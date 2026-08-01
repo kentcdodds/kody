@@ -26,16 +26,39 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 4
+const userMeterSchemaVersion = 5
 /** Singleton row id for expand-phase D1 storage-byte shadow (schema v4). */
 const storageBytesStateRowId = 1
+/** Matches D1 `packageServiceStateStaleMs` (24h); cutover-support RPC only. */
+export const userMeterPackageServiceStateStaleMs = 24 * 60 * 60 * 1000
 
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
 const maxInboundDeliveryIdLength = 256
+const maxPackageServiceIdLength = 256
 const inboundReceiveResource =
 	'email_receives_per_day' satisfies DailyEntitlementResource
 const utcDayKeyPattern = /^\d{4}-\d{2}-\d{2}$/
+/** Matches `new Date().toISOString()` — required for lexicographic monotonicity. */
+const packageServiceSourceUpdatedAtPattern =
+	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const packageServiceShadowStatuses = [
+	'running',
+	'idle',
+	'stopped',
+	'error',
+] as const
+
+export type UserMeterPackageServiceStatus =
+	(typeof packageServiceShadowStatuses)[number]
+
+export function isUserMeterPackageServiceStatus(
+	status: string,
+): status is UserMeterPackageServiceStatus {
+	return (packageServiceShadowStatuses as ReadonlyArray<string>).includes(
+		status,
+	)
+}
 
 /**
  * Legacy D1 mirror `updated_at` token. Lexicographic order matches revision
@@ -110,6 +133,42 @@ export type UserMeterStorageBytesSetResult = UserMeterStorageBytesReadyState & {
 	created: boolean
 }
 
+export type UserMeterPackageServiceState = {
+	packageId: string
+	serviceName: string
+	status: UserMeterPackageServiceStatus
+	startedAt: string | null
+	sourceUpdatedAt: string
+	revision: number
+	updatedAt: string
+	mirrorUpdatedAt: string
+}
+
+export type UserMeterPackageServiceUpsertResult = {
+	applied: boolean
+	created: boolean
+	state: UserMeterPackageServiceState
+}
+
+export type UserMeterPackageServiceDeleteResult = {
+	deleted: boolean
+}
+
+export type UserMeterPackageServiceListResult = {
+	states: Array<UserMeterPackageServiceState>
+	nextStartAfter: string | null
+	truncated: boolean
+}
+
+export type UserMeterPackageServiceCountResult = {
+	count: number
+}
+
+export type UserMeterPackageServiceBootstrapResult = {
+	applied: number
+	skipped: number
+}
+
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
 	/**
@@ -118,6 +177,12 @@ export type UserMeterExportResult = {
 	 * paged consumers never double-count the singleton shadow.
 	 */
 	storageBytesShadow: UserMeterStorageBytesState | null
+	/**
+	 * Non-authoritative D1 `package_service_states` shadow rows. Emitted only
+	 * on the first export page (`startAfter` absent); subsequent pages return
+	 * `null` so paged consumers never double-count the inventory.
+	 */
+	packageServiceStatesShadow: Array<UserMeterPackageServiceState> | null
 	nextStartAfter: string | null
 	truncated: boolean
 }
@@ -139,6 +204,21 @@ export type UserMeterInboundDeliveryConsumeResult =
 type ExportCursor = {
 	day: string
 	resource: string
+}
+
+type PackageServiceExportCursor = {
+	packageId: string
+	serviceName: string
+}
+
+type PackageServiceSqlRow = {
+	package_id: string
+	service_name: string
+	status: string
+	started_at: string | null
+	source_updated_at: string
+	revision: number
+	updated_at: string
 }
 
 function assertDailyResource(resource: string): DailyEntitlementResource {
@@ -184,6 +264,52 @@ function assertInboundDeliveryId(deliveryId: string): string {
 	return deliveryId
 }
 
+function assertPackageServiceId(label: string, value: string): string {
+	if (
+		typeof value !== 'string' ||
+		value.length === 0 ||
+		value.length > maxPackageServiceIdLength
+	) {
+		throw new Error(
+			`UserMeter ${label} must be a non-empty string up to ${maxPackageServiceIdLength} characters.`,
+		)
+	}
+	return value
+}
+
+function assertPackageServiceStatus(
+	status: string,
+): UserMeterPackageServiceStatus {
+	if (!isUserMeterPackageServiceStatus(status)) {
+		throw new Error(
+			`UserMeter package service status must be one of ${packageServiceShadowStatuses.join(', ')}; got ${JSON.stringify(status)}.`,
+		)
+	}
+	return status
+}
+
+function assertSourceUpdatedAt(sourceUpdatedAt: string): string {
+	if (
+		typeof sourceUpdatedAt !== 'string' ||
+		!packageServiceSourceUpdatedAtPattern.test(sourceUpdatedAt)
+	) {
+		throw new Error(
+			'UserMeter package service sourceUpdatedAt must be an ISO-8601 UTC timestamp.',
+		)
+	}
+	// Pattern-first: avoid Invalid Date → RangeError from toISOString().
+	const parsedMs = Date.parse(sourceUpdatedAt)
+	if (
+		!Number.isFinite(parsedMs) ||
+		new Date(parsedMs).toISOString() !== sourceUpdatedAt
+	) {
+		throw new Error(
+			'UserMeter package service sourceUpdatedAt must be an ISO-8601 UTC timestamp.',
+		)
+	}
+	return sourceUpdatedAt
+}
+
 function retentionCutoffDay(now: Date): string {
 	const cutoff = new Date(now)
 	cutoff.setUTCDate(
@@ -203,6 +329,26 @@ function decodeExportCursor(startAfter: string): ExportCursor | null {
 		const [day, resource] = parsed
 		if (typeof day !== 'string' || typeof resource !== 'string') return null
 		return { day, resource }
+	} catch {
+		return null
+	}
+}
+
+function encodePackageServiceCursor(cursor: PackageServiceExportCursor) {
+	return JSON.stringify([cursor.packageId, cursor.serviceName])
+}
+
+function decodePackageServiceCursor(
+	startAfter: string,
+): PackageServiceExportCursor | null {
+	try {
+		const parsed = JSON.parse(startAfter) as unknown
+		if (!Array.isArray(parsed) || parsed.length !== 2) return null
+		const [packageId, serviceName] = parsed
+		if (typeof packageId !== 'string' || typeof serviceName !== 'string') {
+			return null
+		}
+		return { packageId, serviceName }
 	} catch {
 		return null
 	}
@@ -301,6 +447,23 @@ class UserMeterBase extends DurableObject<Env> {
 				updated_at TEXT NOT NULL
 			)
 		`)
+		// Expand-phase shadow of D1 `package_service_states` (schema v5).
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS package_service_states (
+				package_id TEXT NOT NULL,
+				service_name TEXT NOT NULL,
+				status TEXT NOT NULL,
+				started_at TEXT,
+				source_updated_at TEXT NOT NULL,
+				revision INTEGER NOT NULL,
+				updated_at TEXT NOT NULL,
+				PRIMARY KEY (package_id, service_name)
+			)
+		`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_package_service_states_status_source
+			ON package_service_states (status, source_updated_at)`,
+		)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO user_meter_meta (key, value) VALUES (?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -772,6 +935,276 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
+	private packageServiceStateFromRow(
+		row: PackageServiceSqlRow,
+	): UserMeterPackageServiceState {
+		const revision = Math.max(0, Number(row.revision ?? 0))
+		const status = assertPackageServiceStatus(String(row.status))
+		return {
+			packageId: String(row.package_id),
+			serviceName: String(row.service_name),
+			status,
+			startedAt:
+				status === 'running' && row.started_at != null
+					? String(row.started_at)
+					: null,
+			sourceUpdatedAt: String(row.source_updated_at),
+			revision,
+			updatedAt: String(row.updated_at),
+			mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(revision),
+		}
+	}
+
+	private readPackageServiceRow(
+		packageId: string,
+		serviceName: string,
+	): UserMeterPackageServiceState | null {
+		const row = this.ctx.storage.sql
+			.exec<PackageServiceSqlRow>(
+				`SELECT package_id, service_name, status, started_at,
+					source_updated_at, revision, updated_at
+				FROM package_service_states
+				WHERE package_id = ? AND service_name = ?`,
+				packageId,
+				serviceName,
+			)
+			.toArray()[0]
+		if (!row) return null
+		return this.packageServiceStateFromRow(row)
+	}
+
+	private listAllPackageServiceRows(): Array<UserMeterPackageServiceState> {
+		const rows = this.ctx.storage.sql
+			.exec<PackageServiceSqlRow>(
+				`SELECT package_id, service_name, status, started_at,
+					source_updated_at, revision, updated_at
+				FROM package_service_states
+				ORDER BY package_id ASC, service_name ASC`,
+			)
+			.toArray()
+		return rows.map((row) => this.packageServiceStateFromRow(row))
+	}
+
+	/**
+	 * Expand-phase shadow upsert (monotonic on `sourceUpdatedAt`). Stale writes
+	 * are rejected; expand-phase enforcement still reads D1.
+	 */
+	async upsertPackageServiceState(input: {
+		packageId: string
+		serviceName: string
+		status: string
+		startedAt?: string | null
+		sourceUpdatedAt: string
+		updatedAt?: string
+	}): Promise<UserMeterPackageServiceUpsertResult> {
+		const packageId = assertPackageServiceId('packageId', input.packageId)
+		const serviceName = assertPackageServiceId('serviceName', input.serviceName)
+		const status = assertPackageServiceStatus(input.status)
+		const sourceUpdatedAt = assertSourceUpdatedAt(input.sourceUpdatedAt)
+		const updatedAt =
+			typeof input.updatedAt === 'string' && input.updatedAt.length > 0
+				? input.updatedAt
+				: sourceUpdatedAt
+		const startedAt =
+			status === 'running' &&
+			typeof input.startedAt === 'string' &&
+			input.startedAt.length > 0
+				? input.startedAt
+				: null
+
+		const existing = this.readPackageServiceRow(packageId, serviceName)
+		if (existing && existing.sourceUpdatedAt > sourceUpdatedAt) {
+			return {
+				applied: false,
+				created: false,
+				state: existing,
+			}
+		}
+		if (!existing) {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO package_service_states (
+					package_id, service_name, status, started_at,
+					source_updated_at, revision, updated_at
+				) VALUES (?, ?, ?, ?, ?, 1, ?)`,
+				packageId,
+				serviceName,
+				status,
+				startedAt,
+				sourceUpdatedAt,
+				updatedAt,
+			)
+			const row = this.readPackageServiceRow(packageId, serviceName)
+			if (!row) {
+				throw new Error(
+					'UserMeter upsertPackageServiceState failed to materialize shadow row.',
+				)
+			}
+			return { applied: true, created: true, state: row }
+		}
+
+		const nextRevision = existing.revision + 1
+		this.ctx.storage.sql.exec(
+			`UPDATE package_service_states
+			SET status = ?,
+				started_at = ?,
+				source_updated_at = ?,
+				revision = ?,
+				updated_at = ?
+			WHERE package_id = ? AND service_name = ? AND revision = ?`,
+			status,
+			startedAt,
+			sourceUpdatedAt,
+			nextRevision,
+			updatedAt,
+			packageId,
+			serviceName,
+			existing.revision,
+		)
+		const row = this.readPackageServiceRow(packageId, serviceName)
+		if (!row) {
+			throw new Error(
+				'UserMeter upsertPackageServiceState lost the shadow row.',
+			)
+		}
+		return { applied: true, created: false, state: row }
+	}
+
+	/** Expand-phase shadow delete; discovery still uses D1. */
+	async deletePackageServiceState(input: {
+		packageId: string
+		serviceName: string
+	}): Promise<UserMeterPackageServiceDeleteResult> {
+		const packageId = assertPackageServiceId('packageId', input.packageId)
+		const serviceName = assertPackageServiceId('serviceName', input.serviceName)
+		const cursor = this.ctx.storage.sql.exec(
+			`DELETE FROM package_service_states
+			WHERE package_id = ? AND service_name = ?`,
+			packageId,
+			serviceName,
+		)
+		return { deleted: cursor.rowsWritten > 0 }
+	}
+
+	/** Cutover-support paged shadow list; expand-phase discovery uses D1. */
+	async listPackageServiceStates(input: {
+		pageSize?: number
+		startAfter?: string | null
+	}): Promise<UserMeterPackageServiceListResult> {
+		const pageSize = normalizePageSize(input.pageSize)
+		const cursor =
+			typeof input.startAfter === 'string' && input.startAfter.length > 0
+				? decodePackageServiceCursor(input.startAfter)
+				: null
+		const rows = (
+			cursor
+				? this.ctx.storage.sql.exec<PackageServiceSqlRow>(
+						`SELECT package_id, service_name, status, started_at,
+							source_updated_at, revision, updated_at
+						FROM package_service_states
+						WHERE package_id > ?
+							OR (package_id = ? AND service_name > ?)
+						ORDER BY package_id ASC, service_name ASC
+						LIMIT ?`,
+						cursor.packageId,
+						cursor.packageId,
+						cursor.serviceName,
+						pageSize + 1,
+					)
+				: this.ctx.storage.sql.exec<PackageServiceSqlRow>(
+						`SELECT package_id, service_name, status, started_at,
+							source_updated_at, revision, updated_at
+						FROM package_service_states
+						ORDER BY package_id ASC, service_name ASC
+						LIMIT ?`,
+						pageSize + 1,
+					)
+		).toArray()
+		const truncated = rows.length > pageSize
+		const pageRows = truncated ? rows.slice(0, pageSize) : rows
+		const states = pageRows.map((row) => this.packageServiceStateFromRow(row))
+		const last = pageRows[pageRows.length - 1]
+		return {
+			states,
+			nextStartAfter:
+				truncated && last
+					? encodePackageServiceCursor({
+							packageId: String(last.package_id),
+							serviceName: String(last.service_name),
+						})
+					: null,
+			truncated,
+		}
+	}
+
+	/**
+	 * Cutover-support running count from the shadow table. Expand-phase
+	 * enforcement still uses D1 `countRunningPackageServices`.
+	 */
+	async countRunningPackageServices(input: {
+		staleAfterMs?: number
+		excludeService?: { packageId: string; serviceName: string }
+		now?: string
+	}): Promise<UserMeterPackageServiceCountResult> {
+		const now = input.now ? new Date(input.now) : new Date()
+		const safeNow = Number.isNaN(now.valueOf()) ? new Date() : now
+		const staleAfterMs =
+			typeof input.staleAfterMs === 'number' &&
+			Number.isFinite(input.staleAfterMs) &&
+			input.staleAfterMs >= 0
+				? Math.trunc(input.staleAfterMs)
+				: userMeterPackageServiceStateStaleMs
+		const freshAfter = new Date(safeNow.valueOf() - staleAfterMs).toISOString()
+		const exclusion = input.excludeService
+		const packageId = exclusion
+			? assertPackageServiceId('packageId', exclusion.packageId)
+			: null
+		const serviceName = exclusion
+			? assertPackageServiceId('serviceName', exclusion.serviceName)
+			: null
+		const row = (
+			packageId && serviceName
+				? this.ctx.storage.sql.exec<{ count: number }>(
+						`SELECT COUNT(*) AS count
+						FROM package_service_states
+						WHERE status = 'running'
+							AND source_updated_at >= ?
+							AND NOT (package_id = ? AND service_name = ?)`,
+						freshAfter,
+						packageId,
+						serviceName,
+					)
+				: this.ctx.storage.sql.exec<{ count: number }>(
+						`SELECT COUNT(*) AS count
+						FROM package_service_states
+						WHERE status = 'running'
+							AND source_updated_at >= ?`,
+						freshAfter,
+					)
+		).toArray()[0]
+		return { count: Math.max(0, Number(row?.count ?? 0)) }
+	}
+
+	/** Cutover-support bulk seed; same monotonic guard as upsert. */
+	async bootstrapPackageServiceStates(input: {
+		states: ReadonlyArray<{
+			packageId: string
+			serviceName: string
+			status: string
+			startedAt?: string | null
+			sourceUpdatedAt: string
+			updatedAt?: string
+		}>
+	}): Promise<UserMeterPackageServiceBootstrapResult> {
+		let applied = 0
+		let skipped = 0
+		for (const state of input.states) {
+			const result = await this.upsertPackageServiceState(state)
+			if (result.applied) applied += 1
+			else skipped += 1
+		}
+		return { applied, skipped }
+	}
+
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			await this.ctx.storage.deleteAll()
@@ -842,11 +1275,14 @@ class UserMeterBase extends DurableObject<Env> {
 				mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(revision),
 			})
 		}
-		// Shadow is a singleton outside keyset paging — emit it once on the
-		// first page only so section totals and multi-page consumers do not
-		// double-count.
-		const includeStorageShadow = cursor == null
-		const storageRow = includeStorageShadow ? this.readStorageRow() : null
+		// Shadow inventories sit outside counter keyset paging — emit them once
+		// on the first page only so section totals and multi-page consumers do
+		// not double-count.
+		const includeShadows = cursor == null
+		const storageRow = includeShadows ? this.readStorageRow() : null
+		const packageServiceStatesShadow = includeShadows
+			? this.listAllPackageServiceRows()
+			: null
 		const last = pageRows[pageRows.length - 1]
 		return {
 			counters,
@@ -858,6 +1294,7 @@ class UserMeterBase extends DurableObject<Env> {
 						mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(storageRow.revision),
 					}
 				: null,
+			packageServiceStatesShadow,
 			nextStartAfter:
 				truncated && last
 					? encodeExportCursor({
@@ -923,6 +1360,42 @@ export type UserMeterRpc = {
 		bytes: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesSetResult>
+	/** Expand-phase shadow upsert; not used for enforcement. */
+	upsertPackageServiceState: (input: {
+		packageId: string
+		serviceName: string
+		status: string
+		startedAt?: string | null
+		sourceUpdatedAt: string
+		updatedAt?: string
+	}) => Promise<UserMeterPackageServiceUpsertResult>
+	/** Expand-phase shadow delete. */
+	deletePackageServiceState: (input: {
+		packageId: string
+		serviceName: string
+	}) => Promise<UserMeterPackageServiceDeleteResult>
+	/** Cutover-support paged shadow list; discovery uses D1. */
+	listPackageServiceStates: (input: {
+		pageSize?: number
+		startAfter?: string | null
+	}) => Promise<UserMeterPackageServiceListResult>
+	/** Cutover-support running count; service-start still uses D1. */
+	countRunningPackageServices: (input: {
+		staleAfterMs?: number
+		excludeService?: { packageId: string; serviceName: string }
+		now?: string
+	}) => Promise<UserMeterPackageServiceCountResult>
+	/** Cutover-support bulk seed with sourceUpdatedAt monotonic guards. */
+	bootstrapPackageServiceStates: (input: {
+		states: ReadonlyArray<{
+			packageId: string
+			serviceName: string
+			status: string
+			startedAt?: string | null
+			sourceUpdatedAt: string
+			updatedAt?: string
+		}>
+	}) => Promise<UserMeterPackageServiceBootstrapResult>
 	purge: () => Promise<{ ok: true }>
 	exportCounters: (input: {
 		pageSize?: number

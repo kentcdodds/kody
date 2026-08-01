@@ -209,7 +209,13 @@ export type AccountExportArtifactRepo = {
 type RunRecordsExportPayload = Awaited<ReturnType<typeof exportRunRecords>>
 
 function countUserMeterExportEntries(result: UserMeterExportResult): number {
-	return result.counters.length + (result.storageBytesShadow == null ? 0 : 1)
+	return (
+		result.counters.length +
+		(result.storageBytesShadow == null ? 0 : 1) +
+		(result.packageServiceStatesShadow == null
+			? 0
+			: result.packageServiceStatesShadow.length)
+	)
 }
 
 function countRunRecordsExportEntries(
@@ -293,6 +299,12 @@ export type AccountExportSectionResult = {
 	 * first `user_meter` page (`startAfter` absent); later pages omit it.
 	 */
 	storageBytesShadow?: UserMeterExportResult['storageBytesShadow']
+	/**
+	 * Non-authoritative UserMeter package-service shadow rows. Present only on
+	 * the first `user_meter` page (`startAfter` absent); later pages set it to
+	 * `null`.
+	 */
+	packageServiceStatesShadow?: UserMeterExportResult['packageServiceStatesShadow']
 }
 
 function normalizePageSize(pageSize: number | undefined) {
@@ -1989,6 +2001,7 @@ export async function readAccountExportSection(input: {
 			section: input.section,
 			items: page.counters,
 			storageBytesShadow: page.storageBytesShadow,
+			packageServiceStatesShadow: page.packageServiceStatesShadow,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

@@ -99,6 +99,10 @@
 			"new_sqlite_classes": ["Mailbox"],
 			"tag": "v22",
 		},
+		{
+			"new_sqlite_classes": ["StripePlanRefresh"],
+			"tag": "v23",
+		},
 	],
 
 	"observability": {
@@ -210,6 +214,10 @@
 						"name": "MAILBOX",
 					},
 					{
+						"class_name": "StripePlanRefresh",
+						"name": "STRIPE_PLAN_REFRESH",
+					},
+					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
@@ -250,6 +258,10 @@
 						"binding": "COMMUNITY_ACTIVITY_DISPATCH_QUEUE",
 						"queue": "kody-community-activity-dispatch",
 					},
+					{
+						"binding": "SCHEDULED_DISPATCH_QUEUE",
+						"queue": "kody-scheduled-dispatch",
+					},
 				],
 				"consumers": [
 					{
@@ -272,6 +284,14 @@
 						"max_batch_timeout": 5,
 						"max_retries": 3,
 						"dead_letter_queue": "kody-community-activity-dispatch-dlq",
+					},
+					{
+						"queue": "kody-scheduled-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 0,
+						"max_retries": 3,
+						"max_concurrency": 16,
+						"dead_letter_queue": "kody-scheduled-dispatch-dlq",
 					},
 				],
 			},
@@ -441,6 +461,10 @@
 						"name": "MAILBOX",
 					},
 					{
+						"class_name": "StripePlanRefresh",
+						"name": "STRIPE_PLAN_REFRESH",
+					},
+					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
@@ -589,6 +613,10 @@
 						"name": "MAILBOX",
 					},
 					{
+						"class_name": "StripePlanRefresh",
+						"name": "STRIPE_PLAN_REFRESH",
+					},
+					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
@@ -654,6 +682,9 @@
 				"GOOGLE_CLIENT_SECRET": "MOCK_GOOGLE_CLIENT_SECRET",
 				"X_CLIENT_ID": "MOCK_X_CLIENT_ID",
 				"X_CLIENT_SECRET": "MOCK_X_CLIENT_SECRET",
+				"STRIPE_SECRET_KEY": "sk_test_local",
+				"STRIPE_PRO_PRICE_ID": "price_pro",
+				"STRIPE_API_BASE_URL": "https://stripe.mock",
 				"DR_EXPORT_ENABLED": "",
 				"DR_BACKUP_ACCOUNT_ID": "",
 				"DR_BACKUP_BUCKET_NAME": "",

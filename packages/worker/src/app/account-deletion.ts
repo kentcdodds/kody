@@ -4,6 +4,7 @@ import {
 	deleteCustomer,
 	listSubscriptions,
 } from '#worker/billing/stripe-client.ts'
+import { purgeStripePlanRefreshForUser } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
@@ -622,6 +623,29 @@ async function purgeUserMeter(input: {
 	}
 }
 
+async function purgeStripePlanRefresh(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		const result = await purgeStripePlanRefreshForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+		if (!result.purged) {
+			input.warnings.push(
+				'STRIPE_PLAN_REFRESH binding was unavailable; the user Stripe refresh alarm was not purged.',
+			)
+		}
+		return result.purged ? 1 : 0
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Stripe plan refresh purge failed: ${message}`)
+		return 0
+	}
+}
+
 async function purgeMailbox(input: {
 	env: Env
 	userId: string
@@ -1144,6 +1168,12 @@ export async function deleteUserAccount(input: {
 		userId: input.mcpUserId,
 		warnings,
 	})
+	result.clearedDurableObjects.stripePlanRefreshes =
+		await purgeStripePlanRefresh({
+			env: input.env,
+			userId: input.mcpUserId,
+			warnings,
+		})
 	result.clearedDurableObjects.mailboxes = await purgeMailbox({
 		env: input.env,
 		userId: input.mcpUserId,

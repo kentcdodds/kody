@@ -47,11 +47,6 @@ const mocks = vi.hoisted(() => ({
 		alerted: false,
 	})),
 	shouldRunJobScheduleWatchdogCron: vi.fn(() => false),
-	refreshStaleStripePlans: vi.fn(async () => ({
-		refreshed: 0,
-		failed: 0,
-		skipped: true,
-	})),
 	backfillStorageBucketEstimates: vi.fn(async () => ({
 		scanned: 0,
 		updated: 0,
@@ -110,10 +105,6 @@ vi.mock('#worker/dr/exporter.ts', () => ({
 	shouldRunDrExportCron: mocks.shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron: mocks.shouldRunDrExportWatchdogCron,
 	isDrExportConfigured: mocks.isDrExportConfigured,
-}))
-
-vi.mock('#worker/billing/subscription-sync.ts', () => ({
-	refreshStaleStripePlans: mocks.refreshStaleStripePlans,
 }))
 
 vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
@@ -183,15 +174,15 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	expect(mocks.runJobScheduleWatchdogTick).toHaveBeenCalledWith(
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
-	expect(mocks.refreshStaleStripePlans).toHaveBeenCalledWith(
-		expect.objectContaining({ now: new Date(scheduledTime) }),
-	)
 	expect(mocks.backfillStorageBucketEstimates).toHaveBeenCalledWith(
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.reconcileD1StorageBytes).toHaveBeenCalledTimes(1)
 	const reconciliationInput = mocks.reconcileD1StorageBytes.mock.calls[0]?.[0]
 	expect(reconciliationInput?.db === env.APP_DB).toBe(true)
+	expect(reconciliationInput?.env).toEqual(
+		expect.objectContaining({ APP_DB: env.APP_DB }),
+	)
 	expect(reconciliationInput?.now).toEqual(new Date(scheduledTime))
 	expect(mocks.pruneRetention).not.toHaveBeenCalled()
 })

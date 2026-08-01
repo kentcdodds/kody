@@ -35,6 +35,11 @@ export function userMeterDurableObjectName(userId: string) {
 	return userId
 }
 
+/** StripePlanRefresh — one activity-driven refresh alarm per user. */
+export function stripePlanRefreshDurableObjectName(userId: string) {
+	return userId
+}
+
 /** Mailbox — one email-metadata DO per user (untrimmed, like RunLog). */
 export function mailboxDurableObjectName(userId: string) {
 	return userId

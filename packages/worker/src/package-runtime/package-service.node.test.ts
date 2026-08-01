@@ -1,4 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -172,6 +177,37 @@ async function createPackageServiceInstance(env: Env = {} as Env) {
 
 async function flushWaitUntilTasks(waitUntilTasks: Array<Promise<unknown>>) {
 	await Promise.all(waitUntilTasks)
+}
+
+/**
+ * Drain UserMeter shadow (and other promptly settling) waitUntil tasks without
+ * hanging on long-lived background service runs also scheduled via waitUntil.
+ */
+async function drainSettledWaitUntilTasks(
+	waitUntilTasks: Array<Promise<unknown>>,
+	fromIndex = 0,
+) {
+	const pending = waitUntilTasks.slice(fromIndex)
+	await Promise.all(
+		pending.map(async (task) => {
+			const state = { settled: false }
+			void Promise.resolve(task).then(
+				() => {
+					state.settled = true
+				},
+				() => {
+					state.settled = true
+				},
+			)
+			for (let i = 0; i < 40; i++) {
+				await Promise.resolve()
+				if (state.settled) {
+					await task
+					return
+				}
+			}
+		}),
+	)
 }
 
 function resetMocks() {
@@ -795,6 +831,622 @@ test('package service restore projects current state into package_service_states
 				'2026-07-05T14:00:00.000Z',
 			],
 		])
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+function createRecordingPackageServiceDb() {
+	const upserts: Array<Array<unknown>> = []
+	const deletes: Array<Array<unknown>> = []
+	const appDb = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async run() {
+							if (query.includes('INSERT INTO package_service_states')) {
+								upserts.push(params)
+							}
+							if (query.includes('DELETE FROM package_service_states')) {
+								deletes.push(params)
+							}
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	return { appDb, upserts, deletes }
+}
+
+function createNoopPackageServiceDb() {
+	return {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+}
+
+function packageServiceShadowRow(
+	meter: ReturnType<typeof createInMemoryUserMeterEnv>,
+	userId: string,
+	packageId: string,
+	serviceName: string,
+) {
+	return meter.packageServicesByUser
+		.get(userId)
+		?.get(`${packageId}\0${serviceName}`)
+}
+
+async function postPackageService(
+	instance: InstanceType<typeof PackageServiceInstance>,
+	action: 'start' | 'stop' | 'purge',
+	binding: typeof serviceBinding = serviceBinding,
+) {
+	return instance.fetch(
+		new Request(`https://package-service.invalid/service/${action}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ binding }),
+		}),
+	)
+}
+
+test('package service start/heartbeat/stop/purge shadow UserMeter transitions', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb, upserts, deletes } = createRecordingPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		// D1 projection stays on the awaited lifecycle path.
+		expect(upserts[0]?.[3]).toBe('running')
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			startedAt: '2026-07-05T12:00:00.000Z',
+			sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+			revision: 1,
+		})
+		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T13:00:00.000Z'))
+
+		vi.setSystemTime(new Date('2026-07-05T13:00:00.000Z'))
+		const afterStartWaitUntilCount = created.waitUntilTasks.length
+		await created.instance.alarm()
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterStartWaitUntilCount,
+		)
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			sourceUpdatedAt: '2026-07-05T13:00:00.000Z',
+			revision: 2,
+		})
+		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T14:00:00.000Z'))
+
+		const afterHeartbeatWaitUntilCount = created.waitUntilTasks.length
+		await postPackageService(created.instance, 'stop')
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterHeartbeatWaitUntilCount,
+		)
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			sourceUpdatedAt: '2026-07-05T13:00:00.000Z',
+			revision: 3,
+		})
+
+		const afterStopWaitUntilCount = created.waitUntilTasks.length
+		await postPackageService(created.instance, 'purge')
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterStopWaitUntilCount,
+		)
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toBeUndefined()
+		expect(deletes).toContainEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+		])
+		expect(upserts.length).toBeGreaterThanOrEqual(3)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service serializes gated UserMeter shadows so purge stays deleted and running→stopped cannot regress', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb } = createRecordingPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	type Gate = {
+		release: () => void
+		promise: Promise<void>
+		label: string
+	}
+	const gates: Array<Gate> = []
+	const callOrder: Array<string> = []
+	const baseStub = meter.env.USER_METER.get(
+		meter.env.USER_METER.idFromName('user-123'),
+	)
+
+	function pushGate(label: string): Gate {
+		const gate: Gate = {
+			label,
+			release: () => {},
+			promise: Promise.resolve(),
+		}
+		gate.promise = new Promise<void>((resolve) => {
+			gate.release = resolve
+		})
+		gates.push(gate)
+		return gate
+	}
+
+	const gatedMeter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState(
+					input: Parameters<typeof baseStub.upsertPackageServiceState>[0],
+				) {
+					const gate = pushGate(`upsert:${input.status}`)
+					await gate.promise
+					callOrder.push(`upsert:${input.status}`)
+					return baseStub.upsertPackageServiceState(input)
+				},
+				async deletePackageServiceState(
+					input: Parameters<typeof baseStub.deletePackageServiceState>[0],
+				) {
+					const gate = pushGate('delete')
+					await gate.promise
+					callOrder.push('delete')
+					return baseStub.deletePackageServiceState(input)
+				},
+			}),
+		},
+	}
+
+	async function settleMicrotasks() {
+		await Promise.resolve()
+		await Promise.resolve()
+		await Promise.resolve()
+	}
+
+	async function waitForGate(label: string) {
+		for (let i = 0; i < 100; i++) {
+			if (gates.some((gate) => gate.label === label)) return
+			await Promise.resolve()
+		}
+		throw new Error(`Timed out waiting for gated shadow op ${label}.`)
+	}
+
+	try {
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+			vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+			return { result: { ok: true }, error: null }
+		})
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: gatedMeter.USER_METER,
+		} as Env)
+
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		// Lifecycle returned while the first shadow hop is still gated.
+		expect(created.waitUntilTasks.length).toBeGreaterThanOrEqual(2)
+		await waitForGate('upsert:running')
+		expect(gates.map((gate) => gate.label)).toEqual(['upsert:running'])
+		expect(callOrder).toEqual([])
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toBeUndefined()
+
+		// Finish the bounded background run while the running shadow stays gated so
+		// the same-ms stopped upsert is chained behind it (not started yet).
+		const backgroundRunTask = created.waitUntilTasks[1]
+		expect(backgroundRunTask).toBeDefined()
+		await backgroundRunTask
+		await settleMicrotasks()
+		expect(gates.map((gate) => gate.label)).toEqual(['upsert:running'])
+		expect(callOrder).toEqual([])
+
+		// Same-ms running→stopped: stopped cannot begin until running is released,
+		// so a reordered drain cannot let stopped win first and then regress.
+		gates[0]?.release()
+		await waitForGate('upsert:stopped')
+		expect(callOrder).toEqual(['upsert:running'])
+		expect(gates.map((gate) => gate.label)).toEqual([
+			'upsert:running',
+			'upsert:stopped',
+		])
+		gates[1]?.release()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(callOrder).toEqual(['upsert:running', 'upsert:stopped'])
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'stopped',
+			sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+		})
+
+		callOrder.length = 0
+		gates.length = 0
+		const beforePurgeWaitUntilCount = created.waitUntilTasks.length
+		const purge = await postPackageService(created.instance, 'purge')
+		expect(purge.status).toBe(200)
+		await waitForGate('upsert:stopped')
+		// Purge schedules stopped upsert then delete; delete cannot start first.
+		expect(gates.map((gate) => gate.label)).toEqual(['upsert:stopped'])
+		expect(callOrder).toEqual([])
+
+		// Prefer settling the trailing waitUntil chain entry first while the head
+		// upsert is still gated. Serialization keeps delete behind the upsert, so
+		// the purge final state stays deleted instead of resurrecting.
+		const trailingPurgeChain = created.waitUntilTasks.at(-1)
+		expect(trailingPurgeChain).toBeDefined()
+		let trailingSettled = false
+		void Promise.resolve(trailingPurgeChain).then(() => {
+			trailingSettled = true
+		})
+		await settleMicrotasks()
+		expect(trailingSettled).toBe(false)
+		expect(callOrder).toEqual([])
+
+		gates[0]?.release()
+		await waitForGate('delete')
+		expect(callOrder).toEqual(['upsert:stopped'])
+		expect(gates.map((gate) => gate.label)).toEqual([
+			'upsert:stopped',
+			'delete',
+		])
+		expect(trailingSettled).toBe(false)
+		gates[1]?.release()
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			beforePurgeWaitUntilCount,
+		)
+		expect(trailingSettled).toBe(true)
+		expect(callOrder).toEqual(['upsert:stopped', 'delete'])
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toBeUndefined()
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service lifecycle does not await a gated UserMeter shadow', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb, upserts } = createRecordingPackageServiceDb()
+	let releaseShadow!: () => void
+	const shadowGate = new Promise<void>((resolve) => {
+		releaseShadow = resolve
+	})
+	let shadowFinished = false
+	const gatedMeter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState() {
+					await shadowGate
+					shadowFinished = true
+					return {
+						applied: true,
+						created: true,
+						state: {
+							packageId: 'package-1',
+							serviceName: 'realtime-supervisor',
+							status: 'running' as const,
+							startedAt: '2026-07-05T12:00:00.000Z',
+							sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+							revision: 1,
+							updatedAt: '2026-07-05T12:00:00.000Z',
+							mirrorUpdatedAt: 'r/00000000000000000001',
+						},
+					}
+				},
+				async deletePackageServiceState() {
+					return { deleted: true }
+				},
+			}),
+		},
+	}
+
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: gatedMeter.USER_METER,
+		} as Env)
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		expect(upserts[0]).toEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+			'running',
+			'2026-07-05T12:00:00.000Z',
+			'2026-07-05T12:00:00.000Z',
+		])
+		// Lifecycle returned while the shadow DO hop is still gated.
+		expect(shadowFinished).toBe(false)
+		expect(created.waitUntilTasks.length).toBeGreaterThan(0)
+
+		releaseShadow()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(shadowFinished).toBe(true)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service UserMeter shadow failure cannot break D1 projection or lifecycle', async () => {
+	resetMocks()
+	silenceExpectedConsoleWarns(['package-service-user-meter-shadow-failed'])
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb, upserts } = createRecordingPackageServiceDb()
+	const failingMeter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState() {
+					throw new Error('shadow write failed')
+				},
+				async deletePackageServiceState() {
+					throw new Error('shadow delete failed')
+				},
+			}),
+		},
+	}
+
+	try {
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+			vi.setSystemTime(new Date('2026-07-05T12:00:05.000Z'))
+			return { result: { ok: true }, error: null }
+		})
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: failingMeter.USER_METER,
+		} as Env)
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		expect(upserts[0]).toEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+			'running',
+			'2026-07-05T12:00:00.000Z',
+			'2026-07-05T12:00:00.000Z',
+		])
+		await flushWaitUntilTasks(created.waitUntilTasks)
+		expect(upserts.at(-1)).toEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+			'stopped',
+			null,
+			'2026-07-05T12:00:05.000Z',
+		])
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'package-service-user-meter-shadow-failed',
+			expect.any(Error),
+		)
+
+		const beforePurgeWaitUntilCount = created.waitUntilTasks.length
+		const purge = await postPackageService(created.instance, 'purge')
+		expect(purge.status).toBe(200)
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			beforePurgeWaitUntilCount,
+		)
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'package-service-user-meter-shadow-failed',
+			expect.any(Error),
+		)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service UserMeter shadows are isolated per owning user', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const appDb = createNoopPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+	const otherBinding = {
+		...serviceBinding,
+		userId: 'user-other',
+		packageId: 'package-2',
+		kodyId: '@scope/package-2',
+	}
+
+	try {
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		mockModule.getSavedPackageById.mockImplementation(
+			async (_db: unknown, input: { packageId: string }) =>
+				input.packageId === 'package-2'
+					? {
+							id: 'package-2',
+							sourceId: 'source-1',
+							kodyId: '@scope/package-2',
+						}
+					: savedPackage,
+		)
+		mockModule.loadPackageSourceBySourceId.mockImplementation(async () =>
+			createPackageSource('bounded'),
+		)
+
+		const first = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		const second = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+
+		await postPackageService(first.instance, 'start')
+		await postPackageService(second.instance, 'start', otherBinding)
+		await drainSettledWaitUntilTasks(first.waitUntilTasks)
+		await drainSettledWaitUntilTasks(second.waitUntilTasks)
+
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({ status: 'running' })
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-other',
+				'package-2',
+				'realtime-supervisor',
+			),
+		).toMatchObject({ status: 'running' })
+		expect(meter.packageServicesByUser.get('user-123')?.size).toBe(1)
+		expect(meter.packageServicesByUser.get('user-other')?.size).toBe(1)
+		expect(
+			meter.packageServicesByUser
+				.get('user-123')
+				?.has('package-2\0realtime-supervisor'),
+		).toBe(false)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service restore shadows current D1 projection into UserMeter', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T14:00:00.000Z'))
+	const appDb = createNoopPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	try {
+		const restored = createPackageServiceState()
+		restored.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: false,
+			mode: 'bounded',
+			timeoutMs: 30_000,
+			stopRequested: false,
+			currentRunId: null,
+			nextAlarmAt: null,
+			nextAlarmSource: null,
+			lastStartedAt: '2026-07-05T13:00:00.000Z',
+			lastStoppedAt: '2026-07-05T13:05:00.000Z',
+			status: 'error',
+			lastError: 'boom',
+			lastResult: null,
+			lastRunFinishedAt: '2026-07-05T13:05:00.000Z',
+			consecutiveFailureCount: 1,
+		})
+		new PackageServiceInstance(restored.state, {
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		await waitForRestoreState(restored.state)
+		await drainSettledWaitUntilTasks(restored.waitUntilTasks)
+
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'error',
+			startedAt: null,
+			sourceUpdatedAt: '2026-07-05T14:00:00.000Z',
+			revision: 1,
+		})
 	} finally {
 		vi.useRealTimers()
 	}
