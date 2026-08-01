@@ -25,9 +25,11 @@ function createUsageTestDb(input: {
 	stripePlan?: string | null
 	packageCount?: number
 	dailyCounters?: Array<DailyCounterRow>
+	d1StorageBytes?: number
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	const dailyCounters = input.dailyCounters?.map((row) => ({ ...row })) ?? []
+	const d1StorageBytes = input.d1StorageBytes ?? 0
 	return {
 		stableUserId,
 		db: {
@@ -60,10 +62,12 @@ function createUsageTestDb(input: {
 									)
 									return (row ? { count: row.count } : { count: 0 }) as T
 								}
+								if (normalized.includes('d1_storage_bytes')) {
+									return { bytes: d1StorageBytes } as T
+								}
 								if (
 									normalized.includes('count(*)') ||
-									normalized.includes('sum(') ||
-									normalized.includes('d1_storage_bytes')
+									normalized.includes('sum(')
 								) {
 									return { count: 0, total: 0, bytes: 0 } as T
 								}
@@ -215,4 +219,25 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(currentFor(authoritative, 'outbound_fetches_per_day')).toBe(404)
 	expect(currentFor(authoritative, 'concurrent_workflows')).toBe(3)
 	expect(currentFor(authoritative, 'saved_packages')).toBe(4)
+})
+
+test('loadAccountUsageData prefers D1 storage_bytes over a divergent UserMeter shadow', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const email = 'usage-storage@example.com'
+	const userId = testStableUserIdFromEmail(email)
+	const { db } = createUsageTestDb({
+		userId: 11,
+		email,
+		plan: 'pro',
+		packageCount: 0,
+		d1StorageBytes: 4_321,
+	})
+	const usageEnv = withUsageEnv({ APP_DB: db })
+	await usageEnv.meter.seedStorageBytes({ userId, bytes: 321 })
+	const data = await loadAccountUsageData({
+		env: usageEnv as Env,
+		userId: 11,
+		now,
+	})
+	expect(currentFor(data, 'storage_bytes')).toBe(4_321)
 })

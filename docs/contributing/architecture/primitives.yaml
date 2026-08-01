@@ -513,8 +513,8 @@ primitives:
     group: storage
     name: User meter
     summary:
-      Per-user UserMeter DO SQLite for daily entitlement counters and inbound
-      delivery idempotency.
+      Per-user UserMeter DO SQLite for daily entitlement counters, inbound
+      delivery idempotency, and expand-phase D1 storage-byte shadow.
     code:
       - packages/worker/src/entitlements/user-meter-do.ts
       - packages/worker/src/entitlements/user-meter-client.ts

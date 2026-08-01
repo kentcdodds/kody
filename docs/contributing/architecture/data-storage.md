@@ -166,13 +166,14 @@ migration-safe chunked interface:
   with `section: "storage_runner"` and a `storage_id`, using the same
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability. User meter counters use `section: "user_meter"` and
-  the `UserMeter.exportCounters` RPC. R2 raw MIME, attachment, avatar, and icon
-  objects use `section: "r2_object"`; each response contains at most one 256 KiB
-  base64 chunk and an opaque cursor. Each request uses bounded `LIMIT 1`
-  ownership queries rather than reconstructing inventory. Continuation cursors
-  bind the source row, object key, size, and ETag; ownership/key mutations and
-  object overwrites are reported instead of mixing generations. Missing objects
-  are represented explicitly.
+  the `UserMeter.exportCounters` RPC (daily counters plus additive
+  `storageBytesShadow` when present; explicitly non-authoritative). R2 raw MIME,
+  attachment, avatar, and icon objects use `section: "r2_object"`; each response
+  contains at most one 256 KiB base64 chunk and an opaque cursor. Each request
+  uses bounded `LIMIT 1` ownership queries rather than reconstructing inventory.
+  Continuation cursors bind the source row, object key, size, and ETag;
+  ownership/key mutations and object overwrites are reported instead of mixing
+  generations. Missing objects are represented explicitly.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -196,8 +197,12 @@ Durable Object export behavior:
   never pruned by retention. See [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
-  Retention is self-enforced inside the DO (seven UTC days of counter and
-  inbound-delivery-claim rows); see
+  The same RPC may return additive `storageBytesShadow` when the schema-v4
+  shadow row exists (`null` when never shadowed); section totals count it as one
+  row when present, but it is explicitly **non-authoritative** — usage and
+  enforcement read D1 `users.d1_storage_bytes`. Retention is self-enforced
+  inside the DO (seven UTC days of counter and inbound-delivery-claim rows);
+  shadow storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
@@ -238,11 +243,15 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   default `public`) come from migration 0068. `account_type` (`'person'` default
   or `'platform'`, migration 0072) distinguishes normal signups from
   operator-provisioned platform accounts that own official package scopes (see
-  [Platform accounts](./platform-accounts.md)). Inbound email routing does not
-  reverse-resolve stable ids at all — it uses the indexed username lookup
-  (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
-  with one indexed point read on `users.stable_user_id` (for example
-  `findUserAccountByStableUserId`).
+  [Platform accounts](./platform-accounts.md)). `d1_storage_bytes` and
+  `d1_storage_bytes_updated_at` (migration 0122) are the **sole authority** for
+  D1 payload storage-byte read, enforcement, and reconciliation. UserMeter
+  `storage_bytes_state` (schema v4) is an optional expand-phase shadow only —
+  see [Entitlements](./entitlements.md#usermeter-expand-phase). Inbound email
+  routing does not reverse-resolve stable ids at all — it uses the indexed
+  username lookup (`findPublicUserIdentityByUsername`). Contextless paths
+  resolve stable ids with one indexed point read on `users.stable_user_id` (for
+  example `findUserAccountByStableUserId`).
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
@@ -489,16 +498,20 @@ Storage split:
 
 Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
-(`packages/worker/src/entitlements/user-meter-do.ts`). The Worker binding is
-`USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
-`new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
+(`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4 adds an
+optional `storage_bytes_state` singleton as a **best-effort shadow** of D1
+`users.d1_storage_bytes` for future cutover — D1 remains sole authority for
+reads, reserves, and reconciliation in the current additive slice. The Worker
+binding is `USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21`
+via `new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
 
 Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 `userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
 `packages/worker/src/user-scoped-durable-object-name.ts`. There is no `user_id`
 column inside the DO because the object identity is the user.
 
-SQLite ownership (schema version tracked in `user_meter_meta`):
+SQLite ownership (schema version tracked in `user_meter_meta`; current version
+**4**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -509,30 +522,40 @@ SQLite ownership (schema version tracked in `user_meter_meta`):
   claim's resource/day, post-charge counter, revision, and `claimed_at` so
   Cloudflare Email Routing retries inside the 48-hour inbound dedupe window
   cannot double-charge `email_receives_per_day`.
+- `storage_bytes_state` — singleton **shadow** of D1 payload bytes (`id = 1`
+  CHECK constraint, `bytes`, monotonic `revision`, `updated_at`). Added in
+  schema v4. Populated by optional non-awaited shadow writes after D1 reserves
+  and optional reconcile shadows; never read for enforcement or usage display.
+  StorageRunner bucket estimates stay outside this row (see
+  [Entitlements](./entitlements.md#usermeter-expand-phase)).
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
-retries.
+retries. Shadow storage-byte state is not time-pruned.
 
-**Expand-phase D1 mirror:** enforcement and point reads are authoritative in
-UserMeter. D1 `entitlement_daily_counters` is **not** dropped — it remains a
-best-effort mirror for existing readers and reporting. After each DO
-consume/refund/inbound claim, the entitlements service schedules a non-awaited
-absolute mirror write keyed by `(user_id, resource, day)` with a
-revision-ordered `updated_at` token (`r/` + zero-padded revision from
-`userMeterMirrorUpdatedAtToken`) so late writes cannot overwrite newer state.
-See [Entitlements](./entitlements.md#usermeter-expand-phase).
+**Expand-phase D1 mirrors (daily counters only):** enforcement and point reads
+are authoritative in UserMeter for daily counters. D1
+`entitlement_daily_counters` is **not** dropped — it remains a best-effort
+mirror for existing readers and reporting. After each DO consume/refund/inbound
+claim, the entitlements service schedules a non-awaited absolute mirror write
+keyed by `(user_id, resource, day)` with a revision-ordered `updated_at` token
+(`r/` + zero-padded revision from `userMeterMirrorUpdatedAtToken`) so late
+writes cannot overwrite newer state. See
+[Entitlements](./entitlements.md#usermeter-expand-phase).
 
-**Cold bootstrap:** a missing `(resource, day)` row returns `needs_bootstrap`.
-The service performs one legacy D1 point read on `entitlement_daily_counters`,
-then `initialize()` seeds the DO row with `INSERT OR IGNORE` (concurrent callers
-cannot double-apply the baseline). Warm paths never read D1 for enforcement.
+**Daily cold bootstrap:** a missing `(resource, day)` row returns
+`needs_bootstrap`. The service performs one legacy D1 point read on
+`entitlement_daily_counters`, then `initialize()` seeds the DO row with
+`INSERT OR IGNORE` (concurrent callers cannot double-apply the baseline). Warm
+daily paths never read D1 for enforcement.
 
-Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan).
-Account export pages `UserMeter.exportCounters` through the `user_meter`
-manifest section / `account_export_section`.
+Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
+`deleteAll` clears counters, claims, and any shadow storage state). Account
+export pages `UserMeter.exportCounters` through the `user_meter` manifest
+section / `account_export_section` (daily counters plus additive
+`storageBytesShadow` when present; shadow field is non-authoritative).
 
 ### Package state model
 
@@ -570,8 +593,9 @@ via `durableObjectNameFromParts`); domain helpers such as
   and dedicated unpruned state (workflow projections, job-run observability,
   package activation counters/milestones). See [Run records](./run-records.md).
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
-  daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`).
-  See [Entitlements](./entitlements.md#usermeter-expand-phase).
+  daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
+  plus optional schema-v4 D1 storage-byte shadow. See
+  [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
   `idFromName(userId.trim())`.
 - `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →
@@ -886,7 +910,7 @@ to `durableObjectNameFromParts`).
 - `JobManager`: `idFromName(userId)` (no trim).
 - `RunLog`: `idFromName(userId)` (no trim); one execution-history DO per user.
 - `UserMeter`: `idFromName(userId)` (no trim); one daily-entitlement meter DO
-  per user.
+  per user, plus optional schema-v4 D1 storage-byte shadow.
 - `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
 - `RepoSession`: `idFromName(repo_sessions.id)`; the key is not user-prefixed,

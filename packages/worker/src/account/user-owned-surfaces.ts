@@ -130,7 +130,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'userMeters',
 			export: 'include',
 			notes:
-				'Per-user daily entitlement counters (one DO per stable userId). Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters and the inbound delivery ledger, and account export pages counters through the user_meter section via exportCounters.',
+				'Per-user daily entitlement counters plus expand-phase D1 storage-byte shadow (one DO per stable userId). Daily counters are authoritative in UserMeter; storage-byte shadow is not. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage shadow, and the inbound delivery ledger; account export pages counters through the user_meter section via exportCounters (may include additive non-authoritative storageBytesShadow).',
 		},
 		{
 			id: 'mcp',
