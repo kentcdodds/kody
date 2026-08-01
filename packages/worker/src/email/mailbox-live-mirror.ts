@@ -1,5 +1,6 @@
 import {
 	mirrorMailboxDeliveryEventSnapshot,
+	mirrorMailboxDeliveryEventSnapshots,
 	mirrorMailboxMessageSnapshot,
 	type MailboxMirrorEnv,
 	type MailboxMirrorResult,
@@ -9,7 +10,7 @@ import {
 	listMailboxDeliveryEventMirrorInputsForMessage,
 } from './mailbox-snapshot-repo.ts'
 import { toMailboxDeliveryEventInput } from './mailbox-snapshots.ts'
-import { mailboxDefaultPageSize } from './mailbox-types.ts'
+import { mailboxUpsertDeliveryEventsMax } from './mailbox-types.ts'
 import {
 	getEmailMessageById,
 	getEmailThreadById,
@@ -27,20 +28,19 @@ import { type EmailThreadRecord } from './types.ts'
  * Callers that just created a thread may pass it via `thread` to avoid a
  * round-trip; otherwise the graph helper loads it with `getEmailThreadById`.
  *
- * Graph event fan-out runs concurrently after the message RPC settles so event
- * wall time stays near one RPC timeout (not limit × timeout). Analytics Engine
- * parity writes stay under the ~250/request cap: 1 message + max events.
+ * Graph event mirroring uses one batch RPC after the message settles (not
+ * Promise.all of per-event RPCs). Analytics Engine parity writes stay small:
+ * 1 message + 1 batch outcome.
  */
 
 /**
  * Max delivery events mirrored per graph call.
- * `1 + mailboxLiveMirrorMaxEvents` AE writes must stay under ~250/request.
+ * Matches the DO batch RPC bound ({@link mailboxUpsertDeliveryEventsMax}).
  */
-export const mailboxLiveMirrorMaxEvents = mailboxDefaultPageSize
+export const mailboxLiveMirrorMaxEvents = mailboxUpsertDeliveryEventsMax
 
-/** AE write budget headroom check (message + event outcomes). */
-export const mailboxLiveMirrorMaxAnalyticsWrites =
-	1 + mailboxLiveMirrorMaxEvents
+/** AE write budget: message outcome + one batch outcome. */
+export const mailboxLiveMirrorMaxAnalyticsWrites = 2
 
 export type MailboxLiveMirrorEnv = MailboxMirrorEnv
 
@@ -114,16 +114,14 @@ export async function mirrorMailboxDeliveryEventFromD1(input: {
 
 /**
  * Load the authoritative D1 message graph and best-effort mirror it:
- * message (+ optional caller-supplied thread, attachments) first, then all
- * delivery events concurrently (cohesive projection; `created_at` as
- * `sourceMutationAt`).
+ * message (+ optional caller-supplied thread, attachments) first, then a
+ * bounded batch of delivery events (cohesive projection; `created_at` as
+ * `sourceMutationAt`) via one RPC after the message settles.
  *
- * Never throws. Returns a bounded structured summary. Queries `max+1` events
- * so truncation is explicit; mirrors at most {@link mailboxLiveMirrorMaxEvents}.
+ * Never throws. Returns a bounded structured summary. Queries newest
+ * `max+1` events so truncation is explicit; mirrors at most
+ * {@link mailboxLiveMirrorMaxEvents} in chronological order.
  *
- * @param sourceMutationAt - Optional caller mutation timestamp for context;
- *   D1 row timestamps remain authoritative. Delivery events always use
- *   `created_at` for immutable outbound/provider inserts.
  * @param thread - Optional thread from the caller. When omitted, loads via
  *   `getEmailThreadById` when `message.threadId` is set. Explicit `null`
  *   skips the thread snapshot.
@@ -133,12 +131,8 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 	db: D1Database
 	userId: string
 	messageId: string
-	sourceMutationAt?: string
 	thread?: EmailThreadRecord | null
 }): Promise<MailboxLiveMirrorGraphSummary> {
-	// Caller mutation timestamp is accepted for API symmetry with dual-write
-	// sites; D1 row timestamps remain authoritative for the loaded graph.
-	void input.sourceMutationAt
 	try {
 		const message = await getEmailMessageById({
 			db: input.db,
@@ -163,7 +157,7 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 			})
 		}
 
-		// Message settles before any event RPC starts (ordering guarantee).
+		// Message settles before the event-batch RPC starts (ordering guarantee).
 		const messageResult = await mirrorMailboxMessageSnapshot({
 			env: input.env,
 			thread,
@@ -171,6 +165,8 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 			attachments,
 		})
 
+		// Newest max+1 from D1 (chrono-restored). When truncated, keep the
+		// trailing newest max — drop the oldest overflow row at index 0.
 		const loadedEvents = await listMailboxDeliveryEventMirrorInputsForMessage({
 			db: input.db,
 			ownerId: input.userId,
@@ -179,20 +175,17 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 		})
 		const eventsTruncated = loadedEvents.length > mailboxLiveMirrorMaxEvents
 		const eventInputs = eventsTruncated
-			? loadedEvents.slice(0, mailboxLiveMirrorMaxEvents)
+			? loadedEvents.slice(-mailboxLiveMirrorMaxEvents)
 			: loadedEvents
 
-		// Concurrent fan-out: event-phase wall time ≈ one RPC timeout, not N×.
-		const events = await Promise.all(
-			eventInputs.map(async (event) => ({
-				eventId: event.id,
-				result: await mirrorMailboxDeliveryEventSnapshot({
-					env: input.env,
-					ownerId: input.userId,
-					event,
-				}),
-			})),
-		)
+		const events =
+			eventInputs.length === 0
+				? []
+				: await mirrorMailboxDeliveryEventSnapshots({
+						env: input.env,
+						ownerId: input.userId,
+						events: eventInputs,
+					})
 
 		return {
 			messageId: input.messageId,

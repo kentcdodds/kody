@@ -128,8 +128,11 @@ export async function getMailboxDeliveryEventMirrorInput(input: {
 }
 
 /**
- * Load complete delivery-event mirror projections for one message, oldest
- * first, bounded by `limit`. Scoped by owner.
+ * Load complete delivery-event mirror projections for one message.
+ *
+ * Selects the newest `limit` rows (`ORDER BY created_at DESC, id DESC`) so
+ * truncation keeps recent events, then restores chronological order for
+ * insertion. Scoped by owner.
  */
 export async function listEmailDeliveryEventMirrorProjectionsForMessage(input: {
 	db: D1Database
@@ -142,12 +145,13 @@ export async function listEmailDeliveryEventMirrorProjectionsForMessage(input: {
 			`${deliveryEventMirrorSelect}
 			WHERE message_id = ?
 				AND user_id = ?
-			ORDER BY created_at ASC, id ASC
+			ORDER BY created_at DESC, id DESC
 			LIMIT ?`,
 		)
 		.bind(input.messageId, input.ownerId, input.limit)
 		.all<DeliveryEventMirrorRow>()
-	return (result.results ?? []).map(mapDeliveryEventMirrorRow)
+	const newestFirst = (result.results ?? []).map(mapDeliveryEventMirrorRow)
+	return newestFirst.reverse()
 }
 
 /**

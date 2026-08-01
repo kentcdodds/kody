@@ -172,4 +172,13 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 			updatedAt: '2026-07-02T10:05:00.000Z',
 		}),
 	])
+
+	// Newest-N selection: limit 1 returns the newest event, chrono-restored.
+	const newestOnly = await listMailboxDeliveryEventMirrorInputsForMessage({
+		db,
+		ownerId: 'user-aaa',
+		messageId: 'msg-1',
+		limit: 1,
+	})
+	expect(newestOnly.map((event) => event.id)).toEqual(['evt-2'])
 })

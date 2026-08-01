@@ -4,6 +4,7 @@ import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	mailboxMirrorRpcTimeoutMs,
 	mirrorMailboxDeliveryEventSnapshot,
+	mirrorMailboxDeliveryEventSnapshots,
 	mirrorMailboxDeleteDeliveryEvent,
 	mirrorMailboxDeleteMessageMetadata,
 	mirrorMailboxDeleteThreadIfEmpty,
@@ -445,6 +446,162 @@ test('mailbox mirror RPC timeout returns timeout and late rejection is not unhan
 		expect(unhandled).toEqual([])
 	} finally {
 		process.off('unhandledRejection', onUnhandled)
+		vi.useRealTimers()
+	}
+})
+
+function baseDeliveryEventInput(
+	overrides?: Partial<MailboxDeliveryEventInput>,
+): MailboxDeliveryEventInput {
+	return {
+		id: 'evt-1',
+		messageId: 'msg-1',
+		inboxId: 'inbox-1',
+		eventType: 'sent',
+		provider: 'kody',
+		providerMessageId: null,
+		providerEventId: null,
+		detailJson: '{}',
+		needsEffectReconcile: false,
+		state: null,
+		fingerprint: null,
+		storageLease: null,
+		storageLeaseAt: null,
+		cleanupLease: null,
+		cleanupLeaseAt: null,
+		cleanupRetryAt: null,
+		expectedAttachmentCount: null,
+		finalizationToken: null,
+		reconcileAfter: null,
+		dedupeExpiresAt: null,
+		usageEffectRecordedAt: null,
+		usageEffectSuppressedAt: null,
+		usageStartedAt: null,
+		usageMonth: null,
+		usageBytes: null,
+		usageDurationMs: null,
+		usageEffectRetryAt: null,
+		usageEffectLease: null,
+		usageEffectLeaseAt: null,
+		subscriptionEffectState: null,
+		subscriptionEffectLease: null,
+		subscriptionEffectLeaseAt: null,
+		subscriptionEffectRetryAt: null,
+		subscriptionEffectAttemptCount: null,
+		subscriptionEffectDeadLetterAt: null,
+		subscriptionEffectLastError: null,
+		createdAt: '2026-07-02T10:00:00.000Z',
+		updatedAt: '2026-07-02T10:00:00.000Z',
+		...overrides,
+	}
+}
+
+test('mailbox mirror batch helper uses one RPC, one telemetry outcome, and maps per-event results', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const events = [
+		baseDeliveryEventInput({ id: 'evt-a' }),
+		baseDeliveryEventInput({
+			id: 'evt-b',
+			createdAt: '2026-07-02T10:00:01.000Z',
+			updatedAt: '2026-07-02T10:00:01.000Z',
+		}),
+	]
+	const upsertDeliveryEvents = vi.fn(async () => ({
+		results: [
+			{ eventId: 'evt-a', inserted: true, accepted: true },
+			{ eventId: 'evt-b', inserted: false, accepted: false },
+		],
+	}))
+	const { env, writeDataPoint } = fakeMailboxEnv({ upsertDeliveryEvents })
+
+	await expect(
+		mirrorMailboxDeliveryEventSnapshots({
+			env,
+			ownerId: 'user-aaa',
+			events,
+		}),
+	).resolves.toEqual([
+		{ eventId: 'evt-a', result: { status: 'mirrored' } },
+		{ eventId: 'evt-b', result: { status: 'stale' } },
+	])
+	expect(upsertDeliveryEvents).toHaveBeenCalledTimes(1)
+	expect(upsertDeliveryEvents).toHaveBeenCalledWith({
+		ownerId: 'user-aaa',
+		events,
+	})
+	expect(writeDataPoint).toHaveBeenCalledTimes(1)
+	expect(writeDataPoint).toHaveBeenCalledWith(
+		expect.objectContaining({
+			blobs: [
+				'mailbox_mirror:upsert_delivery_event_batch',
+				'stale',
+				expect.any(String),
+			],
+		}),
+	)
+
+	await expect(
+		mirrorMailboxDeliveryEventSnapshots({
+			env,
+			ownerId: 'user-aaa',
+			events: [],
+		}),
+	).resolves.toEqual([])
+	expect(upsertDeliveryEvents).toHaveBeenCalledTimes(1)
+})
+
+test('mailbox mirror batch helper maps timeout and error to every event', async () => {
+	vi.useFakeTimers()
+	consoleWarn.mockImplementation(() => {})
+	try {
+		const events = [
+			baseDeliveryEventInput({ id: 'evt-1' }),
+			baseDeliveryEventInput({ id: 'evt-2' }),
+		]
+		const hang = vi.fn(() => new Promise<never>(() => {}))
+		const { env: hangEnv, writeDataPoint: hangWrite } = fakeMailboxEnv({
+			upsertDeliveryEvents: hang,
+		})
+		const pending = mirrorMailboxDeliveryEventSnapshots({
+			env: hangEnv,
+			ownerId: 'user-aaa',
+			events,
+		})
+		const expectation = expect(pending).resolves.toEqual([
+			{ eventId: 'evt-1', result: { status: 'timeout' } },
+			{ eventId: 'evt-2', result: { status: 'timeout' } },
+		])
+		await vi.advanceTimersByTimeAsync(mailboxMirrorRpcTimeoutMs)
+		await expectation
+		expect(hangWrite).toHaveBeenCalledTimes(1)
+
+		const fail = vi.fn(async () => {
+			throw new Error('batch unavailable')
+		})
+		const { env: failEnv } = fakeMailboxEnv({ upsertDeliveryEvents: fail })
+		await expect(
+			mirrorMailboxDeliveryEventSnapshots({
+				env: failEnv,
+				ownerId: 'user-aaa',
+				events,
+			}),
+		).resolves.toEqual([
+			{
+				eventId: 'evt-1',
+				result: {
+					status: 'error',
+					error: expect.objectContaining({ message: 'batch unavailable' }),
+				},
+			},
+			{
+				eventId: 'evt-2',
+				result: {
+					status: 'error',
+					error: expect.objectContaining({ message: 'batch unavailable' }),
+				},
+			},
+		])
+	} finally {
 		vi.useRealTimers()
 	}
 })

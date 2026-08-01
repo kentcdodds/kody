@@ -7,6 +7,7 @@ export type MailboxParityEnv = {
 export type MailboxMirrorOperation =
 	| 'mirror_message'
 	| 'upsert_delivery_event'
+	| 'upsert_delivery_event_batch'
 	| 'touch_thread'
 	| 'update_message_delivery'
 	| 'set_message_classification'

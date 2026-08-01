@@ -54,6 +54,13 @@ test('mailbox parity writes compact indexed mirror and parity data points', () =
 		timestamp: '2026-07-30T10:09:00.000Z',
 	})
 	recordMailboxParityEvent(env, {
+		userId: 'user-1',
+		category: 'mirror',
+		operation: 'upsert_delivery_event_batch',
+		outcome: 'timeout',
+		timestamp: '2026-07-30T10:10:00.000Z',
+	})
+	recordMailboxParityEvent(env, {
 		userId: 'user-2',
 		category: 'parity',
 		operation: 'compare_messages',
@@ -70,7 +77,7 @@ test('mailbox parity writes compact indexed mirror and parity data points', () =
 		timestamp: '2026-07-30T12:00:00.000Z',
 	})
 
-	expect(writeDataPoint).toHaveBeenCalledTimes(8)
+	expect(writeDataPoint).toHaveBeenCalledTimes(9)
 	expect(writeDataPoint).toHaveBeenNthCalledWith(1, {
 		indexes: ['user-1'],
 		blobs: [
@@ -122,6 +129,15 @@ test('mailbox parity writes compact indexed mirror and parity data points', () =
 		doubles: [1, 0],
 	})
 	expect(writeDataPoint).toHaveBeenNthCalledWith(7, {
+		indexes: ['user-1'],
+		blobs: [
+			'mailbox_mirror:upsert_delivery_event_batch',
+			'timeout',
+			'2026-07-30T10:10:00.000Z',
+		],
+		doubles: [1, 0],
+	})
+	expect(writeDataPoint).toHaveBeenNthCalledWith(8, {
 		indexes: ['user-2'],
 		blobs: [
 			'mailbox_parity:compare_messages',
@@ -130,7 +146,7 @@ test('mailbox parity writes compact indexed mirror and parity data points', () =
 		],
 		doubles: [1, 2],
 	})
-	expect(writeDataPoint).toHaveBeenNthCalledWith(8, {
+	expect(writeDataPoint).toHaveBeenNthCalledWith(9, {
 		indexes: ['user-3'],
 		blobs: [
 			'mailbox_parity:compare_threads',

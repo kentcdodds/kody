@@ -855,11 +855,13 @@ export async function getEmailMessageById(input: {
 }
 
 /**
- * Reclassify a stored inbound message (spam <-> not spam). Reclassifying to
+ * D1-only inbound classification update. Prefer
+ * `setEmailMessageClassification` in `service.ts`, which dual-writes the
+ * Mailbox graph mirror after a successful mutation. Reclassifying to
  * `accepted` does not retroactively dispatch package subscription events; the
  * receive-time classification decides dispatch exactly once.
  */
-export async function setEmailMessageClassification(input: {
+export async function updateEmailMessageClassificationInD1(input: {
 	db: D1Database
 	userId: string
 	messageId: string

@@ -31,6 +31,7 @@ import {
 	type MailboxSetMessageClassificationInput,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
+	type MailboxUpsertDeliveryEventsResult,
 } from './mailbox-types.ts'
 
 /**
@@ -67,6 +68,11 @@ export type MailboxMirrorResult =
 	| { status: 'timeout' }
 	| { status: 'skipped'; reason: MailboxMirrorSkipReason }
 	| { status: 'error'; error: unknown }
+
+export type MailboxMirrorDeliveryEventBatchItemResult = {
+	eventId: string
+	result: MailboxMirrorResult
+}
 
 function resolveMirrorOwner(
 	ownerId: string | null | undefined,
@@ -169,6 +175,14 @@ function outcomeFromAccepted(accepted: boolean): MailboxMirrorResult {
 	return accepted ? { status: 'mirrored' } : { status: 'stale' }
 }
 
+function outcomeFromBatchAccepted(
+	results: MailboxUpsertDeliveryEventsResult['results'],
+): MailboxMirrorResult {
+	return results.every((item) => item.accepted)
+		? { status: 'mirrored' }
+		: { status: 'stale' }
+}
+
 /**
  * Race a DO RPC against {@link mailboxMirrorRpcTimeoutMs}.
  * The settled wrapper ensures a late rejection cannot become unhandled.
@@ -203,32 +217,51 @@ export async function awaitMailboxMirrorRpc<T>(
 	}
 }
 
-async function runMirror(input: {
+/**
+ * Shared owner/config/timeout/telemetry pipeline for single-result mirror RPCs.
+ * Thin wrappers supply only the RPC call and result mapping.
+ */
+async function executeMailboxMirrorRpc<T>(input: {
 	tag: string
 	env: MailboxMirrorEnv
-	userId: string | null | undefined
+	ownerId: string | null | undefined
 	operation: MailboxMirrorOperation
-	run: () => Promise<MailboxMirrorResult>
+	call: (ownerId: string) => Promise<T>
+	toResult: (value: T) => MailboxMirrorResult
 }): Promise<MailboxMirrorResult> {
+	const owner = resolveMirrorOwner(input.ownerId)
+	if (!owner.ok) {
+		recordMirrorOutcome(input.env, input.ownerId, input.operation, owner.result)
+		return owner.result
+	}
+	const skippedMailbox = skipIfMailboxMissing(input.env)
+	if (skippedMailbox) {
+		recordMirrorOutcome(
+			input.env,
+			owner.ownerId,
+			input.operation,
+			skippedMailbox,
+		)
+		return skippedMailbox
+	}
+
 	let result: MailboxMirrorResult
 	try {
-		result = await input.run()
+		const raced = await awaitMailboxMirrorRpc(input.call(owner.ownerId))
+		result = raced.ok ? input.toResult(raced.value) : { status: 'timeout' }
 	} catch (error) {
 		console.warn(input.tag, error)
 		result = { status: 'error', error }
 	}
-	recordMirrorOutcome(input.env, input.userId, input.operation, result)
+	recordMirrorOutcome(input.env, owner.ownerId, input.operation, result)
 	return result
 }
 
-function finishEarly(input: {
-	env: MailboxMirrorEnv
-	userId: string | null | undefined
-	operation: MailboxMirrorOperation
-	result: MailboxMirrorResult
-}): MailboxMirrorResult {
-	recordMirrorOutcome(input.env, input.userId, input.operation, input.result)
-	return input.result
+function mapUniformBatchResults(
+	events: Array<{ id: string }>,
+	result: MailboxMirrorResult,
+): Array<MailboxMirrorDeliveryEventBatchItemResult> {
+	return events.map((event) => ({ eventId: event.id, result }))
 }
 
 /** Best-effort full message (+ optional thread/attachments) snapshot mirror. */
@@ -238,46 +271,19 @@ export async function mirrorMailboxMessageSnapshot(input: {
 	message: EmailMessageRecord
 	attachments?: Array<EmailAttachmentRecord>
 }): Promise<MailboxMirrorResult> {
-	const operation = 'mirror_message' as const
-	const owner = resolveMirrorOwner(input.message.userId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.message.userId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-message-failed',
 		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).mirrorMessage({
-					ownerId: owner.ownerId,
-					thread: input.thread ? toMailboxThreadInput(input.thread) : null,
-					message: toMailboxMessageInput(input.message),
-					attachments: input.attachments?.map(toMailboxAttachmentInput),
-				}),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromAccepted(raced.value.accepted)
-		},
+		ownerId: input.message.userId,
+		operation: 'mirror_message',
+		call: (ownerId) =>
+			mailboxRpc({ env: input.env, userId: ownerId }).mirrorMessage({
+				ownerId,
+				thread: input.thread ? toMailboxThreadInput(input.thread) : null,
+				message: toMailboxMessageInput(input.message),
+				attachments: input.attachments?.map(toMailboxAttachmentInput),
+			}),
+		toResult: (value) => outcomeFromAccepted(value.accepted),
 	})
 }
 
@@ -298,88 +304,101 @@ export async function mirrorMailboxDeliveryEventSnapshot(input: {
 		deliveryStatusAt: string
 	} | null
 }): Promise<MailboxMirrorResult> {
-	const operation = 'upsert_delivery_event' as const
+	return executeMailboxMirrorRpc({
+		tag: 'mailbox-mirror-delivery-event-failed',
+		env: input.env,
+		ownerId: input.ownerId,
+		operation: 'upsert_delivery_event',
+		call: (ownerId) =>
+			mailboxRpc({ env: input.env, userId: ownerId }).upsertDeliveryEvent({
+				ownerId,
+				event: input.event,
+				latestDeliveryStatus: input.latestDeliveryStatus,
+			}),
+		toResult: (value) => outcomeFromAccepted(value.accepted),
+	})
+}
+
+/**
+ * Best-effort batch delivery-event snapshot mirror.
+ *
+ * One 1s timeout and one `upsert_delivery_event_batch` telemetry outcome.
+ * Timeout/error/skip apply uniformly to each per-event summary entry.
+ * Empty `events` returns `[]` without RPC or telemetry.
+ */
+export async function mirrorMailboxDeliveryEventSnapshots(input: {
+	env: MailboxMirrorEnv
+	ownerId: string
+	events: Array<MailboxDeliveryEventInput>
+}): Promise<Array<MailboxMirrorDeliveryEventBatchItemResult>> {
+	const operation = 'upsert_delivery_event_batch' as const
+	if (input.events.length === 0) return []
+
 	const owner = resolveMirrorOwner(input.ownerId)
 	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
+		recordMirrorOutcome(input.env, input.ownerId, operation, owner.result)
+		return mapUniformBatchResults(input.events, owner.result)
 	}
 	const skippedMailbox = skipIfMailboxMissing(input.env)
 	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
+		recordMirrorOutcome(input.env, owner.ownerId, operation, skippedMailbox)
+		return mapUniformBatchResults(input.events, skippedMailbox)
 	}
 
-	return runMirror({
-		tag: 'mailbox-mirror-delivery-event-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).upsertDeliveryEvent({
-					ownerId: owner.ownerId,
-					event: input.event,
-					latestDeliveryStatus: input.latestDeliveryStatus,
-				}),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromAccepted(raced.value.accepted)
-		},
-	})
+	try {
+		const raced = await awaitMailboxMirrorRpc(
+			mailboxRpc({
+				env: input.env,
+				userId: owner.ownerId,
+			}).upsertDeliveryEvents({
+				ownerId: owner.ownerId,
+				events: input.events,
+			}),
+		)
+		if (!raced.ok) {
+			const result = { status: 'timeout' as const }
+			recordMirrorOutcome(input.env, owner.ownerId, operation, result)
+			return mapUniformBatchResults(input.events, result)
+		}
+		recordMirrorOutcome(
+			input.env,
+			owner.ownerId,
+			operation,
+			outcomeFromBatchAccepted(raced.value.results),
+		)
+		const byEventId = new Map(
+			raced.value.results.map((item) => [item.eventId, item] as const),
+		)
+		return input.events.map((event) => {
+			const item = byEventId.get(event.id)
+			return {
+				eventId: event.id,
+				result: item
+					? outcomeFromAccepted(item.accepted)
+					: { status: 'missing' as const },
+			}
+		})
+	} catch (error) {
+		console.warn('mailbox-mirror-delivery-event-batch-failed', error)
+		const result = { status: 'error' as const, error }
+		recordMirrorOutcome(input.env, owner.ownerId, operation, result)
+		return mapUniformBatchResults(input.events, result)
+	}
 }
 
 /** Best-effort thread touch mirror. */
 export async function mirrorMailboxTouchThread(
 	input: MailboxTouchThreadInput & { env: MailboxMirrorEnv },
 ): Promise<MailboxMirrorResult> {
-	const operation = 'touch_thread' as const
-	const owner = resolveMirrorOwner(input.ownerId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	const { env, ...rpcInput } = input
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-touch-thread-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const { env: _env, ...rpcInput } = input
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).touchThread(rpcInput),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromPartialMutation(raced.value)
-		},
+		env,
+		ownerId: input.ownerId,
+		operation: 'touch_thread',
+		call: (ownerId) =>
+			mailboxRpc({ env, userId: ownerId }).touchThread(rpcInput),
+		toResult: outcomeFromPartialMutation,
 	})
 }
 
@@ -387,42 +406,15 @@ export async function mirrorMailboxTouchThread(
 export async function mirrorMailboxUpdateMessageDelivery(
 	input: MailboxUpdateMessageDeliveryInput & { env: MailboxMirrorEnv },
 ): Promise<MailboxMirrorResult> {
-	const operation = 'update_message_delivery' as const
-	const owner = resolveMirrorOwner(input.ownerId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	const { env, ...rpcInput } = input
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-update-message-delivery-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const { env: _env, ...rpcInput } = input
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).updateMessageDelivery(rpcInput),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromPartialMutation(raced.value)
-		},
+		env,
+		ownerId: input.ownerId,
+		operation: 'update_message_delivery',
+		call: (ownerId) =>
+			mailboxRpc({ env, userId: ownerId }).updateMessageDelivery(rpcInput),
+		toResult: outcomeFromPartialMutation,
 	})
 }
 
@@ -430,42 +422,15 @@ export async function mirrorMailboxUpdateMessageDelivery(
 export async function mirrorMailboxSetMessageClassification(
 	input: MailboxSetMessageClassificationInput & { env: MailboxMirrorEnv },
 ): Promise<MailboxMirrorResult> {
-	const operation = 'set_message_classification' as const
-	const owner = resolveMirrorOwner(input.ownerId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	const { env, ...rpcInput } = input
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-set-message-classification-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const { env: _env, ...rpcInput } = input
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).setMessageClassification(rpcInput),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromPartialMutation(raced.value)
-		},
+		env,
+		ownerId: input.ownerId,
+		operation: 'set_message_classification',
+		call: (ownerId) =>
+			mailboxRpc({ env, userId: ownerId }).setMessageClassification(rpcInput),
+		toResult: outcomeFromPartialMutation,
 	})
 }
 
@@ -473,42 +438,15 @@ export async function mirrorMailboxSetMessageClassification(
 export async function mirrorMailboxDeleteMessageMetadata(
 	input: MailboxDeleteMessageMetadataInput & { env: MailboxMirrorEnv },
 ): Promise<MailboxMirrorResult> {
-	const operation = 'delete_message_metadata' as const
-	const owner = resolveMirrorOwner(input.ownerId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	const { env, ...rpcInput } = input
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-delete-message-metadata-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const { env: _env, ...rpcInput } = input
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).deleteMessageMetadata(rpcInput),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromDeleteResult(raced.value)
-		},
+		env,
+		ownerId: input.ownerId,
+		operation: 'delete_message_metadata',
+		call: (ownerId) =>
+			mailboxRpc({ env, userId: ownerId }).deleteMessageMetadata(rpcInput),
+		toResult: outcomeFromDeleteResult,
 	})
 }
 
@@ -516,42 +454,15 @@ export async function mirrorMailboxDeleteMessageMetadata(
 export async function mirrorMailboxDeleteDeliveryEvent(
 	input: MailboxDeleteDeliveryEventInput & { env: MailboxMirrorEnv },
 ): Promise<MailboxMirrorResult> {
-	const operation = 'delete_delivery_event' as const
-	const owner = resolveMirrorOwner(input.ownerId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	const { env, ...rpcInput } = input
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-delete-delivery-event-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const { env: _env, ...rpcInput } = input
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).deleteDeliveryEvent(rpcInput),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromDeleteResult(raced.value)
-		},
+		env,
+		ownerId: input.ownerId,
+		operation: 'delete_delivery_event',
+		call: (ownerId) =>
+			mailboxRpc({ env, userId: ownerId }).deleteDeliveryEvent(rpcInput),
+		toResult: outcomeFromDeleteResult,
 	})
 }
 
@@ -559,41 +470,14 @@ export async function mirrorMailboxDeleteDeliveryEvent(
 export async function mirrorMailboxDeleteThreadIfEmpty(
 	input: MailboxDeleteThreadIfEmptyInput & { env: MailboxMirrorEnv },
 ): Promise<MailboxMirrorResult> {
-	const operation = 'delete_thread_if_empty' as const
-	const owner = resolveMirrorOwner(input.ownerId)
-	if (!owner.ok) {
-		return finishEarly({
-			env: input.env,
-			userId: input.ownerId,
-			operation,
-			result: owner.result,
-		})
-	}
-	const skippedMailbox = skipIfMailboxMissing(input.env)
-	if (skippedMailbox) {
-		return finishEarly({
-			env: input.env,
-			userId: owner.ownerId,
-			operation,
-			result: skippedMailbox,
-		})
-	}
-
-	return runMirror({
+	const { env, ...rpcInput } = input
+	return executeMailboxMirrorRpc({
 		tag: 'mailbox-mirror-delete-thread-if-empty-failed',
-		env: input.env,
-		userId: owner.ownerId,
-		operation,
-		run: async () => {
-			const { env: _env, ...rpcInput } = input
-			const raced = await awaitMailboxMirrorRpc(
-				mailboxRpc({
-					env: input.env,
-					userId: owner.ownerId,
-				}).deleteThreadIfEmpty(rpcInput),
-			)
-			if (!raced.ok) return { status: 'timeout' }
-			return outcomeFromDeleteResult(raced.value)
-		},
+		env,
+		ownerId: input.ownerId,
+		operation: 'delete_thread_if_empty',
+		call: (ownerId) =>
+			mailboxRpc({ env, userId: ownerId }).deleteThreadIfEmpty(rpcInput),
+		toResult: outcomeFromDeleteResult,
 	})
 }

@@ -23,6 +23,7 @@ import {
 } from './mailbox-mutations.ts'
 import {
 	assertMailboxNonEmptyString,
+	mailboxUpsertDeliveryEventsMax,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
@@ -45,6 +46,8 @@ import {
 	type MailboxThreadRecord,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
+	type MailboxUpsertDeliveryEventBatchItemResult,
+	type MailboxUpsertDeliveryEventsResult,
 } from './mailbox-types.ts'
 
 /**
@@ -230,6 +233,42 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		this.markRetentionDirty()
 		await this.ensureRetentionAlarm()
 		return { inserted, accepted, updatedLatestStatus }
+	}
+
+	/**
+	 * Upsert a bounded batch of complete immutable delivery-event snapshots in
+	 * one transaction / one DO RPC. Validates non-empty and
+	 * {@link mailboxUpsertDeliveryEventsMax}. Does not patch message latest
+	 * delivery status. Marks retention dirty once for the batch.
+	 */
+	async upsertDeliveryEvents(input: {
+		ownerId: string
+		events: Array<MailboxDeliveryEventInput>
+	}): Promise<MailboxUpsertDeliveryEventsResult> {
+		if (!Array.isArray(input.events) || input.events.length === 0) {
+			throw new Error('Mailbox upsertDeliveryEvents events must be non-empty.')
+		}
+		if (input.events.length > mailboxUpsertDeliveryEventsMax) {
+			throw new Error(
+				`Mailbox upsertDeliveryEvents events exceed max of ${mailboxUpsertDeliveryEventsMax}.`,
+			)
+		}
+		const results: Array<MailboxUpsertDeliveryEventBatchItemResult> = []
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			for (const event of input.events) {
+				const eventId = assertMailboxNonEmptyString(event.id, 'event.id')
+				const write = this.store.writeDeliveryEventRow(event)
+				results.push({
+					eventId,
+					inserted: write.inserted,
+					accepted: write.accepted,
+				})
+			}
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return { results }
 	}
 
 	/**

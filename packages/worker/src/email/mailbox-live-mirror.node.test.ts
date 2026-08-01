@@ -11,6 +11,7 @@ import {
 } from './mailbox-live-mirror.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { type EmailThreadRecord } from './types.ts'
+import { type MailboxDeliveryEventInput } from './mailbox-types.ts'
 
 async function createEmailDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -137,12 +138,10 @@ async function seedMessageGraph(db: D1Database) {
 
 test('live-mirror AE write budget stays under Analytics Engine request cap', () => {
 	expect(mailboxLiveMirrorMaxAnalyticsWrites).toBeLessThan(250)
-	expect(mailboxLiveMirrorMaxAnalyticsWrites).toBe(
-		1 + mailboxLiveMirrorMaxEvents,
-	)
+	expect(mailboxLiveMirrorMaxAnalyticsWrites).toBe(2)
 })
 
-test('live-mirror graph mirrors message before events and uses createdAt for event updatedAt', async () => {
+test('live-mirror graph mirrors message before one batch event RPC and uses createdAt for event updatedAt', async () => {
 	const { db } = await createEmailDb()
 	await seedMessageGraph(db)
 
@@ -151,18 +150,28 @@ test('live-mirror graph mirrors message before events and uses createdAt for eve
 		messageSettled = true
 		return { ok: true as const, accepted: true }
 	})
-	const upsertDeliveryEvent = vi.fn(
-		async (input: { event: { id: string } }) => {
+	const upsertDeliveryEvents = vi.fn(
+		async (input: { events: Array<{ id: string }> }) => {
 			expect(messageSettled).toBe(true)
 			return {
-				inserted: true,
-				accepted: true,
-				updatedLatestStatus: false,
-				eventId: input.event.id,
+				results: input.events.map((event) => ({
+					eventId: event.id,
+					inserted: true,
+					accepted: true,
+				})),
 			}
 		},
 	)
-	const { env } = fakeMailboxEnv({ mirrorMessage, upsertDeliveryEvent })
+	const upsertDeliveryEvent = vi.fn(async () => ({
+		inserted: true,
+		accepted: true,
+		updatedLatestStatus: false,
+	}))
+	const { env } = fakeMailboxEnv({
+		mirrorMessage,
+		upsertDeliveryEvents,
+		upsertDeliveryEvent,
+	})
 
 	const thread: EmailThreadRecord = {
 		id: 'thread-1',
@@ -180,7 +189,6 @@ test('live-mirror graph mirrors message before events and uses createdAt for eve
 		db,
 		userId: 'user-aaa',
 		messageId: 'msg-1',
-		sourceMutationAt: '2026-07-01T12:00:03.000Z',
 		thread,
 	})
 
@@ -203,10 +211,12 @@ test('live-mirror graph mirrors message before events and uses createdAt for eve
 			],
 		}),
 	)
+	expect(upsertDeliveryEvents).toHaveBeenCalledTimes(1)
+	expect(upsertDeliveryEvent).not.toHaveBeenCalled()
 
 	// When thread is omitted, load it from D1 via getEmailThreadById.
 	mirrorMessage.mockClear()
-	upsertDeliveryEvent.mockClear()
+	upsertDeliveryEvents.mockClear()
 	await mirrorMailboxMessageGraphFromD1({
 		env,
 		db,
@@ -221,27 +231,26 @@ test('live-mirror graph mirrors message before events and uses createdAt for eve
 			}),
 		}),
 	)
-	expect(upsertDeliveryEvent).toHaveBeenCalledWith(
+	expect(upsertDeliveryEvents).toHaveBeenCalledWith(
 		expect.objectContaining({
-			event: expect.objectContaining({
-				id: 'evt-1',
-				createdAt: '2026-07-01T12:00:01.000Z',
-				updatedAt: '2026-07-01T12:00:01.000Z',
-			}),
-		}),
-	)
-	expect(upsertDeliveryEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			event: expect.objectContaining({
-				id: 'evt-2',
-				createdAt: '2026-07-01T12:00:02.000Z',
-				updatedAt: '2026-07-01T12:00:02.000Z',
-			}),
+			ownerId: 'user-aaa',
+			events: [
+				expect.objectContaining({
+					id: 'evt-1',
+					createdAt: '2026-07-01T12:00:01.000Z',
+					updatedAt: '2026-07-01T12:00:01.000Z',
+				}),
+				expect.objectContaining({
+					id: 'evt-2',
+					createdAt: '2026-07-01T12:00:02.000Z',
+					updatedAt: '2026-07-01T12:00:02.000Z',
+				}),
+			],
 		}),
 	)
 })
 
-test('live-mirror graph fans out event RPCs concurrently after message settles', async () => {
+test('live-mirror graph uses one batch RPC after message settles, not per-event fan-out', async () => {
 	vi.useFakeTimers()
 	try {
 		const { db } = await createEmailDb()
@@ -255,25 +264,35 @@ test('live-mirror graph fans out event RPCs concurrently after message settles',
 			})
 		}
 
-		const eventDelayMs = 400
-		let maxInFlight = 0
-		let inFlight = 0
+		const batchDelayMs = 400
 		let messageSettled = false
+		let batchCalls = 0
 		const mirrorMessage = vi.fn(async () => {
 			messageSettled = true
 			return { ok: true as const, accepted: true }
 		})
-		const upsertDeliveryEvent = vi.fn(async () => {
-			expect(messageSettled).toBe(true)
-			inFlight += 1
-			maxInFlight = Math.max(maxInFlight, inFlight)
-			await new Promise<void>((resolve) => {
-				setTimeout(resolve, eventDelayMs)
-			})
-			inFlight -= 1
-			return { inserted: true, accepted: true, updatedLatestStatus: false }
+		const upsertDeliveryEvents = vi.fn(
+			async (input: { events: Array<{ id: string }> }) => {
+				expect(messageSettled).toBe(true)
+				batchCalls += 1
+				await new Promise<void>((resolve) => {
+					setTimeout(resolve, batchDelayMs)
+				})
+				return {
+					results: input.events.map((event) => ({
+						eventId: event.id,
+						inserted: true,
+						accepted: true,
+					})),
+				}
+			},
+		)
+		const upsertDeliveryEvent = vi.fn()
+		const { env } = fakeMailboxEnv({
+			mirrorMessage,
+			upsertDeliveryEvents,
+			upsertDeliveryEvent,
 		})
-		const { env } = fakeMailboxEnv({ mirrorMessage, upsertDeliveryEvent })
 
 		const pending = mirrorMailboxMessageGraphFromD1({
 			env,
@@ -282,22 +301,21 @@ test('live-mirror graph fans out event RPCs concurrently after message settles',
 			messageId: 'msg-1',
 		})
 
-		// One event-delay tick completes the whole fan-out (not eventCount × delay).
-		await vi.advanceTimersByTimeAsync(eventDelayMs)
+		await vi.advanceTimersByTimeAsync(batchDelayMs)
 		const summary = await pending
 
 		expect(summary.events).toHaveLength(eventCount)
 		expect(summary.eventsTruncated).toBe(false)
-		expect(maxInFlight).toBe(eventCount)
-		expect(upsertDeliveryEvent).toHaveBeenCalledTimes(eventCount)
-		// Wall budget stays near one RPC timeout for the event phase.
-		expect(eventDelayMs).toBeLessThan(mailboxMirrorRpcTimeoutMs)
+		expect(batchCalls).toBe(1)
+		expect(upsertDeliveryEvents).toHaveBeenCalledTimes(1)
+		expect(upsertDeliveryEvent).not.toHaveBeenCalled()
+		expect(batchDelayMs).toBeLessThan(mailboxMirrorRpcTimeoutMs)
 	} finally {
 		vi.useRealTimers()
 	}
 })
 
-test('live-mirror graph sets eventsTruncated and mirrors at most max events', async () => {
+test('live-mirror graph keeps newest events when truncated and sets eventsTruncated', async () => {
 	const { db } = await createEmailDb()
 	await seedMessage(db)
 
@@ -312,18 +330,22 @@ test('live-mirror graph sets eventsTruncated and mirrors at most max events', as
 		})
 	}
 
-	const upsertDeliveryEvent = vi.fn(async () => ({
-		inserted: true,
-		accepted: true,
-		updatedLatestStatus: false,
-	}))
+	const upsertDeliveryEvents = vi.fn(
+		async (input: { events: Array<MailboxDeliveryEventInput> }) => ({
+			results: input.events.map((event) => ({
+				eventId: event.id,
+				inserted: true,
+				accepted: true,
+			})),
+		}),
+	)
 	const mirrorMessage = vi.fn(async () => ({
 		ok: true as const,
 		accepted: true,
 	}))
 	const { env, writeDataPoint } = fakeMailboxEnv({
 		mirrorMessage,
-		upsertDeliveryEvent,
+		upsertDeliveryEvents,
 	})
 
 	const summary = await mirrorMailboxMessageGraphFromD1({
@@ -335,16 +357,117 @@ test('live-mirror graph sets eventsTruncated and mirrors at most max events', as
 
 	expect(summary.eventsTruncated).toBe(true)
 	expect(summary.events).toHaveLength(mailboxLiveMirrorMaxEvents)
-	expect(summary.events[0]?.eventId).toBe('evt-000')
+	// Newest max kept: drop oldest overflow evt-000.
+	expect(summary.events[0]?.eventId).toBe('evt-001')
 	expect(summary.events.at(-1)?.eventId).toBe(
-		`evt-${String(mailboxLiveMirrorMaxEvents - 1).padStart(3, '0')}`,
+		`evt-${String(mailboxLiveMirrorMaxEvents).padStart(3, '0')}`,
 	)
-	expect(upsertDeliveryEvent).toHaveBeenCalledTimes(mailboxLiveMirrorMaxEvents)
-	// 1 message + max events AE writes; never the overflow row.
+	expect(upsertDeliveryEvents).toHaveBeenCalledTimes(1)
+	const batchEvents = upsertDeliveryEvents.mock.calls[0]?.[0]?.events ?? []
+	expect(batchEvents).toHaveLength(mailboxLiveMirrorMaxEvents)
+	expect(batchEvents[0]?.id).toBe('evt-001')
+	expect(batchEvents.at(-1)?.id).toBe(
+		`evt-${String(mailboxLiveMirrorMaxEvents).padStart(3, '0')}`,
+	)
+	// 1 message + 1 batch AE write; never per-event fan-out.
 	expect(writeDataPoint).toHaveBeenCalledTimes(
 		mailboxLiveMirrorMaxAnalyticsWrites,
 	)
 	expect(writeDataPoint.mock.calls.length).toBeLessThan(250)
+	expect(
+		writeDataPoint.mock.calls.some(
+			(call) =>
+				(call[0] as { blobs: Array<string> }).blobs[0] ===
+				'mailbox_mirror:upsert_delivery_event_batch',
+		),
+	).toBe(true)
+})
+
+test('live-mirror graph maps batch timeout and error onto each event summary', async () => {
+	vi.useFakeTimers()
+	consoleWarn.mockImplementation(() => {})
+	try {
+		const { db } = await createEmailDb()
+		await seedMessageGraph(db)
+
+		const mirrorMessage = vi.fn(async () => ({
+			ok: true as const,
+			accepted: true,
+		}))
+		const hangBatch = vi.fn(() => new Promise<never>(() => {}))
+		const { env: hangEnv, writeDataPoint: hangWrite } = fakeMailboxEnv({
+			mirrorMessage,
+			upsertDeliveryEvents: hangBatch,
+		})
+
+		const pendingTimeout = mirrorMailboxMessageGraphFromD1({
+			env: hangEnv,
+			db,
+			userId: 'user-aaa',
+			messageId: 'msg-1',
+		})
+		const timeoutExpectation = expect(pendingTimeout).resolves.toEqual({
+			messageId: 'msg-1',
+			message: { status: 'mirrored' },
+			events: [
+				{ eventId: 'evt-1', result: { status: 'timeout' } },
+				{ eventId: 'evt-2', result: { status: 'timeout' } },
+			],
+			eventsTruncated: false,
+		})
+		await vi.advanceTimersByTimeAsync(mailboxMirrorRpcTimeoutMs)
+		await timeoutExpectation
+		expect(hangWrite).toHaveBeenCalledWith(
+			expect.objectContaining({
+				blobs: [
+					'mailbox_mirror:upsert_delivery_event_batch',
+					'timeout',
+					expect.any(String),
+				],
+			}),
+		)
+
+		const failingBatch = vi.fn(async () => {
+			throw new Error('batch exploded')
+		})
+		const { env: failEnv, writeDataPoint: failWrite } = fakeMailboxEnv({
+			mirrorMessage,
+			upsertDeliveryEvents: failingBatch,
+		})
+		const failSummary = await mirrorMailboxMessageGraphFromD1({
+			env: failEnv,
+			db,
+			userId: 'user-aaa',
+			messageId: 'msg-1',
+		})
+		expect(failSummary.events).toEqual([
+			{
+				eventId: 'evt-1',
+				result: {
+					status: 'error',
+					error: expect.objectContaining({ message: 'batch exploded' }),
+				},
+			},
+			{
+				eventId: 'evt-2',
+				result: {
+					status: 'error',
+					error: expect.objectContaining({ message: 'batch exploded' }),
+				},
+			},
+		])
+		expect(failWrite).toHaveBeenCalledWith(
+			expect.objectContaining({
+				blobs: [
+					'mailbox_mirror:upsert_delivery_event_batch',
+					'error',
+					expect.any(String),
+				],
+			}),
+		)
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('live-mirror graph returns missing when D1 message is absent', async () => {
