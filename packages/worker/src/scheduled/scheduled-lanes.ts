@@ -16,6 +16,7 @@ import {
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
+import { reconcileMailboxParity } from '#worker/email/mailbox-reconcile.ts'
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
@@ -48,6 +49,7 @@ export const scheduledLaneNames = [
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
+	'mailbox_parity',
 ] as const
 
 export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
@@ -79,6 +81,7 @@ export function getScheduledLanes(input: {
 		'storage_bucket_estimate_backfill',
 		'd1_storage_reconciliation',
 		'oauth_purge_expired',
+		'mailbox_parity',
 	]
 	if (shouldRunRetentionCron(input.scheduledAt)) {
 		lanes.push('retention', 'job_retention')
@@ -180,6 +183,11 @@ export async function runScheduledLane(input: {
 			})
 		case 'job_schedule_watchdog':
 			return runJobScheduleWatchdogTick({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'mailbox_parity':
+			return reconcileMailboxParity({
 				env: input.env,
 				now: input.scheduledAt,
 			})

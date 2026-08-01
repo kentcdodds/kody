@@ -69,6 +69,41 @@ The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised
 end-to-end (`e2e/admin-feature-flags.spec.ts`).
 
+### Mailbox read cutover (`mailbox-read-cutover`)
+
+Default-off migration flag for phase 3 of the Mailbox expand/contract track (see
+[Data storage — Mailbox](./data-storage.md#durable-objects-mailbox)). It gates
+whether owner-scoped user-mail **message reads** may come from the per-user
+Mailbox Durable Object instead of D1.
+
+Evaluation alone is not enough. A live read path must also pass the per-user
+parity soak on `users` (migration `0125-mailbox-parity-state.sql`):
+
+- `mailbox_parity_matching_since` at least **24 hours** old (continuous exact
+  D1↔Mailbox count parity),
+- `mailbox_parity_checked_at` fresh within **6 hours** (every-5m lane with
+  bounded batch scaling; not a strict 5m SLA),
+- `mailbox_parity_mismatch_count === 0`,
+- exact `stable_user_id` match between the gate caller and the loaded row,
+- `deleting_at IS NULL` (accounts marked for deletion fail closed to D1).
+
+D1 errors, missing/incomplete parity state, stale `checked_at`, non-zero
+mismatch depth, deleting accounts, and an off flag all **fail closed** to
+D1-authoritative reads. When the gate is on, Mailbox DO read errors propagate
+with no D1 fallback.
+
+The prepared adapter lives in
+`packages/worker/src/email/mailbox-read-cutover.ts`
+(`isMailboxReadCutoverEnabled`, `getOwnerEmailMessageById`). **No live reader
+calls it yet** — phase 3 is not flipped. Exposure recording is intentionally
+omitted until a live gate site exists (the session/MCP evaluation caches, or an
+explicit `recordFeatureFlagExposures` at the first switched call site). Until
+then, the flag appears in admin/session evaluation maps but records no
+`FLAG_EXPOSURES` rows.
+
+Success metric: `email_received` error rate should decrease after verified
+parity soak and cutover (`successMetric` on the registry definition).
+
 ## Success metrics
 
 Every flag exists to move something; the `successMetric` field on a registry

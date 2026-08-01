@@ -14,6 +14,7 @@ import {
 	stubFor,
 	uniqueUserId,
 } from './mailbox-test-helpers.ts'
+import { mailboxUpsertDeliveryEventsMax } from './mailbox-types.ts'
 
 test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', async () => {
 	silenceIncidentalRuntimeWarnings()
@@ -696,4 +697,161 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		attachments: 0,
 		deliveryEvents: 0,
 	})
+})
+
+test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retention once', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('batch')
+	const otherUserId = uniqueUserId('batch-other')
+	const mailbox = rpcFor(userId)
+	const stub = stubFor(userId)
+
+	const message = baseMessage(userId, {
+		id: 'batch-msg',
+		direction: 'outbound',
+		processingStatus: 'sent',
+		rawMimeKey: null,
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
+	})
+	await mailbox.mirrorMessage({ ownerId: userId, message })
+
+	await assertMailboxThrows(/events must be non-empty/, () =>
+		mailbox.upsertDeliveryEvents({ ownerId: userId, events: [] }),
+	)
+	const tooMany = Array.from(
+		{ length: mailboxUpsertDeliveryEventsMax + 1 },
+		(_, index) =>
+			baseDeliveryEvent({
+				id: `overflow-${index}`,
+				messageId: message.id,
+				eventType: 'sent',
+				provider: 'kody',
+				createdAt: '2026-07-02T10:00:00.000Z',
+				updatedAt: '2026-07-02T10:00:00.000Z',
+			}),
+	)
+	await assertMailboxThrows(/exceed max of/, () =>
+		mailbox.upsertDeliveryEvents({ ownerId: userId, events: tooMany }),
+	)
+
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		await state.storage.deleteAlarm()
+	})
+
+	const batch = [
+		baseDeliveryEvent({
+			id: 'batch-evt-1',
+			messageId: message.id,
+			eventType: 'send_requested',
+			provider: 'kody',
+			createdAt: '2026-07-02T10:00:01.000Z',
+			updatedAt: '2026-07-02T10:00:01.000Z',
+		}),
+		baseDeliveryEvent({
+			id: 'batch-evt-2',
+			messageId: message.id,
+			eventType: 'sent',
+			provider: 'kody',
+			providerEventId: 'provider-batch-2',
+			createdAt: '2026-07-02T10:00:02.000Z',
+			updatedAt: '2026-07-02T10:00:02.000Z',
+		}),
+	]
+	const first = await mailbox.upsertDeliveryEvents({
+		ownerId: userId,
+		events: batch,
+	})
+	expect(first).toEqual({
+		results: [
+			{ eventId: 'batch-evt-1', inserted: true, accepted: true },
+			{ eventId: 'batch-evt-2', inserted: true, accepted: true },
+		],
+	})
+	// Batch must not patch message latest delivery status.
+	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
+	})
+	expect(
+		new Set(
+			(
+				await mailbox.listDeliveryEvents({ messageId: message.id, limit: 10 })
+			).map((event) => event.id),
+		),
+	).toEqual(new Set(['batch-evt-1', 'batch-evt-2']))
+
+	const alarmAfterBatch = await runInDurableObject(
+		stub,
+		async (_instance: Mailbox, state) => state.storage.getAlarm(),
+	)
+	expect(alarmAfterBatch).toBeTypeOf('number')
+
+	const replay = await mailbox.upsertDeliveryEvents({
+		ownerId: userId,
+		events: [
+			batch[0]!,
+			baseDeliveryEvent({
+				id: 'batch-evt-2-dup',
+				messageId: message.id,
+				eventType: 'sent',
+				provider: 'kody',
+				providerEventId: 'provider-batch-2',
+				createdAt: '2026-07-02T11:00:00.000Z',
+				updatedAt: '2026-07-02T11:00:00.000Z',
+			}),
+		],
+	})
+	expect(replay).toEqual({
+		results: [
+			{ eventId: 'batch-evt-1', inserted: false, accepted: true },
+			{ eventId: 'batch-evt-2-dup', inserted: false, accepted: false },
+		],
+	})
+
+	await assertMailboxThrows(/ownerId mismatch/, () =>
+		mailbox.upsertDeliveryEvents({
+			ownerId: otherUserId,
+			events: [
+				baseDeliveryEvent({
+					id: 'batch-evt-other',
+					messageId: message.id,
+					eventType: 'sent',
+					provider: 'kody',
+				}),
+			],
+		}),
+	)
+
+	// Transactionality: a mid-batch validation failure rolls back prior writes.
+	const beforeCount = (await mailbox.countMailbox()).deliveryEvents
+	await assertMailboxThrows(/canonical ISO-8601/, () =>
+		mailbox.upsertDeliveryEvents({
+			ownerId: userId,
+			events: [
+				baseDeliveryEvent({
+					id: 'batch-txn-ok',
+					messageId: message.id,
+					eventType: 'delivered',
+					provider: 'kody',
+					createdAt: '2026-07-02T12:00:00.000Z',
+					updatedAt: '2026-07-02T12:00:00.000Z',
+				}),
+				baseDeliveryEvent({
+					id: 'batch-txn-bad',
+					messageId: message.id,
+					eventType: 'delivered',
+					provider: 'kody',
+					createdAt: '2026-07-02T12:00:00Z',
+					updatedAt: '2026-07-02T12:00:00Z',
+				}),
+			],
+		}),
+	)
+	expect((await mailbox.countMailbox()).deliveryEvents).toBe(beforeCount)
+	expect(
+		(
+			await mailbox.listDeliveryEvents({ messageId: message.id, limit: 20 })
+		).some((event) => event.id === 'batch-txn-ok'),
+	).toBe(false)
 })

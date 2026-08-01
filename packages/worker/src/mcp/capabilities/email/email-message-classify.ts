@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { setEmailMessageClassification } from '#worker/email/repo.ts'
+import { setEmailMessageClassification } from '#worker/email/service.ts'
 import { emailClassificationValues } from '#worker/email/types.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
@@ -35,6 +35,7 @@ export const emailMessageClassifyCapability = defineDomainCapability(
 			const classificationReason =
 				args.classification === 'quarantined' ? 'Reclassified by user.' : null
 			const updated = await setEmailMessageClassification({
+				env: ctx.env,
 				db: ctx.env.APP_DB,
 				userId: user.userId,
 				messageId: args.message_id,

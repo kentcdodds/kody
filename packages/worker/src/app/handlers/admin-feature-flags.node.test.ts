@@ -361,18 +361,30 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 
 	const listResponse = await handler.handler(createHandlerRequest())
 	expect(listResponse.status).toBe(200)
-	await expect(listResponse.json()).resolves.toMatchObject({
-		ok: true,
-		featureFlags: [
-			{
+	const listBody = (await listResponse.json()) as {
+		ok: boolean
+		featureFlags: Array<{ key: string }>
+	}
+	expect(listBody).toMatchObject({ ok: true })
+	expect(listBody.featureFlags).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
 				key: 'demo-indicator',
 				stale: false,
 				defaultEnabled: false,
 				global: null,
 				overrides: [],
-			},
-		],
-	})
+			}),
+			expect.objectContaining({
+				key: 'mailbox-read-cutover',
+				stale: false,
+				defaultEnabled: false,
+				successMetric: expect.objectContaining({
+					eventType: 'email_received',
+				}),
+			}),
+		]),
+	)
 
 	const setGlobalResponse = await handler.handler(
 		createHandlerRequest({
@@ -387,20 +399,24 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 		}),
 	)
 	expect(setGlobalResponse.status).toBe(200)
-	await expect(setGlobalResponse.json()).resolves.toMatchObject({
-		ok: true,
-		featureFlags: [
-			{
+	const setGlobalBody = (await setGlobalResponse.json()) as {
+		ok: boolean
+		featureFlags: Array<{ key: string }>
+	}
+	expect(setGlobalBody).toMatchObject({ ok: true })
+	expect(setGlobalBody.featureFlags).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
 				key: 'demo-indicator',
-				global: {
+				global: expect.objectContaining({
 					enabled: true,
 					rolloutPercent: 25,
 					note: 'canary',
 					updatedByStableUserId: null,
-				},
-			},
-		],
-	})
+				}),
+			}),
+		]),
+	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
@@ -523,10 +539,14 @@ test('admin feature flags set_user_override validates user identity and existenc
 		}),
 	)
 	expect(byUsername.status).toBe(200)
-	await expect(byUsername.json()).resolves.toMatchObject({
-		ok: true,
-		featureFlags: [
-			{
+	const byUsernameBody = (await byUsername.json()) as {
+		ok: boolean
+		featureFlags: Array<{ key: string }>
+	}
+	expect(byUsernameBody).toMatchObject({ ok: true })
+	expect(byUsernameBody.featureFlags).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
 				key: 'demo-indicator',
 				overrides: [
 					expect.objectContaining({
@@ -535,7 +555,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 						enabled: true,
 					}),
 				],
-			},
-		],
-	})
+			}),
+		]),
+	)
 })

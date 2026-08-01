@@ -7,6 +7,7 @@ export type MailboxParityEnv = {
 export type MailboxMirrorOperation =
 	| 'mirror_message'
 	| 'upsert_delivery_event'
+	| 'upsert_delivery_event_batch'
 	| 'touch_thread'
 	| 'update_message_delivery'
 	| 'set_message_classification'
@@ -14,7 +15,13 @@ export type MailboxMirrorOperation =
 	| 'delete_delivery_event'
 	| 'delete_thread_if_empty'
 
-export type MailboxMirrorOutcome = 'mirrored' | 'stale' | 'skipped' | 'error'
+export type MailboxMirrorOutcome =
+	| 'mirrored'
+	| 'stale'
+	| 'missing'
+	| 'timeout'
+	| 'skipped'
+	| 'error'
 
 export type MailboxParityOperation =
 	| 'compare_threads'

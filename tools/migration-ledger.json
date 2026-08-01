@@ -511,6 +511,10 @@
 		{
 			"filename": "0124-entity-sources-external-reconcile-pending.sql",
 			"sha256": "75b93b4c2fa14c6303834877d6a07a42bb054a33b16a55de23c6b56f4b31bd0d"
+		},
+		{
+			"filename": "0125-mailbox-parity-state.sql",
+			"sha256": "6d2d54b8d8a2cc7399c4f0dbb8069cfa5d6686958d8fef1a3b874c472a564754"
 		}
 	]
 }

@@ -20,6 +20,8 @@ export const mailboxMessageRetentionDays = 365
 export const mailboxDeliveryEventRetentionDays = 90
 export const mailboxDefaultPageSize = 100
 export const mailboxMaxPageSize = 500
+/** Max complete delivery-event snapshots per `upsertDeliveryEvents` RPC. */
+export const mailboxUpsertDeliveryEventsMax = 100
 export const mailboxRetentionBatchSize = 100
 export const mailboxRetentionAlarmSkewMs = 60_000
 /** Bound retry delay when overdue retention work cannot finish (e.g. R2 errors). */
@@ -434,6 +436,17 @@ export type MailboxDeleteResult =
 	| { status: 'missing' }
 	| { status: 'stale' }
 
+/** Per-event outcome from {@link MailboxRpc.upsertDeliveryEvents}. */
+export type MailboxUpsertDeliveryEventBatchItemResult = {
+	eventId: string
+	inserted: boolean
+	accepted: boolean
+}
+
+export type MailboxUpsertDeliveryEventsResult = {
+	results: Array<MailboxUpsertDeliveryEventBatchItemResult>
+}
+
 export type MailboxRpc = {
 	mirrorMessage: (input: {
 		/**
@@ -463,6 +476,15 @@ export type MailboxRpc = {
 		accepted: boolean
 		updatedLatestStatus: boolean
 	}>
+	/**
+	 * Upsert a bounded batch of complete immutable delivery-event snapshots in
+	 * one transaction. Does not patch message latest delivery status — that
+	 * remains from the prior full message snapshot.
+	 */
+	upsertDeliveryEvents: (input: {
+		ownerId: string
+		events: Array<MailboxDeliveryEventInput>
+	}) => Promise<MailboxUpsertDeliveryEventsResult>
 	touchThread: (
 		input: MailboxTouchThreadInput,
 	) => Promise<MailboxPartialMutationResult>

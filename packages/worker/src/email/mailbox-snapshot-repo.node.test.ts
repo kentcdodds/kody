@@ -4,6 +4,8 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	getEmailDeliveryEventMirrorProjection,
 	getMailboxDeliveryEventMirrorInput,
+	listEmailDeliveryEventMirrorProjectionsForMessage,
+	listMailboxDeliveryEventMirrorInputsForMessage,
 } from './mailbox-snapshot-repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -117,4 +119,66 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 			updatedAt: '2026-07-02T10:00:00.000Z',
 		}),
 	)
+
+	await db
+		.prepare(
+			`INSERT INTO email_delivery_events (
+				id, message_id, user_id, inbox_id, event_type, provider,
+				provider_message_id, provider_event_id, detail_json,
+				needs_effect_reconcile, usage_effect_recorded_at, usage_month,
+				usage_bytes, usage_duration_ms, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			'evt-2',
+			'msg-1',
+			'user-aaa',
+			'inbox-1',
+			'sent',
+			'kody',
+			null,
+			null,
+			'{}',
+			0,
+			null,
+			null,
+			null,
+			null,
+			'2026-07-02T10:05:00.000Z',
+		)
+		.run()
+
+	const projections = await listEmailDeliveryEventMirrorProjectionsForMessage({
+		db,
+		ownerId: 'user-aaa',
+		messageId: 'msg-1',
+		limit: 10,
+	})
+	expect(projections.map((row) => row.id)).toEqual(['evt-1', 'evt-2'])
+
+	const mailboxInputs = await listMailboxDeliveryEventMirrorInputsForMessage({
+		db,
+		ownerId: 'user-aaa',
+		messageId: 'msg-1',
+		limit: 10,
+	})
+	expect(mailboxInputs).toEqual([
+		expect.objectContaining({
+			id: 'evt-1',
+			updatedAt: '2026-07-02T10:00:00.000Z',
+		}),
+		expect.objectContaining({
+			id: 'evt-2',
+			updatedAt: '2026-07-02T10:05:00.000Z',
+		}),
+	])
+
+	// Newest-N selection: limit 1 returns the newest event, chrono-restored.
+	const newestOnly = await listMailboxDeliveryEventMirrorInputsForMessage({
+		db,
+		ownerId: 'user-aaa',
+		messageId: 'msg-1',
+		limit: 1,
+	})
+	expect(newestOnly.map((event) => event.id)).toEqual(['evt-2'])
 })

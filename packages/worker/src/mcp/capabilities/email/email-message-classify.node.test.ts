@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
 	setEmailMessageClassification: vi.fn(),
 }))
 
-vi.mock('#worker/email/repo.ts', () => ({
+vi.mock('#worker/email/service.ts', () => ({
 	setEmailMessageClassification: mocks.setEmailMessageClassification,
 }))
 
@@ -50,6 +50,7 @@ test('email_message_classify updates classification and reports not-found', asyn
 		classification: 'quarantined',
 	})
 	expect(mocks.setEmailMessageClassification).toHaveBeenCalledWith({
+		env: context.env,
 		db: context.env.APP_DB,
 		userId: 'user-1',
 		messageId: 'message-1',
@@ -68,6 +69,7 @@ test('email_message_classify updates classification and reports not-found', asyn
 		classification: 'accepted',
 	})
 	expect(mocks.setEmailMessageClassification).toHaveBeenLastCalledWith({
+		env: context.env,
 		db: context.env.APP_DB,
 		userId: 'user-1',
 		messageId: 'message-1',

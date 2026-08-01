@@ -222,6 +222,9 @@ vi.mock('#worker/email/repo.ts', () => ({
 		mockModule.listEmailAttachmentsForMessage(...args),
 	listEmailDeliveryEvents: (...args: Array<unknown>) =>
 		mockModule.listEmailDeliveryEvents(...args),
+}))
+
+vi.mock('#worker/email/service.ts', () => ({
 	setEmailMessageClassification: (...args: Array<unknown>) =>
 		mockModule.setEmailMessageClassification(...args),
 }))
@@ -573,6 +576,7 @@ test('email API lists classification filters and classifies inbound messages', a
 	})
 	expect(quarantineResponse.status).toBe(200)
 	expect(mockModule.setEmailMessageClassification).toHaveBeenCalledWith({
+		env,
 		db: env.APP_DB,
 		userId: 'stable-user-1',
 		messageId: 'msg-1',
@@ -598,6 +602,7 @@ test('email API lists classification filters and classifies inbound messages', a
 	})
 	expect(acceptResponse.status).toBe(200)
 	expect(mockModule.setEmailMessageClassification).toHaveBeenCalledWith({
+		env,
 		db: env.APP_DB,
 		userId: 'stable-user-1',
 		messageId: 'msg-1',
