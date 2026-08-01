@@ -4,7 +4,7 @@ import {
 	userMeterMirrorUpdatedAtToken,
 	userMeterPackageServiceStateStaleMs,
 	type DailyEntitlementResource,
-	type UserMeterDeletionShadow,
+	type UserMeterDeletionShadowExport,
 	type UserMeterPackageServiceState,
 	type UserMeterPackageServiceStatus,
 	type UserMeterStorageBytesState,
@@ -150,10 +150,14 @@ export function createInMemoryUserMeterEnv() {
 				})
 		}
 
-		function readDeletionShadow(): UserMeterDeletionShadow {
+		function readDeletionShadowExport(): UserMeterDeletionShadowExport {
+			const writeLeases = listWriteLeasesSorted().map((lease) => ({
+				acquiredAt: lease.acquiredAt,
+			}))
 			return {
 				deletingAt: deletion.deletingAt,
-				writeLeases: listWriteLeasesSorted(),
+				activeWriteLeaseCount: writeLeases.length,
+				writeLeases,
 			}
 		}
 
@@ -452,6 +456,36 @@ export function createInMemoryUserMeterEnv() {
 				deletion.deletingAt = input.deletingAt
 				return { deletingAt: input.deletingAt, created: true }
 			},
+			async shadowReplaceDeletionState(input: {
+				deletingAt: string
+				leases?: ReadonlyArray<{
+					token: string
+					holder: string
+					acquiredAt: string
+				}>
+			}) {
+				const created = deletion.deletingAt == null
+				if (created) deletion.deletingAt = input.deletingAt
+				deletion.leases.clear()
+				const leasesByToken = new Map<
+					string,
+					{ holder: string; acquiredAt: string }
+				>()
+				for (const lease of input.leases ?? []) {
+					leasesByToken.set(lease.token, {
+						holder: lease.holder,
+						acquiredAt: lease.acquiredAt,
+					})
+				}
+				for (const [token, row] of leasesByToken) {
+					deletion.leases.set(token, row)
+				}
+				return {
+					deletingAt: deletion.deletingAt ?? input.deletingAt,
+					created,
+					leaseCount: deletion.leases.size,
+				}
+			},
 			async shadowAcquireWriteLease(input: {
 				token: string
 				holder: string
@@ -593,7 +627,9 @@ export function createInMemoryUserMeterEnv() {
 				const packageServiceStatesShadow = includeShadows
 					? listPackageServiceStatesSorted()
 					: null
-				const deletionShadow = includeShadows ? readDeletionShadow() : null
+				const deletionShadow = includeShadows
+					? readDeletionShadowExport()
+					: null
 				return {
 					counters,
 					storageBytesShadow,

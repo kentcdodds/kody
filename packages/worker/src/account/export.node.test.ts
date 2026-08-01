@@ -1592,10 +1592,9 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	]
 	const deletionShadow = {
 		deletingAt: '2026-07-31 03:10:00' as string | null,
+		activeWriteLeaseCount: 1,
 		writeLeases: [
 			{
-				token: '11111111-1111-4111-8111-111111111111',
-				holder: 'test:export',
 				acquiredAt: '2026-07-31 03:00:00',
 			},
 		],

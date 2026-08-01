@@ -419,6 +419,9 @@ function createFailingShadowEnv(): UserMeterEnv {
 				async shadowMarkDeleting() {
 					throw new Error('shadow mark failed')
 				},
+				async shadowReplaceDeletionState() {
+					throw new Error('shadow replace failed')
+				},
 				async shadowAcquireWriteLease() {
 					throw new Error('shadow acquire failed')
 				},
@@ -518,10 +521,19 @@ function createGatedShadowEnv(input: {
 			get(id: DurableObjectId) {
 				const stub = namespace.get(id)
 				return {
-					shadowMarkDeleting: async (args: { deletingAt: string }) => {
+					shadowMarkDeleting: (args: { deletingAt: string }) =>
+						stub.shadowMarkDeleting(args),
+					shadowReplaceDeletionState: async (args: {
+						deletingAt: string
+						leases?: ReadonlyArray<{
+							token: string
+							holder: string
+							acquiredAt: string
+						}>
+					}) => {
 						gates.markEntered = true
 						if (input.markGate) await input.markGate
-						return stub.shadowMarkDeleting(args)
+						return stub.shadowReplaceDeletionState(args)
 					},
 					shadowAcquireWriteLease: (args: {
 						token: string
@@ -535,6 +547,9 @@ function createGatedShadowEnv(input: {
 					},
 					countActiveWriteLeases: () => stub.countActiveWriteLeases(),
 					readDeletionState: () => stub.readDeletionState(),
+					listWriteLeases: (
+						args: { pageSize?: number; startAfter?: string | null } = {},
+					) => stub.listWriteLeases(args),
 				}
 			},
 		},
@@ -710,4 +725,122 @@ test('with waitUntil, lease return completes before release shadow settles', asy
 	release.resolve()
 	await drain.drain()
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+})
+
+test('markAccountDeleting replaces UserMeter lease shadows from authoritative D1', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	addLeaseRepairsTable(sqlite)
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const drain = createWaitUntilDrain()
+
+	// Stale shadow left behind by a failed release (no matching D1 lease).
+	await meterA.shadowAcquireWriteLease({
+		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+		holder: 'test:stale-shadow',
+		acquiredAt: '2026-01-01 00:00:00',
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+
+	let heldToken = ''
+	let heldAcquiredAt = ''
+	let startWrite: () => void = () => undefined
+	let finishWrite: () => void = () => undefined
+	const started = new Promise<void>((resolve) => {
+		startWrite = resolve
+	})
+	const finish = new Promise<void>((resolve) => {
+		finishWrite = resolve
+	})
+	const operation = withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:active-d1',
+		env: meter.env,
+		waitUntil: drain.waitUntil,
+		async write() {
+			const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
+			heldToken = lease!.token
+			heldAcquiredAt = lease!.acquired_at
+			startWrite()
+			await finish
+			return 'lost'
+		},
+	})
+	await started
+	await drain.drain()
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 2 })
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			now: new Date('2099-01-01T00:00:00.000Z'),
+			env: meter.env,
+			waitUntil: drain.waitUntil,
+		}),
+	).resolves.toBe(1)
+	await drain.drain()
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
+	// Stale shadow removed; active D1 lease preserved under the tombstone.
+	expect(await meterA.listWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: heldToken,
+				holder: 'test:active-d1',
+				acquiredAt: heldAcquiredAt,
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await meterA.exportCounters({})).toMatchObject({
+		deletionShadow: {
+			deletingAt: '2099-01-01 00:00:00',
+			activeWriteLeaseCount: 1,
+			writeLeases: [{ acquiredAt: heldAcquiredAt }],
+		},
+	})
+
+	await repairAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		token: heldToken,
+		expectedAcquiredAt: heldAcquiredAt,
+		repairedByUserId: 'admin-user',
+		reason: 'Inspected worker crash and confirmed process termination.',
+		env: meter.env,
+		waitUntil: drain.waitUntil,
+	})
+	await drain.drain()
+	finishWrite()
+	await expect(operation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
+	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
+
+	// Failed release after D1 drain can leave a stale shadow; retry clears it.
+	await meterA.shadowReplaceDeletionState({
+		deletingAt: '2099-01-01 00:00:00',
+		leases: [
+			{
+				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+				holder: 'test:post-drain-stale',
+				acquiredAt: '2099-01-01 00:01:00',
+			},
+		],
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			env: meter.env,
+		}),
+	).resolves.toBe(0)
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
 })

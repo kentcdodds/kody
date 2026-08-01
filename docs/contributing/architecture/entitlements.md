@@ -302,22 +302,29 @@ list, repair, or drain in this slice.
 **Optional dual-write from `account/deletion-state.ts`:** after a **successful**
 D1 mark/acquire/release/repair, callers may pass optional `env?: UserMeterEnv`
 (and `waitUntil` when available). The helper schedules a best-effort UserMeter
-shadow (`shadowMarkDeleting`, `shadowAcquireWriteLease`,
-`shadowReleaseWriteLease`). Acquire shadows start during the write; ordered
-release shadows run after authoritative D1 release. When `waitUntil` is
-provided, shadows detach through it; when omitted, mark/release/repair shadows
-are awaited (still non-rejecting) so middleware and other non-`waitUntil`
-callers cannot return with a stale shadow lease or missing tombstone. Missing
-`USER_METER` is a no-op; failures log
+shadow (`shadowReplaceDeletionState` on mark, `shadowAcquireWriteLease`,
+`shadowReleaseWriteLease`). After D1 `deleting_at` is set, mark loads the
+authoritative active D1 lease rows and calls `shadowReplaceDeletionState`, which
+under DO serialization sets/preserves the tombstone then deletes and re-inserts
+exactly that lease set — so a prior failed shadow release cannot leave stale
+rows, and a deletion retry with zero D1 leases clears the shadow set. Acquire
+shadows start during the write; ordered release shadows run after authoritative
+D1 release. When `waitUntil` is provided, shadows detach through it; when
+omitted, mark/release/repair shadows are awaited (still non-rejecting) so
+middleware and other non-`waitUntil` callers cannot return with a stale shadow
+lease or missing tombstone. Missing `USER_METER` is a no-op; failures log
 `account-deletion-user-meter-shadow-failed` and never alter D1 results or
 errors. Mark is monotonic (first `deleting_at` wins). Acquire is rejected when a
 deleting tombstone is present and is idempotent for an already-held token.
+Cutover/list RPCs (`listWriteLeases`, `bootstrapDeletionState`) may still carry
+token/holder for parity review.
 
 **Account export:** `UserMeter.exportCounters` returns additive `deletionShadow`
-(`deletingAt` + `writeLeases`) on the first page only (`startAfter` absent);
-later pages return `null`. Section totals count the tombstone (when set) and
-each lease once when present; the field is explicitly non-authoritative —
-authoritative fencing remains on D1.
+on the first page only (`startAfter` absent); later pages return `null`. The
+export shape is sanitized (`deletingAt`, `activeWriteLeaseCount`, and
+`writeLeases` with `acquiredAt` only — no raw token or holder). Section totals
+count the tombstone (when set) plus `activeWriteLeaseCount`; the field is
+explicitly non-authoritative — authoritative fencing remains on D1.
 
 **Account purge:** `UserMeter.purge()` clears counters, claims, storage shadow,
 package-service shadow, and write-lease shadow via `deleteAll`, then restores

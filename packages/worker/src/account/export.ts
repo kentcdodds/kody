@@ -213,7 +213,7 @@ function countUserMeterExportEntries(result: UserMeterExportResult): number {
 		result.deletionShadow == null
 			? 0
 			: (result.deletionShadow.deletingAt == null ? 0 : 1) +
-				result.deletionShadow.writeLeases.length
+				result.deletionShadow.activeWriteLeaseCount
 	return (
 		result.counters.length +
 		(result.storageBytesShadow == null ? 0 : 1) +

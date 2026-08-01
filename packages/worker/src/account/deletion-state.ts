@@ -77,40 +77,49 @@ export async function markAccountDeleting(input: {
 	if ((result.meta.changes ?? 0) !== 1) {
 		throw new Error('Account could not be marked for deletion.')
 	}
-	const row = await input.db
+	const userRow = await input.db
 		.prepare(
-			`SELECT COUNT(*) AS count
-			FROM account_write_leases
-			WHERE user_id = (
-				SELECT stable_user_id FROM users WHERE id = ?
-			) AND released_at IS NULL`,
+			`SELECT stable_user_id, deleting_at
+			FROM users
+			WHERE id = ?`,
 		)
 		.bind(input.dbUserId)
-		.first<{ count: number }>()
-	if (input.env && userMeterNamespace(input.env)) {
-		const userRow = await input.db
-			.prepare(
-				`SELECT stable_user_id, deleting_at
-				FROM users
-				WHERE id = ?`,
-			)
-			.bind(input.dbUserId)
-			.first<{ stable_user_id: string; deleting_at: string | null }>()
-		if (userRow?.stable_user_id && userRow.deleting_at) {
-			const { stable_user_id: stableUserId, deleting_at: deletingAt } = userRow
-			const markShadowPromise = scheduleAccountDeletionShadow({
-				env: input.env,
-				waitUntil: input.waitUntil,
-				task: async (env) => {
-					await userMeterRpc({ env, userId: stableUserId }).shadowMarkDeleting({
-						deletingAt,
-					})
-				},
-			})
-			if (!input.waitUntil) await markShadowPromise
-		}
+		.first<{ stable_user_id: string; deleting_at: string | null }>()
+	const stableUserId = userRow?.stable_user_id
+	const deletingAt = userRow?.deleting_at
+	// Authoritative active D1 leases after deleting_at is set (new acquires
+	// are fenced). Returned count stays D1-authoritative for drain waits.
+	const activeLeases = stableUserId
+		? await listActiveAccountWriteLeases(input.db, stableUserId)
+		: []
+	if (
+		input.env &&
+		userMeterNamespace(input.env) &&
+		stableUserId &&
+		deletingAt
+	) {
+		const markShadowPromise = scheduleAccountDeletionShadow({
+			env: input.env,
+			waitUntil: input.waitUntil,
+			task: async (env) => {
+				// Replace (not append) so a prior failed shadow release cannot
+				// leave stale rows after D1 drain; empty list clears shadows.
+				await userMeterRpc({
+					env,
+					userId: stableUserId,
+				}).shadowReplaceDeletionState({
+					deletingAt,
+					leases: activeLeases.map((lease) => ({
+						token: lease.token,
+						holder: lease.holder,
+						acquiredAt: lease.acquired_at,
+					})),
+				})
+			},
+		})
+		if (!input.waitUntil) await markShadowPromise
 	}
-	return Number(row?.count ?? 0)
+	return activeLeases.length
 }
 
 export async function assertAccountWritableDb(

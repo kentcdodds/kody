@@ -562,7 +562,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		counters: [],
 		storageBytesShadow: null,
 		packageServiceStatesShadow: [],
-		deletionShadow: { deletingAt: null, writeLeases: [] },
+		deletionShadow: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -690,7 +694,11 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 		counters: [],
 		storageBytesShadow: null,
 		packageServiceStatesShadow: [],
-		deletionShadow: { deletingAt: null, writeLeases: [] },
+		deletionShadow: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -995,6 +1003,7 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(firstPage.packageServiceStatesShadow).toEqual([])
 	expect(firstPage.deletionShadow).toEqual({
 		deletingAt: null,
+		activeWriteLeaseCount: 0,
 		writeLeases: [],
 	})
 
@@ -1021,7 +1030,11 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 		counters: [],
 		storageBytesShadow: null,
 		packageServiceStatesShadow: [],
-		deletionShadow: { deletingAt: null, writeLeases: [] },
+		deletionShadow: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1370,6 +1383,7 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 	expect(firstPage.truncated).toBe(true)
 	expect(firstPage.deletionShadow).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
+		activeWriteLeaseCount: 0,
 		writeLeases: [],
 	})
 	const secondPage = await meterA.exportCounters({
@@ -1392,6 +1406,7 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 		packageServiceStatesShadow: [],
 		deletionShadow: {
 			deletingAt: '2026-08-01 10:00:00',
+			activeWriteLeaseCount: 0,
 			writeLeases: [],
 		},
 		nextStartAfter: null,
@@ -1418,4 +1433,49 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 			}),
 		]),
 	})
+
+	const replaced = await meterB.shadowReplaceDeletionState({
+		deletingAt: '2026-08-01 14:00:00',
+		leases: [
+			{
+				token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+				holder: 'test:replace',
+				acquiredAt: '2026-08-01 10:09:00',
+			},
+		],
+	})
+	expect(replaced).toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+		created: false,
+		leaseCount: 1,
+	})
+	expect(await meterB.listWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+				holder: 'test:replace',
+				acquiredAt: '2026-08-01 10:09:00',
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await meterB.exportCounters({})).toMatchObject({
+		deletionShadow: {
+			deletingAt: '2026-08-01 12:00:00',
+			activeWriteLeaseCount: 1,
+			writeLeases: [{ acquiredAt: '2026-08-01 10:09:00' }],
+		},
+	})
+	await expect(
+		meterB.shadowReplaceDeletionState({
+			deletingAt: '2026-08-01 15:00:00',
+			leases: [],
+		}),
+	).resolves.toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+		created: false,
+		leaseCount: 0,
+	})
+	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 0 })
 }, 30_000)

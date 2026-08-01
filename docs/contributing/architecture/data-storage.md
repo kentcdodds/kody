@@ -572,17 +572,23 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   v6. Populated by optional best-effort dual-writes from
   `account/deletion-state.ts` after successful D1 mark/acquire/release/repair;
   never read for fencing, list, repair, or drain in expand-phase slice 5 Phase
-  A. `purge()` preserves an existing deleting tombstone across `deleteAll` so a
-  later cutover cannot reopen writes. Cutover-support RPCs (`readDeletionState`,
-  `listWriteLeases`, `countActiveWriteLeases`, `bootstrapDeletionState`) exist
-  for future parity review only.
+  A. On mark, after D1 `deleting_at` is set, the helper loads active D1 leases
+  and calls `shadowReplaceDeletionState` (DO-serialized tombstone set/preserve +
+  exact lease-set replace) so stale unreleased shadow rows are cleared when D1
+  drain reaches zero and active D1 leases are preserved. `purge()` preserves an
+  existing deleting tombstone across `deleteAll` so a later cutover cannot
+  reopen writes. Cutover-support RPCs (`readDeletionState`, `listWriteLeases`,
+  `countActiveWriteLeases`, `bootstrapDeletionState`) exist for future parity
+  review only; account export emits a sanitized `deletionShadow` without raw
+  token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
-retries. Shadow storage-byte, package-service liveness, and deletion-fence rows
-are not time-pruned.
+retries. Shadow storage-byte and package-service liveness rows are not
+time-pruned. Deletion-fence lease shadows are bounded by the D1-backed mark
+replace path above rather than time retention.
 
 **Expand-phase D1 mirrors (daily counters only):** enforcement and point reads
 are authoritative in UserMeter for daily counters. D1

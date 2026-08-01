@@ -113,6 +113,45 @@ function createTestDb(
 							}
 							if (
 								lower ===
+								'select stable_user_id, deleting_at from users where id = ?'
+							) {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										stable_user_id: row['stable_user_id'],
+										deleting_at: row['deleting_at'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower.startsWith(
+									'select token, holder, acquired_at from account_write_leases',
+								)
+							) {
+								const stableUserId = params[0] as string
+								results = (rows.account_write_leases ?? [])
+									.filter(
+										(row) =>
+											row['user_id'] === stableUserId &&
+											row['released_at'] == null,
+									)
+									.map((row) => ({
+										token: row['token'],
+										holder: row['holder'],
+										acquired_at: row['acquired_at'],
+									}))
+									.sort((left, right) => {
+										const byAcquired = String(left.acquired_at).localeCompare(
+											String(right.acquired_at),
+										)
+										if (byAcquired !== 0) return byAcquired
+										return String(left.token).localeCompare(String(right.token))
+									})
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower ===
 								'select id from saved_packages where user_id = ? and has_app = 1'
 							) {
 								results = (rows.saved_packages ?? [])
