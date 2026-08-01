@@ -19,10 +19,7 @@ import {
 import { type MailboxCountResult } from '#worker/email/mailbox-types.ts'
 import {
 	deleteEmailMessageById,
-	emailAttachmentBlobKey,
-	emailRawMimeKey,
 	getEmailMessageById,
-	listEmailAttachmentsForMessage,
 } from '#worker/email/repo.ts'
 
 /** Cap for admin reconcile batch discovery (hard max). */
@@ -100,7 +97,8 @@ export type AdminMailboxMaintenanceDeleteMessageResult = {
 	externalAttachmentsSeen: number
 	rawMimeBlobAbsent: boolean
 	externalAttachmentBlobsAbsent: number
-	allCanonicalBlobsAbsent: boolean
+	/** True when every blob key captured by deleteEmailMessageById is absent. */
+	allCapturedBlobsAbsent: boolean
 }
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
@@ -637,10 +635,10 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 
 /**
  * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
- * Verifies ownership via getEmailMessageById, collects attachment metadata /
- * storage keys (no content), deletes through existing deleteEmailMessageById,
- * then confirms D1 absence plus every canonical raw-MIME / external-attachment
- * R2 object absent via head. Rejects missing or foreign messages.
+ * Verifies ownership via getEmailMessageById, deletes through
+ * deleteEmailMessageById with an expectedUserId fence, then confirms D1
+ * absence plus every exact captured blob key absent via head. Rejects missing
+ * or foreign messages.
  */
 export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 	env: AdminMailboxMaintenanceEnv
@@ -660,30 +658,11 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 		)
 	}
 
-	// Collect attachment metadata/storage keys before delete (no content).
-	const attachmentMetadata = (
-		await listEmailAttachmentsForMessage({
-			db,
-			messageId: message.id,
-		})
-	).map((attachment) => ({
-		id: attachment.id,
-		storageKind: attachment.storageKind,
-		storageKey: attachment.storageKey,
-	}))
-	const externalAttachments = attachmentMetadata.filter(
-		(attachment) => attachment.storageKind === 'external',
-	)
-	const rawMimeKey = emailRawMimeKey(input.stableUserId, message.id)
-	const canonicalExternalAttachmentKeys = externalAttachments.map(
-		(attachment) =>
-			emailAttachmentBlobKey(input.stableUserId, message.id, attachment.id),
-	)
-
-	await deleteEmailMessageById({
+	const deletion = await deleteEmailMessageById({
 		db,
 		blobs: blobs as R2Bucket,
 		messageId: message.id,
+		expectedUserId: input.stableUserId,
 	})
 
 	const remaining = await getEmailMessageById({
@@ -693,23 +672,34 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 	})
 	const d1MessageAbsent = remaining == null
 
-	const rawMimeBlobAbsent = (await blobs.head(rawMimeKey)) == null
+	const rawMimeEntries = deletion.blobDeletions.filter(
+		(entry) => entry.role === 'raw_mime',
+	)
+	const attachmentEntries = deletion.blobDeletions.filter(
+		(entry) => entry.role === 'attachment',
+	)
+	let rawMimeBlobAbsent = true
+	for (const entry of rawMimeEntries) {
+		if ((await blobs.head(entry.key)) != null) {
+			rawMimeBlobAbsent = false
+		}
+	}
 	let externalAttachmentBlobsAbsent = 0
-	for (const key of canonicalExternalAttachmentKeys) {
-		if ((await blobs.head(key)) == null) {
+	for (const entry of attachmentEntries) {
+		if ((await blobs.head(entry.key)) == null) {
 			externalAttachmentBlobsAbsent += 1
 		}
 	}
-	const allCanonicalBlobsAbsent =
+	const allCapturedBlobsAbsent =
 		rawMimeBlobAbsent &&
-		externalAttachmentBlobsAbsent === canonicalExternalAttachmentKeys.length
+		externalAttachmentBlobsAbsent === attachmentEntries.length
 
 	return {
 		d1MessageAbsent,
-		attachmentsSeen: attachmentMetadata.length,
-		externalAttachmentsSeen: externalAttachments.length,
+		attachmentsSeen: deletion.attachmentsSeen,
+		externalAttachmentsSeen: deletion.externalAttachmentsSeen,
 		rawMimeBlobAbsent,
 		externalAttachmentBlobsAbsent,
-		allCanonicalBlobsAbsent,
+		allCapturedBlobsAbsent,
 	}
 }
