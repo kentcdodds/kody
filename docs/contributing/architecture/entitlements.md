@@ -147,25 +147,20 @@ reserve bytes in D1 or UserMeter.
 `consumeInboundDelivery` RPCs check the plan limit and increment inside the DO.
 The Durable Object request model serializes mutations per user; counter updates
 use optimistic concurrency on monotonic `revision` so concurrent consumes cannot
-overshoot. Missing `(resource, day)` rows return `needs_bootstrap` rather than
-silently starting at zero on a warm account.
+overshoot. Missing `(resource, day)` rows return `needs_bootstrap`; the service
+then initializes that key at zero via `UserMeter.initialize()`
+(`INSERT OR IGNORE`, concurrent-safe) before retrying. Warm enforcement awaits
+only the DO RPC and never touches D1 daily counter state.
 
-**Cold bootstrap:** on `needs_bootstrap`, the service performs one legacy D1
-point read on `entitlement_daily_counters`, then `UserMeter.initialize()` seeds
-the row with `INSERT OR IGNORE` (concurrent callers cannot double-apply the
-baseline). The warm enforcement path awaits only the DO RPC — never APP_DB.
-
-**Non-awaited D1 mirror:** after each successful consume, refund, or inbound
-delivery claim, the service schedules a best-effort absolute mirror write to
-`entitlement_daily_counters` via `waitUntil` when available (otherwise a caught
-void promise). Mirror ordering uses the DO-minted `mirrorUpdatedAt` token
-(`r/` + zero-padded revision) in the existing `updated_at` TEXT column so late
-writes cannot overwrite newer state, including refunds that lower `count`.
-Mirror failures are logged and never affect enforcement. The D1 table is **not**
-dropped in this phase — it remains for existing readers and reporting.
+**D1 daily mirror writes stopped:** consume, refund, inbound charge/read,
+point-read surfaces, account export/deletion inventory, and retention no longer
+read or write `entitlement_daily_counters`. The physical table stays in
+production until a follow-up migration-only deploy drops it (migrations apply
+before Workers); existing rows are quiescent historical mirror state. Analytics
+Engine remains the production reporting path for email send/receive aggregates.
 
 **Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
-the same cold-bootstrap path):
+the same cold zero-init path):
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
@@ -173,23 +168,15 @@ the same cold-bootstrap path):
 - Admin per-user usage drill-down —
   `packages/worker/src/admin/user-usage-data.ts`
 
-Non-daily resources and contexts without `USER_METER` still use
-`readEntitlementResourceUsage` against D1.
-
-During a rolling deployment, requests already running on the previous Worker
-version may still increment D1 after a new-version request bootstraps its DO
-row. Cloudflare activation bounds that overlap to in-flight requests, but
-operators should treat mirror parity during the deploy window as approximate;
-post-deploy requests have one authority in UserMeter.
+Non-daily resources still use `readEntitlementResourceUsage` against D1.
+`readEntitlementResourceUsage` for daily resources throws and directs callers to
+the UserMeter helpers above.
 
 **Inbound retry idempotency:** inbound receive quota uses
 `UserMeter.consumeInboundDelivery`, which atomically claims `delivery_id` and
 consumes one `email_receives_per_day` unit inside a SQLite transaction. Retries
 return the accepted counter without incrementing (`replayed: true`).
-Cross-UTC-day retries use the original claim's resource/day. The legacy D1
-mirror is scheduled from the email path via
-`scheduleAbsoluteDailyEntitlementMirror` so the email subsystem does not
-duplicate mirror SQL.
+Cross-UTC-day retries use the original claim's resource/day.
 
 ### D1 payload storage bytes — UserMeter shadow (expand phase slice 3)
 
@@ -371,29 +358,37 @@ same-token rollout mirrors; email keeps its D1 lease path. Package-service and
 storage authority flips remain separate high-risk contract follow-ups after
 soak/parity review.
 
-**Daily-counter mirror retirement:** dropping D1 `entitlement_daily_counters`
-waits until reporting-off-D1 work merges and mirror parity is verified in
-production.
+**Daily-counter mirror retirement (two-deploy):** this code deploy stops all D1
+mirror/bootstrap/inventory/retention use while leaving the physical
+`entitlement_daily_counters` table in place. A follow-up migration-only PR drops
+the table after this deploy is healthy. Production `admin_user_meter_parity`
+scans across 38 users showed zero daily mismatches with Analytics Engine
+reporting active — the deploy rationale for stopping mirror writes before the
+drop. While the table exists, parity still compares `d1Count === meterCount`
+(`mirrorRetired: false`); after the drop migration, `mirrorRetired: true`
+reports meter counts only.
 
 ### Admin UserMeter parity gates (`admin_user_meter_parity`)
 
-Production verification for mirror retirement and authority flips uses the
-admin-only read-only capability `admin_user_meter_parity` (input:
+Production verification for mirror retirement and remaining authority flips uses
+the admin-only read-only capability `admin_user_meter_parity` (input:
 `stable_user_id`). It compares production-shaped D1 rows for one account against
-direct UserMeter RPCs and never bootstraps or writes parity state. Opening a
-cold UserMeter stub may still run Durable Object constructor schema maintenance
-and opportunistic stale daily-counter pruning. Cold meter rows surface as
+direct UserMeter RPCs and never bootstraps or writes parity state. Daily
+comparison retires automatically once the drop migration removes
+`entitlement_daily_counters` (`daily.mirrorRetired: true`). Opening a cold
+UserMeter stub may still run Durable Object constructor schema maintenance and
+opportunistic stale daily-counter pruning. Cold meter rows surface as
 `needsBootstrap` with `meterCount`/`meterBytes` null.
 
 Interpret the structured report as independent gates:
 
-| Gate                             | Pass condition                                                                                                                                                                                                                                                                      |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Daily counters (current UTC day) | Each of the four daily resources has `parity: true` (`d1Count === meterCount`); aggregate `daily.mismatchCount === 0`.                                                                                                                                                              |
-| Storage bytes                    | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                          |
-| Package services                 | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`. |
-| Deletion tombstone               | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                   |
-| Temporary D1 lease mirror        | `deletion.mirrorLeaseParity` — `doOnly === 0`, `legacyWithoutD1 === 0`, inventory not truncated, and `d1ActiveLeaseCount >= doAuthorityLeaseCount` (same-token mirror coverage). `tokenSetMismatches.d1Only` is reported but does **not** fail this gate.                           |
+| Gate                             | Pass condition                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daily counters (current UTC day) | While `daily.mirrorRetired` is false (table present): each of the four daily resources has `parity: true` (`d1Count === meterCount`); aggregate `daily.mismatchCount === 0`. After the drop migration (`mirrorRetired: true`): report meter counts only; `d1Count`/`delta` are null, each resource has `parity: true`, and `mismatchCount === 0` (no D1 comparison). |
+| Storage bytes                    | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                                                                                                           |
+| Package services                 | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`.                                                                                  |
+| Deletion tombstone               | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                                                                                                    |
+| Temporary D1 lease mirror        | `deletion.mirrorLeaseParity` — `doOnly === 0`, `legacyWithoutD1 === 0`, inventory not truncated, and `d1ActiveLeaseCount >= doAuthorityLeaseCount` (same-token mirror coverage). `tokenSetMismatches.d1Only` is reported but does **not** fail this gate.                                                                                                            |
 
 **D1-only leases:** email and other transition paths that omit `env` still take
 exact D1 leases, so `d1Only > 0` is expected until that handoff. Mirror-removal
@@ -402,12 +397,12 @@ are known email/transition holders via `admin_account_write_lease_list` and
 holder classification before retiring the temporary D1 mirror inventory.
 
 **Threshold:** treat unexplained mismatches as blocking for the corresponding
-cutover (daily mirror retirement, storage authority flip, package-service
-authority flip, or temporary D1 lease-mirror removal). Expected cold accounts
-may report `needsBootstrap` until live traffic or an intentional bootstrap path
-seeds the DO; that is a bootstrap gap, not a silent pass. Truncated inventories
-fail closed (`parity` / `mirrorLeaseParity` false) so operators re-run or raise
-the bounded page cap rather than approve a partial compare.
+cutover (daily mirror retirement before the drop migration, storage authority
+flip, package-service authority flip, or temporary D1 lease-mirror removal).
+Expected cold accounts may report `needsBootstrap` until live traffic seeds the
+DO; that is a bootstrap gap, not a silent pass. Truncated inventories fail
+closed (`parity` / `mirrorLeaseParity` false) so operators re-run or raise the
+bounded page cap rather than approve a partial compare.
 
 Module wiring: `consumeDailyEntitlement`, `refundDailyEntitlement`, and
 `readDailyEntitlementResourceUsage` require `env.USER_METER` and fail closed
@@ -568,23 +563,19 @@ Rules:
   the limit abuse-resistant for permanent rejects (parse failures,
   entitlement/quota rejects).
 
-  **Cold bootstrap:** missing `(resource, day)` rows trigger one legacy D1 point
-  read and a single `UserMeter.initialize()` before retrying the consume.
+  **Cold bootstrap:** missing `(resource, day)` rows trigger
+  `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the
+  consume. Concurrent cold callers cannot double-apply a non-zero baseline.
 
-  **D1 mirror (expand phase):** after each successful consume/refund/inbound
-  claim, a best-effort, non-awaited absolute mirror write updates
-  `entitlement_daily_counters` with revision-ordered `updated_at` tokens. The
-  table is not dropped — it remains for existing readers and reporting until
-  reporting-off-D1 retirement is verified.
+  **D1 mirror writes stopped:** consume/refund/inbound charge/read paths never
+  touch `entitlement_daily_counters`; the physical table remains quiescent until
+  a follow-up migration drops it.
 
   A delivery claim remains charged when later storage fails. Cloudflare Email
   Routing retries replay that same `delivery_id` through
   `UserMeter.consumeInboundDelivery` without incrementing again, including
   across a UTC-day boundary. The retained claim is the idempotency boundary;
   production inbound handling does not call `refundDailyEntitlement`.
-
-  `incrementDailyEntitlementCounter` remains for raw D1 counter writes (tests,
-  backfills, and legacy paths).
 
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
   (not allowed) vs `1` (allowed) so the numeric contract stays uniform.
@@ -795,9 +786,9 @@ in [`../environment-variables.md`](../environment-variables.md).
   `0066-stripe-billing.sql`; owned by `packages/worker/src/billing/`, read by
   `getUserPlan` via `resolveEffectivePlan`. `stripe_plan` stays nullable because
   it is Stripe-derived; `max` is manual-only.
-- `entitlement_daily_counters` — expand-phase **mirror** of UserMeter daily
-  counters (authoritative state in the per-user `UserMeter` DO), created by
-  migration `0048-user-plans-and-entitlement-counters.sql`; included in the
-  account-deletion cascade (`packages/worker/src/app/account-deletion.ts`).
-  Table retirement waits until reporting-off-D1 merges and mirror parity is
-  verified.
+- `entitlement_daily_counters` — **quiescent pending drop**. Created by
+  migration `0048-user-plans-and-entitlement-counters.sql`; mirror writes,
+  bootstrap reads, account-deletion inventory, and retention pruning all stopped
+  in the code deploy. Daily counters are authoritative in the per-user
+  `UserMeter` DO; account export/deletion use `UserMeter` RPCs. A follow-up
+  migration-only PR drops the physical table after this deploy is healthy.
