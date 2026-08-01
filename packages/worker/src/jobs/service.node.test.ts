@@ -836,17 +836,22 @@ function createDatabase(
 								return { meta: { changes, last_row_id: 0 } }
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
-								// Scheduling finalization writes last_run_at/status +
-								// next_run_at but leaves RunLog-owned columns intact.
+								// last_run_at/status + next_run_at; clear error/duration
+								// only when last_run_at changes (CASE WHEN last_run_at IS ?).
 								const existingJob = selectOne(
 									'jobs',
 									(existing) =>
-										existing['id'] === params[17] &&
-										existing['user_id'] === params[18],
+										existing['id'] === params[19] &&
+										existing['user_id'] === params[20],
 								)
+								const nextLastRunAt = params[14]
+								const previousLastRunAt = existingJob?.['last_run_at'] ?? null
+								const lastRunAtChanged =
+									previousLastRunAt !== nextLastRunAt &&
+									!(previousLastRunAt == null && nextLastRunAt == null)
 								const row = {
-									id: params[17],
-									user_id: params[18],
+									id: params[19],
+									user_id: params[20],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -861,11 +866,15 @@ function createDatabase(
 									expires_at: params[11],
 									caller_context_json: params[12],
 									updated_at: params[13],
-									last_run_at: params[14],
+									last_run_at: nextLastRunAt,
 									last_run_status: params[15],
-									last_run_error: existingJob?.['last_run_error'] ?? null,
-									last_duration_ms: existingJob?.['last_duration_ms'] ?? null,
-									next_run_at: params[16],
+									last_run_error: lastRunAtChanged
+										? null
+										: (existingJob?.['last_run_error'] ?? null),
+									last_duration_ms: lastRunAtChanged
+										? null
+										: (existingJob?.['last_duration_ms'] ?? null),
+									next_run_at: params[18],
 									run_count: existingJob?.['run_count'] ?? 0,
 									success_count: existingJob?.['success_count'] ?? 0,
 									error_count: existingJob?.['error_count'] ?? 0,
