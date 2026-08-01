@@ -132,7 +132,7 @@ function createAdminCtx() {
 	`)
 	const db = createD1FromSqlite(sqlite)
 	return {
-		env: { APP_DB: db } as Env,
+		env: { APP_DB: db, AUDIT_DB: db } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {

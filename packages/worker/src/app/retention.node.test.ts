@@ -1232,8 +1232,6 @@ test('retention coverage includes every live growth-pattern table or documented 
 			columnNames.has('user_id') &&
 			growthTimeColumns.some((column) => columnNames.has(column)) &&
 			growthPattern.test(table.name)
-		const hasGlobalAuditShape =
-			table.name === 'audit_events' && columnNames.has('timestamp')
 		const hasGlobalStripeWebhookShape =
 			table.name === 'stripe_webhook_events' && columnNames.has('processed_at')
 		const hasPlatformFeedbackGrowthShape =
@@ -1242,7 +1240,6 @@ test('retention coverage includes every live growth-pattern table or documented 
 			columnNames.has('updated_at')
 		if (
 			hasUserCreatedGrowthShape ||
-			hasGlobalAuditShape ||
 			hasGlobalStripeWebhookShape ||
 			hasPlatformFeedbackGrowthShape
 		) {

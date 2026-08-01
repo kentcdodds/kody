@@ -1731,11 +1731,11 @@ Current retention policies:
   resolved or dismissed, or the submitter deletes their account. Resolved and
   dismissed rows keep 365 days after `updated_at`; submitter deletion removes
   any remaining rows.
-- `audit_events`: global hashed auth/security audit events are dual-written to
-  the legacy `APP_DB` table and the dedicated `AUDIT_DB` database during the
-  expand phase. Retention prunes only `AUDIT_DB` after 180 days; the legacy
-  table remains in place until a later contract phase. Audit events are not
-  user-owned rows and remain independent of account deletion/export.
+- `audit_events`: global hashed auth/security audit events live only in the
+  dedicated `AUDIT_DB` database. All persisted writes, admin reads, insights,
+  and auth-denial alerts use that binding; the hourly retention lane prunes
+  rows after 180 days. Audit events are not user-owned and remain independent
+  of account deletion/export.
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.
