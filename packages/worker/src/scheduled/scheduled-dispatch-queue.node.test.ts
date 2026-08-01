@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import type * as ScheduledLanesModule from './scheduled-lanes.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	getScheduledLanes: vi.fn(() => [
@@ -75,6 +76,39 @@ test('scheduled dispatch enqueues due lanes as independent queue messages', asyn
 		scheduledTime: controller.scheduledTime,
 		cron: controller.cron,
 	})
+})
+
+test('a failed enqueue runs only that lane through the inline fallback', async () => {
+	consoleError.mockImplementation(() => {})
+	const send = vi
+		.fn()
+		.mockResolvedValueOnce(undefined)
+		.mockRejectedValueOnce(new Error('queue unavailable'))
+	mocks.runScheduledLaneWithFailureIsolation.mockResolvedValueOnce('completed')
+	const env = {
+		SCHEDULED_DISPATCH_QUEUE: { send },
+	} as unknown as Env
+	const controller = {
+		scheduledTime: Date.parse('2026-08-01T06:00:00.000Z'),
+		cron: '*/5 * * * *',
+		noRetry() {},
+	} satisfies ScheduledController
+
+	await dispatchScheduledLanes({ controller, env })
+
+	expect(mocks.runScheduledLaneWithFailureIsolation).toHaveBeenCalledTimes(1)
+	expect(mocks.runScheduledLaneWithFailureIsolation).toHaveBeenCalledWith({
+		env,
+		message: {
+			lane: 'repo_session_cleanup',
+			scheduledTime: controller.scheduledTime,
+			cron: controller.cron,
+		},
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'scheduled_lane_dispatch_failed lane=repo_session_cleanup',
+		expect.any(Error),
+	)
 })
 
 test('a deliberately slow lane invocation does not delay its sibling invocation', async () => {
