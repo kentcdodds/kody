@@ -2,8 +2,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
-import type * as MailboxMirrorModule from './mailbox-mirror.ts'
-import { ensureEmailTestSchema } from './test-schema.ts'
+import type * as MailboxMirrorModule from '#worker/email/mailbox-mirror.ts'
+import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 
 const mocks = vi.hoisted(() => ({
 	mirrorMailboxMessageGraphFromD1: vi.fn(),
@@ -13,12 +13,12 @@ const mocks = vi.hoisted(() => ({
 	mailboxRpc: vi.fn(),
 }))
 
-vi.mock('./mailbox-live-mirror.ts', () => ({
+vi.mock('#worker/email/mailbox-live-mirror.ts', () => ({
 	mirrorMailboxMessageGraphFromD1: mocks.mirrorMailboxMessageGraphFromD1,
 	mirrorMailboxDeliveryEventFromD1: mocks.mirrorMailboxDeliveryEventFromD1,
 }))
 
-vi.mock('./mailbox-mirror.ts', async (importOriginal) => {
+vi.mock('#worker/email/mailbox-mirror.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof MailboxMirrorModule>()
 	return {
 		...actual,
@@ -26,11 +26,11 @@ vi.mock('./mailbox-mirror.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('./mailbox-parity-events.ts', () => ({
+vi.mock('#worker/email/mailbox-parity-events.ts', () => ({
 	recordMailboxParityEvent: mocks.recordMailboxParityEvent,
 }))
 
-vi.mock('./mailbox-client.ts', () => ({
+vi.mock('#worker/email/mailbox-client.ts', () => ({
 	mailboxRpc: mocks.mailboxRpc,
 }))
 
@@ -45,7 +45,7 @@ export const {
 	listEventBackfillPage,
 	listUsersForMailboxParity,
 	reconcileMailboxParity,
-} = await import('./mailbox-reconcile.ts')
+} = await import('#worker/email/mailbox-reconcile.ts')
 
 export async function createParityDb() {
 	const sqlite = new DatabaseSync(':memory:')

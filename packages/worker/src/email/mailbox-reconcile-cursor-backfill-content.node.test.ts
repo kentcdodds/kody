@@ -13,7 +13,7 @@ import {
 	readParityRow,
 	reconcileMailboxParity,
 	successGraph,
-} from './mailbox-reconcile.node.test-support.ts'
+} from '#worker/test-support/mailbox-reconcile.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
