@@ -48,6 +48,11 @@ import {
 	getSystemEmailDomain,
 } from './platform-address.ts'
 import {
+	scheduleInboundReceivedTerminalWork,
+	scheduleInboundRejectedTerminalWork,
+	type InboundMailboxEnv,
+} from './inbound-mailbox.ts'
+import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
@@ -157,6 +162,7 @@ async function cleanupInboundDurability(input: {
 	}
 }
 
+/** System-inbox effects only (no Mailbox dual-write). */
 async function scheduleInboundDeliveryEffects(input: {
 	env: Parameters<typeof processInboundDeliveryEffects>[0]['env']
 	userId: string
@@ -201,8 +207,11 @@ export async function handleInboundEmail(
 		| 'USER_EMAIL_DOMAIN'
 		| 'USAGE_EVENTS'
 		| 'USER_METER'
+		| 'MAILBOX'
+		| 'EMAIL_EVENTS'
 	> &
-		EmailReportingEnv,
+		EmailReportingEnv &
+		InboundMailboxEnv,
 	ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
@@ -593,6 +602,12 @@ export async function handleInboundEmail(
 				message.setReject(
 					claimedDelivery.rejectionReason ?? 'Failed to parse inbound email.',
 				)
+				await scheduleInboundRejectedTerminalWork({
+					env,
+					userId,
+					deliveryId: claimedDelivery.deliveryId,
+					ctx,
+				})
 				return
 			}
 			if (claimedDelivery.state === 'received') {
@@ -602,10 +617,12 @@ export async function handleInboundEmail(
 					messageId: claimedDelivery.messageId,
 				})
 				if (existing) {
-					await scheduleInboundDeliveryEffects({
+					await scheduleInboundReceivedTerminalWork({
 						env,
 						userId,
+						messageId: claimedDelivery.messageId,
 						deliveryId: claimedDelivery.deliveryId,
+						expectedFinalizationToken: claimedDelivery.finalizationToken,
 						durationMs: Date.now() - receiveStartedAtMs,
 						ctx,
 						logLabel: 'Inbound email effect reconciliation failed',
@@ -629,6 +646,12 @@ export async function handleInboundEmail(
 				})
 				if (!rejected) return
 				await recordReceiveUsage({ outcome: 'error' })
+				await scheduleInboundRejectedTerminalWork({
+					env,
+					userId,
+					deliveryId: claimedDelivery.deliveryId,
+					ctx,
+				})
 				return
 			}
 			const storageClaim = await claimInboundDeliveryStorage({
@@ -638,7 +661,19 @@ export async function handleInboundEmail(
 				usageStartedAt: new Date(receiveStartedAtMs).toISOString(),
 			})
 			if (!storageClaim.claimed) {
-				if (storageClaim.delivery?.state === 'received') return
+				if (storageClaim.delivery?.state === 'received') {
+					await scheduleInboundReceivedTerminalWork({
+						env,
+						userId,
+						messageId: claimedDelivery.messageId,
+						deliveryId: storageClaim.delivery.deliveryId,
+						expectedFinalizationToken: storageClaim.delivery.finalizationToken,
+						durationMs: Date.now() - receiveStartedAtMs,
+						ctx,
+						logLabel: 'Inbound email effect reconciliation failed',
+					})
+					return
+				}
 				throw new RetryableInboundStorageError(
 					'Inbound delivery is already being stored; retry the stable delivery.',
 				)
@@ -664,10 +699,12 @@ export async function handleInboundEmail(
 				})
 				throw error
 			}
+			// Mailbox dual-write only after durable D1/R2 commit + finalization win.
 			if (!storedResult.wonFinalization) return
-			await scheduleInboundDeliveryEffects({
+			await scheduleInboundReceivedTerminalWork({
 				env,
 				userId,
+				messageId: storedResult.finalizedDelivery.messageId,
 				deliveryId: storedResult.finalizedDelivery.deliveryId,
 				expectedFinalizationToken:
 					storedResult.finalizedDelivery.finalizationToken,
