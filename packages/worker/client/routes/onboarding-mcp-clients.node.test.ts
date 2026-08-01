@@ -7,9 +7,6 @@ import {
 	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
-	chatGptDeveloperModeGuideUrl,
-	grokConnectorsUrl,
-	grokCustomMcpGuideUrl,
 	mcpClientTabs,
 } from './onboarding-mcp-clients.ts'
 
@@ -72,9 +69,4 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
 		'https://heykody.dev/apple-touch-icon.png',
 	)
-	expect(chatGptDeveloperModeGuideUrl).toBe(
-		'https://developers.openai.com/api/docs/guides/developer-mode',
-	)
-	expect(grokConnectorsUrl).toBe('https://grok.com/connectors')
-	expect(grokCustomMcpGuideUrl).toBe('https://docs.x.ai/grok/connectors')
 })

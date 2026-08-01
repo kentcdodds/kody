@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import {
@@ -395,20 +395,6 @@ function createWaitUntilFlusher() {
 	}
 }
 
-beforeEach(() => {
-	runRecordMocks.resetProjections()
-	runRecordMocks.beginRunRecord.mockClear()
-	runRecordMocks.finishRunRecord.mockClear()
-	runRecordMocks.upsertWorkflowProjection.mockClear()
-	runRecordMocks.importWorkflowProjections.mockClear()
-	runRecordMocks.getWorkflowProjection.mockClear()
-	runRecordMocks.findWorkflowProjectionByIdempotencyKey.mockClear()
-	runRecordMocks.listWorkflowProjections.mockClear()
-	runRecordMocks.countActiveWorkflowProjections.mockClear()
-	runRecordMocks.reserveWorkflowProjectionSlot.mockClear()
-	runRecordMocks.deleteWorkflowProjectionIfCreating.mockClear()
-})
-
 async function seedActiveWorkflowProjections(input: {
 	userId: string
 	count: number
@@ -748,6 +734,7 @@ function createWorkflowRunsDatabase(options?: {
 }
 
 test('createDynamicCallableWorkflow queues inline code without package context and records runs before status reads', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const flusher = createWaitUntilFlusher()
@@ -850,6 +837,7 @@ test('createDynamicCallableWorkflow queues inline code without package context a
 })
 
 test('DynamicCallableWorkflowBase executes queued inline code and records completion', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const env = {
@@ -927,6 +915,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 test('inline workflow sandbox failures throw UserCodeError', async () => {
 	const { UserCodeError, isUserCodeError } =
 		await import('#worker/user-code-error.ts')
+	runRecordMocks.resetProjections()
 	runRecordMocks.beginRunRecord.mockClear()
 	runRecordMocks.finishRunRecord.mockClear()
 	const binding = createStatefulWorkflowBinding()
@@ -1008,6 +997,7 @@ test('inline workflow sandbox failures throw UserCodeError', async () => {
 })
 
 test('package-created inline workflows retain package secret authorization context', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const env = {
 		APP_DB: createWorkflowRunsDatabase(),
@@ -1083,6 +1073,7 @@ test('package-created inline workflows retain package secret authorization conte
 })
 
 test('DynamicCallableWorkflowBase restores attached remote connectors for inline code and package exports', async () => {
+	runRecordMocks.resetProjections()
 	const remoteConnectors = [{ instanceId: 'home' }]
 	const stepDo = vi.fn(
 		async (_name: string, _config: unknown, callback: () => unknown) =>
@@ -1197,6 +1188,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 })
 
 test('DynamicCallableWorkflowBase marks package export error responses as workflow errors', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const env = {
@@ -1255,6 +1247,7 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 })
 
 test('DynamicCallableWorkflowBase rejects package export redirect responses', async () => {
+	runRecordMocks.resetProjections()
 	runRecordMocks.beginRunRecord.mockClear()
 	runRecordMocks.finishRunRecord.mockClear()
 	const binding = createStatefulWorkflowBinding()
@@ -1324,6 +1317,7 @@ test('DynamicCallableWorkflowBase rejects package export redirect responses', as
 })
 
 test('package workflow records exactly one workflow run with workflowId', async () => {
+	runRecordMocks.resetProjections()
 	runRecordMocks.beginRunRecord.mockClear()
 	runRecordMocks.finishRunRecord.mockClear()
 	const binding = createStatefulWorkflowBinding()
@@ -1397,6 +1391,7 @@ test('package workflow records exactly one workflow run with workflowId', async 
 })
 
 test('inline workflow records exactly one workflow run with workflowId', async () => {
+	runRecordMocks.resetProjections()
 	runRecordMocks.beginRunRecord.mockClear()
 	runRecordMocks.finishRunRecord.mockClear()
 	const binding = createStatefulWorkflowBinding()
@@ -1456,6 +1451,7 @@ test('inline workflow records exactly one workflow run with workflowId', async (
 })
 
 test('package workflow records failures before the inner invocation starts', async () => {
+	runRecordMocks.resetProjections()
 	runRecordMocks.beginRunRecord.mockClear()
 	runRecordMocks.finishRunRecord.mockClear()
 	const binding = createStatefulWorkflowBinding()
@@ -1526,6 +1522,7 @@ test('package workflow records failures before the inner invocation starts', asy
 })
 
 test('package workflow sandbox and 4xx failures throw UserCodeError', async () => {
+	runRecordMocks.resetProjections()
 	const { UserCodeError, isUserCodeError } =
 		await import('#worker/user-code-error.ts')
 	const cases = [
@@ -1615,6 +1612,7 @@ test('package workflow sandbox and 4xx failures throw UserCodeError', async () =
 })
 
 test('package workflow infrastructure failures are not UserCodeError', async () => {
+	runRecordMocks.resetProjections()
 	const { UserCodeError } = await import('#worker/user-code-error.ts')
 	const cases = [
 		{
@@ -1701,6 +1699,7 @@ test('package workflow infrastructure failures are not UserCodeError', async () 
 })
 
 test('createDynamicCallableWorkflow verifies package ownership before queueing package exports', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createWorkflowBinding({ existing: null })
 	const db = createWorkflowRunsDatabase()
 
@@ -1777,6 +1776,7 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 })
 
 test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency key', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const flusher = createWaitUntilFlusher()
@@ -2098,6 +2098,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 })
 
 test('D1-only legacy workflow_runs are dual-read into RunLog for list, cancel, idempotency, and concurrency', async () => {
+	runRecordMocks.resetProjections()
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const binding = createCancelStyleBindingForDualRead()
 	const db = createWorkflowRunsDatabase()
@@ -2238,17 +2239,18 @@ test('D1-only legacy workflow_runs are dual-read into RunLog for list, cancel, i
 	).toMatchObject({ status: 'cancelled' })
 })
 
-test('monotonic upsert ignores older D1 mirror timestamps on dual-read import', async () => {
-	const binding = createStatefulWorkflowBinding()
-	const db = createWorkflowRunsDatabase()
-	const env = {
-		APP_DB: db,
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+test('dual-read import and D1 mirrors stay monotonic against newer terminal rows', async () => {
+	runRecordMocks.resetProjections()
+	const importBinding = createStatefulWorkflowBinding()
+	const importDb = createWorkflowRunsDatabase()
+	const importEnv = {
+		APP_DB: importDb,
+		DYNAMIC_CALLABLE_WORKFLOWS: importBinding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
 	const runId = 'dynwf-mono'
 	await runRecordMocks.upsertWorkflowProjection({
-		env,
+		env: importEnv,
 		userId: 'user-1',
 		projection: {
 			id: runId,
@@ -2263,7 +2265,7 @@ test('monotonic upsert ignores older D1 mirror timestamps on dual-read import', 
 			completedAt: '2026-05-08T20:00:00.000Z',
 		},
 	})
-	db.workflowRuns.set(runId, {
+	importDb.workflowRuns.set(runId, {
 		id: runId,
 		user_id: 'user-1',
 		source_type: 'inline',
@@ -2283,7 +2285,7 @@ test('monotonic upsert ignores older D1 mirror timestamps on dual-read import', 
 	})
 
 	const listed = await listWorkflowRunsForUser({
-		env,
+		env: importEnv,
 		userId: 'user-1',
 		limit: 10,
 	})
@@ -2294,9 +2296,8 @@ test('monotonic upsert ignores older D1 mirror timestamps on dual-read import', 
 		updatedAt: '2026-05-08T20:00:00.000Z',
 	})
 	expect(runRecordMocks.listForUser('user-1')[0]?.status).toBe('complete')
-})
 
-test('out-of-order D1 mirrors cannot regress a newer terminal row', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const flusher = createWaitUntilFlusher()
@@ -2377,6 +2378,7 @@ test('out-of-order D1 mirrors cannot regress a newer terminal row', async () => 
 })
 
 test('active D1 import bound overflows still block entitlement', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const env = {
@@ -2441,22 +2443,23 @@ test('active D1 import bound overflows still block entitlement', async () => {
 	).toHaveLength(activeD1WorkflowImportBound)
 })
 
-test('concurrent creates cannot exceed a one-slot workflow entitlement', async () => {
+test('createDynamicCallableWorkflow enforces concurrent workflow entitlements across free, pro, and max plans', async () => {
+	runRecordMocks.resetProjections()
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	await seedActiveWorkflowProjections({
 		userId: 'user-1',
 		count: freeLimit - 1,
 	})
-	const binding = createStatefulWorkflowBinding()
-	const env = {
+	const concurrentBinding = createStatefulWorkflowBinding()
+	const concurrentEnv = {
 		APP_DB: createWorkflowRunsDatabase(),
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		DYNAMIC_CALLABLE_WORKFLOWS: concurrentBinding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
 
 	const results = await Promise.allSettled([
 		createDynamicCallableWorkflow({
-			env,
+			env: concurrentEnv,
 			userId: 'user-1',
 			body: {
 				code: 'export default async function main() { return { ok: true } }',
@@ -2465,7 +2468,7 @@ test('concurrent creates cannot exceed a one-slot workflow entitlement', async (
 			},
 		}),
 		createDynamicCallableWorkflow({
-			env,
+			env: concurrentEnv,
 			userId: 'user-1',
 			body: {
 				code: 'export default async function main() { return { ok: true } }',
@@ -2480,7 +2483,7 @@ test('concurrent creates cannot exceed a one-slot workflow entitlement', async (
 	expect(fulfilled).toHaveLength(1)
 	expect(rejected).toHaveLength(1)
 	expect(isEntitlementLimitError(rejected[0]?.reason)).toBe(true)
-	expect(binding.create).toHaveBeenCalledTimes(1)
+	expect(concurrentBinding.create).toHaveBeenCalledTimes(1)
 	expect(
 		runRecordMocks
 			.listForUser('user-1')
@@ -2497,12 +2500,12 @@ test('concurrent creates cannot exceed a one-slot workflow entitlement', async (
 			.listForUser('user-1')
 			.filter((row) => row.status === creatingWorkflowProjectionStatus),
 	).toHaveLength(0)
-})
 
-test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {
-	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	runRecordMocks.resetProjections()
 	await seedActiveWorkflowProjections({ userId: 'user-1', count: freeLimit })
 	runRecordMocks.countActiveWorkflowProjections.mockClear()
+	runRecordMocks.reserveWorkflowProjectionSlot.mockClear()
+	runRecordMocks.deleteWorkflowProjectionIfCreating.mockClear()
 	let error: unknown
 	try {
 		await createDynamicCallableWorkflow({
@@ -2542,21 +2545,21 @@ test('createDynamicCallableWorkflow enforces the per-user concurrent workflow li
 	)
 	expect(runRecordMocks.deleteWorkflowProjectionIfCreating).toHaveBeenCalled()
 	expect(activeWorkflowStatusValues).toContain('queued')
-})
 
-test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', async () => {
 	const email = 'plan-user@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxConcurrentWorkflows
-	if (limit == null) throw new Error('Expected pro plan workflow limit.')
-	const binding = createStatefulWorkflowBinding()
+	const proLimit = planLimits.pro.maxConcurrentWorkflows
+	if (proLimit == null) throw new Error('Expected pro plan workflow limit.')
+	const proBinding = createStatefulWorkflowBinding()
 	const body = {
 		code: 'export default async function main() { return { ok: true } }',
 		runAt: '2026-05-03T12:34:56.000Z',
 		idempotencyKey: 'plan-limit-key',
 	}
-	await seedActiveWorkflowProjections({ userId, count: limit })
+	runRecordMocks.resetProjections()
+	await seedActiveWorkflowProjections({ userId, count: proLimit })
 	runRecordMocks.reserveWorkflowProjectionSlot.mockClear()
+	runRecordMocks.deleteWorkflowProjectionIfCreating.mockClear()
 	let denied: unknown
 	try {
 		await createDynamicCallableWorkflow({
@@ -2564,7 +2567,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 				APP_DB: createWorkflowRunsDatabase({
 					users: [{ email, plan: 'pro', stable_user_id: userId }],
 				}),
-				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+				DYNAMIC_CALLABLE_WORKFLOWS: proBinding.workflow,
 				RUN_LOG: {} as DurableObjectNamespace,
 			} as Env,
 			userId,
@@ -2584,17 +2587,17 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 		code: 'entitlement_limit_exceeded',
 		resource: 'concurrent_workflows',
 		plan: 'pro',
-		limit,
-		current: limit,
+		limit: proLimit,
+		current: proLimit,
 	})
-	expect(denied.message).toContain(`at most ${limit} concurrent workflows`)
+	expect(denied.message).toContain(`at most ${proLimit} concurrent workflows`)
 	expect(runRecordMocks.reserveWorkflowProjectionSlot).toHaveBeenCalledWith(
 		expect.objectContaining({ userId }),
 	)
 	expect(runRecordMocks.deleteWorkflowProjectionIfCreating).toHaveBeenCalled()
 
 	runRecordMocks.resetProjections()
-	await seedActiveWorkflowProjections({ userId, count: limit - 1 })
+	await seedActiveWorkflowProjections({ userId, count: proLimit - 1 })
 	const allowed = await createDynamicCallableWorkflow({
 		env: {
 			APP_DB: createWorkflowRunsDatabase({
@@ -2614,7 +2617,6 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 
 	// Package jobs persist email: '' — reverse-resolve by stable userId so a
 	// max-plan account is not wrongly capped at the free concurrent limit.
-	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	runRecordMocks.resetProjections()
 	await seedActiveWorkflowProjections({ userId, count: freeLimit })
 	const maxAllowed = await createDynamicCallableWorkflow({
@@ -2636,6 +2638,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 })
 
 test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
+	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const env = {
@@ -2687,6 +2690,7 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 })
 
 test('DynamicCallableWorkflowBase records workflow_run usage on terminal transitions', async () => {
+	runRecordMocks.resetProjections()
 	const usageModule = await import('#worker/usage/record-usage.ts')
 	const recordUsageSpy = vi
 		.spyOn(usageModule, 'recordUsage')
@@ -2809,6 +2813,7 @@ test('DynamicCallableWorkflowBase records workflow_run usage on terminal transit
 })
 
 test('workflow_run usage is recorded once across replays and never on failed terminal status writes', async () => {
+	runRecordMocks.resetProjections()
 	const usageModule = await import('#worker/usage/record-usage.ts')
 	const recordUsageSpy = vi
 		.spyOn(usageModule, 'recordUsage')

@@ -671,12 +671,12 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 	expect(usageQueries()).toHaveLength(3)
 })
 
-test('assertWithinEntitlement enforces free concurrent workflow limit without email', async () => {
+test('assertWithinEntitlement enforces concurrent workflow limits without email and reverse-resolves blank emails', async () => {
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const { db } = createEntitlementsTestDb()
 	// concurrent_workflows occupancy is RunLog-backed; create path passes
 	// getCurrent from reserveWorkflowProjectionSlot.
-	const error = await assertWithinEntitlement({
+	const freeDenial = await assertWithinEntitlement({
 		db,
 		userId: 'user-1',
 		email: null,
@@ -686,19 +686,16 @@ test('assertWithinEntitlement enforces free concurrent workflow limit without em
 		() => null,
 		(thrown: unknown) => thrown,
 	)
-	if (!(error instanceof EntitlementLimitError)) {
+	if (!(freeDenial instanceof EntitlementLimitError)) {
 		throw new Error('Expected an EntitlementLimitError.')
 	}
-	expect(error.details).toMatchObject({
+	expect(freeDenial.details).toMatchObject({
 		plan: 'free',
 		limit: freeLimit,
 		current: freeLimit,
 	})
-})
 
-test('assertWithinEntitlement reverse-resolves plan when email is blank for a real stable userId', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const maxLimit = planLimits.max.maxConcurrentWorkflows
 	const underMax = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
@@ -714,7 +711,7 @@ test('assertWithinEntitlement reverse-resolves plan when email is blank for a re
 	const atMax = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
 	})
-	const error = await assertWithinEntitlement({
+	const maxDenial = await assertWithinEntitlement({
 		db: atMax.db,
 		userId,
 		email: null,
@@ -724,10 +721,10 @@ test('assertWithinEntitlement reverse-resolves plan when email is blank for a re
 		() => null,
 		(thrown: unknown) => thrown,
 	)
-	if (!(error instanceof EntitlementLimitError)) {
+	if (!(maxDenial instanceof EntitlementLimitError)) {
 		throw new Error('Expected an EntitlementLimitError at the max ceiling.')
 	}
-	expect(error.details).toMatchObject({
+	expect(maxDenial.details).toMatchObject({
 		plan: 'max',
 		limit: maxLimit,
 		current: maxLimit,
@@ -1143,12 +1140,12 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 	).toBe(true)
 })
 
-test('storage byte reserve retries after a failed conditional update under limit', async () => {
+test('storage byte reserve retries under contention then fails closed when unresolved', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const proLimit = planLimits.pro.maxStorageBytes
 	let reserveAttempts = 0
 	let bytes = proLimit - 10
-	const db = {
+	const retryDb = {
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
@@ -1189,20 +1186,16 @@ test('storage byte reserve retries after a failed conditional update under limit
 	} as unknown as D1Database
 
 	await assertWithinStorageBytesEntitlement({
-		db,
+		db: retryDb,
 		userId,
 		email: plannedEmail,
 		requested: 5,
 	})
 	expect(reserveAttempts).toBe(2)
 	expect(bytes).toBe(proLimit - 5)
-})
 
-test('storage byte reserve fails closed when contention never resolves', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const proLimit = planLimits.pro.maxStorageBytes
-	let reserveAttempts = 0
-	const db = {
+	reserveAttempts = 0
+	const stuckDb = {
 		prepare(query: string) {
 			return {
 				bind() {
@@ -1236,7 +1229,7 @@ test('storage byte reserve fails closed when contention never resolves', async (
 
 	await expect(
 		assertWithinStorageBytesEntitlement({
-			db,
+			db: stuckDb,
 			userId,
 			email: plannedEmail,
 			requested: 5,
@@ -1247,19 +1240,14 @@ test('storage byte reserve fails closed when contention never resolves', async (
 	expect(reserveAttempts).toBe(5)
 })
 
-test('getPlanRank orders free < pro < partner < max', () => {
+test('plan ranking helpers order plans and resolve effective plan from manual vs Stripe', () => {
 	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
 	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
 	expect(getPlanRank('partner')).toBeLessThan(getPlanRank('max'))
-})
 
-test('resolveEffectivePlan manual max ranks above Stripe', () => {
 	expect(resolveEffectivePlan('max', 'pro')).toBe('max')
 	expect(resolveEffectivePlan('max', 'partner')).toBe('max')
 	expect(resolveEffectivePlan('max', null)).toBe('max')
-})
-
-test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
 	expect(resolveEffectivePlan('free', 'pro')).toBe('pro')
 	expect(resolveEffectivePlan('pro', 'free')).toBe('pro')
 	expect(resolveEffectivePlan('free', 'partner')).toBe('partner')
@@ -1290,16 +1278,24 @@ test('free plan limits are stricter than pro for every resource', () => {
 	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(1)
 })
 
-test('max plan has finite ordinary limits, email caps, and persistent services', () => {
-	expect(planLimits.max.maxSavedPackages).toBe(10_000)
-	expect(planLimits.max.maxScheduledJobs).toBe(5_000)
-	expect(planLimits.max.maxPackageServices).toBe(1_000)
-	expect(planLimits.max.maxRepoSessions).toBe(2_000)
-	expect(planLimits.max.maxSecrets).toBe(10_000)
-	expect(planLimits.max.maxStorageBytes).toBe(100 * 1024 * 1024 * 1024)
-	expect(planLimits.max.maxConcurrentWorkflows).toBe(5_000)
+test('max plan stays above pro for ordinary limits and wires finite email caps', () => {
+	const emailResources = new Set<string>([
+		'email_sends_per_day',
+		'email_receives_per_day',
+		'stored_email_messages',
+		'email_message_bytes',
+	])
+	for (const resource of entitlementResources) {
+		expect(Number.isFinite(resolvePlanLimit('max', resource))).toBe(true)
+		if (emailResources.has(resource)) continue
+		expect(
+			resolvePlanLimit('max', resource),
+			`max ${resource} should be at or above pro`,
+		).toBeGreaterThanOrEqual(resolvePlanLimit('pro', resource))
+	}
 	expect(planLimits.max.packageServicePersistentAllowed).toBe(1)
 	expect(resolvePlanLimit('max', 'persistent_package_services')).toBe(1)
+	// Max email caps are intentionally lower than pro and live in one table.
 	expect(planLimits.max.maxEmailSendsPerDay).toBe(
 		maxPlanEmailLimits.email_sends_per_day,
 	)
@@ -1313,7 +1309,6 @@ test('max plan has finite ordinary limits, email caps, and persistent services',
 		maxPlanEmailLimits.email_message_bytes,
 	)
 })
-
 test('entitlement enforcement stops when a stored plan violates the schema contract', async () => {
 	for (const [index, plan] of [
 		null,

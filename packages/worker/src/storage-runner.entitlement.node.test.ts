@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
 import { storageEstimateReadRetryDelaysMs } from '#worker/storage-runner.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
@@ -198,7 +200,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 // bucket in a large inventory, different bucket each time. Once a peer's
 // estimate is stored in D1, its Durable Object must never be probed (let
 // alone block) another bucket's write.
-test('an unreachable peer bucket with a stored estimate never blocks a write', async () => {
+test('peer estimates stay out of the live probe path while D1 + target compose the baseline', async () => {
 	const peerStorageIds = Array.from(
 		{ length: 40 },
 		(_value, index) => `package:peer-${String(index)}`,
@@ -228,12 +230,7 @@ test('an unreachable peer bucket with a stored estimate never blocks a write', a
 
 	// Only the write target was measured live; no peer fan-out happened.
 	expect(probedStorageIds).toEqual(['package:target'])
-})
 
-test('StorageRunner baseline composes D1 payload with bucket estimates via check-only getCurrent', async () => {
-	const { planLimits } = await import('#worker/entitlements/plans.ts')
-	const { isEntitlementLimitError } =
-		await import('#worker/entitlements/errors.ts')
 	const userId = 'user-1'
 	const limit = planLimits.free.maxStorageBytes
 	mockModule.readUserD1StorageBytes.mockImplementation(
@@ -246,14 +243,14 @@ test('StorageRunner baseline composes D1 payload with bucket estimates via check
 		{ storageId: 'package:peer', estimatedBytes: 50 },
 		{ storageId: 'package:target', estimatedBytes: 200 },
 	])
-	const probedStorageIds: Array<string> = []
-	const getEstimatedBytes = async (storageId: string) => {
+	probedStorageIds.length = 0
+	const composeEstimate = async (storageId: string) => {
 		probedStorageIds.push(storageId)
 		return { estimatedBytes: storageId === 'package:target' ? 60 : 50 }
 	}
 
 	const denied = await assertStorageRunnerWriteWithinEntitlement({
-		env: createEstimateEnv(getEstimatedBytes),
+		env: createEstimateEnv(composeEstimate),
 		userId,
 		email: null,
 		storageId: 'package:target',

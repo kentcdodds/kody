@@ -44,12 +44,13 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 			regex: /\bwere(?:\s+\*{1,2})?\s*removed\b(?:\*{1,2})?/i,
 		},
 		{
-			label: 'no longer support/accept/require/use/fan/carry/replay',
-			regex: /\bno longer (?:support|accept|require|use|fan|carry|replay)s?\b/i,
+			label: 'no longer support/accept/require/use/fan/carry/replay/incur',
+			regex:
+				/\bno longer (?:support|accept|require|use|fan|carry|replay|incur)s?\b/i,
 		},
 		{
-			label: 'now support/accept/require/use/store/return',
-			regex: /\bnow (?:support|accept|require|use|store|return)s?\b/i,
+			label: 'now support/accept/require/use/store/return/call/read',
+			regex: /\bnow (?:support|accept|require|use|store|return|call|read)s?\b/i,
 		},
 		{
 			label: 'recently changed/added/updated/removed/introduced',

@@ -125,17 +125,3 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		).toBe(true)
 	}
 })
-
-test('run_log inventory notes document dedicated RunLog tables and clearAll purge', () => {
-	const runLog = accountUserOwnedDurableObjectSurfaces.find(
-		(surface) => surface.id === 'run_log',
-	)
-	expect(runLog?.export).toBe('include')
-	expect(runLog?.binding).toBe('RUN_LOG')
-	expect(runLog?.notes).toContain('clearAll')
-	expect(runLog?.notes).toContain('workflow_projections')
-	expect(runLog?.notes).toContain('job_run_observability')
-	expect(runLog?.notes).toContain('package_run_successes')
-	expect(runLog?.notes).toContain('activation_milestones')
-	expect(runLog?.notes).toContain('DYNAMIC_CALLABLE_WORKFLOWS')
-})

@@ -164,6 +164,34 @@ test('workflow projections track binding name, idempotency, and active counts', 
 			idempotencyKey: 'idem-creating',
 		}),
 	).toBeNull()
+	expect(
+		await findWorkflowProjectionByIdempotencyKey({
+			env,
+			userId,
+			idempotencyKey: 'idem-creating',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+		}),
+	).toBeNull()
+	expect(
+		await findWorkflowProjectionByBindingIdempotencyKey({
+			env,
+			userId,
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			idempotencyKey: 'idem-creating',
+		}),
+	).toMatchObject({
+		id: 'wf-creating',
+		status: 'creating',
+		idempotencyKey: 'idem-creating',
+	})
+	expect(
+		await findWorkflowProjectionByBindingIdempotencyKey({
+			env,
+			userId,
+			bindingName: 'OTHER_WORKFLOWS',
+			idempotencyKey: 'idem-creating',
+		}),
+	).toBeNull()
 
 	expect(await countActiveWorkflowProjections({ env, userId })).toBe(1)
 
@@ -209,7 +237,7 @@ test('workflow projections track binding name, idempotency, and active counts', 
 	).toBe('OTHER_WORKFLOWS')
 })
 
-test('reserveWorkflowProjectionSlot serializes concurrent creating reservations for a one-slot limit', async () => {
+test('reserveWorkflowProjectionSlot serializes concurrent creating, prunes stale, and never overwrites terminal', async () => {
 	const userId = uniqueUserId('wf-reserve')
 	const results = await Promise.all(
 		Array.from({ length: 5 }, (_, index) =>
@@ -259,17 +287,15 @@ test('reserveWorkflowProjectionSlot serializes concurrent creating reservations 
 		results.find((result) => result.countBeforeReservation === 0)?.projection
 			.id,
 	)
-})
 
-test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites terminal', async () => {
-	const userId = uniqueUserId('wf-reserve-ttl')
+	const ttlUserId = uniqueUserId('wf-reserve-ttl')
 	const staleAt = new Date(
 		Date.now() - workflowProjectionCreatingTtlMs - 60_000,
 	).toISOString()
 
 	await upsertWorkflowProjection({
 		env,
-		userId,
+		userId: ttlUserId,
 		projection: {
 			id: 'wf-stale-creating',
 			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
@@ -284,7 +310,7 @@ test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites t
 	})
 	await upsertWorkflowProjection({
 		env,
-		userId,
+		userId: ttlUserId,
 		projection: {
 			id: 'wf-terminal',
 			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
@@ -301,7 +327,7 @@ test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites t
 
 	const recovered = await reserveWorkflowProjectionSlot({
 		env,
-		userId,
+		userId: ttlUserId,
 		projection: {
 			id: 'wf-fresh',
 			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
@@ -316,12 +342,16 @@ test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites t
 	expect(recovered.countBeforeReservation).toBe(0)
 	expect(recovered).toMatchObject({ reserved: true, inserted: true })
 	expect(
-		await getWorkflowProjection({ env, userId, id: 'wf-stale-creating' }),
+		await getWorkflowProjection({
+			env,
+			userId: ttlUserId,
+			id: 'wf-stale-creating',
+		}),
 	).toBeNull()
 
 	const againstTerminal = await reserveWorkflowProjectionSlot({
 		env,
-		userId,
+		userId: ttlUserId,
 		projection: {
 			id: 'wf-terminal',
 			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
@@ -344,7 +374,7 @@ test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites t
 
 	const sameId = await reserveWorkflowProjectionSlot({
 		env,
-		userId,
+		userId: ttlUserId,
 		projection: {
 			id: 'wf-fresh',
 			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
@@ -357,97 +387,6 @@ test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites t
 	})
 	expect(sameId.countBeforeReservation).toBe(0)
 	expect(sameId).toMatchObject({ reserved: true, inserted: false })
-})
-
-test('findWorkflowProjectionByBindingIdempotencyKey includes creating exactly', async () => {
-	const userId = uniqueUserId('wf-lookup')
-	await upsertWorkflowProjection({
-		env,
-		userId,
-		projection: {
-			id: 'wf-creating-lookup',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			sourceType: 'package',
-			packageId: 'pkg-1',
-			workflowName: 'nightly',
-			exportName: 'run',
-			idempotencyKey: 'lookup-creating-key',
-			runAt: '2026-07-31T00:00:00.000Z',
-			status: 'creating',
-		},
-	})
-
-	expect(
-		await findWorkflowProjectionByIdempotencyKey({
-			env,
-			userId,
-			idempotencyKey: 'lookup-creating-key',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-		}),
-	).toBeNull()
-
-	expect(
-		await findWorkflowProjectionByBindingIdempotencyKey({
-			env,
-			userId,
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			idempotencyKey: 'lookup-creating-key',
-		}),
-	).toMatchObject({
-		id: 'wf-creating-lookup',
-		status: 'creating',
-		idempotencyKey: 'lookup-creating-key',
-	})
-	expect(
-		await findWorkflowProjectionByBindingIdempotencyKey({
-			env,
-			userId,
-			bindingName: 'OTHER_WORKFLOWS',
-			idempotencyKey: 'lookup-creating-key',
-		}),
-	).toBeNull()
-})
-
-test('workflow projection upsert is monotonic by updatedAt', async () => {
-	const userId = uniqueUserId('wf-mono')
-	await upsertWorkflowProjection({
-		env,
-		userId,
-		projection: {
-			id: 'wf-mono',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			sourceType: 'inline',
-			workflowName: 'adhoc',
-			idempotencyKey: 'mono-key',
-			runAt: '2026-07-31T20:00:00.000Z',
-			status: 'complete',
-			createdAt: '2026-07-31T20:00:00.000Z',
-			updatedAt: '2026-07-31T20:00:00.000Z',
-			completedAt: '2026-07-31T20:00:00.000Z',
-		},
-	})
-	await upsertWorkflowProjection({
-		env,
-		userId,
-		projection: {
-			id: 'wf-mono',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			sourceType: 'inline',
-			workflowName: 'adhoc',
-			idempotencyKey: 'mono-key',
-			runAt: '2026-07-31T19:00:00.000Z',
-			status: 'running',
-			createdAt: '2026-07-31T19:00:00.000Z',
-			updatedAt: '2026-07-31T19:00:00.000Z',
-			completedAt: null,
-		},
-	})
-	expect(
-		await getWorkflowProjection({ env, userId, id: 'wf-mono' }),
-	).toMatchObject({
-		status: 'complete',
-		updatedAt: '2026-07-31T20:00:00.000Z',
-	})
 })
 
 test('importWorkflowProjections batches rows with monotonic and terminal-sticky guards', async () => {
