@@ -74,9 +74,9 @@ Deletion must cover these user-owned surfaces:
   and listing children for community-owned listings. Physical tables pending a
   later drop migration are registered in `accountUserDataPendingDropTargets`
   (schema coverage only; runtime deletion never queries them). The guardrail
-  test in `packages/worker/src/app/account-deletion.node.test.ts` applies the
-  live migrations to SQLite and fails if a user-owned schema column is not
-  represented in the deletion target list or pending-drop registry, or if those
+  test in `packages/worker/src/account/data-targets.node.test.ts` applies the
+  live migrations to SQLite and fails if a user-owned schema column lacks schema
+  coverage in the runtime target list or pending-drop registry, or if those
   lists reference a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
