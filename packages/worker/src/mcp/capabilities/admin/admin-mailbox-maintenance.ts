@@ -113,26 +113,28 @@ const deleteMessageResultSchema = z.object({
 		.number()
 		.int()
 		.nonnegative()
-		.describe('Attachment metadata rows observed before delete.'),
+		.describe('Attachment metadata rows captured at delete time.'),
 	externalAttachmentsSeen: z
 		.number()
 		.int()
 		.nonnegative()
-		.describe('External-storage attachment rows observed before delete.'),
+		.describe('External-storage attachment rows captured at delete time.'),
 	rawMimeBlobAbsent: z
 		.boolean()
-		.describe('True when head(emailRawMimeKey) finds no object after delete.'),
+		.describe(
+			'True when head() finds no object for every captured raw-MIME blob key.',
+		),
 	externalAttachmentBlobsAbsent: z
 		.number()
 		.int()
 		.nonnegative()
 		.describe(
-			'Count of canonical external attachment keys with no R2 object after delete.',
+			'Count of captured attachment blob keys with no R2 object after delete.',
 		),
-	allCanonicalBlobsAbsent: z
+	allCapturedBlobsAbsent: z
 		.boolean()
 		.describe(
-			'True when the canonical raw-MIME key and every external attachment key are absent.',
+			'True when every blob key captured by deleteEmailMessageById is absent via head.',
 		),
 })
 
@@ -210,7 +212,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content), bounded reconcileMailboxParity, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, existing deleteEmailMessageById, post-delete D1/R2 head aggregates). Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content), bounded reconcileMailboxParity, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, deleteEmailMessageById with expectedUserId fence, post-delete D1/R2 head over exact captured blob keys). Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
@@ -294,7 +296,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 										: 'unknown'
 								const targetMessageId =
 									args.action === 'delete_message' ? args.message_id : 'unknown'
-								return `action=delete_message;stable_user_id=${targetStableUserId};message_id=${targetMessageId};d1_absent=${result.result.d1MessageAbsent ? 1 : 0};blobs_absent=${result.result.allCanonicalBlobsAbsent ? 1 : 0}`
+								return `action=delete_message;stable_user_id=${targetStableUserId};message_id=${targetMessageId};d1_absent=${result.result.d1MessageAbsent ? 1 : 0};blobs_absent=${result.result.allCapturedBlobsAbsent ? 1 : 0}`
 							}
 							default: {
 								const exhaustive: never = result

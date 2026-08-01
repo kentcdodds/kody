@@ -101,7 +101,7 @@ const emptyDeleteResult = {
 	externalAttachmentsSeen: 1,
 	rawMimeBlobAbsent: true,
 	externalAttachmentBlobsAbsent: 1,
-	allCanonicalBlobsAbsent: true,
+	allCapturedBlobsAbsent: true,
 }
 
 function createAdminCtx() {

@@ -523,14 +523,16 @@ rows only.
   re-parses the resolved MIME from that blob.
 - Message deletes always delete the deterministic
   `emailRawMimeKey(userId, messageId)` from R2 (production writers always store
-  that canonical key). `deleteEmailMessageById` runs an atomic D1 batch
-  (attachments, then message), then best-effort R2 blob deletes. Live explicit
-  and retention deletes do not call Mailbox mirror helpers today; the parity
-  lane repairs DO state via purge/rebuild. Direct delete wiring is pending. User
-  email retention and system-email retention stay strict: blob delete before row
-  delete; failed blob deletes skip the row for retry. Account deletion stays
-  strict before atomic D1 finalization; a failed blob delete preserves every
-  message row for retry.
+  that canonical key). `deleteEmailMessageById` captures ownership + attachment
+  `storage_key` values, optionally enforces an `expectedUserId` owner fence,
+  runs an atomic D1 batch (attachments, then message), then best-effort R2 blob
+  deletes and returns the exact captured blob deletion inventory/outcomes for
+  internal verification. Live explicit and retention deletes do not call Mailbox
+  mirror helpers today; the parity lane repairs DO state via purge/rebuild.
+  Direct delete wiring is pending. User email retention and system-email
+  retention stay strict: blob delete before row delete; failed blob deletes skip
+  the row for retry. Account deletion stays strict before atomic D1
+  finalization; a failed blob delete preserves every message row for retry.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -979,12 +981,12 @@ max 100, then status), `retention` (natural cutoffs only), and `delete_message`
    the last considered owner). Per-owner failures are isolated.
 
 `delete_message` takes `stable_user_id` + `message_id`, verifies ownership with
-`getEmailMessageById` (missing/foreign rejected), collects attachment metadata /
-storage keys without reading content, deletes through existing
-`deleteEmailMessageById` (`APP_DB` + `EMAIL_BLOBS`), then verifies the D1
-message is absent and every canonical raw-MIME / external-attachment R2 object
-is absent via `head`. Returns aggregate booleans/counts only (no addresses,
-bodies, filenames, or keys). Audit success reason includes the target ids.
+`getEmailMessageById` (missing/foreign rejected), deletes through
+`deleteEmailMessageById` (`APP_DB` + `EMAIL_BLOBS`, `expectedUserId` fence),
+then verifies the D1 message is absent and every exact captured blob key from
+that delete inventory is absent via `head`. Returns aggregate booleans/counts
+only (no addresses, bodies, filenames, or keys). Audit success reason includes
+the target ids.
 
 Retention returns D1 delete/error totals plus aggregate Mailbox before/after
 counts (no message ids or email content). No seed or arbitrary-cutoff surface.
