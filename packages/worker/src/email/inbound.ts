@@ -9,7 +9,6 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
-	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -62,6 +61,7 @@ import {
 	RetryableInboundStorageError,
 	storeIdempotentInboundEmail,
 } from './service.ts'
+import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import {
 	countStoredSystemEmailMessages,
 	ensureSystemEmailInbox,
@@ -472,12 +472,11 @@ export async function handleInboundEmail(
 			})
 			if (!existingDelivery) {
 				try {
-					let storageAccounting: Promise<unknown> | undefined
 					// New deliveries check storage bytes and stored-message caps
 					// before their durable quota claim. A retry with an existing
 					// ledger bypasses both so already-charged mail can still repair
 					// after unrelated writes fill the mailbox.
-					await assertWithinStorageBytesEntitlement({
+					await reserveEmailStorageBytes({
 						db: env.APP_DB,
 						env,
 						userId,
@@ -488,11 +487,8 @@ export async function handleInboundEmail(
 						}),
 						waitUntil: ctx
 							? (promise: Promise<unknown>) => ctx.waitUntil(promise)
-							: (promise) => {
-									storageAccounting = promise
-								},
+							: undefined,
 					})
-					if (!ctx) await storageAccounting
 					await assertWithinEntitlement({
 						db: env.APP_DB,
 						userId,

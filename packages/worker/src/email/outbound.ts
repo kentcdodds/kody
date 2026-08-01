@@ -11,7 +11,6 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,
-	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
@@ -27,6 +26,7 @@ import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
+import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import {
 	createEmailThread,
 	emailAttachmentBlobKey,
@@ -569,8 +569,7 @@ export async function sendOutboundEmail(
 			inReplyTo: input.inReplyToHeader ?? null,
 			references: input.references ?? [],
 		})
-		let storageAccounting: Promise<unknown> | undefined
-		await assertWithinStorageBytesEntitlement({
+		await reserveEmailStorageBytes({
 			db: input.env.APP_DB,
 			env: input.env,
 			userId: input.userId,
@@ -588,13 +587,7 @@ export async function sendOutboundEmail(
 						headers: storedHeaders,
 					},
 				}) + attachmentBytesTotal,
-			waitUntil: (promise) => {
-				storageAccounting = promise
-			},
 		})
-		// Outbound has no ExecutionContext. Await the interface's caught
-		// accounting task so a worker shutdown cannot drop the UserMeter handoff.
-		await storageAccounting
 
 		// Atomic check-and-increment via UserMeter (sole daily authority).
 		await consumeDailyEntitlement({
