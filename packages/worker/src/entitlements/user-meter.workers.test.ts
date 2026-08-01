@@ -11,6 +11,7 @@ import { planLimits } from './plans.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	readDailyEntitlementResourceUsage,
 	readUserD1StorageBytes,
 	refundDailyEntitlement,
 } from './service.ts'
@@ -36,22 +37,6 @@ async function seedFreeUser(emailPrefix: string) {
 	return { email, userId }
 }
 
-async function readD1DailyCount(input: {
-	userId: string
-	resource: string
-	day: string
-}) {
-	const row = await env.APP_DB.prepare(
-		`SELECT count, updated_at FROM entitlement_daily_counters
-		WHERE user_id = ? AND resource = ? AND day = ?`,
-	)
-		.bind(input.userId, input.resource, input.day)
-		.first<{ count: number; updated_at: string }>()
-	return row
-		? { count: Number(row.count), updatedAt: String(row.updated_at) }
-		: null
-}
-
 async function waitFor(
 	predicate: () => boolean,
 	timeoutMs = 5_000,
@@ -66,57 +51,58 @@ async function waitFor(
 	}
 }
 
-const mirrorSql = `INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(user_id, resource, day) DO UPDATE SET
-				count = excluded.count,
-				updated_at = excluded.updated_at
-			WHERE entitlement_daily_counters.updated_at < excluded.updated_at`
-
-test('UserMeter bootstraps from legacy D1 once, then warms without APP_DB awaits', async () => {
+test('cold daily consume initializes at zero without D1 prepare/run and first unit is 1', async () => {
 	const now = new Date('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey(now)
-	const sendLimit = planLimits.free.maxEmailSendsPerDay
-	const user = await seedFreeUser('meter-bootstrap')
-	const drain = createWaitUntilDrain()
+	const user = await seedFreeUser('meter-cold-zero')
 	const meter = userMeterRpc({ env, userId: user.userId })
 
-	const legacyCount = sendLimit - 1
-	await env.APP_DB.prepare(
-		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			user.userId,
-			'email_sends_per_day',
-			day,
-			legacyCount,
-			'2026-07-31T12:00:00.000Z',
-		)
-		.run()
-
-	let d1PointReads = 0
+	let dailyPrepareCalls = 0
 	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
 		return ((query: string) => {
-			const statement = originalPrepare(query)
-			const isPointRead =
-				query.includes('SELECT count FROM entitlement_daily_counters') &&
-				query.includes('WHERE user_id = ? AND resource = ? AND day = ?')
-			const originalBind = statement.bind.bind(statement)
-			return {
-				bind(...params: Array<unknown>) {
-					const bound = originalBind(...params)
-					return {
-						first: async <T>() => {
-							if (isPointRead) d1PointReads += 1
-							return await bound.first<T>()
-						},
-						all: bound.all.bind(bound),
-						raw: bound.raw?.bind(bound),
-						run: bound.run.bind(bound),
-					}
-				},
-			}
+			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
+			return originalPrepare(query)
+		}) as D1Database['prepare']
+	})
+
+	expect(await meter.read({ resource: 'email_sends_per_day', day })).toEqual({
+		outcome: 'needs_bootstrap',
+	})
+
+	await consumeDailyEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.userId,
+		email: user.email,
+		resource: 'email_sends_per_day',
+		now,
+	})
+	expect(
+		await meter.read({ resource: 'email_sends_per_day', day }),
+	).toMatchObject({
+		outcome: 'ready',
+		count: 1,
+	})
+	expect(dailyPrepareCalls).toBe(0)
+}, 30_000)
+
+test('warm daily consume/read never prepares entitlement_daily_counters', async () => {
+	const now = new Date('2026-07-31T15:00:00.000Z')
+	const day = utcDayKey(now)
+	const user = await seedFreeUser('meter-warm-no-d1')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	await meter.initialize({
+		resource: 'email_sends_per_day',
+		day,
+		count: 0,
+		updatedAt: now.toISOString(),
+	})
+
+	let dailyPrepareCalls = 0
+	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
+		return ((query: string) => {
+			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
+			return originalPrepare(query)
 		}) as D1Database['prepare']
 	})
 
@@ -127,285 +113,90 @@ test('UserMeter bootstraps from legacy D1 once, then warms without APP_DB awaits
 		email: user.email,
 		resource: 'email_sends_per_day',
 		now,
-		waitUntil: drain.waitUntil,
 	})
-	expect(d1PointReads).toBe(1)
-	expect(
-		await meter.read({ resource: 'email_sends_per_day', day }),
-	).toMatchObject({
-		outcome: 'ready',
-		count: sendLimit,
-	})
+	await expect(
+		readDailyEntitlementResourceUsage({
+			db: env.APP_DB,
+			env,
+			userId: user.userId,
+			resource: 'email_sends_per_day',
+			now,
+		}),
+	).resolves.toBe(1)
+	expect(dailyPrepareCalls).toBe(0)
+}, 30_000)
 
-	const denied = await consumeDailyEntitlement({
+test('next UTC day cold consume starts at zero independently', async () => {
+	const dayOne = new Date('2026-07-31T15:00:00.000Z')
+	const dayTwo = new Date('2026-08-01T01:00:00.000Z')
+	const user = await seedFreeUser('meter-next-day')
+	const meter = userMeterRpc({ env, userId: user.userId })
+
+	await consumeDailyEntitlement({
 		db: env.APP_DB,
 		env,
 		userId: user.userId,
 		email: user.email,
 		resource: 'email_sends_per_day',
-		now,
-		waitUntil: drain.waitUntil,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	expect(denied).toBeInstanceOf(EntitlementLimitError)
-	expect(denied).toMatchObject({
-		details: {
-			resource: 'email_sends_per_day',
-			plan: 'free',
-			limit: sendLimit,
-			current: sendLimit,
-		},
+		now: dayOne,
 	})
-	expect(d1PointReads).toBe(1)
+	expect(
+		await meter.read({
+			resource: 'email_sends_per_day',
+			day: utcDayKey(dayOne),
+		}),
+	).toMatchObject({ outcome: 'ready', count: 1 })
 
-	await refundDailyEntitlement({
+	expect(
+		await meter.read({
+			resource: 'email_sends_per_day',
+			day: utcDayKey(dayTwo),
+			now: dayTwo.toISOString(),
+		}),
+	).toEqual({ outcome: 'needs_bootstrap' })
+
+	let dailyPrepareCalls = 0
+	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
+		return ((query: string) => {
+			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
+			return originalPrepare(query)
+		}) as D1Database['prepare']
+	})
+
+	await consumeDailyEntitlement({
 		db: env.APP_DB,
 		env,
 		userId: user.userId,
+		email: user.email,
 		resource: 'email_sends_per_day',
-		now,
-		waitUntil: drain.waitUntil,
+		now: dayTwo,
 	})
-	await drain.drain()
-	d1PointReads = 0
-	let nonMirrorAppDbRuns = 0
-	let releaseMirror!: () => void
-	const mirrorGate = new Promise<void>((resolve) => {
-		releaseMirror = resolve
-	})
-	let mirrorRunStarted = false
-	using _warmPatch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			const statement = originalPrepare(query)
-			const isMirrorWrite =
-				query.includes('INSERT INTO entitlement_daily_counters') &&
-				query.includes('updated_at < excluded.updated_at')
-			const isPointRead =
-				query.includes('SELECT count FROM entitlement_daily_counters') &&
-				query.includes('WHERE user_id = ? AND resource = ? AND day = ?')
-			const originalBind = statement.bind.bind(statement)
-			return {
-				bind(...params: Array<unknown>) {
-					const bound = originalBind(...params)
-					return {
-						first: async <T>() => {
-							if (isPointRead) d1PointReads += 1
-							return await bound.first<T>()
-						},
-						all: bound.all.bind(bound),
-						raw: bound.raw?.bind(bound),
-						run: async () => {
-							if (isMirrorWrite) {
-								mirrorRunStarted = true
-								await mirrorGate
-								return await bound.run()
-							}
-							nonMirrorAppDbRuns += 1
-							return await bound.run()
-						},
-					}
-				},
-			}
-		}) as D1Database['prepare']
-	})
-	try {
-		await expect(
-			consumeDailyEntitlement({
-				db: env.APP_DB,
-				env,
-				userId: user.userId,
-				email: user.email,
-				resource: 'email_sends_per_day',
-				now,
-				waitUntil: drain.waitUntil,
-			}),
-		).resolves.toBeUndefined()
-		expect(mirrorRunStarted).toBe(true)
-		expect(d1PointReads).toBe(0)
-		expect(nonMirrorAppDbRuns).toBe(0)
-	} finally {
-		releaseMirror()
-	}
-	await drain.drain()
+	expect(
+		await meter.read({
+			resource: 'email_sends_per_day',
+			day: utcDayKey(dayTwo),
+		}),
+	).toMatchObject({ outcome: 'ready', count: 1 })
+	expect(dailyPrepareCalls).toBe(0)
 }, 30_000)
 
-test('UserMeter mirror tokens reject out-of-order absolute D1 writes', async () => {
-	const now = new Date('2026-07-31T16:00:00.000Z')
-	const day = utcDayKey(now)
-	const user = await seedFreeUser('meter-mirror-order')
-	const meter = userMeterRpc({ env, userId: user.userId })
-
-	await meter.initialize({
-		resource: 'email_sends_per_day',
-		day,
-		count: 0,
-		updatedAt: now.toISOString(),
-	})
-	const first = await meter.consume({
-		resource: 'email_sends_per_day',
-		day,
-		limit: 100,
-		updatedAt: now.toISOString(),
-	})
-	expect(first).toMatchObject({
-		outcome: 'ready',
-		consumed: true,
-		count: 1,
-		revision: 2,
-	})
-	const second = await meter.consume({
-		resource: 'email_sends_per_day',
-		day,
-		limit: 100,
-		updatedAt: now.toISOString(),
-	})
-	expect(second).toMatchObject({
-		outcome: 'ready',
-		consumed: true,
-		count: 2,
-		revision: 3,
-	})
-	const refunded = await meter.refund({
-		resource: 'email_sends_per_day',
-		day,
-		updatedAt: now.toISOString(),
-	})
-	expect(refunded).toMatchObject({
-		outcome: 'ready',
-		count: 1,
-		revision: 4,
-	})
-	if (first.outcome !== 'ready') {
-		throw new Error('Expected ready consume results.')
-	}
-
-	type PendingMirror = {
-		count: number
-		mirrorUpdatedAt: string
-		resolve: () => void
-		promise: Promise<void>
-	}
-	const pending: Array<PendingMirror> = []
-	function deferMirror(count: number, mirrorUpdatedAt: string) {
-		let resolve!: () => void
-		const promise = new Promise<void>((res) => {
-			resolve = res
-		})
-		pending.push({ count, mirrorUpdatedAt, resolve, promise })
-		return promise
-	}
-
-	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			const statement = originalPrepare(query)
-			const isMirrorWrite =
-				query.includes('INSERT INTO entitlement_daily_counters') &&
-				query.includes('updated_at < excluded.updated_at')
-			const originalBind = statement.bind.bind(statement)
-			return {
-				bind(...params: Array<unknown>) {
-					const bound = originalBind(...params)
-					return {
-						first: bound.first.bind(bound),
-						all: bound.all.bind(bound),
-						raw: bound.raw?.bind(bound),
-						run: async () => {
-							if (!isMirrorWrite) return await bound.run()
-							await deferMirror(Number(params[3]), String(params[4]))
-							return await bound.run()
-						},
-					}
-				},
-			}
-		}) as D1Database['prepare']
-	})
-
-	const older = env.APP_DB.prepare(mirrorSql)
-		.bind(
-			user.userId,
-			'email_sends_per_day',
-			day,
-			first.count,
-			first.mirrorUpdatedAt,
-		)
-		.run()
-	const newer = env.APP_DB.prepare(mirrorSql)
-		.bind(
-			user.userId,
-			'email_sends_per_day',
-			day,
-			refunded.count,
-			refunded.mirrorUpdatedAt,
-		)
-		.run()
-
-	await waitFor(() => pending.length === 2, 5_000, 'mirror gates')
-	expect(pending.map((entry) => entry.mirrorUpdatedAt)).toEqual([
-		userMeterMirrorUpdatedAtToken(2),
-		userMeterMirrorUpdatedAtToken(4),
-	])
-	const [olderGate, newerGate] = pending
-	newerGate!.resolve()
-	await newer
-	expect(
-		await readD1DailyCount({
-			userId: user.userId,
-			resource: 'email_sends_per_day',
-			day,
-		}),
-	).toEqual({
-		count: 1,
-		updatedAt: userMeterMirrorUpdatedAtToken(4),
-	})
-
-	olderGate!.resolve()
-	await older
-	expect(
-		await readD1DailyCount({
-			userId: user.userId,
-			resource: 'email_sends_per_day',
-			day,
-		}),
-	).toEqual({
-		count: 1,
-		updatedAt: userMeterMirrorUpdatedAtToken(4),
-	})
-	expect(
-		await meter.read({ resource: 'email_sends_per_day', day }),
-	).toMatchObject({ outcome: 'ready', count: 1, revision: 4 })
-}, 30_000)
-
-test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user and mirror-safe', async () => {
+test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user without D1 daily table', async () => {
 	const now = new Date('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey(now)
 	const sendLimit = planLimits.free.maxEmailSendsPerDay
 	const userA = await seedFreeUser('meter-a')
 	const userB = await seedFreeUser('meter-b')
-	const drain = createWaitUntilDrain()
 	const meterA = userMeterRpc({ env, userId: userA.userId })
 	const meterB = userMeterRpc({ env, userId: userB.userId })
 
 	expect(userMeterDurableObjectName(userA.userId)).toBe(userA.userId)
 
-	await meterA.initialize({
-		resource: 'email_sends_per_day',
-		day,
-		count: 0,
-		updatedAt: now.toISOString(),
-	})
-	await expect(
-		meterA.consume({
-			resource: 'email_sends_per_day',
-			day,
-			limit: sendLimit,
-			updatedAt: now.toISOString(),
-		}),
-	).resolves.toMatchObject({
-		outcome: 'ready',
-		consumed: true,
-		count: 1,
+	let dailyPrepareCalls = 0
+	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
+		return ((query: string) => {
+			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
+			return originalPrepare(query)
+		}) as D1Database['prepare']
 	})
 
 	await consumeDailyEntitlement({
@@ -415,14 +206,12 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		email: userA.email,
 		resource: 'email_sends_per_day',
 		now,
-		waitUntil: drain.waitUntil,
 	})
-	await drain.drain()
 	expect(
 		await meterA.read({ resource: 'email_sends_per_day', day }),
-	).toMatchObject({ outcome: 'ready', count: 2 })
+	).toMatchObject({ outcome: 'ready', count: 1 })
 
-	for (let index = 2; index < sendLimit; index += 1) {
+	for (let index = 1; index < sendLimit; index += 1) {
 		await consumeDailyEntitlement({
 			db: env.APP_DB,
 			env,
@@ -430,7 +219,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 			email: userA.email,
 			resource: 'email_sends_per_day',
 			now,
-			waitUntil: drain.waitUntil,
 		})
 	}
 	const concurrent = await Promise.all(
@@ -442,7 +230,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 				email: userA.email,
 				resource: 'email_sends_per_day',
 				now,
-				waitUntil: drain.waitUntil,
 			}).then(
 				() => null,
 				(thrown: unknown) => thrown,
@@ -454,17 +241,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		(result) => result instanceof EntitlementLimitError,
 	)
 	expect(denials).toHaveLength(8)
-	for (const denial of denials) {
-		expect(denial).toMatchObject({
-			details: {
-				code: 'entitlement_limit_exceeded',
-				resource: 'email_sends_per_day',
-				plan: 'free',
-				limit: sendLimit,
-				current: sendLimit,
-			},
-		})
-	}
 
 	await consumeDailyEntitlement({
 		db: env.APP_DB,
@@ -473,7 +249,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		email: userB.email,
 		resource: 'email_sends_per_day',
 		now,
-		waitUntil: drain.waitUntil,
 	})
 	expect(
 		await meterB.read({ resource: 'email_sends_per_day', day }),
@@ -488,7 +263,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		userId: userA.userId,
 		resource: 'email_sends_per_day',
 		now,
-		waitUntil: drain.waitUntil,
 	})
 	expect(
 		await meterA.read({ resource: 'email_sends_per_day', day }),
@@ -500,7 +274,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 			userId: userA.userId,
 			resource: 'email_sends_per_day',
 			now,
-			waitUntil: drain.waitUntil,
 		})
 	}
 	expect(
@@ -514,7 +287,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		email: userA.email,
 		resource: 'email_sends_per_day',
 		now,
-		waitUntil: drain.waitUntil,
 	})
 	await consumeDailyEntitlement({
 		db: env.APP_DB,
@@ -523,7 +295,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		email: userA.email,
 		resource: 'execute_calls_per_day',
 		now,
-		waitUntil: drain.waitUntil,
 	})
 	const exportedA = await meterA.exportCounters({})
 	expect(exportedA.counters).toEqual(
@@ -574,53 +345,20 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		await meterB.read({ resource: 'email_sends_per_day', day }),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 
-	await env.APP_DB.prepare(
-		`DELETE FROM entitlement_daily_counters
-		WHERE user_id = ? AND resource = ? AND day = ?`,
-	)
-		.bind(userA.userId, 'email_sends_per_day', day)
-		.run()
-
-	consoleWarn.mockImplementation(() => {})
-	const failingMirrorDb = {
-		prepare(query: string) {
-			if (
-				query.includes('INSERT INTO entitlement_daily_counters') &&
-				query.includes('updated_at < excluded.updated_at')
-			) {
-				return {
-					bind() {
-						return {
-							async run() {
-								throw new Error('mirror write failed')
-							},
-						}
-					},
-				}
-			}
-			return env.APP_DB.prepare(query)
-		},
-	} as unknown as D1Database
-
 	await expect(
 		consumeDailyEntitlement({
-			db: failingMirrorDb,
+			db: env.APP_DB,
 			env,
 			userId: userA.userId,
 			email: userA.email,
 			resource: 'email_sends_per_day',
 			now,
-			waitUntil: drain.waitUntil,
 		}),
 	).resolves.toBeUndefined()
-	await drain.drain()
 	expect(
 		await meterA.read({ resource: 'email_sends_per_day', day }),
 	).toMatchObject({ outcome: 'ready', count: 1 })
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'entitlement-daily-mirror-failed',
-		expect.any(Error),
-	)
+	expect(dailyPrepareCalls).toBe(0)
 
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(userA.userId)),

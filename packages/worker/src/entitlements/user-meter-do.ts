@@ -829,7 +829,7 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	/** Cold-key seed from legacy D1; INSERT OR IGNORE is concurrency-safe. */
+	/** Cold-key seed (zero after D1 mirror retirement); INSERT OR IGNORE is concurrency-safe. */
 	async initialize(input: {
 		resource: string
 		day: string

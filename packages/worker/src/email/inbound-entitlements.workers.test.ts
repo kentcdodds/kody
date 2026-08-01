@@ -93,15 +93,6 @@ async function seedDailyReceiveCounter(userId: string, count: number) {
 			updatedAt,
 		)
 	})
-	await env.APP_DB.prepare(
-		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, 'email_receives_per_day', ?, ?, ?)
-			ON CONFLICT(user_id, resource, day) DO UPDATE SET
-				count = excluded.count,
-				updated_at = excluded.updated_at`,
-	)
-		.bind(userId, day, count, updatedAt)
-		.run()
 }
 
 async function readDailyReceiveCounter(userId: string) {
@@ -888,19 +879,4 @@ test('inbound UserMeter replay keeps original claim day across UTC midnight', as
 	expect(
 		await meter.read({ resource: 'email_receives_per_day', day: dayN1 }),
 	).toMatchObject({ outcome: 'needs_bootstrap' })
-
-	const mirroredDayN = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-		WHERE user_id = ? AND resource = 'email_receives_per_day' AND day = ?`,
-	)
-		.bind(userId, dayN)
-		.first<{ count: number }>()
-	const mirroredDayN1 = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-		WHERE user_id = ? AND resource = 'email_receives_per_day' AND day = ?`,
-	)
-		.bind(userId, dayN1)
-		.first<{ count: number }>()
-	expect(Number(mirroredDayN?.count ?? 0)).toBe(1)
-	expect(mirroredDayN1).toBeNull()
 }, 30_000)

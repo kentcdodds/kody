@@ -281,29 +281,31 @@ async function loadEmailInsightsRows(input: {
 	deliveryRows: Array<EmailDeliveryDayRow>
 }> {
 	// Wrangler exposes a local Analytics Engine binding, but its SQL API cannot
-	// query the emulated dataset. Local development therefore keeps using the
-	// existing D1 tables, matching the feature-flag exposure fallback.
-	if (!input.env.EMAIL_EVENTS || input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
-		const [emailRows, deliveryRows] = await Promise.all([
-			input.env.APP_DB.prepare(
-				`SELECT day, resource, SUM(count) AS n
-				 FROM entitlement_daily_counters
-				 WHERE day >= ? AND resource IN ('email_sends_per_day', 'email_receives_per_day')
-				 GROUP BY day, resource`,
-			)
-				.bind(input.dayCutoff)
-				.all<EmailDayRow>(),
-			input.env.APP_DB.prepare(
-				`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
-				 FROM email_delivery_events
-				 WHERE provider = 'cloudflare-email' AND created_at >= ?
-				 GROUP BY day, event_type`,
-			)
-				.bind(input.dayCutoff)
-				.all<EmailDeliveryDayRow>(),
-		])
+	// query the emulated dataset. The D1 entitlement_daily_counters mirror is
+	// retired, so local/dev email quota aggregates degrade explicitly to empty
+	// (with a warning) rather than querying a removed table. Delivery-event
+	// aggregates still come from D1 email_delivery_events.
+	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
+		console.warn('admin-insights-email-quota-aggregate-unavailable', {
+			reason: 'entitlement-daily-counters-retired-local-dev',
+		})
+	}
+	if (!input.env.EMAIL_EVENTS) {
+		console.warn('admin-insights-email-quota-aggregate-unavailable', {
+			reason: 'missing-email-events-binding',
+		})
+	}
+	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true' || !input.env.EMAIL_EVENTS) {
+		const deliveryRows = await input.env.APP_DB.prepare(
+			`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
+			 FROM email_delivery_events
+			 WHERE provider = 'cloudflare-email' AND created_at >= ?
+			 GROUP BY day, event_type`,
+		)
+			.bind(input.dayCutoff)
+			.all<EmailDeliveryDayRow>()
 		return {
-			emailRows: emailRows.results ?? [],
+			emailRows: [],
 			deliveryRows: deliveryRows.results ?? [],
 		}
 	}

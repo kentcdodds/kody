@@ -6,14 +6,12 @@ import {
 	auditEventRetentionDays,
 	emailDeliveryEventRetentionDays,
 	emailMessageRetentionDays,
-	entitlementDailyCounterRetentionDays,
 	featureFlagExposureRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
-	pruneEntitlementDailyCountersForRetention,
 	pruneFeatureFlagExposuresForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePlatformFeedbackForRetention,
@@ -200,14 +198,6 @@ function createRetentionDb() {
 			storage_kind TEXT NOT NULL,
 			storage_key TEXT,
 			created_at TEXT NOT NULL
-		);
-		CREATE TABLE entitlement_daily_counters (
-			user_id TEXT NOT NULL,
-			resource TEXT NOT NULL,
-			day TEXT NOT NULL,
-			count INTEGER NOT NULL DEFAULT 0,
-			updated_at TEXT NOT NULL,
-			PRIMARY KEY (user_id, resource, day)
 		);
 		CREATE TABLE usage_rollups (
 			user_id TEXT NOT NULL,
@@ -865,22 +855,8 @@ test('retention prune reports selected separately from deleted when rows vanish 
 	).toEqual({ selected: 2, deleted: 1 })
 })
 
-test('entitlement counter and usage rollup retention respect boundaries', async () => {
+test('usage rollup retention respects month boundaries', async () => {
 	const { sqlite, db } = createRetentionDb()
-	const cutoffDay = daysAgo(entitlementDailyCounterRetentionDays).slice(0, 10)
-	for (const day of [
-		daysAgo(entitlementDailyCounterRetentionDays + 1).slice(0, 10),
-		cutoffDay,
-		daysAgo(1).slice(0, 10),
-	]) {
-		sqlite
-			.prepare(
-				`INSERT INTO entitlement_daily_counters (
-				user_id, resource, day, count, updated_at
-			) VALUES ('user-1', 'email_sends_per_day', ?, 1, ?)`,
-			)
-			.run(day, now.toISOString())
-	}
 	// 24 months before 2026-07 keeps 2024-07 and later.
 	for (const month of ['2024-06', '2024-07', '2026-06']) {
 		sqlite
@@ -892,22 +868,11 @@ test('entitlement counter and usage rollup retention respect boundaries', async 
 			.run(month, now.toISOString())
 	}
 
-	expect(await pruneEntitlementDailyCountersForRetention({ db, now })).toEqual({
-		selected: 1,
-		deleted: 1,
-	})
 	expect(await pruneUsageRollupsForRetention({ db, now })).toEqual({
 		selected: 1,
 		deleted: 1,
 	})
 
-	const days = sqlite
-		.prepare(`SELECT day FROM entitlement_daily_counters ORDER BY day`)
-		.all() as Array<{ day: string }>
-	expect(days.map((row) => row.day)).toEqual([
-		cutoffDay,
-		daysAgo(1).slice(0, 10),
-	])
 	const months = sqlite
 		.prepare(`SELECT month FROM usage_rollups ORDER BY month`)
 		.all() as Array<{ month: string }>

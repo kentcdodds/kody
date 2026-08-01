@@ -248,17 +248,6 @@ function createInsightsTestDb(
 							] as Array<T>,
 						}
 					}
-					if (normalizedQuery.includes('from entitlement_daily_counters')) {
-						return {
-							results: [
-								{
-									day: '2026-07-08',
-									resource: 'email_sends_per_day',
-									n: 3,
-								},
-							] as Array<T>,
-						}
-					}
 					if (normalizedQuery.includes('from email_delivery_events')) {
 						return {
 							results: [
@@ -322,12 +311,26 @@ function createInsightsTestDb(
 }
 
 test('loadAdminInsightsData assembles the dashboard payload', async () => {
+	consoleWarn.mockImplementation(() => {})
+	consoleWarn.mockClear()
 	const data = await loadAdminInsightsData(
-		{ APP_DB: createInsightsTestDb() } as Env,
+		{
+			APP_DB: createInsightsTestDb(),
+			EMAIL_EVENTS: {} as AnalyticsEngineDataset,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
 		now,
 	)
 
 	expect(data.ok).toBe(true)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'entitlement-daily-counters-retired-local-dev' },
+	)
+	expect(consoleWarn).not.toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'missing-email-events-binding' },
+	)
 	expect(data.totals).toEqual({
 		users: 8,
 		verifiedUsers: 5,
@@ -353,7 +356,7 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	expect(data.emailByDay).toHaveLength(28)
 	expect(data.emailByDay.at(-1)).toEqual({
 		day: '2026-07-08',
-		sends: 3,
+		sends: 0,
 		receives: 0,
 	})
 	expect(data.emailDeliveryByDay).toHaveLength(28)
@@ -395,9 +398,32 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	expect(data.activation.medianHoursToActivation).toBe(36)
 })
 
-test('activation latency excludes users who have no usable verification date', async () => {
+test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async () => {
+	consoleWarn.mockImplementation(() => {})
+	consoleWarn.mockClear()
 	const data = await loadAdminInsightsData(
-		{ APP_DB: createInsightsTestDb({ activationLatencyRows: [] }) } as Env,
+		{ APP_DB: createInsightsTestDb() } as Env,
+		now,
+	)
+
+	expect(data.ok).toBe(true)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'missing-email-events-binding' },
+	)
+	expect(consoleWarn).not.toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'entitlement-daily-counters-retired-local-dev' },
+	)
+})
+
+test('activation latency excludes users who have no usable verification date', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: createInsightsTestDb({ activationLatencyRows: [] }),
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
 		now,
 	)
 	// Two users reached the milestone, but neither has timing we can measure.

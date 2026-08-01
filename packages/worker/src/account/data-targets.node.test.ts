@@ -1,13 +1,29 @@
+import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
+import { readdirSync, readFileSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
 	accountExportForeignUserIdColumnsByTable,
 	accountExportRedactedColumnsByTable,
 	accountExportRedactedForeignUserId,
+	accountUserDataPendingDropTargets,
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
+	getAccountD1UserColumnCoverage,
+	getAccountExportExcludedD1Surfaces,
+	isExcludedFromAccountExport,
 	type UserScopedDataTarget,
 } from './data-targets.ts'
+
+function applyMigrations(db: DatabaseSync) {
+	const migrationsDir = new URL('../../migrations/', import.meta.url)
+	for (const fileName of readdirSync(migrationsDir)
+		.filter((file) => file.endsWith('.sql'))
+		.sort()) {
+		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
+	}
+}
 
 function matchFor(target: UserScopedDataTarget) {
 	return buildUserScopedTargetMatch({
@@ -196,4 +212,81 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 			target.table.startsWith('community_'),
 		),
 	).toBe(true)
+})
+
+test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {
+	expect(
+		accountUserDataPendingDropTargets.some(
+			(target) => target.table === 'entitlement_daily_counters',
+		),
+	).toBe(false)
+	expect(
+		accountUserDataTargets.some(
+			(target) =>
+				'table' in target && target.table === 'entitlement_daily_counters',
+		),
+	).toBe(false)
+	expect(getAccountExportExcludedD1Surfaces()).not.toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ name: 'entitlement_daily_counters' }),
+		]),
+	)
+
+	const deletionStatements = accountUserDataTargets.map((target) => {
+		const match = matchFor(target)
+		return buildUserScopedDeleteOrUpdateSql(match).sql
+	})
+	expect(deletionStatements.join('\n')).not.toMatch(
+		/entitlement_daily_counters/u,
+	)
+
+	const exportStatements = accountUserDataTargets
+		.filter((target) => !isExcludedFromAccountExport(target))
+		.map((target) => {
+			const match = matchFor(target)
+			return `SELECT * FROM ${match.table} WHERE ${match.qualifiedWhereSql}`
+		})
+	expect(exportStatements.join('\n')).not.toMatch(/entitlement_daily_counters/u)
+
+	const db = new DatabaseSync(':memory:')
+	applyMigrations(db)
+	const tableExists = db
+		.prepare(
+			`SELECT 1 AS present
+			FROM sqlite_schema
+			WHERE type = 'table' AND name = 'entitlement_daily_counters'`,
+		)
+		.get() as { present: number } | undefined
+	expect(tableExists).toBeUndefined()
+
+	const liveUserColumns = new Set<string>()
+	const tables = db
+		.prepare(
+			`SELECT name
+			FROM sqlite_schema
+			WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+			ORDER BY name`,
+		)
+		.all() as Array<{ name: string }>
+	for (const table of tables) {
+		const columns = db
+			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table.name)})`)
+			.all() as Array<{ name: string }>
+		for (const column of columns) {
+			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
+				liveUserColumns.add(`${table.name}.${column.name}`)
+			}
+		}
+	}
+	const coveredColumns = getAccountD1UserColumnCoverage()
+	expect(coveredColumns.has('entitlement_daily_counters.user_id')).toBe(false)
+	expect(liveUserColumns.has('entitlement_daily_counters.user_id')).toBe(false)
+	const missing = [...liveUserColumns].filter(
+		(column) => !coveredColumns.has(column),
+	)
+	const stale = [...coveredColumns].filter(
+		(column) => !liveUserColumns.has(column),
+	)
+	expect(missing).toEqual([])
+	expect(stale).toEqual([])
 })

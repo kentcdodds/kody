@@ -5,7 +5,6 @@ import {
 	EntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
 import { type PlanName } from '#worker/entitlements/plans.ts'
-import { scheduleAbsoluteDailyEntitlementMirror } from '#worker/entitlements/service.ts'
 import {
 	userMeterRpc,
 	type UserMeterEnv,
@@ -423,25 +422,11 @@ export async function pruneExpiredInboundDedupePointers(input: {
 	)
 }
 
-async function readCounter(input: {
+async function readSystemEmailDailyCounter(input: {
 	db: D1Database
-	table: 'entitlement_daily_counters' | 'system_email_daily_counters'
-	userId?: string
-	localPart?: SystemEmailLocal
+	localPart: SystemEmailLocal
 	day: string
 }) {
-	if (input.table === 'entitlement_daily_counters') {
-		const row = await input.db
-			.prepare(
-				`SELECT count FROM entitlement_daily_counters
-				WHERE user_id = ?
-					AND resource = 'email_receives_per_day'
-					AND day = ?`,
-			)
-			.bind(input.userId, input.day)
-			.first<{ count: number }>()
-		return Number(row?.count ?? 0)
-	}
 	const row = await input.db
 		.prepare(
 			`SELECT count FROM system_email_daily_counters
@@ -452,7 +437,12 @@ async function readCounter(input: {
 	return Number(row?.count ?? 0)
 }
 
-/** Point-read today's user inbound receive count from UserMeter. */
+/**
+ * Point-read today's user inbound receive count from UserMeter. Cold meters
+ * initialize at zero; never touches the retired D1 daily counter table.
+ *
+ * `db` remains for call-site stability.
+ */
 export async function readUserInboundReceiveCount(input: {
 	db: D1Database
 	env: UserMeterEnv
@@ -460,6 +450,7 @@ export async function readUserInboundReceiveCount(input: {
 	day: string
 	now?: Date
 }) {
+	void input.db
 	const now = input.now ?? new Date()
 	const updatedAt = now.toISOString()
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
@@ -469,16 +460,10 @@ export async function readUserInboundReceiveCount(input: {
 		now: updatedAt,
 	})
 	if (result.outcome === 'needs_bootstrap') {
-		const baseline = await readCounter({
-			db: input.db,
-			table: 'entitlement_daily_counters',
-			userId: input.userId,
-			day: input.day,
-		})
 		await meter.initialize({
 			resource: 'email_receives_per_day',
 			day: input.day,
-			count: baseline,
+			count: 0,
 			updatedAt,
 		})
 		result = await meter.read({
@@ -500,9 +485,8 @@ export async function readSystemInboundReceiveCount(input: {
 	localPart: SystemEmailLocal
 	day: string
 }) {
-	return await readCounter({
+	return await readSystemEmailDailyCounter({
 		db: input.db,
-		table: 'system_email_daily_counters',
 		localPart: input.localPart,
 		day: input.day,
 	})
@@ -521,7 +505,8 @@ async function resolveConcurrentDelivery(input: {
 
 /**
  * Charge one inbound receive via UserMeter, then persist the D1 delivery
- * event. Delivery-id idempotency lives in the DO; D1 mirror is best-effort.
+ * event. Delivery-id idempotency lives in the DO. Never touches the retired
+ * D1 daily counter table.
  */
 export async function chargeUserInboundDeliveryOnce(input: {
 	db: D1Database
@@ -530,8 +515,13 @@ export async function chargeUserInboundDeliveryOnce(input: {
 	plan: PlanName
 	limit: number
 	now: Date
+	/**
+	 * Retained for call-site stability. Daily counters no longer schedule D1
+	 * mirror work after mirror retirement.
+	 */
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<InboundDelivery> {
+	void input.waitUntil
 	const existing = await resolveConcurrentDelivery(input)
 	if (existing) return existing
 
@@ -548,16 +538,10 @@ export async function chargeUserInboundDeliveryOnce(input: {
 		updatedAt,
 	})
 	if (meterResult.outcome === 'needs_bootstrap') {
-		const baseline = await readCounter({
-			db: input.db,
-			table: 'entitlement_daily_counters',
-			userId: input.delivery.userId,
-			day: input.delivery.quotaDay,
-		})
 		await meter.initialize({
 			resource: 'email_receives_per_day',
 			day: input.delivery.quotaDay,
-			count: baseline,
+			count: 0,
 			updatedAt,
 		})
 		meterResult = await meter.consumeInboundDelivery({
@@ -584,16 +568,6 @@ export async function chargeUserInboundDeliveryOnce(input: {
 			upgradeHint: buildEntitlementUpgradeHint('email_receives_per_day'),
 		})
 	}
-
-	scheduleAbsoluteDailyEntitlementMirror({
-		db: input.db,
-		userId: input.delivery.userId,
-		resource: meterResult.resource,
-		day: meterResult.day,
-		count: meterResult.count,
-		mirrorUpdatedAt: meterResult.mirrorUpdatedAt,
-		waitUntil: input.waitUntil,
-	})
 
 	try {
 		const insert = await input.db
@@ -635,9 +609,8 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 }) {
 	const existing = await resolveConcurrentDelivery(input)
 	if (existing) return { delivery: existing, overLimit: false as const }
-	const current = await readCounter({
+	const current = await readSystemEmailDailyCounter({
 		db: input.db,
-		table: 'system_email_daily_counters',
 		localPart: input.localPart,
 		day: input.delivery.quotaDay,
 	})

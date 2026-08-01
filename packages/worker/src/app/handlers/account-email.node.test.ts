@@ -4,6 +4,7 @@ import type * as EmailPlatformAddress from '#worker/email/platform-address.ts'
 import type * as EntitlementPlans from '#worker/entitlements/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 
 const messageRow = {
 	id: 'msg-1',
@@ -251,41 +252,14 @@ function createListResult(rows: Array<Record<string, unknown>>) {
 
 function createEnv(input?: {
 	meter?: ReturnType<typeof createInMemoryUserMeterEnv>
-	dailyCounters?: Array<{
-		user_id: string
-		resource: string
-		day: string
-		count: number
-	}>
 	messageRows?: Array<Record<string, unknown>>
 	messageTotal?: number
 }) {
 	const meter = input?.meter ?? createInMemoryUserMeterEnv()
-	const dailyCounters = input?.dailyCounters?.map((row) => ({ ...row })) ?? []
 	const messageRows = input?.messageRows ?? [messageRow]
 	const messageTotal = input?.messageTotal ?? messageRows.length
 	mockModule.prepare.mockImplementation((query: string) => {
 		const normalized = String(query).replace(/\s+/g, ' ').trim().toLowerCase()
-		if (normalized.includes('from entitlement_daily_counters')) {
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first<T>() {
-							const row = dailyCounters.find(
-								(counter) =>
-									counter.user_id === params[0] &&
-									counter.resource === params[1] &&
-									counter.day === params[2],
-							)
-							return (row ? { count: row.count } : { count: 0 }) as T
-						},
-						async all() {
-							return { results: [] }
-						},
-					}
-				},
-			}
-		}
 		if (normalized.includes('count(*)')) {
 			return createCountResult(messageTotal)
 		}
@@ -321,20 +295,19 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	const bootstrapMeter = createInMemoryUserMeterEnv()
 	const env = createEnv({
 		meter: bootstrapMeter,
-		dailyCounters: [
-			{
-				user_id: userId,
-				resource: 'email_sends_per_day',
-				day,
-				count: 2,
-			},
-			{
-				user_id: userId,
-				resource: 'email_receives_per_day',
-				day,
-				count: 2,
-			},
-		],
+	})
+	const meterStub = userMeterRpc({ env: bootstrapMeter.env, userId })
+	await meterStub.initialize({
+		resource: 'email_sends_per_day',
+		day,
+		count: 2,
+		updatedAt: new Date().toISOString(),
+	})
+	await meterStub.initialize({
+		resource: 'email_receives_per_day',
+		day,
+		count: 2,
+		updatedAt: new Date().toISOString(),
 	})
 	const handler = createAccountEmailApiHandler(env)
 
@@ -389,21 +362,25 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 
 	mockModule.prepare.mockClear()
 	mockModule.getEmailMessageById.mockClear()
+	const selectionMeter = createInMemoryUserMeterEnv()
 	const envWithSelection = createEnv({
-		dailyCounters: [
-			{
-				user_id: userId,
-				resource: 'email_sends_per_day',
-				day,
-				count: 2,
-			},
-			{
-				user_id: userId,
-				resource: 'email_receives_per_day',
-				day,
-				count: 2,
-			},
-		],
+		meter: selectionMeter,
+	})
+	const selectionStub = userMeterRpc({
+		env: selectionMeter.env,
+		userId,
+	})
+	await selectionStub.initialize({
+		resource: 'email_sends_per_day',
+		day,
+		count: 2,
+		updatedAt: new Date().toISOString(),
+	})
+	await selectionStub.initialize({
+		resource: 'email_receives_per_day',
+		day,
+		count: 2,
+		updatedAt: new Date().toISOString(),
 	})
 	const selectedResponse = await createAccountEmailApiHandler(
 		envWithSelection,
@@ -465,7 +442,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	expect(unauthorizedResponse.status).toBe(401)
 })
 
-test('email API usage prefers initialized UserMeter daily counts over D1', async () => {
+test('email API usage reads initialized UserMeter daily counts', async () => {
 	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey()
 	const userId = 'stable-user-1'
@@ -484,20 +461,6 @@ test('email API usage prefers initialized UserMeter daily counts over D1', async
 	})
 	const env = createEnv({
 		meter,
-		dailyCounters: [
-			{
-				user_id: userId,
-				resource: 'email_sends_per_day',
-				day,
-				count: 3,
-			},
-			{
-				user_id: userId,
-				resource: 'email_receives_per_day',
-				day,
-				count: 5,
-			},
-		],
 	})
 	const response = await createAccountEmailApiHandler(env).handler({
 		request: new Request('https://example.com/account/email.json'),
@@ -513,7 +476,7 @@ test('email API usage prefers initialized UserMeter daily counts over D1', async
 			receives_today: { count: 15, limit: 50 },
 		}),
 	})
-	expect(body.usage.sends_today.count).not.toBe(3)
+	expect(body.usage.sends_today.count).toBe(13)
 	expect(body.usage.receives_today.count).not.toBe(5)
 })
 

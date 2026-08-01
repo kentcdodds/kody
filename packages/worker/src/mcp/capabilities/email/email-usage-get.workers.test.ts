@@ -29,18 +29,13 @@ async function seedDailyCounter(input: {
 	count: number
 	day: string
 }) {
-	await env.APP_DB.prepare(
-		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			input.userId,
-			input.resource,
-			input.day,
-			input.count,
-			new Date().toISOString(),
-		)
-		.run()
+	const meter = userMeterRpc({ env, userId: input.userId })
+	await meter.initialize({
+		resource: input.resource,
+		day: input.day,
+		count: input.count,
+		updatedAt: new Date().toISOString(),
+	})
 }
 
 async function seedStoredMessages(userId: string, count: number) {
@@ -180,32 +175,18 @@ test(
 		const meterEmail = `usage-meter-${crypto.randomUUID()}@example.com`
 		const meterUserId = await createStableUserIdFromEmail(meterEmail)
 		await seedUsageAccount({ email: meterEmail, plan: 'pro' })
-		await seedDailyCounter({
-			userId: meterUserId,
-			resource: 'email_sends_per_day',
-			count: 3,
-			day,
-		})
-		await seedDailyCounter({
-			userId: meterUserId,
-			resource: 'email_receives_per_day',
-			count: 5,
-			day,
-		})
 		await seedStoredMessages(meterUserId, 2)
-		const updatedAt = new Date().toISOString()
-		const meter = userMeterRpc({ env, userId: meterUserId })
-		await meter.initialize({
+		await seedDailyCounter({
+			userId: meterUserId,
 			resource: 'email_sends_per_day',
-			day,
 			count: 13,
-			updatedAt,
-		})
-		await meter.initialize({
-			resource: 'email_receives_per_day',
 			day,
+		})
+		await seedDailyCounter({
+			userId: meterUserId,
+			resource: 'email_receives_per_day',
 			count: 15,
-			updatedAt,
+			day,
 		})
 		const meterResult = await emailUsageGetCapability.handler(
 			{},

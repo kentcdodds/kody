@@ -285,9 +285,6 @@ function createAdminCapabilityTestDb(input: {
 							raw_mime_key: message.raw_mime_key ?? null,
 						} as T
 					}
-					if (normalizedQuery.includes('from entitlement_daily_counters')) {
-						return null
-					}
 					const count = countForQuery(normalizedQuery)
 					if (count !== null) return { count } as T
 					return null

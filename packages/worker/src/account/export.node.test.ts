@@ -158,6 +158,12 @@ test('account export documents and excludes operator-owned system email rows', a
 			}),
 		]),
 	)
+	expect(accountExport.manifest.excludedD1Surfaces).not.toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ name: 'entitlement_daily_counters' }),
+		]),
+	)
+	expect(accountExport.d1).not.toHaveProperty('entitlement_daily_counters')
 })
 
 test('account export includes submitted feedback but excludes reviewer-only relationships', async () => {

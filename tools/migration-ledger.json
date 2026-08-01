@@ -515,6 +515,10 @@
 		{
 			"filename": "0125-mailbox-parity-state.sql",
 			"sha256": "6d2d54b8d8a2cc7399c4f0dbb8069cfa5d6686958d8fef1a3b874c472a564754"
+		},
+		{
+			"filename": "0126-drop-entitlement-daily-counters.sql",
+			"sha256": "1fd413a77395d0dd183533863fe381ee5c006e75c8cf4224a4f00c1a57496e26"
 		}
 	]
 }

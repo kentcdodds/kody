@@ -24,16 +24,6 @@ const env = {
 				bind(...params: Array<unknown>) {
 					return {
 						async run() {
-							if (
-								normalizedQuery.includes(
-									'insert into entitlement_daily_counters',
-								) &&
-								params[0] !== 'user-123'
-							) {
-								throw new Error(
-									'Entitlement counter upsert must bind the acting userId.',
-								)
-							}
 							return { meta: { changes: 1 } }
 						},
 						async first() {
@@ -622,8 +612,8 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		})
 		expect(successResponse.status).toBe(200)
 		expect(fetchStub).toHaveBeenCalledTimes(1)
-		// waitUntil: entitlement D1 mirror + usage metering
-		expect(waitUntil).toHaveBeenCalledTimes(2)
+		// waitUntil: usage metering only (daily D1 mirror retired)
+		expect(waitUntil).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
 			userId: 'user-123',
@@ -747,8 +737,8 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 				waitUntil,
 			}),
 		).rejects.toThrow('network failed with waitUntil')
-		// waitUntil: entitlement D1 mirror (before fetch) + usage metering (error path)
-		expect(waitUntil).toHaveBeenCalledTimes(2)
+		// waitUntil: usage metering only (daily D1 mirror retired)
+		expect(waitUntil).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
 			entityId: 'api.example.com',

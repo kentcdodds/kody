@@ -138,6 +138,7 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 		ctx,
 	)
 	expect(present.report?.stableUserId).toBe(stableUserId)
+	expect(present.report?.daily.mirrorRetired).toBe(false)
 	expect(present.report?.deletion.mirrorLeaseParity).toBe(true)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({

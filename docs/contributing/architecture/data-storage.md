@@ -71,11 +71,13 @@ Deletion must cover these user-owned surfaces:
 
 - **D1:** every live table with `user_id` / `*_user_id` ownership columns, plus
   transitive children (`secret_entries`, `value_entries`, `email_attachments`)
-  and listing children for community-owned listings. The guardrail test in
-  `packages/worker/src/app/account-deletion.node.test.ts` applies the live
-  migrations to SQLite and fails if a user-owned schema column is not
-  represented in the deletion target list, or if the deletion target list
-  references a stale column.
+  and listing children for community-owned listings. Physical tables pending a
+  later drop migration are registered in `accountUserDataPendingDropTargets`
+  (schema coverage only; runtime deletion never queries them). The guardrail
+  test in `packages/worker/src/account/data-targets.node.test.ts` applies the
+  live migrations to SQLite and fails if a user-owned schema column lacks schema
+  coverage in the runtime target list or pending-drop registry, or if those
+  lists reference a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
   `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
@@ -114,22 +116,25 @@ Deletion must cover these user-owned surfaces:
 Account export is implemented in `packages/worker/src/account/export.ts`. It
 mirrors the deletion inventory so portability and account migration cover the
 same user-owned storage surfaces. The D1 table list and shared kind→SQL match
-builders live in `account-data-targets.ts` (`accountUserDataTargets`,
-`buildUserScopedTargetMatch`); export redaction columns also live there.
-Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
-declared in `account-user-owned-surfaces.ts` and consumed by both deletion and
-export. Growth-table retention dispositions are linked in
+builders live in `account/data-targets.ts` (`accountUserDataTargets`,
+`buildUserScopedTargetMatch`); export redaction columns and
+`accountUserDataPendingDropTargets` also live there. Out-of-band surfaces
+(Durable Objects, KV schemes, R2, Vectorize, Artifacts) are declared in
+`account-user-owned-surfaces.ts` and consumed by both deletion and export.
+Growth-table retention dispositions are linked in
 `account-retention-dispositions.ts`.
 `packages/worker/src/account/export.node.test.ts` applies the live migrations to
 SQLite and fails if a `user_id` / `*_user_id` column is not covered by the
-export list. The hard invariant is the same as every storage path: callers pass
-the authenticated user's stable MCP `userId`, and every query or Durable Object
-lookup is scoped to that id.
+export list or pending-drop registry. The hard invariant is the same as every
+storage path: callers pass the authenticated user's stable MCP `userId`, and
+every query or Durable Object lookup is scoped to that id.
 
 System email rows owned by `system:email` are intentionally absent from account
 exports for the same reason they are absent from deletion: they belong to the
 operator inbox surface, not to the exporting user. The export manifest lists
-this under `excludedD1Surfaces` so the omission is explicit.
+that omission under `excludedD1Surfaces` so it is explicit. The retired
+`entitlement_daily_counters` D1 mirror is absent from the final schema
+(migration `0126`) and therefore from export inventory and `excludedD1Surfaces`.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
@@ -388,8 +393,10 @@ layout is `index1 = userId`, `blob1 = event type`, `blob2 = delivery outcome`,
 `blob3 = source timestamp`, and `double1 = 1`. Admin queries return only
 platform-wide day/outcome counts and weight sampled rows by `_sample_interval`.
 When Analytics Engine SQL is unreachable, these two charts zero-fill while the
-rest of the page renders. Local development uses the existing D1 counters and
-delivery-event table because Wrangler's emulated dataset has no SQL API.
+rest of the page renders. Local development cannot query Wrangler's emulated
+Analytics Engine SQL API: email quota aggregates degrade to empty (with an
+explicit warning) rather than reading the retired D1 mirror, while
+delivery-outcome aggregates still read D1 `email_delivery_events`.
 
 **Mailbox expand-phase parity events** reuse the same `EMAIL_EVENTS` dataset
 with a separate row shape defined in
@@ -637,21 +644,18 @@ time-pruned. Deletion-fence legacy lease rows are bounded by the D1 snapshot
 replace on `markDeleting` rather than time retention; DO-authority rows clear on
 release/repair/purge.
 
-**Expand-phase D1 mirrors (daily counters only):** enforcement and point reads
-are authoritative in UserMeter for daily counters. D1
-`entitlement_daily_counters` is **not** dropped — it remains a best-effort
-mirror for existing readers and reporting. After each DO consume/refund/inbound
-claim, the entitlements service schedules a non-awaited absolute mirror write
-keyed by `(user_id, resource, day)` with a revision-ordered `updated_at` token
-(`r/` + zero-padded revision from `userMeterMirrorUpdatedAtToken`) so late
-writes cannot overwrite newer state. See
+**D1 daily mirror retired:** enforcement, point reads, bootstrap, mirror, and
+account export/deletion inventory paths never read or write
+`entitlement_daily_counters`. The three-deploy retirement is complete (Workers
+`#1133` / `#1134`, then migration `0126-drop-entitlement-daily-counters.sql`).
+The final live schema has no table or day index; `admin_user_meter_parity`
+reports `daily.mirrorRetired: true` (meter counts only). See
 [Entitlements](./entitlements.md#usermeter-expand-phase).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
-`needs_bootstrap`. The service performs one legacy D1 point read on
-`entitlement_daily_counters`, then `initialize()` seeds the DO row with
-`INSERT OR IGNORE` (concurrent callers cannot double-apply the baseline). Warm
-daily paths never read D1 for enforcement.
+`needs_bootstrap`. The service calls `initialize({ count: 0 })` with
+`INSERT OR IGNORE` (concurrent callers stay safe). Warm daily paths never read
+D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
 `deleteAll` clears counters, claims, storage-byte shadow, package-service
@@ -1668,10 +1672,12 @@ Current retention policies:
   After Mailbox cut-over, the same 365-day window and blob-before-row ordering
   are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
   system-email retention job.
-- `entitlement_daily_counters`: expand-phase **mirror** of UserMeter daily
-  counters (authoritative state lives in the per-user `UserMeter` DO). Rows keep
-  400 days by `day` key until mirror retirement is verified after
-  reporting-off-D1 merges; the table is not dropped in this phase.
+- `entitlement_daily_counters`: **retired** — dropped by migration
+  `0126-drop-entitlement-daily-counters.sql` after stages 1/2 stopped mirror
+  writes and detached runtime inventory. No scheduled retention disposition or
+  pending-drop coverage remains. Daily counter retention lives in the per-user
+  `UserMeter` DO (`userMeterDailyCounterRetentionDays`);
+  `admin_user_meter_parity` reports `daily.mirrorRetired: true`.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90

@@ -13,7 +13,7 @@ const dailyResourceSchema = z.enum(dailyEntitlementResources)
 
 const dailyResourceParitySchema = z.object({
 	resource: dailyResourceSchema,
-	d1Count: z.number().int().nonnegative(),
+	d1Count: z.number().int().nonnegative().nullable(),
 	meterCount: z.number().int().nonnegative().nullable(),
 	needsBootstrap: z.boolean(),
 	delta: z.number().int().nullable(),
@@ -76,6 +76,11 @@ const reportSchema = z.object({
 	stableUserId: stableUserIdSchema,
 	daily: z.object({
 		day: z.string(),
+		mirrorRetired: z
+			.boolean()
+			.describe(
+				'True when D1 entitlement_daily_counters is absent. Daily gate then reports meter counts only; d1Count/delta are null and parity stays true (no D1 comparison).',
+			),
 		resources: z.array(dailyResourceParitySchema),
 		mismatchCount: z.number().int().nonnegative(),
 	}),
@@ -98,7 +103,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_meter_parity',
 		description:
-			'Read-only production verification report comparing one user D1 entitlement mirrors against UserMeter for daily counters, storage bytes, package-service liveness, and deletion write leases. Never bootstraps or writes parity state (DO constructor schema maintenance and stale daily pruning may still run); returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
+			'Read-only production verification report for one user: UserMeter daily counters plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion write leases. While `entitlement_daily_counters` exists, daily rows compare D1 mirror counts (`mirrorRetired: false`); after the drop migration, daily rows report meter counts only (`mirrorRetired: true`). Never bootstraps or writes parity state (DO constructor schema maintenance and stale daily pruning may still run); returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
 		keywords: [
 			'admin',
 			'user meter',
@@ -111,6 +116,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 			'deletion',
 			'mirror',
 			'bootstrap',
+			'retired',
 		],
 		inputSchema,
 		outputSchema,

@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
@@ -576,13 +577,12 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 		limit: 10,
 	})
 	expect(messages).toEqual([])
-	const counterRow = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day'`,
-	)
-		.bind(userId)
-		.first<{ count: number }>()
-	expect(counterRow).toBeNull()
+	expect(
+		await userMeterRpc({ env, userId }).read({
+			resource: 'email_receives_per_day',
+			day: utcDayKey(),
+		}),
+	).toEqual({ outcome: 'needs_bootstrap' })
 	const events = await env.APP_DB.prepare(
 		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
 	)
@@ -1339,13 +1339,12 @@ test('pointer-only retry after midnight enforces the current quota day', async (
 		})
 		const receiveLimit = planLimits.free.maxEmailReceivesPerDay
 		if (receiveLimit == null) throw new Error('Expected finite receive limit.')
-		await env.APP_DB.prepare(
-			`INSERT INTO entitlement_daily_counters (
-				user_id, resource, day, count, updated_at
-			) VALUES (?, 'email_receives_per_day', '2026-07-23', ?, ?)`,
-		)
-			.bind(userId, receiveLimit, retryNow.toISOString())
-			.run()
+		await userMeterRpc({ env, userId }).initialize({
+			resource: 'email_receives_per_day',
+			day: '2026-07-23',
+			count: receiveLimit,
+			updatedAt: retryNow.toISOString(),
+		})
 
 		vi.setSystemTime(retryNow)
 		const retry = createForwardableEmailMessage({
