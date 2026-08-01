@@ -4,18 +4,37 @@ import {
 	type MailboxLiveMirrorEnv,
 	type MailboxLiveMirrorGraphSummary,
 } from './mailbox-live-mirror.ts'
-import { type MailboxMirrorResult } from './mailbox-mirror.ts'
+import {
+	mirrorMailboxDeliveryEventSnapshots,
+	type MailboxMirrorResult,
+} from './mailbox-mirror.ts'
 import {
 	listContentReplayPage,
-	listEventBackfillPage,
 	listMessageBackfillPage,
 	type MailboxParityContentCursor,
 	type MailboxParityUserState,
 } from './mailbox-parity-repo.ts'
+import { listMailboxDeliveryEventMirrorInputsForOwnerKeyset } from './mailbox-snapshot-repo.ts'
+import { mailboxUpsertDeliveryEventsMax } from './mailbox-types.ts'
 
 export const mailboxParityMessagePageSize = 10
+/**
+ * Events per backfill page / single `upsertDeliveryEvents` RPC.
+ * Must stay ≤ {@link mailboxUpsertDeliveryEventsMax}.
+ */
 export const mailboxParityEventPageSize = 25
 export const mailboxParityContentPageSize = 10
+
+/**
+ * Scheduled parity event-batch RPC timeout.
+ *
+ * Live dual-write keeps the 1s mirror bound so request paths stay snappy.
+ * Production soak evidence: per-event 1s RPCs repeatedly timed out on one
+ * owner and blocked convergence under the ~10s lane budget. One page-sized
+ * batch with a ~5s bound lets a tick make progress without exceeding the
+ * lane budget or the DO batch max.
+ */
+export const mailboxParityEventMirrorTimeoutMs = 5_000
 
 export type MailboxParityPhaseEnv = MailboxLiveMirrorEnv & {
 	APP_DB: D1Database
@@ -103,8 +122,8 @@ export function messageGraphAllowsCursorAdvance(
 
 /**
  * Event-phase cursor: mirrored/stale advance; missing advances (D1 row may have
- * been deleted concurrently after selection); skipped (incl. unconfigured),
- * timeout, and error must not advance.
+ * been deleted concurrently after selection, or the batch omitted an id);
+ * skipped (incl. unconfigured), timeout, and error must not advance.
  */
 export function eventMirrorAllowsCursorAdvance(
 	result: MailboxMirrorResult,
@@ -218,6 +237,14 @@ export async function backfillMessagesForUser(input: {
 	return { status: 'budget_exhausted', state, backfilled }
 }
 
+/**
+ * Keyset-page ready delivery-event snapshots and mirror each page with one
+ * `upsertDeliveryEvents` batch RPC ({@link mailboxParityEventMirrorTimeoutMs}).
+ *
+ * Cursor advances through per-event mirrored/stale/missing results in page
+ * order (including equal `createdAt` by id). Uniform timeout/error/skip keep
+ * the cursor so the next tick reloads the same page.
+ */
 export async function backfillEventsForUser(input: {
 	env: MailboxParityPhaseEnv
 	state: MailboxParityUserState
@@ -234,11 +261,18 @@ export async function backfillEventsForUser(input: {
 	}
 
 	while (Date.now() < input.deadlineMs) {
-		const page = await listEventBackfillPage({
+		if (await input.isDeleting()) {
+			return { status: 'deletion_started', state, backfilled }
+		}
+
+		const page = await listMailboxDeliveryEventMirrorInputsForOwnerKeyset({
 			db: input.env.APP_DB,
-			userId: state.userId,
+			ownerId: state.userId,
 			cursor: state.eventCursor,
-			limit: mailboxParityEventPageSize,
+			limit: Math.min(
+				mailboxParityEventPageSize,
+				mailboxUpsertDeliveryEventsMax,
+			),
 		})
 		if (page.length === 0) {
 			state = {
@@ -248,39 +282,41 @@ export async function backfillEventsForUser(input: {
 			return { status: 'complete', state, backfilled }
 		}
 
+		if (Date.now() >= input.deadlineMs) {
+			return { status: 'budget_exhausted', state, backfilled }
+		}
+		if (await input.isDeleting()) {
+			return { status: 'deletion_started', state, backfilled }
+		}
+
+		const results = await mirrorMailboxDeliveryEventSnapshots({
+			env: input.env,
+			ownerId: state.userId,
+			events: page,
+			timeoutMs: mailboxParityEventMirrorTimeoutMs,
+		})
+
+		if (await input.isDeleting()) {
+			return { status: 'deletion_started', state, backfilled }
+		}
+
 		let cursor = state.eventCursor
-		for (const row of page) {
-			if (Date.now() >= input.deadlineMs) {
-				state = { ...state, eventCursor: cursor }
-				return { status: 'budget_exhausted', state, backfilled }
-			}
-			if (await input.isDeleting()) {
-				state = { ...state, eventCursor: cursor }
-				return { status: 'deletion_started', state, backfilled }
-			}
-			const result = await mirrorMailboxParityDeliveryEventFromD1({
-				env: input.env,
-				db: input.env.APP_DB,
-				userId: state.userId,
-				eventId: row.id,
-			})
-			if (await input.isDeleting()) {
-				state = { ...state, eventCursor: cursor }
-				return { status: 'deletion_started', state, backfilled }
-			}
-			if (!eventMirrorAllowsCursorAdvance(result)) {
+		for (let index = 0; index < results.length; index += 1) {
+			const item = results[index]!
+			const event = page[index]!
+			if (!eventMirrorAllowsCursorAdvance(item.result)) {
 				state = { ...state, eventCursor: cursor }
 				return {
 					status: 'retryable_failure',
 					state,
 					backfilled,
 					blockedReason:
-						result.status === 'skipped'
-							? `event skipped:${result.reason}`
-							: `event ${result.status}`,
+						item.result.status === 'skipped'
+							? `event skipped:${item.result.reason}`
+							: `event ${item.result.status}`,
 				}
 			}
-			cursor = { createdAt: row.created_at, id: row.id }
+			cursor = { createdAt: event.createdAt, id: event.id }
 			backfilled += 1
 		}
 		state = { ...state, eventCursor: cursor }

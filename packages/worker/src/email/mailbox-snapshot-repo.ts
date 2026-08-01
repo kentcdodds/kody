@@ -173,3 +173,56 @@ export async function listMailboxDeliveryEventMirrorInputsForMessage(input: {
 		}),
 	)
 }
+
+/**
+ * Owner-scoped delivery-event creation keyset of ready Mailbox snapshots.
+ *
+ * Orders by `(created_at ASC, id ASC)` so equal timestamps progress by id.
+ * Uses each event's `created_at` as `sourceMutationAt` (immutable inserts).
+ * Rows deleted before this query simply do not appear — callers advance only
+ * over returned snapshots (or reload the same cursor after uniform failure).
+ */
+export async function listMailboxDeliveryEventMirrorInputsForOwnerKeyset(input: {
+	db: D1Database
+	ownerId: string
+	cursor: { createdAt: string; id: string } | null
+	limit: number
+}): Promise<Array<MailboxDeliveryEventInput>> {
+	const result =
+		input.cursor == null
+			? await input.db
+					.prepare(
+						`${deliveryEventMirrorSelect}
+						WHERE user_id = ?
+						ORDER BY created_at ASC, id ASC
+						LIMIT ?`,
+					)
+					.bind(input.ownerId, input.limit)
+					.all<DeliveryEventMirrorRow>()
+			: await input.db
+					.prepare(
+						`${deliveryEventMirrorSelect}
+						WHERE user_id = ?
+							AND (
+								created_at > ?
+								OR (created_at = ? AND id > ?)
+							)
+						ORDER BY created_at ASC, id ASC
+						LIMIT ?`,
+					)
+					.bind(
+						input.ownerId,
+						input.cursor.createdAt,
+						input.cursor.createdAt,
+						input.cursor.id,
+						input.limit,
+					)
+					.all<DeliveryEventMirrorRow>()
+	return (result.results ?? []).map((row) => {
+		const projection = mapDeliveryEventMirrorRow(row)
+		return toMailboxDeliveryEventInput({
+			projection,
+			sourceMutationAt: projection.createdAt,
+		})
+	})
+}

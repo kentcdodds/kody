@@ -605,3 +605,99 @@ test('mailbox mirror batch helper maps timeout and error to every event', async 
 		vi.useRealTimers()
 	}
 })
+
+test('mailbox mirror batch helper honors optional timeoutMs override', async () => {
+	vi.useFakeTimers()
+	consoleWarn.mockImplementation(() => {})
+	try {
+		const events = [baseDeliveryEventInput({ id: 'evt-slow' })]
+		let resolveRpc:
+			| ((value: {
+					results: Array<{
+						eventId: string
+						inserted: boolean
+						accepted: boolean
+					}>
+			  }) => void)
+			| undefined
+		const upsertDeliveryEvents = vi.fn(
+			() =>
+				new Promise<{
+					results: Array<{
+						eventId: string
+						inserted: boolean
+						accepted: boolean
+					}>
+				}>((resolve) => {
+					resolveRpc = resolve
+				}),
+		)
+		const { env, writeDataPoint } = fakeMailboxEnv({ upsertDeliveryEvents })
+
+		const defaultPending = mirrorMailboxDeliveryEventSnapshots({
+			env,
+			ownerId: 'user-aaa',
+			events,
+		})
+		const defaultExpectation = expect(defaultPending).resolves.toEqual([
+			{ eventId: 'evt-slow', result: { status: 'timeout' } },
+		])
+		await vi.advanceTimersByTimeAsync(mailboxMirrorRpcTimeoutMs)
+		await defaultExpectation
+		expect(writeDataPoint).toHaveBeenCalledTimes(1)
+		resolveRpc?.({
+			results: [{ eventId: 'evt-slow', inserted: true, accepted: true }],
+		})
+
+		const overrideMs = 5_000
+		let resolveOverride:
+			| ((value: {
+					results: Array<{
+						eventId: string
+						inserted: boolean
+						accepted: boolean
+					}>
+			  }) => void)
+			| undefined
+		const upsertOverride = vi.fn(
+			() =>
+				new Promise<{
+					results: Array<{
+						eventId: string
+						inserted: boolean
+						accepted: boolean
+					}>
+				}>((resolve) => {
+					resolveOverride = resolve
+				}),
+		)
+		const { env: overrideEnv, writeDataPoint: overrideWrite } = fakeMailboxEnv({
+			upsertDeliveryEvents: upsertOverride,
+		})
+		const overridePending = mirrorMailboxDeliveryEventSnapshots({
+			env: overrideEnv,
+			ownerId: 'user-aaa',
+			events,
+			timeoutMs: overrideMs,
+		})
+		await vi.advanceTimersByTimeAsync(mailboxMirrorRpcTimeoutMs)
+		resolveOverride?.({
+			results: [{ eventId: 'evt-slow', inserted: true, accepted: true }],
+		})
+		await expect(overridePending).resolves.toEqual([
+			{ eventId: 'evt-slow', result: { status: 'mirrored' } },
+		])
+		expect(overrideWrite).toHaveBeenCalledTimes(1)
+		expect(overrideWrite).toHaveBeenCalledWith(
+			expect.objectContaining({
+				blobs: [
+					'mailbox_mirror:upsert_delivery_event_batch',
+					'mirrored',
+					expect.any(String),
+				],
+			}),
+		)
+	} finally {
+		vi.useRealTimers()
+	}
+})
