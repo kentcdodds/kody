@@ -13,6 +13,7 @@ import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 
 type UserRow = {
@@ -504,12 +505,15 @@ function createAdminCapabilityTestDb(input: {
 	return { db, auditEvents, passwordResets, userRoles, users }
 }
 
+const userMeter = createInMemoryUserMeterEnv()
+
 function createAdminCapabilityContext(
 	db: D1Database,
 	blobs?: Pick<R2Bucket, 'get'>,
 ) {
 	return {
 		env: {
+			...userMeter.env,
 			APP_DB: db,
 			EMAIL_BLOBS: blobs ?? {
 				get: async () => null,

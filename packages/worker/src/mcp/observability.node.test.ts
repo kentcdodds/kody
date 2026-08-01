@@ -26,6 +26,10 @@ vi.mock('@sentry/cloudflare', () => ({
 		sentryMock.captureException(...args),
 	captureMessage: (...args: Array<unknown>) =>
 		sentryMock.captureMessage(...args),
+	instrumentDurableObjectWithSentry: (
+		_getOptions: unknown,
+		durableObjectClass: unknown,
+	) => durableObjectClass,
 }))
 
 const { logMcpEvent } = await import('./observability.ts')
