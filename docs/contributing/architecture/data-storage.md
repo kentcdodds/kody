@@ -131,10 +131,10 @@ every query or Durable Object lookup is scoped to that id.
 
 System email rows owned by `system:email` are intentionally absent from account
 exports for the same reason they are absent from deletion: they belong to the
-operator inbox surface, not to the exporting user. Pending-drop physical tables
-(such as quiescent `entitlement_daily_counters`) are also absent from export
-queries. The export manifest lists both under `excludedD1Surfaces` so the
-omission is explicit.
+operator inbox surface, not to the exporting user. The export manifest lists
+that omission under `excludedD1Surfaces` so it is explicit. The retired
+`entitlement_daily_counters` D1 mirror is absent from the final schema
+(migration `0126`) and therefore from export inventory and `excludedD1Surfaces`.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
@@ -644,12 +644,12 @@ time-pruned. Deletion-fence legacy lease rows are bounded by the D1 snapshot
 replace on `markDeleting` rather than time retention; DO-authority rows clear on
 release/repair/purge.
 
-**D1 daily mirror writes stopped:** enforcement, point reads, bootstrap, mirror,
-and account export/deletion inventory paths no longer read or write
-`entitlement_daily_counters`. The admin parity report
-(`admin_user_meter_parity`) temporarily reads the table while it exists for
-migration verification. The physical table stays registered as a pending-drop
-coverage exemption until a later migration-only deploy drops it. See
+**D1 daily mirror retired:** enforcement, point reads, bootstrap, mirror, and
+account export/deletion inventory paths never read or write
+`entitlement_daily_counters`. The three-deploy retirement is complete (Workers
+#1133 / #1134, then migration `0126-drop-entitlement-daily-counters.sql`). The
+final live schema has no table or day index; `admin_user_meter_parity` reports
+`daily.mirrorRetired: true` (meter counts only). See
 [Entitlements](./entitlements.md#usermeter-expand-phase).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -1672,14 +1672,12 @@ Current retention policies:
   After Mailbox cut-over, the same 365-day window and blob-before-row ordering
   are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
   system-email retention job.
-- `entitlement_daily_counters`: **quiescent pending drop** — mirror writes,
-  bootstrap reads, scheduled retention pruning, and account export/deletion
-  inventory stopped across the stage 1/2 code deploys. The admin parity report
-  (`admin_user_meter_parity`) temporarily reads the table while it exists.
-  Runtime account inventory no longer queries the table; it remains registered
-  in `accountUserDataPendingDropTargets` for schema coverage until the later
-  drop migration. Daily counter retention lives in the per-user `UserMeter` DO
-  (`userMeterDailyCounterRetentionDays`).
+- `entitlement_daily_counters`: **retired** — dropped by migration
+  `0126-drop-entitlement-daily-counters.sql` after stages 1/2 stopped mirror
+  writes and detached runtime inventory. No scheduled retention disposition or
+  pending-drop coverage remains. Daily counter retention lives in the per-user
+  `UserMeter` DO (`userMeterDailyCounterRetentionDays`);
+  `admin_user_meter_parity` reports `daily.mirrorRetired: true`.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90

@@ -214,26 +214,23 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	).toBe(true)
 })
 
-test('pending-drop entitlement_daily_counters stays out of runtime deletion/export SQL while schema coverage holds', () => {
-	const pendingDrop = accountUserDataPendingDropTargets.find(
-		(target) => target.table === 'entitlement_daily_counters',
-	)
-	expect(pendingDrop).toEqual(
-		expect.objectContaining({
-			table: 'entitlement_daily_counters',
-			column: 'user_id',
-			surface: 'entitlement_daily_counters',
-			reason: expect.stringContaining('pending a later drop migration'),
-		}),
-	)
-	expect(pendingDrop?.reason).toContain('No raw rows exported')
-
+test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {
+	expect(
+		accountUserDataPendingDropTargets.some(
+			(target) => target.table === 'entitlement_daily_counters',
+		),
+	).toBe(false)
 	expect(
 		accountUserDataTargets.some(
 			(target) =>
 				'table' in target && target.table === 'entitlement_daily_counters',
 		),
 	).toBe(false)
+	expect(getAccountExportExcludedD1Surfaces()).not.toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ name: 'entitlement_daily_counters' }),
+		]),
+	)
 
 	const deletionStatements = accountUserDataTargets.map((target) => {
 		const match = matchFor(target)
@@ -251,15 +248,6 @@ test('pending-drop entitlement_daily_counters stays out of runtime deletion/expo
 		})
 	expect(exportStatements.join('\n')).not.toMatch(/entitlement_daily_counters/u)
 
-	expect(getAccountExportExcludedD1Surfaces()).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				name: 'entitlement_daily_counters',
-				reason: expect.stringContaining('No raw rows exported'),
-			}),
-		]),
-	)
-
 	const db = new DatabaseSync(':memory:')
 	applyMigrations(db)
 	const tableExists = db
@@ -269,7 +257,7 @@ test('pending-drop entitlement_daily_counters stays out of runtime deletion/expo
 			WHERE type = 'table' AND name = 'entitlement_daily_counters'`,
 		)
 		.get() as { present: number } | undefined
-	expect(tableExists?.present).toBe(1)
+	expect(tableExists).toBeUndefined()
 
 	const liveUserColumns = new Set<string>()
 	const tables = db
@@ -291,7 +279,8 @@ test('pending-drop entitlement_daily_counters stays out of runtime deletion/expo
 		}
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()
-	expect(coveredColumns.has('entitlement_daily_counters.user_id')).toBe(true)
+	expect(coveredColumns.has('entitlement_daily_counters.user_id')).toBe(false)
+	expect(liveUserColumns.has('entitlement_daily_counters.user_id')).toBe(false)
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
 	)

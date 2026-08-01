@@ -79,7 +79,8 @@ export const accountUserDataExcludedOwnerIds = [
  * `user_id` / `*_user_id` columns as covered so the live table does not look
  * like a missing inventory target; runtime deletion and export never query
  * them. Export documents each omission under `excludedD1Surfaces` (no raw
- * rows).
+ * rows). Empty after `entitlement_daily_counters` was dropped by migration
+ * `0126`.
  */
 export type AccountUserDataPendingDropTarget = {
 	table: string
@@ -89,15 +90,7 @@ export type AccountUserDataPendingDropTarget = {
 }
 
 export const accountUserDataPendingDropTargets: ReadonlyArray<AccountUserDataPendingDropTarget> =
-	[
-		{
-			table: 'entitlement_daily_counters',
-			column: 'user_id',
-			surface: 'entitlement_daily_counters',
-			reason:
-				'Quiescent daily-counter D1 mirror pending a later drop migration after mirror-stop Worker #1133. Authoritative daily counters live in UserMeter; account export and deletion must not query this table before the drop. No raw rows exported.',
-		},
-	]
+	[]
 
 /** Targets that account export should skip (deletion still covers them). */
 export function isExcludedFromAccountExport(

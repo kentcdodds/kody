@@ -45,13 +45,12 @@ test('retention dispositions stay aligned with scheduled policies and documented
 	).toBe(true)
 	expect(
 		nonScheduled.some(
-			(disposition) =>
-				disposition.table === 'entitlement_daily_counters' &&
-				disposition.kind === 'alternate_cleanup' &&
-				disposition.reason.includes('pending a later drop migration') &&
-				disposition.reason.includes('no scheduled retention'),
+			(disposition) => disposition.table === 'entitlement_daily_counters',
 		),
-	).toBe(true)
+	).toBe(false)
+	expect(getRetentionPolicyCoverage().has('entitlement_daily_counters')).toBe(
+		false,
+	)
 	expect(
 		nonScheduled.some(
 			(disposition) =>

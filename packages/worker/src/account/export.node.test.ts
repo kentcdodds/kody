@@ -156,10 +156,11 @@ test('account export documents and excludes operator-owned system email rows', a
 				name: 'system_email_inboxes',
 				reason: expect.stringContaining('Operator-owned inbound mail'),
 			}),
-			expect.objectContaining({
-				name: 'entitlement_daily_counters',
-				reason: expect.stringContaining('pending a later drop migration'),
-			}),
+		]),
+	)
+	expect(accountExport.manifest.excludedD1Surfaces).not.toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ name: 'entitlement_daily_counters' }),
 		]),
 	)
 	expect(accountExport.d1).not.toHaveProperty('entitlement_daily_counters')

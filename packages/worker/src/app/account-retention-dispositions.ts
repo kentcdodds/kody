@@ -33,12 +33,6 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 				'Ad-hoc jobs are cleaned by the hourly job_retention sweeper using account/platform retention windows; package-owned and preserved jobs are durable until explicit delete, package sync, or account deletion.',
 		},
 		{
-			table: 'entitlement_daily_counters',
-			kind: 'alternate_cleanup',
-			reason:
-				'The quiescent daily-counter mirror is pending a later drop migration; no scheduled retention reads or writes. Rows age in place until the drop migration.',
-		},
-		{
 			table: 'mcp_memories',
 			kind: 'durable_forever',
 			reason:
