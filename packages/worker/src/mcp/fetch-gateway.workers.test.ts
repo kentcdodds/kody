@@ -10,6 +10,7 @@ import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -57,20 +58,17 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	}
 	const globalFetch = (async () =>
 		new Response('ok')) as unknown as typeof fetch
-	const waitUntilTasks: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		waitUntilTasks.push(promise)
-	}
+	const drain = createWaitUntilDrain()
 
 	const allowed = await executeGatewayFetch({
 		env,
 		props,
 		request: new Request('https://api.example.net/data'),
 		globalFetch,
-		waitUntil,
+		waitUntil: drain.waitUntil,
 	})
 	expect(await allowed.text()).toBe('ok')
-	await Promise.all(waitUntilTasks)
+	await drain.drain()
 	expect(
 		await userMeterRpc({ env, userId }).read({
 			resource: 'outbound_fetches_per_day',
@@ -88,7 +86,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 		props,
 		request: new Request('https://api.example.net/data'),
 		globalFetch,
-		waitUntil,
+		waitUntil: drain.waitUntil,
 	}).catch((error: unknown) => error)
 	expect(isEntitlementLimitError(denied)).toBe(true)
 
@@ -101,7 +99,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 		props: { ...props, email: null },
 		request: new Request('https://api.example.net/data'),
 		globalFetch,
-		waitUntil,
+		waitUntil: drain.waitUntil,
 	}).catch((error: unknown) => error)
 	expect(isEntitlementLimitError(deniedWithoutEmail)).toBe(true)
 
@@ -112,7 +110,8 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 		props: { ...props, userId: null, email: null },
 		request: new Request('https://api.example.net/data'),
 		globalFetch,
-		waitUntil,
+		waitUntil: drain.waitUntil,
 	})
 	expect(await contextless.text()).toBe('ok')
+	await drain.drain()
 }, 30_000)

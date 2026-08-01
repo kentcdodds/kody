@@ -864,8 +864,17 @@ async function readUserDailyReceiveCount(userId: string) {
 }
 
 async function readUserTotalReceiveCount(userId: string) {
-	const exported = await userMeterRpc({ env, userId }).exportCounters({})
-	return exported.counters
+	const meter = userMeterRpc({ env, userId })
+	const counters: Array<{ resource: string; count: number }> = []
+	let startAfter: string | null = null
+	for (;;) {
+		const page = await meter.exportCounters({ startAfter })
+		counters.push(...page.counters)
+		if (!page.truncated) break
+		if (!page.nextStartAfter) break
+		startAfter = page.nextStartAfter
+	}
+	return counters
 		.filter((row) => row.resource === 'email_receives_per_day')
 		.reduce((total, row) => total + row.count, 0)
 }

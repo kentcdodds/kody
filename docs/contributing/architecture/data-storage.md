@@ -195,7 +195,7 @@ Durable Object export behavior:
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
   Retention is self-enforced inside the DO (seven UTC days of counter and
   inbound-delivery-claim rows); see
-  [Entitlements](./entitlements.md#user-meter-expand-phase).
+  [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -515,7 +515,7 @@ consume/refund/inbound claim, the entitlements service schedules a non-awaited
 absolute mirror write keyed by `(user_id, resource, day)` with a
 revision-ordered `updated_at` token (`r/` + zero-padded revision from
 `userMeterMirrorUpdatedAtToken`) so late writes cannot overwrite newer state.
-See [Entitlements](./entitlements.md#user-meter-expand-phase).
+See [Entitlements](./entitlements.md#usermeter-expand-phase).
 
 **Cold bootstrap:** a missing `(resource, day)` row returns `needs_bootstrap`.
 The service performs one legacy D1 point read on `entitlement_daily_counters`,
@@ -561,7 +561,7 @@ via `durableObjectNameFromParts`); domain helpers such as
   the DO identity is the user. See [Run records](./run-records.md).
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`).
-  See [Entitlements](./entitlements.md#user-meter-expand-phase).
+  See [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
   `idFromName(userId.trim())`.
 - `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →
@@ -628,7 +628,7 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `RUN_LOG` (Durable Objects; per-user run records — see
   [Run records](./run-records.md))
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
-  [Entitlements](./entitlements.md#user-meter-expand-phase))
+  [Entitlements](./entitlements.md#usermeter-expand-phase))
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)

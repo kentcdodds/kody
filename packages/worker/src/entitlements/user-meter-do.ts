@@ -553,8 +553,10 @@ class UserMeterBase extends DurableObject<Env> {
 	}
 
 	async purge(): Promise<{ ok: true }> {
-		await this.ctx.storage.deleteAll()
-		this.initializeSchema()
+		await this.ctx.blockConcurrencyWhile(async () => {
+			await this.ctx.storage.deleteAll()
+			this.initializeSchema()
+		})
 		return { ok: true }
 	}
 

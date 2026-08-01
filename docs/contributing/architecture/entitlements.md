@@ -109,7 +109,7 @@ two compute surfaces `usage-metering.md` already observes:
 Both consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped. Daily consumption is
 authoritative in the per-user `UserMeter` Durable Object; see
-[UserMeter (expand phase)](#user-meter-expand-phase).
+[UserMeter (expand phase)](#usermeter-expand-phase).
 
 ## UserMeter (expand phase)
 

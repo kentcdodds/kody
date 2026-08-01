@@ -298,10 +298,21 @@ function createEnv(input?: {
 	} as Env
 }
 
+function useFrozenUtcTime(iso: string) {
+	vi.useFakeTimers({ toFake: ['Date'] })
+	vi.setSystemTime(new Date(iso))
+	return {
+		[Symbol.dispose]() {
+			vi.useRealTimers()
+		},
+	}
+}
+
 test('email API lists messages with pagination, usage, and selected detail', async () => {
 	mockModule.prepare.mockClear()
 	mockModule.getEmailMessageById.mockClear()
 	mockModule.listEmailDeliveryEvents.mockClear()
+	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey()
 	const userId = 'stable-user-1'
 	const bootstrapMeter = createInMemoryUserMeterEnv()
@@ -452,6 +463,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 })
 
 test('email API usage prefers initialized UserMeter daily counts over D1', async () => {
+	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey()
 	const userId = 'stable-user-1'
 	const meter = createInMemoryUserMeterEnv()

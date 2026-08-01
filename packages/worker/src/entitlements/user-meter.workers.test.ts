@@ -11,10 +11,7 @@ import { planLimits } from './plans.ts'
 import { consumeDailyEntitlement, refundDailyEntitlement } from './service.ts'
 import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { userMeterRpc } from './user-meter-client.ts'
-import {
-	type UserMeter,
-	userMeterMirrorUpdatedAtToken,
-} from './user-meter-do.ts'
+import { UserMeter, userMeterMirrorUpdatedAtToken } from './user-meter-do.ts'
 import {
 	createWaitUntilDrain,
 	withPatchedDbPrepare,
@@ -539,7 +536,20 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		]),
 	)
 
-	await meterA.purge()
+	const [purgeResult, readDuringPurge, exportDuringPurge] = await Promise.all([
+		meterA.purge(),
+		meterA.read({ resource: 'email_sends_per_day', day }).then(
+			(value) => value,
+			(error: unknown) => error,
+		),
+		meterA.exportCounters({}).then(
+			(value) => value,
+			(error: unknown) => error,
+		),
+	])
+	expect(purgeResult).toEqual({ ok: true })
+	expect(readDuringPurge).not.toBeInstanceOf(Error)
+	expect(exportDuringPurge).not.toBeInstanceOf(Error)
 	expect(await meterA.read({ resource: 'email_sends_per_day', day })).toEqual({
 		outcome: 'needs_bootstrap',
 	})
@@ -615,5 +625,68 @@ test('UserMeter consume rejects invalid UTC day keys before SQL', async () => {
 				updatedAt: '2026-07-31T15:00:00.000Z',
 			}),
 		).rejects.toThrow(/UTC YYYY-MM-DD/)
+	})
+}, 30_000)
+
+test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore', async () => {
+	const now = new Date('2026-07-31T15:00:00.000Z')
+	const day = utcDayKey(now)
+	const user = await seedFreeUser('meter-purge-concurrency')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	await meter.initialize({
+		resource: 'email_sends_per_day',
+		day,
+		count: 4,
+		updatedAt: now.toISOString(),
+	})
+
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+	)
+	let releaseDelete: (() => void) | undefined
+	const deletePaused = new Promise<void>((resolve) => {
+		releaseDelete = resolve
+	})
+	let deleteAllReached = false
+	await runInDurableObject(stub, async (instance: UserMeter, state) => {
+		expect(instance).toBeInstanceOf(UserMeter)
+		const originalDeleteAll = state.storage.deleteAll.bind(state.storage)
+		state.storage.deleteAll = async () => {
+			await originalDeleteAll()
+			deleteAllReached = true
+			await deletePaused
+		}
+	})
+
+	const purgePromise = meter.purge()
+	await waitFor(() => deleteAllReached, 5_000, 'purge deleteAll')
+
+	const readPromise = meter.read({ resource: 'email_sends_per_day', day }).then(
+		(value) => value,
+		(error: unknown) => error,
+	)
+	const exportPromise = meter.exportCounters({}).then(
+		(value) => value,
+		(error: unknown) => error,
+	)
+	// Give queued RPCs a chance to enter the wiped-schema window if
+	// blockConcurrencyWhile is missing around deleteAll+initializeSchema.
+	await new Promise((resolve) => setTimeout(resolve, 25))
+	releaseDelete!()
+
+	const [purgeResult, readDuringPurge, exportDuringPurge] = await Promise.all([
+		purgePromise,
+		readPromise,
+		exportPromise,
+	])
+	expect(purgeResult).toEqual({ ok: true })
+	expect(readDuringPurge).toEqual({ outcome: 'needs_bootstrap' })
+	expect(exportDuringPurge).toEqual({
+		counters: [],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await meter.read({ resource: 'email_sends_per_day', day })).toEqual({
+		outcome: 'needs_bootstrap',
 	})
 }, 30_000)

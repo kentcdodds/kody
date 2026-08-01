@@ -215,6 +215,7 @@ function withFailingReceiveStartedInsert(input: {
 			const isDeliveryInsert =
 				query.includes('INSERT OR IGNORE INTO email_delivery_events') &&
 				query.includes("'receive_started'")
+			if (!isDeliveryInsert) return statement
 			const originalBind = statement.bind.bind(statement)
 			return {
 				bind(...params: Array<unknown>) {
@@ -224,11 +225,7 @@ function withFailingReceiveStartedInsert(input: {
 						all: bound.all.bind(bound),
 						raw: bound.raw?.bind(bound),
 						run: async () => {
-							if (
-								isDeliveryInsert &&
-								failNext &&
-								params[0] === input.deliveryId
-							) {
+							if (failNext && params[0] === input.deliveryId) {
 								failNext = false
 								throw new Error(input.message)
 							}

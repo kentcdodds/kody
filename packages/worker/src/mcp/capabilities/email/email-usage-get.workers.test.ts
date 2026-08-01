@@ -27,6 +27,7 @@ async function seedDailyCounter(input: {
 	userId: string
 	resource: 'email_sends_per_day' | 'email_receives_per_day'
 	count: number
+	day: string
 }) {
 	await env.APP_DB.prepare(
 		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
@@ -35,7 +36,7 @@ async function seedDailyCounter(input: {
 		.bind(
 			input.userId,
 			input.resource,
-			utcDayKey(),
+			input.day,
 			input.count,
 			new Date().toISOString(),
 		)
@@ -68,6 +69,7 @@ test(
 	{ timeout: 30_000 },
 	async () => {
 		await ensureEmailTestSchema(env.APP_DB)
+		const day = utcDayKey()
 		await expect(
 			emailUsageGetCapability.handler(
 				{},
@@ -102,11 +104,13 @@ test(
 			userId: planUserId,
 			resource: 'email_sends_per_day',
 			count: 3,
+			day,
 		})
 		await seedDailyCounter({
 			userId: planUserId,
 			resource: 'email_receives_per_day',
 			count: 5,
+			day,
 		})
 		await seedStoredMessages(planUserId, 2)
 
@@ -122,7 +126,7 @@ test(
 		)
 		expect(planResult).toEqual({
 			plan: 'pro',
-			day: utcDayKey(),
+			day,
 			stored_messages: {
 				count: 2,
 				limit: planLimits.pro.maxStoredEmailMessages,
@@ -134,7 +138,6 @@ test(
 			},
 			max_message_bytes: planLimits.pro.maxEmailMessageBytes,
 		})
-		const day = utcDayKey()
 		const planMeter = userMeterRpc({ env, userId: planUserId })
 		expect(
 			await planMeter.read({ resource: 'email_sends_per_day', day }),
@@ -158,7 +161,7 @@ test(
 		)
 		expect(maxResult).toEqual({
 			plan: 'max',
-			day: utcDayKey(),
+			day,
 			stored_messages: {
 				count: 0,
 				limit: maxPlanEmailLimits.stored_email_messages,
@@ -181,11 +184,13 @@ test(
 			userId: meterUserId,
 			resource: 'email_sends_per_day',
 			count: 3,
+			day,
 		})
 		await seedDailyCounter({
 			userId: meterUserId,
 			resource: 'email_receives_per_day',
 			count: 5,
+			day,
 		})
 		await seedStoredMessages(meterUserId, 2)
 		const updatedAt = new Date().toISOString()
