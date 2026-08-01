@@ -153,11 +153,12 @@ then initializes that key at zero via `UserMeter.initialize()`
 only the DO RPC and never touches D1 daily counter state.
 
 **D1 daily mirror writes stopped:** consume, refund, inbound charge/read,
-point-read surfaces, account export/deletion inventory, and retention no longer
-read or write `entitlement_daily_counters`. The physical table stays in
-production until a follow-up migration-only deploy drops it (migrations apply
-before Workers); existing rows are quiescent historical mirror state. Analytics
-Engine remains the production reporting path for email send/receive aggregates.
+point-read surfaces, account export, and retention no longer read or write
+`entitlement_daily_counters`. Account deletion keeps removing rows while the
+physical table exists. A follow-up code deploy removes that target before the
+later migration-only drop (migrations apply before Workers); existing rows are
+otherwise quiescent historical mirror state. Analytics Engine remains the
+production reporting path for email send/receive aggregates.
 
 **Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
 the same cold zero-init path):
@@ -358,15 +359,16 @@ same-token rollout mirrors; email keeps its D1 lease path. Package-service and
 storage authority flips remain separate high-risk contract follow-ups after
 soak/parity review.
 
-**Daily-counter mirror retirement (two-deploy):** this code deploy stops all D1
-mirror/bootstrap/inventory/retention use while leaving the physical
-`entitlement_daily_counters` table in place. A follow-up migration-only PR drops
-the table after this deploy is healthy. Production `admin_user_meter_parity`
-scans across 38 users showed zero daily mismatches with Analytics Engine
-reporting active — the deploy rationale for stopping mirror writes before the
-drop. While the table exists, parity still compares `d1Count === meterCount`
-(`mirrorRetired: false`); after the drop migration, `mirrorRetired: true`
-reports meter counts only.
+**Daily-counter mirror retirement (three-deploy):** this code deploy stops all
+D1 mirror/bootstrap/retention use while leaving the physical
+`entitlement_daily_counters` table and account-deletion target in place. A
+follow-up code deploy removes that target after this Worker is healthy; the
+third, migration-only deploy drops the table. Production
+`admin_user_meter_parity` scans across 38 users showed zero daily mismatches
+with Analytics Engine reporting active — the deploy rationale for stopping
+mirror writes before the drop. While the table exists, parity still compares
+`d1Count === meterCount` (`mirrorRetired: false`); after the drop migration,
+`mirrorRetired: true` reports meter counts only.
 
 ### Admin UserMeter parity gates (`admin_user_meter_parity`)
 
@@ -788,7 +790,8 @@ in [`../environment-variables.md`](../environment-variables.md).
   it is Stripe-derived; `max` is manual-only.
 - `entitlement_daily_counters` — **quiescent pending drop**. Created by
   migration `0048-user-plans-and-entitlement-counters.sql`; mirror writes,
-  bootstrap reads, account-deletion inventory, and retention pruning all stopped
-  in the code deploy. Daily counters are authoritative in the per-user
-  `UserMeter` DO; account export/deletion use `UserMeter` RPCs. A follow-up
-  migration-only PR drops the physical table after this deploy is healthy.
+  bootstrap reads, and retention pruning stop in the code deploy. Account
+  deletion keeps removing user rows while the table exists. Daily counters are
+  authoritative in the per-user `UserMeter` DO; account export uses UserMeter
+  RPCs. A follow-up code deploy removes the deletion target before a later
+  migration-only PR drops the table.

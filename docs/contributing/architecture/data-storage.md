@@ -1662,9 +1662,10 @@ Current retention policies:
   are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
   system-email retention job.
 - `entitlement_daily_counters`: **quiescent pending drop** — mirror writes,
-  bootstrap reads, account-deletion inventory, and retention pruning all stopped
-  in the code deploy; existing rows age in place until a follow-up migration
-  drops the table. Daily counter retention lives in the per-user `UserMeter` DO
+  bootstrap reads, and scheduled retention pruning stop in the code deploy.
+  Account deletion keeps removing rows while the physical table exists; a
+  follow-up code deploy removes that inventory target before the later drop
+  migration. Daily counter retention lives in the per-user `UserMeter` DO
   (`userMeterDailyCounterRetentionDays`).
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
