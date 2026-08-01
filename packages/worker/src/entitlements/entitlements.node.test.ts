@@ -1278,16 +1278,24 @@ test('free plan limits are stricter than pro for every resource', () => {
 	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(1)
 })
 
-test('max plan stays above pro with finite ordinary limits and email caps', () => {
+test('max plan stays above pro for ordinary limits and wires finite email caps', () => {
+	const emailResources = new Set<string>([
+		'email_sends_per_day',
+		'email_receives_per_day',
+		'stored_email_messages',
+		'email_message_bytes',
+	])
 	for (const resource of entitlementResources) {
+		expect(Number.isFinite(resolvePlanLimit('max', resource))).toBe(true)
+		if (emailResources.has(resource)) continue
 		expect(
 			resolvePlanLimit('max', resource),
 			`max ${resource} should be at or above pro`,
 		).toBeGreaterThanOrEqual(resolvePlanLimit('pro', resource))
-		expect(Number.isFinite(resolvePlanLimit('max', resource))).toBe(true)
 	}
 	expect(planLimits.max.packageServicePersistentAllowed).toBe(1)
 	expect(resolvePlanLimit('max', 'persistent_package_services')).toBe(1)
+	// Max email caps are intentionally lower than pro and live in one table.
 	expect(planLimits.max.maxEmailSendsPerDay).toBe(
 		maxPlanEmailLimits.email_sends_per_day,
 	)
