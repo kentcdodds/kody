@@ -1,4 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -795,6 +800,340 @@ test('package service restore projects current state into package_service_states
 				'2026-07-05T14:00:00.000Z',
 			],
 		])
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+function createRecordingPackageServiceDb() {
+	const upserts: Array<Array<unknown>> = []
+	const deletes: Array<Array<unknown>> = []
+	const appDb = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async run() {
+							if (query.includes('INSERT INTO package_service_states')) {
+								upserts.push(params)
+							}
+							if (query.includes('DELETE FROM package_service_states')) {
+								deletes.push(params)
+							}
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	return { appDb, upserts, deletes }
+}
+
+function createNoopPackageServiceDb() {
+	return {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+}
+
+function packageServiceShadowRow(
+	meter: ReturnType<typeof createInMemoryUserMeterEnv>,
+	userId: string,
+	packageId: string,
+	serviceName: string,
+) {
+	return meter.packageServicesByUser
+		.get(userId)
+		?.get(`${packageId}\0${serviceName}`)
+}
+
+async function postPackageService(
+	instance: InstanceType<typeof PackageServiceInstance>,
+	action: 'start' | 'stop' | 'purge',
+	binding: typeof serviceBinding = serviceBinding,
+) {
+	return instance.fetch(
+		new Request(`https://package-service.invalid/service/${action}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ binding }),
+		}),
+	)
+}
+
+test('package service start/heartbeat/stop/purge shadow UserMeter transitions', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb, upserts, deletes } = createRecordingPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			startedAt: '2026-07-05T12:00:00.000Z',
+			sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+			revision: 1,
+		})
+		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T13:00:00.000Z'))
+
+		vi.setSystemTime(new Date('2026-07-05T13:00:00.000Z'))
+		await created.instance.alarm()
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			sourceUpdatedAt: '2026-07-05T13:00:00.000Z',
+			revision: 2,
+		})
+		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T14:00:00.000Z'))
+
+		await postPackageService(created.instance, 'stop')
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			sourceUpdatedAt: '2026-07-05T13:00:00.000Z',
+			revision: 3,
+		})
+
+		await postPackageService(created.instance, 'purge')
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toBeUndefined()
+		expect(deletes).toContainEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+		])
+		expect(upserts.length).toBeGreaterThanOrEqual(3)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service UserMeter shadow failure cannot break D1 projection or lifecycle', async () => {
+	resetMocks()
+	silenceExpectedConsoleWarns(['package-service-user-meter-shadow-failed'])
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb, upserts } = createRecordingPackageServiceDb()
+	const failingMeter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState() {
+					throw new Error('shadow write failed')
+				},
+				async deletePackageServiceState() {
+					throw new Error('shadow delete failed')
+				},
+			}),
+		},
+	}
+
+	try {
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+			vi.setSystemTime(new Date('2026-07-05T12:00:05.000Z'))
+			return { result: { ok: true }, error: null }
+		})
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: failingMeter.USER_METER,
+		} as Env)
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		expect(upserts[0]).toEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+			'running',
+			'2026-07-05T12:00:00.000Z',
+			'2026-07-05T12:00:00.000Z',
+		])
+		await flushWaitUntilTasks(created.waitUntilTasks)
+		expect(upserts.at(-1)).toEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+			'stopped',
+			null,
+			'2026-07-05T12:00:05.000Z',
+		])
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'package-service-user-meter-shadow-failed',
+			expect.any(Error),
+		)
+
+		const purge = await postPackageService(created.instance, 'purge')
+		expect(purge.status).toBe(200)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service UserMeter shadows are isolated per owning user', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const appDb = createNoopPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+	const otherBinding = {
+		...serviceBinding,
+		userId: 'user-other',
+		packageId: 'package-2',
+		kodyId: '@scope/package-2',
+	}
+
+	try {
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		mockModule.getSavedPackageById.mockImplementation(
+			async (_db: unknown, input: { packageId: string }) =>
+				input.packageId === 'package-2'
+					? {
+							id: 'package-2',
+							sourceId: 'source-1',
+							kodyId: '@scope/package-2',
+						}
+					: savedPackage,
+		)
+		mockModule.loadPackageSourceBySourceId.mockImplementation(async () =>
+			createPackageSource('bounded'),
+		)
+
+		const first = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		const second = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+
+		await postPackageService(first.instance, 'start')
+		await postPackageService(second.instance, 'start', otherBinding)
+
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({ status: 'running' })
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-other',
+				'package-2',
+				'realtime-supervisor',
+			),
+		).toMatchObject({ status: 'running' })
+		expect(meter.packageServicesByUser.get('user-123')?.size).toBe(1)
+		expect(meter.packageServicesByUser.get('user-other')?.size).toBe(1)
+		expect(
+			meter.packageServicesByUser
+				.get('user-123')
+				?.has('package-2\0realtime-supervisor'),
+		).toBe(false)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service restore shadows current D1 projection into UserMeter', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T14:00:00.000Z'))
+	const appDb = createNoopPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	try {
+		const restored = createPackageServiceState()
+		restored.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: false,
+			mode: 'bounded',
+			timeoutMs: 30_000,
+			stopRequested: false,
+			currentRunId: null,
+			nextAlarmAt: null,
+			nextAlarmSource: null,
+			lastStartedAt: '2026-07-05T13:00:00.000Z',
+			lastStoppedAt: '2026-07-05T13:05:00.000Z',
+			status: 'error',
+			lastError: 'boom',
+			lastResult: null,
+			lastRunFinishedAt: '2026-07-05T13:05:00.000Z',
+			consecutiveFailureCount: 1,
+		})
+		new PackageServiceInstance(restored.state, {
+			APP_DB: appDb,
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		await waitForRestoreState(restored.state)
+
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'error',
+			startedAt: null,
+			sourceUpdatedAt: '2026-07-05T14:00:00.000Z',
+			revision: 1,
+		})
 	} finally {
 		vi.useRealTimers()
 	}

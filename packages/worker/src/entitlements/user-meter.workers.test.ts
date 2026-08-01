@@ -561,6 +561,7 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	expect(await meterA.exportCounters({})).toEqual({
 		counters: [],
 		storageBytesShadow: null,
+		packageServiceStatesShadow: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -690,6 +691,7 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	expect(exportDuringPurge).toEqual({
 		counters: [],
 		storageBytesShadow: null,
+		packageServiceStatesShadow: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -963,6 +965,7 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 		updatedAt: '2026-07-31T17:02:00.000Z',
 		mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
 	})
+	expect(firstPage.packageServiceStatesShadow).toEqual([])
 
 	const secondPage = await meter.exportCounters({
 		pageSize: 2,
@@ -972,6 +975,7 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(secondPage.truncated).toBe(false)
 	expect(secondPage.nextStartAfter).toBeNull()
 	expect(secondPage.storageBytesShadow).toBeNull()
+	expect(secondPage.packageServiceStatesShadow).toBeNull()
 
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
@@ -984,6 +988,7 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(await meter.exportCounters({})).toEqual({
 		counters: [],
 		storageBytesShadow: null,
+		packageServiceStatesShadow: [],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1022,5 +1027,191 @@ test('missing-user storage reserve preserves EntitlementLimitError semantics on 
 			limit: freeLimit,
 			current: 0,
 		},
+	})
+}, 30_000)
+
+test('UserMeter package-service shadow upserts are monotonic, isolated, exportable, and purgeable', async () => {
+	const userA = await seedFreeUser('meter-pkg-svc-a')
+	const userB = await seedFreeUser('meter-pkg-svc-b')
+	const meterA = userMeterRpc({ env, userId: userA.userId })
+	const meterB = userMeterRpc({ env, userId: userB.userId })
+
+	const created = await meterA.upsertPackageServiceState({
+		packageId: 'pkg-1',
+		serviceName: 'worker',
+		status: 'running',
+		startedAt: '2026-08-01T10:00:00.000Z',
+		sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
+	})
+	expect(created).toMatchObject({
+		applied: true,
+		created: true,
+		state: {
+			packageId: 'pkg-1',
+			serviceName: 'worker',
+			status: 'running',
+			startedAt: '2026-08-01T10:00:00.000Z',
+			sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
+			revision: 1,
+		},
+	})
+
+	const heartbeat = await meterA.upsertPackageServiceState({
+		packageId: 'pkg-1',
+		serviceName: 'worker',
+		status: 'running',
+		startedAt: '2026-08-01T10:00:00.000Z',
+		sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
+	})
+	expect(heartbeat).toMatchObject({
+		applied: true,
+		created: false,
+		state: {
+			status: 'running',
+			sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
+			revision: 2,
+		},
+	})
+
+	const stale = await meterA.upsertPackageServiceState({
+		packageId: 'pkg-1',
+		serviceName: 'worker',
+		status: 'stopped',
+		startedAt: null,
+		sourceUpdatedAt: '2026-08-01T10:30:00.000Z',
+	})
+	expect(stale).toMatchObject({
+		applied: false,
+		created: false,
+		state: {
+			status: 'running',
+			sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
+			revision: 2,
+		},
+	})
+
+	await meterA.upsertPackageServiceState({
+		packageId: 'pkg-2',
+		serviceName: 'idle-svc',
+		status: 'idle',
+		sourceUpdatedAt: '2026-08-01T11:05:00.000Z',
+	})
+	await meterB.upsertPackageServiceState({
+		packageId: 'pkg-1',
+		serviceName: 'worker',
+		status: 'running',
+		startedAt: '2026-08-01T11:00:00.000Z',
+		sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
+	})
+
+	expect(
+		await meterA.countRunningPackageServices({
+			now: '2026-08-01T11:30:00.000Z',
+		}),
+	).toEqual({ count: 1 })
+	expect(
+		await meterA.countRunningPackageServices({
+			now: '2026-08-01T11:30:00.000Z',
+			excludeService: { packageId: 'pkg-1', serviceName: 'worker' },
+		}),
+	).toEqual({ count: 0 })
+
+	const listed = await meterA.listPackageServiceStates({ pageSize: 1 })
+	expect(listed.states).toHaveLength(1)
+	expect(listed.truncated).toBe(true)
+	expect(listed.nextStartAfter).toEqual(expect.any(String))
+	const listedRest = await meterA.listPackageServiceStates({
+		pageSize: 10,
+		startAfter: listed.nextStartAfter,
+	})
+	expect(listedRest.states).toHaveLength(1)
+	expect(listedRest.truncated).toBe(false)
+
+	const bootstrap = await meterA.bootstrapPackageServiceStates({
+		states: [
+			{
+				packageId: 'pkg-1',
+				serviceName: 'worker',
+				status: 'error',
+				sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
+			},
+			{
+				packageId: 'pkg-3',
+				serviceName: 'new',
+				status: 'stopped',
+				sourceUpdatedAt: '2026-08-01T12:00:00.000Z',
+			},
+		],
+	})
+	expect(bootstrap).toEqual({ applied: 1, skipped: 1 })
+
+	const day = '2026-08-01'
+	for (const resource of [
+		'email_receives_per_day',
+		'email_sends_per_day',
+	] as const) {
+		await meterA.initialize({
+			resource,
+			day,
+			count: 1,
+			updatedAt: '2026-08-01T12:00:00.000Z',
+		})
+	}
+
+	const firstPage = await meterA.exportCounters({ pageSize: 1 })
+	expect(firstPage.truncated).toBe(true)
+	expect(firstPage.nextStartAfter).toEqual(expect.any(String))
+	expect(firstPage.packageServiceStatesShadow).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				packageId: 'pkg-1',
+				serviceName: 'worker',
+				status: 'running',
+				revision: 2,
+			}),
+			expect.objectContaining({
+				packageId: 'pkg-2',
+				serviceName: 'idle-svc',
+				status: 'idle',
+			}),
+			expect.objectContaining({
+				packageId: 'pkg-3',
+				serviceName: 'new',
+				status: 'stopped',
+			}),
+		]),
+	)
+	const secondPage = await meterA.exportCounters({
+		pageSize: 1,
+		startAfter: firstPage.nextStartAfter,
+	})
+	expect(secondPage.packageServiceStatesShadow).toBeNull()
+
+	await expect(
+		meterA.deletePackageServiceState({
+			packageId: 'pkg-1',
+			serviceName: 'worker',
+		}),
+	).resolves.toEqual({ deleted: true })
+	expect(
+		await meterA.countRunningPackageServices({
+			now: '2026-08-01T11:30:00.000Z',
+		}),
+	).toEqual({ count: 0 })
+
+	await expect(meterA.purge()).resolves.toEqual({ ok: true })
+	expect(await meterA.listPackageServiceStates({})).toEqual({
+		states: [],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await meterB.listPackageServiceStates({})).toMatchObject({
+		states: [
+			expect.objectContaining({
+				packageId: 'pkg-1',
+				serviceName: 'worker',
+				status: 'running',
+			}),
+		],
 	})
 }, 30_000)
