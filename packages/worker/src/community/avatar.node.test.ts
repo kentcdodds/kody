@@ -7,6 +7,63 @@ import {
 	saveUserAvatar,
 } from './avatar.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+
+function createAvatarTestEnv(input: {
+	db: D1Database
+	communityAssets: R2Bucket
+	meter?: ReturnType<typeof createInMemoryUserMeterEnv>
+}) {
+	const meter = input.meter ?? createInMemoryUserMeterEnv()
+	return {
+		APP_DB: input.db,
+		COMMUNITY_ASSETS: input.communityAssets,
+		USER_METER: meter.env.USER_METER,
+	} as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'USER_METER'>
+}
+
+function createAvatarDeletionRaceDbMock() {
+	let deleting = false
+	const db = {
+		prepare(query: string) {
+			return {
+				bind() {
+					return {
+						async first<T>() {
+							if (query.includes('SELECT deleting_at')) {
+								return {
+									deleting_at: deleting ? '2026-07-22 22:00:00' : null,
+								} as T
+							}
+							if (query.includes('SELECT avatar_key')) {
+								return { avatar_key: null } as T
+							}
+							return null
+						},
+						async run() {
+							if (
+								query.includes('UPDATE users') &&
+								query.includes('avatar_key')
+							) {
+								return { meta: { changes: deleting ? 0 : 1 } }
+							}
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+		async batch() {
+			return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]
+		},
+	} as unknown as D1Database
+	return {
+		db,
+		setDeleting(value: boolean) {
+			deleting = value
+		},
+	}
+}
 
 function createPngHeader(width: number, height: number) {
 	const bytes = new Uint8Array(24)
@@ -164,7 +221,6 @@ test('getUserAvatarObject refuses keys outside the user-avatars prefix', async (
 })
 
 test('saveUserAvatar removes an in-flight upload when deletion starts', async () => {
-	let deleting = false
 	let releasePut: () => void = () => undefined
 	let markPutStarted: () => void = () => undefined
 	const putStarted = new Promise<void>((resolve) => {
@@ -174,34 +230,11 @@ test('saveUserAvatar removes an in-flight upload when deletion starts', async ()
 		releasePut = resolve
 	})
 	const deleted: Array<string> = []
-	const db = {
-		prepare(query: string) {
-			return {
-				bind() {
-					return {
-						async first<T>() {
-							if (query.includes('SELECT deleting_at')) {
-								return {
-									deleting_at: deleting ? '2026-07-22 22:00:00' : null,
-								} as T
-							}
-							if (query.includes('SELECT avatar_key')) {
-								return { avatar_key: null } as T
-							}
-							return null
-						},
-						async run() {
-							return { meta: { changes: deleting ? 0 : 1 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
+	const { db, setDeleting } = createAvatarDeletionRaceDbMock()
 	const save = saveUserAvatar({
-		env: {
-			APP_DB: db,
-			COMMUNITY_ASSETS: {
+		env: createAvatarTestEnv({
+			db,
+			communityAssets: {
 				async put() {
 					markPutStarted()
 					await putReleased
@@ -211,14 +244,14 @@ test('saveUserAvatar removes an in-flight upload when deletion starts', async ()
 					deleted.push(key)
 				},
 			} as R2Bucket,
-		},
+		}),
 		numericUserId: 1,
 		stableUserId: 'stable-1',
 		bytes: createPngHeader(128, 128),
 		contentType: 'image/png',
 	})
 	await putStarted
-	deleting = true
+	setDeleting(true)
 	releasePut()
 	await expect(save).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 	expect(deleted).toHaveLength(1)

@@ -833,6 +833,47 @@ export function createWaitUntilDrain() {
 	}
 }
 
+/** Minimal D1 hooks for DO-authoritative {@link withAccountWriteLease} in node tests. */
+export function createPermissiveAccountWriteLeaseDbHooks() {
+	return {
+		supportsDeletingAtQuery(query: string) {
+			return query.includes(
+				'SELECT deleting_at FROM users WHERE stable_user_id',
+			)
+		},
+		deletingAtFirstResult() {
+			return { deleting_at: null as string | null }
+		},
+		supportsHeldLeaseQuery(query: string) {
+			return query.includes('SELECT 1 AS held FROM account_write_leases')
+		},
+		heldLeaseFirstResult() {
+			return { held: 1 as number }
+		},
+		supportsWriteLeaseRun(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').trim()
+			return (
+				normalized.includes('INSERT INTO account_write_leases') ||
+				normalized.includes('UPDATE account_write_leases') ||
+				normalized.includes('DELETE FROM account_write_leases') ||
+				normalized.startsWith('UPDATE users')
+			)
+		},
+		writeLeaseRunResult() {
+			return { meta: { changes: 1 } }
+		},
+		async runWriteLeaseBatch(
+			statements: Array<{ run: () => Promise<unknown> }>,
+		) {
+			const results = []
+			for (const statement of statements) {
+				results.push(await statement.run())
+			}
+			return results
+		},
+	}
+}
+
 /**
  * Patch `db.prepare` and restore it via `using` even when the body throws.
  */

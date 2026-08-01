@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import {
+	createInMemoryUserMeterEnv,
+	createPermissiveAccountWriteLeaseDbHooks,
+} from '#worker/test-support/user-meter.ts'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -621,14 +625,24 @@ function createJobMutationDatabase(input: {
 		tables.set(name, remaining)
 		return rows.length - remaining.length
 	}
+	const writeLeaseDb = createPermissiveAccountWriteLeaseDbHooks()
 
 	return {
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			return await writeLeaseDb.runWriteLeaseBatch(statements)
+		},
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim()
 			return {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T = Record<string, unknown>>() {
+							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
+								return writeLeaseDb.deletingAtFirstResult() as T
+							}
+							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
+								return writeLeaseDb.heldLeaseFirstResult() as T
+							}
 							if (
 								normalized === 'SELECT * FROM jobs WHERE id = ? AND user_id = ?'
 							) {
@@ -680,6 +694,9 @@ function createJobMutationDatabase(input: {
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {
+							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
+								return writeLeaseDb.writeLeaseRunResult()
+							}
 							if (normalized.startsWith('UPDATE users')) {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
@@ -820,6 +837,17 @@ function createJobMutationKv() {
 			deletedKeys.push(key)
 		},
 	} as unknown as KVNamespace & { deletedKeys: Array<string> }
+}
+
+function createRunKodyRegistryTestEnv(
+	bindings: Record<string, unknown>,
+	meter?: ReturnType<typeof createInMemoryUserMeterEnv>,
+) {
+	const userMeter = meter ?? createInMemoryUserMeterEnv()
+	return {
+		...bindings,
+		USER_METER: userMeter.env.USER_METER,
+	} as Env
 }
 
 function createJobRow(
@@ -976,7 +1004,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	const repoSessionAccesses: Array<string> = []
 	const jobManagerNames: Array<string> = []
 	const jobManagerSyncPayloads: Array<{ userId: string; source?: string }> = []
-	const env = {
+	const env = createRunKodyRegistryTestEnv({
 		APP_DB: db,
 		SENTRY_ENVIRONMENT: 'production',
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
@@ -1025,7 +1053,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 				}
 			},
 		},
-	} as unknown as Env
+	})
 	const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 		new Response(
 			JSON.stringify({
