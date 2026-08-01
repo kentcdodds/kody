@@ -810,20 +810,20 @@ Never throws; returns a bounded summary. **Live callers:**
 - **Inbound terminals** (`inbound.ts`) — high-risk user-mail dual-write with
   strict ordering: **no Mailbox RPC before** durable D1/R2 message + attachment
   storage and `received` finalization win. The winner schedules full graph
-  repair via `ctx.waitUntil` (`scheduleInboundMailboxMessageGraphMirror`).
+  repair via `ctx.waitUntil` (`scheduleInboundReceivedTerminalWork`).
   **Already-received** Email Routing retries (delivery ledger
   `state === 'received'` with an existing message row) idempotently repair the
   graph and re-run effect reconciliation without a second charge. **Rejected
   terminals** (post-claim parse failure or replay of a claimed `rejected`
   delivery) mirror the delivery event only via
-  `scheduleInboundMailboxDeliveryEventMirror`
-  (`mirrorMailboxDeliveryEventFromD1`). After successful
-  `processInboundDeliveryEffects`, the effects chain re-mirrors the updated
-  delivery event (usage/subscription fields). Mirror failures, timeouts, and
-  hangs never affect SMTP reject/refund/retry/charge semantics. **Pre-claim
-  bounded rejection rows** (`recordBoundedEmailRejectionEvent` for verification,
-  suspension, sender-policy, size, entitlement, and system-limit gates before
-  delivery claim/charge) stay **D1-only on the live path** — the every-5-minute
+  `scheduleInboundRejectedTerminalWork` (`mirrorMailboxDeliveryEventFromD1`).
+  After successful `processInboundDeliveryEffects`, the same received
+  coordinator task re-mirrors the updated delivery event (usage/subscription
+  fields). Mirror failures, timeouts, and hangs never affect SMTP
+  reject/refund/retry/charge semantics. **Pre-claim bounded rejection rows**
+  (`recordBoundedEmailRejectionEvent` for verification, suspension,
+  sender-policy, size, entitlement, and system-limit gates before delivery
+  claim/charge) stay **D1-only on the live path** — the every-5-minute
   `mailbox_parity` lane backfills them. **`system:email` stays excluded** (no
   per-user Mailbox object). Retention sweeper deletes and other bulk
   metadata-delete mirrors are **still not wired** on live paths. Scheduled
