@@ -220,10 +220,10 @@ Durable Object export behavior:
   RPC; keyset pagination with prefixed cursors over those tables). Manifest
   counts use `countMailbox`. Phase 1 registers this consumption; phase 2 wires
   live dual-write for outbound terminals, provider delivery-queue graph repair,
-  user classification (`service.ts#setEmailMessageClassification`), and high-risk
-  inbound terminal paths without changing D1 authority — D1 `email_*` rows remain
-  the live source of truth and are still exported in the `d1` section. See
-  [Mailbox](#durable-objects-mailbox).
+  user classification (`service.ts#setEmailMessageClassification`), and
+  high-risk inbound terminal paths without changing D1 authority — D1 `email_*`
+  rows remain the live source of truth and are still exported in the `d1`
+  section. See [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -518,12 +518,12 @@ rows only.
   `emailRawMimeKey(userId, messageId)` from R2 (production writers always store
   that canonical key). `deleteEmailMessageById` runs an atomic D1 batch
   (attachments, then message), then best-effort R2 blob deletes. Live explicit
-  and retention deletes do not call Mailbox mirror helpers today; the parity lane
-  repairs DO state via purge/rebuild. Direct delete wiring is pending. User email
-  retention and system-email retention stay strict: blob delete before row delete;
-  failed blob deletes skip the row for retry. Account deletion stays strict before
-  atomic D1 finalization; a failed blob delete preserves every message row for
-  retry.
+  and retention deletes do not call Mailbox mirror helpers today; the parity
+  lane repairs DO state via purge/rebuild. Direct delete wiring is pending. User
+  email retention and system-email retention stay strict: blob delete before row
+  delete; failed blob deletes skip the row for retry. Account deletion stays
+  strict before atomic D1 finalization; a failed blob delete preserves every
+  message row for retry.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -948,19 +948,19 @@ parity-lane only; `system:email` excluded). Mirror helpers emit automatic
 namespaced outcome telemetry (`missing` and `timeout` included). Message and
 batch event repair each use one 1s-bounded RPC; each graph attempt emits at most
 two AE writes; event repair batches up to 100 events with explicit truncation
-(newest retained, chronological insertion restored, stable truncation warning) and
-one batch telemetry outcome. Live explicit and retention deletes do not call
+(newest retained, chronological insertion restored, stable truncation warning)
+and one batch telemetry outcome. Live explicit and retention deletes do not call
 Mailbox mirror helpers; the every-5-minute queue-isolated `mailbox_parity` lane
 backfills all owner messages and delivery events (including pre-claim bounded
 rejection rows), durable content-watermark replays, compares owner-scoped D1 vs
 Mailbox counts, persists soak state on `users` (migration `0125`), re-purges the
-DO when account deletion races the lane, and repairs delete drift via purge/rebuild.
-Direct delete wiring is pending. Live email read/write authority is unchanged —
-D1 `email_*` tables remain authoritative for all live paths. D1 email rows and
-existing R2 inventory deletion stay authoritative during expand. **Phase 2 contract
-completion** (every user-mail D1 mutation also writes the DO on live paths,
-including retention deletes) remains pending; terminal inbound + parity cover the
-high-risk live surface today.
+DO when account deletion races the lane, and repairs delete drift via
+purge/rebuild. Direct delete wiring is pending. Live email read/write authority
+is unchanged — D1 `email_*` tables remain authoritative for all live paths. D1
+email rows and existing R2 inventory deletion stay authoritative during expand.
+**Phase 2 contract completion** (every user-mail D1 mutation also writes the DO
+on live paths, including retention deletes) remains pending; terminal inbound +
+parity cover the high-risk live surface today.
 
 1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
    `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
@@ -983,14 +983,14 @@ high-risk live surface today.
    paths in `inbound.ts` (received graph via `waitUntil` only after D1/R2 +
    finalization; rejected delivery-event mirror; post-effects event re-mirror;
    already-received idempotent repair; pre-claim bounded rejections parity-lane
-   only; `system:email` excluded) call the live mirror helpers; graph repair uses
-   message RPC + one batch event RPC (at most two AE writes per attempt). The
-   every-5-minute `mailbox_parity` scheduled lane backfills all owner messages
-   and delivery events, durable content-watermark replays, count compares, soak
-   tracking on `users` (migration `0125`), and repairs delete drift via
-   purge/rebuild. **Still pending for phase-2 contract completion:** direct delete
-   wiring for explicit/retention deletes (including retention sweeper
-   metadata-delete mirrors). D1 authority and read cutover are unchanged
+   only; `system:email` excluded) call the live mirror helpers; graph repair
+   uses message RPC + one batch event RPC (at most two AE writes per attempt).
+   The every-5-minute `mailbox_parity` scheduled lane backfills all owner
+   messages and delivery events, durable content-watermark replays, count
+   compares, soak tracking on `users` (migration `0125`), and repairs delete
+   drift via purge/rebuild. **Still pending for phase-2 contract completion:**
+   direct delete wiring for explicit/retention deletes (including retention
+   sweeper metadata-delete mirrors). D1 authority and read cutover are unchanged
    (prepared adapter exists; not wired).
 3. **Reads cut over after production soak** — user-mail reads move to the DO
    only after production parity soak is verified
