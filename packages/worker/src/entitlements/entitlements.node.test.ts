@@ -29,7 +29,6 @@ import {
 	findCachedUserAccountByStableUserId,
 	getCachedUserPlan,
 	getUserPlan,
-	incrementDailyEntitlementCounter,
 	packageServiceStateStaleMs,
 	refundDailyEntitlement,
 } from './service.ts'

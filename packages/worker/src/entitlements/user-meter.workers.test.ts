@@ -11,7 +11,10 @@ import { planLimits } from './plans.ts'
 import { consumeDailyEntitlement, refundDailyEntitlement } from './service.ts'
 import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { userMeterRpc } from './user-meter-client.ts'
-import { UserMeter, userMeterMirrorUpdatedAtToken } from './user-meter-do.ts'
+import {
+	type UserMeter,
+	userMeterMirrorUpdatedAtToken,
+} from './user-meter-do.ts'
 import {
 	createWaitUntilDrain,
 	withPatchedDbPrepare,
