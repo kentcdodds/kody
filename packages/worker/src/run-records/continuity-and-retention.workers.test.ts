@@ -362,27 +362,30 @@ test('finishRun rolls back run upsert when a later terminal side effect throws',
 	])
 })
 
-test('activation seed failure then finish then recovery merges legacy additively once', async () => {
+test('seed failure then finish then recovery merges legacy additively once for activation and job observability', async () => {
 	silenceExpectedConsoleWarns([
 		'activation-run-record-failed',
 		'run-log-activation-seed-failed',
+		'run-log-job-observability-seed-failed',
 	])
 	await ensureActivationD1Schema()
-	const userId = uniqueUserId('activation-recover')
+	await ensureJobsD1Schema()
+
+	const activationUserId = uniqueUserId('activation-recover')
 	await env.APP_DB.prepare(
 		`DELETE FROM user_package_run_successes WHERE user_id = ?`,
 	)
-		.bind(userId)
+		.bind(activationUserId)
 		.run()
 	await env.APP_DB.prepare(
 		`DELETE FROM user_activation_milestones WHERE user_id = ?`,
 	)
-		.bind(userId)
+		.bind(activationUserId)
 		.run()
 
 	// First seed sees a D1 query failure (missing table name) and must not mark
 	// initialized.
-	const envBrokenDb = {
+	const envBrokenActivationDb = {
 		...env,
 		APP_DB: {
 			prepare: () => {
@@ -390,18 +393,26 @@ test('activation seed failure then finish then recovery merges legacy additively
 			},
 		},
 	} as unknown as Env
-	await ensureActivationStateSeeded({ env: envBrokenDb, userId })
-	expect(await runLogRpc({ env, userId }).isActivationInitialized()).toEqual({
+	await ensureActivationStateSeeded({
+		env: envBrokenActivationDb,
+		userId: activationUserId,
+	})
+	expect(
+		await runLogRpc({
+			env,
+			userId: activationUserId,
+		}).isActivationInitialized(),
+	).toEqual({
 		initialized: false,
 	})
 
 	// Finish must also see D1 failure so prepare-seed does not mark initialized
 	// via a successful empty read before the increment.
 	await finishRunRecord({
-		env: envBrokenDb,
+		env: envBrokenActivationDb,
 		handle: beginRunRecord({
-			env: envBrokenDb,
-			userId,
+			env: envBrokenActivationDb,
+			userId: activationUserId,
 			context: {
 				surface: 'job',
 				name: 'post-cutover-before-seed',
@@ -410,10 +421,17 @@ test('activation seed failure then finish then recovery merges legacy additively
 		}),
 		status: 'success',
 	})
-	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+	expect(
+		await listPackageRunSuccesses({ env, userId: activationUserId }),
+	).toEqual([
 		expect.objectContaining({ packageId: 'pkg-recover', successCount: 1 }),
 	])
-	expect(await runLogRpc({ env, userId }).isActivationInitialized()).toEqual({
+	expect(
+		await runLogRpc({
+			env,
+			userId: activationUserId,
+		}).isActivationInitialized(),
+	).toEqual({
 		initialized: false,
 	})
 
@@ -421,20 +439,24 @@ test('activation seed failure then finish then recovery merges legacy additively
 		`INSERT INTO user_package_run_successes (user_id, package_id, success_count, updated_at)
 		VALUES (?, 'pkg-recover', 1, ?)`,
 	)
-		.bind(userId, '2026-01-15T00:00:00.000Z')
+		.bind(activationUserId, '2026-01-15T00:00:00.000Z')
 		.run()
 	await env.APP_DB.prepare(
 		`INSERT INTO user_activation_milestones (user_id, milestone, reached_at, package_id)
 		VALUES (?, 'package_run_succeeded', ?, 'pkg-recover')`,
 	)
-		.bind(userId, '2026-01-15T00:00:00.000Z')
+		.bind(activationUserId, '2026-01-15T00:00:00.000Z')
 		.run()
 
-	await ensureActivationStateSeeded({ env, userId })
-	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+	await ensureActivationStateSeeded({ env, userId: activationUserId })
+	expect(
+		await listPackageRunSuccesses({ env, userId: activationUserId }),
+	).toEqual([
 		expect.objectContaining({ packageId: 'pkg-recover', successCount: 2 }),
 	])
-	expect(await listActivationMilestones({ env, userId })).toEqual(
+	expect(
+		await listActivationMilestones({ env, userId: activationUserId }),
+	).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				milestone: 'package_activated',
@@ -445,7 +467,12 @@ test('activation seed failure then finish then recovery merges legacy additively
 			}),
 		]),
 	)
-	expect(await runLogRpc({ env, userId }).isActivationInitialized()).toEqual({
+	expect(
+		await runLogRpc({
+			env,
+			userId: activationUserId,
+		}).isActivationInitialized(),
+	).toEqual({
 		initialized: true,
 	})
 
@@ -453,25 +480,20 @@ test('activation seed failure then finish then recovery merges legacy additively
 	await env.APP_DB.prepare(
 		`UPDATE user_package_run_successes SET success_count = 9 WHERE user_id = ?`,
 	)
-		.bind(userId)
+		.bind(activationUserId)
 		.run()
-	await ensureActivationStateSeeded({ env, userId })
-	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+	await ensureActivationStateSeeded({ env, userId: activationUserId })
+	expect(
+		await listPackageRunSuccesses({ env, userId: activationUserId }),
+	).toEqual([
 		expect.objectContaining({ packageId: 'pkg-recover', successCount: 2 }),
 	])
-})
 
-test('job observability seed failure then finish then recovery merges legacy once', async () => {
-	silenceExpectedConsoleWarns([
-		'activation-run-record-failed',
-		'run-log-job-observability-seed-failed',
-	])
-	await ensureJobsD1Schema()
-	const userId = uniqueUserId('job-recover')
+	const jobUserId = uniqueUserId('job-recover')
 	const jobId = `job-${crypto.randomUUID()}`
 	const legacyAt = '2026-06-01T00:00:00.000Z'
 
-	const envBrokenDb = {
+	const envBrokenJobDb = {
 		...env,
 		APP_DB: {
 			prepare: () => {
@@ -480,23 +502,29 @@ test('job observability seed failure then finish then recovery merges legacy onc
 		},
 	} as unknown as Env
 	await ensureJobRunObservabilitySeeded({
-		env: envBrokenDb,
-		userId,
+		env: envBrokenJobDb,
+		userId: jobUserId,
 		jobId,
 	})
-	expect(await getJobRunObservability({ env, userId, jobId })).toBeNull()
+	expect(
+		await getJobRunObservability({ env, userId: jobUserId, jobId }),
+	).toBeNull()
 
 	const handle = beginRunRecord({
-		env: envBrokenDb,
-		userId,
+		env: envBrokenJobDb,
+		userId: jobUserId,
 		context: { surface: 'job', name: 'before-seed', jobId },
 	})
 	await finishRunRecord({
-		env: envBrokenDb,
+		env: envBrokenJobDb,
 		handle,
 		status: 'success',
 	})
-	const afterFinish = await getJobRunObservability({ env, userId, jobId })
+	const afterFinish = await getJobRunObservability({
+		env,
+		userId: jobUserId,
+		jobId,
+	})
 	expect(afterFinish).toMatchObject({
 		runCount: 1,
 		successCount: 1,
@@ -511,11 +539,15 @@ test('job observability seed failure then finish then recovery merges legacy onc
 			last_run_error, last_duration_ms, run_count, success_count, error_count
 		) VALUES (?, ?, 'legacy', ?, ?, ?, 'error', 'old', 5, 3, 2, 1)`,
 	)
-		.bind(jobId, userId, legacyAt, legacyAt, legacyAt)
+		.bind(jobId, jobUserId, legacyAt, legacyAt, legacyAt)
 		.run()
 
-	await ensureJobRunObservabilitySeeded({ env, userId, jobId })
-	const recovered = await getJobRunObservability({ env, userId, jobId })
+	await ensureJobRunObservabilitySeeded({ env, userId: jobUserId, jobId })
+	const recovered = await getJobRunObservability({
+		env,
+		userId: jobUserId,
+		jobId,
+	})
 	expect(recovered).toMatchObject({
 		runCount: 4,
 		successCount: 3,
@@ -527,8 +559,10 @@ test('job observability seed failure then finish then recovery merges legacy onc
 	expect(recovered?.lastRunAt).not.toBe(legacyAt)
 	expect(recovered?.lastRunAt != null).toBe(true)
 
-	await ensureJobRunObservabilitySeeded({ env, userId, jobId })
-	expect(await getJobRunObservability({ env, userId, jobId })).toMatchObject({
+	await ensureJobRunObservabilitySeeded({ env, userId: jobUserId, jobId })
+	expect(
+		await getJobRunObservability({ env, userId: jobUserId, jobId }),
+	).toMatchObject({
 		runCount: 4,
 		successCount: 3,
 		errorCount: 1,

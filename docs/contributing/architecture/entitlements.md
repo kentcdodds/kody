@@ -130,6 +130,12 @@ v5 adds an optional per-service shadow table as **best-effort future-cutover
 support only** — see
 [Package service liveness — UserMeter shadow](#package-service-liveness--usermeter-shadow-expand-phase-slice-4-phase-a).
 
+**D1 account-deletion write fencing** (`users.deleting_at` /
+`account_write_leases`) stays authoritative for fencing, list, repair, and
+drain. UserMeter schema v6 adds an optional deletion-fence / write-lease shadow
+as **best-effort future-cutover support only** — see
+[Account-deletion write fencing — UserMeter shadow](#account-deletion-write-fencing--usermeter-shadow-expand-phase-slice-5-phase-a).
+
 StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
 `user_storage_buckets` stay a **separate** quota component. StorageRunner write
 chokepoints pass `getCurrent` as a check-only composed total (D1 payload bytes
@@ -157,8 +163,8 @@ writes cannot overwrite newer state, including refunds that lower `count`.
 Mirror failures are logged and never affect enforcement. The D1 table is **not**
 dropped in this phase — it remains for existing readers and reporting.
 
-**Point-read surfaces** now call `readDailyEntitlementResourceUsage` (UserMeter
-with the same cold-bootstrap path) instead of reading D1 directly:
+**Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
+the same cold-bootstrap path):
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
@@ -276,6 +282,61 @@ remains on D1.
 **Account purge:** `UserMeter.purge()` clears package-service shadow rows with
 the rest of DO state via `deleteAll`.
 
+### Account-deletion write fencing — UserMeter shadow (expand phase slice 5, Phase A)
+
+D1 `users.deleting_at`, `account_write_leases`, and
+`account_write_lease_repairs` remain the **sole authority** for deletion
+fencing, lease acquire/release, active-lease list, audited repair, and deletion
+drain waits in this PR. Nothing in Phase A switches `withAccountWriteLease`,
+`markAccountDeleting`, `listActiveAccountWriteLeases`, or
+`repairAccountWriteLease` onto UserMeter reads — public errors, ALS nested-lease
+reuse, and D1 `waitUntil` release semantics stay identical when optional `env`
+is omitted.
+
+UserMeter schema **v6** adds a singleton `deletion_state.deleting_at` tombstone
+plus per-token `account_write_leases` rows (`token`, `holder`, `acquired_at`) as
+**best-effort shadow / future-cutover support only**. User scope is the DO
+identity — there is no `user_id` column. Shadow rows are never read for fencing,
+list, repair, or drain in this slice.
+
+**Optional dual-write from `account/deletion-state.ts`:** after a **successful**
+D1 mark/acquire/release/repair, callers may pass optional `env?: UserMeterEnv`
+(and `waitUntil` when available). The helper schedules a best-effort UserMeter
+shadow (`shadowReplaceDeletionState` on mark, `shadowAcquireWriteLease`,
+`shadowReleaseWriteLease`). After D1 `deleting_at` is set, mark loads the
+authoritative active D1 lease rows and calls `shadowReplaceDeletionState`, which
+under DO serialization sets/preserves the tombstone then deletes and re-inserts
+exactly that lease set — so a prior failed shadow release cannot leave stale
+rows, and a deletion retry with zero D1 leases clears the shadow set. Acquire
+shadows start during the write; ordered release shadows run after authoritative
+D1 release. When `waitUntil` is provided, shadows detach through it; when
+omitted, mark/release/repair shadows are awaited (still non-rejecting) so
+middleware and other non-`waitUntil` callers cannot return with a stale shadow
+lease or missing tombstone. Missing `USER_METER` is a no-op; failures log
+`account-deletion-user-meter-shadow-failed` and never alter D1 results or
+errors. Mark is monotonic (first `deleting_at` wins). Acquire is rejected when a
+deleting tombstone is present and is idempotent for an already-held token.
+Cutover/list RPCs (`listWriteLeases`, `bootstrapDeletionState`) may still carry
+token/holder for parity review.
+
+**Account export:** `UserMeter.exportCounters` returns additive `deletionShadow`
+on the first page only (`startAfter` absent); later pages return `null`. The
+export shape is sanitized (`deletingAt`, `activeWriteLeaseCount`, and
+`writeLeases` with `acquiredAt` only — no raw token or holder). Section totals
+count the tombstone (when set) plus `activeWriteLeaseCount`; the field is
+explicitly non-authoritative — authoritative fencing remains on D1.
+
+**Account purge:** `UserMeter.purge()` clears counters, claims, storage shadow,
+package-service shadow, and write-lease shadow via `deleteAll`, then restores
+any pre-existing deleting tombstone so a later authority cutover cannot reopen
+writes for a purged account.
+
+Non-email production call sites that hold `env` pass it into deletion-state APIs
+(`withAccountWriteLease`, `markAccountDeleting`, `repairAccountWriteLease`) and
+forward existing `waitUntil` when available. Email paths stay untouched in this
+slice (`system:email` skip unchanged). Assert-only readers
+(`assertAccountWritable*`, `listActiveAccountWriteLeases`) remain D1-only.
+
 ### Future package-service authority flip (contract follow-up)
 
 A separate **high-risk contract PR** — not a merge blocker for Phase A — will
@@ -290,10 +351,6 @@ likely stays the enumeration index** for account export, deletion, and admin
 discovery until an alternate inventory exists — UserMeter would become the
 running-count authority first, not a wholesale replacement for every D1 reader.
 
-**Remaining expand roadmap:** slice 4 Phase A (this shadow slice) is additive
-only; slice 5 — account-deletion write fencing — follows independently. Storage
-authority flip remains the separate contract follow-up above.
-
 ### Future storage authority flip (contract follow-up)
 
 A separate contract PR will flip D1 payload storage-byte authority into
@@ -304,10 +361,11 @@ Only then do reads, reserves, and reconciliation switch to UserMeter-first with
 D1 as mirror/cursor. Until that flip, shadow divergence is acceptable; D1
 remains the contract.
 
-**Remaining UserMeter expand roadmap:** slice 4 Phase A —
-`package_service_states` UserMeter shadow (this PR; D1 authority unchanged);
-slice 5 — account-deletion write fencing. Package-service and storage authority
-flips are separate high-risk contract follow-ups after soak/parity review.
+**Remaining UserMeter expand roadmap:** slice 5 Phase A — account-deletion write
+fencing shadow (this PR; D1 authority unchanged; non-email dual-write wired).
+Package-service and storage authority flips are separate high-risk contract
+follow-ups after soak/parity review. Deletion-fence authority flip is a separate
+high-risk contract follow-up after shadow/D1 parity review.
 
 **Daily-counter mirror retirement:** dropping D1 `entitlement_daily_counters`
 waits until reporting-off-D1 work merges and mirror parity is verified in
@@ -392,7 +450,7 @@ returns a `PlanName`:
 Interactive surfaces still carry email (app sessions expose
 `user.mcpUser.email`, MCP caller contexts expose
 `ctx.callerContext.user.email`). Background package-runtime paths that only have
-the stable userId no longer need a separate email hydrate step for entitlement
+the stable userId do not need a separate email hydrate step for entitlement
 checks — `getUserPlan` reverse-resolves for them.
 
 Inbound email routing has no caller context and resolves the owning account via

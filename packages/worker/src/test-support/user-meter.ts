@@ -4,9 +4,11 @@ import {
 	userMeterMirrorUpdatedAtToken,
 	userMeterPackageServiceStateStaleMs,
 	type DailyEntitlementResource,
+	type UserMeterDeletionShadowExport,
 	type UserMeterPackageServiceState,
 	type UserMeterPackageServiceStatus,
 	type UserMeterStorageBytesState,
+	type UserMeterWriteLeaseShadow,
 } from '#worker/entitlements/user-meter-do.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
@@ -18,6 +20,14 @@ type PackageServiceRow = {
 	sourceUpdatedAt: string
 	revision: number
 	updatedAt: string
+}
+type WriteLeaseRow = {
+	holder: string
+	acquiredAt: string
+}
+type DeletionState = {
+	deletingAt: string | null
+	leases: Map<string, WriteLeaseRow>
 }
 
 /**
@@ -32,6 +42,7 @@ export function createInMemoryUserMeterEnv() {
 		string,
 		Map<string, PackageServiceRow>
 	>()
+	const deletionByUser = new Map<string, DeletionState>()
 
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
@@ -39,6 +50,17 @@ export function createInMemoryUserMeterEnv() {
 
 	function packageServiceKey(packageId: string, serviceName: string) {
 		return `${packageId}\0${serviceName}`
+	}
+
+	function deletionStateFor(userId: string): DeletionState {
+		const existing = deletionByUser.get(userId)
+		if (existing) return existing
+		const created: DeletionState = {
+			deletingAt: null,
+			leases: new Map(),
+		}
+		deletionByUser.set(userId, created)
+		return created
 	}
 
 	function meterFor(userId: string) {
@@ -52,6 +74,8 @@ export function createInMemoryUserMeterEnv() {
 		if (!existingPackageServices) {
 			packageServicesByUser.set(userId, packageServices)
 		}
+
+		const deletion = deletionStateFor(userId)
 
 		function readRow(resource: string, day: string) {
 			return rows.get(counterKey(resource, day)) ?? null
@@ -103,6 +127,38 @@ export function createInMemoryUserMeterEnv() {
 					if (byPackage !== 0) return byPackage
 					return left.serviceName.localeCompare(right.serviceName)
 				})
+		}
+
+		function writeLeaseState(
+			token: string,
+			row: WriteLeaseRow,
+		): UserMeterWriteLeaseShadow {
+			return {
+				token,
+				holder: row.holder,
+				acquiredAt: row.acquiredAt,
+			}
+		}
+
+		function listWriteLeasesSorted() {
+			return [...deletion.leases.entries()]
+				.map(([token, row]) => writeLeaseState(token, row))
+				.sort((left, right) => {
+					const byAcquired = left.acquiredAt.localeCompare(right.acquiredAt)
+					if (byAcquired !== 0) return byAcquired
+					return left.token.localeCompare(right.token)
+				})
+		}
+
+		function readDeletionShadowExport(): UserMeterDeletionShadowExport {
+			const writeLeases = listWriteLeasesSorted().map((lease) => ({
+				acquiredAt: lease.acquiredAt,
+			}))
+			return {
+				deletingAt: deletion.deletingAt,
+				activeWriteLeaseCount: writeLeases.length,
+				writeLeases,
+			}
 		}
 
 		return {
@@ -393,11 +449,151 @@ export function createInMemoryUserMeterEnv() {
 				}
 				return { applied, skipped }
 			},
+			async shadowMarkDeleting(input: { deletingAt: string }) {
+				if (deletion.deletingAt != null) {
+					return { deletingAt: deletion.deletingAt, created: false }
+				}
+				deletion.deletingAt = input.deletingAt
+				return { deletingAt: input.deletingAt, created: true }
+			},
+			async shadowReplaceDeletionState(input: {
+				deletingAt: string
+				leases?: ReadonlyArray<{
+					token: string
+					holder: string
+					acquiredAt: string
+				}>
+			}) {
+				const created = deletion.deletingAt == null
+				if (created) deletion.deletingAt = input.deletingAt
+				deletion.leases.clear()
+				const leasesByToken = new Map<
+					string,
+					{ holder: string; acquiredAt: string }
+				>()
+				for (const lease of input.leases ?? []) {
+					leasesByToken.set(lease.token, {
+						holder: lease.holder,
+						acquiredAt: lease.acquiredAt,
+					})
+				}
+				for (const [token, row] of leasesByToken) {
+					deletion.leases.set(token, row)
+				}
+				return {
+					deletingAt: deletion.deletingAt ?? input.deletingAt,
+					created,
+					leaseCount: deletion.leases.size,
+				}
+			},
+			async shadowAcquireWriteLease(input: {
+				token: string
+				holder: string
+				acquiredAt: string
+			}) {
+				if (deletion.leases.has(input.token)) return { acquired: true }
+				if (deletion.deletingAt != null) return { acquired: false }
+				deletion.leases.set(input.token, {
+					holder: input.holder,
+					acquiredAt: input.acquiredAt,
+				})
+				return { acquired: true }
+			},
+			async shadowReleaseWriteLease(input: { token: string }) {
+				return { released: deletion.leases.delete(input.token) }
+			},
+			async readDeletionState() {
+				return { deletingAt: deletion.deletingAt }
+			},
+			async listWriteLeases(
+				input: {
+					pageSize?: number
+					startAfter?: string | null
+				} = {},
+			) {
+				const pageSize =
+					typeof input.pageSize === 'number' && Number.isFinite(input.pageSize)
+						? Math.min(Math.max(Math.trunc(input.pageSize), 1), 500)
+						: 100
+				const all = listWriteLeasesSorted()
+				let startIndex = 0
+				if (
+					typeof input.startAfter === 'string' &&
+					input.startAfter.length > 0
+				) {
+					try {
+						const parsed = JSON.parse(input.startAfter) as unknown
+						if (
+							Array.isArray(parsed) &&
+							parsed.length === 2 &&
+							typeof parsed[0] === 'string' &&
+							typeof parsed[1] === 'string'
+						) {
+							const acquiredAt = parsed[0]
+							const token = parsed[1]
+							startIndex =
+								all.findIndex(
+									(row) => row.acquiredAt === acquiredAt && row.token === token,
+								) + 1
+						}
+					} catch {
+						startIndex = 0
+					}
+				}
+				const page = all.slice(startIndex, startIndex + pageSize)
+				const truncated = startIndex + pageSize < all.length
+				const last = page[page.length - 1]
+				return {
+					leases: page,
+					nextStartAfter:
+						truncated && last
+							? JSON.stringify([last.acquiredAt, last.token])
+							: null,
+					truncated,
+				}
+			},
+			async countActiveWriteLeases() {
+				return { count: deletion.leases.size }
+			},
+			async bootstrapDeletionState(input: {
+				deletingAt?: string | null
+				leases?: ReadonlyArray<{
+					token: string
+					holder: string
+					acquiredAt: string
+				}>
+			}) {
+				let leasesApplied = 0
+				let leasesSkipped = 0
+				for (const lease of input.leases ?? []) {
+					if (deletion.leases.has(lease.token)) {
+						leasesSkipped += 1
+						continue
+					}
+					const result = await this.shadowAcquireWriteLease(lease)
+					if (result.acquired) leasesApplied += 1
+					else leasesSkipped += 1
+				}
+				let deletingAtApplied = false
+				if (
+					typeof input.deletingAt === 'string' &&
+					input.deletingAt.length > 0
+				) {
+					const marked = await this.shadowMarkDeleting({
+						deletingAt: input.deletingAt,
+					})
+					deletingAtApplied = marked.created
+				}
+				return { deletingAtApplied, leasesApplied, leasesSkipped }
+			},
 			async purge() {
+				const deletingAt = deletion.deletingAt
 				rows.clear()
 				storageByUser.delete(userId)
 				packageServices.clear()
 				packageServicesByUser.delete(userId)
+				deletion.leases.clear()
+				deletion.deletingAt = deletingAt
 				return { ok: true as const }
 			},
 			async exportCounters(
@@ -431,10 +627,14 @@ export function createInMemoryUserMeterEnv() {
 				const packageServiceStatesShadow = includeShadows
 					? listPackageServiceStatesSorted()
 					: null
+				const deletionShadow = includeShadows
+					? readDeletionShadowExport()
+					: null
 				return {
 					counters,
 					storageBytesShadow,
 					packageServiceStatesShadow,
+					deletionShadow,
 					nextStartAfter: null,
 					truncated: false,
 				}
@@ -454,6 +654,7 @@ export function createInMemoryUserMeterEnv() {
 		metersByUser,
 		storageByUser,
 		packageServicesByUser,
+		deletionByUser,
 		async seed(input: {
 			userId: string
 			resource: DailyEntitlementResource

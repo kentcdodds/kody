@@ -26,9 +26,11 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 5
+const userMeterSchemaVersion = 6
 /** Singleton row id for expand-phase D1 storage-byte shadow (schema v4). */
 const storageBytesStateRowId = 1
+/** Singleton row id for expand-phase D1 deletion-fence shadow (schema v6). */
+const deletionStateRowId = 1
 /** Matches D1 `packageServiceStateStaleMs` (24h); cutover-support RPC only. */
 export const userMeterPackageServiceStateStaleMs = 24 * 60 * 60 * 1000
 
@@ -36,6 +38,9 @@ const defaultExportPageSize = 100
 const maxExportPageSize = 500
 const maxInboundDeliveryIdLength = 256
 const maxPackageServiceIdLength = 256
+const maxWriteLeaseTokenLength = 64
+const maxWriteLeaseHolderLength = 256
+const maxDeletionTimestampLength = 64
 const inboundReceiveResource =
 	'email_receives_per_day' satisfies DailyEntitlementResource
 const utcDayKeyPattern = /^\d{4}-\d{2}-\d{2}$/
@@ -169,6 +174,66 @@ export type UserMeterPackageServiceBootstrapResult = {
 	skipped: number
 }
 
+export type UserMeterWriteLeaseShadow = {
+	token: string
+	holder: string
+	acquiredAt: string
+}
+
+/**
+ * Internal cutover / list shape. Includes token and holder for parity with D1
+ * `account_write_leases`; never emit this from account export.
+ */
+export type UserMeterDeletionShadow = {
+	deletingAt: string | null
+	writeLeases: Array<UserMeterWriteLeaseShadow>
+}
+
+/**
+ * Account-export deletion shadow. Omits raw lease token and holder; retains
+ * only deleting tombstone presence, active lease count, and acquired_at.
+ */
+export type UserMeterDeletionShadowExport = {
+	deletingAt: string | null
+	activeWriteLeaseCount: number
+	writeLeases: Array<{ acquiredAt: string }>
+}
+
+export type UserMeterShadowMarkDeletingResult = {
+	deletingAt: string
+	created: boolean
+}
+
+export type UserMeterShadowReplaceDeletionStateResult = {
+	deletingAt: string
+	created: boolean
+	leaseCount: number
+}
+
+export type UserMeterShadowAcquireWriteLeaseResult = {
+	acquired: boolean
+}
+
+export type UserMeterShadowReleaseWriteLeaseResult = {
+	released: boolean
+}
+
+export type UserMeterWriteLeaseListResult = {
+	leases: Array<UserMeterWriteLeaseShadow>
+	nextStartAfter: string | null
+	truncated: boolean
+}
+
+export type UserMeterWriteLeaseCountResult = {
+	count: number
+}
+
+export type UserMeterDeletionBootstrapResult = {
+	deletingAtApplied: boolean
+	leasesApplied: number
+	leasesSkipped: number
+}
+
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
 	/**
@@ -183,6 +248,14 @@ export type UserMeterExportResult = {
 	 * `null` so paged consumers never double-count the inventory.
 	 */
 	packageServiceStatesShadow: Array<UserMeterPackageServiceState> | null
+	/**
+	 * Non-authoritative D1 deletion-fence / write-lease shadow. Emitted only
+	 * on the first export page (`startAfter` absent); subsequent pages return
+	 * `null` so paged consumers never double-count the inventory. Sanitized:
+	 * excludes raw lease token and holder (see
+	 * {@link UserMeterDeletionShadowExport}).
+	 */
+	deletionShadow: UserMeterDeletionShadowExport | null
 	nextStartAfter: string | null
 	truncated: boolean
 }
@@ -211,6 +284,11 @@ type PackageServiceExportCursor = {
 	serviceName: string
 }
 
+type WriteLeaseExportCursor = {
+	acquiredAt: string
+	token: string
+}
+
 type PackageServiceSqlRow = {
 	package_id: string
 	service_name: string
@@ -219,6 +297,12 @@ type PackageServiceSqlRow = {
 	source_updated_at: string
 	revision: number
 	updated_at: string
+}
+
+type WriteLeaseSqlRow = {
+	token: string
+	holder: string
+	acquired_at: string
 }
 
 function assertDailyResource(resource: string): DailyEntitlementResource {
@@ -310,6 +394,45 @@ function assertSourceUpdatedAt(sourceUpdatedAt: string): string {
 	return sourceUpdatedAt
 }
 
+function assertDeletionTimestamp(label: string, value: string): string {
+	if (
+		typeof value !== 'string' ||
+		value.length === 0 ||
+		value.length > maxDeletionTimestampLength
+	) {
+		throw new Error(
+			`UserMeter ${label} must be a non-empty string up to ${maxDeletionTimestampLength} characters.`,
+		)
+	}
+	return value
+}
+
+function assertWriteLeaseToken(token: string): string {
+	if (
+		typeof token !== 'string' ||
+		token.length === 0 ||
+		token.length > maxWriteLeaseTokenLength
+	) {
+		throw new Error(
+			`UserMeter write lease token must be a non-empty string up to ${maxWriteLeaseTokenLength} characters.`,
+		)
+	}
+	return token
+}
+
+function assertWriteLeaseHolder(holder: string): string {
+	if (
+		typeof holder !== 'string' ||
+		holder.length === 0 ||
+		holder.length > maxWriteLeaseHolderLength
+	) {
+		throw new Error(
+			`UserMeter write lease holder must be a non-empty string up to ${maxWriteLeaseHolderLength} characters.`,
+		)
+	}
+	return holder
+}
+
 function retentionCutoffDay(now: Date): string {
 	const cutoff = new Date(now)
 	cutoff.setUTCDate(
@@ -349,6 +472,26 @@ function decodePackageServiceCursor(
 			return null
 		}
 		return { packageId, serviceName }
+	} catch {
+		return null
+	}
+}
+
+function encodeWriteLeaseCursor(cursor: WriteLeaseExportCursor) {
+	return JSON.stringify([cursor.acquiredAt, cursor.token])
+}
+
+function decodeWriteLeaseCursor(
+	startAfter: string,
+): WriteLeaseExportCursor | null {
+	try {
+		const parsed = JSON.parse(startAfter) as unknown
+		if (!Array.isArray(parsed) || parsed.length !== 2) return null
+		const [acquiredAt, token] = parsed
+		if (typeof acquiredAt !== 'string' || typeof token !== 'string') {
+			return null
+		}
+		return { acquiredAt, token }
 	} catch {
 		return null
 	}
@@ -463,6 +606,24 @@ class UserMeterBase extends DurableObject<Env> {
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_package_service_states_status_source
 			ON package_service_states (status, source_updated_at)`,
+		)
+		// Expand-phase shadow of D1 deletion fence / write leases (schema v6).
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS deletion_state (
+				id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+				deleting_at TEXT NOT NULL
+			)
+		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS account_write_leases (
+				token TEXT PRIMARY KEY NOT NULL,
+				holder TEXT NOT NULL,
+				acquired_at TEXT NOT NULL
+			)
+		`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_account_write_leases_acquired_token
+			ON account_write_leases (acquired_at, token)`,
 		)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO user_meter_meta (key, value) VALUES (?, ?)
@@ -1205,10 +1366,294 @@ class UserMeterBase extends DurableObject<Env> {
 		return { applied, skipped }
 	}
 
+	private readDeletingAt(): string | null {
+		const row = this.ctx.storage.sql
+			.exec<{
+				deleting_at: string
+			}>(
+				`SELECT deleting_at FROM deletion_state WHERE id = ?`,
+				deletionStateRowId,
+			)
+			.toArray()[0]
+		if (!row) return null
+		const deletingAt = String(row.deleting_at ?? '')
+		return deletingAt.length > 0 ? deletingAt : null
+	}
+
+	private writeLeaseFromRow(row: WriteLeaseSqlRow): UserMeterWriteLeaseShadow {
+		return {
+			token: String(row.token),
+			holder: String(row.holder),
+			acquiredAt: String(row.acquired_at),
+		}
+	}
+
+	private readWriteLease(token: string): UserMeterWriteLeaseShadow | null {
+		const row = this.ctx.storage.sql
+			.exec<WriteLeaseSqlRow>(
+				`SELECT token, holder, acquired_at
+				FROM account_write_leases
+				WHERE token = ?`,
+				token,
+			)
+			.toArray()[0]
+		if (!row) return null
+		return this.writeLeaseFromRow(row)
+	}
+
+	private listAllWriteLeaseRows(): Array<UserMeterWriteLeaseShadow> {
+		const rows = this.ctx.storage.sql
+			.exec<WriteLeaseSqlRow>(
+				`SELECT token, holder, acquired_at
+				FROM account_write_leases
+				ORDER BY acquired_at ASC, token ASC`,
+			)
+			.toArray()
+		return rows.map((row) => this.writeLeaseFromRow(row))
+	}
+
+	private readDeletionShadowExport(): UserMeterDeletionShadowExport {
+		const writeLeases = this.listAllWriteLeaseRows().map((lease) => ({
+			acquiredAt: lease.acquiredAt,
+		}))
+		return {
+			deletingAt: this.readDeletingAt(),
+			activeWriteLeaseCount: writeLeases.length,
+			writeLeases,
+		}
+	}
+
+	/** Expand-phase shadow of D1 `users.deleting_at` (first write wins). */
+	async shadowMarkDeleting(input: {
+		deletingAt: string
+	}): Promise<UserMeterShadowMarkDeletingResult> {
+		const deletingAt = assertDeletionTimestamp('deletingAt', input.deletingAt)
+		const existing = this.readDeletingAt()
+		if (existing != null) {
+			return { deletingAt: existing, created: false }
+		}
+		const cursor = this.ctx.storage.sql.exec(
+			`INSERT INTO deletion_state (id, deleting_at)
+			VALUES (?, ?)
+			ON CONFLICT(id) DO NOTHING`,
+			deletionStateRowId,
+			deletingAt,
+		)
+		const stored = this.readDeletingAt() ?? deletingAt
+		return { deletingAt: stored, created: cursor.rowsWritten > 0 }
+	}
+
+	/**
+	 * Atomically set/preserve the deleting tombstone and replace the shadow
+	 * lease set with exactly the supplied active D1 leases. Used by
+	 * `markAccountDeleting` so stale unreleased shadow rows cannot linger
+	 * after D1 drain (empty lease list clears all shadow leases).
+	 */
+	async shadowReplaceDeletionState(input: {
+		deletingAt: string
+		leases?: ReadonlyArray<{
+			token: string
+			holder: string
+			acquiredAt: string
+		}>
+	}): Promise<UserMeterShadowReplaceDeletionStateResult> {
+		const deletingAt = assertDeletionTimestamp('deletingAt', input.deletingAt)
+		const leasesByToken = new Map<
+			string,
+			{ token: string; holder: string; acquiredAt: string }
+		>()
+		for (const lease of input.leases ?? []) {
+			const token = assertWriteLeaseToken(lease.token)
+			leasesByToken.set(token, {
+				token,
+				holder: assertWriteLeaseHolder(lease.holder),
+				acquiredAt: assertDeletionTimestamp('acquiredAt', lease.acquiredAt),
+			})
+		}
+		const leases = [...leasesByToken.values()]
+		return await this.ctx.blockConcurrencyWhile(async () => {
+			const existing = this.readDeletingAt()
+			let created = false
+			if (existing == null) {
+				const cursor = this.ctx.storage.sql.exec(
+					`INSERT INTO deletion_state (id, deleting_at)
+					VALUES (?, ?)
+					ON CONFLICT(id) DO NOTHING`,
+					deletionStateRowId,
+					deletingAt,
+				)
+				created = cursor.rowsWritten > 0
+			}
+			const stored = this.readDeletingAt() ?? deletingAt
+			this.ctx.storage.sql.exec(`DELETE FROM account_write_leases`)
+			for (const lease of leases) {
+				this.ctx.storage.sql.exec(
+					`INSERT INTO account_write_leases (token, holder, acquired_at)
+					VALUES (?, ?, ?)`,
+					lease.token,
+					lease.holder,
+					lease.acquiredAt,
+				)
+			}
+			return {
+				deletingAt: stored,
+				created,
+				leaseCount: leases.length,
+			}
+		})
+	}
+
+	/** Expand-phase shadow lease acquire; fencing still uses D1. */
+	async shadowAcquireWriteLease(input: {
+		token: string
+		holder: string
+		acquiredAt: string
+	}): Promise<UserMeterShadowAcquireWriteLeaseResult> {
+		const token = assertWriteLeaseToken(input.token)
+		const holder = assertWriteLeaseHolder(input.holder)
+		const acquiredAt = assertDeletionTimestamp('acquiredAt', input.acquiredAt)
+		if (this.readWriteLease(token)) return { acquired: true }
+		if (this.readDeletingAt() != null) return { acquired: false }
+		const cursor = this.ctx.storage.sql.exec(
+			`INSERT INTO account_write_leases (token, holder, acquired_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT(token) DO NOTHING`,
+			token,
+			holder,
+			acquiredAt,
+		)
+		return {
+			acquired: cursor.rowsWritten > 0 || this.readWriteLease(token) != null,
+		}
+	}
+
+	/** Expand-phase shadow lease release / repair mirror; fencing uses D1. */
+	async shadowReleaseWriteLease(input: {
+		token: string
+	}): Promise<UserMeterShadowReleaseWriteLeaseResult> {
+		const token = assertWriteLeaseToken(input.token)
+		const cursor = this.ctx.storage.sql.exec(
+			`DELETE FROM account_write_leases WHERE token = ?`,
+			token,
+		)
+		return { released: cursor.rowsWritten > 0 }
+	}
+
+	/** Cutover-support deletion tombstone read; Phase A uses D1. */
+	async readDeletionState(): Promise<{ deletingAt: string | null }> {
+		return { deletingAt: this.readDeletingAt() }
+	}
+
+	/** Cutover-support paged shadow lease list; Phase A list uses D1. */
+	async listWriteLeases(
+		input: {
+			pageSize?: number
+			startAfter?: string | null
+		} = {},
+	): Promise<UserMeterWriteLeaseListResult> {
+		const pageSize = normalizePageSize(input.pageSize)
+		const cursor =
+			typeof input.startAfter === 'string' && input.startAfter.length > 0
+				? decodeWriteLeaseCursor(input.startAfter)
+				: null
+		const rows = (
+			cursor
+				? this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
+						`SELECT token, holder, acquired_at
+						FROM account_write_leases
+						WHERE acquired_at > ?
+							OR (acquired_at = ? AND token > ?)
+						ORDER BY acquired_at ASC, token ASC
+						LIMIT ?`,
+						cursor.acquiredAt,
+						cursor.acquiredAt,
+						cursor.token,
+						pageSize + 1,
+					)
+				: this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
+						`SELECT token, holder, acquired_at
+						FROM account_write_leases
+						ORDER BY acquired_at ASC, token ASC
+						LIMIT ?`,
+						pageSize + 1,
+					)
+		).toArray()
+		const truncated = rows.length > pageSize
+		const pageRows = truncated ? rows.slice(0, pageSize) : rows
+		const leases = pageRows.map((row) => this.writeLeaseFromRow(row))
+		const last = pageRows[pageRows.length - 1]
+		return {
+			leases,
+			nextStartAfter:
+				truncated && last
+					? encodeWriteLeaseCursor({
+							acquiredAt: String(last.acquired_at),
+							token: String(last.token),
+						})
+					: null,
+			truncated,
+		}
+	}
+
+	/** Cutover-support active lease count; Phase A drain uses D1. */
+	async countActiveWriteLeases(): Promise<UserMeterWriteLeaseCountResult> {
+		const row = this.ctx.storage.sql
+			.exec<{
+				count: number
+			}>(`SELECT COUNT(*) AS count FROM account_write_leases`)
+			.toArray()[0]
+		return { count: Math.max(0, Number(row?.count ?? 0)) }
+	}
+
+	/**
+	 * Cutover-support cold seed. Leases apply first (same guards as
+	 * {@link shadowAcquireWriteLease}), then the deleting tombstone.
+	 */
+	async bootstrapDeletionState(input: {
+		deletingAt?: string | null
+		leases?: ReadonlyArray<{
+			token: string
+			holder: string
+			acquiredAt: string
+		}>
+	}): Promise<UserMeterDeletionBootstrapResult> {
+		let leasesApplied = 0
+		let leasesSkipped = 0
+		for (const lease of input.leases ?? []) {
+			const token = assertWriteLeaseToken(lease.token)
+			if (this.readWriteLease(token)) {
+				leasesSkipped += 1
+				continue
+			}
+			const result = await this.shadowAcquireWriteLease(lease)
+			if (result.acquired) leasesApplied += 1
+			else leasesSkipped += 1
+		}
+		let deletingAtApplied = false
+		if (typeof input.deletingAt === 'string' && input.deletingAt.length > 0) {
+			const marked = await this.shadowMarkDeleting({
+				deletingAt: input.deletingAt,
+			})
+			deletingAtApplied = marked.created
+		}
+		return { deletingAtApplied, leasesApplied, leasesSkipped }
+	}
+
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
+			// Preserve deleting tombstone across deleteAll for later cutover safety.
+			const deletingAt = this.readDeletingAt()
 			await this.ctx.storage.deleteAll()
 			this.initializeSchema()
+			if (deletingAt != null) {
+				this.ctx.storage.sql.exec(
+					`INSERT INTO deletion_state (id, deleting_at)
+					VALUES (?, ?)
+					ON CONFLICT(id) DO NOTHING`,
+					deletionStateRowId,
+					deletingAt,
+				)
+			}
 		})
 		return { ok: true }
 	}
@@ -1283,6 +1728,9 @@ class UserMeterBase extends DurableObject<Env> {
 		const packageServiceStatesShadow = includeShadows
 			? this.listAllPackageServiceRows()
 			: null
+		const deletionShadow = includeShadows
+			? this.readDeletionShadowExport()
+			: null
 		const last = pageRows[pageRows.length - 1]
 		return {
 			counters,
@@ -1295,6 +1743,7 @@ class UserMeterBase extends DurableObject<Env> {
 					}
 				: null,
 			packageServiceStatesShadow,
+			deletionShadow,
 			nextStartAfter:
 				truncated && last
 					? encodeExportCursor({
@@ -1396,6 +1845,50 @@ export type UserMeterRpc = {
 			updatedAt?: string
 		}>
 	}) => Promise<UserMeterPackageServiceBootstrapResult>
+	/** Expand-phase shadow of D1 users.deleting_at; fence still uses D1. */
+	shadowMarkDeleting: (input: {
+		deletingAt: string
+	}) => Promise<UserMeterShadowMarkDeletingResult>
+	/**
+	 * Atomically set/preserve deleting tombstone and replace shadow leases
+	 * with the supplied active D1 set (empty clears stale shadows).
+	 */
+	shadowReplaceDeletionState: (input: {
+		deletingAt: string
+		leases?: ReadonlyArray<{
+			token: string
+			holder: string
+			acquiredAt: string
+		}>
+	}) => Promise<UserMeterShadowReplaceDeletionStateResult>
+	/** Expand-phase shadow lease acquire; fencing still uses D1. */
+	shadowAcquireWriteLease: (input: {
+		token: string
+		holder: string
+		acquiredAt: string
+	}) => Promise<UserMeterShadowAcquireWriteLeaseResult>
+	/** Expand-phase shadow lease release / repair mirror; fencing uses D1. */
+	shadowReleaseWriteLease: (input: {
+		token: string
+	}) => Promise<UserMeterShadowReleaseWriteLeaseResult>
+	/** Cutover-support deletion tombstone read; Phase A uses D1. */
+	readDeletionState: () => Promise<{ deletingAt: string | null }>
+	/** Cutover-support paged shadow lease list; Phase A list uses D1. */
+	listWriteLeases: (input: {
+		pageSize?: number
+		startAfter?: string | null
+	}) => Promise<UserMeterWriteLeaseListResult>
+	/** Cutover-support active lease count; Phase A drain uses D1. */
+	countActiveWriteLeases: () => Promise<UserMeterWriteLeaseCountResult>
+	/** Cutover-support cold seed with monotonic mark / acquire guards. */
+	bootstrapDeletionState: (input: {
+		deletingAt?: string | null
+		leases?: ReadonlyArray<{
+			token: string
+			holder: string
+			acquiredAt: string
+		}>
+	}) => Promise<UserMeterDeletionBootstrapResult>
 	purge: () => Promise<{ ok: true }>
 	exportCounters: (input: {
 		pageSize?: number

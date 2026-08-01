@@ -25,6 +25,7 @@ export async function scheduleStripePlanRefreshBackstop(input: {
 			db: input.env.APP_DB,
 			stableUserId: userId,
 			holder: 'stripe_plan_refresh_schedule',
+			env: input.env,
 			write: async () => {
 				await stub.schedule({
 					userId,

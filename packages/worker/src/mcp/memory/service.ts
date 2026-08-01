@@ -148,6 +148,7 @@ export async function acknowledgeSurfacedMemories(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const memoryIds = Array.from(
 				new Set(input.memoryIds.filter((id) => id.trim().length > 0)),
@@ -175,6 +176,8 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const normalized = normalizeMemoryPayload(input)
 			const now = new Date().toISOString()
@@ -329,6 +332,7 @@ export async function deleteMemory(
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const existing = await getMemoryById(
 				input.env.APP_DB,

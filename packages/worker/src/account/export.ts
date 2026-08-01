@@ -209,12 +209,18 @@ export type AccountExportArtifactRepo = {
 type RunRecordsExportPayload = Awaited<ReturnType<typeof exportRunRecords>>
 
 function countUserMeterExportEntries(result: UserMeterExportResult): number {
+	const deletionShadowCount =
+		result.deletionShadow == null
+			? 0
+			: (result.deletionShadow.deletingAt == null ? 0 : 1) +
+				result.deletionShadow.activeWriteLeaseCount
 	return (
 		result.counters.length +
 		(result.storageBytesShadow == null ? 0 : 1) +
 		(result.packageServiceStatesShadow == null
 			? 0
-			: result.packageServiceStatesShadow.length)
+			: result.packageServiceStatesShadow.length) +
+		deletionShadowCount
 	)
 }
 
@@ -305,6 +311,12 @@ export type AccountExportSectionResult = {
 	 * `null`.
 	 */
 	packageServiceStatesShadow?: UserMeterExportResult['packageServiceStatesShadow']
+	/**
+	 * Non-authoritative UserMeter deletion-fence / write-lease shadow. Present
+	 * only on the first `user_meter` page (`startAfter` absent); later pages
+	 * set it to `null`.
+	 */
+	deletionShadow?: UserMeterExportResult['deletionShadow']
 }
 
 function normalizePageSize(pageSize: number | undefined) {
@@ -2002,6 +2014,7 @@ export async function readAccountExportSection(input: {
 			items: page.counters,
 			storageBytesShadow: page.storageBytesShadow,
 			packageServiceStatesShadow: page.packageServiceStatesShadow,
+			deletionShadow: page.deletionShadow,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

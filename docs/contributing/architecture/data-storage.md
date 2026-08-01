@@ -563,7 +563,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**5**):
+**6**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -590,13 +590,29 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   (`listPackageServiceStates`, `countRunningPackageServices`,
   `bootstrapPackageServiceStates`) mirror D1 semantics for future parity review
   only.
+- `deletion_state` / `account_write_leases` — **shadow** of D1
+  `users.deleting_at` and active `account_write_leases` (singleton
+  `deleting_at`; lease rows `token` / `holder` / `acquired_at`). Added in schema
+  v6. Populated by optional best-effort dual-writes from
+  `account/deletion-state.ts` after successful D1 mark/acquire/release/repair;
+  never read for fencing, list, repair, or drain in expand-phase slice 5 Phase
+  A. On mark, after D1 `deleting_at` is set, the helper loads active D1 leases
+  and calls `shadowReplaceDeletionState` (DO-serialized tombstone set/preserve +
+  exact lease-set replace) so stale unreleased shadow rows are cleared when D1
+  drain reaches zero and active D1 leases are preserved. `purge()` preserves an
+  existing deleting tombstone across `deleteAll` so a later cutover cannot
+  reopen writes. Cutover-support RPCs (`readDeletionState`, `listWriteLeases`,
+  `countActiveWriteLeases`, `bootstrapDeletionState`) exist for future parity
+  review only; account export emits a sanitized `deletionShadow` without raw
+  token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
 retries. Shadow storage-byte and package-service liveness rows are not
-time-pruned.
+time-pruned. Deletion-fence lease shadows are bounded by the D1-backed mark
+replace path above rather than time retention.
 
 **Expand-phase D1 mirrors (daily counters only):** enforcement and point reads
 are authoritative in UserMeter for daily counters. D1
@@ -615,12 +631,13 @@ writes cannot overwrite newer state. See
 daily paths never read D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
-`deleteAll` clears counters, claims, and all shadow state including storage
-bytes and package-service liveness). Account export pages
-`UserMeter.exportCounters` through the `user_meter` manifest section /
-`account_export_section` (daily counters plus additive `storageBytesShadow` and
-`packageServiceStatesShadow` on the first page only when present; shadow fields
-are non-authoritative).
+`deleteAll` clears counters, claims, storage-byte shadow, package-service
+shadow, and write-lease shadow, while preserving an existing deleting
+tombstone). Account export pages `UserMeter.exportCounters` through the
+`user_meter` manifest section / `account_export_section` (daily counters plus
+additive `storageBytesShadow`, `packageServiceStatesShadow`, and
+`deletionShadow` on the first page only when present; shadow fields are
+non-authoritative).
 
 ## Durable Objects (`Mailbox`)
 
@@ -1050,7 +1067,7 @@ source's `external_check_until` to the token expiry plus a one-hour grace
 period. The normal pass only scans these pending sources, using
 `last_external_check_at` for the five-minute cadence and keyset paging until the
 pending queue is drained or a wall-clock time budget (`reconcileTimeBudgetMs`,
-~60 seconds) is exhausted. Dormant package sources no longer incur an Artifacts
+~60 seconds) is exhausted. Dormant package sources do not incur an Artifacts
 HEAD lookup on every tick.
 
 For each pending source, reconcile resolves the Artifacts default-branch HEAD.

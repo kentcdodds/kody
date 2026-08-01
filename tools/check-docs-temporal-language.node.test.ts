@@ -49,7 +49,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({ line: 6, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 6,
-			pattern: 'now support/accept/require/use/store/return',
+			pattern: 'now support/accept/require/use/store/return/call/read',
 		}),
 	])
 
@@ -69,7 +69,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({ line: 2, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 2,
-			pattern: 'now support/accept/require/use/store/return',
+			pattern: 'now support/accept/require/use/store/return/call/read',
 		}),
 	])
 
@@ -93,7 +93,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({
 			line: 5,
 			column: 22,
-			pattern: 'now support/accept/require/use/store/return',
+			pattern: 'now support/accept/require/use/store/return/call/read',
 		}),
 	])
 
@@ -115,7 +115,9 @@ test.each([
 	['Formerly we stored package state elsewhere.', 'formerly we'],
 	['The API no longer supports that option.', 'no longer support'],
 	['Mutating writes no longer fan RPCs across buckets.', 'no longer support'],
+	['Dormant sources no longer incur a HEAD lookup.', 'no longer support'],
 	['The API now supports this option.', 'now support'],
+	['Point-read surfaces now call the meter helper.', 'now support'],
 	['This guide was recently updated.', 'recently changed'],
 	['The API used to require that option.', 'used to support'],
 	['Use the same restore-safe byte ceiling as before.', 'as before'],
@@ -220,7 +222,7 @@ test('exempts principles and migration pages and scans discovered docs', async (
 			expect.objectContaining({
 				file: 'docs/use/example.md',
 				line: 1,
-				pattern: 'now support/accept/require/use/store/return',
+				pattern: 'now support/accept/require/use/store/return/call/read',
 			}),
 		])
 	} finally {

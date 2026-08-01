@@ -382,10 +382,9 @@ run retention passes; only account deletion `clearAll` removes them.
 | `package_run_successes` | Per-package success counters toward activation.                                                                                                                                                                                               |
 | `activation_milestones` | One row each for `package_run_succeeded` and `package_activated` (`package_id` on the second). High-frequency HTTP surfaces (`webhook`, `app_fetch`) do not count; activation means two unattended capability successes for the same package. |
 
-During the expand phase, workflow writes still project into D1 `workflow_runs`
-for compatibility while the authoritative correctness copy lives in
-`workflow_projections`. The D1 table is pruned by the hourly retention job;
-RunLog projections are not.
+During the expand phase, workflow writes also project into D1 `workflow_runs`
+while the authoritative correctness copy lives in `workflow_projections`. The D1
+table is pruned by the hourly retention job; RunLog projections are not.
 
 Account export pages all of the above through section `run_records` after runs
 and ledger rows (`exportRuns` phases: raw run-id cursor, then

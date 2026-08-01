@@ -37,6 +37,7 @@ type JobScheduleWatchdogEnv = {
 	APP_DB: D1Database
 	JOB_MANAGER?: Env['JOB_MANAGER']
 	BUNDLE_ARTIFACTS_KV?: KVNamespace
+	USER_METER?: DurableObjectNamespace
 }
 
 export function shouldRunJobScheduleWatchdogCron(now: Date) {
@@ -190,6 +191,7 @@ export async function runJobScheduleWatchdogTick(input: {
 			const repaired = await withAccountWriteLease({
 				db: input.env.APP_DB,
 				stableUserId: row.user_id,
+				env: input.env,
 				async write() {
 					return advanceStuckSkippedJobNextRunAt({
 						db: input.env.APP_DB,

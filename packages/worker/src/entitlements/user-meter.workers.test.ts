@@ -562,6 +562,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		counters: [],
 		storageBytesShadow: null,
 		packageServiceStatesShadow: [],
+		deletionShadow: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -616,12 +621,9 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		'entitlement-daily-mirror-failed',
 		expect.any(Error),
 	)
-}, 30_000)
 
-test('UserMeter consume rejects invalid UTC day keys before SQL', async () => {
-	const user = await seedFreeUser('meter-invalid-day')
 	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+		env.USER_METER.idFromName(userMeterDurableObjectName(userA.userId)),
 	)
 	await runInDurableObject(stub, async (instance: UserMeter) => {
 		await expect(
@@ -692,6 +694,11 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 		counters: [],
 		storageBytesShadow: null,
 		packageServiceStatesShadow: [],
+		deletionShadow: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -700,11 +707,11 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	})
 }, 30_000)
 
-test('storage bytes enforcement remains D1-authoritative even when env is passed', async () => {
+test('storage bytes stay D1-authoritative with shadow failure, concurrency, delayed shadow, and missing-user semantics', async () => {
+	const storageLimit = planLimits.free.maxStorageBytes
 	const user = await seedFreeUser('meter-storage-d1-authority')
 	const drain = createWaitUntilDrain()
 	const meter = userMeterRpc({ env, userId: user.userId })
-	const storageLimit = planLimits.free.maxStorageBytes
 	const legacyBytes = storageLimit - 10
 
 	await env.APP_DB.prepare(
@@ -762,20 +769,16 @@ test('storage bytes enforcement remains D1-authoritative even when env is passed
 		outcome: 'ready',
 		bytes: legacyBytes + 5,
 	})
-}, 30_000)
 
-test('UserMeter storage shadow failure cannot affect successful D1 reserves', async () => {
-	const user = await seedFreeUser('meter-storage-shadow-fail')
-	const drain = createWaitUntilDrain()
-	const storageLimit = planLimits.free.maxStorageBytes
-
+	const shadowFailUser = await seedFreeUser('meter-storage-shadow-fail')
+	const shadowFailDrain = createWaitUntilDrain()
 	await env.APP_DB.prepare(
 		`UPDATE users
 		SET d1_storage_bytes = ?,
 			d1_storage_bytes_updated_at = ?
 		WHERE stable_user_id = ?`,
 	)
-		.bind(storageLimit - 20, '2026-07-31T12:00:00.000Z', user.userId)
+		.bind(storageLimit - 20, '2026-07-31T12:00:00.000Z', shadowFailUser.userId)
 		.run()
 
 	consoleWarn.mockImplementation(() => {})
@@ -796,40 +799,40 @@ test('UserMeter storage shadow failure cannot affect successful D1 reserves', as
 		assertWithinStorageBytesEntitlement({
 			db: env.APP_DB,
 			env: failingMeterEnv,
-			userId: user.userId,
-			email: user.email,
+			userId: shadowFailUser.userId,
+			email: shadowFailUser.email,
 			requested: 5,
-			waitUntil: drain.waitUntil,
+			waitUntil: shadowFailDrain.waitUntil,
 		}),
 	).resolves.toBeUndefined()
 	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+		readUserD1StorageBytes({
+			db: env.APP_DB,
+			userId: shadowFailUser.userId,
+		}),
 	).resolves.toBe(storageLimit - 15)
-	await drain.drain()
+	await shadowFailDrain.drain()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'entitlement-storage-bytes-shadow-failed',
 		expect.any(Error),
 	)
-}, 30_000)
 
-test('concurrent D1 storage reserves cannot overshoot the plan limit', async () => {
-	const user = await seedFreeUser('meter-storage-concurrent-d1')
-	const limit = planLimits.free.maxStorageBytes
+	const concurrentUser = await seedFreeUser('meter-storage-concurrent-d1')
 	await env.APP_DB.prepare(
 		`UPDATE users
 		SET d1_storage_bytes = ?,
 			d1_storage_bytes_updated_at = ?
 		WHERE stable_user_id = ?`,
 	)
-		.bind(limit - 10, '2026-07-31T15:00:00.000Z', user.userId)
+		.bind(storageLimit - 10, '2026-07-31T15:00:00.000Z', concurrentUser.userId)
 		.run()
 
 	const attempts = await Promise.all(
 		Array.from({ length: 20 }, () =>
 			assertWithinStorageBytesEntitlement({
 				db: env.APP_DB,
-				userId: user.userId,
-				email: user.email,
+				userId: concurrentUser.userId,
+				email: concurrentUser.email,
 				requested: 5,
 			}).then(
 				() => 'reserved' as const,
@@ -838,20 +841,21 @@ test('concurrent D1 storage reserves cannot overshoot the plan limit', async () 
 		),
 	)
 	const reserved = attempts.filter((result) => result === 'reserved')
-	const denied = attempts.filter(
+	const concurrentDenied = attempts.filter(
 		(result) => result instanceof EntitlementLimitError,
 	)
 	expect(reserved).toHaveLength(2)
-	expect(denied).toHaveLength(18)
+	expect(concurrentDenied).toHaveLength(18)
 	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(limit)
-}, 30_000)
+		readUserD1StorageBytes({
+			db: env.APP_DB,
+			userId: concurrentUser.userId,
+		}),
+	).resolves.toBe(storageLimit)
 
-test('delayed UserMeter storage shadow re-reads latest D1 and cannot regress D1', async () => {
-	const user = await seedFreeUser('meter-storage-shadow-latest')
-	const drain = createWaitUntilDrain()
-	const meter = userMeterRpc({ env, userId: user.userId })
+	const delayedUser = await seedFreeUser('meter-storage-shadow-latest')
+	const delayedDrain = createWaitUntilDrain()
+	const delayedMeter = userMeterRpc({ env, userId: delayedUser.userId })
 
 	await env.APP_DB.prepare(
 		`UPDATE users
@@ -859,67 +863,98 @@ test('delayed UserMeter storage shadow re-reads latest D1 and cannot regress D1'
 			d1_storage_bytes_updated_at = ?
 		WHERE stable_user_id = ?`,
 	)
-		.bind(10, '2026-07-31T16:00:00.000Z', user.userId)
+		.bind(10, '2026-07-31T16:00:00.000Z', delayedUser.userId)
 		.run()
 
-	let releaseShadow!: () => void
-	const shadowGate = new Promise<void>((resolve) => {
-		releaseShadow = resolve
-	})
-	let shadowReads = 0
-	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			const statement = originalPrepare(query)
-			const isPointRead =
-				query.includes('SELECT d1_storage_bytes AS bytes') &&
-				query.includes('FROM users')
-			const isReserve = query.includes(
-				'SET d1_storage_bytes = d1_storage_bytes + ?',
-			)
-			const originalBind = statement.bind.bind(statement)
-			return {
-				bind(...params: Array<unknown>) {
-					const bound = originalBind(...params)
-					return {
-						first: async <T>() => {
-							if (isPointRead) {
-								shadowReads += 1
-								await shadowGate
-							}
-							return await bound.first<T>()
-						},
-						all: bound.all.bind(bound),
-						raw: bound.raw?.bind(bound),
-						run: bound.run.bind(bound),
-					}
-				},
-			}
-		}) as D1Database['prepare']
-	})
+	{
+		let releaseShadow!: () => void
+		const shadowGate = new Promise<void>((resolve) => {
+			releaseShadow = resolve
+		})
+		let shadowReads = 0
+		using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
+			return ((query: string) => {
+				const statement = originalPrepare(query)
+				const isPointRead =
+					query.includes('SELECT d1_storage_bytes AS bytes') &&
+					query.includes('FROM users')
+				const originalBind = statement.bind.bind(statement)
+				return {
+					bind(...params: Array<unknown>) {
+						const bound = originalBind(...params)
+						return {
+							first: async <T>() => {
+								if (isPointRead) {
+									shadowReads += 1
+									await shadowGate
+								}
+								return await bound.first<T>()
+							},
+							all: bound.all.bind(bound),
+							raw: bound.raw?.bind(bound),
+							run: bound.run.bind(bound),
+						}
+					},
+				}
+			}) as D1Database['prepare']
+		})
 
-	await assertWithinStorageBytesEntitlement({
+		await assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			env,
+			userId: delayedUser.userId,
+			email: delayedUser.email,
+			requested: 5,
+			waitUntil: delayedDrain.waitUntil,
+		})
+		await assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			userId: delayedUser.userId,
+			email: delayedUser.email,
+			requested: 7,
+		})
+		releaseShadow()
+		await delayedDrain.drain()
+		expect(shadowReads).toBeGreaterThanOrEqual(1)
+		await expect(
+			readUserD1StorageBytes({ db: env.APP_DB, userId: delayedUser.userId }),
+		).resolves.toBe(22)
+		expect(await delayedMeter.readStorageBytes()).toMatchObject({
+			outcome: 'ready',
+			bytes: 22,
+		})
+	}
+
+	await ensureEntitlementTestSchema(env.APP_DB)
+	const missingUserId = 'a'.repeat(64)
+	await expect(
+		assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			env,
+			userId: missingUserId,
+			email: null,
+			requested: 1,
+		}),
+	).resolves.toBeUndefined()
+
+	const missingDenied = await assertWithinStorageBytesEntitlement({
 		db: env.APP_DB,
 		env,
-		userId: user.userId,
-		email: user.email,
-		requested: 5,
-		waitUntil: drain.waitUntil,
-	})
-	await assertWithinStorageBytesEntitlement({
-		db: env.APP_DB,
-		userId: user.userId,
-		email: user.email,
-		requested: 7,
-	})
-	releaseShadow()
-	await drain.drain()
-	expect(shadowReads).toBeGreaterThanOrEqual(1)
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(22)
-	expect(await meter.readStorageBytes()).toMatchObject({
-		outcome: 'ready',
-		bytes: 22,
+		userId: missingUserId,
+		email: null,
+		requested: storageLimit + 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(missingDenied).toBeInstanceOf(EntitlementLimitError)
+	expect(missingDenied).toMatchObject({
+		details: {
+			resource: 'storage_bytes',
+			plan: 'free',
+			limit: storageLimit,
+			current: 0,
+		},
 	})
 }, 30_000)
 
@@ -966,6 +1001,11 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 		mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
 	})
 	expect(firstPage.packageServiceStatesShadow).toEqual([])
+	expect(firstPage.deletionShadow).toEqual({
+		deletingAt: null,
+		activeWriteLeaseCount: 0,
+		writeLeases: [],
+	})
 
 	const secondPage = await meter.exportCounters({
 		pageSize: 2,
@@ -976,6 +1016,7 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(secondPage.nextStartAfter).toBeNull()
 	expect(secondPage.storageBytesShadow).toBeNull()
 	expect(secondPage.packageServiceStatesShadow).toBeNull()
+	expect(secondPage.deletionShadow).toBeNull()
 
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
@@ -989,44 +1030,13 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 		counters: [],
 		storageBytesShadow: null,
 		packageServiceStatesShadow: [],
+		deletionShadow: {
+			deletingAt: null,
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
 		nextStartAfter: null,
 		truncated: false,
-	})
-}, 30_000)
-
-test('missing-user storage reserve preserves EntitlementLimitError semantics on D1 path', async () => {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const missingUserId = 'a'.repeat(64)
-	const freeLimit = planLimits.free.maxStorageBytes
-
-	await expect(
-		assertWithinStorageBytesEntitlement({
-			db: env.APP_DB,
-			env,
-			userId: missingUserId,
-			email: null,
-			requested: 1,
-		}),
-	).resolves.toBeUndefined()
-
-	const denied = await assertWithinStorageBytesEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: missingUserId,
-		email: null,
-		requested: freeLimit + 1,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	expect(denied).toBeInstanceOf(EntitlementLimitError)
-	expect(denied).toMatchObject({
-		details: {
-			resource: 'storage_bytes',
-			plan: 'free',
-			limit: freeLimit,
-			current: 0,
-		},
 	})
 }, 30_000)
 
@@ -1186,6 +1196,7 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 		startAfter: firstPage.nextStartAfter,
 	})
 	expect(secondPage.packageServiceStatesShadow).toBeNull()
+	expect(secondPage.deletionShadow).toBeNull()
 
 	await expect(
 		meterA.deletePackageServiceState({
@@ -1199,44 +1210,22 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 		}),
 	).toEqual({ count: 0 })
 
-	await expect(meterA.purge()).resolves.toEqual({ ok: true })
-	expect(await meterA.listPackageServiceStates({})).toEqual({
-		states: [],
-		nextStartAfter: null,
-		truncated: false,
-	})
-	expect(await meterB.listPackageServiceStates({})).toMatchObject({
-		states: [
-			expect.objectContaining({
-				packageId: 'pkg-1',
-				serviceName: 'worker',
-				status: 'running',
-			}),
-		],
-	})
-}, 30_000)
-
-test('UserMeter package-service sourceUpdatedAt accepts only canonical UTC ISO timestamps', async () => {
-	const user = await seedFreeUser('meter-pkg-svc-iso')
-	const meter = userMeterRpc({ env, userId: user.userId })
 	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+		env.USER_METER.idFromName(userMeterDurableObjectName(userA.userId)),
 	)
-	const valid = '2026-08-01T10:00:00.000Z'
-
+	const validIso = '2026-08-01T10:00:00.000Z'
 	await expect(
-		meter.upsertPackageServiceState({
+		meterA.upsertPackageServiceState({
 			packageId: 'pkg-iso',
 			serviceName: 'worker',
 			status: 'running',
-			startedAt: valid,
-			sourceUpdatedAt: valid,
+			startedAt: validIso,
+			sourceUpdatedAt: validIso,
 		}),
 	).resolves.toMatchObject({
 		applied: true,
-		state: { sourceUpdatedAt: valid },
+		state: { sourceUpdatedAt: validIso },
 	})
-
 	const rejected = [
 		'',
 		'not-a-timestamp',
@@ -1260,15 +1249,233 @@ test('UserMeter package-service sourceUpdatedAt accepts only canonical UTC ISO t
 			).rejects.toThrow(/ISO-8601 UTC timestamp/)
 		}
 	})
-
 	// Prior valid row must remain; rejected writes must not throw RangeError past RPC.
-	expect(await meter.listPackageServiceStates({})).toMatchObject({
-		states: [
+	expect(await meterA.listPackageServiceStates({})).toMatchObject({
+		states: expect.arrayContaining([
 			expect.objectContaining({
 				packageId: 'pkg-iso',
 				status: 'running',
-				sourceUpdatedAt: valid,
+				sourceUpdatedAt: validIso,
+			}),
+		]),
+	})
+
+	await expect(meterA.purge()).resolves.toEqual({ ok: true })
+	expect(await meterA.listPackageServiceStates({})).toEqual({
+		states: [],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await meterB.listPackageServiceStates({})).toMatchObject({
+		states: [
+			expect.objectContaining({
+				packageId: 'pkg-1',
+				serviceName: 'worker',
+				status: 'running',
 			}),
 		],
 	})
+}, 30_000)
+
+test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserves tombstone across purge', async () => {
+	const userA = await seedFreeUser('meter-deletion-a')
+	const userB = await seedFreeUser('meter-deletion-b')
+	const meterA = userMeterRpc({ env, userId: userA.userId })
+	const meterB = userMeterRpc({ env, userId: userB.userId })
+
+	const firstMark = await meterA.shadowMarkDeleting({
+		deletingAt: '2026-08-01 10:00:00',
+	})
+	expect(firstMark).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+		created: true,
+	})
+	const secondMark = await meterA.shadowMarkDeleting({
+		deletingAt: '2026-08-01 11:00:00',
+	})
+	expect(secondMark).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+		created: false,
+	})
+
+	await expect(
+		meterB.shadowAcquireWriteLease({
+			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+			holder: 'test:writer',
+			acquiredAt: '2026-08-01 10:05:00',
+		}),
+	).resolves.toEqual({ acquired: true })
+	await expect(
+		meterB.shadowAcquireWriteLease({
+			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+			holder: 'test:writer',
+			acquiredAt: '2026-08-01 10:05:00',
+		}),
+	).resolves.toEqual({ acquired: true })
+	await expect(
+		meterB.shadowAcquireWriteLease({
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+			holder: 'test:other',
+			acquiredAt: '2026-08-01 10:06:00',
+		}),
+	).resolves.toEqual({ acquired: true })
+	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
+
+	const listed = await meterB.listWriteLeases({ pageSize: 1 })
+	expect(listed.leases).toHaveLength(1)
+	expect(listed.truncated).toBe(true)
+	const listedRest = await meterB.listWriteLeases({
+		pageSize: 10,
+		startAfter: listed.nextStartAfter,
+	})
+	expect(listedRest.leases).toHaveLength(1)
+	expect(listedRest.truncated).toBe(false)
+
+	await expect(
+		meterB.shadowReleaseWriteLease({
+			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+		}),
+	).resolves.toEqual({ released: true })
+	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
+
+	await expect(
+		meterA.shadowAcquireWriteLease({
+			token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+			holder: 'test:blocked',
+			acquiredAt: '2026-08-01 10:07:00',
+		}),
+	).resolves.toEqual({ acquired: false })
+
+	const bootstrap = await meterB.bootstrapDeletionState({
+		deletingAt: '2026-08-01 12:00:00',
+		leases: [
+			{
+				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+				holder: 'test:other',
+				acquiredAt: '2026-08-01 10:06:00',
+			},
+			{
+				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+				holder: 'test:boot',
+				acquiredAt: '2026-08-01 10:08:00',
+			},
+		],
+	})
+	expect(bootstrap).toEqual({
+		deletingAtApplied: true,
+		leasesApplied: 1,
+		leasesSkipped: 1,
+	})
+
+	const day = '2026-08-01'
+	for (const resource of [
+		'email_receives_per_day',
+		'email_sends_per_day',
+	] as const) {
+		await meterA.initialize({
+			resource,
+			day,
+			count: 1,
+			updatedAt: '2026-08-01T12:00:00.000Z',
+		})
+	}
+	const firstPage = await meterA.exportCounters({ pageSize: 1 })
+	expect(firstPage.truncated).toBe(true)
+	expect(firstPage.deletionShadow).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+		activeWriteLeaseCount: 0,
+		writeLeases: [],
+	})
+	const secondPage = await meterA.exportCounters({
+		pageSize: 1,
+		startAfter: firstPage.nextStartAfter,
+	})
+	expect(secondPage.deletionShadow).toBeNull()
+
+	await expect(meterA.purge()).resolves.toEqual({ ok: true })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(await meterA.read({ resource: 'email_sends_per_day', day })).toEqual({
+		outcome: 'needs_bootstrap',
+	})
+	expect(await meterA.exportCounters({})).toEqual({
+		counters: [],
+		storageBytesShadow: null,
+		packageServiceStatesShadow: [],
+		deletionShadow: {
+			deletingAt: '2026-08-01 10:00:00',
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
+		nextStartAfter: null,
+		truncated: false,
+	})
+	await expect(
+		meterA.shadowAcquireWriteLease({
+			token: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+			holder: 'test:post-purge',
+			acquiredAt: '2026-08-01 13:00:00',
+		}),
+	).resolves.toEqual({ acquired: false })
+
+	expect(await meterB.readDeletionState()).toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+	})
+	expect(await meterB.listWriteLeases({})).toMatchObject({
+		leases: expect.arrayContaining([
+			expect.objectContaining({
+				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+			}),
+			expect.objectContaining({
+				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			}),
+		]),
+	})
+
+	const replaced = await meterB.shadowReplaceDeletionState({
+		deletingAt: '2026-08-01 14:00:00',
+		leases: [
+			{
+				token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+				holder: 'test:replace',
+				acquiredAt: '2026-08-01 10:09:00',
+			},
+		],
+	})
+	expect(replaced).toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+		created: false,
+		leaseCount: 1,
+	})
+	expect(await meterB.listWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+				holder: 'test:replace',
+				acquiredAt: '2026-08-01 10:09:00',
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(await meterB.exportCounters({})).toMatchObject({
+		deletionShadow: {
+			deletingAt: '2026-08-01 12:00:00',
+			activeWriteLeaseCount: 1,
+			writeLeases: [{ acquiredAt: '2026-08-01 10:09:00' }],
+		},
+	})
+	await expect(
+		meterB.shadowReplaceDeletionState({
+			deletingAt: '2026-08-01 15:00:00',
+			leases: [],
+		}),
+	).resolves.toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+		created: false,
+		leaseCount: 0,
+	})
+	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 0 })
 }, 30_000)

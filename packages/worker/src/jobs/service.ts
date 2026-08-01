@@ -667,6 +667,7 @@ export async function syncPackageJobsForPackage(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const desiredJobs = input.manifest.kody.jobs ?? {}
 			const existingRows = await listJobRowsByUserId(
@@ -784,6 +785,7 @@ export async function deletePackageJobsForSourceId(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const existingRows = await listJobRowsByUserId(
 				input.env.APP_DB,
@@ -859,6 +861,7 @@ export async function createJob(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: callerContext.user.userId,
+		env: input.env,
 		async write() {
 			await assertWithinEntitlement({
 				db: input.env.APP_DB,
@@ -959,6 +962,7 @@ export async function updateJob(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: callerContext.user.userId,
+		env: input.env,
 		async write() {
 			const existingRow = await getJobRowById(
 				input.env.APP_DB,
@@ -1085,6 +1089,7 @@ export async function deleteJob(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const row = await getJobRowById(
 				input.env.APP_DB,
@@ -1163,6 +1168,8 @@ export async function executeJobOnce(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.job.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const started = new Date()
 			let execution: JobExecutionResult
@@ -1337,6 +1344,8 @@ export async function runJobNow(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const row = await getJobRowById(
 				input.env.APP_DB,
@@ -1480,6 +1489,8 @@ export async function runDueJobsForUser(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const now = input.now ?? new Date()
 			const nowIso = now.toISOString()

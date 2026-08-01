@@ -20,6 +20,7 @@ import {
 	consoleError,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -108,6 +109,45 @@ function createTestDb(
 										).length,
 									},
 								]
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower ===
+								'select stable_user_id, deleting_at from users where id = ?'
+							) {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										stable_user_id: row['stable_user_id'],
+										deleting_at: row['deleting_at'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower.startsWith(
+									'select token, holder, acquired_at from account_write_leases',
+								)
+							) {
+								const stableUserId = params[0] as string
+								results = (rows.account_write_leases ?? [])
+									.filter(
+										(row) =>
+											row['user_id'] === stableUserId &&
+											row['released_at'] == null,
+									)
+									.map((row) => ({
+										token: row['token'],
+										holder: row['holder'],
+										acquired_at: row['acquired_at'],
+									}))
+									.sort((left, right) => {
+										const byAcquired = String(left.acquired_at).localeCompare(
+											String(right.acquired_at),
+										)
+										if (byAcquired !== 0) return byAcquired
+										return String(left.token).localeCompare(String(right.token))
+									})
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
@@ -513,6 +553,7 @@ function createSuccessfulDeletionEnv(
 ) {
 	const durableObjectId = (name: string) => name as unknown as DurableObjectId
 	const fetchOk = async () => Response.json({ ok: true })
+	const userMeter = createInMemoryUserMeterEnv()
 	return {
 		APP_DB: db,
 		CAPABILITY_VECTOR_INDEX: {
@@ -529,10 +570,7 @@ function createSuccessfulDeletionEnv(
 				listStorageIds: async () => [] as Array<string>,
 			}),
 		},
-		USER_METER: {
-			idFromName: durableObjectId,
-			get: () => ({ purge: async () => ({ ok: true as const }) }),
-		},
+		USER_METER: userMeter.env.USER_METER,
 		STRIPE_PLAN_REFRESH: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
@@ -1131,6 +1169,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const purgeMcpAgentSessionMock = vi.fn(async () => undefined)
 	const doFetchMock = vi.fn(async () => Response.json({ ok: true }))
 	const deleteVectorsMock = vi.fn(async () => undefined)
+	const userMeter = createInMemoryUserMeterEnv()
 	const env = createSuccessfulDeletionEnv(db, {
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: communityAssets,
@@ -1150,8 +1189,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			}),
 		},
 		USER_METER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ purge: purgeUserMeterMock }),
+			idFromName: (name: string) => userMeter.env.USER_METER!.idFromName(name),
+			get: (id: DurableObjectId) => ({
+				...userMeter.env.USER_METER!.get(id),
+				purge: async () => purgeUserMeterMock(),
+			}),
 		},
 		STRIPE_PLAN_REFRESH: {
 			idFromName: stripePlanRefreshIdFromNameMock,
@@ -1731,39 +1773,78 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	])
 })
 
-test('account deletion reports a missing email blob binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [
-			{
-				id: 1,
-				email: 'a@example.com',
-				stable_user_id: 'user-aaa',
+test('account deletion reports missing Durable Object / blob bindings and remains retryable', async () => {
+	const missingBindings = [
+		{
+			envOverrides: { EMAIL_BLOBS: undefined },
+			cleanupError:
+				'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
+			seed: {
+				users: [
+					{
+						id: 1,
+						email: 'a@example.com',
+						stable_user_id: 'user-aaa',
+					},
+				],
+				email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
 			},
-		],
-		email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				EMAIL_BLOBS: undefined,
+			assertRows: (rows: ReturnType<typeof createTestDb>['rows']) => {
+				expect(rows.email_messages).toEqual([
+					{ id: 'message-a', user_id: 'user-aaa' },
+				])
+			},
+		},
+		{
+			envOverrides: { USER_METER: undefined },
+			cleanupError:
+				'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
+			partialResult: {
+				clearedDurableObjects: expect.objectContaining({
+					userMeters: 0,
+				}),
+			},
+			seed: {
+				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			},
+		},
+		{
+			envOverrides: { MAILBOX: undefined },
+			cleanupError:
+				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
+			partialResult: {
+				clearedDurableObjects: expect.objectContaining({
+					mailboxes: 0,
+				}),
+			},
+			seed: {
+				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			},
+		},
+	] as const
+
+	for (const scenario of missingBindings) {
+		const { db, rows } = createTestDb(scenario.seed)
+		await expect(
+			deleteUserAccount({
+				env: createSuccessfulDeletionEnv(db, scenario.envOverrides),
+				dbUserId: 1,
+				mcpUserId: 'user-aaa',
 			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
-		]),
-	})
-	expect(rows.email_messages).toEqual([
-		{ id: 'message-a', user_id: 'user-aaa' },
-	])
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: expect.any(String),
-		}),
-	])
+		).rejects.toMatchObject({
+			cleanupErrors: expect.arrayContaining([scenario.cleanupError]),
+			...('partialResult' in scenario
+				? { partialResult: scenario.partialResult }
+				: {}),
+		})
+		scenario.assertRows?.(rows)
+		expect(rows.users).toEqual([
+			expect.objectContaining({
+				id: 1,
+				deleting_at: expect.any(String),
+			}),
+		])
+	}
 })
 
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
@@ -2025,66 +2106,6 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 		true,
 	)
 	expect(clearedStorageIds.some((id) => id.includes('bbb-bucket'))).toBe(false)
-})
-
-test('account deletion reports a missing USER_METER binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				USER_METER: undefined,
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
-		]),
-		partialResult: expect.objectContaining({
-			clearedDurableObjects: expect.objectContaining({
-				userMeters: 0,
-			}),
-		}),
-	})
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: expect.any(String),
-		}),
-	])
-})
-
-test('account deletion reports a missing MAILBOX binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				MAILBOX: undefined,
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
-		]),
-		partialResult: expect.objectContaining({
-			clearedDurableObjects: expect.objectContaining({
-				mailboxes: 0,
-			}),
-		}),
-	})
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: expect.any(String),
-		}),
-	])
 })
 
 test('account deletion purges a StorageRunner known only via user_storage_buckets', async () => {
