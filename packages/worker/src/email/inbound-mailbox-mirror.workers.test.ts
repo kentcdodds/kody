@@ -21,11 +21,27 @@ function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
 }
 
-async function seedAccount(input: {
+function createCapturedWaitUntilContext() {
+	const waitUntilPromises: Array<Promise<unknown>> = []
+	const ctx = {
+		waitUntil(promise: Promise<unknown>) {
+			waitUntilPromises.push(promise)
+		},
+		passThroughOnException() {},
+	} as ExecutionContext
+	return { ctx, waitUntilPromises }
+}
+
+async function drainWaitUntil(waitUntilPromises: Array<Promise<unknown>>) {
+	for (let index = 0; index < waitUntilPromises.length; index += 1) {
+		await waitUntilPromises[index]
+	}
+}
+
+async function seedVerifiedAccount(input: {
 	db: D1Database
 	email: string
 	username: string
-	emailVerifiedAt?: string | null
 }) {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await input.db
@@ -43,21 +59,11 @@ async function seedAccount(input: {
 			input.username,
 			input.email,
 			'test-password-hash',
-			input.emailVerifiedAt === undefined
-				? new Date().toISOString()
-				: input.emailVerifiedAt,
+			new Date().toISOString(),
 			stableUserId,
 			'max',
 		)
 		.run()
-}
-
-async function seedVerifiedAccount(input: {
-	db: D1Database
-	email: string
-	username: string
-}) {
-	await seedAccount(input)
 }
 
 async function readUserDailyReceiveCount(userId: string) {
@@ -160,6 +166,7 @@ test(
 		})
 		const mailbox = rpcFor(userId)
 		await mailbox.getMessage({ messageId: 'warmup-nonexistent' })
+		const { ctx, waitUntilPromises } = createCapturedWaitUntilContext()
 
 		const raw = buildInboundAttachmentRaw({
 			address,
@@ -173,8 +180,9 @@ test(
 			to: address,
 			raw,
 		})
-		await handleInboundEmail(message, createInboundEnv())
+		await handleInboundEmail(message, createInboundEnv(), ctx)
 		expect(message.rejectedReason).toBeNull()
+		await drainWaitUntil(waitUntilPromises)
 
 		const [stored] = await listEmailMessages({
 			db: env.APP_DB,
@@ -219,7 +227,127 @@ test(
 			id: expect.stringMatching(/^email-inbound-delivery:/),
 			provider: 'cloudflare-email-routing',
 		})
+		expect(mirroredEvents[0]?.usageEffectRecordedAt).toEqual(expect.any(String))
 		expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	},
+	inboundMailboxMirrorTimeoutMs,
+)
+
+test(
+	'delayed graph RPCs cannot overwrite post-effects delivery event fields',
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureEmailTestSchema(env.APP_DB)
+		await ensureUsageRollupsTestSchema(env.APP_DB)
+		const username = `mbx-ord-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `mbx-ord-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		const address = `${username}@${platformDomain}`
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
+
+		const real = rpcFor(userId)
+		await real.getMessage({ messageId: 'warmup-nonexistent' })
+		let releaseGraph!: () => void
+		const graphGate = new Promise<void>((resolve) => {
+			releaseGraph = resolve
+		})
+		const order: Array<string> = []
+		const delayedStub = {
+			async mirrorMessage(...args: Parameters<typeof real.mirrorMessage>) {
+				order.push('graph-message')
+				await graphGate
+				return await real.mirrorMessage(...args)
+			},
+			async upsertDeliveryEvents(
+				...args: Parameters<typeof real.upsertDeliveryEvents>
+			) {
+				order.push('graph-batch')
+				await graphGate
+				return await real.upsertDeliveryEvents(...args)
+			},
+			async upsertDeliveryEvent(
+				...args: Parameters<typeof real.upsertDeliveryEvent>
+			) {
+				order.push('post-effects-event')
+				return await real.upsertDeliveryEvent(...args)
+			},
+		}
+
+		const orderedEnv = {
+			...createInboundEnv(),
+			MAILBOX: {
+				idFromName: (name: string) => env.MAILBOX.idFromName(name),
+				get: () => delayedStub,
+			} as unknown as DurableObjectNamespace,
+		}
+		const { ctx, waitUntilPromises } = createCapturedWaitUntilContext()
+		const raw = [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Ordered terminal mirror',
+			'Message-ID: <mailbox-ordered@example.net>',
+			'',
+			'Order body',
+		].join('\r\n')
+		const message = createForwardableEmailMessage({
+			from: 'sender@example.net',
+			to: address,
+			raw,
+		})
+
+		await handleInboundEmail(message, orderedEnv, ctx)
+		expect(message.rejectedReason).toBeNull()
+		expect(waitUntilPromises.length).toBeGreaterThanOrEqual(1)
+
+		// Wait until the waitUntil task reaches the gated graph RPC.
+		const graphStartedAt = Date.now()
+		while (!order.includes('graph-message')) {
+			if (Date.now() - graphStartedAt > 5_000) {
+				throw new Error('Timed out waiting for gated graph mirror RPC')
+			}
+			await new Promise((resolve) => setTimeout(resolve, 10))
+		}
+		expect(order).toEqual(['graph-message'])
+		expect(order.includes('post-effects-event')).toBe(false)
+		const [stored] = await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 1,
+		})
+		expect(stored).toBeDefined()
+		if (!stored) throw new Error('Expected stored inbound message')
+		const preEffectsLedger = await env.APP_DB.prepare(
+			`SELECT detail_json FROM email_delivery_events
+			WHERE user_id = ? AND id LIKE 'email-inbound-delivery:%'
+				AND event_type = 'received'`,
+		)
+			.bind(userId)
+			.first<{ detail_json: string }>()
+		expect(
+			JSON.parse(preEffectsLedger!.detail_json).usageEffectRecordedAt ?? null,
+		).toBeNull()
+
+		releaseGraph()
+		await drainWaitUntil(waitUntilPromises)
+
+		expect(order).toEqual([
+			'graph-message',
+			'graph-batch',
+			'post-effects-event',
+		])
+
+		const mailbox = rpcFor(userId)
+		const mirroredEvents = await mailbox.listDeliveryEvents({
+			messageId: stored.id,
+			limit: 10,
+		})
+		expect(mirroredEvents).toHaveLength(1)
+		expect(mirroredEvents[0]?.usageEffectRecordedAt).toEqual(expect.any(String))
+		expect(mirroredEvents[0]?.subscriptionEffectState).toBe('complete')
 	},
 	inboundMailboxMirrorTimeoutMs,
 )
@@ -258,8 +386,12 @@ test(
 			to: address,
 			raw,
 		})
-		await handleInboundEmail(first, createInboundEnv())
-		await handleInboundEmail(second, createInboundEnv())
+		const firstCtx = createCapturedWaitUntilContext()
+		const secondCtx = createCapturedWaitUntilContext()
+		await handleInboundEmail(first, createInboundEnv(), firstCtx.ctx)
+		await drainWaitUntil(firstCtx.waitUntilPromises)
+		await handleInboundEmail(second, createInboundEnv(), secondCtx.ctx)
+		await drainWaitUntil(secondCtx.waitUntilPromises)
 		expect(first.rejectedReason).toBeNull()
 		expect(second.rejectedReason).toBeNull()
 
@@ -316,16 +448,20 @@ test(
 			...createInboundEnv(),
 			EMAIL_BLOBS: createFailingEmailBlobs(),
 		} as Parameters<typeof handleInboundEmail>[1]
+		const failCtx = createCapturedWaitUntilContext()
 
 		const first = createForwardableEmailMessage({
 			from: 'sender@example.net',
 			to: address,
 			raw,
 		})
-		await expect(handleInboundEmail(first, failingEnv)).rejects.toBeInstanceOf(
-			RetryableInboundStorageError,
-		)
+		await expect(
+			handleInboundEmail(first, failingEnv, failCtx.ctx),
+		).rejects.toBeInstanceOf(RetryableInboundStorageError)
 		expect(first.rejectedReason).toBeNull()
+		// Charge may schedule UserMeter D1 mirror via waitUntil; no Mailbox
+		// terminal work should have produced a message below.
+		await drainWaitUntil(failCtx.waitUntilPromises)
 		expect(await readUserDailyReceiveCount(userId)).toBe(1)
 		expect(
 			await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
@@ -343,12 +479,14 @@ test(
 			await mailbox.getMessage({ messageId: candidate.messageId }),
 		).toBeNull()
 
+		const retryCtx = createCapturedWaitUntilContext()
 		const retry = createForwardableEmailMessage({
 			from: 'sender@example.net',
 			to: address,
 			raw,
 		})
-		await handleInboundEmail(retry, createInboundEnv())
+		await handleInboundEmail(retry, createInboundEnv(), retryCtx.ctx)
+		await drainWaitUntil(retryCtx.waitUntilPromises)
 		expect(retry.rejectedReason).toBeNull()
 		expect(await readUserDailyReceiveCount(userId)).toBe(1)
 		const [stored] = await listEmailMessages({
@@ -378,6 +516,7 @@ test(
 			'mailbox-live-mirror-delivery-event-failed',
 		])
 		await ensureEmailTestSchema(env.APP_DB)
+		await ensureUsageRollupsTestSchema(env.APP_DB)
 
 		{
 			const username = `mbx-err-${crypto.randomUUID().slice(0, 8)}`
@@ -402,15 +541,27 @@ test(
 				to: address,
 				raw,
 			})
+			const { ctx, waitUntilPromises } = createCapturedWaitUntilContext()
 			await handleInboundEmail(
 				message,
 				createInboundMailboxStubEnv({ mode: 'throw' }),
+				ctx,
 			)
 			expect(message.rejectedReason).toBeNull()
+			await drainWaitUntil(waitUntilPromises)
 			expect(await readUserDailyReceiveCount(userId)).toBe(1)
 			expect(
 				await listEmailMessages({ db: env.APP_DB, userId, limit: 1 }),
 			).toHaveLength(1)
+			const ledger = await env.APP_DB.prepare(
+				`SELECT json_extract(detail_json, '$.usageEffectRecordedAt') AS recorded
+				FROM email_delivery_events
+				WHERE user_id = ? AND event_type = 'received'`,
+			)
+				.bind(userId)
+				.first<{ recorded: string | null }>()
+			// Graph failure/timeout must not skip D1 effects.
+			expect(ledger?.recorded).toEqual(expect.any(String))
 		}
 
 		{
@@ -436,19 +587,31 @@ test(
 				to: address,
 				raw,
 			})
+			const { ctx, waitUntilPromises } = createCapturedWaitUntilContext()
 			const startedAt = Date.now()
 			await handleInboundEmail(
 				message,
 				createInboundMailboxStubEnv({ mode: 'hang' }),
+				ctx,
 			)
-			const elapsedMs = Date.now() - startedAt
+			// Handler acknowledges before the bounded hang finishes.
+			expect(Date.now() - startedAt).toBeLessThan(mailboxMirrorRpcTimeoutMs)
 			expect(message.rejectedReason).toBeNull()
+			await drainWaitUntil(waitUntilPromises)
+			const elapsedMs = Date.now() - startedAt
 			expect(await readUserDailyReceiveCount(userId)).toBe(1)
 			expect(
 				await listEmailMessages({ db: env.APP_DB, userId, limit: 1 }),
 			).toHaveLength(1)
-			// Graph + post-effects event each race the mirror RPC bound.
 			expect(elapsedMs).toBeLessThan(mailboxMirrorRpcTimeoutMs * 8)
+			const ledger = await env.APP_DB.prepare(
+				`SELECT json_extract(detail_json, '$.usageEffectRecordedAt') AS recorded
+				FROM email_delivery_events
+				WHERE user_id = ? AND event_type = 'received'`,
+			)
+				.bind(userId)
+				.first<{ recorded: string | null }>()
+			expect(ledger?.recorded).toEqual(expect.any(String))
 		}
 	},
 	inboundMailboxMirrorTimeoutMs,
@@ -465,6 +628,7 @@ test(
 			'mailbox-live-mirror-delivery-event-failed',
 		])
 		await ensureEmailTestSchema(env.APP_DB)
+		await ensureUsageRollupsTestSchema(env.APP_DB)
 		const username = `mbx-replay-${crypto.randomUUID().slice(0, 8)}`
 		const accountEmail = `mbx-replay-${crypto.randomUUID()}@example.com`
 		const userId = await createStableUserIdFromEmail(accountEmail)
@@ -484,6 +648,7 @@ test(
 			body: 'Stored before repair.',
 			attachmentText: 'Repair me',
 		})
+		const firstCtx = createCapturedWaitUntilContext()
 		const first = createForwardableEmailMessage({
 			from: 'sender@example.net',
 			to: address,
@@ -492,7 +657,9 @@ test(
 		await handleInboundEmail(
 			first,
 			createInboundMailboxStubEnv({ mode: 'throw' }),
+			firstCtx.ctx,
 		)
+		await drainWaitUntil(firstCtx.waitUntilPromises)
 		expect(first.rejectedReason).toBeNull()
 		const [stored] = await listEmailMessages({
 			db: env.APP_DB,
@@ -504,12 +671,14 @@ test(
 		expect(await mailbox.getMessage({ messageId: stored.id })).toBeNull()
 		expect(await readUserDailyReceiveCount(userId)).toBe(1)
 
+		const replayCtx = createCapturedWaitUntilContext()
 		const replay = createForwardableEmailMessage({
 			from: 'sender@example.net',
 			to: address,
 			raw,
 		})
-		await handleInboundEmail(replay, createInboundEnv())
+		await handleInboundEmail(replay, createInboundEnv(), replayCtx.ctx)
+		await drainWaitUntil(replayCtx.waitUntilPromises)
 		expect(replay.rejectedReason).toBeNull()
 		expect(await readUserDailyReceiveCount(userId)).toBe(1)
 		expect(
@@ -568,12 +737,14 @@ test(
 			.spyOn(parser, 'parseForwardableEmailRawMime')
 			.mockRejectedValueOnce(new Error('simulated parse failure'))
 		try {
+			const { ctx, waitUntilPromises } = createCapturedWaitUntilContext()
 			const message = createForwardableEmailMessage({
 				from: 'sender@example.net',
 				to: address,
 				raw,
 			})
-			await handleInboundEmail(message, createInboundEnv())
+			await handleInboundEmail(message, createInboundEnv(), ctx)
+			await drainWaitUntil(waitUntilPromises)
 			expect(message.rejectedReason).toBe('simulated parse failure')
 			expect(await readUserDailyReceiveCount(userId)).toBe(1)
 			expect(
@@ -602,13 +773,14 @@ test(
 				messageId: null,
 			})
 
-			// Claimed-rejected replay re-mirrors the same event idempotently.
+			const replayCtx = createCapturedWaitUntilContext()
 			const replay = createForwardableEmailMessage({
 				from: 'sender@example.net',
 				to: address,
 				raw,
 			})
-			await handleInboundEmail(replay, createInboundEnv())
+			await handleInboundEmail(replay, createInboundEnv(), replayCtx.ctx)
+			await drainWaitUntil(replayCtx.waitUntilPromises)
 			expect(replay.rejectedReason).toBe('simulated parse failure')
 			const afterReplay = await mailbox.listDeliveryEvents({
 				messageId: null,

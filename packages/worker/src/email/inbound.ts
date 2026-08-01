@@ -48,14 +48,14 @@ import {
 	getSystemEmailDomain,
 } from './platform-address.ts'
 import {
+	scheduleInboundReceivedTerminalWork,
+	scheduleInboundRejectedTerminalWork,
+	type InboundMailboxEnv,
+} from './inbound-mailbox.ts'
+import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
-import {
-	mirrorMailboxDeliveryEventFromD1,
-	mirrorMailboxMessageGraphFromD1,
-	type MailboxLiveMirrorEnv,
-} from './mailbox-live-mirror.ts'
 import { deleteEmptyEmailThreads, getEmailMessageById } from './repo.ts'
 import {
 	recordBoundedEmailRejectionEvent,
@@ -70,59 +70,6 @@ import {
 	systemEmailOwnerId,
 	type SystemEmailLocal,
 } from './system-email.ts'
-
-type InboundMailboxMirrorEnv = Pick<
-	Env,
-	'APP_DB' | 'MAILBOX' | 'EMAIL_EVENTS'
-> &
-	MailboxLiveMirrorEnv
-
-/**
- * Best-effort D1 → Mailbox graph repair after durable inbound commit.
- * Uses `ctx.waitUntil` when present; otherwise awaits the never-throw mirror.
- * Must not run before D1/R2 storage + `markInboundDeliveryReceived`.
- */
-async function scheduleInboundMailboxMessageGraphMirror(input: {
-	env: InboundMailboxMirrorEnv
-	userId: string
-	messageId: string
-	ctx?: ExecutionContext
-}) {
-	const promise = mirrorMailboxMessageGraphFromD1({
-		env: input.env,
-		db: input.env.APP_DB,
-		userId: input.userId,
-		messageId: input.messageId,
-	})
-	if (input.ctx) {
-		input.ctx.waitUntil(promise)
-		return
-	}
-	await promise
-}
-
-/**
- * Best-effort D1 → Mailbox delivery-event mirror (rejected / post-effects).
- * Uses `ctx.waitUntil` when present; otherwise awaits the never-throw mirror.
- */
-async function scheduleInboundMailboxDeliveryEventMirror(input: {
-	env: InboundMailboxMirrorEnv
-	userId: string
-	deliveryId: string
-	ctx?: ExecutionContext
-}) {
-	const promise = mirrorMailboxDeliveryEventFromD1({
-		env: input.env,
-		db: input.env.APP_DB,
-		userId: input.userId,
-		eventId: input.deliveryId,
-	})
-	if (input.ctx) {
-		input.ctx.waitUntil(promise)
-		return
-	}
-	await promise
-}
 
 /**
  * Rejection audit writes are best-effort (the SMTP reject already happened),
@@ -215,9 +162,9 @@ async function cleanupInboundDurability(input: {
 	}
 }
 
+/** System-inbox effects only (no Mailbox dual-write). */
 async function scheduleInboundDeliveryEffects(input: {
-	env: Parameters<typeof processInboundDeliveryEffects>[0]['env'] &
-		InboundMailboxMirrorEnv
+	env: Parameters<typeof processInboundDeliveryEffects>[0]['env']
 	userId: string
 	deliveryId: string
 	expectedFinalizationToken?: string
@@ -228,8 +175,6 @@ async function scheduleInboundDeliveryEffects(input: {
 	const waitUntil = input.ctx
 		? (promise: Promise<unknown>) => input.ctx!.waitUntil(promise)
 		: undefined
-	// On success, re-mirror the updated delivery event (usage/subscription
-	// effect fields). Failures keep the existing log + reconcile path only.
 	const promise = processInboundDeliveryEffects({
 		env: input.env,
 		userId: input.userId,
@@ -237,14 +182,6 @@ async function scheduleInboundDeliveryEffects(input: {
 		expectedFinalizationToken: input.expectedFinalizationToken,
 		durationMs: input.durationMs,
 		waitUntil,
-	}).then(async () => {
-		if (input.userId === systemEmailOwnerId) return
-		await mirrorMailboxDeliveryEventFromD1({
-			env: input.env,
-			db: input.env.APP_DB,
-			userId: input.userId,
-			eventId: input.deliveryId,
-		})
 	})
 	if (input.ctx) {
 		input.ctx.waitUntil(
@@ -274,7 +211,7 @@ export async function handleInboundEmail(
 		| 'EMAIL_EVENTS'
 	> &
 		EmailReportingEnv &
-		MailboxLiveMirrorEnv,
+		InboundMailboxEnv,
 	ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
@@ -665,7 +602,7 @@ export async function handleInboundEmail(
 				message.setReject(
 					claimedDelivery.rejectionReason ?? 'Failed to parse inbound email.',
 				)
-				await scheduleInboundMailboxDeliveryEventMirror({
+				await scheduleInboundRejectedTerminalWork({
 					env,
 					userId,
 					deliveryId: claimedDelivery.deliveryId,
@@ -680,16 +617,12 @@ export async function handleInboundEmail(
 					messageId: claimedDelivery.messageId,
 				})
 				if (existing) {
-					await scheduleInboundMailboxMessageGraphMirror({
+					await scheduleInboundReceivedTerminalWork({
 						env,
 						userId,
 						messageId: claimedDelivery.messageId,
-						ctx,
-					})
-					await scheduleInboundDeliveryEffects({
-						env,
-						userId,
 						deliveryId: claimedDelivery.deliveryId,
+						expectedFinalizationToken: claimedDelivery.finalizationToken,
 						durationMs: Date.now() - receiveStartedAtMs,
 						ctx,
 						logLabel: 'Inbound email effect reconciliation failed',
@@ -713,7 +646,7 @@ export async function handleInboundEmail(
 				})
 				if (!rejected) return
 				await recordReceiveUsage({ outcome: 'error' })
-				await scheduleInboundMailboxDeliveryEventMirror({
+				await scheduleInboundRejectedTerminalWork({
 					env,
 					userId,
 					deliveryId: claimedDelivery.deliveryId,
@@ -729,11 +662,15 @@ export async function handleInboundEmail(
 			})
 			if (!storageClaim.claimed) {
 				if (storageClaim.delivery?.state === 'received') {
-					await scheduleInboundMailboxMessageGraphMirror({
+					await scheduleInboundReceivedTerminalWork({
 						env,
 						userId,
 						messageId: claimedDelivery.messageId,
+						deliveryId: storageClaim.delivery.deliveryId,
+						expectedFinalizationToken: storageClaim.delivery.finalizationToken,
+						durationMs: Date.now() - receiveStartedAtMs,
 						ctx,
+						logLabel: 'Inbound email effect reconciliation failed',
 					})
 					return
 				}
@@ -764,15 +701,10 @@ export async function handleInboundEmail(
 			}
 			// Mailbox dual-write only after durable D1/R2 commit + finalization win.
 			if (!storedResult.wonFinalization) return
-			await scheduleInboundMailboxMessageGraphMirror({
+			await scheduleInboundReceivedTerminalWork({
 				env,
 				userId,
 				messageId: storedResult.finalizedDelivery.messageId,
-				ctx,
-			})
-			await scheduleInboundDeliveryEffects({
-				env,
-				userId,
 				deliveryId: storedResult.finalizedDelivery.deliveryId,
 				expectedFinalizationToken:
 					storedResult.finalizedDelivery.finalizationToken,
@@ -793,10 +725,7 @@ async function handleSystemInboundEmail(input: {
 		| 'BUNDLE_ARTIFACTS_KV'
 		| 'APP_BASE_URL'
 		| 'USAGE_EVENTS'
-		| 'MAILBOX'
-		| 'EMAIL_EVENTS'
-	> &
-		MailboxLiveMirrorEnv
+	>
 	recipient: string
 	localPart: SystemEmailLocal
 	systemDomain: string
