@@ -1,5 +1,7 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent, type EventHint } from '@sentry/core'
+import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
+import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isUserCodeError } from './user-code-error.ts'
 
@@ -30,6 +32,36 @@ export function filterUserCodeErrorSentryEvent(
 ) {
 	if (isUserCodeError(hint?.originalException)) return null
 	return _event
+}
+
+/**
+ * Plan-limit denials are expected account policy outcomes (clean up usage or
+ * upgrade), not platform defects. MCP observability already skips them via
+ * `isCallerFailure`; this `beforeSend` gate is the backstop for any other
+ * capture path that still forwards the typed error.
+ */
+export function isEntitlementLimitErrorSentryEvent(
+	event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (
+		getErrorCauseChain(hint?.originalException).some(isEntitlementLimitError)
+	) {
+		return true
+	}
+	return (
+		event.exception?.values?.some(
+			(value) => value.type === 'EntitlementLimitError',
+		) ?? false
+	)
+}
+
+export function filterEntitlementLimitErrorSentryEvent(
+	event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (!isEntitlementLimitErrorSentryEvent(event, hint)) return event
+	return null
 }
 
 /**
@@ -144,6 +176,7 @@ export function filterDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
 export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// Marker first: primary mechanism for user-authored failures.
 	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
+	if (filterEntitlementLimitErrorSentryEvent(event, hint) === null) return null
 	if (filterRetryableD1LockSentryEvent(event) === null) return null
 	// String-match backstops for paths that cannot yet be marked.
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
@@ -180,9 +213,11 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// regress Sentry issues.
 		//
 		// User-authored failures are dropped primarily via `UserCodeError`
-		// (`filterUserCodeErrorSentryEvent`). Bundler / sandbox-timeout string
-		// matches remain as backstops for unmarked paths; see
-		// filterUserModuleBundlerFailureSentryEvent and
+		// (`filterUserCodeErrorSentryEvent`). Plan-limit denials
+		// (`EntitlementLimitError`) are dropped the same way — expected
+		// account policy, still visible on structured `mcp-event` logs. Bundler
+		// / sandbox-timeout string matches remain as backstops for unmarked
+		// paths; see filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
 		// Object platform reset strings (memory/CPU limits, deploy-time code
 		// updates, and blockConcurrencyWhile timeouts) are dropped the same
