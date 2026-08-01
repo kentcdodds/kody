@@ -2,7 +2,7 @@ import { systemEmailOwnerId } from './email-owner.ts'
 import { type MailboxCountResult } from './mailbox-types.ts'
 
 /**
- * D1 loaders/persisters for the hourly Mailbox parity reconcile lane.
+ * D1 loaders/persisters for the five-minute Mailbox parity reconcile lane.
  * Creation backfill uses (created_at, id) keysets over messages and all owner
  * delivery events; content replay uses a durable (watermark, upper] window with
  * an (updated_at, id) cursor.

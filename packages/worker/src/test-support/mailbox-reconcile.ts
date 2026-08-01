@@ -2,7 +2,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import type * as MailboxClientModule from '#worker/email/mailbox-client.ts'
+import type * as MailboxLiveMirrorModule from '#worker/email/mailbox-live-mirror.ts'
 import type * as MailboxMirrorModule from '#worker/email/mailbox-mirror.ts'
+import type * as MailboxParityEventsModule from '#worker/email/mailbox-parity-events.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -13,10 +16,14 @@ const mocks = vi.hoisted(() => ({
 	mailboxRpc: vi.fn(),
 }))
 
-vi.mock('#worker/email/mailbox-live-mirror.ts', () => ({
-	mirrorMailboxMessageGraphFromD1: mocks.mirrorMailboxMessageGraphFromD1,
-	mirrorMailboxDeliveryEventFromD1: mocks.mirrorMailboxDeliveryEventFromD1,
-}))
+vi.mock('#worker/email/mailbox-live-mirror.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof MailboxLiveMirrorModule>()
+	return {
+		...actual,
+		mirrorMailboxMessageGraphFromD1: mocks.mirrorMailboxMessageGraphFromD1,
+		mirrorMailboxDeliveryEventFromD1: mocks.mirrorMailboxDeliveryEventFromD1,
+	}
+})
 
 vi.mock('#worker/email/mailbox-mirror.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof MailboxMirrorModule>()
@@ -26,13 +33,21 @@ vi.mock('#worker/email/mailbox-mirror.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/email/mailbox-parity-events.ts', () => ({
-	recordMailboxParityEvent: mocks.recordMailboxParityEvent,
-}))
+vi.mock('#worker/email/mailbox-parity-events.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof MailboxParityEventsModule>()
+	return {
+		...actual,
+		recordMailboxParityEvent: mocks.recordMailboxParityEvent,
+	}
+})
 
-vi.mock('#worker/email/mailbox-client.ts', () => ({
-	mailboxRpc: mocks.mailboxRpc,
-}))
+vi.mock('#worker/email/mailbox-client.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof MailboxClientModule>()
+	return {
+		...actual,
+		mailboxRpc: mocks.mailboxRpc,
+	}
+})
 
 export type MailboxReconcileTestMocks = typeof mocks
 

@@ -33,7 +33,7 @@ import {
 import { type MailboxCountResult } from './mailbox-types.ts'
 
 /**
- * Bounded hourly Mailbox backfill + count-parity reconciler.
+ * Bounded five-minute Mailbox backfill + count-parity reconciler.
  *
  * Discovers a small oldest-first page of non-deleting D1 mail owners (no DO
  * enumeration), mirrors message graphs then every owner delivery event through

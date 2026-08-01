@@ -1,4 +1,4 @@
--- Account-owned Mailbox parity / backfill state for the hourly reconcile lane.
+-- Account-owned Mailbox parity / backfill state for the five-minute reconcile lane.
 -- Low-write columns live on users (not per-message). Creation cursors are
 -- keyset (created_at, id) for messages and ALL owner delivery events so backfill
 -- can resume across ticks without DO enumeration. The event phase rescans every
