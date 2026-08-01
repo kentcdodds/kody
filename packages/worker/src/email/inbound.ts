@@ -478,12 +478,16 @@ export async function handleInboundEmail(
 					// after unrelated writes fill the mailbox.
 					await assertWithinStorageBytesEntitlement({
 						db: env.APP_DB,
+						env,
 						userId,
 						email: account.email,
 						requested: estimateInboundEmailStorageBytes({
 							message,
 							recipient,
 						}),
+						waitUntil: ctx
+							? (promise: Promise<unknown>) => ctx.waitUntil(promise)
+							: undefined,
 					})
 					await assertWithinEntitlement({
 						db: env.APP_DB,

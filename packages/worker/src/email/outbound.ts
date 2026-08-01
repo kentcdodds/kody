@@ -571,6 +571,7 @@ export async function sendOutboundEmail(
 		})
 		await assertWithinStorageBytesEntitlement({
 			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
 			email: sender.accountEmail,
 			requested:
