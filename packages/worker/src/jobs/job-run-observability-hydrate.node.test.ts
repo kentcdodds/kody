@@ -41,7 +41,7 @@ function createJobView(overrides: Partial<JobView> = {}): JobView {
 	}
 }
 
-test('applyJobRunObservabilityToJobView overlays RunLog outcome and counters', () => {
+test('job view hydrate overlays RunLog outcomes for point and batch reads', async () => {
 	const job = createJobView({
 		lastRunAt: '2026-04-20T09:00:00.000Z',
 		lastRunStatus: 'success',
@@ -68,9 +68,7 @@ test('applyJobRunObservabilityToJobView overlays RunLog outcome and counters', (
 		errorCount: 1,
 	})
 	expect(applyJobRunObservabilityToJobView(job, null)).toBe(job)
-})
 
-test('hydrateJobViewFromRunLog and batch hydrate are user-scoped', async () => {
 	const env = {} as Env
 	getJobRunObservability.mockResolvedValue({
 		jobId: 'job-1',

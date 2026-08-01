@@ -219,25 +219,22 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(currentFor(authoritative, 'outbound_fetches_per_day')).toBe(404)
 	expect(currentFor(authoritative, 'concurrent_workflows')).toBe(3)
 	expect(currentFor(authoritative, 'saved_packages')).toBe(4)
-})
 
-test('loadAccountUsageData prefers D1 storage_bytes over a divergent UserMeter shadow', async () => {
-	const now = new Date('2026-07-25T12:00:00.000Z')
-	const email = 'usage-storage@example.com'
-	const userId = testStableUserIdFromEmail(email)
-	const { db } = createUsageTestDb({
+	const storageEmail = 'usage-storage@example.com'
+	const storageUserId = testStableUserIdFromEmail(storageEmail)
+	const { db: storageDb } = createUsageTestDb({
 		userId: 11,
-		email,
+		email: storageEmail,
 		plan: 'pro',
 		packageCount: 0,
 		d1StorageBytes: 4_321,
 	})
-	const usageEnv = withUsageEnv({ APP_DB: db })
-	await usageEnv.meter.seedStorageBytes({ userId, bytes: 321 })
-	const data = await loadAccountUsageData({
-		env: usageEnv as Env,
+	const storageEnv = withUsageEnv({ APP_DB: storageDb })
+	await storageEnv.meter.seedStorageBytes({ userId: storageUserId, bytes: 321 })
+	const storageData = await loadAccountUsageData({
+		env: storageEnv as Env,
 		userId: 11,
 		now,
 	})
-	expect(currentFor(data, 'storage_bytes')).toBe(4_321)
+	expect(currentFor(storageData, 'storage_bytes')).toBe(4_321)
 })

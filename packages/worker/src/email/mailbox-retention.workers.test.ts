@@ -24,7 +24,7 @@ import {
 	uniqueUserId,
 } from './mailbox-test-helpers.ts'
 
-test('computeMailboxRetentionReschedule prefers backoff, then continue, then due-time', () => {
+test('mailbox retention helpers prefer backoff/continue and never postpone earlier alarms', () => {
 	const nowMs = 1_700_000_000_000
 	expect(
 		computeMailboxRetentionReschedule({
@@ -64,9 +64,7 @@ test('computeMailboxRetentionReschedule prefers backoff, then continue, then due
 			nextDueAtMs: null,
 		}),
 	).toEqual({ kind: 'idle', atMs: null })
-})
 
-test('selectMailboxRetentionWriteAlarm never postpones an earlier existing alarm', () => {
 	const earlier = 1_700_000_100_000
 	const later = earlier + 60_000
 	expect(

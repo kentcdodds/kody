@@ -31,7 +31,7 @@ async function insertReconciliationUser(input: {
 		.run()
 }
 
-test('D1 storage reconciliation is bounded and remains D1-authoritative with {db}', async () => {
+test('D1 storage reconciliation stays D1-authoritative with optional UserMeter shadow', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(
 		`UPDATE users
@@ -106,13 +106,10 @@ test('D1 storage reconciliation is bounded and remains D1-authoritative with {db
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: secondUserId }),
 	).resolves.toBe(0)
-})
 
-test('optional reconciliation env shadows UserMeter without becoming authoritative', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const userId = '3'.repeat(64)
+	const shadowUserId = '3'.repeat(64)
 	await insertReconciliationUser({
-		userId,
+		userId: shadowUserId,
 		email: `${crypto.randomUUID()}@example.test`,
 		storedBytes: 50,
 		updatedAt: '2019-01-01T00:00:00.000Z',
@@ -126,49 +123,46 @@ test('optional reconciliation env shadows UserMeter without becoming authoritati
 	)
 		.bind(
 			crypto.randomUUID(),
-			userId,
+			shadowUserId,
 			'2026-07-31T00:00:00.000Z',
 			'2026-07-31T00:00:00.000Z',
 		)
 		.run()
 
-	const meter = userMeterRpc({ env, userId })
-	await meter.setStorageBytes({
+	const shadowMeter = userMeterRpc({ env, userId: shadowUserId })
+	await shadowMeter.setStorageBytes({
 		bytes: 999_999,
 		updatedAt: '2026-07-31T00:00:00.000Z',
 	})
 
-	const expectedBytes = await calculateUserD1StorageBytes({
+	const expectedShadowBytes = await calculateUserD1StorageBytes({
 		db: env.APP_DB,
-		userId,
+		userId: shadowUserId,
 	})
 	await expect(
 		reconcileD1StorageBytes({
 			db: env.APP_DB,
 			env,
-			now: new Date('2026-07-31T01:00:00.000Z'),
+			now: new Date('2026-07-31T01:10:00.000Z'),
 			batchSize: 8,
 		}),
 	).resolves.toMatchObject({ failed: 0 })
 
 	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(expectedBytes)
-	expect(await meter.readStorageBytes()).toMatchObject({
+		readUserD1StorageBytes({ db: env.APP_DB, userId: shadowUserId }),
+	).resolves.toBe(expectedShadowBytes)
+	expect(await shadowMeter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
-		bytes: expectedBytes,
+		bytes: expectedShadowBytes,
 	})
-})
 
-test('reconciliation shadow failure does not fail or poison the D1 lane', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(
 		`UPDATE users
 		SET d1_storage_bytes_updated_at = '9999-12-31T23:59:59.999Z'`,
 	).run()
-	const userId = '4'.repeat(64)
+	const failingUserId = '4'.repeat(64)
 	await insertReconciliationUser({
-		userId,
+		userId: failingUserId,
 		email: `${crypto.randomUUID()}@example.test`,
 		storedBytes: 40,
 		updatedAt: '2018-01-01T00:00:00.000Z',
@@ -188,21 +182,21 @@ test('reconciliation shadow failure does not fail or poison the D1 lane', async 
 		},
 	} as unknown as typeof env
 
-	const expectedBytes = await calculateUserD1StorageBytes({
+	const expectedFailingBytes = await calculateUserD1StorageBytes({
 		db: env.APP_DB,
-		userId,
+		userId: failingUserId,
 	})
 	await expect(
 		reconcileD1StorageBytes({
 			db: env.APP_DB,
 			env: failingMeterEnv,
-			now: new Date('2026-07-31T01:00:00.000Z'),
+			now: new Date('2026-07-31T01:15:00.000Z'),
 			batchSize: 1,
 		}),
 	).resolves.toEqual({ scanned: 1, updated: 1, failed: 0 })
 	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(expectedBytes)
+		readUserD1StorageBytes({ db: env.APP_DB, userId: failingUserId }),
+	).resolves.toBe(expectedFailingBytes)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'entitlement-storage-bytes-shadow-failed',
 		expect.any(Error),

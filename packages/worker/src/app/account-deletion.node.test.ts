@@ -1731,39 +1731,78 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	])
 })
 
-test('account deletion reports a missing email blob binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [
-			{
-				id: 1,
-				email: 'a@example.com',
-				stable_user_id: 'user-aaa',
+test('account deletion reports missing Durable Object / blob bindings and remains retryable', async () => {
+	const missingBindings = [
+		{
+			envOverrides: { EMAIL_BLOBS: undefined },
+			cleanupError:
+				'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
+			seed: {
+				users: [
+					{
+						id: 1,
+						email: 'a@example.com',
+						stable_user_id: 'user-aaa',
+					},
+				],
+				email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
 			},
-		],
-		email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				EMAIL_BLOBS: undefined,
+			assertRows: (rows: ReturnType<typeof createTestDb>['rows']) => {
+				expect(rows.email_messages).toEqual([
+					{ id: 'message-a', user_id: 'user-aaa' },
+				])
+			},
+		},
+		{
+			envOverrides: { USER_METER: undefined },
+			cleanupError:
+				'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
+			partialResult: {
+				clearedDurableObjects: expect.objectContaining({
+					userMeters: 0,
+				}),
+			},
+			seed: {
+				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			},
+		},
+		{
+			envOverrides: { MAILBOX: undefined },
+			cleanupError:
+				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
+			partialResult: {
+				clearedDurableObjects: expect.objectContaining({
+					mailboxes: 0,
+				}),
+			},
+			seed: {
+				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			},
+		},
+	] as const
+
+	for (const scenario of missingBindings) {
+		const { db, rows } = createTestDb(scenario.seed)
+		await expect(
+			deleteUserAccount({
+				env: createSuccessfulDeletionEnv(db, scenario.envOverrides),
+				dbUserId: 1,
+				mcpUserId: 'user-aaa',
 			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
-		]),
-	})
-	expect(rows.email_messages).toEqual([
-		{ id: 'message-a', user_id: 'user-aaa' },
-	])
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: expect.any(String),
-		}),
-	])
+		).rejects.toMatchObject({
+			cleanupErrors: expect.arrayContaining([scenario.cleanupError]),
+			...('partialResult' in scenario
+				? { partialResult: scenario.partialResult }
+				: {}),
+		})
+		scenario.assertRows?.(rows)
+		expect(rows.users).toEqual([
+			expect.objectContaining({
+				id: 1,
+				deleting_at: expect.any(String),
+			}),
+		])
+	}
 })
 
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
@@ -2025,66 +2064,6 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 		true,
 	)
 	expect(clearedStorageIds.some((id) => id.includes('bbb-bucket'))).toBe(false)
-})
-
-test('account deletion reports a missing USER_METER binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				USER_METER: undefined,
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
-		]),
-		partialResult: expect.objectContaining({
-			clearedDurableObjects: expect.objectContaining({
-				userMeters: 0,
-			}),
-		}),
-	})
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: expect.any(String),
-		}),
-	])
-})
-
-test('account deletion reports a missing MAILBOX binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				MAILBOX: undefined,
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
-		]),
-		partialResult: expect.objectContaining({
-			clearedDurableObjects: expect.objectContaining({
-				mailboxes: 0,
-			}),
-		}),
-	})
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			deleting_at: expect.any(String),
-		}),
-	])
 })
 
 test('account deletion purges a StorageRunner known only via user_storage_buckets', async () => {

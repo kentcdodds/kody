@@ -52,7 +52,7 @@ function createBatch(message: Message<unknown>) {
 	} as unknown as MessageBatch<unknown>
 }
 
-test('scheduled dispatch enqueues due lanes as independent queue messages', async () => {
+test('scheduled dispatch enqueues lanes and falls back inline for failed sends', async () => {
 	const send = vi.fn(async () => undefined)
 	const env = {
 		SCHEDULED_DISPATCH_QUEUE: { send },
@@ -76,23 +76,13 @@ test('scheduled dispatch enqueues due lanes as independent queue messages', asyn
 		scheduledTime: controller.scheduledTime,
 		cron: controller.cron,
 	})
-})
 
-test('a failed enqueue runs only that lane through the inline fallback', async () => {
 	consoleError.mockImplementation(() => {})
-	const send = vi
-		.fn()
+	send
+		.mockReset()
 		.mockResolvedValueOnce(undefined)
 		.mockRejectedValueOnce(new Error('queue unavailable'))
 	mocks.runScheduledLaneWithFailureIsolation.mockResolvedValueOnce('completed')
-	const env = {
-		SCHEDULED_DISPATCH_QUEUE: { send },
-	} as unknown as Env
-	const controller = {
-		scheduledTime: Date.parse('2026-08-01T06:00:00.000Z'),
-		cron: '*/5 * * * *',
-		noRetry() {},
-	} satisfies ScheduledController
 
 	await dispatchScheduledLanes({ controller, env })
 
