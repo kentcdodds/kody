@@ -144,12 +144,9 @@ test(
 			message,
 			recipient: address,
 		})
-		const drain = createWaitUntilDrain()
-
-		await handleInboundEmail(message, createInboundEnv(), {
-			waitUntil: drain.waitUntil,
-			passThroughOnException() {},
-		} as ExecutionContext)
+		// Direct/test callers may not have an ExecutionContext. The reservation
+		// must await its caught UserMeter accounting task before returning.
+		await handleInboundEmail(message, createInboundEnv())
 		expect(message.rejectedReason).toBeNull()
 		expect(
 			await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
@@ -160,7 +157,6 @@ test(
 			authoritativeAfterReserve,
 		)
 
-		await drain.drain()
 		expect(await meter.readStorageBytes()).toMatchObject({
 			outcome: 'ready',
 			bytes: authoritativeAfterReserve,

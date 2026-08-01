@@ -472,6 +472,7 @@ export async function handleInboundEmail(
 			})
 			if (!existingDelivery) {
 				try {
+					let storageAccounting: Promise<unknown> | undefined
 					// New deliveries check storage bytes and stored-message caps
 					// before their durable quota claim. A retry with an existing
 					// ledger bypasses both so already-charged mail can still repair
@@ -487,8 +488,11 @@ export async function handleInboundEmail(
 						}),
 						waitUntil: ctx
 							? (promise: Promise<unknown>) => ctx.waitUntil(promise)
-							: undefined,
+							: (promise) => {
+									storageAccounting = promise
+								},
 					})
+					if (!ctx) await storageAccounting
 					await assertWithinEntitlement({
 						db: env.APP_DB,
 						userId,
