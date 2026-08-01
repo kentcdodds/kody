@@ -1,5 +1,5 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import { logAuditEvent } from '#worker/audit-log.ts'
+import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
 	getPlatformAccountByUsername,
@@ -47,10 +47,11 @@ function normalizeRequestedScope(scope: string | undefined) {
  * caller's email so scope use stays attributable to a person.
  */
 export async function resolvePackageOwnerContext(
-	db: D1Database,
+	env: Pick<Env, 'APP_DB' | 'AUDIT_DB' | 'SENTRY_ENVIRONMENT'>,
 	user: McpUserContext,
 	requestedScope?: string,
 ): Promise<PackageOwnerContext> {
+	const db = env.APP_DB
 	const ownScope = await getMcpUserPackageScope(db, user)
 	const scope = normalizeRequestedScope(requestedScope)
 	if (!scope || scope === ownScope) {
@@ -82,6 +83,7 @@ export async function resolvePackageOwnerContext(
 	}
 	await logAuditEvent({
 		db,
+		auditDb: auditDatabaseFromEnv(env),
 		category: 'account',
 		action: 'package_scope_delegated_access',
 		result: 'success',

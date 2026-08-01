@@ -98,7 +98,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const owner = await resolvePackageOwnerContext(
-				ctx.env.APP_DB,
+				ctx.env,
 				user,
 				args.package_scope,
 			)
