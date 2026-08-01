@@ -539,7 +539,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**5**):
+**6**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -566,13 +566,23 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   (`listPackageServiceStates`, `countRunningPackageServices`,
   `bootstrapPackageServiceStates`) mirror D1 semantics for future parity review
   only.
+- `deletion_state` / `account_write_leases` — **shadow** of D1
+  `users.deleting_at` and active `account_write_leases` (singleton
+  `deleting_at`; lease rows `token` / `holder` / `acquired_at`). Added in schema
+  v6. Populated by optional best-effort dual-writes from
+  `account/deletion-state.ts` after successful D1 mark/acquire/release/repair;
+  never read for fencing, list, repair, or drain in expand-phase slice 5 Phase
+  A. `purge()` preserves an existing deleting tombstone across `deleteAll` so a
+  later cutover cannot reopen writes. Cutover-support RPCs (`readDeletionState`,
+  `listWriteLeases`, `countActiveWriteLeases`, `bootstrapDeletionState`) exist
+  for future parity review only.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
-retries. Shadow storage-byte and package-service liveness rows are not
-time-pruned.
+retries. Shadow storage-byte, package-service liveness, and deletion-fence rows
+are not time-pruned.
 
 **Expand-phase D1 mirrors (daily counters only):** enforcement and point reads
 are authoritative in UserMeter for daily counters. D1
@@ -591,12 +601,13 @@ writes cannot overwrite newer state. See
 daily paths never read D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
-`deleteAll` clears counters, claims, and all shadow state including storage
-bytes and package-service liveness). Account export pages
-`UserMeter.exportCounters` through the `user_meter` manifest section /
-`account_export_section` (daily counters plus additive `storageBytesShadow` and
-`packageServiceStatesShadow` on the first page only when present; shadow fields
-are non-authoritative).
+`deleteAll` clears counters, claims, storage-byte shadow, package-service
+shadow, and write-lease shadow, while preserving an existing deleting
+tombstone). Account export pages `UserMeter.exportCounters` through the
+`user_meter` manifest section / `account_export_section` (daily counters plus
+additive `storageBytesShadow`, `packageServiceStatesShadow`, and
+`deletionShadow` on the first page only when present; shadow fields are
+non-authoritative).
 
 ## Durable Objects (`Mailbox`)
 
