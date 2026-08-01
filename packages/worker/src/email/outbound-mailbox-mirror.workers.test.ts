@@ -32,6 +32,7 @@ function createMailboxStubEnv(input: {
 	const stub = {
 		mirrorMessage: method,
 		upsertDeliveryEvent: method,
+		upsertDeliveryEvents: method,
 		touchThread: method,
 		updateMessageDelivery: method,
 		setMessageClassification: method,
@@ -207,6 +208,7 @@ test('sendOutboundEmail ignores Mailbox RPC failure and timeout', async () => {
 	silenceIncidentalRuntimeWarnings([
 		'mailbox-mirror-message-failed',
 		'mailbox-mirror-delivery-event-failed',
+		'mailbox-mirror-delivery-event-batch-failed',
 		'mailbox-live-mirror-message-graph-failed',
 	])
 	await ensureEmailTestSchema(env.APP_DB)

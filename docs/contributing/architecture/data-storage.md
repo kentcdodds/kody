@@ -219,11 +219,11 @@ Durable Object export behavior:
   delivery events) through the account-export `mailbox` section (`exportMailbox`
   RPC; keyset pagination with prefixed cursors over those tables). Manifest
   counts use `countMailbox`. Phase 1 registers this consumption; phase 2 wires
-  non-inbound live dual-write for outbound terminals, provider-recorded delivery
-  events, and user classification (`service.ts#setEmailMessageClassification`)
-  without changing D1 authority — D1 `email_*` rows remain the live source of
-  truth and are still exported in the `d1` section. See
-  [Mailbox](#durable-objects-mailbox).
+  non-inbound live dual-write for outbound terminals, provider delivery-queue
+  graph repair, and user classification
+  (`service.ts#setEmailMessageClassification`) without changing D1 authority —
+  D1 `email_*` rows remain the live source of truth and are still exported in
+  the `d1` section. See [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -764,21 +764,26 @@ owner-bound `upsertDeliveryEvents` batch RPC (not concurrent per-event RPCs to
 the same DO). Event load queries newest `max+1` rows from D1, restores
 chronological order, and when truncated keeps the newest
 `mailboxLiveMirrorMaxEvents` (`mailboxUpsertDeliveryEventsMax`, 100) — dropping
-oldest overflow. The batch RPC shares one 1s timeout and one
-`mailbox_mirror:upsert_delivery_event_batch` telemetry outcome (timeout/error
-apply uniformly to per-event summary entries). Analytics Engine budget per graph
-call is two writes (1 message outcome + 1 batch outcome). Never throws; returns
-a bounded summary. **Live callers (non-inbound phase-2 slice):**
+oldest overflow — with a stable warning (`mailbox-live-mirror-events-truncated`;
+`userId`, `messageId`, `loaded`, `max`). The batch RPC shares one 1s timeout and
+one `mailbox_mirror:upsert_delivery_event_batch` telemetry outcome
+(timeout/error apply uniformly to per-event summary entries). Each graph attempt
+emits at most two Analytics Engine writes (1 message outcome + 1 batch outcome).
+Never throws; returns a bounded summary. **Live callers (non-inbound phase-2
+slice):**
 
 - **Outbound terminals** (`outbound.ts`) — after D1 reaches a terminal outbound
   state (`sent`, attachment-store `failed`, or send `failed`), mirrors the full
   message/thread/attachment/event graph. Passes a just-created thread when
   present; otherwise the orchestrator loads it from D1. Failures never affect
   send/refund.
-- **Provider-recorded delivery events** (`delivery-queue.ts`) — when queue
-  ingestion persists a new provider event (`recorded`), schedules
-  `mirrorMailboxMessageGraphFromD1` via `waitUntil` so the Worker ack is not
-  blocked; full graph repair via message + batch event upsert.
+- **Provider delivery queue** (`delivery-queue.ts`) — when queue ingestion
+  resolves to `recorded`, `duplicate`, or `stale` with a bound message,
+  schedules `mirrorMailboxMessageGraphFromD1` via `waitUntil` so the Worker ack
+  is not blocked; full graph repair via message + batch event upsert. `recorded`
+  and `duplicate` still run subscription dispatch first; `stale` skips
+  subscription dispatch (abuse pause only) but still schedules graph repair when
+  a message is present.
 - **User classification** (`service.ts#setEmailMessageClassification`) —
   transport handlers (`account-email.ts`, `email-message-classify.ts`) delegate
   here for the D1 mutation + full graph mirror invariant (mirror only after a
@@ -810,20 +815,22 @@ mail content. Account export pages Mailbox state through the `mailbox` section
 
 This is an expand/contract migration. **Phase 2 is partially wired (non-inbound
 slice):** live dual-write covers outbound terminal
-message/thread/attachment/event graphs, provider-recorded delivery events (queue
-`waitUntil` full graph repair), and user classification (full graph repair after
-D1 update via `service.ts#setEmailMessageClassification`). Mirror helpers emit
-automatic namespaced outcome telemetry (`missing` and `timeout` included).
-Message and batch event repair each use one 1s-bounded RPC; graph event repair
-batches up to 100 events with explicit truncation (newest retained,
-chronological insertion restored) and one batch telemetry outcome.
-**`system:email` stays in D1 only.** Inbound lifecycle dual-write,
-retention/metadata deletes, and scheduled parity reconcile are **not** wired in
-this slice. Live email read/write authority is unchanged — D1 `email_*` tables
-remain authoritative for all live paths. D1 email rows and existing R2 inventory
-deletion stay authoritative during expand. **Phase 2 completes only when every
-user-mail mutation that writes D1 also writes the DO and parity/reconciliation
-are wired** — inbound paths and parity reconcile remain.
+message/thread/attachment/event graphs, provider delivery-queue graph repair
+(`recorded` / `duplicate` / `stale` with a message, via `waitUntil`), and user
+classification (full graph repair after D1 update via
+`service.ts#setEmailMessageClassification`). Mirror helpers emit automatic
+namespaced outcome telemetry (`missing` and `timeout` included). Message and
+batch event repair each use one 1s-bounded RPC; each graph attempt emits at most
+two AE writes; event repair batches up to 100 events with explicit truncation
+(newest retained, chronological insertion restored, stable truncation warning)
+and one batch telemetry outcome. **`system:email` stays in D1 only.** Inbound
+lifecycle dual-write, retention/metadata deletes, and scheduled parity reconcile
+are **not** wired in this slice. Live email read/write authority is unchanged —
+D1 `email_*` tables remain authoritative for all live paths. D1 email rows and
+existing R2 inventory deletion stay authoritative during expand. **Phase 2
+completes only when every user-mail mutation that writes D1 also writes the DO
+and parity/reconciliation are wired** — inbound paths and parity reconcile
+remain.
 
 1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
    `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
@@ -839,13 +846,14 @@ are wired** — inbound paths and parity reconcile remain.
    `updateMessageDelivery`, `setMessageClassification`, `deleteMessageMetadata`,
    `deleteDeliveryEvent`, `deleteThreadIfEmpty`, `upsertDeliveryEvents`), and
    `mailbox-parity-events.ts`. **Live today (partial):** outbound terminals,
-   provider `recorded` queue events (`waitUntil`), and user classification
+   provider delivery-queue outcomes with a message (`recorded`, `duplicate`,
+   `stale`; `waitUntil`), and user classification
    (`service.ts#setEmailMessageClassification`) call
    `mirrorMailboxMessageGraphFromD1`; mirror helpers record `mailbox_mirror:*`
-   outcomes automatically (graph repair uses message RPC + one batch event RPC).
-   **Still pending for phase-2 completion:** inbound commit/touch/classify
-   dual-write, retention and metadata-delete mirrors, and scheduled parity
-   compare/reconcile.
+   outcomes automatically (graph repair uses message RPC + one batch event RPC;
+   at most two AE writes per attempt). **Still pending for phase-2 completion:**
+   inbound commit/touch/classify dual-write, retention and metadata-delete
+   mirrors, and scheduled parity compare/reconcile.
 3. **Reads cut over after production soak** — user-mail reads move to the DO
    only after production parity soak is verified. D1 writes continue.
 4. **D1 write-off / event retirement** — stop writing moved user-mail metadata

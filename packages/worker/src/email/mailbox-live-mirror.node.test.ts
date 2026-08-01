@@ -136,9 +136,9 @@ async function seedMessageGraph(db: D1Database) {
 	})
 }
 
-test('live-mirror AE write budget stays under Analytics Engine request cap', () => {
-	expect(mailboxLiveMirrorMaxAnalyticsWrites).toBeLessThan(250)
+test('live-mirror AE write budget is at most two writes per graph attempt', () => {
 	expect(mailboxLiveMirrorMaxAnalyticsWrites).toBe(2)
+	expect(mailboxLiveMirrorMaxAnalyticsWrites).toBeLessThan(250)
 })
 
 test('live-mirror graph mirrors message before one batch event RPC and uses createdAt for event updatedAt', async () => {
@@ -316,6 +316,7 @@ test('live-mirror graph uses one batch RPC after message settles, not per-event 
 })
 
 test('live-mirror graph keeps newest events when truncated and sets eventsTruncated', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const { db } = await createEmailDb()
 	await seedMessage(db)
 
@@ -369,7 +370,7 @@ test('live-mirror graph keeps newest events when truncated and sets eventsTrunca
 	expect(batchEvents.at(-1)?.id).toBe(
 		`evt-${String(mailboxLiveMirrorMaxEvents).padStart(3, '0')}`,
 	)
-	// 1 message + 1 batch AE write; never per-event fan-out.
+	// At most two AE writes: message + batch; never per-event fan-out.
 	expect(writeDataPoint).toHaveBeenCalledTimes(
 		mailboxLiveMirrorMaxAnalyticsWrites,
 	)
@@ -381,6 +382,15 @@ test('live-mirror graph keeps newest events when truncated and sets eventsTrunca
 				'mailbox_mirror:upsert_delivery_event_batch',
 		),
 	).toBe(true)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mailbox-live-mirror-events-truncated',
+		{
+			userId: 'user-aaa',
+			messageId: 'msg-1',
+			loaded: totalEvents,
+			max: mailboxLiveMirrorMaxEvents,
+		},
+	)
 })
 
 test('live-mirror graph maps batch timeout and error onto each event summary', async () => {
@@ -476,7 +486,8 @@ test('live-mirror graph returns missing when D1 message is absent', async () => 
 		ok: true as const,
 		accepted: true,
 	}))
-	const { env } = fakeMailboxEnv({ mirrorMessage })
+	const upsertDeliveryEvents = vi.fn()
+	const { env } = fakeMailboxEnv({ mirrorMessage, upsertDeliveryEvents })
 
 	await expect(
 		mirrorMailboxMessageGraphFromD1({
@@ -492,6 +503,36 @@ test('live-mirror graph returns missing when D1 message is absent', async () => 
 		eventsTruncated: false,
 	})
 	expect(mirrorMessage).not.toHaveBeenCalled()
+	expect(upsertDeliveryEvents).not.toHaveBeenCalled()
+})
+
+test('live-mirror graph returns missing for cross-owner message without RPCs', async () => {
+	const { db } = await createEmailDb()
+	await seedMessageGraph(db)
+	const mirrorMessage = vi.fn(async () => ({
+		ok: true as const,
+		accepted: true,
+	}))
+	const upsertDeliveryEvents = vi.fn(async () => ({
+		results: [],
+	}))
+	const { env } = fakeMailboxEnv({ mirrorMessage, upsertDeliveryEvents })
+
+	await expect(
+		mirrorMailboxMessageGraphFromD1({
+			env,
+			db,
+			userId: 'other-user',
+			messageId: 'msg-1',
+		}),
+	).resolves.toEqual({
+		messageId: 'msg-1',
+		message: { status: 'missing' },
+		events: [],
+		eventsTruncated: false,
+	})
+	expect(mirrorMessage).not.toHaveBeenCalled()
+	expect(upsertDeliveryEvents).not.toHaveBeenCalled()
 })
 
 test('live-mirror graph catches unexpected errors without throwing', async () => {

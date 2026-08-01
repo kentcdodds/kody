@@ -21,7 +21,7 @@ export const mailboxDeliveryEventRetentionDays = 90
 export const mailboxDefaultPageSize = 100
 export const mailboxMaxPageSize = 500
 /** Max complete delivery-event snapshots per `upsertDeliveryEvents` RPC. */
-export const mailboxUpsertDeliveryEventsMax = mailboxDefaultPageSize
+export const mailboxUpsertDeliveryEventsMax = 100
 export const mailboxRetentionBatchSize = 100
 export const mailboxRetentionAlarmSkewMs = 60_000
 /** Bound retry delay when overdue retention work cannot finish (e.g. R2 errors). */

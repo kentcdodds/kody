@@ -7,6 +7,22 @@ import { type EmailReportingEnv } from './reporting-events.ts'
 const unmatchedRetryDelaySeconds = 30
 export const emailDeliveryQueueName = 'kody-email-delivery'
 
+function scheduleMailboxGraphMirror(
+	waitUntil: (promise: Promise<unknown>) => void,
+	env: Env,
+	message: { userId: string; id: string } | null,
+) {
+	if (message == null) return
+	waitUntil(
+		mirrorMailboxMessageGraphFromD1({
+			env,
+			db: env.APP_DB,
+			userId: message.userId,
+			messageId: message.id,
+		}),
+	)
+}
+
 export async function handleEmailDeliveryQueue(
 	batch: MessageBatch<unknown>,
 	env: Env,
@@ -43,6 +59,7 @@ export async function handleEmailDeliveryQueue(
 						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: false,
 					})
+					scheduleMailboxGraphMirror(waitUntil, env, result.message)
 					queueMessage.ack()
 					break
 				case 'duplicate':
@@ -63,16 +80,7 @@ export async function handleEmailDeliveryQueue(
 						providerEvent: result.providerEvent,
 						waitUntil,
 					})
-					if (result.outcome === 'recorded' && result.message != null) {
-						waitUntil(
-							mirrorMailboxMessageGraphFromD1({
-								env,
-								db: env.APP_DB,
-								userId: result.message.userId,
-								messageId: result.message.id,
-							}),
-						)
-					}
+					scheduleMailboxGraphMirror(waitUntil, env, result.message)
 					queueMessage.ack()
 					break
 				}

@@ -29,8 +29,8 @@ import { type EmailThreadRecord } from './types.ts'
  * round-trip; otherwise the graph helper loads it with `getEmailThreadById`.
  *
  * Graph event mirroring uses one batch RPC after the message settles (not
- * Promise.all of per-event RPCs). Analytics Engine parity writes stay small:
- * 1 message + 1 batch outcome.
+ * Promise.all of per-event RPCs). Analytics Engine parity writes are at most
+ * two per graph attempt: 1 message outcome + 1 batch outcome.
  */
 
 /**
@@ -39,7 +39,7 @@ import { type EmailThreadRecord } from './types.ts'
  */
 export const mailboxLiveMirrorMaxEvents = mailboxUpsertDeliveryEventsMax
 
-/** AE write budget: message outcome + one batch outcome. */
+/** AE write budget cap: at most two writes (message + batch). */
 export const mailboxLiveMirrorMaxAnalyticsWrites = 2
 
 export type MailboxLiveMirrorEnv = MailboxMirrorEnv
@@ -143,19 +143,23 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 			return emptyGraphSummary(input.messageId, { status: 'missing' })
 		}
 
-		const attachments = await listEmailAttachmentsForMessage({
-			db: input.db,
-			messageId: input.messageId,
-		})
-
-		let thread = input.thread
-		if (thread === undefined && message.threadId) {
-			thread = await getEmailThreadById({
+		// After the owner-scoped message load, fan out attachment + optional
+		// thread reads concurrently.
+		const [attachments, thread] = await Promise.all([
+			listEmailAttachmentsForMessage({
 				db: input.db,
-				userId: input.userId,
-				threadId: message.threadId,
-			})
-		}
+				messageId: input.messageId,
+			}),
+			input.thread !== undefined
+				? Promise.resolve(input.thread)
+				: message.threadId
+					? getEmailThreadById({
+							db: input.db,
+							userId: input.userId,
+							threadId: message.threadId,
+						})
+					: Promise.resolve(null),
+		])
 
 		// Message settles before the event-batch RPC starts (ordering guarantee).
 		const messageResult = await mirrorMailboxMessageSnapshot({
@@ -174,6 +178,14 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 			limit: mailboxLiveMirrorMaxEvents + 1,
 		})
 		const eventsTruncated = loadedEvents.length > mailboxLiveMirrorMaxEvents
+		if (eventsTruncated) {
+			console.warn('mailbox-live-mirror-events-truncated', {
+				userId: input.userId,
+				messageId: input.messageId,
+				loaded: loadedEvents.length,
+				max: mailboxLiveMirrorMaxEvents,
+			})
+		}
 		const eventInputs = eventsTruncated
 			? loadedEvents.slice(-mailboxLiveMirrorMaxEvents)
 			: loadedEvents
