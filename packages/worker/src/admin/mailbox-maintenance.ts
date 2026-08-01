@@ -634,6 +634,21 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 }
 
 /**
+ * Missing or foreign target for owner-scoped canary delete. Callers supplied
+ * an id that does not resolve under the given owner fence — not a platform
+ * defect. The MCP capability maps this to `McpCallerError` so it stays on
+ * `mcp-event` and out of Sentry.
+ */
+export class AdminMailboxMessageNotFoundError extends Error {
+	constructor(input: { stableUserId: string; messageId: string }) {
+		super(
+			`Email message not found for stable_user_id=${input.stableUserId} message_id=${input.messageId}`,
+		)
+		this.name = 'AdminMailboxMessageNotFoundError'
+	}
+}
+
+/**
  * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
  * Verifies ownership via getEmailMessageById, deletes through
  * deleteEmailMessageById with an expectedUserId fence, then confirms D1
@@ -653,9 +668,10 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 		messageId: input.messageId,
 	})
 	if (!message) {
-		throw new Error(
-			`Email message not found for stable_user_id=${input.stableUserId} message_id=${input.messageId}`,
-		)
+		throw new AdminMailboxMessageNotFoundError({
+			stableUserId: input.stableUserId,
+			messageId: input.messageId,
+		})
 	}
 
 	const deletion = await deleteEmailMessageById({

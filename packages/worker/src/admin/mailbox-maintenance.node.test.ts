@@ -61,6 +61,7 @@ const {
 	adminMailboxMaintenanceRetentionMaxLimit,
 	listUsersForAdminMailboxRetention,
 	loadAdminMailboxMaintenanceStatus,
+	AdminMailboxMessageNotFoundError,
 	runAdminMailboxMaintenanceDeleteMessage,
 	runAdminMailboxMaintenanceReconcile,
 	runAdminMailboxMaintenanceRetention,
@@ -743,8 +744,11 @@ test('delete_message enforces owner isolation and verifies D1/R2 linkage aggrega
 			stableUserId: ownerA,
 			messageId: messageB,
 		}),
-	).rejects.toThrow(
-		`Email message not found for stable_user_id=${ownerA} message_id=${messageB}`,
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof AdminMailboxMessageNotFoundError &&
+			error.message ===
+				`Email message not found for stable_user_id=${ownerA} message_id=${messageB}`,
 	)
 	await expect(
 		runAdminMailboxMaintenanceDeleteMessage({
@@ -752,8 +756,11 @@ test('delete_message enforces owner isolation and verifies D1/R2 linkage aggrega
 			stableUserId: ownerA,
 			messageId: 'missing-message',
 		}),
-	).rejects.toThrow(
-		`Email message not found for stable_user_id=${ownerA} message_id=missing-message`,
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof AdminMailboxMessageNotFoundError &&
+			error.message ===
+				`Email message not found for stable_user_id=${ownerA} message_id=missing-message`,
 	)
 	expect(
 		await getEmailMessageById({
