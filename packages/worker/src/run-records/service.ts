@@ -25,6 +25,7 @@ import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionReserveResult,
 	type WorkflowProjectionUpsertInput,
+	workflowProjectionImportMaxBatch,
 } from './workflow-projection.ts'
 import {
 	type RunRecord,
@@ -435,10 +436,14 @@ export async function ensureJobRunObservabilitySeeded(input: {
 
 type D1ReadResult<T> = { ok: true; value: T } | { ok: false; error: unknown }
 
-/** Schema-not-ready is a successful empty legacy snapshot, not a retryable read failure. */
-function isMissingD1RelationError(error: unknown): boolean {
+/**
+ * Schema-not-ready (missing table or column) is a successful empty legacy
+ * snapshot, not a retryable read failure — later contract-phase drops must not
+ * leave the DO uninitialized forever.
+ */
+export function isMissingD1RelationError(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error)
-	return /no such table/i.test(message)
+	return /no such (table|column)/i.test(message)
 }
 
 async function readActivationStateFromD1(input: {
@@ -1142,6 +1147,27 @@ export async function upsertWorkflowProjection(input: {
 	}).upsertWorkflowProjection(input.projection)
 }
 
+/**
+ * Batch expand-phase D1 → RunLog import in one DO RPC. Applies the same
+ * monotonic + terminal-sticky upsert as {@link upsertWorkflowProjection}.
+ * Hard-capped at {@link workflowProjectionImportMaxBatch}.
+ */
+export async function importWorkflowProjections(input: {
+	env: Env
+	userId: string
+	projections: Array<WorkflowProjectionUpsertInput>
+}): Promise<{ imported: number }> {
+	const projections = input.projections.slice(
+		0,
+		workflowProjectionImportMaxBatch,
+	)
+	if (projections.length === 0) return { imported: 0 }
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).importWorkflowProjections({ projections })
+}
+
 export async function getWorkflowProjection(input: {
 	env: Env
 	userId: string
@@ -1369,5 +1395,6 @@ export {
 	workflowBindingNames,
 	workflowProjectionActiveStatuses,
 	workflowProjectionCreatingTtlMs,
+	workflowProjectionImportMaxBatch,
 	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'

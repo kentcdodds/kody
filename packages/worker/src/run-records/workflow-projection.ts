@@ -89,6 +89,12 @@ export const creatingWorkflowProjectionStatus = 'creating'
  */
 export const workflowProjectionCreatingTtlMs = 10 * 60 * 1000
 
+/**
+ * Hard cap for one {@link importWorkflowProjections} RPC. Matches the expand-
+ * phase active D1 import bound (`planLimits.max.maxConcurrentWorkflows + 1`).
+ */
+export const workflowProjectionImportMaxBatch = 5_001
+
 export const workflowProjectionActiveStatuses: ReadonlyArray<string> =
 	activeWorkflowStatusValues
 

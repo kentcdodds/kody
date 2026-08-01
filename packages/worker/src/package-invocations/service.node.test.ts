@@ -270,7 +270,14 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 						typeof input.run['surface'] === 'string'
 							? input.run['surface']
 							: null
-					if (packageId && surface !== 'webhook' && surface !== 'app_fetch') {
+					// Match RunLog: once global package_activated exists, counters
+					// stop changing for every package.
+					if (
+						packageId &&
+						surface !== 'webhook' &&
+						surface !== 'app_fetch' &&
+						!activationMilestones.has('package_activated')
+					) {
 						const reachedAt =
 							typeof input.run['finishedAt'] === 'string'
 								? input.run['finishedAt']
@@ -289,10 +296,7 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 								packageId,
 							})
 						}
-						if (
-							successCount >= 2 &&
-							!activationMilestones.has('package_activated')
-						) {
+						if (successCount >= 2) {
 							activationMilestones.set('package_activated', {
 								milestone: 'package_activated',
 								reachedAt,

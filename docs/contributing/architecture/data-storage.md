@@ -443,9 +443,12 @@ instead of one Durable Object wake.
 
 Storage split:
 
-- D1 `jobs` table: job metadata, persisted caller context, schedule, run
-  counters, last error, last duration, run history, repo source reference, and
-  stable `storage_id`
+- D1 `jobs` table: job metadata, persisted caller context, schedule fields,
+  `last_run_at` / `last_run_status` as retention anchors, repo source pointers
+  (`source_id`, `published_commit`), and stable `storage_id`. Terminal run
+  error, duration, counters, and pruned execution history live in the per-user
+  `RunLog` (`job_run_observability` and `runs`; see
+  [Run records](./run-records.md))
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`

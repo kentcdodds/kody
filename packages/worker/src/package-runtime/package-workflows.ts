@@ -37,6 +37,7 @@ import {
 	getWorkflowProjection,
 	listWorkflowProjections,
 	reserveWorkflowProjectionSlot,
+	importWorkflowProjections,
 	upsertWorkflowProjection,
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
@@ -704,7 +705,7 @@ function projectionUpsertFromInspection(
 	}
 }
 
-/** Expand-phase D1 → RunLog import; monotonic upsert refuses older updatedAt. */
+/** Single-row expand-phase D1 → RunLog import (idempotency / get-by-id paths). */
 async function importWorkflowInspectionIntoRunLog(input: {
 	env: Env
 	row: WorkflowRunInspection
@@ -713,6 +714,27 @@ async function importWorkflowInspectionIntoRunLog(input: {
 		env: input.env,
 		userId: input.row.userId,
 		projection: projectionUpsertFromInspection(input.row),
+	})
+}
+
+/**
+ * Bounded expand-phase D1 → RunLog import in one RunLog RPC. Callers must
+ * already scope rows to `userId` and apply a D1 LIMIT; this filters any
+ * cross-user stragglers and hard-caps the batch.
+ */
+async function importWorkflowInspectionsIntoRunLog(input: {
+	env: Env
+	userId: string
+	rows: Array<WorkflowRunInspection>
+}) {
+	const projections = input.rows
+		.filter((row) => row.userId === input.userId)
+		.map(projectionUpsertFromInspection)
+	if (projections.length === 0) return
+	await importWorkflowProjections({
+		env: input.env,
+		userId: input.userId,
+		projections,
 	})
 }
 
@@ -865,9 +887,11 @@ async function importActiveD1WorkflowRuns(input: { env: Env; userId: string }) {
 		userId: input.userId,
 		limit: activeD1WorkflowImportBound,
 	})
-	for (const row of active) {
-		await importWorkflowInspectionIntoRunLog({ env: input.env, row })
-	}
+	await importWorkflowInspectionsIntoRunLog({
+		env: input.env,
+		userId: input.userId,
+		rows: active,
+	})
 }
 
 async function importRecentD1WorkflowRuns(input: {
@@ -881,9 +905,11 @@ async function importRecentD1WorkflowRuns(input: {
 		userId: input.userId,
 		limit: input.limit,
 	})
-	for (const row of recent) {
-		await importWorkflowInspectionIntoRunLog({ env: input.env, row })
-	}
+	await importWorkflowInspectionsIntoRunLog({
+		env: input.env,
+		userId: input.userId,
+		rows: recent,
+	})
 }
 
 function buildWorkflowProjectionUpsert(input: {

@@ -69,45 +69,64 @@ const runRecordMocks = vi.hoisted(() => {
 		}
 	}
 
+	function applyProjectionUpsert(
+		userId: string,
+		projection: WorkflowProjectionUpsertInput,
+	) {
+		const store = userStore(userId)
+		const existing = store.get(projection.id) ?? null
+		const nextUpdatedAt =
+			projection.updatedAt?.trim() || new Date().toISOString()
+		if (!existing) {
+			store.set(projection.id, toRecord(projection, null))
+			return
+		}
+		if (nextUpdatedAt < existing.updatedAt) {
+			return
+		}
+		const nextStatus = projection.status ?? null
+		if (
+			existing.status != null &&
+			(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+				existing.status,
+			) &&
+			(nextStatus == null ||
+				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					nextStatus,
+				))
+		) {
+			return
+		}
+		store.set(projection.id, {
+			...existing,
+			status: nextStatus,
+			updatedAt: nextUpdatedAt,
+			completedAt: projection.completedAt ?? existing.completedAt ?? null,
+			lastError: projection.lastError ?? existing.lastError ?? null,
+		})
+	}
+
 	const upsertWorkflowProjection = vi.fn(
 		async (input: {
 			env: Env
 			userId: string
 			projection: WorkflowProjectionUpsertInput
 		}) => {
-			const store = userStore(input.userId)
-			const existing = store.get(input.projection.id) ?? null
-			const nextUpdatedAt =
-				input.projection.updatedAt?.trim() || new Date().toISOString()
-			if (!existing) {
-				store.set(input.projection.id, toRecord(input.projection, null))
-				return { ok: true as const }
-			}
-			if (nextUpdatedAt < existing.updatedAt) {
-				return { ok: true as const }
-			}
-			const nextStatus = input.projection.status ?? null
-			if (
-				existing.status != null &&
-				(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
-					existing.status,
-				) &&
-				nextStatus != null &&
-				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
-					nextStatus,
-				)
-			) {
-				return { ok: true as const }
-			}
-			store.set(input.projection.id, {
-				...existing,
-				status: nextStatus,
-				updatedAt: nextUpdatedAt,
-				completedAt:
-					input.projection.completedAt ?? existing.completedAt ?? null,
-				lastError: input.projection.lastError ?? existing.lastError ?? null,
-			})
+			applyProjectionUpsert(input.userId, input.projection)
 			return { ok: true as const }
+		},
+	)
+
+	const importWorkflowProjections = vi.fn(
+		async (input: {
+			env: Env
+			userId: string
+			projections: Array<WorkflowProjectionUpsertInput>
+		}) => {
+			for (const projection of input.projections) {
+				applyProjectionUpsert(input.userId, projection)
+			}
+			return { imported: input.projections.length }
 		},
 	)
 
@@ -128,6 +147,7 @@ const runRecordMocks = vi.hoisted(() => {
 		})),
 		finishRunRecord: vi.fn(async () => {}),
 		upsertWorkflowProjection,
+		importWorkflowProjections,
 		getWorkflowProjection: vi.fn(
 			async (input: { env: Env; userId: string; id: string }) =>
 				userStore(input.userId).get(input.id) ?? null,
@@ -259,6 +279,16 @@ vi.mock('#worker/run-records/service.ts', () => ({
 					env: Env
 					userId: string
 					projection: WorkflowProjectionUpsertInput
+				},
+			]),
+		),
+	importWorkflowProjections: (...args: Array<unknown>) =>
+		runRecordMocks.importWorkflowProjections(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projections: Array<WorkflowProjectionUpsertInput>
 				},
 			]),
 		),

@@ -89,46 +89,65 @@ const runRecordMocks = vi.hoisted(() => {
 		}
 	}
 
+	function applyProjectionUpsert(
+		userId: string,
+		projection: WorkflowProjectionUpsertInput,
+	) {
+		const store = userStore(userId)
+		const existing = store.get(projection.id) ?? null
+		const nextUpdatedAt =
+			projection.updatedAt?.trim() || new Date().toISOString()
+		if (!existing) {
+			store.set(projection.id, toRecord(projection, null))
+			return
+		}
+		// Monotonic by updatedAt + terminal stickiness (matches RunLog DO).
+		if (nextUpdatedAt < existing.updatedAt) {
+			return
+		}
+		const nextStatus = projection.status ?? null
+		if (
+			existing.status != null &&
+			(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+				existing.status,
+			) &&
+			(nextStatus == null ||
+				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					nextStatus,
+				))
+		) {
+			return
+		}
+		store.set(projection.id, {
+			...existing,
+			status: nextStatus,
+			updatedAt: nextUpdatedAt,
+			completedAt: projection.completedAt ?? existing.completedAt ?? null,
+			lastError: projection.lastError ?? existing.lastError ?? null,
+		})
+	}
+
 	const upsertWorkflowProjection = vi.fn(
 		async (input: {
 			env: Env
 			userId: string
 			projection: WorkflowProjectionUpsertInput
 		}) => {
-			const store = userStore(input.userId)
-			const existing = store.get(input.projection.id) ?? null
-			const nextUpdatedAt =
-				input.projection.updatedAt?.trim() || new Date().toISOString()
-			if (!existing) {
-				store.set(input.projection.id, toRecord(input.projection, null))
-				return { ok: true as const }
-			}
-			// Monotonic by updatedAt (matches RunLog DO).
-			if (nextUpdatedAt < existing.updatedAt) {
-				return { ok: true as const }
-			}
-			const nextStatus = input.projection.status ?? null
-			if (
-				existing.status != null &&
-				(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
-					existing.status,
-				) &&
-				nextStatus != null &&
-				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
-					nextStatus,
-				)
-			) {
-				return { ok: true as const }
-			}
-			store.set(input.projection.id, {
-				...existing,
-				status: nextStatus,
-				updatedAt: nextUpdatedAt,
-				completedAt:
-					input.projection.completedAt ?? existing.completedAt ?? null,
-				lastError: input.projection.lastError ?? existing.lastError ?? null,
-			})
+			applyProjectionUpsert(input.userId, input.projection)
 			return { ok: true as const }
+		},
+	)
+
+	const importWorkflowProjections = vi.fn(
+		async (input: {
+			env: Env
+			userId: string
+			projections: Array<WorkflowProjectionUpsertInput>
+		}) => {
+			for (const projection of input.projections) {
+				applyProjectionUpsert(input.userId, projection)
+			}
+			return { imported: input.projections.length }
 		},
 	)
 
@@ -149,6 +168,7 @@ const runRecordMocks = vi.hoisted(() => {
 		})),
 		finishRunRecord: vi.fn(async () => {}),
 		upsertWorkflowProjection,
+		importWorkflowProjections,
 		getWorkflowProjection: vi.fn(
 			async (input: { env: Env; userId: string; id: string }) =>
 				userStore(input.userId).get(input.id) ?? null,
@@ -305,6 +325,16 @@ vi.mock('#worker/run-records/service.ts', () => ({
 				},
 			]),
 		),
+	importWorkflowProjections: (...args: Array<unknown>) =>
+		runRecordMocks.importWorkflowProjections(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projections: Array<WorkflowProjectionUpsertInput>
+				},
+			]),
+		),
 	getWorkflowProjection: (...args: Array<unknown>) =>
 		runRecordMocks.getWorkflowProjection(
 			...(args as [{ env: Env; userId: string; id: string }]),
@@ -370,6 +400,7 @@ beforeEach(() => {
 	runRecordMocks.beginRunRecord.mockClear()
 	runRecordMocks.finishRunRecord.mockClear()
 	runRecordMocks.upsertWorkflowProjection.mockClear()
+	runRecordMocks.importWorkflowProjections.mockClear()
 	runRecordMocks.getWorkflowProjection.mockClear()
 	runRecordMocks.findWorkflowProjectionByIdempotencyKey.mockClear()
 	runRecordMocks.listWorkflowProjections.mockClear()
@@ -2389,6 +2420,20 @@ test('active D1 import bound overflows still block entitlement', async () => {
 		}),
 	).rejects.toSatisfy((error: unknown) => isEntitlementLimitError(error))
 	expect(binding.create).not.toHaveBeenCalled()
+	// Expand-phase active import is one batch RPC, not N per-row upserts.
+	expect(runRecordMocks.importWorkflowProjections).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.importWorkflowProjections).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			projections: expect.arrayContaining([
+				expect.objectContaining({ status: 'running' }),
+			]),
+		}),
+	)
+	expect(
+		runRecordMocks.importWorkflowProjections.mock.calls[0]?.[0]?.projections,
+	).toHaveLength(activeD1WorkflowImportBound)
+	expect(runRecordMocks.upsertWorkflowProjection).not.toHaveBeenCalled()
 	expect(
 		runRecordMocks
 			.listForUser('user-1')
@@ -2607,6 +2652,8 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 		},
 	})
 
+	runRecordMocks.importWorkflowProjections.mockClear()
+	runRecordMocks.upsertWorkflowProjection.mockClear()
 	const workflows = await listWorkflowRunsForUser({
 		env,
 		userId: 'user-1',
@@ -2621,6 +2668,9 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 			idempotencyKey: 'inline-key',
 		}),
 	])
+	// Recent D1 import is one batch RPC (even when the page is a single row).
+	expect(runRecordMocks.importWorkflowProjections).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.upsertWorkflowProjection).not.toHaveBeenCalled()
 	binding.instances.delete(created.id)
 	const staleWorkflows = await listWorkflowRunsForUser({
 		env,

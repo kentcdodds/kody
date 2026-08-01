@@ -17,6 +17,7 @@ import {
 	getJobRunObservability,
 	getJobRunObservabilityBatch,
 	getWorkflowProjection,
+	importWorkflowProjections,
 	listActivationMilestones,
 	listPackageRunSuccesses,
 	listRunRecords,
@@ -449,6 +450,103 @@ test('workflow projection upsert is monotonic by updatedAt', async () => {
 	})
 })
 
+test('importWorkflowProjections batches rows with monotonic and terminal-sticky guards', async () => {
+	const userId = uniqueUserId('wf-batch-import')
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-batch-terminal',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'done',
+			idempotencyKey: 'batch-terminal',
+			runAt: '2026-07-31T20:00:00.000Z',
+			status: 'cancelled',
+			createdAt: '2026-07-31T20:00:00.000Z',
+			updatedAt: '2026-07-31T20:00:00.000Z',
+			completedAt: '2026-07-31T20:00:00.000Z',
+		},
+	})
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-batch-newer',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'live',
+			idempotencyKey: 'batch-newer',
+			runAt: '2026-07-31T20:00:00.000Z',
+			status: 'running',
+			createdAt: '2026-07-31T20:00:00.000Z',
+			updatedAt: '2026-07-31T20:00:02.000Z',
+		},
+	})
+
+	const result = await importWorkflowProjections({
+		env,
+		userId,
+		projections: [
+			{
+				id: 'wf-batch-terminal',
+				bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+				sourceType: 'inline',
+				workflowName: 'done',
+				idempotencyKey: 'batch-terminal',
+				runAt: '2026-07-31T20:00:01.000Z',
+				status: 'queued',
+				createdAt: '2026-07-31T20:00:00.000Z',
+				updatedAt: '2026-07-31T20:00:01.000Z',
+				completedAt: null,
+			},
+			{
+				id: 'wf-batch-newer',
+				bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+				sourceType: 'inline',
+				workflowName: 'live',
+				idempotencyKey: 'batch-newer',
+				runAt: '2026-07-31T19:00:00.000Z',
+				status: 'queued',
+				createdAt: '2026-07-31T19:00:00.000Z',
+				updatedAt: '2026-07-31T20:00:01.000Z',
+			},
+			{
+				id: 'wf-batch-fresh',
+				bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+				sourceType: 'package',
+				packageId: 'pkg-1',
+				workflowName: 'nightly',
+				exportName: 'run',
+				idempotencyKey: 'batch-fresh',
+				runAt: '2026-07-31T21:00:00.000Z',
+				status: 'running',
+				createdAt: '2026-07-31T21:00:00.000Z',
+				updatedAt: '2026-07-31T21:00:00.000Z',
+			},
+		],
+	})
+	expect(result).toEqual({ imported: 3 })
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-batch-terminal' }),
+	).toMatchObject({
+		status: 'cancelled',
+		updatedAt: '2026-07-31T20:00:00.000Z',
+	})
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-batch-newer' }),
+	).toMatchObject({
+		status: 'running',
+		updatedAt: '2026-07-31T20:00:02.000Z',
+	})
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-batch-fresh' }),
+	).toMatchObject({
+		status: 'running',
+		idempotencyKey: 'batch-fresh',
+	})
+})
+
 test('workflow projection upsert keeps terminal status sticky against newer active/creating', async () => {
 	const userId = uniqueUserId('wf-terminal-sticky')
 	const terminalAt = '2026-07-31T20:00:00.000Z'
@@ -777,6 +875,25 @@ test('activation counts same-package successes, excludes HTTP surfaces, and is i
 	])
 
 	await finishSuccess({ packageId: 'pkg-a', surface: 'workflow' })
+	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+		expect.objectContaining({ packageId: 'pkg-a', successCount: 2 }),
+		expect.objectContaining({ packageId: 'pkg-b', successCount: 1 }),
+	])
+	expect(await listActivationMilestones({ env, userId })).toEqual([
+		expect.objectContaining({
+			milestone: 'package_activated',
+			packageId: 'pkg-a',
+		}),
+		expect.objectContaining({
+			milestone: 'package_run_succeeded',
+			packageId: 'pkg-a',
+		}),
+	])
+
+	// Global package_activated latch: further successes must not change counters.
+	await finishSuccess({ packageId: 'pkg-a', surface: 'job' })
+	await finishSuccess({ packageId: 'pkg-b', surface: 'job' })
+	await finishSuccess({ packageId: 'pkg-c', surface: 'workflow' })
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({ packageId: 'pkg-a', successCount: 2 }),
 		expect.objectContaining({ packageId: 'pkg-b', successCount: 1 }),

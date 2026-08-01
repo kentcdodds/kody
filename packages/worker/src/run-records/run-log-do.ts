@@ -24,6 +24,7 @@ import {
 	creatingWorkflowProjectionStatus,
 	workflowProjectionActiveStatuses,
 	workflowProjectionCreatingTtlMs,
+	workflowProjectionImportMaxBatch,
 	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'
 import {
@@ -1402,6 +1403,10 @@ class RunLogBase extends DurableObject<Env> {
 	 * milestones. Transaction-neutral so callers can wrap it with run upsert +
 	 * log replacement in one `transactionSync` (nested transactions are not
 	 * supported).
+	 *
+	 * Legacy contract: once the global `package_activated` milestone exists,
+	 * counters and milestones stop changing for every package (short-circuit
+	 * before any write). This matches pre-cutover D1 activation semantics.
 	 */
 	private applySuccessfulPackageActivationIncrement(input: {
 		packageId: string
@@ -1409,6 +1414,8 @@ class RunLogBase extends DurableObject<Env> {
 	}) {
 		const packageId = input.packageId
 		const updatedAt = input.reachedAt
+		// Global activation latch: further package successes must not mutate
+		// success_count rows or milestones after the user is already activated.
 		if (this.hasActivationMilestone('package_activated')) return
 
 		this.ctx.storage.sql.exec(
@@ -1824,16 +1831,14 @@ class RunLogBase extends DurableObject<Env> {
 		return { released: false, record: current }
 	}
 
-	async upsertWorkflowProjection(
-		input: WorkflowProjectionUpsertInput,
-	): Promise<{ ok: true }> {
+	/**
+	 * Authoritative workflow projection write: monotonic by `updated_at`, plus
+	 * terminal-stickiness (same predicate as the D1 `workflow_runs` mirror).
+	 */
+	private writeWorkflowProjectionRow(input: WorkflowProjectionUpsertInput) {
 		const now = new Date().toISOString()
 		const createdAt = input.createdAt?.trim() || now
 		const updatedAt = input.updatedAt?.trim() || now
-		// Monotonic by updated_at, plus the same terminal-stickiness predicate as
-		// the D1 workflow_runs mirror: a terminal existing status cannot regress
-		// to active/creating/null even with a newer updated_at. Terminal→terminal
-		// and nonterminal→any remain allowed when updated_at does not go backward.
 		const terminalPlaceholders = workflowProjectionTerminalStatuses
 			.map(() => '?')
 			.join(', ')
@@ -1872,10 +1877,38 @@ class RunLogBase extends DurableObject<Env> {
 			...workflowProjectionTerminalStatuses,
 			...workflowProjectionTerminalStatuses,
 		)
+	}
+
+	async upsertWorkflowProjection(
+		input: WorkflowProjectionUpsertInput,
+	): Promise<{ ok: true }> {
+		this.writeWorkflowProjectionRow(input)
 		// Terminal projections create future age-prune work.
 		this.retentionIdleConfirmed = false
 		await this.ensureRetentionAlarm()
 		return { ok: true }
+	}
+
+	/**
+	 * Expand-phase D1 → RunLog batch import. Applies the same monotonic +
+	 * terminal-sticky upsert as {@link upsertWorkflowProjection} for each row
+	 * in one DO RPC. Input is hard-capped at
+	 * {@link workflowProjectionImportMaxBatch}.
+	 */
+	async importWorkflowProjections(input: {
+		projections: Array<WorkflowProjectionUpsertInput>
+	}): Promise<{ imported: number }> {
+		const projections = Array.isArray(input.projections)
+			? input.projections.slice(0, workflowProjectionImportMaxBatch)
+			: []
+		for (const projection of projections) {
+			this.writeWorkflowProjectionRow(projection)
+		}
+		if (projections.length > 0) {
+			this.retentionIdleConfirmed = false
+			await this.ensureRetentionAlarm()
+		}
+		return { imported: projections.length }
 	}
 
 	async getWorkflowProjection(input: {
@@ -3016,6 +3049,9 @@ export type RunLogRpc = {
 	upsertWorkflowProjection: (
 		input: WorkflowProjectionUpsertInput,
 	) => Promise<{ ok: true }>
+	importWorkflowProjections: (input: {
+		projections: Array<WorkflowProjectionUpsertInput>
+	}) => Promise<{ imported: number }>
 	getWorkflowProjection: (input: {
 		id: string
 	}) => Promise<WorkflowProjectionRecord | null>

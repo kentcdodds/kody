@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
 	startRun: vi.fn(async () => ({ ok: true })),
 	listPackageRunSuccesses: vi.fn(async () => []),
 	listActivationMilestones: vi.fn(async () => []),
+	isActivationInitialized: vi.fn(async () => ({ initialized: false })),
+	importActivationState: vi.fn(async () => ({ initialized: true })),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -15,13 +17,15 @@ vi.mock('./package-subscriptions.ts', () => ({
 
 const {
 	beginRunRecord,
+	ensureActivationStateSeeded,
 	finishRunRecord,
+	isMissingD1RelationError,
 	listActivationMilestones,
 	listPackageRunSuccesses,
 	recordRunRecord,
 } = await import('./service.ts')
 
-function createEnv() {
+function createEnv(overrides: Partial<Env> = {}) {
 	return {
 		RUN_LOG: {
 			idFromName: () => ({ toString: () => 'run-log-id' }),
@@ -30,11 +34,14 @@ function createEnv() {
 				finishRun: mocks.finishRun,
 				listPackageRunSuccesses: mocks.listPackageRunSuccesses,
 				listActivationMilestones: mocks.listActivationMilestones,
+				isActivationInitialized: mocks.isActivationInitialized,
+				importActivationState: mocks.importActivationState,
 			}),
 		},
 		APP_DB: {},
 		BUNDLE_ARTIFACTS_KV: {},
 		APP_BASE_URL: 'https://example.com',
+		...overrides,
 	} as unknown as Env
 }
 
@@ -151,6 +158,49 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-error-subscription-dispatch-failed',
 		expect.any(Error),
+	)
+})
+
+test('isMissingD1RelationError treats no-such-table and no-such-column as empty', () => {
+	expect(isMissingD1RelationError(new Error('no such table: jobs'))).toBe(true)
+	expect(
+		isMissingD1RelationError(
+			new Error('D1_ERROR: no such column: legacy_seeded: SQLITE_ERROR'),
+		),
+	).toBe(true)
+	expect(isMissingD1RelationError(new Error('D1 unavailable'))).toBe(false)
+})
+
+test('activation seed treats no-such-column as successful empty import', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mocks.isActivationInitialized.mockReset()
+	mocks.importActivationState.mockReset()
+	mocks.isActivationInitialized.mockResolvedValue({ initialized: false })
+	mocks.importActivationState.mockResolvedValue({ initialized: true })
+
+	const env = createEnv({
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					all: async () => {
+						throw new Error(
+							'D1_ERROR: no such column: success_count: SQLITE_ERROR',
+						)
+					},
+				}),
+			}),
+		} as unknown as D1Database,
+	})
+
+	await ensureActivationStateSeeded({ env, userId: 'user-1' })
+	expect(mocks.importActivationState).toHaveBeenCalledTimes(1)
+	expect(mocks.importActivationState).toHaveBeenCalledWith({
+		packageRunSuccesses: [],
+		milestones: [],
+	})
+	expect(consoleWarn).not.toHaveBeenCalledWith(
+		'run-log-activation-seed-failed',
+		expect.anything(),
 	)
 })
 

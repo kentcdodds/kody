@@ -6,9 +6,10 @@ describes the contract, the per-user Durable Object store, persistence policy,
 retention, and the recipe for instrumenting a new surface.
 
 Deliberately out of scope: Analytics Engine aggregates (see
-[Usage metering](./usage-metering.md)), Sentry platform alerts, and entity
-“current state” columns such as `jobs.last_run_*`. Those neighbors are covered
-in [Neighboring systems](#neighboring-systems).
+[Usage metering](./usage-metering.md)), Sentry platform alerts, and D1 job
+schedule/retention anchors (`jobs.last_run_at` / `last_run_status` — not
+last-run error, duration, or counters). Those neighbors are covered in
+[Neighboring systems](#neighboring-systems).
 
 ## What a run record is
 
@@ -241,10 +242,11 @@ Entitlement concurrency reads `package_service_states` (migration `0095`), an
 authoritative D1 projection upserted and heartbeaten by the service Durable
 Object. History rows can outlive an evicted DO or stay `running` after a crash,
 so they are not a reliable liveness signal. Jobs keep schedule metadata and
-`last_run_at` on the D1 `jobs` row for the hourly retention sweeper; terminal
-outcomes and counters for observability live in RunLog `job_run_observability`
-and survive run-history pruning. Package activation counters and milestones live
-in the same DO (`package_run_successes`, `activation_milestones`).
+`last_run_at` / `last_run_status` on the D1 `jobs` row for the hourly retention
+sweeper; last-run error, duration, and counters for observability live in RunLog
+`job_run_observability` and survive run-history pruning. Package activation
+counters and milestones live in the same DO (`package_run_successes`,
+`activation_milestones`).
 
 ## Recipe: instrumenting a new surface
 
@@ -304,9 +306,12 @@ Modelled on the
 5. **Do not change behavior.** Recording must not alter return values or add
    critical-path latency beyond the awaited finish RPC (begin stays
    fire-and-forget).
-6. **Keep state updates on the entity.** Update `last_run_*`, counters, or a
-   dedicated state table in the same change if the surface has “is it running?”
-   semantics — never teach entitlements or UI to infer that from run history.
+6. **Keep state updates on the entity.** For jobs, update RunLog
+   `job_run_observability` (error, duration, counters) and D1 schedule fields
+   plus `last_run_at` / `last_run_status` retention anchors — not pruned run
+   history. Other surfaces may update a dedicated state table when they have “is
+   it running?” semantics — never teach entitlements or UI to infer that from
+   run history.
 7. **Test it.** Prefer a `*.workers.test.ts` against the real `RUN_LOG` binding
    (see `packages/worker/src/run-records/run-records.workers.test.ts`), or spy
    on `beginRunRecord` / `finishRunRecord` in Node unit tests the way usage
@@ -314,13 +319,13 @@ Modelled on the
 
 ## Neighboring systems
 
-| System                          | Answers                                         | Store                                     |
-| ------------------------------- | ----------------------------------------------- | ----------------------------------------- |
-| **Run records** (this doc)      | What failed, with logs, for one user’s runs     | Per-user `RunLog` DO SQLite               |
-| **Usage metering**              | How many / how long / aggregate cost pressure   | Analytics Engine + D1 `usage_rollups`     |
-| **Sentry**                      | Platform defects operators should fix           | Sentry project                            |
-| **Entity state columns/tables** | Current status (`last_run_*`, service liveness) | D1 entity rows / `package_service_states` |
-| **Package subscriptions**       | Same-user reaction to terminal errors           | Best-effort dispatch after `finishRun`    |
+| System                          | Answers                                                                 | Store                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Run records** (this doc)      | What failed, with logs, for one user’s runs                             | Per-user `RunLog` DO SQLite                                                                    |
+| **Usage metering**              | How many / how long / aggregate cost pressure                           | Analytics Engine + D1 `usage_rollups`                                                          |
+| **Sentry**                      | Platform defects operators should fix                                   | Sentry project                                                                                 |
+| **Entity state columns/tables** | Current status (job last-run error/duration/counters, service liveness) | RunLog `job_run_observability`; D1 `jobs` schedule/retention anchors; `package_service_states` |
+| **Package subscriptions**       | Same-user reaction to terminal errors                                   | Best-effort dispatch after `finishRun`                                                         |
 
 After a successful terminal `finishRun` with `status: 'error'`,
 `finishRunRecord` best-effort dispatches `run.error.recorded` to the owning
@@ -345,9 +350,12 @@ String-match filters for bundler failures and sandbox timeouts remain only as
 backstops for unmarked paths. Run records still store those failures for the
 user.
 
-**Entity state** stays on the entity. Jobs update `last_run_*` and counters;
-package services heartbeat `package_service_states`. History browsers
-(`/account/activity`, `run_list` / `run_get` / `run_summary`) read `RunLog`.
+**Entity state** stays on the entity (or its dedicated projection table). Job
+last-run error, duration, and counters live in RunLog `job_run_observability`;
+D1 `jobs` keeps schedule fields and `last_run_at` / `last_run_status` as
+retention anchors only. Package services heartbeat `package_service_states`.
+History browsers (`/account/activity`, `run_list` / `run_get` / `run_summary`)
+read `RunLog`.
 
 ## Reading the data
 
