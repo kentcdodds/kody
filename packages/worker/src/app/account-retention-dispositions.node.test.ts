@@ -46,6 +46,15 @@ test('retention dispositions stay aligned with scheduled policies and documented
 	expect(
 		nonScheduled.some(
 			(disposition) =>
+				disposition.table === 'entitlement_daily_counters' &&
+				disposition.kind === 'alternate_cleanup' &&
+				disposition.reason.includes('pending a later drop migration') &&
+				disposition.reason.includes('no scheduled retention'),
+		),
+	).toBe(true)
+	expect(
+		nonScheduled.some(
+			(disposition) =>
 				disposition.table === 'mcp_memories' &&
 				disposition.kind === 'durable_forever',
 		),

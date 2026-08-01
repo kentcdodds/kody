@@ -36,7 +36,7 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			table: 'entitlement_daily_counters',
 			kind: 'alternate_cleanup',
 			reason:
-				'The quiescent daily-counter mirror is pending a later drop migration; account deletion removes user rows during the code-first retirement window.',
+				'The quiescent daily-counter mirror is pending a later drop migration; no scheduled retention reads or writes. Rows age in place until the drop migration.',
 		},
 		{
 			table: 'mcp_memories',

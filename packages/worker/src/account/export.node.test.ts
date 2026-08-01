@@ -156,8 +156,13 @@ test('account export documents and excludes operator-owned system email rows', a
 				name: 'system_email_inboxes',
 				reason: expect.stringContaining('Operator-owned inbound mail'),
 			}),
+			expect.objectContaining({
+				name: 'entitlement_daily_counters',
+				reason: expect.stringContaining('pending a later drop migration'),
+			}),
 		]),
 	)
+	expect(accountExport.d1).not.toHaveProperty('entitlement_daily_counters')
 })
 
 test('account export includes submitted feedback but excludes reviewer-only relationships', async () => {

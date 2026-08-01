@@ -153,12 +153,14 @@ then initializes that key at zero via `UserMeter.initialize()`
 only the DO RPC and never touches D1 daily counter state.
 
 **D1 daily mirror writes stopped:** consume, refund, inbound charge/read,
-point-read surfaces, and retention no longer read or write
-`entitlement_daily_counters`. Generic account export and deletion keep reading
-or removing user rows while the physical table exists. A follow-up code deploy
-removes those inventory targets before the later migration-only drop (migrations
-apply before Workers); existing rows are otherwise quiescent historical mirror
-state. Analytics Engine remains the production reporting path for email
+point-read surfaces, retention, and generic account export/deletion no longer
+read or write `entitlement_daily_counters`. The physical table remains in the
+migrated schema as a pending-drop target (`accountUserDataPendingDropTargets`)
+so schema coverage still recognizes `entitlement_daily_counters.user_id` without
+runtime inventory querying it; export lists the omission under
+`excludedD1Surfaces` (no raw rows). A later migration-only deploy drops the
+table (migrations apply before Workers); existing rows are quiescent historical
+mirror state. Analytics Engine remains the production reporting path for email
 send/receive aggregates.
 
 **Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
@@ -360,16 +362,17 @@ same-token rollout mirrors; email keeps its D1 lease path. Package-service and
 storage authority flips remain separate high-risk contract follow-ups after
 soak/parity review.
 
-**Daily-counter mirror retirement (three-deploy):** this code deploy stops all
-D1 mirror/bootstrap/retention use while leaving the physical
-`entitlement_daily_counters` table and account-deletion target in place. A
-follow-up code deploy removes that target after this Worker is healthy; the
-third, migration-only deploy drops the table. Production
-`admin_user_meter_parity` scans across 38 users showed zero daily mismatches
-with Analytics Engine reporting active — the deploy rationale for stopping
-mirror writes before the drop. While the table exists, parity still compares
-`d1Count === meterCount` (`mirrorRetired: false`); after the drop migration,
-`mirrorRetired: true` reports meter counts only.
+**Daily-counter mirror retirement (three-deploy):** stage 1 (Worker #1133)
+stopped all D1 mirror/bootstrap/retention use while leaving the physical
+`entitlement_daily_counters` table and account inventory target in place. Stage
+2 removes the runtime account export/deletion inventory target and registers the
+table in `accountUserDataPendingDropTargets` for schema coverage (export
+documents the omission; no raw rows). The third, migration-only deploy drops the
+table. Production `admin_user_meter_parity` scans across 38 users showed zero
+daily mismatches with Analytics Engine reporting active — the deploy rationale
+for stopping mirror writes before the drop. While the table exists, parity still
+compares `d1Count === meterCount` (`mirrorRetired: false`); after the drop
+migration, `mirrorRetired: true` reports meter counts only.
 
 ### Admin UserMeter parity gates (`admin_user_meter_parity`)
 
@@ -791,8 +794,8 @@ in [`../environment-variables.md`](../environment-variables.md).
   it is Stripe-derived; `max` is manual-only.
 - `entitlement_daily_counters` — **quiescent pending drop**. Created by
   migration `0048-user-plans-and-entitlement-counters.sql`; mirror writes,
-  bootstrap reads, and retention pruning stop in the code deploy. Account
-  deletion keeps removing user rows while the table exists. Daily counters are
-  authoritative in the per-user `UserMeter` DO; account export uses UserMeter
-  RPCs. A follow-up code deploy removes the deletion target before a later
-  migration-only PR drops the table.
+  bootstrap reads, retention pruning, and account export/deletion inventory
+  stopped across the stage 1/2 code deploys. The table remains in
+  `accountUserDataPendingDropTargets` for schema coverage until a later
+  migration-only PR drops it. Daily counters are authoritative in the per-user
+  `UserMeter` DO; account export uses UserMeter RPCs (no raw D1 mirror rows).

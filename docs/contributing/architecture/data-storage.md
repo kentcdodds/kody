@@ -71,11 +71,13 @@ Deletion must cover these user-owned surfaces:
 
 - **D1:** every live table with `user_id` / `*_user_id` ownership columns, plus
   transitive children (`secret_entries`, `value_entries`, `email_attachments`)
-  and listing children for community-owned listings. The guardrail test in
-  `packages/worker/src/app/account-deletion.node.test.ts` applies the live
-  migrations to SQLite and fails if a user-owned schema column is not
-  represented in the deletion target list, or if the deletion target list
-  references a stale column.
+  and listing children for community-owned listings. Physical tables pending a
+  later drop migration are registered in `accountUserDataPendingDropTargets`
+  (schema coverage only; runtime deletion never queries them). The guardrail
+  test in `packages/worker/src/app/account-deletion.node.test.ts` applies the
+  live migrations to SQLite and fails if a user-owned schema column is not
+  represented in the deletion target list or pending-drop registry, or if those
+  lists reference a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
   `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
@@ -114,22 +116,25 @@ Deletion must cover these user-owned surfaces:
 Account export is implemented in `packages/worker/src/account/export.ts`. It
 mirrors the deletion inventory so portability and account migration cover the
 same user-owned storage surfaces. The D1 table list and shared kind→SQL match
-builders live in `account-data-targets.ts` (`accountUserDataTargets`,
-`buildUserScopedTargetMatch`); export redaction columns also live there.
-Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
-declared in `account-user-owned-surfaces.ts` and consumed by both deletion and
-export. Growth-table retention dispositions are linked in
+builders live in `account/data-targets.ts` (`accountUserDataTargets`,
+`buildUserScopedTargetMatch`); export redaction columns and
+`accountUserDataPendingDropTargets` also live there. Out-of-band surfaces
+(Durable Objects, KV schemes, R2, Vectorize, Artifacts) are declared in
+`account-user-owned-surfaces.ts` and consumed by both deletion and export.
+Growth-table retention dispositions are linked in
 `account-retention-dispositions.ts`.
 `packages/worker/src/account/export.node.test.ts` applies the live migrations to
 SQLite and fails if a `user_id` / `*_user_id` column is not covered by the
-export list. The hard invariant is the same as every storage path: callers pass
-the authenticated user's stable MCP `userId`, and every query or Durable Object
-lookup is scoped to that id.
+export list or pending-drop registry. The hard invariant is the same as every
+storage path: callers pass the authenticated user's stable MCP `userId`, and
+every query or Durable Object lookup is scoped to that id.
 
 System email rows owned by `system:email` are intentionally absent from account
 exports for the same reason they are absent from deletion: they belong to the
-operator inbox surface, not to the exporting user. The export manifest lists
-this under `excludedD1Surfaces` so the omission is explicit.
+operator inbox surface, not to the exporting user. Pending-drop physical tables
+(such as quiescent `entitlement_daily_counters`) are also absent from export
+queries. The export manifest lists both under `excludedD1Surfaces` so the
+omission is explicit.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
@@ -639,11 +644,12 @@ time-pruned. Deletion-fence legacy lease rows are bounded by the D1 snapshot
 replace on `markDeleting` rather than time retention; DO-authority rows clear on
 release/repair/purge.
 
-**D1 daily mirror writes stopped:** enforcement, point reads, bootstrap, and
-mirror paths no longer read or write `entitlement_daily_counters`. The admin
-parity report (`admin_user_meter_parity`) temporarily reads the table while it
-exists for migration verification. The physical table stays quiescent until a
-follow-up migration-only deploy drops it. See
+**D1 daily mirror writes stopped:** enforcement, point reads, bootstrap, mirror,
+and account export/deletion inventory paths no longer read or write
+`entitlement_daily_counters`. The admin parity report
+(`admin_user_meter_parity`) temporarily reads the table while it exists for
+migration verification. The physical table stays registered as a pending-drop
+coverage exemption until a later migration-only deploy drops it. See
 [Entitlements](./entitlements.md#usermeter-expand-phase).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -1667,10 +1673,11 @@ Current retention policies:
   are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
   system-email retention job.
 - `entitlement_daily_counters`: **quiescent pending drop** — mirror writes,
-  bootstrap reads, and scheduled retention pruning stop in the code deploy. The
-  admin parity report (`admin_user_meter_parity`) temporarily reads the table
-  while it exists; account deletion keeps removing rows while the physical table
-  exists; a follow-up code deploy removes that inventory target before the later
+  bootstrap reads, scheduled retention pruning, and account export/deletion
+  inventory stopped across the stage 1/2 code deploys. The admin parity report
+  (`admin_user_meter_parity`) temporarily reads the table while it exists.
+  Runtime account inventory no longer queries the table; it remains registered
+  in `accountUserDataPendingDropTargets` for schema coverage until the later
   drop migration. Daily counter retention lives in the per-user `UserMeter` DO
   (`userMeterDailyCounterRetentionDays`).
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
