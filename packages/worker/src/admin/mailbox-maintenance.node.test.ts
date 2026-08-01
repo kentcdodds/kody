@@ -4,6 +4,13 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { systemEmailOwnerId } from '#worker/email/email-owner.ts'
+import * as EmailRepo from '#worker/email/repo.ts'
+import {
+	deleteEmailMessageById,
+	emailAttachmentBlobKey,
+	emailRawMimeKey,
+	getEmailMessageById,
+} from '#worker/email/repo.ts'
 import {
 	mailboxReadCutoverCheckedAtMaxAgeMs,
 	mailboxReadCutoverSoakMs,
@@ -54,6 +61,8 @@ const {
 	adminMailboxMaintenanceRetentionMaxLimit,
 	listUsersForAdminMailboxRetention,
 	loadAdminMailboxMaintenanceStatus,
+	AdminMailboxMessageNotFoundError,
+	runAdminMailboxMaintenanceDeleteMessage,
 	runAdminMailboxMaintenanceReconcile,
 	runAdminMailboxMaintenanceRetention,
 } = await import('./mailbox-maintenance.ts')
@@ -174,8 +183,121 @@ function envFor(db: D1Database) {
 	return {
 		APP_DB: db,
 		MAILBOX: {},
-		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
+		EMAIL_BLOBS: {
+			delete: vi.fn(async () => undefined),
+			head: vi.fn(async () => null),
+		},
 	} as unknown as Env
+}
+
+function createMemoryEmailBlobs() {
+	const objects = new Map<string, Uint8Array>()
+	return {
+		objects,
+		blobs: {
+			async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
+				const bytes =
+					typeof value === 'string'
+						? new TextEncoder().encode(value)
+						: value instanceof ArrayBuffer
+							? new Uint8Array(value)
+							: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+				objects.set(key, bytes)
+				return { key } as R2Object
+			},
+			async delete(key: string | Array<string>) {
+				for (const entry of Array.isArray(key) ? key : [key]) {
+					objects.delete(entry)
+				}
+			},
+			async head(key: string) {
+				return objects.has(key) ? ({ key } as R2Object) : null
+			},
+		} satisfies Pick<R2Bucket, 'put' | 'delete' | 'head'>,
+	}
+}
+
+function createDeleteMessageDb() {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE email_messages (
+			id TEXT PRIMARY KEY,
+			direction TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			inbox_id TEXT,
+			thread_id TEXT,
+			from_address TEXT NOT NULL,
+			subject TEXT NOT NULL DEFAULT '',
+			processing_status TEXT NOT NULL,
+			raw_mime_key TEXT,
+			text_body TEXT,
+			html_body TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE email_attachments (
+			id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
+			filename TEXT,
+			content_type TEXT NOT NULL,
+			size INTEGER NOT NULL DEFAULT 0,
+			storage_kind TEXT NOT NULL,
+			storage_key TEXT,
+			created_at TEXT NOT NULL
+		);
+	`)
+	return { sqlite, db: createD1FromSqlite(sqlite) }
+}
+
+async function seedOwnedMessageWithBlobs(input: {
+	sqlite: DatabaseSync
+	blobs: Pick<R2Bucket, 'put'>
+	userId: string
+	messageId: string
+	attachmentId: string
+	includeBody?: boolean
+}) {
+	const rawKey = emailRawMimeKey(input.userId, input.messageId)
+	const attachmentKey = emailAttachmentBlobKey(
+		input.userId,
+		input.messageId,
+		input.attachmentId,
+	)
+	input.sqlite
+		.prepare(
+			`INSERT INTO email_messages (
+				id, direction, user_id, from_address, subject, processing_status,
+				raw_mime_key, text_body, html_body, created_at, updated_at
+			) VALUES (?, 'outbound', ?, 'sender@example.net', 'Subject', 'sent', ?, ?, ?, ?, ?)`,
+		)
+		.run(
+			input.messageId,
+			input.userId,
+			rawKey,
+			input.includeBody === false ? null : 'secret body',
+			null,
+			freshCreatedAt,
+			freshCreatedAt,
+		)
+	input.sqlite
+		.prepare(
+			`INSERT INTO email_attachments (
+				id, message_id, filename, content_type, size, storage_kind,
+				storage_key, created_at
+			) VALUES (?, ?, 'note.txt', 'text/plain', 4, 'external', ?, ?)`,
+		)
+		.run(input.attachmentId, input.messageId, attachmentKey, freshCreatedAt)
+	input.sqlite
+		.prepare(
+			`INSERT INTO email_attachments (
+				id, message_id, filename, content_type, size, storage_kind,
+				storage_key, created_at
+			) VALUES (?, ?, 'inline.png', 'image/png', 0, 'raw-mime', NULL, ?)`,
+		)
+		.run(`inline-${input.attachmentId}`, input.messageId, freshCreatedAt)
+	await input.blobs.put(rawKey, 'raw-mime-bytes')
+	await input.blobs.put(attachmentKey, 'att')
+	return { rawKey, attachmentKey }
 }
 
 test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', async () => {
@@ -585,4 +707,243 @@ test('retention skips DO while owner still has expired D1 rows omitted by global
 		pendingOwner,
 		clearOwner,
 	])
+})
+
+test('delete_message enforces owner isolation and verifies D1/R2 linkage aggregates', async () => {
+	const { sqlite, db } = createDeleteMessageDb()
+	const { blobs, objects } = createMemoryEmailBlobs()
+	const ownerA = testStableUserIdFromEmail('owner-a@example.com')
+	const ownerB = testStableUserIdFromEmail('owner-b@example.com')
+	const messageA = 'msg-owner-a'
+	const messageB = 'msg-owner-b'
+	const attachmentA = 'att-owner-a'
+	const attachmentB = 'att-owner-b'
+	const seededA = await seedOwnedMessageWithBlobs({
+		sqlite,
+		blobs,
+		userId: ownerA,
+		messageId: messageA,
+		attachmentId: attachmentA,
+	})
+	const seededB = await seedOwnedMessageWithBlobs({
+		sqlite,
+		blobs,
+		userId: ownerB,
+		messageId: messageB,
+		attachmentId: attachmentB,
+	})
+	const env = {
+		APP_DB: db,
+		MAILBOX: {},
+		EMAIL_BLOBS: blobs,
+	} as unknown as Env
+
+	await expect(
+		runAdminMailboxMaintenanceDeleteMessage({
+			env,
+			stableUserId: ownerA,
+			messageId: messageB,
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof AdminMailboxMessageNotFoundError &&
+			error.message ===
+				`Email message not found for stable_user_id=${ownerA} message_id=${messageB}`,
+	)
+	await expect(
+		runAdminMailboxMaintenanceDeleteMessage({
+			env,
+			stableUserId: ownerA,
+			messageId: 'missing-message',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof AdminMailboxMessageNotFoundError &&
+			error.message ===
+				`Email message not found for stable_user_id=${ownerA} message_id=missing-message`,
+	)
+	expect(
+		await getEmailMessageById({
+			db,
+			userId: ownerB,
+			messageId: messageB,
+		}),
+	).not.toBeNull()
+	expect(objects.has(seededB.rawKey)).toBe(true)
+	expect(objects.has(seededB.attachmentKey)).toBe(true)
+
+	const result = await runAdminMailboxMaintenanceDeleteMessage({
+		env,
+		stableUserId: ownerA,
+		messageId: messageA,
+	})
+	expect(result).toEqual({
+		d1MessageAbsent: true,
+		attachmentsSeen: 2,
+		externalAttachmentsSeen: 1,
+		rawMimeBlobAbsent: true,
+		externalAttachmentBlobsAbsent: 1,
+		allCapturedBlobsAbsent: true,
+	})
+	expect(JSON.stringify(result)).not.toMatch(
+		/@|secret body|email-raw:|email-attachment:/,
+	)
+	expect(
+		await getEmailMessageById({
+			db,
+			userId: ownerA,
+			messageId: messageA,
+		}),
+	).toBeNull()
+	expect(objects.has(seededA.rawKey)).toBe(false)
+	expect(objects.has(seededA.attachmentKey)).toBe(false)
+	expect(
+		await getEmailMessageById({
+			db,
+			userId: ownerB,
+			messageId: messageB,
+		}),
+	).not.toBeNull()
+	expect(objects.has(seededB.rawKey)).toBe(true)
+	expect(objects.has(seededB.attachmentKey)).toBe(true)
+})
+
+test('deleteEmailMessageById expectedUserId fence rejects foreign owners without mutating', async () => {
+	const { sqlite, db } = createDeleteMessageDb()
+	const { blobs, objects } = createMemoryEmailBlobs()
+	const owner = testStableUserIdFromEmail('fence-owner@example.com')
+	const other = testStableUserIdFromEmail('fence-other@example.com')
+	const messageId = 'msg-fence'
+	const attachmentId = 'att-fence'
+	const seeded = await seedOwnedMessageWithBlobs({
+		sqlite,
+		blobs,
+		userId: owner,
+		messageId,
+		attachmentId,
+	})
+
+	await expect(
+		deleteEmailMessageById({
+			db,
+			blobs: blobs as R2Bucket,
+			messageId,
+			expectedUserId: other,
+		}),
+	).rejects.toThrow(
+		`Email message not found for expected_user_id=${other} message_id=${messageId}`,
+	)
+	expect(
+		await getEmailMessageById({
+			db,
+			userId: owner,
+			messageId,
+		}),
+	).not.toBeNull()
+	expect(objects.has(seeded.rawKey)).toBe(true)
+	expect(objects.has(seeded.attachmentKey)).toBe(true)
+
+	const deletion = await deleteEmailMessageById({
+		db,
+		blobs: blobs as R2Bucket,
+		messageId,
+		expectedUserId: owner,
+	})
+	expect(deletion.messageFound).toBe(true)
+	expect(deletion.ownerUserId).toBe(owner)
+	expect(deletion.attachmentsSeen).toBe(2)
+	expect(deletion.externalAttachmentsSeen).toBe(1)
+	expect(deletion.blobDeletions.map((entry) => entry.key)).toEqual([
+		seeded.rawKey,
+		seeded.attachmentKey,
+	])
+	expect(deletion.blobDeletions.every((entry) => entry.deleted)).toBe(true)
+})
+
+test('delete_message head-checks exact keys captured after verification drift', async () => {
+	const { sqlite, db } = createDeleteMessageDb()
+	const { blobs, objects } = createMemoryEmailBlobs()
+	const owner = testStableUserIdFromEmail('drift-owner@example.com')
+	const messageId = 'msg-drift'
+	const attachmentId = 'att-original'
+	const seeded = await seedOwnedMessageWithBlobs({
+		sqlite,
+		blobs,
+		userId: owner,
+		messageId,
+		attachmentId,
+	})
+	const driftAttachmentId = 'att-drifted'
+	const driftKey = emailAttachmentBlobKey(owner, messageId, driftAttachmentId)
+	const headedKeys: Array<string> = []
+	const trackingBlobs = {
+		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
+			return blobs.put(key, value)
+		},
+		async delete(key: string | Array<string>) {
+			return blobs.delete(key)
+		},
+		async head(key: string) {
+			headedKeys.push(key)
+			return blobs.head(key)
+		},
+	}
+	const env = {
+		APP_DB: db,
+		MAILBOX: {},
+		EMAIL_BLOBS: trackingBlobs,
+	} as unknown as Env
+
+	const actualGet = EmailRepo.getEmailMessageById
+	const getSpy = vi
+		.spyOn(EmailRepo, 'getEmailMessageById')
+		.mockImplementation(async (input) => {
+			const message = await actualGet(input)
+			// Drift after ownership verification returns, before delete capture.
+			if (message != null && !objects.has(driftKey)) {
+				sqlite
+					.prepare(
+						`INSERT INTO email_attachments (
+							id, message_id, filename, content_type, size, storage_kind,
+							storage_key, created_at
+						) VALUES (?, ?, 'drift.txt', 'text/plain', 5, 'external', ?, ?)`,
+					)
+					.run(driftAttachmentId, messageId, driftKey, freshCreatedAt)
+				await blobs.put(driftKey, 'drift')
+			}
+			return message
+		})
+
+	try {
+		const deleteSpy = vi.spyOn(EmailRepo, 'deleteEmailMessageById')
+		const result = await runAdminMailboxMaintenanceDeleteMessage({
+			env,
+			stableUserId: owner,
+			messageId,
+		})
+		expect(deleteSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				messageId,
+				expectedUserId: owner,
+			}),
+		)
+		expect(result).toEqual({
+			d1MessageAbsent: true,
+			attachmentsSeen: 3,
+			externalAttachmentsSeen: 2,
+			rawMimeBlobAbsent: true,
+			externalAttachmentBlobsAbsent: 2,
+			allCapturedBlobsAbsent: true,
+		})
+		expect(headedKeys).toEqual([seeded.rawKey, seeded.attachmentKey, driftKey])
+		expect(objects.has(seeded.rawKey)).toBe(false)
+		expect(objects.has(seeded.attachmentKey)).toBe(false)
+		expect(objects.has(driftKey)).toBe(false)
+		expect(JSON.stringify(result)).not.toMatch(
+			/@|secret body|email-raw:|email-attachment:/,
+		)
+		deleteSpy.mockRestore()
+	} finally {
+		getSpy.mockRestore()
+	}
 })

@@ -1,11 +1,14 @@
 import { z } from 'zod'
 import {
+	AdminMailboxMessageNotFoundError,
 	adminMailboxMaintenanceMaxBatchSize,
 	adminMailboxMaintenanceRetentionMaxLimit,
 	loadAdminMailboxMaintenanceStatus,
+	runAdminMailboxMaintenanceDeleteMessage,
 	runAdminMailboxMaintenanceReconcile,
 	runAdminMailboxMaintenanceRetention,
 } from '#worker/admin/mailbox-maintenance.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -104,6 +107,39 @@ const retentionMetricsSchema = z.object({
 	}),
 })
 
+const deleteMessageResultSchema = z.object({
+	d1MessageAbsent: z
+		.boolean()
+		.describe('True when the D1 email_messages row is gone after delete.'),
+	attachmentsSeen: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('Attachment metadata rows captured at delete time.'),
+	externalAttachmentsSeen: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('External-storage attachment rows captured at delete time.'),
+	rawMimeBlobAbsent: z
+		.boolean()
+		.describe(
+			'True when head() finds no object for every captured raw-MIME blob key.',
+		),
+	externalAttachmentBlobsAbsent: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Count of captured attachment blob keys with no R2 object after delete.',
+		),
+	allCapturedBlobsAbsent: z
+		.boolean()
+		.describe(
+			'True when every blob key captured by deleteEmailMessageById is absent via head.',
+		),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
 	z
 		.object({
@@ -125,6 +161,18 @@ const inputSchema = z.discriminatedUnion('action', [
 				.describe(
 					'Stable-user-id keyset cursor from a prior retention nextStartAfter. Ordered by stable_user_id ASC; never parity checked_at.',
 				),
+		})
+		.strict(),
+	z
+		.object({
+			action: z.literal('delete_message'),
+			stable_user_id: stableUserIdSchema.describe(
+				'Owning users.stable_user_id. Foreign or missing messages are rejected.',
+			),
+			message_id: z
+				.string()
+				.min(1)
+				.describe('email_messages.id to delete for the given owner.'),
 		})
 		.strict(),
 ])
@@ -154,6 +202,10 @@ const outputSchema = z.discriminatedUnion('action', [
 			),
 		status: statusSchema,
 	}),
+	z.object({
+		action: z.literal('delete_message'),
+		result: deleteMessageResultSchema,
+	}),
 ])
 
 export const adminMailboxMaintenanceCapability = defineDomainCapability(
@@ -162,7 +214,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget). Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content), bounded reconcileMailboxParity, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, deleteEmailMessageById with expectedUserId fence, post-delete D1/R2 head over exact captured blob keys). Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
@@ -170,6 +222,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 			'parity',
 			'reconcile',
 			'retention',
+			'delete',
 			'cutover',
 			'soak',
 		],
@@ -213,6 +266,23 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 								status: result.status,
 							}
 						}
+						case 'delete_message': {
+							try {
+								const result = await runAdminMailboxMaintenanceDeleteMessage({
+									env: ctx.env,
+									stableUserId: args.stable_user_id,
+									messageId: args.message_id,
+								})
+								return { action: 'delete_message' as const, result }
+							} catch (error) {
+								// Missing/foreign canary targets are caller-supplied ids that
+								// do not resolve — keep them off Sentry via McpCallerError.
+								if (error instanceof AdminMailboxMessageNotFoundError) {
+									throw new McpCallerError(error.message, { cause: error })
+								}
+								throw error
+							}
+						}
 						default: {
 							const exhaustive: never = args
 							throw new Error(
@@ -230,6 +300,15 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 								return `action=reconcile;scanned=${result.metrics.scanned};matched=${result.metrics.matched}`
 							case 'retention':
 								return `action=retention;attempted=${result.metrics.mailbox.ownersAttempted};succeeded=${result.metrics.mailbox.ownersSucceeded};truncated=${result.truncated ? 1 : 0}`
+							case 'delete_message': {
+								const targetStableUserId =
+									args.action === 'delete_message'
+										? args.stable_user_id
+										: 'unknown'
+								const targetMessageId =
+									args.action === 'delete_message' ? args.message_id : 'unknown'
+								return `action=delete_message;stable_user_id=${targetStableUserId};message_id=${targetMessageId};d1_absent=${result.result.d1MessageAbsent ? 1 : 0};blobs_absent=${result.result.allCapturedBlobsAbsent ? 1 : 0}`
+							}
 							default: {
 								const exhaustive: never = result
 								return `action=unknown;${JSON.stringify(exhaustive)}`

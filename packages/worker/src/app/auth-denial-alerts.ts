@@ -20,6 +20,7 @@ const watchedAuthDenialActions = [
 
 type AuthDenialAlertEnv = {
 	APP_DB: D1Database
+	AUDIT_DB: D1Database
 	APP_BASE_URL?: string
 	CLOUDFLARE_ACCOUNT_ID?: string
 	CLOUDFLARE_API_BASE_URL?: string
@@ -55,7 +56,7 @@ export async function checkAuthDenialBurstAndNotify(input: {
 		now.getTime() - windowMinutes * 60_000,
 	).toISOString()
 	const actionPlaceholders = watchedAuthDenialActions.map(() => '?').join(', ')
-	const row = await input.env.APP_DB.prepare(
+	const row = await input.env.AUDIT_DB.prepare(
 		`SELECT COUNT(*) AS count FROM audit_events
 		 WHERE category = 'auth'
 			 AND result = 'failure'

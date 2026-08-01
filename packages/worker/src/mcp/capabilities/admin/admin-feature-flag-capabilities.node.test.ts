@@ -280,7 +280,7 @@ function createFeatureFlagCapabilityTestDb(input: {
 
 function createAdminCapabilityContext(db: D1Database) {
 	return {
-		env: { APP_DB: db } as Env,
+		env: { APP_DB: db, AUDIT_DB: db } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {

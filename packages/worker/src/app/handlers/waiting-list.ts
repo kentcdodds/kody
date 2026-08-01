@@ -105,8 +105,7 @@ export function createWaitingListHandler(env: Env) {
 			)
 			if (!rateLimit.allowed) {
 				void logAuditEvent({
-					db: env.APP_DB,
-					auditDb: auditDatabaseFromEnv(env),
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'waiting_list_join',
 					result: 'rate_limited',
@@ -132,8 +131,7 @@ export function createWaitingListHandler(env: Env) {
 			if (!apiKey) {
 				if (isNonProductionRuntime(env)) {
 					void logAuditEvent({
-						db: env.APP_DB,
-						auditDb: auditDatabaseFromEnv(env),
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'waiting_list_join',
 						result: 'success',
@@ -150,8 +148,7 @@ export function createWaitingListHandler(env: Env) {
 
 				await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
 				void logAuditEvent({
-					db: env.APP_DB,
-					auditDb: auditDatabaseFromEnv(env),
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'waiting_list_join',
 					result: 'failure',
@@ -193,8 +190,7 @@ export function createWaitingListHandler(env: Env) {
 					)
 				}
 				void logAuditEvent({
-					db: env.APP_DB,
-					auditDb: auditDatabaseFromEnv(env),
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'waiting_list_join',
 					result: 'failure',
@@ -214,8 +210,7 @@ export function createWaitingListHandler(env: Env) {
 			}
 
 			void logAuditEvent({
-				db: env.APP_DB,
-				auditDb: auditDatabaseFromEnv(env),
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'waiting_list_join',
 				result: 'success',

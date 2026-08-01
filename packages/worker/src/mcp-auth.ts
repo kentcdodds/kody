@@ -140,8 +140,7 @@ export async function handleMcpRequest({
 		email?: string,
 	) => {
 		await recordMcpAuthDenial({
-			db: env.APP_DB,
-			auditDb: auditDatabaseFromEnv(env),
+			db: auditDatabaseFromEnv(env),
 			action: 'mcp_token_rejected',
 			reason,
 			email,

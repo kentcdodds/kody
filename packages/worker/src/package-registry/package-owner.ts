@@ -82,8 +82,7 @@ export async function resolvePackageOwnerContext(
 		throw new Error(`You do not have a package scope grant for "@${scope}".`)
 	}
 	await logAuditEvent({
-		db,
-		auditDb: auditDatabaseFromEnv(env),
+		db: auditDatabaseFromEnv(env),
 		category: 'account',
 		action: 'package_scope_delegated_access',
 		result: 'success',

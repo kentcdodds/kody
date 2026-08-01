@@ -1060,6 +1060,25 @@ export async function searchEmailMessages(input: {
 	return (result.results ?? []).map(mapMessageRow)
 }
 
+export type DeleteEmailMessageBlobDeletion = {
+	key: string
+	role: 'raw_mime' | 'attachment'
+	/** True when `blobs.delete` settled without throwing. */
+	deleted: boolean
+}
+
+export type DeleteEmailMessageByIdResult = {
+	messageFound: boolean
+	ownerUserId: string | null
+	attachmentsSeen: number
+	externalAttachmentsSeen: number
+	/**
+	 * Exact blob keys/outcomes from the R2 delete loop. Keys are for internal
+	 * post-delete verification only and must not be returned to clients.
+	 */
+	blobDeletions: Array<DeleteEmailMessageBlobDeletion>
+}
+
 export async function deleteEmailMessageById(input: {
 	db: D1Database
 	/**
@@ -1068,7 +1087,12 @@ export async function deleteEmailMessageById(input: {
 	 */
 	blobs: R2Bucket
 	messageId: string
-}) {
+	/**
+	 * Optional owner fence. When set, refuse to mutate unless the captured
+	 * `email_messages.user_id` matches (missing/foreign → throw).
+	 */
+	expectedUserId?: string
+}): Promise<DeleteEmailMessageByIdResult> {
 	// Capture ownership and blob keys before D1 delete. A failed read must
 	// abort the delete (and be retried) rather than orphan the R2 blobs; only
 	// the R2 deletes themselves are best-effort.
@@ -1076,16 +1100,44 @@ export async function deleteEmailMessageById(input: {
 		.prepare(`SELECT user_id FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
 		.first<{ user_id: string }>()
+	if (
+		input.expectedUserId !== undefined &&
+		(row == null || row.user_id !== input.expectedUserId)
+	) {
+		throw new Error(
+			`Email message not found for expected_user_id=${input.expectedUserId} message_id=${input.messageId}`,
+		)
+	}
 	const attachmentRows = await input.db
 		.prepare(
-			`SELECT storage_key FROM email_attachments
-			WHERE message_id = ? AND storage_key IS NOT NULL`,
+			`SELECT storage_kind, storage_key FROM email_attachments
+			WHERE message_id = ?`,
 		)
 		.bind(input.messageId)
-		.all<{ storage_key: string }>()
-	const blobKeys = [
-		...(row ? [emailRawMimeKey(row.user_id, input.messageId)] : []),
-		...(attachmentRows.results ?? []).map((result) => result.storage_key),
+		.all<{ storage_kind: string; storage_key: string | null }>()
+	const attachments = attachmentRows.results ?? []
+	const capturedBlobs: Array<{
+		key: string
+		role: 'raw_mime' | 'attachment'
+	}> = [
+		...(row
+			? [
+					{
+						key: emailRawMimeKey(row.user_id, input.messageId),
+						role: 'raw_mime' as const,
+					},
+				]
+			: []),
+		...attachments.flatMap((attachment) =>
+			attachment.storage_key == null
+				? []
+				: [
+						{
+							key: attachment.storage_key,
+							role: 'attachment' as const,
+						},
+					],
+		),
 	]
 	// Atomic batch: a partial delete (attachments gone, message left) would
 	// lose the storage_key values needed to delete the R2 blobs on retry.
@@ -1097,10 +1149,24 @@ export async function deleteEmailMessageById(input: {
 			.prepare(`DELETE FROM email_messages WHERE id = ?`)
 			.bind(input.messageId),
 	])
-	for (const blobKey of blobKeys) {
-		await input.blobs.delete(blobKey).catch((error: unknown) => {
-			console.warn('email-blob-delete-failed', blobKey, error)
-		})
+	const blobDeletions: Array<DeleteEmailMessageBlobDeletion> = []
+	for (const captured of capturedBlobs) {
+		try {
+			await input.blobs.delete(captured.key)
+			blobDeletions.push({ ...captured, deleted: true })
+		} catch (error: unknown) {
+			console.warn('email-blob-delete-failed', captured.key, error)
+			blobDeletions.push({ ...captured, deleted: false })
+		}
+	}
+	return {
+		messageFound: row != null,
+		ownerUserId: row?.user_id ?? null,
+		attachmentsSeen: attachments.length,
+		externalAttachmentsSeen: attachments.filter(
+			(attachment) => attachment.storage_kind === 'external',
+		).length,
+		blobDeletions,
 	}
 }
 

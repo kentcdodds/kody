@@ -515,6 +515,7 @@ function createAdminCapabilityContext(
 			...runLog.env,
 			...userMeter.env,
 			APP_DB: db,
+			AUDIT_DB: db,
 			EMAIL_BLOBS: blobs ?? {
 				get: async () => null,
 			},

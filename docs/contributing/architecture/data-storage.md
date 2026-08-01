@@ -529,14 +529,16 @@ rows only.
   re-parses the resolved MIME from that blob.
 - Message deletes always delete the deterministic
   `emailRawMimeKey(userId, messageId)` from R2 (production writers always store
-  that canonical key). `deleteEmailMessageById` runs an atomic D1 batch
-  (attachments, then message), then best-effort R2 blob deletes. Live explicit
-  and retention deletes do not call Mailbox mirror helpers today; the parity
-  lane repairs DO state via purge/rebuild. Direct delete wiring is pending. User
-  email retention and system-email retention stay strict: blob delete before row
-  delete; failed blob deletes skip the row for retry. Account deletion stays
-  strict before atomic D1 finalization; a failed blob delete preserves every
-  message row for retry.
+  that canonical key). `deleteEmailMessageById` captures ownership + attachment
+  `storage_key` values, optionally enforces an `expectedUserId` owner fence,
+  runs an atomic D1 batch (attachments, then message), then best-effort R2 blob
+  deletes and returns the exact captured blob deletion inventory/outcomes for
+  internal verification. Live explicit and retention deletes do not call Mailbox
+  mirror helpers today; the parity lane repairs DO state via purge/rebuild.
+  Direct delete wiring is pending. User email retention and system-email
+  retention stay strict: blob delete before row delete; failed blob deletes skip
+  the row for retry. Account deletion stays strict before atomic D1
+  finalization; a failed blob delete preserves every message row for retry.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -971,7 +973,8 @@ content).
 discriminated actions — `status` (aggregate tracked/matching/mismatch/error/
 incomplete/eligible counts plus matching/check timestamps and earliest cutover;
 no email content), `reconcile` (bounded `reconcileMailboxParity`, `batch_size`
-max 100, then status), and `retention` (natural cutoffs only):
+max 100, then status), `retention` (natural cutoffs only), and `delete_message`
+(owner-scoped single-message canary delete):
 
 1. Run existing D1 `pruneUserEmailMessagesForRetention` then
    `pruneEmailDeliveryEventsForRetention` (bounded batches; message prune keeps
@@ -990,8 +993,16 @@ max 100, then status), and `retention` (natural cutoffs only):
    a ~10s wall budget (stop scheduling new owners after the deadline; cursor is
    the last considered owner). Per-owner failures are isolated.
 
-Returns D1 delete/error totals plus aggregate Mailbox before/after counts (no
-message ids or email content). No seed or arbitrary-cutoff surface.
+`delete_message` takes `stable_user_id` + `message_id`, verifies ownership with
+`getEmailMessageById` (missing/foreign rejected), deletes through
+`deleteEmailMessageById` (`APP_DB` + `EMAIL_BLOBS`, `expectedUserId` fence),
+then verifies the D1 message is absent and every exact captured blob key from
+that delete inventory is absent via `head`. Returns aggregate booleans/counts
+only (no addresses, bodies, filenames, or keys). Audit success reason includes
+the target ids.
+
+Retention returns D1 delete/error totals plus aggregate Mailbox before/after
+counts (no message ids or email content). No seed or arbitrary-cutoff surface.
 
 Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
 result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state
@@ -1626,13 +1637,18 @@ deterministic so upserts and deletes target the same vector.
 - Builtin capabilities: id is the capability name in namespace
   `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
-Every Vectorize query supplies the corresponding user or builtin namespace;
-queries never use the default namespace. User-owned queries also keep the
-`userId` metadata filter as defense-in-depth. The post-deploy
-`POST /__maintenance/reindex-capabilities` sweep uses keyset pagination to page
-every memory, job, and saved package from D1 (200 rows per page) into its
-namespace and rebuilds builtins in their reserved namespace. Vectors are derived
-from D1, so this maintenance path does not move or delete canonical data.
+The namespace migration uses expand/contract reads. Each query searches both the
+intended namespace and the legacy default namespace with the same metadata
+filter, then deduplicates, ranks, and limits the combined matches. This keeps
+partially reindexed accounts complete without weakening user isolation. The
+post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
+memory, job, and saved package from D1 (200 rows per page) and upserts it into
+the owner's namespace; it also rebuilds builtins in their reserved namespace.
+The deploy is not considered migrated until every phase reports no `error` or
+`failed` vectors. Remove the default-namespace read in a follow-up contract
+deploy only after a production full sweep succeeds and the next deploy confirms
+normal namespaced search. Vectors are derived from D1, so no canonical data is
+moved or deleted during this migration.
 
 ### `entity_sources` and package import contracts
 
@@ -1728,11 +1744,11 @@ Current retention policies:
   resolved or dismissed, or the submitter deletes their account. Resolved and
   dismissed rows keep 365 days after `updated_at`; submitter deletion removes
   any remaining rows.
-- `audit_events`: global hashed auth/security audit events are dual-written to
-  the legacy `APP_DB` table and the dedicated `AUDIT_DB` database during the
-  expand phase. Retention prunes only `AUDIT_DB` after 180 days; the legacy
-  table remains in place until a later contract phase. Audit events are not
-  user-owned rows and remain independent of account deletion/export.
+- `audit_events`: global hashed auth/security audit events live only in the
+  dedicated `AUDIT_DB` database. All persisted writes, admin reads, insights,
+  and auth-denial alerts use that binding; the hourly retention lane prunes rows
+  after 180 days. Audit events are not user-owned and remain independent of
+  account deletion/export.
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.

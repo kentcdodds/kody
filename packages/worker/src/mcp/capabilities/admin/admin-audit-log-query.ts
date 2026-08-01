@@ -91,7 +91,7 @@ export const adminAuditLogQueryCapability = defineDomainCapability(
 			return auditAdminCapabilityInvocation(
 				ctx,
 				'admin_audit_log_query',
-				async () => queryAuditLog(ctx.env.APP_DB, args),
+				async () => queryAuditLog(ctx.env.AUDIT_DB, args),
 			)
 		},
 	},

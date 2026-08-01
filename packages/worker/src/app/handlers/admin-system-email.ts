@@ -19,8 +19,7 @@ async function auditSystemEmailRead(input: {
 	messageId?: string | null
 }) {
 	await logAuditEvent({
-		db: input.env.APP_DB,
-		auditDb: auditDatabaseFromEnv(input.env),
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: input.action,
 		result: 'success',

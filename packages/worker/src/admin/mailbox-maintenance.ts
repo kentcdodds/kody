@@ -17,6 +17,10 @@ import {
 	mailboxReadCutoverSoakMs,
 } from '#worker/email/mailbox-read-cutover.ts'
 import { type MailboxCountResult } from '#worker/email/mailbox-types.ts'
+import {
+	deleteEmailMessageById,
+	getEmailMessageById,
+} from '#worker/email/repo.ts'
 
 /** Cap for admin reconcile batch discovery (hard max). */
 export const adminMailboxMaintenanceMaxBatchSize = 100
@@ -34,7 +38,7 @@ export const adminMailboxMaintenanceRetentionBudgetMs = 10_000
 
 export type AdminMailboxMaintenanceEnv = MailboxParityReconcileEnv &
 	MailboxEnv & {
-		EMAIL_BLOBS: Pick<R2Bucket, 'delete'>
+		EMAIL_BLOBS: Pick<R2Bucket, 'delete' | 'head'>
 	}
 
 export type AdminMailboxMaintenanceStatus = {
@@ -81,6 +85,20 @@ export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 export type AdminMailboxMaintenanceRetentionMetrics = {
 	d1: AdminMailboxMaintenanceRetentionD1Metrics
 	mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics
+}
+
+/**
+ * Aggregate-only outcome for a single audited admin message delete. Never
+ * includes addresses, bodies, filenames, or R2 keys.
+ */
+export type AdminMailboxMaintenanceDeleteMessageResult = {
+	d1MessageAbsent: boolean
+	attachmentsSeen: number
+	externalAttachmentsSeen: number
+	rawMimeBlobAbsent: boolean
+	externalAttachmentBlobsAbsent: number
+	/** True when every blob key captured by deleteEmailMessageById is absent. */
+	allCapturedBlobsAbsent: boolean
 }
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
@@ -612,5 +630,92 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 		nextStartAfter,
 		truncated,
 		status,
+	}
+}
+
+/**
+ * Missing or foreign target for owner-scoped canary delete. Callers supplied
+ * an id that does not resolve under the given owner fence — not a platform
+ * defect. The MCP capability maps this to `McpCallerError` so it stays on
+ * `mcp-event` and out of Sentry.
+ */
+export class AdminMailboxMessageNotFoundError extends Error {
+	constructor(input: { stableUserId: string; messageId: string }) {
+		super(
+			`Email message not found for stable_user_id=${input.stableUserId} message_id=${input.messageId}`,
+		)
+		this.name = 'AdminMailboxMessageNotFoundError'
+	}
+}
+
+/**
+ * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
+ * Verifies ownership via getEmailMessageById, deletes through
+ * deleteEmailMessageById with an expectedUserId fence, then confirms D1
+ * absence plus every exact captured blob key absent via head. Rejects missing
+ * or foreign messages.
+ */
+export async function runAdminMailboxMaintenanceDeleteMessage(input: {
+	env: AdminMailboxMaintenanceEnv
+	stableUserId: string
+	messageId: string
+}): Promise<AdminMailboxMaintenanceDeleteMessageResult> {
+	const db = input.env.APP_DB
+	const blobs = input.env.EMAIL_BLOBS
+	const message = await getEmailMessageById({
+		db,
+		userId: input.stableUserId,
+		messageId: input.messageId,
+	})
+	if (!message) {
+		throw new AdminMailboxMessageNotFoundError({
+			stableUserId: input.stableUserId,
+			messageId: input.messageId,
+		})
+	}
+
+	const deletion = await deleteEmailMessageById({
+		db,
+		blobs: blobs as R2Bucket,
+		messageId: message.id,
+		expectedUserId: input.stableUserId,
+	})
+
+	const remaining = await getEmailMessageById({
+		db,
+		userId: input.stableUserId,
+		messageId: message.id,
+	})
+	const d1MessageAbsent = remaining == null
+
+	const rawMimeEntries = deletion.blobDeletions.filter(
+		(entry) => entry.role === 'raw_mime',
+	)
+	const attachmentEntries = deletion.blobDeletions.filter(
+		(entry) => entry.role === 'attachment',
+	)
+	let rawMimeBlobAbsent = true
+	for (const entry of rawMimeEntries) {
+		if ((await blobs.head(entry.key)) != null) {
+			rawMimeBlobAbsent = false
+		}
+	}
+	let externalAttachmentBlobsAbsent = 0
+	for (const entry of attachmentEntries) {
+		if ((await blobs.head(entry.key)) == null) {
+			externalAttachmentBlobsAbsent += 1
+		}
+	}
+	const allCapturedBlobsAbsent =
+		rawMimeBlobAbsent &&
+		externalAttachmentBlobsAbsent === attachmentEntries.length
+
+	return {
+		d1MessageAbsent,
+		attachmentsSeen: deletion.attachmentsSeen,
+		externalAttachmentsSeen: deletion.externalAttachmentsSeen,
+		rawMimeBlobAbsent,
+		externalAttachmentBlobsAbsent,
+		allCapturedBlobsAbsent,
 	}
 }
