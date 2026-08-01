@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
@@ -75,6 +77,10 @@ export function errorFields(error: unknown): {
  * Failures the caller caused and can fix. They stay on the structured
  * `mcp-event` log line; sending them to Sentry creates issues that look like
  * platform bugs and trip triage automation.
+ *
+ * Plan-limit denials (`EntitlementLimitError`) belong here too: the user can
+ * clean up or upgrade, and volume is still visible on `mcp-event` lines if a
+ * spike ever needs investigation.
  */
 function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	// Sandbox failures come from caller-supplied module code (bad Notion
@@ -84,6 +90,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (payload.failurePhase === 'parse_input') return true
 	if (payload.callerError) return true
 	if (isUserCodeError(cause)) return true
+	if (getErrorCauseChain(cause).some(isEntitlementLimitError)) return true
 	return isMcpCallerError(cause)
 }
 

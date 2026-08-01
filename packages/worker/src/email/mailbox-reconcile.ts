@@ -41,12 +41,14 @@ import { type MailboxCountResult } from './mailbox-types.ts'
  * page-sized `upsertDeliveryEvents` batches (repairing graph truncation;
  * {@link mailboxParityEventMirrorTimeoutMs}), durably keyset-replays messages
  * updated after the content watermark, then compares owner-scoped D1 counts
- * with `countMailbox`. D1 remains mail authority; this lane never mutates
+ * with `countMailbox` ({@link mailboxParityCountTimeoutMs}). D1 remains mail
+ * authority; this lane never mutates
  * email_* rows and does not flip read authority.
  */
 
 export const mailboxParityUserBatchSize = 16
 export const mailboxParityTimeBudgetMs = 10_000
+export const mailboxParityCountTimeoutMs = 5_000
 export const mailboxParityLastErrorMaxBytes = 512
 
 export {
@@ -252,7 +254,7 @@ async function compareParityForUser(input: {
 	})
 	const raced = await awaitMailboxMirrorRpc(
 		mailboxRpc({ env: input.env, userId: input.state.userId }).countMailbox(),
-		mailboxMirrorRpcTimeoutMs,
+		mailboxParityCountTimeoutMs,
 	)
 	if (!raced.ok) {
 		throw new Error('Mailbox countMailbox timed out')

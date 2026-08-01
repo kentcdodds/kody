@@ -36,6 +36,7 @@ const { logMcpEvent } = await import('./observability.ts')
 const { McpCallerError } = await import('./caller-error.ts')
 const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
+const { EntitlementLimitError } = await import('#worker/entitlements/errors.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
 
 function captureMcpEvents(run: () => void) {
@@ -160,9 +161,47 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				'Secret "x-kodykoalaAccessToken" is not allowed for package "x".',
 			),
 		})
+
+		const entitlementLimitError = new EntitlementLimitError({
+			resource: 'storage_bytes',
+			plan: 'free',
+			limit: 67_108_864,
+			current: 449_966_219,
+			upgradeHint:
+				'Remove or finish existing storage bytes you no longer need, or upgrade your plan at /account/billing.',
+		})
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'storage_query',
+			domain: 'storage',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'EntitlementLimitError',
+			errorMessage: entitlementLimitError.message,
+			cause: entitlementLimitError,
+		})
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'job_schedule_once',
+			domain: 'jobs',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'Scheduling failed.',
+			cause: new Error('Scheduling failed.', {
+				cause: new EntitlementLimitError({
+					resource: 'scheduled_jobs',
+					plan: 'free',
+					limit: 10,
+					current: 46,
+					upgradeHint:
+						'Remove or finish existing scheduled jobs you no longer need, or upgrade your plan at /account/billing.',
+				}),
+			}),
+		})
 	})
 
-	expect(payloads).toHaveLength(8)
+	expect(payloads).toHaveLength(10)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

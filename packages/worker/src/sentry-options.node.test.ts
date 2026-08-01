@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { EntitlementLimitError } from './entitlements/errors.ts'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
 	durableObjectBlockConcurrencyWhileTimeoutResetMessage,
@@ -187,6 +188,51 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBe(platformEvent)
 	expect(filterSentryEvent(platformEvent)).toBe(platformEvent)
+
+	// Plan-limit denials are account policy, not platform defects. Match the
+	// typed originalException (including wrappers) and the serialized type
+	// name when the instance is gone.
+	const entitlementLimitError = new EntitlementLimitError({
+		resource: 'storage_bytes',
+		plan: 'free',
+		limit: 67_108_864,
+		current: 449_966_219,
+		upgradeHint:
+			'Remove or finish existing storage bytes you no longer need, or upgrade your plan at /account/billing.',
+	})
+	const entitlementEvent = {
+		exception: {
+			values: [
+				{
+					type: 'EntitlementLimitError',
+					value: entitlementLimitError.message,
+				},
+			],
+		},
+	}
+	expect(
+		filterSentryEvent(entitlementEvent, {
+			originalException: entitlementLimitError,
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent(entitlementEvent, {
+			originalException: new Error('handler failed', {
+				cause: entitlementLimitError,
+			}),
+		}),
+	).toBeNull()
+	expect(filterSentryEvent(entitlementEvent)).toBeNull()
+	expect(
+		filterSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: entitlementLimitError.message }],
+				},
+			},
+			{ originalException: new Error(entitlementLimitError.message) },
+		),
+	).not.toBeNull()
 
 	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
 	// update / blockConcurrencyWhile timeout) are transient — one
