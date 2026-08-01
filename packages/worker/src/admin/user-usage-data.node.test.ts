@@ -6,14 +6,9 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#app/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
 
-function withUserMeter(
-	env: { APP_DB: D1Database } & Record<string, unknown>,
-	options?: { activeWorkflowCount?: number },
-) {
+function withUserMeter(env: { APP_DB: D1Database } & Record<string, unknown>) {
 	const meter = createInMemoryUserMeterEnv()
-	const runLog = createInMemoryRunLogUsageEnv({
-		activeWorkflowCount: options?.activeWorkflowCount ?? 0,
-	})
+	const runLog = createInMemoryRunLogUsageEnv()
 	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
 }
 
@@ -502,54 +497,52 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (bootstrap then w
 
 	const meterEmail = 'meter-drilldown@example.com'
 	const meterUserId = await createStableUserIdFromEmail(meterEmail)
-	const warmEnv = withUserMeter(
-		{
-			APP_DB: createAdminUserUsageTestDb({
-				users: [
-					{
-						id: 4,
-						username: 'meter',
-						email: meterEmail,
-						plan: 'pro',
-						stable_user_id: meterUserId,
-					},
-				],
-				dailyCounters: [
-					{
-						user_id: meterUserId,
-						resource: 'email_sends_per_day',
-						day,
-						count: 11,
-					},
-					{
-						user_id: meterUserId,
-						resource: 'email_receives_per_day',
-						day,
-						count: 22,
-					},
-					{
-						user_id: meterUserId,
-						resource: 'execute_calls_per_day',
-						day,
-						count: 33,
-					},
-					{
-						user_id: meterUserId,
-						resource: 'outbound_fetches_per_day',
-						day,
-						count: 44,
-					},
-				],
-				resourceCounts: {
-					[meterUserId]: {
-						saved_packages: 6,
-						stored_email_messages: 9,
-					},
+	const warmEnv = withUserMeter({
+		APP_DB: createAdminUserUsageTestDb({
+			users: [
+				{
+					id: 4,
+					username: 'meter',
+					email: meterEmail,
+					plan: 'pro',
+					stable_user_id: meterUserId,
 				},
-			}),
-		},
-		{ activeWorkflowCount: 2 },
-	)
+			],
+			dailyCounters: [
+				{
+					user_id: meterUserId,
+					resource: 'email_sends_per_day',
+					day,
+					count: 11,
+				},
+				{
+					user_id: meterUserId,
+					resource: 'email_receives_per_day',
+					day,
+					count: 22,
+				},
+				{
+					user_id: meterUserId,
+					resource: 'execute_calls_per_day',
+					day,
+					count: 33,
+				},
+				{
+					user_id: meterUserId,
+					resource: 'outbound_fetches_per_day',
+					day,
+					count: 44,
+				},
+			],
+			resourceCounts: {
+				[meterUserId]: {
+					saved_packages: 6,
+					stored_email_messages: 9,
+				},
+			},
+		}),
+	})
+	warmEnv.runLog.setActiveWorkflowCount(meterUserId, 2)
 	await warmEnv.meter.seed({
 		userId: meterUserId,
 		resource: 'email_sends_per_day',

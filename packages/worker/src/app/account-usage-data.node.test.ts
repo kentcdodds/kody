@@ -178,7 +178,8 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		],
 	})
 	const warmEnv = withUsageEnv({ APP_DB: warmDb })
-	warmEnv.runLog.setActiveWorkflowCount(3)
+	warmEnv.runLog.setActiveWorkflowCount(meterUserId, 3)
+	warmEnv.runLog.setActiveWorkflowCount('other-user', 99)
 	await warmEnv.meter.seed({
 		userId: meterUserId,
 		resource: 'email_sends_per_day',
