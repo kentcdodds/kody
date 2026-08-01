@@ -1462,9 +1462,9 @@ test('storage usage reads do not materialize UserMeter state for missing users',
 		}),
 	).resolves.toBe(0)
 
-	await expect(userMeterRpc({ env, userId }).readStorageBytes()).resolves.toEqual(
-		{ outcome: 'needs_bootstrap' },
-	)
+	await expect(
+		userMeterRpc({ env, userId }).readStorageBytes(),
+	).resolves.toEqual({ outcome: 'needs_bootstrap' })
 })
 
 test('plan ranking helpers order plans and resolve effective plan from manual vs Stripe', () => {
