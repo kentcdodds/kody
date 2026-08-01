@@ -941,12 +941,15 @@ async function readStorageBytesFromUserMeter(input: {
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
 	let result = await meter.readStorageBytes()
 	if (result.outcome === 'needs_bootstrap') {
-		const d1Bytes = await readUserD1StorageBytes({
+		const d1Row = await readUserD1StorageBytesRow({
 			db: input.db,
 			userId: input.userId,
 		})
+		// Synthetic/unknown contexts have no account row. Preserve their zero
+		// usage semantics without materializing durable state for a non-user.
+		if (d1Row == null) return 0
 		await meter.initializeStorageBytes({
-			bytes: d1Bytes,
+			bytes: d1Row.bytes,
 			updatedAt: input.now.toISOString(),
 		})
 		result = await meter.readStorageBytes()

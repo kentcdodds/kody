@@ -1447,6 +1447,26 @@ test('readCurrentEntitlementResourceUsage for storage_bytes reads from UserMeter
 	expect(warmBytes).toBe(750)
 })
 
+test('storage usage reads do not materialize UserMeter state for missing users', async () => {
+	const userId = await createStableUserIdFromEmail('missing@example.com')
+	const { env } = createInMemoryUserMeterEnv()
+	const db = createEntitlementsTestDb({ users: [] })
+
+	await expect(
+		readCurrentEntitlementResourceUsage({
+			db: db.db,
+			env,
+			userId,
+			resource: 'storage_bytes',
+			now: new Date(),
+		}),
+	).resolves.toBe(0)
+
+	await expect(userMeterRpc({ env, userId }).readStorageBytes()).resolves.toEqual(
+		{ outcome: 'needs_bootstrap' },
+	)
+})
+
 test('plan ranking helpers order plans and resolve effective plan from manual vs Stripe', () => {
 	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
 	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
