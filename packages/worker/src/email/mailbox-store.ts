@@ -11,10 +11,13 @@ import {
 	encodeMailboxListCursor,
 	mailboxNowIso,
 	normalizeMailboxPageSize,
+	type MailboxAcceptedResult,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
 	type MailboxCountResult,
+	type MailboxDeleteDeliveryEventResult,
+	type MailboxDeleteMessageMetadataResult,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
 	type MailboxExportResult,
@@ -22,9 +25,19 @@ import {
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
 	type MailboxSearchMessagesInput,
+	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
+	type MailboxTouchThreadInput,
+	type MailboxUpdateMessageDeliveryInput,
 } from './mailbox-types.ts'
+import {
+	deleteMailboxDeliveryEvent,
+	deleteMailboxMessageMetadata,
+	setMailboxMessageClassification,
+	touchMailboxThread,
+	updateMailboxMessageDelivery,
+} from './mailbox-mutations.ts'
 import {
 	type EmailDeliveryEventType,
 	type EmailDeliveryStatus,
@@ -439,6 +452,38 @@ export class MailboxStore {
 
 	deliveryEventOwnsMessage(eventId: string, messageId: string) {
 		return deliveryEventOwnsMessage(this.sql, eventId, messageId)
+	}
+
+	touchThread(
+		input: Omit<MailboxTouchThreadInput, 'ownerId'>,
+	): MailboxAcceptedResult {
+		return touchMailboxThread(this.sql, input)
+	}
+
+	updateMessageDelivery(
+		input: Omit<MailboxUpdateMessageDeliveryInput, 'ownerId'>,
+	): MailboxAcceptedResult {
+		return updateMailboxMessageDelivery(this.sql, input)
+	}
+
+	setMessageClassification(
+		input: Omit<MailboxSetMessageClassificationInput, 'ownerId'>,
+	): MailboxAcceptedResult {
+		return setMailboxMessageClassification(this.sql, input)
+	}
+
+	deleteMessageMetadata(input: {
+		messageId: string
+		deletedAt: string
+	}): MailboxDeleteMessageMetadataResult {
+		return deleteMailboxMessageMetadata(this.sql, input)
+	}
+
+	deleteDeliveryEvent(input: {
+		eventId: string
+		deletedAt: string
+	}): MailboxDeleteDeliveryEventResult {
+		return deleteMailboxDeliveryEvent(this.sql, input)
 	}
 
 	getThread(threadId: string): MailboxThreadRecord | null {

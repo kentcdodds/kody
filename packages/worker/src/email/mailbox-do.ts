@@ -15,10 +15,15 @@ import {
 import { MailboxStore } from './mailbox-store.ts'
 import {
 	assertMailboxNonEmptyString,
+	type MailboxAcceptedResult,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
 	type MailboxCountResult,
+	type MailboxDeleteDeliveryEventInput,
+	type MailboxDeleteDeliveryEventResult,
+	type MailboxDeleteMessageMetadataInput,
+	type MailboxDeleteMessageMetadataResult,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
 	type MailboxExportResult,
@@ -27,8 +32,11 @@ import {
 	type MailboxMessageRecord,
 	type MailboxRpc,
 	type MailboxSearchMessagesInput,
+	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
+	type MailboxTouchThreadInput,
+	type MailboxUpdateMessageDeliveryInput,
 } from './mailbox-types.ts'
 
 /**
@@ -216,6 +224,119 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return { inserted, accepted, updatedLatestStatus }
 	}
 
+	/**
+	 * Advance thread activity without a full snapshot. Equal/newer `updatedAt`
+	 * only; `last_message_at` never moves backward.
+	 */
+	async touchThread(
+		input: MailboxTouchThreadInput,
+	): Promise<MailboxAcceptedResult> {
+		let accepted = false
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			accepted = this.store.touchThread({
+				threadId: input.threadId,
+				lastMessageAt: input.lastMessageAt,
+				updatedAt: input.updatedAt,
+			}).accepted
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return { accepted }
+	}
+
+	/**
+	 * Partial delivery/processing update for dual-write parity. Equal/newer
+	 * `updatedAt` only.
+	 */
+	async updateMessageDelivery(
+		input: MailboxUpdateMessageDeliveryInput,
+	): Promise<MailboxAcceptedResult> {
+		let accepted = false
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			accepted = this.store.updateMessageDelivery({
+				messageId: input.messageId,
+				processingStatus: input.processingStatus,
+				providerMessageId: input.providerMessageId,
+				error: input.error,
+				sentAt: input.sentAt,
+				updatedAt: input.updatedAt,
+			}).accepted
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return { accepted }
+	}
+
+	/**
+	 * Partial classification update for dual-write parity. Equal/newer
+	 * `updatedAt` only.
+	 */
+	async setMessageClassification(
+		input: MailboxSetMessageClassificationInput,
+	): Promise<MailboxAcceptedResult> {
+		let accepted = false
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			accepted = this.store.setMessageClassification({
+				messageId: input.messageId,
+				classification: input.classification,
+				classificationReason: input.classificationReason,
+				updatedAt: input.updatedAt,
+			}).accepted
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return { accepted }
+	}
+
+	/**
+	 * Metadata-only delete (attachments + message + orphan thread). Never
+	 * deletes R2. Stale when the message `updated_at` is newer than `deletedAt`.
+	 */
+	async deleteMessageMetadata(
+		input: MailboxDeleteMessageMetadataInput,
+	): Promise<MailboxDeleteMessageMetadataResult> {
+		let result: MailboxDeleteMessageMetadataResult = {
+			deleted: false,
+			stale: false,
+		}
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = this.store.deleteMessageMetadata({
+				messageId: input.messageId,
+				deletedAt: input.deletedAt,
+			})
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return result
+	}
+
+	/**
+	 * Metadata-only delivery-event delete. Distinguishes missing (idempotent)
+	 * from stale (newer `updated_at` retained).
+	 */
+	async deleteDeliveryEvent(
+		input: MailboxDeleteDeliveryEventInput,
+	): Promise<MailboxDeleteDeliveryEventResult> {
+		let result: MailboxDeleteDeliveryEventResult = {
+			deleted: false,
+			stale: false,
+		}
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = this.store.deleteDeliveryEvent({
+				eventId: input.eventId,
+				deletedAt: input.deletedAt,
+			})
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return result
+	}
+
 	async getThread(input: {
 		threadId: string
 	}): Promise<MailboxThreadRecord | null> {
@@ -316,19 +437,27 @@ export {
 	mailboxMessageRetentionDays,
 	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
+	type MailboxAcceptedResult,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReference,
 	type MailboxBlobReferencePage,
 	type MailboxCountResult,
+	type MailboxDeleteDeliveryEventInput,
+	type MailboxDeleteDeliveryEventResult,
+	type MailboxDeleteMessageMetadataInput,
+	type MailboxDeleteMessageMetadataResult,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
 	type MailboxExportResult,
 	type MailboxExportRow,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
+	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
+	type MailboxTouchThreadInput,
+	type MailboxUpdateMessageDeliveryInput,
 } from './mailbox-types.ts'
 export {
 	computeMailboxRetentionReschedule,

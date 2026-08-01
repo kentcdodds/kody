@@ -353,6 +353,84 @@ export type MailboxExportPhase =
 	| 'attachment'
 	| 'delivery_event'
 
+/** Partial thread touch — equal/newer `updatedAt` only; never regresses `lastMessageAt`. */
+export type MailboxTouchThreadInput = {
+	ownerId: string
+	threadId: string
+	lastMessageAt: string
+	updatedAt: string
+}
+
+/** Partial delivery/processing update — equal/newer `updatedAt` only. */
+export type MailboxUpdateMessageDeliveryInput = {
+	ownerId: string
+	messageId: string
+	processingStatus: EmailProcessingStatus
+	providerMessageId: string | null
+	error: string | null
+	sentAt: string | null
+	updatedAt: string
+}
+
+/** Partial classification update — equal/newer `updatedAt` only. */
+export type MailboxSetMessageClassificationInput = {
+	ownerId: string
+	messageId: string
+	classification: EmailClassification
+	classificationReason: string | null
+	updatedAt: string
+}
+
+/**
+ * Metadata-only message delete. Never touches R2. Stale when the row's
+ * `updated_at` is newer than `deletedAt`. Idempotent when already absent.
+ */
+export type MailboxDeleteMessageMetadataInput = {
+	ownerId: string
+	messageId: string
+	deletedAt: string
+}
+
+/**
+ * Metadata-only delivery-event delete. Stale when the row's `updated_at` is
+ * newer than `deletedAt`. Idempotent when already absent.
+ */
+export type MailboxDeleteDeliveryEventInput = {
+	ownerId: string
+	eventId: string
+	deletedAt: string
+}
+
+export type MailboxAcceptedResult = {
+	accepted: boolean
+}
+
+/**
+ * Message metadata delete outcome.
+ * - `deleted: true` — row removed; includes `orphanThreadDeleted`
+ * - `deleted: false, stale: false` — missing (idempotent success)
+ * - `deleted: false, stale: true` — newer row retained
+ *
+ * Best-effort callers map missing (`!deleted && !stale`) to success.
+ */
+export type MailboxDeleteMessageMetadataResult =
+	| { deleted: true; stale: false; orphanThreadDeleted: boolean }
+	| { deleted: false; stale: true }
+	| { deleted: false; stale: false }
+
+/**
+ * Delivery-event delete outcome.
+ * - `deleted: true` — row removed
+ * - `deleted: false, stale: false` — missing (idempotent success)
+ * - `deleted: false, stale: true` — newer row retained
+ *
+ * Best-effort callers map missing (`!deleted && !stale`) to success.
+ */
+export type MailboxDeleteDeliveryEventResult =
+	| { deleted: true; stale: false }
+	| { deleted: false; stale: true }
+	| { deleted: false; stale: false }
+
 export type MailboxRpc = {
 	mirrorMessage: (input: {
 		/**
@@ -382,6 +460,21 @@ export type MailboxRpc = {
 		accepted: boolean
 		updatedLatestStatus: boolean
 	}>
+	touchThread: (
+		input: MailboxTouchThreadInput,
+	) => Promise<MailboxAcceptedResult>
+	updateMessageDelivery: (
+		input: MailboxUpdateMessageDeliveryInput,
+	) => Promise<MailboxAcceptedResult>
+	setMessageClassification: (
+		input: MailboxSetMessageClassificationInput,
+	) => Promise<MailboxAcceptedResult>
+	deleteMessageMetadata: (
+		input: MailboxDeleteMessageMetadataInput,
+	) => Promise<MailboxDeleteMessageMetadataResult>
+	deleteDeliveryEvent: (
+		input: MailboxDeleteDeliveryEventInput,
+	) => Promise<MailboxDeleteDeliveryEventResult>
 	getThread: (input: {
 		threadId: string
 	}) => Promise<MailboxThreadRecord | null>
