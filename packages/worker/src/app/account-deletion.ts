@@ -18,6 +18,10 @@ import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { clearRunRecords } from '#worker/run-records/service.ts'
 import {
+	userMeterNamespace,
+	userMeterRpc,
+} from '#worker/entitlements/user-meter-client.ts'
+import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
 } from '#worker/account/user-inventory.ts'
@@ -596,6 +600,27 @@ async function clearRunLog(input: {
 	}
 }
 
+async function purgeUserMeter(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		if (!userMeterNamespace(input.env)) {
+			input.warnings.push(
+				'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
+			)
+			return 0
+		}
+		await userMeterRpc({ env: input.env, userId: input.userId }).purge()
+		return 1
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`User meter purge failed: ${message}`)
+		return 0
+	}
+}
+
 async function purgeJobManager(input: {
 	env: Env
 	userId: string
@@ -1088,6 +1113,11 @@ export async function deleteUserAccount(input: {
 		warnings,
 	})
 	result.clearedDurableObjects.runLogs = await clearRunLog({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
+	result.clearedDurableObjects.userMeters = await purgeUserMeter({
 		env: input.env,
 		userId: input.mcpUserId,
 		warnings,

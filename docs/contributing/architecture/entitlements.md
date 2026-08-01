@@ -107,7 +107,68 @@ two compute surfaces `usage-metering.md` already observes:
   cannot grant elevated quotas.
 
 Both consume only when the context has a `userId`, matching the usage-metering
-rule that events without an owning user are skipped.
+rule that events without an owning user are skipped. Daily consumption is
+authoritative in the per-user `UserMeter` Durable Object; see
+[UserMeter (expand phase)](#user-meter-expand-phase).
+
+## UserMeter (expand phase)
+
+Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
+`execute_calls_per_day`, `outbound_fetches_per_day`) are **authoritative in the
+per-user `UserMeter` Durable Object** (`USER_METER` binding). Code lives in
+`packages/worker/src/entitlements/user-meter-do.ts` and `user-meter-client.ts`;
+storage layout and naming are documented in [Data storage](./data-storage.md).
+
+**Strong enforcement:** `consumeDailyEntitlement` and inbound
+`consumeInboundDelivery` RPCs check the plan limit and increment inside the DO.
+The Durable Object request model serializes mutations per user; counter updates
+use optimistic concurrency on monotonic `revision` so concurrent consumes cannot
+overshoot. Missing `(resource, day)` rows return `needs_bootstrap` rather than
+silently starting at zero on a warm account.
+
+**Cold bootstrap:** on `needs_bootstrap`, the service performs one legacy D1
+point read on `entitlement_daily_counters`, then `UserMeter.initialize()` seeds
+the row with `INSERT OR IGNORE` (concurrent callers cannot double-apply the
+baseline). The warm enforcement path awaits only the DO RPC — never APP_DB.
+
+**Non-awaited D1 mirror:** after each successful consume, refund, or inbound
+delivery claim, the service schedules a best-effort absolute mirror write to
+`entitlement_daily_counters` via `waitUntil` when available (otherwise a caught
+void promise). Mirror ordering uses the DO-minted `mirrorUpdatedAt` token
+(`r/` + zero-padded revision) in the existing `updated_at` TEXT column so late
+writes cannot overwrite newer state, including refunds that lower `count`.
+Mirror failures are logged and never affect enforcement. The D1 table is **not**
+dropped in this phase — it remains for existing readers and reporting.
+
+**Point-read surfaces** now call `readDailyEntitlementResourceUsage` (UserMeter
+with the same cold-bootstrap path) instead of reading D1 directly:
+
+- Account usage UI — `packages/worker/src/app/account-usage-data.ts`
+- `email_usage_get` MCP capability
+- Admin per-user usage drill-down —
+  `packages/worker/src/admin/user-usage-data.ts`
+
+Non-daily resources and contexts without `USER_METER` still use
+`readEntitlementResourceUsage` against D1.
+
+**Inbound retry idempotency:** inbound receive quota uses
+`UserMeter.consumeInboundDelivery`, which atomically claims `delivery_id` and
+consumes one `email_receives_per_day` unit inside a SQLite transaction. Retries
+return the accepted counter without incrementing (`replayed: true`).
+Cross-UTC-day retries use the original claim's resource/day. The legacy D1
+mirror is scheduled from the email path via
+`scheduleAbsoluteDailyEntitlementMirror` so the email subsystem does not
+duplicate mirror SQL.
+
+**Remaining migration dependency:** retiring the D1 mirror and
+`entitlement_daily_counters` table waits until reporting-off-D1 work merges and
+mirror parity is verified in production. This expand phase intentionally does
+**not** move `storage_bytes` enforcement, `package_service_states` running
+counts, or account-deletion write fencing to UserMeter.
+
+Module wiring: `consumeDailyEntitlement`, `refundDailyEntitlement`, and
+`readDailyEntitlementResourceUsage` in `service.ts` require `env.USER_METER` and
+fail closed when the binding is missing.
 
 ## Schema history
 
@@ -245,21 +306,35 @@ Rules:
   package services are counted from `package_service_states` (status `running`
   and freshly heartbeaten), not from run-history rows — see
   [Run records](./run-records.md) (`state-vs-history`).
-- **Rate-style limits** (email sends and receives per day) use the
-  `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
-  UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
-  plan limit from `resolvePlanLimit` and increments the counter in one
-  conditional D1 upsert (no check-then-increment race). Every resolved plan has
-  a finite numeric limit. Counting attempts rather than successes keeps the
-  limit abuse-resistant for permanent rejects (parse failures, entitlement/quota
-  rejects). Only typed pre-commit `RetryableInboundStorageError` failures
-  (thread prework, R2 put, D1 message/attachment storage after successful
-  cleanup) refund exactly one `email_receives_per_day` unit via
-  `refundDailyEntitlement` for the same UTC day that was charged, so Cloudflare
-  Email Routing retries do not burn the daily receive quota. Post-commit
-  bookkeeping failures do not refund or retry.
-  `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
-  backfills).
+- **Rate-style limits** (email sends/receives per day, execute calls per day,
+  outbound fetches per day) are **authoritative in the per-user UserMeter
+  Durable Object** (UTC day keys). Call `consumeDailyEntitlement` on every
+  attempt: it resolves the plan limit, atomically checks and increments inside
+  the DO, and throws `EntitlementLimitError` when over limit. Every resolved
+  plan has a finite numeric limit. Counting attempts rather than successes keeps
+  the limit abuse-resistant for permanent rejects (parse failures,
+  entitlement/quota rejects).
+
+  **Cold bootstrap:** missing `(resource, day)` rows trigger one legacy D1 point
+  read and a single `UserMeter.initialize()` before retrying the consume.
+
+  **D1 mirror (expand phase):** after each successful consume/refund/inbound
+  claim, a best-effort, non-awaited absolute mirror write updates
+  `entitlement_daily_counters` with revision-ordered `updated_at` tokens. The
+  table is not dropped — it remains for existing readers and reporting until
+  reporting-off-D1 retirement is verified.
+
+  Only typed pre-commit `RetryableInboundStorageError` failures (thread prework,
+  R2 put, D1 message/attachment storage after successful cleanup) refund exactly
+  one `email_receives_per_day` unit via `refundDailyEntitlement` for the same
+  UTC day that was charged, so Cloudflare Email Routing retries do not burn the
+  daily receive quota. Post-commit bookkeeping failures do not refund or retry.
+  Inbound routing retries that replay the same `delivery_id` are idempotent via
+  `UserMeter.consumeInboundDelivery` and do not consume an additional unit.
+
+  `incrementDailyEntitlementCounter` remains for raw D1 counter writes (tests,
+  backfills, and legacy paths).
+
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
   (not allowed) vs `1` (allowed) so the numeric contract stays uniform.
 - **Per-unit size limits** (`email_message_bytes`) compare one candidate value
@@ -328,9 +403,9 @@ separate statements, so a burst of concurrent creates can overshoot a limit by a
 few rows before the next check sees the new count. That is an accepted trade-off
 — these limits are order-of-magnitude denial-of-wallet caps, not billing-grade
 accounting, and folding every insert into a conditional statement would couple
-the entitlements module to each resource's write path. The rate-style path does
-not share this window: `consumeDailyEntitlement` checks and increments in a
-single conditional upsert.
+the entitlements module to each resource's write path. Daily rate-style limits
+do not share this window: UserMeter consumes are serialized per user inside the
+DO with revision-checked updates.
 
 ## How to add an enforcement point
 
@@ -459,6 +534,9 @@ in [`../environment-variables.md`](../environment-variables.md).
   `0066-stripe-billing.sql`; owned by `packages/worker/src/billing/`, read by
   `getUserPlan` via `resolveEffectivePlan`. `stripe_plan` stays nullable because
   it is Stripe-derived; `max` is manual-only.
-- `entitlement_daily_counters` — rate counters, created by migration
-  `0048-user-plans-and-entitlement-counters.sql`; included in the
+- `entitlement_daily_counters` — expand-phase **mirror** of UserMeter daily
+  counters (authoritative state in the per-user `UserMeter` DO), created by
+  migration `0048-user-plans-and-entitlement-counters.sql`; included in the
   account-deletion cascade (`packages/worker/src/app/account-deletion.ts`).
+  Table retirement waits until reporting-off-D1 merges and mirror parity is
+  verified.

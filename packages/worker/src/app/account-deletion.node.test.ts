@@ -529,6 +529,10 @@ function createSuccessfulDeletionEnv(
 				listStorageIds: async () => [] as Array<string>,
 			}),
 		},
+		USER_METER: {
+			idFromName: durableObjectId,
+			get: () => ({ purge: async () => ({ ok: true as const }) }),
+		},
 		JOB_MANAGER: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
@@ -1106,6 +1110,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
 	const clearRunLogMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeUserMeterMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
@@ -1130,6 +1135,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				clearAll: clearRunLogMock,
 				listStorageIds: async () => [] as Array<string>,
 			}),
+		},
+		USER_METER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ purge: purgeUserMeterMock }),
 		},
 		JOB_MANAGER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -1431,6 +1440,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,
 		runLogs: 1,
+		userMeters: 1,
 		jobManagers: 1,
 		repoSessions: 1,
 		remoteConnectorSessions: 1,
@@ -1443,6 +1453,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		packageServiceInstances: 3,
 	})
 	expect(clearRunLogMock).toHaveBeenCalledTimes(1)
+	expect(purgeUserMeterMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
 		userId: userAaa,
@@ -1988,6 +1999,36 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 		true,
 	)
 	expect(clearedStorageIds.some((id) => id.includes('bbb-bucket'))).toBe(false)
+})
+
+test('account deletion reports a missing USER_METER binding and remains retryable', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, {
+				USER_METER: undefined,
+			}),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toMatchObject({
+		cleanupErrors: expect.arrayContaining([
+			'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
+		]),
+		partialResult: expect.objectContaining({
+			clearedDurableObjects: expect.objectContaining({
+				userMeters: 0,
+			}),
+		}),
+	})
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			deleting_at: expect.any(String),
+		}),
+	])
 })
 
 test('account deletion purges a StorageRunner known only via user_storage_buckets', async () => {

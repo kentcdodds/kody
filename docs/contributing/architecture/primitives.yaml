@@ -487,6 +487,19 @@ primitives:
     docs:
       - docs/contributing/architecture/run-records.md
 
+  - id: user-meter
+    group: storage
+    name: User meter
+    summary:
+      Per-user UserMeter DO SQLite for daily entitlement counters and inbound
+      delivery idempotency.
+    code:
+      - packages/worker/src/entitlements/user-meter-do.ts
+      - packages/worker/src/entitlements/user-meter-client.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
+      - docs/contributing/architecture/entitlements.md
+
   - id: email-blobs-r2
     group: storage
     name: Email blob storage (R2)
@@ -605,3 +618,4 @@ invariants:
     docs:
       - docs/contributing/architecture/usage-metering.md
       - docs/contributing/architecture/run-records.md
+      - docs/contributing/architecture/entitlements.md

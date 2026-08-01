@@ -1474,6 +1474,130 @@ test('account export includes run_records section with runs and log lines', asyn
 	])
 })
 
+test('account export includes user_meter counters, pages them, and warns on truncation', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+	const counters = [
+		{
+			resource: 'email_sends_per_day' as const,
+			day: '2026-07-30',
+			count: 2,
+			revision: 2,
+			updatedAt: '2026-07-30T01:00:00.000Z',
+			mirrorUpdatedAt: 'r/00000000000000000002',
+		},
+		{
+			resource: 'execute_calls_per_day' as const,
+			day: '2026-07-30',
+			count: 5,
+			revision: 5,
+			updatedAt: '2026-07-30T02:00:00.000Z',
+			mirrorUpdatedAt: 'r/00000000000000000005',
+		},
+		{
+			resource: 'outbound_fetches_per_day' as const,
+			day: '2026-07-31',
+			count: 1,
+			revision: 1,
+			updatedAt: '2026-07-31T00:00:00.000Z',
+			mirrorUpdatedAt: 'r/00000000000000000001',
+		},
+	]
+	const exportCounters = vi.fn(
+		async (input: { pageSize?: number; startAfter?: string | null }) => {
+			const pageSize = input.pageSize ?? 100
+			const startIndex = input.startAfter
+				? counters.findIndex(
+						(row) => `${row.day}:${row.resource}` === input.startAfter,
+					) + 1
+				: 0
+			const page = counters.slice(startIndex, startIndex + pageSize)
+			const truncated = startIndex + pageSize < counters.length
+			return {
+				counters: page,
+				nextStartAfter: truncated
+					? `${page.at(-1)!.day}:${page.at(-1)!.resource}`
+					: null,
+				truncated,
+			}
+		},
+	)
+	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
+	const env = {
+		APP_DB: db,
+		USER_METER: {
+			idFromName,
+			get: () => ({ exportCounters }),
+		},
+	} as unknown as Env
+
+	const accountExport = await createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(idFromName).toHaveBeenCalledWith('user-aaa')
+	expect(accountExport.manifest.sections.user_meter?.count).toBe(3)
+	expect(accountExport.durableObjects.userMeter).toEqual({
+		counters,
+		nextStartAfter: null,
+		truncated: false,
+	})
+	expect(accountExport.manifest.warnings).not.toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('entitlement_daily_counters'),
+		]),
+	)
+
+	const first = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'user_meter',
+		pageSize: 2,
+	})
+	expect(first.items).toEqual(counters.slice(0, 2))
+	expect(first.truncated).toBe(true)
+	expect(first.nextStartAfter).toBe('2026-07-30:execute_calls_per_day')
+
+	const second = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'user_meter',
+		pageSize: 2,
+		startAfter: first.nextStartAfter ?? undefined,
+	})
+	expect(second.items).toEqual(counters.slice(2))
+	expect(second.truncated).toBe(false)
+	expect(second.nextStartAfter).toBeNull()
+	expect(exportCounters).toHaveBeenCalled()
+
+	exportCounters.mockImplementation(async () => ({
+		counters: [counters[0]!],
+		nextStartAfter: 'cursor-more',
+		truncated: true,
+	}))
+	const truncatedExport = await createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(truncatedExport.durableObjects.userMeter?.truncated).toBe(true)
+	expect(truncatedExport.manifest.warnings).toContain(
+		'User meter counters were truncated in the full export; use account_export_section with section "user_meter" to retrieve additional pages.',
+	)
+})
+
 test('account export includes a package service known only via package_service_states', async () => {
 	consoleWarn.mockImplementation(() => {})
 	try {

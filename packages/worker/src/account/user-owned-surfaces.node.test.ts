@@ -59,11 +59,25 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	).toBe(true)
 	expect(coverage.r2SurfaceIds.has('email_raw_mime')).toBe(true)
 	expect(coverage.r2SurfaceIds.has('user_avatar')).toBe(true)
+	expect(coverage.durableObjectIds.has('user_meter')).toBe(true)
+	expect(
+		accountUserOwnedDurableObjectSurfaces.find(
+			(surface) => surface.id === 'user_meter',
+		),
+	).toMatchObject({
+		binding: 'USER_METER',
+		deletionResultKey: 'userMeters',
+		export: 'include',
+	})
 	expect(
 		accountUserOwnedKvKeySchemes.some((scheme) =>
 			scheme.prefixTemplate?.includes('source-snapshot:v1:'),
 		),
 	).toBe(true)
+	expect(accountExportSource).toContain("'user_meter'")
+	expect(accountExportSource).toContain('userMeterRpc')
+	expect(accountDeletionSource).toContain('userMeterRpc')
+	expect(accountDeletionSource).toContain('userMeters')
 
 	expect(accountDeletionSource).toContain(
 		"from '#worker/account/user-owned-surfaces.ts'",

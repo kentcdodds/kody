@@ -8,6 +8,7 @@ export type UserOwnedDurableObjectSurface = {
 		| 'package_realtime_session'
 		| 'package_service_instance'
 		| 'run_log'
+		| 'user_meter'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -122,6 +123,14 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			export: 'include',
 			notes:
 				'Execution history and captured logs across every runtime surface, plus the keyed package-invocation idempotency ledger (terminal replay responses, 90-day window). Self-prunes inside the DO rather than through a retention cron lane; account deletion clearAll purges ledger rows with the run history, and account export pages both through the run_records section.',
+		},
+		{
+			id: 'user_meter',
+			binding: 'USER_METER',
+			deletionResultKey: 'userMeters',
+			export: 'include',
+			notes:
+				'Per-user daily entitlement counters (one DO per stable userId). Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters and the inbound delivery ledger, and account export pages counters through the user_meter section via exportCounters.',
 		},
 		{
 			id: 'mcp',

@@ -78,12 +78,13 @@ Deletion must cover these user-owned surfaces:
   references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
-  `McpClientHub`, and `RunLog` are purged through account-deletion RPCs after
-  their D1 identifiers are collected (`RunLog` is one object per user and needs
-  no D1 id scan). `MCP` objects remain SDK session-keyed, while
-  `mcp_agent_sessions` indexes each Durable Object id by authenticated stable
-  user id so account deletion can purge stored props, conversation state,
-  raw-fetch state, and transport storage before revoking OAuth grants.
+  `McpClientHub`, `RunLog`, and `UserMeter` are purged through account-deletion
+  RPCs after their D1 identifiers are collected (`RunLog` and `UserMeter` are
+  one object per user and need no D1 id scan). `MCP` objects remain SDK
+  session-keyed, while `mcp_agent_sessions` indexes each Durable Object id by
+  authenticated stable user id so account deletion can purge stored props,
+  conversation state, raw-fetch state, and transport storage before revoking
+  OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
@@ -164,13 +165,14 @@ migration-safe chunked interface:
   with `section: "d1_table"` and a table name. Durable storage buckets are read
   with `section: "storage_runner"` and a `storage_id`, using the same
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
-  storage export capability. R2 raw MIME, attachment, avatar, and icon objects
-  use `section: "r2_object"`; each response contains at most one 256 KiB base64
-  chunk and an opaque cursor. Each request uses bounded `LIMIT 1` ownership
-  queries rather than reconstructing inventory. Continuation cursors bind the
-  source row, object key, size, and ETag; ownership/key mutations and object
-  overwrites are reported instead of mixing generations. Missing objects are
-  represented explicitly.
+  storage export capability. User meter counters use `section: "user_meter"` and
+  the `UserMeter.exportCounters` RPC. R2 raw MIME, attachment, avatar, and icon
+  objects use `section: "r2_object"`; each response contains at most one 256 KiB
+  base64 chunk and an opaque cursor. Each request uses bounded `LIMIT 1`
+  ownership queries rather than reconstructing inventory. Continuation cursors
+  bind the source row, object key, size, and ETag; ownership/key mutations and
+  object overwrites are reported instead of mixing generations. Missing objects
+  are represented explicitly.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -189,6 +191,11 @@ Durable Object export behavior:
   section (`exportRuns` RPC; one cursor pages runs first, then ledger rows).
   Retention is self-enforced inside the DO (~30 days / 2,000 runs; ledger
   terminal rows 90 days); see [Run records](./run-records.md).
+- `UserMeter` exports daily entitlement counter rows through the `user_meter`
+  section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
+  Retention is self-enforced inside the DO (seven UTC days of counter and
+  inbound-delivery-claim rows); see
+  [Entitlements](./entitlements.md#user-meter-expand-phase).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -445,6 +452,55 @@ Storage split:
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`
 
+## Durable Objects (`UserMeter`)
+
+Daily rate-style entitlement counters and inbound email delivery-id idempotency
+live in a per-user `UserMeter` Durable Object with SQLite
+(`packages/worker/src/entitlements/user-meter-do.ts`). The Worker binding is
+`USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
+`new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
+
+Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
+`userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
+`packages/worker/src/user-scoped-durable-object-name.ts`. There is no `user_id`
+column inside the DO because the object identity is the user.
+
+SQLite ownership (schema version tracked in `user_meter_meta`):
+
+- `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
+  `email_receives_per_day`, `execute_calls_per_day`, and
+  `outbound_fetches_per_day` (`resource`, `day`, `count`, monotonic `revision`,
+  `updated_at`).
+- `inbound_delivery_claims` — idempotency ledger keyed by inbound `delivery_id`
+  (scoped by DO identity, so the primary key is delivery id alone). Records the
+  claim's resource/day, post-charge counter, revision, and `claimed_at` so
+  Cloudflare Email Routing retries inside the 48-hour inbound dedupe window
+  cannot double-charge `email_receives_per_day`.
+
+Retention is self-enforced inside the DO: every read/write path
+opportunistically deletes counter and claim rows older than seven UTC days
+(`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
+the window covers timezone edge cases, recent account exports, and inbound
+retries.
+
+**Expand-phase D1 mirror:** enforcement and point reads are authoritative in
+UserMeter. D1 `entitlement_daily_counters` is **not** dropped — it remains a
+best-effort mirror for existing readers and reporting. After each DO
+consume/refund/inbound claim, the entitlements service schedules a non-awaited
+absolute mirror write keyed by `(user_id, resource, day)` with a
+revision-ordered `updated_at` token (`r/` + zero-padded revision from
+`userMeterMirrorUpdatedAtToken`) so late writes cannot overwrite newer state.
+See [Entitlements](./entitlements.md#user-meter-expand-phase).
+
+**Cold bootstrap:** a missing `(resource, day)` row returns `needs_bootstrap`.
+The service performs one legacy D1 point read on `entitlement_daily_counters`,
+then `initialize()` seeds the DO row with `INSERT OR IGNORE` (concurrent callers
+cannot double-apply the baseline). Warm paths never read D1 for enforcement.
+
+Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan).
+Account export pages `UserMeter.exportCounters` through the `user_meter`
+manifest section / `account_export_section`.
+
 ### Package state model
 
 Saved packages are the only top-level persisted primitive. Their state maps onto
@@ -478,6 +534,9 @@ via `durableObjectNameFromParts`); domain helpers such as
 - `RunLog` — `runLogDurableObjectName(userId)` → `idFromName(userId)`. One
   execution-history DO per user; there is no `user_id` column inside it because
   the DO identity is the user. See [Run records](./run-records.md).
+- `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
+  daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`).
+  See [Entitlements](./entitlements.md#user-meter-expand-phase).
 - `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
   `idFromName(userId.trim())`.
 - `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →
@@ -542,6 +601,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `JOB_MANAGER` (Durable Objects)
 - `RUN_LOG` (Durable Objects; per-user run records — see
   [Run records](./run-records.md))
+- `USER_METER` (Durable Objects; per-user daily entitlement counters — see
+  [Entitlements](./entitlements.md#user-meter-expand-phase))
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)
@@ -786,6 +847,8 @@ to `durableObjectNameFromParts`).
 
 - `JobManager`: `idFromName(userId)` (no trim).
 - `RunLog`: `idFromName(userId)` (no trim); one execution-history DO per user.
+- `UserMeter`: `idFromName(userId)` (no trim); one daily-entitlement meter DO
+  per user.
 - `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
 - `RepoSession`: `idFromName(repo_sessions.id)`; the key is not user-prefixed,
@@ -953,7 +1016,10 @@ Current retention policies:
   blob delete fails, those rows are skipped and still selected on later runs so
   cleanup can retry. Dependent `email_attachments` rows are deleted before their
   messages, and threads left with no messages are pruned for the affected users.
-- `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.
+- `entitlement_daily_counters`: expand-phase **mirror** of UserMeter daily
+  counters (authoritative state lives in the per-user `UserMeter` DO). Rows keep
+  400 days by `day` key until mirror retirement is verified after
+  reporting-off-D1 merges; the table is not dropped in this phase.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
