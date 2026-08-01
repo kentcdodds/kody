@@ -1144,6 +1144,109 @@ test('DO acquire fails closed and releases DO when D1 mirror response is lost un
 	db.prepare = originalPrepare
 })
 
+test('DO acquire cleans partial D1 mirror when insert commits and count returns false', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const originalBatch = db.batch.bind(db)
+	db.batch = (async () => {
+		throw new Error('simulated lost D1 batch response')
+	}) as D1Database['batch']
+	const originalPrepare = db.prepare.bind(db)
+	db.prepare = ((query: string) => {
+		const statement = originalPrepare(query)
+		if (query.includes('active_write_count + 1')) {
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						async run() {
+							return { meta: { changes: 0 } }
+						},
+						first: bound.first.bind(bound),
+						all: bound.all.bind(bound),
+					}
+				},
+			}
+		}
+		return statement
+	}) as D1Database['prepare']
+	let writeStarted = false
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:mirror-partial-false',
+			env: meter.env,
+			async write() {
+				writeStarted = true
+				return 'should-not-run'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(writeStarted).toBe(false)
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	db.batch = originalBatch
+	db.prepare = originalPrepare
+})
+
+test('DO acquire cleans partial D1 mirror when sequential count throws after insert', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const originalBatch = db.batch.bind(db)
+	db.batch = (async () => {
+		throw new Error('simulated lost D1 batch response')
+	}) as D1Database['batch']
+	const originalPrepare = db.prepare.bind(db)
+	const countFailure = new Error('simulated sequential count failure')
+	db.prepare = ((query: string) => {
+		const statement = originalPrepare(query)
+		if (query.includes('active_write_count + 1')) {
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						async run() {
+							throw countFailure
+						},
+						first: bound.first.bind(bound),
+						all: bound.all.bind(bound),
+					}
+				},
+			}
+		}
+		return statement
+	}) as D1Database['prepare']
+	let writeStarted = false
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:mirror-partial-throw',
+			env: meter.env,
+			async write() {
+				writeStarted = true
+				return 'should-not-run'
+			},
+		}),
+	).rejects.toBe(countFailure)
+	expect(writeStarted).toBe(false)
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	db.batch = originalBatch
+	db.prepare = originalPrepare
+})
+
 test('DO repair clears D1 mirror, stays audit-first, and retries after finalize without double audit/count', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)

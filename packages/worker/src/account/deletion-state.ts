@@ -541,6 +541,14 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 			throw new AccountDeletionInProgressError()
 		}
 	} catch (error) {
+		// Mirror acquire can leave a partial D1 row (insert committed, count
+		// missed/threw). Clear it before DO release; cleanup must not mask
+		// the original error. A failed clear may overblock old Phase-A marks.
+		await releaseD1WriteLeaseMirror({
+			db: input.db,
+			stableUserId: lease.stableUserId,
+			token: lease.token,
+		}).catch(() => {})
 		await meter.releaseWriteLease({ token: lease.token }).catch(() => {})
 		throw error
 	}
