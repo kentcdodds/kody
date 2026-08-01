@@ -325,6 +325,17 @@ export type MailboxCountResult = {
 	deliveryEvents: number
 }
 
+/**
+ * Aggregate result from {@link MailboxRpc.runRetentionNow} (and the shared
+ * private retention pass used by `alarm`). Counts only — no row ids or content.
+ */
+export type MailboxRunRetentionNowResult = {
+	before: MailboxCountResult
+	after: MailboxCountResult
+	blobDeleteFailures: boolean
+	expiredRemaining: boolean
+}
+
 export type MailboxListMessagesInput = {
 	inboxId?: string | null
 	direction?: EmailDirection | null
@@ -539,6 +550,13 @@ export type MailboxRpc = {
 		pageSize?: number
 		startAfter?: string | null
 	}) => Promise<MailboxBlobReferencePage>
+	/**
+	 * Owner-bound retention pass using natural production cutoffs only (no
+	 * cutoff override). Reuses the same pass + alarm reschedule as `alarm`.
+	 */
+	runRetentionNow: (input: {
+		ownerId: string
+	}) => Promise<MailboxRunRetentionNowResult>
 	purge: () => Promise<{ ok: true }>
 }
 

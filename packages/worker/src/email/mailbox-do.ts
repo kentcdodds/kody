@@ -40,6 +40,7 @@ import {
 	type MailboxMessageRecord,
 	type MailboxPartialMutationResult,
 	type MailboxRpc,
+	type MailboxRunRetentionNowResult,
 	type MailboxSearchMessagesInput,
 	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
@@ -138,12 +139,18 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		this.retentionAlarmArmed = false
 	}
 
-	async alarm(): Promise<void> {
+	/**
+	 * Shared retention pass for `alarm` and {@link runRetentionNow}.
+	 * Natural production cutoffs only; exact post-pass alarm scheduling.
+	 */
+	private async runRetentionPass(): Promise<MailboxRunRetentionNowResult> {
+		const before = this.store.countMailbox()
 		const nowMs = Date.now()
 		const result = await enforceMailboxRetention({
 			store: this.store,
 			blobs: this.env.EMAIL_BLOBS,
 		})
+		const after = this.store.countMailbox()
 		const nextDueAtMs = nextMailboxRetentionDueAtMs(this.store)
 		const reschedule = computeMailboxRetentionReschedule({
 			nowMs,
@@ -154,11 +161,32 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		if (reschedule.atMs == null) {
 			this.retentionAlarmArmed = false
 			this.retentionIdleConfirmed = true
-			return
+		} else {
+			await this.ctx.storage.setAlarm(reschedule.atMs)
+			this.retentionAlarmArmed = true
+			this.retentionIdleConfirmed = false
 		}
-		await this.ctx.storage.setAlarm(reschedule.atMs)
-		this.retentionAlarmArmed = true
-		this.retentionIdleConfirmed = false
+		return {
+			before,
+			after,
+			blobDeleteFailures: result.hadBlobDeleteFailures,
+			expiredRemaining: result.expiredWorkRemaining,
+		}
+	}
+
+	async alarm(): Promise<void> {
+		await this.runRetentionPass()
+	}
+
+	/**
+	 * Owner-bound retention pass (natural cutoffs only). Same scheduling as
+	 * `alarm`; returns before/after counts with no row ids or content.
+	 */
+	async runRetentionNow(input: {
+		ownerId: string
+	}): Promise<MailboxRunRetentionNowResult> {
+		this.store.assertOwner(input.ownerId)
+		return this.runRetentionPass()
 	}
 
 	/** Atomic mirror of thread + message + attachments for dual-write. */
@@ -485,6 +513,7 @@ export {
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
 	type MailboxPartialMutationResult,
+	type MailboxRunRetentionNowResult,
 	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,

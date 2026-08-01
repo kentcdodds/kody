@@ -946,7 +946,22 @@ retention pass: successful work with expired rows remaining schedules a
 near-immediate continuation (`mailboxRetentionContinuationDelayMs`); R2 delete
 failures use hourly backoff (`mailboxRetentionRetryDelayMs`). Write-path alarm
 selection never postpones an earlier existing alarm under sustained writes
-(near-equal times within skew keep the existing alarm).
+(near-equal times within skew keep the existing alarm). `alarm` and the
+owner-bound `runRetentionNow({ ownerId })` RPC share one private retention pass
+(natural production cutoffs only — no arbitrary cutoff override) and the same
+post-pass alarm reschedule; the RPC returns before/after `countMailbox`
+aggregates plus `blobDeleteFailures` / `expiredRemaining` (no row ids or
+content).
+
+**Admin accelerated coverage** (`admin_mailbox_maintenance`;
+`packages/worker/src/admin/mailbox-maintenance.ts`): audited admin-only
+discriminated actions — `status` (aggregate tracked/matching/mismatch/error/
+incomplete/eligible counts plus matching/check timestamps and earliest cutover;
+no email content), `reconcile` (bounded `reconcileMailboxParity`, `batch_size`
+max 100, then status), and `retention` (D1-discover bounded non-deleting
+non-system owners with mail/parity state, call `runRetentionNow` per owner,
+aggregate deletes/failures without owner or message ids). No seed or
+arbitrary-cutoff surface.
 
 Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
 result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state
