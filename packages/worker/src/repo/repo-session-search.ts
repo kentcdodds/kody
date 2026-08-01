@@ -10,6 +10,7 @@ const defaultRepoSearchLimit = 50
 const maxRepoSearchBytes = 200_000
 const maxRepoSearchRegexLength = 512
 const maxExpandedGlobPatterns = 64
+const maxBraceNestingDepth = 16
 const obviousNestedQuantifierPattern =
 	/\((?:[^()\\]|\\.)*[+*{][^)]*\)(?:[+*]|\{\d+(?:,\d*)?\})/
 
@@ -30,18 +31,26 @@ function escapeRegex(source: string) {
  * or `?` throws "SyntaxError: Nothing to repeat". Expanding first keeps each
  * alternative on the wildcard-aware path.
  */
-export function expandBraceGlobs(pattern: string): Array<string> {
+export function expandBraceGlobs(
+	pattern: string,
+	nestingDepth = 0,
+): Array<string> {
 	const open = pattern.indexOf('{')
 	if (open === -1) return [pattern]
+	if (nestingDepth >= maxBraceNestingDepth) {
+		throw new Error(
+			`repo_search glob brace nesting exceeds ${maxBraceNestingDepth} levels.`,
+		)
+	}
 
-	let depth = 0
+	let braceDepth = 0
 	let close = -1
 	for (let index = open; index < pattern.length; index += 1) {
 		const character = pattern[index]
-		if (character === '{') depth += 1
+		if (character === '{') braceDepth += 1
 		else if (character === '}') {
-			depth -= 1
-			if (depth === 0) {
+			braceDepth -= 1
+			if (braceDepth === 0) {
 				close = index
 				break
 			}
@@ -53,12 +62,12 @@ export function expandBraceGlobs(pattern: string): Array<string> {
 	const suffix = pattern.slice(close + 1)
 	const alternatives: Array<string> = []
 	let alternativeStart = open + 1
-	depth = 0
+	braceDepth = 0
 	for (let index = open + 1; index < close; index += 1) {
 		const character = pattern[index]
-		if (character === '{') depth += 1
-		else if (character === '}') depth -= 1
-		else if (character === ',' && depth === 0) {
+		if (character === '{') braceDepth += 1
+		else if (character === '}') braceDepth -= 1
+		else if (character === ',' && braceDepth === 0) {
 			alternatives.push(pattern.slice(alternativeStart, index))
 			alternativeStart = index + 1
 		}
@@ -69,6 +78,7 @@ export function expandBraceGlobs(pattern: string): Array<string> {
 	for (const alternative of alternatives) {
 		for (const candidate of expandBraceGlobs(
 			`${prefix}${alternative}${suffix}`,
+			nestingDepth + 1,
 		)) {
 			expanded.push(candidate)
 			if (expanded.length > maxExpandedGlobPatterns) {

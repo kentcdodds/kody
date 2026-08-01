@@ -86,3 +86,11 @@ test('searchRepoWorkspace rejects pathological brace expansion', async () => {
 	).rejects.toThrow(/expands to more than 64 patterns/)
 	expect(workspace.glob).not.toHaveBeenCalled()
 })
+
+test('expandBraceGlobs rejects deeply nested single-alternative braces', () => {
+	let nested = 'x'
+	for (let index = 0; index < 20; index += 1) {
+		nested = `{${nested}}`
+	}
+	expect(() => expandBraceGlobs(nested)).toThrow(/brace nesting exceeds 16/)
+})
