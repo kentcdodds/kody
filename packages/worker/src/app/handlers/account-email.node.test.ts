@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import type * as EmailPlatformAddress from '#worker/email/platform-address.ts'
 import type * as EntitlementPlans from '#worker/entitlements/plans.ts'
+import type * as EntitlementService from '#worker/entitlements/service.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const messageRow = {
 	id: 'msg-1',
@@ -180,11 +183,15 @@ vi.mock('#app/email-verification.ts', () => ({
 		mockModule.isAccountEmailVerified(...args),
 }))
 
-vi.mock('#worker/entitlements/service.ts', () => ({
-	getUserPlan: (...args: Array<unknown>) => mockModule.getUserPlan(...args),
-	readEntitlementResourceUsage: (...args: Array<unknown>) =>
-		mockModule.readEntitlementResourceUsage(...args),
-}))
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof EntitlementService>()
+	return {
+		...actual,
+		getUserPlan: (...args: Array<unknown>) => mockModule.getUserPlan(...args),
+		readEntitlementResourceUsage: (...args: Array<unknown>) =>
+			mockModule.readEntitlementResourceUsage(...args),
+	}
+})
 
 vi.mock('#worker/entitlements/plans.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementPlans>()
@@ -239,13 +246,47 @@ function createListResult(rows: Array<Record<string, unknown>>) {
 	}
 }
 
-function createEnv() {
-	let prepareCall = 0
-	mockModule.prepare.mockImplementation(() => {
-		prepareCall += 1
-		// countAndListMessages issues COUNT then SELECT in Promise.all order.
-		if (prepareCall % 2 === 1) return createCountResult(1)
-		return createListResult([messageRow])
+function createEnv(input?: {
+	meter?: ReturnType<typeof createInMemoryUserMeterEnv>
+	dailyCounters?: Array<{
+		user_id: string
+		resource: string
+		day: string
+		count: number
+	}>
+	messageRows?: Array<Record<string, unknown>>
+	messageTotal?: number
+}) {
+	const meter = input?.meter ?? createInMemoryUserMeterEnv()
+	const dailyCounters = input?.dailyCounters?.map((row) => ({ ...row })) ?? []
+	const messageRows = input?.messageRows ?? [messageRow]
+	const messageTotal = input?.messageTotal ?? messageRows.length
+	mockModule.prepare.mockImplementation((query: string) => {
+		const normalized = String(query).replace(/\s+/g, ' ').trim().toLowerCase()
+		if (normalized.includes('from entitlement_daily_counters')) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async first<T>() {
+							const row = dailyCounters.find(
+								(counter) =>
+									counter.user_id === params[0] &&
+									counter.resource === params[1] &&
+									counter.day === params[2],
+							)
+							return (row ? { count: row.count } : { count: 0 }) as T
+						},
+						async all() {
+							return { results: [] }
+						},
+					}
+				},
+			}
+		}
+		if (normalized.includes('count(*)')) {
+			return createCountResult(messageTotal)
+		}
+		return createListResult(messageRows)
 	})
 	return {
 		APP_DB: {
@@ -253,6 +294,7 @@ function createEnv() {
 		} as unknown as D1Database,
 		APP_BASE_URL: 'https://example.com',
 		COOKIE_SECRET: 'secret',
+		...meter.env,
 	} as Env
 }
 
@@ -260,7 +302,26 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	mockModule.prepare.mockClear()
 	mockModule.getEmailMessageById.mockClear()
 	mockModule.listEmailDeliveryEvents.mockClear()
-	const env = createEnv()
+	const day = utcDayKey()
+	const userId = 'stable-user-1'
+	const bootstrapMeter = createInMemoryUserMeterEnv()
+	const env = createEnv({
+		meter: bootstrapMeter,
+		dailyCounters: [
+			{
+				user_id: userId,
+				resource: 'email_sends_per_day',
+				day,
+				count: 2,
+			},
+			{
+				user_id: userId,
+				resource: 'email_receives_per_day',
+				day,
+				count: 2,
+			},
+		],
+	})
 	const handler = createAccountEmailApiHandler(env)
 
 	const listResponse = await handler.handler({
@@ -299,6 +360,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		selectedMessage: null,
 		usage: expect.objectContaining({
 			plan: 'free',
+			day,
 			stored_messages: { count: 2, limit: 100 },
 			sends_today: { count: 2, limit: 20 },
 			receives_today: { count: 2, limit: 50 },
@@ -313,7 +375,22 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 
 	mockModule.prepare.mockClear()
 	mockModule.getEmailMessageById.mockClear()
-	const envWithSelection = createEnv()
+	const envWithSelection = createEnv({
+		dailyCounters: [
+			{
+				user_id: userId,
+				resource: 'email_sends_per_day',
+				day,
+				count: 2,
+			},
+			{
+				user_id: userId,
+				resource: 'email_receives_per_day',
+				day,
+				count: 2,
+			},
+		],
+	})
 	const selectedResponse = await createAccountEmailApiHandler(
 		envWithSelection,
 	).handler({
@@ -374,6 +451,57 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	expect(unauthorizedResponse.status).toBe(401)
 })
 
+test('email API usage prefers initialized UserMeter daily counts over D1', async () => {
+	const day = utcDayKey()
+	const userId = 'stable-user-1'
+	const meter = createInMemoryUserMeterEnv()
+	await meter.seed({
+		userId,
+		resource: 'email_sends_per_day',
+		day,
+		count: 13,
+	})
+	await meter.seed({
+		userId,
+		resource: 'email_receives_per_day',
+		day,
+		count: 15,
+	})
+	const env = createEnv({
+		meter,
+		dailyCounters: [
+			{
+				user_id: userId,
+				resource: 'email_sends_per_day',
+				day,
+				count: 3,
+			},
+			{
+				user_id: userId,
+				resource: 'email_receives_per_day',
+				day,
+				count: 5,
+			},
+		],
+	})
+	const response = await createAccountEmailApiHandler(env).handler({
+		request: new Request('https://example.com/account/email.json'),
+	})
+	expect(response.status).toBe(200)
+	const body = await response.json()
+	expect(body).toMatchObject({
+		ok: true,
+		usage: expect.objectContaining({
+			day,
+			stored_messages: { count: 2, limit: 100 },
+			sends_today: { count: 13, limit: 20 },
+			receives_today: { count: 15, limit: 50 },
+		}),
+	})
+	expect(body.usage.sends_today.count).not.toBe(3)
+	expect(body.usage.receives_today.count).not.toBe(5)
+})
+
 test('email API lists classification filters and classifies inbound messages', async () => {
 	const quarantinedRow = {
 		...messageRow,
@@ -381,12 +509,10 @@ test('email API lists classification filters and classifies inbound messages', a
 		classification: 'quarantined',
 		classification_reason: 'DMARC failed.',
 	}
-	const env = createEnv()
-	let prepareCall = 0
-	mockModule.prepare.mockImplementation(() => {
-		prepareCall += 1
-		if (prepareCall % 2 === 1) return createCountResult(1)
-		return createListResult([quarantinedRow])
+	const meter = createInMemoryUserMeterEnv()
+	const env = createEnv({
+		meter,
+		messageRows: [quarantinedRow],
 	})
 	mockModule.getEmailMessageById.mockResolvedValueOnce({
 		...messageRecord,
@@ -420,12 +546,8 @@ test('email API lists classification filters and classifies inbound messages', a
 	})
 
 	mockModule.setEmailMessageClassification.mockClear()
-	let classifyPrepareCall = 0
-	mockModule.prepare.mockImplementation(() => {
-		classifyPrepareCall += 1
-		if (classifyPrepareCall % 2 === 1) return createCountResult(1)
-		return createListResult([messageRow])
-	})
+	// Reload after classify uses the default message list again.
+	createEnv({ meter, messageRows: [messageRow] })
 	const quarantineResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {
 			method: 'POST',
