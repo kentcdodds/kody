@@ -891,8 +891,12 @@ Per user, the lane:
    ticks. The watermark advances to `upper` only when the full window succeeds.
 5. **Count compare + AE signals** — runs only after the event phase and a
    completed content window. Owner-scoped D1 counts vs `Mailbox.countMailbox()`
-   for threads, messages, attachments, and delivery events. Each comparison
-   emits one `mailbox_parity:<operation>` Analytics Engine row with
+   for threads, messages, attachments, and delivery events (timeout
+   `mailboxParityCountTimeoutMs` ≈ 5s). Production evidence: after event
+   backfill completed, tracked owners repeatedly hit `countMailbox timed out`
+   under the live 1s mirror bound and could not advance soak; the scheduled lane
+   uses a longer count-only bound while live dual-write mirrors stay at 1s. Each
+   comparison emits one `mailbox_parity:<operation>` Analytics Engine row with
    `double2 = d1Count - doCount`.
 
 Parity progress persists on `users` (migration `0125-mailbox-parity-state.sql`).
