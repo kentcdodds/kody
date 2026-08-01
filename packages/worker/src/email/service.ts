@@ -13,7 +13,6 @@ import {
 	mirrorMailboxMessageGraphFromD1,
 	type MailboxLiveMirrorEnv,
 } from './mailbox-live-mirror.ts'
-import { type MailboxMirrorEnv } from './mailbox-mirror.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
@@ -217,13 +216,6 @@ export async function getEmailMessageWithAttachmentsById(input: {
 export async function insertEmailMessageWithAttachments(
 	input: InsertEmailMessageWithRawMimeInput & {
 		attachments: Parameters<typeof insertEmailAttachments>[0]['attachments']
-		/**
-		 * Optional Mailbox mirror context forwarded to cleanup deletes so an
-		 * inbound agent can pass `env` / `waitUntil` without changing
-		 * acknowledge/retry rules on ambiguous attachment failures.
-		 */
-		env?: MailboxMirrorEnv
-		waitUntil?: (promise: Promise<unknown>) => void
 	},
 ) {
 	let message
@@ -251,8 +243,6 @@ export async function insertEmailMessageWithAttachments(
 				db: input.db,
 				blobs: input.blobs,
 				messageId: message.id,
-				env: input.env,
-				waitUntil: input.waitUntil,
 			})
 		} catch (error) {
 			cleanupError = error

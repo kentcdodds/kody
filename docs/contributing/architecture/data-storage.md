@@ -220,10 +220,9 @@ Durable Object export behavior:
   RPC; keyset pagination with prefixed cursors over those tables). Manifest
   counts use `countMailbox`. Phase 1 registers this consumption; phase 2 wires
   live dual-write for outbound terminals, provider delivery-queue graph repair,
-  user classification (`service.ts#setEmailMessageClassification`), high-risk
-  inbound terminal paths, and `deleteEmailMessageById` metadata delete without
-  changing D1 authority — D1 `email_*` rows remain the live source of truth and
-  are still exported in the `d1` section. See
+  user classification (`service.ts#setEmailMessageClassification`), and high-risk
+  inbound terminal paths without changing D1 authority — D1 `email_*` rows remain
+  the live source of truth and are still exported in the `d1` section. See
   [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
@@ -518,15 +517,13 @@ rows only.
 - Message deletes always delete the deterministic
   `emailRawMimeKey(userId, messageId)` from R2 (production writers always store
   that canonical key). `deleteEmailMessageById` runs an atomic D1 batch
-  (attachments, then message), then best-effort
-  `mirrorMailboxDeleteMessageMetadata` when `env` is supplied (metadata-only;
-  nulls delivery-event `message_id`, never deletes R2 or empty threads — thread
-  cleanup stays deferred), then best-effort R2 blob deletes in the same order as
-  before expand. Mirror failures/timeouts never affect return/throw; optional
-  `waitUntil` attaches the mirror without blocking R2. User email retention and
-  system-email retention stay strict: blob delete before row delete; failed blob
-  deletes skip the row for retry. Account deletion stays strict before atomic D1
-  finalization; a failed blob delete preserves every message row for retry.
+  (attachments, then message), then best-effort R2 blob deletes. Live explicit
+  and retention deletes do not call Mailbox mirror helpers today; the parity lane
+  repairs DO state via purge/rebuild. Direct delete wiring is pending. User email
+  retention and system-email retention stay strict: blob delete before row delete;
+  failed blob deletes skip the row for retry. Account deletion stays strict before
+  atomic D1 finalization; a failed blob delete preserves every message row for
+  retry.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -712,10 +709,9 @@ Accepted mirrors validate inbound/outbound `rawMimeKey` and external attachment
 
 **Partial mutation RPCs** (owner-bound, monotonic on `updatedAt`, no R2 or
 retention-alarm side effects — unlike full snapshot mirrors, these do not mark
-retention dirty or reschedule alarms). `deleteMessageMetadata` is live on the
-`deleteEmailMessageById` path when `env` is supplied; touch/update/classify and
-the other delete RPCs remain library-only on live paths that prefer full graph
-repair:
+retention dirty or reschedule alarms). All partial mutation RPCs remain
+library-only on live paths that prefer full graph repair or parity backfill;
+direct delete wiring for explicit/retention deletes is pending:
 
 - `touchThread` — advance `last_message_at` / `updated_at` without a full
   snapshot; `last_message_at` never moves backward
@@ -776,10 +772,9 @@ never propagate into D1 commit paths. Helpers cover full snapshots
 (`mirrorMailboxTouchThread`, `mirrorMailboxUpdateMessageDelivery`,
 `mirrorMailboxSetMessageClassification`, `mirrorMailboxDeleteMessageMetadata`,
 `mirrorMailboxDeleteDeliveryEvent`, `mirrorMailboxDeleteThreadIfEmpty`). Partial
-mutation helpers are library-only except `mirrorMailboxDeleteMessageMetadata` on
-the `deleteEmailMessageById` path; other live paths prefer the graph
-orchestrator below. D1 remains sole authority for all live mail read/write
-paths.
+mutation helpers are library-only; live paths prefer the graph orchestrator
+below or parity purge/rebuild for deletes. D1 remains sole authority for all
+live mail read/write paths.
 
 **Live graph orchestrator** (`mailbox-live-mirror.ts`): loads a cohesive D1
 message graph (optional caller thread, message, attachments, then delivery
@@ -949,24 +944,23 @@ classification (full graph repair after D1 update via
 `service.ts#setEmailMessageClassification`), high-risk inbound terminal paths
 (received graph + rejected delivery-event mirror + post-effects event re-mirror;
 `waitUntil`; no Mailbox before D1/R2 finalization; pre-claim bounded rejections
-parity-lane only; `system:email` excluded), and `deleteEmailMessageById`
-metadata delete (mirror only after the D1 batch; R2 unchanged; thread cleanup
-deferred). Mirror helpers emit automatic namespaced outcome telemetry (`missing`
-and `timeout` included). Message and batch event repair each use one 1s-bounded
-RPC; each graph attempt emits at most two AE writes; event repair batches up to
-100 events with explicit truncation (newest retained, chronological insertion
-restored, stable truncation warning) and one batch telemetry outcome. The
-every-5-minute queue-isolated `mailbox_parity` lane backfills all owner messages
-and delivery events (including pre-claim bounded rejection rows), durable
-content-watermark replays, compares owner-scoped D1 vs Mailbox counts, persists
-soak state on `users` (migration `0125`), and re-purges the DO when account
-deletion races the lane. Retention sweeper metadata-delete mirrors and live read
-cutover are **still not wired**. Live email read/write authority is unchanged —
+parity-lane only; `system:email` excluded). Mirror helpers emit automatic
+namespaced outcome telemetry (`missing` and `timeout` included). Message and
+batch event repair each use one 1s-bounded RPC; each graph attempt emits at most
+two AE writes; event repair batches up to 100 events with explicit truncation
+(newest retained, chronological insertion restored, stable truncation warning) and
+one batch telemetry outcome. Live explicit and retention deletes do not call
+Mailbox mirror helpers; the every-5-minute queue-isolated `mailbox_parity` lane
+backfills all owner messages and delivery events (including pre-claim bounded
+rejection rows), durable content-watermark replays, compares owner-scoped D1 vs
+Mailbox counts, persists soak state on `users` (migration `0125`), re-purges the
+DO when account deletion races the lane, and repairs delete drift via purge/rebuild.
+Direct delete wiring is pending. Live email read/write authority is unchanged —
 D1 `email_*` tables remain authoritative for all live paths. D1 email rows and
-existing R2 inventory deletion stay authoritative during expand. **Phase 2
-contract completion** (every user-mail D1 mutation also writes the DO on live
-paths, including retention deletes) remains pending; terminal inbound + parity
-cover the high-risk live surface today.
+existing R2 inventory deletion stay authoritative during expand. **Phase 2 contract
+completion** (every user-mail D1 mutation also writes the DO on live paths,
+including retention deletes) remains pending; terminal inbound + parity cover the
+high-risk live surface today.
 
 1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
    `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
@@ -989,15 +983,15 @@ cover the high-risk live surface today.
    paths in `inbound.ts` (received graph via `waitUntil` only after D1/R2 +
    finalization; rejected delivery-event mirror; post-effects event re-mirror;
    already-received idempotent repair; pre-claim bounded rejections parity-lane
-   only; `system:email` excluded), and `deleteEmailMessageById` metadata delete
-   (mirror after D1 batch only) call the live mirror helpers; graph repair uses
+   only; `system:email` excluded) call the live mirror helpers; graph repair uses
    message RPC + one batch event RPC (at most two AE writes per attempt). The
    every-5-minute `mailbox_parity` scheduled lane backfills all owner messages
-   and delivery events, durable content-watermark replays, count compares, and
-   soak tracking on `users` (migration `0125`). **Still pending for phase-2
-   contract completion:** retention sweeper metadata-delete mirrors. D1
-   authority and read cutover are unchanged (prepared adapter exists; not
-   wired).
+   and delivery events, durable content-watermark replays, count compares, soak
+   tracking on `users` (migration `0125`), and repairs delete drift via
+   purge/rebuild. **Still pending for phase-2 contract completion:** direct delete
+   wiring for explicit/retention deletes (including retention sweeper
+   metadata-delete mirrors). D1 authority and read cutover are unchanged
+   (prepared adapter exists; not wired).
 3. **Reads cut over after production soak** — user-mail reads move to the DO
    only after production parity soak is verified
    (`mailbox_parity_matching_since` ≥ 24h continuous exact counts, fresh
@@ -1060,8 +1054,7 @@ failures acknowledge rather than risk duplicates.
 - **Ambiguity:** if attachment commit fails but message cleanup (or a residual
   probe) cannot prove the pre-commit state, acknowledge the already-created
   message (logged, non-retry) rather than risking a duplicate on Email Routing
-  retry. `deleteEmailMessageById` mirrors metadata only after the D1 batch; R2
-  delete behavior is unchanged; empty-thread cleanup stays deferred.
+  retry. Empty-thread cleanup stays deferred.
 
 When Mailbox becomes read-authoritative (phase 3+), the same shape applies with
 the DO as the metadata store:
@@ -1191,8 +1184,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
   reconciliation alarms)
 - `MAILBOX` (Durable Objects; per-user email metadata — see
   [Mailbox](#durable-objects-mailbox); phase 1 registers purge/export
-  consumption; phase 2 wires terminal inbound + outbound live dual-write and
-  `deleteEmailMessageById` metadata delete without changing D1 authority)
+  consumption; phase 2 wires terminal inbound + outbound live dual-write without
+  changing D1 authority)
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)

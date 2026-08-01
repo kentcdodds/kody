@@ -5,10 +5,6 @@ import {
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import { parseJsonArray } from '@kody-internal/shared/json-parsing.ts'
 import {
-	mirrorMailboxDeleteMessageMetadata,
-	type MailboxMirrorEnv,
-} from './mailbox-mirror.ts'
-import {
 	emailClassificationValues,
 	type EmailAttachmentRecord,
 	type EmailClassification,
@@ -1064,15 +1060,6 @@ export async function searchEmailMessages(input: {
 	return (result.results ?? []).map(mapMessageRow)
 }
 
-/**
- * Delete a message and its attachments from D1, then best-effort delete R2
- * blobs. When `env` is provided and the row existed, schedule a Mailbox
- * metadata-delete mirror only after the authoritative D1 batch succeeds
- * (`deletedAt` = canonical now). Mirror never affects return/throw; when
- * `waitUntil` is supplied the mirror promise is attached there, otherwise it
- * is awaited (bounded, never-throw). Absent rows skip DO delete. Thread
- * cleanup stays deferred (RPC nulls delivery `message_id` only).
- */
 export async function deleteEmailMessageById(input: {
 	db: D1Database
 	/**
@@ -1081,10 +1068,6 @@ export async function deleteEmailMessageById(input: {
 	 */
 	blobs: R2Bucket
 	messageId: string
-	/** Optional Mailbox binding for post-D1 best-effort metadata delete. */
-	env?: MailboxMirrorEnv
-	/** When set with `env`, attach the mirror promise instead of awaiting. */
-	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	// Capture ownership and blob keys before D1 delete. A failed read must
 	// abort the delete (and be retried) rather than orphan the R2 blobs; only
@@ -1114,21 +1097,6 @@ export async function deleteEmailMessageById(input: {
 			.prepare(`DELETE FROM email_messages WHERE id = ?`)
 			.bind(input.messageId),
 	])
-	// D1 is authoritative: mirror only after the batch commits, never before.
-	// Captured owner is required; system owners are skipped inside the helper.
-	if (row && input.env) {
-		const mirrorPromise = mirrorMailboxDeleteMessageMetadata({
-			env: input.env,
-			ownerId: row.user_id,
-			messageId: input.messageId,
-			deletedAt: nowIso(),
-		})
-		if (input.waitUntil) {
-			input.waitUntil(mirrorPromise)
-		} else {
-			await mirrorPromise
-		}
-	}
 	for (const blobKey of blobKeys) {
 		await input.blobs.delete(blobKey).catch((error: unknown) => {
 			console.warn('email-blob-delete-failed', blobKey, error)
