@@ -524,6 +524,29 @@ async function findThreadForMessage(input: {
 
 export const findEmailThreadForInboundMessage = findThreadForMessage
 
+/**
+ * Owner-scoped thread lookup for D1 → Mailbox graph mirrors and other
+ * strictly user-bound readers. Returns null when absent or owned by another
+ * user — never use for inbound delivery fencing.
+ */
+export async function getEmailThreadById(input: {
+	db: D1Database
+	userId: string
+	threadId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_threads
+			WHERE id = ?
+				AND user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.threadId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapThreadRow(row) : null
+}
+
 export async function createEmailThread(input: {
 	db: D1Database
 	id?: string
@@ -1198,7 +1221,22 @@ export async function insertEmailDeliveryEvent(input: {
 	providerEventId?: string | null
 	detail?: Record<string, unknown> | null
 	createdAt?: string
-}) {
+}): Promise<EmailDeliveryEventRecord> {
+	const id = crypto.randomUUID()
+	const createdAt = input.createdAt ?? nowIso()
+	const detailJson = JSON.stringify(input.detail ?? {})
+	const record: EmailDeliveryEventRecord = {
+		id,
+		messageId: input.messageId ?? null,
+		userId: input.userId ?? null,
+		inboxId: input.inboxId ?? null,
+		eventType: input.eventType,
+		provider: input.provider ?? null,
+		providerMessageId: input.providerMessageId ?? null,
+		providerEventId: input.providerEventId ?? null,
+		detailJson,
+		createdAt,
+	}
 	await input.db
 		.prepare(
 			`INSERT INTO email_delivery_events (
@@ -1207,16 +1245,17 @@ export async function insertEmailDeliveryEvent(input: {
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
-			crypto.randomUUID(),
-			input.messageId ?? null,
-			input.userId ?? null,
-			input.inboxId ?? null,
-			input.eventType,
-			input.provider ?? null,
-			input.providerMessageId ?? null,
-			input.providerEventId ?? null,
-			JSON.stringify(input.detail ?? {}),
-			input.createdAt ?? nowIso(),
+			record.id,
+			record.messageId,
+			record.userId,
+			record.inboxId,
+			record.eventType,
+			record.provider,
+			record.providerMessageId,
+			record.providerEventId,
+			record.detailJson,
+			record.createdAt,
 		)
 		.run()
+	return record
 }

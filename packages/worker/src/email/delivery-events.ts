@@ -94,30 +94,35 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 	reportingEnv?: EmailReportingEnv
 	body: unknown
 }) {
-	const event = parseCloudflareEmailDeliveryEvent(input.body)
-	if (!event) {
-		return { outcome: 'invalid' as const, event: null, message: null }
+	const providerEvent = parseCloudflareEmailDeliveryEvent(input.body)
+	if (!providerEvent) {
+		return {
+			outcome: 'invalid' as const,
+			providerEvent: null,
+			event: null,
+			message: null,
+		}
 	}
 	const result = await recordProviderEmailDeliveryEvent({
 		db: input.db,
 		reportingEnv: input.reportingEnv,
-		providerMessageId: event.payload.messageId,
-		providerEventId: event.payload.eventId,
-		deliveryStatus: event.payload.delivery.status,
-		eventTimestamp: event.metadata.eventTimestamp,
+		providerMessageId: providerEvent.payload.messageId,
+		providerEventId: providerEvent.payload.eventId,
+		deliveryStatus: providerEvent.payload.delivery.status,
+		eventTimestamp: providerEvent.metadata.eventTimestamp,
 		detail: {
-			source: event.source,
-			sender: event.payload.sender,
-			recipient: event.payload.recipient,
-			subject: event.payload.subject ?? null,
-			terminal: event.payload.terminal,
-			delivery: event.payload.delivery,
-			bounce: event.payload.bounce ?? null,
-			failure: event.payload.failure ?? null,
-			rejection: event.payload.rejection ?? null,
-			complaint: event.payload.complaint ?? null,
-			metadata: event.metadata,
+			source: providerEvent.source,
+			sender: providerEvent.payload.sender,
+			recipient: providerEvent.payload.recipient,
+			subject: providerEvent.payload.subject ?? null,
+			terminal: providerEvent.payload.terminal,
+			delivery: providerEvent.payload.delivery,
+			bounce: providerEvent.payload.bounce ?? null,
+			failure: providerEvent.payload.failure ?? null,
+			rejection: providerEvent.payload.rejection ?? null,
+			complaint: providerEvent.payload.complaint ?? null,
+			metadata: providerEvent.metadata,
 		},
 	})
-	return { ...result, event }
+	return { ...result, providerEvent }
 }

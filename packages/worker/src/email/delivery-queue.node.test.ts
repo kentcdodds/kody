@@ -7,11 +7,20 @@ import {
 const mocks = vi.hoisted(() => ({
 	processCloudflareEmailDeliveryEvent: vi.fn(),
 	dispatchEmailDeliverySubscriptionEvents: vi.fn(async () => []),
+	mirrorMailboxMessageGraphFromD1: vi.fn(async () => ({
+		messageId: 'message-1',
+		message: { status: 'mirrored' as const },
+		events: [],
+	})),
 }))
 
 vi.mock('./delivery-events.ts', () => ({
 	processCloudflareEmailDeliveryEvent:
 		mocks.processCloudflareEmailDeliveryEvent,
+}))
+
+vi.mock('./mailbox-live-mirror.ts', () => ({
+	mirrorMailboxMessageGraphFromD1: mocks.mirrorMailboxMessageGraphFromD1,
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -53,35 +62,50 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 		},
 	}
 	const storedMessage = { id: 'message-1', userId: 'user-1' }
+	const d1Event = {
+		id: 'd1-event-1',
+		messageId: 'message-1',
+		userId: 'user-1',
+		inboxId: 'inbox-1',
+		eventType: 'delivered',
+		provider: 'cloudflare-email',
+		providerMessageId: 'provider-1',
+		providerEventId: 'event-1',
+		detailJson: '{}',
+		createdAt: '2026-07-17T20:02:00.000Z',
+	}
 	mocks.processCloudflareEmailDeliveryEvent
 		.mockResolvedValueOnce({
 			outcome: 'recorded',
-			event: providerEvent,
+			providerEvent,
+			event: d1Event,
 			message: storedMessage,
 		})
 		.mockResolvedValueOnce({
 			outcome: 'duplicate',
-			event: providerEvent,
+			providerEvent,
 			message: storedMessage,
 		})
 		.mockResolvedValueOnce({
 			outcome: 'invalid',
+			providerEvent: null,
 			event: null,
 			message: null,
 		})
 		.mockResolvedValueOnce({
 			outcome: 'stale',
-			event: providerEvent,
+			providerEvent,
 			message: storedMessage,
 		})
 		.mockResolvedValueOnce({
 			outcome: 'unmatched',
-			event: providerEvent,
+			providerEvent,
 			message: null,
 		})
 		.mockResolvedValueOnce({
 			outcome: 'recorded',
-			event: providerEvent,
+			providerEvent,
+			event: d1Event,
 			message: storedMessage,
 		})
 	mocks.dispatchEmailDeliverySubscriptionEvents
@@ -135,6 +159,14 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 			waitUntil: expect.any(Function),
 		},
 	)
+	expect(mocks.mirrorMailboxMessageGraphFromD1).toHaveBeenCalledTimes(1)
+	expect(mocks.mirrorMailboxMessageGraphFromD1).toHaveBeenCalledWith({
+		env: expect.anything(),
+		db: expect.anything(),
+		userId: 'user-1',
+		messageId: 'message-1',
+	})
+	expect(waitUntilPromises).toHaveLength(1)
 	expect(consoleWarn).toHaveBeenCalledWith('email-delivery-event-unmatched', {
 		queueMessageId: 'queue-unmatched',
 		providerMessageId: 'provider-1',
@@ -142,5 +174,119 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	expect(consoleError).toHaveBeenCalledWith(
 		'email-delivery-event-processing-failed',
 		expect.objectContaining({ message: expect.stringContaining('KV failure') }),
+	)
+})
+
+test('recorded delivery events schedule mailbox graph mirror via waitUntil without blocking ack', async () => {
+	consoleError.mockImplementation(() => {})
+	mocks.processCloudflareEmailDeliveryEvent.mockReset()
+	mocks.mirrorMailboxMessageGraphFromD1.mockReset()
+	mocks.dispatchEmailDeliverySubscriptionEvents.mockReset()
+	mocks.dispatchEmailDeliverySubscriptionEvents.mockResolvedValue([])
+
+	const providerEvent = {
+		payload: {
+			eventId: 'event-mirror',
+			messageId: 'provider-mirror',
+			delivery: { status: 'delivered' },
+		},
+	}
+	const storedMessage = { id: 'message-mirror', userId: 'user-mirror' }
+	mocks.processCloudflareEmailDeliveryEvent.mockResolvedValue({
+		outcome: 'recorded',
+		providerEvent,
+		event: { id: 'd1-event-mirror' },
+		message: storedMessage,
+	})
+
+	let resolveMirror: (() => void) | undefined
+	const mirrorPromise = new Promise<{ messageId: string }>((resolve) => {
+		resolveMirror = () =>
+			resolve({
+				messageId: 'message-mirror',
+				message: { status: 'mirrored' },
+				events: [],
+			})
+	})
+	mocks.mirrorMailboxMessageGraphFromD1.mockReturnValue(mirrorPromise)
+
+	const queueMessage = createQueueMessage('queue-mirror', { kind: 'recorded' })
+	const waitUntilPromises: Array<Promise<unknown>> = []
+	const ctx = {
+		waitUntil(promise: Promise<unknown>) {
+			waitUntilPromises.push(promise)
+		},
+		passThroughOnException() {},
+	} as ExecutionContext
+
+	await handleEmailDeliveryQueue(
+		{
+			queue: 'kody-email-delivery',
+			messages: [queueMessage],
+			ackAll() {},
+			retryAll() {},
+		} as unknown as MessageBatch<unknown>,
+		{ APP_DB: {} } as Env,
+		ctx,
+	)
+
+	expect(queueMessage.ack).toHaveBeenCalledTimes(1)
+	expect(queueMessage.retry).not.toHaveBeenCalled()
+	expect(waitUntilPromises).toHaveLength(1)
+	resolveMirror?.()
+	await Promise.all(waitUntilPromises)
+})
+
+test('mailbox graph mirror failures scheduled in waitUntil do not reject or alter queue ack', async () => {
+	consoleError.mockImplementation(() => {})
+	mocks.processCloudflareEmailDeliveryEvent.mockReset()
+	mocks.mirrorMailboxMessageGraphFromD1.mockReset()
+	mocks.dispatchEmailDeliverySubscriptionEvents.mockReset()
+	mocks.dispatchEmailDeliverySubscriptionEvents.mockResolvedValue([])
+
+	const providerEvent = {
+		payload: {
+			eventId: 'event-fail',
+			messageId: 'provider-fail',
+			delivery: { status: 'delivered' },
+		},
+	}
+	const storedMessage = { id: 'message-fail', userId: 'user-fail' }
+	mocks.processCloudflareEmailDeliveryEvent.mockResolvedValue({
+		outcome: 'recorded',
+		providerEvent,
+		event: { id: 'd1-event-fail' },
+		message: storedMessage,
+	})
+	mocks.mirrorMailboxMessageGraphFromD1.mockRejectedValue(
+		new Error('mailbox rpc unavailable'),
+	)
+
+	const queueMessage = createQueueMessage('queue-mirror-fail', {
+		kind: 'recorded',
+	})
+	const waitUntilPromises: Array<Promise<unknown>> = []
+	const ctx = {
+		waitUntil(promise: Promise<unknown>) {
+			waitUntilPromises.push(promise)
+		},
+		passThroughOnException() {},
+	} as ExecutionContext
+
+	await handleEmailDeliveryQueue(
+		{
+			queue: 'kody-email-delivery',
+			messages: [queueMessage],
+			ackAll() {},
+			retryAll() {},
+		} as unknown as MessageBatch<unknown>,
+		{ APP_DB: {} } as Env,
+		ctx,
+	)
+
+	expect(queueMessage.ack).toHaveBeenCalledTimes(1)
+	expect(queueMessage.retry).not.toHaveBeenCalled()
+	await expect(Promise.all(waitUntilPromises)).rejects.toThrow(
+		'mailbox rpc unavailable',
 	)
 })

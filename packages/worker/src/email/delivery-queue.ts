@@ -1,4 +1,5 @@
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
+import { mirrorMailboxMessageGraphFromD1 } from './mailbox-live-mirror.ts'
 import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
@@ -26,7 +27,7 @@ export async function handleEmailDeliveryQueue(
 				case 'unmatched':
 					console.warn('email-delivery-event-unmatched', {
 						queueMessageId: queueMessage.id,
-						providerMessageId: result.event?.payload.messageId ?? null,
+						providerMessageId: result.providerEvent?.payload.messageId ?? null,
 					})
 					queueMessage.retry({ delaySeconds: unmatchedRetryDelaySeconds })
 					break
@@ -39,7 +40,7 @@ export async function handleEmailDeliveryQueue(
 					await applyOutboundEmailAbusePause({
 						env,
 						userId: result.message.userId,
-						deliveryStatus: result.event.payload.delivery.status,
+						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: false,
 					})
 					queueMessage.ack()
@@ -53,15 +54,25 @@ export async function handleEmailDeliveryQueue(
 					await applyOutboundEmailAbusePause({
 						env,
 						userId: result.message.userId,
-						deliveryStatus: result.event.payload.delivery.status,
+						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: result.outcome === 'recorded',
 					})
 					await dispatchEmailDeliverySubscriptionEvents({
 						env,
 						message: result.message,
-						providerEvent: result.event,
+						providerEvent: result.providerEvent,
 						waitUntil,
 					})
+					if (result.outcome === 'recorded' && result.message != null) {
+						waitUntil(
+							mirrorMailboxMessageGraphFromD1({
+								env,
+								db: env.APP_DB,
+								userId: result.message.userId,
+								messageId: result.message.id,
+							}),
+						)
+					}
 					queueMessage.ack()
 					break
 				}

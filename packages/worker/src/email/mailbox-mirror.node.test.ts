@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import {
+	mailboxMirrorRpcTimeoutMs,
 	mirrorMailboxDeliveryEventSnapshot,
 	mirrorMailboxDeleteDeliveryEvent,
 	mirrorMailboxDeleteMessageMetadata,
@@ -17,15 +18,20 @@ import { type MailboxDeliveryEventInput } from './mailbox-types.ts'
 function fakeMailboxEnv(stub: Record<string, unknown>) {
 	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
 	const get = vi.fn(() => stub)
+	const writeDataPoint = vi.fn()
 	return {
 		env: {
 			MAILBOX: {
 				idFromName,
 				get,
 			} as unknown as DurableObjectNamespace,
+			EMAIL_EVENTS: {
+				writeDataPoint,
+			} as unknown as AnalyticsEngineDataset,
 		},
 		idFromName,
 		get,
+		writeDataPoint,
 	}
 }
 
@@ -107,7 +113,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		status: 'missing' as const,
 	}))
 
-	const { env, idFromName } = fakeMailboxEnv({
+	const { env, idFromName, writeDataPoint } = fakeMailboxEnv({
 		mirrorMessage,
 		upsertDeliveryEvent,
 		touchThread,
@@ -266,7 +272,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		}),
 	).toEqual({ status: 'stale' })
 
-	// missing partial mutation is idempotent success for best-effort dual-write
+	// missing partial mutation is a distinct mirror outcome (not mirrored)
 	expect(
 		await mirrorMailboxSetMessageClassification({
 			env,
@@ -276,7 +282,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 			classificationReason: 'manual',
 			updatedAt: '2026-07-01T14:00:00.000Z',
 		}),
-	).toEqual({ status: 'mirrored' })
+	).toEqual({ status: 'missing' })
 
 	expect(
 		await mirrorMailboxDeleteMessageMetadata({
@@ -296,6 +302,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		}),
 	).toEqual({ status: 'stale' })
 
+	// delete missing remains mirrored — desired absence is achieved
 	expect(
 		await mirrorMailboxDeleteMessageMetadata({
 			env,
@@ -345,7 +352,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 
 	expect(
 		await mirrorMailboxMessageSnapshot({
-			env: {},
+			env: { EMAIL_EVENTS: env.EMAIL_EVENTS },
 			message: baseMessage(),
 		}),
 	).toEqual({ status: 'skipped', reason: 'mailbox-unconfigured' })
@@ -360,4 +367,84 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		}),
 	).toEqual({ status: 'skipped', reason: 'missing-owner' })
 	expect(touchThread).toHaveBeenCalledTimes(1)
+
+	const outcomes = writeDataPoint.mock.calls.map(
+		(call) => (call[0] as { blobs: Array<string> }).blobs,
+	)
+	expect(outcomes).toContainEqual([
+		'mailbox_mirror:mirror_message',
+		'mirrored',
+		expect.any(String),
+	])
+	expect(outcomes).toContainEqual([
+		'mailbox_mirror:set_message_classification',
+		'missing',
+		expect.any(String),
+	])
+	expect(outcomes).toContainEqual([
+		'mailbox_mirror:update_message_delivery',
+		'stale',
+		expect.any(String),
+	])
+	expect(outcomes).toContainEqual([
+		'mailbox_mirror:delete_delivery_event',
+		'error',
+		expect.any(String),
+	])
+	expect(outcomes).toContainEqual([
+		'mailbox_mirror:mirror_message',
+		'skipped',
+		expect.any(String),
+	])
+	// system email must not emit a parity data point
+	expect(
+		outcomes.filter(
+			(blobs) =>
+				blobs[0] === 'mailbox_mirror:mirror_message' && blobs[1] === 'skipped',
+		),
+	).toHaveLength(1)
+})
+
+test('mailbox mirror RPC timeout returns timeout and late rejection is not unhandled', async () => {
+	vi.useFakeTimers()
+	consoleWarn.mockImplementation(() => {})
+
+	let rejectRpc!: (error: unknown) => void
+	const mirrorMessage = vi.fn(
+		() =>
+			new Promise<{ ok: true; accepted: boolean }>((_resolve, reject) => {
+				rejectRpc = reject
+			}),
+	)
+	const { env, writeDataPoint } = fakeMailboxEnv({ mirrorMessage })
+
+	const pending = mirrorMailboxMessageSnapshot({
+		env,
+		message: baseMessage(),
+	})
+	const expectation = expect(pending).resolves.toEqual({ status: 'timeout' })
+	await vi.advanceTimersByTimeAsync(mailboxMirrorRpcTimeoutMs)
+	await expectation
+
+	expect(writeDataPoint).toHaveBeenCalledWith(
+		expect.objectContaining({
+			indexes: ['user-aaa'],
+			blobs: ['mailbox_mirror:mirror_message', 'timeout', expect.any(String)],
+		}),
+	)
+
+	const unhandled: Array<unknown> = []
+	const onUnhandled = (reason: unknown) => {
+		unhandled.push(reason)
+	}
+	process.on('unhandledRejection', onUnhandled)
+	try {
+		rejectRpc(new Error('late rejection after timeout'))
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(unhandled).toEqual([])
+	} finally {
+		process.off('unhandledRejection', onUnhandled)
+		vi.useRealTimers()
+	}
 })

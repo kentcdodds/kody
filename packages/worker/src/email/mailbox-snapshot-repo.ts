@@ -35,6 +35,24 @@ type DeliveryEventMirrorRow = {
 	created_at: string
 }
 
+const deliveryEventMirrorSelect = `SELECT
+				id,
+				message_id,
+				user_id,
+				inbox_id,
+				event_type,
+				provider,
+				provider_message_id,
+				provider_event_id,
+				detail_json,
+				needs_effect_reconcile,
+				usage_effect_recorded_at,
+				usage_month,
+				usage_bytes,
+				usage_duration_ms,
+				created_at
+			FROM email_delivery_events`
+
 function mapDeliveryEventMirrorRow(
 	row: DeliveryEventMirrorRow,
 ): EmailDeliveryEventMirrorProjection {
@@ -74,23 +92,7 @@ export async function getEmailDeliveryEventMirrorProjection(input: {
 }): Promise<EmailDeliveryEventMirrorProjection | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT
-				id,
-				message_id,
-				user_id,
-				inbox_id,
-				event_type,
-				provider,
-				provider_message_id,
-				provider_event_id,
-				detail_json,
-				needs_effect_reconcile,
-				usage_effect_recorded_at,
-				usage_month,
-				usage_bytes,
-				usage_duration_ms,
-				created_at
-			FROM email_delivery_events
+			`${deliveryEventMirrorSelect}
 			WHERE id = ?
 				AND user_id = ?
 			LIMIT 1`,
@@ -123,4 +125,47 @@ export async function getMailboxDeliveryEventMirrorInput(input: {
 		projection,
 		sourceMutationAt: input.sourceMutationAt,
 	})
+}
+
+/**
+ * Load complete delivery-event mirror projections for one message, oldest
+ * first, bounded by `limit`. Scoped by owner.
+ */
+export async function listEmailDeliveryEventMirrorProjectionsForMessage(input: {
+	db: D1Database
+	ownerId: string
+	messageId: string
+	limit: number
+}): Promise<Array<EmailDeliveryEventMirrorProjection>> {
+	const result = await input.db
+		.prepare(
+			`${deliveryEventMirrorSelect}
+			WHERE message_id = ?
+				AND user_id = ?
+			ORDER BY created_at ASC, id ASC
+			LIMIT ?`,
+		)
+		.bind(input.messageId, input.ownerId, input.limit)
+		.all<DeliveryEventMirrorRow>()
+	return (result.results ?? []).map(mapDeliveryEventMirrorRow)
+}
+
+/**
+ * Load ready Mailbox delivery-event snapshots for one message.
+ * Uses each event's `created_at` as `sourceMutationAt` (immutable inserts).
+ */
+export async function listMailboxDeliveryEventMirrorInputsForMessage(input: {
+	db: D1Database
+	ownerId: string
+	messageId: string
+	limit: number
+}): Promise<Array<MailboxDeliveryEventInput>> {
+	const projections =
+		await listEmailDeliveryEventMirrorProjectionsForMessage(input)
+	return projections.map((projection) =>
+		toMailboxDeliveryEventInput({
+			projection,
+			sourceMutationAt: projection.createdAt,
+		}),
+	)
 }

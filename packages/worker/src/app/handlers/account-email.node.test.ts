@@ -155,6 +155,11 @@ const mockModule = vi.hoisted(() => ({
 		},
 	]),
 	setEmailMessageClassification: vi.fn(async () => true),
+	mirrorMailboxMessageGraphFromD1: vi.fn(async () => ({
+		messageId: 'msg-1',
+		message: { status: 'mirrored' },
+		events: [],
+	})),
 	prepare: vi.fn(),
 }))
 
@@ -224,6 +229,11 @@ vi.mock('#worker/email/repo.ts', () => ({
 		mockModule.listEmailDeliveryEvents(...args),
 	setEmailMessageClassification: (...args: Array<unknown>) =>
 		mockModule.setEmailMessageClassification(...args),
+}))
+
+vi.mock('#worker/email/mailbox-live-mirror.ts', () => ({
+	mirrorMailboxMessageGraphFromD1: (...args: Array<unknown>) =>
+		mockModule.mirrorMailboxMessageGraphFromD1(...args),
 }))
 
 const { createAccountEmailApiHandler } = await import('./account-email.ts')
@@ -558,6 +568,7 @@ test('email API lists classification filters and classifies inbound messages', a
 	})
 
 	mockModule.setEmailMessageClassification.mockClear()
+	mockModule.mirrorMailboxMessageGraphFromD1.mockClear()
 	// Reload after classify uses the default message list again.
 	createEnv({ meter, messageRows: [messageRow] })
 	const quarantineResponse = await handler.handler({
@@ -579,12 +590,19 @@ test('email API lists classification filters and classifies inbound messages', a
 		classification: 'quarantined',
 		classificationReason: 'Reclassified by user.',
 	})
+	expect(mockModule.mirrorMailboxMessageGraphFromD1).toHaveBeenCalledWith({
+		env,
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		messageId: 'msg-1',
+	})
 	await expect(quarantineResponse.json()).resolves.toMatchObject({
 		ok: true,
 		selectedMessage: expect.objectContaining({ id: 'msg-1' }),
 	})
 
 	mockModule.setEmailMessageClassification.mockClear()
+	mockModule.mirrorMailboxMessageGraphFromD1.mockClear()
 	const acceptResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {
 			method: 'POST',
@@ -604,8 +622,15 @@ test('email API lists classification filters and classifies inbound messages', a
 		classification: 'accepted',
 		classificationReason: null,
 	})
+	expect(mockModule.mirrorMailboxMessageGraphFromD1).toHaveBeenCalledWith({
+		env,
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		messageId: 'msg-1',
+	})
 
 	mockModule.setEmailMessageClassification.mockResolvedValueOnce(false)
+	mockModule.mirrorMailboxMessageGraphFromD1.mockClear()
 	const missingResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {
 			method: 'POST',
@@ -618,6 +643,33 @@ test('email API lists classification filters and classifies inbound messages', a
 		}),
 	})
 	expect(missingResponse.status).toBe(404)
+	expect(mockModule.mirrorMailboxMessageGraphFromD1).not.toHaveBeenCalled()
+
+	mockModule.setEmailMessageClassification.mockResolvedValueOnce(true)
+	mockModule.mirrorMailboxMessageGraphFromD1.mockResolvedValueOnce({
+		messageId: 'msg-1',
+		message: {
+			status: 'error',
+			error: new Error('mailbox mirror timed out'),
+		},
+		events: [],
+	})
+	const mirrorFailureResponse = await handler.handler({
+		request: new Request('https://example.com/account/email.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'classify',
+				message_id: 'msg-1',
+				classification: 'quarantined',
+			}),
+		}),
+	})
+	expect(mirrorFailureResponse.status).toBe(200)
+	await expect(mirrorFailureResponse.json()).resolves.toMatchObject({
+		ok: true,
+		selectedMessage: expect.objectContaining({ id: 'msg-1' }),
+	})
 
 	const invalidActionResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {

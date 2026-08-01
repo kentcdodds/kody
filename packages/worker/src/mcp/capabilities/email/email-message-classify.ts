@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { mirrorMailboxMessageGraphFromD1 } from '#worker/email/mailbox-live-mirror.ts'
 import { setEmailMessageClassification } from '#worker/email/repo.ts'
 import { emailClassificationValues } from '#worker/email/types.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
@@ -44,6 +45,12 @@ export const emailMessageClassifyCapability = defineDomainCapability(
 			if (!updated) {
 				throw new Error(`Email message not found: ${args.message_id}`)
 			}
+			await mirrorMailboxMessageGraphFromD1({
+				env: ctx.env,
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				messageId: args.message_id,
+			})
 			return {
 				message_id: args.message_id,
 				classification: args.classification,

@@ -14,7 +14,13 @@ export type MailboxMirrorOperation =
 	| 'delete_delivery_event'
 	| 'delete_thread_if_empty'
 
-export type MailboxMirrorOutcome = 'mirrored' | 'stale' | 'skipped' | 'error'
+export type MailboxMirrorOutcome =
+	| 'mirrored'
+	| 'stale'
+	| 'missing'
+	| 'timeout'
+	| 'skipped'
+	| 'error'
 
 export type MailboxParityOperation =
 	| 'compare_threads'

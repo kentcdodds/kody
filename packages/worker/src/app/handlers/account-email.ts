@@ -7,6 +7,7 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { mirrorMailboxMessageGraphFromD1 } from '#worker/email/mailbox-live-mirror.ts'
 import { setEmailMessageClassification } from '#worker/email/repo.ts'
 import {
 	emailClassificationValues,
@@ -128,6 +129,13 @@ export function createAccountEmailApiHandler(env: Env) {
 					404,
 				)
 			}
+
+			await mirrorMailboxMessageGraphFromD1({
+				env,
+				db: env.APP_DB,
+				userId: user.mcpUser.userId,
+				messageId,
+			})
 
 			const listUrl = new URL(request.url, 'http://localhost')
 			listUrl.searchParams.set('selected', messageId)
