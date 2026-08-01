@@ -13,6 +13,7 @@ import {
 	getRunRecord,
 } from '#worker/run-records/service.ts'
 import { type RunRecordHandle } from '#worker/run-records/types.ts'
+import { hydrateJobViewFromRunLog } from './job-run-observability-hydrate.ts'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import { syncJobManagerAlarm } from './manager-client.ts'
 import {
@@ -1384,8 +1385,13 @@ export async function runJobNow(input: {
 					? serializeCallerContext(activeCallerContext)
 					: row.callerContextJson,
 			})
-			return {
+			const job = await hydrateJobViewFromRunLog({
+				env: input.env,
+				userId: input.userId,
 				job: toJobView(updated),
+			})
+			return {
+				job,
 				execution: outcome.execution,
 				deletedAfterRun,
 			}

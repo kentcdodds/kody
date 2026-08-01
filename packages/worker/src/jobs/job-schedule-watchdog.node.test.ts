@@ -189,8 +189,11 @@ test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fenc
 	)
 	const overduePayload = consoleWarn.mock.calls.find(
 		(call) => call[0] === 'job-schedule-watchdog-overdue',
-	)?.[1] as { overdueSample: Array<{ name?: string }> }
+	)?.[1] as {
+		overdueSample: Array<{ name?: string; lastRunAt?: string }>
+	}
 	expect(overduePayload.overdueSample[0]).not.toHaveProperty('name')
+	expect(overduePayload.overdueSample[0]).not.toHaveProperty('lastRunAt')
 
 	listSilentlyOverdueJobRowsPage.mockResolvedValueOnce([overdue])
 	listStuckSkippedJobRowsPage.mockResolvedValueOnce([])

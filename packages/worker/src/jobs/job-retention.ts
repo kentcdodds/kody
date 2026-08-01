@@ -134,8 +134,9 @@ export function isPastOnceJob(job: JobRecord, now: Date) {
 	if (!isIsoAtOrBefore(job.schedule.runAt, now)) {
 		return false
 	}
+	// D1 keeps last_run_at for retention aging; counters live in RunLog.
 	const stillRunnableNeverRan =
-		job.enabled && !job.killSwitchEnabled && job.runCount === 0
+		job.enabled && !job.killSwitchEnabled && job.lastRunAt == null
 	return !stillRunnableNeverRan
 }
 
@@ -145,13 +146,10 @@ export function classifyPastOnceJob(
 	if (job.schedule.type !== 'once') {
 		return null
 	}
-	if (job.runCount === 0 && job.lastRunAt == null) {
+	if (job.lastRunAt == null) {
 		return 'never_ran_once'
 	}
-	if (
-		job.lastRunStatus === 'success' ||
-		(job.successCount > 0 && job.lastRunStatus !== 'error')
-	) {
+	if (job.lastRunStatus === 'success') {
 		return 'success_once'
 	}
 	return 'failed_once'

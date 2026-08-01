@@ -673,14 +673,15 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 
 test('assertWithinEntitlement enforces free concurrent workflow limit without email', async () => {
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
-	const { db } = createEntitlementsTestDb({
-		counts: { workflow_runs: freeLimit },
-	})
+	const { db } = createEntitlementsTestDb()
+	// concurrent_workflows occupancy is RunLog-backed; create path passes
+	// getCurrent from reserveWorkflowProjectionSlot.
 	const error = await assertWithinEntitlement({
 		db,
 		userId: 'user-1',
 		email: null,
 		resource: 'concurrent_workflows',
+		getCurrent: async () => freeLimit,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -701,24 +702,24 @@ test('assertWithinEntitlement reverse-resolves plan when email is blank for a re
 	const maxLimit = planLimits.max.maxConcurrentWorkflows
 	const underMax = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
-		counts: { workflow_runs: freeLimit },
 	})
 	await assertWithinEntitlement({
 		db: underMax.db,
 		userId,
 		email: '',
 		resource: 'concurrent_workflows',
+		getCurrent: async () => freeLimit,
 	})
 
 	const atMax = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
-		counts: { workflow_runs: maxLimit },
 	})
 	const error = await assertWithinEntitlement({
 		db: atMax.db,
 		userId,
 		email: null,
 		resource: 'concurrent_workflows',
+		getCurrent: async () => maxLimit,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,

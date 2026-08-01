@@ -56,11 +56,12 @@ export type JobScheduleWatchdogResult = {
 
 function summarizeJobs(rows: Array<JobRow>) {
 	// Omit user-authored job names from ops/Sentry payloads; job ids are enough.
+	// Detection uses scheduling fences (next_run_at / claim / completed-for);
+	// last_run_at is retention/observability and not needed in the sample.
 	return rows.slice(0, jobScheduleWatchdogMaxJobsLogged).map((row) => ({
 		jobId: row.id,
 		userId: row.user_id,
 		nextRunAt: row.next_run_at,
-		lastRunAt: row.last_run_at,
 		lastCompletedScheduledFor: row.last_completed_scheduled_for,
 	}))
 }

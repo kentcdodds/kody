@@ -1,6 +1,6 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
-import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parseStoredPlanName,
@@ -14,6 +14,9 @@ import {
 	type DailyEntitlementResource,
 } from './user-meter-do.ts'
 import { userMeterRpc, type UserMeterEnv } from './user-meter-client.ts'
+
+/** Env surface for authoritative entitlement usage readers (UserMeter + RunLog). */
+export type EntitlementUsageEnv = UserMeterEnv & Pick<Env, 'RUN_LOG'>
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
@@ -861,15 +864,15 @@ export async function readEntitlementResourceUsage(input: {
 					AND (sb.expires_at IS NULL OR sb.expires_at > ?)`,
 				[userId, now.toISOString()],
 			)
-		case 'concurrent_workflows': {
-			const placeholders = activeWorkflowStatusValues.map(() => '?').join(', ')
-			return await countRows(
-				db,
-				`SELECT COUNT(*) AS count FROM workflow_runs
-				WHERE user_id = ? AND status IN (${placeholders})`,
-				[userId, ...activeWorkflowStatusValues],
+		case 'concurrent_workflows':
+			// Authoritative concurrent-workflow occupancy lives in per-user
+			// RunLog `workflow_projections`. Callers must pass getCurrent from
+			// reserveWorkflowProjectionSlot (create path) or use
+			// readCurrentEntitlementResourceUsage (usage readers). The expand-
+			// phase D1 `workflow_runs` mirror is not authoritative here.
+			throw new Error(
+				'concurrent_workflows usage must be read from RunLog (pass getCurrent or use readCurrentEntitlementResourceUsage).',
 			)
-		}
 		case 'storage_bytes':
 			return await readUserD1StorageBytes({ db, userId })
 		case 'email_message_bytes':
@@ -887,11 +890,12 @@ export async function readEntitlementResourceUsage(input: {
 
 /**
  * Authoritative current usage for any entitlement resource: daily counters
- * via UserMeter, everything else via the legacy D1 helpers.
+ * via UserMeter, concurrent workflows via RunLog workflow projections, and
+ * everything else via the legacy D1 helpers.
  */
 export async function readCurrentEntitlementResourceUsage(input: {
 	db: D1Database
-	env: UserMeterEnv
+	env: EntitlementUsageEnv
 	userId: string
 	resource: EntitlementResource
 	now: Date
@@ -903,6 +907,12 @@ export async function readCurrentEntitlementResourceUsage(input: {
 			userId: input.userId,
 			resource: input.resource,
 			now: input.now,
+		})
+	}
+	if (input.resource === 'concurrent_workflows') {
+		return await countActiveWorkflowProjections({
+			env: input.env as Env,
+			userId: input.userId,
 		})
 	}
 	return await readEntitlementResourceUsage({
@@ -982,7 +992,10 @@ export type AssertWithinEntitlementInput = {
 	resource: EntitlementResource
 	/** How many units the operation is about to consume. Defaults to 1. */
 	requested?: number
-	/** Override the built-in D1 usage counter for this resource. */
+	/**
+	 * Override the built-in usage counter for this resource. Required for
+	 * `concurrent_workflows` (pass RunLog reservation occupancy).
+	 */
 	getCurrent?: () => Promise<number>
 	now?: Date
 }

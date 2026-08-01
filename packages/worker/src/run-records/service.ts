@@ -1,6 +1,18 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
-import { recordSuccessfulPackageRun } from '#worker/usage/activation.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import {
+	type ActivationMilestone,
+	type ActivationMilestoneRecord,
+	type ActivationStateImport,
+	type PackageRunSuccessRecord,
+	countsTowardPackageActivation,
+} from './package-activation-state.ts'
+import {
+	type JobRunObservabilityRecord,
+	type JobRunObservabilitySeedInput,
+	type JobRunObservabilityStatus,
+	type JobRunObservabilityUpsertInput,
+} from './job-run-observability.ts'
 import {
 	type PackageInvocationClaimInput,
 	type PackageInvocationLedgerKey,
@@ -9,6 +21,12 @@ import {
 	type RunLogRowInput,
 	type RunLogRpc,
 } from './run-log-do.ts'
+import {
+	type WorkflowProjectionRecord,
+	type WorkflowProjectionReserveResult,
+	type WorkflowProjectionUpsertInput,
+	workflowProjectionImportMaxBatch,
+} from './workflow-projection.ts'
 import {
 	type RunRecord,
 	type RunRecordContext,
@@ -343,9 +361,247 @@ export async function claimRunRecord(input: {
 }
 
 /**
- * Never throws, including the activation milestone write it fans out to: the
- * terminal record and the milestone both observe the run, so neither may fail
- * it.
+ * Lazily seed RunLog activation counters/milestones from D1 exactly once per
+ * user. Never throws. D1 query failures leave the DO uninitialized so a later
+ * successful read can merge; successful empty (including missing APP_DB) still
+ * marks initialized.
+ */
+export async function ensureActivationStateSeeded(input: {
+	env: Env
+	userId: string
+}): Promise<void> {
+	if (!runLogBinding(input.env)) return
+	try {
+		const rpc = runLogRpc({ env: input.env, userId: input.userId })
+		const { initialized } = await rpc.isActivationInitialized()
+		if (initialized) return
+		const snapshot = await readActivationStateFromD1({
+			env: input.env,
+			userId: input.userId,
+		})
+		if (!snapshot.ok) {
+			console.warn('run-log-activation-seed-failed', snapshot.error)
+			return
+		}
+		await rpc.importActivationState(snapshot.value)
+	} catch (error) {
+		console.warn('run-log-activation-seed-failed', error)
+	}
+}
+
+/**
+ * Lazily seed one job's observability from D1 exactly once (`legacy_seeded`).
+ * Never throws. D1 query failures skip seeding so a later success can merge
+ * into counters created by post-cutover finishes; successful empty marks
+ * `legacy_seeded` with zeros.
+ */
+export async function ensureJobRunObservabilitySeeded(input: {
+	env: Env
+	userId: string
+	jobId: string
+}): Promise<void> {
+	const jobId = normalizeOptionalString(input.jobId)
+	if (!runLogBinding(input.env) || !jobId) return
+	try {
+		const rpc = runLogRpc({ env: input.env, userId: input.userId })
+		const existing = await rpc.getJobRunObservability({ jobId })
+		if (existing?.legacySeeded) return
+		const read = await readJobRunObservabilityFromD1({
+			env: input.env,
+			userId: input.userId,
+			jobId,
+		})
+		if (!read.ok) {
+			console.warn('run-log-job-observability-seed-failed', read.error)
+			return
+		}
+		const seed =
+			read.value ??
+			({
+				jobId,
+				lastRunAt: null,
+				lastRunStatus: null,
+				lastRunError: null,
+				lastDurationMs: null,
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+				updatedAt: new Date().toISOString(),
+			} satisfies JobRunObservabilitySeedInput)
+		await rpc.seedJobRunObservabilityIfAbsent(seed)
+	} catch (error) {
+		console.warn('run-log-job-observability-seed-failed', error)
+	}
+}
+
+type D1ReadResult<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
+/**
+ * Schema-not-ready (missing table or column) is a successful empty legacy
+ * snapshot, not a retryable read failure — later contract-phase drops must not
+ * leave the DO uninitialized forever.
+ */
+export function isMissingD1RelationError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return /no such (table|column)/i.test(message)
+}
+
+async function readActivationStateFromD1(input: {
+	env: Env
+	userId: string
+}): Promise<D1ReadResult<ActivationStateImport>> {
+	const empty: ActivationStateImport = {
+		packageRunSuccesses: [],
+		milestones: [],
+	}
+	const db = input.env.APP_DB
+	if (!db) return { ok: true, value: empty }
+	try {
+		const successRows = await db
+			.prepare(
+				`SELECT package_id, success_count, updated_at
+				FROM user_package_run_successes
+				WHERE user_id = ?
+				ORDER BY package_id ASC`,
+			)
+			.bind(input.userId)
+			.all<{
+				package_id: string
+				success_count: number
+				updated_at: string
+			}>()
+		const milestoneRows = await db
+			.prepare(
+				`SELECT milestone, reached_at, package_id
+				FROM user_activation_milestones
+				WHERE user_id = ?
+				ORDER BY milestone ASC`,
+			)
+			.bind(input.userId)
+			.all<{
+				milestone: string
+				reached_at: string
+				package_id: string | null
+			}>()
+		return {
+			ok: true,
+			value: {
+				packageRunSuccesses: (successRows.results ?? []).map((row) => ({
+					packageId: String(row.package_id),
+					successCount: Number(row.success_count) || 0,
+					updatedAt: String(row.updated_at),
+				})),
+				milestones: (milestoneRows.results ?? [])
+					.filter(
+						(row) =>
+							row.milestone === 'package_run_succeeded' ||
+							row.milestone === 'package_activated',
+					)
+					.map((row) => ({
+						milestone: row.milestone as ActivationMilestone,
+						reachedAt: String(row.reached_at),
+						packageId: row.package_id == null ? null : String(row.package_id),
+					})),
+			},
+		}
+	} catch (error) {
+		if (isMissingD1RelationError(error)) {
+			return { ok: true, value: empty }
+		}
+		// Transient / unexpected D1 failure: do not mark initialized.
+		return { ok: false, error }
+	}
+}
+
+async function readJobRunObservabilityFromD1(input: {
+	env: Env
+	userId: string
+	jobId: string
+}): Promise<D1ReadResult<JobRunObservabilitySeedInput | null>> {
+	const db = input.env.APP_DB
+	if (!db) return { ok: true, value: null }
+	try {
+		const row = await db
+			.prepare(
+				`SELECT id, last_run_at, last_run_status, last_run_error, last_duration_ms,
+					run_count, success_count, error_count, updated_at
+				FROM jobs
+				WHERE id = ? AND user_id = ?
+				LIMIT 1`,
+			)
+			.bind(input.jobId, input.userId)
+			.first<{
+				id: string
+				last_run_at: string | null
+				last_run_status: string | null
+				last_run_error: string | null
+				last_duration_ms: number | null
+				run_count: number
+				success_count: number
+				error_count: number
+				updated_at: string
+			}>()
+		if (!row) return { ok: true, value: null }
+		const lastRunStatus: JobRunObservabilityStatus | null =
+			row.last_run_status === 'success' || row.last_run_status === 'error'
+				? row.last_run_status
+				: null
+		return {
+			ok: true,
+			value: {
+				jobId: String(row.id),
+				lastRunAt: row.last_run_at == null ? null : String(row.last_run_at),
+				lastRunStatus,
+				lastRunError:
+					row.last_run_error == null ? null : String(row.last_run_error),
+				lastDurationMs:
+					row.last_duration_ms == null
+						? null
+						: Number(row.last_duration_ms) || 0,
+				runCount: Number(row.run_count) || 0,
+				successCount: Number(row.success_count) || 0,
+				errorCount: Number(row.error_count) || 0,
+				updatedAt: String(row.updated_at),
+			},
+		}
+	} catch (error) {
+		if (isMissingD1RelationError(error)) {
+			return { ok: true, value: null }
+		}
+		return { ok: false, error }
+	}
+}
+
+async function prepareTerminalRunSideEffectSeeds(input: {
+	env: Env
+	userId: string
+	status: RunTerminalStatus
+	context: RunRecordContext
+}): Promise<void> {
+	const jobId = normalizeOptionalString(input.context.jobId)
+	if (jobId) {
+		await ensureJobRunObservabilitySeeded({
+			env: input.env,
+			userId: input.userId,
+			jobId,
+		})
+	}
+	if (
+		input.status === 'success' &&
+		normalizeOptionalString(input.context.packageId) &&
+		countsTowardPackageActivation(input.context.surface)
+	) {
+		await ensureActivationStateSeeded({
+			env: input.env,
+			userId: input.userId,
+		})
+	}
+}
+
+/**
+ * Never throws: a broken record or activation seed must not fail the observed
+ * run. Historical D1 activation/job counters are seeded before the DO finish
+ * so the terminal increment continues from the pre-cutover baseline.
  */
 export async function finishRunRecord(input: {
 	env: Env
@@ -370,6 +626,12 @@ export async function finishRunRecord(input: {
 		let persistedRun: RunLogRowInput | null = null
 		try {
 			if (runLogBinding(input.env)) {
+				await prepareTerminalRunSideEffectSeeds({
+					env: input.env,
+					userId: handle.userId,
+					status: input.status,
+					context: handle.context,
+				})
 				const finishedAt = new Date().toISOString()
 				const durationMs = Math.max(
 					0,
@@ -406,21 +668,6 @@ export async function finishRunRecord(input: {
 			}
 		} catch (error) {
 			console.warn('run-record-finish-failed', error)
-		}
-
-		if (input.status === 'success') {
-			const packageId = normalizeOptionalString(handle.context.packageId)
-			if (packageId) {
-				try {
-					await recordSuccessfulPackageRun(input.env, {
-						userId: handle.userId,
-						packageId,
-						surface: handle.context.surface,
-					})
-				} catch (error) {
-					console.warn('run-record-activation-failed', error)
-				}
-			}
 		}
 
 		if (
@@ -655,9 +902,9 @@ export async function getPackageInvocationRecord(input: {
  * Terminal ledger response and run-record finish in ONE awaited on-path DO
  * RPC — the counterpart to {@link claimPackageInvocationRecord}. RPC failures
  * propagate (the caller decides whether a lost terminal write may poison the
- * key); the activation-milestone and run-error subscription side effects
- * shared with {@link finishRunRecord} never throw and are scheduled on
- * `waitUntil` when provided.
+ * key); run-error subscription side effects shared with
+ * {@link finishRunRecord} never throw and are scheduled on `waitUntil` when
+ * provided.
  */
 export async function finishPackageInvocationRecord(input: {
 	env: Env
@@ -680,6 +927,12 @@ export async function finishPackageInvocationRecord(input: {
 	const handle = input.handle
 	let run: RunLogRowInput | null = null
 	if (handle) {
+		await prepareTerminalRunSideEffectSeeds({
+			env: input.env,
+			userId: input.userId,
+			status: input.status,
+			context: handle.context,
+		})
 		const finishedAt = new Date().toISOString()
 		const durationMs = Math.max(
 			0,
@@ -764,8 +1017,8 @@ export async function releasePackageInvocationRecord(input: {
 
 /**
  * Post-terminal-write observers shared by {@link finishRunRecord} and
- * {@link finishPackageInvocationRecord}: the activation milestone on success
- * and best-effort `run.error.recorded` dispatch on error. Never throws.
+ * {@link finishPackageInvocationRecord}: best-effort `run.error.recorded`
+ * dispatch on error. Never throws.
  */
 async function dispatchTerminalRunRecordSideEffects(input: {
 	env: Env
@@ -774,20 +1027,7 @@ async function dispatchTerminalRunRecordSideEffects(input: {
 	status: RunTerminalStatus
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
-	if (input.status === 'success') {
-		const packageId = normalizeOptionalString(input.handle.context.packageId)
-		if (!packageId) return
-		try {
-			await recordSuccessfulPackageRun(input.env, {
-				userId: input.handle.userId,
-				packageId,
-				surface: input.handle.context.surface,
-			})
-		} catch (error) {
-			console.warn('run-record-activation-failed', error)
-		}
-		return
-	}
+	if (input.status !== 'error') return
 	if (input.handle.context.surface === 'subscription') return
 	try {
 		// Dynamic import: a static edge to package-subscriptions pulls
@@ -847,6 +1087,10 @@ export async function exportRunRecords(input: {
 	runs: Array<RunRecord>
 	logs: Array<RunRecordLog>
 	packageInvocations: Array<PackageInvocationLedgerRecord>
+	workflowProjections: Array<WorkflowProjectionRecord>
+	jobRunObservability: Array<JobRunObservabilityRecord>
+	packageRunSuccesses: Array<PackageRunSuccessRecord>
+	activationMilestones: Array<ActivationMilestoneRecord>
 	nextStartAfter: string | null
 	truncated: boolean
 }> {
@@ -855,6 +1099,10 @@ export async function exportRunRecords(input: {
 			runs: [],
 			logs: [],
 			packageInvocations: [],
+			workflowProjections: [],
+			jobRunObservability: [],
+			packageRunSuccesses: [],
+			activationMilestones: [],
 			nextStartAfter: null,
 			truncated: false,
 		}
@@ -869,6 +1117,10 @@ export async function exportRunRecords(input: {
 	return {
 		...page,
 		packageInvocations: page.packageInvocations ?? [],
+		workflowProjections: page.workflowProjections ?? [],
+		jobRunObservability: page.jobRunObservability ?? [],
+		packageRunSuccesses: page.packageRunSuccesses ?? [],
+		activationMilestones: page.activationMilestones ?? [],
 	}
 }
 
@@ -880,6 +1132,236 @@ export async function clearRunRecords(input: {
 	await runLogRpc({ env: input.env, userId: input.userId }).clearAll()
 }
 
+/**
+ * Workflow projection writes/reads are correctness (idempotency + concurrent
+ * workflow entitlements). Errors propagate to the caller.
+ */
+export async function upsertWorkflowProjection(input: {
+	env: Env
+	userId: string
+	projection: WorkflowProjectionUpsertInput
+}): Promise<{ ok: true }> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).upsertWorkflowProjection(input.projection)
+}
+
+/**
+ * Batch expand-phase D1 → RunLog import in one DO RPC. Applies the same
+ * monotonic + terminal-sticky upsert as {@link upsertWorkflowProjection}.
+ * Hard-capped at {@link workflowProjectionImportMaxBatch}.
+ */
+export async function importWorkflowProjections(input: {
+	env: Env
+	userId: string
+	projections: Array<WorkflowProjectionUpsertInput>
+}): Promise<{ imported: number }> {
+	const projections = input.projections.slice(
+		0,
+		workflowProjectionImportMaxBatch,
+	)
+	if (projections.length === 0) return { imported: 0 }
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).importWorkflowProjections({ projections })
+}
+
+export async function getWorkflowProjection(input: {
+	env: Env
+	userId: string
+	id: string
+}): Promise<WorkflowProjectionRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).getWorkflowProjection({ id: input.id })
+}
+
+export async function findWorkflowProjectionByIdempotencyKey(input: {
+	env: Env
+	userId: string
+	idempotencyKey: string
+	bindingName?: string | null
+}): Promise<WorkflowProjectionRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).findWorkflowProjectionByIdempotencyKey({
+		idempotencyKey: input.idempotencyKey,
+		bindingName: input.bindingName ?? null,
+	})
+}
+
+/**
+ * Exact binding + idempotency lookup that includes `creating` rows. Use this
+ * instead of listing/scanning creating projections.
+ */
+export async function findWorkflowProjectionByBindingIdempotencyKey(input: {
+	env: Env
+	userId: string
+	bindingName: string
+	idempotencyKey: string
+}): Promise<WorkflowProjectionRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).findWorkflowProjectionByBindingIdempotencyKey({
+		bindingName: input.bindingName,
+		idempotencyKey: input.idempotencyKey,
+	})
+}
+
+export async function listWorkflowProjections(input: {
+	env: Env
+	userId: string
+	limit?: number | null
+	cursor?: string | null
+	status?: string | null
+	bindingName?: string | null
+}): Promise<{
+	projections: Array<WorkflowProjectionRecord>
+	nextCursor: string | null
+}> {
+	const limit = Math.min(
+		Math.max(input.limit ?? runRecordDefaultPageSize, 1),
+		runRecordMaxPageSize,
+	)
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).listWorkflowProjections({
+		limit,
+		cursor: input.cursor ?? null,
+		status: input.status ?? null,
+		bindingName: input.bindingName ?? null,
+	})
+}
+
+export async function countActiveWorkflowProjections(input: {
+	env: Env
+	userId: string
+}): Promise<number> {
+	const result = await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).countActiveWorkflowProjections()
+	return result.count
+}
+
+export async function reserveWorkflowProjectionSlot(input: {
+	env: Env
+	userId: string
+	projection: WorkflowProjectionUpsertInput
+}): Promise<WorkflowProjectionReserveResult> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).reserveWorkflowProjectionSlot(input.projection)
+}
+
+export async function deleteWorkflowProjectionIfCreating(input: {
+	env: Env
+	userId: string
+	id: string
+}): Promise<{ deleted: boolean }> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).deleteWorkflowProjectionIfCreating({ id: input.id })
+}
+
+/**
+ * Job-run observability is best-effort instrumentation. Never throws.
+ */
+export async function upsertJobRunObservability(input: {
+	env: Env
+	userId: string
+	outcome: JobRunObservabilityUpsertInput
+}): Promise<JobRunObservabilityRecord | null> {
+	if (!runLogBinding(input.env)) return null
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).upsertJobRunObservability(input.outcome)
+	} catch (error) {
+		console.warn('job-run-observability-upsert-failed', error)
+		return null
+	}
+}
+
+export async function getJobRunObservability(input: {
+	env: Env
+	userId: string
+	jobId: string
+}): Promise<JobRunObservabilityRecord | null> {
+	if (!runLogBinding(input.env)) return null
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).getJobRunObservability({ jobId: input.jobId })
+	} catch (error) {
+		console.warn('job-run-observability-get-failed', error)
+		return null
+	}
+}
+
+export async function getJobRunObservabilityBatch(input: {
+	env: Env
+	userId: string
+	jobIds: Array<string>
+}): Promise<Array<JobRunObservabilityRecord>> {
+	if (!runLogBinding(input.env)) return []
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).getJobRunObservabilityBatch({ jobIds: input.jobIds })
+	} catch (error) {
+		console.warn('job-run-observability-batch-failed', error)
+		return []
+	}
+}
+
+/**
+ * Activation reads are observability. Never throws. Writes happen atomically
+ * inside terminal `finishRun` / `finishPackageInvocation`.
+ */
+export async function listPackageRunSuccesses(input: {
+	env: Env
+	userId: string
+}): Promise<Array<PackageRunSuccessRecord>> {
+	if (!runLogBinding(input.env)) return []
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).listPackageRunSuccesses()
+	} catch (error) {
+		console.warn('package-run-successes-list-failed', error)
+		return []
+	}
+}
+
+export async function listActivationMilestones(input: {
+	env: Env
+	userId: string
+}): Promise<Array<ActivationMilestoneRecord>> {
+	if (!runLogBinding(input.env)) return []
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).listActivationMilestones()
+	} catch (error) {
+		console.warn('activation-milestones-list-failed', error)
+		return []
+	}
+}
+
 export type { RunLogRpc }
 export type {
 	PackageInvocationClaimInput,
@@ -887,3 +1369,32 @@ export type {
 	PackageInvocationLedgerRecord,
 	PackageInvocationLedgerStatus,
 } from './run-log-do.ts'
+export type {
+	ActivationMilestone,
+	ActivationMilestoneRecord,
+	ActivationStateImport,
+	PackageRunSuccessRecord,
+} from './package-activation-state.ts'
+export { countsTowardPackageActivation } from './package-activation-state.ts'
+export type {
+	JobRunObservabilityRecord,
+	JobRunObservabilitySeedInput,
+	JobRunObservabilityStatus,
+	JobRunObservabilityUpsertInput,
+} from './job-run-observability.ts'
+export type {
+	WorkflowBindingName,
+	WorkflowProjectionRecord,
+	WorkflowProjectionReserveResult,
+	WorkflowProjectionSourceType,
+	WorkflowProjectionUpsertInput,
+} from './workflow-projection.ts'
+export {
+	creatingWorkflowProjectionStatus,
+	isWorkflowBindingName,
+	workflowBindingNames,
+	workflowProjectionActiveStatuses,
+	workflowProjectionCreatingTtlMs,
+	workflowProjectionImportMaxBatch,
+	workflowProjectionReservationStatuses,
+} from './workflow-projection.ts'

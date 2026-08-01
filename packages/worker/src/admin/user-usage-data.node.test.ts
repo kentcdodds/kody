@@ -1,13 +1,20 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#app/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
 
-function withUserMeter(env: { APP_DB: D1Database } & Record<string, unknown>) {
+function withUserMeter(
+	env: { APP_DB: D1Database } & Record<string, unknown>,
+	options?: { activeWorkflowCount?: number },
+) {
 	const meter = createInMemoryUserMeterEnv()
-	return { ...env, ...meter.env, meter }
+	const runLog = createInMemoryRunLogUsageEnv({
+		activeWorkflowCount: options?.activeWorkflowCount ?? 0,
+	})
+	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
 }
 
 type UserRow = {
@@ -495,32 +502,7 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (bootstrap then w
 
 	const meterEmail = 'meter-drilldown@example.com'
 	const meterUserId = await createStableUserIdFromEmail(meterEmail)
-	const meter = createInMemoryUserMeterEnv()
-	await meter.seed({
-		userId: meterUserId,
-		resource: 'email_sends_per_day',
-		day,
-		count: 111,
-	})
-	await meter.seed({
-		userId: meterUserId,
-		resource: 'email_receives_per_day',
-		day,
-		count: 222,
-	})
-	await meter.seed({
-		userId: meterUserId,
-		resource: 'execute_calls_per_day',
-		day,
-		count: 333,
-	})
-	await meter.seed({
-		userId: meterUserId,
-		resource: 'outbound_fetches_per_day',
-		day,
-		count: 444,
-	})
-	const warm = await loadAdminUserUsageData(
+	const warmEnv = withUserMeter(
 		{
 			APP_DB: createAdminUserUsageTestDb({
 				users: [
@@ -565,11 +547,34 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (bootstrap then w
 					},
 				},
 			}),
-			...meter.env,
-		} as Env,
-		meterUserId,
-		now,
+		},
+		{ activeWorkflowCount: 2 },
 	)
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'email_sends_per_day',
+		day,
+		count: 111,
+	})
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'email_receives_per_day',
+		day,
+		count: 222,
+	})
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'execute_calls_per_day',
+		day,
+		count: 333,
+	})
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'outbound_fetches_per_day',
+		day,
+		count: 444,
+	})
+	const warm = await loadAdminUserUsageData(warmEnv as Env, meterUserId, now)
 	expect(
 		warm?.entitlementConsumption.find(
 			(row) => row.resource === 'email_sends_per_day',
@@ -600,6 +605,11 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (bootstrap then w
 			(row) => row.resource === 'stored_email_messages',
 		)?.current,
 	).toBe(9)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'concurrent_workflows',
+		)?.current,
+	).toBe(2)
 })
 
 function getEventCount(

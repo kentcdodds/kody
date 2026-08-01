@@ -1,8 +1,15 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { loadAccountUsageData } from '#app/account-usage-data.ts'
+
+function withUsageEnv(env: { APP_DB: D1Database } & Record<string, unknown>) {
+	const meter = createInMemoryUserMeterEnv()
+	const runLog = createInMemoryRunLogUsageEnv()
+	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
+}
 
 type DailyCounterRow = {
 	user_id: string
@@ -86,15 +93,15 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const day = utcDayKey(now)
 
-	const baselineMeter = createInMemoryUserMeterEnv()
 	const { db: emptyDailyDb } = createUsageTestDb({
 		userId: 7,
 		email: 'usage@example.com',
 		plan: 'free',
 		packageCount: 2,
 	})
+	const baselineEnv = withUsageEnv({ APP_DB: emptyDailyDb })
 	const baseline = await loadAccountUsageData({
-		env: { APP_DB: emptyDailyDb, ...baselineMeter.env } as Env,
+		env: baselineEnv as Env,
 		userId: 7,
 		now,
 	})
@@ -102,11 +109,11 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(baseline?.plan).toBe('free')
 	expect(baseline?.today).toBe('2026-07-25')
 	expect(currentFor(baseline, 'saved_packages')).toBe(2)
+	expect(currentFor(baseline, 'concurrent_workflows')).toBe(0)
 	expect(baseline?.entitlementConsumption.length).toBeGreaterThan(5)
 
 	const bootstrapEmail = 'usage-bootstrap@example.com'
 	const bootstrapUserId = testStableUserIdFromEmail(bootstrapEmail)
-	const bootstrapMeter = createInMemoryUserMeterEnv()
 	const { db: bootstrapDb } = createUsageTestDb({
 		userId: 8,
 		email: bootstrapEmail,
@@ -128,7 +135,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		],
 	})
 	const bootstrapped = await loadAccountUsageData({
-		env: { APP_DB: bootstrapDb, ...bootstrapMeter.env } as Env,
+		env: withUsageEnv({ APP_DB: bootstrapDb }) as Env,
 		userId: 8,
 		now,
 	})
@@ -138,7 +145,6 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 
 	const meterEmail = 'usage-meter@example.com'
 	const meterUserId = testStableUserIdFromEmail(meterEmail)
-	const warmMeter = createInMemoryUserMeterEnv()
 	const { db: warmDb } = createUsageTestDb({
 		userId: 9,
 		email: meterEmail,
@@ -171,32 +177,34 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 			},
 		],
 	})
-	await warmMeter.seed({
+	const warmEnv = withUsageEnv({ APP_DB: warmDb })
+	warmEnv.runLog.setActiveWorkflowCount(3)
+	await warmEnv.meter.seed({
 		userId: meterUserId,
 		resource: 'email_sends_per_day',
 		day,
 		count: 101,
 	})
-	await warmMeter.seed({
+	await warmEnv.meter.seed({
 		userId: meterUserId,
 		resource: 'email_receives_per_day',
 		day,
 		count: 202,
 	})
-	await warmMeter.seed({
+	await warmEnv.meter.seed({
 		userId: meterUserId,
 		resource: 'execute_calls_per_day',
 		day,
 		count: 303,
 	})
-	await warmMeter.seed({
+	await warmEnv.meter.seed({
 		userId: meterUserId,
 		resource: 'outbound_fetches_per_day',
 		day,
 		count: 404,
 	})
 	const authoritative = await loadAccountUsageData({
-		env: { APP_DB: warmDb, ...warmMeter.env } as Env,
+		env: warmEnv as Env,
 		userId: 9,
 		now,
 	})
@@ -204,5 +212,6 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(currentFor(authoritative, 'email_receives_per_day')).toBe(202)
 	expect(currentFor(authoritative, 'execute_calls_per_day')).toBe(303)
 	expect(currentFor(authoritative, 'outbound_fetches_per_day')).toBe(404)
+	expect(currentFor(authoritative, 'concurrent_workflows')).toBe(3)
 	expect(currentFor(authoritative, 'saved_packages')).toBe(4)
 })

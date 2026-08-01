@@ -167,6 +167,18 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 		jobOutcomes: [],
 	})
 	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
+	expect(finalizeClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			job: expect.objectContaining({
+				lastRunStatus: 'success',
+				lastRunAt: expect.any(String),
+				// Scheduling finalization must not bump RunLog-owned counters.
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+			}),
+		}),
+	)
 	expect(retryClaimedJobRow).not.toHaveBeenCalled()
 	expect(consoleInfo).toHaveBeenCalledWith(
 		'job-scheduler',

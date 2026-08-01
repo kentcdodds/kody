@@ -1,10 +1,26 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
+import {
+	activeWorkflowStatusValues,
+	terminalWorkflowStatusValues,
+} from '#worker/package-runtime/workflow-statuses.ts'
+import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
+import type {
+	WorkflowProjectionRecord,
+	WorkflowProjectionUpsertInput,
+} from '#worker/run-records/service.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	DynamicCallableWorkflowBase,
+	activeD1WorkflowImportBound,
+	cancelWorkflowRunForUser,
 	createDynamicCallableWorkflow,
+	dynamicCallableWorkflowsBindingName,
 	listWorkflowRunsForUser,
 	workflowExecutorTimeoutMs,
 } from './package-workflows.ts'
@@ -18,16 +34,266 @@ const remoteConnectorMocks = vi.hoisted(() => ({
 	listAttachedRemoteConnectorRefs: vi.fn(async () => []),
 }))
 
-const runRecordMocks = vi.hoisted(() => ({
-	beginRunRecord: vi.fn(() => ({
-		id: 'run-1',
-		userId: 'user-1',
-		startedAt: '2026-05-03T12:34:56.000Z',
-		persistence: 'eager' as const,
-		context: { surface: 'workflow' as const },
-	})),
-	finishRunRecord: vi.fn(async () => {}),
-}))
+const runRecordMocks = vi.hoisted(() => {
+	const projectionsByUser = new Map<
+		string,
+		Map<string, WorkflowProjectionRecord>
+	>()
+	const activeStatuses = new Set<string>([
+		'queued',
+		'running',
+		'paused',
+		'waiting',
+		'waitingForPause',
+		'unknown',
+	])
+	const reservationStatuses = new Set<string>([...activeStatuses, 'creating'])
+
+	function userStore(userId: string) {
+		let store = projectionsByUser.get(userId)
+		if (!store) {
+			store = new Map()
+			projectionsByUser.set(userId, store)
+		}
+		return store
+	}
+
+	function toRecord(
+		input: WorkflowProjectionUpsertInput,
+		existing?: WorkflowProjectionRecord | null,
+	): WorkflowProjectionRecord {
+		const now = new Date().toISOString()
+		return {
+			id: input.id,
+			bindingName: input.bindingName,
+			sourceType: input.sourceType,
+			packageId: input.packageId ?? null,
+			kodyId: input.kodyId ?? null,
+			sourceId: input.sourceId ?? null,
+			workflowName: input.workflowName,
+			exportName: input.exportName ?? null,
+			idempotencyKey: input.idempotencyKey,
+			runAt: input.runAt,
+			planDate: input.planDate ?? null,
+			status: input.status ?? null,
+			createdAt: input.createdAt?.trim() || existing?.createdAt || now,
+			updatedAt: input.updatedAt?.trim() || now,
+			completedAt:
+				input.completedAt === undefined
+					? (existing?.completedAt ?? null)
+					: input.completedAt,
+			lastError:
+				input.lastError === undefined
+					? (existing?.lastError ?? null)
+					: input.lastError,
+		}
+	}
+
+	function applyProjectionUpsert(
+		userId: string,
+		projection: WorkflowProjectionUpsertInput,
+	) {
+		const store = userStore(userId)
+		const existing = store.get(projection.id) ?? null
+		const nextUpdatedAt =
+			projection.updatedAt?.trim() || new Date().toISOString()
+		if (!existing) {
+			store.set(projection.id, toRecord(projection, null))
+			return
+		}
+		// Monotonic by updatedAt + terminal stickiness (matches RunLog DO).
+		if (nextUpdatedAt < existing.updatedAt) {
+			return
+		}
+		const nextStatus = projection.status ?? null
+		if (
+			existing.status != null &&
+			(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+				existing.status,
+			) &&
+			(nextStatus == null ||
+				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					nextStatus,
+				))
+		) {
+			return
+		}
+		store.set(projection.id, {
+			...existing,
+			status: nextStatus,
+			updatedAt: nextUpdatedAt,
+			completedAt: projection.completedAt ?? existing.completedAt ?? null,
+			lastError: projection.lastError ?? existing.lastError ?? null,
+		})
+	}
+
+	const upsertWorkflowProjection = vi.fn(
+		async (input: {
+			env: Env
+			userId: string
+			projection: WorkflowProjectionUpsertInput
+		}) => {
+			applyProjectionUpsert(input.userId, input.projection)
+			return { ok: true as const }
+		},
+	)
+
+	const importWorkflowProjections = vi.fn(
+		async (input: {
+			env: Env
+			userId: string
+			projections: Array<WorkflowProjectionUpsertInput>
+		}) => {
+			for (const projection of input.projections) {
+				applyProjectionUpsert(input.userId, projection)
+			}
+			return { imported: input.projections.length }
+		},
+	)
+
+	return {
+		projectionsByUser,
+		resetProjections() {
+			projectionsByUser.clear()
+		},
+		listForUser(userId: string) {
+			return [...(projectionsByUser.get(userId)?.values() ?? [])]
+		},
+		beginRunRecord: vi.fn(() => ({
+			id: 'run-1',
+			userId: 'user-1',
+			startedAt: '2026-05-03T12:34:56.000Z',
+			persistence: 'eager' as const,
+			context: { surface: 'workflow' as const },
+		})),
+		finishRunRecord: vi.fn(async () => {}),
+		upsertWorkflowProjection,
+		importWorkflowProjections,
+		getWorkflowProjection: vi.fn(
+			async (input: { env: Env; userId: string; id: string }) =>
+				userStore(input.userId).get(input.id) ?? null,
+		),
+		findWorkflowProjectionByIdempotencyKey: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				idempotencyKey: string
+				bindingName?: string | null
+			}) => {
+				const matches = [...userStore(input.userId).values()]
+					.filter(
+						(row) =>
+							row.idempotencyKey === input.idempotencyKey &&
+							row.status !== 'creating' &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
+					)
+					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+				return matches[0] ?? null
+			},
+		),
+		listWorkflowProjections: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				limit?: number | null
+				cursor?: string | null
+				status?: string | null
+				bindingName?: string | null
+			}) => {
+				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
+				const rows = [...userStore(input.userId).values()]
+					.filter(
+						(row) =>
+							(input.status ? row.status === input.status : true) &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
+					)
+					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+				return {
+					projections: rows.slice(0, limit),
+					nextCursor: null as string | null,
+				}
+			},
+		),
+		countActiveWorkflowProjections: vi.fn(
+			async (input: { env: Env; userId: string }) =>
+				[...userStore(input.userId).values()].filter(
+					(row) => row.status != null && activeStatuses.has(row.status),
+				).length,
+		),
+		reserveWorkflowProjectionSlot: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				projection: WorkflowProjectionUpsertInput
+			}) => {
+				const store = userStore(input.userId)
+				const existing = store.get(input.projection.id) ?? null
+				const countBeforeReservation = [...store.values()].filter(
+					(row) =>
+						row.id !== input.projection.id &&
+						row.status != null &&
+						reservationStatuses.has(row.status),
+				).length
+				// Insert-only / creating-refresh: never clobber queued/running/terminal.
+				if (
+					existing?.status != null &&
+					existing.status !== creatingWorkflowProjectionStatus
+				) {
+					return {
+						countBeforeReservation,
+						reserved: false,
+						inserted: false,
+						projection: existing,
+					}
+				}
+				const now = new Date().toISOString()
+				const inserted = existing == null
+				// Keep count+insert synchronous (no await) so concurrent create
+				// tests observe DO-like serialization under Promise.all.
+				store.set(
+					input.projection.id,
+					toRecord(
+						{
+							...input.projection,
+							status: 'creating',
+							createdAt:
+								input.projection.createdAt ?? existing?.createdAt ?? now,
+							updatedAt: input.projection.updatedAt ?? now,
+							completedAt: null,
+							lastError: null,
+						},
+						existing,
+					),
+				)
+				const projection = store.get(input.projection.id)
+				if (!projection) {
+					throw new Error('Expected reserved projection.')
+				}
+				return {
+					countBeforeReservation,
+					reserved: true,
+					inserted,
+					projection,
+				}
+			},
+		),
+		deleteWorkflowProjectionIfCreating: vi.fn(
+			async (input: { env: Env; userId: string; id: string }) => {
+				const store = userStore(input.userId)
+				const existing = store.get(input.id)
+				if (existing?.status === 'creating') {
+					store.delete(input.id)
+					return { deleted: true }
+				}
+				return { deleted: false }
+			},
+		),
+	}
+})
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	invokePackageExport: (...args: Array<unknown>) =>
@@ -49,7 +315,120 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		runRecordMocks.beginRunRecord(...args),
 	finishRunRecord: (...args: Array<unknown>) =>
 		runRecordMocks.finishRunRecord(...args),
+	upsertWorkflowProjection: (...args: Array<unknown>) =>
+		runRecordMocks.upsertWorkflowProjection(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projection: WorkflowProjectionUpsertInput
+				},
+			]),
+		),
+	importWorkflowProjections: (...args: Array<unknown>) =>
+		runRecordMocks.importWorkflowProjections(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projections: Array<WorkflowProjectionUpsertInput>
+				},
+			]),
+		),
+	getWorkflowProjection: (...args: Array<unknown>) =>
+		runRecordMocks.getWorkflowProjection(
+			...(args as [{ env: Env; userId: string; id: string }]),
+		),
+	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
+		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					idempotencyKey: string
+					bindingName?: string | null
+				},
+			]),
+		),
+	listWorkflowProjections: (...args: Array<unknown>) =>
+		runRecordMocks.listWorkflowProjections(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					limit?: number | null
+					cursor?: string | null
+					status?: string | null
+					bindingName?: string | null
+				},
+			]),
+		),
+	countActiveWorkflowProjections: (...args: Array<unknown>) =>
+		runRecordMocks.countActiveWorkflowProjections(
+			...(args as [{ env: Env; userId: string }]),
+		),
+	reserveWorkflowProjectionSlot: (...args: Array<unknown>) =>
+		runRecordMocks.reserveWorkflowProjectionSlot(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projection: WorkflowProjectionUpsertInput
+				},
+			]),
+		),
+	deleteWorkflowProjectionIfCreating: (...args: Array<unknown>) =>
+		runRecordMocks.deleteWorkflowProjectionIfCreating(
+			...(args as [{ env: Env; userId: string; id: string }]),
+		),
 }))
+
+function createWaitUntilFlusher() {
+	const pending: Array<Promise<unknown>> = []
+	return {
+		waitUntil(promise: Promise<unknown>) {
+			pending.push(promise)
+		},
+		async flush() {
+			await Promise.all(pending.splice(0, pending.length))
+		},
+	}
+}
+
+beforeEach(() => {
+	runRecordMocks.resetProjections()
+	runRecordMocks.beginRunRecord.mockClear()
+	runRecordMocks.finishRunRecord.mockClear()
+	runRecordMocks.upsertWorkflowProjection.mockClear()
+	runRecordMocks.importWorkflowProjections.mockClear()
+	runRecordMocks.getWorkflowProjection.mockClear()
+	runRecordMocks.findWorkflowProjectionByIdempotencyKey.mockClear()
+	runRecordMocks.listWorkflowProjections.mockClear()
+	runRecordMocks.countActiveWorkflowProjections.mockClear()
+	runRecordMocks.reserveWorkflowProjectionSlot.mockClear()
+	runRecordMocks.deleteWorkflowProjectionIfCreating.mockClear()
+})
+
+async function seedActiveWorkflowProjections(input: {
+	userId: string
+	count: number
+}) {
+	for (let index = 0; index < input.count; index += 1) {
+		await runRecordMocks.upsertWorkflowProjection({
+			env: {} as Env,
+			userId: input.userId,
+			projection: {
+				id: `active-seed-${input.userId}-${index}`,
+				bindingName: dynamicCallableWorkflowsBindingName,
+				sourceType: 'inline',
+				workflowName: `seed-${index}`,
+				idempotencyKey: `seed-key-${input.userId}-${index}`,
+				runAt: '2026-05-03T12:34:56.000Z',
+				status: 'queued',
+			},
+		})
+	}
+}
 
 function createWorkflowBinding(options?: {
 	existing?: { id: string; status?: string } | null
@@ -98,6 +477,7 @@ function createStatefulWorkflowBinding() {
 		return {
 			id: input.id,
 			status: async () => ({ status: 'queued' }),
+			terminate: vi.fn(async () => {}),
 		}
 	})
 	const get = vi.fn(async (id: string) => {
@@ -107,6 +487,39 @@ function createStatefulWorkflowBinding() {
 		return {
 			id,
 			status: async () => ({ status: 'waiting' }),
+			terminate: vi.fn(async () => {}),
+		}
+	})
+	return {
+		workflow: { get, create } as unknown as Workflow,
+		get,
+		create,
+		instances,
+	}
+}
+
+/** Dual-read tests seed D1 ids without going through create(). */
+function createCancelStyleBindingForDualRead() {
+	const instances = new Set<string>()
+	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
+		if (instances.has(input.id)) {
+			throw new Error('Workflow instance already exists')
+		}
+		instances.add(input.id)
+		return {
+			id: input.id,
+			status: async () => ({ status: 'queued' }),
+			terminate: vi.fn(async () => {}),
+		}
+	})
+	const get = vi.fn(async (id: string) => {
+		if (!instances.has(id)) {
+			throw new Error('workflow instance does not exist')
+		}
+		return {
+			id,
+			status: async () => ({ status: 'running' }),
+			terminate: vi.fn(async () => {}),
 		}
 	})
 	return {
@@ -180,18 +593,23 @@ function createWorkflowRunsDatabase(options?: {
 							) {
 								const userId = params[0]
 								const idempotencyKey = params[1]
-								const ignoredStatus = query.includes(
-									"COALESCE(status, '') != ?",
-								)
-									? params[2]
-									: null
+								const statusFilter = params[2]
 								const matches = [...workflowRuns.values()]
-									.filter(
-										(row) =>
-											row['user_id'] === userId &&
-											row['idempotency_key'] === idempotencyKey &&
-											row['status'] !== ignoredStatus,
-									)
+									.filter((row) => {
+										if (
+											row['user_id'] !== userId ||
+											row['idempotency_key'] !== idempotencyKey
+										) {
+											return false
+										}
+										if (query.includes("COALESCE(status, '') != ?")) {
+											return row['status'] !== statusFilter
+										}
+										if (query.includes('status = ?')) {
+											return row['status'] === statusFilter
+										}
+										return true
+									})
 									.sort((left, right) =>
 										String(left['created_at']).localeCompare(
 											String(right['created_at']),
@@ -199,10 +617,45 @@ function createWorkflowRunsDatabase(options?: {
 									)
 								return matches[0] ?? null
 							}
+							if (
+								query.includes('FROM workflow_runs') &&
+								query.includes('id = ?') &&
+								query.includes('user_id = ?')
+							) {
+								const row = workflowRuns.get(String(params[0]))
+								if (!row || row['user_id'] !== params[1]) return null
+								return row
+							}
 							return null
 						},
 						async all() {
 							const userId = params[0]
+							if (query.includes('status IN')) {
+								const limitIndex = params.length - 1
+								const limit = query.includes('LIMIT')
+									? Number(params[limitIndex] ?? 25)
+									: Number.POSITIVE_INFINITY
+								const statusParams = query.includes('LIMIT')
+									? params.slice(1, limitIndex)
+									: params.slice(1)
+								const statuses = new Set(
+									statusParams.map((value) => String(value)),
+								)
+								return {
+									results: [...workflowRuns.values()]
+										.filter(
+											(row) =>
+												row['user_id'] === userId &&
+												statuses.has(String(row['status'])),
+										)
+										.sort((left, right) =>
+											String(right['created_at']).localeCompare(
+												String(left['created_at']),
+											),
+										)
+										.slice(0, Number.isFinite(limit) ? limit : undefined),
+								}
+							}
 							const limit = Number(params[1] ?? 25)
 							return {
 								results: [...workflowRuns.values()]
@@ -216,10 +669,38 @@ function createWorkflowRunsDatabase(options?: {
 							}
 						},
 						async run() {
+							if (query.includes('DELETE FROM workflow_runs')) {
+								const id = String(params[0])
+								const row = workflowRuns.get(id)
+								if (
+									row &&
+									row['user_id'] === params[1] &&
+									row['status'] === params[2]
+								) {
+									workflowRuns.delete(id)
+								}
+								return { success: true }
+							}
 							if (query.includes('INSERT INTO workflow_runs')) {
 								const id = String(params[0])
 								const existing = workflowRuns.get(id)
+								const nextStatus = String(params[11] ?? '')
+								const nextUpdatedAt = String(params[13] ?? '')
+								const terminal = new Set(terminalWorkflowStatusValues)
 								if (existing) {
+									const existingUpdatedAt = String(existing['updated_at'] ?? '')
+									const existingStatus = String(existing['status'] ?? '')
+									// Mirror ON CONFLICT guards: monotonic updated_at +
+									// terminal stickiness against active regression.
+									if (nextUpdatedAt < existingUpdatedAt) {
+										return { success: true }
+									}
+									if (
+										terminal.has(existingStatus) &&
+										!terminal.has(nextStatus)
+									) {
+										return { success: true }
+									}
 									existing['status'] = params[11]
 									existing['updated_at'] = params[13]
 									existing['completed_at'] =
@@ -269,14 +750,17 @@ function createWorkflowRunsDatabase(options?: {
 test('createDynamicCallableWorkflow queues inline code without package context and records runs before status reads', async () => {
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
+	const flusher = createWaitUntilFlusher()
 
 	const created = await createDynamicCallableWorkflow({
 		env: {
 			APP_DB: db,
 			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env,
 		userId: 'user-1',
 		packageContext: null,
+		waitUntil: flusher.waitUntil,
 		body: {
 			code: 'export default async function main(p) { return { ok: true, p } }',
 			runAt: '2026-05-03T12:34:56.000Z',
@@ -308,20 +792,40 @@ test('createDynamicCallableWorkflow queues inline code without package context a
 			errorRetention: '30 days',
 		},
 	})
+	expect(runRecordMocks.listForUser('user-1')).toEqual([
+		expect.objectContaining({
+			id: created.id,
+			bindingName: dynamicCallableWorkflowsBindingName,
+			status: 'queued',
+			idempotencyKey: 'inline-key',
+		}),
+	])
+	await flusher.flush()
+	expect([...db.workflowRuns.values()]).toEqual([
+		expect.objectContaining({
+			id: created.id,
+			status: 'queued',
+			idempotency_key: 'inline-key',
+		}),
+	])
 
+	runRecordMocks.resetProjections()
 	const statusFailureBinding = createWorkflowBinding({
 		existing: null,
 		statusThrows: new Error('status unavailable'),
 	})
 	const statusFailureDb = createWorkflowRunsDatabase()
+	const statusFailureFlusher = createWaitUntilFlusher()
 	await expect(
 		createDynamicCallableWorkflow({
 			env: {
 				APP_DB: statusFailureDb,
 				DYNAMIC_CALLABLE_WORKFLOWS: statusFailureBinding.workflow,
+				RUN_LOG: {} as DurableObjectNamespace,
 			} as Env,
 			userId: 'user-1',
 			packageContext: null,
+			waitUntil: statusFailureFlusher.waitUntil,
 			body: {
 				code: 'export default async function main() { return { ok: true } }',
 				runAt: '2026-05-03T12:34:56.000Z',
@@ -329,6 +833,14 @@ test('createDynamicCallableWorkflow queues inline code without package context a
 			},
 		}),
 	).rejects.toThrow('status unavailable')
+	expect(runRecordMocks.listForUser('user-1')).toEqual([
+		expect.objectContaining({
+			status: 'queued',
+			idempotencyKey: 'status-failure-key',
+			bindingName: dynamicCallableWorkflowsBindingName,
+		}),
+	])
+	await statusFailureFlusher.flush()
 	expect([...statusFailureDb.workflowRuns.values()]).toEqual([
 		expect.objectContaining({
 			status: 'queued',
@@ -345,26 +857,29 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 		APP_BASE_URL: 'https://app.example.com',
 	} as Env
-	const created = await createDynamicCallableWorkflow({
-		env,
-		userId: 'user-1',
-		packageContext: null,
-		body: {
-			code: 'export default async function main(p){ return { ok: true, p }; }',
-			runAt: '2026-05-03T12:34:56.000Z',
-			idempotencyKey: 'execute-smoke',
-			params: { greeting: 'hello' },
-		},
-	})
-	const queued = binding.instances.get(created.id)
-	if (!queued?.params) throw new Error('Expected queued workflow payload.')
-	invocationMocks.runModuleWithRegistry.mockReset()
-	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true, p: { greeting: 'hello' } },
-		logs: [],
-	})
 	vi.useFakeTimers()
 	try {
+		// Create and complete under ordered clocks so monotonic upsert accepts
+		// the terminal projection (lagging timestamps must not regress status).
+		vi.setSystemTime(new Date('2026-05-03T12:34:56.000Z'))
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			packageContext: null,
+			body: {
+				code: 'export default async function main(p){ return { ok: true, p }; }',
+				runAt: '2026-05-03T12:34:56.000Z',
+				idempotencyKey: 'execute-smoke',
+				params: { greeting: 'hello' },
+			},
+		})
+		const queued = binding.instances.get(created.id)
+		if (!queued?.params) throw new Error('Expected queued workflow payload.')
+		invocationMocks.runModuleWithRegistry.mockReset()
+		invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
+			result: { ok: true, p: { greeting: 'hello' } },
+			logs: [],
+		})
 		vi.setSystemTime(new Date('2026-05-03T12:35:00.000Z'))
 		const workflow = new DynamicCallableWorkflowBase(
 			{ waitUntil: vi.fn() } as unknown as ExecutionContext,
@@ -397,9 +912,12 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 				executorTimeoutMs: workflowExecutorTimeoutMs,
 			},
 		)
-		expect(db.workflowRuns.get(created.id)).toMatchObject({
+		expect(
+			runRecordMocks.listForUser('user-1').find((row) => row.id === created.id),
+		).toMatchObject({
 			status: 'complete',
-			completed_at: expect.any(String),
+			completedAt: expect.any(String),
+			bindingName: dynamicCallableWorkflowsBindingName,
 		})
 	} finally {
 		vi.useRealTimers()
@@ -459,9 +977,12 @@ test('inline workflow sandbox failures throw UserCodeError', async () => {
 			error.message === 'boom' &&
 			isUserCodeError(error),
 	)
-	expect(db.workflowRuns.get(created.id)).toMatchObject({
+	expect(
+		runRecordMocks.listForUser('user-1').find((row) => row.id === created.id),
+	).toMatchObject({
 		status: 'errored',
-		last_error: 'boom',
+		lastError: 'boom',
+		bindingName: dynamicCallableWorkflowsBindingName,
 	})
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -1221,13 +1742,16 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 			env: {
 				APP_DB: createWorkflowRunsDatabase({ savedPackage: null }),
 				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+				RUN_LOG: {} as DurableObjectNamespace,
 			} as Env,
 			userId: 'user-1',
 			body: {
 				packageId: 'not-owned',
 				exportName: './run-event',
 				runAt: '2026-05-03T12:34:56.000Z',
-				idempotencyKey: 'event-key',
+				// Distinct key: same-key replay is satisfied from the user-scoped
+				// RunLog projection before package ownership is resolved.
+				idempotencyKey: 'not-owned-key',
 			},
 		}),
 	).rejects.toThrow(
@@ -1255,14 +1779,17 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency key', async () => {
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
+	const flusher = createWaitUntilFlusher()
 	const env = {
 		APP_DB: db,
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
 
 	const first = await createDynamicCallableWorkflow({
 		env,
 		userId: 'user-1',
+		waitUntil: flusher.waitUntil,
 		body: {
 			packageId: 'pkg-1',
 			exportName: './workflow-run-event',
@@ -1274,6 +1801,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	const replay = await createDynamicCallableWorkflow({
 		env,
 		userId: 'user-1',
+		waitUntil: flusher.waitUntil,
 		body: {
 			packageId: 'pkg-1',
 			exportName: './workflow-run-event',
@@ -1293,6 +1821,14 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	})
 	expect(binding.create).toHaveBeenCalledTimes(1)
 	expect(binding.instances.size).toBe(1)
+	expect(runRecordMocks.listForUser('user-1')).toEqual([
+		expect.objectContaining({
+			idempotencyKey: 'idempotency-repro',
+			runAt: '2026-05-08T19:30:00.000Z',
+			bindingName: dynamicCallableWorkflowsBindingName,
+		}),
+	])
+	await flusher.flush()
 	expect([...db.workflowRuns.values()]).toEqual([
 		expect.objectContaining({
 			idempotency_key: 'idempotency-repro',
@@ -1300,6 +1836,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		}),
 	])
 
+	runRecordMocks.resetProjections()
 	const preProjectionDb = createWorkflowRunsDatabase()
 	const preProjectionInstances = new Map<
 		string,
@@ -1307,12 +1844,13 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	>()
 	const preProjectionCreate = vi.fn(
 		async (input: WorkflowInstanceCreateOptions) => {
-			expect([...preProjectionDb.workflowRuns.values()]).toEqual([
+			expect(runRecordMocks.listForUser('user-1')).toEqual([
 				expect.objectContaining({
 					id: input.id,
-					idempotency_key: 'inline-pre-projection-key',
-					run_at: '2026-05-08T19:30:00.000Z',
-					status: 'creating',
+					idempotencyKey: 'inline-pre-projection-key',
+					runAt: '2026-05-08T19:30:00.000Z',
+					status: creatingWorkflowProjectionStatus,
+					bindingName: dynamicCallableWorkflowsBindingName,
 				}),
 			])
 			preProjectionInstances.set(input.id, input)
@@ -1337,6 +1875,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 			get: preProjectionGet,
 			create: preProjectionCreate,
 		} as unknown as Workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
 	vi.useFakeTimers()
 	try {
@@ -1367,12 +1906,16 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		vi.useRealTimers()
 	}
 
+	runRecordMocks.resetProjections()
 	const existingOverLimitBinding = createWorkflowBinding({})
+	await seedActiveWorkflowProjections({ userId: 'user-1', count: 100 })
+	// Existing engine instance must still short-circuit before entitlement.
 	await expect(
 		createDynamicCallableWorkflow({
 			env: {
-				APP_DB: createWorkflowRunsDatabase({ activeCount: 100 }),
+				APP_DB: createWorkflowRunsDatabase(),
 				DYNAMIC_CALLABLE_WORKFLOWS: existingOverLimitBinding.workflow,
+				RUN_LOG: {} as DurableObjectNamespace,
 			} as Env,
 			userId: 'user-1',
 			body: {
@@ -1386,7 +1929,9 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	})
 	expect(existingOverLimitBinding.create).not.toHaveBeenCalled()
 
+	runRecordMocks.resetProjections()
 	const failedCreateDb = createWorkflowRunsDatabase()
+	const failedCreateFlusher = createWaitUntilFlusher()
 	const failedCreateInstances = new Map<string, WorkflowInstanceCreateOptions>()
 	let shouldFailCreate = true
 	const retryCreate = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
@@ -1415,6 +1960,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 			get: retryGet,
 			create: retryCreate,
 		} as unknown as Workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
 	vi.useFakeTimers()
 	try {
@@ -1423,35 +1969,43 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 			createDynamicCallableWorkflow({
 				env: failedCreateEnv,
 				userId: 'user-1',
+				waitUntil: failedCreateFlusher.waitUntil,
 				body: {
 					code: 'export default async function main() { return { ok: true } }',
 					idempotencyKey: 'failed-create-retry-key',
 				},
 			}),
 		).rejects.toThrow('transient workflow create failure')
-		expect([...failedCreateDb.workflowRuns.values()]).toEqual([
-			expect.objectContaining({
-				idempotency_key: 'failed-create-retry-key',
-				run_at: '2026-05-08T19:30:00.000Z',
-				status: 'creating',
-			}),
-		])
+		// Non-duplicate engine failures release the creating reservation.
+		expect(runRecordMocks.listForUser('user-1')).toEqual([])
+		expect(runRecordMocks.deleteWorkflowProjectionIfCreating).toHaveBeenCalled()
+		await failedCreateFlusher.flush()
+		expect([...failedCreateDb.workflowRuns.values()]).toEqual([])
 		vi.setSystemTime(new Date('2026-05-08T19:31:00.000Z'))
 		const retryAfterFailure = await createDynamicCallableWorkflow({
 			env: failedCreateEnv,
 			userId: 'user-1',
+			waitUntil: failedCreateFlusher.waitUntil,
 			body: {
 				code: 'export default async function main() { return { ok: true } }',
 				idempotencyKey: 'failed-create-retry-key',
 			},
 		})
 
-		expect(retryAfterFailure.run_at).toBe('2026-05-08T19:30:00.000Z')
+		expect(retryAfterFailure.run_at).toBe('2026-05-08T19:31:00.000Z')
 		expect(retryCreate).toHaveBeenCalledTimes(2)
+		expect(runRecordMocks.listForUser('user-1')).toEqual([
+			expect.objectContaining({
+				idempotencyKey: 'failed-create-retry-key',
+				runAt: '2026-05-08T19:31:00.000Z',
+				status: 'queued',
+			}),
+		])
+		await failedCreateFlusher.flush()
 		expect([...failedCreateDb.workflowRuns.values()]).toEqual([
 			expect.objectContaining({
 				idempotency_key: 'failed-create-retry-key',
-				run_at: '2026-05-08T19:30:00.000Z',
+				run_at: '2026-05-08T19:31:00.000Z',
 				status: 'queued',
 			}),
 		])
@@ -1459,11 +2013,13 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		vi.useRealTimers()
 	}
 
+	runRecordMocks.resetProjections()
 	const perUserBinding = createStatefulWorkflowBinding()
 	const userOne = await createDynamicCallableWorkflow({
 		env: {
 			APP_DB: createWorkflowRunsDatabase(),
 			DYNAMIC_CALLABLE_WORKFLOWS: perUserBinding.workflow,
+			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env,
 		userId: 'user-1',
 		body: {
@@ -1491,6 +2047,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 				},
 			}),
 			DYNAMIC_CALLABLE_WORKFLOWS: perUserBinding.workflow,
+			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env,
 		userId: 'user-2',
 		body: {
@@ -1503,11 +2060,12 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	expect(userOne.id).not.toBe(userTwo.id)
 	expect(perUserBinding.create).toHaveBeenCalledTimes(2)
 
+	runRecordMocks.resetProjections()
 	const erroredBinding = createStatefulWorkflowBinding()
-	const erroredDb = createWorkflowRunsDatabase()
 	const erroredEnv = {
-		APP_DB: erroredDb,
+		APP_DB: createWorkflowRunsDatabase(),
 		DYNAMIC_CALLABLE_WORKFLOWS: erroredBinding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
 	const erroredFirst = await createDynamicCallableWorkflow({
 		env: erroredEnv,
@@ -1519,9 +2077,11 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 			idempotencyKey: 'terminal-key',
 		},
 	})
-	const erroredStored = erroredDb.workflowRuns.get(erroredFirst.id)
-	if (!erroredStored) throw new Error('Expected stored workflow row.')
-	erroredStored['status'] = 'errored'
+	const erroredStored = runRecordMocks
+		.listForUser('user-1')
+		.find((row) => row.id === erroredFirst.id)
+	if (!erroredStored) throw new Error('Expected stored workflow projection.')
+	erroredStored.status = 'errored'
 	const erroredReplay = await createDynamicCallableWorkflow({
 		env: erroredEnv,
 		userId: 'user-1',
@@ -1537,14 +2097,419 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	expect(erroredBinding.create).toHaveBeenCalledTimes(1)
 })
 
+test('D1-only legacy workflow_runs are dual-read into RunLog for list, cancel, idempotency, and concurrency', async () => {
+	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	const binding = createCancelStyleBindingForDualRead()
+	const db = createWorkflowRunsDatabase()
+	const flusher = createWaitUntilFlusher()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+
+	const now = '2026-05-08T18:00:00.000Z'
+	const legacyActiveIds = Array.from(
+		{ length: freeLimit },
+		(_, index) => `dynwf-legacy-active-${index}`,
+	)
+	const legacyDoneId = 'dynwf-legacy-done'
+	const legacyIdemId = 'dynwf-legacy-idem'
+	for (const [index, id] of legacyActiveIds.entries()) {
+		db.workflowRuns.set(id, {
+			id,
+			user_id: 'user-1',
+			source_type: 'inline',
+			package_id: null,
+			kody_id: null,
+			source_id: null,
+			workflow_name: 'inline-code',
+			export_name: null,
+			idempotency_key: `legacy-active-${index}`,
+			run_at: now,
+			plan_date: '2026-05-08',
+			status: 'running',
+			created_at: now,
+			updated_at: now,
+			completed_at: null,
+			last_error: null,
+		})
+		binding.instances.add(id)
+	}
+	db.workflowRuns.set(legacyDoneId, {
+		id: legacyDoneId,
+		user_id: 'user-1',
+		source_type: 'inline',
+		package_id: null,
+		kody_id: null,
+		source_id: null,
+		workflow_name: 'inline-code',
+		export_name: null,
+		idempotency_key: 'legacy-done-key',
+		run_at: now,
+		plan_date: '2026-05-08',
+		status: 'complete',
+		created_at: now,
+		updated_at: now,
+		completed_at: now,
+		last_error: null,
+	})
+	db.workflowRuns.set(legacyIdemId, {
+		id: legacyIdemId,
+		user_id: 'user-1',
+		source_type: 'inline',
+		package_id: null,
+		kody_id: null,
+		source_id: null,
+		workflow_name: 'inline-code',
+		export_name: null,
+		idempotency_key: 'legacy-idem-key',
+		run_at: now,
+		plan_date: '2026-05-08',
+		status: 'complete',
+		created_at: now,
+		updated_at: now,
+		completed_at: now,
+		last_error: null,
+	})
+
+	expect(runRecordMocks.listForUser('user-1')).toEqual([])
+
+	const listed = await listWorkflowRunsForUser({
+		env,
+		userId: 'user-1',
+		limit: 25,
+		waitUntil: flusher.waitUntil,
+	})
+	expect(listed.map((row) => row.id).sort()).toEqual(
+		[...legacyActiveIds, legacyDoneId, legacyIdemId].sort(),
+	)
+	for (const id of [...legacyActiveIds, legacyDoneId, legacyIdemId]) {
+		expect(
+			runRecordMocks.listForUser('user-1').find((row) => row.id === id),
+		).toMatchObject({
+			id,
+			bindingName: dynamicCallableWorkflowsBindingName,
+		})
+	}
+
+	const replay = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		waitUntil: flusher.waitUntil,
+		body: {
+			code: 'export default async function main() { return { ok: true } }',
+			idempotencyKey: 'legacy-idem-key',
+			runAt: '2026-05-08T19:30:00.000Z',
+		},
+	})
+	expect(replay.id).toBe(legacyIdemId)
+	expect(replay.status).toBe('complete')
+	expect(binding.create).not.toHaveBeenCalled()
+
+	await expect(
+		createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			waitUntil: flusher.waitUntil,
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'blocked-by-legacy-active',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		}),
+	).rejects.toSatisfy((error: unknown) => isEntitlementLimitError(error))
+	expect(binding.create).not.toHaveBeenCalled()
+
+	const cancelled = await cancelWorkflowRunForUser({
+		env,
+		userId: 'user-1',
+		workflowRunId: legacyActiveIds[0]!,
+		waitUntil: flusher.waitUntil,
+	})
+	expect(cancelled).toMatchObject({
+		outcome: 'cancelled',
+		run: { id: legacyActiveIds[0], status: 'cancelled' },
+	})
+	expect(
+		runRecordMocks
+			.listForUser('user-1')
+			.find((row) => row.id === legacyActiveIds[0]),
+	).toMatchObject({ status: 'cancelled' })
+})
+
+test('monotonic upsert ignores older D1 mirror timestamps on dual-read import', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+	const runId = 'dynwf-mono'
+	await runRecordMocks.upsertWorkflowProjection({
+		env,
+		userId: 'user-1',
+		projection: {
+			id: runId,
+			bindingName: dynamicCallableWorkflowsBindingName,
+			sourceType: 'inline',
+			workflowName: 'inline-code',
+			idempotencyKey: 'mono-key',
+			runAt: '2026-05-08T20:00:00.000Z',
+			status: 'complete',
+			createdAt: '2026-05-08T20:00:00.000Z',
+			updatedAt: '2026-05-08T20:00:00.000Z',
+			completedAt: '2026-05-08T20:00:00.000Z',
+		},
+	})
+	db.workflowRuns.set(runId, {
+		id: runId,
+		user_id: 'user-1',
+		source_type: 'inline',
+		package_id: null,
+		kody_id: null,
+		source_id: null,
+		workflow_name: 'inline-code',
+		export_name: null,
+		idempotency_key: 'mono-key',
+		run_at: '2026-05-08T19:00:00.000Z',
+		plan_date: '2026-05-08',
+		status: 'running',
+		created_at: '2026-05-08T19:00:00.000Z',
+		updated_at: '2026-05-08T19:00:00.000Z',
+		completed_at: null,
+		last_error: null,
+	})
+
+	const listed = await listWorkflowRunsForUser({
+		env,
+		userId: 'user-1',
+		limit: 10,
+	})
+	expect(listed).toHaveLength(1)
+	expect(listed[0]).toMatchObject({
+		id: runId,
+		status: 'complete',
+		updatedAt: '2026-05-08T20:00:00.000Z',
+	})
+	expect(runRecordMocks.listForUser('user-1')[0]?.status).toBe('complete')
+})
+
+test('out-of-order D1 mirrors cannot regress a newer terminal row', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const flusher = createWaitUntilFlusher()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-05-08T19:30:00.000Z'))
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			waitUntil: flusher.waitUntil,
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'mirror-mono-key',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		})
+		await flusher.flush()
+
+		vi.setSystemTime(new Date('2026-05-08T19:31:00.000Z'))
+		await cancelWorkflowRunForUser({
+			env,
+			userId: 'user-1',
+			workflowRunId: created.id,
+			waitUntil: flusher.waitUntil,
+		})
+		await flusher.flush()
+		expect(db.workflowRuns.get(created.id)).toMatchObject({
+			status: 'cancelled',
+			updated_at: '2026-05-08T19:31:00.000Z',
+		})
+
+		// Lagging creating/queued mirror with an older updated_at must not win.
+		vi.setSystemTime(new Date('2026-05-08T19:30:30.000Z'))
+		db.workflowRuns.set(created.id, {
+			...db.workflowRuns.get(created.id)!,
+			status: 'cancelled',
+			updated_at: '2026-05-08T19:31:00.000Z',
+			completed_at: '2026-05-08T19:31:00.000Z',
+		})
+		const mirrorBind = env.APP_DB.prepare(
+			`INSERT INTO workflow_runs (
+				id, user_id, source_type, package_id, kody_id, source_id,
+				workflow_name, export_name, idempotency_key, run_at, plan_date,
+				status, created_at, updated_at, completed_at, last_error
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).bind(
+			created.id,
+			'user-1',
+			'inline',
+			null,
+			null,
+			null,
+			'inline-code',
+			null,
+			'mirror-mono-key',
+			'2026-05-08T19:30:00.000Z',
+			'2026-05-08',
+			'queued',
+			'2026-05-08T19:30:00.000Z',
+			'2026-05-08T19:30:30.000Z',
+			null,
+			null,
+		)
+		await mirrorBind.run()
+		expect(db.workflowRuns.get(created.id)).toMatchObject({
+			status: 'cancelled',
+			updated_at: '2026-05-08T19:31:00.000Z',
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('active D1 import bound overflows still block entitlement', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+	const now = '2026-05-08T18:00:00.000Z'
+	const overflowCount = activeD1WorkflowImportBound + 25
+	for (let index = 0; index < overflowCount; index += 1) {
+		const id = `dynwf-overflow-${index}`
+		db.workflowRuns.set(id, {
+			id,
+			user_id: 'user-1',
+			source_type: 'inline',
+			package_id: null,
+			kody_id: null,
+			source_id: null,
+			workflow_name: 'inline-code',
+			export_name: null,
+			idempotency_key: `overflow-${index}`,
+			run_at: now,
+			plan_date: '2026-05-08',
+			status: 'running',
+			created_at: now,
+			updated_at: now,
+			completed_at: null,
+			last_error: null,
+		})
+	}
+
+	await expect(
+		createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'blocked-by-overflow',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		}),
+	).rejects.toSatisfy((error: unknown) => isEntitlementLimitError(error))
+	expect(binding.create).not.toHaveBeenCalled()
+	// Expand-phase active import is one batch RPC, not N per-row upserts.
+	expect(runRecordMocks.importWorkflowProjections).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.importWorkflowProjections).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			projections: expect.arrayContaining([
+				expect.objectContaining({ status: 'running' }),
+			]),
+		}),
+	)
+	expect(
+		runRecordMocks.importWorkflowProjections.mock.calls[0]?.[0]?.projections,
+	).toHaveLength(activeD1WorkflowImportBound)
+	expect(runRecordMocks.upsertWorkflowProjection).not.toHaveBeenCalled()
+	expect(
+		runRecordMocks
+			.listForUser('user-1')
+			.filter((row) => row.status === 'running'),
+	).toHaveLength(activeD1WorkflowImportBound)
+})
+
+test('concurrent creates cannot exceed a one-slot workflow entitlement', async () => {
+	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	await seedActiveWorkflowProjections({
+		userId: 'user-1',
+		count: freeLimit - 1,
+	})
+	const binding = createStatefulWorkflowBinding()
+	const env = {
+		APP_DB: createWorkflowRunsDatabase(),
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+
+	const results = await Promise.allSettled([
+		createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'concurrent-slot-a',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		}),
+		createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'concurrent-slot-b',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		}),
+	])
+
+	const fulfilled = results.filter((result) => result.status === 'fulfilled')
+	const rejected = results.filter((result) => result.status === 'rejected')
+	expect(fulfilled).toHaveLength(1)
+	expect(rejected).toHaveLength(1)
+	expect(isEntitlementLimitError(rejected[0]?.reason)).toBe(true)
+	expect(binding.create).toHaveBeenCalledTimes(1)
+	expect(
+		runRecordMocks
+			.listForUser('user-1')
+			.filter(
+				(row) =>
+					row.status != null &&
+					(activeWorkflowStatusValues as ReadonlyArray<string>).includes(
+						row.status,
+					),
+			),
+	).toHaveLength(freeLimit)
+	expect(
+		runRecordMocks
+			.listForUser('user-1')
+			.filter((row) => row.status === creatingWorkflowProjectionStatus),
+	).toHaveLength(0)
+})
+
 test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	await seedActiveWorkflowProjections({ userId: 'user-1', count: freeLimit })
+	runRecordMocks.countActiveWorkflowProjections.mockClear()
 	let error: unknown
 	try {
 		await createDynamicCallableWorkflow({
 			env: {
-				APP_DB: createWorkflowRunsDatabase({ activeCount: freeLimit }),
+				APP_DB: createWorkflowRunsDatabase(),
 				DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
+				RUN_LOG: {} as DurableObjectNamespace,
 			} as Env,
 			userId: 'user-1',
 			body: {
@@ -1570,7 +2535,13 @@ test('createDynamicCallableWorkflow enforces the per-user concurrent workflow li
 		resource: 'concurrent_workflows',
 		plan: 'free',
 		limit: freeLimit,
+		current: freeLimit,
 	})
+	expect(runRecordMocks.reserveWorkflowProjectionSlot).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'user-1' }),
+	)
+	expect(runRecordMocks.deleteWorkflowProjectionIfCreating).toHaveBeenCalled()
+	expect(activeWorkflowStatusValues).toContain('queued')
 })
 
 test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', async () => {
@@ -1584,15 +2555,17 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 		runAt: '2026-05-03T12:34:56.000Z',
 		idempotencyKey: 'plan-limit-key',
 	}
+	await seedActiveWorkflowProjections({ userId, count: limit })
+	runRecordMocks.reserveWorkflowProjectionSlot.mockClear()
 	let denied: unknown
 	try {
 		await createDynamicCallableWorkflow({
 			env: {
 				APP_DB: createWorkflowRunsDatabase({
-					activeCount: limit,
 					users: [{ email, plan: 'pro', stable_user_id: userId }],
 				}),
 				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+				RUN_LOG: {} as DurableObjectNamespace,
 			} as Env,
 			userId,
 			userEmail: email,
@@ -1615,14 +2588,20 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 		current: limit,
 	})
 	expect(denied.message).toContain(`at most ${limit} concurrent workflows`)
+	expect(runRecordMocks.reserveWorkflowProjectionSlot).toHaveBeenCalledWith(
+		expect.objectContaining({ userId }),
+	)
+	expect(runRecordMocks.deleteWorkflowProjectionIfCreating).toHaveBeenCalled()
 
+	runRecordMocks.resetProjections()
+	await seedActiveWorkflowProjections({ userId, count: limit - 1 })
 	const allowed = await createDynamicCallableWorkflow({
 		env: {
 			APP_DB: createWorkflowRunsDatabase({
-				activeCount: limit - 1,
 				users: [{ email, plan: 'pro', stable_user_id: userId }],
 			}),
 			DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
+			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env,
 		userId,
 		userEmail: email,
@@ -1636,13 +2615,15 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 	// Package jobs persist email: '' — reverse-resolve by stable userId so a
 	// max-plan account is not wrongly capped at the free concurrent limit.
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	runRecordMocks.resetProjections()
+	await seedActiveWorkflowProjections({ userId, count: freeLimit })
 	const maxAllowed = await createDynamicCallableWorkflow({
 		env: {
 			APP_DB: createWorkflowRunsDatabase({
-				activeCount: freeLimit,
 				users: [{ email, plan: 'max', stable_user_id: userId }],
 			}),
 			DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
+			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env,
 		userId,
 		userEmail: '',
@@ -1671,6 +2652,8 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 		},
 	})
 
+	runRecordMocks.importWorkflowProjections.mockClear()
+	runRecordMocks.upsertWorkflowProjection.mockClear()
 	const workflows = await listWorkflowRunsForUser({
 		env,
 		userId: 'user-1',
@@ -1685,6 +2668,9 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 			idempotencyKey: 'inline-key',
 		}),
 	])
+	// Recent D1 import is one batch RPC (even when the page is a single row).
+	expect(runRecordMocks.importWorkflowProjections).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.upsertWorkflowProjection).not.toHaveBeenCalled()
 	binding.instances.delete(created.id)
 	const staleWorkflows = await listWorkflowRunsForUser({
 		env,
@@ -1890,37 +2876,17 @@ test('workflow_run usage is recorded once across replays and never on failed ter
 			}),
 		)
 
-		// A successful execution whose terminal status write fails must not be
-		// recorded as an error (and is not recorded at all until the terminal
-		// transition succeeds on a later replay).
+		// A successful execution whose authoritative RunLog terminal projection
+		// write fails must not be recorded as usage (and is not recorded at all
+		// until the terminal transition succeeds on a later replay). D1 mirror
+		// failures are best-effort and must not fail the workflow.
 		recordUsageSpy.mockClear()
 		const statusFailureDb = createWorkflowRunsDatabase()
 		const statusFailureEnv = {
-			APP_DB: new Proxy(statusFailureDb, {
-				get(target, property, receiver) {
-					if (property !== 'prepare') {
-						return Reflect.get(target, property, receiver)
-					}
-					return (query: string) => {
-						const statement = target.prepare(query)
-						if (!query.includes('INSERT INTO workflow_runs')) return statement
-						return {
-							bind(...params: Array<unknown>) {
-								if (params[11] === 'complete') {
-									return {
-										async run() {
-											throw new Error('terminal status write failed')
-										},
-									}
-								}
-								return statement.bind(...params)
-							},
-						}
-					}
-				},
-			}) as unknown as D1Database,
+			APP_DB: statusFailureDb,
 			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 			APP_BASE_URL: 'https://app.example.com',
+			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env
 		const statusFailureCreated = await createDynamicCallableWorkflow({
 			env: statusFailureEnv,
@@ -1936,6 +2902,54 @@ test('workflow_run usage is recorded once across replays and never on failed ter
 		if (!statusFailureQueued?.params) {
 			throw new Error('Expected queued workflow payload.')
 		}
+		runRecordMocks.upsertWorkflowProjection.mockImplementation(
+			async (input: {
+				env: Env
+				userId: string
+				projection: WorkflowProjectionUpsertInput
+			}) => {
+				if (input.projection.status === 'complete') {
+					throw new Error('terminal status write failed')
+				}
+				const store =
+					runRecordMocks.projectionsByUser.get(input.userId) ??
+					new Map<string, WorkflowProjectionRecord>()
+				runRecordMocks.projectionsByUser.set(input.userId, store)
+				const existing = store.get(input.projection.id) ?? null
+				if (!existing) {
+					store.set(input.projection.id, {
+						id: input.projection.id,
+						bindingName: input.projection.bindingName,
+						sourceType: input.projection.sourceType,
+						packageId: input.projection.packageId ?? null,
+						kodyId: input.projection.kodyId ?? null,
+						sourceId: input.projection.sourceId ?? null,
+						workflowName: input.projection.workflowName,
+						exportName: input.projection.exportName ?? null,
+						idempotencyKey: input.projection.idempotencyKey,
+						runAt: input.projection.runAt,
+						planDate: input.projection.planDate ?? null,
+						status: input.projection.status ?? null,
+						createdAt:
+							input.projection.createdAt?.trim() || new Date().toISOString(),
+						updatedAt:
+							input.projection.updatedAt?.trim() || new Date().toISOString(),
+						completedAt: input.projection.completedAt ?? null,
+						lastError: input.projection.lastError ?? null,
+					})
+					return { ok: true as const }
+				}
+				store.set(input.projection.id, {
+					...existing,
+					status: input.projection.status ?? null,
+					updatedAt:
+						input.projection.updatedAt?.trim() || new Date().toISOString(),
+					completedAt: input.projection.completedAt ?? existing.completedAt,
+					lastError: input.projection.lastError ?? existing.lastError,
+				})
+				return { ok: true as const }
+			},
+		)
 		const statusFailureWorkflow = new DynamicCallableWorkflowBase(
 			{} as ExecutionContext,
 			statusFailureEnv,
@@ -1951,6 +2965,84 @@ test('workflow_run usage is recorded once across replays and never on failed ter
 			),
 		).rejects.toThrow('terminal status write failed')
 		expect(recordUsageSpy).not.toHaveBeenCalled()
+
+		silenceExpectedConsoleWarns(['workflow-runs-d1-mirror-failed'])
+		runRecordMocks.upsertWorkflowProjection.mockRestore()
+		runRecordMocks.resetProjections()
+		const mirrorBinding = createStatefulWorkflowBinding()
+		const mirrorFailureDb = createWorkflowRunsDatabase()
+		const mirrorFailureEnv = {
+			APP_DB: new Proxy(mirrorFailureDb, {
+				get(target, property, receiver) {
+					if (property !== 'prepare') {
+						return Reflect.get(target, property, receiver)
+					}
+					return (query: string) => {
+						const statement = target.prepare(query)
+						if (!query.includes('INSERT INTO workflow_runs')) return statement
+						return {
+							bind(...params: Array<unknown>) {
+								if (params[11] === 'complete') {
+									return {
+										async run() {
+											throw new Error('d1 mirror failed')
+										},
+									}
+								}
+								return statement.bind(...params)
+							},
+						}
+					}
+				},
+			}) as unknown as D1Database,
+			DYNAMIC_CALLABLE_WORKFLOWS: mirrorBinding.workflow,
+			APP_BASE_URL: 'https://app.example.com',
+			RUN_LOG: {} as DurableObjectNamespace,
+		} as Env
+		const mirrorCreated = await createDynamicCallableWorkflow({
+			env: mirrorFailureEnv,
+			userId: 'user-1',
+			packageContext: null,
+			body: {
+				code: 'export default async function main(){ return { ok: true }; }',
+				runAt: '2026-05-03T12:34:56.000Z',
+				idempotencyKey: 'usage-metering-d1-mirror-failure',
+			},
+		})
+		const mirrorPayload = mirrorBinding.instances.get(mirrorCreated.id)
+		if (!mirrorPayload?.params) throw new Error('Expected mirror payload.')
+		invocationMocks.runModuleWithRegistry.mockResolvedValue({
+			result: { ok: true },
+			logs: [],
+		})
+		await expect(
+			new DynamicCallableWorkflowBase(
+				{} as ExecutionContext,
+				mirrorFailureEnv,
+			).run(
+				{
+					payload: mirrorPayload.params as never,
+					timestamp: new Date(),
+					instanceId: mirrorCreated.id,
+				},
+				createReplayableStep() as unknown as WorkflowStep,
+			),
+		).resolves.toEqual({ ok: true })
+		// Drain the void-scheduled D1 mirror rejection.
+		await vi.waitFor(() => {
+			expect(consoleWarn).toHaveBeenCalledWith(
+				'workflow-runs-d1-mirror-failed',
+				expect.any(Error),
+			)
+		})
+		expect(
+			runRecordMocks
+				.listForUser('user-1')
+				.find((row) => row.id === mirrorCreated.id),
+		).toMatchObject({
+			status: 'complete',
+			bindingName: dynamicCallableWorkflowsBindingName,
+		})
 	} finally {
 		recordUsageSpy.mockRestore()
 	}

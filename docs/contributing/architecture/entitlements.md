@@ -307,12 +307,17 @@ Rules:
 ## Counting strategy
 
 - **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets,
-  concurrent workflows, running package services) are counted **directly from
-  their source D1 tables at the enforcement point** via built-in counters in
-  `service.ts`. They do not depend on any metering or rollup tables. Running
-  package services are counted from `package_service_states` (status `running`
-  and freshly heartbeaten), not from run-history rows — see
-  [Run records](./run-records.md) (`state-vs-history`).
+  running package services) are counted **directly from their source D1 tables
+  at the enforcement point** via built-in counters in `service.ts`. They do not
+  depend on any metering or rollup tables. Running package services are counted
+  from `package_service_states` (status `running` and freshly heartbeaten), not
+  from run-history rows — see [Run records](./run-records.md)
+  (`state-vs-history`). **Concurrent workflows** are authoritative in per-user
+  RunLog `workflow_projections`: create reserves atomically via
+  `reserveWorkflowProjectionSlot`, and usage readers call
+  `countActiveWorkflowProjections` through
+  `readCurrentEntitlementResourceUsage`. Expand-phase D1 `workflow_runs` is a
+  compatibility mirror only.
 - **Rate-style limits** (email sends/receives per day, execute calls per day,
   outbound fetches per day) are **authoritative in the per-user UserMeter
   Durable Object** (UTC day keys). Call `consumeDailyEntitlement` on every
@@ -465,7 +470,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                              |
 | `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`)                                 |
 | `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                               |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit from `resolvePlanLimit`; `max` = 5,000)                                            |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)        |
 | `storage_bytes`               | D1 payload writes (values, secrets, memories, saved-package projections, email storage) and StorageRunner write tools/app RPCs |
 
 ## Billing

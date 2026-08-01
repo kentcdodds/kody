@@ -81,22 +81,25 @@ test('processDueJobs handles cron batching and once-job retain, preserve, and re
 			expect.objectContaining({
 				id: 'job-1',
 				lastRunStatus: 'error',
-				lastRunError: 'boom',
 				lastRunAt: now.toISOString(),
-				runCount: 1,
+				// RunLog owns counters/error/duration; D1 copies stay put.
+				runCount: 0,
 				successCount: 0,
-				errorCount: 1,
+				errorCount: 0,
 			}),
 			expect.objectContaining({
 				id: 'job-2',
 				lastRunStatus: 'success',
 				lastRunAt: now.toISOString(),
-				runCount: 1,
-				successCount: 1,
+				runCount: 0,
+				successCount: 0,
 				errorCount: 0,
 			}),
 		]),
 	)
+	expect(
+		batchResult.saveJobs.find((job) => job.id === 'job-1')?.lastRunError,
+	).toBeUndefined()
 	expect(batchResult.saveJobs[0]).not.toHaveProperty('runHistory')
 	expect(batchResult.saveJobs[1]).not.toHaveProperty('runHistory')
 
@@ -130,10 +133,9 @@ test('processDueJobs handles cron batching and once-job retain, preserve, and re
 			id: 'job-once',
 			enabled: false,
 			lastRunStatus: 'error',
-			lastRunError: 'expected failure',
-			runCount: 1,
+			runCount: 0,
 			successCount: 0,
-			errorCount: 1,
+			errorCount: 0,
 		}),
 	])
 	expect(failedOnceResult.jobOutcomes).toEqual([
@@ -177,8 +179,8 @@ test('processDueJobs handles cron batching and once-job retain, preserve, and re
 			id: 'job-once-success',
 			enabled: false,
 			lastRunStatus: 'success',
-			runCount: 1,
-			successCount: 1,
+			runCount: 0,
+			successCount: 0,
 			errorCount: 0,
 		}),
 	])
@@ -237,8 +239,9 @@ test('processDueJobs handles cron batching and once-job retain, preserve, and re
 			id: 'job-reschedule-failure',
 			enabled: false,
 			lastRunStatus: 'error',
-			lastRunError:
-				'Failed to reschedule job: Cron expressions must use standard 5-field syntax: minute hour day-of-month month day-of-week.',
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
 		}),
 	)
 })
