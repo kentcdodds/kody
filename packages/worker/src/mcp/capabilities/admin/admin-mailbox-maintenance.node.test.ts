@@ -109,14 +109,17 @@ const emptyDeleteResult = {
 }
 
 function createAdminCtx() {
-	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(`
+	const appSqlite = new DatabaseSync(':memory:')
+	appSqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE NOT NULL,
 			username TEXT NOT NULL,
 			email TEXT NOT NULL
 		);
+	`)
+	const auditSqlite = new DatabaseSync(':memory:')
+	auditSqlite.exec(`
 		CREATE TABLE audit_events (
 			id INTEGER PRIMARY KEY,
 			category TEXT NOT NULL,
@@ -130,9 +133,11 @@ function createAdminCtx() {
 			timestamp TEXT NOT NULL
 		);
 	`)
-	const db = createD1FromSqlite(sqlite)
 	return {
-		env: { APP_DB: db, AUDIT_DB: db } as Env,
+		env: {
+			APP_DB: createD1FromSqlite(appSqlite),
+			AUDIT_DB: createD1FromSqlite(auditSqlite),
+		} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
