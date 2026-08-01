@@ -105,6 +105,9 @@ test('a failed enqueue runs only that lane through the inline fallback', async (
 			cron: controller.cron,
 		},
 	})
+	expect(send.mock.invocationCallOrder.at(-1)).toBeLessThan(
+		mocks.runScheduledLaneWithFailureIsolation.mock.invocationCallOrder[0]!,
+	)
 	expect(consoleError).toHaveBeenCalledWith(
 		'scheduled_lane_dispatch_failed lane=repo_session_cleanup',
 		expect.any(Error),

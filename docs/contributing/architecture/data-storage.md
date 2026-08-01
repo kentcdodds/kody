@@ -781,9 +781,10 @@ usage-rollup aggregation. Each production queue message preserves the existing
 `scheduled_lane_failed` / D1 lock-contention log and Sentry context. A handled
 lane failure is acknowledged and retried by the next cron tick, matching the old
 cron semantics. A failed enqueue is reported and runs through the inline
-fallback after sibling enqueue attempts have started; consumer transport
-failures retain the configured retry/DLQ behavior. No failure can abort or mask
-a sibling invocation.
+fallback after all sibling enqueue attempts finish; multiple failed enqueues
+fall back sequentially to avoid D1 lock contention. Consumer transport failures
+retain the configured retry/DLQ behavior. No failure can abort or mask a sibling
+invocation.
 
 Production note:
 

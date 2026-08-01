@@ -44,7 +44,7 @@ export async function dispatchScheduledLanes(input: {
 		return
 	}
 
-	await Promise.all(
+	const failedMessages = await Promise.all(
 		lanes.map(async (lane) => {
 			const message = {
 				lane,
@@ -53,6 +53,7 @@ export async function dispatchScheduledLanes(input: {
 			} satisfies ScheduledLaneMessage
 			try {
 				await queue.send(message)
+				return null
 			} catch (error) {
 				console.error(`scheduled_lane_dispatch_failed lane=${lane}`, error)
 				Sentry.withScope((scope) => {
@@ -64,13 +65,17 @@ export async function dispatchScheduledLanes(input: {
 					})
 					Sentry.captureException(error)
 				})
-				await runScheduledLaneWithFailureIsolation({
-					env: input.env,
-					message,
-				})
+				return message
 			}
 		}),
 	)
+	for (const message of failedMessages) {
+		if (!message) continue
+		await runScheduledLaneWithFailureIsolation({
+			env: input.env,
+			message,
+		})
+	}
 }
 
 export async function handleScheduledDispatchQueue(
