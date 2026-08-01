@@ -3,6 +3,7 @@ import {
 	adminMailboxMaintenanceMaxBatchSize,
 	adminMailboxMaintenanceRetentionMaxLimit,
 	loadAdminMailboxMaintenanceStatus,
+	runAdminMailboxMaintenanceDeleteMessage,
 	runAdminMailboxMaintenanceReconcile,
 	runAdminMailboxMaintenanceRetention,
 } from '#worker/admin/mailbox-maintenance.ts'
@@ -104,6 +105,37 @@ const retentionMetricsSchema = z.object({
 	}),
 })
 
+const deleteMessageResultSchema = z.object({
+	d1MessageAbsent: z
+		.boolean()
+		.describe('True when the D1 email_messages row is gone after delete.'),
+	attachmentsSeen: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('Attachment metadata rows observed before delete.'),
+	externalAttachmentsSeen: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('External-storage attachment rows observed before delete.'),
+	rawMimeBlobAbsent: z
+		.boolean()
+		.describe('True when head(emailRawMimeKey) finds no object after delete.'),
+	externalAttachmentBlobsAbsent: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Count of canonical external attachment keys with no R2 object after delete.',
+		),
+	allCanonicalBlobsAbsent: z
+		.boolean()
+		.describe(
+			'True when the canonical raw-MIME key and every external attachment key are absent.',
+		),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
 	z
 		.object({
@@ -125,6 +157,18 @@ const inputSchema = z.discriminatedUnion('action', [
 				.describe(
 					'Stable-user-id keyset cursor from a prior retention nextStartAfter. Ordered by stable_user_id ASC; never parity checked_at.',
 				),
+		})
+		.strict(),
+	z
+		.object({
+			action: z.literal('delete_message'),
+			stable_user_id: stableUserIdSchema.describe(
+				'Owning users.stable_user_id. Foreign or missing messages are rejected.',
+			),
+			message_id: z
+				.string()
+				.min(1)
+				.describe('email_messages.id to delete for the given owner.'),
 		})
 		.strict(),
 ])
@@ -154,6 +198,10 @@ const outputSchema = z.discriminatedUnion('action', [
 			),
 		status: statusSchema,
 	}),
+	z.object({
+		action: z.literal('delete_message'),
+		result: deleteMessageResultSchema,
+	}),
 ])
 
 export const adminMailboxMaintenanceCapability = defineDomainCapability(
@@ -162,7 +210,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget). Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content), bounded reconcileMailboxParity, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, existing deleteEmailMessageById, post-delete D1/R2 head aggregates). Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
@@ -170,6 +218,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 			'parity',
 			'reconcile',
 			'retention',
+			'delete',
 			'cutover',
 			'soak',
 		],
@@ -213,6 +262,14 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 								status: result.status,
 							}
 						}
+						case 'delete_message': {
+							const result = await runAdminMailboxMaintenanceDeleteMessage({
+								env: ctx.env,
+								stableUserId: args.stable_user_id,
+								messageId: args.message_id,
+							})
+							return { action: 'delete_message' as const, result }
+						}
 						default: {
 							const exhaustive: never = args
 							throw new Error(
@@ -230,6 +287,15 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 								return `action=reconcile;scanned=${result.metrics.scanned};matched=${result.metrics.matched}`
 							case 'retention':
 								return `action=retention;attempted=${result.metrics.mailbox.ownersAttempted};succeeded=${result.metrics.mailbox.ownersSucceeded};truncated=${result.truncated ? 1 : 0}`
+							case 'delete_message': {
+								const targetStableUserId =
+									args.action === 'delete_message'
+										? args.stable_user_id
+										: 'unknown'
+								const targetMessageId =
+									args.action === 'delete_message' ? args.message_id : 'unknown'
+								return `action=delete_message;stable_user_id=${targetStableUserId};message_id=${targetMessageId};d1_absent=${result.result.d1MessageAbsent ? 1 : 0};blobs_absent=${result.result.allCanonicalBlobsAbsent ? 1 : 0}`
+							}
 							default: {
 								const exhaustive: never = result
 								return `action=unknown;${JSON.stringify(exhaustive)}`

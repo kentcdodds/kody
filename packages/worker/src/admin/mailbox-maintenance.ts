@@ -17,6 +17,13 @@ import {
 	mailboxReadCutoverSoakMs,
 } from '#worker/email/mailbox-read-cutover.ts'
 import { type MailboxCountResult } from '#worker/email/mailbox-types.ts'
+import {
+	deleteEmailMessageById,
+	emailAttachmentBlobKey,
+	emailRawMimeKey,
+	getEmailMessageById,
+	listEmailAttachmentsForMessage,
+} from '#worker/email/repo.ts'
 
 /** Cap for admin reconcile batch discovery (hard max). */
 export const adminMailboxMaintenanceMaxBatchSize = 100
@@ -34,7 +41,7 @@ export const adminMailboxMaintenanceRetentionBudgetMs = 10_000
 
 export type AdminMailboxMaintenanceEnv = MailboxParityReconcileEnv &
 	MailboxEnv & {
-		EMAIL_BLOBS: Pick<R2Bucket, 'delete'>
+		EMAIL_BLOBS: Pick<R2Bucket, 'delete' | 'head'>
 	}
 
 export type AdminMailboxMaintenanceStatus = {
@@ -81,6 +88,19 @@ export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 export type AdminMailboxMaintenanceRetentionMetrics = {
 	d1: AdminMailboxMaintenanceRetentionD1Metrics
 	mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics
+}
+
+/**
+ * Aggregate-only outcome for a single audited admin message delete. Never
+ * includes addresses, bodies, filenames, or R2 keys.
+ */
+export type AdminMailboxMaintenanceDeleteMessageResult = {
+	d1MessageAbsent: boolean
+	attachmentsSeen: number
+	externalAttachmentsSeen: number
+	rawMimeBlobAbsent: boolean
+	externalAttachmentBlobsAbsent: number
+	allCanonicalBlobsAbsent: boolean
 }
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
@@ -612,5 +632,84 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 		nextStartAfter,
 		truncated,
 		status,
+	}
+}
+
+/**
+ * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
+ * Verifies ownership via getEmailMessageById, collects attachment metadata /
+ * storage keys (no content), deletes through existing deleteEmailMessageById,
+ * then confirms D1 absence plus every canonical raw-MIME / external-attachment
+ * R2 object absent via head. Rejects missing or foreign messages.
+ */
+export async function runAdminMailboxMaintenanceDeleteMessage(input: {
+	env: AdminMailboxMaintenanceEnv
+	stableUserId: string
+	messageId: string
+}): Promise<AdminMailboxMaintenanceDeleteMessageResult> {
+	const db = input.env.APP_DB
+	const blobs = input.env.EMAIL_BLOBS
+	const message = await getEmailMessageById({
+		db,
+		userId: input.stableUserId,
+		messageId: input.messageId,
+	})
+	if (!message) {
+		throw new Error(
+			`Email message not found for stable_user_id=${input.stableUserId} message_id=${input.messageId}`,
+		)
+	}
+
+	// Collect attachment metadata/storage keys before delete (no content).
+	const attachmentMetadata = (
+		await listEmailAttachmentsForMessage({
+			db,
+			messageId: message.id,
+		})
+	).map((attachment) => ({
+		id: attachment.id,
+		storageKind: attachment.storageKind,
+		storageKey: attachment.storageKey,
+	}))
+	const externalAttachments = attachmentMetadata.filter(
+		(attachment) => attachment.storageKind === 'external',
+	)
+	const rawMimeKey = emailRawMimeKey(input.stableUserId, message.id)
+	const canonicalExternalAttachmentKeys = externalAttachments.map(
+		(attachment) =>
+			emailAttachmentBlobKey(input.stableUserId, message.id, attachment.id),
+	)
+
+	await deleteEmailMessageById({
+		db,
+		blobs: blobs as R2Bucket,
+		messageId: message.id,
+	})
+
+	const remaining = await getEmailMessageById({
+		db,
+		userId: input.stableUserId,
+		messageId: message.id,
+	})
+	const d1MessageAbsent = remaining == null
+
+	const rawMimeBlobAbsent = (await blobs.head(rawMimeKey)) == null
+	let externalAttachmentBlobsAbsent = 0
+	for (const key of canonicalExternalAttachmentKeys) {
+		if ((await blobs.head(key)) == null) {
+			externalAttachmentBlobsAbsent += 1
+		}
+	}
+	const allCanonicalBlobsAbsent =
+		rawMimeBlobAbsent &&
+		externalAttachmentBlobsAbsent === canonicalExternalAttachmentKeys.length
+
+	return {
+		d1MessageAbsent,
+		attachmentsSeen: attachmentMetadata.length,
+		externalAttachmentsSeen: externalAttachments.length,
+		rawMimeBlobAbsent,
+		externalAttachmentBlobsAbsent,
+		allCanonicalBlobsAbsent,
 	}
 }

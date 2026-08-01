@@ -958,7 +958,8 @@ content).
 discriminated actions — `status` (aggregate tracked/matching/mismatch/error/
 incomplete/eligible counts plus matching/check timestamps and earliest cutover;
 no email content), `reconcile` (bounded `reconcileMailboxParity`, `batch_size`
-max 100, then status), and `retention` (natural cutoffs only):
+max 100, then status), `retention` (natural cutoffs only), and `delete_message`
+(owner-scoped single-message canary delete):
 
 1. Run existing D1 `pruneUserEmailMessagesForRetention` then
    `pruneEmailDeliveryEventsForRetention` (bounded batches; message prune keeps
@@ -977,8 +978,16 @@ max 100, then status), and `retention` (natural cutoffs only):
    a ~10s wall budget (stop scheduling new owners after the deadline; cursor is
    the last considered owner). Per-owner failures are isolated.
 
-Returns D1 delete/error totals plus aggregate Mailbox before/after counts (no
-message ids or email content). No seed or arbitrary-cutoff surface.
+`delete_message` takes `stable_user_id` + `message_id`, verifies ownership with
+`getEmailMessageById` (missing/foreign rejected), collects attachment metadata /
+storage keys without reading content, deletes through existing
+`deleteEmailMessageById` (`APP_DB` + `EMAIL_BLOBS`), then verifies the D1
+message is absent and every canonical raw-MIME / external-attachment R2 object
+is absent via `head`. Returns aggregate booleans/counts only (no addresses,
+bodies, filenames, or keys). Audit success reason includes the target ids.
+
+Retention returns D1 delete/error totals plus aggregate Mailbox before/after
+counts (no message ids or email content). No seed or arbitrary-cutoff surface.
 
 Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
 result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state
