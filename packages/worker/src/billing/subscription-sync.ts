@@ -308,7 +308,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 		throw error
 	}
 
-	await scheduleStripePlanRefreshBackstop({
+	const backstopScheduled = await scheduleStripePlanRefreshBackstop({
 		env: input.env,
 		userId: input.user.stableUserId,
 		now,
@@ -325,6 +325,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			error instanceof StripeApiError ||
 			error instanceof BillingNotConfiguredError
 		) {
+			if (!backstopScheduled) throw error
 			// The customer is linked; a failed plan refresh must not surface as
 			// a checkout error. The billing page refreshes on view and the
 			// per-user alarm retries after this plan-relevant activity.

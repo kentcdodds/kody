@@ -596,11 +596,14 @@ The global hourly customer scan is retired. Checkout completion and
 subscription/invoice webhooks refresh immediately and also arm the owning user's
 one-shot `StripePlanRefresh` Durable Object alarm for one hour later. That
 independent retry closes over transient Stripe failures without repeatedly
-enumerating inactive users. `/account/billing` still refreshes on every view so
-non-persisted `cancel_at` / `subscriptionStatus` stay current. Migration
-`0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
-`stripe_plan`, and `stripe_plan_refreshed_at`; Wrangler migration `v22` adds the
-alarm DO class without moving canonical billing data out of D1.
+enumerating inactive users. `/account/billing` arms the same backstop and still
+refreshes on every view so non-persisted `cancel_at` / `subscriptionStatus` stay
+current. If checkout cannot arm its backstop, a failed immediate refresh remains
+an error so the caller or Stripe webhook retries instead of acknowledging an
+unrecoverable stale projection. Migration `0066-stripe-billing.sql` adds
+`stripe_customer_id` (unique partial index), `stripe_plan`, and
+`stripe_plan_refreshed_at`; Wrangler migration `v23` adds the alarm DO class
+without moving canonical billing data out of D1.
 
 Published prices: Free $0, Pro $5/mo. Env vars and deploy wiring are documented
 in [`../environment-variables.md`](../environment-variables.md).

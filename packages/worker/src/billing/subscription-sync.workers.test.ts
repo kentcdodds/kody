@@ -2,7 +2,9 @@ import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createBillingLinkReference } from './billing-config.ts'
+import { StripeApiError } from './stripe-client.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
@@ -20,6 +22,7 @@ function createBillingEnv(
 		STRIPE_SECRET_KEY?: string
 		STRIPE_PRO_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
+		STRIPE_PLAN_REFRESH?: Env['STRIPE_PLAN_REFRESH']
 	} = {},
 ): Env {
 	return {
@@ -87,6 +90,7 @@ function stubStripeFetch(input: {
 	checkout?: unknown
 	subscriptions?: unknown
 	checkoutStatus?: number
+	subscriptionsStatus?: number
 }) {
 	const fetchStub = vi.fn(async (request: RequestInfo | URL) => {
 		const url = String(request)
@@ -114,6 +118,7 @@ function stubStripeFetch(input: {
 						},
 					],
 				},
+				input.subscriptionsStatus ?? 200,
 			)
 		}
 		return jsonResponse({ error: 'unexpected stripe path' }, 500)
@@ -184,6 +189,47 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 			state.storage.getAlarm(),
 		),
 	).toBeTypeOf('number')
+
+	vi.unstubAllGlobals()
+})
+
+test('checkout linking surfaces Stripe failure when its retry alarm cannot be armed', async () => {
+	const email = `link-no-backstop-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({ email, plan: 'pro' })
+	stubStripeFetch({
+		checkout: {
+			id: 'cs_no_backstop',
+			customer: 'cus_no_backstop',
+			client_reference_id: user.linkReference,
+		},
+		subscriptions: { error: 'stripe down' },
+		subscriptionsStatus: 500,
+	})
+	consoleError.mockImplementation(() => {})
+	const schedule = vi.fn(async () => {
+		throw new Error('alarm unavailable')
+	})
+	const billingEnv = createBillingEnv({
+		STRIPE_PLAN_REFRESH: {
+			idFromName: env.STRIPE_PLAN_REFRESH.idFromName.bind(
+				env.STRIPE_PLAN_REFRESH,
+			),
+			get: () => ({ schedule }),
+		} as unknown as Env['STRIPE_PLAN_REFRESH'],
+	})
+
+	await expect(
+		linkStripeCustomerFromCheckoutSession({
+			env: billingEnv,
+			user,
+			sessionId: 'cs_no_backstop',
+		}),
+	).rejects.toBeInstanceOf(StripeApiError)
+	expect(schedule).toHaveBeenCalledTimes(1)
+	expect(consoleError).toHaveBeenCalledWith(
+		'stripe_plan_refresh_schedule_failed',
+		expect.objectContaining({ userId: user.stableUserId }),
+	)
 
 	vi.unstubAllGlobals()
 })
