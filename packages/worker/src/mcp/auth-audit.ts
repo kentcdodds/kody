@@ -30,7 +30,7 @@ export type McpAuthDenialReason =
 	| 'denied'
 
 export async function recordMcpAuthDenial(input: {
-	db?: D1Database
+	db?: D1Database | null
 	action: 'mcp_token_rejected' | 'mcp_capability_denied'
 	reason: McpAuthDenialReason
 	/** Hashed by the audit sink; the raw value is never stored. */
