@@ -3,6 +3,7 @@ import {
 	getProPriceId,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
+import { scheduleStripePlanRefreshBackstop } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
 import {
 	parseStoredPlanName,
@@ -41,6 +42,7 @@ type BillingUserRow = {
 	stripe_plan: string | null
 	stripe_customer_id: string | null
 	stripe_plan_refreshed_at: string | null
+	stable_user_id: string
 }
 
 export async function loadAccountBillingData(input: {
@@ -54,7 +56,8 @@ export async function loadAccountBillingData(input: {
 	const error = resolveBillingErrorMessage(input.errorCode)
 
 	const row = await input.env.APP_DB.prepare(
-		`SELECT plan, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at
+		`SELECT plan, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at,
+		        stable_user_id
 		 FROM users
 		 WHERE id = ?`,
 	)
@@ -69,6 +72,13 @@ export async function loadAccountBillingData(input: {
 	const hasStripeCustomer = Boolean(customerId)
 
 	if (configured && customerId) {
+		if (row?.stable_user_id) {
+			await scheduleStripePlanRefreshBackstop({
+				env: input.env,
+				userId: row.stable_user_id,
+				now,
+			})
+		}
 		// Always refresh on page view: cancel_at and subscriptionStatus are not
 		// persisted, so serving the stored stripe_plan would hide a scheduled
 		// cancellation or past_due state. Billing page loads are rare enough

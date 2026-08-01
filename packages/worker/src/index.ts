@@ -7,12 +7,12 @@ import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
 import { RunLog } from './run-records/run-log-do.ts'
 import { UserMeter } from './entitlements/user-meter-do.ts'
+import { StripePlanRefresh } from './billing/stripe-plan-refresh-do.ts'
 import { Mailbox } from './email/mailbox-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
-import { isRetryableD1LockError } from './d1-retry.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
 import {
@@ -47,8 +47,6 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
-import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
-import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
 	parseUserScopedConnectorRoutePath,
@@ -61,38 +59,9 @@ import {
 import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
-import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
-import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
-import { refreshStaleStripePlans } from '#worker/billing/subscription-sync.ts'
-import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
-import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
-import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
-import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
-import {
-	checkAuthDenialBurstAndNotify,
-	shouldRunAuthDenialAlertCron,
-} from '#app/auth-denial-alerts.ts'
-import {
-	checkEmailDeliveryBurstAndNotify,
-	shouldRunEmailDeliveryAlertCron,
-} from '#app/email-delivery-alerts.ts'
-import {
-	aggregateUsageRollups,
-	shouldRunUsageAggregationCron,
-} from '#worker/usage/aggregate-rollups.ts'
-import {
-	isDrExportConfigured,
-	runDrExportTick,
-	runDrExportWatchdogTick,
-	shouldRunDrExportCron,
-	shouldRunDrExportWatchdogCron,
-} from '#worker/dr/exporter.ts'
-import {
-	runJobScheduleWatchdogTick,
-	shouldRunJobScheduleWatchdogCron,
-} from '#worker/jobs/job-schedule-watchdog.ts'
+import { dispatchScheduledLanes } from '#worker/scheduled/scheduled-dispatch-queue.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
@@ -111,6 +80,7 @@ export {
 	StorageRunner,
 	RunLog,
 	UserMeter,
+	StripePlanRefresh,
 	Mailbox,
 	OAuthPurgeCoordinator,
 }
@@ -632,146 +602,7 @@ const workerHandler = {
 		env: Env,
 		_ctx: ExecutionContext,
 	) {
-		const baseUrl = env.APP_BASE_URL ?? 'https://kody.local'
-		const scheduledAt = new Date(controller.scheduledTime)
-		const lanes: Array<{ name: string; run: () => Promise<unknown> }> = [
-			{
-				name: 'reconcile_artifacts_pushes',
-				run: () => reconcileArtifactsPushes({ env, baseUrl, now: scheduledAt }),
-			},
-			{
-				name: 'repo_session_cleanup',
-				run: () => cleanupRepoSessionBranches({ env, now: scheduledAt }),
-			},
-			{
-				name: 'reconcile_inbound_deliveries',
-				run: () =>
-					sweepStaleInboundDeliveries({
-						env,
-						now: scheduledAt,
-					}),
-			},
-			{
-				name: 'system_email_retention',
-				run: () =>
-					pruneSystemEmailRetention({
-						db: env.APP_DB,
-						blobs: env.EMAIL_BLOBS,
-						now: scheduledAt,
-					}),
-			},
-			{
-				name: 'stripe_plan_refresh',
-				run: () => refreshStaleStripePlans({ env, now: scheduledAt }),
-			},
-			{
-				// Seeds stored bucket byte estimates for rows that have never
-				// been measured so mutating storage entitlement checks never
-				// need a whole-inventory DO fan-out. Bounded batch per tick;
-				// a no-op SELECT once every bucket has an estimate.
-				name: 'storage_bucket_estimate_backfill',
-				run: () => backfillStorageBucketEstimates({ env, now: scheduledAt }),
-			},
-			{
-				// Rotates through a fixed user batch, replacing conservative
-				// write reservations with an authoritative D1 payload sum.
-				name: 'd1_storage_reconciliation',
-				run: () =>
-					reconcileD1StorageBytes({
-						db: env.APP_DB,
-						now: scheduledAt,
-					}),
-			},
-			{
-				// One global DO serializes invocations and persists independent phase
-				// cursors so neither healthy pages nor overlapping crons lose progress.
-				name: 'oauth_purge_expired',
-				run: () => {
-					const id = env.OAUTH_PURGE_COORDINATOR.idFromName('global')
-					return env.OAUTH_PURGE_COORDINATOR.get(id).run({
-						scheduledAt: scheduledAt.getTime(),
-					})
-				},
-			},
-		]
-		if (shouldRunRetentionCron(scheduledAt)) {
-			lanes.push({
-				name: 'retention',
-				run: () => pruneRetention({ env, now: scheduledAt }),
-			})
-			lanes.push({
-				name: 'job_retention',
-				run: () => pruneJobRetention({ env, now: scheduledAt }),
-			})
-		}
-		if (shouldRunUsageAggregationCron(scheduledAt)) {
-			lanes.push({
-				name: 'usage_aggregation',
-				run: () => aggregateUsageRollups(env, scheduledAt),
-			})
-		}
-		if (shouldRunAuthDenialAlertCron(scheduledAt)) {
-			lanes.push({
-				name: 'auth_denial_alert',
-				run: () => checkAuthDenialBurstAndNotify({ env, now: scheduledAt }),
-			})
-		}
-		if (shouldRunEmailDeliveryAlertCron(scheduledAt)) {
-			lanes.push({
-				name: 'email_delivery_alert',
-				run: () => checkEmailDeliveryBurstAndNotify({ env, now: scheduledAt }),
-			})
-		}
-		if (shouldRunDrExportCron(scheduledAt) && isDrExportConfigured(env)) {
-			lanes.push({
-				name: 'dr_export',
-				run: () => runDrExportTick({ env, now: scheduledAt }),
-			})
-		}
-		if (
-			shouldRunDrExportWatchdogCron(scheduledAt) &&
-			isDrExportConfigured(env)
-		) {
-			lanes.push({
-				name: 'dr_export_watchdog',
-				run: () => runDrExportWatchdogTick({ env, now: scheduledAt }),
-			})
-		}
-		if (shouldRunJobScheduleWatchdogCron(scheduledAt)) {
-			lanes.push({
-				name: 'job_schedule_watchdog',
-				run: () => runJobScheduleWatchdogTick({ env, now: scheduledAt }),
-			})
-		}
-		// Lane failures are isolated: each rejection is logged and reported to
-		// Sentry explicitly (the withSentry wrapper flushes captured events via
-		// waitUntil), but the handler never throws, so one broken lane cannot
-		// fail the cron invocation or hide sibling lane failures. Lanes run
-		// sequentially so D1 write-heavy crons (retention, reconcile, usage
-		// aggregation) do not contend for the same SQLite lock.
-		for (const lane of lanes) {
-			try {
-				await lane.run()
-			} catch (error) {
-				if (isRetryableD1LockError(error)) {
-					console.warn(
-						`scheduled_lane_d1_lock_contention lane=${lane.name}`,
-						error,
-					)
-					continue
-				}
-				console.error(`scheduled_lane_failed lane=${lane.name}`, error)
-				Sentry.withScope((scope) => {
-					scope.setTag('scheduled.lane', lane.name)
-					scope.setContext('scheduled', {
-						lane: lane.name,
-						scheduledTime: scheduledAt.toISOString(),
-						cron: controller.cron,
-					})
-					Sentry.captureException(error)
-				})
-			}
-		}
+		await dispatchScheduledLanes({ controller, env })
 	},
 } satisfies ExportedHandler<Env>
 

@@ -1,12 +1,13 @@
-import { env } from 'cloudflare:workers'
+import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createBillingLinkReference } from './billing-config.ts'
+import { StripeApiError } from './stripe-client.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
-	refreshStaleStripePlans,
 } from './subscription-sync.ts'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -21,6 +22,7 @@ function createBillingEnv(
 		STRIPE_SECRET_KEY?: string
 		STRIPE_PRO_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
+		STRIPE_PLAN_REFRESH?: Env['STRIPE_PLAN_REFRESH']
 	} = {},
 ): Env {
 	return {
@@ -88,6 +90,7 @@ function stubStripeFetch(input: {
 	checkout?: unknown
 	subscriptions?: unknown
 	checkoutStatus?: number
+	subscriptionsStatus?: number
 }) {
 	const fetchStub = vi.fn(async (request: RequestInfo | URL) => {
 		const url = String(request)
@@ -115,6 +118,7 @@ function stubStripeFetch(input: {
 						},
 					],
 				},
+				input.subscriptionsStatus ?? 200,
 			)
 		}
 		return jsonResponse({ error: 'unexpected stripe path' }, 500)
@@ -177,6 +181,55 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 		stripe_plan: 'pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
+	const refreshAlarm = env.STRIPE_PLAN_REFRESH.get(
+		env.STRIPE_PLAN_REFRESH.idFromName(user.stableUserId),
+	)
+	expect(
+		await runInDurableObject(refreshAlarm, async (_instance, state) =>
+			state.storage.getAlarm(),
+		),
+	).toBeTypeOf('number')
+
+	vi.unstubAllGlobals()
+})
+
+test('checkout linking surfaces Stripe failure when its retry alarm cannot be armed', async () => {
+	const email = `link-no-backstop-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({ email, plan: 'pro' })
+	stubStripeFetch({
+		checkout: {
+			id: 'cs_no_backstop',
+			customer: 'cus_no_backstop',
+			client_reference_id: user.linkReference,
+		},
+		subscriptions: { error: 'stripe down' },
+		subscriptionsStatus: 500,
+	})
+	consoleError.mockImplementation(() => {})
+	const schedule = vi.fn(async () => {
+		throw new Error('alarm unavailable')
+	})
+	const billingEnv = createBillingEnv({
+		STRIPE_PLAN_REFRESH: {
+			idFromName: env.STRIPE_PLAN_REFRESH.idFromName.bind(
+				env.STRIPE_PLAN_REFRESH,
+			),
+			get: () => ({ schedule }),
+		} as unknown as Env['STRIPE_PLAN_REFRESH'],
+	})
+
+	await expect(
+		linkStripeCustomerFromCheckoutSession({
+			env: billingEnv,
+			user,
+			sessionId: 'cs_no_backstop',
+		}),
+	).rejects.toBeInstanceOf(StripeApiError)
+	expect(schedule).toHaveBeenCalledTimes(1)
+	expect(consoleError).toHaveBeenCalledWith(
+		'stripe_plan_refresh_schedule_failed',
+		expect.objectContaining({ userId: user.stableUserId }),
+	)
 
 	vi.unstubAllGlobals()
 })
@@ -291,59 +344,4 @@ test('linkStripeCustomerFromCheckoutSession rejects unsafe checkout links withou
 		})
 		vi.unstubAllGlobals()
 	}
-})
-
-test('refreshStaleStripePlans refreshes stale linked customers', async () => {
-	const email = `stale-refresh-${crypto.randomUUID()}@example.com`
-	const staleAt = '2026-07-19T10:00:00.000Z'
-	const now = new Date('2026-07-19T12:00:00.000Z')
-	const user = await seedUser({
-		email,
-		stripeCustomerId: 'cus_stale',
-		stripePlan: 'pro',
-		stripePlanRefreshedAt: staleAt,
-	})
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_stale',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
-	})
-
-	const result = await refreshStaleStripePlans({
-		env: createBillingEnv(),
-		now,
-	})
-	expect(result.skipped).toBe(false)
-	expect(result.refreshed).toBeGreaterThanOrEqual(1)
-	expect(result.failed).toBe(0)
-
-	const row = await readUserBilling(user.id)
-	expect(row).toEqual({
-		stripe_customer_id: 'cus_stale',
-		stripe_plan: 'pro',
-		stripe_plan_refreshed_at: now.toISOString(),
-	})
-
-	vi.unstubAllGlobals()
-})
-
-test('refreshStaleStripePlans skips when billing is not configured', async () => {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const fetchStub = vi.fn()
-	vi.stubGlobal('fetch', fetchStub)
-
-	const result = await refreshStaleStripePlans({
-		env: createBillingEnv({ STRIPE_SECRET_KEY: '' }),
-	})
-	expect(result).toEqual({ refreshed: 0, failed: 0, skipped: true })
-	expect(fetchStub).not.toHaveBeenCalled()
-
-	vi.unstubAllGlobals()
 })

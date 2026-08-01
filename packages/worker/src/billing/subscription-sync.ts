@@ -15,9 +15,7 @@ import {
 	listSubscriptions,
 	StripeApiError,
 } from './stripe-client.ts'
-
-const staleRefreshMs = 60 * 60 * 1000
-const cronRefreshLimit = 25
+import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.ts'
 
 export class BillingLinkError extends Error {
 	readonly code:
@@ -310,6 +308,11 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 		throw error
 	}
 
+	const backstopScheduled = await scheduleStripePlanRefreshBackstop({
+		env: input.env,
+		userId: input.user.stableUserId,
+		now,
+	})
 	try {
 		return await refreshStripePlanForUser({
 			env: input.env,
@@ -322,9 +325,10 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			error instanceof StripeApiError ||
 			error instanceof BillingNotConfiguredError
 		) {
+			if (!backstopScheduled) throw error
 			// The customer is linked; a failed plan refresh must not surface as
 			// a checkout error. The billing page refreshes on view and the
-			// hourly cron sweep retries, so the plan converges shortly.
+			// per-user alarm retries after this plan-relevant activity.
 			console.error('billing_link_refresh_failed', {
 				userId: input.user.id,
 				error: error instanceof Error ? error.message : String(error),
@@ -400,6 +404,11 @@ export async function refreshStripePlanForStripeCustomer(input: {
 	if (!user) {
 		return { userId: null, resolved: null }
 	}
+	await scheduleStripePlanRefreshBackstop({
+		env: input.env,
+		userId: user.stableUserId,
+		now: input.now,
+	})
 	const resolved = await refreshStripePlanForUser({
 		env: input.env,
 		userId: user.id,
@@ -407,54 +416,6 @@ export async function refreshStripePlanForStripeCustomer(input: {
 		now: input.now,
 	})
 	return { userId: user.id, resolved }
-}
-
-/**
- * Cron sweep: refresh stripe_plan for up to 25 users whose
- * stripe_plan_refreshed_at is older than 1 hour (or null). Skipped entirely
- * when billing is not configured. Per-user failures are logged and do not
- * halt the sweep.
- */
-export async function refreshStaleStripePlans(input: {
-	env: SyncEnv
-	now?: Date
-}): Promise<{ refreshed: number; failed: number; skipped: boolean }> {
-	if (!isBillingConfigured(input.env)) {
-		return { refreshed: 0, failed: 0, skipped: true }
-	}
-	const now = input.now ?? new Date()
-	const staleBefore = new Date(now.valueOf() - staleRefreshMs).toISOString()
-	const rows = await input.env.APP_DB.prepare(
-		`SELECT id, stripe_customer_id
-		 FROM users
-		 WHERE stripe_customer_id IS NOT NULL
-		   AND (stripe_plan_refreshed_at IS NULL OR stripe_plan_refreshed_at < ?)
-		 ORDER BY stripe_plan_refreshed_at ASC
-		 LIMIT ?`,
-	)
-		.bind(staleBefore, cronRefreshLimit)
-		.all<{ id: number; stripe_customer_id: string }>()
-
-	let refreshed = 0
-	let failed = 0
-	for (const row of rows.results ?? []) {
-		try {
-			await refreshStripePlanForUser({
-				env: input.env,
-				userId: row.id,
-				customerId: row.stripe_customer_id,
-				now,
-			})
-			refreshed += 1
-		} catch (error) {
-			failed += 1
-			console.error('stripe_plan_refresh_failed', {
-				userId: row.id,
-				error: error instanceof Error ? error.message : String(error),
-			})
-		}
-	}
-	return { refreshed, failed, skipped: false }
 }
 
 export function parseStoredStripePlan(value: string | null | undefined) {

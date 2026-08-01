@@ -8,6 +8,11 @@ import {
 	platformFeedbackDispatchQueueBinding,
 	platformFeedbackDispatchQueueName,
 } from '../../packages/worker/src/platform-feedback/dispatch-queue-names.ts'
+import {
+	scheduledDispatchDeadLetterQueueName,
+	scheduledDispatchQueueBinding,
+	scheduledDispatchQueueName,
+} from '../../packages/worker/src/scheduled/scheduled-dispatch-queue-names.ts'
 
 const emailDeliveryQueueName = 'kody-email-delivery'
 const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
@@ -20,6 +25,9 @@ function readQueueConsumer(input: {
 	queueName: string
 	deadLetterQueueName: string
 	configPath: string
+	maxBatchSize?: number
+	maxBatchTimeout?: number
+	maxConcurrency?: number
 }) {
 	const value = input.consumers.find((entry) => {
 		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
@@ -34,9 +42,12 @@ function readQueueConsumer(input: {
 	const consumer = value as Record<string, unknown>
 	if (
 		consumer.dead_letter_queue !== input.deadLetterQueueName ||
-		consumer.max_batch_size !== expectedMaxBatchSize ||
-		consumer.max_batch_timeout !== expectedMaxBatchTimeout ||
-		consumer.max_retries !== expectedMaxRetries
+		consumer.max_batch_size !== (input.maxBatchSize ?? expectedMaxBatchSize) ||
+		consumer.max_batch_timeout !==
+			(input.maxBatchTimeout ?? expectedMaxBatchTimeout) ||
+		consumer.max_retries !== expectedMaxRetries ||
+		(input.maxConcurrency !== undefined &&
+			consumer.max_concurrency !== input.maxConcurrency)
 	) {
 		throw new Error(
 			`wrangler config "${input.configPath}" has invalid production consumer settings for "${input.queueName}".`,
@@ -45,6 +56,29 @@ function readQueueConsumer(input: {
 	return {
 		queue: input.queueName,
 		deadLetterQueue: input.deadLetterQueueName,
+	}
+}
+
+function readQueueProducer(input: {
+	producers: Array<unknown>
+	binding: string
+	queueName: string
+	configPath: string
+}) {
+	const producer = input.producers.find((entry) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+			return false
+		return (entry as Record<string, unknown>).binding === input.binding
+	})
+	if (
+		!producer ||
+		typeof producer !== 'object' ||
+		Array.isArray(producer) ||
+		(producer as Record<string, unknown>).queue !== input.queueName
+	) {
+		throw new Error(
+			`wrangler config "${input.configPath}" must bind "${input.binding}" to "${input.queueName}".`,
+		)
 	}
 }
 
@@ -60,9 +94,9 @@ export function parseProductionQueueResources(input: {
 	}
 	const queueConfig = queues as Record<string, unknown>
 	const consumers = queueConfig.consumers
-	if (!Array.isArray(consumers) || consumers.length !== 3) {
+	if (!Array.isArray(consumers) || consumers.length !== 4) {
 		throw new Error(
-			`wrangler config "${input.configPath}" must define exactly three production Queue consumers.`,
+			`wrangler config "${input.configPath}" must define exactly four production Queue consumers.`,
 		)
 	}
 	const emailDelivery = readQueueConsumer({
@@ -83,50 +117,39 @@ export function parseProductionQueueResources(input: {
 		deadLetterQueueName: communityActivityDispatchDeadLetterQueueName,
 		configPath: input.configPath,
 	})
+	const scheduledDispatch = readQueueConsumer({
+		consumers,
+		queueName: scheduledDispatchQueueName,
+		deadLetterQueueName: scheduledDispatchDeadLetterQueueName,
+		configPath: input.configPath,
+		maxBatchSize: 1,
+		maxBatchTimeout: 0,
+		maxConcurrency: 16,
+	})
 	const producers = queueConfig.producers
 	if (!Array.isArray(producers)) {
 		throw new Error(
 			`wrangler config "${input.configPath}" must define production Queue producers.`,
 		)
 	}
-	const platformFeedbackProducer = producers.find((entry) => {
-		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
-			return false
-		return (
-			(entry as Record<string, unknown>).binding ===
-			platformFeedbackDispatchQueueBinding
-		)
+	readQueueProducer({
+		producers,
+		binding: platformFeedbackDispatchQueueBinding,
+		queueName: platformFeedbackDispatchQueueName,
+		configPath: input.configPath,
 	})
-	if (
-		!platformFeedbackProducer ||
-		typeof platformFeedbackProducer !== 'object' ||
-		Array.isArray(platformFeedbackProducer) ||
-		(platformFeedbackProducer as Record<string, unknown>).queue !==
-			platformFeedbackDispatchQueueName
-	) {
-		throw new Error(
-			`wrangler config "${input.configPath}" must bind "${platformFeedbackDispatchQueueBinding}" to "${platformFeedbackDispatchQueueName}".`,
-		)
-	}
-	const communityActivityProducer = producers.find((entry) => {
-		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
-			return false
-		return (
-			(entry as Record<string, unknown>).binding ===
-			communityActivityDispatchQueueBinding
-		)
+	readQueueProducer({
+		producers,
+		binding: communityActivityDispatchQueueBinding,
+		queueName: communityActivityDispatchQueueName,
+		configPath: input.configPath,
 	})
-	if (
-		!communityActivityProducer ||
-		typeof communityActivityProducer !== 'object' ||
-		Array.isArray(communityActivityProducer) ||
-		(communityActivityProducer as Record<string, unknown>).queue !==
-			communityActivityDispatchQueueName
-	) {
-		throw new Error(
-			`wrangler config "${input.configPath}" must bind "${communityActivityDispatchQueueBinding}" to "${communityActivityDispatchQueueName}".`,
-		)
-	}
+	readQueueProducer({
+		producers,
+		binding: scheduledDispatchQueueBinding,
+		queueName: scheduledDispatchQueueName,
+		configPath: input.configPath,
+	})
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,
@@ -136,5 +159,7 @@ export function parseProductionQueueResources(input: {
 		communityActivityDispatchQueueName: communityActivityDispatch.queue,
 		communityActivityDispatchDeadLetterQueueName:
 			communityActivityDispatch.deadLetterQueue,
+		scheduledDispatchQueueName: scheduledDispatch.queue,
+		scheduledDispatchDeadLetterQueueName: scheduledDispatch.deadLetterQueue,
 	}
 }

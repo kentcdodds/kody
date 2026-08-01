@@ -78,16 +78,16 @@ Deletion must cover these user-owned surfaces:
   references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
-  `McpClientHub`, `RunLog`, `UserMeter`, and `Mailbox` are purged through
-  account-deletion RPCs after their D1 identifiers are collected (`RunLog`,
-  `UserMeter`, and `Mailbox` are one object per user and need no D1 id scan).
-  During the Mailbox expand phase, `Mailbox.purge()` clears DO SQLite only; D1
-  `email_*` rows and `EMAIL_BLOBS` deletion remain the authoritative account-
-  deletion path for mail content (see [Mailbox](#durable-objects-mailbox)).
-  `MCP` objects remain SDK session-keyed, while `mcp_agent_sessions` indexes
-  each Durable Object id by authenticated stable user id so account deletion can
-  purge stored props, conversation state, raw-fetch state, and transport storage
-  before revoking OAuth grants.
+  `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
+  purged through account-deletion RPCs after their D1 identifiers are collected
+  (`RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are one object per
+  user and need no D1 id scan). During the Mailbox expand phase,
+  `Mailbox.purge()` clears DO SQLite only; D1 `email_*` rows and `EMAIL_BLOBS`
+  deletion remain the authoritative account- deletion path for mail content (see
+  [Mailbox](#durable-objects-mailbox)). `MCP` objects remain SDK session-keyed,
+  while `mcp_agent_sessions` indexes each Durable Object id by authenticated
+  stable user id so account deletion can purge stored props, conversation state,
+  raw-fetch state, and transport storage before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME and attachment blobs in `EMAIL_BLOBS` are deleted by
@@ -766,6 +766,10 @@ via `durableObjectNameFromParts`); domain helpers such as
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
   plus optional schema-v4 D1 storage-byte shadow and schema-v5 package-service
   liveness shadow. See [Entitlements](./entitlements.md#usermeter-expand-phase).
+- `StripePlanRefresh` — `stripePlanRefreshDurableObjectName(userId)` →
+  `idFromName(userId)`. One ephemeral, one-shot reconciliation alarm per user;
+  checkout and subscription webhook activity arm it as a backstop to the
+  immediate Stripe refresh. Account deletion cancels and purges the alarm.
 - `Mailbox` — `mailboxDurableObjectName(userId)` → `idFromName(userId)`. One
   email-metadata DO per user (untrimmed stable id, same as `RunLog`). See
   [Mailbox](#durable-objects-mailbox).
@@ -836,6 +840,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
   [Run records](./run-records.md))
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
   [Entitlements](./entitlements.md#usermeter-expand-phase))
+- `STRIPE_PLAN_REFRESH` (Durable Objects; per-user, activity-driven Stripe plan
+  reconciliation alarms)
 - `MAILBOX` (Durable Objects; per-user email metadata — see
   [Mailbox](#durable-objects-mailbox); phase 1 registers purge/export
   consumption without changing D1 authority)
@@ -937,8 +943,13 @@ pushed the session commit to the source Artifacts repo.
 
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 external pushes that were not followed by an explicit
-`package_publish_external_push` call. The Worker scheduled handler runs every
-five minutes (`wrangler.jsonc` `*/5 * * * *`). A write-token mint sets the
+`package_publish_external_push` call. In production, the Worker cron dispatcher
+runs every five minutes (`wrangler.jsonc` `*/5 * * * *`) and sends each due
+maintenance lane to `kody-scheduled-dispatch`. The consumer is configured for
+one message per invocation with independent concurrency, so a slow reconcile
+cannot consume the runtime budget of retention, OAuth purge, or another sibling
+lane. Preview and local runtimes execute the same registry inline when the
+production-only queue binding is unavailable. A write-token mint sets the
 source's `external_check_until` to the token expiry plus a one-hour grace
 period. The normal pass only scans these pending sources, using
 `last_external_check_at` for the five-minute cadence and keyset paging until the
@@ -963,12 +974,17 @@ widens the same keyset scan to every package source as a full-fleet backstop and
 calls `revokeStaleArtifactsTokens(...)` for checked repos to clean up expired
 Artifacts tokens.
 
-Reconcile runs as one lane of the scheduled handler in
-`packages/worker/src/index.ts`, alongside repo-session cleanup, system-email
-retention, general retention, job retention, and hourly usage-rollup
-aggregation. Lane failures are isolated: each rejected lane is logged with a
-`scheduled_lane_failed` tag and reported to Sentry, and the handler never
-throws, so one broken lane cannot abort or mask the others.
+Reconcile runs through the registry in
+`packages/worker/src/scheduled/scheduled-lanes.ts`, alongside repo-session
+cleanup, system-email retention, general retention, job retention, and hourly
+usage-rollup aggregation. Each production queue message preserves the existing
+`scheduled_lane_failed` / D1 lock-contention log and Sentry context. A handled
+lane failure is acknowledged and retried by the next cron tick, matching the old
+cron semantics. A failed enqueue is reported and runs through the inline
+fallback after all sibling enqueue attempts finish; multiple failed enqueues
+fall back sequentially to avoid D1 lock contention. Consumer transport failures
+retain the configured retry/DLQ behavior. No failure can abort or mask a sibling
+invocation.
 
 Production note:
 
@@ -1088,6 +1104,8 @@ to `durableObjectNameFromParts`).
 - `UserMeter`: `idFromName(userId)` (no trim); one daily-entitlement meter DO
   per user, plus optional schema-v4 D1 storage-byte shadow and schema-v5
   package-service liveness shadow.
+- `StripePlanRefresh`: `idFromName(userId)` (no trim); one ephemeral billing
+  reconciliation alarm DO per user.
 - `Mailbox`: `idFromName(userId)` (no trim); one email-metadata DO per user.
 - `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
@@ -1237,19 +1255,21 @@ migration plan.
 
 ### Growth and retention policies
 
-The Worker scheduled handler runs every five minutes, but
+The Worker cron dispatcher runs every five minutes, but
 `packages/worker/src/app/retention.ts` gates the general retention job to the
-top of the hour. Each hourly run loops in round-robin passes over the policy
-tables — every pending table gets one configured batch before any table gets a
-second one — until every table is drained or the run's time budget
-(`retentionRunTimeBudgetMs`, ~20 seconds measured with `Date.now`) is exhausted.
-The first pass always completes so a hot table cannot starve the others, and
-per-batch sizes stay small to bound D1 single-writer pressure. Progress is
-reported with a one-line `retention-prune` log that includes batches-per-table
-counts and whether the budget ran out. The retention module owns the named
-constants and manifest, and `packages/worker/src/app/retention.node.test.ts`
-fails if a future growth-pattern D1 table is added without either a policy or a
-documented exemption.
+top of the hour. Production dispatches it as its own queue invocation; preview
+and local runtimes run it inline. Each hourly run loops in round-robin passes
+over the policy tables — every pending table gets one configured batch before
+any table gets a second one — until every table is drained or the run's time
+budget (`retentionRunTimeBudgetMs`, ~20 seconds measured with `Date.now`) is
+exhausted. The first pass always completes so a hot table cannot starve the
+others, and per-batch sizes stay small to bound D1 single-writer pressure.
+Progress is reported with a one-line `retention-prune` log that includes
+batches-per-table counts and whether the budget ran out. The retention module
+owns the named constants and manifest, and
+`packages/worker/src/app/retention.node.test.ts` fails if a future
+growth-pattern D1 table is added without either a policy or a documented
+exemption.
 
 Current retention policies:
 

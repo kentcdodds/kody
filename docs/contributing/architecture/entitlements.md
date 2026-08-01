@@ -212,8 +212,9 @@ affect D1 enforcement.
 **Optional reconcile shadow:** `reconcileUserD1StorageBytes` absolute-sets D1
 from `calculateUserD1StorageBytes` and awaits that write. When optional `env` is
 present, it best-effort shadows the post-update D1 value into UserMeter; shadow
-failures are logged and never fail or poison the lane. Current
-`d1_storage_reconciliation` wiring passes `{ db }` only.
+failures are logged and never fail or poison the lane. The
+`d1_storage_reconciliation` scheduled-lane wiring passes `env`, so every
+successful absolute reconciliation also advances the expand-phase shadow.
 
 **Usage reads stay on D1:** account usage, admin drill-down, and
 `readCurrentEntitlementResourceUsage` for `storage_bytes` call
@@ -295,13 +296,9 @@ authority flip remains the separate contract follow-up above.
 
 ### Future storage authority flip (contract follow-up)
 
-A separate contract PR — not a merge blocker for this additive slice — will flip
-D1 payload storage-byte authority into UserMeter once:
-
-1. **mailbox-do** passes `env` on email inbound/outbound storage reservations,
-   and
-2. **cron-restructure** passes `env` into `d1_storage_reconciliation` lane
-   wiring in `index.ts`.
+A separate contract PR will flip D1 payload storage-byte authority into
+UserMeter once **mailbox-do** passes `env` on email inbound/outbound storage
+reservations. Cron reconciliation shadowing is already wired.
 
 Only then do reads, reserves, and reconciliation switch to UserMeter-first with
 D1 as mirror/cursor. Until that flip, shadow divergence is acceptable; D1
@@ -669,15 +666,20 @@ are idempotent), then recorded. A UNIQUE conflict after a successful process is
 treated as duplicate success (`200`). Process failures return `500` without
 inserting so Stripe can retry. Rows older than 30 days are pruned by retention.
 
-### Poll backup
+### Activity-driven backup
 
-`users.stripe_plan` also stays fresh via an hourly cron lane
-(`refreshStaleStripePlans`: 25 users/sweep, 1h staleness) and an on-page refresh
-every time `/account/billing` loads (always calls Stripe so non-persisted
-`cancel_at` / `subscriptionStatus` stay current). Keep the poll as a backup if a
-webhook is missed or the success URL is never hit. Migration
-`0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
-`stripe_plan`, and `stripe_plan_refreshed_at`.
+The global hourly customer scan is retired. Checkout completion and
+subscription/invoice webhooks refresh immediately and also arm the owning user's
+one-shot `StripePlanRefresh` Durable Object alarm for one hour later. That
+independent retry closes over transient Stripe failures without repeatedly
+enumerating inactive users. `/account/billing` arms the same backstop and still
+refreshes on every view so non-persisted `cancel_at` / `subscriptionStatus` stay
+current. If checkout cannot arm its backstop, a failed immediate refresh remains
+an error so the caller or Stripe webhook retries instead of acknowledging an
+unrecoverable stale projection. Migration `0066-stripe-billing.sql` adds
+`stripe_customer_id` (unique partial index), `stripe_plan`, and
+`stripe_plan_refreshed_at`; Wrangler migration `v23` adds the alarm DO class
+without moving canonical billing data out of D1.
 
 Published prices: Free $0, Pro $5/mo. Env vars and deploy wiring are documented
 in [`../environment-variables.md`](../environment-variables.md).

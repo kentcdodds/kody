@@ -66,9 +66,11 @@ primitives:
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
-    summary: Worker cron entry with isolated maintenance lanes.
+    summary:
+      Worker cron dispatcher with queue-isolated maintenance lane invocations.
     code:
       - packages/worker/src/index.ts
+      - packages/worker/src/scheduled/
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
       - packages/worker/src/jobs/job-retention-cleanup.ts
       - packages/worker/src/repo/repo-session-cleanup.ts
@@ -146,7 +148,7 @@ primitives:
     name: Stripe billing
     summary:
       Authenticated Checkout Session creation, Stripe webhooks, customer
-      linking, and subscription→plan sync (cron poll as backup).
+      linking, and subscription→plan sync with per-user activity-driven alarms.
     code:
       - packages/worker/src/billing/
       - packages/worker/src/app/handlers/stripe-webhook.ts

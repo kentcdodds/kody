@@ -8,9 +8,15 @@ const refreshStripePlanForUser = vi.hoisted(() =>
 		subscriptionStatus: 'active' as string | null,
 	})),
 )
+const scheduleStripePlanRefreshBackstop = vi.hoisted(() =>
+	vi.fn(async () => true),
+)
 
 vi.mock('#worker/billing/subscription-sync.ts', () => ({
 	refreshStripePlanForUser,
+}))
+vi.mock('#worker/billing/stripe-plan-refresh-client.ts', () => ({
+	scheduleStripePlanRefreshBackstop,
 }))
 
 import {
@@ -37,6 +43,7 @@ function createBillingTestDb(input: {
 								void params
 								return {
 									plan: input.plan,
+									stable_user_id: 'stable-user-id',
 									stripe_plan: input.stripePlan ?? null,
 									stripe_customer_id: input.stripeCustomerId ?? null,
 									stripe_plan_refreshed_at: null,
@@ -98,6 +105,11 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 			customerId: 'cus_test',
 		}),
 	)
+	expect(scheduleStripePlanRefreshBackstop).toHaveBeenCalledWith({
+		env,
+		userId: 'stable-user-id',
+		now: new Date('2026-07-25T12:00:00.000Z'),
+	})
 
 	consoleError.mockImplementation(() => {})
 	refreshStripePlanForUser.mockRejectedValueOnce(new Error('stripe down'))
@@ -128,4 +140,5 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	expect(noCustomer.subscriptionStatus).toBeNull()
 	expect(noCustomer.configured).toBe(true)
 	expect(refreshStripePlanForUser).not.toHaveBeenCalled()
+	expect(scheduleStripePlanRefreshBackstop).toHaveBeenCalledTimes(2)
 })
