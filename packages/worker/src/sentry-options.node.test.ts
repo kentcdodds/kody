@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
+	durableObjectBlockConcurrencyWhileTimeoutResetMessage,
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectIsolateCpuResetMessage,
 	durableObjectIsolateMemoryResetMessage,
@@ -188,9 +189,9 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(filterSentryEvent(platformEvent)).toBe(platformEvent)
 
 	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
-	// update) are transient — one representative form per family, plus an
-	// `Error:`-prefixed variant and a missing trailing period. Wrapped
-	// recovery failures must stay visible.
+	// update / blockConcurrencyWhile timeout) are transient — one
+	// representative form per family, plus an `Error:`-prefixed variant and a
+	// missing trailing period. Wrapped recovery failures must stay visible.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -215,6 +216,17 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 				values: [
 					{
 						value: durableObjectCodeUpdatedResetMessage.replace(/\.$/, ''),
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: `Error: ${durableObjectBlockConcurrencyWhileTimeoutResetMessage}`,
 					},
 				],
 			},
