@@ -203,7 +203,9 @@ test(
 		expect(overQuotaMessage.rejectedReason).toBe(
 			'Recipient mailbox is over quota.',
 		)
-		expect(await readAuthoritativeD1StorageBytes(atCapUserId)).toBe(storageLimit)
+		expect(await readAuthoritativeD1StorageBytes(atCapUserId)).toBe(
+			storageLimit,
+		)
 		await overQuotaDrain.drain()
 		expect(await atCapMeter.readStorageBytes()).toMatchObject({
 			outcome: 'ready',

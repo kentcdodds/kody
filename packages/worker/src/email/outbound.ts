@@ -569,6 +569,7 @@ export async function sendOutboundEmail(
 			inReplyTo: input.inReplyToHeader ?? null,
 			references: input.references ?? [],
 		})
+		let storageAccounting: Promise<unknown> | undefined
 		await assertWithinStorageBytesEntitlement({
 			db: input.env.APP_DB,
 			env: input.env,
@@ -587,7 +588,13 @@ export async function sendOutboundEmail(
 						headers: storedHeaders,
 					},
 				}) + attachmentBytesTotal,
+			waitUntil: (promise) => {
+				storageAccounting = promise
+			},
 		})
+		// Outbound has no ExecutionContext. Await the interface's caught
+		// accounting task so a worker shutdown cannot drop the UserMeter handoff.
+		await storageAccounting
 
 		// Atomic check-and-increment via UserMeter (sole daily authority).
 		await consumeDailyEntitlement({

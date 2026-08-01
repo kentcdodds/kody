@@ -38,7 +38,11 @@ async function seedVerifiedAccount(email: string) {
 			stableUserId,
 		)
 		.run()
-	return { username, from: `${username}@${platformDomain}`, userId: stableUserId }
+	return {
+		username,
+		from: `${username}@${platformDomain}`,
+		userId: stableUserId,
+	}
 }
 
 async function seedAuthoritativeD1StorageBytes(userId: string, bytes: number) {
@@ -51,36 +55,6 @@ async function seedAuthoritativeD1StorageBytes(userId: string, bytes: number) {
 	)
 		.bind(bytes, updatedAt, userId)
 		.run()
-}
-
-async function waitForUserMeterStorageShadowParity(input: {
-	userId: string
-	timeoutMs?: number
-}) {
-	const meter = userMeterRpc({ env, userId: input.userId })
-	const timeoutMs = input.timeoutMs ?? 5_000
-	const started = Date.now()
-
-	while (Date.now() - started <= timeoutMs) {
-		const authoritative = await readUserD1StorageBytes({
-			db: env.APP_DB,
-			userId: input.userId,
-		})
-		const shadow = await meter.readStorageBytes()
-		if (shadow.outcome === 'ready' && shadow.bytes === authoritative) {
-			return { authoritative, shadow }
-		}
-		await new Promise((resolve) => setTimeout(resolve, 10))
-	}
-
-	const authoritative = await readUserD1StorageBytes({
-		db: env.APP_DB,
-		userId: input.userId,
-	})
-	const shadow = await meter.readStorageBytes()
-	throw new Error(
-		`Timed out waiting for UserMeter storage shadow parity (D1=${authoritative}, shadow=${shadow.outcome === 'ready' ? shadow.bytes : shadow.outcome}).`,
-	)
 }
 
 test('sendOutboundEmail reserves D1 storage bytes and best-effort shadows them into USER_METER', async () => {
@@ -115,9 +89,11 @@ test('sendOutboundEmail reserves D1 storage bytes and best-effort shadows them i
 	})
 	expect(authoritativeAfter).toBeGreaterThan(initialD1Bytes)
 
-	const { authoritative, shadow } = await waitForUserMeterStorageShadowParity({
+	const authoritative = await readUserD1StorageBytes({
+		db: env.APP_DB,
 		userId,
 	})
+	const shadow = await userMeterRpc({ env, userId }).readStorageBytes()
 	expect(shadow).toMatchObject({
 		outcome: 'ready',
 		bytes: authoritativeAfter,
