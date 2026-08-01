@@ -11,6 +11,7 @@ import { communitySetFeaturedCapability } from '#mcp/capabilities/community/set-
 import { communitySetTrustedCapability } from '#mcp/capabilities/community/set-trusted.ts'
 import { communityContentWarning } from '#mcp/capabilities/community/shared.ts'
 import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
+import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	banCommunityUser,
 	listFeaturedCommunityListingsWithAggregates,
@@ -308,7 +309,7 @@ test('community package flow works end-to-end through capability handlers', asyn
 			},
 			reporterCtx,
 		),
-	).rejects.toThrow('rate after forking')
+	).rejects.toThrow('Fork this community listing before rating it.')
 
 	await communityRateCapability.handler(
 		{

@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
+import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
@@ -91,6 +92,15 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (payload.callerError) return true
 	if (isUserCodeError(cause)) return true
 	if (getErrorCauseChain(cause).some(isEntitlementLimitError)) return true
+	// Community preconditions (rate before fork, self-rate, banned, …) are
+	// caller-clearable; keep them on mcp-event and out of Sentry.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) => entry instanceof CommunityActionError,
+		)
+	) {
+		return true
+	}
 	return isMcpCallerError(cause)
 }
 
