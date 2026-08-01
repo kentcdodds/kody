@@ -1143,6 +1143,110 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 	).toBe(true)
 })
 
+test('storage byte reserve retries after a failed conditional update under limit', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const proLimit = planLimits.pro.maxStorageBytes
+	let reserveAttempts = 0
+	let bytes = proLimit - 10
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async first<T>() {
+							if (
+								query.includes('SELECT plan, stripe_plan FROM users') ||
+								query.includes('SELECT plan FROM users')
+							) {
+								return { plan: 'pro', stripe_plan: null } as T
+							}
+							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
+								return { bytes } as T
+							}
+							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async run() {
+							if (
+								query.includes('SET d1_storage_bytes = d1_storage_bytes + ?')
+							) {
+								reserveAttempts += 1
+								if (reserveAttempts === 1) {
+									return { meta: { changes: 0 } }
+								}
+								const requested = Number(params[0])
+								if (bytes + Number(params[3]) > Number(params[4])) {
+									return { meta: { changes: 0 } }
+								}
+								bytes += requested
+								return { meta: { changes: 1 } }
+							}
+							throw new Error(`Unsupported run query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await assertWithinStorageBytesEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		requested: 5,
+	})
+	expect(reserveAttempts).toBe(2)
+	expect(bytes).toBe(proLimit - 5)
+})
+
+test('storage byte reserve fails closed when contention never resolves', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const proLimit = planLimits.pro.maxStorageBytes
+	let reserveAttempts = 0
+	const db = {
+		prepare(query: string) {
+			return {
+				bind() {
+					return {
+						async first<T>() {
+							if (
+								query.includes('SELECT plan, stripe_plan FROM users') ||
+								query.includes('SELECT plan FROM users')
+							) {
+								return { plan: 'pro', stripe_plan: null } as T
+							}
+							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
+								return { bytes: proLimit - 10 } as T
+							}
+							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async run() {
+							if (
+								query.includes('SET d1_storage_bytes = d1_storage_bytes + ?')
+							) {
+								reserveAttempts += 1
+								return { meta: { changes: 0 } }
+							}
+							throw new Error(`Unsupported run query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		assertWithinStorageBytesEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			requested: 5,
+		}),
+	).rejects.toThrow(
+		'Storage byte reservation could not complete under concurrent updates.',
+	)
+	expect(reserveAttempts).toBe(5)
+})
+
 test('getPlanRank orders free < pro < partner < max', () => {
 	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
 	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))

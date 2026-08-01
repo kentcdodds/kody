@@ -204,6 +204,10 @@ export type AccountExportArtifactRepo = {
 
 type RunRecordsExportPayload = Awaited<ReturnType<typeof exportRunRecords>>
 
+function countUserMeterExportEntries(result: UserMeterExportResult): number {
+	return result.counters.length + (result.storageBytesShadow == null ? 0 : 1)
+}
+
 function countRunRecordsExportEntries(
 	runRecords: RunRecordsExportPayload | null | undefined,
 ) {
@@ -279,6 +283,11 @@ export type AccountExportSectionResult = {
 	nextStartAfter: string | null
 	pageSize: number
 	warnings: Array<string>
+	/**
+	 * Non-authoritative UserMeter storage-byte shadow. Present only on the
+	 * first `user_meter` page (`startAfter` absent); later pages omit it.
+	 */
+	storageBytesShadow?: UserMeterExportResult['storageBytesShadow']
 }
 
 function normalizePageSize(pageSize: number | undefined) {
@@ -1050,7 +1059,7 @@ async function collectManifestInventoryCounts(input: {
 			}).exportCounters({
 				pageSize: maxExportPageSize,
 			})
-			return page.counters.length
+			return countUserMeterExportEntries(page)
 		}),
 		safeCount('remote connectors', async () =>
 			countScalar(
@@ -1571,7 +1580,7 @@ function buildManifest(input: {
 		count:
 			input.durableObjects?.userMeter == null
 				? (input.inventoryCounts?.userMeterCounters ?? 0)
-				: input.durableObjects.userMeter.counters.length,
+				: countUserMeterExportEntries(input.durableObjects.userMeter),
 		warnings: input.warnings.filter(
 			(warning) =>
 				warning.startsWith('User meter ') || warning.startsWith('USER_METER '),
@@ -1911,6 +1920,7 @@ export async function readAccountExportSection(input: {
 		return {
 			section: input.section,
 			items: page.counters,
+			storageBytesShadow: page.storageBytesShadow,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

@@ -1572,6 +1572,12 @@ test('account export includes user_meter counters, pages them, and warns on trun
 			mirrorUpdatedAt: 'r/00000000000000000001',
 		},
 	]
+	const storageBytesShadow = {
+		bytes: 4_096,
+		revision: 3,
+		updatedAt: '2026-07-31T03:00:00.000Z',
+		mirrorUpdatedAt: 'r/00000000000000000003',
+	}
 	const exportCounters = vi.fn(
 		async (input: { pageSize?: number; startAfter?: string | null }) => {
 			const pageSize = input.pageSize ?? 100
@@ -1582,8 +1588,11 @@ test('account export includes user_meter counters, pages them, and warns on trun
 				: 0
 			const page = counters.slice(startIndex, startIndex + pageSize)
 			const truncated = startIndex + pageSize < counters.length
+			const isFirstPage =
+				typeof input.startAfter !== 'string' || input.startAfter.length === 0
 			return {
 				counters: page,
+				storageBytesShadow: isFirstPage ? storageBytesShadow : null,
 				nextStartAfter: truncated
 					? `${page.at(-1)!.day}:${page.at(-1)!.resource}`
 					: null,
@@ -1606,9 +1615,10 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		mcpUserId: 'user-aaa',
 	})
 	expect(idFromName).toHaveBeenCalledWith('user-aaa')
-	expect(accountExport.manifest.sections.user_meter?.count).toBe(3)
+	expect(accountExport.manifest.sections.user_meter?.count).toBe(4)
 	expect(accountExport.durableObjects.userMeter).toEqual({
 		counters,
+		storageBytesShadow,
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1626,6 +1636,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		pageSize: 2,
 	})
 	expect(first.items).toEqual(counters.slice(0, 2))
+	expect(first.storageBytesShadow).toEqual(storageBytesShadow)
 	expect(first.truncated).toBe(true)
 	expect(first.nextStartAfter).toBe('2026-07-30:execute_calls_per_day')
 
@@ -1638,12 +1649,19 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		startAfter: first.nextStartAfter ?? undefined,
 	})
 	expect(second.items).toEqual(counters.slice(2))
+	expect(second.storageBytesShadow).toBeNull()
 	expect(second.truncated).toBe(false)
 	expect(second.nextStartAfter).toBeNull()
-	expect(exportCounters).toHaveBeenCalled()
+	expect(exportCounters).toHaveBeenCalledWith(
+		expect.objectContaining({
+			pageSize: 2,
+			startAfter: first.nextStartAfter,
+		}),
+	)
 
 	exportCounters.mockImplementation(async () => ({
 		counters: [counters[0]!],
+		storageBytesShadow: null,
 		nextStartAfter: 'cursor-more',
 		truncated: true,
 	}))
@@ -1653,6 +1671,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		mcpUserId: 'user-aaa',
 	})
 	expect(truncatedExport.durableObjects.userMeter?.truncated).toBe(true)
+	expect(truncatedExport.manifest.sections.user_meter?.count).toBe(1)
 	expect(truncatedExport.manifest.warnings).toContain(
 		'User meter counters were truncated in the full export; use account_export_section with section "user_meter" to retrieve additional pages.',
 	)

@@ -285,6 +285,7 @@ test('storage runner storage byte entitlement aggregates only inventoried user b
 		.bind(targetD1Bytes, new Date().toISOString(), userId)
 		.run()
 	expect(initialD1Bytes).toBe(0)
+	// D1 remains the sole payload authority for composed getCurrent.
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId }),
 	).resolves.toBe(targetD1Bytes)

@@ -21,6 +21,7 @@ import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import {
 	type McpMemoryRow,
 	type MemoryRecord,
@@ -72,7 +73,8 @@ type MemoryOwnerContext = {
 }
 
 type MemoryEnv = Pick<Env, 'APP_DB'> &
-	Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>> &
+	UserMeterEnv
 
 type MemoryUpsertInput = MemoryOwnerContext & {
 	env: MemoryEnv
@@ -86,6 +88,7 @@ type MemoryUpsertInput = MemoryOwnerContext & {
 	dedupeKey?: string | null
 	status?: 'active' | 'archived'
 	verificationReference?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 type MemoryDeleteInput = MemoryOwnerContext & {
@@ -215,6 +218,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 
 			await assertWithinStorageBytesEntitlement({
 				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.userId,
 				email: input.userEmail,
 				requested: estimateEntitlementStorageEntryByteDelta({
@@ -247,6 +251,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 							}
 						: null,
 				}),
+				waitUntil: input.waitUntil,
 			})
 
 			if (existing) {

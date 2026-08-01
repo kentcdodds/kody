@@ -2,10 +2,12 @@ import {
 	isDailyEntitlementResource,
 	userMeterMirrorUpdatedAtToken,
 	type DailyEntitlementResource,
+	type UserMeterStorageBytesState,
 } from '#worker/entitlements/user-meter-do.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
 type MeterRow = { count: number; revision: number }
+type StorageRow = { bytes: number; revision: number; updatedAt: string }
 
 /**
  * In-memory UserMeter stub keyed by `idFromName` (stable userId) for node-unit
@@ -14,6 +16,7 @@ type MeterRow = { count: number; revision: number }
  */
 export function createInMemoryUserMeterEnv() {
 	const metersByUser = new Map<string, Map<string, MeterRow>>()
+	const storageByUser = new Map<string, StorageRow>()
 
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
@@ -32,6 +35,15 @@ export function createInMemoryUserMeterEnv() {
 			return {
 				outcome: 'ready' as const,
 				count: row.count,
+				revision: row.revision,
+				mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(row.revision),
+			}
+		}
+
+		function storageReady(row: StorageRow) {
+			return {
+				outcome: 'ready' as const,
+				bytes: row.bytes,
 				revision: row.revision,
 				mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(row.revision),
 			}
@@ -105,11 +117,77 @@ export function createInMemoryUserMeterEnv() {
 				rows.set(counterKey(input.resource, input.day), next)
 				return ready(next)
 			},
+			async initializeStorageBytes(input: {
+				bytes: number
+				updatedAt: string
+			}) {
+				const existing = storageByUser.get(userId)
+				if (existing) return { ...storageReady(existing), created: false }
+				const row = {
+					bytes: Math.max(0, Math.trunc(input.bytes) || 0),
+					revision: 1,
+					updatedAt: input.updatedAt,
+				}
+				storageByUser.set(userId, row)
+				return { ...storageReady(row), created: true }
+			},
+			async readStorageBytes() {
+				const existing = storageByUser.get(userId)
+				if (!existing) return { outcome: 'needs_bootstrap' as const }
+				return storageReady(existing)
+			},
+			async reserveStorageBytes(input: {
+				requested: number
+				limit: number
+				updatedAt: string
+			}) {
+				const requested = Math.max(0, Math.trunc(input.requested) || 0)
+				const existing = storageByUser.get(userId)
+				if (!existing) return { outcome: 'needs_bootstrap' as const }
+				if (
+					requested > 0 &&
+					(input.limit < 1 || existing.bytes + requested > input.limit)
+				) {
+					return { ...storageReady(existing), reserved: false }
+				}
+				if (requested === 0) {
+					return { ...storageReady(existing), reserved: true }
+				}
+				const next = {
+					bytes: existing.bytes + requested,
+					revision: existing.revision + 1,
+					updatedAt: input.updatedAt,
+				}
+				storageByUser.set(userId, next)
+				return { ...storageReady(next), reserved: true }
+			},
+			async setStorageBytes(input: { bytes: number; updatedAt: string }) {
+				const bytes = Math.max(0, Math.trunc(input.bytes) || 0)
+				const existing = storageByUser.get(userId)
+				if (!existing) {
+					const row = { bytes, revision: 1, updatedAt: input.updatedAt }
+					storageByUser.set(userId, row)
+					return { ...storageReady(row), created: true }
+				}
+				const next = {
+					bytes,
+					revision: existing.revision + 1,
+					updatedAt: input.updatedAt,
+				}
+				storageByUser.set(userId, next)
+				return { ...storageReady(next), created: false }
+			},
 			async purge() {
 				rows.clear()
+				storageByUser.delete(userId)
 				return { ok: true as const }
 			},
-			async exportCounters() {
+			async exportCounters(
+				input: {
+					pageSize?: number
+					startAfter?: string | null
+				} = {},
+			) {
 				const counters = [...rows.entries()].map(([entryKey, row]) => {
 					const [resource, day] = entryKey.split('\0')
 					return {
@@ -121,7 +199,25 @@ export function createInMemoryUserMeterEnv() {
 						mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(row.revision),
 					}
 				})
-				return { counters, nextStartAfter: null, truncated: false }
+				const includeStorageShadow =
+					typeof input.startAfter !== 'string' || input.startAfter.length === 0
+				const storage = includeStorageShadow
+					? storageByUser.get(userId)
+					: undefined
+				const storageBytesShadow: UserMeterStorageBytesState | null = storage
+					? {
+							bytes: storage.bytes,
+							revision: storage.revision,
+							updatedAt: storage.updatedAt,
+							mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(storage.revision),
+						}
+					: null
+				return {
+					counters,
+					storageBytesShadow,
+					nextStartAfter: null,
+					truncated: false,
+				}
 			},
 		}
 	}
@@ -136,6 +232,7 @@ export function createInMemoryUserMeterEnv() {
 	return {
 		env,
 		metersByUser,
+		storageByUser,
 		async seed(input: {
 			userId: string
 			resource: DailyEntitlementResource
@@ -147,6 +244,16 @@ export function createInMemoryUserMeterEnv() {
 				day: input.day,
 				count: input.count,
 				updatedAt: new Date().toISOString(),
+			})
+		},
+		async seedStorageBytes(input: {
+			userId: string
+			bytes: number
+			updatedAt?: string
+		}) {
+			await meterFor(input.userId).initializeStorageBytes({
+				bytes: input.bytes,
+				updatedAt: input.updatedAt ?? new Date().toISOString(),
 			})
 		},
 	}

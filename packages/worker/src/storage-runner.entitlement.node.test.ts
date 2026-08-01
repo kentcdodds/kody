@@ -229,3 +229,52 @@ test('an unreachable peer bucket with a stored estimate never blocks a write', a
 	// Only the write target was measured live; no peer fan-out happened.
 	expect(probedStorageIds).toEqual(['package:target'])
 })
+
+test('StorageRunner baseline composes D1 payload with bucket estimates via check-only getCurrent', async () => {
+	const { planLimits } = await import('#worker/entitlements/plans.ts')
+	const { isEntitlementLimitError } =
+		await import('#worker/entitlements/errors.ts')
+	const userId = 'user-1'
+	const limit = planLimits.free.maxStorageBytes
+	mockModule.readUserD1StorageBytes.mockImplementation(
+		async (input: { userId: string }) => {
+			expect(input.userId).toBe(userId)
+			return limit - 100
+		},
+	)
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
+		{ storageId: 'package:peer', estimatedBytes: 50 },
+		{ storageId: 'package:target', estimatedBytes: 200 },
+	])
+	const probedStorageIds: Array<string> = []
+	const getEstimatedBytes = async (storageId: string) => {
+		probedStorageIds.push(storageId)
+		return { estimatedBytes: storageId === 'package:target' ? 60 : 50 }
+	}
+
+	const denied = await assertStorageRunnerWriteWithinEntitlement({
+		env: createEstimateEnv(getEstimatedBytes),
+		userId,
+		email: null,
+		storageId: 'package:target',
+		requested: 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(isEntitlementLimitError(denied)).toBe(true)
+	expect(denied).toMatchObject({
+		details: {
+			resource: 'storage_bytes',
+			current: limit - 100 + 50 + 60,
+			limit,
+		},
+	})
+	expect(probedStorageIds).toEqual(['package:target'])
+	expect(mockModule.readUserD1StorageBytes).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId,
+			db: expect.anything(),
+		}),
+	)
+})

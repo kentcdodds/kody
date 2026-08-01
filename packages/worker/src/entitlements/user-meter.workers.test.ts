@@ -8,7 +8,12 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { EntitlementLimitError } from './errors.ts'
 import { planLimits } from './plans.ts'
-import { consumeDailyEntitlement, refundDailyEntitlement } from './service.ts'
+import {
+	assertWithinStorageBytesEntitlement,
+	consumeDailyEntitlement,
+	readUserD1StorageBytes,
+	refundDailyEntitlement,
+} from './service.ts'
 import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 import { UserMeter, userMeterMirrorUpdatedAtToken } from './user-meter-do.ts'
@@ -555,6 +560,7 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	})
 	expect(await meterA.exportCounters({})).toEqual({
 		counters: [],
+		storageBytesShadow: null,
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -683,10 +689,338 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	expect(readDuringPurge).toEqual({ outcome: 'needs_bootstrap' })
 	expect(exportDuringPurge).toEqual({
 		counters: [],
+		storageBytesShadow: null,
 		nextStartAfter: null,
 		truncated: false,
 	})
 	expect(await meter.read({ resource: 'email_sends_per_day', day })).toEqual({
 		outcome: 'needs_bootstrap',
+	})
+}, 30_000)
+
+test('storage bytes enforcement remains D1-authoritative even when env is passed', async () => {
+	const user = await seedFreeUser('meter-storage-d1-authority')
+	const drain = createWaitUntilDrain()
+	const meter = userMeterRpc({ env, userId: user.userId })
+	const storageLimit = planLimits.free.maxStorageBytes
+	const legacyBytes = storageLimit - 10
+
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET d1_storage_bytes = ?,
+			d1_storage_bytes_updated_at = ?
+		WHERE stable_user_id = ?`,
+	)
+		.bind(legacyBytes, '2026-07-31T12:00:00.000Z', user.userId)
+		.run()
+
+	await meter.setStorageBytes({
+		bytes: storageLimit,
+		updatedAt: '2026-07-31T11:00:00.000Z',
+	})
+
+	await assertWithinStorageBytesEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.userId,
+		email: user.email,
+		requested: 5,
+		waitUntil: drain.waitUntil,
+	})
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+	).resolves.toBe(legacyBytes + 5)
+
+	const denied = await assertWithinStorageBytesEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.userId,
+		email: user.email,
+		requested: 6,
+		waitUntil: drain.waitUntil,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(denied).toBeInstanceOf(EntitlementLimitError)
+	expect(denied).toMatchObject({
+		details: {
+			resource: 'storage_bytes',
+			plan: 'free',
+			limit: storageLimit,
+			current: legacyBytes + 5,
+		},
+	})
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+	).resolves.toBe(legacyBytes + 5)
+
+	await drain.drain()
+	expect(await meter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: legacyBytes + 5,
+	})
+}, 30_000)
+
+test('UserMeter storage shadow failure cannot affect successful D1 reserves', async () => {
+	const user = await seedFreeUser('meter-storage-shadow-fail')
+	const drain = createWaitUntilDrain()
+	const storageLimit = planLimits.free.maxStorageBytes
+
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET d1_storage_bytes = ?,
+			d1_storage_bytes_updated_at = ?
+		WHERE stable_user_id = ?`,
+	)
+		.bind(storageLimit - 20, '2026-07-31T12:00:00.000Z', user.userId)
+		.run()
+
+	consoleWarn.mockImplementation(() => {})
+	const failingMeterEnv = {
+		USER_METER: {
+			idFromName: env.USER_METER.idFromName.bind(env.USER_METER),
+			get() {
+				return {
+					async setStorageBytes() {
+						throw new Error('shadow write failed')
+					},
+				}
+			},
+		},
+	} as unknown as typeof env
+
+	await expect(
+		assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			env: failingMeterEnv,
+			userId: user.userId,
+			email: user.email,
+			requested: 5,
+			waitUntil: drain.waitUntil,
+		}),
+	).resolves.toBeUndefined()
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+	).resolves.toBe(storageLimit - 15)
+	await drain.drain()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'entitlement-storage-bytes-shadow-failed',
+		expect.any(Error),
+	)
+}, 30_000)
+
+test('concurrent D1 storage reserves cannot overshoot the plan limit', async () => {
+	const user = await seedFreeUser('meter-storage-concurrent-d1')
+	const limit = planLimits.free.maxStorageBytes
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET d1_storage_bytes = ?,
+			d1_storage_bytes_updated_at = ?
+		WHERE stable_user_id = ?`,
+	)
+		.bind(limit - 10, '2026-07-31T15:00:00.000Z', user.userId)
+		.run()
+
+	const attempts = await Promise.all(
+		Array.from({ length: 20 }, () =>
+			assertWithinStorageBytesEntitlement({
+				db: env.APP_DB,
+				userId: user.userId,
+				email: user.email,
+				requested: 5,
+			}).then(
+				() => 'reserved' as const,
+				(error: unknown) => error,
+			),
+		),
+	)
+	const reserved = attempts.filter((result) => result === 'reserved')
+	const denied = attempts.filter(
+		(result) => result instanceof EntitlementLimitError,
+	)
+	expect(reserved).toHaveLength(2)
+	expect(denied).toHaveLength(18)
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+	).resolves.toBe(limit)
+}, 30_000)
+
+test('delayed UserMeter storage shadow re-reads latest D1 and cannot regress D1', async () => {
+	const user = await seedFreeUser('meter-storage-shadow-latest')
+	const drain = createWaitUntilDrain()
+	const meter = userMeterRpc({ env, userId: user.userId })
+
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET d1_storage_bytes = ?,
+			d1_storage_bytes_updated_at = ?
+		WHERE stable_user_id = ?`,
+	)
+		.bind(10, '2026-07-31T16:00:00.000Z', user.userId)
+		.run()
+
+	let releaseShadow!: () => void
+	const shadowGate = new Promise<void>((resolve) => {
+		releaseShadow = resolve
+	})
+	let shadowReads = 0
+	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
+		return ((query: string) => {
+			const statement = originalPrepare(query)
+			const isPointRead =
+				query.includes('SELECT d1_storage_bytes AS bytes') &&
+				query.includes('FROM users')
+			const isReserve = query.includes(
+				'SET d1_storage_bytes = d1_storage_bytes + ?',
+			)
+			const originalBind = statement.bind.bind(statement)
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = originalBind(...params)
+					return {
+						first: async <T>() => {
+							if (isPointRead) {
+								shadowReads += 1
+								await shadowGate
+							}
+							return await bound.first<T>()
+						},
+						all: bound.all.bind(bound),
+						raw: bound.raw?.bind(bound),
+						run: bound.run.bind(bound),
+					}
+				},
+			}
+		}) as D1Database['prepare']
+	})
+
+	await assertWithinStorageBytesEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.userId,
+		email: user.email,
+		requested: 5,
+		waitUntil: drain.waitUntil,
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: env.APP_DB,
+		userId: user.userId,
+		email: user.email,
+		requested: 7,
+	})
+	releaseShadow()
+	await drain.drain()
+	expect(shadowReads).toBeGreaterThanOrEqual(1)
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+	).resolves.toBe(22)
+	expect(await meter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: 22,
+	})
+}, 30_000)
+
+test('UserMeter storage RPCs, export shadow field, and purge work additively', async () => {
+	const user = await seedFreeUser('meter-storage-export-purge')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	await meter.initializeStorageBytes({
+		bytes: 42,
+		updatedAt: '2026-07-31T17:00:00.000Z',
+	})
+	await meter.reserveStorageBytes({
+		requested: 8,
+		limit: 1_000,
+		updatedAt: '2026-07-31T17:01:00.000Z',
+	})
+	await meter.setStorageBytes({
+		bytes: 11,
+		updatedAt: '2026-07-31T17:02:00.000Z',
+	})
+
+	const day = '2026-07-31'
+	for (const resource of [
+		'email_receives_per_day',
+		'email_sends_per_day',
+		'execute_calls_per_day',
+		'outbound_fetches_per_day',
+	] as const) {
+		await meter.initialize({
+			resource,
+			day,
+			count: 1,
+			updatedAt: '2026-07-31T17:03:00.000Z',
+		})
+	}
+
+	const firstPage = await meter.exportCounters({ pageSize: 2 })
+	expect(firstPage.counters).toHaveLength(2)
+	expect(firstPage.truncated).toBe(true)
+	expect(firstPage.nextStartAfter).toEqual(expect.any(String))
+	expect(firstPage.storageBytesShadow).toEqual({
+		bytes: 11,
+		revision: 3,
+		updatedAt: '2026-07-31T17:02:00.000Z',
+		mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
+	})
+
+	const secondPage = await meter.exportCounters({
+		pageSize: 2,
+		startAfter: firstPage.nextStartAfter,
+	})
+	expect(secondPage.counters).toHaveLength(2)
+	expect(secondPage.truncated).toBe(false)
+	expect(secondPage.nextStartAfter).toBeNull()
+	expect(secondPage.storageBytesShadow).toBeNull()
+
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
+	).resolves.toBe(0)
+
+	await expect(meter.purge()).resolves.toEqual({ ok: true })
+	expect(await meter.readStorageBytes()).toEqual({
+		outcome: 'needs_bootstrap',
+	})
+	expect(await meter.exportCounters({})).toEqual({
+		counters: [],
+		storageBytesShadow: null,
+		nextStartAfter: null,
+		truncated: false,
+	})
+}, 30_000)
+
+test('missing-user storage reserve preserves EntitlementLimitError semantics on D1 path', async () => {
+	await ensureEntitlementTestSchema(env.APP_DB)
+	const missingUserId = 'a'.repeat(64)
+	const freeLimit = planLimits.free.maxStorageBytes
+
+	await expect(
+		assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			env,
+			userId: missingUserId,
+			email: null,
+			requested: 1,
+		}),
+	).resolves.toBeUndefined()
+
+	const denied = await assertWithinStorageBytesEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: missingUserId,
+		email: null,
+		requested: freeLimit + 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(denied).toBeInstanceOf(EntitlementLimitError)
+	expect(denied).toMatchObject({
+		details: {
+			resource: 'storage_bytes',
+			plan: 'free',
+			limit: freeLimit,
+			current: 0,
+		},
 	})
 }, 30_000)
