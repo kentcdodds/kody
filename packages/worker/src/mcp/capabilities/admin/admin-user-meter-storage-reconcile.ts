@@ -26,6 +26,13 @@ const outputSchema = z.object({
 	scanned: z.number().int().nonnegative(),
 	updated: z.number().int().nonnegative(),
 	failed: z.number().int().nonnegative(),
+	deferred: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'CAS-miss or init-race rows rotated to the back of the queue for the next sweep. Not a failure.',
+		),
 	batchSize: z.number().int().positive(),
 	completedAt: z.string().datetime(),
 })
@@ -36,7 +43,7 @@ export const adminUserMeterStorageReconcileCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_user_meter_storage_reconcile',
 		description:
-			'Admin-only pre-flip maintenance: run one bounded oldest-first D1 storage-byte reconciliation page while D1 remains authoritative, best-effort shadowing each absolute into UserMeter. Safe to repeat but not idempotent. `failed` counts per-row D1 reconciliation failures only; UserMeter shadow failures are silent and require `admin_user_meter_parity` to detect. Row failures do not fail the invocation. Remove or gate after the storage authority flip.',
+			"Admin-only corrective physical-storage reconciliation under UserMeter authority. Runs one bounded oldest-first page: recomputes each user's absolute storage bytes from D1 payload tables, applies the absolute to UserMeter via a revision-guarded CAS (never clobbers a live reservation), then mirrors to D1. `updated` counts successful CAS applications; `deferred` counts CAS misses or init-race rows that were safely rotated to the back of the queue for the next sweep — deferred rows are not failures. `failed` counts per-row errors (unexpected exceptions). Failed and deferred rows are both moved to the back of the oldest-first queue. Safe to repeat as a corrective or catch-up sweep; not idempotent with live writes.",
 		keywords: [
 			'admin',
 			'user meter',
@@ -72,7 +79,7 @@ export const adminUserMeterStorageReconcileCapability = defineDomainCapability(
 				},
 				{
 					successReason: (result) =>
-						`scanned=${result.scanned};updated=${result.updated};failed=${result.failed};batch_size=${result.batchSize}`,
+						`scanned=${result.scanned};updated=${result.updated};failed=${result.failed};deferred=${result.deferred};batch_size=${result.batchSize}`,
 				},
 			)
 		},

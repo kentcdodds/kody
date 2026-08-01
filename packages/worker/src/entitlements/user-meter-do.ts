@@ -141,6 +141,15 @@ export type UserMeterStorageBytesSetResult = UserMeterStorageBytesReadyState & {
 	created: boolean
 }
 
+/**
+ * Result of a revision-guarded absolute reconciliation CAS.
+ * `needs_bootstrap` when the singleton is absent; `applied` distinguishes a
+ * successful overwrite from a CAS miss caused by a concurrent reserve.
+ */
+export type UserMeterStorageBytesReconcileResult =
+	| UserMeterBootstrapState
+	| (UserMeterStorageBytesReadyState & { applied: boolean })
+
 export type UserMeterPackageServiceState = {
 	packageId: string
 	serviceName: string
@@ -1193,6 +1202,54 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Revision-guarded absolute reconciliation CAS. Applies `bytes` only when
+	 * the current revision equals `expectedRevision`, preventing a scheduled
+	 * reconcile sweep from clobbering a live reservation that arrived between
+	 * revision capture and the CAS call. Returns `needs_bootstrap` when the
+	 * singleton is absent; `applied: false` when another writer changed the
+	 * revision first.
+	 */
+	async reconcileStorageBytes(input: {
+		bytes: number
+		expectedRevision: number
+		updatedAt: string
+	}): Promise<UserMeterStorageBytesReconcileResult> {
+		const bytes = Math.max(0, Math.trunc(Number(input.bytes) || 0))
+		const existing = this.readStorageRow()
+		if (!existing) {
+			return { outcome: 'needs_bootstrap' }
+		}
+		if (existing.revision !== input.expectedRevision) {
+			// CAS miss: a concurrent reserve or other write changed the revision.
+			return {
+				...this.storageReadyState(existing.bytes, existing.revision),
+				applied: false,
+			}
+		}
+		const nextRevision = existing.revision + 1
+		this.ctx.storage.sql.exec(
+			`UPDATE storage_bytes_state
+			SET bytes = ?,
+				revision = ?,
+				updated_at = ?
+			WHERE id = ? AND revision = ?`,
+			bytes,
+			nextRevision,
+			input.updatedAt,
+			storageBytesStateRowId,
+			existing.revision,
+		)
+		const row = this.readStorageRow()
+		if (!row) {
+			throw new Error('UserMeter reconcileStorageBytes lost storage state.')
+		}
+		return {
+			...this.storageReadyState(row.bytes, row.revision),
+			applied: row.revision === nextRevision,
+		}
+	}
+
 	private packageServiceStateFromRow(
 		row: PackageServiceSqlRow,
 	): UserMeterPackageServiceState {
@@ -2173,6 +2230,16 @@ export type UserMeterRpc = {
 		bytes: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesSetResult>
+	/**
+	 * Revision-guarded absolute reconciliation CAS. Applies `bytes` only when
+	 * current revision equals `expectedRevision`. Returns `needs_bootstrap` if
+	 * the singleton is absent; `applied: false` on a CAS miss.
+	 */
+	reconcileStorageBytes: (input: {
+		bytes: number
+		expectedRevision: number
+		updatedAt: string
+	}) => Promise<UserMeterStorageBytesReconcileResult>
 	/** Expand-phase shadow upsert; not used for enforcement. */
 	upsertPackageServiceState: (input: {
 		packageId: string

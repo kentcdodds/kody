@@ -214,11 +214,13 @@ Durable Object export behavior:
   (`startAfter` absent): `storageBytesShadow` when the schema-v4 row exists, and
   `packageServiceStatesShadow` when schema-v5 service rows exist (`null` on
   later pages and when never shadowed). Section totals count each shadow
-  inventory once when present, but both are explicitly **non-authoritative** —
-  usage and enforcement read D1 (`users.d1_storage_bytes` and
-  `package_service_states` respectively). Retention is self-enforced inside the
-  DO (seven UTC days of counter and inbound-delivery-claim rows); shadow
-  storage-byte and package-service liveness rows are not time-pruned. See
+  inventory once when present, but `package_service_states` is explicitly
+  **non-authoritative** for running counts and enforcement — that still reads D1
+  `package_service_states`. `users.d1_storage_bytes` is a **temporary async
+  mirror** after the 2026-08-01 storage authority cutover; authoritative storage
+  bytes now live in UserMeter. Retention is self-enforced inside the DO (seven
+  UTC days of counter and inbound-delivery-claim rows); shadow storage-byte and
+  package-service liveness rows are not time-pruned. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `Mailbox` exports per-user email metadata (threads, messages, attachments,
   delivery events) through the account-export `mailbox` section (`exportMailbox`
@@ -269,10 +271,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   or `'platform'`, migration 0072) distinguishes normal signups from
   operator-provisioned platform accounts that own official package scopes (see
   [Platform accounts](./platform-accounts.md)). `d1_storage_bytes` and
-  `d1_storage_bytes_updated_at` (migration 0122) are the **sole authority** for
-  D1 payload storage-byte read, enforcement, and reconciliation. UserMeter
-  `storage_bytes_state` (schema v4) and `package_service_states` (schema v5) are
-  optional expand-phase shadows only — see
+  `d1_storage_bytes_updated_at` (migration 0122) are a **temporary async
+  mirror** of the UserMeter `storage_bytes_state` singleton after the storage
+  authority cutover (2026-08-01). Enforcement and usage reads are now
+  authoritative in UserMeter; the D1 columns remain for cold bootstrap, parity
+  checks, and the `d1_storage_reconciliation` sweep cursor until they can be
+  safely dropped (a separate schema migration after parity sign-off). UserMeter
+  `storage_bytes_state` (schema v4) drives enforcement; `package_service_states`
+  (schema v5) are optional expand-phase shadows only — see
   [Entitlements](./entitlements.md#usermeter-expand-phase). Mailbox expand-phase
   parity/backfill state (migration `0125-mailbox-parity-state.sql`):
   `mailbox_parity_checked_at`, `mailbox_parity_matching_since`,
@@ -579,14 +585,17 @@ Storage split:
 
 Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
-(`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4 adds an
-optional `storage_bytes_state` singleton as a **best-effort shadow** of D1
-`users.d1_storage_bytes`. Schema v5 adds an optional `package_service_states`
-table as a **best-effort shadow** of D1 `package_service_states` for future
-cutover — D1 remains sole authority for reads, running counts, discovery, and
-`service_start` enforcement in expand-phase slice 4 Phase A. The Worker binding
-is `USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
-`new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
+(`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4 adds a
+`storage_bytes_state` singleton that is now the **authoritative** storage-byte
+counter after the 2026-08-01 cutover (previously a best-effort shadow of D1
+`users.d1_storage_bytes`; cutover evidence in
+[Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
+Schema v5 adds an optional `package_service_states` table as a **best-effort
+shadow** of D1 `package_service_states` for future cutover — D1 remains sole
+authority for reads, running counts, discovery, and `service_start` enforcement
+in expand-phase slice 4 Phase A. The Worker binding is `USER_METER` (class
+`UserMeter`; Wrangler SQLite migration tag `v21` via `new_sqlite_classes` in
+`packages/worker/wrangler.jsonc`).
 
 Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 `userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
@@ -605,11 +614,15 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   claim's resource/day, post-charge counter, revision, and `claimed_at` so
   Cloudflare Email Routing retries inside the 48-hour inbound dedupe window
   cannot double-charge `email_receives_per_day`.
-- `storage_bytes_state` — singleton **shadow** of D1 payload bytes (`id = 1`
-  CHECK constraint, `bytes`, monotonic `revision`, `updated_at`). Added in
-  schema v4. Populated by optional non-awaited shadow writes after D1 reserves
-  and optional reconcile shadows; never read for enforcement or usage display.
-  StorageRunner bucket estimates stay outside this row (see
+- `storage_bytes_state` — **authoritative** D1 payload byte counter after the
+  2026-08-01 cutover (`id = 1` CHECK constraint, `bytes`, monotonic `revision`,
+  `updated_at`). Added in schema v4 as an expand-phase shadow; promoted to
+  authority after the flip. Written by `reserveStorageBytes` (atomic increment
+  with limit check), `initializeStorageBytes` (INSERT OR IGNORE cold bootstrap
+  from D1 mirror), and `setStorageBytes` (absolute set from reconcile).
+  Authoritative for enforcement and usage reads via `readStorageBytes`; D1
+  `users.d1_storage_bytes` is the temporary async mirror (MAX on reserve; direct
+  set on reconcile). StorageRunner bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter-expand-phase)).
 - `package_service_states` — per-service **shadow** of D1 liveness rows
   (`package_id`, `service_name`, `status`, `started_at`, `source_updated_at`,

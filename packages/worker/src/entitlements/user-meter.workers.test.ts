@@ -445,27 +445,26 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	})
 }, 30_000)
 
-test('storage bytes stay D1-authoritative with shadow failure, concurrency, delayed shadow, and missing-user semantics', async () => {
+test('storage bytes are UserMeter-authoritative: cold bootstrap, D1 mirror, mirror failure, concurrency, delayed mirror, and missing-user semantics', async () => {
 	const storageLimit = planLimits.free.maxStorageBytes
-	const user = await seedFreeUser('meter-storage-d1-authority')
+
+	// === Section 1: Cold bootstrap from D1, reserve, D1 mirror, and denial ===
+	const user = await seedFreeUser('meter-storage-do-authority')
 	const drain = createWaitUntilDrain()
 	const meter = userMeterRpc({ env, userId: user.userId })
-	const legacyBytes = storageLimit - 10
+	const startBytes = storageLimit - 10
 
+	// Seed D1; UserMeter starts empty (needs_bootstrap).
 	await env.APP_DB.prepare(
 		`UPDATE users
 		SET d1_storage_bytes = ?,
 			d1_storage_bytes_updated_at = ?
 		WHERE stable_user_id = ?`,
 	)
-		.bind(legacyBytes, '2026-07-31T12:00:00.000Z', user.userId)
+		.bind(startBytes, '2026-07-31T12:00:00.000Z', user.userId)
 		.run()
 
-	await meter.setStorageBytes({
-		bytes: storageLimit,
-		updatedAt: '2026-07-31T11:00:00.000Z',
-	})
-
+	// Cold bootstrap: reads D1 = startBytes, initializes UserMeter, then reserves 5.
 	await assertWithinStorageBytesEntitlement({
 		db: env.APP_DB,
 		env,
@@ -474,10 +473,18 @@ test('storage bytes stay D1-authoritative with shadow failure, concurrency, dela
 		requested: 5,
 		waitUntil: drain.waitUntil,
 	})
+	// UserMeter immediately reflects startBytes + 5.
+	expect(await meter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: startBytes + 5,
+	})
+	// D1 mirror: MAX(startBytes, startBytes + 5).
+	await drain.drain()
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(legacyBytes + 5)
+	).resolves.toBe(startBytes + 5)
 
+	// Deny 6 more: startBytes + 5 + 6 = storageLimit + 1 > storageLimit.
 	const denied = await assertWithinStorageBytesEntitlement({
 		db: env.APP_DB,
 		env,
@@ -495,83 +502,95 @@ test('storage bytes stay D1-authoritative with shadow failure, concurrency, dela
 			resource: 'storage_bytes',
 			plan: 'free',
 			limit: storageLimit,
-			current: legacyBytes + 5,
+			current: startBytes + 5,
 		},
 	})
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(legacyBytes + 5)
+	).resolves.toBe(startBytes + 5)
 
 	await drain.drain()
 	expect(await meter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
-		bytes: legacyBytes + 5,
+		bytes: startBytes + 5,
 	})
 
-	const shadowFailUser = await seedFreeUser('meter-storage-shadow-fail')
-	const shadowFailDrain = createWaitUntilDrain()
-	await env.APP_DB.prepare(
-		`UPDATE users
-		SET d1_storage_bytes = ?,
-			d1_storage_bytes_updated_at = ?
-		WHERE stable_user_id = ?`,
-	)
-		.bind(storageLimit - 20, '2026-07-31T12:00:00.000Z', shadowFailUser.userId)
-		.run()
+	// === Section 2: D1 mirror failure is silent; UserMeter stays correct ===
+	const d1FailUser = await seedFreeUser('meter-storage-d1-mirror-fail')
+	const d1FailDrain = createWaitUntilDrain()
+	const d1FailMeter = userMeterRpc({ env, userId: d1FailUser.userId })
+	await d1FailMeter.initializeStorageBytes({
+		bytes: storageLimit - 20,
+		updatedAt: '2026-07-31T12:00:00.000Z',
+	})
 
 	consoleWarn.mockImplementation(() => {})
-	const failingMeterEnv = {
-		USER_METER: {
-			idFromName: env.USER_METER.idFromName.bind(env.USER_METER),
-			get() {
+	{
+		using _failDb = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
+			return ((query: string) => {
+				const statement = originalPrepare(query)
+				const isD1Mirror = query
+					.replace(/\s+/g, ' ')
+					.trim()
+					.includes('d1_storage_bytes = MAX(')
+				const originalBind = statement.bind.bind(statement)
 				return {
-					async setStorageBytes() {
-						throw new Error('shadow write failed')
+					bind(...params: Array<unknown>) {
+						const bound = originalBind(...params)
+						return {
+							first: bound.first.bind(bound),
+							all: bound.all.bind(bound),
+							raw: bound.raw?.bind(bound),
+							run: async () => {
+								if (isD1Mirror) throw new Error('D1 mirror write failed')
+								return await bound.run()
+							},
+						}
 					},
 				}
-			},
-		},
-	} as unknown as typeof env
+			}) as D1Database['prepare']
+		})
 
-	await expect(
-		assertWithinStorageBytesEntitlement({
-			db: env.APP_DB,
-			env: failingMeterEnv,
-			userId: shadowFailUser.userId,
-			email: shadowFailUser.email,
-			requested: 5,
-			waitUntil: shadowFailDrain.waitUntil,
-		}),
-	).resolves.toBeUndefined()
-	await expect(
-		readUserD1StorageBytes({
-			db: env.APP_DB,
-			userId: shadowFailUser.userId,
-		}),
-	).resolves.toBe(storageLimit - 15)
-	await shadowFailDrain.drain()
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'entitlement-storage-bytes-shadow-failed',
-		expect.any(Error),
-	)
+		await expect(
+			assertWithinStorageBytesEntitlement({
+				db: env.APP_DB,
+				env,
+				userId: d1FailUser.userId,
+				email: d1FailUser.email,
+				requested: 5,
+				waitUntil: d1FailDrain.waitUntil,
+			}),
+		).resolves.toBeUndefined()
+		// UserMeter updated despite D1 mirror failure.
+		expect(await d1FailMeter.readStorageBytes()).toMatchObject({
+			outcome: 'ready',
+			bytes: storageLimit - 15,
+		})
+		await d1FailDrain.drain()
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'entitlement-storage-bytes-d1-mirror-failed',
+			expect.any(Error),
+		)
+	}
 
-	const concurrentUser = await seedFreeUser('meter-storage-concurrent-d1')
-	await env.APP_DB.prepare(
-		`UPDATE users
-		SET d1_storage_bytes = ?,
-			d1_storage_bytes_updated_at = ?
-		WHERE stable_user_id = ?`,
-	)
-		.bind(storageLimit - 10, '2026-07-31T15:00:00.000Z', concurrentUser.userId)
-		.run()
+	// === Section 3: Concurrent reservations (UserMeter atomicity) ===
+	const concurrentUser = await seedFreeUser('meter-storage-concurrent-do')
+	const concurrentDrain = createWaitUntilDrain()
+	const concurrentMeter = userMeterRpc({ env, userId: concurrentUser.userId })
+	await concurrentMeter.initializeStorageBytes({
+		bytes: storageLimit - 10,
+		updatedAt: '2026-07-31T15:00:00.000Z',
+	})
 
 	const attempts = await Promise.all(
 		Array.from({ length: 20 }, () =>
 			assertWithinStorageBytesEntitlement({
 				db: env.APP_DB,
+				env,
 				userId: concurrentUser.userId,
 				email: concurrentUser.email,
 				requested: 5,
+				waitUntil: concurrentDrain.waitUntil,
 			}).then(
 				() => 'reserved' as const,
 				(error: unknown) => error,
@@ -584,6 +603,11 @@ test('storage bytes stay D1-authoritative with shadow failure, concurrency, dela
 	)
 	expect(reserved).toHaveLength(2)
 	expect(concurrentDenied).toHaveLength(18)
+	expect(await concurrentMeter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: storageLimit,
+	})
+	await concurrentDrain.drain()
 	await expect(
 		readUserD1StorageBytes({
 			db: env.APP_DB,
@@ -591,46 +615,43 @@ test('storage bytes stay D1-authoritative with shadow failure, concurrency, dela
 		}),
 	).resolves.toBe(storageLimit)
 
-	const delayedUser = await seedFreeUser('meter-storage-shadow-latest')
+	// === Section 4: Delayed D1 mirror does not regress value (MAX) ===
+	const delayedUser = await seedFreeUser('meter-storage-mirror-latest')
 	const delayedDrain = createWaitUntilDrain()
 	const delayedMeter = userMeterRpc({ env, userId: delayedUser.userId })
-
-	await env.APP_DB.prepare(
-		`UPDATE users
-		SET d1_storage_bytes = ?,
-			d1_storage_bytes_updated_at = ?
-		WHERE stable_user_id = ?`,
-	)
-		.bind(10, '2026-07-31T16:00:00.000Z', delayedUser.userId)
-		.run()
+	await delayedMeter.initializeStorageBytes({
+		bytes: 10,
+		updatedAt: '2026-07-31T16:00:00.000Z',
+	})
 
 	{
-		let releaseShadow!: () => void
-		const shadowGate = new Promise<void>((resolve) => {
-			releaseShadow = resolve
+		let releaseMirror!: () => void
+		const mirrorGate = new Promise<void>((resolve) => {
+			releaseMirror = resolve
 		})
-		let shadowReads = 0
+		let mirrorWrites = 0
 		using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
 			return ((query: string) => {
 				const statement = originalPrepare(query)
-				const isPointRead =
-					query.includes('SELECT d1_storage_bytes AS bytes') &&
-					query.includes('FROM users')
+				const isD1Mirror = query
+					.replace(/\s+/g, ' ')
+					.trim()
+					.includes('d1_storage_bytes = MAX(')
 				const originalBind = statement.bind.bind(statement)
 				return {
 					bind(...params: Array<unknown>) {
 						const bound = originalBind(...params)
 						return {
-							first: async <T>() => {
-								if (isPointRead) {
-									shadowReads += 1
-									await shadowGate
-								}
-								return await bound.first<T>()
-							},
+							first: bound.first.bind(bound),
 							all: bound.all.bind(bound),
 							raw: bound.raw?.bind(bound),
-							run: bound.run.bind(bound),
+							run: async () => {
+								if (isD1Mirror) {
+									mirrorWrites += 1
+									await mirrorGate
+								}
+								return await bound.run()
+							},
 						}
 					},
 				}
@@ -647,13 +668,15 @@ test('storage bytes stay D1-authoritative with shadow failure, concurrency, dela
 		})
 		await assertWithinStorageBytesEntitlement({
 			db: env.APP_DB,
+			env,
 			userId: delayedUser.userId,
 			email: delayedUser.email,
 			requested: 7,
+			waitUntil: delayedDrain.waitUntil,
 		})
-		releaseShadow()
+		releaseMirror()
 		await delayedDrain.drain()
-		expect(shadowReads).toBeGreaterThanOrEqual(1)
+		expect(mirrorWrites).toBeGreaterThanOrEqual(1)
 		await expect(
 			readUserD1StorageBytes({ db: env.APP_DB, userId: delayedUser.userId }),
 		).resolves.toBe(22)
@@ -663,6 +686,7 @@ test('storage bytes stay D1-authoritative with shadow failure, concurrency, dela
 		})
 	}
 
+	// === Section 5: Missing user (synthetic context, free-plan semantics) ===
 	await ensureEntitlementTestSchema(env.APP_DB)
 	const missingUserId = 'a'.repeat(64)
 	await expect(

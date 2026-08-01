@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
 	listPackageSecretsByPackageIds,
 	resolveSecret,
@@ -415,6 +416,7 @@ test('resolveSecret returns the first scope hit in precedence order', async () =
 		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
 	}
 	const userId = 'user-123'
 	const secretName = 'shared-secret'
@@ -522,6 +524,7 @@ test('listPackageSecretsByPackageIds groups package-owned secrets', async () => 
 		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
 	}
 	const storageContext = {
 		sessionId: null,
@@ -560,6 +563,7 @@ test('updateUserSecretForPackage atomically requires an existing package approva
 		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
 	}
 	await saveSecret({
 		env,
@@ -615,6 +619,7 @@ test('setSecretsAtomically persists refresh then access tokens together for pack
 		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
 	}
 	await saveSecret({
 		env,
@@ -684,6 +689,7 @@ test('updateUserSecretsForPackageAtomically leaves both secrets unchanged when a
 		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
 	}
 	await saveSecret({
 		env,
@@ -744,6 +750,7 @@ test('resolveSecret ignores a corrupted lower-precedence entry when a higher sco
 		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
 	}
 	const userId = 'user-123'
 	const secretName = 'shared-secret'
@@ -801,6 +808,7 @@ function buildEntitlementTestSecretEnv(input: {
 			APP_DB: testDb.db,
 			COOKIE_SECRET: 'test-cookie-secret',
 			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+			...createInMemoryUserMeterEnv().env,
 		},
 	}
 }

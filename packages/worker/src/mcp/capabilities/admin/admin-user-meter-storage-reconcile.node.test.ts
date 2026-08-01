@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 		scanned: 2,
 		updated: 1,
 		failed: 1,
+		deferred: 0,
 	})),
 	logAuditEvent: vi.fn(async () => undefined),
 }))
@@ -70,6 +71,7 @@ test('admin_user_meter_storage_reconcile passes env and returns full batch resul
 		scanned: 3,
 		updated: 2,
 		failed: 0,
+		deferred: 1,
 	})
 	const env = { APP_DB: {} as D1Database, USER_METER: {} } as Env
 	const ctx = createAdminContext(env)
@@ -83,6 +85,7 @@ test('admin_user_meter_storage_reconcile passes env and returns full batch resul
 		scanned: 3,
 		updated: 2,
 		failed: 0,
+		deferred: 1,
 		batchSize: 5,
 	})
 	expect(result.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
@@ -98,7 +101,7 @@ test('admin_user_meter_storage_reconcile passes env and returns full batch resul
 		expect.objectContaining({
 			action: 'admin_user_meter_storage_reconcile',
 			result: 'success',
-			reason: 'scanned=3;updated=2;failed=0;batch_size=5',
+			reason: 'scanned=3;updated=2;failed=0;deferred=1;batch_size=5',
 		}),
 	)
 })
@@ -109,7 +112,7 @@ test('admin_user_meter_storage_reconcile sets completedAt after reconciliation s
 		async (input: { now: Date }) => {
 			reconcileNow = input.now
 			await new Promise((resolve) => setTimeout(resolve, 5))
-			return { scanned: 1, updated: 1, failed: 0 }
+			return { scanned: 1, updated: 1, failed: 0, deferred: 0 }
 		},
 	)
 	const ctx = createAdminContext({ APP_DB: {} as D1Database } as Env)
@@ -127,6 +130,7 @@ test('admin_user_meter_storage_reconcile defaults batch_size and reports row fai
 		scanned: 5,
 		updated: 4,
 		failed: 1,
+		deferred: 0,
 	})
 	const ctx = createAdminContext({ APP_DB: {} as D1Database } as Env)
 
@@ -136,13 +140,14 @@ test('admin_user_meter_storage_reconcile defaults batch_size and reports row fai
 		scanned: 5,
 		updated: 4,
 		failed: 1,
+		deferred: 0,
 		batchSize: mockModule.d1StorageReconciliationBatchSize,
 	})
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'admin_user_meter_storage_reconcile',
 			result: 'success',
-			reason: `scanned=5;updated=4;failed=1;batch_size=${mockModule.d1StorageReconciliationBatchSize}`,
+			reason: `scanned=5;updated=4;failed=1;deferred=0;batch_size=${mockModule.d1StorageReconciliationBatchSize}`,
 		}),
 	)
 })

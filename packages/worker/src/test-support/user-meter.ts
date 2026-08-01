@@ -374,6 +374,27 @@ export function createInMemoryUserMeterEnv() {
 				storageByUser.set(userId, next)
 				return { ...storageReady(next), created: false }
 			},
+			async reconcileStorageBytes(input: {
+				bytes: number
+				expectedRevision: number
+				updatedAt: string
+			}) {
+				const bytes = Math.max(0, Math.trunc(input.bytes) || 0)
+				const existing = storageByUser.get(userId)
+				if (!existing) {
+					return { outcome: 'needs_bootstrap' as const }
+				}
+				if (existing.revision !== input.expectedRevision) {
+					return { ...storageReady(existing), applied: false }
+				}
+				const next = {
+					bytes,
+					revision: existing.revision + 1,
+					updatedAt: input.updatedAt,
+				}
+				storageByUser.set(userId, next)
+				return { ...storageReady(next), applied: true }
+			},
 			async upsertPackageServiceState(input: {
 				packageId: string
 				serviceName: string
