@@ -218,10 +218,10 @@ Durable Object export behavior:
 - `Mailbox` exports per-user email metadata (threads, messages, attachments,
   delivery events) through the account-export `mailbox` section (`exportMailbox`
   RPC; keyset pagination with prefixed cursors over those tables). Manifest
-  counts use `countMailbox`. Phase 1 registers this consumption without
-  dual-write or a change of D1 authority — D1 `email_*` rows remain the live
-  source of truth and are still exported in the `d1` section. See
-  [Mailbox](#durable-objects-mailbox).
+  counts use `countMailbox`. Phase 1 registers this consumption; phase 2a adds
+  dual-write primitives without live callers or a change of D1 authority — D1
+  `email_*` rows remain the live source of truth and are still exported in the
+  `d1` section. See [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -375,6 +375,30 @@ platform-wide day/outcome counts and weight sampled rows by `_sample_interval`.
 When Analytics Engine SQL is unreachable, these two charts zero-fill while the
 rest of the page renders. Local development uses the existing D1 counters and
 delivery-event table because Wrangler's emulated dataset has no SQL API.
+
+**Mailbox expand-phase parity events** (additive; no live writers in the
+phase-2a PR) reuse the same `EMAIL_EVENTS` dataset with a separate row shape
+defined in `packages/worker/src/email/mailbox-parity-events.ts`
+(`recordMailboxParityEvent`). These rows are for future dual-write observability
+and reconciliation — they do not feed the admin insights charts today:
+
+- `index1` — stable user id (per-user isolation; `system:email` is excluded)
+- `blob1` — namespaced event type (`mailbox_mirror:<operation>` or
+  `mailbox_parity:<operation>`) so unfiltered consumers can distinguish these
+  from `email_send` / `email_receive` / `email_delivery`
+- `blob2` — operation outcome
+- `blob3` — source event timestamp (ISO 8601)
+- `double1` — event weight (always `1`, matching reporting)
+- `double2` — D1-minus-DO count delta (`d1Count - doCount` for parity compares;
+  `0` when absent or not applicable)
+
+Mirror operations: `mirror_message`, `upsert_delivery_event`, `touch_thread`,
+`update_message_delivery`, `set_message_classification`,
+`delete_message_metadata`, `delete_delivery_event`, `delete_thread_if_empty`.
+Mirror outcomes: `mirrored`, `stale`, `skipped`, `error`. Parity operations:
+`compare_threads`, `compare_messages`, `compare_attachments`,
+`compare_delivery_events`. Parity outcomes: `match`, `mismatch`. Writes are
+best-effort and never throw into D1 authority paths.
 
 Two D1 reporting projections deliberately remain:
 
@@ -657,6 +681,65 @@ clears them. Accepted mirrors validate inbound/outbound `rawMimeKey` and
 external attachment `storageKey` values against the canonical builders for that
 `ownerId`.
 
+**Partial mutation RPCs** (phase 2a; owner-bound, monotonic on `updatedAt`, no
+R2 or retention-alarm side effects — unlike full snapshot mirrors, these do not
+mark retention dirty or reschedule alarms):
+
+- `touchThread` — advance `last_message_at` / `updated_at` without a full
+  snapshot; `last_message_at` never moves backward
+- `updateMessageDelivery` — outbound processing fields (`processing_status`,
+  `provider_message_id`, `error`, `sent_at`)
+- `setMessageClassification` — inbound classification fields
+- `deleteMessageMetadata` — metadata-only delete (null delivery-event
+  `message_id`, then attachments + message); never deletes R2 or empty threads
+- `deleteDeliveryEvent` — metadata-only delivery-event delete
+- `deleteThreadIfEmpty` — deferred empty-thread cleanup (D1
+  `deleteEmptyEmailThreads` parity); stale-safe by `thread.updated_at`
+
+Partial touch/update/classify RPCs return `accepted`, `missing` (target absent —
+idempotent for best-effort callers), or `stale` (newer `updated_at` retained).
+Delete RPCs return `deleted`, `missing`, or `stale` with the same semantics.
+Implementation lives in `mailbox-mutations.ts` (SQLite helpers) and is exposed
+through `mailbox-do.ts` RPCs. All require `ownerId` and reject cross-owner
+calls.
+
+**Email owner constant** (`packages/worker/src/email/email-owner.ts`): a
+lightweight module exporting `systemEmailOwnerId` (`'system:email'`) and
+`isSystemEmailOwner`. It stays free of system-email service imports so
+dual-write helpers can skip the reserved operator inbox without import cycles.
+Operator mail is never mirrored into per-user Mailbox objects.
+
+**D1 → Mailbox snapshot adapters** (`mailbox-snapshots.ts`; delivery loads in
+`mailbox-snapshot-repo.ts`): pure converters that turn D1 rows into complete
+Mailbox wire inputs — `toMailboxThreadInput`, `toMailboxMessageInput`,
+`toMailboxAttachmentInput`, and `toMailboxDeliveryEventInput`. They normalize
+nulls to Mailbox SQLite defaults (empty strings, `[]`, `{}`, `0`,
+`application/octet-stream`, `kody`) and fail clearly on invalid persisted
+JSON/enums rather than fabricating state. Delivery events consume a complete
+`EmailDeliveryEventMirrorProjection` loaded as one cohesive D1 row (base columns
+plus promoted `needs_effect_reconcile` and usage-effect fields); inbound/effect
+lease fields still come from `detail_json`. Callers load via
+`getMailboxDeliveryEventMirrorInput` / `getEmailDeliveryEventMirrorProjection`
+and supply only `sourceMutationAt` — the canonical mirror `updatedAt` from the
+D1 mutation (inserts use `created_at`). Callers must not stitch promoted columns
+field-by-field.
+
+**Best-effort mirror helpers** (`mailbox-mirror.ts`): non-throwing wrappers
+around the DO RPCs for future D1-authoritative dual-write. Each returns a
+structured `MailboxMirrorResult`: `{ status: 'mirrored' }`,
+`{ status: 'stale' }`, `{ status: 'skipped', reason }` (`system-email` |
+`mailbox-unconfigured` | `missing-owner`), or `{ status: 'error', error }`.
+Failures log with stable tags (for example `mailbox-mirror-message-failed`) and
+never propagate into D1 commit paths. Helpers cover full snapshots
+(`mirrorMailboxMessageSnapshot`, `mirrorMailboxDeliveryEventSnapshot` — prefer
+loading delivery events with `getMailboxDeliveryEventMirrorInput`) and partial
+mutations (`mirrorMailboxTouchThread`, `mirrorMailboxUpdateMessageDelivery`,
+`mirrorMailboxSetMessageClassification`, `mirrorMailboxDeleteMessageMetadata`,
+`mirrorMailboxDeleteDeliveryEvent`, `mirrorMailboxDeleteThreadIfEmpty`). **There
+are no live dual-write callers in the phase-2a PR** — only unit/worker tests
+invoke these helpers. D1 remains sole authority for all live mail read/write
+paths.
+
 **Retention** is self-enforced inside the DO with alarms
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
 Alarm-driven deletes derive canonical blob keys from `ownerId` + row ids (rather
@@ -677,13 +760,17 @@ mail content. Account export pages Mailbox state through the `mailbox` section
 
 ### Expand/contract phases
 
-This is an expand/contract migration. **The current PR is phase 1 only:**
-additive scaffold (DO class, binding, naming, client, mirror/export/purge RPCs,
-and alarm retention) **plus registered account-deletion `purge` and
-account-export `mailbox` section consumption**. It does **not** dual-write, does
-**not** change live email read/write authority, and leaves D1 `email_*` tables
-authoritative for all live paths. D1 email rows and existing R2 inventory
-deletion stay authoritative during expand.
+This is an expand/contract migration. **The current PR is phase 2a —
+prerequisite scaffolding within phase 2:** additive dual-write **primitives**
+(email-owner constant, D1→Mailbox snapshot adapters, best-effort mirror helpers
+with structured outcomes, owner-bound partial-mutation and stale-safe
+metadata-delete RPCs, and the Analytics Engine parity event schema). It does
+**not** wire live dual-write callers, does **not** change live email read/write
+authority, and leaves D1 `email_*` tables authoritative for all live paths. D1
+email rows and existing R2 inventory deletion stay authoritative during expand.
+**Phase 2 is complete only when every user-mail mutation that writes D1 also
+writes the DO and parity/reconciliation are wired** — this PR ships the library
+surface that later live-path wiring will call.
 
 1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
    `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
@@ -692,9 +779,17 @@ deletion stay authoritative during expand.
    authority for live mail.
 2. **D1-authoritative dual-write + parity** — every user-mail mutation that
    writes D1 also writes the DO; parity counters and reconciliation prove DO
-   completeness against D1. D1 stays authoritative for reads.
-3. **Reads cut over after production parity** — user-mail reads move to the DO
-   only after production parity is verified. D1 writes continue.
+   completeness against D1. D1 stays authoritative for reads. Phase 2a (current
+   PR) adds `email-owner.ts`, `mailbox-types.ts`, `mailbox-snapshots.ts`,
+   `mailbox-snapshot-repo.ts`, `mailbox-mirror.ts`, `mailbox-mutations.ts` +
+   matching DO RPCs (`touchThread`, `updateMessageDelivery`,
+   `setMessageClassification`, `deleteMessageMetadata`, `deleteDeliveryEvent`,
+   `deleteThreadIfEmpty`), and `mailbox-parity-events.ts`. Those helpers and
+   parity-event writers are library-only today — **no production path invokes
+   them yet**; live-path dual-write and parity wiring remain for the rest of
+   phase 2.
+3. **Reads cut over after production soak** — user-mail reads move to the DO
+   only after production parity soak is verified. D1 writes continue.
 4. **D1 write-off / event retirement** — stop writing moved user-mail metadata
    to D1; retire dual-write and event/mirror machinery used only for the
    migration.
@@ -740,7 +835,7 @@ metadata store:
   message (logged, non-retry) rather than risking a duplicate on Email Routing
   retry.
 
-Phase 1 scaffolding does not change that live D1 boundary.
+Phase 1 and phase 2a scaffolding does not change that live D1 boundary.
 
 ### Package state model
 
@@ -861,7 +956,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
   reconciliation alarms)
 - `MAILBOX` (Durable Objects; per-user email metadata — see
   [Mailbox](#durable-objects-mailbox); phase 1 registers purge/export
-  consumption without changing D1 authority)
+  consumption; phase 2a adds dual-write primitives without changing D1
+  authority)
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)
