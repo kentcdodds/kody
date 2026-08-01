@@ -183,8 +183,11 @@ duplicate mirror SQL.
 D1 `users.d1_storage_bytes` and `users.d1_storage_bytes_updated_at` remain the
 **sole read, enforcement, and reconciliation authority** for the D1 payload
 component of `storage_bytes`. Every caller — including email — reserves through
-the same atomic D1 `UPDATE` in `assertWithinStorageBytesEntitlement`; denial
-semantics and `EntitlementLimitError` always come from D1.
+the same conditional D1 `UPDATE` in `assertWithinStorageBytesEntitlement`
+(bounded retry while a real users row remains under limit; fail closed if
+contention never resolves; missing-user synthetic contexts keep prior
+under-limit allow / over-limit deny). Denial semantics and
+`EntitlementLimitError` always come from D1.
 
 UserMeter schema **v4** adds a singleton `storage_bytes_state` row (`id = 1`) as
 **best-effort shadow / future-cutover support only**. The DO row is never read
@@ -211,9 +214,11 @@ failures are logged and never fail or poison the lane. Current
 `readUserD1StorageBytes` only.
 
 **Account export and purge:** `UserMeter.exportCounters` may return additive
-non-authoritative `storageBytesShadow` when the shadow row exists (counted in
-the `user_meter` section total). `UserMeter.purge()` clears counters, inbound
-delivery claims, and any shadow storage state via `deleteAll`.
+non-authoritative `storageBytesShadow` on the first page only (`startAfter`
+absent) when the shadow row exists; subsequent pages return `null` so paged
+consumers never double-count it (still counted once in the `user_meter` section
+total). `UserMeter.purge()` clears counters, inbound delivery claims, and any
+shadow storage state via `deleteAll`.
 
 ### Future storage authority flip (contract follow-up)
 

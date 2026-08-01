@@ -283,7 +283,10 @@ export type AccountExportSectionResult = {
 	nextStartAfter: string | null
 	pageSize: number
 	warnings: Array<string>
-	/** Non-authoritative UserMeter storage-byte shadow; not part of paging. */
+	/**
+	 * Non-authoritative UserMeter storage-byte shadow. Present only on the
+	 * first `user_meter` page (`startAfter` absent); later pages omit it.
+	 */
 	storageBytesShadow?: UserMeterExportResult['storageBytesShadow']
 }
 

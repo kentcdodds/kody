@@ -112,7 +112,11 @@ export type UserMeterStorageBytesSetResult = UserMeterStorageBytesReadyState & {
 
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
-	/** Non-authoritative D1 storage-byte shadow; `null` when never synced. */
+	/**
+	 * Non-authoritative D1 storage-byte shadow. Emitted only on the first
+	 * export page (`startAfter` absent); subsequent pages return `null` so
+	 * paged consumers never double-count the singleton shadow.
+	 */
 	storageBytesShadow: UserMeterStorageBytesState | null
 	nextStartAfter: string | null
 	truncated: boolean
@@ -838,7 +842,11 @@ class UserMeterBase extends DurableObject<Env> {
 				mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(revision),
 			})
 		}
-		const storageRow = this.readStorageRow()
+		// Shadow is a singleton outside keyset paging — emit it once on the
+		// first page only so section totals and multi-page consumers do not
+		// double-count.
+		const includeStorageShadow = cursor == null
+		const storageRow = includeStorageShadow ? this.readStorageRow() : null
 		const last = pageRows[pageRows.length - 1]
 		return {
 			counters,

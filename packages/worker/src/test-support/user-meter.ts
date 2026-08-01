@@ -182,7 +182,12 @@ export function createInMemoryUserMeterEnv() {
 				storageByUser.delete(userId)
 				return { ok: true as const }
 			},
-			async exportCounters() {
+			async exportCounters(
+				input: {
+					pageSize?: number
+					startAfter?: string | null
+				} = {},
+			) {
 				const counters = [...rows.entries()].map(([entryKey, row]) => {
 					const [resource, day] = entryKey.split('\0')
 					return {
@@ -194,7 +199,11 @@ export function createInMemoryUserMeterEnv() {
 						mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(row.revision),
 					}
 				})
-				const storage = storageByUser.get(userId)
+				const includeStorageShadow =
+					typeof input.startAfter !== 'string' || input.startAfter.length === 0
+				const storage = includeStorageShadow
+					? storageByUser.get(userId)
+					: undefined
 				const storageBytesShadow: UserMeterStorageBytesState | null = storage
 					? {
 							bytes: storage.bytes,

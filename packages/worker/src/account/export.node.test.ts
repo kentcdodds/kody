@@ -1588,9 +1588,11 @@ test('account export includes user_meter counters, pages them, and warns on trun
 				: 0
 			const page = counters.slice(startIndex, startIndex + pageSize)
 			const truncated = startIndex + pageSize < counters.length
+			const isFirstPage =
+				typeof input.startAfter !== 'string' || input.startAfter.length === 0
 			return {
 				counters: page,
-				storageBytesShadow,
+				storageBytesShadow: isFirstPage ? storageBytesShadow : null,
 				nextStartAfter: truncated
 					? `${page.at(-1)!.day}:${page.at(-1)!.resource}`
 					: null,
@@ -1647,10 +1649,15 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		startAfter: first.nextStartAfter ?? undefined,
 	})
 	expect(second.items).toEqual(counters.slice(2))
-	expect(second.storageBytesShadow).toEqual(storageBytesShadow)
+	expect(second.storageBytesShadow).toBeNull()
 	expect(second.truncated).toBe(false)
 	expect(second.nextStartAfter).toBeNull()
-	expect(exportCounters).toHaveBeenCalled()
+	expect(exportCounters).toHaveBeenCalledWith(
+		expect.objectContaining({
+			pageSize: 2,
+			startAfter: first.nextStartAfter,
+		}),
+	)
 
 	exportCounters.mockImplementation(async () => ({
 		counters: [counters[0]!],

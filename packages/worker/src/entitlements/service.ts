@@ -725,10 +725,10 @@ function scheduleUserMeterStorageBytesShadow(input: {
 	void tracked
 }
 
-export async function readUserD1StorageBytes(input: {
+async function readUserD1StorageBytesRow(input: {
 	db: D1Database
 	userId: string
-}): Promise<number> {
+}): Promise<{ bytes: number } | null> {
 	const row = await input.db
 		.prepare(
 			`SELECT d1_storage_bytes AS bytes
@@ -737,7 +737,16 @@ export async function readUserD1StorageBytes(input: {
 		)
 		.bind(input.userId)
 		.first<{ bytes: number }>()
-	return Math.max(0, Number(row?.bytes ?? 0))
+	if (row == null) return null
+	return { bytes: Math.max(0, Number(row.bytes ?? 0)) }
+}
+
+export async function readUserD1StorageBytes(input: {
+	db: D1Database
+	userId: string
+}): Promise<number> {
+	const row = await readUserD1StorageBytesRow(input)
+	return row?.bytes ?? 0
 }
 
 /**
@@ -985,11 +994,20 @@ export async function readCurrentEntitlementResourceUsage(input: {
 	})
 }
 
+/** Bounded retries when a conditional D1 reserve loses to concurrent writers. */
+const storageBytesReserveMaxAttempts = 5
+
 /**
  * Atomically reserve D1 payload storage bytes against the plan limit.
  * Optional `env` schedules a best-effort UserMeter shadow after a successful
  * reserve (never awaited; failures logged only). `getCurrent` is check-only
  * and does not reserve in D1 or UserMeter.
+ *
+ * Real users never succeed unreserved: a failed conditional update re-reads
+ * row existence/current, throws {@link EntitlementLimitError} at the limit,
+ * retries while a real row remains under limit, and fails closed with an
+ * operational error if contention never resolves. Missing-user synthetic
+ * contexts keep their prior under-limit allow / over-limit deny semantics.
  */
 export async function assertWithinStorageBytesEntitlement(input: {
 	db: D1Database
@@ -1020,42 +1038,66 @@ export async function assertWithinStorageBytesEntitlement(input: {
 	})
 	const limit = resolvePlanLimit(plan, 'storage_bytes')
 	const requested = Math.max(0, input.requested ?? 1)
-	const now = new Date().toISOString()
-	const result = await input.db
-		.prepare(
-			`UPDATE users
-			SET d1_storage_bytes = d1_storage_bytes + ?,
-				d1_storage_bytes_updated_at = ?
-			WHERE stable_user_id = ?
-				AND d1_storage_bytes + ? <= ?`,
-		)
-		.bind(requested, now, input.userId, requested, limit)
-		.run()
-	if ((result.meta.changes ?? 0) > 0) {
-		scheduleUserMeterStorageBytesShadow({
+
+	for (let attempt = 0; attempt < storageBytesReserveMaxAttempts; attempt++) {
+		const now = new Date().toISOString()
+		const result = await input.db
+			.prepare(
+				`UPDATE users
+				SET d1_storage_bytes = d1_storage_bytes + ?,
+					d1_storage_bytes_updated_at = ?
+				WHERE stable_user_id = ?
+					AND d1_storage_bytes + ? <= ?`,
+			)
+			.bind(requested, now, input.userId, requested, limit)
+			.run()
+		if ((result.meta.changes ?? 0) > 0) {
+			scheduleUserMeterStorageBytesShadow({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+				waitUntil: input.waitUntil,
+			})
+			return
+		}
+
+		const row = await readUserD1StorageBytesRow({
 			db: input.db,
-			env: input.env,
 			userId: input.userId,
-			waitUntil: input.waitUntil,
 		})
-		return
+		// Synthetic contexts have no users row to reserve against. Their plan
+		// has already failed closed to `free`; preserve that finite limit
+		// without inventing a user-owned counter row that reconciliation
+		// cannot resolve.
+		if (row == null) {
+			const current = 0
+			if (current + requested <= limit) return
+			throw new EntitlementLimitError({
+				resource: 'storage_bytes',
+				plan,
+				limit,
+				current,
+				upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+			})
+		}
+
+		const current = row.bytes
+		if (current + requested > limit) {
+			throw new EntitlementLimitError({
+				resource: 'storage_bytes',
+				plan,
+				limit,
+				current,
+				upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+			})
+		}
+		// Real row still under limit: another writer raced the conditional
+		// UPDATE. Retry the reserve rather than succeeding unreserved.
 	}
 
-	const current = await readUserD1StorageBytes({
-		db: input.db,
-		userId: input.userId,
-	})
-	// Synthetic contexts have no users row to reserve against. Their plan has
-	// already failed closed to `free`; preserve that finite limit without
-	// inventing a user-owned counter row that reconciliation cannot resolve.
-	if (current + requested <= limit) return
-	throw new EntitlementLimitError({
-		resource: 'storage_bytes',
-		plan,
-		limit,
-		current,
-		upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
-	})
+	throw new Error(
+		'Storage byte reservation could not complete under concurrent updates.',
+	)
 }
 
 export type AssertWithinEntitlementInput = {

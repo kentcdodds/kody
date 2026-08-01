@@ -167,13 +167,14 @@ migration-safe chunked interface:
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability. User meter counters use `section: "user_meter"` and
   the `UserMeter.exportCounters` RPC (daily counters plus additive
-  `storageBytesShadow` when present; explicitly non-authoritative). R2 raw MIME,
-  attachment, avatar, and icon objects use `section: "r2_object"`; each response
-  contains at most one 256 KiB base64 chunk and an opaque cursor. Each request
-  uses bounded `LIMIT 1` ownership queries rather than reconstructing inventory.
-  Continuation cursors bind the source row, object key, size, and ETag;
-  ownership/key mutations and object overwrites are reported instead of mixing
-  generations. Missing objects are represented explicitly.
+  `storageBytesShadow` on the first page only when present; explicitly
+  non-authoritative). R2 raw MIME, attachment, avatar, and icon objects use
+  `section: "r2_object"`; each response contains at most one 256 KiB base64
+  chunk and an opaque cursor. Each request uses bounded `LIMIT 1` ownership
+  queries rather than reconstructing inventory. Continuation cursors bind the
+  source row, object key, size, and ETag; ownership/key mutations and object
+  overwrites are reported instead of mixing generations. Missing objects are
+  represented explicitly.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -197,12 +198,13 @@ Durable Object export behavior:
   never pruned by retention. See [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
-  The same RPC may return additive `storageBytesShadow` when the schema-v4
-  shadow row exists (`null` when never shadowed); section totals count it as one
-  row when present, but it is explicitly **non-authoritative** — usage and
-  enforcement read D1 `users.d1_storage_bytes`. Retention is self-enforced
-  inside the DO (seven UTC days of counter and inbound-delivery-claim rows);
-  shadow storage-byte state is not time-pruned. See
+  The same RPC may return additive `storageBytesShadow` on the first page only
+  (`startAfter` absent) when the schema-v4 shadow row exists (`null` on later
+  pages and when never shadowed); section totals count it as one row when
+  present, but it is explicitly **non-authoritative** — usage and enforcement
+  read D1 `users.d1_storage_bytes`. Retention is self-enforced inside the DO
+  (seven UTC days of counter and inbound-delivery-claim rows); shadow
+  storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
@@ -555,7 +557,8 @@ Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
 `deleteAll` clears counters, claims, and any shadow storage state). Account
 export pages `UserMeter.exportCounters` through the `user_meter` manifest
 section / `account_export_section` (daily counters plus additive
-`storageBytesShadow` when present; shadow field is non-authoritative).
+`storageBytesShadow` on the first page only when present; shadow field is
+non-authoritative).
 
 ### Package state model
 

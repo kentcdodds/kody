@@ -938,13 +938,41 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 		updatedAt: '2026-07-31T17:02:00.000Z',
 	})
 
-	const exported = await meter.exportCounters({})
-	expect(exported.storageBytesShadow).toEqual({
+	const day = '2026-07-31'
+	for (const resource of [
+		'email_receives_per_day',
+		'email_sends_per_day',
+		'execute_calls_per_day',
+		'outbound_fetches_per_day',
+	] as const) {
+		await meter.initialize({
+			resource,
+			day,
+			count: 1,
+			updatedAt: '2026-07-31T17:03:00.000Z',
+		})
+	}
+
+	const firstPage = await meter.exportCounters({ pageSize: 2 })
+	expect(firstPage.counters).toHaveLength(2)
+	expect(firstPage.truncated).toBe(true)
+	expect(firstPage.nextStartAfter).toEqual(expect.any(String))
+	expect(firstPage.storageBytesShadow).toEqual({
 		bytes: 11,
 		revision: 3,
 		updatedAt: '2026-07-31T17:02:00.000Z',
 		mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
 	})
+
+	const secondPage = await meter.exportCounters({
+		pageSize: 2,
+		startAfter: firstPage.nextStartAfter,
+	})
+	expect(secondPage.counters).toHaveLength(2)
+	expect(secondPage.truncated).toBe(false)
+	expect(secondPage.nextStartAfter).toBeNull()
+	expect(secondPage.storageBytesShadow).toBeNull()
+
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
 	).resolves.toBe(0)
