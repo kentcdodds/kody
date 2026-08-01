@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
@@ -23,6 +24,13 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
 		repoMockModule.syncArtifactSourceSnapshot(...args),
 }))
+
+function createTestEnv(overrides: Record<string, unknown> = {}) {
+	return {
+		USER_METER: env.USER_METER,
+		...overrides,
+	} as unknown as Env
+}
 
 function resetRepoPersistenceMocks() {
 	repoMockModule.ensureEntitySource.mockReset()
@@ -193,7 +201,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 			handler(
 				{},
 				{
-					env: {} as Env,
+					env: createTestEnv(),
 					callerContext: createMcpCallerContext({
 						baseUrl: 'https://example.com',
 					}),
@@ -217,7 +225,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 	resetRepoPersistenceMocks()
 	const handler = getStaticRegistry().capabilityMap['package_save'].handler
 	const signedInContext = {
-		env: {
+		env: createTestEnv({
 			APP_DB: {
 				prepare() {
 					return {
@@ -229,7 +237,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 					}
 				},
 			},
-		} as unknown as Env,
+		}),
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
@@ -352,7 +360,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 				],
 			},
 			{
-				env: {
+				env: createTestEnv({
 					APP_DB: {
 						prepare(query: string) {
 							return {
@@ -513,7 +521,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 							data: [Array.from({ length: 384 }, () => 0)],
 						}),
 					},
-				} as unknown as Env,
+				}),
 				callerContext: createMcpCallerContext({
 					baseUrl: 'https://example.com',
 					user: {
