@@ -1,30 +1,31 @@
 import { truncateToUtf8Bytes } from '@kody-internal/shared/backup-restore-safety.ts'
 import { mailboxRpc } from './mailbox-client.ts'
-import {
-	mirrorMailboxDeliveryEventFromD1,
-	mirrorMailboxMessageGraphFromD1,
-	type MailboxLiveMirrorEnv,
-	type MailboxLiveMirrorGraphSummary,
-} from './mailbox-live-mirror.ts'
+import { type MailboxLiveMirrorEnv } from './mailbox-live-mirror.ts'
 import {
 	awaitMailboxMirrorRpc,
 	mailboxMirrorRpcTimeoutMs,
-	type MailboxMirrorResult,
 } from './mailbox-mirror.ts'
 import {
 	recordMailboxParityEvent,
 	type MailboxParityOperation,
 } from './mailbox-parity-events.ts'
 import {
+	backfillEventsForUser,
+	backfillMessagesForUser,
+	mailboxParityContentPageSize,
+	mailboxParityEventPageSize,
+	mailboxParityMessagePageSize,
+	mirrorMailboxParityDeliveryEventFromD1,
+	replayContentUpdatesForUser,
+} from './mailbox-parity-phases.ts'
+import {
 	countD1MailboxParity,
-	listContentReplayPage,
-	listMessageBackfillPage,
-	listOrphanDeliveryEventBackfillPage,
+	isUserDeleting,
+	listEventBackfillPage,
 	listUsersForMailboxParity,
 	loadUserParityState,
 	persistUserParityProgress,
 	rotateCheckedAt,
-	type MailboxParityContentCursor,
 	type MailboxParityUserState,
 } from './mailbox-parity-repo.ts'
 import { type MailboxCountResult } from './mailbox-types.ts'
@@ -33,19 +34,23 @@ import { type MailboxCountResult } from './mailbox-types.ts'
  * Bounded hourly Mailbox backfill + count-parity reconciler.
  *
  * Discovers a small oldest-first page of non-deleting D1 mail owners (no DO
- * enumeration), mirrors message graphs then message_id-null orphan delivery
- * events through existing live-mirror helpers, then keyset-replays messages
- * updated after the content watermark before comparing owner-scoped D1 counts
- * with `countMailbox`. D1 remains mail authority; this lane never mutates
- * email_* rows and does not flip read authority.
+ * enumeration), mirrors message graphs then every owner delivery event through
+ * existing live-mirror helpers (repairing graph truncation), durably
+ * keyset-replays messages updated after the content watermark, then compares
+ * owner-scoped D1 counts with `countMailbox`. D1 remains mail authority; this
+ * lane never mutates email_* rows and does not flip read authority.
  */
 
 export const mailboxParityUserBatchSize = 8
-export const mailboxParityMessagePageSize = 10
-export const mailboxParityOrphanEventPageSize = 25
-export const mailboxParityContentPageSize = 10
 export const mailboxParityTimeBudgetMs = 10_000
 export const mailboxParityLastErrorMaxBytes = 512
+
+export {
+	mailboxParityContentPageSize,
+	mailboxParityEventPageSize,
+	mailboxParityMessagePageSize,
+	mirrorMailboxParityDeliveryEventFromD1,
+}
 
 export type MailboxParityReconcileEnv = MailboxLiveMirrorEnv & {
 	APP_DB: D1Database
@@ -62,17 +67,8 @@ export type MailboxParityReconcileMetrics = {
 
 export {
 	countD1MailboxParity,
-	listOrphanDeliveryEventBackfillPage,
+	listEventBackfillPage,
 	listUsersForMailboxParity,
-}
-
-function isRetryableMirrorResult(result: MailboxMirrorResult): boolean {
-	return result.status === 'error' || result.status === 'timeout'
-}
-
-function graphMirrorSucceeded(summary: MailboxLiveMirrorGraphSummary): boolean {
-	if (isRetryableMirrorResult(summary.message)) return false
-	return !summary.events.some((event) => isRetryableMirrorResult(event.result))
 }
 
 function safeParityErrorText(error: unknown): string {
@@ -89,17 +85,18 @@ function safeParityErrorText(error: unknown): string {
 	)
 }
 
-/**
- * Load one orphan delivery-event projection from D1 and mirror it.
- * Thin cohesive wrapper over {@link mirrorMailboxDeliveryEventFromD1}.
- */
-export async function mirrorMailboxOrphanDeliveryEventFromD1(input: {
-	env: MailboxLiveMirrorEnv
-	db: D1Database
+async function purgeMailboxBestEffort(input: {
+	env: MailboxParityReconcileEnv
 	userId: string
-	eventId: string
-}): Promise<MailboxMirrorResult> {
-	return mirrorMailboxDeliveryEventFromD1(input)
+}) {
+	try {
+		await awaitMailboxMirrorRpc(
+			mailboxRpc({ env: input.env, userId: input.userId }).purge(),
+			mailboxMirrorRpcTimeoutMs,
+		)
+	} catch (error) {
+		console.warn('mailbox-parity-purge-on-delete-failed', input.userId, error)
+	}
 }
 
 function emitCountComparisons(input: {
@@ -153,199 +150,6 @@ function emitCountComparisons(input: {
 	return { matched }
 }
 
-async function backfillMessagesForUser(input: {
-	env: MailboxParityReconcileEnv
-	state: MailboxParityUserState
-	deadlineMs: number
-}): Promise<{
-	state: MailboxParityUserState
-	backfilled: number
-	budgetExhausted: boolean
-	retryableFailure: boolean
-}> {
-	let state = input.state
-	let backfilled = 0
-	if (state.messagesCompletedAt != null) {
-		return {
-			state,
-			backfilled,
-			budgetExhausted: false,
-			retryableFailure: false,
-		}
-	}
-
-	while (Date.now() < input.deadlineMs) {
-		const page = await listMessageBackfillPage({
-			db: input.env.APP_DB,
-			userId: state.userId,
-			cursor: state.messageCursor,
-			limit: mailboxParityMessagePageSize,
-		})
-		if (page.length === 0) {
-			state = {
-				...state,
-				messagesCompletedAt: new Date().toISOString(),
-			}
-			return {
-				state,
-				backfilled,
-				budgetExhausted: false,
-				retryableFailure: false,
-			}
-		}
-
-		let cursor = state.messageCursor
-		for (const row of page) {
-			if (Date.now() >= input.deadlineMs) {
-				state = { ...state, messageCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: true,
-					retryableFailure: false,
-				}
-			}
-			const summary = await mirrorMailboxMessageGraphFromD1({
-				env: input.env,
-				db: input.env.APP_DB,
-				userId: state.userId,
-				messageId: row.id,
-			})
-			if (!graphMirrorSucceeded(summary)) {
-				state = { ...state, messageCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: true,
-				}
-			}
-			cursor = { createdAt: row.created_at, id: row.id }
-			backfilled += 1
-		}
-		state = { ...state, messageCursor: cursor }
-	}
-
-	return {
-		state,
-		backfilled,
-		budgetExhausted: true,
-		retryableFailure: false,
-	}
-}
-
-async function backfillOrphanEventsForUser(input: {
-	env: MailboxParityReconcileEnv
-	state: MailboxParityUserState
-	deadlineMs: number
-}): Promise<{
-	state: MailboxParityUserState
-	backfilled: number
-	budgetExhausted: boolean
-	retryableFailure: boolean
-}> {
-	let state = input.state
-	let backfilled = 0
-	if (state.messagesCompletedAt == null) {
-		return {
-			state,
-			backfilled,
-			budgetExhausted: false,
-			retryableFailure: false,
-		}
-	}
-	if (state.orphanEventsCompletedAt != null) {
-		return {
-			state,
-			backfilled,
-			budgetExhausted: false,
-			retryableFailure: false,
-		}
-	}
-
-	while (Date.now() < input.deadlineMs) {
-		const page = await listOrphanDeliveryEventBackfillPage({
-			db: input.env.APP_DB,
-			userId: state.userId,
-			cursor: state.orphanEventCursor,
-			limit: mailboxParityOrphanEventPageSize,
-		})
-		if (page.length === 0) {
-			state = {
-				...state,
-				orphanEventsCompletedAt: new Date().toISOString(),
-			}
-			return {
-				state,
-				backfilled,
-				budgetExhausted: false,
-				retryableFailure: false,
-			}
-		}
-
-		let cursor = state.orphanEventCursor
-		for (const row of page) {
-			if (Date.now() >= input.deadlineMs) {
-				state = { ...state, orphanEventCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: true,
-					retryableFailure: false,
-				}
-			}
-			const result = await mirrorMailboxOrphanDeliveryEventFromD1({
-				env: input.env,
-				db: input.env.APP_DB,
-				userId: state.userId,
-				eventId: row.id,
-			})
-			if (isRetryableMirrorResult(result)) {
-				state = { ...state, orphanEventCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: true,
-				}
-			}
-			cursor = { createdAt: row.created_at, id: row.id }
-			backfilled += 1
-		}
-		state = { ...state, orphanEventCursor: cursor }
-	}
-
-	return {
-		state,
-		backfilled,
-		budgetExhausted: true,
-		retryableFailure: false,
-	}
-}
-
-/**
- * Baseline is established before the first creation scan. When it still equals
- * this run's nowIso, sample wall time so same-run updates after the baseline
- * are included; otherwise the run's nowIso is the upper bound.
- */
-function resolveContentReplayUpperBound(input: {
-	nowIso: string
-	watermarkAt: string
-}): string {
-	let upperBoundAt = input.nowIso
-	if (input.watermarkAt === input.nowIso) {
-		const wallIso = new Date().toISOString()
-		if (wallIso > upperBoundAt) upperBoundAt = wallIso
-	}
-	if (upperBoundAt < input.watermarkAt) return input.watermarkAt
-	return upperBoundAt
-}
-
-/**
- * Persist the content watermark at the start of the first backfill attempt so
- * updates during creation/orphan mirroring cannot fall before a completion-time
- * baseline. Retained across incomplete/error ticks.
- */
 async function ensureContentWatermarkBaseline(input: {
 	db: D1Database
 	state: MailboxParityUserState
@@ -363,98 +167,15 @@ async function ensureContentWatermarkBaseline(input: {
 		matchingSince: state.matchingSince,
 		mismatchCount: state.mismatchCount,
 		contentWatermarkAt: state.contentWatermarkAt,
+		contentReplayUpperAt: state.contentReplayUpperAt,
+		contentReplayCursor: state.contentReplayCursor,
 		messageCursor: state.messageCursor,
 		messagesCompletedAt: state.messagesCompletedAt,
-		orphanEventCursor: state.orphanEventCursor,
-		orphanEventsCompletedAt: state.orphanEventsCompletedAt,
+		eventCursor: state.eventCursor,
+		eventsCompletedAt: state.eventsCompletedAt,
 		lastError: null,
 	})
 	return state
-}
-
-/**
- * After initial creation/orphan backfill completes: keyset-replay every owner
- * message with updated_at in (watermark, current-now]. Watermark advances only
- * when the entire window succeeds; in-tick cursor avoids skipping equal
- * timestamps. Always replay — never treat a fresh baseline as an empty skip.
- */
-async function replayContentUpdatesForUser(input: {
-	env: MailboxParityReconcileEnv
-	state: MailboxParityUserState
-	nowIso: string
-	deadlineMs: number
-}): Promise<{
-	state: MailboxParityUserState
-	backfilled: number
-	budgetExhausted: boolean
-	retryableFailure: boolean
-	windowComplete: boolean
-}> {
-	const state = input.state
-	const watermarkAt = state.contentWatermarkAt ?? input.nowIso
-	const upperBoundAt = resolveContentReplayUpperBound({
-		nowIso: input.nowIso,
-		watermarkAt,
-	})
-	let cursor: MailboxParityContentCursor | null = null
-	let backfilled = 0
-
-	while (Date.now() < input.deadlineMs) {
-		const page = await listContentReplayPage({
-			db: input.env.APP_DB,
-			userId: state.userId,
-			watermarkAt,
-			upperBoundAt,
-			cursor,
-			limit: mailboxParityContentPageSize,
-		})
-		if (page.length === 0) {
-			return {
-				state: { ...state, contentWatermarkAt: upperBoundAt },
-				backfilled,
-				budgetExhausted: false,
-				retryableFailure: false,
-				windowComplete: true,
-			}
-		}
-
-		for (const row of page) {
-			if (Date.now() >= input.deadlineMs) {
-				return {
-					state,
-					backfilled,
-					budgetExhausted: true,
-					retryableFailure: false,
-					windowComplete: false,
-				}
-			}
-			const summary = await mirrorMailboxMessageGraphFromD1({
-				env: input.env,
-				db: input.env.APP_DB,
-				userId: state.userId,
-				messageId: row.id,
-			})
-			if (!graphMirrorSucceeded(summary)) {
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: true,
-					windowComplete: false,
-				}
-			}
-			cursor = { updatedAt: row.updated_at, id: row.id }
-			backfilled += 1
-		}
-	}
-
-	return {
-		state,
-		backfilled,
-		budgetExhausted: true,
-		retryableFailure: false,
-		windowComplete: false,
-	}
 }
 
 async function compareParityForUser(input: {
@@ -494,16 +215,19 @@ async function compareParityForUser(input: {
 			matched: true,
 		}
 	}
-	// Reopen bounded creation/orphan backfill after completed cursors so later
-	// live rows past the retained keyset are mirrored on the next ticks; keep
-	// the content watermark so classification updates remain covered.
+	// Full historical rescan: clear creation cursors + completion markers.
+	// Preserve content watermark; drop any in-flight replay window; clear soak.
 	return {
 		state: {
 			...input.state,
 			matchingSince: null,
 			mismatchCount: input.state.mismatchCount + 1,
+			messageCursor: null,
 			messagesCompletedAt: null,
-			orphanEventsCompletedAt: null,
+			eventCursor: null,
+			eventsCompletedAt: null,
+			contentReplayUpperAt: null,
+			contentReplayCursor: null,
 		},
 		matched: false,
 	}
@@ -539,25 +263,50 @@ async function reconcileOneUser(input: {
 
 	let state = loaded
 	let backfilled = 0
-	let initialBackfilled = 0
+	let creationBackfilled = 0
 
-	const persistIncomplete = async (inputPersist: {
+	const isDeleting = () =>
+		isUserDeleting({ db: input.env.APP_DB, userId: state.userId })
+
+	const stopForDeletion = async () => {
+		await purgeMailboxBestEffort({
+			env: input.env,
+			userId: state.userId,
+		})
+		return {
+			backfilled,
+			compared: false,
+			matched: false,
+			mismatched: false,
+			failed: false,
+			budgetExhausted: false,
+		}
+	}
+
+	const persistProgress = async (inputPersist: {
+		matchingSince: string | null
 		lastError: string | null
 	}) => {
-		await persistUserParityProgress({
+		const { wrote } = await persistUserParityProgress({
 			db: input.env.APP_DB,
 			userId: state.userId,
 			nowIso: input.nowIso,
-			// Soak cannot survive incomplete/error/backfill ticks.
-			matchingSince: null,
+			matchingSince: inputPersist.matchingSince,
 			mismatchCount: state.mismatchCount,
 			contentWatermarkAt: state.contentWatermarkAt,
+			contentReplayUpperAt: state.contentReplayUpperAt,
+			contentReplayCursor: state.contentReplayCursor,
 			messageCursor: state.messageCursor,
 			messagesCompletedAt: state.messagesCompletedAt,
-			orphanEventCursor: state.orphanEventCursor,
-			orphanEventsCompletedAt: state.orphanEventsCompletedAt,
+			eventCursor: state.eventCursor,
+			eventsCompletedAt: state.eventsCompletedAt,
 			lastError: inputPersist.lastError,
 		})
+		return wrote
+	}
+
+	if (await isDeleting()) {
+		return stopForDeletion()
 	}
 
 	// Baseline before scanning so mid-backfill updates stay inside the replay window.
@@ -566,23 +315,33 @@ async function reconcileOneUser(input: {
 		state,
 		nowIso: input.nowIso,
 	})
+	if (await isDeleting()) {
+		return stopForDeletion()
+	}
 
 	const messagePass = await backfillMessagesForUser({
 		env: input.env,
 		state,
 		deadlineMs: input.deadlineMs,
+		isDeleting,
 	})
 	state = messagePass.state
-	initialBackfilled += messagePass.backfilled
+	creationBackfilled += messagePass.backfilled
 	backfilled += messagePass.backfilled
+	if (messagePass.deletionStarted) {
+		return stopForDeletion()
+	}
 	if (messagePass.retryableFailure) {
-		await persistIncomplete({
-			lastError: 'message backfill mirror error or timeout',
+		await persistProgress({
+			matchingSince: null,
+			lastError: messagePass.blockedReason
+				? `message backfill ${messagePass.blockedReason}`
+				: 'message backfill mirror error or timeout',
 		})
 		console.warn(
 			'mailbox-parity-message-backfill-retryable',
 			state.userId,
-			'error-or-timeout',
+			messagePass.blockedReason ?? 'error-or-timeout',
 		)
 		return {
 			backfilled,
@@ -594,7 +353,7 @@ async function reconcileOneUser(input: {
 		}
 	}
 	if (messagePass.budgetExhausted) {
-		await persistIncomplete({ lastError: null })
+		await persistProgress({ matchingSince: null, lastError: null })
 		return {
 			backfilled,
 			compared: false,
@@ -605,22 +364,29 @@ async function reconcileOneUser(input: {
 		}
 	}
 
-	const orphanPass = await backfillOrphanEventsForUser({
+	const eventPass = await backfillEventsForUser({
 		env: input.env,
 		state,
 		deadlineMs: input.deadlineMs,
+		isDeleting,
 	})
-	state = orphanPass.state
-	initialBackfilled += orphanPass.backfilled
-	backfilled += orphanPass.backfilled
-	if (orphanPass.retryableFailure) {
-		await persistIncomplete({
-			lastError: 'orphan-event backfill mirror error or timeout',
+	state = eventPass.state
+	creationBackfilled += eventPass.backfilled
+	backfilled += eventPass.backfilled
+	if (eventPass.deletionStarted) {
+		return stopForDeletion()
+	}
+	if (eventPass.retryableFailure) {
+		await persistProgress({
+			matchingSince: null,
+			lastError: eventPass.blockedReason
+				? `event backfill ${eventPass.blockedReason}`
+				: 'event backfill mirror error or timeout',
 		})
 		console.warn(
-			'mailbox-parity-orphan-event-backfill-retryable',
+			'mailbox-parity-event-backfill-retryable',
 			state.userId,
-			'error-or-timeout',
+			eventPass.blockedReason ?? 'error-or-timeout',
 		)
 		return {
 			backfilled,
@@ -631,8 +397,8 @@ async function reconcileOneUser(input: {
 			budgetExhausted: false,
 		}
 	}
-	if (orphanPass.budgetExhausted) {
-		await persistIncomplete({ lastError: null })
+	if (eventPass.budgetExhausted) {
+		await persistProgress({ matchingSince: null, lastError: null })
 		return {
 			backfilled,
 			compared: false,
@@ -643,11 +409,8 @@ async function reconcileOneUser(input: {
 		}
 	}
 
-	if (
-		state.messagesCompletedAt == null ||
-		state.orphanEventsCompletedAt == null
-	) {
-		await persistIncomplete({ lastError: null })
+	if (state.messagesCompletedAt == null || state.eventsCompletedAt == null) {
+		await persistProgress({ matchingSince: null, lastError: null })
 		return {
 			backfilled,
 			compared: false,
@@ -658,9 +421,9 @@ async function reconcileOneUser(input: {
 		}
 	}
 
-	// Initial creation/orphan work ends the continuous soak window. Successful
-	// content replay below may keep matching_since when the final compare matches.
-	if (initialBackfilled > 0) {
+	// Creation work ends the continuous soak window. Successful content replay
+	// below may keep matching_since when the final compare matches.
+	if (creationBackfilled > 0) {
 		state = { ...state, matchingSince: null }
 	}
 
@@ -669,17 +432,31 @@ async function reconcileOneUser(input: {
 		state,
 		nowIso: input.nowIso,
 		deadlineMs: input.deadlineMs,
+		isDeleting,
 	})
 	state = contentPass.state
 	backfilled += contentPass.backfilled
+	if (contentPass.deletionStarted) {
+		return stopForDeletion()
+	}
+	// Durably freeze a newly opened window even when this tick cannot finish it.
+	if (contentPass.openedWindow && !contentPass.windowComplete) {
+		await persistProgress({
+			matchingSince: null,
+			lastError: null,
+		})
+	}
 	if (contentPass.retryableFailure) {
-		await persistIncomplete({
-			lastError: 'content replay mirror error or timeout',
+		await persistProgress({
+			matchingSince: null,
+			lastError: contentPass.blockedReason
+				? `content replay ${contentPass.blockedReason}`
+				: 'content replay mirror error or timeout',
 		})
 		console.warn(
 			'mailbox-parity-content-replay-retryable',
 			state.userId,
-			'error-or-timeout',
+			contentPass.blockedReason ?? 'error-or-timeout',
 		)
 		return {
 			backfilled,
@@ -691,7 +468,8 @@ async function reconcileOneUser(input: {
 		}
 	}
 	if (!contentPass.windowComplete) {
-		await persistIncomplete({ lastError: null })
+		// Freeze/retain upper + cursor; clear soak on incomplete budget ticks.
+		await persistProgress({ matchingSince: null, lastError: null })
 		return {
 			backfilled,
 			compared: false,
@@ -702,23 +480,21 @@ async function reconcileOneUser(input: {
 		}
 	}
 
+	if (await isDeleting()) {
+		return stopForDeletion()
+	}
+
 	const compared = await compareParityForUser({
 		env: input.env,
 		state,
 		nowIso: input.nowIso,
 	})
 	state = compared.state
-	await persistUserParityProgress({
-		db: input.env.APP_DB,
-		userId: state.userId,
-		nowIso: input.nowIso,
+	if (await isDeleting()) {
+		return stopForDeletion()
+	}
+	await persistProgress({
 		matchingSince: state.matchingSince,
-		mismatchCount: state.mismatchCount,
-		contentWatermarkAt: state.contentWatermarkAt,
-		messageCursor: state.messageCursor,
-		messagesCompletedAt: state.messagesCompletedAt,
-		orphanEventCursor: state.orphanEventCursor,
-		orphanEventsCompletedAt: state.orphanEventsCompletedAt,
 		lastError: null,
 	})
 	return {

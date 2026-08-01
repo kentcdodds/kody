@@ -82,11 +82,13 @@ export async function isMailboxReadCutoverEnabled(input: {
 					mailbox_parity_checked_at,
 					mailbox_parity_mismatch_count
 				FROM users
-				WHERE id = ?`,
+				WHERE id = ?
+					AND deleting_at IS NULL`,
 			)
 			.bind(input.dbUserId)
 			.first<MailboxParityStateRow>()
 
+		// Missing row includes deleting accounts (`deleting_at IS NOT NULL`).
 		if (!row) return false
 		if (row.stable_user_id !== input.stableUserId) return false
 		if (row.mailbox_parity_mismatch_count !== 0) return false

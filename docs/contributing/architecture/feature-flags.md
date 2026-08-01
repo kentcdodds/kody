@@ -83,11 +83,13 @@ parity soak on `users` (migration `0125-mailbox-parity-state.sql`):
   D1↔Mailbox count parity),
 - `mailbox_parity_checked_at` fresh within **2 hours** (hourly lane + slack),
 - `mailbox_parity_mismatch_count === 0`,
-- exact `stable_user_id` match between the gate caller and the loaded row.
+- exact `stable_user_id` match between the gate caller and the loaded row,
+- `deleting_at IS NULL` (accounts marked for deletion fail closed to D1).
 
 D1 errors, missing/incomplete parity state, stale `checked_at`, non-zero
-mismatch depth, and an off flag all **fail closed** to D1-authoritative reads.
-When the gate is on, Mailbox DO read errors propagate with no D1 fallback.
+mismatch depth, deleting accounts, and an off flag all **fail closed** to
+D1-authoritative reads. When the gate is on, Mailbox DO read errors propagate
+with no D1 fallback.
 
 The prepared adapter lives in
 `packages/worker/src/email/mailbox-read-cutover.ts`

@@ -3,8 +3,9 @@ import { type MailboxCountResult } from './mailbox-types.ts'
 
 /**
  * D1 loaders/persisters for the hourly Mailbox parity reconcile lane.
- * Creation backfill uses (created_at, id) keysets; content replay uses
- * (updated_at, id) within (watermark, now].
+ * Creation backfill uses (created_at, id) keysets over messages and all owner
+ * delivery events; content replay uses a durable (watermark, upper] window with
+ * an (updated_at, id) cursor.
  */
 
 export type MailboxParityBackfillCursor = {
@@ -22,10 +23,12 @@ export type MailboxParityUserState = {
 	matchingSince: string | null
 	mismatchCount: number
 	contentWatermarkAt: string | null
+	contentReplayUpperAt: string | null
+	contentReplayCursor: MailboxParityContentCursor | null
 	messageCursor: MailboxParityBackfillCursor | null
 	messagesCompletedAt: string | null
-	orphanEventCursor: MailboxParityBackfillCursor | null
-	orphanEventsCompletedAt: string | null
+	eventCursor: MailboxParityBackfillCursor | null
+	eventsCompletedAt: string | null
 }
 
 export type MailboxParityCreatedKeysetRow = {
@@ -64,6 +67,22 @@ export async function listUsersForMailboxParity(input: {
 		.bind(systemEmailOwnerId, input.limit)
 		.all<{ userId: string }>()
 	return result.results ?? []
+}
+
+export async function isUserDeleting(input: {
+	db: D1Database
+	userId: string
+}): Promise<boolean> {
+	const row = await input.db
+		.prepare(
+			`SELECT deleting_at AS deletingAt
+			FROM users
+			WHERE stable_user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId)
+		.first<{ deletingAt: string | null }>()
+	return row == null || row.deletingAt != null
 }
 
 export async function countD1MailboxParity(input: {
@@ -114,12 +133,15 @@ export async function loadUserParityState(input: {
 				mailbox_parity_matching_since AS matchingSince,
 				mailbox_parity_mismatch_count AS mismatchCount,
 				mailbox_parity_content_watermark_at AS contentWatermarkAt,
+				mailbox_parity_content_replay_upper_at AS contentReplayUpperAt,
+				mailbox_parity_content_replay_cursor_updated_at AS contentReplayCursorUpdatedAt,
+				mailbox_parity_content_replay_cursor_id AS contentReplayCursorId,
 				mailbox_parity_message_backfill_cursor_created_at AS messageCursorCreatedAt,
 				mailbox_parity_message_backfill_cursor_id AS messageCursorId,
 				mailbox_parity_message_backfill_completed_at AS messagesCompletedAt,
-				mailbox_parity_orphan_event_backfill_cursor_created_at AS orphanCursorCreatedAt,
-				mailbox_parity_orphan_event_backfill_cursor_id AS orphanCursorId,
-				mailbox_parity_orphan_event_backfill_completed_at AS orphanEventsCompletedAt
+				mailbox_parity_event_backfill_cursor_created_at AS eventCursorCreatedAt,
+				mailbox_parity_event_backfill_cursor_id AS eventCursorId,
+				mailbox_parity_event_backfill_completed_at AS eventsCompletedAt
 			FROM users
 			WHERE stable_user_id = ?
 				AND deleting_at IS NULL
@@ -131,31 +153,44 @@ export async function loadUserParityState(input: {
 			matchingSince: string | null
 			mismatchCount: number | null
 			contentWatermarkAt: string | null
+			contentReplayUpperAt: string | null
+			contentReplayCursorUpdatedAt: string | null
+			contentReplayCursorId: string | null
 			messageCursorCreatedAt: string | null
 			messageCursorId: string | null
 			messagesCompletedAt: string | null
-			orphanCursorCreatedAt: string | null
-			orphanCursorId: string | null
-			orphanEventsCompletedAt: string | null
+			eventCursorCreatedAt: string | null
+			eventCursorId: string | null
+			eventsCompletedAt: string | null
 		}>()
 	if (!row) return null
 	const messageCursor =
 		row.messageCursorCreatedAt != null && row.messageCursorId != null
 			? { createdAt: row.messageCursorCreatedAt, id: row.messageCursorId }
 			: null
-	const orphanEventCursor =
-		row.orphanCursorCreatedAt != null && row.orphanCursorId != null
-			? { createdAt: row.orphanCursorCreatedAt, id: row.orphanCursorId }
+	const eventCursor =
+		row.eventCursorCreatedAt != null && row.eventCursorId != null
+			? { createdAt: row.eventCursorCreatedAt, id: row.eventCursorId }
+			: null
+	const contentReplayCursor =
+		row.contentReplayCursorUpdatedAt != null &&
+		row.contentReplayCursorId != null
+			? {
+					updatedAt: row.contentReplayCursorUpdatedAt,
+					id: row.contentReplayCursorId,
+				}
 			: null
 	return {
 		userId: row.userId,
 		matchingSince: row.matchingSince,
 		mismatchCount: Number(row.mismatchCount ?? 0) || 0,
 		contentWatermarkAt: row.contentWatermarkAt,
+		contentReplayUpperAt: row.contentReplayUpperAt,
+		contentReplayCursor,
 		messageCursor,
 		messagesCompletedAt: row.messagesCompletedAt,
-		orphanEventCursor,
-		orphanEventsCompletedAt: row.orphanEventsCompletedAt,
+		eventCursor,
+		eventsCompletedAt: row.eventsCompletedAt,
 	}
 }
 
@@ -201,10 +236,10 @@ export async function listMessageBackfillPage(input: {
 }
 
 /**
- * Cohesive D1 loader for owner-scoped delivery events with `message_id` null
- * (orphan / unbound ledger rows). Keyset-paged for bounded backfill.
+ * Owner-scoped delivery-event creation keyset (all rows, including those bound
+ * to messages). Repairs events omitted by per-message graph truncation.
  */
-export async function listOrphanDeliveryEventBackfillPage(input: {
+export async function listEventBackfillPage(input: {
 	db: D1Database
 	userId: string
 	cursor: MailboxParityBackfillCursor | null
@@ -217,7 +252,6 @@ export async function listOrphanDeliveryEventBackfillPage(input: {
 						`SELECT id, created_at
 						FROM email_delivery_events
 						WHERE user_id = ?
-							AND message_id IS NULL
 						ORDER BY created_at ASC, id ASC
 						LIMIT ?`,
 					)
@@ -228,7 +262,6 @@ export async function listOrphanDeliveryEventBackfillPage(input: {
 						`SELECT id, created_at
 						FROM email_delivery_events
 						WHERE user_id = ?
-							AND message_id IS NULL
 							AND (
 								created_at > ?
 								OR (created_at = ? AND id > ?)
@@ -248,10 +281,8 @@ export async function listOrphanDeliveryEventBackfillPage(input: {
 }
 
 /**
- * Keyset page of owner messages updated after `watermarkAt` and at or before
- * `upperBoundAt` (run now, or wall time when completing in the baseline run).
- * In-tick `cursor` continues within the same window without skipping equal
- * `updated_at` rows.
+ * Keyset page within a frozen content-replay window (watermark, upper].
+ * In-tick / durable `cursor` continues without skipping equal `updated_at`.
  */
 export async function listContentReplayPage(input: {
 	db: D1Database
@@ -312,13 +343,15 @@ export async function persistUserParityProgress(input: {
 	matchingSince: string | null
 	mismatchCount: number
 	contentWatermarkAt: string | null
+	contentReplayUpperAt: string | null
+	contentReplayCursor: MailboxParityContentCursor | null
 	messageCursor: MailboxParityBackfillCursor | null
 	messagesCompletedAt: string | null
-	orphanEventCursor: MailboxParityBackfillCursor | null
-	orphanEventsCompletedAt: string | null
+	eventCursor: MailboxParityBackfillCursor | null
+	eventsCompletedAt: string | null
 	lastError: string | null
-}) {
-	await input.db
+}): Promise<{ wrote: boolean }> {
+	const result = await input.db
 		.prepare(
 			`UPDATE users
 			SET mailbox_parity_checked_at = ?,
@@ -326,13 +359,17 @@ export async function persistUserParityProgress(input: {
 				mailbox_parity_mismatch_count = ?,
 				mailbox_parity_last_error = ?,
 				mailbox_parity_content_watermark_at = ?,
+				mailbox_parity_content_replay_upper_at = ?,
+				mailbox_parity_content_replay_cursor_updated_at = ?,
+				mailbox_parity_content_replay_cursor_id = ?,
 				mailbox_parity_message_backfill_cursor_created_at = ?,
 				mailbox_parity_message_backfill_cursor_id = ?,
 				mailbox_parity_message_backfill_completed_at = ?,
-				mailbox_parity_orphan_event_backfill_cursor_created_at = ?,
-				mailbox_parity_orphan_event_backfill_cursor_id = ?,
-				mailbox_parity_orphan_event_backfill_completed_at = ?
-			WHERE stable_user_id = ?`,
+				mailbox_parity_event_backfill_cursor_created_at = ?,
+				mailbox_parity_event_backfill_cursor_id = ?,
+				mailbox_parity_event_backfill_completed_at = ?
+			WHERE stable_user_id = ?
+				AND deleting_at IS NULL`,
 		)
 		.bind(
 			input.nowIso,
@@ -340,15 +377,19 @@ export async function persistUserParityProgress(input: {
 			input.mismatchCount,
 			input.lastError,
 			input.contentWatermarkAt,
+			input.contentReplayUpperAt,
+			input.contentReplayCursor?.updatedAt ?? null,
+			input.contentReplayCursor?.id ?? null,
 			input.messageCursor?.createdAt ?? null,
 			input.messageCursor?.id ?? null,
 			input.messagesCompletedAt,
-			input.orphanEventCursor?.createdAt ?? null,
-			input.orphanEventCursor?.id ?? null,
-			input.orphanEventsCompletedAt,
+			input.eventCursor?.createdAt ?? null,
+			input.eventCursor?.id ?? null,
+			input.eventsCompletedAt,
 			input.userId,
 		)
 		.run()
+	return { wrote: (result.meta?.changes ?? 0) > 0 }
 }
 
 export async function rotateCheckedAt(input: {
@@ -356,17 +397,18 @@ export async function rotateCheckedAt(input: {
 	userId: string
 	nowIso: string
 	lastError: string | null
-}) {
+}): Promise<{ wrote: boolean }> {
 	// Clears matching_since so a poison/error tick cannot preserve a false soak.
-	// Zero-row updates (deleted/deleting race) are harmless.
-	await input.db
+	const result = await input.db
 		.prepare(
 			`UPDATE users
 			SET mailbox_parity_checked_at = ?,
 				mailbox_parity_last_error = ?,
 				mailbox_parity_matching_since = NULL
-			WHERE stable_user_id = ?`,
+			WHERE stable_user_id = ?
+				AND deleting_at IS NULL`,
 		)
 		.bind(input.nowIso, input.lastError, input.userId)
 		.run()
+	return { wrote: (result.meta?.changes ?? 0) > 0 }
 }

@@ -44,9 +44,11 @@ type FlagState = {
 
 function createCutoverTestDb(input: {
 	parityByUserId?: Map<number, ParityRow | null | 'error'>
+	deletingUserIds?: ReadonlySet<number>
 	flags?: FlagState
 }) {
 	const parityByUserId = input.parityByUserId ?? new Map()
+	const deletingUserIds = input.deletingUserIds ?? new Set<number>()
 	const flags: FlagState = input.flags ?? {
 		overrideEnabled: null,
 		globalEnabled: null,
@@ -86,7 +88,9 @@ function createCutoverTestDb(input: {
 					normalized.includes('from users') &&
 					normalized.includes('mailbox_parity_matching_since')
 				) {
+					expect(normalized).toContain('deleting_at is null')
 					const userId = Number(params[0])
+					if (deletingUserIds.has(userId)) return null
 					const row = parityByUserId.get(userId)
 					if (row === 'error') throw new Error('d1 parity read failed')
 					if (row === undefined || row === null) return null
@@ -386,6 +390,46 @@ test('mailbox-read-cutover defaults off and requires soak + fresh zero-mismatch 
 			now: nowIso,
 		}),
 	).resolves.toBe(true)
+})
+
+test('mailbox-read-cutover keeps deleting accounts on D1 even when otherwise eligible', async () => {
+	const dbUserId = 7
+	const stableUserId = 'user-aaa'
+	const d1Message = baseEmailMessage()
+	getEmailMessageByIdMock.mockResolvedValue(d1Message)
+
+	const deletingDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, soakedParity()]]),
+		deletingUserIds: new Set([dbUserId]),
+	})
+	await expect(
+		isMailboxReadCutoverEnabled({
+			db: deletingDb,
+			dbUserId,
+			stableUserId,
+			now: nowIso,
+		}),
+	).resolves.toBe(false)
+
+	const getMessage = vi.fn(async () => baseMailboxMessage())
+	const { env, idFromName } = fakeMailboxEnv(getMessage)
+	await expect(
+		getOwnerEmailMessageById({
+			env: { ...env, APP_DB: deletingDb },
+			dbUserId,
+			stableUserId,
+			messageId: 'msg-1',
+			now: nowIso,
+		}),
+	).resolves.toEqual(d1Message)
+	expect(getEmailMessageByIdMock).toHaveBeenCalledWith({
+		db: deletingDb,
+		userId: stableUserId,
+		messageId: 'msg-1',
+	})
+	expect(getMessage).not.toHaveBeenCalled()
+	expect(idFromName).not.toHaveBeenCalled()
 })
 
 test('mailbox-read-cutover fails closed on invalid now and future parity timestamps', async () => {

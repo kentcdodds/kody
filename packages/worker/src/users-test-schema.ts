@@ -84,12 +84,15 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	},
 	mailbox_parity_last_error: { create: 'TEXT' },
 	mailbox_parity_content_watermark_at: { create: 'TEXT' },
+	mailbox_parity_content_replay_upper_at: { create: 'TEXT' },
+	mailbox_parity_content_replay_cursor_updated_at: { create: 'TEXT' },
+	mailbox_parity_content_replay_cursor_id: { create: 'TEXT' },
 	mailbox_parity_message_backfill_cursor_created_at: { create: 'TEXT' },
 	mailbox_parity_message_backfill_cursor_id: { create: 'TEXT' },
 	mailbox_parity_message_backfill_completed_at: { create: 'TEXT' },
-	mailbox_parity_orphan_event_backfill_cursor_created_at: { create: 'TEXT' },
-	mailbox_parity_orphan_event_backfill_cursor_id: { create: 'TEXT' },
-	mailbox_parity_orphan_event_backfill_completed_at: { create: 'TEXT' },
+	mailbox_parity_event_backfill_cursor_created_at: { create: 'TEXT' },
+	mailbox_parity_event_backfill_cursor_id: { create: 'TEXT' },
+	mailbox_parity_event_backfill_completed_at: { create: 'TEXT' },
 }
 
 /**

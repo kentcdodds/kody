@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import { mailboxLiveMirrorMaxEvents } from './mailbox-live-mirror.ts'
 import {
 	countD1MailboxParity,
 	reconcileMailboxParity,
@@ -37,6 +38,7 @@ async function seedMessageGraph(input: {
 	threadId: string
 	createdAt: string
 	withAttachment?: boolean
+	eventCount?: number
 }) {
 	await env.APP_DB.prepare(
 		`INSERT INTO email_threads (
@@ -75,18 +77,22 @@ async function seedMessageGraph(input: {
 			.bind(`att-${input.messageId}`, input.messageId, input.createdAt)
 			.run()
 	}
-	await env.APP_DB.prepare(
-		`INSERT INTO email_delivery_events (
-			id, message_id, user_id, event_type, provider, detail_json, created_at
-		) VALUES (?, ?, ?, 'sent', 'kody', '{}', ?)`,
-	)
-		.bind(
-			`evt-${input.messageId}`,
-			input.messageId,
-			input.userId,
-			input.createdAt,
+	const eventCount = input.eventCount ?? 1
+	const baseMs = Date.parse(input.createdAt)
+	for (let index = 0; index < eventCount; index += 1) {
+		await env.APP_DB.prepare(
+			`INSERT INTO email_delivery_events (
+				id, message_id, user_id, event_type, provider, detail_json, created_at
+			) VALUES (?, ?, ?, 'sent', 'kody', '{}', ?)`,
 		)
-		.run()
+			.bind(
+				`evt-${input.messageId}-${String(index).padStart(3, '0')}`,
+				input.messageId,
+				input.userId,
+				new Date(baseMs + index * 1000).toISOString(),
+			)
+			.run()
+	}
 }
 
 async function seedOrphanEvent(input: {
@@ -110,10 +116,11 @@ async function readParityState(userId: string) {
 			mailbox_parity_matching_since AS matchingSince,
 			mailbox_parity_mismatch_count AS mismatchCount,
 			mailbox_parity_content_watermark_at AS contentWatermarkAt,
+			mailbox_parity_content_replay_upper_at AS contentReplayUpperAt,
 			mailbox_parity_message_backfill_cursor_id AS messageCursorId,
 			mailbox_parity_message_backfill_completed_at AS messagesCompletedAt,
-			mailbox_parity_orphan_event_backfill_cursor_id AS orphanCursorId,
-			mailbox_parity_orphan_event_backfill_completed_at AS orphanEventsCompletedAt,
+			mailbox_parity_event_backfill_cursor_id AS eventCursorId,
+			mailbox_parity_event_backfill_completed_at AS eventsCompletedAt,
 			mailbox_parity_last_error AS lastError
 		FROM users
 		WHERE stable_user_id = ?`,
@@ -124,10 +131,11 @@ async function readParityState(userId: string) {
 			matchingSince: string | null
 			mismatchCount: number
 			contentWatermarkAt: string | null
+			contentReplayUpperAt: string | null
 			messageCursorId: string | null
 			messagesCompletedAt: string | null
-			orphanCursorId: string | null
-			orphanEventsCompletedAt: string | null
+			eventCursorId: string | null
+			eventsCompletedAt: string | null
 			lastError: string | null
 		}>()
 }
@@ -142,10 +150,8 @@ async function parkOther(userId: string) {
 		.run()
 }
 
-test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves soak', async () => {
+test('reconcileMailboxParity mismatch full reset and soak', async () => {
 	silenceIncidentalRuntimeWarnings()
-	// Keep wall time aligned with each tick's nowIso so same-run content upper
-	// bounds stay deterministic (without freezing RPC timeout clocks).
 	vi.useFakeTimers({ shouldAdvanceTime: true })
 	await ensureUsersTestSchema({ db: env.APP_DB })
 	await ensureEmailTestSchema(env.APP_DB)
@@ -191,16 +197,16 @@ test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves 
 		})
 
 		const mailbox = rpcFor(userId)
-		// Warm the DO so the first 1s-bounded mirror RPC is not cold-start timeout.
 		await mailbox.getMessage({ messageId: 'warmup-nonexistent' })
 
 		const firstNow = new Date('2026-08-01T10:00:00.000Z')
 		vi.setSystemTime(firstNow)
+		// 2 messages + 2 bound events + 1 orphan
 		await expect(
 			reconcileMailboxParity({ env, now: firstNow, batchSize: 1 }),
 		).resolves.toEqual({
 			scanned: 1,
-			backfilled: 3,
+			backfilled: 5,
 			compared: 1,
 			matched: 1,
 			mismatched: 0,
@@ -216,20 +222,15 @@ test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves 
 			checkedAt: firstNow.toISOString(),
 			matchingSince: firstNow.toISOString(),
 			contentWatermarkAt: expect.any(String),
+			contentReplayUpperAt: null,
 			mismatchCount: 0,
 			messagesCompletedAt: expect.any(String),
-			orphanEventsCompletedAt: expect.any(String),
+			eventsCompletedAt: expect.any(String),
 			messageCursorId: 'parity-msg-2',
-			orphanCursorId: 'parity-orphan-1',
+			eventCursorId: 'parity-orphan-1',
 			lastError: null,
 		})
-		if (!afterMatch?.contentWatermarkAt) {
-			throw new Error('Expected parity content watermark after match.')
-		}
-		expect(afterMatch.contentWatermarkAt >= firstNow.toISOString()).toBe(true)
 
-		// Live D1 row after completed cursors: compare mismatches, reopens backfill
-		// while retaining cursors so the next tick repairs only the new row.
 		await seedMessageGraph({
 			userId,
 			messageId: 'parity-msg-3',
@@ -259,11 +260,11 @@ test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves 
 		expect(afterMismatch).toMatchObject({
 			matchingSince: null,
 			mismatchCount: 1,
-			contentWatermarkAt: expect.any(String),
 			messagesCompletedAt: null,
-			orphanEventsCompletedAt: null,
-			messageCursorId: 'parity-msg-2',
-			orphanCursorId: 'parity-orphan-1',
+			eventsCompletedAt: null,
+			messageCursorId: null,
+			eventCursorId: null,
+			contentReplayUpperAt: null,
 			checkedAt: mismatchNow.toISOString(),
 		})
 		expect(afterMismatch?.contentWatermarkAt).not.toBeNull()
@@ -276,11 +277,12 @@ test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves 
 		await parkOther(otherUserId)
 		const rematchNow = new Date('2026-08-01T12:00:00.000Z')
 		vi.setSystemTime(rematchNow)
+		// Full historical rescan: 3 messages + 3 bound events + 1 orphan
 		await expect(
 			reconcileMailboxParity({ env, now: rematchNow, batchSize: 1 }),
 		).resolves.toEqual({
 			scanned: 1,
-			backfilled: 1,
+			backfilled: 7,
 			compared: 1,
 			matched: 1,
 			mismatched: 0,
@@ -296,9 +298,8 @@ test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves 
 		expect(afterRematch).toMatchObject({
 			matchingSince: rematchNow.toISOString(),
 			mismatchCount: 0,
-			contentWatermarkAt: expect.any(String),
 			messagesCompletedAt: expect.any(String),
-			orphanEventsCompletedAt: expect.any(String),
+			eventsCompletedAt: expect.any(String),
 			messageCursorId: 'parity-msg-3',
 		})
 
@@ -322,10 +323,68 @@ test('reconcileMailboxParity mismatch reopens backfill, resets count, preserves 
 		})
 		const afterSoak = await readParityState(userId)
 		expect(afterSoak?.matchingSince).toBe(rematchNow.toISOString())
-		expect(afterSoak?.contentWatermarkAt).toEqual(expect.any(String))
 		expect(afterSoak?.checkedAt).toBe(soakNow.toISOString())
 		expect(afterSoak?.mismatchCount).toBe(0)
 	} finally {
 		vi.useRealTimers()
 	}
 }, 30_000)
+
+test('reconcileMailboxParity eventually repairs >100 bound delivery events', async () => {
+	silenceIncidentalRuntimeWarnings([
+		'mailbox-parity-reconcile-user-failed',
+		'mailbox-parity-message-backfill-retryable',
+		'mailbox-parity-event-backfill-retryable',
+		'mailbox-parity-content-replay-retryable',
+		'mailbox-live-mirror-events-truncated',
+	])
+	await ensureUsersTestSchema({ db: env.APP_DB })
+	await ensureEmailTestSchema(env.APP_DB)
+
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET mailbox_parity_checked_at = '9999-12-31T23:59:59.999Z'`,
+	).run()
+
+	const heavyUserId = await seedParityUser({
+		email: `heavy-${crypto.randomUUID()}@example.test`,
+		checkedAt: null,
+	})
+	const heavyEventCount = mailboxLiveMirrorMaxEvents + 5
+	await seedMessageGraph({
+		userId: heavyUserId,
+		messageId: 'heavy-msg-1',
+		threadId: 'heavy-thread-1',
+		createdAt: '2026-07-02T12:00:00.000Z',
+		eventCount: heavyEventCount,
+	})
+	const heavyMailbox = rpcFor(heavyUserId)
+	await heavyMailbox.getMessage({ messageId: 'warmup-nonexistent' })
+
+	let matched = 0
+	let backfilled = 0
+	for (let tick = 0; tick < 30; tick += 1) {
+		await env.APP_DB.prepare(
+			`UPDATE users SET mailbox_parity_checked_at = NULL WHERE stable_user_id = ?`,
+		)
+			.bind(heavyUserId)
+			.run()
+		const metrics = await reconcileMailboxParity({
+			env,
+			now: new Date(Date.UTC(2026, 7, 3, 10, tick)),
+			batchSize: 1,
+		})
+		backfilled += metrics.backfilled
+		matched += metrics.matched
+		if (metrics.matched > 0) break
+	}
+	expect(matched).toBeGreaterThan(0)
+	expect(backfilled).toBeGreaterThan(mailboxLiveMirrorMaxEvents)
+	expect(await heavyMailbox.countMailbox()).toEqual(
+		await countD1MailboxParity({ db: env.APP_DB, userId: heavyUserId }),
+	)
+	expect(
+		(await countD1MailboxParity({ db: env.APP_DB, userId: heavyUserId }))
+			.deliveryEvents,
+	).toBe(heavyEventCount)
+}, 60_000)
