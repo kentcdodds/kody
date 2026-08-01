@@ -398,7 +398,10 @@ test('seed failure then finish then recovery merges legacy additively once for a
 		userId: activationUserId,
 	})
 	expect(
-		await runLogRpc({ env, userId: activationUserId }).isActivationInitialized(),
+		await runLogRpc({
+			env,
+			userId: activationUserId,
+		}).isActivationInitialized(),
 	).toEqual({
 		initialized: false,
 	})
@@ -424,7 +427,10 @@ test('seed failure then finish then recovery merges legacy additively once for a
 		expect.objectContaining({ packageId: 'pkg-recover', successCount: 1 }),
 	])
 	expect(
-		await runLogRpc({ env, userId: activationUserId }).isActivationInitialized(),
+		await runLogRpc({
+			env,
+			userId: activationUserId,
+		}).isActivationInitialized(),
 	).toEqual({
 		initialized: false,
 	})
@@ -448,7 +454,9 @@ test('seed failure then finish then recovery merges legacy additively once for a
 	).toEqual([
 		expect.objectContaining({ packageId: 'pkg-recover', successCount: 2 }),
 	])
-	expect(await listActivationMilestones({ env, userId: activationUserId })).toEqual(
+	expect(
+		await listActivationMilestones({ env, userId: activationUserId }),
+	).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				milestone: 'package_activated',
@@ -460,7 +468,10 @@ test('seed failure then finish then recovery merges legacy additively once for a
 		]),
 	)
 	expect(
-		await runLogRpc({ env, userId: activationUserId }).isActivationInitialized(),
+		await runLogRpc({
+			env,
+			userId: activationUserId,
+		}).isActivationInitialized(),
 	).toEqual({
 		initialized: true,
 	})
