@@ -101,9 +101,8 @@ test('capability Vectorize stays builtin-scoped, query-embed-only, and lexical-o
 	expect(embeddedTexts).toEqual([query])
 	expect(capturedFilters).toEqual([
 		{ domain: { $eq: 'meta' }, kind: { $eq: CAPABILITY_VECTOR_KIND } },
-		{ domain: { $eq: 'meta' }, kind: { $eq: CAPABILITY_VECTOR_KIND } },
 	])
-	expect(capturedNamespaces).toEqual([BUILTIN_VECTOR_NAMESPACE, undefined])
+	expect(capturedNamespaces).toEqual([BUILTIN_VECTOR_NAMESPACE])
 	expect(result.matches.map((match) => match.name)).toContain(
 		'oauth_redirect_helper',
 	)

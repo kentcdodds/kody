@@ -1581,18 +1581,13 @@ deterministic so upserts and deletes target the same vector.
 - Builtin capabilities: id is the capability name in namespace
   `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
-The namespace migration uses expand/contract reads. Each query searches both the
-intended namespace and the legacy default namespace with the same metadata
-filter, then deduplicates, ranks, and limits the combined matches. This keeps
-partially reindexed accounts complete without weakening user isolation. The
-post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
-memory, job, and saved package from D1 (200 rows per page) and upserts it into
-the owner's namespace; it also rebuilds builtins in their reserved namespace.
-The deploy is not considered migrated until every phase reports no `error` or
-`failed` vectors. Remove the default-namespace read in a follow-up contract
-deploy only after a production full sweep succeeds and the next deploy confirms
-normal namespaced search. Vectors are derived from D1, so no canonical data is
-moved or deleted during this migration.
+Every Vectorize query supplies the corresponding user or builtin namespace;
+queries never use the default namespace. User-owned queries also keep the
+`userId` metadata filter as defense-in-depth. The post-deploy
+`POST /__maintenance/reindex-capabilities` sweep uses keyset pagination to page
+every memory, job, and saved package from D1 (200 rows per page) into its
+namespace and rebuilds builtins in their reserved namespace. Vectors are derived
+from D1, so this maintenance path does not move or delete canonical data.
 
 ### `entity_sources` and package import contracts
 

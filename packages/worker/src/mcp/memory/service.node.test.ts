@@ -687,9 +687,9 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		limit: 5,
 	})
 
-	// The migration reads both the user namespace and legacy default namespace
-	// with identical user/kind/status metadata filters.
-	expect(vectorQueryCalls).toHaveLength(2)
+	// Vectorize applies the user namespace before the defense-in-depth metadata
+	// filters; exactly one namespaced query runs.
+	expect(vectorQueryCalls).toHaveLength(1)
 	expect(vectorQueryCalls[0]).toMatchObject({
 		namespace: 'user-123',
 		filter: {
@@ -698,10 +698,6 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 			status: { $in: ['active', 'archived'] },
 		},
 	})
-	expect(vectorQueryCalls[1]).toMatchObject({
-		filter: vectorQueryCalls[0]!.filter,
-	})
-	expect(vectorQueryCalls[1]).not.toHaveProperty('namespace')
 	const matchedIds = result.matches.map((match) => match.id)
 	expect(matchedIds).toContain('memory-old-vector-hit')
 	expect(matchedIds).toContain('memory-recent')
