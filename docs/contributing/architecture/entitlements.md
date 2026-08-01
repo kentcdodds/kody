@@ -144,12 +144,19 @@ dropped in this phase — it remains for existing readers and reporting.
 with the same cold-bootstrap path) instead of reading D1 directly:
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
+- Account email usage panel — `packages/worker/src/app/account-email-data.ts`
 - `email_usage_get` MCP capability
 - Admin per-user usage drill-down —
   `packages/worker/src/admin/user-usage-data.ts`
 
 Non-daily resources and contexts without `USER_METER` still use
 `readEntitlementResourceUsage` against D1.
+
+During a rolling deployment, requests already running on the previous Worker
+version may still increment D1 after a new-version request bootstraps its DO
+row. Cloudflare activation bounds that overlap to in-flight requests, but
+operators should treat mirror parity during the deploy window as approximate;
+post-deploy requests have one authority in UserMeter.
 
 **Inbound retry idempotency:** inbound receive quota uses
 `UserMeter.consumeInboundDelivery`, which atomically claims `delivery_id` and
@@ -324,13 +331,11 @@ Rules:
   table is not dropped — it remains for existing readers and reporting until
   reporting-off-D1 retirement is verified.
 
-  Only typed pre-commit `RetryableInboundStorageError` failures (thread prework,
-  R2 put, D1 message/attachment storage after successful cleanup) refund exactly
-  one `email_receives_per_day` unit via `refundDailyEntitlement` for the same
-  UTC day that was charged, so Cloudflare Email Routing retries do not burn the
-  daily receive quota. Post-commit bookkeeping failures do not refund or retry.
-  Inbound routing retries that replay the same `delivery_id` are idempotent via
-  `UserMeter.consumeInboundDelivery` and do not consume an additional unit.
+  A delivery claim remains charged when later storage fails. Cloudflare Email
+  Routing retries replay that same `delivery_id` through
+  `UserMeter.consumeInboundDelivery` without incrementing again, including
+  across a UTC-day boundary. The retained claim is the idempotency boundary;
+  production inbound handling does not call `refundDailyEntitlement`.
 
   `incrementDailyEntitlementCounter` remains for raw D1 counter writes (tests,
   backfills, and legacy paths).
