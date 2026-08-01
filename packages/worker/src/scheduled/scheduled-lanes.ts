@@ -147,6 +147,7 @@ export async function runScheduledLane(input: {
 		case 'd1_storage_reconciliation':
 			return reconcileD1StorageBytes({
 				db: input.env.APP_DB,
+				env: input.env,
 				now: input.scheduledAt,
 			})
 		case 'oauth_purge_expired': {

@@ -206,8 +206,9 @@ affect D1 enforcement.
 **Optional reconcile shadow:** `reconcileUserD1StorageBytes` absolute-sets D1
 from `calculateUserD1StorageBytes` and awaits that write. When optional `env` is
 present, it best-effort shadows the post-update D1 value into UserMeter; shadow
-failures are logged and never fail or poison the lane. Current
-`d1_storage_reconciliation` wiring passes `{ db }` only.
+failures are logged and never fail or poison the lane. The
+`d1_storage_reconciliation` scheduled-lane wiring passes `env`, so every
+successful absolute reconciliation also advances the expand-phase shadow.
 
 **Usage reads stay on D1:** account usage, admin drill-down, and
 `readCurrentEntitlementResourceUsage` for `storage_bytes` call
@@ -222,13 +223,9 @@ shadow storage state via `deleteAll`.
 
 ### Future storage authority flip (contract follow-up)
 
-A separate contract PR — not a merge blocker for this additive slice — will flip
-D1 payload storage-byte authority into UserMeter once:
-
-1. **mailbox-do** passes `env` on email inbound/outbound storage reservations,
-   and
-2. **cron-restructure** passes `env` into `d1_storage_reconciliation` lane
-   wiring in `index.ts`.
+A separate contract PR will flip D1 payload storage-byte authority into
+UserMeter once **mailbox-do** passes `env` on email inbound/outbound storage
+reservations. Cron reconciliation shadowing is already wired.
 
 Only then do reads, reserves, and reconciliation switch to UserMeter-first with
 D1 as mirror/cursor. Until that flip, shadow divergence is acceptable; D1
