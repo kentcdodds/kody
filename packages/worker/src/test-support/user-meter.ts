@@ -1,6 +1,7 @@
 import {
 	isDailyEntitlementResource,
 	isUserMeterPackageServiceStatus,
+	isUserMeterWriteLeaseAuthority,
 	userMeterMirrorUpdatedAtToken,
 	userMeterPackageServiceStateStaleMs,
 	type DailyEntitlementResource,
@@ -8,6 +9,7 @@ import {
 	type UserMeterPackageServiceState,
 	type UserMeterPackageServiceStatus,
 	type UserMeterStorageBytesState,
+	type UserMeterWriteLeaseAuthority,
 	type UserMeterWriteLeaseShadow,
 } from '#worker/entitlements/user-meter-do.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
@@ -24,6 +26,8 @@ type PackageServiceRow = {
 type WriteLeaseRow = {
 	holder: string
 	acquiredAt: string
+	authority: UserMeterWriteLeaseAuthority
+	pendingRepairId: string | null
 }
 type DeletionState = {
 	deletingAt: string | null
@@ -137,17 +141,98 @@ export function createInMemoryUserMeterEnv() {
 				token,
 				holder: row.holder,
 				acquiredAt: row.acquiredAt,
+				authority: row.authority,
 			}
 		}
 
-		function listWriteLeasesSorted() {
+		function listWriteLeasesSorted(authority?: UserMeterWriteLeaseAuthority) {
 			return [...deletion.leases.entries()]
+				.filter(([, row]) => authority == null || row.authority === authority)
 				.map(([token, row]) => writeLeaseState(token, row))
 				.sort((left, right) => {
 					const byAcquired = left.acquiredAt.localeCompare(right.acquiredAt)
 					if (byAcquired !== 0) return byAcquired
 					return left.token.localeCompare(right.token)
 				})
+		}
+
+		function replaceLegacyLeases(
+			leases: ReadonlyArray<{
+				token: string
+				holder: string
+				acquiredAt: string
+			}>,
+		) {
+			for (const [token, row] of [...deletion.leases.entries()]) {
+				if (row.authority === 'legacy') deletion.leases.delete(token)
+			}
+			const leasesByToken = new Map<
+				string,
+				{ holder: string; acquiredAt: string }
+			>()
+			for (const lease of leases) {
+				leasesByToken.set(lease.token, {
+					holder: lease.holder,
+					acquiredAt: lease.acquiredAt,
+				})
+			}
+			for (const [token, row] of leasesByToken) {
+				const existing = deletion.leases.get(token)
+				if (existing?.authority === 'do') continue
+				deletion.leases.set(token, {
+					holder: row.holder,
+					acquiredAt: row.acquiredAt,
+					authority: 'legacy',
+					pendingRepairId: null,
+				})
+			}
+			return deletion.leases.size
+		}
+
+		function pageWriteLeases(
+			input: {
+				pageSize?: number
+				startAfter?: string | null
+			},
+			authority?: UserMeterWriteLeaseAuthority,
+		) {
+			const pageSize =
+				typeof input.pageSize === 'number' && Number.isFinite(input.pageSize)
+					? Math.min(Math.max(Math.trunc(input.pageSize), 1), 500)
+					: 100
+			const all = listWriteLeasesSorted(authority)
+			let startIndex = 0
+			if (typeof input.startAfter === 'string' && input.startAfter.length > 0) {
+				try {
+					const parsed = JSON.parse(input.startAfter) as unknown
+					if (
+						Array.isArray(parsed) &&
+						parsed.length === 2 &&
+						typeof parsed[0] === 'string' &&
+						typeof parsed[1] === 'string'
+					) {
+						const acquiredAt = parsed[0]
+						const token = parsed[1]
+						startIndex =
+							all.findIndex(
+								(row) => row.acquiredAt === acquiredAt && row.token === token,
+							) + 1
+					}
+				} catch {
+					startIndex = 0
+				}
+			}
+			const page = all.slice(startIndex, startIndex + pageSize)
+			const truncated = startIndex + pageSize < all.length
+			const last = page[page.length - 1]
+			return {
+				leases: page,
+				nextStartAfter:
+					truncated && last
+						? JSON.stringify([last.acquiredAt, last.token])
+						: null,
+				truncated,
+			}
 		}
 
 		function readDeletionShadowExport(): UserMeterDeletionShadowExport {
@@ -466,24 +551,28 @@ export function createInMemoryUserMeterEnv() {
 			}) {
 				const created = deletion.deletingAt == null
 				if (created) deletion.deletingAt = input.deletingAt
-				deletion.leases.clear()
-				const leasesByToken = new Map<
-					string,
-					{ holder: string; acquiredAt: string }
-				>()
-				for (const lease of input.leases ?? []) {
-					leasesByToken.set(lease.token, {
-						holder: lease.holder,
-						acquiredAt: lease.acquiredAt,
-					})
-				}
-				for (const [token, row] of leasesByToken) {
-					deletion.leases.set(token, row)
-				}
+				const leaseCount = replaceLegacyLeases(input.leases ?? [])
 				return {
 					deletingAt: deletion.deletingAt ?? input.deletingAt,
 					created,
-					leaseCount: deletion.leases.size,
+					leaseCount,
+				}
+			},
+			async markDeleting(input: {
+				deletingAt: string
+				legacyLeases?: ReadonlyArray<{
+					token: string
+					holder: string
+					acquiredAt: string
+				}>
+			}) {
+				const created = deletion.deletingAt == null
+				if (created) deletion.deletingAt = input.deletingAt
+				const leaseCount = replaceLegacyLeases(input.legacyLeases ?? [])
+				return {
+					deletingAt: deletion.deletingAt ?? input.deletingAt,
+					created,
+					leaseCount,
 				}
 			},
 			async shadowAcquireWriteLease(input: {
@@ -496,11 +585,83 @@ export function createInMemoryUserMeterEnv() {
 				deletion.leases.set(input.token, {
 					holder: input.holder,
 					acquiredAt: input.acquiredAt,
+					authority: 'legacy',
+					pendingRepairId: null,
+				})
+				return { acquired: true }
+			},
+			async acquireWriteLease(input: {
+				token: string
+				holder: string
+				acquiredAt: string
+			}) {
+				const existing = deletion.leases.get(input.token)
+				if (existing) return { acquired: existing.authority === 'do' }
+				if (deletion.deletingAt != null) return { acquired: false }
+				deletion.leases.set(input.token, {
+					holder: input.holder,
+					acquiredAt: input.acquiredAt,
+					authority: 'do',
+					pendingRepairId: null,
 				})
 				return { acquired: true }
 			},
 			async shadowReleaseWriteLease(input: { token: string }) {
 				return { released: deletion.leases.delete(input.token) }
+			},
+			async releaseWriteLease(input: { token: string }) {
+				const existing = deletion.leases.get(input.token)
+				if (!existing || existing.authority !== 'do') {
+					return { released: false }
+				}
+				return { released: deletion.leases.delete(input.token) }
+			},
+			async assertWriteLeaseHeld(input: { token: string }) {
+				const existing = deletion.leases.get(input.token)
+				return { held: existing != null && existing.authority === 'do' }
+			},
+			async prepareWriteLeaseRepair(input: {
+				token: string
+				expectedAcquiredAt: string
+			}) {
+				const existing = deletion.leases.get(input.token)
+				if (!existing || existing.authority !== 'do') {
+					return { prepared: false as const }
+				}
+				if (existing.acquiredAt !== input.expectedAcquiredAt) {
+					throw new Error(
+						'Active account write lease did not match repair request.',
+					)
+				}
+				if (!existing.pendingRepairId) {
+					existing.pendingRepairId = crypto.randomUUID()
+				}
+				return {
+					prepared: true as const,
+					repairId: existing.pendingRepairId,
+					token: input.token,
+					holder: existing.holder,
+					acquiredAt: existing.acquiredAt,
+				}
+			},
+			async finalizeWriteLeaseRepair(input: {
+				token: string
+				repairId: string
+				expectedAcquiredAt: string
+			}) {
+				const existing = deletion.leases.get(input.token)
+				if (!existing) return { finalized: true }
+				if (
+					existing.authority !== 'do' ||
+					existing.acquiredAt !== input.expectedAcquiredAt ||
+					existing.pendingRepairId !== input.repairId
+				) {
+					throw new Error(
+						'Active account write lease did not match repair request.',
+					)
+				}
+				deletion.leases.delete(input.token)
+				return { finalized: true }
 			},
 			async readDeletionState() {
 				return { deletingAt: deletion.deletingAt }
@@ -511,46 +672,15 @@ export function createInMemoryUserMeterEnv() {
 					startAfter?: string | null
 				} = {},
 			) {
-				const pageSize =
-					typeof input.pageSize === 'number' && Number.isFinite(input.pageSize)
-						? Math.min(Math.max(Math.trunc(input.pageSize), 1), 500)
-						: 100
-				const all = listWriteLeasesSorted()
-				let startIndex = 0
-				if (
-					typeof input.startAfter === 'string' &&
-					input.startAfter.length > 0
-				) {
-					try {
-						const parsed = JSON.parse(input.startAfter) as unknown
-						if (
-							Array.isArray(parsed) &&
-							parsed.length === 2 &&
-							typeof parsed[0] === 'string' &&
-							typeof parsed[1] === 'string'
-						) {
-							const acquiredAt = parsed[0]
-							const token = parsed[1]
-							startIndex =
-								all.findIndex(
-									(row) => row.acquiredAt === acquiredAt && row.token === token,
-								) + 1
-						}
-					} catch {
-						startIndex = 0
-					}
-				}
-				const page = all.slice(startIndex, startIndex + pageSize)
-				const truncated = startIndex + pageSize < all.length
-				const last = page[page.length - 1]
-				return {
-					leases: page,
-					nextStartAfter:
-						truncated && last
-							? JSON.stringify([last.acquiredAt, last.token])
-							: null,
-					truncated,
-				}
+				return pageWriteLeases(input)
+			},
+			async listDoAuthorityWriteLeases(
+				input: {
+					pageSize?: number
+					startAfter?: string | null
+				} = {},
+			) {
+				return pageWriteLeases(input, 'do')
 			},
 			async countActiveWriteLeases() {
 				return { count: deletion.leases.size }
@@ -561,6 +691,7 @@ export function createInMemoryUserMeterEnv() {
 					token: string
 					holder: string
 					acquiredAt: string
+					authority?: string
 				}>
 			}) {
 				let leasesApplied = 0
@@ -570,7 +701,15 @@ export function createInMemoryUserMeterEnv() {
 						leasesSkipped += 1
 						continue
 					}
-					const result = await this.shadowAcquireWriteLease(lease)
+					const authority =
+						typeof lease.authority === 'string' &&
+						isUserMeterWriteLeaseAuthority(lease.authority)
+							? lease.authority
+							: 'legacy'
+					const result =
+						authority === 'do'
+							? await this.acquireWriteLease(lease)
+							: await this.shadowAcquireWriteLease(lease)
 					if (result.acquired) leasesApplied += 1
 					else leasesSkipped += 1
 				}
@@ -690,6 +829,47 @@ export function createWaitUntilDrain() {
 		async drain() {
 			await Promise.all(tasks)
 			tasks.length = 0
+		},
+	}
+}
+
+/** Minimal D1 hooks for DO-authoritative {@link withAccountWriteLease} in node tests. */
+export function createPermissiveAccountWriteLeaseDbHooks() {
+	return {
+		supportsDeletingAtQuery(query: string) {
+			return query.includes(
+				'SELECT deleting_at FROM users WHERE stable_user_id',
+			)
+		},
+		deletingAtFirstResult() {
+			return { deleting_at: null as string | null }
+		},
+		supportsHeldLeaseQuery(query: string) {
+			return query.includes('SELECT 1 AS held FROM account_write_leases')
+		},
+		heldLeaseFirstResult() {
+			return { held: 1 as number }
+		},
+		supportsWriteLeaseRun(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').trim()
+			return (
+				normalized.includes('INSERT INTO account_write_leases') ||
+				normalized.includes('UPDATE account_write_leases') ||
+				normalized.includes('DELETE FROM account_write_leases') ||
+				normalized.startsWith('UPDATE users')
+			)
+		},
+		writeLeaseRunResult() {
+			return { meta: { changes: 1 } }
+		},
+		async runWriteLeaseBatch(
+			statements: Array<{ run: () => Promise<unknown> }>,
+		) {
+			const results = []
+			for (const statement of statements) {
+				results.push(await statement.run())
+			}
+			return results
 		},
 	}
 }

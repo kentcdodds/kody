@@ -587,7 +587,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**6**):
+**7**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -614,29 +614,28 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   (`listPackageServiceStates`, `countRunningPackageServices`,
   `bootstrapPackageServiceStates`) mirror D1 semantics for future parity review
   only.
-- `deletion_state` / `account_write_leases` — **shadow** of D1
-  `users.deleting_at` and active `account_write_leases` (singleton
-  `deleting_at`; lease rows `token` / `holder` / `acquired_at`). Added in schema
-  v6. Populated by optional best-effort dual-writes from
-  `account/deletion-state.ts` after successful D1 mark/acquire/release/repair;
-  never read for fencing, list, repair, or drain in expand-phase slice 5 Phase
-  A. On mark, after D1 `deleting_at` is set, the helper loads active D1 leases
-  and calls `shadowReplaceDeletionState` (DO-serialized tombstone set/preserve +
-  exact lease-set replace) so stale unreleased shadow rows are cleared when D1
-  drain reaches zero and active D1 leases are preserved. `purge()` preserves an
-  existing deleting tombstone across `deleteAll` so a later cutover cannot
-  reopen writes. Cutover-support RPCs (`readDeletionState`, `listWriteLeases`,
-  `countActiveWriteLeases`, `bootstrapDeletionState`) exist for future parity
-  review only; account export emits a sanitized `deletionShadow` without raw
-  token/holder.
+- `deletion_state` / `account_write_leases` — deletion tombstone plus write
+  leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
+  / `authority` (`do`|`legacy`) / `pending_repair_id`). Added as shadow in
+  schema v6; schema v7 is the authority cutover. When callers supply
+  `USER_METER`, `authority='do'` rows are authoritative for acquire/held/release
+  and admin union list; `authority='legacy'` rows are the D1 lease snapshot
+  replaced by `markDeleting`. During rolling deploy, DO-authority acquires also
+  mirror the same token into D1 `account_write_leases` so Phase-A marks that
+  only read D1 still observe them (temporary; not the final hot path). D1
+  `users.deleting_at` remains the permanent point gate; email paths omit `env`
+  and keep exact D1 leases. `purge()` preserves an existing deleting tombstone
+  across `deleteAll`. Account export emits a sanitized `deletionShadow` without
+  raw token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
 retries. Shadow storage-byte and package-service liveness rows are not
-time-pruned. Deletion-fence lease shadows are bounded by the D1-backed mark
-replace path above rather than time retention.
+time-pruned. Deletion-fence legacy lease rows are bounded by the D1 snapshot
+replace on `markDeleting` rather than time retention; DO-authority rows clear on
+release/repair/purge.
 
 **Expand-phase D1 mirrors (daily counters only):** enforcement and point reads
 are authoritative in UserMeter for daily counters. D1

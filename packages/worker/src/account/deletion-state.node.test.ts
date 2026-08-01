@@ -1,11 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
-import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import {
 	createInMemoryUserMeterEnv,
 	createWaitUntilDrain,
@@ -306,7 +305,129 @@ test('waitUntil moves lease release off the response path', async () => {
 	await releasePromise
 })
 
-test('optional env shadows mark/acquire/release/repair into UserMeter without changing D1 authority', async () => {
+function createDeferred() {
+	let resolve: () => void = () => undefined
+	const promise = new Promise<void>((next) => {
+		resolve = next
+	})
+	return { promise, resolve: () => resolve() }
+}
+
+function createGatedDoEnv(input: {
+	releaseGate?: Promise<void>
+	finalizeGate?: Promise<void>
+	finalizeFailOnceError?: string
+}) {
+	const base = createInMemoryUserMeterEnv()
+	const namespace = base.env.USER_METER!
+	const gates = { releaseEntered: false, finalizeEntered: false }
+	let finalizeAttempts = 0
+	const env = {
+		USER_METER: {
+			idFromName: namespace.idFromName.bind(namespace),
+			get(id: DurableObjectId) {
+				const stub = namespace.get(id)
+				return new Proxy(stub, {
+					get(target, prop, receiver) {
+						const value = Reflect.get(target, prop, receiver)
+						if (prop === 'releaseWriteLease' && input.releaseGate) {
+							return async (args: { token: string }) => {
+								gates.releaseEntered = true
+								await input.releaseGate
+								return target.releaseWriteLease(args)
+							}
+						}
+						if (prop === 'finalizeWriteLeaseRepair') {
+							return async (args: {
+								token: string
+								repairId: string
+								expectedAcquiredAt: string
+							}) => {
+								if (input.finalizeGate) {
+									gates.finalizeEntered = true
+									await input.finalizeGate
+								}
+								if (input.finalizeFailOnceError) {
+									finalizeAttempts += 1
+									if (finalizeAttempts === 1) {
+										throw new Error(input.finalizeFailOnceError)
+									}
+								}
+								return target.finalizeWriteLeaseRepair(args)
+							}
+						}
+						return typeof value === 'function' ? value.bind(target) : value
+					},
+				})
+			},
+		},
+	} as unknown as UserMeterEnv
+	return {
+		env,
+		gates,
+		get finalizeAttempts() {
+			return finalizeAttempts
+		},
+		meterFor(userId: string) {
+			return userMeterRpc({ env, userId })
+		},
+	}
+}
+
+async function waitFor(predicate: () => Promise<boolean>, label: string) {
+	const deadline = Date.now() + 2_000
+	while (Date.now() < deadline) {
+		if (await predicate()) return
+		await new Promise((resolve) => setTimeout(resolve, 5))
+	}
+	throw new Error(`Timed out waiting for ${label}`)
+}
+
+function holdDoWriteLease(input: {
+	db: D1Database
+	env: UserMeterEnv
+	holder: string
+	stableUserId?: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	const stableUserId = input.stableUserId ?? 'user-a'
+	const finish = createDeferred()
+	const started = createDeferred()
+	let token = ''
+	let acquiredAt = ''
+	const operation = withAccountWriteLease({
+		db: input.db,
+		stableUserId,
+		holder: input.holder,
+		env: input.env,
+		waitUntil: input.waitUntil,
+		async write() {
+			const [lease] = await listActiveAccountWriteLeases(
+				input.db,
+				stableUserId,
+				input.env,
+			)
+			token = lease!.token
+			acquiredAt = lease!.acquired_at
+			started.resolve()
+			await finish.promise
+			return 'lost'
+		},
+	})
+	return {
+		operation,
+		started: started.promise,
+		finish: finish.resolve,
+		get token() {
+			return token
+		},
+		get acquiredAt() {
+			return acquiredAt
+		},
+	}
+}
+
+test('env makes UserMeter authoritative for acquire/held/release with D1 deleting_at gate', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)
 	const meter = createInMemoryUserMeterEnv()
@@ -317,45 +438,33 @@ test('optional env shadows mark/acquire/release/repair into UserMeter without ch
 	await withAccountWriteLease({
 		db,
 		stableUserId: 'user-a',
-		holder: 'test:shadowed',
+		holder: 'test:do-authority',
 		env: meter.env,
 		waitUntil: drain.waitUntil,
 		async write() {
+			expect(countLeaseRows(sqlite)).toBe(1)
+			expect(
+				await listActiveAccountWriteLeases(db, 'user-a', meter.env),
+			).toHaveLength(1)
 			expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 			return 'ok'
 		},
 	})
 	await drain.drain()
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
+	expect(
+		await listActiveAccountWriteLeases(db, 'user-a', meter.env),
+	).toHaveLength(0)
+	expect(countLeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 
-	let heldToken = ''
-	let heldAcquiredAt = ''
-	let startWrite: () => void = () => undefined
-	let finishWrite: () => void = () => undefined
-	const started = new Promise<void>((resolve) => {
-		startWrite = resolve
-	})
-	const finish = new Promise<void>((resolve) => {
-		finishWrite = resolve
-	})
-	const operation = withAccountWriteLease({
+	const held = holdDoWriteLease({
 		db,
-		stableUserId: 'user-a',
-		holder: 'test:repair-shadow',
 		env: meter.env,
+		holder: 'test:do-repair',
 		waitUntil: drain.waitUntil,
-		async write() {
-			const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
-			heldToken = lease!.token
-			heldAcquiredAt = lease!.acquired_at
-			startWrite()
-			await finish
-			return 'lost'
-		},
 	})
-	await started
-	await drain.drain()
+	await held.started
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 
 	await expect(
@@ -364,10 +473,8 @@ test('optional env shadows mark/acquire/release/repair into UserMeter without ch
 			dbUserId: 1,
 			now: new Date('2099-01-01T00:00:00.000Z'),
 			env: meter.env,
-			waitUntil: drain.waitUntil,
 		}),
 	).resolves.toBe(1)
-	await drain.drain()
 	expect(await meterA.readDeletionState()).toEqual({
 		deletingAt: '2099-01-01 00:00:00',
 	})
@@ -375,17 +482,22 @@ test('optional env shadows mark/acquire/release/repair into UserMeter without ch
 	await repairAccountWriteLease({
 		db,
 		stableUserId: 'user-a',
-		token: heldToken,
-		expectedAcquiredAt: heldAcquiredAt,
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
 		repairedByUserId: 'admin-user',
 		reason: 'Inspected worker crash and confirmed process termination.',
 		env: meter.env,
-		waitUntil: drain.waitUntil,
 	})
-	await drain.drain()
-	finishWrite()
-	await expect(operation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
+	held.finish()
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(
+		sqlite.prepare(`SELECT reason FROM account_write_lease_repairs`).get(),
+	).toEqual({
+		reason: 'Inspected worker crash and confirmed process termination.',
+	})
 
 	await expect(
 		withAccountWriteLease({
@@ -411,178 +523,252 @@ test('optional env shadows mark/acquire/release/repair into UserMeter without ch
 	expect(await meterB.readDeletionState()).toEqual({ deletingAt: null })
 })
 
-function createFailingShadowEnv(): UserMeterEnv {
-	return {
-		USER_METER: {
-			idFromName: (name: string) => ({ name, toString: () => name }),
-			get: () => ({
-				async shadowMarkDeleting() {
-					throw new Error('shadow mark failed')
-				},
-				async shadowReplaceDeletionState() {
-					throw new Error('shadow replace failed')
-				},
-				async shadowAcquireWriteLease() {
-					throw new Error('shadow acquire failed')
-				},
-				async shadowReleaseWriteLease() {
-					throw new Error('shadow release failed')
-				},
-			}),
+test('email-style omitted env keeps exact D1 lease path', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:email-d1',
+		async write() {
+			expect(countLeaseRows(sqlite)).toBe(1)
+			expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+			return 'ok'
 		},
-	} as unknown as UserMeterEnv
-}
-
-test('UserMeter shadow failures never alter D1 lease or deletion results', async () => {
-	silenceExpectedConsoleWarns(['account-deletion-user-meter-shadow-failed'])
-	const { db } = createLeaseTestDb()
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const failingEnv = createFailingShadowEnv()
-
-	let finishRelease: () => void = () => undefined
-	const releaseGate = new Promise<void>((resolve) => {
-		finishRelease = resolve
 	})
-	const originalBatch = db.batch.bind(db)
-	let releaseBatchSeen = false
-	db.batch = (async (statements: Parameters<D1Database['batch']>[0]) => {
-		const sql = statements
-			.map((statement) => {
-				const withQuery = statement as { query?: string }
-				return typeof withQuery.query === 'string' ? withQuery.query : ''
-			})
-			.join('\n')
-		const isRelease =
-			sql.includes('MAX(active_write_count - 1') ||
-			sql.includes('DELETE FROM account_write_leases')
-		if (isRelease && !releaseBatchSeen) {
-			releaseBatchSeen = true
-			await releaseGate
-		}
-		return await originalBatch(statements)
-	}) as D1Database['batch']
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+})
 
-	const pending: Array<Promise<unknown>> = []
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			holder: 'test:shadow-fail',
-			env: failingEnv,
-			waitUntil(promise) {
-				pending.push(promise)
-			},
-			async write() {
-				return 'mutated'
-			},
-		}),
-	).resolves.toBe('mutated')
-	expect(pending.length).toBeGreaterThan(0)
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
-	finishRelease()
-	await Promise.all(pending)
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
+test('mixed D1 + DO leases drain/count/dedupe and admin union list', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	addLeaseRepairsTable(sqlite)
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const drain = createWaitUntilDrain()
+
+	let d1Token = ''
+	let d1AcquiredAt = ''
+	let startD1: () => void = () => undefined
+	let finishD1: () => void = () => undefined
+	const d1Started = new Promise<void>((resolve) => {
+		startD1 = resolve
+	})
+	const d1Finish = new Promise<void>((resolve) => {
+		finishD1 = resolve
+	})
+	const d1Operation = withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:email-d1',
+		waitUntil: drain.waitUntil,
+		async write() {
+			const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
+			d1Token = lease!.token
+			d1AcquiredAt = lease!.acquired_at
+			startD1()
+			await d1Finish
+			return 'd1'
+		},
+	})
+	await d1Started
+
+	let doToken = ''
+	let doAcquiredAt = ''
+	let startDo: () => void = () => undefined
+	let finishDo: () => void = () => undefined
+	const doStarted = new Promise<void>((resolve) => {
+		startDo = resolve
+	})
+	const doFinish = new Promise<void>((resolve) => {
+		finishDo = resolve
+	})
+	const doOperation = withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:do-authority',
+		env: meter.env,
+		waitUntil: drain.waitUntil,
+		async write() {
+			const [lease] = (
+				await listActiveAccountWriteLeases(db, 'user-a', meter.env)
+			).filter((row) => row.holder === 'test:do-authority')
+			doToken = lease!.token
+			doAcquiredAt = lease!.acquired_at
+			startDo()
+			await doFinish
+			return 'do'
+		},
+	})
+	await doStarted
+
+	const union = await listActiveAccountWriteLeases(db, 'user-a', meter.env)
+	expect(union).toHaveLength(2)
+	expect(union.map((lease) => lease.holder).sort()).toEqual([
+		'test:do-authority',
+		'test:email-d1',
+	])
+	expect(await listActiveAccountWriteLeases(db, 'user-a')).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ token: d1Token, holder: 'test:email-d1' }),
+			expect.objectContaining({ token: doToken, holder: 'test:do-authority' }),
+		]),
+	)
+	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(2)
 
 	await expect(
 		markAccountDeleting({
 			db,
 			dbUserId: 1,
-			env: failingEnv,
+			now: new Date('2099-01-01T00:00:00.000Z'),
+			env: meter.env,
 		}),
-	).resolves.toBe(0)
-	expect(warn).toHaveBeenCalledWith(
-		'account-deletion-user-meter-shadow-failed',
-		expect.any(Error),
-	)
-	warn.mockRestore()
-})
-
-function createDeferred() {
-	let resolve: () => void = () => undefined
-	const promise = new Promise<void>((next) => {
-		resolve = next
+	).resolves.toBe(2)
+	expect(await meterA.listWriteLeases({})).toEqual({
+		leases: expect.arrayContaining([
+			expect.objectContaining({
+				token: d1Token,
+				holder: 'test:email-d1',
+				authority: 'legacy',
+			}),
+			expect.objectContaining({
+				token: doToken,
+				holder: 'test:do-authority',
+				authority: 'do',
+			}),
+		]),
+		nextStartAfter: null,
+		truncated: false,
 	})
-	return { promise, resolve: () => resolve() }
-}
 
-function createGatedShadowEnv(input: {
-	releaseGate: Promise<void>
-	markGate?: Promise<void>
-}) {
-	const base = createInMemoryUserMeterEnv()
-	const namespace = base.env.USER_METER!
-	const gates = {
-		markEntered: false,
-		releaseEntered: false,
-	}
-	const env = {
-		USER_METER: {
-			idFromName: namespace.idFromName.bind(namespace),
-			get(id: DurableObjectId) {
-				const stub = namespace.get(id)
-				return {
-					shadowMarkDeleting: (args: { deletingAt: string }) =>
-						stub.shadowMarkDeleting(args),
-					shadowReplaceDeletionState: async (args: {
-						deletingAt: string
-						leases?: ReadonlyArray<{
-							token: string
-							holder: string
-							acquiredAt: string
-						}>
-					}) => {
-						gates.markEntered = true
-						if (input.markGate) await input.markGate
-						return stub.shadowReplaceDeletionState(args)
-					},
-					shadowAcquireWriteLease: (args: {
-						token: string
-						holder: string
-						acquiredAt: string
-					}) => stub.shadowAcquireWriteLease(args),
-					shadowReleaseWriteLease: async (args: { token: string }) => {
-						gates.releaseEntered = true
-						await input.releaseGate
-						return stub.shadowReleaseWriteLease(args)
-					},
-					countActiveWriteLeases: () => stub.countActiveWriteLeases(),
-					readDeletionState: () => stub.readDeletionState(),
-					listWriteLeases: (
-						args: { pageSize?: number; startAfter?: string | null } = {},
-					) => stub.listWriteLeases(args),
-				}
-			},
-		},
-	} as unknown as UserMeterEnv
-	return {
-		env,
-		gates,
-		meterFor(userId: string) {
-			return userMeterRpc({ env, userId })
-		},
-	}
-}
-
-async function waitFor(predicate: () => Promise<boolean>, label: string) {
-	const deadline = Date.now() + 2_000
-	while (Date.now() < deadline) {
-		if (await predicate()) return
-		await new Promise((resolve) => setTimeout(resolve, 5))
-	}
-	throw new Error(`Timed out waiting for ${label}`)
-}
-
-test('without waitUntil, lease return awaits release shadow', async () => {
-	const { db } = createLeaseTestDb()
-	const release = createDeferred()
-	const gated = createGatedShadowEnv({ releaseGate: release.promise })
-	const meterA = gated.meterFor('user-a')
-
-	let settled = false
-	const operation = withAccountWriteLease({
+	await repairAccountWriteLease({
 		db,
 		stableUserId: 'user-a',
-		holder: 'test:await-release-shadow',
+		token: d1Token,
+		expectedAcquiredAt: d1AcquiredAt,
+		repairedByUserId: 'admin-user',
+		reason: 'Inspected email writer crash and confirmed process termination.',
+		env: meter.env,
+	})
+	finishD1()
+	await expect(d1Operation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			env: meter.env,
+		}),
+	).resolves.toBe(1)
+
+	await repairAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		token: doToken,
+		expectedAcquiredAt: doAcquiredAt,
+		repairedByUserId: 'admin-user',
+		reason: 'Inspected DO writer crash and confirmed process termination.',
+		env: meter.env,
+	})
+	finishDo()
+	await expect(doOperation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
+	await drain.drain()
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			env: meter.env,
+		}),
+	).resolves.toBe(0)
+})
+
+test('nested/detached/waitUntil parity for DO-authority leases', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	const nested = await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:outer-do',
+		env: meter.env,
+		async write() {
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+			return await withAccountWriteLease({
+				db,
+				stableUserId: 'user-a',
+				holder: 'test:nested-do',
+				env: meter.env,
+				async write() {
+					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+					const active = await listActiveAccountWriteLeases(
+						db,
+						'user-a',
+						meter.env,
+					)
+					expect(active).toHaveLength(1)
+					expect(active[0]).toEqual(
+						expect.objectContaining({ holder: 'test:outer-do' }),
+					)
+					return 'nested'
+				},
+			})
+		},
+	})
+	expect(nested).toBe('nested')
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+
+	let detached: Promise<void> = Promise.resolve()
+	let releaseOuter: () => void = () => undefined
+	const outerReleased = new Promise<void>((resolve) => {
+		releaseOuter = resolve
+	})
+	await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:outer-do',
+		env: meter.env,
+		async write() {
+			detached = (async () => {
+				await outerReleased
+				await withAccountWriteLease({
+					db,
+					stableUserId: 'user-a',
+					holder: 'test:detached-do',
+					env: meter.env,
+					async write() {
+						const active = await listActiveAccountWriteLeases(
+							db,
+							'user-a',
+							meter.env,
+						)
+						expect(active).toHaveLength(1)
+						expect(active[0]).toEqual(
+							expect.objectContaining({ holder: 'test:detached-do' }),
+						)
+					},
+				})
+			})()
+		},
+	})
+	releaseOuter()
+	await detached
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(countLeaseRows(sqlite)).toBe(0)
+
+	const release = createDeferred()
+	const gated = createGatedDoEnv({ releaseGate: release.promise })
+	const gatedMeter = gated.meterFor('user-a')
+	const drain = createWaitUntilDrain()
+
+	let settled = false
+	const awaitedRelease = withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:await-do-release',
 		env: gated.env,
 		async write() {
 			return 'ok'
@@ -594,120 +780,23 @@ test('without waitUntil, lease return awaits release shadow', async () => {
 	await waitFor(
 		async () =>
 			gated.gates.releaseEntered &&
-			(await listActiveAccountWriteLeases(db, 'user-a')).length === 0 &&
-			(await meterA.countActiveWriteLeases()).count === 1,
-		'D1 release with gated shadow lease still held',
-	)
-	expect(settled).toBe(false)
-	release.resolve()
-	await expect(operation).resolves.toBe('ok')
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-})
-
-test('without waitUntil, mark and repair await their shadows', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const release = createDeferred()
-	const mark = createDeferred()
-	const gated = createGatedShadowEnv({
-		releaseGate: release.promise,
-		markGate: mark.promise,
-	})
-	const meterA = gated.meterFor('user-a')
-	const drain = createWaitUntilDrain()
-
-	let heldToken = ''
-	let heldAcquiredAt = ''
-	let startWrite: () => void = () => undefined
-	let finishWrite: () => void = () => undefined
-	const started = new Promise<void>((resolve) => {
-		startWrite = resolve
-	})
-	const finish = new Promise<void>((resolve) => {
-		finishWrite = resolve
-	})
-	const held = withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:await-mark-repair',
-		env: gated.env,
-		waitUntil: drain.waitUntil,
-		async write() {
-			const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
-			heldToken = lease!.token
-			heldAcquiredAt = lease!.acquired_at
-			startWrite()
-			await finish
-			return 'lost'
-		},
-	})
-	await started
-	await drain.drain()
-
-	let markSettled = false
-	const markPromise = markAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: gated.env,
-	}).then((count) => {
-		markSettled = true
-		return count
-	})
-	await waitFor(
-		async () => gated.gates.markEntered && !markSettled,
-		'mark shadow gate',
-	)
-	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
-	mark.resolve()
-	await expect(markPromise).resolves.toBe(1)
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
-
-	let repairSettled = false
-	const repairPromise = repairAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		token: heldToken,
-		expectedAcquiredAt: heldAcquiredAt,
-		repairedByUserId: 'admin-user',
-		reason: 'Inspected worker crash and confirmed process termination.',
-		env: gated.env,
-	}).then((result) => {
-		repairSettled = true
-		return result
-	})
-	await waitFor(
-		async () =>
-			gated.gates.releaseEntered &&
-			(await meterA.countActiveWriteLeases()).count === 1 &&
-			!repairSettled,
-		'repair shadow gate',
+			(await gatedMeter.countActiveWriteLeases()).count === 1 &&
+			!settled,
+		'DO release gate',
 	)
 	release.resolve()
-	await expect(repairPromise).resolves.toEqual(
-		expect.objectContaining({ repaired: true }),
-	)
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-	finishWrite()
-	await expect(held).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
-	await drain.drain()
-})
+	await expect(awaitedRelease).resolves.toBe('ok')
+	expect(await gatedMeter.countActiveWriteLeases()).toEqual({ count: 0 })
 
-test('with waitUntil, lease return completes before release shadow settles', async () => {
-	const { db } = createLeaseTestDb()
-	const release = createDeferred()
-	const gated = createGatedShadowEnv({ releaseGate: release.promise })
-	const meterA = gated.meterFor('user-a')
-	const drain = createWaitUntilDrain()
-
+	const release2 = createDeferred()
+	const gated2 = createGatedDoEnv({ releaseGate: release2.promise })
+	const gatedMeter2 = gated2.meterFor('user-a')
 	await expect(
 		withAccountWriteLease({
 			db,
 			stableUserId: 'user-a',
-			holder: 'test:detach-release-shadow',
-			env: gated.env,
+			holder: 'test:detach-do-release',
+			env: gated2.env,
 			waitUntil: drain.waitUntil,
 			async write() {
 				return 'ok'
@@ -716,34 +805,258 @@ test('with waitUntil, lease return completes before release shadow settles', asy
 	).resolves.toBe('ok')
 	await waitFor(
 		async () =>
-			gated.gates.releaseEntered &&
-			(await listActiveAccountWriteLeases(db, 'user-a')).length === 0 &&
-			(await meterA.countActiveWriteLeases()).count === 1,
-		'detached release shadow still held',
+			gated2.gates.releaseEntered &&
+			(await gatedMeter2.countActiveWriteLeases()).count === 1,
+		'detached DO release still held',
 	)
-
-	release.resolve()
+	release2.resolve()
 	await drain.drain()
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(await gatedMeter2.countActiveWriteLeases()).toEqual({ count: 0 })
 })
 
-test('markAccountDeleting replaces UserMeter lease shadows from authoritative D1', async () => {
+test('D1 deleting_at gate fails closed after purge tombstone', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+	await meterA.purge()
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'blocked'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+})
+
+test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const drain = createWaitUntilDrain()
+	const held = holdDoWriteLease({
+		db,
+		env: meter.env,
+		holder: 'test:do-repair-protocol',
+	})
+	await held.started
 
-	// Stale shadow left behind by a failed release (no matching D1 lease).
-	await meterA.shadowAcquireWriteLease({
-		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-		holder: 'test:stale-shadow',
-		acquiredAt: '2026-01-01 00:00:00',
+	const prepared = await meterA.prepareWriteLeaseRepair({
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
+	})
+	expect(prepared).toEqual(
+		expect.objectContaining({
+			prepared: true,
+			token: held.token,
+			acquiredAt: held.acquiredAt,
+		}),
+	)
+	const repairId =
+		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
+	const retried = await meterA.prepareWriteLeaseRepair({
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
+	})
+	expect(retried).toEqual(expect.objectContaining({ prepared: true, repairId }))
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: true,
 	})
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 
-	let heldToken = ''
-	let heldAcquiredAt = ''
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
+			env: meter.env,
+		}),
+	).resolves.toEqual({ repaired: true, repairId })
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: false,
+	})
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT id, lease_token, lease_acquired_at FROM account_write_lease_repairs`,
+			)
+			.get(),
+	).toEqual({
+		id: repairId,
+		lease_token: held.token,
+		lease_acquired_at: held.acquiredAt,
+	})
+
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
+			env: meter.env,
+		}),
+	).resolves.toEqual({ repaired: true, repairId })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+
+	held.finish()
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
+})
+
+test('USER_METER failures fail closed when env is supplied', async () => {
+	const { db } = createLeaseTestDb()
+	const failingEnv = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async acquireWriteLease() {
+					throw new Error('do acquire failed')
+				},
+				async markDeleting() {
+					throw new Error('do mark failed')
+				},
+			}),
+		},
+	} as unknown as UserMeterEnv
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: failingEnv,
+			async write() {
+				return 'mutated'
+			},
+		}),
+	).rejects.toThrow('do acquire failed')
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			env: failingEnv,
+		}),
+	).rejects.toThrow('do mark failed')
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: {},
+			async write() {
+				return 'blocked'
+			},
+		}),
+	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
+})
+
+test('markAccountDeleting clears stale legacy rows and preserves DO-authority leases', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await meterA.shadowAcquireWriteLease({
+		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+		holder: 'test:stale-legacy',
+		acquiredAt: '2026-01-01 00:00:00',
+	})
+	await meterA.acquireWriteLease({
+		token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+		holder: 'test:do-held',
+		acquiredAt: '2026-01-01 00:01:00',
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 2 })
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			now: new Date('2099-01-01T00:00:00.000Z'),
+			env: meter.env,
+		}),
+	).resolves.toBe(1)
+	expect(await meterA.listWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+				holder: 'test:do-held',
+				acquiredAt: '2026-01-01 00:01:00',
+				authority: 'do',
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
+
+	await meterA.shadowReplaceDeletionState({
+		deletingAt: '2099-01-01 00:00:00',
+		leases: [
+			{
+				token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+				holder: 'test:post-drain-stale',
+				acquiredAt: '2099-01-01 00:01:00',
+			},
+		],
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 2 })
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			env: meter.env,
+		}),
+	).resolves.toBe(1)
+	expect(await meterA.listWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+				holder: 'test:do-held',
+				acquiredAt: '2026-01-01 00:01:00',
+				authority: 'do',
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
+})
+
+test('old Phase-A D1-only mark counts a new DO-authority lease via D1 mirror', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const drain = createWaitUntilDrain()
+
 	let startWrite: () => void = () => undefined
 	let finishWrite: () => void = () => undefined
 	const started = new Promise<void>((resolve) => {
@@ -755,92 +1068,504 @@ test('markAccountDeleting replaces UserMeter lease shadows from authoritative D1
 	const operation = withAccountWriteLease({
 		db,
 		stableUserId: 'user-a',
-		holder: 'test:active-d1',
+		holder: 'test:do-mirror-for-phase-a',
 		env: meter.env,
 		waitUntil: drain.waitUntil,
 		async write() {
-			const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
-			heldToken = lease!.token
-			heldAcquiredAt = lease!.acquired_at
 			startWrite()
 			await finish
-			return 'lost'
+			return 'held'
 		},
 	})
 	await started
-	await drain.drain()
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 2 })
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-			env: meter.env,
-			waitUntil: drain.waitUntil,
-		}),
-	).resolves.toBe(1)
-	await drain.drain()
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
-	// Stale shadow removed; active D1 lease preserved under the tombstone.
-	expect(await meterA.listWriteLeases({})).toEqual({
-		leases: [
-			{
-				token: heldToken,
-				holder: 'test:active-d1',
-				acquiredAt: heldAcquiredAt,
-			},
-		],
-		nextStartAfter: null,
-		truncated: false,
-	})
-	expect(await meterA.exportCounters({})).toMatchObject({
-		deletionShadow: {
-			deletingAt: '2099-01-01 00:00:00',
-			activeWriteLeaseCount: 1,
-			writeLeases: [{ acquiredAt: heldAcquiredAt }],
-		},
-	})
-
-	await repairAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		token: heldToken,
-		expectedAcquiredAt: heldAcquiredAt,
-		repairedByUserId: 'admin-user',
-		reason: 'Inspected worker crash and confirmed process termination.',
-		env: meter.env,
-		waitUntil: drain.waitUntil,
-	})
-	await drain.drain()
-	finishWrite()
-	await expect(operation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
-
-	// Failed release after D1 drain can leave a stale shadow; retry clears it.
-	await meterA.shadowReplaceDeletionState({
-		deletingAt: '2099-01-01 00:00:00',
-		leases: [
-			{
-				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-				holder: 'test:post-drain-stale',
-				acquiredAt: '2099-01-01 00:01:00',
-			},
-		],
-	})
+	expect(countLeaseRows(sqlite)).toBe(1)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 
 	await expect(
 		markAccountDeleting({
 			db,
 			dbUserId: 1,
+			now: new Date('2099-01-01T00:00:00.000Z'),
+		}),
+	).resolves.toBe(1)
+
+	finishWrite()
+	await expect(operation).resolves.toBe('held')
+	await drain.drain()
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+})
+
+test('DO acquire fails closed and releases DO when D1 mirror response is lost unconfirmed', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const originalBatch = db.batch.bind(db)
+	db.batch = (async () => {
+		throw new Error('simulated lost D1 batch response')
+	}) as D1Database['batch']
+	const originalPrepare = db.prepare.bind(db)
+	db.prepare = ((query: string) => {
+		const statement = originalPrepare(query)
+		if (
+			query.includes('INSERT INTO account_write_leases') ||
+			query.includes('active_write_count + 1')
+		) {
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						async run() {
+							return { meta: { changes: 0 } }
+						},
+						first: bound.first.bind(bound),
+						all: bound.all.bind(bound),
+					}
+				},
+			}
+		}
+		return statement
+	}) as D1Database['prepare']
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:mirror-fail',
+			env: meter.env,
+			async write() {
+				return 'should-not-run'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	db.batch = originalBatch
+	db.prepare = originalPrepare
+})
+
+test('DO acquire cleans partial D1 mirror when insert commits and count returns false', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const originalBatch = db.batch.bind(db)
+	db.batch = (async () => {
+		throw new Error('simulated lost D1 batch response')
+	}) as D1Database['batch']
+	const originalPrepare = db.prepare.bind(db)
+	db.prepare = ((query: string) => {
+		const statement = originalPrepare(query)
+		if (query.includes('active_write_count + 1')) {
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						async run() {
+							return { meta: { changes: 0 } }
+						},
+						first: bound.first.bind(bound),
+						all: bound.all.bind(bound),
+					}
+				},
+			}
+		}
+		return statement
+	}) as D1Database['prepare']
+	let writeStarted = false
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:mirror-partial-false',
+			env: meter.env,
+			async write() {
+				writeStarted = true
+				return 'should-not-run'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(writeStarted).toBe(false)
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	db.batch = originalBatch
+	db.prepare = originalPrepare
+})
+
+test('DO acquire cleans partial D1 mirror when sequential count throws after insert', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const originalBatch = db.batch.bind(db)
+	db.batch = (async () => {
+		throw new Error('simulated lost D1 batch response')
+	}) as D1Database['batch']
+	const originalPrepare = db.prepare.bind(db)
+	const countFailure = new Error('simulated sequential count failure')
+	db.prepare = ((query: string) => {
+		const statement = originalPrepare(query)
+		if (query.includes('active_write_count + 1')) {
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						async run() {
+							throw countFailure
+						},
+						first: bound.first.bind(bound),
+						all: bound.all.bind(bound),
+					}
+				},
+			}
+		}
+		return statement
+	}) as D1Database['prepare']
+	let writeStarted = false
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:mirror-partial-throw',
+			env: meter.env,
+			async write() {
+				writeStarted = true
+				return 'should-not-run'
+			},
+		}),
+	).rejects.toBe(countFailure)
+	expect(writeStarted).toBe(false)
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	db.batch = originalBatch
+	db.prepare = originalPrepare
+})
+
+test('DO repair clears D1 mirror, stays audit-first, and retries after finalize without double audit/count', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	addLeaseRepairsTable(sqlite)
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const held = holdDoWriteLease({
+		db,
+		env: meter.env,
+		holder: 'test:do-repair-mirror',
+	})
+	await held.started
+	expect(countLeaseRows(sqlite)).toBe(1)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 1 })
+
+	const prepared = await meterA.prepareWriteLeaseRepair({
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
+	})
+	expect(prepared.prepared).toBe(true)
+	const repairId =
+		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
+
+	sqlite
+		.prepare(
+			`INSERT INTO account_write_lease_repairs (
+				id, target_user_id, lease_token, lease_holder,
+				lease_acquired_at, repaired_by_user_id, reason, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.run(
+			repairId,
+			'user-a',
+			held.token,
+			'test:do-repair-mirror',
+			held.acquiredAt,
+			'admin-user',
+			'Inspected worker crash and confirmed process termination.',
+			'2099-01-01 00:00:00',
+		)
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: true,
+	})
+	expect(countLeaseRows(sqlite)).toBe(1)
+
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
 			env: meter.env,
 		}),
-	).resolves.toBe(0)
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
+	).resolves.toEqual({ repaired: true, repairId })
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: false,
 	})
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
+			.get(),
+	).toEqual({ count: 1 })
+
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
+			env: meter.env,
+		}),
+	).resolves.toEqual({ repaired: true, repairId })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+
+	held.finish()
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
+})
+
+test('authoritative release cleans D1 mirror after DO release under waitUntil', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const release = createDeferred()
+	const gated = createGatedDoEnv({ releaseGate: release.promise })
+	const gatedMeter = gated.meterFor('user-a')
+	const drain = createWaitUntilDrain()
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:release-mirror-order',
+			env: gated.env,
+			waitUntil: drain.waitUntil,
+			async write() {
+				expect(countLeaseRows(sqlite)).toBe(1)
+				return 'ok'
+			},
+		}),
+	).resolves.toBe('ok')
+	await waitFor(
+		async () =>
+			gated.gates.releaseEntered &&
+			(await gatedMeter.countActiveWriteLeases()).count === 1 &&
+			countLeaseRows(sqlite) === 1,
+		'DO release gated while D1 mirror still held',
+	)
+
+	release.resolve()
+	await drain.drain()
+	expect(await gatedMeter.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+})
+
+test('repair keeps D1 mirror until finalize; Phase-A mark counts during gate then drains', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	addLeaseRepairsTable(sqlite)
+	const finalize = createDeferred()
+	const gated = createGatedDoEnv({ finalizeGate: finalize.promise })
+	const gatedMeter = gated.meterFor('user-a')
+	const held = holdDoWriteLease({
+		db,
+		env: gated.env,
+		holder: 'test:repair-finalize-gate',
+	})
+	await held.started
+
+	let repairSettled = false
+	const repairPromise = repairAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
+		repairedByUserId: 'admin-user',
+		reason: 'Inspected worker crash and confirmed process termination.',
+		env: gated.env,
+	}).then((result) => {
+		repairSettled = true
+		return result
+	})
+	await waitFor(
+		async () =>
+			gated.gates.finalizeEntered &&
+			(await gatedMeter.assertWriteLeaseHeld({ token: held.token })).held &&
+			countLeaseRows(sqlite) === 1 &&
+			!repairSettled,
+		'finalize gated with DO + D1 mirror still held',
+	)
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			now: new Date('2099-01-01T00:00:00.000Z'),
+		}),
+	).resolves.toBe(1)
+
+	finalize.resolve()
+	await expect(repairPromise).resolves.toEqual(
+		expect.objectContaining({ repaired: true }),
+	)
+	expect(await gatedMeter.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: false,
+	})
+	expect(countLeaseRows(sqlite)).toBe(0)
+	await expect(markAccountDeleting({ db, dbUserId: 1 })).resolves.toBe(0)
+
+	held.finish()
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
+})
+
+test('lost finalize response retries clear stale D1 mirror and return stable repairId', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	addLeaseRepairsTable(sqlite)
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const held = holdDoWriteLease({
+		db,
+		env: meter.env,
+		holder: 'test:stale-mirror-after-finalize',
+	})
+	await held.started
+
+	const prepared = await meterA.prepareWriteLeaseRepair({
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
+	})
+	const repairId =
+		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
+	sqlite
+		.prepare(
+			`INSERT INTO account_write_lease_repairs (
+				id, target_user_id, lease_token, lease_holder,
+				lease_acquired_at, repaired_by_user_id, reason, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.run(
+			repairId,
+			'user-a',
+			held.token,
+			'test:stale-mirror-after-finalize',
+			held.acquiredAt,
+			'admin-user',
+			'Inspected worker crash and confirmed process termination.',
+			'2099-01-01 00:00:00',
+		)
+	await meterA.finalizeWriteLeaseRepair({
+		token: held.token,
+		repairId,
+		expectedAcquiredAt: held.acquiredAt,
+	})
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: false,
+	})
+	expect(countLeaseRows(sqlite)).toBe(1)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 1 })
+
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
+			env: meter.env,
+		}),
+	).resolves.toEqual({ repaired: true, repairId })
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
+			.get(),
+	).toEqual({ count: 1 })
+
+	held.finish()
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
+})
+
+test('finalize failure without commit leaves D1 mirror held for retry', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	addLeaseRepairsTable(sqlite)
+	const gated = createGatedDoEnv({
+		finalizeFailOnceError: 'simulated finalize transport failure',
+	})
+	const meterA = gated.meterFor('user-a')
+	const held = holdDoWriteLease({
+		db,
+		env: gated.env,
+		holder: 'test:finalize-fail-closed',
+	})
+	await held.started
+
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
+			env: gated.env,
+		}),
+	).rejects.toThrow('simulated finalize transport failure')
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: true,
+	})
+	expect(countLeaseRows(sqlite)).toBe(1)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 1 })
+
+	await expect(
+		repairAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+			repairedByUserId: 'admin-user',
+			reason: 'Inspected worker crash and confirmed process termination.',
+			env: gated.env,
+		}),
+	).resolves.toEqual(expect.objectContaining({ repaired: true }))
+	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
+		held: false,
+	})
+	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(gated.finalizeAttempts).toBe(2)
+
+	held.finish()
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
 })

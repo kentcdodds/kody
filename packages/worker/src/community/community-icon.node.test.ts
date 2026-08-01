@@ -12,6 +12,7 @@ import {
 	renderCommunityIconFallbackPng,
 } from './community-icon.ts'
 import { type CommunityListingRecord } from './types.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const mocks = vi.hoisted(() => ({
 	readFirstArtifactFileAtCommit: vi.fn(),
@@ -151,6 +152,63 @@ function createFakeR2() {
 		},
 	} as unknown as R2Bucket
 	return { bucket, values }
+}
+
+function createCommunityIconTestEnv(input: {
+	db: D1Database
+	kv: KVNamespace
+	bucket: R2Bucket
+	meter?: ReturnType<typeof createInMemoryUserMeterEnv>
+}) {
+	const meter = input.meter ?? createInMemoryUserMeterEnv()
+	return {
+		APP_DB: input.db,
+		BUNDLE_ARTIFACTS_KV: input.kv,
+		COMMUNITY_ASSETS: input.bucket,
+		USER_METER: meter.env.USER_METER,
+	} as Env
+}
+
+function createCommunityIconDeletionRaceDbMock() {
+	let deleting = false
+	let leaseAcquires = 0
+	const db = {
+		prepare(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').trim()
+			return {
+				bind() {
+					return {
+						async first<T>() {
+							if (normalized.includes('SELECT deleting_at')) {
+								return { deleting_at: deleting ? 'now' : null } as T
+							}
+							return null
+						},
+						async run() {
+							if (
+								normalized.includes('INSERT INTO account_write_leases') ||
+								normalized.includes(
+									'active_write_count = active_write_count + 1',
+								)
+							) {
+								leaseAcquires += 1
+								if (leaseAcquires === 2) deleting = true
+								return { meta: { changes: deleting ? 0 : 1 } }
+							}
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+		async batch() {
+			leaseAcquires += 1
+			if (leaseAcquires === 2) deleting = true
+			const changes = deleting ? 0 : 1
+			return [{ meta: { changes } }, { meta: { changes } }]
+		},
+	} as unknown as D1Database
+	return { db, getLeaseAcquires: () => leaseAcquires }
 }
 
 const listing = {
@@ -358,32 +416,7 @@ test('community icon cache write loses the race to account deletion', async () =
 	const png = createPngHeader(128, 128)
 	const { kv, values: kvValues } = createFakeKv()
 	const { bucket } = createFakeR2()
-	let deleting = false
-	let leaseAcquires = 0
-	const db = {
-		prepare(query: string) {
-			return {
-				bind() {
-					return {
-						async first<T>() {
-							if (query.includes('SELECT deleting_at')) {
-								return { deleting_at: deleting ? 'now' : null } as T
-							}
-							return null
-						},
-						async run() {
-							if (query.includes('active_write_count + 1')) {
-								leaseAcquires += 1
-								if (leaseAcquires === 2) deleting = true
-								return { meta: { changes: deleting ? 0 : 1 } }
-							}
-							return { meta: { changes: 1 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
+	const { db, getLeaseAcquires } = createCommunityIconDeletionRaceDbMock()
 	mocks.readCommunitySnapshot.mockResolvedValue({
 		version: 1,
 		listingId: listing.id,
@@ -399,15 +432,11 @@ test('community icon cache write loses the race to account deletion', async () =
 		bytes: png,
 	})
 	await getCommunityIconObject({
-		env: {
-			APP_DB: db,
-			BUNDLE_ARTIFACTS_KV: kv,
-			COMMUNITY_ASSETS: bucket,
-		} as Env,
+		env: createCommunityIconTestEnv({ db, kv, bucket }),
 		listing,
 		iconCommit: listing.pinnedCommit,
 	})
-	expect(leaseAcquires).toBe(2)
+	expect(getLeaseAcquires()).toBe(2)
 	expect(kvValues.size).toBe(0)
 })
 

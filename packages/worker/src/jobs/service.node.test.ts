@@ -3,6 +3,10 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import {
+	createInMemoryUserMeterEnv,
+	createPermissiveAccountWriteLeaseDbHooks,
+} from '#worker/test-support/user-meter.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -354,6 +358,7 @@ function createDatabase(
 		['jobs', (initialRows.jobs ?? []).map((row) => ({ ...row }))],
 		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
 	])
+	const writeLeaseDb = createPermissiveAccountWriteLeaseDbHooks()
 
 	const clone = <T>(value: T): T => structuredClone(value)
 
@@ -402,11 +407,20 @@ function createDatabase(
 	}
 
 	return {
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			return await writeLeaseDb.runWriteLeaseBatch(statements)
+		},
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T = Record<string, unknown>>() {
+							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
+								return writeLeaseDb.deletingAtFirstResult() as T
+							}
+							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
+								return writeLeaseDb.heldLeaseFirstResult() as T
+							}
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								return selectOne(
 									'users',
@@ -685,6 +699,9 @@ function createDatabase(
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {
+							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
+								return writeLeaseDb.writeLeaseRunResult()
+							}
 							if (query.startsWith('UPDATE users')) {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
@@ -1098,6 +1115,19 @@ function createDatabase(
 	} as unknown as D1Database
 }
 
+function createJobServiceTestEnv(
+	bindings: Record<string, unknown> & {
+		APP_DB: ReturnType<typeof createDatabase>
+	},
+	meter?: ReturnType<typeof createInMemoryUserMeterEnv>,
+) {
+	const userMeter = meter ?? createInMemoryUserMeterEnv()
+	return {
+		...bindings,
+		USER_METER: userMeter.env.USER_METER,
+	} as Env
+}
+
 function createBundleArtifactsKv() {
 	const store = new Map<string, string>()
 	return {
@@ -1206,9 +1236,9 @@ function createBaseCallerContext(): PersistedJobCallerContext {
 }
 
 test('package job sync reports scheduler changes for add, update, and remove only', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
-	} as Env
+	})
 	const input = {
 		env,
 		userId: 'user-1',
@@ -1292,12 +1322,12 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 })
 
 test('create, update, and delete jobs sync the job manager alarm', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 
@@ -1436,11 +1466,11 @@ function buildEntitlementTestJobBody(index: number): JobCreateInput {
 test('createJob enforces scheduled job entitlements for plan users and denies at the max plan ceiling', async () => {
 	const plannedEmail = 'planned@example.com'
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
-	const plannedEnv = {
+	const plannedEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
 			users: [{ email: plannedEmail, plan: 'free' }],
 		}),
-	} as Env
+	})
 	mockRepoPersistence()
 	const plannedCallerContext = createPlanUserCallerContext({
 		userId: plannedUserId,
@@ -1478,7 +1508,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	const maxEmail = 'max@example.com'
 	const maxUserId = await createStableUserIdFromEmail(maxEmail)
 	const maxLimit = planLimits.max.maxScheduledJobs
-	const belowMaxEnv = {
+	const belowMaxEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
 			users: [{ email: maxEmail, plan: 'max' }],
 			jobs: Array.from(
@@ -1489,7 +1519,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 				}),
 			),
 		}),
-	} as Env
+	})
 	mockRepoPersistence()
 	const maxCallerContext = createPlanUserCallerContext({
 		userId: maxUserId,
@@ -1501,7 +1531,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 		body: buildEntitlementTestJobBody(0),
 	})
 
-	const atCeilingEnv = {
+	const atCeilingEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
 			users: [{ email: maxEmail, plan: 'max' }],
 			jobs: Array.from({ length: maxLimit }, (_, index) => ({
@@ -1509,7 +1539,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 				user_id: maxUserId,
 			})),
 		}),
-	} as Env
+	})
 	const maxError = await createJob({
 		env: atCeilingEnv,
 		callerContext: maxCallerContext,
@@ -1531,9 +1561,9 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 })
 
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
-	} as Env
+	})
 	mockRepoPersistence()
 	const ownerCallerContext = createBaseCallerContext()
 	const created = await createJob({
@@ -1600,9 +1630,9 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 })
 
 test('missing job ids throw McpCallerError from get/inspect/run-now', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
-	} as Env
+	})
 	const missingJobId = 'missing-job-id'
 	const userId = createBaseCallerContext().user.userId
 
@@ -1638,9 +1668,9 @@ test('missing job ids throw McpCallerError from get/inspect/run-now', async () =
 })
 
 test('updateJob clears params, updates timezone, and disables a job', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
-	} as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	const created = await createJob({
@@ -1690,9 +1720,9 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 })
 
 test('createJob and updateJob reject modules without a default export as McpCallerError', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
-	} as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	const bareArrowSnippet = 'async () => ({ ok: true })'
@@ -1744,9 +1774,9 @@ test('createJob and updateJob reject modules without a default export as McpCall
 })
 
 test('inspectJobsForUser returns persisted job fields with alarm debug state', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
-	} as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	const created = await createJob({
@@ -1853,10 +1883,10 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 })
 
 test('getJobInspection reports alarm state, source code, and artifact gaps', async () => {
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
 		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	const created = await createJob({
@@ -1990,10 +2020,10 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	})
 
 	const bundleKv = createBundleArtifactsKv()
-	const manifestEnv = {
+	const manifestEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
 		BUNDLE_ARTIFACTS_KV: bundleKv,
-	} as Env
+	})
 	const missingManifestJob = await createJob({
 		env: manifestEnv,
 		callerContext,
@@ -2054,7 +2084,7 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 	// Usage rollup writes are best-effort and fail against this fake env.
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
@@ -2095,7 +2125,7 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 				}
 			},
 		},
-	} as unknown as Env
+	})
 	mockRepoPersistence()
 	const callerContext = {
 		...createBaseCallerContext(),
@@ -2250,7 +2280,7 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
@@ -2291,7 +2321,7 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 				}
 			},
 		},
-	} as unknown as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 
@@ -2462,7 +2492,7 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
@@ -2470,7 +2500,7 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 		COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
-	} as unknown as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 
@@ -2663,13 +2693,13 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -2882,13 +2912,13 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 				'export default async () => { console.log("canary"); return { version: "new" } }',
 		},
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -2972,13 +3002,13 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 			'src/custom-job.ts': 'export default async () => ({ ok: true })',
 		},
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -3104,13 +3134,13 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -3283,13 +3313,13 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -3451,13 +3481,13 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		publishedCommit: 'commit-1',
 		manifestPath: 'package.json',
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -3572,13 +3602,13 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 			'src/lib.ts': 'export const value = 1',
 		},
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -3773,13 +3803,13 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	const job: JobRecord = {
 		version: 1,
@@ -3900,14 +3930,14 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
-	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
+	}) as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	const jobView = await createJob({
@@ -4069,13 +4099,13 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		publishedCommit: 'commit-run-now-override',
 		manifestPath: 'package.json',
 	})
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
 		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
-	} as Env
+	})
 	const callerContext = createBaseCallerContext()
 	mockRepoPersistence()
 	const jobView = await createJob({
@@ -4245,7 +4275,7 @@ test('executeJobOnce records job_run usage for success and failure without chang
 		.spyOn(usageModule, 'recordUsage')
 		.mockResolvedValue(undefined)
 	const db = createDatabase()
-	const env = {
+	const env = createJobServiceTestEnv({
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
@@ -4286,7 +4316,7 @@ test('executeJobOnce records job_run usage for success and failure without chang
 				}
 			},
 		},
-	} as unknown as Env
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	const jobView = await createJob({

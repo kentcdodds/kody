@@ -7,6 +7,10 @@ import {
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	createInMemoryUserMeterEnv,
+	createPermissiveAccountWriteLeaseDbHooks,
+} from '#worker/test-support/user-meter.ts'
 
 function mockPackageServiceNamespace(): DurableObjectNamespace {
 	return {
@@ -171,18 +175,24 @@ function createEnv(
 	userId = 'user-1',
 	options?: {
 		storageBuckets?: Array<{ userId: string; storageId: string }>
+		meter?: ReturnType<typeof createInMemoryUserMeterEnv>
+		users?: Array<{ email: string; plan: string | null }>
+		savedPackageCount?: number
 	},
 ) {
 	// Projection refresh asserts finite storage bytes (default/missing plan →
 	// `max`). Stub DB answers storage SUM queries with 0 so unplanned unit
 	// fixtures keep focusing on job/artifact side effects.
+	const meter = options?.meter ?? createInMemoryUserMeterEnv()
 	return {
 		APP_DB: createEntitlementsDatabase({
-			users: [],
+			users: options?.users ?? [],
 			userId,
 			storageBuckets: options?.storageBuckets,
+			savedPackageCount: options?.savedPackageCount,
 		}),
 		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
+		USER_METER: meter.env.USER_METER,
 	} as Env
 }
 
@@ -1054,15 +1064,19 @@ function createEntitlementsDatabase(input: {
 	const users = input.users ?? []
 	const savedPackageCount = input.savedPackageCount ?? 0
 	const storageBuckets = input.storageBuckets ?? []
+	const writeLeaseDb = createPermissiveAccountWriteLeaseDbHooks()
 
 	return {
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			return await writeLeaseDb.runWriteLeaseBatch(statements)
+		},
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
 					return {
 						async run() {
-							if (query.includes('UPDATE users')) {
-								return { meta: { changes: 1 } }
+							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
+								return writeLeaseDb.writeLeaseRunResult()
 							}
 							if (
 								query.includes(
@@ -1091,6 +1105,12 @@ function createEntitlementsDatabase(input: {
 							throw new Error(`Unsupported run query: ${query}`)
 						},
 						async first<T>() {
+							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
+								return writeLeaseDb.deletingAtFirstResult() as T
+							}
+							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
+								return writeLeaseDb.heldLeaseFirstResult() as T
+							}
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
@@ -1154,14 +1174,10 @@ test('refreshSavedPackageProjection enforces the saved packages entitlement on i
 	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxSavedPackages
 	if (limit === null) throw new Error('Expected a numeric pro package limit.')
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro' }],
-			savedPackageCount: limit,
-			userId,
-		}),
-		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
-	} as Env
+	const env = createEnv(userId, {
+		users: [{ email, plan: 'pro' }],
+		savedPackageCount: limit,
+	})
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@kentcdodds/shade-automation',
@@ -1322,14 +1338,10 @@ test('refreshSavedPackageProjection does not gate the update branch at the limit
 	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxSavedPackages
 	if (limit === null) throw new Error('Expected a numeric pro package limit.')
-	const env = {
-		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro' }],
-			savedPackageCount: limit,
-			userId,
-		}),
-		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
-	} as Env
+	const env = createEnv(userId, {
+		users: [{ email, plan: 'pro' }],
+		savedPackageCount: limit,
+	})
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@kentcdodds/shade-automation',

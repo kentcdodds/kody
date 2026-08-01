@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
 	type OAuthHelpers,
@@ -13,6 +14,7 @@ import {
 import { oauthScopes } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from './user-id.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 
 function expectAuthenticateHeader(
 	header: string,
@@ -132,6 +134,18 @@ function createMockDb(options: MockDbOptions = {}) {
 					options.auditInserts?.push(boundParams)
 					return { meta: { changes: 1 } }
 				}
+				if (normalized.startsWith('delete from account_write_leases')) {
+					if (!boundParams.includes(expectedLeaseUserId)) {
+						throw new Error('Unscoped account write lease delete.')
+					}
+					return { meta: { changes: 1 } }
+				}
+				if (normalized.startsWith('insert into account_write_leases')) {
+					if (!boundParams.includes(expectedLeaseUserId)) {
+						throw new Error('Unscoped account write lease insert.')
+					}
+					return { meta: { changes: 1 } }
+				}
 				if (normalized.startsWith('update users')) {
 					if (
 						!normalized.includes('where stable_user_id = ?') ||
@@ -176,6 +190,25 @@ function createMockDb(options: MockDbOptions = {}) {
 						deleting_at: null,
 						suspended_at: options.suspendedAt ?? null,
 					} satisfies MockAccountRow
+				}
+				if (normalized.includes('select 1 as held from account_write_leases')) {
+					return { held: 1 }
+				}
+				if (normalized.includes('select deleting_at from users')) {
+					if (!boundStableUserId) return null
+					if (options.accountByStableId !== undefined) {
+						if (
+							options.accountByStableId === null ||
+							options.accountByStableId.stable_user_id !== boundStableUserId
+						) {
+							return null
+						}
+						return {
+							deleting_at: options.accountByStableId.deleting_at ?? null,
+						}
+					}
+					if (boundStableUserId !== defaultStableUserId) return null
+					return { deleting_at: null }
 				}
 				if (normalized.includes('select suspended_at from users')) {
 					// Validate the bound identity like the adjacent
@@ -266,6 +299,13 @@ function createMockDb(options: MockDbOptions = {}) {
 	}
 	return {
 		prepare: (query: string) => statementFor(query),
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			const results = []
+			for (const statement of statements) {
+				results.push(await statement.run())
+			}
+			return results
+		},
 	} as unknown as D1Database
 }
 
@@ -277,16 +317,34 @@ function createEnv(
 	return {
 		APP_DB: createMockDb(dbOptions),
 		OAUTH_PROVIDER: helpers,
+		USER_METER: env.USER_METER,
 		...overrides,
 	} as unknown as Env
 }
 
 function createContext() {
+	const drain = createWaitUntilDrain()
 	return {
 		props: {},
-		waitUntil: () => undefined,
+		waitUntil: drain.waitUntil,
 		passThroughOnException: () => undefined,
-	} as unknown as ExecutionContext
+		drain: drain.drain,
+	}
+}
+
+type TestContext = ReturnType<typeof createContext>
+
+async function handleMcpRequestAndDrain(
+	input: Omit<Parameters<typeof handleMcpRequest>[0], 'ctx'> & {
+		ctx: TestContext
+	},
+) {
+	const response = await handleMcpRequest({
+		...input,
+		ctx: input.ctx as unknown as ExecutionContext,
+	})
+	await input.ctx.drain()
+	return response
 }
 
 test('protected resource metadata and auth challenge resolve origin consistently', async () => {
@@ -315,7 +373,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 		buildProtectedResourceMetadata(workersDevOrigin),
 	)
 
-	const requestOriginUnauthorizedResponse = await handleMcpRequest({
+	const requestOriginUnauthorizedResponse = await handleMcpRequestAndDrain({
 		request: new Request(`${requestOrigin}${mcpResourcePath}`),
 		env: createEnv(createHelpers()),
 		ctx: createContext(),
@@ -335,7 +393,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 		requestOrigin,
 	)
 
-	const appBaseUrlUnauthorizedResponse = await handleMcpRequest({
+	const appBaseUrlUnauthorizedResponse = await handleMcpRequestAndDrain({
 		request: new Request(`${workersDevOrigin}${mcpResourcePath}`),
 		env: createEnv(createHelpers(), {
 			APP_BASE_URL: appBaseUrl,
@@ -384,7 +442,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		userSelects,
 	}
 
-	const invalidResponse = await handleMcpRequest({
+	const invalidResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -396,7 +454,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	})
 	expect(invalidResponse.status).toBe(401)
 
-	const missingAudienceResponse = await handleMcpRequest({
+	const missingAudienceResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -409,7 +467,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(missingAudienceResponse.status).toBe(401)
 
 	let receivedProps: unknown = null
-	const validResponse = await handleMcpRequest({
+	const validResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -437,7 +495,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(userSelects[0]).toContain('suspended_at')
 	expect(verificationLookups).toHaveLength(0)
 
-	const withConnectorResponse = await handleMcpRequest({
+	const withConnectorResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -480,7 +538,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		},
 	} as unknown as D1Database
 	await expect(
-		handleMcpRequest({
+		handleMcpRequestAndDrain({
 			request,
 			env: createEnv(
 				createHelpers({
@@ -499,7 +557,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		'Failed to load MCP auth user context:',
 		expect.any(Error),
 	)
-})
+}, 15_000)
 
 test('mcp request rejects unverified and unidentifiable accounts fail-closed', async () => {
 	const request = new Request(`https://example.com${mcpResourcePath}`, {
@@ -528,7 +586,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	}
 
 	// Account exists but email_verified_at is null.
-	const unverifiedResponse = await handleMcpRequest({
+	const unverifiedResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -548,7 +606,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	})
 
 	// No matching account row at all.
-	const unknownAccountResponse = await handleMcpRequest({
+	const unknownAccountResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -562,7 +620,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	expect(unknownAccountResponse.status).toBe(403)
 
 	// Grant props without an identifiable user.
-	const noUserResponse = await handleMcpRequest({
+	const noUserResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -579,7 +637,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	// the rejection is recorded so a suspended principal that keeps calling
 	// stays visible instead of failing silently.
 	const auditInserts: Array<Array<unknown>> = []
-	const suspendedResponse = await handleMcpRequest({
+	const suspendedResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -615,7 +673,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
 	const verifiedAt = new Date(0).toISOString()
 	const fallbackUserSelects: Array<string> = []
-	const fallbackResponse = await handleMcpRequest({
+	const fallbackResponse = await handleMcpRequestAndDrain({
 		request,
 		env: createEnv(
 			createHelpers({

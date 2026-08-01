@@ -312,9 +312,9 @@ export type AccountExportSectionResult = {
 	 */
 	packageServiceStatesShadow?: UserMeterExportResult['packageServiceStatesShadow']
 	/**
-	 * Non-authoritative UserMeter deletion-fence / write-lease shadow. Present
-	 * only on the first `user_meter` page (`startAfter` absent); later pages
-	 * set it to `null`.
+	 * Sanitized UserMeter deletion-fence / write-lease inventory (no raw token
+	 * or holder). Present only on the first `user_meter` page (`startAfter`
+	 * absent); later pages set it to `null`.
 	 */
 	deletionShadow?: UserMeterExportResult['deletionShadow']
 }
