@@ -235,6 +235,53 @@ async function readStorageParity(input: {
 	}
 }
 
+/**
+ * Bounded UserMeter list walk. Stops at maxRows, a missing cursor, a
+ * repeated/non-advancing cursor, or a zero-item page that still returns a
+ * cursor. Stalled/invalid progress marks `truncated` so callers fail closed.
+ */
+async function collectBoundedUserMeterPages<T>(input: {
+	maxRows: number
+	fetchPage: (args: {
+		pageSize: number
+		startAfter: string | null
+	}) => Promise<{
+		items: ReadonlyArray<T>
+		nextStartAfter: string | null
+		truncated: boolean
+	}>
+}): Promise<{ items: Array<T>; truncated: boolean }> {
+	const items: Array<T> = []
+	let startAfter: string | null = null
+	let truncated = false
+	for (;;) {
+		const remaining = input.maxRows - items.length
+		if (remaining <= 0) {
+			truncated = true
+			break
+		}
+		const page = await input.fetchPage({
+			pageSize: Math.min(userMeterParityPageSize, remaining),
+			startAfter,
+		})
+		items.push(...page.items)
+		if (!page.nextStartAfter) {
+			truncated = truncated || page.truncated
+			break
+		}
+		if (page.items.length === 0 || page.nextStartAfter === startAfter) {
+			truncated = true
+			break
+		}
+		if (items.length >= input.maxRows) {
+			truncated = true
+			break
+		}
+		startAfter = page.nextStartAfter
+	}
+	return { items, truncated }
+}
+
 async function listAllMeterPackageServiceStates(input: {
 	env: UserMeterEnv
 	stableUserId: string
@@ -244,30 +291,20 @@ async function listAllMeterPackageServiceStates(input: {
 	truncated: boolean
 }> {
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
-	const states: Array<UserMeterPackageServiceState> = []
-	let startAfter: string | null = null
-	let truncated = false
-	for (;;) {
-		const remaining = input.maxRows - states.length
-		if (remaining <= 0) {
-			truncated = true
-			break
-		}
-		const page = await meter.listPackageServiceStates({
-			pageSize: Math.min(userMeterParityPageSize, remaining),
-			startAfter,
-		})
-		states.push(...page.states)
-		if (!page.nextStartAfter) {
-			truncated = truncated || page.truncated
-			break
-		}
-		if (states.length >= input.maxRows) {
-			truncated = true
-			break
-		}
-		startAfter = page.nextStartAfter
-	}
+	const { items: states, truncated } = await collectBoundedUserMeterPages({
+		maxRows: input.maxRows,
+		fetchPage: async ({ pageSize, startAfter }) => {
+			const page = await meter.listPackageServiceStates({
+				pageSize,
+				startAfter,
+			})
+			return {
+				items: page.states,
+				nextStartAfter: page.nextStartAfter,
+				truncated: page.truncated,
+			}
+		},
+	})
 	return { states, truncated }
 }
 
@@ -280,30 +317,20 @@ async function listAllMeterWriteLeases(input: {
 	truncated: boolean
 }> {
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
-	const leases: Array<UserMeterWriteLeaseShadow> = []
-	let startAfter: string | null = null
-	let truncated = false
-	for (;;) {
-		const remaining = input.maxRows - leases.length
-		if (remaining <= 0) {
-			truncated = true
-			break
-		}
-		const page = await meter.listWriteLeases({
-			pageSize: Math.min(userMeterParityPageSize, remaining),
-			startAfter,
-		})
-		leases.push(...page.leases)
-		if (!page.nextStartAfter) {
-			truncated = truncated || page.truncated
-			break
-		}
-		if (leases.length >= input.maxRows) {
-			truncated = true
-			break
-		}
-		startAfter = page.nextStartAfter
-	}
+	const { items: leases, truncated } = await collectBoundedUserMeterPages({
+		maxRows: input.maxRows,
+		fetchPage: async ({ pageSize, startAfter }) => {
+			const page = await meter.listWriteLeases({
+				pageSize,
+				startAfter,
+			})
+			return {
+				items: page.leases,
+				nextStartAfter: page.nextStartAfter,
+				truncated: page.truncated,
+			}
+		},
+	})
 	return { leases, truncated }
 }
 

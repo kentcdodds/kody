@@ -1,11 +1,18 @@
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { dailyEntitlementResources } from '#worker/entitlements/user-meter-do.ts'
+import {
+	userMeterRpc,
+	type UserMeterEnv,
+} from '#worker/entitlements/user-meter-client.ts'
+import {
+	dailyEntitlementResources,
+	type UserMeterPackageServiceState,
+	type UserMeterWriteLeaseShadow,
+} from '#worker/entitlements/user-meter-do.ts'
 import { loadAdminUserMeterParityReport } from './user-meter-parity.ts'
 
 const stableUserId = testStableUserIdFromEmail('parity@example.com')
@@ -201,6 +208,58 @@ function assertNoLeaseSecrets(value: unknown) {
 	expect(serialized).not.toMatch(/lease-token|holder-secret|secret-holder/i)
 	expect(serialized).not.toContain('"token"')
 	expect(serialized).not.toContain('"holder"')
+}
+
+type MeterListPageInput = {
+	pageSize?: number
+	startAfter?: string | null
+}
+
+function withMeterListOverrides(
+	meter: ReturnType<typeof createInMemoryUserMeterEnv>,
+	overrides: {
+		listPackageServiceStates?: (input: MeterListPageInput) => Promise<{
+			states: Array<UserMeterPackageServiceState>
+			nextStartAfter: string | null
+			truncated: boolean
+		}>
+		listWriteLeases?: (input: MeterListPageInput) => Promise<{
+			leases: Array<UserMeterWriteLeaseShadow>
+			nextStartAfter: string | null
+			truncated: boolean
+		}>
+	},
+): UserMeterEnv {
+	const namespace = meter.env.USER_METER
+	if (!namespace) throw new Error('expected USER_METER binding')
+	const originalGet = namespace.get.bind(namespace)
+	return {
+		USER_METER: {
+			idFromName: namespace.idFromName.bind(namespace),
+			get: (id: DurableObjectId) => {
+				const stub = originalGet(id) as unknown as Record<string, unknown> & {
+					listPackageServiceStates: (input: MeterListPageInput) => Promise<{
+						states: Array<UserMeterPackageServiceState>
+						nextStartAfter: string | null
+						truncated: boolean
+					}>
+					listWriteLeases: (input: MeterListPageInput) => Promise<{
+						leases: Array<UserMeterWriteLeaseShadow>
+						nextStartAfter: string | null
+						truncated: boolean
+					}>
+				}
+				return {
+					...stub,
+					listPackageServiceStates:
+						overrides.listPackageServiceStates ??
+						stub.listPackageServiceStates.bind(stub),
+					listWriteLeases:
+						overrides.listWriteLeases ?? stub.listWriteLeases.bind(stub),
+				}
+			},
+		},
+	} as unknown as UserMeterEnv
 }
 
 test('loadAdminUserMeterParityReport reports full parity across daily/storage/services/deletion', async () => {
@@ -596,4 +655,112 @@ test('loadAdminUserMeterParityReport returns null for missing users', async () =
 		now,
 	})
 	expect(report).toBeNull()
+})
+
+test('loadAdminUserMeterParityReport fails closed on repeated package-service cursor', async () => {
+	const { sqlite, db } = createParityTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const dailyCounts = {
+		email_sends_per_day: 0,
+		email_receives_per_day: 0,
+		execute_calls_per_day: 0,
+		outbound_fetches_per_day: 0,
+	}
+	seedD1ParityBaseline({
+		sqlite,
+		stableUserId,
+		dailyCounts,
+		storageBytes: 0,
+	})
+	await seedMeterParityBaseline({
+		meter,
+		stableUserId,
+		dailyCounts,
+		storageBytes: 0,
+	})
+
+	const stuckCursor = '["pkg-a","web"]'
+	const listPackageServiceStates = vi.fn(
+		async (_input: MeterListPageInput) => ({
+			states: [
+				{
+					packageId: 'pkg-a',
+					serviceName: 'web',
+					status: 'idle' as const,
+					startedAt: null,
+					sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
+					revision: 1,
+					updatedAt: now.toISOString(),
+					mirrorUpdatedAt: '1',
+				},
+			],
+			nextStartAfter: stuckCursor,
+			truncated: true,
+		}),
+	)
+	const env = withMeterListOverrides(meter, {
+		listPackageServiceStates,
+	})
+
+	const report = await loadAdminUserMeterParityReport({
+		db,
+		env,
+		stableUserId,
+		now,
+	})
+	expect(listPackageServiceStates).toHaveBeenCalledTimes(2)
+	expect(listPackageServiceStates.mock.calls[0]?.[0]?.startAfter ?? null).toBe(
+		null,
+	)
+	expect(listPackageServiceStates.mock.calls[1]?.[0]?.startAfter).toBe(
+		stuckCursor,
+	)
+	expect(report?.packageServices).toMatchObject({
+		truncated: true,
+		parity: false,
+	})
+})
+
+test('loadAdminUserMeterParityReport fails closed on zero-item write-lease cursor', async () => {
+	const { sqlite, db } = createParityTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const dailyCounts = {
+		email_sends_per_day: 0,
+		email_receives_per_day: 0,
+		execute_calls_per_day: 0,
+		outbound_fetches_per_day: 0,
+	}
+	seedD1ParityBaseline({
+		sqlite,
+		stableUserId,
+		dailyCounts,
+		storageBytes: 0,
+	})
+	await seedMeterParityBaseline({
+		meter,
+		stableUserId,
+		dailyCounts,
+		storageBytes: 0,
+	})
+
+	const listWriteLeases = vi.fn(async (_input: MeterListPageInput) => ({
+		leases: [] as Array<UserMeterWriteLeaseShadow>,
+		nextStartAfter: 'stuck-lease-cursor',
+		truncated: true,
+	}))
+	const env = withMeterListOverrides(meter, {
+		listWriteLeases,
+	})
+
+	const report = await loadAdminUserMeterParityReport({
+		db,
+		env,
+		stableUserId,
+		now,
+	})
+	expect(listWriteLeases).toHaveBeenCalledTimes(1)
+	expect(report?.deletion).toMatchObject({
+		truncated: true,
+		mirrorLeaseParity: false,
+	})
 })
