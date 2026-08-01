@@ -314,7 +314,11 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleWarn.mockClear()
 	const data = await loadAdminInsightsData(
-		{ APP_DB: createInsightsTestDb() } as Env,
+		{
+			APP_DB: createInsightsTestDb(),
+			EMAIL_EVENTS: {} as AnalyticsEngineDataset,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
 		now,
 	)
 
@@ -322,6 +326,10 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-insights-email-quota-aggregate-unavailable',
 		{ reason: 'entitlement-daily-counters-retired-local-dev' },
+	)
+	expect(consoleWarn).not.toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'missing-email-events-binding' },
 	)
 	expect(data.totals).toEqual({
 		users: 8,
@@ -390,10 +398,32 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	expect(data.activation.medianHoursToActivation).toBe(36)
 })
 
+test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async () => {
+	consoleWarn.mockImplementation(() => {})
+	consoleWarn.mockClear()
+	const data = await loadAdminInsightsData(
+		{ APP_DB: createInsightsTestDb() } as Env,
+		now,
+	)
+
+	expect(data.ok).toBe(true)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'missing-email-events-binding' },
+	)
+	expect(consoleWarn).not.toHaveBeenCalledWith(
+		'admin-insights-email-quota-aggregate-unavailable',
+		{ reason: 'entitlement-daily-counters-retired-local-dev' },
+	)
+})
+
 test('activation latency excludes users who have no usable verification date', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const data = await loadAdminInsightsData(
-		{ APP_DB: createInsightsTestDb({ activationLatencyRows: [] }) } as Env,
+		{
+			APP_DB: createInsightsTestDb({ activationLatencyRows: [] }),
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
 		now,
 	)
 	// Two users reached the milestone, but neither has timing we can measure.

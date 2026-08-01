@@ -390,8 +390,8 @@ platform-wide day/outcome counts and weight sampled rows by `_sample_interval`.
 When Analytics Engine SQL is unreachable, these two charts zero-fill while the
 rest of the page renders. Local development cannot query Wrangler's emulated
 Analytics Engine SQL API: email quota aggregates degrade to empty (with an
-explicit warning) because code no longer reads `entitlement_daily_counters`,
-while delivery-outcome aggregates still read D1 `email_delivery_events`.
+explicit warning) rather than reading the retired D1 mirror, while
+delivery-outcome aggregates still read D1 `email_delivery_events`.
 
 **Mailbox expand-phase parity events** reuse the same `EMAIL_EVENTS` dataset
 with a separate row shape defined in
@@ -639,9 +639,10 @@ time-pruned. Deletion-fence legacy lease rows are bounded by the D1 snapshot
 replace on `markDeleting` rather than time retention; DO-authority rows clear on
 release/repair/purge.
 
-**D1 daily mirror writes stopped:** enforcement and point reads for daily
-counters are solely in UserMeter. Code no longer reads or writes
-`entitlement_daily_counters`; the physical table stays quiescent until a
+**D1 daily mirror writes stopped:** enforcement, point reads, bootstrap, and
+mirror paths no longer read or write `entitlement_daily_counters`. The admin
+parity report (`admin_user_meter_parity`) temporarily reads the table while it
+exists for migration verification. The physical table stays quiescent until a
 follow-up migration-only deploy drops it. See
 [Entitlements](./entitlements.md#usermeter-expand-phase).
 
@@ -1662,10 +1663,11 @@ Current retention policies:
   are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
   system-email retention job.
 - `entitlement_daily_counters`: **quiescent pending drop** — mirror writes,
-  bootstrap reads, and scheduled retention pruning stop in the code deploy.
-  Account deletion keeps removing rows while the physical table exists; a
-  follow-up code deploy removes that inventory target before the later drop
-  migration. Daily counter retention lives in the per-user `UserMeter` DO
+  bootstrap reads, and scheduled retention pruning stop in the code deploy. The
+  admin parity report (`admin_user_meter_parity`) temporarily reads the table
+  while it exists; account deletion keeps removing rows while the physical table
+  exists; a follow-up code deploy removes that inventory target before the later
+  drop migration. Daily counter retention lives in the per-user `UserMeter` DO
   (`userMeterDailyCounterRetentionDays`).
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.

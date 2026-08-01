@@ -285,10 +285,17 @@ async function loadEmailInsightsRows(input: {
 	// retired, so local/dev email quota aggregates degrade explicitly to empty
 	// (with a warning) rather than querying a removed table. Delivery-event
 	// aggregates still come from D1 email_delivery_events.
-	if (!input.env.EMAIL_EVENTS || input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
+	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
 		console.warn('admin-insights-email-quota-aggregate-unavailable', {
 			reason: 'entitlement-daily-counters-retired-local-dev',
 		})
+	}
+	if (!input.env.EMAIL_EVENTS) {
+		console.warn('admin-insights-email-quota-aggregate-unavailable', {
+			reason: 'missing-email-events-binding',
+		})
+	}
+	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true' || !input.env.EMAIL_EVENTS) {
 		const deliveryRows = await input.env.APP_DB.prepare(
 			`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
 			 FROM email_delivery_events
