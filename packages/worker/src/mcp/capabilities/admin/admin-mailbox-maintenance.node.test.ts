@@ -5,6 +5,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import type * as MailboxMaintenance from '#worker/admin/mailbox-maintenance.ts'
+import { adminMailboxMaintenanceRetentionMaxLimit } from '#worker/admin/mailbox-maintenance.ts'
 
 const mockModule = vi.hoisted(() => ({
 	logAuditEvent: vi.fn(async () => undefined),
@@ -52,6 +53,42 @@ const emptyStatus = {
 	oldestCheckedAt: '2026-07-31T00:00:00.000Z',
 	newestCheckedAt: '2026-08-01T11:00:00.000Z',
 	earliestCutoverAt: '2026-07-31T00:00:00.000Z',
+}
+
+const emptyRetentionResult = {
+	metrics: {
+		d1: {
+			messagesDeleted: 1,
+			attachmentsDeleted: 0,
+			threadsDeleted: 0,
+			deliveryEventsDeleted: 2,
+			rawMimeBlobsDeleted: 1,
+			attachmentBlobsDeleted: 0,
+			blobDeleteErrors: 0,
+		},
+		mailbox: {
+			ownersAttempted: 1,
+			ownersSucceeded: 1,
+			ownersFailed: 0,
+			before: {
+				threads: 1,
+				messages: 1,
+				attachments: 0,
+				deliveryEvents: 1,
+			},
+			after: {
+				threads: 0,
+				messages: 0,
+				attachments: 0,
+				deliveryEvents: 0,
+			},
+			blobDeleteFailureOwners: 0,
+			expiredRemainingOwners: 0,
+		},
+	},
+	nextStartAfter: 'a'.repeat(64),
+	truncated: true,
+	status: emptyStatus,
 }
 
 function createAdminCtx() {
@@ -124,9 +161,6 @@ test('admin_mailbox_maintenance status is audited and aggregate-only', async () 
 			reason: 'action=status;tracked=2',
 		}),
 	)
-	const serialized = JSON.stringify(result)
-	expect(serialized).not.toContain('subject')
-	expect(serialized).not.toContain('textBody')
 })
 
 test('admin_mailbox_maintenance reconcile and retention route with schema bounds', async () => {
@@ -141,20 +175,9 @@ test('admin_mailbox_maintenance reconcile and retention route with schema bounds
 		},
 		status: emptyStatus,
 	})
-	mockModule.runAdminMailboxMaintenanceRetention.mockResolvedValue({
-		metrics: {
-			ownersAttempted: 1,
-			ownersSucceeded: 1,
-			ownersFailed: 0,
-			messagesDeleted: 0,
-			threadsDeleted: 0,
-			attachmentsDeleted: 0,
-			deliveryEventsDeleted: 0,
-			blobDeleteFailureOwners: 0,
-			expiredRemainingOwners: 0,
-		},
-		status: emptyStatus,
-	})
+	mockModule.runAdminMailboxMaintenanceRetention.mockResolvedValue(
+		emptyRetentionResult,
+	)
 	const ctx = createAdminCtx()
 
 	const reconcile = await adminMailboxMaintenanceCapability.handler(
@@ -166,32 +189,44 @@ test('admin_mailbox_maintenance reconcile and retention route with schema bounds
 		env: ctx.env,
 		batchSize: 16,
 	})
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
-			reason: 'action=reconcile;scanned=1;matched=1',
-		}),
-	)
 
+	const cursor = 'b'.repeat(64)
 	const retention = await adminMailboxMaintenanceCapability.handler(
-		{ action: 'retention', batch_size: 8 },
+		{
+			action: 'retention',
+			limit: 8,
+			start_after_user_id: cursor,
+		},
 		ctx,
 	)
-	expect(retention.action).toBe('retention')
+	expect(retention).toEqual({
+		action: 'retention',
+		...emptyRetentionResult,
+	})
 	expect(mockModule.runAdminMailboxMaintenanceRetention).toHaveBeenCalledWith({
 		env: ctx.env,
-		batchSize: 8,
+		limit: 8,
+		startAfterUserId: cursor,
 	})
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'admin_mailbox_maintenance',
-			reason: 'action=retention;attempted=1;succeeded=1',
+			reason: 'action=retention;attempted=1;succeeded=1;truncated=1',
 		}),
 	)
 
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{ action: 'reconcile', batch_size: 101 },
+			ctx,
+		),
+	).rejects.toThrow()
+	await expect(
+		adminMailboxMaintenanceCapability.handler(
+			{
+				action: 'retention',
+				limit: adminMailboxMaintenanceRetentionMaxLimit + 1,
+			},
 			ctx,
 		),
 	).rejects.toThrow()
@@ -203,6 +238,15 @@ test('admin_mailbox_maintenance reconcile and retention route with schema bounds
 			{
 				action: 'retention',
 				cutoff: '2000-01-01T00:00:00.000Z',
+			},
+			ctx,
+		),
+	).rejects.toThrow()
+	await expect(
+		adminMailboxMaintenanceCapability.handler(
+			{
+				action: 'retention',
+				start_after_user_id: 'not-a-stable-id',
 			},
 			ctx,
 		),

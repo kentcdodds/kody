@@ -958,10 +958,20 @@ content).
 discriminated actions — `status` (aggregate tracked/matching/mismatch/error/
 incomplete/eligible counts plus matching/check timestamps and earliest cutover;
 no email content), `reconcile` (bounded `reconcileMailboxParity`, `batch_size`
-max 100, then status), and `retention` (D1-discover bounded non-deleting
-non-system owners with mail/parity state, call `runRetentionNow` per owner,
-aggregate deletes/failures without owner or message ids). No seed or
-arbitrary-cutoff surface.
+max 100, then status), and `retention` (natural cutoffs only):
+
+1. Run existing D1 `pruneUserEmailMessagesForRetention` then
+   `pruneEmailDeliveryEventsForRetention` (bounded batches; message prune keeps
+   blob-before-row authority during expand).
+2. Keyset-page non-deleting non-system owners with mail/parity state by
+   `stable_user_id ASC` (`start_after_user_id` / `nextStartAfter` / `truncated`;
+   never parity `checked_at` ordering; `limit` default/max 20).
+3. Call owner-bound `Mailbox.runRetentionNow` with concurrency ≤4 and a ~10s
+   wall budget (stop scheduling new owners after the deadline; cursor is the
+   last attempted owner). Per-owner failures are isolated.
+
+Returns D1 delete/error totals plus aggregate Mailbox before/after counts (no
+message ids or email content). No seed or arbitrary-cutoff surface.
 
 Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
 result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state

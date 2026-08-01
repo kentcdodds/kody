@@ -1,3 +1,7 @@
+import {
+	pruneEmailDeliveryEventsForRetention,
+	pruneUserEmailMessagesForRetention,
+} from '#app/retention.ts'
 import { systemEmailOwnerId } from '#worker/email/email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from '#worker/email/mailbox-client.ts'
 import {
@@ -6,16 +10,30 @@ import {
 	type MailboxParityReconcileEnv,
 	type MailboxParityReconcileMetrics,
 } from '#worker/email/mailbox-reconcile.ts'
-import { listUsersForMailboxParity } from '#worker/email/mailbox-parity-repo.ts'
 import {
 	mailboxReadCutoverCheckedAtMaxAgeMs,
 	mailboxReadCutoverSoakMs,
 } from '#worker/email/mailbox-read-cutover.ts'
+import { type MailboxCountResult } from '#worker/email/mailbox-types.ts'
 
-/** Cap for admin reconcile/retention batch discovery (hard max). */
+/** Cap for admin reconcile batch discovery (hard max). */
 export const adminMailboxMaintenanceMaxBatchSize = 100
 
-export type AdminMailboxMaintenanceEnv = MailboxParityReconcileEnv & MailboxEnv
+/** Retention owner page size default/max (hard max). */
+export const adminMailboxMaintenanceRetentionMaxLimit = 20
+export const adminMailboxMaintenanceRetentionDefaultLimit =
+	adminMailboxMaintenanceRetentionMaxLimit
+
+/** Max concurrent per-owner Mailbox retention RPCs. */
+export const adminMailboxMaintenanceRetentionConcurrency = 4
+
+/** Wall-clock budget for one retention action call. */
+export const adminMailboxMaintenanceRetentionBudgetMs = 10_000
+
+export type AdminMailboxMaintenanceEnv = MailboxParityReconcileEnv &
+	MailboxEnv & {
+		EMAIL_BLOBS: Pick<R2Bucket, 'delete'>
+	}
 
 export type AdminMailboxMaintenanceStatus = {
 	generatedAt: string
@@ -33,16 +51,29 @@ export type AdminMailboxMaintenanceStatus = {
 	earliestCutoverAt: string | null
 }
 
-export type AdminMailboxMaintenanceRetentionMetrics = {
+export type AdminMailboxMaintenanceRetentionD1Metrics = {
+	messagesDeleted: number
+	attachmentsDeleted: number
+	threadsDeleted: number
+	deliveryEventsDeleted: number
+	rawMimeBlobsDeleted: number
+	attachmentBlobsDeleted: number
+	blobDeleteErrors: number
+}
+
+export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 	ownersAttempted: number
 	ownersSucceeded: number
 	ownersFailed: number
-	messagesDeleted: number
-	threadsDeleted: number
-	attachmentsDeleted: number
-	deliveryEventsDeleted: number
+	before: MailboxCountResult
+	after: MailboxCountResult
 	blobDeleteFailureOwners: number
 	expiredRemainingOwners: number
+}
+
+export type AdminMailboxMaintenanceRetentionMetrics = {
+	d1: AdminMailboxMaintenanceRetentionD1Metrics
+	mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics
 }
 
 const trackedOwnerSql = `
@@ -71,7 +102,7 @@ const trackedOwnerSql = `
 	)
 `
 
-function clampBatchSize(batchSize: number | undefined): number {
+function clampReconcileBatchSize(batchSize: number | undefined): number {
 	const requested = batchSize ?? mailboxParityUserBatchSize
 	if (!Number.isFinite(requested)) return mailboxParityUserBatchSize
 	return Math.max(
@@ -80,13 +111,143 @@ function clampBatchSize(batchSize: number | undefined): number {
 	)
 }
 
-function countDelta(before: number, after: number): number {
-	return Math.max(0, before - after)
+function clampRetentionLimit(limit: number | undefined): number {
+	const requested = limit ?? adminMailboxMaintenanceRetentionDefaultLimit
+	if (!Number.isFinite(requested)) {
+		return adminMailboxMaintenanceRetentionDefaultLimit
+	}
+	return Math.max(
+		1,
+		Math.min(adminMailboxMaintenanceRetentionMaxLimit, Math.trunc(requested)),
+	)
+}
+
+function emptyMailboxCounts(): MailboxCountResult {
+	return { threads: 0, messages: 0, attachments: 0, deliveryEvents: 0 }
+}
+
+function addMailboxCounts(
+	left: MailboxCountResult,
+	right: MailboxCountResult,
+): MailboxCountResult {
+	return {
+		threads: left.threads + right.threads,
+		messages: left.messages + right.messages,
+		attachments: left.attachments + right.attachments,
+		deliveryEvents: left.deliveryEvents + right.deliveryEvents,
+	}
+}
+
+/**
+ * List non-deleting owners with mail/parity state ordered by stable_user_id
+ * keyset (never by parity checked_at).
+ */
+export async function listUsersForAdminMailboxRetention(input: {
+	db: D1Database
+	limit: number
+	startAfterUserId?: string | null
+}): Promise<Array<{ userId: string }>> {
+	const startAfter = input.startAfterUserId ?? null
+	const result = startAfter
+		? await input.db
+				.prepare(
+					`SELECT u.stable_user_id AS userId
+					FROM users u
+					WHERE ${trackedOwnerSql}
+						AND u.stable_user_id > ?
+					ORDER BY u.stable_user_id ASC
+					LIMIT ?`,
+				)
+				.bind(systemEmailOwnerId, startAfter, input.limit)
+				.all<{ userId: string }>()
+		: await input.db
+				.prepare(
+					`SELECT u.stable_user_id AS userId
+					FROM users u
+					WHERE ${trackedOwnerSql}
+					ORDER BY u.stable_user_id ASC
+					LIMIT ?`,
+				)
+				.bind(systemEmailOwnerId, input.limit)
+				.all<{ userId: string }>()
+	return result.results ?? []
+}
+
+type OwnerRetentionOutcome =
+	| {
+			status: 'succeeded'
+			before: MailboxCountResult
+			after: MailboxCountResult
+			blobDeleteFailures: boolean
+			expiredRemaining: boolean
+	  }
+	| { status: 'failed' }
+
+async function runOwnersWithBudget(input: {
+	owners: ReadonlyArray<{ userId: string }>
+	concurrency: number
+	deadlineMs: number
+	nowMs: () => number
+	runOwner: (userId: string) => Promise<OwnerRetentionOutcome>
+}): Promise<{
+	outcomes: Array<OwnerRetentionOutcome>
+	lastAttemptedUserId: string | null
+	stoppedByBudget: boolean
+}> {
+	const outcomes: Array<OwnerRetentionOutcome> = []
+	let nextIndex = 0
+	let inFlight = 0
+	let lastAttemptedUserId: string | null = null
+	let stoppedByBudget = false
+
+	await new Promise<void>((resolve) => {
+		const settleIfDone = () => {
+			if (inFlight > 0) return
+			resolve()
+		}
+		const launch = () => {
+			while (
+				inFlight < input.concurrency &&
+				nextIndex < input.owners.length &&
+				input.nowMs() < input.deadlineMs
+			) {
+				const owner = input.owners[nextIndex]
+				if (!owner) break
+				nextIndex += 1
+				lastAttemptedUserId = owner.userId
+				inFlight += 1
+				void input
+					.runOwner(owner.userId)
+					.then((outcome) => {
+						outcomes.push(outcome)
+					})
+					.catch(() => {
+						// runOwner isolates failures; this is a last-resort guard.
+						outcomes.push({ status: 'failed' })
+					})
+					.finally(() => {
+						inFlight -= 1
+						launch()
+						settleIfDone()
+					})
+			}
+			if (
+				input.nowMs() >= input.deadlineMs &&
+				nextIndex < input.owners.length
+			) {
+				stoppedByBudget = true
+			}
+			settleIfDone()
+		}
+		launch()
+	})
+
+	return { outcomes, lastAttemptedUserId, stoppedByBudget }
 }
 
 /**
  * Aggregate-only Mailbox parity status for operators. Never returns email
- * content, message ids, or per-owner identity.
+ * content, message ids, or per-owner identity (except retention cursors).
  */
 export async function loadAdminMailboxMaintenanceStatus(input: {
 	db: D1Database
@@ -234,7 +395,7 @@ export async function runAdminMailboxMaintenanceReconcile(input: {
 	const metrics = await reconcileMailboxParity({
 		env: input.env,
 		now,
-		batchSize: clampBatchSize(input.batchSize),
+		batchSize: clampReconcileBatchSize(input.batchSize),
 	})
 	const status = await loadAdminMailboxMaintenanceStatus({
 		db: input.env.APP_DB,
@@ -244,73 +405,133 @@ export async function runAdminMailboxMaintenanceReconcile(input: {
 }
 
 /**
- * Bounded D1-discovered retention sweep. Calls owner-bound
- * `Mailbox.runRetentionNow` (natural cutoffs only). Aggregates counts without
- * owner ids, message ids, or email content.
+ * Bounded retention sweep: D1 natural-cutoff prune (authoritative blob-before-row
+ * for messages) then owner-keyed Mailbox DO passes. Stable-id keyset cursor;
+ * wall budget + concurrency bounds; per-owner failures isolated.
  */
 export async function runAdminMailboxMaintenanceRetention(input: {
 	env: AdminMailboxMaintenanceEnv
-	batchSize?: number
+	limit?: number
+	startAfterUserId?: string | null
 	now?: Date
+	/** Test seam for wall-clock budget. */
+	budgetMs?: number
+	/** Test seam for concurrency. */
+	concurrency?: number
+	/** Test seam for clock. */
+	nowMs?: () => number
 }): Promise<{
 	metrics: AdminMailboxMaintenanceRetentionMetrics
+	nextStartAfter: string | null
+	truncated: boolean
 	status: AdminMailboxMaintenanceStatus
 }> {
 	const now = input.now ?? new Date()
-	const owners = await listUsersForMailboxParity({
+	const nowMs = input.nowMs ?? Date.now
+	const budgetMs = input.budgetMs ?? adminMailboxMaintenanceRetentionBudgetMs
+	const concurrency = Math.max(
+		1,
+		Math.min(
+			adminMailboxMaintenanceRetentionConcurrency,
+			input.concurrency ?? adminMailboxMaintenanceRetentionConcurrency,
+		),
+	)
+	const limit = clampRetentionLimit(input.limit)
+	const startAfterUserId = input.startAfterUserId ?? null
+	const deadlineMs = nowMs() + budgetMs
+
+	// D1 remains expand-phase authority + blob linkage. Natural cutoffs only.
+	const d1Messages = await pruneUserEmailMessagesForRetention({
 		db: input.env.APP_DB,
-		limit: clampBatchSize(input.batchSize),
+		blobs: input.env.EMAIL_BLOBS,
+		now,
+	})
+	const d1Events = await pruneEmailDeliveryEventsForRetention({
+		db: input.env.APP_DB,
+		now,
 	})
 
-	const metrics: AdminMailboxMaintenanceRetentionMetrics = {
-		ownersAttempted: 0,
+	const owners = await listUsersForAdminMailboxRetention({
+		db: input.env.APP_DB,
+		limit,
+		startAfterUserId,
+	})
+
+	const { outcomes, lastAttemptedUserId, stoppedByBudget } =
+		await runOwnersWithBudget({
+			owners,
+			concurrency,
+			deadlineMs,
+			nowMs,
+			async runOwner(userId) {
+				try {
+					const result = await mailboxRpc({
+						env: input.env,
+						userId,
+					}).runRetentionNow({ ownerId: userId })
+					return {
+						status: 'succeeded' as const,
+						before: result.before,
+						after: result.after,
+						blobDeleteFailures: result.blobDeleteFailures,
+						expiredRemaining: result.expiredRemaining,
+					}
+				} catch (error) {
+					console.warn('admin-mailbox-maintenance-retention-owner-failed', {
+						error,
+					})
+					return { status: 'failed' as const }
+				}
+			},
+		})
+
+	const mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics = {
+		ownersAttempted: outcomes.length,
 		ownersSucceeded: 0,
 		ownersFailed: 0,
-		messagesDeleted: 0,
-		threadsDeleted: 0,
-		attachmentsDeleted: 0,
-		deliveryEventsDeleted: 0,
+		before: emptyMailboxCounts(),
+		after: emptyMailboxCounts(),
 		blobDeleteFailureOwners: 0,
 		expiredRemainingOwners: 0,
 	}
-
-	for (const { userId } of owners) {
-		metrics.ownersAttempted += 1
-		try {
-			const result = await mailboxRpc({
-				env: input.env,
-				userId,
-			}).runRetentionNow({ ownerId: userId })
-			metrics.ownersSucceeded += 1
-			metrics.messagesDeleted += countDelta(
-				result.before.messages,
-				result.after.messages,
-			)
-			metrics.threadsDeleted += countDelta(
-				result.before.threads,
-				result.after.threads,
-			)
-			metrics.attachmentsDeleted += countDelta(
-				result.before.attachments,
-				result.after.attachments,
-			)
-			metrics.deliveryEventsDeleted += countDelta(
-				result.before.deliveryEvents,
-				result.after.deliveryEvents,
-			)
-			if (result.blobDeleteFailures) metrics.blobDeleteFailureOwners += 1
-			if (result.expiredRemaining) metrics.expiredRemainingOwners += 1
-		} catch (error) {
-			metrics.ownersFailed += 1
-			console.warn('admin-mailbox-maintenance-retention-owner-failed', {
-				error,
-			})
+	for (const outcome of outcomes) {
+		if (outcome.status === 'failed') {
+			mailbox.ownersFailed += 1
+			continue
 		}
+		mailbox.ownersSucceeded += 1
+		mailbox.before = addMailboxCounts(mailbox.before, outcome.before)
+		mailbox.after = addMailboxCounts(mailbox.after, outcome.after)
+		if (outcome.blobDeleteFailures) mailbox.blobDeleteFailureOwners += 1
+		if (outcome.expiredRemaining) mailbox.expiredRemainingOwners += 1
 	}
+
+	const pageFull = owners.length >= limit
+	const truncated = stoppedByBudget || pageFull
+	const nextStartAfter = truncated
+		? (lastAttemptedUserId ?? startAfterUserId)
+		: null
 
 	const status = await loadAdminMailboxMaintenanceStatus({
 		db: input.env.APP_DB,
 		now,
 	})
-	return { metrics, status }
+
+	return {
+		metrics: {
+			d1: {
+				messagesDeleted: d1Messages.deletedMessages,
+				attachmentsDeleted: d1Messages.deletedAttachments,
+				threadsDeleted: d1Messages.deletedThreads,
+				deliveryEventsDeleted: d1Events.deleted,
+				rawMimeBlobsDeleted: d1Messages.deletedRawMimeBlobs,
+				attachmentBlobsDeleted: d1Messages.deletedAttachmentBlobs,
+				blobDeleteErrors: d1Messages.blobDeleteErrors,
+			},
+			mailbox,
+		},
+		nextStartAfter,
+		truncated,
+		status,
+	}
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
 	adminMailboxMaintenanceMaxBatchSize,
+	adminMailboxMaintenanceRetentionMaxLimit,
 	loadAdminMailboxMaintenanceStatus,
 	runAdminMailboxMaintenanceReconcile,
 	runAdminMailboxMaintenanceRetention,
@@ -10,9 +11,10 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	stableUserIdSchema,
 } from './admin-shared.ts'
 
-const batchSizeSchema = z
+const reconcileBatchSizeSchema = z
 	.number()
 	.int()
 	.min(1)
@@ -21,6 +23,23 @@ const batchSizeSchema = z
 	.describe(
 		`Optional bounded owner batch size (1–${adminMailboxMaintenanceMaxBatchSize}). Defaults to the scheduled parity lane batch size.`,
 	)
+
+const retentionLimitSchema = z
+	.number()
+	.int()
+	.min(1)
+	.max(adminMailboxMaintenanceRetentionMaxLimit)
+	.optional()
+	.describe(
+		`Optional owner page size (1–${adminMailboxMaintenanceRetentionMaxLimit}). Defaults to ${adminMailboxMaintenanceRetentionMaxLimit}.`,
+	)
+
+const mailboxCountSchema = z.object({
+	threads: z.number().int().nonnegative(),
+	messages: z.number().int().nonnegative(),
+	attachments: z.number().int().nonnegative(),
+	deliveryEvents: z.number().int().nonnegative(),
+})
 
 const statusSchema = z.object({
 	generatedAt: z.string(),
@@ -58,15 +77,24 @@ const reconcileMetricsSchema = z.object({
 })
 
 const retentionMetricsSchema = z.object({
-	ownersAttempted: z.number().int().nonnegative(),
-	ownersSucceeded: z.number().int().nonnegative(),
-	ownersFailed: z.number().int().nonnegative(),
-	messagesDeleted: z.number().int().nonnegative(),
-	threadsDeleted: z.number().int().nonnegative(),
-	attachmentsDeleted: z.number().int().nonnegative(),
-	deliveryEventsDeleted: z.number().int().nonnegative(),
-	blobDeleteFailureOwners: z.number().int().nonnegative(),
-	expiredRemainingOwners: z.number().int().nonnegative(),
+	d1: z.object({
+		messagesDeleted: z.number().int().nonnegative(),
+		attachmentsDeleted: z.number().int().nonnegative(),
+		threadsDeleted: z.number().int().nonnegative(),
+		deliveryEventsDeleted: z.number().int().nonnegative(),
+		rawMimeBlobsDeleted: z.number().int().nonnegative(),
+		attachmentBlobsDeleted: z.number().int().nonnegative(),
+		blobDeleteErrors: z.number().int().nonnegative(),
+	}),
+	mailbox: z.object({
+		ownersAttempted: z.number().int().nonnegative(),
+		ownersSucceeded: z.number().int().nonnegative(),
+		ownersFailed: z.number().int().nonnegative(),
+		before: mailboxCountSchema,
+		after: mailboxCountSchema,
+		blobDeleteFailureOwners: z.number().int().nonnegative(),
+		expiredRemainingOwners: z.number().int().nonnegative(),
+	}),
 })
 
 const inputSchema = z.discriminatedUnion('action', [
@@ -78,13 +106,18 @@ const inputSchema = z.discriminatedUnion('action', [
 	z
 		.object({
 			action: z.literal('reconcile'),
-			batch_size: batchSizeSchema,
+			batch_size: reconcileBatchSizeSchema,
 		})
 		.strict(),
 	z
 		.object({
 			action: z.literal('retention'),
-			batch_size: batchSizeSchema,
+			limit: retentionLimitSchema,
+			start_after_user_id: stableUserIdSchema
+				.optional()
+				.describe(
+					'Stable-user-id keyset cursor from a prior retention nextStartAfter. Ordered by stable_user_id ASC; never parity checked_at.',
+				),
 		})
 		.strict(),
 ])
@@ -102,6 +135,16 @@ const outputSchema = z.discriminatedUnion('action', [
 	z.object({
 		action: z.literal('retention'),
 		metrics: retentionMetricsSchema,
+		nextStartAfter: stableUserIdSchema
+			.nullable()
+			.describe(
+				'Pass as start_after_user_id on the next call when truncated is true.',
+			),
+		truncated: z
+			.boolean()
+			.describe(
+				'True when more owners remain (full page) or the wall-clock budget stopped scheduling.',
+			),
 		status: statusSchema,
 	}),
 ])
@@ -112,7 +155,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or bounded owner-discovered natural retention passes via Mailbox.runRetentionNow. Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or keyset-paged natural retention (D1 authoritative prune then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget). Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
@@ -152,11 +195,14 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 						case 'retention': {
 							const result = await runAdminMailboxMaintenanceRetention({
 								env: ctx.env,
-								batchSize: args.batch_size,
+								limit: args.limit,
+								startAfterUserId: args.start_after_user_id,
 							})
 							return {
 								action: 'retention' as const,
 								metrics: result.metrics,
+								nextStartAfter: result.nextStartAfter,
+								truncated: result.truncated,
 								status: result.status,
 							}
 						}
@@ -176,7 +222,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 							case 'reconcile':
 								return `action=reconcile;scanned=${result.metrics.scanned};matched=${result.metrics.matched}`
 							case 'retention':
-								return `action=retention;attempted=${result.metrics.ownersAttempted};succeeded=${result.metrics.ownersSucceeded}`
+								return `action=retention;attempted=${result.metrics.mailbox.ownersAttempted};succeeded=${result.metrics.mailbox.ownersSucceeded};truncated=${result.truncated ? 1 : 0}`
 							default: {
 								const exhaustive: never = result
 								return `action=unknown;${JSON.stringify(exhaustive)}`
