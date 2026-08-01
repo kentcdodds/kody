@@ -408,6 +408,21 @@ DO; that is a bootstrap gap, not a silent pass. Truncated inventories fail
 closed (`parity` / `mirrorLeaseParity` false) so operators re-run or raise the
 bounded page cap rather than approve a partial compare.
 
+### Pre-flip storage reconciliation (`admin_user_meter_storage_reconcile`)
+
+Before flipping storage authority to UserMeter, run the admin-only maintenance
+capability `admin_user_meter_storage_reconcile` to rotate D1 storage-byte
+reconciliation through the fleet while D1 remains authoritative and best-effort
+shadows absolutes into UserMeter. Each invocation reconciles one oldest-first
+page (default and max `batch_size` 8, matching the scheduled lane). For a known
+fleet size, run exactly `ceil(userCount / 8)` invocations — e.g. 38 users => 5 —
+then rerun `admin_user_meter_parity` for every user and confirm `storage.parity`
+before the authority flip. Remove or gate this capability after the storage
+authority flip.
+
+`failed` counts per-row D1 reconciliation failures; UserMeter shadow failures
+are silent and require the parity scan to detect.
+
 Module wiring: `consumeDailyEntitlement`, `refundDailyEntitlement`, and
 `readDailyEntitlementResourceUsage` require `env.USER_METER` and fail closed
 when the binding is missing. Storage-byte helpers (`readUserD1StorageBytes`,
