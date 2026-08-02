@@ -8,31 +8,177 @@ import {
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
 import {
-	getInboundDelivery as getD1InboundDelivery,
-	getInboundDeliveryWindow as getD1InboundDeliveryWindow,
 	InboundDeliveryLeaseLostError,
 	type InboundDelivery,
 } from './inbound-delivery.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
-	detailJsonFromMailboxInboundSnapshot,
+	type MailboxClaimInboundSubscriptionEffectResult,
+	type MailboxClaimInboundUsageEffectResult,
+	type MailboxCompleteInboundSubscriptionEffectResult,
+	type MailboxCompleteInboundUsageEffectResult,
+	type MailboxFailInboundSubscriptionEffectResult,
+	type MailboxListDueInboundEffectWorkResult,
+} from './mailbox-inbound-effect-ledger.ts'
+import {
 	mailboxInboundDedupePointerId,
 	mailboxInboundDedupeProvider,
-	mailboxInboundProvider,
-	needsMailboxEffectReconcile,
+	type MailboxClaimInboundDeliveryCleanupResult,
+	type MailboxDeferInboundDeliveryReconcileResult,
 	type MailboxInboundDeliveryInsertInput,
 	type MailboxInboundDeliverySnapshot,
+	type MailboxListDueStaleInboundDeliveriesResult,
+	type MailboxMarkInboundDeliveryOrphanCleanedResult,
+	type MailboxReleaseInboundDeliveryCleanupResult,
 } from './mailbox-inbound-ledger.ts'
 import {
-	type MailboxDeliveryEventInput,
-	type MailboxInboundDeliveryState,
-} from './mailbox-types.ts'
+	bootstrapUserInboundDeliveryFromD1,
+	bootstrapUserInboundDeliveryWindowFromD1,
+	mirrorUserInboundDeliverySnapshotToD1,
+	toUserInboundDelivery,
+} from './inbound-delivery-projection.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+
+export { mirrorUserInboundDeliverySnapshotToD1 } from './inbound-delivery-projection.ts'
 
 export type UserInboundDeliveryAuthorityEnv = {
 	APP_DB: D1Database
 } & MailboxEnv &
 	UserMeterEnv
+
+export type CreateUserInboundDeliveryAuthorityInput = {
+	env: UserInboundDeliveryAuthorityEnv
+	userId: string
+}
+
+export type UserInboundDeliveryChargeInput = {
+	delivery: InboundDelivery
+	plan: PlanName
+	limit: number
+	now: Date
+}
+
+export type UserInboundDeliveryReceiveInput = {
+	delivery: InboundDelivery
+	usageDurationMs: number
+	usageMonth: string
+	usageBytes: number
+	now?: Date
+}
+
+export type UserInboundDeliveryStorageClaimResult =
+	| { claimed: true; delivery: InboundDelivery }
+	| { claimed: false; delivery: InboundDelivery | null }
+
+export type UserInboundDeliveryOrphanCleanedInput = {
+	deliveryId: string
+	cleanupLease: string
+	outcome: 'deleted' | 'delete-failed'
+	now?: Date
+}
+
+export type UserInboundUsageEffectClaimInput = {
+	deliveryId: string
+	expectedFinalizationToken?: string
+	now?: Date
+}
+
+export type UserInboundUsageEffectCompleteInput = {
+	deliveryId: string
+	usageEffectLease: string
+	expectedFinalizationToken: string
+	mode: 'recorded' | 'suppressed'
+	usageMonth: string
+	usageBytes: number
+	usageDurationMs: number
+	now?: Date
+}
+
+export type UserInboundSubscriptionEffectClaimInput = {
+	deliveryId: string
+	expectedFinalizationToken?: string
+	now?: Date
+}
+
+export type UserInboundSubscriptionEffectCompleteInput = {
+	deliveryId: string
+	subscriptionEffectLease: string
+	expectedFinalizationToken: string
+	mode: 'complete' | 'suppressed'
+	suppressionReason?: string
+	now?: Date
+}
+
+export type UserInboundSubscriptionEffectFailInput = {
+	deliveryId: string
+	subscriptionEffectLease: string
+	expectedFinalizationToken: string
+	error: string
+	now?: Date
+}
+
+export type UserInboundDeliveryAuthority = {
+	get: (deliveryId: string) => Promise<InboundDelivery | null>
+	getWindow: (fingerprint: string, now: Date) => Promise<InboundDelivery | null>
+	claimWindow: (
+		delivery: InboundDelivery,
+		now: Date,
+	) => Promise<InboundDelivery>
+	charge: (input: UserInboundDeliveryChargeInput) => Promise<InboundDelivery>
+	claimStorage: (
+		delivery: InboundDelivery,
+		expectedAttachmentCount: number,
+		usageStartedAt?: string,
+		now?: Date,
+	) => Promise<UserInboundDeliveryStorageClaimResult>
+	releaseStorage: (delivery: InboundDelivery, now?: Date) => Promise<void>
+	reject: (
+		delivery: InboundDelivery,
+		reason: string,
+		now?: Date,
+	) => Promise<boolean>
+	receive: (input: UserInboundDeliveryReceiveInput) => Promise<InboundDelivery>
+	deferReconciliation: (
+		deliveryId: string,
+		now?: Date,
+	) => Promise<MailboxDeferInboundDeliveryReconcileResult>
+	listDueStale: (
+		now?: Date,
+		limit?: number,
+	) => Promise<MailboxListDueStaleInboundDeliveriesResult>
+	claimCleanup: (
+		deliveryId: string,
+		now?: Date,
+	) => Promise<MailboxClaimInboundDeliveryCleanupResult>
+	releaseCleanup: (
+		deliveryId: string,
+		cleanupLease: string,
+		now?: Date,
+	) => Promise<MailboxReleaseInboundDeliveryCleanupResult>
+	markOrphanCleaned: (
+		input: UserInboundDeliveryOrphanCleanedInput,
+	) => Promise<MailboxMarkInboundDeliveryOrphanCleanedResult>
+	pruneExpiredDedupe: (now?: Date, limit?: number) => Promise<number>
+	claimUsageEffect: (
+		input: UserInboundUsageEffectClaimInput,
+	) => Promise<MailboxClaimInboundUsageEffectResult>
+	completeUsageEffect: (
+		input: UserInboundUsageEffectCompleteInput,
+	) => Promise<MailboxCompleteInboundUsageEffectResult>
+	claimSubscriptionEffect: (
+		input: UserInboundSubscriptionEffectClaimInput,
+	) => Promise<MailboxClaimInboundSubscriptionEffectResult>
+	completeSubscriptionEffect: (
+		input: UserInboundSubscriptionEffectCompleteInput,
+	) => Promise<MailboxCompleteInboundSubscriptionEffectResult>
+	failSubscriptionEffect: (
+		input: UserInboundSubscriptionEffectFailInput,
+	) => Promise<MailboxFailInboundSubscriptionEffectResult>
+	listDueEffects: (
+		now?: Date,
+		limit?: number,
+	) => Promise<MailboxListDueInboundEffectWorkResult>
+}
 
 function toInsertInput(
 	delivery: InboundDelivery,
@@ -53,318 +199,9 @@ function toInsertInput(
 	}
 }
 
-function toInboundDelivery(
-	userId: string,
-	snapshot: MailboxInboundDeliverySnapshot,
-): InboundDelivery {
-	const {
-		createdAt: _createdAt,
-		updatedAt: _updatedAt,
-		cleanupRetryAt: _cleanupRetryAt,
-		reconcileAfter: _reconcileAfter,
-		...delivery
-	} = snapshot
-	return { ...delivery, userId }
-}
-
-function eventTypeForState(state: MailboxInboundDeliveryState) {
-	switch (state) {
-		case 'received':
-			return 'received' as const
-		case 'rejected':
-			return 'rejected' as const
-		case 'pending':
-		case 'storing':
-		case 'cleaning':
-		case 'orphan-cleaned':
-			return 'receive_started' as const
-		default: {
-			const exhaustive: never = state
-			throw new Error(`Unhandled inbound delivery state: ${String(exhaustive)}`)
-		}
-	}
-}
-
-function toMailboxBootstrapEvent(input: {
-	delivery: InboundDelivery
-	eventId: string
-	provider: string
-	createdAt: string
-	updatedAt: string
-}): MailboxDeliveryEventInput {
-	const delivery = input.delivery
-	const detail = JSON.stringify(delivery)
-	return {
-		id: input.eventId,
-		messageId: delivery.state === 'received' ? delivery.messageId : null,
-		inboxId: delivery.inboxId,
-		eventType: eventTypeForState(delivery.state),
-		provider: input.provider,
-		providerMessageId: null,
-		providerEventId: input.eventId,
-		detailJson: detail,
-		needsEffectReconcile:
-			delivery.state === 'received' && needsMailboxEffectReconcile(delivery),
-		state: delivery.state,
-		fingerprint: delivery.fingerprint,
-		storageLease: delivery.storageLease ?? null,
-		storageLeaseAt: delivery.storageLeaseAt ?? null,
-		cleanupLease: delivery.cleanupLease ?? null,
-		cleanupLeaseAt: delivery.cleanupLeaseAt ?? null,
-		cleanupRetryAt: null,
-		expectedAttachmentCount: delivery.expectedAttachmentCount ?? null,
-		finalizationToken: delivery.finalizationToken ?? null,
-		reconcileAfter: null,
-		dedupeExpiresAt: delivery.dedupeExpiresAt,
-		usageEffectRecordedAt: delivery.usageEffectRecordedAt ?? null,
-		usageEffectSuppressedAt: delivery.usageEffectSuppressedAt ?? null,
-		usageStartedAt: delivery.usageStartedAt ?? null,
-		usageMonth: delivery.usageMonth ?? null,
-		usageBytes: delivery.usageBytes ?? null,
-		usageDurationMs: delivery.usageDurationMs ?? null,
-		usageEffectRetryAt: delivery.usageEffectRetryAt ?? null,
-		usageEffectLease: delivery.usageEffectLease ?? null,
-		usageEffectLeaseAt: delivery.usageEffectLeaseAt ?? null,
-		subscriptionEffectState: delivery.subscriptionEffectState ?? null,
-		subscriptionEffectLease: delivery.subscriptionEffectLease ?? null,
-		subscriptionEffectLeaseAt: delivery.subscriptionEffectLeaseAt ?? null,
-		subscriptionEffectRetryAt: delivery.subscriptionEffectRetryAt ?? null,
-		subscriptionEffectAttemptCount:
-			delivery.subscriptionEffectAttemptCount ?? null,
-		subscriptionEffectDeadLetterAt:
-			delivery.subscriptionEffectDeadLetterAt ?? null,
-		subscriptionEffectLastError: delivery.subscriptionEffectLastError ?? null,
-		createdAt: input.createdAt,
-		updatedAt: input.updatedAt,
-	}
-}
-
-async function d1EventTimestamps(input: {
-	db: D1Database
-	userId: string
-	eventId: string
-	provider: string
-}) {
-	return await input.db
-		.prepare(
-			`SELECT created_at, COALESCE(updated_at, created_at) AS updated_at
-			FROM email_delivery_events
-			WHERE id = ? AND user_id = ? AND provider = ?
-			LIMIT 1`,
-		)
-		.bind(input.eventId, input.userId, input.provider)
-		.first<{ created_at: string; updated_at: string }>()
-}
-
-/**
- * Full Mailbox → D1 compatibility snapshot. The conflict fence prevents a
- * different owner/provider from being overwritten, while updated_at rejects
- * delayed mirrors from an older Mailbox CAS.
- */
-export async function mirrorUserInboundDeliverySnapshotToD1(input: {
-	db: D1Database
-	userId: string
-	snapshot: MailboxInboundDeliverySnapshot
-	eventId?: string
-	provider?: string
-}) {
-	const snapshot = input.snapshot
-	const eventId = input.eventId ?? snapshot.deliveryId
-	const provider = input.provider ?? mailboxInboundProvider
-	const eventType = eventTypeForState(snapshot.state)
-	const detailJson = detailJsonFromMailboxInboundSnapshot(snapshot, {
-		userId: input.userId,
-	})
-	const result = await input.db
-		.prepare(
-			`INSERT INTO email_delivery_events (
-				id, message_id, user_id, inbox_id, event_type, provider,
-				provider_message_id, provider_event_id, detail_json,
-				needs_effect_reconcile, state, fingerprint,
-				storage_lease, storage_lease_at, cleanup_lease, cleanup_lease_at,
-				cleanup_retry_at, expected_attachment_count, finalization_token,
-				reconcile_after, dedupe_expires_at, usage_effect_recorded_at,
-				usage_effect_suppressed_at, usage_started_at, usage_month,
-				usage_bytes, usage_duration_ms, usage_effect_retry_at,
-				usage_effect_lease, usage_effect_lease_at, subscription_effect_state,
-				subscription_effect_lease, subscription_effect_lease_at,
-				subscription_effect_retry_at, subscription_effect_attempt_count,
-				subscription_effect_dead_letter_at, subscription_effect_last_error,
-				created_at, updated_at
-			) VALUES (
-				?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-			)
-			ON CONFLICT(id) DO UPDATE SET
-				message_id = excluded.message_id,
-				inbox_id = excluded.inbox_id,
-				event_type = excluded.event_type,
-				provider_event_id = excluded.provider_event_id,
-				detail_json = excluded.detail_json,
-				needs_effect_reconcile = excluded.needs_effect_reconcile,
-				state = excluded.state,
-				fingerprint = excluded.fingerprint,
-				storage_lease = excluded.storage_lease,
-				storage_lease_at = excluded.storage_lease_at,
-				cleanup_lease = excluded.cleanup_lease,
-				cleanup_lease_at = excluded.cleanup_lease_at,
-				cleanup_retry_at = excluded.cleanup_retry_at,
-				expected_attachment_count = excluded.expected_attachment_count,
-				finalization_token = excluded.finalization_token,
-				reconcile_after = excluded.reconcile_after,
-				dedupe_expires_at = excluded.dedupe_expires_at,
-				usage_effect_recorded_at = excluded.usage_effect_recorded_at,
-				usage_effect_suppressed_at = excluded.usage_effect_suppressed_at,
-				usage_started_at = excluded.usage_started_at,
-				usage_month = excluded.usage_month,
-				usage_bytes = excluded.usage_bytes,
-				usage_duration_ms = excluded.usage_duration_ms,
-				usage_effect_retry_at = excluded.usage_effect_retry_at,
-				usage_effect_lease = excluded.usage_effect_lease,
-				usage_effect_lease_at = excluded.usage_effect_lease_at,
-				subscription_effect_state = excluded.subscription_effect_state,
-				subscription_effect_lease = excluded.subscription_effect_lease,
-				subscription_effect_lease_at = excluded.subscription_effect_lease_at,
-				subscription_effect_retry_at = excluded.subscription_effect_retry_at,
-				subscription_effect_attempt_count = excluded.subscription_effect_attempt_count,
-				subscription_effect_dead_letter_at = excluded.subscription_effect_dead_letter_at,
-				subscription_effect_last_error = excluded.subscription_effect_last_error,
-				updated_at = excluded.updated_at
-			WHERE email_delivery_events.user_id = excluded.user_id
-				AND email_delivery_events.provider = excluded.provider
-				AND excluded.updated_at >= COALESCE(
-					email_delivery_events.updated_at,
-					email_delivery_events.created_at
-				)`,
-		)
-		.bind(
-			eventId,
-			snapshot.state === 'received' ? snapshot.messageId : null,
-			input.userId,
-			snapshot.inboxId,
-			eventType,
-			provider,
-			eventId,
-			detailJson,
-			snapshot.state === 'received' && needsMailboxEffectReconcile(snapshot)
-				? 1
-				: 0,
-			snapshot.state,
-			snapshot.fingerprint,
-			snapshot.storageLease ?? null,
-			snapshot.storageLeaseAt ?? null,
-			snapshot.cleanupLease ?? null,
-			snapshot.cleanupLeaseAt ?? null,
-			snapshot.cleanupRetryAt ?? null,
-			snapshot.expectedAttachmentCount ?? null,
-			snapshot.finalizationToken ?? null,
-			snapshot.reconcileAfter ?? null,
-			snapshot.dedupeExpiresAt,
-			snapshot.usageEffectRecordedAt ?? null,
-			snapshot.usageEffectSuppressedAt ?? null,
-			snapshot.usageStartedAt ?? null,
-			snapshot.usageMonth ?? null,
-			snapshot.usageBytes ?? null,
-			snapshot.usageDurationMs ?? null,
-			snapshot.usageEffectRetryAt ?? null,
-			snapshot.usageEffectLease ?? null,
-			snapshot.usageEffectLeaseAt ?? null,
-			snapshot.subscriptionEffectState ?? null,
-			snapshot.subscriptionEffectLease ?? null,
-			snapshot.subscriptionEffectLeaseAt ?? null,
-			snapshot.subscriptionEffectRetryAt ?? null,
-			snapshot.subscriptionEffectAttemptCount ?? null,
-			snapshot.subscriptionEffectDeadLetterAt ?? null,
-			snapshot.subscriptionEffectLastError ?? null,
-			snapshot.createdAt,
-			snapshot.updatedAt,
-		)
-		.run()
-	if (Number(result.meta.changes ?? 0) < 1) {
-		throw new Error(
-			'Mailbox inbound snapshot failed its D1 owner/provider fence.',
-		)
-	}
-}
-
-async function bootstrapDeliveryFromD1(input: {
-	env: UserInboundDeliveryAuthorityEnv
-	userId: string
-	deliveryId: string
-}) {
-	const delivery = await getD1InboundDelivery({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		deliveryId: input.deliveryId,
-	})
-	if (!delivery) return null
-	const timestamps = await d1EventTimestamps({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		eventId: input.deliveryId,
-		provider: mailboxInboundProvider,
-	})
-	if (!timestamps) return null
-	const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
-	await mailbox.upsertDeliveryEvent({
-		ownerId: input.userId,
-		event: toMailboxBootstrapEvent({
-			delivery,
-			eventId: input.deliveryId,
-			provider: mailboxInboundProvider,
-			createdAt: timestamps.created_at,
-			updatedAt: timestamps.updated_at,
-		}),
-	})
-	return await mailbox.getInboundDelivery({
-		ownerId: input.userId,
-		deliveryId: input.deliveryId,
-	})
-}
-
-async function bootstrapWindowFromD1(input: {
-	env: UserInboundDeliveryAuthorityEnv
-	userId: string
-	fingerprint: string
-	now: Date
-}) {
-	const delivery = await getD1InboundDeliveryWindow({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		fingerprint: input.fingerprint,
-		now: input.now,
-	})
-	if (!delivery) return null
-	const eventId = mailboxInboundDedupePointerId(input.fingerprint)
-	const timestamps = await d1EventTimestamps({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		eventId,
-		provider: mailboxInboundDedupeProvider,
-	})
-	if (!timestamps) return null
-	const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
-	await mailbox.upsertDeliveryEvent({
-		ownerId: input.userId,
-		event: toMailboxBootstrapEvent({
-			delivery,
-			eventId,
-			provider: mailboxInboundDedupeProvider,
-			createdAt: timestamps.created_at,
-			updatedAt: timestamps.updated_at,
-		}),
-	})
-	return await mailbox.getInboundDeliveryWindow({
-		ownerId: input.userId,
-		fingerprint: input.fingerprint,
-		now: input.now.toISOString(),
-	})
-}
-
-export function createUserInboundDeliveryAuthority(input: {
-	env: UserInboundDeliveryAuthorityEnv
-	userId: string
-}) {
+export function createUserInboundDeliveryAuthority(
+	input: CreateUserInboundDeliveryAuthorityInput,
+): UserInboundDeliveryAuthority {
 	const { env, userId } = input
 	if (userId === systemEmailOwnerId) {
 		throw new Error(
@@ -382,101 +219,121 @@ export function createUserInboundDeliveryAuthority(input: {
 			snapshot,
 			...options,
 		})
-		return toInboundDelivery(userId, snapshot)
+		return toUserInboundDelivery(userId, snapshot)
 	}
-	return {
-		async get(deliveryId: string) {
-			const current =
-				(await mailbox.getInboundDelivery({ ownerId: userId, deliveryId })) ??
-				(await bootstrapDeliveryFromD1({ env, userId, deliveryId }))
-			return current ? await mirror(current) : null
-		},
-		async getWindow(fingerprint: string, now: Date) {
-			const current =
-				(await mailbox.getInboundDeliveryWindow({
-					ownerId: userId,
-					fingerprint,
-					now: now.toISOString(),
-				})) ?? (await bootstrapWindowFromD1({ env, userId, fingerprint, now }))
-			return current
-				? await mirror(current, {
-						eventId: mailboxInboundDedupePointerId(fingerprint),
-						provider: mailboxInboundDedupeProvider,
-					})
-				: null
-		},
-		async claimWindow(delivery: InboundDelivery, now: Date) {
-			const snapshot = await mailbox.claimInboundDeliveryWindow({
+	const mirrorClaimBestEffort = async (
+		snapshot: MailboxInboundDeliverySnapshot,
+		logLabel: string,
+	) => {
+		await mirror(snapshot).catch((error: unknown) => {
+			console.warn(logLabel, userId, snapshot.deliveryId, error)
+		})
+	}
+	/**
+	 * Mailbox is authoritative. A successful point read synchronously repairs
+	 * the D1 compatibility projection; only a Mailbox miss may invoke the
+	 * one-time pre-deploy bootstrap bridge.
+	 */
+	const get = async (deliveryId: string) => {
+		const current =
+			(await mailbox.getInboundDelivery({ ownerId: userId, deliveryId })) ??
+			(await bootstrapUserInboundDeliveryFromD1({ env, userId, deliveryId }))
+		return current ? await mirror(current) : null
+	}
+	const getWindow = async (fingerprint: string, now: Date) => {
+		const current =
+			(await mailbox.getInboundDeliveryWindow({
 				ownerId: userId,
-				delivery: toInsertInput(delivery),
+				fingerprint,
 				now: now.toISOString(),
-			})
-			return await mirror(snapshot, {
-				eventId: mailboxInboundDedupePointerId(delivery.fingerprint),
-				provider: mailboxInboundDedupeProvider,
-			})
-		},
-		async charge(input: {
-			delivery: InboundDelivery
-			plan: PlanName
-			limit: number
-			now: Date
-		}) {
-			const existing = await this.get(input.delivery.deliveryId)
-			if (existing) return existing
-			const updatedAt = input.now.toISOString()
-			const meter = userMeterRpc({ env, userId })
-			let meterResult = await meter.consumeInboundDelivery({
-				deliveryId: input.delivery.deliveryId,
+			})) ??
+			(await bootstrapUserInboundDeliveryWindowFromD1({
+				env,
+				userId,
+				fingerprint,
+				now,
+			}))
+		return current
+			? await mirror(current, {
+					eventId: mailboxInboundDedupePointerId(fingerprint),
+					provider: mailboxInboundDedupeProvider,
+				})
+			: null
+	}
+	const claimWindow = async (delivery: InboundDelivery, now: Date) => {
+		const snapshot = await mailbox.claimInboundDeliveryWindow({
+			ownerId: userId,
+			delivery: toInsertInput(delivery),
+			now: now.toISOString(),
+		})
+		return await mirror(snapshot, {
+			eventId: mailboxInboundDedupePointerId(delivery.fingerprint),
+			provider: mailboxInboundDedupeProvider,
+		})
+	}
+	const charge = async (chargeInput: UserInboundDeliveryChargeInput) => {
+		// Resolve the canonical dedupe winner before charging. Concurrent
+		// boundary candidates therefore consume quota only under the winner id.
+		const claimedDelivery = await claimWindow(
+			chargeInput.delivery,
+			chargeInput.now,
+		)
+		const existing = await get(claimedDelivery.deliveryId)
+		if (existing) return existing
+		const updatedAt = chargeInput.now.toISOString()
+		const meter = userMeterRpc({ env, userId })
+		let meterResult = await meter.consumeInboundDelivery({
+			deliveryId: claimedDelivery.deliveryId,
+			resource: 'email_receives_per_day',
+			day: claimedDelivery.quotaDay,
+			limit: chargeInput.limit,
+			updatedAt,
+		})
+		if (meterResult.outcome === 'needs_bootstrap') {
+			await meter.initialize({
 				resource: 'email_receives_per_day',
-				day: input.delivery.quotaDay,
-				limit: input.limit,
+				day: claimedDelivery.quotaDay,
+				count: 0,
+				updatedAt,
+			})
+			meterResult = await meter.consumeInboundDelivery({
+				deliveryId: claimedDelivery.deliveryId,
+				resource: 'email_receives_per_day',
+				day: claimedDelivery.quotaDay,
+				limit: chargeInput.limit,
 				updatedAt,
 			})
 			if (meterResult.outcome === 'needs_bootstrap') {
-				await meter.initialize({
-					resource: 'email_receives_per_day',
-					day: input.delivery.quotaDay,
-					count: 0,
-					updatedAt,
-				})
-				meterResult = await meter.consumeInboundDelivery({
-					deliveryId: input.delivery.deliveryId,
-					resource: 'email_receives_per_day',
-					day: input.delivery.quotaDay,
-					limit: input.limit,
-					updatedAt,
-				})
-				if (meterResult.outcome === 'needs_bootstrap') {
-					throw new Error(
-						'UserMeter inbound delivery consume still needs bootstrap after initialize.',
-					)
-				}
+				throw new Error(
+					'UserMeter inbound delivery consume still needs bootstrap after initialize.',
+				)
 			}
-			if (!meterResult.consumed && !meterResult.replayed) {
-				throw new EntitlementLimitError({
-					resource: 'email_receives_per_day',
-					plan: input.plan,
-					limit: input.limit,
-					current: meterResult.count,
-					upgradeHint: buildEntitlementUpgradeHint('email_receives_per_day'),
-				})
-			}
-			// UserMeter is deliberately the first durable mutation. Only after
-			// its idempotent claim succeeds may Mailbox claim the dedupe window
-			// and insert the charged delivery.
-			const claimedDelivery = await this.claimWindow(input.delivery, input.now)
-			const result = await mailbox.insertChargedPendingInboundDelivery({
-				ownerId: userId,
-				delivery: toInsertInput(claimedDelivery),
-				now: updatedAt,
+		}
+		if (!meterResult.consumed && !meterResult.replayed) {
+			throw new EntitlementLimitError({
+				resource: 'email_receives_per_day',
+				plan: chargeInput.plan,
+				limit: chargeInput.limit,
+				current: meterResult.count,
+				upgradeHint: buildEntitlementUpgradeHint('email_receives_per_day'),
 			})
-			await mirror(result.delivery)
-			return result.status === 'inserted' &&
-				claimedDelivery.deliveryId === input.delivery.deliveryId
-				? input.delivery
-				: toInboundDelivery(userId, result.delivery)
-		},
+		}
+		const result = await mailbox.insertChargedPendingInboundDelivery({
+			ownerId: userId,
+			delivery: toInsertInput(claimedDelivery),
+			now: updatedAt,
+		})
+		await mirror(result.delivery)
+		return result.status === 'inserted' &&
+			claimedDelivery.deliveryId === chargeInput.delivery.deliveryId
+			? chargeInput.delivery
+			: toUserInboundDelivery(userId, result.delivery)
+	}
+	return {
+		get,
+		getWindow,
+		claimWindow,
+		charge,
 		async claimStorage(
 			delivery: InboundDelivery,
 			expectedAttachmentCount: number,
@@ -491,9 +348,38 @@ export function createUserInboundDeliveryAuthority(input: {
 				now: now.toISOString(),
 			})
 			if (result.status === 'claimed') {
+				const storageLease = result.delivery.storageLease
+				if (!storageLease) {
+					throw new Error(
+						'Mailbox returned a claimed inbound storage delivery without a lease.',
+					)
+				}
+				let projected: InboundDelivery
+				try {
+					projected = await mirror(result.delivery)
+				} catch (projectionError) {
+					let compensationError: unknown
+					try {
+						await mailbox.releaseInboundDeliveryStorage({
+							ownerId: userId,
+							deliveryId: result.delivery.deliveryId,
+							storageLease,
+							now: now.toISOString(),
+						})
+					} catch (error) {
+						compensationError = error
+					}
+					if (compensationError) {
+						throw new AggregateError(
+							[projectionError, compensationError],
+							'Inbound storage claim projection failed and its Mailbox lease could not be released.',
+						)
+					}
+					throw projectionError
+				}
 				return {
 					claimed: true as const,
-					delivery: await mirror(result.delivery),
+					delivery: projected,
 				}
 			}
 			return {
@@ -535,13 +421,7 @@ export function createUserInboundDeliveryAuthority(input: {
 				'Inbound rejection lost a state race; delivery should be retried.',
 			)
 		},
-		async receive(input: {
-			delivery: InboundDelivery
-			usageDurationMs: number
-			usageMonth: string
-			usageBytes: number
-			now?: Date
-		}) {
+		async receive(input: UserInboundDeliveryReceiveInput) {
 			if (!input.delivery.storageLease) {
 				throw new InboundDeliveryLeaseLostError(
 					'Inbound delivery finalization requires a storage lease.',
@@ -588,7 +468,14 @@ export function createUserInboundDeliveryAuthority(input: {
 				deliveryId,
 				now: now.toISOString(),
 			})
-			if (result.delivery) await mirror(result.delivery)
+			if (result.status === 'claimed') {
+				await mirrorClaimBestEffort(
+					result.delivery,
+					'inbound-email-cleanup-claim-projection-failed',
+				)
+			} else if (result.delivery) {
+				await mirror(result.delivery)
+			}
 			return result
 		},
 		async releaseCleanup(
@@ -605,12 +492,7 @@ export function createUserInboundDeliveryAuthority(input: {
 			if (result.status === 'released') await mirror(result.delivery)
 			return result
 		},
-		async markOrphanCleaned(input: {
-			deliveryId: string
-			cleanupLease: string
-			outcome: 'deleted' | 'delete-failed'
-			now?: Date
-		}) {
+		async markOrphanCleaned(input: UserInboundDeliveryOrphanCleanedInput) {
 			const result = await mailbox.markInboundDeliveryOrphanCleaned({
 				ownerId: userId,
 				deliveryId: input.deliveryId,
@@ -647,30 +529,24 @@ export function createUserInboundDeliveryAuthority(input: {
 				.run()
 			return result.pruned
 		},
-		async claimUsageEffect(input: {
-			deliveryId: string
-			expectedFinalizationToken?: string
-			now?: Date
-		}) {
+		async claimUsageEffect(input: UserInboundUsageEffectClaimInput) {
 			const result = await mailbox.claimInboundUsageEffect({
 				ownerId: userId,
 				deliveryId: input.deliveryId,
 				expectedFinalizationToken: input.expectedFinalizationToken,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.delivery) await mirror(result.delivery)
+			if (result.status === 'claimed') {
+				await mirrorClaimBestEffort(
+					result.delivery,
+					'inbound-email-usage-effect-claim-projection-failed',
+				)
+			} else if (result.delivery) {
+				await mirror(result.delivery)
+			}
 			return result
 		},
-		async completeUsageEffect(input: {
-			deliveryId: string
-			usageEffectLease: string
-			expectedFinalizationToken: string
-			mode: 'recorded' | 'suppressed'
-			usageMonth: string
-			usageBytes: number
-			usageDurationMs: number
-			now?: Date
-		}) {
+		async completeUsageEffect(input: UserInboundUsageEffectCompleteInput) {
 			const result = await mailbox.completeInboundUsageEffect({
 				ownerId: userId,
 				deliveryId: input.deliveryId,
@@ -685,28 +561,28 @@ export function createUserInboundDeliveryAuthority(input: {
 			if (result.status !== 'lease-lost') await mirror(result.delivery)
 			return result
 		},
-		async claimSubscriptionEffect(input: {
-			deliveryId: string
-			expectedFinalizationToken?: string
-			now?: Date
-		}) {
+		async claimSubscriptionEffect(
+			input: UserInboundSubscriptionEffectClaimInput,
+		) {
 			const result = await mailbox.claimInboundSubscriptionEffect({
 				ownerId: userId,
 				deliveryId: input.deliveryId,
 				expectedFinalizationToken: input.expectedFinalizationToken,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.delivery) await mirror(result.delivery)
+			if (result.status === 'claimed') {
+				await mirrorClaimBestEffort(
+					result.delivery,
+					'inbound-email-subscription-effect-claim-projection-failed',
+				)
+			} else if (result.delivery) {
+				await mirror(result.delivery)
+			}
 			return result
 		},
-		async completeSubscriptionEffect(input: {
-			deliveryId: string
-			subscriptionEffectLease: string
-			expectedFinalizationToken: string
-			mode: 'complete' | 'suppressed'
-			suppressionReason?: string
-			now?: Date
-		}) {
+		async completeSubscriptionEffect(
+			input: UserInboundSubscriptionEffectCompleteInput,
+		) {
 			const result = await mailbox.completeInboundSubscriptionEffect({
 				ownerId: userId,
 				deliveryId: input.deliveryId,
@@ -719,13 +595,9 @@ export function createUserInboundDeliveryAuthority(input: {
 			if (result.status !== 'lease-lost') await mirror(result.delivery)
 			return result
 		},
-		async failSubscriptionEffect(input: {
-			deliveryId: string
-			subscriptionEffectLease: string
-			expectedFinalizationToken: string
-			error: string
-			now?: Date
-		}) {
+		async failSubscriptionEffect(
+			input: UserInboundSubscriptionEffectFailInput,
+		) {
 			const result = await mailbox.failInboundSubscriptionEffect({
 				ownerId: userId,
 				deliveryId: input.deliveryId,
@@ -744,5 +616,5 @@ export function createUserInboundDeliveryAuthority(input: {
 				limit,
 			})
 		},
-	}
+	} satisfies UserInboundDeliveryAuthority
 }

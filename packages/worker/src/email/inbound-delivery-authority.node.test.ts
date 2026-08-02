@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { buildInboundDelivery } from './inbound-delivery.ts'
 import {
@@ -9,7 +10,14 @@ import {
 import { type MailboxInboundDeliverySnapshot } from './mailbox-inbound-ledger.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
-test('UserMeter charge precedes Mailbox insert failure and replay does not charge twice', async () => {
+function namespace(stub: object) {
+	return {
+		idFromName: () => ({}) as DurableObjectId,
+		get: () => stub,
+	} as unknown as DurableObjectNamespace
+}
+
+test('dedupe claim precedes UserMeter, and insert failure replay does not double charge', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureEmailTestSchema(db)
@@ -63,11 +71,6 @@ test('UserMeter charge precedes Mailbox insert failure and replay does not charg
 			return { status: 'inserted' as const, delivery: snapshot }
 		}),
 	}
-	const namespace = (stub: object) =>
-		({
-			idFromName: () => ({}) as DurableObjectId,
-			get: () => stub,
-		}) as unknown as DurableObjectNamespace
 	const authority = createUserInboundDeliveryAuthority({
 		env: {
 			APP_DB: db,
@@ -80,7 +83,7 @@ test('UserMeter charge precedes Mailbox insert failure and replay does not charg
 	await expect(
 		authority.charge({ delivery, plan: 'pro', limit: 100, now }),
 	).rejects.toThrow('injected Mailbox insert failure')
-	expect(order).toEqual(['meter-1', 'mailbox-window', 'mailbox-1'])
+	expect(order).toEqual(['mailbox-window', 'meter-1', 'mailbox-1'])
 
 	const replay = await authority.charge({
 		delivery,
@@ -90,11 +93,11 @@ test('UserMeter charge precedes Mailbox insert failure and replay does not charg
 	})
 	expect(replay).toBe(delivery)
 	expect(order).toEqual([
+		'mailbox-window',
 		'meter-1',
-		'mailbox-window',
 		'mailbox-1',
-		'meter-2',
 		'mailbox-window',
+		'meter-2',
 		'mailbox-2',
 	])
 	expect(consumeCalls).toBe(2)
@@ -108,6 +111,256 @@ test('UserMeter charge precedes Mailbox insert failure and replay does not charg
 			.bind(delivery.deliveryId, userId)
 			.first(),
 	).toEqual({ state: 'pending', fingerprint: delivery.fingerprint })
+	sqlite.close()
+})
+
+test('dedupe boundary race charges and inserts only the claimed winner id', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	const userId = `user-${crypto.randomUUID()}`
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const winner = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'From: sender@example.com\r\n\r\nsame message',
+		quotaDay: '2026-08-02',
+		now,
+	})
+	const loser: typeof winner = {
+		...winner,
+		deliveryId: `${winner.deliveryId}-boundary-loser`,
+		messageId: `${winner.messageId}-boundary-loser`,
+		rawMimeKey: `${winner.rawMimeKey}-boundary-loser`,
+	}
+	const winnerSnapshot: MailboxInboundDeliverySnapshot = {
+		...winner,
+		state: 'pending',
+		createdAt: now.toISOString(),
+		updatedAt: now.toISOString(),
+	}
+	let stored: MailboxInboundDeliverySnapshot | null = null
+	const consumedDeliveryIds: Array<string> = []
+	const insertedDeliveryIds: Array<string> = []
+	const meter = {
+		consumeInboundDelivery: vi.fn(async (input: { deliveryId: string }) => {
+			consumedDeliveryIds.push(input.deliveryId)
+			return {
+				outcome: 'ready' as const,
+				count: 1,
+				revision: 1,
+				mirrorUpdatedAt: now.toISOString(),
+				consumed: true,
+				replayed: false,
+				day: '2026-08-02',
+				resource: 'email_receives_per_day' as const,
+			}
+		}),
+	}
+	const mailbox = {
+		getInboundDelivery: vi.fn(async (input: { deliveryId: string }) =>
+			stored?.deliveryId === input.deliveryId ? stored : null,
+		),
+		claimInboundDeliveryWindow: vi.fn(async () => winnerSnapshot),
+		insertChargedPendingInboundDelivery: vi.fn(
+			async (input: { delivery: { deliveryId: string } }) => {
+				insertedDeliveryIds.push(input.delivery.deliveryId)
+				stored = winnerSnapshot
+				return { status: 'inserted' as const, delivery: winnerSnapshot }
+			},
+		),
+	}
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace(meter),
+			MAILBOX: namespace(mailbox),
+		},
+		userId,
+	})
+
+	const first = await authority.charge({
+		delivery: winner,
+		plan: 'pro',
+		limit: 100,
+		now,
+	})
+	const boundaryLoser = await authority.charge({
+		delivery: loser,
+		plan: 'pro',
+		limit: 100,
+		now,
+	})
+
+	expect(first).toBe(winner)
+	expect(boundaryLoser.deliveryId).toBe(winner.deliveryId)
+	expect(consumedDeliveryIds).toEqual([winner.deliveryId])
+	expect(insertedDeliveryIds).toEqual([winner.deliveryId])
+	expect(consumedDeliveryIds).not.toContain(loser.deliveryId)
+	sqlite.close()
+})
+
+test('storage claim projection failure releases the authoritative Mailbox lease', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId: 'user-storage-owner',
+		inboxId: 'inbox-storage',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'storage projection',
+		quotaDay: '2026-08-02',
+		now,
+	})
+	const claimed: MailboxInboundDeliverySnapshot = {
+		...delivery,
+		state: 'storing',
+		storageLease: 'storage-lease-1',
+		storageLeaseAt: now.toISOString(),
+		createdAt: now.toISOString(),
+		updatedAt: now.toISOString(),
+	}
+	await mirrorUserInboundDeliverySnapshotToD1({
+		db,
+		userId: 'different-owner',
+		snapshot: claimed,
+	})
+	const releaseInboundDeliveryStorage = vi.fn(async () => ({
+		status: 'released' as const,
+		delivery: {
+			...claimed,
+			state: 'pending' as const,
+			storageLease: undefined,
+			storageLeaseAt: undefined,
+		},
+	}))
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				claimInboundDeliveryStorage: vi.fn(async () => ({
+					status: 'claimed' as const,
+					delivery: claimed,
+				})),
+				releaseInboundDeliveryStorage,
+			}),
+		},
+		userId: delivery.userId,
+	})
+
+	await expect(
+		authority.claimStorage(delivery, 2, now.toISOString(), now),
+	).rejects.toThrow('owner/provider fence')
+	expect(releaseInboundDeliveryStorage).toHaveBeenCalledWith({
+		ownerId: delivery.userId,
+		deliveryId: delivery.deliveryId,
+		storageLease: 'storage-lease-1',
+		now: now.toISOString(),
+	})
+	sqlite.close()
+})
+
+test('effect and cleanup claim projection failures warn without stranding leases', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	consoleWarn.mockImplementation(() => {})
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId: 'user-claim-owner',
+		inboxId: 'inbox-claim',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'claim projection',
+		quotaDay: '2026-08-02',
+		now,
+	})
+	const base: MailboxInboundDeliverySnapshot = {
+		...delivery,
+		state: 'received',
+		finalizationToken: 'final-1',
+		createdAt: now.toISOString(),
+		updatedAt: now.toISOString(),
+	}
+	await mirrorUserInboundDeliverySnapshotToD1({
+		db,
+		userId: 'different-owner',
+		snapshot: base,
+	})
+	const cleanup = {
+		...base,
+		state: 'cleaning' as const,
+		cleanupLease: 'cleanup-1',
+		cleanupLeaseAt: now.toISOString(),
+	}
+	const usage = {
+		...base,
+		usageEffectLease: 'usage-1',
+		usageEffectLeaseAt: now.toISOString(),
+	}
+	const subscription = {
+		...base,
+		subscriptionEffectState: 'processing' as const,
+		subscriptionEffectLease: 'subscription-1',
+		subscriptionEffectLeaseAt: now.toISOString(),
+	}
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				claimInboundDeliveryCleanup: vi.fn(async () => ({
+					status: 'claimed' as const,
+					delivery: cleanup,
+				})),
+				claimInboundUsageEffect: vi.fn(async () => ({
+					status: 'claimed' as const,
+					delivery: usage,
+				})),
+				claimInboundSubscriptionEffect: vi.fn(async () => ({
+					status: 'claimed' as const,
+					delivery: subscription,
+				})),
+			}),
+		},
+		userId: delivery.userId,
+	})
+
+	await expect(
+		authority.claimCleanup(delivery.deliveryId, now),
+	).resolves.toMatchObject({ status: 'claimed' })
+	await expect(
+		authority.claimUsageEffect({ deliveryId: delivery.deliveryId, now }),
+	).resolves.toMatchObject({ status: 'claimed' })
+	await expect(
+		authority.claimSubscriptionEffect({
+			deliveryId: delivery.deliveryId,
+			now,
+		}),
+	).resolves.toMatchObject({ status: 'claimed' })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-cleanup-claim-projection-failed',
+		delivery.userId,
+		delivery.deliveryId,
+		expect.objectContaining({ message: expect.stringContaining('fence') }),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-usage-effect-claim-projection-failed',
+		delivery.userId,
+		delivery.deliveryId,
+		expect.any(Error),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-subscription-effect-claim-projection-failed',
+		delivery.userId,
+		delivery.deliveryId,
+		expect.any(Error),
+	)
 	sqlite.close()
 })
 

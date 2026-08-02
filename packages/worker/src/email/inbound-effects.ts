@@ -6,7 +6,7 @@ import {
 	dispatchSystemInboundEmailSubscriptionEvents,
 } from './package-subscriptions.ts'
 import { getEmailMessageById } from './repo.ts'
-import { systemEmailOwnerId } from './system-email.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 
 const subscriptionEffectLeaseMs = 5 * 60 * 1000
 const effectRetryMs = 15 * 60 * 1000
@@ -425,7 +425,7 @@ async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
 	}
 }
 
-async function processInboundDeliveryEffectsWithLeaseHeld(input: {
+export type ProcessInboundDeliveryEffectsInput = {
 	env: InboundEffectsEnv
 	userId: string
 	deliveryId: string
@@ -433,7 +433,13 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 	durationMs?: number
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
-}) {
+}
+
+// system:email deliberately retains the legacy D1 authority and effect policy;
+// USER deliveries use the Mailbox CAS engine below. Keep the split explicit.
+async function processSystemInboundDeliveryEffectsWithLeaseHeld(
+	input: ProcessInboundDeliveryEffectsInput,
+) {
 	const now = input.now ?? new Date()
 	const delivery = await getInboundDelivery({
 		db: input.env.APP_DB,
@@ -698,10 +704,10 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 }
 
 export async function processInboundDeliveryEffects(
-	input: Parameters<typeof processInboundDeliveryEffectsWithLeaseHeld>[0],
+	input: ProcessInboundDeliveryEffectsInput,
 ) {
 	if (input.userId === systemEmailOwnerId) {
-		return await processInboundDeliveryEffectsWithLeaseHeld(input)
+		return await processSystemInboundDeliveryEffectsWithLeaseHeld(input)
 	}
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,

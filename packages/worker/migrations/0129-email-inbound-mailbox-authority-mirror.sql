@@ -117,5 +117,6 @@ CREATE TABLE email_inbound_usage_effects (
 	delivery_id TEXT NOT NULL,
 	finalization_token TEXT NOT NULL,
 	created_at TEXT NOT NULL,
-	PRIMARY KEY (user_id, delivery_id, finalization_token)
+	PRIMARY KEY (user_id, delivery_id, finalization_token),
+	FOREIGN KEY (delivery_id) REFERENCES email_delivery_events(id) ON DELETE CASCADE
 );

@@ -199,7 +199,8 @@ WHERE provider = 'cloudflare-email-routing'
 	delivery_id TEXT NOT NULL,
 	finalization_token TEXT NOT NULL,
 	created_at TEXT NOT NULL,
-	PRIMARY KEY (user_id, delivery_id, finalization_token)
+	PRIMARY KEY (user_id, delivery_id, finalization_token),
+	FOREIGN KEY (delivery_id) REFERENCES email_delivery_events(id) ON DELETE CASCADE
 );`,
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_recorded_usage_month
 ON email_delivery_events(usage_month, user_id)

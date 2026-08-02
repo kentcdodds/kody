@@ -9,6 +9,7 @@ import {
 	markInboundDeliveryReceived,
 	type InboundDelivery,
 } from './inbound-delivery.ts'
+import { type UserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import {
 	mirrorMailboxMessageGraphFromD1,
 	type MailboxLiveMirrorEnv,
@@ -353,15 +354,7 @@ export async function storeIdempotentInboundEmail(input: {
 	parsed: ParsedInboundEmail
 	subjectNormalized: string
 	now: string
-	authority?: {
-		get: (deliveryId: string) => Promise<InboundDelivery | null>
-		receive: (input: {
-			delivery: InboundDelivery
-			usageDurationMs: number
-			usageMonth: string
-			usageBytes: number
-		}) => Promise<InboundDelivery>
-	}
+	authority?: Pick<UserInboundDeliveryAuthority, 'get' | 'receive'>
 }) {
 	const { delivery, parsed } = input
 	if (!delivery.storageLease) {

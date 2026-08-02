@@ -8,7 +8,7 @@ import {
 	pruneUserExpiredInboundDedupePointers,
 	reconcileUserStaleInboundDeliveries,
 } from './inbound-delivery-reconciliation-authority.ts'
-import { systemEmailOwnerId } from './system-email.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 
 const reconciliationUserBatchSize = 25
@@ -48,64 +48,124 @@ export async function sweepStaleInboundDeliveries(input: {
 	// still performed under one explicit userId. Deferring failed attempts and
 	// verification tombstones moves them behind older untouched users.
 	const rows = await input.env.APP_DB.prepare(
-		`WITH due_users AS (
-				SELECT user_id, created_at AS due_at
+		`WITH authority(system_owner_id) AS (VALUES (?)),
+			projected_events AS (
+				SELECT email_delivery_events.*,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.reconcileAfter')
+						ELSE reconcile_after
+					END AS authority_reconcile_after,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.state')
+						ELSE state
+					END AS authority_state,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.cleanupRetryAt')
+						ELSE cleanup_retry_at
+					END AS authority_cleanup_retry_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.dedupeExpiresAt')
+						ELSE dedupe_expires_at
+					END AS authority_dedupe_expires_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.fingerprint')
+						ELSE fingerprint
+					END AS authority_fingerprint,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.usageEffectRecordedAt')
+						ELSE usage_effect_recorded_at
+					END AS authority_usage_recorded_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.usageEffectSuppressedAt')
+						ELSE usage_effect_suppressed_at
+					END AS authority_usage_suppressed_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.usageEffectRetryAt')
+						ELSE usage_effect_retry_at
+					END AS authority_usage_retry_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.usageEffectLease')
+						ELSE usage_effect_lease
+					END AS authority_usage_lease,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.usageEffectLeaseAt')
+						ELSE usage_effect_lease_at
+					END AS authority_usage_lease_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.subscriptionEffectState')
+						ELSE subscription_effect_state
+					END AS authority_subscription_state,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.subscriptionEffectRetryAt')
+						ELSE subscription_effect_retry_at
+					END AS authority_subscription_retry_at,
+					CASE WHEN user_id = system_owner_id
+						THEN json_extract(detail_json, '$.subscriptionEffectLeaseAt')
+						ELSE subscription_effect_lease_at
+					END AS authority_subscription_lease_at
 				FROM email_delivery_events
+				CROSS JOIN authority
+			),
+			due_users AS (
+				SELECT user_id, created_at AS due_at
+				FROM projected_events
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'receive_started'
 					AND created_at < ?
 					AND (
-						json_extract(detail_json, '$.reconcileAfter') IS NULL
-						OR json_extract(detail_json, '$.reconcileAfter') <= ?
+						authority_reconcile_after IS NULL
+						OR authority_reconcile_after <= ?
 					)
 					AND (
-						json_extract(detail_json, '$.state') != 'orphan-cleaned'
-						OR json_extract(detail_json, '$.cleanupRetryAt') <= ?
+						authority_state != 'orphan-cleaned'
+						OR authority_cleanup_retry_at <= ?
 					)
 				UNION ALL
-				SELECT user_id, json_extract(detail_json, '$.dedupeExpiresAt')
-				FROM email_delivery_events
+				SELECT user_id, authority_dedupe_expires_at
+				FROM projected_events
 				WHERE provider = 'cloudflare-email-routing-dedupe'
-					AND json_extract(detail_json, '$.dedupeExpiresAt') <= ?
+					AND authority_dedupe_expires_at <= ?
 				UNION ALL
 				SELECT user_id, COALESCE(
-					json_extract(detail_json, '$.usageEffectRetryAt'),
-					json_extract(detail_json, '$.subscriptionEffectRetryAt'),
+					authority_usage_retry_at,
+					authority_subscription_retry_at,
 					created_at
 				)
-				FROM email_delivery_events
+				FROM projected_events
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
 					AND needs_effect_reconcile = 1
-					AND json_extract(detail_json, '$.fingerprint') IS NOT NULL
+					AND authority_fingerprint IS NOT NULL
 					AND (
 						(
-							json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
-							AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
+							authority_usage_recorded_at IS NULL
+							AND authority_usage_suppressed_at IS NULL
 							AND (
-								json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
-								OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
+								authority_usage_retry_at IS NULL
+								OR authority_usage_retry_at <= ?
 							)
 							AND (
-								json_extract(detail_json, '$.usageEffectLease') IS NULL
-								OR json_extract(detail_json, '$.usageEffectLeaseAt') < ?
+								authority_usage_lease IS NULL
+								OR authority_usage_lease_at IS NULL
+								OR authority_usage_lease_at < ?
 							)
 						)
 						OR (
 							(
-								json_extract(detail_json, '$.subscriptionEffectState') IS NULL
-								OR json_extract(
-									detail_json,
-									'$.subscriptionEffectState'
-								) NOT IN ('complete', 'dead-letter')
+								authority_subscription_state IS NULL
+								OR authority_subscription_state NOT IN (
+									'complete',
+									'dead-letter'
+								)
 							)
 							AND (
-								json_extract(detail_json, '$.subscriptionEffectRetryAt') IS NULL
-								OR json_extract(detail_json, '$.subscriptionEffectRetryAt') <= ?
+								authority_subscription_retry_at IS NULL
+								OR authority_subscription_retry_at <= ?
 							)
 							AND (
-								json_extract(detail_json, '$.subscriptionEffectState') != 'processing'
-								OR json_extract(detail_json, '$.subscriptionEffectLeaseAt') < ?
+								authority_subscription_state != 'processing'
+								OR authority_subscription_lease_at IS NULL
+								OR authority_subscription_lease_at < ?
 							)
 						)
 					)
@@ -117,6 +177,7 @@ export async function sweepStaleInboundDeliveries(input: {
 			LIMIT ?`,
 	)
 		.bind(
+			systemEmailOwnerId,
 			cutoff,
 			now.toISOString(),
 			now.toISOString(),

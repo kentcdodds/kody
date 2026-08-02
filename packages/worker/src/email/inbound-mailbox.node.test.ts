@@ -199,3 +199,26 @@ test('rejected terminal schedules authority snapshot repair only', async () => {
 	expect(mocks.processInboundDeliveryEffects).not.toHaveBeenCalled()
 	expect(mocks.authorityGet).toHaveBeenCalledWith('delivery-3')
 })
+
+test('rejected terminal contains and logs projection repair failures', async () => {
+	resetMocks()
+	consoleError.mockImplementation(() => {})
+	mocks.authorityGet.mockRejectedValueOnce(new Error('projection unavailable'))
+	const { ctx, waitUntilPromises } = createCapturedWaitUntilContext()
+
+	await scheduleInboundRejectedTerminalWork({
+		env: { APP_DB: {} } as unknown as Parameters<
+			typeof scheduleInboundRejectedTerminalWork
+		>[0]['env'],
+		userId: 'user-ddd',
+		deliveryId: 'delivery-4',
+		ctx,
+	})
+
+	expect(waitUntilPromises).toHaveLength(1)
+	await expect(Promise.all(waitUntilPromises)).resolves.toEqual([undefined])
+	expect(consoleError).toHaveBeenCalledWith(
+		'Inbound email rejection projection repair failed',
+		expect.objectContaining({ message: 'projection unavailable' }),
+	)
+})

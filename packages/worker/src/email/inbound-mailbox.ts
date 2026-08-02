@@ -108,7 +108,11 @@ export async function scheduleInboundRejectedTerminalWork(
 	const task = createUserInboundDeliveryAuthority({
 		env: input.env,
 		userId: input.userId,
-	}).get(input.deliveryId)
+	})
+		.get(input.deliveryId)
+		.catch((error: unknown) => {
+			console.error('Inbound email rejection projection repair failed', error)
+		})
 
 	if (input.ctx) {
 		input.ctx.waitUntil(task)

@@ -43,6 +43,7 @@ import {
 } from './inbound-delivery.ts'
 import {
 	createUserInboundDeliveryAuthority,
+	type UserInboundDeliveryAuthority,
 	type UserInboundDeliveryAuthorityEnv,
 } from './inbound-delivery-authority.ts'
 import {
@@ -92,7 +93,7 @@ async function rejectClaimedInboundDelivery(input: {
 	message: ForwardableEmailMessage
 	delivery: InboundDelivery
 	reason: string
-	authority?: ReturnType<typeof createUserInboundDeliveryAuthority>
+	authority?: UserInboundDeliveryAuthority
 }) {
 	const transitioned = await (
 		input.authority
@@ -132,7 +133,7 @@ async function parseAndStoreInboundEmail(input: {
 	blobs: R2Bucket
 	delivery: InboundDelivery
 	parsed: Awaited<ReturnType<typeof parseForwardableEmailRawMime>>
-	authority?: ReturnType<typeof createUserInboundDeliveryAuthority>
+	authority?: UserInboundDeliveryAuthority
 }) {
 	const now = new Date().toISOString()
 	try {

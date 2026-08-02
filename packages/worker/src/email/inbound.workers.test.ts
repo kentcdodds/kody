@@ -2678,6 +2678,20 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 		)
 		.run()
 
+	// Match the production 0129 backfill: USER owner discovery reads promoted
+	// compatibility columns, while only system:email retains legacy JSON reads.
+	await env.APP_DB.prepare(
+		`UPDATE email_delivery_events
+		SET state = json_extract(detail_json, '$.state'),
+			fingerprint = json_extract(detail_json, '$.fingerprint'),
+			reconcile_after = json_extract(detail_json, '$.reconcileAfter'),
+			cleanup_retry_at = json_extract(detail_json, '$.cleanupRetryAt'),
+			dedupe_expires_at = json_extract(detail_json, '$.dedupeExpiresAt')
+		WHERE user_id IN (?, ?, ?, ?)`,
+	)
+		.bind(orphanUserId, partialUserId, pointerUserId, deletingUserId)
+		.run()
+
 	expect(
 		await sweepStaleInboundDeliveries({
 			env: createInboundEnv(),
