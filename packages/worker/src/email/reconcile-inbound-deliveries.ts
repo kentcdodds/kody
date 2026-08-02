@@ -4,6 +4,10 @@ import {
 	staleInboundDeliveryAgeMs,
 } from './inbound-delivery.ts'
 import { reconcileInboundDeliveryEffectsForUser } from './inbound-effects.ts'
+import {
+	pruneUserExpiredInboundDedupePointers,
+	reconcileUserStaleInboundDeliveries,
+} from './inbound-delivery-reconciliation-authority.ts'
 import { systemEmailOwnerId } from './system-email.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 
@@ -19,6 +23,8 @@ export async function sweepStaleInboundDeliveries(input: {
 		| 'BUNDLE_ARTIFACTS_KV'
 		| 'APP_BASE_URL'
 		| 'USAGE_EVENTS'
+		| 'MAILBOX'
+		| 'USER_METER'
 	>
 	now?: Date
 }) {
@@ -126,18 +132,32 @@ export async function sweepStaleInboundDeliveries(input: {
 		if (Date.now() >= deadlineMs) break
 		try {
 			const reconcileUser = async () => {
-				const result = await reconcileStaleInboundDeliveries({
-					db: input.env.APP_DB,
-					blobs: input.env.EMAIL_BLOBS,
-					userId,
-					now,
-					deadlineMs,
-				})
-				const pruned = await pruneExpiredInboundDedupePointers({
-					db: input.env.APP_DB,
-					userId,
-					now,
-				})
+				const systemOwner = userId === systemEmailOwnerId
+				const result = systemOwner
+					? await reconcileStaleInboundDeliveries({
+							db: input.env.APP_DB,
+							blobs: input.env.EMAIL_BLOBS,
+							userId,
+							now,
+							deadlineMs,
+						})
+					: await reconcileUserStaleInboundDeliveries({
+							env: input.env,
+							userId,
+							now,
+							deadlineMs,
+						})
+				const pruned = systemOwner
+					? await pruneExpiredInboundDedupePointers({
+							db: input.env.APP_DB,
+							userId,
+							now,
+						})
+					: await pruneUserExpiredInboundDedupePointers({
+							env: input.env,
+							userId,
+							now,
+						})
 				const effectResult = await reconcileInboundDeliveryEffectsForUser({
 					env: input.env,
 					userId,

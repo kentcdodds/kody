@@ -527,6 +527,10 @@
 		{
 			"filename": "0128-email-outbound-provider-index.sql",
 			"sha256": "b51c4f9cc4416cd81c1c1648311e0267e28a208d386d4729295b1d3dad54ed5a"
+		},
+		{
+			"filename": "0129-email-inbound-mailbox-authority-mirror.sql",
+			"sha256": "41df09101819cf992d33504013ebf016d7bbbf49b310d08a02a71cb6b5b6dfe1"
 		}
 	]
 }

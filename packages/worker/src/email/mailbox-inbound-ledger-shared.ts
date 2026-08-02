@@ -1,6 +1,5 @@
 /**
- * Shared snapshot / detail helpers and constants for Mailbox inbound ledger
- * CAS (step 2a).
+ * Shared snapshot / detail helpers and constants for Mailbox inbound authority.
  */
 
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
@@ -16,6 +15,7 @@ export const mailboxInboundProvider = 'cloudflare-email-routing'
 export const mailboxInboundDedupeProvider = 'cloudflare-email-routing-dedupe'
 export const mailboxInboundStorageLeaseMs = 5 * 60 * 1000
 export const mailboxInboundReconciliationRetryMs = 15 * 60 * 1000
+export const mailboxInboundOrphanVerificationMs = 60 * 60 * 1000
 export const mailboxInboundDeliveryDedupeWindowMs = 48 * 60 * 60 * 1000
 export const mailboxStaleInboundDeliveryAgeMs = 48 * 60 * 60 * 1000
 export const mailboxUsageEffectLeaseMs = 5 * 60 * 1000
@@ -112,7 +112,10 @@ export function snapshotFromMailboxDeliveryEventRow(
 	const inboxId =
 		optionalDetailString(detail['inboxId']) ?? row.inboxId ?? undefined
 	const recipient = optionalDetailString(detail['recipient'])
-	const envelopeFrom = optionalDetailString(detail['envelopeFrom'])
+	const envelopeFrom =
+		typeof detail['envelopeFrom'] === 'string'
+			? detail['envelopeFrom']
+			: undefined
 	const quotaDay = optionalDetailString(detail['quotaDay'])
 	const dedupeExpiresAt =
 		row.dedupeExpiresAt ?? optionalDetailString(detail['dedupeExpiresAt'])
@@ -123,7 +126,7 @@ export function snapshotFromMailboxDeliveryEventRow(
 		!rawMimeKey ||
 		!inboxId ||
 		!recipient ||
-		!envelopeFrom ||
+		envelopeFrom === undefined ||
 		!quotaDay ||
 		!dedupeExpiresAt
 	) {

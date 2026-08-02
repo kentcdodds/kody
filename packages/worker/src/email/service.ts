@@ -353,6 +353,15 @@ export async function storeIdempotentInboundEmail(input: {
 	parsed: ParsedInboundEmail
 	subjectNormalized: string
 	now: string
+	authority?: {
+		get: (deliveryId: string) => Promise<InboundDelivery | null>
+		receive: (input: {
+			delivery: InboundDelivery
+			usageDurationMs: number
+			usageMonth: string
+			usageBytes: number
+		}) => Promise<InboundDelivery>
+	}
 }) {
 	const { delivery, parsed } = input
 	if (!delivery.storageLease) {
@@ -496,21 +505,30 @@ export async function storeIdempotentInboundEmail(input: {
 
 	let finalizedDelivery: InboundDelivery
 	try {
-		finalizedDelivery = await markInboundDeliveryReceived({
-			db: input.db,
+		const finalization = {
 			delivery,
 			usageDurationMs: delivery.usageStartedAt
 				? Date.now() - Date.parse(delivery.usageStartedAt)
 				: 0,
 			usageMonth: (stored.receivedAt ?? stored.createdAt).slice(0, 7),
 			usageBytes: stored.rawSize ?? 0,
-		})
+		}
+		finalizedDelivery = input.authority
+			? await input.authority.receive(finalization)
+			: await markInboundDeliveryReceived({
+					db: input.db,
+					...finalization,
+				})
 	} catch (error) {
-		const committed = await getInboundDelivery({
-			db: input.db,
-			userId: delivery.userId,
-			deliveryId: delivery.deliveryId,
-		}).catch(() => null)
+		const committed = await (
+			input.authority
+				? input.authority.get(delivery.deliveryId)
+				: getInboundDelivery({
+						db: input.db,
+						userId: delivery.userId,
+						deliveryId: delivery.deliveryId,
+					})
+		).catch(() => null)
 		if (committed?.state !== 'received') {
 			throw new RetryableInboundStorageError(
 				'Failed to finalize the inbound delivery ledger; the stable delivery will be retried.',

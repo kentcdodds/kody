@@ -21,7 +21,7 @@ import {
 	uniqueUserId,
 } from './mailbox-test-helpers.ts'
 
-test('Mailbox inbound ledger CAS covers USER transition matrix without live flip', async () => {
+test('Mailbox inbound ledger CAS covers USER authority transition matrix', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const ownerA = uniqueUserId('ledger-a')
 	const ownerB = uniqueUserId('ledger-b')
@@ -252,6 +252,25 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 	expect(
 		dueStale.deliveries.some((d) => d.deliveryId === stalePending.deliveryId),
 	).toBe(true)
+	const cleanupClaim = await mailboxA.claimInboundDeliveryCleanup({
+		ownerId: ownerA,
+		deliveryId: stalePending.deliveryId,
+		now,
+	})
+	expect(cleanupClaim.status).toBe('claimed')
+	if (
+		cleanupClaim.status !== 'claimed' ||
+		!cleanupClaim.delivery.cleanupLease
+	) {
+		throw new Error('expected cleanup claim')
+	}
+	const cleanupRelease = await mailboxA.releaseInboundDeliveryCleanup({
+		ownerId: ownerA,
+		deliveryId: stalePending.deliveryId,
+		cleanupLease: cleanupClaim.delivery.cleanupLease,
+		now,
+	})
+	expect(cleanupRelease.status).toBe('released')
 
 	const foreign = insertInput(ownerB, {
 		fingerprint: 'fp-b',
@@ -305,6 +324,31 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 		now,
 	})
 	expect(deferred.status).toBe('deferred')
+	const orphanClaim = await mailboxA.claimInboundDeliveryCleanup({
+		ownerId: ownerA,
+		deliveryId: stalePending.deliveryId,
+		now,
+	})
+	if (orphanClaim.status !== 'claimed' || !orphanClaim.delivery.cleanupLease) {
+		throw new Error('expected orphan cleanup claim')
+	}
+	expect(
+		await mailboxA.markInboundDeliveryOrphanCleaned({
+			ownerId: ownerA,
+			deliveryId: stalePending.deliveryId,
+			cleanupLease: 'stale-cleanup-lease',
+			outcome: 'deleted',
+			now,
+		}),
+	).toEqual({ status: 'lease-lost' })
+	const orphaned = await mailboxA.markInboundDeliveryOrphanCleaned({
+		ownerId: ownerA,
+		deliveryId: stalePending.deliveryId,
+		cleanupLease: orphanClaim.delivery.cleanupLease,
+		outcome: 'delete-failed',
+		now,
+	})
+	expect(orphaned.status).toBe('orphan-cleaned')
 
 	// Mirror upsert compatibility still works alongside ledger rows.
 	const mirror = await mailboxA.upsertDeliveryEvent({

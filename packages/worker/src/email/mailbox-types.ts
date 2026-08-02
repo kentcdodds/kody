@@ -479,9 +479,8 @@ export type MailboxUpsertDeliveryEventsResult = {
 }
 
 /**
- * Mirror / read / retention / purge surface. Inbound ledger CAS RPCs
- * (additive step 2a) are intersected below — not live-wired; D1 remains
- * authority.
+ * Mirror / read / retention / purge surface. Authoritative USER inbound ledger
+ * CAS RPCs are intersected below; `system:email` remains D1-only.
  */
 type MailboxCoreRpc = {
 	mirrorMessage: (input: {
@@ -500,8 +499,8 @@ type MailboxCoreRpc = {
 		attachments?: Array<MailboxAttachmentInput>
 	}) => Promise<{ ok: true; accepted: boolean }>
 	/**
-	 * Compatibility mirror upsert for complete delivery-event snapshots.
-	 * Remains available during step 2a; CAS ledger RPCs are additive.
+	 * Complete delivery-event snapshot upsert. USER inbound only uses this for
+	 * the one-time pre-deploy D1 bootstrap bridge.
 	 */
 	upsertDeliveryEvent: (input: {
 		ownerId: string

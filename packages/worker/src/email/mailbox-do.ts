@@ -22,6 +22,11 @@ import {
 	updateMailboxMessageDelivery,
 } from './mailbox-mutations.ts'
 import {
+	claimMailboxInboundDeliveryCleanup,
+	markMailboxInboundDeliveryOrphanCleaned,
+	releaseMailboxInboundDeliveryCleanup,
+} from './mailbox-inbound-cleanup-ledger.ts'
+import {
 	claimMailboxInboundDeliveryStorage,
 	claimMailboxInboundDeliveryWindow,
 	deferMailboxInboundDeliveryReconciliation,
@@ -84,23 +89,14 @@ import {
  * external attachment bytes stay in `EMAIL_BLOBS`; rows retain keys.
  * `system:email` stays in D1 by design.
  *
- * Dual-write / read-cutover live paths are wired elsewhere. Additive step 2a
- * inbound ledger CAS RPCs are exposed but not live-wired (D1 remains
- * authority for inbound ledger/effects).
+ * Dual-write / read-cutover live paths are wired elsewhere. USER inbound
+ * ledger/effect transitions are authoritative here; `system:email` remains D1.
  */
 
 class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	private readonly store: MailboxStore
-	/**
-	 * In-isolate cache: once an alarm is scheduled, hot writes skip
-	 * getAlarm/setAlarm. Cleared when retention becomes idle or a write may
-	 * need an earlier wake.
-	 */
+	/** In-isolate alarm scheduling caches. */
 	private retentionAlarmArmed = false
-	/**
-	 * In-isolate: no future retention work. Cleared on every data write so
-	 * ensureRetentionAlarm re-arms for the new row's due-time.
-	 */
 	private retentionIdleConfirmed = false
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -507,11 +503,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return this.store.listBlobReferences(input)
 	}
 
-	/**
-	 * Additive step 2a inbound ledger CAS RPCs. Not live-wired — D1 remains
-	 * authority. Mirror `upsertDeliveryEvent(s)` stay the compatibility path.
-	 */
-
 	async getInboundDelivery(input: {
 		ownerId: string
 		deliveryId: string
@@ -685,6 +676,55 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 			this.markRetentionDirty()
 			await this.ensureRetentionAlarm()
 		}
+		return result
+	}
+
+	async claimInboundDeliveryCleanup(input: {
+		ownerId: string
+		deliveryId: string
+		now?: string
+	}) {
+		let result!: Awaited<ReturnType<MailboxRpc['claimInboundDeliveryCleanup']>>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = claimMailboxInboundDeliveryCleanup(this.ctx.storage.sql, input)
+		})
+		return result
+	}
+
+	async releaseInboundDeliveryCleanup(input: {
+		ownerId: string
+		deliveryId: string
+		cleanupLease: string
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['releaseInboundDeliveryCleanup']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = releaseMailboxInboundDeliveryCleanup(this.ctx.storage.sql, input)
+		})
+		return result
+	}
+
+	async markInboundDeliveryOrphanCleaned(input: {
+		ownerId: string
+		deliveryId: string
+		cleanupLease: string
+		outcome: 'deleted' | 'delete-failed'
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['markInboundDeliveryOrphanCleaned']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = markMailboxInboundDeliveryOrphanCleaned(
+				this.ctx.storage.sql,
+				input,
+			)
+		})
 		return result
 	}
 

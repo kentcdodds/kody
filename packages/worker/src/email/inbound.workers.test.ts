@@ -4,10 +4,13 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
+import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import {
 	buildInboundDelivery,
 	claimInboundDeliveryWindow,
 	claimInboundDeliveryStorage,
+	getInboundDelivery,
 	inboundDeliveryDedupeWindowMs,
 	InboundDeliveryLeaseLostError,
 	markInboundDeliveryRejected,
@@ -1475,9 +1478,8 @@ test('identical MIME from distinct envelope senders creates separate deliveries'
 	expect(await readUserDailyReceiveCount(userId)).toBe(2)
 })
 
-test('inbound post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {
+test('D1 fence mirror failure fails closed and replay repairs without a second charge', async () => {
 	silenceIncidentalRuntimeWarnings()
-	silenceExpectedConsoleErrors(['inbound-email-post-commit-bookkeeping-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `postcommit-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `postcommit-${crypto.randomUUID()}@example.com`
@@ -1488,24 +1490,27 @@ test('inbound post-commit bookkeeping failure keeps one stored row without refun
 		email: accountEmail,
 		username,
 	})
+	const raw = [
+		'From: Sender <sender@example.net>',
+		`To: ${address}`,
+		'Subject: Post-commit bookkeeping',
+		'Message-ID: <post-commit@example.net>',
+		'',
+		'Body',
+	].join('\r\n')
 	const message = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
-		raw: [
-			'From: Sender <sender@example.net>',
-			`To: ${address}`,
-			'Subject: Post-commit bookkeeping',
-			'Message-ID: <post-commit@example.net>',
-			'',
-			'Body',
-		].join('\r\n'),
+		raw,
 	})
 	const failingEnv = {
 		...createInboundEnv(),
 		APP_DB: createPostCommitBookkeepingFailureDb(),
 	} as Parameters<typeof handleInboundEmail>[1]
 
-	await handleInboundEmail(message, failingEnv)
+	await expect(handleInboundEmail(message, failingEnv)).rejects.toBeInstanceOf(
+		RetryableInboundStorageError,
+	)
 	expect(message.rejectedReason).toBeNull()
 	expect(await readUserDailyReceiveCount(userId)).toBe(1)
 	expect(
@@ -1515,9 +1520,18 @@ test('inbound post-commit bookkeeping failure keeps one stored row without refun
 			limit: 10,
 		}),
 	).toHaveLength(1)
+	await handleInboundEmail(
+		createForwardableEmailMessage({
+			from: 'sender@example.net',
+			to: address,
+			raw,
+		}),
+		createInboundEnv(),
+	)
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
 })
 
-test('delivery-ledger finalization failure retries before usage or subscription success', async () => {
+test('Mailbox finalization runs effects once and ignores D1 authority reset attempts', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
@@ -1530,33 +1544,6 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 		email: accountEmail,
 		username,
 	})
-	let finalizationFailed = false
-	const failingDb = new Proxy(env.APP_DB, {
-		get(target, property, receiver) {
-			if (property === 'prepare') {
-				return (query: string) => {
-					const statement = target.prepare(query)
-					if (
-						finalizationFailed ||
-						!query.includes('UPDATE email_delivery_events') ||
-						!query.includes('SET message_id = ?')
-					) {
-						return statement
-					}
-					return {
-						bind: () => ({
-							run: async () => {
-								finalizationFailed = true
-								throw new Error('simulated ledger finalization failure')
-							},
-						}),
-					}
-				}
-			}
-			const value = Reflect.get(target, property, receiver)
-			return typeof value === 'function' ? value.bind(target) : value
-		},
-	}) as D1Database
 	const raw = [
 		'From: Sender <sender@example.net>',
 		`To: ${address}`,
@@ -1571,20 +1558,15 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 		raw,
 	})
 
-	await expect(
-		handleInboundEmail(first, {
-			...createInboundEnv(),
-			APP_DB: failingDb,
-		}),
-	).rejects.toBeInstanceOf(RetryableInboundStorageError)
+	await handleInboundEmail(first, createInboundEnv())
 	expect(
 		await env.APP_DB.prepare(
 			`SELECT event_count FROM usage_rollups
 			WHERE user_id = ? AND metric = 'email_received'`,
 		)
 			.bind(userId)
-			.first(),
-	).toBeNull()
+			.first<{ event_count: number }>(),
+	).toEqual({ event_count: 1 })
 
 	const retry = createForwardableEmailMessage({
 		from: 'sender@example.net',
@@ -1641,11 +1623,13 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 	)
 		.bind(delivery.id, userId)
 		.run()
-	await processInboundDeliveryEffects({
-		env: createInboundEnv(),
-		userId,
-		deliveryId: delivery.id,
-	})
+	expect(
+		await processInboundDeliveryEffects({
+			env: createInboundEnv(),
+			userId,
+			deliveryId: delivery.id,
+		}),
+	).toEqual({ outcome: 'usage-only' })
 	expect(
 		await env.APP_DB.prepare(
 			`SELECT event_count, total_duration_ms FROM usage_rollups
@@ -1653,7 +1637,7 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 		)
 			.bind(userId)
 			.first<{ event_count: number; total_duration_ms: number }>(),
-	).toEqual({ event_count: 1, total_duration_ms: 4321 })
+	).toBeNull()
 })
 
 test('production usage outbox records one durable D1 event without retry data points', async () => {
@@ -2044,12 +2028,58 @@ test('stale rejection cannot overwrite finalized delivery usage', async () => {
 		usageMonth: '2026-07',
 		usageBytes: 456,
 	})
-	await processInboundDeliveryEffects({
+	expect(
+		await getInboundDelivery({
+			db: env.APP_DB,
+			userId,
+			deliveryId: pending.deliveryId,
+		}),
+	).toMatchObject({ state: 'received', finalizationToken: expect.any(String) })
+	const authorityDelivery = await createUserInboundDeliveryAuthority({
+		env: createInboundEnv(),
+		userId,
+	}).get(pending.deliveryId)
+	const mailboxEvents = await mailboxRpc({
+		env: createInboundEnv(),
+		userId,
+	}).listDeliveryEvents({ limit: 10 })
+	expect(mailboxEvents[0]).toMatchObject({
+		id: pending.deliveryId,
+		provider: 'cloudflare-email-routing',
+		state: 'received',
+	})
+	expect(JSON.parse(mailboxEvents[0]!.detailJson)).toMatchObject({
+		fingerprint: expect.any(String),
+		deliveryId: pending.deliveryId,
+		messageId: pending.messageId,
+		threadId: pending.threadId,
+		rawMimeKey: pending.rawMimeKey,
+		inboxId: pending.inboxId,
+		recipient: pending.recipient,
+		envelopeFrom: pending.envelopeFrom,
+		quotaDay: pending.quotaDay,
+		dedupeExpiresAt: pending.dedupeExpiresAt,
+	})
+	expect(
+		await mailboxRpc({
+			env: createInboundEnv(),
+			userId,
+		}).getInboundDelivery({
+			ownerId: userId,
+			deliveryId: pending.deliveryId,
+		}),
+	).not.toBeNull()
+	expect(authorityDelivery).toMatchObject({
+		state: 'received',
+		finalizationToken: expect.any(String),
+	})
+	const effectResult = await processInboundDeliveryEffects({
 		env: createInboundEnv(),
 		userId,
 		deliveryId: pending.deliveryId,
 		now,
 	})
+	expect(effectResult).toEqual({ outcome: 'complete' })
 
 	expect(
 		await markInboundDeliveryRejected({

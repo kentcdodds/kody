@@ -1,7 +1,7 @@
 import { isSystemEmailOwner } from './email-owner.ts'
+import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import {
-	mirrorMailboxDeliveryEventFromD1,
 	mirrorMailboxMessageGraphFromD1,
 	type MailboxLiveMirrorEnv,
 } from './mailbox-live-mirror.ts'
@@ -9,7 +9,8 @@ import { type EmailReportingEnv } from './reporting-events.ts'
 
 /**
  * Env surface for inbound Mailbox terminal coordination.
- * D1 remains authoritative; Mailbox dual-write is best-effort after commit.
+ * Mailbox owns USER inbound delivery state; D1 is a synchronous compatibility
+ * snapshot used by graph fences and scheduled owner discovery.
  */
 export type InboundMailboxEnv = Pick<
 	Env,
@@ -17,6 +18,7 @@ export type InboundMailboxEnv = Pick<
 	| 'BUNDLE_ARTIFACTS_KV'
 	| 'APP_BASE_URL'
 	| 'USAGE_EVENTS'
+	| 'USER_METER'
 	| 'MAILBOX'
 	| 'EMAIL_EVENTS'
 > &
@@ -44,8 +46,8 @@ export type InboundRejectedTerminalWorkInput = {
 /**
  * One ordered received-terminal task:
  * 1) bounded full message graph mirror (never throws)
- * 2) D1 inbound delivery effects
- * 3) on effects success only, mirror the updated delivery event
+ * 2) Mailbox-authoritative inbound delivery effects
+ * 3) final Mailbox → D1 delivery snapshot repair
  *
  * Attach to `ctx.waitUntil` when present; otherwise await. Catch/log once so
  * Mailbox/effects failures never throw into Email Routing.
@@ -68,6 +70,7 @@ export async function scheduleInboundReceivedTerminalWork(
 			db: input.env.APP_DB,
 			userId: input.userId,
 			messageId: input.messageId,
+			includeDeliveryEvents: false,
 		})
 		await processInboundDeliveryEffects({
 			env: input.env,
@@ -77,12 +80,11 @@ export async function scheduleInboundReceivedTerminalWork(
 			durationMs: input.durationMs,
 			waitUntil: nestedWaitUntil,
 		})
-		await mirrorMailboxDeliveryEventFromD1({
+		const authority = createUserInboundDeliveryAuthority({
 			env: input.env,
-			db: input.env.APP_DB,
 			userId: input.userId,
-			eventId: input.deliveryId,
 		})
+		await authority.get(input.deliveryId)
 	})().catch((error: unknown) => {
 		console.error(input.logLabel, error)
 	})
@@ -95,7 +97,7 @@ export async function scheduleInboundReceivedTerminalWork(
 }
 
 /**
- * Rejected-terminal delivery-event mirror only (no message graph).
+ * Rejected-terminal Mailbox → D1 snapshot repair only (no message graph).
  * `system:email` is skipped. Never throws into Email Routing.
  */
 export async function scheduleInboundRejectedTerminalWork(
@@ -103,12 +105,10 @@ export async function scheduleInboundRejectedTerminalWork(
 ) {
 	if (isSystemEmailOwner(input.userId)) return
 
-	const task = mirrorMailboxDeliveryEventFromD1({
+	const task = createUserInboundDeliveryAuthority({
 		env: input.env,
-		db: input.env.APP_DB,
 		userId: input.userId,
-		eventId: input.deliveryId,
-	})
+	}).get(input.deliveryId)
 
 	if (input.ctx) {
 		input.ctx.waitUntil(task)

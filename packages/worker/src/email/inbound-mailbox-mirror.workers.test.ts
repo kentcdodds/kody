@@ -90,7 +90,89 @@ function createFailingEmailBlobs() {
 
 const inboundMailboxMirrorTimeoutMs = 30_000
 
-/** MAILBOX stub that fails or hangs every mirror RPC without touching the real DO. */
+function createLedgerBackedMailboxStub(
+	mailbox: ReturnType<typeof env.MAILBOX.get>,
+) {
+	return {
+		async getInboundDelivery(
+			...args: Parameters<typeof mailbox.getInboundDelivery>
+		) {
+			return await mailbox.getInboundDelivery(...args)
+		},
+		async getInboundDeliveryWindow(
+			...args: Parameters<typeof mailbox.getInboundDeliveryWindow>
+		) {
+			return await mailbox.getInboundDeliveryWindow(...args)
+		},
+		async claimInboundDeliveryWindow(
+			...args: Parameters<typeof mailbox.claimInboundDeliveryWindow>
+		) {
+			return await mailbox.claimInboundDeliveryWindow(...args)
+		},
+		async insertChargedPendingInboundDelivery(
+			...args: Parameters<typeof mailbox.insertChargedPendingInboundDelivery>
+		) {
+			return await mailbox.insertChargedPendingInboundDelivery(...args)
+		},
+		async claimInboundDeliveryStorage(
+			...args: Parameters<typeof mailbox.claimInboundDeliveryStorage>
+		) {
+			return await mailbox.claimInboundDeliveryStorage(...args)
+		},
+		async releaseInboundDeliveryStorage(
+			...args: Parameters<typeof mailbox.releaseInboundDeliveryStorage>
+		) {
+			return await mailbox.releaseInboundDeliveryStorage(...args)
+		},
+		async markInboundDeliveryRejected(
+			...args: Parameters<typeof mailbox.markInboundDeliveryRejected>
+		) {
+			return await mailbox.markInboundDeliveryRejected(...args)
+		},
+		async markInboundDeliveryReceived(
+			...args: Parameters<typeof mailbox.markInboundDeliveryReceived>
+		) {
+			return await mailbox.markInboundDeliveryReceived(...args)
+		},
+		async pruneExpiredInboundDedupePointers(
+			...args: Parameters<typeof mailbox.pruneExpiredInboundDedupePointers>
+		) {
+			return await mailbox.pruneExpiredInboundDedupePointers(...args)
+		},
+		async listDueStaleInboundDeliveries(
+			...args: Parameters<typeof mailbox.listDueStaleInboundDeliveries>
+		) {
+			return await mailbox.listDueStaleInboundDeliveries(...args)
+		},
+		async claimInboundUsageEffect(
+			...args: Parameters<typeof mailbox.claimInboundUsageEffect>
+		) {
+			return await mailbox.claimInboundUsageEffect(...args)
+		},
+		async completeInboundUsageEffect(
+			...args: Parameters<typeof mailbox.completeInboundUsageEffect>
+		) {
+			return await mailbox.completeInboundUsageEffect(...args)
+		},
+		async claimInboundSubscriptionEffect(
+			...args: Parameters<typeof mailbox.claimInboundSubscriptionEffect>
+		) {
+			return await mailbox.claimInboundSubscriptionEffect(...args)
+		},
+		async completeInboundSubscriptionEffect(
+			...args: Parameters<typeof mailbox.completeInboundSubscriptionEffect>
+		) {
+			return await mailbox.completeInboundSubscriptionEffect(...args)
+		},
+		async failInboundSubscriptionEffect(
+			...args: Parameters<typeof mailbox.failInboundSubscriptionEffect>
+		) {
+			return await mailbox.failInboundSubscriptionEffect(...args)
+		},
+	}
+}
+
+/** MAILBOX namespace that fails graph-mirror RPCs but keeps ledger CAS real. */
 function createInboundMailboxStubEnv(input: {
 	mode: 'throw' | 'hang'
 	base?: typeof env
@@ -101,23 +183,26 @@ function createInboundMailboxStubEnv(input: {
 		throw new Error('simulated mailbox failure')
 	}
 	const method = input.mode === 'hang' ? hang : fail
-	const stub = {
-		mirrorMessage: method,
-		upsertDeliveryEvent: method,
-		upsertDeliveryEvents: method,
-		touchThread: method,
-		updateMessageDelivery: method,
-		setMessageClassification: method,
-		deleteMessageMetadata: method,
-		deleteDeliveryEvent: method,
-		deleteThreadIfEmpty: method,
-	}
 	return {
 		...base,
 		APP_BASE_URL: platformBaseUrl,
 		MAILBOX: {
 			idFromName: (name: string) => base.MAILBOX.idFromName(name),
-			get: () => stub,
+			get: (id: DurableObjectId) => {
+				const mailbox = base.MAILBOX.get(id)
+				return {
+					...createLedgerBackedMailboxStub(mailbox),
+					mirrorMessage: method,
+					upsertDeliveryEvent: method,
+					upsertDeliveryEvents: method,
+					touchThread: method,
+					updateMessageDelivery: method,
+					setMessageClassification: method,
+					deleteMessageMetadata: method,
+					deleteDeliveryEvent: method,
+					deleteThreadIfEmpty: method,
+				}
+			},
 		} as unknown as DurableObjectNamespace,
 	}
 }
@@ -257,23 +342,11 @@ test(
 		})
 		const order: Array<string> = []
 		const delayedStub = {
+			...createLedgerBackedMailboxStub(real),
 			async mirrorMessage(...args: Parameters<typeof real.mirrorMessage>) {
 				order.push('graph-message')
 				await graphGate
 				return await real.mirrorMessage(...args)
-			},
-			async upsertDeliveryEvents(
-				...args: Parameters<typeof real.upsertDeliveryEvents>
-			) {
-				order.push('graph-batch')
-				await graphGate
-				return await real.upsertDeliveryEvents(...args)
-			},
-			async upsertDeliveryEvent(
-				...args: Parameters<typeof real.upsertDeliveryEvent>
-			) {
-				order.push('post-effects-event')
-				return await real.upsertDeliveryEvent(...args)
 			},
 		}
 
@@ -334,11 +407,7 @@ test(
 		releaseGraph()
 		await drainWaitUntil(waitUntilPromises)
 
-		expect(order).toEqual([
-			'graph-message',
-			'graph-batch',
-			'post-effects-event',
-		])
+		expect(order).toEqual(['graph-message'])
 
 		const mailbox = rpcFor(userId)
 		const mirroredEvents = await mailbox.listDeliveryEvents({

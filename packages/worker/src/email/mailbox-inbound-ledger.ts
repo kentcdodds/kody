@@ -1,11 +1,11 @@
 /**
- * Additive Mailbox USER inbound ledger CAS primitives (step 2a).
+ * Mailbox USER inbound ledger authority CAS primitives.
  *
  * Owner-bound SQLite helpers matching D1 USER transitions in
  * `inbound-delivery.ts`. Effect lease CAS lives in
  * `mailbox-inbound-effect-ledger.ts`. No external usage/subscription side
- * effects. Mirror upsert RPCs remain the compatibility write path; these CAS
- * RPCs are not live-wired (D1 stays authority). `system:email` stays on D1.
+ * effects. D1 receives synchronous compatibility snapshots after CAS;
+ * `system:email` stays on D1.
  */
 
 import { emailRawMimeKey } from './blob-keys.ts'
@@ -105,6 +105,18 @@ export type MailboxDeferInboundDeliveryReconcileResult =
 	| { status: 'missing' }
 	| { status: 'not-applicable' }
 
+export type MailboxClaimInboundDeliveryCleanupResult =
+	| { status: 'claimed'; delivery: MailboxInboundDeliverySnapshot }
+	| { status: 'not-claimed'; delivery: MailboxInboundDeliverySnapshot | null }
+
+export type MailboxReleaseInboundDeliveryCleanupResult =
+	| { status: 'released'; delivery: MailboxInboundDeliverySnapshot }
+	| { status: 'not-held' }
+
+export type MailboxMarkInboundDeliveryOrphanCleanedResult =
+	| { status: 'orphan-cleaned'; delivery: MailboxInboundDeliverySnapshot }
+	| { status: 'lease-lost' }
+
 export type MailboxPruneExpiredInboundDedupeResult = { pruned: number }
 
 export type MailboxListDueStaleInboundDeliveriesResult = {
@@ -171,6 +183,24 @@ export type MailboxInboundDeliveryLedgerRpc = {
 		deliveryId: string
 		now?: string
 	}) => Promise<MailboxDeferInboundDeliveryReconcileResult>
+	claimInboundDeliveryCleanup: (input: {
+		ownerId: string
+		deliveryId: string
+		now?: string
+	}) => Promise<MailboxClaimInboundDeliveryCleanupResult>
+	releaseInboundDeliveryCleanup: (input: {
+		ownerId: string
+		deliveryId: string
+		cleanupLease: string
+		now?: string
+	}) => Promise<MailboxReleaseInboundDeliveryCleanupResult>
+	markInboundDeliveryOrphanCleaned: (input: {
+		ownerId: string
+		deliveryId: string
+		cleanupLease: string
+		outcome: 'deleted' | 'delete-failed'
+		now?: string
+	}) => Promise<MailboxMarkInboundDeliveryOrphanCleanedResult>
 	listDueStaleInboundDeliveries: (input: {
 		ownerId: string
 		now?: string
@@ -225,7 +255,9 @@ function assertInsertInput(
 	)
 	assertMailboxNonEmptyString(delivery.inboxId, 'delivery.inboxId')
 	assertMailboxNonEmptyString(delivery.recipient, 'delivery.recipient')
-	assertMailboxNonEmptyString(delivery.envelopeFrom, 'delivery.envelopeFrom')
+	if (typeof delivery.envelopeFrom !== 'string') {
+		throw new Error('Mailbox delivery.envelopeFrom must be a string.')
+	}
 	assertMailboxNonEmptyString(delivery.quotaDay, 'delivery.quotaDay')
 	return { deliveryId, messageId, fingerprint, threadId, rawMimeKey }
 }
@@ -322,11 +354,11 @@ export function claimMailboxInboundDeliveryWindow(
 			fingerprint = excluded.fingerprint,
 			dedupe_expires_at = excluded.dedupe_expires_at,
 			usage_started_at = excluded.usage_started_at,
-			provider = excluded.provider,
 			provider_event_id = excluded.provider_event_id,
 			created_at = excluded.created_at,
 			updated_at = excluded.updated_at
-		WHERE email_delivery_events.dedupe_expires_at <= ?`,
+		WHERE email_delivery_events.provider = ?
+			AND email_delivery_events.dedupe_expires_at <= ?`,
 		pointerId,
 		input.delivery.inboxId,
 		mailboxInboundDedupeProvider,
@@ -337,9 +369,13 @@ export function claimMailboxInboundDeliveryWindow(
 		input.delivery.usageStartedAt ?? null,
 		now,
 		now,
+		mailboxInboundDedupeProvider,
 		now,
 	)
 	const row = readMailboxDeliveryEventRow(sql, pointerId)
+	if (row?.provider !== mailboxInboundDedupeProvider) {
+		throw new Error('Mailbox inbound dedupe pointer failed its provider fence.')
+	}
 	const snapshot = row ? snapshotFromMailboxDeliveryEventRow(row) : null
 	if (!snapshot) {
 		throw new Error('Failed to resolve the inbound delivery dedupe window.')

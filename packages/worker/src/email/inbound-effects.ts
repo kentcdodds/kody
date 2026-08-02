@@ -1,5 +1,6 @@
 import { getInboundDelivery } from './inbound-delivery.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
 	dispatchSystemInboundEmailSubscriptionEvents,
@@ -21,7 +22,12 @@ export function resolveSubscriptionEffectFailure(attemptCount: number) {
 
 type InboundEffectsEnv = Pick<
 	Env,
-	'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'USAGE_EVENTS'
+	| 'APP_DB'
+	| 'BUNDLE_ARTIFACTS_KV'
+	| 'APP_BASE_URL'
+	| 'USAGE_EVENTS'
+	| 'MAILBOX'
+	| 'USER_METER'
 >
 
 async function recordInboundUsageEffect(input: {
@@ -230,6 +236,193 @@ async function recordInboundUsageEffect(input: {
 			finalizationToken,
 		)
 		.run()
+}
+
+async function recordUserInboundUsageRollup(input: {
+	env: InboundEffectsEnv
+	userId: string
+	deliveryId: string
+	finalizationToken: string
+	usageMonth: string
+	usageBytes: number
+	usageDurationMs: number
+	now: Date
+}) {
+	if (input.env.USAGE_EVENTS) return
+	try {
+		await input.env.APP_DB.batch([
+			input.env.APP_DB.prepare(
+				`INSERT INTO usage_rollups (
+					user_id, metric, month, event_count, error_count,
+					total_duration_ms, total_cpu_ms, total_bytes, updated_at
+				)
+				SELECT ?, 'email_received', ?, 1, 0, ?, 0, ?, ?
+				WHERE NOT EXISTS (
+					SELECT 1 FROM email_inbound_usage_effects
+					WHERE user_id = ? AND delivery_id = ? AND finalization_token = ?
+				)
+				ON CONFLICT (user_id, metric, month) DO UPDATE SET
+					event_count = event_count + 1,
+					total_duration_ms = total_duration_ms + excluded.total_duration_ms,
+					total_bytes = total_bytes + excluded.total_bytes,
+					updated_at = excluded.updated_at`,
+			).bind(
+				input.userId,
+				input.usageMonth,
+				Math.round(input.usageDurationMs),
+				Math.round(input.usageBytes),
+				input.now.toISOString(),
+				input.userId,
+				input.deliveryId,
+				input.finalizationToken,
+			),
+			input.env.APP_DB.prepare(
+				`INSERT OR IGNORE INTO email_inbound_usage_effects (
+					user_id, delivery_id, finalization_token, created_at
+				) VALUES (?, ?, ?, ?)`,
+			).bind(
+				input.userId,
+				input.deliveryId,
+				input.finalizationToken,
+				input.now.toISOString(),
+			),
+		])
+	} catch (error) {
+		if (
+			!(error instanceof Error) ||
+			!error.message.includes('no such table: usage_rollups')
+		) {
+			throw error
+		}
+	}
+}
+
+async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
+	env: InboundEffectsEnv
+	userId: string
+	deliveryId: string
+	expectedFinalizationToken?: string
+	durationMs?: number
+	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	const now = input.now ?? new Date()
+	const authority = createUserInboundDeliveryAuthority({
+		env: input.env,
+		userId: input.userId,
+	})
+	const delivery = await authority.get(input.deliveryId)
+	if (
+		delivery?.state !== 'received' ||
+		!delivery.finalizationToken ||
+		(input.expectedFinalizationToken != null &&
+			delivery.finalizationToken !== input.expectedFinalizationToken)
+	) {
+		return { outcome: 'stale' as const }
+	}
+	const message = await getEmailMessageById({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		messageId: delivery.messageId,
+	})
+	const usageMonth =
+		delivery.usageMonth ??
+		(message
+			? (message.receivedAt ?? message.createdAt).slice(0, 7)
+			: now.toISOString().slice(0, 7))
+	const usageBytes = delivery.usageBytes ?? message?.rawSize ?? 0
+	const usageDurationMs = delivery.usageDurationMs ?? input.durationMs ?? 0
+	const usageClaim = await authority.claimUsageEffect({
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: delivery.finalizationToken,
+		now,
+	})
+	if (usageClaim.status === 'claimed') {
+		await recordUserInboundUsageRollup({
+			env: input.env,
+			userId: input.userId,
+			deliveryId: delivery.deliveryId,
+			finalizationToken: delivery.finalizationToken,
+			usageMonth,
+			usageBytes,
+			usageDurationMs,
+			now,
+		})
+		const completed = await authority.completeUsageEffect({
+			deliveryId: delivery.deliveryId,
+			usageEffectLease: usageClaim.delivery.usageEffectLease!,
+			expectedFinalizationToken: delivery.finalizationToken,
+			mode: 'recorded',
+			usageMonth,
+			usageBytes,
+			usageDurationMs,
+			now,
+		})
+		if (completed.status === 'lease-lost') {
+			return { outcome: 'stale' as const }
+		}
+	}
+
+	const subscriptionClaim = await authority.claimSubscriptionEffect({
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: delivery.finalizationToken,
+		now,
+	})
+	if (subscriptionClaim.status !== 'claimed') {
+		return { outcome: 'usage-only' as const }
+	}
+	const effectLease = subscriptionClaim.delivery.subscriptionEffectLease!
+	try {
+		if (!message) {
+			await authority.completeSubscriptionEffect({
+				deliveryId: delivery.deliveryId,
+				subscriptionEffectLease: effectLease,
+				expectedFinalizationToken: delivery.finalizationToken,
+				mode: 'suppressed',
+				suppressionReason: 'missing-message',
+				now,
+			})
+			return { outcome: 'missing-message' as const }
+		}
+		await dispatchInboundEmailSubscriptionEvents({
+			env: input.env,
+			userId: input.userId,
+			message,
+			waitUntil: input.waitUntil,
+		})
+		const completed = await authority.completeSubscriptionEffect({
+			deliveryId: delivery.deliveryId,
+			subscriptionEffectLease: effectLease,
+			expectedFinalizationToken: delivery.finalizationToken,
+			mode: 'complete',
+			now,
+		})
+		if (completed.status === 'lease-lost') {
+			return { outcome: 'stale' as const }
+		}
+		return { outcome: 'complete' as const }
+	} catch (error) {
+		const failure = await authority.failSubscriptionEffect({
+			deliveryId: delivery.deliveryId,
+			subscriptionEffectLease: effectLease,
+			expectedFinalizationToken: delivery.finalizationToken,
+			error: error instanceof Error ? error.message : String(error),
+			now,
+		})
+		if (failure.status === 'lease-lost') {
+			return { outcome: 'stale' as const }
+		}
+		if (failure.status === 'dead-letter') {
+			console.error('inbound-email-subscription-effect-dead-lettered', {
+				userId: input.userId,
+				deliveryId: delivery.deliveryId,
+				attemptCount: failure.delivery.subscriptionEffectAttemptCount,
+				error,
+			})
+			return { outcome: 'dead-letter' as const }
+		}
+		throw error
+	}
 }
 
 async function processInboundDeliveryEffectsWithLeaseHeld(input: {
@@ -513,7 +706,8 @@ export async function processInboundDeliveryEffects(
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
-		write: async () => await processInboundDeliveryEffectsWithLeaseHeld(input),
+		write: async () =>
+			await processUserInboundDeliveryEffectsWithLeaseHeld(input),
 	})
 }
 
@@ -524,6 +718,47 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 	limit?: number
 }) {
 	const now = input.now ?? new Date()
+	if (input.userId !== systemEmailOwnerId) {
+		const authority = createUserInboundDeliveryAuthority({
+			env: input.env,
+			userId: input.userId,
+		})
+		const bridgeRows = await input.env.APP_DB.prepare(
+			`SELECT id FROM email_delivery_events
+			WHERE user_id = ?
+				AND provider = 'cloudflare-email-routing'
+				AND event_type = 'received'
+				AND needs_effect_reconcile = 1
+			ORDER BY created_at ASC, id ASC
+			LIMIT ?`,
+		)
+			.bind(input.userId, input.limit ?? 20)
+			.all<{ id: string }>()
+		for (const row of bridgeRows.results ?? []) await authority.get(row.id)
+		const due = await authority.listDueEffects(now, input.limit)
+		let processed = 0
+		let errors = 0
+		for (const delivery of due.deliveries) {
+			try {
+				await processInboundDeliveryEffects({
+					env: input.env,
+					userId: input.userId,
+					deliveryId: delivery.deliveryId,
+					now: input.now,
+				})
+				processed += 1
+			} catch (error) {
+				errors += 1
+				console.warn(
+					'inbound-email-effect-reconciliation-failed',
+					input.userId,
+					delivery.deliveryId,
+					error,
+				)
+			}
+		}
+		return { processed, errors }
+	}
 	const leaseExpiredBefore = new Date(
 		now.getTime() - subscriptionEffectLeaseMs,
 	).toISOString()

@@ -8,6 +8,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 		`DROP TABLE IF EXISTS system_email_daily_counters;`,
 		`DROP TABLE IF EXISTS email_sender_policies;`,
 		`DROP TABLE IF EXISTS email_sender_rules;`,
+		`DROP TABLE IF EXISTS email_inbound_usage_effects;`,
 		`DROP TABLE IF EXISTS email_delivery_events;`,
 		`DROP TABLE IF EXISTS email_attachments;`,
 		`DROP TABLE IF EXISTS email_outbound_provider_index;`,
@@ -154,13 +155,52 @@ ON email_sender_rules(user_id, kind, value);`,
 	usage_month TEXT,
 	usage_bytes INTEGER,
 	usage_duration_ms INTEGER,
-	created_at TEXT NOT NULL
+	state TEXT CHECK (
+		state IS NULL OR state IN (
+			'pending', 'storing', 'cleaning', 'received', 'rejected', 'orphan-cleaned'
+		)
+	),
+	fingerprint TEXT,
+	storage_lease TEXT,
+	storage_lease_at TEXT,
+	cleanup_lease TEXT,
+	cleanup_lease_at TEXT,
+	cleanup_retry_at TEXT,
+	expected_attachment_count INTEGER,
+	finalization_token TEXT,
+	reconcile_after TEXT,
+	dedupe_expires_at TEXT,
+	usage_effect_suppressed_at TEXT,
+	usage_started_at TEXT,
+	usage_effect_retry_at TEXT,
+	usage_effect_lease TEXT,
+	usage_effect_lease_at TEXT,
+	subscription_effect_state TEXT CHECK (
+		subscription_effect_state IS NULL OR subscription_effect_state IN (
+			'pending', 'processing', 'complete', 'dead-letter'
+		)
+	),
+	subscription_effect_lease TEXT,
+	subscription_effect_lease_at TEXT,
+	subscription_effect_retry_at TEXT,
+	subscription_effect_attempt_count INTEGER,
+	subscription_effect_dead_letter_at TEXT,
+	subscription_effect_last_error TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT
 );`,
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_pending_effects
 ON email_delivery_events(user_id, created_at)
 WHERE provider = 'cloudflare-email-routing'
 	AND event_type = 'received'
 	AND needs_effect_reconcile = 1;`,
+		`CREATE TABLE IF NOT EXISTS email_inbound_usage_effects (
+	user_id TEXT NOT NULL,
+	delivery_id TEXT NOT NULL,
+	finalization_token TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (user_id, delivery_id, finalization_token)
+);`,
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_recorded_usage_month
 ON email_delivery_events(usage_month, user_id)
 WHERE provider = 'cloudflare-email-routing'

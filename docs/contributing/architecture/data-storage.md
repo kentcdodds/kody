@@ -227,10 +227,12 @@ Durable Object export behavior:
   RPC; keyset pagination with prefixed cursors over those tables). Manifest
   counts use `countMailbox`. Phase 1 registers this consumption; phase 2 wires
   live dual-write for outbound terminals, provider delivery-queue graph repair,
-  user classification (`service.ts#setEmailMessageClassification`), and
-  high-risk inbound terminal paths without changing D1 authority — D1 `email_*`
-  rows remain the live source of truth and are still exported in the `d1`
-  section. See [Mailbox](#durable-objects-mailbox).
+  user classification (`service.ts#setEmailMessageClassification`), and user
+  message-graph paths. USER inbound delivery lifecycle/effect authority is now
+  Mailbox CAS; D1 `email_delivery_events` is its synchronous compatibility
+  mirror and graph-write fence. Other D1 `email_*` rows remain live graph
+  storage and are still exported in the `d1` section. See
+  [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -712,26 +714,37 @@ owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
   objects install the full DDL; warm v1 objects run `CREATE INDEX IF NOT EXISTS`
   only. No destructive ALTERs.
 
-**Additive inbound ledger CAS (step 2a — no authority flip):** owner-bound
-atomic RPCs in `mailbox-inbound-ledger.ts` / `mailbox-inbound-effect-ledger.ts`
-mirror D1 USER transitions from `inbound-delivery.ts` / `inbound-effects.ts`
-(get delivery + active fingerprint window; claim/rewrite dedupe; insert charged
-pending with explicit `inserted`/`existed`; claim/release storage lease; mark
-rejected/received with lease/finalization CAS; prune dedupe; defer reconcile;
-claim/complete usage effect; claim/complete/fail subscription effect with
-retry/dead-letter/suppression; list due stale/effect work). Mutations keep
-promoted columns and `detail_json` in sync and set canonical `updated_at`.
-Usage/subscription complete and subscription fail require an exact
-`expectedFinalizationToken` match (`event_type`/`state` = `received`); mismatch
-is `lease-lost`. Storage claim clears finalization plus in-flight effect
-leases/retry (and resets `processing` → `pending`) so reclaim/re-finalization
-cannot be completed by a stale effect worker — stronger than D1's `json_set`
-patch, required because Mailbox promotes those lease columns. The DO does
-**not** perform external usage recording or subscription dispatch. Mirror
-`upsertDeliveryEvent` / `upsertDeliveryEvents` remain the compatibility write
-API. **These CAS RPCs are not live-wired** — D1 stays sole write authority for
-inbound ledger/effects. `system:email` stays on D1 and is never written into
-per-user Mailbox objects.
+**USER inbound ledger authority (step 2b):** owner-bound atomic RPCs in
+`mailbox-inbound-ledger.ts` / `mailbox-inbound-effect-ledger.ts` are the sole
+authority for USER delivery/window/storage/rejection/receive/reconciliation and
+effect transitions. Mutations keep promoted columns and `detail_json` in sync
+and set canonical `updated_at`. Usage/subscription complete and subscription
+fail require an exact `expectedFinalizationToken` match (`event_type`/`state` =
+`received`); mismatch is `lease-lost`. Storage claim clears finalization plus
+in-flight effect leases/retry (and resets `processing` → `pending`) so
+reclaim/re-finalization cannot be completed by a stale effect worker. Cleanup
+claim/release and orphan-cleaned tombstones are also owner-bound CAS.
+
+The DO does **not** perform external usage recording or subscription dispatch:
+Workers claim in Mailbox, perform the D1 usage-rollup or package dispatch, then
+complete/fail in Mailbox. After every successful USER CAS,
+`inbound-delivery-authority.ts` synchronously upserts one full Mailbox snapshot
+into D1 `email_delivery_events` (promoted columns plus `detail_json`,
+owner/provider fenced, monotonic and idempotent). Pending is mirrored before
+delivery reads; storing is mirrored before D1 thread/message/attachment fence
+predicates. Mirror failure fails closed. Terminal/effect snapshots keep D1
+global due-owner discovery current, but D1 is never read back as ongoing
+authority.
+
+The only reverse path is the deployment bridge: when a USER point lookup misses
+in Mailbox and a pre-deploy D1 row exists, one complete D1 snapshot bootstraps
+the owner-bound DO row, after which transitions continue through Mailbox CAS.
+`system:email` stays on the existing D1 implementation and cannot bootstrap a
+Mailbox. Migration `0129-email-inbound-mailbox-authority-mirror.sql` is
+additive: it promotes compatibility/fence fields and adds the cross-store usage
+effect idempotency ledger; it drops no tables. Destructive follow-up work
+remains gated on the verified backup whose SHA-256 starts with `7787f8c9`; this
+change is explicitly non-destructive.
 
 **Mirror write contract:** `mirrorMessage`, `upsertDeliveryEvent`, and
 `upsertDeliveryEvents` take complete snapshots — every persisted field is
@@ -814,8 +827,9 @@ never propagate into D1 commit paths. Helpers cover full snapshots
 `mirrorMailboxSetMessageClassification`, `mirrorMailboxDeleteMessageMetadata`,
 `mirrorMailboxDeleteDeliveryEvent`, `mirrorMailboxDeleteThreadIfEmpty`). Partial
 mutation helpers are library-only; live paths prefer the graph orchestrator
-below or parity purge/rebuild for deletes. D1 remains sole authority for all
-live mail read/write paths.
+below or parity purge/rebuild for deletes. These best-effort helpers remain for
+D1-authoritative message graphs; USER inbound delivery events use the
+synchronous reverse compatibility mirror described above.
 
 **Live graph orchestrator** (`mailbox-live-mirror.ts`): loads a cohesive D1
 message graph (optional caller thread, message, attachments, then delivery

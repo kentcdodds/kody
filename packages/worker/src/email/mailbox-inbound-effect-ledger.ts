@@ -1,5 +1,5 @@
 /**
- * Additive Mailbox USER inbound effect CAS primitives (step 2a).
+ * Mailbox USER inbound effect authority CAS primitives.
  *
  * Lease claim / complete / fail for usage and subscription effects. Does not
  * perform external usage recording or subscription dispatch — callers do that
