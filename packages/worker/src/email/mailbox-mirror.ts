@@ -15,6 +15,7 @@ import {
 	toMailboxMessageInput,
 	toMailboxThreadInput,
 } from './mailbox-snapshots.ts'
+import { isUserInboundLegacyAuthoritySnapshot } from './mailbox-inbound-bootstrap.ts'
 import {
 	type EmailAttachmentRecord,
 	type EmailDeliveryStatus,
@@ -31,7 +32,6 @@ import {
 	type MailboxSetMessageClassificationInput,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
-	type MailboxUpsertDeliveryEventsResult,
 } from './mailbox-types.ts'
 
 /**
@@ -81,7 +81,10 @@ function resolveMirrorOwner(
 	ownerId: string | null | undefined,
 ): { ok: true; ownerId: string } | { ok: false; result: MailboxMirrorResult } {
 	if (ownerId == null || ownerId.length === 0) {
-		return { ok: false, result: { status: 'skipped', reason: 'missing-owner' } }
+		return {
+			ok: false,
+			result: { status: 'skipped', reason: 'missing-owner' },
+		}
 	}
 	if (isSystemEmailOwner(ownerId)) {
 		return {
@@ -178,12 +181,20 @@ function outcomeFromAccepted(accepted: boolean): MailboxMirrorResult {
 	return accepted ? { status: 'mirrored' } : { status: 'stale' }
 }
 
-function outcomeFromBatchAccepted(
-	results: MailboxUpsertDeliveryEventsResult['results'],
+function aggregateBatchOutcome(
+	results: Array<MailboxMirrorDeliveryEventBatchItemResult>,
 ): MailboxMirrorResult {
-	return results.every((item) => item.accepted)
-		? { status: 'mirrored' }
-		: { status: 'stale' }
+	for (const status of [
+		'error',
+		'timeout',
+		'skipped',
+		'missing',
+		'stale',
+	] as const) {
+		const result = results.find((item) => item.result.status === status)?.result
+		if (result) return result
+	}
+	return { status: 'mirrored' }
 }
 
 /**
@@ -325,10 +336,11 @@ export async function mirrorMailboxDeliveryEventSnapshot(input: {
 /**
  * Best-effort batch delivery-event snapshot mirror.
  *
- * One timeout (default {@link mailboxMirrorRpcTimeoutMs}) and one
- * `upsert_delivery_event_batch` telemetry outcome. Timeout/error/skip apply
- * uniformly to each per-event summary entry. Empty `events` returns `[]`
- * without RPC or telemetry.
+ * Partitions legacy USER inbound authority snapshots to missing-only bootstrap
+ * and all other rows to normal upsert. Each non-empty subset gets the timeout
+ * bound (default {@link mailboxMirrorRpcTimeoutMs}); one aggregate
+ * `upsert_delivery_event_batch` telemetry outcome covers the input page. Empty
+ * `events` returns `[]` without RPC or telemetry.
  */
 export async function mirrorMailboxDeliveryEventSnapshots(input: {
 	env: MailboxMirrorEnv
@@ -351,46 +363,121 @@ export async function mirrorMailboxDeliveryEventSnapshots(input: {
 		return mapUniformBatchResults(input.events, skippedMailbox)
 	}
 
-	try {
-		const raced = await awaitMailboxMirrorRpc(
-			mailboxRpc({
-				env: input.env,
-				userId: owner.ownerId,
-			}).upsertDeliveryEvents({
-				ownerId: owner.ownerId,
-				events: input.events,
-			}),
-			input.timeoutMs ?? mailboxMirrorRpcTimeoutMs,
-		)
-		if (!raced.ok) {
-			const result = { status: 'timeout' as const }
-			recordMirrorOutcome(input.env, owner.ownerId, operation, result)
-			return mapUniformBatchResults(input.events, result)
-		}
-		recordMirrorOutcome(
-			input.env,
-			owner.ownerId,
-			operation,
-			outcomeFromBatchAccepted(raced.value.results),
-		)
-		const byEventId = new Map(
-			raced.value.results.map((item) => [item.eventId, item] as const),
-		)
-		return input.events.map((event) => {
-			const item = byEventId.get(event.id)
-			return {
-				eventId: event.id,
-				result: item
-					? outcomeFromAccepted(item.accepted)
-					: { status: 'missing' as const },
+	const timeoutMs = input.timeoutMs ?? mailboxMirrorRpcTimeoutMs
+	const rpc = mailboxRpc({
+		env: input.env,
+		userId: owner.ownerId,
+	})
+	const bootstrapEvents = input.events.filter(
+		isUserInboundLegacyAuthoritySnapshot,
+	)
+	const normalEvents = input.events.filter(
+		(event) => !isUserInboundLegacyAuthoritySnapshot(event),
+	)
+	const resultsByEventId = new Map<string, MailboxMirrorResult>()
+
+	if (normalEvents.length > 0) {
+		try {
+			const raced = await awaitMailboxMirrorRpc(
+				rpc.upsertDeliveryEvents({
+					ownerId: owner.ownerId,
+					events: normalEvents,
+				}),
+				timeoutMs,
+			)
+			if (!raced.ok) {
+				for (const event of normalEvents) {
+					resultsByEventId.set(event.id, { status: 'timeout' })
+				}
+			} else {
+				const byEventId = new Map(
+					raced.value.results.map((item) => [item.eventId, item] as const),
+				)
+				for (const event of normalEvents) {
+					const item = byEventId.get(event.id)
+					resultsByEventId.set(
+						event.id,
+						item ? outcomeFromAccepted(item.accepted) : { status: 'missing' },
+					)
+				}
 			}
-		})
-	} catch (error) {
-		console.warn('mailbox-mirror-delivery-event-batch-failed', error)
-		const result = { status: 'error' as const, error }
-		recordMirrorOutcome(input.env, owner.ownerId, operation, result)
-		return mapUniformBatchResults(input.events, result)
+		} catch (error) {
+			console.warn('mailbox-mirror-delivery-event-batch-failed', error)
+			for (const event of normalEvents) {
+				resultsByEventId.set(event.id, { status: 'error', error })
+			}
+		}
 	}
+
+	if (bootstrapEvents.length > 0) {
+		try {
+			const raced = await awaitMailboxMirrorRpc(
+				rpc.bootstrapDeliveryEvents({
+					ownerId: owner.ownerId,
+					events: bootstrapEvents,
+				}),
+				timeoutMs,
+			)
+			if (!raced.ok) {
+				for (const event of bootstrapEvents) {
+					resultsByEventId.set(event.id, { status: 'timeout' })
+				}
+			} else {
+				const byEventId = new Map(
+					raced.value.results.map((item) => [item.eventId, item] as const),
+				)
+				for (const event of bootstrapEvents) {
+					const item = byEventId.get(event.id)
+					const status = item?.status
+					let result: MailboxMirrorResult
+					switch (status) {
+						case 'inserted':
+							result = { status: 'mirrored' }
+							break
+						case 'existing':
+							result = { status: 'stale' }
+							break
+						case 'skipped':
+							result = {
+								status: 'skipped',
+								reason: 'user-inbound-authority',
+							}
+							break
+						case undefined:
+							result = { status: 'missing' }
+							break
+						default: {
+							const exhaustive: never = status
+							throw new Error(
+								`Unhandled bootstrap delivery-event status: ${String(exhaustive)}`,
+							)
+						}
+					}
+					resultsByEventId.set(event.id, result)
+				}
+			}
+		} catch (error) {
+			console.warn(
+				'mailbox-mirror-delivery-event-bootstrap-batch-failed',
+				error,
+			)
+			for (const event of bootstrapEvents) {
+				resultsByEventId.set(event.id, { status: 'error', error })
+			}
+		}
+	}
+
+	const results = input.events.map((event) => ({
+		eventId: event.id,
+		result: resultsByEventId.get(event.id) ?? ({ status: 'missing' } as const),
+	}))
+	recordMirrorOutcome(
+		input.env,
+		owner.ownerId,
+		operation,
+		aggregateBatchOutcome(results),
+	)
+	return results
 }
 
 /** Best-effort thread touch mirror. */

@@ -19,7 +19,7 @@ import { mailboxUpsertDeliveryEventsMax } from './mailbox-types.ts'
 
 export const mailboxParityMessagePageSize = 10
 /**
- * Events per backfill page / single `upsertDeliveryEvents` RPC.
+ * Events per backfill page, partitioned across normal/bootstrap batch RPCs.
  * Must stay ≤ {@link mailboxUpsertDeliveryEventsMax}.
  */
 export const mailboxParityEventPageSize = 25
@@ -238,8 +238,8 @@ export async function backfillMessagesForUser(input: {
 }
 
 /**
- * Keyset-page ready delivery-event snapshots and mirror each page with one
- * `upsertDeliveryEvents` batch RPC ({@link mailboxParityEventMirrorTimeoutMs}).
+ * Keyset-page ready delivery-event snapshots and mirror each page with bounded
+ * normal/bootstrap batch RPCs ({@link mailboxParityEventMirrorTimeoutMs}).
  *
  * Cursor advances through per-event mirrored/stale/missing results in page
  * order (including equal `createdAt` by id). Uniform timeout/error/skip keep

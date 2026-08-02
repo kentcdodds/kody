@@ -70,7 +70,7 @@ function hasNoInboundAuthorityState(
 	)
 }
 
-function isPreClaimAuditSnapshot(
+export function isPreClaimAuditSnapshot(
 	event: MailboxDeliveryEventInput | MailboxDeliveryEventRecord,
 ) {
 	if (
@@ -114,6 +114,12 @@ function isPreClaimAuditSnapshot(
 	return event.id === `email-rejections:${event.inboxId}:${detail.day}`
 }
 
+export function isUserInboundLegacyAuthoritySnapshot(
+	event: MailboxDeliveryEventInput,
+) {
+	return isUserInboundAuthorityEvent(event) && !isPreClaimAuditSnapshot(event)
+}
+
 function readMailboxDeliveryEvent(
 	sql: SqlStorage,
 	eventId: string,
@@ -128,37 +134,16 @@ function readMailboxDeliveryEvent(
 }
 
 /**
- * Fence the only D1 → Mailbox USER inbound bridge. Bootstrap accepts a
- * validated complete snapshot only when the owner-bound row is still missing.
+ * Validate the only D1 → Mailbox USER inbound bridge. Callers may insert this
+ * snapshot only when its owner-bound row is missing.
  */
-export function shouldSkipMailboxDeliveryEventWrite(
-	sql: SqlStorage,
-	input: {
-		ownerId: string
-		event: MailboxDeliveryEventInput
-		intent?: 'user-inbound-bootstrap'
-		hasLatestDeliveryStatus: boolean
-	},
-) {
-	const inboundAuthorityEvent = isUserInboundAuthorityEvent(input.event)
-	if (inboundAuthorityEvent && input.intent !== 'user-inbound-bootstrap') {
-		if (!isPreClaimAuditSnapshot(input.event)) {
-			throw new Error(
-				'USER inbound delivery events require the missing-row bootstrap intent.',
-			)
-		}
-		const existing = readMailboxDeliveryEvent(sql, input.event.id)
-		return existing != null && !isPreClaimAuditSnapshot(existing)
-	}
-	if (!inboundAuthorityEvent && input.intent === 'user-inbound-bootstrap') {
+export function assertUserInboundLegacyBootstrapSnapshot(input: {
+	ownerId: string
+	event: MailboxDeliveryEventInput
+}) {
+	if (!isUserInboundLegacyAuthoritySnapshot(input.event)) {
 		throw new Error(
-			'USER inbound bootstrap intent requires an inbound delivery provider.',
-		)
-	}
-	if (input.intent !== 'user-inbound-bootstrap') return false
-	if (input.hasLatestDeliveryStatus) {
-		throw new Error(
-			'USER inbound bootstrap cannot update latest delivery status.',
+			'USER inbound bootstrap requires an inbound lifecycle or dedupe snapshot.',
 		)
 	}
 	const delivery = parseStrictInboundDeliveryDetailJson(input.event.detailJson)
@@ -166,25 +151,113 @@ export function shouldSkipMailboxDeliveryEventWrite(
 		input.event.provider === mailboxInboundDedupeProvider && delivery
 			? mailboxInboundDedupePointerId(delivery.fingerprint)
 			: delivery?.deliveryId
+	const expectedEventType =
+		delivery?.state === 'received'
+			? 'received'
+			: delivery?.state === 'rejected'
+				? 'rejected'
+				: 'receive_started'
+	const optionalMatches = (actual: unknown, expected: unknown) =>
+		actual === (expected ?? null)
 	if (
 		!delivery ||
 		delivery.userId !== input.ownerId ||
 		delivery.provider !== mailboxInboundProvider ||
 		input.event.id !== expectedEventId ||
+		input.event.inboxId !== delivery.inboxId ||
+		input.event.eventType !== expectedEventType ||
+		input.event.providerMessageId != null ||
+		input.event.providerEventId !== input.event.id ||
+		input.event.messageId !==
+			(delivery.state === 'received' ? delivery.messageId : null) ||
 		input.event.state !== delivery.state ||
-		input.event.fingerprint !== delivery.fingerprint
+		input.event.fingerprint !== delivery.fingerprint ||
+		!optionalMatches(input.event.storageLease, delivery.storageLease) ||
+		!optionalMatches(input.event.storageLeaseAt, delivery.storageLeaseAt) ||
+		!optionalMatches(input.event.cleanupLease, delivery.cleanupLease) ||
+		!optionalMatches(input.event.cleanupLeaseAt, delivery.cleanupLeaseAt) ||
+		!optionalMatches(
+			input.event.expectedAttachmentCount,
+			delivery.expectedAttachmentCount,
+		) ||
+		!optionalMatches(
+			input.event.finalizationToken,
+			delivery.finalizationToken,
+		) ||
+		!optionalMatches(input.event.dedupeExpiresAt, delivery.dedupeExpiresAt) ||
+		!optionalMatches(
+			input.event.usageEffectRecordedAt,
+			delivery.usageEffectRecordedAt,
+		) ||
+		!optionalMatches(
+			input.event.usageEffectSuppressedAt,
+			delivery.usageEffectSuppressedAt,
+		) ||
+		!optionalMatches(input.event.usageStartedAt, delivery.usageStartedAt) ||
+		!optionalMatches(input.event.usageMonth, delivery.usageMonth) ||
+		!optionalMatches(input.event.usageBytes, delivery.usageBytes) ||
+		!optionalMatches(input.event.usageDurationMs, delivery.usageDurationMs) ||
+		!optionalMatches(
+			input.event.usageEffectRetryAt,
+			delivery.usageEffectRetryAt,
+		) ||
+		!optionalMatches(input.event.usageEffectLease, delivery.usageEffectLease) ||
+		!optionalMatches(
+			input.event.usageEffectLeaseAt,
+			delivery.usageEffectLeaseAt,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectState,
+			delivery.subscriptionEffectState,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectLease,
+			delivery.subscriptionEffectLease,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectLeaseAt,
+			delivery.subscriptionEffectLeaseAt,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectRetryAt,
+			delivery.subscriptionEffectRetryAt,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectAttemptCount,
+			delivery.subscriptionEffectAttemptCount,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectDeadLetterAt,
+			delivery.subscriptionEffectDeadLetterAt,
+		) ||
+		!optionalMatches(
+			input.event.subscriptionEffectLastError,
+			delivery.subscriptionEffectLastError,
+		)
 	) {
 		throw new Error(
 			'USER inbound bootstrap requires a valid owner-bound complete snapshot.',
 		)
 	}
+}
+
+/**
+ * Reject authority-bearing lifecycle/dedupe snapshots from normal mirror
+ * upserts. The only inbound-provider exception is the bounded pre-claim audit.
+ */
+export function shouldSkipMailboxDeliveryEventWrite(
+	sql: SqlStorage,
+	input: {
+		event: MailboxDeliveryEventInput
+	},
+) {
+	if (!isUserInboundAuthorityEvent(input.event)) return false
+	if (!isPreClaimAuditSnapshot(input.event)) {
+		throw new Error(
+			'USER inbound delivery events require the missing-row bootstrap RPC.',
+		)
+	}
 	const eventId = assertMailboxNonEmptyString(input.event.id, 'event.id')
-	return (
-		sql
-			.exec(
-				`SELECT id FROM email_delivery_events WHERE id = ? LIMIT 1`,
-				eventId,
-			)
-			.toArray().length > 0
-	)
+	const existing = readMailboxDeliveryEvent(sql, eventId)
+	return existing != null && !isPreClaimAuditSnapshot(existing)
 }

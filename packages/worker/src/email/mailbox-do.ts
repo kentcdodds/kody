@@ -26,6 +26,8 @@ import {
 	markMailboxInboundDeliveryOrphanCleaned,
 	releaseMailboxInboundDeliveryCleanup,
 } from './mailbox-inbound-cleanup-ledger.ts'
+import { bootstrapMailboxDeliveryEvents } from './mailbox-delivery-event-bootstrap.ts'
+import { upsertMailboxDeliveryEvents } from './mailbox-delivery-event-upsert.ts'
 import { shouldSkipMailboxDeliveryEventWrite } from './mailbox-inbound-bootstrap.ts'
 import {
 	claimMailboxInboundDeliveryStorage,
@@ -52,10 +54,10 @@ import {
 } from './mailbox-inbound-effect-ledger.ts'
 import {
 	assertMailboxNonEmptyString,
-	mailboxUpsertDeliveryEventsMax,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
+	type MailboxBootstrapDeliveryEventsResult,
 	type MailboxCountMessagesInput,
 	type MailboxCountResult,
 	type MailboxDeleteDeliveryEventInput,
@@ -78,7 +80,6 @@ import {
 	type MailboxThreadRecord,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
-	type MailboxUpsertDeliveryEventBatchItemResult,
 	type MailboxUpsertDeliveryEventsResult,
 } from './mailbox-types.ts'
 
@@ -244,7 +245,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async upsertDeliveryEvent(input: {
 		ownerId: string
 		event: MailboxDeliveryEventInput
-		intent?: 'user-inbound-bootstrap'
 		latestDeliveryStatus?: {
 			messageId: string
 			deliveryStatus: EmailDeliveryStatus
@@ -262,10 +262,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 			this.store.assertOwner(input.ownerId)
 			if (
 				shouldSkipMailboxDeliveryEventWrite(this.ctx.storage.sql, {
-					ownerId: input.ownerId,
 					event: input.event,
-					intent: input.intent,
-					hasLatestDeliveryStatus: input.latestDeliveryStatus != null,
 				})
 			) {
 				return
@@ -295,36 +292,32 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
 	}): Promise<MailboxUpsertDeliveryEventsResult> {
-		if (!Array.isArray(input.events) || input.events.length === 0) {
-			throw new Error('Mailbox upsertDeliveryEvents events must be non-empty.')
-		}
-		if (input.events.length > mailboxUpsertDeliveryEventsMax) {
-			throw new Error(
-				`Mailbox upsertDeliveryEvents events exceed max of ${mailboxUpsertDeliveryEventsMax}.`,
-			)
-		}
-		const results: Array<MailboxUpsertDeliveryEventBatchItemResult> = []
+		let result: MailboxUpsertDeliveryEventsResult | undefined
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			for (const event of input.events) {
-				const eventId = assertMailboxNonEmptyString(event.id, 'event.id')
-				if (
-					shouldSkipMailboxDeliveryEventWrite(this.ctx.storage.sql, {
-						ownerId: input.ownerId,
-						event,
-						hasLatestDeliveryStatus: false,
-					})
-				) {
-					results.push({ eventId, inserted: false, accepted: false })
-					continue
-				}
-				const write = this.store.writeDeliveryEventRow(event)
-				results.push({ eventId, ...write })
-			}
+			result = upsertMailboxDeliveryEvents(this.ctx.storage.sql, input.events)
 		})
+		if (!result) throw new Error('Mailbox upsert transaction did not run.')
 		this.markRetentionDirty()
 		await this.ensureRetentionAlarm()
-		return { results }
+		return result
+	}
+
+	async bootstrapDeliveryEvents(input: {
+		ownerId: string
+		events: Array<MailboxDeliveryEventInput>
+	}): Promise<MailboxBootstrapDeliveryEventsResult> {
+		let result: MailboxBootstrapDeliveryEventsResult | undefined
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = bootstrapMailboxDeliveryEvents(this.ctx.storage.sql, input)
+		})
+		if (!result) throw new Error('Mailbox bootstrap transaction did not run.')
+		if (result.inserted > 0) {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
 	}
 
 	/**

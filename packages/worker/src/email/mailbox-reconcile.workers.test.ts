@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import { emailRawMimeKey } from './blob-keys.ts'
 import { mailboxLiveMirrorMaxEvents } from './mailbox-live-mirror.ts'
 import {
 	countD1MailboxParity,
@@ -129,6 +130,105 @@ async function seedPreClaimAuditEvent(input: {
 		)
 		.run()
 	return eventId
+}
+
+async function seedLegacyInboundEvent(input: {
+	userId: string
+	deliveryId: string
+	state: 'pending' | 'storing' | 'received'
+	createdAt: string
+	messageId?: string
+	fingerprint?: string
+	provider?: 'cloudflare-email-routing' | 'cloudflare-email-routing-dedupe'
+	eventId?: string
+}) {
+	const provider = input.provider ?? 'cloudflare-email-routing'
+	const fingerprint = input.fingerprint ?? `fingerprint-${input.deliveryId}`
+	const messageId =
+		input.messageId ?? `email-inbound-message:${input.deliveryId}`
+	const eventId =
+		input.eventId ??
+		(provider === 'cloudflare-email-routing-dedupe'
+			? `email-inbound-dedupe:${fingerprint}`
+			: input.deliveryId)
+	const detail = {
+		fingerprint,
+		deliveryId: input.deliveryId,
+		messageId,
+		threadId: `email-inbound-thread:${input.deliveryId}`,
+		rawMimeKey: emailRawMimeKey(input.userId, messageId),
+		userId: input.userId,
+		inboxId: 'legacy-inbox',
+		recipient: 'owner@example.test',
+		envelopeFrom: 'sender@example.test',
+		provider: 'cloudflare-email-routing',
+		quotaDay: '2026-07-01',
+		dedupeExpiresAt: '2026-09-01T00:00:00.000Z',
+		state: input.state,
+		...(input.state === 'storing'
+			? {
+					storageLease: 'legacy-storage-lease',
+					storageLeaseAt: '2026-07-01T12:01:30.000Z',
+					expectedAttachmentCount: 2,
+				}
+			: {}),
+		...(input.state === 'received'
+			? {
+					expectedAttachmentCount: 1,
+					finalizationToken: 'legacy-finalization-token',
+					usageEffectRecordedAt: '2026-07-01T12:04:00.000Z',
+					usageStartedAt: '2026-07-01T12:02:30.000Z',
+					usageMonth: '2026-07',
+					usageBytes: 4096,
+					usageDurationMs: 900,
+					subscriptionEffectState: 'complete',
+				}
+			: {}),
+	}
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, message_id, user_id, inbox_id, event_type, provider,
+			provider_event_id, detail_json, needs_effect_reconcile,
+			state, fingerprint, storage_lease, storage_lease_at,
+			expected_attachment_count, finalization_token, dedupe_expires_at,
+			usage_effect_recorded_at, usage_started_at, usage_month, usage_bytes,
+			usage_duration_ms, subscription_effect_state, created_at, updated_at
+		) VALUES (
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		)`,
+	)
+		.bind(
+			eventId,
+			input.state === 'received' ? messageId : null,
+			input.userId,
+			detail.inboxId,
+			input.state === 'received' ? 'received' : 'receive_started',
+			provider,
+			eventId,
+			JSON.stringify(detail),
+			0,
+			input.state,
+			fingerprint,
+			'storageLease' in detail ? detail.storageLease : null,
+			'storageLeaseAt' in detail ? detail.storageLeaseAt : null,
+			'expectedAttachmentCount' in detail
+				? detail.expectedAttachmentCount
+				: null,
+			'finalizationToken' in detail ? detail.finalizationToken : null,
+			detail.dedupeExpiresAt,
+			'usageEffectRecordedAt' in detail ? detail.usageEffectRecordedAt : null,
+			'usageStartedAt' in detail ? detail.usageStartedAt : null,
+			'usageMonth' in detail ? detail.usageMonth : null,
+			'usageBytes' in detail ? detail.usageBytes : null,
+			'usageDurationMs' in detail ? detail.usageDurationMs : null,
+			'subscriptionEffectState' in detail
+				? detail.subscriptionEffectState
+				: null,
+			input.createdAt,
+			input.createdAt,
+		)
+		.run()
+	return { eventId, fingerprint }
 }
 
 async function readParityState(userId: string) {
@@ -522,3 +622,186 @@ test('reconcileMailboxParity eventually repairs >100 bound delivery events', asy
 			.deliveryEvents,
 	).toBe(heavyEventCount)
 }, 60_000)
+
+test('reconcileMailboxParity bootstraps production legacy USER inbound shapes without overwriting authority', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureUsersTestSchema({ db: env.APP_DB })
+	await ensureEmailTestSchema(env.APP_DB)
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET mailbox_parity_checked_at = '9999-12-31T23:59:59.999Z'`,
+	).run()
+
+	const userId = await seedParityUser({
+		email: `legacy-inbound-${crypto.randomUUID()}@example.test`,
+		checkedAt: null,
+	})
+	const receivedMessageId = 'legacy-received-message'
+	await seedMessageGraph({
+		userId,
+		messageId: receivedMessageId,
+		threadId: 'legacy-received-thread',
+		createdAt: '2026-07-01T12:02:00.000Z',
+		eventCount: 0,
+	})
+	const pendingId = 'email-inbound-delivery:legacy-pending'
+	const storingId = 'email-inbound-delivery:legacy-storing'
+	const receivedId = 'email-inbound-delivery:legacy-received'
+	const pending = await seedLegacyInboundEvent({
+		userId,
+		deliveryId: pendingId,
+		state: 'pending',
+		createdAt: '2026-07-01T12:00:00.000Z',
+	})
+	await seedLegacyInboundEvent({
+		userId,
+		deliveryId: storingId,
+		state: 'storing',
+		createdAt: '2026-07-01T12:01:00.000Z',
+	})
+	await seedLegacyInboundEvent({
+		userId,
+		deliveryId: receivedId,
+		messageId: receivedMessageId,
+		state: 'received',
+		createdAt: '2026-07-01T12:03:00.000Z',
+	})
+	await seedLegacyInboundEvent({
+		userId,
+		deliveryId: pendingId,
+		fingerprint: pending.fingerprint,
+		state: 'pending',
+		provider: 'cloudflare-email-routing-dedupe',
+		createdAt: '2026-07-01T12:00:01.000Z',
+	})
+	const auditEventId = await seedPreClaimAuditEvent({
+		userId,
+		inboxId: 'legacy-inbox',
+		createdAt: '2026-07-01T12:05:00.000Z',
+	})
+
+	const mailbox = rpcFor(userId)
+	expect(await mailbox.countMailbox()).toEqual({
+		threads: 0,
+		messages: 0,
+		attachments: 0,
+		deliveryEvents: 0,
+	})
+	const firstNow = new Date('2026-08-02T15:00:00.000Z')
+	await expect(
+		reconcileMailboxParity({ env, now: firstNow, batchSize: 1 }),
+	).resolves.toMatchObject({
+		scanned: 1,
+		compared: 1,
+		matched: 1,
+		mismatched: 0,
+		failed: 0,
+	})
+	expect(await mailbox.countMailbox()).toEqual(
+		await countD1MailboxParity({ db: env.APP_DB, userId }),
+	)
+	expect(
+		await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId: pendingId,
+		}),
+	).toMatchObject({ state: 'pending' })
+	expect(
+		await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId: storingId,
+		}),
+	).toMatchObject({
+		state: 'storing',
+		storageLease: 'legacy-storage-lease',
+		expectedAttachmentCount: 2,
+	})
+	expect(
+		await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId: receivedId,
+		}),
+	).toMatchObject({
+		state: 'received',
+		finalizationToken: 'legacy-finalization-token',
+		usageEffectRecordedAt: '2026-07-01T12:04:00.000Z',
+		subscriptionEffectState: 'complete',
+	})
+	expect(
+		await mailbox.getInboundDeliveryWindow({
+			ownerId: userId,
+			fingerprint: pending.fingerprint,
+			now: '2026-08-02T15:00:00.000Z',
+		}),
+	).toMatchObject({ deliveryId: pendingId })
+	expect(
+		(await mailbox.listDeliveryEvents({ messageId: null, limit: 20 })).some(
+			(event) => event.id === auditEventId,
+		),
+	).toBe(true)
+
+	const replayEventBackfill = () =>
+		env.APP_DB.prepare(
+			`UPDATE users
+			SET mailbox_parity_checked_at = NULL,
+				mailbox_parity_event_backfill_cursor_created_at = NULL,
+				mailbox_parity_event_backfill_cursor_id = NULL,
+				mailbox_parity_event_backfill_completed_at = NULL
+			WHERE stable_user_id = ?`,
+		)
+			.bind(userId)
+			.run()
+	const countAfterFirst = await mailbox.countMailbox()
+	await replayEventBackfill()
+	const secondNow = new Date('2026-08-02T15:30:00.000Z')
+	await expect(
+		reconcileMailboxParity({ env, now: secondNow, batchSize: 1 }),
+	).resolves.toMatchObject({
+		scanned: 1,
+		compared: 1,
+		matched: 1,
+		mismatched: 0,
+		failed: 0,
+	})
+	expect(await mailbox.countMailbox()).toEqual(countAfterFirst)
+
+	await mailbox.claimInboundDeliveryStorage({
+		ownerId: userId,
+		deliveryId: pendingId,
+		expectedAttachmentCount: 7,
+		now: '2026-08-02T15:01:00.000Z',
+	})
+	const newerAuthority = await mailbox.getInboundDelivery({
+		ownerId: userId,
+		deliveryId: pendingId,
+	})
+	expect(newerAuthority).toMatchObject({
+		state: 'storing',
+		expectedAttachmentCount: 7,
+	})
+	await replayEventBackfill()
+
+	const thirdNow = new Date('2026-08-02T16:00:00.000Z')
+	await expect(
+		reconcileMailboxParity({ env, now: thirdNow, batchSize: 1 }),
+	).resolves.toMatchObject({
+		scanned: 1,
+		compared: 1,
+		matched: 1,
+		mismatched: 0,
+		failed: 0,
+	})
+	expect(await mailbox.countMailbox()).toEqual(
+		await countD1MailboxParity({ db: env.APP_DB, userId }),
+	)
+	expect(
+		await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId: pendingId,
+		}),
+	).toMatchObject({
+		state: 'storing',
+		expectedAttachmentCount: 7,
+		updatedAt: newerAuthority?.updatedAt,
+	})
+}, 30_000)

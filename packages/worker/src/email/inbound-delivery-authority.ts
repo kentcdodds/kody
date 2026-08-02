@@ -300,6 +300,10 @@ export function createUserInboundDeliveryAuthority(
 		}
 		const updatedAt = chargeInput.now.toISOString()
 		const meter = userMeterRpc({ env, userId })
+		// Accepted non-atomic cross-DO window: if Email Routing exhausts retries
+		// after UserMeter consume but before Mailbox insert, one daily receive unit
+		// may burn until reset. Replays self-heal while retries continue and cannot
+		// duplicate a message because both operations use the dedupe winner id.
 		let meterResult = await meter.consumeInboundDelivery({
 			deliveryId: chargedDelivery.deliveryId,
 			resource: 'email_receives_per_day',

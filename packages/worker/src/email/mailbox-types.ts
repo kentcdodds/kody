@@ -478,6 +478,18 @@ export type MailboxUpsertDeliveryEventsResult = {
 	results: Array<MailboxUpsertDeliveryEventBatchItemResult>
 }
 
+export type MailboxBootstrapDeliveryEventItemResult = {
+	eventId: string
+	status: 'inserted' | 'existing' | 'skipped'
+}
+
+export type MailboxBootstrapDeliveryEventsResult = {
+	inserted: number
+	existing: number
+	skipped: number
+	results: Array<MailboxBootstrapDeliveryEventItemResult>
+}
+
 /**
  * Mirror / read / retention / purge surface. Authoritative USER inbound ledger
  * CAS RPCs are intersected below; `system:email` remains D1-only.
@@ -499,14 +511,12 @@ type MailboxCoreRpc = {
 		attachments?: Array<MailboxAttachmentInput>
 	}) => Promise<{ ok: true; accepted: boolean }>
 	/**
-	 * Complete delivery-event snapshot upsert. USER inbound only uses this for
-	 * the one-time pre-deploy D1 bootstrap bridge.
+	 * Complete delivery-event snapshot upsert. Rejects USER inbound
+	 * lifecycle/dedupe authority snapshots; use `bootstrapDeliveryEvents`.
 	 */
 	upsertDeliveryEvent: (input: {
 		ownerId: string
 		event: MailboxDeliveryEventInput
-		/** Missing-row-only bridge for pre-deploy USER inbound D1 snapshots. */
-		intent?: 'user-inbound-bootstrap'
 		latestDeliveryStatus?: {
 			messageId: string
 			deliveryStatus: EmailDeliveryStatus
@@ -526,6 +536,14 @@ type MailboxCoreRpc = {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
 	}) => Promise<MailboxUpsertDeliveryEventsResult>
+	/**
+	 * Missing-row-only deployment bridge for validated legacy USER inbound
+	 * lifecycle/dedupe snapshots. Existing rows are never updated.
+	 */
+	bootstrapDeliveryEvents: (input: {
+		ownerId: string
+		events: Array<MailboxDeliveryEventInput>
+	}) => Promise<MailboxBootstrapDeliveryEventsResult>
 	touchThread: (
 		input: MailboxTouchThreadInput,
 	) => Promise<MailboxPartialMutationResult>

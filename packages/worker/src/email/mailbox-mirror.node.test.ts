@@ -550,6 +550,87 @@ test('mailbox mirror batch helper uses one RPC, one telemetry outcome, and maps 
 	expect(upsertDeliveryEvents).toHaveBeenCalledTimes(1)
 })
 
+test('mailbox mirror batch partitions legacy authority from audits and counts existing/skipped without errors', async () => {
+	const legacyExisting = baseDeliveryEventInput({
+		id: 'email-inbound-delivery:existing',
+		provider: 'cloudflare-email-routing',
+		eventType: 'receive_started',
+		state: 'pending',
+		fingerprint: 'existing-fingerprint',
+	})
+	const legacySkipped = baseDeliveryEventInput({
+		id: 'email-inbound-dedupe:skipped-fingerprint',
+		provider: 'cloudflare-email-routing-dedupe',
+		eventType: 'receive_started',
+		state: 'pending',
+		fingerprint: 'skipped-fingerprint',
+	})
+	const audit = baseDeliveryEventInput({
+		id: 'email-rejections:inbox-audit:2026-07-02',
+		messageId: null,
+		inboxId: 'inbox-audit',
+		provider: 'cloudflare-email-routing',
+		eventType: 'rejected',
+		detailJson: JSON.stringify({
+			aggregate: true,
+			day: '2026-07-02',
+			count: 1,
+			last_reason: 'Recipient mailbox is over quota.',
+			last_phase: 'entitlement',
+			last_at: '2026-07-02T10:00:00.000Z',
+		}),
+	})
+	const upsertDeliveryEvents = vi.fn(async () => ({
+		results: [{ eventId: audit.id, inserted: true, accepted: true }],
+	}))
+	const bootstrapDeliveryEvents = vi.fn(async () => ({
+		inserted: 0,
+		existing: 1,
+		skipped: 1,
+		results: [
+			{ eventId: legacyExisting.id, status: 'existing' as const },
+			{ eventId: legacySkipped.id, status: 'skipped' as const },
+		],
+	}))
+	const { env, writeDataPoint } = fakeMailboxEnv({
+		upsertDeliveryEvents,
+		bootstrapDeliveryEvents,
+	})
+
+	await expect(
+		mirrorMailboxDeliveryEventSnapshots({
+			env,
+			ownerId: 'user-aaa',
+			events: [legacyExisting, audit, legacySkipped],
+		}),
+	).resolves.toEqual([
+		{ eventId: legacyExisting.id, result: { status: 'stale' } },
+		{ eventId: audit.id, result: { status: 'mirrored' } },
+		{
+			eventId: legacySkipped.id,
+			result: { status: 'skipped', reason: 'user-inbound-authority' },
+		},
+	])
+	expect(upsertDeliveryEvents).toHaveBeenCalledWith({
+		ownerId: 'user-aaa',
+		events: [audit],
+	})
+	expect(bootstrapDeliveryEvents).toHaveBeenCalledWith({
+		ownerId: 'user-aaa',
+		events: [legacyExisting, legacySkipped],
+	})
+	expect(consoleWarn).not.toHaveBeenCalled()
+	expect(writeDataPoint).toHaveBeenCalledWith(
+		expect.objectContaining({
+			blobs: [
+				'mailbox_mirror:upsert_delivery_event_batch',
+				'skipped',
+				expect.any(String),
+			],
+		}),
+	)
+})
+
 test('mailbox mirror batch helper maps timeout and error to every event', async () => {
 	vi.useFakeTimers()
 	consoleWarn.mockImplementation(() => {})

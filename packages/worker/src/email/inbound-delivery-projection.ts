@@ -327,16 +327,17 @@ export async function bootstrapUserInboundDeliveryFromD1(input: {
 		return null
 	}
 	const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
-	await mailbox.upsertDeliveryEvent({
+	await mailbox.bootstrapDeliveryEvents({
 		ownerId: input.userId,
-		intent: 'user-inbound-bootstrap',
-		event: toMailboxBootstrapEvent({
-			delivery,
-			eventId: input.deliveryId,
-			provider: mailboxInboundProvider,
-			createdAt: timestamps.created_at,
-			updatedAt: timestamps.updated_at,
-		}),
+		events: [
+			toMailboxBootstrapEvent({
+				delivery,
+				eventId: input.deliveryId,
+				provider: mailboxInboundProvider,
+				createdAt: timestamps.created_at,
+				updatedAt: timestamps.updated_at,
+			}),
+		],
 	})
 	return await mailbox.getInboundDelivery({
 		ownerId: input.userId,
@@ -373,16 +374,17 @@ export async function bootstrapUserInboundDeliveryWindowFromD1(input: {
 		return null
 	}
 	const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
-	await mailbox.upsertDeliveryEvent({
+	await mailbox.bootstrapDeliveryEvents({
 		ownerId: input.userId,
-		intent: 'user-inbound-bootstrap',
-		event: toMailboxBootstrapEvent({
-			delivery,
-			eventId,
-			provider: mailboxInboundDedupeProvider,
-			createdAt: timestamps.created_at,
-			updatedAt: timestamps.updated_at,
-		}),
+		events: [
+			toMailboxBootstrapEvent({
+				delivery,
+				eventId,
+				provider: mailboxInboundDedupeProvider,
+				createdAt: timestamps.created_at,
+				updatedAt: timestamps.updated_at,
+			}),
+		],
 	})
 	return await mailbox.getInboundDeliveryWindow({
 		ownerId: input.userId,

@@ -359,6 +359,19 @@ Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
 config, and expect users to reauthorize OAuth and remote connectors.
 
+### Mailbox authority rollback repair
+
+Rollback from the USER inbound Mailbox-authority Worker to its predecessor has
+an accepted roll-forward caveat: legacy `json_set` lifecycle writes do not bump
+`updated_at`, and the roll-forward does not auto-detect newer D1 state when a
+Mailbox row already exists. Before a roll-forward after such a rollback, use the
+backup-gated, owner-by-owner metadata purge and full D1 parity rebuild procedure
+in
+[Data storage → Mailbox](./architecture/data-storage.md#durable-objects-mailbox).
+That procedure is gated on the verified backup SHA-256 prefix `7787f8c9`, keeps
+the rollback Worker quiesced, and requires effect/finalization verification. Do
+not use normal purge as an exploratory or routine repair.
+
 ## Schedules and freshness
 
 | When (UTC)               | Who               | What                                                                                               |
