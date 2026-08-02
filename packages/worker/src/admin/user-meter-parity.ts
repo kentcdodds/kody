@@ -88,12 +88,17 @@ type DeletionParity = {
 	tokenSetMismatches: DeletionLeaseTokenMismatches
 	truncated: boolean
 	/**
-	 * Temporary same-token D1 mirror readiness for DO-authority leases.
-	 * Passes when every DO-authority and legacy meter lease is mirrored in D1
-	 * (`doOnly` / `legacyWithoutD1` are zero), the meter page walk is complete,
-	 * and D1 active lease count covers DO-authority count. `d1Only` is reported
-	 * but does not fail this gate — expected for email/transition D1 leases
-	 * until that path hands off.
+	 * True after the temporary same-token D1 mirror was retired (2026-08-01).
+	 * DO-authority leases no longer insert a D1 row on acquire; `doOnly` is
+	 * expected and does not indicate a problem. `d1Only` reflects legacy email
+	 * leases and historical stale pre-retirement rows pending audit repair.
+	 */
+	temporaryMirrorRetired: true
+	/**
+	 * Lease readiness after mirror retirement: no `legacyWithoutD1` (every
+	 * legacy-authority meter lease has a matching D1 row) and the meter page
+	 * walk is complete. `doOnly` is expected after retirement and does not fail
+	 * this gate. `d1Only` is reported separately as a diagnostic.
 	 */
 	mirrorLeaseParity: boolean
 }
@@ -561,10 +566,7 @@ async function readDeletionParity(input: {
 	const deletingAtParity = d1DeletingAt === meterDeletion.deletingAt
 	const d1ActiveLeaseCount = d1Tokens.length
 	const mirrorLeaseParity =
-		tokenSetMismatches.doOnly === 0 &&
-		tokenSetMismatches.legacyWithoutD1 === 0 &&
-		!truncated &&
-		d1ActiveLeaseCount >= doAuthorityLeaseCount
+		tokenSetMismatches.legacyWithoutD1 === 0 && !truncated
 	return {
 		d1DeletingAt,
 		meterDeletingAt: meterDeletion.deletingAt,
@@ -574,6 +576,7 @@ async function readDeletionParity(input: {
 		doLegacyLeaseCount,
 		tokenSetMismatches,
 		truncated,
+		temporaryMirrorRetired: true as const,
 		mirrorLeaseParity,
 	}
 }

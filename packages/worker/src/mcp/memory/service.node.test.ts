@@ -549,9 +549,10 @@ test('acknowledgeSurfacedMemories writes suppressions and last_accessed in one b
 		memoryIds: [created.memory.id],
 	})
 
-	// Lease acquire, acknowledgement, and lease release are each atomic batches.
-	expect(testDb.batches).toHaveLength(3)
-	expect(testDb.batches.every((batch) => batch.length === 2)).toBe(true)
+	// After mirror retirement, DO-authority leases no longer use D1 batch for
+	// acquire or release. Only the acknowledgement itself is an atomic batch.
+	expect(testDb.batches).toHaveLength(1)
+	expect(testDb.batches[0]).toHaveLength(2)
 	expect(
 		testDb.suppressions.get(`user-123:conv-ack-batch:${created.memory.id}`),
 	).toMatchObject({

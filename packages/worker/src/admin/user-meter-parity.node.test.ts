@@ -371,6 +371,7 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 				legacyWithoutD1: 0,
 			},
 			truncated: false,
+			temporaryMirrorRetired: true,
 			mirrorLeaseParity: true,
 		},
 	})
@@ -424,6 +425,7 @@ test('loadAdminUserMeterParityReport treats D1-only leases as mirrorLeaseParity 
 			legacyWithoutD1: 0,
 		},
 		truncated: false,
+		temporaryMirrorRetired: true,
 		mirrorLeaseParity: true,
 	})
 	assertNoLeaseSecrets(report)
@@ -554,6 +556,7 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 			doOnly: 1,
 			legacyWithoutD1: 1,
 		},
+		temporaryMirrorRetired: true,
 		mirrorLeaseParity: false,
 	})
 
@@ -569,7 +572,7 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 	assertNoLeaseSecrets(report)
 })
 
-test('loadAdminUserMeterParityReport fails mirrorLeaseParity for doOnly or legacyWithoutD1', async () => {
+test('loadAdminUserMeterParityReport doOnly passes mirrorLeaseParity after retirement; legacyWithoutD1 still fails', async () => {
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	insertUser(sqlite, { stableUserId, d1StorageBytes: 0 })
@@ -603,6 +606,8 @@ test('loadAdminUserMeterParityReport fails mirrorLeaseParity for doOnly or legac
 		stableUserId,
 		now,
 	})
+	// After mirror retirement, doOnly is expected (DO-authority leases no longer
+	// write D1 rows); mirrorLeaseParity passes when only doOnly is non-zero.
 	expect(doOnlyReport?.deletion).toMatchObject({
 		d1ActiveLeaseCount: 0,
 		doAuthorityLeaseCount: 1,
@@ -611,7 +616,8 @@ test('loadAdminUserMeterParityReport fails mirrorLeaseParity for doOnly or legac
 			doOnly: 1,
 			legacyWithoutD1: 0,
 		},
-		mirrorLeaseParity: false,
+		temporaryMirrorRetired: true,
+		mirrorLeaseParity: true,
 	})
 
 	await meterStub.releaseWriteLease({ token: 'do-only-token' })
@@ -631,6 +637,8 @@ test('loadAdminUserMeterParityReport fails mirrorLeaseParity for doOnly or legac
 		stableUserId,
 		now,
 	})
+	// legacyWithoutD1 still fails parity: every legacy-authority meter lease must
+	// have a matching D1 row for the gate to pass.
 	expect(legacyReport?.deletion).toMatchObject({
 		d1ActiveLeaseCount: 0,
 		doAuthorityLeaseCount: 0,
@@ -640,6 +648,7 @@ test('loadAdminUserMeterParityReport fails mirrorLeaseParity for doOnly or legac
 			doOnly: 0,
 			legacyWithoutD1: 1,
 		},
+		temporaryMirrorRetired: true,
 		mirrorLeaseParity: false,
 	})
 	assertNoLeaseSecrets(doOnlyReport)
