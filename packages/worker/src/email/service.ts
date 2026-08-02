@@ -697,8 +697,9 @@ export async function recordBoundedEmailRejectionEvent(input: {
 	const row = await input.db
 		.prepare(
 			`INSERT INTO email_delivery_events (
-				id, user_id, inbox_id, event_type, provider, detail_json, created_at
-			) VALUES (?, ?, ?, 'rejected', 'cloudflare-email-routing', ?, ?)
+				id, user_id, inbox_id, event_type, provider, detail_json,
+				needs_effect_reconcile, created_at
+			) VALUES (?, ?, ?, 'rejected', 'cloudflare-email-routing', ?, 0, ?)
 			ON CONFLICT(id) DO UPDATE SET detail_json = json_set(
 				email_delivery_events.detail_json,
 				'$.count', COALESCE(json_extract(email_delivery_events.detail_json, '$.count'), 0) + 1,
