@@ -11,6 +11,7 @@ import {
 } from './mailbox-types.ts'
 import { type EmailDeliveryEventType } from './types.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
+import { isMailboxMessageTombstoned } from './mailbox-message-deletion-tombstones.ts'
 
 export function findDeliveryEventByProviderEventId(
 	sql: SqlStorage,
@@ -32,6 +33,10 @@ export function writeMailboxDeliveryEventRow(
 	event: MailboxDeliveryEventInput,
 ): { inserted: boolean; accepted: boolean } {
 	const id = assertMailboxNonEmptyString(event.id, 'event.id')
+	const messageId =
+		event.messageId != null && isMailboxMessageTombstoned(sql, event.messageId)
+			? null
+			: event.messageId
 	const eventType = assertMailboxDeliveryEventType(event.eventType)
 	const provider = assertMailboxNonEmptyString(event.provider, 'event.provider')
 	const providerEventId = event.providerEventId
@@ -133,7 +138,7 @@ export function writeMailboxDeliveryEventRow(
 			updated_at = excluded.updated_at
 		WHERE excluded.updated_at >= email_delivery_events.updated_at`,
 		id,
-		event.messageId,
+		messageId,
 		event.inboxId,
 		eventType,
 		provider,

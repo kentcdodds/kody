@@ -22,7 +22,10 @@ import {
 	touchMailboxThread,
 	updateMailboxMessageDelivery,
 } from './mailbox-mutations.ts'
-import { deleteMailboxMessageMetadataWithTombstone } from './mailbox-message-deletion-tombstones.ts'
+import {
+	deleteMailboxMessageMetadataWithTombstone,
+	tombstoneMissingMailboxMessage,
+} from './mailbox-message-deletion-tombstones.ts'
 import {
 	claimMailboxInboundDeliveryCleanup,
 	markMailboxInboundDeliveryOrphanCleaned,
@@ -81,6 +84,7 @@ import {
 	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
+	type MailboxTombstoneMissingMessageResult,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
 	type MailboxUpsertDeliveryEventsResult,
@@ -166,6 +170,28 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	/**
+	 * Serialize an async R2→SQLite orchestration without letting a callback
+	 * rejection permanently break the Durable Object input gate.
+	 */
+	private async blockConcurrencySafely<T>(
+		operation: () => Promise<T>,
+	): Promise<T> {
+		const outcome = await this.ctx.blockConcurrencyWhile(
+			async (): Promise<
+				{ ok: true; value: T } | { ok: false; error: unknown }
+			> => {
+				try {
+					return { ok: true, value: await operation() }
+				} catch (error) {
+					return { ok: false, error }
+				}
+			},
+		)
+		if (!outcome.ok) throw outcome.error
+		return outcome.value
+	}
+
+	/**
 	 * Shared retention pass for `alarm` and {@link runRetentionNow}.
 	 * Natural production cutoffs only; exact post-pass alarm scheduling.
 	 */
@@ -201,7 +227,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async alarm(): Promise<void> {
-		await this.runRetentionPass()
+		await this.blockConcurrencySafely(() => this.runRetentionPass())
 	}
 
 	/**
@@ -211,8 +237,10 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async runRetentionNow(input: {
 		ownerId: string
 	}): Promise<MailboxRunRetentionNowResult> {
-		this.store.assertOwner(input.ownerId)
-		return this.runRetentionPass()
+		return await this.blockConcurrencySafely(async () => {
+			this.store.assertOwner(input.ownerId)
+			return await this.runRetentionPass()
+		})
 	}
 
 	async mirrorMessage(input: {
@@ -403,68 +431,63 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		messageId: string
 	}): Promise<MailboxDeleteMessageWithBlobsResult> {
-		const outcome = await this.ctx.blockConcurrencyWhile(
-			async (): Promise<
-				| { ok: true; result: MailboxDeleteMessageWithBlobsResult }
-				| { ok: false; error: unknown }
-			> => {
-				try {
-					const ownerId = this.store.assertOwner(input.ownerId)
-					const messageId = assertMailboxNonEmptyString(
-						input.messageId,
-						'messageId',
-					)
-					const message = this.store.getMessage(messageId)
-					if (!message) {
-						return {
-							ok: true,
-							result: {
-								status: 'missing',
-								tombstoned: this.store.isMessageTombstoned(messageId),
-							},
-						}
-					}
-
-					const attachments = this.store.listAttachmentsForMessage(messageId)
-					const blobReferences = canonicalMailboxMessageBlobReferences({
-						ownerId,
-						messageId,
-						direction: message.direction,
-						attachments: attachments.map((attachment) => ({
-							id: attachment.id,
-							storage_key: attachment.storageKey,
-						})),
-					})
-					await deleteMailboxBlobKeys(
-						this.env.EMAIL_BLOBS,
-						blobReferences.map((reference) => reference.key),
-					)
-
-					this.store.tombstoneAndDeleteMessage({
-						messageId,
-						deletedAt: new Date().toISOString(),
-					})
-					return {
-						ok: true,
-						result: {
-							status: 'deleted',
-							attachmentsSeen: attachments.length,
-							externalAttachmentsSeen: attachments.filter(
-								(attachment) => attachment.storageKind === 'external',
-							).length,
-							blobReferences,
-						},
-					}
-				} catch (error) {
-					// A rejected blockConcurrencyWhile callback permanently
-					// breaks the DO input gate. Return the failure through the
-					// gate, then throw it to the RPC caller below.
-					return { ok: false, error }
+		return await this.blockConcurrencySafely(async () => {
+			const ownerId = this.store.assertOwner(input.ownerId)
+			const messageId = assertMailboxNonEmptyString(
+				input.messageId,
+				'messageId',
+			)
+			const message = this.store.getMessage(messageId)
+			if (!message) {
+				return {
+					status: 'missing',
+					tombstoned: this.store.isMessageTombstoned(messageId),
 				}
-			},
-		)
-		if (!outcome.ok) throw outcome.error
-		return outcome.result
+			}
+
+			const attachments = this.store.listAttachmentsForMessage(messageId)
+			const blobReferences = canonicalMailboxMessageBlobReferences({
+				ownerId,
+				messageId,
+				direction: message.direction,
+				attachments: attachments.map((attachment) => ({
+					id: attachment.id,
+					storage_key: attachment.storageKey,
+				})),
+			})
+			await deleteMailboxBlobKeys(
+				this.env.EMAIL_BLOBS,
+				blobReferences.map((reference) => reference.key),
+			)
+
+			this.store.tombstoneAndDeleteMessage({
+				messageId,
+				deletedAt: new Date().toISOString(),
+			})
+			return {
+				status: 'deleted',
+				attachmentsSeen: attachments.length,
+				externalAttachmentsSeen: attachments.filter(
+					(attachment) => attachment.storageKind === 'external',
+				).length,
+				blobReferences,
+			}
+		})
+	}
+
+	async tombstoneMissingMessage(input: {
+		ownerId: string
+		messageId: string
+		deletedAt: string
+	}): Promise<MailboxTombstoneMissingMessageResult> {
+		let result: MailboxTombstoneMissingMessageResult = {
+			status: 'message-present',
+		}
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = tombstoneMissingMailboxMessage(this.ctx.storage.sql, input)
+		})
+		return result
 	}
 
 	/**

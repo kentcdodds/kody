@@ -752,10 +752,11 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 			attachmentId: null,
 		}))
 	} else {
-		const mailboxDeletion = await mailboxRpc({
+		const mailbox = mailboxRpc({
 			env: input.env,
 			userId: input.stableUserId,
-		}).deleteMessageWithBlobs({
+		})
+		const mailboxDeletion = await mailbox.deleteMessageWithBlobs({
 			ownerId: input.stableUserId,
 			messageId: input.messageId,
 		})
@@ -766,6 +767,18 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 				messageId: input.messageId,
 			})
 			if (d1Inventory) {
+				if (!mailboxDeletion.tombstoned) {
+					const tombstone = await mailbox.tombstoneMissingMessage({
+						ownerId: input.stableUserId,
+						messageId: input.messageId,
+						deletedAt: new Date().toISOString(),
+					})
+					if (tombstone.status === 'message-present') {
+						throw new Error(
+							'Mailbox message became present before compatibility cleanup.',
+						)
+					}
+				}
 				await deleteMailboxBlobKeys(
 					blobs,
 					d1Inventory.blobReferences.map((reference) => reference.key),

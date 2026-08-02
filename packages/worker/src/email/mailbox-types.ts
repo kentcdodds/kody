@@ -336,6 +336,10 @@ export type MailboxDeleteMessageWithBlobsResult =
 			blobReferences: Array<MailboxBlobReference>
 	  }
 
+export type MailboxTombstoneMissingMessageResult =
+	| { status: 'message-present' }
+	| { status: 'tombstoned'; created: boolean }
+
 export type MailboxCountResult = {
 	threads: number
 	messages: number
@@ -577,6 +581,15 @@ type MailboxCoreRpc = {
 		ownerId: string
 		messageId: string
 	}) => Promise<MailboxDeleteMessageWithBlobsResult>
+	/**
+	 * Fence an already-missing USER message before compatibility R2/D1 cleanup.
+	 * Refuses to tombstone when Mailbox metadata became present concurrently.
+	 */
+	tombstoneMissingMessage: (input: {
+		ownerId: string
+		messageId: string
+		deletedAt: string
+	}) => Promise<MailboxTombstoneMissingMessageResult>
 	deleteDeliveryEvent: (
 		input: MailboxDeleteDeliveryEventInput,
 	) => Promise<MailboxDeleteResult>

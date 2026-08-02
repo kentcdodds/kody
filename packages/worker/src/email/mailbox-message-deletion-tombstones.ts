@@ -4,6 +4,7 @@ import {
 	assertMailboxNonEmptyString,
 	type MailboxDeleteMessageMetadataInput,
 	type MailboxDeleteResult,
+	type MailboxTombstoneMissingMessageResult,
 } from './mailbox-types.ts'
 
 /**
@@ -45,6 +46,33 @@ export function writeMailboxMessageDeletionTombstone(
 		messageId,
 		deletedAt,
 	)
+}
+
+/**
+ * Fence a missing message without racing a newly accepted mirror. The caller
+ * must wrap this check-and-write in a SQLite transaction.
+ */
+export function tombstoneMissingMailboxMessage(
+	sql: SqlStorage,
+	input: { messageId: string; deletedAt: string },
+): MailboxTombstoneMissingMessageResult {
+	const messageId = assertMailboxNonEmptyString(input.messageId, 'messageId')
+	const deletedAt = assertMailboxCanonicalIsoTimestamp(
+		input.deletedAt,
+		'deletedAt',
+	)
+	const messagePresent =
+		sql
+			.exec<{ found: number }>(
+				`SELECT 1 AS found FROM email_messages WHERE id = ? LIMIT 1`,
+				messageId,
+			)
+			.toArray()[0] != null
+	if (messagePresent) return { status: 'message-present' }
+
+	const created = !isMailboxMessageTombstoned(sql, messageId)
+	writeMailboxMessageDeletionTombstone(sql, { messageId, deletedAt })
+	return { status: 'tombstoned', created }
 }
 
 /**

@@ -75,6 +75,10 @@ function mockMailboxDeleteFromD1(
 	blobs: Pick<R2Bucket, 'delete'>,
 ) {
 	mocks.mailboxRpc.mockImplementation(({ userId }: { userId: string }) => ({
+		tombstoneMissingMessage: async ({ ownerId }: { ownerId: string }) => {
+			if (ownerId !== userId) throw new Error('Mailbox ownerId mismatch')
+			return { status: 'tombstoned' as const, created: true }
+		},
 		deleteMessageWithBlobs: async ({
 			ownerId,
 			messageId,
@@ -962,6 +966,91 @@ test('delete_message leaves the D1 projection when authoritative R2 deletion fai
 			messageId,
 		}),
 	).rejects.toThrow('simulated authoritative R2 failure')
+	expect(
+		await getEmailMessageById({ db, userId: owner, messageId }),
+	).not.toBeNull()
+	expect(objects.has(seeded.rawKey)).toBe(true)
+	expect(objects.has(seeded.attachmentKey)).toBe(true)
+})
+
+test('delete_message fences a Mailbox-missing D1 projection before destructive cleanup', async () => {
+	const { sqlite, db } = createDeleteMessageDb()
+	const { blobs, objects } = createMemoryEmailBlobs()
+	const owner = testStableUserIdFromEmail('missing-mailbox@example.com')
+	const messageId = 'msg-missing-mailbox'
+	const seeded = await seedOwnedMessageWithBlobs({
+		sqlite,
+		blobs,
+		userId: owner,
+		messageId,
+		attachmentId: 'att-missing-mailbox',
+	})
+	const order: Array<string> = []
+	const originalDelete = blobs.delete.bind(blobs)
+	blobs.delete = async (keys) => {
+		order.push('r2-delete')
+		await originalDelete(keys)
+	}
+	const tombstoneMissingMessage = vi.fn(async () => {
+		order.push('mailbox-tombstone')
+		return { status: 'tombstoned' as const, created: true }
+	})
+	mocks.mailboxRpc.mockImplementation(() => ({
+		deleteMessageWithBlobs: async () => ({
+			status: 'missing' as const,
+			tombstoned: false,
+		}),
+		tombstoneMissingMessage,
+	}))
+
+	await expect(
+		runAdminMailboxMaintenanceDeleteMessage({
+			env: { APP_DB: db, EMAIL_BLOBS: blobs, MAILBOX: {} } as Env,
+			stableUserId: owner,
+			messageId,
+		}),
+	).resolves.toMatchObject({ d1MessageAbsent: true })
+
+	expect(order).toEqual(['mailbox-tombstone', 'r2-delete'])
+	expect(tombstoneMissingMessage).toHaveBeenCalledWith(
+		expect.objectContaining({ ownerId: owner, messageId }),
+	)
+	expect(objects.has(seeded.rawKey)).toBe(false)
+	expect(objects.has(seeded.attachmentKey)).toBe(false)
+})
+
+test('delete_message performs no R2 or D1 cleanup when missing-message tombstoning fails', async () => {
+	const { sqlite, db } = createDeleteMessageDb()
+	const { blobs, objects } = createMemoryEmailBlobs()
+	const owner = testStableUserIdFromEmail('tombstone-failure@example.com')
+	const messageId = 'msg-tombstone-failure'
+	const seeded = await seedOwnedMessageWithBlobs({
+		sqlite,
+		blobs,
+		userId: owner,
+		messageId,
+		attachmentId: 'att-tombstone-failure',
+	})
+	const deleteBlob = vi.spyOn(blobs, 'delete')
+	mocks.mailboxRpc.mockImplementation(() => ({
+		deleteMessageWithBlobs: async () => ({
+			status: 'missing' as const,
+			tombstoned: false,
+		}),
+		tombstoneMissingMessage: async () => {
+			throw new Error('simulated tombstone failure')
+		},
+	}))
+
+	await expect(
+		runAdminMailboxMaintenanceDeleteMessage({
+			env: { APP_DB: db, EMAIL_BLOBS: blobs, MAILBOX: {} } as Env,
+			stableUserId: owner,
+			messageId,
+		}),
+	).rejects.toThrow('simulated tombstone failure')
+
+	expect(deleteBlob).not.toHaveBeenCalled()
 	expect(
 		await getEmailMessageById({ db, userId: owner, messageId }),
 	).not.toBeNull()

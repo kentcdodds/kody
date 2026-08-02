@@ -408,6 +408,119 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 	expect(noop.after.messages).toBe(1)
 })
 
+test('Mailbox retention blocks a newer mirror across the R2 deletion boundary', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('retention-concurrency')
+	const mailbox = rpcFor(userId)
+	const oldAt = new Date(
+		Date.now() - (mailboxMessageRetentionDays + 3) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	const message = baseMessage(userId, {
+		id: 'retention-concurrent-message',
+		createdAt: oldAt,
+		updatedAt: oldAt,
+	})
+	await mailbox.mirrorMessage({ ownerId: userId, message })
+	const rawKey = emailRawMimeKey(userId, message.id)
+	await env.EMAIL_BLOBS.put(rawKey, 'raw')
+
+	let releaseDelete!: () => void
+	const deleteGate = new Promise<void>((resolve) => {
+		releaseDelete = resolve
+	})
+	let deleteStarted = false
+	const originalDelete = env.EMAIL_BLOBS.delete.bind(env.EMAIL_BLOBS)
+	env.EMAIL_BLOBS.delete = (async (keys: string | Array<string>) => {
+		const list = Array.isArray(keys) ? keys : [keys]
+		if (list.includes(rawKey)) {
+			deleteStarted = true
+			await deleteGate
+		}
+		await originalDelete(keys)
+	}) as typeof env.EMAIL_BLOBS.delete
+
+	try {
+		const retention = mailbox.runRetentionNow({ ownerId: userId })
+		while (!deleteStarted) {
+			await new Promise((resolve) => setTimeout(resolve, 1))
+		}
+		let mirrorSettled = false
+		const newerMirror = mailbox
+			.mirrorMessage({
+				ownerId: userId,
+				message: {
+					...message,
+					subject: 'newer live mirror',
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+				},
+			})
+			.then((result) => {
+				mirrorSettled = true
+				return result
+			})
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		expect(mirrorSettled).toBe(false)
+
+		releaseDelete()
+		await expect(retention).resolves.toMatchObject({
+			after: { messages: 0 },
+		})
+		await expect(newerMirror).resolves.toEqual({ ok: true, accepted: false })
+		expect(await mailbox.getMessage({ messageId: message.id })).toBeNull()
+	} finally {
+		releaseDelete()
+		env.EMAIL_BLOBS.delete = originalDelete
+	}
+})
+
+test('Mailbox can idempotently tombstone only an owner-bound missing message', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('missing-tombstone')
+	const otherOwner = uniqueUserId('missing-tombstone-other')
+	const mailbox = rpcFor(userId)
+	const deletedAt = '2026-08-02T20:00:00.000Z'
+	const present = baseMessage(userId, { id: 'present-message' })
+	await mailbox.mirrorMessage({ ownerId: userId, message: present })
+
+	await expect(
+		mailbox.tombstoneMissingMessage({
+			ownerId: userId,
+			messageId: present.id,
+			deletedAt,
+		}),
+	).resolves.toEqual({ status: 'message-present' })
+	await runInDurableObject(stubFor(userId), async (instance: Mailbox) => {
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.tombstoneMissingMessage({
+				ownerId: otherOwner,
+				messageId: 'missing-message',
+				deletedAt,
+			}),
+		)
+	})
+	await expect(
+		mailbox.tombstoneMissingMessage({
+			ownerId: userId,
+			messageId: 'missing-message',
+			deletedAt,
+		}),
+	).resolves.toEqual({ status: 'tombstoned', created: true })
+	await expect(
+		mailbox.tombstoneMissingMessage({
+			ownerId: userId,
+			messageId: 'missing-message',
+			deletedAt: '2026-08-02T20:01:00.000Z',
+		}),
+	).resolves.toEqual({ status: 'tombstoned', created: false })
+	await expect(
+		mailbox.mirrorMessage({
+			ownerId: userId,
+			message: baseMessage(userId, { id: 'missing-message' }),
+		}),
+	).resolves.toEqual({ ok: true, accepted: false })
+})
+
 test('Mailbox single-message delete is owner-bound and R2-durable before metadata', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('delete-message')
