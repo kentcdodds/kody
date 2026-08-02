@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
@@ -86,6 +87,55 @@ function createFailingEmailBlobs() {
 			return typeof value === 'function' ? value.bind(target) : value
 		},
 	})
+}
+
+function createRejectProjectionFailingDb(db: D1Database) {
+	let failed = false
+	const failingDb = new Proxy(db, {
+		get(target, property) {
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					if (!query.includes('INSERT INTO email_delivery_events')) {
+						return statement
+					}
+					return new Proxy(statement, {
+						get(statementTarget, statementProperty) {
+							if (statementProperty === 'bind') {
+								return (...values: Array<unknown>) => {
+									const bound = statementTarget.bind(...values)
+									if (failed || values[4] !== 'rejected') return bound
+									return new Proxy(bound, {
+										get(boundTarget, boundProperty) {
+											if (boundProperty === 'run') {
+												return async () => {
+													failed = true
+													throw new Error(
+														'simulated rejected projection failure',
+													)
+												}
+											}
+											const value = Reflect.get(boundTarget, boundProperty)
+											return typeof value === 'function'
+												? value.bind(boundTarget)
+												: value
+										},
+									})
+								}
+							}
+							const value = Reflect.get(statementTarget, statementProperty)
+							return typeof value === 'function'
+								? value.bind(statementTarget)
+								: value
+						},
+					})
+				}
+			}
+			const value = Reflect.get(target, property)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+	return { db: failingDb, didFail: () => failed }
 }
 
 const inboundMailboxMirrorTimeoutMs = 30_000
@@ -859,6 +909,85 @@ test(
 				afterReplay.filter((event) => event.id === delivery.id),
 			).toHaveLength(1)
 			expect(await readUserDailyReceiveCount(userId)).toBe(1)
+		} finally {
+			parseSpy.mockRestore()
+		}
+	},
+	inboundMailboxMirrorTimeoutMs,
+)
+
+test.each([
+	{ label: 'without an execution context', withContext: false },
+	{ label: 'with an execution context', withContext: true },
+])(
+	'SMTP rejection survives a rejected D1 projection failure $label',
+	async ({ withContext }) => {
+		silenceIncidentalRuntimeWarnings([
+			'inbound-email-rejected-projection-failed',
+		])
+		await ensureEmailTestSchema(env.APP_DB)
+		const username = `mbx-rej-fail-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `mbx-rej-fail-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		const address = `${username}@${platformDomain}`
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
+		const mailbox = rpcFor(userId)
+		await mailbox.getMessage({ messageId: 'warmup-nonexistent' })
+		const raw = [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Permanent reject despite projection failure',
+			`Message-ID: <mailbox-reject-failure-${crypto.randomUUID()}@example.net>`,
+			'',
+			'Body',
+		].join('\r\n')
+		const projection = createRejectProjectionFailingDb(env.APP_DB)
+		const inboundEnv = {
+			...createInboundEnv(),
+			APP_DB: projection.db,
+		}
+		const captured = withContext ? createCapturedWaitUntilContext() : null
+		const parseSpy = vi
+			.spyOn(parser, 'parseForwardableEmailRawMime')
+			.mockRejectedValueOnce(new Error('permanent parse rejection'))
+		try {
+			const message = createForwardableEmailMessage({
+				from: 'sender@example.net',
+				to: address,
+				raw,
+			})
+			await handleInboundEmail(message, inboundEnv, captured?.ctx)
+
+			expect(projection.didFail()).toBe(true)
+			expect(message.rejectedReason).toBe('permanent parse rejection')
+			expect(consoleWarn).toHaveBeenCalledWith(
+				'inbound-email-rejected-projection-failed',
+				userId,
+				expect.any(String),
+				expect.any(Error),
+			)
+			if (captured) await drainWaitUntil(captured.waitUntilPromises)
+
+			const rejected = (
+				await mailbox.listDeliveryEvents({ messageId: null, limit: 20 })
+			).find((event) => event.eventType === 'rejected')
+			expect(rejected).toMatchObject({
+				eventType: 'rejected',
+				provider: 'cloudflare-email-routing',
+			})
+			if (!rejected) throw new Error('Expected authoritative Mailbox rejection')
+			expect(
+				await env.APP_DB.prepare(
+					`SELECT event_type FROM email_delivery_events
+					WHERE id = ? AND user_id = ?`,
+				)
+					.bind(rejected.id, userId)
+					.first<{ event_type: string }>(),
+			).toEqual({ event_type: 'rejected' })
 		} finally {
 			parseSpy.mockRestore()
 		}

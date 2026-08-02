@@ -117,7 +117,10 @@ export type MailboxMarkInboundDeliveryOrphanCleanedResult =
 	| { status: 'orphan-cleaned'; delivery: MailboxInboundDeliverySnapshot }
 	| { status: 'lease-lost' }
 
-export type MailboxPruneExpiredInboundDedupeResult = { pruned: number }
+export type MailboxPruneExpiredInboundDedupeResult = {
+	pruned: number
+	prunedEventIds: Array<string>
+}
 
 export type MailboxListDueStaleInboundDeliveriesResult = {
 	deliveries: Array<MailboxInboundDeliverySnapshot>
@@ -787,7 +790,7 @@ export function pruneMailboxExpiredInboundDedupePointers(
 		)
 		.toArray()
 		.map((row) => String(row.id))
-	let pruned = 0
+	const prunedEventIds: Array<string> = []
 	for (const id of ids) {
 		const cursor = sql.exec(
 			`DELETE FROM email_delivery_events
@@ -796,9 +799,9 @@ export function pruneMailboxExpiredInboundDedupePointers(
 			mailboxInboundDedupeProvider,
 			now,
 		)
-		pruned += cursor.rowsWritten
+		if (cursor.rowsWritten > 0) prunedEventIds.push(id)
 	}
-	return { pruned }
+	return { pruned: prunedEventIds.length, prunedEventIds }
 }
 
 export function deferMailboxInboundDeliveryReconciliation(

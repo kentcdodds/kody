@@ -755,6 +755,80 @@ test('bootstrap skips malformed and cross-owner legacy D1 rows', async () => {
 	sqlite.close()
 })
 
+test('dedupe prune projects only the exact Mailbox IDs with owner/provider fences', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	const ownerId = 'owner-prune'
+	const selectedId = 'email-inbound-dedupe:selected'
+	const unselectedId = 'email-inbound-dedupe:unselected'
+	const foreignId = 'email-inbound-dedupe:foreign'
+	const wrongProviderId = 'email-inbound-dedupe:wrong-provider'
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	for (const [id, userId, provider] of [
+		[selectedId, ownerId, 'cloudflare-email-routing-dedupe'],
+		[unselectedId, ownerId, 'cloudflare-email-routing-dedupe'],
+		[foreignId, 'other-owner', 'cloudflare-email-routing-dedupe'],
+		[wrongProviderId, ownerId, 'cloudflare-email-routing'],
+	] as const) {
+		await db
+			.prepare(
+				`INSERT INTO email_delivery_events (
+					id, user_id, event_type, provider, created_at, updated_at
+				) VALUES (?, ?, 'receive_started', ?, ?, ?)`,
+			)
+			.bind(id, userId, provider, now.toISOString(), now.toISOString())
+			.run()
+	}
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				pruneExpiredInboundDedupePointers: vi.fn(async () => ({
+					pruned: 3,
+					prunedEventIds: [selectedId, foreignId, wrongProviderId],
+				})),
+			}),
+		},
+		userId: ownerId,
+	})
+
+	expect(await authority.pruneExpiredDedupe(now, 10)).toBe(3)
+	const remaining = await db
+		.prepare(
+			`SELECT id FROM email_delivery_events
+			ORDER BY id`,
+		)
+		.all<{ id: string }>()
+	expect(remaining.results?.map((row) => row.id)).toEqual([
+		foreignId,
+		unselectedId,
+		wrongProviderId,
+	])
+	sqlite.close()
+})
+
+test('empty Mailbox dedupe prune does not issue a D1 delete', async () => {
+	const prepare = vi.fn()
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: { prepare } as unknown as D1Database,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				pruneExpiredInboundDedupePointers: vi.fn(async () => ({
+					pruned: 0,
+					prunedEventIds: [],
+				})),
+			}),
+		},
+		userId: 'owner-empty-prune',
+	})
+
+	expect(await authority.pruneExpiredDedupe()).toBe(0)
+	expect(prepare).not.toHaveBeenCalled()
+})
+
 test('system D1 mutation surface rejects USER deliveries before writing', async () => {
 	const now = new Date('2026-08-02T12:00:00.000Z')
 	const delivery = await buildInboundDelivery({

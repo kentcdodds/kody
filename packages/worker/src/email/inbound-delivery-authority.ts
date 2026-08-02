@@ -151,7 +151,7 @@ export type UserInboundDeliveryAuthority = {
 		delivery: InboundDelivery,
 		reason: string,
 		now?: Date,
-	) => Promise<boolean>
+	) => Promise<InboundDelivery | null>
 	receive: (input: UserInboundDeliveryReceiveInput) => Promise<InboundDelivery>
 	deferReconciliation: (
 		deliveryId: string,
@@ -430,12 +430,22 @@ export function createUserInboundDeliveryAuthority(
 				result.status === 'rejected' ||
 				result.status === 'already-rejected'
 			) {
-				await mirror(result.delivery)
-				return true
+				const canonical = toUserInboundDelivery(userId, result.delivery)
+				try {
+					return await mirror(result.delivery)
+				} catch (error) {
+					console.warn(
+						'inbound-email-rejected-projection-failed',
+						userId,
+						result.delivery.deliveryId,
+						error,
+					)
+					return canonical
+				}
 			}
 			if (result.status === 'already-received') {
 				await mirror(result.delivery)
-				return false
+				return null
 			}
 			throw new InboundDeliveryLeaseLostError(
 				'Inbound rejection lost a state race; delivery should be retried.',
@@ -557,23 +567,15 @@ export function createUserInboundDeliveryAuthority(
 				now: now.toISOString(),
 				limit,
 			})
+			if (result.prunedEventIds.length === 0) return 0
+			const placeholders = result.prunedEventIds.map(() => '?').join(', ')
 			await env.APP_DB.prepare(
 				`DELETE FROM email_delivery_events
-				WHERE id IN (
-					SELECT id FROM email_delivery_events
-					WHERE user_id = ?
-						AND provider = ?
-						AND dedupe_expires_at <= ?
-					ORDER BY created_at ASC, id ASC
-					LIMIT ?
-				)`,
+				WHERE user_id = ?
+					AND provider = ?
+					AND id IN (${placeholders})`,
 			)
-				.bind(
-					userId,
-					mailboxInboundDedupeProvider,
-					now.toISOString(),
-					limit ?? 20,
-				)
+				.bind(userId, mailboxInboundDedupeProvider, ...result.prunedEventIds)
 				.run()
 			return result.pruned
 		},

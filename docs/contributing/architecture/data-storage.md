@@ -725,14 +725,17 @@ claim/release and orphan-cleaned tombstones are also owner-bound CAS.
 
 The DO does **not** perform external usage recording or subscription dispatch:
 Workers claim in Mailbox, perform the D1 usage-rollup or package dispatch, then
-complete/fail in Mailbox. After every successful USER CAS,
-`inbound-delivery-authority.ts` synchronously upserts one full Mailbox snapshot
-into D1 `email_delivery_events` (promoted columns plus `detail_json`,
-owner/provider fenced, monotonic and idempotent). Pending is mirrored before
-delivery reads; storing is mirrored before D1 thread/message/attachment fence
-predicates. Mirror failure fails closed. Terminal/effect snapshots keep D1
-global due-owner discovery current, but D1 is never read back as ongoing
-authority.
+complete/fail in Mailbox. `inbound-delivery-authority.ts` synchronously upserts
+one full Mailbox snapshot into D1 `email_delivery_events` (promoted columns plus
+`detail_json`, owner/provider fenced, monotonic and idempotent). Pending is
+mirrored before delivery reads; storing is mirrored before D1
+thread/message/attachment fence predicates. Those fence-critical failures fail
+closed. A rejected CAS is the deliberate exception: SMTP rejection remains
+permanent when its D1 projection fails, and rejected terminal work read-repairs
+the projection. Terminal/effect snapshots keep D1 global due-owner discovery
+current, but D1 is never read back as ongoing authority. Dedupe pruning projects
+only the exact bounded pointer IDs deleted by Mailbox, with D1 owner/provider
+fences; it never runs a second independent expiry/limit selection.
 
 The only reverse path is the deployment bridge: when a USER point lookup misses
 in Mailbox and a pre-deploy D1 row exists, one complete D1 snapshot bootstraps
@@ -862,15 +865,16 @@ Never throws; returns a bounded summary. **Live callers:**
   successful D1 update; failures never change the mutation response).
 - **Inbound terminals** (`inbound.ts`) — USER delivery authority starts in
   Mailbox: dedupe claim, UserMeter consume, and charged-pending CAS precede
-  D1/R2 message-graph storage. Mailbox then finalizes `received` or `rejected`
-  and synchronously projects the full delivery snapshot to D1. A received winner
-  schedules D1 message-graph repair via `ctx.waitUntil`
-  (`scheduleInboundReceivedTerminalWork`) without D1 delivery-event write-back.
-  **Already-received** Email Routing retries (delivery ledger
-  `state === 'received'` with an existing message row) idempotently repair the
-  graph and re-run effect reconciliation without a second charge. **Rejected
-  terminals** (post-claim parse failure or replay of a claimed `rejected`
-  delivery) read-repair the Mailbox → D1 projection via
+  D1/R2 message-graph storage. Mailbox then finalizes `received` or `rejected`.
+  Received snapshots synchronously project to D1; rejected snapshots project
+  best-effort so a compatibility-write outage cannot undo the permanent SMTP
+  reject. A received winner schedules D1 message-graph repair via
+  `ctx.waitUntil` (`scheduleInboundReceivedTerminalWork`) without D1
+  delivery-event write-back. **Already-received** Email Routing retries
+  (delivery ledger `state === 'received'` with an existing message row)
+  idempotently repair the graph and re-run effect reconciliation without a
+  second charge. **Rejected terminals** (post-claim parse failure or replay of a
+  claimed `rejected` delivery) read-repair the Mailbox → D1 projection via
   `scheduleInboundRejectedTerminalWork`. Effects claim and complete/fail in
   Mailbox around external work; terminal snapshots synchronously repair D1.
   Terminal coordinator failures are contained after the authoritative CAS.
@@ -1187,9 +1191,11 @@ For USER mail, the owner-bound Mailbox ledger is the lifecycle/effect authority:
    pending snapshot is synchronously projected to D1.
 2. Thread prework, R2 raw-MIME put, and D1 message/attachment storage build the
    message graph. D1 remains authoritative for that graph.
-3. Mailbox CAS finalizes the delivery as `received` or `rejected`; the complete
-   Mailbox snapshot is synchronously projected to D1. Fence-critical projection
-   failures fail closed.
+3. Mailbox CAS finalizes the delivery as `received` or `rejected`. A received
+   snapshot is synchronously projected to D1 and fence-critical projection
+   failures fail closed. Rejection projection is best-effort because Mailbox has
+   already made the SMTP rejection permanent; rejected terminal work
+   read-repairs D1.
 4. Received terminal work repairs the D1-authoritative message graph into
    Mailbox without delivery events, runs externally executed effects under
    Mailbox leases, then read-repairs the Mailbox → D1 projection.

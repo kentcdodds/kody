@@ -5,6 +5,7 @@ import { emailRawMimeKey } from './blob-keys.ts'
 import { Mailbox } from './mailbox-do.ts'
 import { insertInput } from './mailbox-inbound-ledger-test-helpers.ts'
 import {
+	mailboxInboundDedupePointerId,
 	mailboxInboundDedupeProvider,
 	mailboxInboundProvider,
 	mailboxInboundReconciliationRetryMs,
@@ -331,6 +332,11 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 		messageId: 'email-inbound-message:owner-b',
 		threadId: 'email-inbound-thread:owner-b',
 	})
+	await mailboxB.claimInboundDeliveryWindow({
+		ownerId: ownerB,
+		delivery: foreign,
+		now,
+	})
 	await mailboxB.insertChargedPendingInboundDelivery({
 		ownerId: ownerB,
 		delivery: foreign,
@@ -369,6 +375,17 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 		limit: 50,
 	})
 	expect(pruned.pruned).toBeGreaterThan(0)
+	expect(pruned.prunedEventIds).toHaveLength(pruned.pruned)
+	expect(pruned.prunedEventIds).not.toContain(
+		mailboxInboundDedupePointerId(foreign.fingerprint),
+	)
+	expect(
+		await mailboxB.getInboundDeliveryWindow({
+			ownerId: ownerB,
+			fingerprint: foreign.fingerprint,
+			now,
+		}),
+	).toMatchObject({ deliveryId: foreign.deliveryId })
 
 	// Defer reconcile.
 	const deferred = await mailboxA.deferInboundDeliveryReconciliation({
