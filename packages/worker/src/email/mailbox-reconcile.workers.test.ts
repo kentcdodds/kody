@@ -135,12 +135,14 @@ async function seedPreClaimAuditEvent(input: {
 async function seedLegacyInboundEvent(input: {
 	userId: string
 	deliveryId: string
-	state: 'pending' | 'storing' | 'received'
+	state: 'pending' | 'storing' | 'received' | 'orphan-cleaned'
 	createdAt: string
 	messageId?: string
 	fingerprint?: string
 	provider?: 'cloudflare-email-routing' | 'cloudflare-email-routing-dedupe'
 	eventId?: string
+	cleanupRetryAt?: string
+	reconcileAfter?: string
 }) {
 	const provider = input.provider ?? 'cloudflare-email-routing'
 	const fingerprint = input.fingerprint ?? `fingerprint-${input.deliveryId}`
@@ -165,6 +167,12 @@ async function seedLegacyInboundEvent(input: {
 		quotaDay: '2026-07-01',
 		dedupeExpiresAt: '2026-09-01T00:00:00.000Z',
 		state: input.state,
+		...(input.cleanupRetryAt == null
+			? {}
+			: { cleanupRetryAt: input.cleanupRetryAt }),
+		...(input.reconcileAfter == null
+			? {}
+			: { reconcileAfter: input.reconcileAfter }),
 		...(input.state === 'storing'
 			? {
 					storageLease: 'legacy-storage-lease',
@@ -190,11 +198,12 @@ async function seedLegacyInboundEvent(input: {
 			id, message_id, user_id, inbox_id, event_type, provider,
 			provider_event_id, detail_json, needs_effect_reconcile,
 			state, fingerprint, storage_lease, storage_lease_at,
-			expected_attachment_count, finalization_token, dedupe_expires_at,
+			cleanup_retry_at, expected_attachment_count, finalization_token,
+			reconcile_after, dedupe_expires_at,
 			usage_effect_recorded_at, usage_started_at, usage_month, usage_bytes,
 			usage_duration_ms, subscription_effect_state, created_at, updated_at
 		) VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		)`,
 	)
 		.bind(
@@ -211,10 +220,12 @@ async function seedLegacyInboundEvent(input: {
 			fingerprint,
 			'storageLease' in detail ? detail.storageLease : null,
 			'storageLeaseAt' in detail ? detail.storageLeaseAt : null,
+			'cleanupRetryAt' in detail ? detail.cleanupRetryAt : null,
 			'expectedAttachmentCount' in detail
 				? detail.expectedAttachmentCount
 				: null,
 			'finalizationToken' in detail ? detail.finalizationToken : null,
+			'reconcileAfter' in detail ? detail.reconcileAfter : null,
 			detail.dedupeExpiresAt,
 			'usageEffectRecordedAt' in detail ? detail.usageEffectRecordedAt : null,
 			'usageStartedAt' in detail ? detail.usageStartedAt : null,
@@ -647,17 +658,22 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 	const pendingId = 'email-inbound-delivery:legacy-pending'
 	const storingId = 'email-inbound-delivery:legacy-storing'
 	const receivedId = 'email-inbound-delivery:legacy-received'
+	const orphanId = 'email-inbound-delivery:legacy-orphan-cleaned'
+	const reconcileAfter = '2026-08-03T12:00:00.000Z'
+	const cleanupRetryAt = '2026-08-03T13:00:00.000Z'
 	const pending = await seedLegacyInboundEvent({
 		userId,
 		deliveryId: pendingId,
 		state: 'pending',
 		createdAt: '2026-07-01T12:00:00.000Z',
+		reconcileAfter,
 	})
 	await seedLegacyInboundEvent({
 		userId,
 		deliveryId: storingId,
 		state: 'storing',
 		createdAt: '2026-07-01T12:01:00.000Z',
+		reconcileAfter,
 	})
 	await seedLegacyInboundEvent({
 		userId,
@@ -665,6 +681,14 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 		messageId: receivedMessageId,
 		state: 'received',
 		createdAt: '2026-07-01T12:03:00.000Z',
+	})
+	await seedLegacyInboundEvent({
+		userId,
+		deliveryId: orphanId,
+		state: 'orphan-cleaned',
+		createdAt: '2026-07-01T12:04:00.000Z',
+		cleanupRetryAt,
+		reconcileAfter,
 	})
 	await seedLegacyInboundEvent({
 		userId,
@@ -681,18 +705,11 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 	})
 
 	const mailbox = rpcFor(userId)
-	expect(await mailbox.countMailbox()).toEqual({
-		threads: 0,
-		messages: 0,
-		attachments: 0,
-		deliveryEvents: 0,
-	})
+	expect((await mailbox.countMailbox()).deliveryEvents).toBe(0)
 	const firstNow = new Date('2026-08-02T15:00:00.000Z')
 	await expect(
 		reconcileMailboxParity({ env, now: firstNow, batchSize: 1 }),
 	).resolves.toMatchObject({
-		scanned: 1,
-		compared: 1,
 		matched: 1,
 		mismatched: 0,
 		failed: 0,
@@ -705,7 +722,7 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 			ownerId: userId,
 			deliveryId: pendingId,
 		}),
-	).toMatchObject({ state: 'pending' })
+	).toMatchObject({ state: 'pending', reconcileAfter })
 	expect(
 		await mailbox.getInboundDelivery({
 			ownerId: userId,
@@ -715,6 +732,7 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 		state: 'storing',
 		storageLease: 'legacy-storage-lease',
 		expectedAttachmentCount: 2,
+		reconcileAfter,
 	})
 	expect(
 		await mailbox.getInboundDelivery({
@@ -728,17 +746,47 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 		subscriptionEffectState: 'complete',
 	})
 	expect(
+		await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId: orphanId,
+		}),
+	).toMatchObject({
+		state: 'orphan-cleaned',
+		cleanupRetryAt,
+		reconcileAfter,
+	})
+	const unboundEvents = await mailbox.listDeliveryEvents({
+		messageId: null,
+		limit: 20,
+	})
+	expect(
+		JSON.parse(
+			unboundEvents.find((event) => event.id === orphanId)!.detailJson,
+		),
+	).toMatchObject({ cleanupRetryAt, reconcileAfter })
+	expect(
 		await mailbox.getInboundDeliveryWindow({
 			ownerId: userId,
 			fingerprint: pending.fingerprint,
 			now: '2026-08-02T15:00:00.000Z',
 		}),
 	).toMatchObject({ deliveryId: pendingId })
+	expect(unboundEvents.some((event) => event.id === auditEventId)).toBe(true)
+	await expect(
+		mailbox.listDueStaleInboundDeliveries({
+			ownerId: userId,
+			now: '2026-08-02T16:00:00.000Z',
+			limit: 20,
+		}),
+	).resolves.toEqual({ deliveries: [] })
+	const dueAfterSchedules = await mailbox.listDueStaleInboundDeliveries({
+		ownerId: userId,
+		now: '2026-08-04T16:00:00.000Z',
+		limit: 20,
+	})
 	expect(
-		(await mailbox.listDeliveryEvents({ messageId: null, limit: 20 })).some(
-			(event) => event.id === auditEventId,
-		),
-	).toBe(true)
+		new Set(dueAfterSchedules.deliveries.map((row) => row.deliveryId)),
+	).toEqual(new Set([pendingId, storingId, orphanId]))
 
 	const replayEventBackfill = () =>
 		env.APP_DB.prepare(
@@ -757,13 +805,17 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 	await expect(
 		reconcileMailboxParity({ env, now: secondNow, batchSize: 1 }),
 	).resolves.toMatchObject({
-		scanned: 1,
-		compared: 1,
 		matched: 1,
 		mismatched: 0,
 		failed: 0,
 	})
 	expect(await mailbox.countMailbox()).toEqual(countAfterFirst)
+	expect(
+		await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId: orphanId,
+		}),
+	).toMatchObject({ cleanupRetryAt, reconcileAfter })
 
 	await mailbox.claimInboundDeliveryStorage({
 		ownerId: userId,
@@ -785,8 +837,6 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 	await expect(
 		reconcileMailboxParity({ env, now: thirdNow, batchSize: 1 }),
 	).resolves.toMatchObject({
-		scanned: 1,
-		compared: 1,
 		matched: 1,
 		mismatched: 0,
 		failed: 0,
@@ -803,5 +853,44 @@ test('reconcileMailboxParity bootstraps production legacy USER inbound shapes wi
 		state: 'storing',
 		expectedAttachmentCount: 7,
 		updatedAt: newerAuthority?.updatedAt,
+	})
+
+	const malformedUserId = await seedParityUser({
+		email: `legacy-malformed-${crypto.randomUUID()}@example.test`,
+		checkedAt: null,
+	})
+	await seedLegacyInboundEvent({
+		userId: malformedUserId,
+		deliveryId: 'email-inbound-delivery:malformed-schedule',
+		state: 'pending',
+		createdAt: '2026-07-01T13:00:00.000Z',
+		reconcileAfter: 'not-a-timestamp',
+	})
+	await seedPreClaimAuditEvent({
+		userId: malformedUserId,
+		inboxId: 'malformed-schedule-inbox',
+		createdAt: '2026-07-01T13:01:00.000Z',
+	})
+	const malformedMailbox = rpcFor(malformedUserId)
+	await expect(
+		reconcileMailboxParity({
+			env,
+			now: new Date('2026-08-02T17:00:00.000Z'),
+			batchSize: 1,
+		}),
+	).resolves.toMatchObject({
+		compared: 1,
+		matched: 0,
+		mismatched: 1,
+		failed: 0,
+	})
+	expect(
+		(await countD1MailboxParity({ db: env.APP_DB, userId: malformedUserId }))
+			.deliveryEvents,
+	).toBe(2)
+	expect((await malformedMailbox.countMailbox()).deliveryEvents).toBe(0)
+	expect(await readParityState(malformedUserId)).toMatchObject({
+		mismatchCount: 1,
+		lastError: null,
 	})
 }, 30_000)

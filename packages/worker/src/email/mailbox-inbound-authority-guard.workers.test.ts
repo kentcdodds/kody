@@ -233,6 +233,28 @@ test('bootstrapDeliveryEvents is owner-bound, validated, bounded, transactional,
 		skipped: 1,
 		results: [{ eventId: skippedId, status: 'skipped' }],
 	})
+	const malformedId = 'email-inbound-delivery:malformed-schedule'
+	const malformed = legacyPendingEvent(ownerId, malformedId)
+	await expect(
+		mailbox.bootstrapDeliveryEvents({
+			ownerId,
+			events: [
+				{
+					...malformed,
+					reconcileAfter: 'not-a-timestamp',
+					detailJson: JSON.stringify({
+						...JSON.parse(malformed.detailJson),
+						reconcileAfter: 'not-a-timestamp',
+					}),
+				},
+			],
+		}),
+	).resolves.toEqual({
+		inserted: 0,
+		existing: 0,
+		skipped: 1,
+		results: [{ eventId: malformedId, status: 'skipped' }],
+	})
 
 	await runInDurableObject(stubFor(ownerId), async (instance) => {
 		await assertMailboxThrows(/ownerId mismatch/, () =>

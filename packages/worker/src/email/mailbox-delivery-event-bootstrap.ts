@@ -1,5 +1,8 @@
 import { writeMailboxDeliveryEventRow } from './mailbox-delivery-events.ts'
-import { assertUserInboundLegacyBootstrapSnapshot } from './mailbox-inbound-bootstrap.ts'
+import {
+	assertUserInboundLegacyBootstrapSnapshot,
+	hasMalformedUserInboundBootstrapSchedule,
+} from './mailbox-inbound-bootstrap.ts'
 import {
 	assertMailboxNonEmptyString,
 	mailboxUpsertDeliveryEventsMax,
@@ -33,11 +36,16 @@ export function bootstrapMailboxDeliveryEvents(
 		results: [],
 	}
 	for (const event of input.events) {
+		const eventId = assertMailboxNonEmptyString(event.id, 'event.id')
+		if (hasMalformedUserInboundBootstrapSchedule(event)) {
+			result.skipped += 1
+			result.results.push({ eventId, status: 'skipped' })
+			continue
+		}
 		assertUserInboundLegacyBootstrapSnapshot({
 			ownerId: input.ownerId,
 			event,
 		})
-		const eventId = assertMailboxNonEmptyString(event.id, 'event.id')
 		const existing = sql
 			.exec(
 				`SELECT id FROM email_delivery_events WHERE id = ? LIMIT 1`,

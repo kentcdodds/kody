@@ -133,9 +133,10 @@ export function eventMirrorAllowsCursorAdvance(
 		case 'stale':
 		case 'missing':
 			return true
+		case 'skipped':
+			return result.reason === 'user-inbound-authority'
 		case 'timeout':
 		case 'error':
-		case 'skipped':
 			return false
 		default: {
 			const exhaustive: never = result

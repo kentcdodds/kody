@@ -3,7 +3,10 @@ import {
 	mailboxInboundDedupeProvider,
 	mailboxInboundProvider,
 } from './mailbox-inbound-ledger.ts'
-import { parseStrictInboundDeliveryDetailJson } from './inbound-delivery.ts'
+import {
+	parseInboundDeliveryDetailJson,
+	parseStrictInboundDeliveryDetailJson,
+} from './inbound-delivery.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
 import {
 	assertMailboxNonEmptyString,
@@ -120,6 +123,27 @@ export function isUserInboundLegacyAuthoritySnapshot(
 	return isUserInboundAuthorityEvent(event) && !isPreClaimAuditSnapshot(event)
 }
 
+export function hasMalformedUserInboundBootstrapSchedule(
+	event: MailboxDeliveryEventInput,
+) {
+	if (!isUserInboundLegacyAuthoritySnapshot(event)) return false
+	if (!parseInboundDeliveryDetailJson(event.detailJson)) return false
+	try {
+		const detail = JSON.parse(event.detailJson) as Record<string, unknown>
+		return ['cleanupRetryAt', 'reconcileAfter'].some((field) => {
+			if (!(field in detail)) return false
+			const value = detail[field]
+			return (
+				typeof value !== 'string' ||
+				!Number.isFinite(Date.parse(value)) ||
+				new Date(value).toISOString() !== value
+			)
+		})
+	} catch {
+		return false
+	}
+}
+
 function readMailboxDeliveryEvent(
 	sql: SqlStorage,
 	eventId: string,
@@ -159,6 +183,19 @@ export function assertUserInboundLegacyBootstrapSnapshot(input: {
 				: 'receive_started'
 	const optionalMatches = (actual: unknown, expected: unknown) =>
 		actual === (expected ?? null)
+	const lifecycle = input.event.provider === mailboxInboundProvider
+	const expectedCleanupRetryAt =
+		lifecycle && delivery?.state === 'orphan-cleaned'
+			? delivery.cleanupRetryAt
+			: null
+	const expectedReconcileAfter =
+		lifecycle &&
+		(delivery?.state === 'pending' ||
+			delivery?.state === 'storing' ||
+			delivery?.state === 'cleaning' ||
+			delivery?.state === 'orphan-cleaned')
+			? delivery.reconcileAfter
+			: null
 	if (
 		!delivery ||
 		delivery.userId !== input.ownerId ||
@@ -176,6 +213,7 @@ export function assertUserInboundLegacyBootstrapSnapshot(input: {
 		!optionalMatches(input.event.storageLeaseAt, delivery.storageLeaseAt) ||
 		!optionalMatches(input.event.cleanupLease, delivery.cleanupLease) ||
 		!optionalMatches(input.event.cleanupLeaseAt, delivery.cleanupLeaseAt) ||
+		!optionalMatches(input.event.cleanupRetryAt, expectedCleanupRetryAt) ||
 		!optionalMatches(
 			input.event.expectedAttachmentCount,
 			delivery.expectedAttachmentCount,
@@ -184,6 +222,7 @@ export function assertUserInboundLegacyBootstrapSnapshot(input: {
 			input.event.finalizationToken,
 			delivery.finalizationToken,
 		) ||
+		!optionalMatches(input.event.reconcileAfter, expectedReconcileAfter) ||
 		!optionalMatches(input.event.dedupeExpiresAt, delivery.dedupeExpiresAt) ||
 		!optionalMatches(
 			input.event.usageEffectRecordedAt,

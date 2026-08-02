@@ -55,7 +55,9 @@ export type InboundDelivery = {
 	expectedAttachmentCount?: number
 	cleanupLease?: string
 	cleanupLeaseAt?: string
+	cleanupRetryAt?: string
 	finalizationToken?: string
+	reconcileAfter?: string
 	usageEffectRecordedAt?: string
 	usageEffectSuppressedAt?: string
 	usageStartedAt?: string
@@ -217,8 +219,14 @@ export function parseInboundDeliveryDetailJson(
 			...(typeof detail.cleanupLeaseAt === 'string'
 				? { cleanupLeaseAt: detail.cleanupLeaseAt }
 				: {}),
+			...(typeof detail.cleanupRetryAt === 'string'
+				? { cleanupRetryAt: detail.cleanupRetryAt }
+				: {}),
 			...(typeof detail.finalizationToken === 'string'
 				? { finalizationToken: detail.finalizationToken }
+				: {}),
+			...(typeof detail.reconcileAfter === 'string'
+				? { reconcileAfter: detail.reconcileAfter }
 				: {}),
 			...(typeof detail.usageEffectRecordedAt === 'string'
 				? { usageEffectRecordedAt: detail.usageEffectRecordedAt }
@@ -297,6 +305,18 @@ export function parseStrictInboundDeliveryDetailJson(
 			raw.state !== delivery.state
 		) {
 			return null
+		}
+		const record = raw as Record<string, unknown>
+		for (const field of ['cleanupRetryAt', 'reconcileAfter'] as const) {
+			const value = record[field]
+			if (
+				field in record &&
+				(typeof value !== 'string' ||
+					!Number.isFinite(Date.parse(value)) ||
+					new Date(value).toISOString() !== value)
+			) {
+				return null
+			}
 		}
 		return delivery
 	} catch {

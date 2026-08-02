@@ -29,13 +29,7 @@ export function toUserInboundDelivery(
 	userId: string,
 	snapshot: MailboxInboundDeliverySnapshot,
 ): InboundDelivery {
-	const {
-		createdAt: _createdAt,
-		updatedAt: _updatedAt,
-		cleanupRetryAt: _cleanupRetryAt,
-		reconcileAfter: _reconcileAfter,
-		...delivery
-	} = snapshot
+	const { createdAt: _createdAt, updatedAt: _updatedAt, ...delivery } = snapshot
 	return { ...delivery, userId }
 }
 
@@ -65,6 +59,19 @@ function toMailboxBootstrapEvent(input: {
 	updatedAt: string
 }): MailboxDeliveryEventInput {
 	const delivery = input.delivery
+	const isLifecycle = input.provider === mailboxInboundProvider
+	const cleanupRetryAt =
+		isLifecycle && delivery.state === 'orphan-cleaned'
+			? (delivery.cleanupRetryAt ?? null)
+			: null
+	const reconcileAfter =
+		isLifecycle &&
+		(delivery.state === 'pending' ||
+			delivery.state === 'storing' ||
+			delivery.state === 'cleaning' ||
+			delivery.state === 'orphan-cleaned')
+			? (delivery.reconcileAfter ?? null)
+			: null
 	return {
 		id: input.eventId,
 		messageId: delivery.state === 'received' ? delivery.messageId : null,
@@ -82,10 +89,10 @@ function toMailboxBootstrapEvent(input: {
 		storageLeaseAt: delivery.storageLeaseAt ?? null,
 		cleanupLease: delivery.cleanupLease ?? null,
 		cleanupLeaseAt: delivery.cleanupLeaseAt ?? null,
-		cleanupRetryAt: null,
+		cleanupRetryAt,
 		expectedAttachmentCount: delivery.expectedAttachmentCount ?? null,
 		finalizationToken: delivery.finalizationToken ?? null,
-		reconcileAfter: null,
+		reconcileAfter,
 		dedupeExpiresAt: delivery.dedupeExpiresAt,
 		usageEffectRecordedAt: delivery.usageEffectRecordedAt ?? null,
 		usageEffectSuppressedAt: delivery.usageEffectSuppressedAt ?? null,

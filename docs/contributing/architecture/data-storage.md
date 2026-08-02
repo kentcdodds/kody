@@ -746,8 +746,13 @@ non-inbound events continue through normal `upsertDeliveryEvents`. The bootstrap
 RPC accepts at most 100 snapshots, validates owner/provider/detail coherence,
 and reports inserted/existing/skipped counts. It never updates an existing
 Mailbox row. Normal delivery-event upserts continue rejecting USER inbound
-authority snapshots. `system:email` stays on the existing D1 implementation and
-cannot bootstrap a Mailbox. Migration
+authority snapshots. Legacy lifecycle bootstrap preserves canonical
+`reconcileAfter` and orphan-cleaned `cleanupRetryAt` schedules in Mailbox
+columns/detail JSON so due work cannot run early; irrelevant dedupe/terminal
+schedule columns remain null. A malformed schedule is skipped per row, allowing
+the normal audit subset to commit; parity records a count mismatch instead of
+treating the mixed page as an RPC failure. `system:email` stays on the existing
+D1 implementation and cannot bootstrap a Mailbox. Migration
 `0129-email-inbound-mailbox-authority-mirror.sql` is additive: it promotes
 compatibility/fence fields and adds the cross-store usage effect idempotency
 ledger; it drops no tables. Destructive follow-up work remains gated on the
@@ -1011,9 +1016,10 @@ Per user, the lane:
    RPCs repeatedly timed out on a lagging owner and prevented soak under the 10s
    lane budget; page batches restore convergence while live dual-write keeps the
    1s bound. Cursor advances through per-event mirrored/stale/missing results
-   (equal `created_at` progresses by id); uniform timeout/error/unconfigured
-   retains the cursor so the next tick reloads the same page. Rows deleted
-   before the snapshot load simply do not appear.
+   and USER-inbound bootstrap skips (so count comparison exposes malformed
+   legacy rows); equal `created_at` progresses by id. Uniform
+   timeout/error/unconfigured retains the cursor so the next tick reloads the
+   same page. Rows deleted before the snapshot load simply do not appear.
 4. **Durable content watermark replay** — after both creation phases complete,
    opens a frozen window `(watermark, upper]`
    (`mailbox_parity_content_replay_upper_at` set once when the window opens;
