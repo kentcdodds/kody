@@ -21,7 +21,9 @@ Module: `packages/worker/src/entitlements/`
   helpers for rate-style limits, `assertWithinStorageBytesEntitlement`
   (UserMeter DO reserve with cold bootstrap), and
   `readCurrentEntitlementResourceUsage` (UserMeter-authoritative for
-  `storage_bytes` and daily resources).
+  `storage_bytes`, `package_services`, and daily resources).
+  `countRunningPackageServices` is UserMeter-authoritative.
+  `countRunningPackageServicesFromD1` is reserved for parity only.
 
 ## Plan model
 
@@ -130,11 +132,11 @@ live 2026-08-01). `assertWithinStorageBytesEntitlement` uses atomic DO
 async mirror** — it is never read for enforcement or usage after the flip; only
 parity checks, reconcile tooling, and cold bootstrap read it.
 
-**D1 package service liveness** (`package_service_states`) stays authoritative
-for running counts, discovery, and `service_start` enforcement. UserMeter schema
-v5 adds an optional per-service shadow table as **best-effort future-cutover
-support only** — see
-[Package service liveness — UserMeter shadow](#package-service-liveness--usermeter-shadow-expand-phase-slice-4-phase-a).
+**D1 package service liveness** (`package_service_states`): UserMeter is now the
+**authoritative running-count source** for `package_services` enforcement and
+`service_start` after the cutover (2026-08-01). D1 remains the enumeration index
+for discovery, account export, and deletion, and is the parity mirror — see
+[Package service liveness — UserMeter authority](#package-service-liveness--usermeter-authority-cutover-2026-08-01).
 
 **Account-deletion write fencing** uses a split authority model after slice 5
 Phase B: D1 `users.deleting_at` remains the permanent point gate; callers that
@@ -246,22 +248,71 @@ return `null` for each shadow so paged consumers never double-count them
 `UserMeter.purge()` clears counters, inbound delivery claims, and all shadow
 state (storage bytes and package-service liveness) via `deleteAll`.
 
-### Package service liveness — UserMeter shadow (expand phase slice 4, Phase A)
+### Package service liveness — UserMeter authority (cutover 2026-08-01)
 
-D1 `package_service_states` remains the **sole authority** for running-service
-**count**, **discovery**, and **`service_start` enforcement** in this PR.
-Nothing in Phase A switches those reads or the `assertWithinEntitlement` path
-for `package_services` / `persistent_package_services`.
+**Production evidence (authority gate):** 38-user parity sweep at 2026-08-01
+~21:27Z showed running-count parity clean for every user. Exactly one user had 2
+D1-only stopped inventory rows with `d1-fresh-running=0` and `meter-running=0`.
+No declared package services exist in production (Kent's 59 personal or 10
+platform packages), so deliberate lifecycle exercise is unavailable; the parity
+sweep is the production gate.
 
-UserMeter schema **v5** adds a per-service `package_service_states` table inside
-the DO as **best-effort shadow / future-cutover support only** (`status`,
-`started_at`, monotonic `source_updated_at` from the D1 projection timestamp,
-`revision`, `updated_at`). User scope is the DO identity — there is no `user_id`
-column. Shadow rows are never read for usage display, entitlement enforcement,
-or account-deletion inventory in this slice.
+**Authority after the flip:** `countRunningPackageServices` reads directly from
+the UserMeter DO — no D1 access on the enforcement path. New lifecycle
+dual-writes (`upsertPackageServiceState`) populate the meter so enforcement is
+immediately consistent. D1 `package_service_states` remains:
 
-**Dual-write from `PackageServiceInstance`:** every D1 projection also attempts
-a best-effort UserMeter shadow on the same lifecycle surface:
+- the **enumeration index** for account export, deletion, and admin discovery
+- the **parity mirror**: `admin_user_meter_parity` compares
+  `countRunningPackageServicesFromD1` (D1 side) against
+  `meter.countRunningPackageServices` (DO side)
+- the **repair source**: `bootstrapPackageServiceStates` is an explicit
+  migration/repair primitive only — it is not on the enforcement path
+
+**Stopped inventory policy:** D1 stopped/error rows are historical inventory and
+do not gate liveness authority. They are never loaded into the meter at
+enforcement time. The meter count is 0 for a new user or a user with no live
+dual-writes; this is correct.
+
+**D1-only fresh-running row:** a D1 fresh-running row that has no corresponding
+meter row means a lifecycle dual-write shadow missed the meter. This is a
+migration anomaly and parity blocker; `admin_user_meter_parity` will expose it.
+The authority count returns 0 (from the empty meter). Roll back D1 authority if
+this is observed in production.
+
+**`excludeService` and 24h staleness:** both semantics are preserved exactly.
+`excludeService` is forwarded to `meter.countRunningPackageServices`. The 24h
+`staleAfterMs` window applies to DO `source_updated_at` (kept fresh by heartbeat
+dual-writes).
+
+**`readEntitlementResourceUsage` throws:** calling
+`readEntitlementResourceUsage(package_services)` throws with guidance directing
+callers to `readCurrentEntitlementResourceUsage` or `assertWithinEntitlement`
+with an explicit `getCurrent`. No production D1 count path for enforcement
+remains.
+
+**`service_start` caller:** passes `env: ctx.env` into
+`countRunningPackageServices` so `USER_METER` binding is available. Missing
+binding fails closed.
+
+**Rollback window:** D1 `package_service_states` continues to receive D1-first
+lifecycle dual-writes (no table/column retirements). To roll back: remove the
+`readCurrentEntitlementResourceUsage` / `countRunningPackageServices` changes,
+revert `service-start.ts` to call `countRunningPackageServicesFromD1`, and
+restore the `readEntitlementResourceUsage` D1 path. Verify via
+`admin_user_meter_parity` before rolling back.
+
+**No declared service lifecycle:** because no package services are currently
+declared in production packages, the only ongoing exercise of this path is the
+heartbeat alarm and any future `service_start` calls. Parity sweeps remain the
+primary verification surface.
+
+UserMeter schema **v5** adds the per-service `package_service_states` table
+inside the DO (`status`, `started_at`, monotonic `source_updated_at`,
+`revision`, `updated_at`).
+
+**Dual-write from `PackageServiceInstance`:** D1 upsert/delete runs first; a
+best-effort UserMeter shadow follows on the same lifecycle surfaces:
 
 - lifecycle transitions and warm-start restore after upgrades
   (`projectServiceStateToD1`)
@@ -271,27 +322,17 @@ a best-effort UserMeter shadow on the same lifecycle surface:
 - purge (`deleteProjectedServiceState` deletes D1 then shadow before
   `deleteAll`)
 
-D1 upsert/delete runs first; shadow RPCs are optional when `USER_METER` is
-unbound and failures log `package-service-user-meter-shadow-failed` without
-affecting the service path. Shadow upserts reject stale/out-of-order writes when
-`sourceUpdatedAt` is older than the existing shadow row so cold bootstrap cannot
-clobber fresher state.
-
-**Timing unchanged:** live services heartbeat D1 `updated_at` every **1 hour**
-(`packageServiceStateHeartbeatMs`). Running counts still treat rows as stale
-after **24 hours** without a fresh heartbeat (`packageServiceStateStaleMs` in
-`entitlements/service.ts`). The UserMeter cutover-support RPC
-`countRunningPackageServices` uses the same 24h window on shadow
-`source_updated_at` but is **not** wired to enforcement in Phase A.
+Shadow RPCs are optional when `USER_METER` is unbound and failures log
+`package-service-user-meter-shadow-failed` without affecting the service path.
+Shadow upserts reject stale/out-of-order writes when `sourceUpdatedAt` is older
+than the existing shadow row.
 
 **Account export:** `UserMeter.exportCounters` returns additive
 `packageServiceStatesShadow` on the first page only (`startAfter` absent); later
-pages return `null`. Section totals count the shadow inventory once when
-present; the field is explicitly non-authoritative — authoritative liveness
-remains on D1.
+pages return `null`. The field reflects the authoritative DO inventory.
 
-**Account purge:** `UserMeter.purge()` clears package-service shadow rows with
-the rest of DO state via `deleteAll`.
+**Account purge:** `UserMeter.purge()` clears package-service shadow rows via
+`deleteAll` then schema re-init.
 
 ### Account-deletion write fencing — UserMeter authority (expand phase slice 5, Phase B)
 
@@ -351,19 +392,14 @@ restores any deleting tombstone; D1 `deleting_at` remains the gate.
 Public errors, ALS nested-lease reuse, holder strings, and `waitUntil` release
 detachment stay parity-compatible with the pre-cutover surface.
 
-### Future package-service authority flip (contract follow-up)
+### Package-service authority flip (complete, 2026-08-01)
 
-A separate **high-risk contract PR** — not a merge blocker for Phase A — will
-flip running-service count/discovery/enforcement into UserMeter only after:
-
-1. at least one full **24h stale-window soak** with shadow/D1 parity review, and
-2. a **cold-bootstrap design** for accounts whose DO shadow is empty while D1
-   still holds rows (`bootstrapPackageServiceStates` / equivalent).
-
-Until that flip, shadow divergence is acceptable; D1 remains the contract. **D1
-likely stays the enumeration index** for account export, deletion, and admin
-discovery until an alternate inventory exists — UserMeter would become the
-running-count authority first, not a wholesale replacement for every D1 reader.
+The running-count authority for `package_services` moved from D1 to UserMeter as
+of the cutover (see
+[Package service liveness — UserMeter authority](#package-service-liveness--usermeter-authority-cutover-2026-08-01)).
+D1 remains the enumeration index for account export, deletion, and admin
+discovery. `countRunningPackageServicesFromD1` is retained for parity
+comparisons; all enforcement uses UserMeter via `countRunningPackageServices`.
 
 ### Storage authority flip (complete, 2026-08-01)
 
@@ -622,14 +658,16 @@ Rules:
 ## Counting strategy
 
 - **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets,
-  running package services) are counted **directly from their source D1 tables
-  at the enforcement point** via built-in counters in `service.ts`. They do not
-  depend on any metering or rollup tables. Running package services are counted
-  from D1 `package_service_states` (status `running` and freshly heartbeaten; 1h
-  heartbeat, 24h staleness), not from run-history rows — see
-  [Run records](./run-records.md) (`state-vs-history`). Expand-phase slice 4
-  Phase A dual-writes the same projection into UserMeter as a non-authoritative
-  shadow; enforcement and `service_start` still read D1 only. **Concurrent
+  running package services) are counted via built-in counters in `service.ts`.
+  Most are counted directly from their source D1 tables. **Running package
+  services** are now counted from the **per-user UserMeter DO** (authoritative
+  as of 2026-08-01): `countRunningPackageServices` counts `status = 'running'`
+  rows with the 24h staleness window from DO `source_updated_at`. D1
+  `package_service_states` remains the enumeration index (discovery, export,
+  deletion) and parity mirror; `countRunningPackageServicesFromD1` is retained
+  for parity only — see
+  [Package service liveness — UserMeter authority](#package-service-liveness--usermeter-authority-cutover-2026-08-01)
+  and [Run records](./run-records.md) (`state-vs-history`). **Concurrent
   workflows** are authoritative in per-user RunLog `workflow_projections`:
   create reserves atomically via `reserveWorkflowProjectionSlot`, and usage
   readers call `countActiveWorkflowProjections` through
@@ -782,7 +820,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                                                                                                                            |
 | `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                                 |
-| `package_services`            | `service_start` capability path (count from `package_service_states`)                                                                                                                                                                      |
+| `package_services`            | `service_start` capability path (`getCurrent` with `countRunningPackageServices(env)`; UserMeter authority since 2026-08-01; D1-only fresh-running rows are parity blockers rather than runtime bootstrap input)                           |
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                                                                                                                                 |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                                                                                                                                                                          |
 | `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                        |

@@ -74,7 +74,7 @@ export const serviceStartCapability = defineDomainCapability(
 					// restart.
 					getCurrent: async () =>
 						await countRunningPackageServices({
-							db: ctx.env.APP_DB,
+							env: ctx.env,
 							userId: serviceContext.user.userId,
 							excludeService: {
 								packageId: serviceContext.savedPackage.id,

@@ -23,7 +23,7 @@ import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
-	countRunningPackageServices,
+	countRunningPackageServicesFromD1,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageEntryBytes,
 	findCachedUserAccountByStableUserId,
@@ -1613,7 +1613,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	).toBe('max')
 })
 
-test('countRunningPackageServices queries package_service_states with staleness and excludeService', async () => {
+test('countRunningPackageServicesFromD1 queries package_service_states with staleness and excludeService', async () => {
 	const now = new Date('2026-07-26T12:00:00.000Z')
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const db = {
@@ -1632,7 +1632,7 @@ test('countRunningPackageServices queries package_service_states with staleness 
 	} as unknown as D1Database
 
 	expect(
-		await countRunningPackageServices({
+		await countRunningPackageServicesFromD1({
 			db,
 			userId: 'user-1',
 			now,
@@ -1645,7 +1645,7 @@ test('countRunningPackageServices queries package_service_states with staleness 
 	])
 
 	queries.length = 0
-	await countRunningPackageServices({
+	await countRunningPackageServicesFromD1({
 		db,
 		userId: 'user-1',
 		now,

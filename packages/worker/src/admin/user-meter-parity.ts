@@ -10,7 +10,7 @@ import {
 	type UserMeterWriteLeaseShadow,
 } from '#worker/entitlements/user-meter-do.ts'
 import {
-	countRunningPackageServices,
+	countRunningPackageServicesFromD1,
 	packageServiceStateStaleMs,
 } from '#worker/entitlements/service.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
@@ -462,7 +462,7 @@ async function readPackageServicesParity(input: {
 		d1Rows,
 		meterStates,
 	})
-	const d1FreshRunningCount = await countRunningPackageServices({
+	const d1FreshRunningCount = await countRunningPackageServicesFromD1({
 		db: input.db,
 		userId: input.stableUserId,
 		now: input.now,

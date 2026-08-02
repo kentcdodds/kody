@@ -794,13 +794,11 @@ export async function markUserD1StorageReconciliationAttempt(input: {
 export const packageServiceStateStaleMs = 24 * 60 * 60 * 1000
 
 /**
- * Count currently-running package services for a user from
- * `package_service_states`. Enforcement points that start a specific service
- * should pass `excludeService` so a stale 'running' row for that same
- * service can never block its own restart (starting it again does not add a
- * new running service).
+ * Count currently-running package services for a user directly from D1
+ * `package_service_states`. Reserved for parity comparisons only — enforcement
+ * uses the UserMeter-authoritative `countRunningPackageServices`.
  */
-export async function countRunningPackageServices(input: {
+export async function countRunningPackageServicesFromD1(input: {
 	db: D1Database
 	userId: string
 	excludeService?: { packageId: string; serviceName: string }
@@ -832,6 +830,32 @@ export async function countRunningPackageServices(input: {
 	)
 }
 
+/**
+ * UserMeter-authoritative running count for a user's package services.
+ * Reads directly from the DO; no D1 access. Lifecycle dual-writes
+ * (`upsertPackageServiceState`) populate the meter so enforcement is
+ * immediately consistent. The `excludeService` and 24h staleness semantics
+ * are preserved exactly.
+ *
+ * Requires `env.USER_METER`. Throws immediately when the binding is absent
+ * (fail-closed for enforcement).
+ */
+export async function countRunningPackageServices(input: {
+	env: UserMeterEnv
+	userId: string
+	excludeService?: { packageId: string; serviceName: string }
+	now?: Date
+}): Promise<number> {
+	const now = input.now ?? new Date()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const { count } = await meter.countRunningPackageServices({
+		staleAfterMs: packageServiceStateStaleMs,
+		excludeService: input.excludeService,
+		now: now.toISOString(),
+	})
+	return count
+}
+
 export async function readEntitlementResourceUsage(input: {
 	db: D1Database
 	userId: string
@@ -852,13 +876,13 @@ export async function readEntitlementResourceUsage(input: {
 				`SELECT COUNT(*) AS count FROM jobs WHERE user_id = ?`,
 				[userId],
 			)
-		case 'package_services': {
-			return await countRunningPackageServices({
-				db,
-				userId,
-				now,
-			})
-		}
+		case 'package_services':
+			// Authoritative running liveness is in UserMeter. Callers must use
+			// readCurrentEntitlementResourceUsage or pass getCurrent with
+			// countRunningPackageServices to assertWithinEntitlement.
+			throw new Error(
+				'package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
+			)
 		case 'persistent_package_services':
 			// Finite 0/1 gate: the limit is 0 (not allowed) or 1 (allowed),
 			// so the current count never changes the outcome.
@@ -992,6 +1016,13 @@ export async function readCurrentEntitlementResourceUsage(input: {
 	if (input.resource === 'storage_bytes') {
 		return await readStorageBytesFromUserMeter({
 			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			now: input.now,
+		})
+	}
+	if (input.resource === 'package_services') {
+		return await countRunningPackageServices({
 			env: input.env,
 			userId: input.userId,
 			now: input.now,

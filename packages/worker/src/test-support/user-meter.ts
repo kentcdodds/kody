@@ -36,7 +36,7 @@ type DeletionState = {
 
 /**
  * In-memory UserMeter stub keyed by `idFromName` (stable userId) for node-unit
- * coverage of expand-phase service/usage paths. Workers suites exercise the
+ * coverage of authoritative service/usage paths. Workers suites exercise the
  * real Durable Object binding instead.
  */
 export function createInMemoryUserMeterEnv() {
@@ -47,7 +47,6 @@ export function createInMemoryUserMeterEnv() {
 		Map<string, PackageServiceRow>
 	>()
 	const deletionByUser = new Map<string, DeletionState>()
-
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
