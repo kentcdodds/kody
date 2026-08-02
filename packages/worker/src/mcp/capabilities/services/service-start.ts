@@ -1,13 +1,14 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,
 	countRunningPackageServices,
 } from '#worker/entitlements/service.ts'
 import {
+	requireDeclaredPackageService,
 	requirePackageServiceContext,
-	resolveDeclaredPackageService,
 } from './shared.ts'
 
 const inputSchema = z.object({
@@ -28,7 +29,7 @@ export const serviceStartCapability = defineDomainCapability(
 	{
 		name: 'service_start',
 		description:
-			'Start a package service instance and return the latest execution result.',
+			'Start a package service declared under package.json#kody.services and return the latest execution result.',
 		keywords: ['service', 'start', 'package service', 'runtime'],
 		readOnly: false,
 		idempotent: false,
@@ -43,20 +44,23 @@ export const serviceStartCapability = defineDomainCapability(
 				explicitPackageId: args.package_id,
 			})
 			if (!serviceContext.service) {
-				throw new Error(
+				throw new McpCallerError(
 					`Package service "${args.service_name}" was not found for this package.`,
 				)
 			}
+			// Validate the manifest declaration before RPC so typos / export-vs-
+			// service mixups stay on McpCallerError instead of bubbling from the
+			// Durable Object as an unhandled platform Error (Sentry noise).
+			const declaredService = await requireDeclaredPackageService({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				savedPackage: serviceContext.savedPackage,
+				userId: serviceContext.user.userId,
+				serviceName: args.service_name,
+			})
 			const currentStatus = await serviceContext.service.status()
 			if (currentStatus.status !== 'running') {
-				const declaredService = await resolveDeclaredPackageService({
-					env: ctx.env,
-					callerContext: ctx.callerContext,
-					savedPackage: serviceContext.savedPackage,
-					userId: serviceContext.user.userId,
-					serviceName: args.service_name,
-				})
-				if (declaredService?.mode === 'persistent') {
+				if (declaredService.mode === 'persistent') {
 					await assertWithinEntitlement({
 						db: ctx.env.APP_DB,
 						userId: serviceContext.user.userId,
