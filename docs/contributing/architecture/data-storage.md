@@ -1099,15 +1099,17 @@ enable per user.
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
 Alarm-driven deletes derive canonical blob keys from `ownerId` + row ids (rather
 than trusting stored key strings), then apply strict blob-before-row ordering
-for `EMAIL_BLOBS` (failed blob deletes skip the row for retry). After a
-retention pass: successful work with expired rows remaining schedules a
-near-immediate continuation (`mailboxRetentionContinuationDelayMs`); R2 delete
-failures use hourly backoff (`mailboxRetentionRetryDelayMs`). Write-path alarm
-selection never postpones an earlier existing alarm under sustained writes
-(near-equal times within skew keep the existing alarm). `alarm` and the
-owner-bound `runRetentionNow({ ownerId })` RPC share one private retention pass
-(natural production cutoffs only — no arbitrary cutoff override) and the same
-post-pass alarm reschedule; the RPC returns before/after `countMailbox`
+for `EMAIL_BLOBS` (failed blob deletes skip the row for retry). Each alarm or
+owner-bound `runRetentionNow({ ownerId })` invocation selects and revalidates at
+most one R2-backed message inside one safe concurrency gate; queued live writes
+run before a continuation turn can select another message. SQLite-only expired
+delivery-event and orphan-thread cleanup remains batched at 100 rows. Successful
+work with expired rows remaining schedules a near-immediate continuation
+(`mailboxRetentionContinuationDelayMs`); R2 delete failures use hourly backoff
+(`mailboxRetentionRetryDelayMs`). Write-path alarm selection never postpones an
+earlier existing alarm under sustained writes (near-equal times within skew keep
+the existing alarm). `alarm` and the RPC share natural production cutoffs and
+the same post-pass alarm reschedule; the RPC returns before/after `countMailbox`
 aggregates plus `blobDeleteFailures` / `expiredRemaining` (no row ids or
 content).
 

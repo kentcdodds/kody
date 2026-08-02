@@ -24,7 +24,10 @@ export const mailboxDefaultPageSize = 100
 export const mailboxMaxPageSize = 500
 /** Max complete delivery-event snapshots per `upsertDeliveryEvents` RPC. */
 export const mailboxUpsertDeliveryEventsMax = 100
-export const mailboxRetentionBatchSize = 100
+/** At most one R2-backed message is processed in each DO event/invocation. */
+export const mailboxRetentionMessageCandidatesPerTurn = 1
+/** SQLite-only delivery-event/thread retention batch size. */
+export const mailboxRetentionMetadataBatchSize = 100
 export const mailboxRetentionAlarmSkewMs = 60_000
 /** Bound retry delay when overdue retention work cannot finish (e.g. R2 errors). */
 export const mailboxRetentionRetryDelayMs = 60 * 60 * 1000
@@ -349,7 +352,8 @@ export type MailboxCountResult = {
 
 /**
  * Aggregate result from {@link MailboxRpc.runRetentionNow} (and the shared
- * private retention pass used by `alarm`). Counts only — no row ids or content.
+ * private retention turn used by `alarm`). Each invocation processes at most
+ * one R2-backed message; counts only — no row ids or content.
  */
 export type MailboxRunRetentionNowResult = {
 	before: MailboxCountResult
