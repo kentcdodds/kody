@@ -251,6 +251,18 @@ test('system email graph report returns aggregate parity and provider dispositio
 			'system-attachment-new', 'system-inbound', 'new.txt', 'text/plain',
 			8, 'raw-mime', '${updatedAt}'
 		);
+		INSERT INTO system_email_messages (
+			id, direction, from_address, processing_status, created_at, updated_at
+		) VALUES (
+			'dedicated-drift-message', 'inbound', 'drift@example.net', 'stored',
+			'${createdAt}', '${updatedAt}'
+		);
+		INSERT INTO system_email_attachments (
+			id, message_id, content_type, size, storage_kind, created_at
+		) VALUES (
+			'dedicated-drift-attachment', 'dedicated-drift-message', 'text/plain',
+			1, 'raw-mime', '${createdAt}'
+		);
 	`)
 	const batch = vi.spyOn(db, 'batch')
 	const repaired = await reconcileSystemEmailGraphFromLegacy({ db })
@@ -258,8 +270,8 @@ test('system email graph report returns aggregate parity and provider dispositio
 	expect(repaired.metrics).toEqual({
 		deleted: {
 			threads: 1,
-			messages: 0,
-			attachments: 1,
+			messages: 1,
+			attachments: 2,
 			deliveryEvents: 0,
 		},
 		upserted: {

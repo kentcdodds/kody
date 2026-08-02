@@ -53,6 +53,15 @@ test('retention dispositions stay aligned with scheduled policies and documented
 			.every((disposition) => disposition.kind === 'alternate_cleanup'),
 	).toBe(true)
 	expect(
+		nonScheduled
+			.filter((disposition) => disposition.table.startsWith('system_email_'))
+			.every(
+				(disposition) =>
+					disposition.kind === 'alternate_cleanup' &&
+					disposition.reason.includes('step 4a'),
+			),
+	).toBe(true)
+	expect(
 		nonScheduled.some(
 			(disposition) =>
 				disposition.table === 'jobs' &&

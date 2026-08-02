@@ -35,25 +35,25 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			table: 'system_email_delivery_events',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 delivery events are excluded from account retention; step 4b will route the existing 90-day system-email retention policy to this dedicated table.',
+				'Operator-owned D1 delivery events are excluded from account retention; in step 4a the system-email retention lane applies the legacy 90-day policy, then atomically reconciles the dedicated copy.',
 		},
 		{
 			table: 'system_email_messages',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 messages are excluded from account retention; step 4b will route the existing 90-day age and 5,000-message system cap to this dedicated table.',
+				'Operator-owned D1 messages are excluded from account retention; in step 4a the legacy-authority 90-day age and 5,000-message cap run first, then atomic reconciliation bounds the dedicated copy.',
 		},
 		{
 			table: 'system_email_attachments',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 attachment metadata follows dedicated system messages; step 4b will delete it through the routed system-email retention path.',
+				'Operator-owned D1 attachment metadata follows dedicated system messages and is explicitly removed child-first by the step 4a post-retention graph reconcile.',
 		},
 		{
 			table: 'system_email_threads',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 threads are pruned when orphaned by dedicated system-message retention; routing begins in step 4b.',
+				'Operator-owned D1 threads are pruned when absent from the legacy-authority graph by the step 4a post-retention atomic reconcile.',
 		},
 		{
 			table: 'mcp_memories',

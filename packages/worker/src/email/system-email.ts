@@ -1,5 +1,9 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import {
+	reconcileSystemEmailGraphFromLegacy,
+	type SystemEmailGraphMutationCounts,
+} from './system-email-graph-repo.ts'
 import { maxRawMimeBytes } from './parser.ts'
 import { buildPlatformEmailAddress } from './platform-address.ts'
 import {
@@ -343,6 +347,22 @@ export type SystemEmailRetentionResult = {
 	deletedThreads: number
 	deletedRawMimeBlobs: number
 	blobDeleteErrors: number
+	dedicatedGraphSync:
+		| {
+				status: 'reconciled'
+				upserted: SystemEmailGraphMutationCounts
+				deleted: SystemEmailGraphMutationCounts
+				referencedOwnerMismatchCount: number
+				parity: boolean
+		  }
+		| {
+				status: 'skipped'
+				reason: 'legacy-blob-delete-errors'
+				blobDeleteErrors: number
+		  }
+	warnings: Array<
+		'dedicated-graph-sync-skipped' | 'dedicated-graph-post-reconcile-mismatch'
+	>
 }
 
 export async function pruneSystemEmailRetention(input: {
@@ -367,6 +387,12 @@ export async function pruneSystemEmailRetention(input: {
 		deletedThreads: 0,
 		deletedRawMimeBlobs: 0,
 		blobDeleteErrors: 0,
+		dedicatedGraphSync: {
+			status: 'skipped',
+			reason: 'legacy-blob-delete-errors',
+			blobDeleteErrors: 0,
+		},
+		warnings: [],
 	}
 
 	const addMessageDelete = (batch: {
@@ -461,6 +487,39 @@ export async function pruneSystemEmailRetention(input: {
 		.bind(systemEmailOwnerId)
 		.run()
 	result.deletedThreads = threadDelete.meta.changes ?? 0
+
+	if (result.blobDeleteErrors > 0) {
+		result.dedicatedGraphSync = {
+			status: 'skipped',
+			reason: 'legacy-blob-delete-errors',
+			blobDeleteErrors: result.blobDeleteErrors,
+		}
+		result.warnings.push('dedicated-graph-sync-skipped')
+		console.warn('system-email-dedicated-graph-sync-skipped', {
+			reason: 'legacy-blob-delete-errors',
+			blobDeleteErrors: result.blobDeleteErrors,
+		})
+		return result
+	}
+
+	const graphSync = await reconcileSystemEmailGraphFromLegacy({ db: input.db })
+	result.dedicatedGraphSync = {
+		status: 'reconciled',
+		upserted: graphSync.metrics.upserted,
+		deleted: graphSync.metrics.deleted,
+		referencedOwnerMismatchCount:
+			graphSync.metrics.referencedOwnerMismatchCount,
+		parity: graphSync.postReport.parity,
+	}
+	if (!graphSync.postReport.parity) {
+		result.warnings.push('dedicated-graph-post-reconcile-mismatch')
+		console.warn('system-email-dedicated-graph-post-reconcile-mismatch', {
+			referencedOwnerMismatchCount:
+				graphSync.metrics.referencedOwnerMismatchCount,
+			upserted: graphSync.metrics.upserted,
+			deleted: graphSync.metrics.deleted,
+		})
+	}
 
 	return result
 }

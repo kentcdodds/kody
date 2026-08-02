@@ -621,7 +621,10 @@ test('system email retention prunes old operator-owned messages and counters', a
 })
 
 test('system email retention deletes blobs before rows and keeps rows when the blob delete fails', async () => {
-	silenceIncidentalRuntimeWarnings(['system-email-raw-mime-blob-delete-failed'])
+	silenceIncidentalRuntimeWarnings([
+		'system-email-raw-mime-blob-delete-failed',
+		'system-email-dedicated-graph-sync-skipped',
+	])
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const old = new Date(
@@ -674,6 +677,19 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 	expect(failed.deletedMessages).toBe(0)
 	expect(failed.deletedRawMimeBlobs).toBe(0)
 	expect(failed.blobDeleteErrors).toBe(2)
+	expect(failed.dedicatedGraphSync).toEqual({
+		status: 'skipped',
+		reason: 'legacy-blob-delete-errors',
+		blobDeleteErrors: 2,
+	})
+	expect(failed.warnings).toEqual(['dedicated-graph-sync-skipped'])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'system-email-dedicated-graph-sync-skipped',
+		{
+			reason: 'legacy-blob-delete-errors',
+			blobDeleteErrors: 2,
+		},
+	)
 	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).not.toBeNull()
 	expect(
 		await env.APP_DB.prepare(
@@ -695,6 +711,10 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 	expect(retried.deletedMessages).toBe(2)
 	expect(retried.deletedRawMimeBlobs).toBe(1)
 	expect(retried.blobDeleteErrors).toBe(0)
+	expect(retried.dedicatedGraphSync).toMatchObject({
+		status: 'reconciled',
+		parity: true,
+	})
 	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).toBeNull()
 	expect(
 		await env.APP_DB.prepare(
@@ -709,7 +729,10 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 })
 
 test('system email retention advances past skipped blob rows at the head of a batch', async () => {
-	silenceIncidentalRuntimeWarnings(['system-email-raw-mime-blob-delete-failed'])
+	silenceIncidentalRuntimeWarnings([
+		'system-email-raw-mime-blob-delete-failed',
+		'system-email-dedicated-graph-sync-skipped',
+	])
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const oldMs =

@@ -64,8 +64,10 @@ warning-only failures.
 Legacy system email rows owned by `system:email` and all four dedicated
 `system_email_*` graph tables are intentionally excluded from account deletion.
 They are operator-owned mail for reserved platform addresses, not portable user
-content. Step 4a does not route retention to the dedicated copy; step 4b will
-route the existing 90-day age policy and 5,000-message cap there.
+content. During step 4a, legacy remains retention authority: the scheduled
+system-email lane applies its 90-day age policy, 5,000-message cap, and
+blob-before-row deletion first, then atomically reconciles the dedicated copy so
+it cannot retain rows absent from legacy after a successful pass.
 
 Platform-feedback rows follow two account-deletion behaviors. Deleting the
 submitting account deletes its submissions. When a deleted account was an admin
@@ -800,10 +802,13 @@ The explicit audited `admin_mailbox_maintenance` action
 deletes dedicated rows absent from the valid legacy graph in child-first order,
 then upserts every current legacy column in parent-first order. It returns
 aggregate mutation metrics and a post-reconcile parity report, never email
-content. This is an operator repair/catch-up action, not a scheduled write path;
-routine status remains read-only. The full graph comparator runs only when an
-operator explicitly requests maintenance status (also as the post-status of
-reconcile/retention actions).
+content. The same reconcile primitive runs after successful scheduled legacy
+system-email retention. If any R2 deletion fails, the legacy row remains for
+retry and dedicated reconciliation is skipped with aggregate warnings; D1 or
+reconcile failures escape the scheduled lane for normal failure reporting and
+retry. This does not make dedicated tables authority, and routine status remains
+read-only. The full graph comparator runs for explicit maintenance status and
+after graph reconciliation.
 
 The existing `email_outbound_provider_index` deliberately remains unchanged. Its
 `message_id` FK targets legacy `email_messages`; a second FK cannot validly
@@ -1949,12 +1954,15 @@ Current retention policies:
   events older than 90 days in bounded batches within its own time budget,
   deletes stale `system_email_daily_counters`, and caps stored system messages
   at 5,000. The four dedicated `system_email_*` tables have explicit
-  `alternate_cleanup` dispositions: in 4a they are copy-only and are not pruned;
-  4b will route this same 90-day policy and 5,000-message cap to the dedicated
-  authority, with attachments following messages and orphan threads pruned.
-  After Mailbox cut-over, user-owned delivery-event retention moves to the
-  per-user Mailbox DO alarm (still 90 days, strict blob-before-row); D1 policies
-  here remain authoritative until that phase.
+  `alternate_cleanup` dispositions: in 4a the lane runs legacy retention first,
+  then atomically upserts the remaining graph and deletes dedicated drift in
+  child-first order. This actively bounds the copy while legacy remains
+  authority. A legacy blob-delete failure skips that reconcile so the preserved
+  legacy row and dedicated copy retry together. Step 4b will move retention
+  authority itself to the dedicated graph. After Mailbox cut-over, user-owned
+  delivery-event retention moves to the per-user Mailbox DO alarm (still 90
+  days, strict blob-before-row); D1 policies here remain authoritative until
+  that phase.
 - `email_messages` / `email_attachments` / `email_threads`: user-owned messages
   (excluding the `system:email` owner) keep 365 days, deleted oldest first in
   batches. Retention deletes the deterministic

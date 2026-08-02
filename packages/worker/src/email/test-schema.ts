@@ -6,6 +6,10 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	await ensureEntitlementTestSchema(db)
 	const statements = [
 		`DROP TABLE IF EXISTS system_email_daily_counters;`,
+		`DROP TABLE IF EXISTS system_email_delivery_events;`,
+		`DROP TABLE IF EXISTS system_email_attachments;`,
+		`DROP TABLE IF EXISTS system_email_messages;`,
+		`DROP TABLE IF EXISTS system_email_threads;`,
 		`DROP TABLE IF EXISTS email_sender_policies;`,
 		`DROP TABLE IF EXISTS email_sender_rules;`,
 		`DROP TABLE IF EXISTS email_inbound_usage_effects;`,
@@ -188,6 +192,139 @@ ON email_sender_rules(user_id, kind, value);`,
 	subscription_effect_last_error TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT
+);`,
+		`CREATE TABLE IF NOT EXISTS system_email_threads (
+	id TEXT PRIMARY KEY,
+	inbox_id TEXT,
+	subject_normalized TEXT NOT NULL DEFAULT '',
+	root_message_id_header TEXT,
+	last_message_at TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL
+);`,
+		`CREATE TABLE IF NOT EXISTS system_email_messages (
+	id TEXT PRIMARY KEY,
+	direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+	inbox_id TEXT,
+	thread_id TEXT,
+	sender_identity_id TEXT,
+	from_address TEXT NOT NULL,
+	envelope_from TEXT,
+	to_addresses_json TEXT NOT NULL DEFAULT '[]',
+	cc_addresses_json TEXT NOT NULL DEFAULT '[]',
+	bcc_addresses_json TEXT NOT NULL DEFAULT '[]',
+	reply_to_addresses_json TEXT NOT NULL DEFAULT '[]',
+	subject TEXT NOT NULL DEFAULT '',
+	message_id_header TEXT,
+	in_reply_to_header TEXT,
+	references_json TEXT NOT NULL DEFAULT '[]',
+	headers_json TEXT NOT NULL DEFAULT '{}',
+	auth_results TEXT,
+	text_body TEXT,
+	html_body TEXT,
+	raw_size INTEGER NOT NULL DEFAULT 0,
+	processing_status TEXT NOT NULL CHECK (
+		processing_status IN ('stored', 'sent', 'failed')
+	),
+	provider_message_id TEXT,
+	error TEXT,
+	received_at TEXT,
+	sent_at TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	raw_mime_key TEXT,
+	delivery_status TEXT CHECK (
+		delivery_status IS NULL OR delivery_status IN (
+			'delivered', 'deferred', 'bounced', 'failed', 'rejected', 'complained'
+		)
+	),
+	delivery_status_at TEXT,
+	classification TEXT NOT NULL DEFAULT 'accepted' CHECK (
+		classification IN ('accepted', 'quarantined')
+	),
+	classification_reason TEXT,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL,
+	FOREIGN KEY (thread_id) REFERENCES system_email_threads(id) ON DELETE SET NULL,
+	FOREIGN KEY (sender_identity_id) REFERENCES email_sender_identities(id)
+		ON DELETE SET NULL
+);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_email_messages_provider_message_id
+ON system_email_messages(provider_message_id)
+WHERE direction = 'outbound' AND provider_message_id IS NOT NULL;`,
+		`CREATE TABLE IF NOT EXISTS system_email_attachments (
+	id TEXT PRIMARY KEY,
+	message_id TEXT NOT NULL,
+	filename TEXT,
+	content_type TEXT NOT NULL,
+	content_id TEXT,
+	disposition TEXT,
+	size INTEGER NOT NULL DEFAULT 0,
+	storage_kind TEXT NOT NULL CHECK (
+		storage_kind IN ('raw-mime', 'external', 'unavailable')
+	),
+	storage_key TEXT,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY (message_id) REFERENCES system_email_messages(id)
+		ON DELETE CASCADE
+);`,
+		`CREATE TABLE IF NOT EXISTS system_email_delivery_events (
+	id TEXT PRIMARY KEY,
+	message_id TEXT,
+	inbox_id TEXT,
+	event_type TEXT NOT NULL CHECK (
+		event_type IN (
+			'receive_started', 'received', 'rejected', 'send_requested', 'sent',
+			'failed', 'delivered', 'deferred', 'bounced', 'complained'
+		)
+	),
+	provider TEXT NOT NULL DEFAULT 'kody',
+	provider_message_id TEXT,
+	provider_event_id TEXT,
+	detail_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	needs_effect_reconcile INTEGER NOT NULL DEFAULT 1 CHECK (
+		needs_effect_reconcile IN (0, 1)
+	),
+	usage_effect_recorded_at TEXT,
+	usage_month TEXT,
+	usage_bytes INTEGER,
+	usage_duration_ms INTEGER,
+	state TEXT CHECK (
+		state IS NULL OR state IN (
+			'pending', 'storing', 'cleaning', 'received', 'rejected', 'orphan-cleaned'
+		)
+	),
+	fingerprint TEXT,
+	storage_lease TEXT,
+	storage_lease_at TEXT,
+	cleanup_lease TEXT,
+	cleanup_lease_at TEXT,
+	cleanup_retry_at TEXT,
+	expected_attachment_count INTEGER,
+	finalization_token TEXT,
+	reconcile_after TEXT,
+	dedupe_expires_at TEXT,
+	usage_effect_suppressed_at TEXT,
+	usage_started_at TEXT,
+	usage_effect_retry_at TEXT,
+	usage_effect_lease TEXT,
+	usage_effect_lease_at TEXT,
+	subscription_effect_state TEXT CHECK (
+		subscription_effect_state IS NULL OR subscription_effect_state IN (
+			'pending', 'processing', 'complete', 'dead-letter'
+		)
+	),
+	subscription_effect_lease TEXT,
+	subscription_effect_lease_at TEXT,
+	subscription_effect_retry_at TEXT,
+	subscription_effect_attempt_count INTEGER,
+	subscription_effect_dead_letter_at TEXT,
+	subscription_effect_last_error TEXT,
+	updated_at TEXT,
+	FOREIGN KEY (message_id) REFERENCES system_email_messages(id)
+		ON DELETE SET NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL
 );`,
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_pending_effects
 ON email_delivery_events(user_id, created_at)
