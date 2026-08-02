@@ -678,7 +678,7 @@ export function markMailboxInboundDeliveryReceived(
 		...current,
 		state: 'received',
 		finalizationToken: storageLease,
-		subscriptionEffectState: current.subscriptionEffectState ?? 'pending',
+		subscriptionEffectState: 'pending',
 		usageDurationMs: current.usageDurationMs ?? usageDurationMs,
 		usageMonth: current.usageMonth ?? usageMonth,
 		usageBytes: current.usageBytes ?? usageBytes,

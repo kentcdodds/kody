@@ -417,6 +417,31 @@ test('stale effect workers cannot complete or fail after storage reclaim re-fina
 			})
 		).status,
 	).toBe('complete')
+
+	const terminalReclaim = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now: '2026-07-22T00:02:00.000Z',
+	})
+	expect(terminalReclaim.status).toBe('claimed')
+	if (terminalReclaim.status !== 'claimed') {
+		throw new Error('expected terminal-state reclaim')
+	}
+	const thirdReceived = await mailbox.markInboundDeliveryReceived({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		storageLease: terminalReclaim.delivery.storageLease!,
+		usageDurationMs: 9,
+		usageMonth: '2026-07',
+		usageBytes: 16,
+		now: '2026-07-22T00:02:01.000Z',
+	})
+	expect(thirdReceived.status).toBe('received')
+	if (thirdReceived.status !== 'received') {
+		throw new Error('expected third received')
+	}
+	expect(thirdReceived.delivery.subscriptionEffectState).toBe('pending')
 })
 
 test('legacy received rows with null effect lease timestamps and null subscription state are claimable and due', async () => {
