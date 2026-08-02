@@ -970,6 +970,109 @@ export async function listEmailMessages(input: {
 	return (result.results ?? []).map(mapMessageRow)
 }
 
+/**
+ * Account-inbox page query: total + OFFSET page with optional substring search
+ * and classification filter. Used by the cutover D1 off-path.
+ */
+export async function listEmailMessagesPageForUser(input: {
+	db: D1Database
+	userId: string
+	query: string
+	classification: EmailClassification | null
+	pageSize: number
+	offset: number
+}): Promise<{ total: number; messages: Array<EmailMessageRecord> }> {
+	const classification = input.classification
+	if (input.query) {
+		const pattern = `%${escapeLikePattern(input.query.toLowerCase())}%`
+		const [totalResult, messageRows] = await Promise.all([
+			input.db
+				.prepare(
+					`SELECT COUNT(*) AS total
+					FROM email_messages
+					WHERE user_id = ?
+						AND (? IS NULL OR classification = ?)
+						AND (
+							LOWER(subject) LIKE ? ESCAPE '\\'
+							OR LOWER(from_address) LIKE ? ESCAPE '\\'
+							OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
+						)`,
+				)
+				.bind(
+					input.userId,
+					classification,
+					classification,
+					pattern,
+					pattern,
+					pattern,
+				)
+				.first<{ total: number }>(),
+			input.db
+				.prepare(
+					`SELECT *
+					FROM email_messages
+					WHERE user_id = ?
+						AND (? IS NULL OR classification = ?)
+						AND (
+							LOWER(subject) LIKE ? ESCAPE '\\'
+							OR LOWER(from_address) LIKE ? ESCAPE '\\'
+							OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
+						)
+					ORDER BY created_at DESC, id DESC
+					LIMIT ? OFFSET ?`,
+				)
+				.bind(
+					input.userId,
+					classification,
+					classification,
+					pattern,
+					pattern,
+					pattern,
+					input.pageSize,
+					input.offset,
+				)
+				.all<Record<string, unknown>>(),
+		])
+		return {
+			total: Number(totalResult?.total ?? 0),
+			messages: (messageRows.results ?? []).map(mapMessageRow),
+		}
+	}
+
+	const [totalResult, messageRows] = await Promise.all([
+		input.db
+			.prepare(
+				`SELECT COUNT(*) AS total
+				FROM email_messages
+				WHERE user_id = ?
+					AND (? IS NULL OR classification = ?)`,
+			)
+			.bind(input.userId, classification, classification)
+			.first<{ total: number }>(),
+		input.db
+			.prepare(
+				`SELECT *
+				FROM email_messages
+				WHERE user_id = ?
+					AND (? IS NULL OR classification = ?)
+				ORDER BY created_at DESC, id DESC
+				LIMIT ? OFFSET ?`,
+			)
+			.bind(
+				input.userId,
+				classification,
+				classification,
+				input.pageSize,
+				input.offset,
+			)
+			.all<Record<string, unknown>>(),
+	])
+	return {
+		total: Number(totalResult?.total ?? 0),
+		messages: (messageRows.results ?? []).map(mapMessageRow),
+	}
+}
+
 export async function listEmailDeliveryEvents(input: {
 	db: D1Database
 	userId: string

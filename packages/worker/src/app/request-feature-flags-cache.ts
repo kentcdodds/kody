@@ -90,3 +90,8 @@ export function loadRequestFeatureFlags(
 	}
 	return promise
 }
+
+/** True when this request already resolved (and recorded) feature-flag exposures. */
+export function hasResolvedRequestFeatureFlags(request: Request): boolean {
+	return requestFeatureFlagsStore.has(request)
+}

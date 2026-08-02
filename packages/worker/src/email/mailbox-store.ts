@@ -10,10 +10,12 @@ import {
 	decodeMailboxListCursor,
 	encodeMailboxListCursor,
 	mailboxNowIso,
+	normalizeMailboxOffset,
 	normalizeMailboxPageSize,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
+	type MailboxCountMessagesInput,
 	type MailboxCountResult,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
@@ -26,9 +28,11 @@ import {
 	type MailboxThreadRecord,
 } from './mailbox-types.ts'
 import {
+	type EmailClassification,
 	type EmailDeliveryEventType,
 	type EmailDeliveryStatus,
 	type EmailDirection,
+	type EmailProcessingStatus,
 } from './types.ts'
 import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
@@ -55,6 +59,48 @@ import { initializeMailboxSchema } from './mailbox-schema.ts'
 export type MailboxUpsertResult = {
 	created: boolean
 	accepted: boolean
+}
+
+function buildMailboxMessageFilterClauses(input: {
+	inboxId?: string | null
+	direction?: EmailDirection | null
+	processingStatus?: EmailProcessingStatus | null
+	deliveryStatus?: EmailDeliveryStatus | null
+	classification?: EmailClassification | null
+	query?: string | null
+}): { clauses: Array<string>; params: Array<SqlStorageValue> } {
+	const clauses: Array<string> = ['1 = 1']
+	const params: Array<SqlStorageValue> = []
+	if (typeof input.query === 'string') {
+		const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
+		clauses.push(`(
+			LOWER(subject) LIKE ? ESCAPE '\\'
+			OR LOWER(from_address) LIKE ? ESCAPE '\\'
+			OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
+		)`)
+		params.push(pattern, pattern, pattern)
+	}
+	if (input.inboxId) {
+		clauses.push('inbox_id = ?')
+		params.push(input.inboxId)
+	}
+	if (input.direction) {
+		clauses.push('direction = ?')
+		params.push(assertMailboxDirection(input.direction))
+	}
+	if (input.processingStatus) {
+		clauses.push('processing_status = ?')
+		params.push(assertMailboxProcessingStatus(input.processingStatus))
+	}
+	if (input.deliveryStatus) {
+		clauses.push('delivery_status = ?')
+		params.push(assertMailboxDeliveryStatus(input.deliveryStatus))
+	}
+	if (input.classification) {
+		clauses.push('classification = ?')
+		params.push(assertMailboxClassification(input.classification))
+	}
+	return { clauses, params }
 }
 
 /**
@@ -504,40 +550,21 @@ export class MailboxStore {
 		nextCursor: string | null
 	} {
 		const limit = normalizeMailboxPageSize(input.limit)
-		const clauses: Array<string> = ['1 = 1']
-		const params: Array<SqlStorageValue> = []
-		if (input.inboxId) {
-			clauses.push('inbox_id = ?')
-			params.push(input.inboxId)
-		}
-		if (input.direction) {
-			clauses.push('direction = ?')
-			params.push(assertMailboxDirection(input.direction))
-		}
-		if (input.processingStatus) {
-			clauses.push('processing_status = ?')
-			params.push(assertMailboxProcessingStatus(input.processingStatus))
-		}
-		if (input.deliveryStatus) {
-			clauses.push('delivery_status = ?')
-			params.push(assertMailboxDeliveryStatus(input.deliveryStatus))
-		}
-		if (input.classification) {
-			clauses.push('classification = ?')
-			params.push(assertMailboxClassification(input.classification))
-		}
+		const { clauses, params } = buildMailboxMessageFilterClauses(input)
 		if (input.cursor) {
 			const cursor = decodeMailboxListCursor(input.cursor)
 			clauses.push('(created_at, id) < (?, ?)')
 			params.push(cursor.createdAt, cursor.id)
 		}
-		params.push(limit + 1)
+		const offset =
+			input.cursor == null ? normalizeMailboxOffset(input.offset) : 0
+		params.push(limit + 1, offset)
 		const rows = this.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM email_messages
 				WHERE ${clauses.join(' AND ')}
 				ORDER BY created_at DESC, id DESC
-				LIMIT ?`,
+				LIMIT ? OFFSET ?`,
 				...params,
 			)
 			.toArray()
@@ -563,42 +590,44 @@ export class MailboxStore {
 			throw new Error('Mailbox search query must be a string.')
 		}
 		const limit = normalizeMailboxPageSize(input.limit)
-		const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
-		const clauses: Array<string> = [
-			`(
-				LOWER(subject) LIKE ? ESCAPE '\\'
-				OR LOWER(from_address) LIKE ? ESCAPE '\\'
-				OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
-			)`,
-		]
-		const params: Array<SqlStorageValue> = [pattern, pattern, pattern]
-		if (input.inboxId) {
-			clauses.push('inbox_id = ?')
-			params.push(input.inboxId)
-		}
-		if (input.direction) {
-			clauses.push('direction = ?')
-			params.push(assertMailboxDirection(input.direction))
-		}
-		if (input.processingStatus) {
-			clauses.push('processing_status = ?')
-			params.push(assertMailboxProcessingStatus(input.processingStatus))
-		}
-		if (input.deliveryStatus) {
-			clauses.push('delivery_status = ?')
-			params.push(assertMailboxDeliveryStatus(input.deliveryStatus))
-		}
-		params.push(limit)
+		const offset = normalizeMailboxOffset(input.offset)
+		const { clauses, params } = buildMailboxMessageFilterClauses({
+			...input,
+			query: input.query,
+		})
+		params.push(limit, offset)
 		const rows = this.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM email_messages
 				WHERE ${clauses.join(' AND ')}
 				ORDER BY created_at DESC, id DESC
-				LIMIT ?`,
+				LIMIT ? OFFSET ?`,
 				...params,
 			)
 			.toArray()
 		return { messages: rows.map(mapMailboxMessageRow) }
+	}
+
+	countMessages(input: MailboxCountMessagesInput): { total: number } {
+		const { clauses, params } = buildMailboxMessageFilterClauses(input)
+		const row = this.sql
+			.exec<{ n: number }>(
+				`SELECT COUNT(*) AS n FROM email_messages
+				WHERE ${clauses.join(' AND ')}`,
+				...params,
+			)
+			.one()
+		return { total: Number(row.n ?? 0) || 0 }
+	}
+
+	getAttachment(attachmentId: string): MailboxAttachmentRecord | null {
+		const row = this.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM email_attachments WHERE id = ? LIMIT 1`,
+				assertMailboxNonEmptyString(attachmentId, 'attachmentId'),
+			)
+			.toArray()[0]
+		return row ? mapMailboxAttachmentRow(row) : null
 	}
 
 	listAttachmentsForMessage(messageId: string): Array<MailboxAttachmentRecord> {
@@ -606,7 +635,7 @@ export class MailboxStore {
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM email_attachments
 				WHERE message_id = ?
-				ORDER BY id ASC`,
+				ORDER BY created_at ASC, id ASC`,
 				assertMailboxNonEmptyString(messageId, 'messageId'),
 			)
 			.toArray()

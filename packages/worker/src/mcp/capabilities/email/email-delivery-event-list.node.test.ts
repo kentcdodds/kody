@@ -2,11 +2,13 @@ import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mocks = vi.hoisted(() => ({
-	listEmailDeliveryEvents: vi.fn(),
+	listOwnerEmailDeliveryEvents: vi.fn(),
+	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/repo.ts', () => ({
-	listEmailDeliveryEvents: mocks.listEmailDeliveryEvents,
+vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+	listOwnerEmailDeliveryEvents: mocks.listOwnerEmailDeliveryEvents,
+	resolveMailboxReadCutoverDbUserId: mocks.resolveMailboxReadCutoverDbUserId,
 }))
 
 const { emailDeliveryEventListCapability } =
@@ -37,7 +39,8 @@ function createContext() {
 }
 
 test('email_delivery_event_list returns parsed events scoped to the signed-in user', async () => {
-	mocks.listEmailDeliveryEvents.mockResolvedValueOnce([
+	mocks.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
+	mocks.listOwnerEmailDeliveryEvents.mockResolvedValueOnce([
 		{
 			id: 'event-1',
 			messageId: 'message-1',
@@ -60,9 +63,10 @@ test('email_delivery_event_list returns parsed events scoped to the signed-in us
 		context,
 	)
 
-	expect(mocks.listEmailDeliveryEvents).toHaveBeenCalledWith({
-		db: context.env.APP_DB,
-		userId: 'user-1',
+	expect(mocks.listOwnerEmailDeliveryEvents).toHaveBeenCalledWith({
+		env: context.env,
+		dbUserId: 7,
+		stableUserId: 'user-1',
 		messageId: 'message-1',
 		eventType: 'bounced',
 		limit: 10,

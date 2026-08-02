@@ -27,6 +27,7 @@ import {
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
+	type MailboxCountMessagesInput,
 	type MailboxCountResult,
 	type MailboxDeleteDeliveryEventInput,
 	type MailboxDeleteMessageMetadataInput,
@@ -434,6 +435,18 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		messages: Array<MailboxMessageRecord>
 	}> {
 		return this.store.searchMessages(input)
+	}
+
+	async countMessages(
+		input: MailboxCountMessagesInput,
+	): Promise<{ total: number }> {
+		return this.store.countMessages(input)
+	}
+
+	async getAttachment(input: {
+		attachmentId: string
+	}): Promise<MailboxAttachmentRecord | null> {
+		return this.store.getAttachment(input.attachmentId)
 	}
 
 	async listAttachmentsForMessage(input: {

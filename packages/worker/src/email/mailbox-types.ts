@@ -343,7 +343,10 @@ export type MailboxListMessagesInput = {
 	deliveryStatus?: EmailDeliveryStatus | null
 	classification?: EmailClassification | null
 	limit?: number
+	/** Keyset cursor; when set, `offset` is ignored. */
 	cursor?: string | null
+	/** Offset page (account inbox). Ignored when `cursor` is set. */
+	offset?: number | null
 }
 
 export type MailboxSearchMessagesInput = {
@@ -352,7 +355,19 @@ export type MailboxSearchMessagesInput = {
 	direction?: EmailDirection | null
 	processingStatus?: EmailProcessingStatus | null
 	deliveryStatus?: EmailDeliveryStatus | null
+	classification?: EmailClassification | null
 	limit?: number
+	offset?: number | null
+}
+
+export type MailboxCountMessagesInput = {
+	inboxId?: string | null
+	direction?: EmailDirection | null
+	processingStatus?: EmailProcessingStatus | null
+	deliveryStatus?: EmailDeliveryStatus | null
+	classification?: EmailClassification | null
+	/** When set, applies the same subject/from/envelope substring match as search. */
+	query?: string | null
 }
 
 export type MailboxListCursorPayload = {
@@ -533,6 +548,12 @@ export type MailboxRpc = {
 	searchMessages: (input: MailboxSearchMessagesInput) => Promise<{
 		messages: Array<MailboxMessageRecord>
 	}>
+	countMessages: (
+		input: MailboxCountMessagesInput,
+	) => Promise<{ total: number }>
+	getAttachment: (input: {
+		attachmentId: string
+	}) => Promise<MailboxAttachmentRecord | null>
 	listAttachmentsForMessage: (input: {
 		messageId: string
 	}) => Promise<Array<MailboxAttachmentRecord>>
@@ -570,6 +591,12 @@ export function normalizeMailboxPageSize(pageSize: number | undefined) {
 			? Math.trunc(pageSize)
 			: mailboxDefaultPageSize
 	return Math.min(Math.max(requested, 1), mailboxMaxPageSize)
+}
+
+/** Non-negative offset; invalid/omitted values become 0. */
+export function normalizeMailboxOffset(offset: number | null | undefined) {
+	if (typeof offset !== 'number' || !Number.isFinite(offset)) return 0
+	return Math.max(0, Math.trunc(offset))
 }
 
 export function assertMailboxNonEmptyString(

@@ -1,12 +1,15 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	getEmailAttachmentById: vi.fn(),
+	getOwnerEmailAttachmentById: vi.fn(),
+	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/service.ts', () => ({
-	getEmailAttachmentById: (...args: Array<unknown>) =>
-		mockModule.getEmailAttachmentById(...args),
+vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+	getOwnerEmailAttachmentById: (...args: Array<unknown>) =>
+		mockModule.getOwnerEmailAttachmentById(...args),
+	resolveMailboxReadCutoverDbUserId: (...args: Array<unknown>) =>
+		mockModule.resolveMailboxReadCutoverDbUserId(...args),
 }))
 
 const { emailAttachmentGetCapability } =
@@ -45,7 +48,10 @@ test('email capabilities require a signed-in user and return attachment content 
 		},
 	})
 	const verifiedDb = createUsersDb('2026-01-01T00:00:00.000Z')
-	const env = { APP_DB: verifiedDb } as Env
+	const env = {
+		APP_DB: verifiedDb,
+		EMAIL_BLOBS: {} as R2Bucket,
+	} as Env
 
 	await expect(
 		emailAttachmentGetCapability.handler(
@@ -56,9 +62,10 @@ test('email capabilities require a signed-in user and return attachment content 
 			},
 		),
 	).rejects.toThrow(/Account email is not verified/)
-	expect(mockModule.getEmailAttachmentById).not.toHaveBeenCalled()
+	expect(mockModule.getOwnerEmailAttachmentById).not.toHaveBeenCalled()
 
-	mockModule.getEmailAttachmentById.mockResolvedValueOnce({
+	mockModule.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
+	mockModule.getOwnerEmailAttachmentById.mockResolvedValueOnce({
 		id: 'attachment-1',
 		messageId: 'message-1',
 		filename: 'note.txt',
@@ -77,9 +84,11 @@ test('email capabilities require a signed-in user and return attachment content 
 		{ env, callerContext },
 	)
 
-	expect(mockModule.getEmailAttachmentById).toHaveBeenCalledWith({
-		db: verifiedDb,
-		userId: 'user-1',
+	expect(mockModule.getOwnerEmailAttachmentById).toHaveBeenCalledWith({
+		env,
+		dbUserId: 7,
+		stableUserId: 'user-1',
+		blobs: env.EMAIL_BLOBS,
 		attachmentId: 'attachment-1',
 	})
 	expect(result).toEqual({
@@ -93,7 +102,8 @@ test('email capabilities require a signed-in user and return attachment content 
 		data_base64: 'QXR0YWNobWVudCB0ZXh0',
 	})
 
-	mockModule.getEmailAttachmentById.mockResolvedValueOnce(null)
+	mockModule.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
+	mockModule.getOwnerEmailAttachmentById.mockResolvedValueOnce(null)
 
 	await expect(
 		emailAttachmentGetCapability.handler(

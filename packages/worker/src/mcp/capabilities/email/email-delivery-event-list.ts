@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { listEmailDeliveryEvents } from '#worker/email/repo.ts'
+import {
+	listOwnerEmailDeliveryEvents,
+	resolveMailboxReadCutoverDbUserId,
+} from '#worker/email/mailbox-read-cutover.ts'
 import { emailDeliveryEventTypeValues } from '#worker/email/types.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
@@ -57,9 +60,17 @@ export const emailDeliveryEventListCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
-			const events = await listEmailDeliveryEvents({
+			const dbUserId = await resolveMailboxReadCutoverDbUserId({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				stableUserId: user.userId,
+			})
+			if (dbUserId === null) {
+				throw new Error('Authenticated user could not be resolved.')
+			}
+			const events = await listOwnerEmailDeliveryEvents({
+				env: ctx.env,
+				dbUserId,
+				stableUserId: user.userId,
 				messageId: args.message_id ?? null,
 				eventType: args.event_type ?? null,
 				limit: args.limit,

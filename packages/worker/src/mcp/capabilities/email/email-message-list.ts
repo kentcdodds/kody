@@ -1,12 +1,15 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
-import { listEmailMessages } from '#worker/email/repo.ts'
+import {
+	listOwnerEmailMessages,
+	resolveMailboxReadCutoverDbUserId,
+} from '#worker/email/mailbox-read-cutover.ts'
 import {
 	emailClassificationValues,
 	emailDeliveryStatusValues,
 } from '#worker/email/types.ts'
+import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
 export const emailMessageListCapability = defineDomainCapability(
@@ -32,9 +35,17 @@ export const emailMessageListCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
-			const messages = await listEmailMessages({
+			const dbUserId = await resolveMailboxReadCutoverDbUserId({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				stableUserId: user.userId,
+			})
+			if (dbUserId === null) {
+				throw new Error('Authenticated user could not be resolved.')
+			}
+			const messages = await listOwnerEmailMessages({
+				env: ctx.env,
+				dbUserId,
+				stableUserId: user.userId,
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,
 				processingStatus: args.processing_status ?? null,

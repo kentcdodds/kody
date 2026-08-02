@@ -1,8 +1,11 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	getOwnerEmailAttachmentById,
+	resolveMailboxReadCutoverDbUserId,
+} from '#worker/email/mailbox-read-cutover.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
-import { getEmailAttachmentById } from '#worker/email/service.ts'
 
 const emailAttachmentContentSchema = z.object({
 	id: z.string(),
@@ -31,10 +34,18 @@ export const emailAttachmentGetCapability = defineDomainCapability(
 		outputSchema: emailAttachmentContentSchema,
 		async handler(args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
-			const attachment = await getEmailAttachmentById({
+			const dbUserId = await resolveMailboxReadCutoverDbUserId({
 				db: ctx.env.APP_DB,
+				stableUserId: user.userId,
+			})
+			if (dbUserId === null) {
+				throw new Error('Authenticated user could not be resolved.')
+			}
+			const attachment = await getOwnerEmailAttachmentById({
+				env: ctx.env,
+				dbUserId,
+				stableUserId: user.userId,
 				blobs: ctx.env.EMAIL_BLOBS,
-				userId: user.userId,
 				attachmentId: args.attachment_id,
 			})
 			if (!attachment) {

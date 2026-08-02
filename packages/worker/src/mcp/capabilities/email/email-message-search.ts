@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { searchEmailMessages } from '#worker/email/repo.ts'
+import {
+	resolveMailboxReadCutoverDbUserId,
+	searchOwnerEmailMessages,
+} from '#worker/email/mailbox-read-cutover.ts'
 import {
 	emailDeliveryStatusValues,
 	emailDirectionValues,
@@ -40,9 +43,17 @@ export const emailMessageSearchCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
-			const messages = await searchEmailMessages({
+			const dbUserId = await resolveMailboxReadCutoverDbUserId({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				stableUserId: user.userId,
+			})
+			if (dbUserId === null) {
+				throw new Error('Authenticated user could not be resolved.')
+			}
+			const messages = await searchOwnerEmailMessages({
+				env: ctx.env,
+				dbUserId,
+				stableUserId: user.userId,
 				query: args.query,
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,

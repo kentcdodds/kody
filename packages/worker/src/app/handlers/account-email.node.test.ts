@@ -6,29 +6,6 @@ import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 
-const messageRow = {
-	id: 'msg-1',
-	direction: 'inbound',
-	inbox_id: 'inbox-1',
-	thread_id: null,
-	from_address: 'sender@example.com',
-	envelope_from: 'sender@example.com',
-	to_addresses_json: '["user@inbox.example.com"]',
-	subject: 'Hello from sender',
-	message_id_header: '<msg-1@example.com>',
-	processing_status: 'stored',
-	classification: 'accepted',
-	classification_reason: null,
-	provider_message_id: null,
-	delivery_status: null,
-	delivery_status_at: null,
-	error: null,
-	received_at: new Date(0).toISOString(),
-	sent_at: null,
-	created_at: new Date(0).toISOString(),
-	updated_at: new Date(0).toISOString(),
-}
-
 const messageRecord = {
 	id: 'msg-1',
 	direction: 'inbound' as const,
@@ -126,8 +103,12 @@ const mockModule = vi.hoisted(() => ({
 			updatedAt: new Date(0).toISOString(),
 		},
 	]),
-	getEmailMessageById: vi.fn(async () => messageRecord),
-	listEmailAttachmentsForMessage: vi.fn(async () => [
+	listOwnerEmailMessagesPage: vi.fn(async () => ({
+		total: 1,
+		messages: [messageRecord],
+	})),
+	getOwnerEmailMessageById: vi.fn(async () => messageRecord),
+	listOwnerEmailAttachmentsForMessage: vi.fn(async () => [
 		{
 			id: 'att-1',
 			messageId: 'msg-1',
@@ -141,7 +122,7 @@ const mockModule = vi.hoisted(() => ({
 			createdAt: new Date(0).toISOString(),
 		},
 	]),
-	listEmailDeliveryEvents: vi.fn(async () => [
+	listOwnerEmailDeliveryEvents: vi.fn(async () => [
 		{
 			id: 'evt-1',
 			messageId: 'msg-1',
@@ -217,12 +198,17 @@ vi.mock('#worker/email/repo.ts', () => ({
 		mockModule.listEmailInboxesForUser(...args),
 	listEmailInboxAddressesForUser: (...args: Array<unknown>) =>
 		mockModule.listEmailInboxAddressesForUser(...args),
-	getEmailMessageById: (...args: Array<unknown>) =>
-		mockModule.getEmailMessageById(...args),
-	listEmailAttachmentsForMessage: (...args: Array<unknown>) =>
-		mockModule.listEmailAttachmentsForMessage(...args),
-	listEmailDeliveryEvents: (...args: Array<unknown>) =>
-		mockModule.listEmailDeliveryEvents(...args),
+}))
+
+vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+	listOwnerEmailMessagesPage: (...args: Array<unknown>) =>
+		mockModule.listOwnerEmailMessagesPage(...args),
+	getOwnerEmailMessageById: (...args: Array<unknown>) =>
+		mockModule.getOwnerEmailMessageById(...args),
+	listOwnerEmailAttachmentsForMessage: (...args: Array<unknown>) =>
+		mockModule.listOwnerEmailAttachmentsForMessage(...args),
+	listOwnerEmailDeliveryEvents: (...args: Array<unknown>) =>
+		mockModule.listOwnerEmailDeliveryEvents(...args),
 }))
 
 vi.mock('#worker/email/service.ts', () => ({
@@ -232,39 +218,18 @@ vi.mock('#worker/email/service.ts', () => ({
 
 const { createAccountEmailApiHandler } = await import('./account-email.ts')
 
-function createCountResult(total: number) {
-	return {
-		bind: vi.fn().mockReturnValue({
-			first: vi.fn(async () => ({ total })),
-			all: vi.fn(async () => ({ results: [] })),
-		}),
-	}
-}
-
-function createListResult(rows: Array<Record<string, unknown>>) {
-	return {
-		bind: vi.fn().mockReturnValue({
-			first: vi.fn(async () => null),
-			all: vi.fn(async () => ({ results: rows })),
-		}),
-	}
-}
-
 function createEnv(input?: {
 	meter?: ReturnType<typeof createInMemoryUserMeterEnv>
-	messageRows?: Array<Record<string, unknown>>
+	messages?: Array<typeof messageRecord>
 	messageTotal?: number
 }) {
 	const meter = input?.meter ?? createInMemoryUserMeterEnv()
-	const messageRows = input?.messageRows ?? [messageRow]
-	const messageTotal = input?.messageTotal ?? messageRows.length
-	mockModule.prepare.mockImplementation((query: string) => {
-		const normalized = String(query).replace(/\s+/g, ' ').trim().toLowerCase()
-		if (normalized.includes('count(*)')) {
-			return createCountResult(messageTotal)
-		}
-		return createListResult(messageRows)
-	})
+	const messages = input?.messages ?? [messageRecord]
+	const messageTotal = input?.messageTotal ?? messages.length
+	mockModule.listOwnerEmailMessagesPage.mockImplementation(async () => ({
+		total: messageTotal,
+		messages,
+	}))
 	return {
 		APP_DB: {
 			prepare: (...args: Array<unknown>) => mockModule.prepare(...args),
@@ -286,9 +251,9 @@ function useFrozenUtcTime(iso: string) {
 }
 
 test('email API lists messages with pagination, usage, and selected detail', async () => {
-	mockModule.prepare.mockClear()
-	mockModule.getEmailMessageById.mockClear()
-	mockModule.listEmailDeliveryEvents.mockClear()
+	mockModule.listOwnerEmailMessagesPage.mockClear()
+	mockModule.getOwnerEmailMessageById.mockClear()
+	mockModule.listOwnerEmailDeliveryEvents.mockClear()
 	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey()
 	const userId = 'stable-user-1'
@@ -316,7 +281,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	})
 	expect(listResponse.status).toBe(200)
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
-	expect(mockModule.getEmailMessageById).not.toHaveBeenCalled()
+	expect(mockModule.getOwnerEmailMessageById).not.toHaveBeenCalled()
 	await expect(listResponse.json()).resolves.toMatchObject({
 		ok: true,
 		emailVerified: true,
@@ -360,8 +325,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		classification: null,
 	})
 
-	mockModule.prepare.mockClear()
-	mockModule.getEmailMessageById.mockClear()
+	mockModule.getOwnerEmailMessageById.mockClear()
 	const selectionMeter = createInMemoryUserMeterEnv()
 	const envWithSelection = createEnv({
 		meter: selectionMeter,
@@ -390,14 +354,16 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		),
 	})
 	expect(selectedResponse.status).toBe(200)
-	expect(mockModule.getEmailMessageById).toHaveBeenCalledWith({
-		db: envWithSelection.APP_DB,
-		userId: 'stable-user-1',
-		messageId: 'msg-1',
-	})
-	expect(mockModule.listEmailDeliveryEvents).toHaveBeenCalledWith(
+	expect(mockModule.getOwnerEmailMessageById).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			dbUserId: 42,
+			stableUserId: 'stable-user-1',
+			messageId: 'msg-1',
+		}),
+	)
+	expect(mockModule.listOwnerEmailDeliveryEvents).toHaveBeenCalledWith(
+		expect.objectContaining({
+			stableUserId: 'stable-user-1',
 			messageId: 'msg-1',
 		}),
 	)
@@ -481,23 +447,18 @@ test('email API usage reads initialized UserMeter daily counts', async () => {
 })
 
 test('email API lists classification filters and classifies inbound messages', async () => {
-	const quarantinedRow = {
-		...messageRow,
+	const quarantinedMessage = {
+		...messageRecord,
 		id: 'msg-quarantined',
-		classification: 'quarantined',
-		classification_reason: 'DMARC failed.',
+		classification: 'quarantined' as const,
+		classificationReason: 'DMARC failed.',
 	}
 	const meter = createInMemoryUserMeterEnv()
 	const env = createEnv({
 		meter,
-		messageRows: [quarantinedRow],
+		messages: [quarantinedMessage],
 	})
-	mockModule.getEmailMessageById.mockResolvedValueOnce({
-		...messageRecord,
-		id: 'msg-quarantined',
-		classification: 'quarantined',
-		classificationReason: 'DMARC failed.',
-	})
+	mockModule.getOwnerEmailMessageById.mockResolvedValueOnce(quarantinedMessage)
 
 	const handler = createAccountEmailApiHandler(env)
 	const listResponse = await handler.handler({
@@ -525,7 +486,8 @@ test('email API lists classification filters and classifies inbound messages', a
 
 	mockModule.setEmailMessageClassification.mockClear()
 	// Reload after classify uses the default message list again.
-	createEnv({ meter, messageRows: [messageRow] })
+	createEnv({ meter, messages: [messageRecord] })
+	mockModule.getOwnerEmailMessageById.mockResolvedValue(messageRecord)
 	const quarantineResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {
 			method: 'POST',
@@ -616,7 +578,7 @@ test('email API gates unverified accounts and skips mailbox queries', async () =
 		},
 	} as never)
 	mockModule.isAccountEmailVerified.mockResolvedValueOnce(false)
-	mockModule.prepare.mockClear()
+	mockModule.listOwnerEmailMessagesPage.mockClear()
 	mockModule.listEmailInboxesForUser.mockClear()
 	mockModule.getUserPlan.mockClear()
 
@@ -627,7 +589,7 @@ test('email API gates unverified accounts and skips mailbox queries', async () =
 	expect(response.status).toBe(200)
 	expect(mockModule.listEmailInboxesForUser).not.toHaveBeenCalled()
 	expect(mockModule.getUserPlan).not.toHaveBeenCalled()
-	expect(mockModule.prepare).not.toHaveBeenCalled()
+	expect(mockModule.listOwnerEmailMessagesPage).not.toHaveBeenCalled()
 	await expect(response.json()).resolves.toMatchObject({
 		ok: true,
 		emailVerified: false,
@@ -642,7 +604,7 @@ test('email API gates unverified accounts and skips mailbox queries', async () =
 })
 
 test('email API scopes message detail lookups to the signed-in userId', async () => {
-	mockModule.getEmailMessageById.mockResolvedValueOnce(null)
+	mockModule.getOwnerEmailMessageById.mockResolvedValueOnce(null)
 	const env = createEnv()
 	const handler = createAccountEmailApiHandler(env)
 	const response = await handler.handler({
@@ -651,11 +613,13 @@ test('email API scopes message detail lookups to the signed-in userId', async ()
 		),
 	})
 	expect(response.status).toBe(200)
-	expect(mockModule.getEmailMessageById).toHaveBeenCalledWith({
-		db: env.APP_DB,
-		userId: 'stable-user-1',
-		messageId: 'missing-msg',
-	})
+	expect(mockModule.getOwnerEmailMessageById).toHaveBeenCalledWith(
+		expect.objectContaining({
+			dbUserId: 42,
+			stableUserId: 'stable-user-1',
+			messageId: 'missing-msg',
+		}),
+	)
 	await expect(response.json()).resolves.toMatchObject({
 		ok: true,
 		selectedMessage: null,

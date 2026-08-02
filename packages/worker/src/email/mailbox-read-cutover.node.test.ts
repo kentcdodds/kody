@@ -1,22 +1,73 @@
 import { expect, test, vi } from 'vitest'
 import {
+	getOwnerEmailAttachmentById,
 	getOwnerEmailMessageById,
 	isMailboxReadCutoverEnabled,
+	listOwnerEmailDeliveryEvents,
+	listOwnerEmailMessages,
+	listOwnerEmailMessagesPage,
+	mailboxAttachmentToEmailAttachmentRecord,
 	mailboxMessageToEmailMessageRecord,
 	mailboxReadCutoverCheckedAtMaxAgeMs,
 	mailboxReadCutoverFlagKey,
 	mailboxReadCutoverSoakMs,
+	searchOwnerEmailMessages,
+	type MailboxReadCutoverMemo,
 } from './mailbox-read-cutover.ts'
-import { type MailboxMessageRecord } from './mailbox-types.ts'
+import {
+	type MailboxAttachmentRecord,
+	type MailboxMessageRecord,
+} from './mailbox-types.ts'
 import { type EmailMessageRecord } from './types.ts'
 
-const { getEmailMessageByIdMock } = vi.hoisted(() => ({
+const {
+	getEmailMessageByIdMock,
+	listEmailMessagesMock,
+	searchEmailMessagesMock,
+	listEmailMessagesPageForUserMock,
+	listEmailAttachmentsForMessageMock,
+	getEmailAttachmentRecordByIdMock,
+	listEmailDeliveryEventsMock,
+	loadEmailAttachmentContentMock,
+	recordFeatureFlagExposuresMock,
+} = vi.hoisted(() => ({
 	getEmailMessageByIdMock: vi.fn(),
+	listEmailMessagesMock: vi.fn(),
+	searchEmailMessagesMock: vi.fn(),
+	listEmailMessagesPageForUserMock: vi.fn(),
+	listEmailAttachmentsForMessageMock: vi.fn(),
+	getEmailAttachmentRecordByIdMock: vi.fn(),
+	listEmailDeliveryEventsMock: vi.fn(),
+	loadEmailAttachmentContentMock: vi.fn(),
+	recordFeatureFlagExposuresMock: vi.fn(),
 }))
 
 vi.mock('./repo.ts', () => ({
 	getEmailMessageById: (...args: Array<unknown>) =>
 		getEmailMessageByIdMock(...args),
+	listEmailMessages: (...args: Array<unknown>) =>
+		listEmailMessagesMock(...args),
+	searchEmailMessages: (...args: Array<unknown>) =>
+		searchEmailMessagesMock(...args),
+	listEmailMessagesPageForUser: (...args: Array<unknown>) =>
+		listEmailMessagesPageForUserMock(...args),
+	listEmailAttachmentsForMessage: (...args: Array<unknown>) =>
+		listEmailAttachmentsForMessageMock(...args),
+	getEmailAttachmentRecordById: (...args: Array<unknown>) =>
+		getEmailAttachmentRecordByIdMock(...args),
+	listEmailDeliveryEvents: (...args: Array<unknown>) =>
+		listEmailDeliveryEventsMock(...args),
+}))
+
+vi.mock('./service.ts', () => ({
+	loadEmailAttachmentContent: (...args: Array<unknown>) =>
+		loadEmailAttachmentContentMock(...args),
+	loadRawMime: vi.fn(),
+}))
+
+vi.mock('#worker/feature-flags/exposure.ts', () => ({
+	recordFeatureFlagExposures: (...args: Array<unknown>) =>
+		recordFeatureFlagExposuresMock(...args),
 }))
 
 const nowIso = '2026-08-01T12:00:00.000Z'
@@ -160,15 +211,15 @@ function baseEmailMessage(
 function soakedParity(stableUserId = 'user-aaa'): ParityRow {
 	return {
 		stable_user_id: stableUserId,
-		mailbox_parity_matching_since: hoursAgoIso(30),
+		mailbox_parity_matching_since: hoursAgoIso(3),
 		mailbox_parity_checked_at: hoursAgoIso(1),
 		mailbox_parity_mismatch_count: 0,
 	}
 }
 
-function fakeMailboxEnv(getMessage: ReturnType<typeof vi.fn>) {
+function fakeMailboxEnv(methods: Record<string, ReturnType<typeof vi.fn>>) {
 	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
-	const get = vi.fn(() => ({ getMessage }))
+	const get = vi.fn(() => methods)
 	return {
 		env: {
 			MAILBOX: {
@@ -178,79 +229,15 @@ function fakeMailboxEnv(getMessage: ReturnType<typeof vi.fn>) {
 		},
 		idFromName,
 		get,
+		methods,
 	}
 }
 
-test('mailbox-read-cutover defaults off and requires soak + fresh zero-mismatch parity', async () => {
+test('mailbox-read-cutover soak is 2h; prior pass and young fail', async () => {
+	expect(mailboxReadCutoverSoakMs).toBe(2 * 60 * 60 * 1000)
 	const dbUserId = 7
 	const stableUserId = 'user-aaa'
-	const d1Message = baseEmailMessage()
-	getEmailMessageByIdMock.mockResolvedValue(d1Message)
 
-	// Registry default: flag off → D1, even with soaked parity.
-	const defaultOffDb = createCutoverTestDb({
-		flags: { overrideEnabled: null, globalEnabled: null },
-		parityByUserId: new Map([[dbUserId, soakedParity()]]),
-	})
-	await expect(
-		isMailboxReadCutoverEnabled({
-			db: defaultOffDb,
-			dbUserId,
-			stableUserId,
-			now: nowIso,
-		}),
-	).resolves.toBe(false)
-
-	const getMessage = vi.fn(async () => baseMailboxMessage())
-	const { env: mailboxEnv, idFromName } = fakeMailboxEnv(getMessage)
-	await expect(
-		getOwnerEmailMessageById({
-			env: { ...mailboxEnv, APP_DB: defaultOffDb },
-			dbUserId,
-			stableUserId,
-			messageId: 'msg-1',
-			now: nowIso,
-		}),
-	).resolves.toEqual(d1Message)
-	expect(getEmailMessageByIdMock).toHaveBeenCalledWith({
-		db: defaultOffDb,
-		userId: stableUserId,
-		messageId: 'msg-1',
-	})
-	expect(getMessage).not.toHaveBeenCalled()
-	expect(idFromName).not.toHaveBeenCalled()
-
-	// Override/global on but no parity → still D1.
-	for (const flags of [
-		{ overrideEnabled: true as boolean | null, globalEnabled: null },
-		{ overrideEnabled: null, globalEnabled: true as boolean | null },
-	]) {
-		getEmailMessageByIdMock.mockClear()
-		const noParityDb = createCutoverTestDb({
-			flags,
-			parityByUserId: new Map([[dbUserId, null]]),
-		})
-		await expect(
-			isMailboxReadCutoverEnabled({
-				db: noParityDb,
-				dbUserId,
-				stableUserId,
-				now: nowIso,
-			}),
-		).resolves.toBe(false)
-		await expect(
-			getOwnerEmailMessageById({
-				env: { ...mailboxEnv, APP_DB: noParityDb },
-				dbUserId,
-				stableUserId,
-				messageId: 'msg-1',
-				now: nowIso,
-			}),
-		).resolves.toEqual(d1Message)
-		expect(getEmailMessageByIdMock).toHaveBeenCalled()
-	}
-
-	// Young matching_since (< 24h soak).
 	const youngDb = createCutoverTestDb({
 		flags: { overrideEnabled: true, globalEnabled: null },
 		parityByUserId: new Map([
@@ -258,112 +245,35 @@ test('mailbox-read-cutover defaults off and requires soak + fresh zero-mismatch 
 				dbUserId,
 				{
 					...soakedParity(),
-					mailbox_parity_matching_since: hoursAgoIso(23),
+					mailbox_parity_matching_since: hoursAgoIso(1),
 				},
 			],
 		]),
 	})
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: youngDb,
+			env: { APP_DB: youngDb },
 			dbUserId,
 			stableUserId,
 			now: nowIso,
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(false)
 
-	// Stale checked_at (> 6h freshness window).
-	const staleDb = createCutoverTestDb({
-		flags: { overrideEnabled: true, globalEnabled: null },
-		parityByUserId: new Map([
-			[
-				dbUserId,
-				{
-					...soakedParity(),
-					mailbox_parity_checked_at: hoursAgoIso(7),
-				},
-			],
-		]),
-	})
-	await expect(
-		isMailboxReadCutoverEnabled({
-			db: staleDb,
-			dbUserId,
-			stableUserId,
-			now: nowIso,
-		}),
-	).resolves.toBe(false)
-
-	// Mismatch count blocks cutover.
-	const mismatchedDb = createCutoverTestDb({
-		flags: { overrideEnabled: true, globalEnabled: null },
-		parityByUserId: new Map([
-			[
-				dbUserId,
-				{
-					...soakedParity(),
-					mailbox_parity_mismatch_count: 1,
-				},
-			],
-		]),
-	})
-	await expect(
-		isMailboxReadCutoverEnabled({
-			db: mismatchedDb,
-			dbUserId,
-			stableUserId,
-			now: nowIso,
-		}),
-	).resolves.toBe(false)
-
-	// Cross-user parity row denied (stable_user_id must match exactly).
-	const crossUserDb = createCutoverTestDb({
-		flags: { overrideEnabled: true, globalEnabled: null },
-		parityByUserId: new Map([[dbUserId, soakedParity('user-other')]]),
-	})
-	await expect(
-		isMailboxReadCutoverEnabled({
-			db: crossUserDb,
-			dbUserId,
-			stableUserId,
-			now: nowIso,
-		}),
-	).resolves.toBe(false)
-
-	// Soaked + fresh + flag on → Mailbox DO; maps userId from the caller.
 	const readyDb = createCutoverTestDb({
 		flags: { overrideEnabled: true, globalEnabled: null },
 		parityByUserId: new Map([[dbUserId, soakedParity()]]),
 	})
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: readyDb,
+			env: { APP_DB: readyDb },
 			dbUserId,
 			stableUserId,
 			now: nowIso,
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(true)
 
-	getEmailMessageByIdMock.mockClear()
-	const doMessage = baseMailboxMessage({ subject: 'From DO' })
-	const doGetMessage = vi.fn(async () => doMessage)
-	const doEnv = fakeMailboxEnv(doGetMessage)
-	await expect(
-		getOwnerEmailMessageById({
-			env: { ...doEnv.env, APP_DB: readyDb },
-			dbUserId,
-			stableUserId,
-			messageId: 'msg-1',
-			now: nowIso,
-		}),
-	).resolves.toEqual(
-		mailboxMessageToEmailMessageRecord(doMessage, stableUserId),
-	)
-	expect(doEnv.idFromName).toHaveBeenCalledWith(stableUserId)
-	expect(doGetMessage).toHaveBeenCalledWith({ messageId: 'msg-1' })
-	expect(getEmailMessageByIdMock).not.toHaveBeenCalled()
-
-	// Boundary: matching_since exactly soak age and checked_at exactly max age.
 	const boundaryDb = createCutoverTestDb({
 		flags: { overrideEnabled: null, globalEnabled: true },
 		parityByUserId: new Map([
@@ -384,19 +294,124 @@ test('mailbox-read-cutover defaults off and requires soak + fresh zero-mismatch 
 	})
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: boundaryDb,
+			env: { APP_DB: boundaryDb },
 			dbUserId,
 			stableUserId,
 			now: nowIso,
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(true)
 })
 
-test('mailbox-read-cutover keeps deleting accounts on D1 even when otherwise eligible', async () => {
+test('mailbox-read-cutover defaults off and keeps fresh6h/mismatch/error/deleting/identity fail closed', async () => {
 	const dbUserId = 7
 	const stableUserId = 'user-aaa'
 	const d1Message = baseEmailMessage()
 	getEmailMessageByIdMock.mockResolvedValue(d1Message)
+	recordFeatureFlagExposuresMock.mockClear()
+
+	const defaultOffDb = createCutoverTestDb({
+		flags: { overrideEnabled: null, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, soakedParity()]]),
+	})
+	await expect(
+		isMailboxReadCutoverEnabled({
+			env: { APP_DB: defaultOffDb },
+			dbUserId,
+			stableUserId,
+			now: nowIso,
+		}),
+	).resolves.toBe(false)
+	expect(recordFeatureFlagExposuresMock).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			stableUserId,
+			evaluations: {
+				[mailboxReadCutoverFlagKey]: {
+					enabled: false,
+					source: 'default',
+				},
+			},
+		}),
+	)
+
+	const getMessage = vi.fn(async () => baseMailboxMessage())
+	const { env: mailboxEnv, idFromName } = fakeMailboxEnv({ getMessage })
+	await expect(
+		getOwnerEmailMessageById({
+			env: { ...mailboxEnv, APP_DB: defaultOffDb },
+			dbUserId,
+			stableUserId,
+			messageId: 'msg-1',
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toEqual(d1Message)
+	expect(getEmailMessageByIdMock).toHaveBeenCalledWith({
+		db: defaultOffDb,
+		userId: stableUserId,
+		messageId: 'msg-1',
+	})
+	expect(getMessage).not.toHaveBeenCalled()
+	expect(idFromName).not.toHaveBeenCalled()
+
+	const staleDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([
+			[
+				dbUserId,
+				{
+					...soakedParity(),
+					mailbox_parity_checked_at: hoursAgoIso(7),
+				},
+			],
+		]),
+	})
+	await expect(
+		isMailboxReadCutoverEnabled({
+			env: { APP_DB: staleDb },
+			dbUserId,
+			stableUserId,
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toBe(false)
+
+	const mismatchedDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([
+			[
+				dbUserId,
+				{
+					...soakedParity(),
+					mailbox_parity_mismatch_count: 1,
+				},
+			],
+		]),
+	})
+	await expect(
+		isMailboxReadCutoverEnabled({
+			env: { APP_DB: mismatchedDb },
+			dbUserId,
+			stableUserId,
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toBe(false)
+
+	const crossUserDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, soakedParity('user-other')]]),
+	})
+	await expect(
+		isMailboxReadCutoverEnabled({
+			env: { APP_DB: crossUserDb },
+			dbUserId,
+			stableUserId,
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toBe(false)
 
 	const deletingDb = createCutoverTestDb({
 		flags: { overrideEnabled: true, globalEnabled: null },
@@ -405,31 +420,222 @@ test('mailbox-read-cutover keeps deleting accounts on D1 even when otherwise eli
 	})
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: deletingDb,
+			env: { APP_DB: deletingDb },
 			dbUserId,
 			stableUserId,
 			now: nowIso,
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(false)
+})
 
-	const getMessage = vi.fn(async () => baseMailboxMessage())
-	const { env, idFromName } = fakeMailboxEnv(getMessage)
+test('mailbox-read-cutover DO on path covers list/search/get/attachment/events without D1 fallback', async () => {
+	const dbUserId = 7
+	const stableUserId = 'user-aaa'
+	const readyDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, soakedParity()]]),
+	})
+	const memo: MailboxReadCutoverMemo = {}
+	const doMessage = baseMailboxMessage({ subject: 'From DO' })
+	const attachment: MailboxAttachmentRecord = {
+		id: 'att-1',
+		messageId: 'msg-1',
+		filename: 'note.txt',
+		contentType: 'text/plain',
+		contentId: null,
+		disposition: 'attachment',
+		size: 4,
+		storageKind: 'raw-mime',
+		storageKey: null,
+		createdAt: '2026-07-01T12:00:00.000Z',
+	}
+	const methods = {
+		getMessage: vi.fn(async () => doMessage),
+		listMessages: vi.fn(async () => ({
+			messages: [doMessage],
+			nextCursor: null,
+		})),
+		searchMessages: vi.fn(async () => ({ messages: [doMessage] })),
+		countMessages: vi.fn(async () => ({ total: 1 })),
+		getAttachment: vi.fn(async () => attachment),
+		listAttachmentsForMessage: vi.fn(async () => [attachment]),
+		listDeliveryEvents: vi.fn(async () => [
+			{
+				id: 'evt-1',
+				messageId: 'msg-1',
+				inboxId: 'inbox-1',
+				eventType: 'received' as const,
+				provider: 'cloudflare',
+				providerMessageId: null,
+				providerEventId: null,
+				detailJson: '{}',
+				needsEffectReconcile: false,
+				state: null,
+				fingerprint: null,
+				storageLease: null,
+				storageLeaseAt: null,
+				cleanupLease: null,
+				cleanupLeaseAt: null,
+				cleanupRetryAt: null,
+				expectedAttachmentCount: null,
+				finalizationToken: null,
+				reconcileAfter: null,
+				dedupeExpiresAt: null,
+				usageEffectRecordedAt: null,
+				usageEffectSuppressedAt: null,
+				usageStartedAt: null,
+				usageMonth: null,
+				usageBytes: null,
+				usageDurationMs: null,
+				usageEffectRetryAt: null,
+				usageEffectLease: null,
+				usageEffectLeaseAt: null,
+				subscriptionEffectState: null,
+				subscriptionEffectLease: null,
+				subscriptionEffectLeaseAt: null,
+				subscriptionEffectRetryAt: null,
+				subscriptionEffectAttemptCount: null,
+				subscriptionEffectDeadLetterAt: null,
+				subscriptionEffectLastError: null,
+				createdAt: '2026-07-01T12:00:00.000Z',
+				updatedAt: '2026-07-01T12:00:00.000Z',
+			},
+		]),
+	}
+	const doEnv = fakeMailboxEnv(methods)
+	const env = { ...doEnv.env, APP_DB: readyDb }
+	const base = {
+		env,
+		dbUserId,
+		stableUserId,
+		now: nowIso,
+		memo,
+		skipExposureRecording: true,
+	}
+
+	getEmailMessageByIdMock.mockClear()
+	listEmailMessagesMock.mockClear()
+	searchEmailMessagesMock.mockClear()
+	listEmailMessagesPageForUserMock.mockClear()
+	listEmailDeliveryEventsMock.mockClear()
+	getEmailAttachmentRecordByIdMock.mockClear()
+	loadEmailAttachmentContentMock.mockResolvedValue({
+		...mailboxAttachmentToEmailAttachmentRecord(attachment),
+		contentBase64: 'YmxvYg==',
+		content: null,
+	})
+
+	await expect(listOwnerEmailMessages({ ...base, limit: 10 })).resolves.toEqual(
+		[mailboxMessageToEmailMessageRecord(doMessage, stableUserId)],
+	)
+	await expect(
+		searchOwnerEmailMessages({ ...base, query: 'Hello', limit: 10 }),
+	).resolves.toEqual([
+		mailboxMessageToEmailMessageRecord(doMessage, stableUserId),
+	])
+	await expect(
+		listOwnerEmailMessagesPage({
+			...base,
+			query: '',
+			classification: null,
+			pageSize: 10,
+			offset: 0,
+		}),
+	).resolves.toEqual({
+		total: 1,
+		messages: [mailboxMessageToEmailMessageRecord(doMessage, stableUserId)],
+	})
+	await expect(
+		getOwnerEmailMessageById({ ...base, messageId: 'msg-1' }),
+	).resolves.toEqual(
+		mailboxMessageToEmailMessageRecord(doMessage, stableUserId),
+	)
+	const events = await listOwnerEmailDeliveryEvents({
+		...base,
+		messageId: 'msg-1',
+		limit: 5,
+	})
+	expect(events).toEqual([
+		expect.objectContaining({
+			id: 'evt-1',
+			userId: stableUserId,
+			messageId: 'msg-1',
+			eventType: 'received',
+		}),
+	])
+	expect(methods.listDeliveryEvents).toHaveBeenCalled()
+	await expect(
+		getOwnerEmailAttachmentById({
+			...base,
+			blobs: {} as R2Bucket,
+			attachmentId: 'att-1',
+		}),
+	).resolves.toMatchObject({ id: 'att-1', contentBase64: 'YmxvYg==' })
+
+	expect(doEnv.idFromName).toHaveBeenCalledWith(stableUserId)
+	expect(getEmailMessageByIdMock).not.toHaveBeenCalled()
+	expect(listEmailMessagesMock).not.toHaveBeenCalled()
+	expect(searchEmailMessagesMock).not.toHaveBeenCalled()
+	expect(listEmailMessagesPageForUserMock).not.toHaveBeenCalled()
+	expect(listEmailDeliveryEventsMock).not.toHaveBeenCalled()
+	expect(getEmailAttachmentRecordByIdMock).not.toHaveBeenCalled()
+	expect(loadEmailAttachmentContentMock).toHaveBeenCalled()
+})
+
+test('mailbox-read-cutover does not fall back from DO and isolates cross-owner identity', async () => {
+	const dbUserId = 7
+	const stableUserId = 'user-aaa'
+	const readyDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, soakedParity()]]),
+	})
+	const failingGet = vi.fn(async () => {
+		throw new Error('mailbox unavailable')
+	})
+	const failingEnv = fakeMailboxEnv({ getMessage: failingGet })
+	getEmailMessageByIdMock.mockClear()
 	await expect(
 		getOwnerEmailMessageById({
-			env: { ...env, APP_DB: deletingDb },
+			env: { ...failingEnv.env, APP_DB: readyDb },
 			dbUserId,
 			stableUserId,
 			messageId: 'msg-1',
 			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).rejects.toThrow(/mailbox unavailable/)
+	expect(getEmailMessageByIdMock).not.toHaveBeenCalled()
+
+	const parityErrorDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, 'error']]),
+	})
+	const d1Message = baseEmailMessage()
+	getEmailMessageByIdMock.mockResolvedValue(d1Message)
+	await expect(
+		getOwnerEmailMessageById({
+			env: {
+				...fakeMailboxEnv({ getMessage: vi.fn() }).env,
+				APP_DB: parityErrorDb,
+			},
+			dbUserId,
+			stableUserId,
+			messageId: 'msg-1',
+			now: nowIso,
+			skipExposureRecording: true,
 		}),
 	).resolves.toEqual(d1Message)
-	expect(getEmailMessageByIdMock).toHaveBeenCalledWith({
-		db: deletingDb,
-		userId: stableUserId,
-		messageId: 'msg-1',
-	})
-	expect(getMessage).not.toHaveBeenCalled()
-	expect(idFromName).not.toHaveBeenCalled()
+
+	await expect(
+		isMailboxReadCutoverEnabled({
+			env: { APP_DB: readyDb },
+			dbUserId,
+			stableUserId: 'user-other',
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toBe(false)
 })
 
 test('mailbox-read-cutover fails closed on invalid now and future parity timestamps', async () => {
@@ -442,18 +648,20 @@ test('mailbox-read-cutover fails closed on invalid now and future parity timesta
 
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: readyDb,
+			env: { APP_DB: readyDb },
 			dbUserId,
 			stableUserId,
 			now: 'not-a-timestamp',
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(false)
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: readyDb,
+			env: { APP_DB: readyDb },
 			dbUserId,
 			stableUserId,
 			now: new Date(Number.NaN),
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(false)
 
@@ -471,89 +679,13 @@ test('mailbox-read-cutover fails closed on invalid now and future parity timesta
 	})
 	await expect(
 		isMailboxReadCutoverEnabled({
-			db: futureCheckedDb,
+			env: { APP_DB: futureCheckedDb },
 			dbUserId,
 			stableUserId,
 			now: nowIso,
+			skipExposureRecording: true,
 		}),
 	).resolves.toBe(false)
-
-	const futureMatchingDb = createCutoverTestDb({
-		flags: { overrideEnabled: true, globalEnabled: null },
-		parityByUserId: new Map([
-			[
-				dbUserId,
-				{
-					...soakedParity(),
-					mailbox_parity_matching_since: hoursFromNowIso(1),
-					mailbox_parity_checked_at: hoursAgoIso(1),
-				},
-			],
-		]),
-	})
-	await expect(
-		isMailboxReadCutoverEnabled({
-			db: futureMatchingDb,
-			dbUserId,
-			stableUserId,
-			now: nowIso,
-		}),
-	).resolves.toBe(false)
-})
-
-test('mailbox-read-cutover fails closed on D1 parity errors and does not fall back from DO', async () => {
-	const dbUserId = 7
-	const stableUserId = 'user-aaa'
-	const d1Message = baseEmailMessage()
-	getEmailMessageByIdMock.mockResolvedValue(d1Message)
-
-	const parityErrorDb = createCutoverTestDb({
-		flags: { overrideEnabled: true, globalEnabled: null },
-		parityByUserId: new Map([[dbUserId, 'error']]),
-	})
-	await expect(
-		isMailboxReadCutoverEnabled({
-			db: parityErrorDb,
-			dbUserId,
-			stableUserId,
-			now: nowIso,
-		}),
-	).resolves.toBe(false)
-	const getMessage = vi.fn(async () => baseMailboxMessage())
-	const { env } = fakeMailboxEnv(getMessage)
-	await expect(
-		getOwnerEmailMessageById({
-			env: { ...env, APP_DB: parityErrorDb },
-			dbUserId,
-			stableUserId,
-			messageId: 'msg-1',
-			now: nowIso,
-		}),
-	).resolves.toEqual(d1Message)
-	expect(getMessage).not.toHaveBeenCalled()
-	expect(getEmailMessageByIdMock).toHaveBeenCalled()
-
-	// When cutover is on, DO errors propagate — no silent D1 fallback.
-	getEmailMessageByIdMock.mockClear()
-	const readyDb = createCutoverTestDb({
-		flags: { overrideEnabled: true, globalEnabled: null },
-		parityByUserId: new Map([[dbUserId, soakedParity()]]),
-	})
-	const failingGet = vi.fn(async () => {
-		throw new Error('mailbox unavailable')
-	})
-	const failingEnv = fakeMailboxEnv(failingGet)
-	await expect(
-		getOwnerEmailMessageById({
-			env: { ...failingEnv.env, APP_DB: readyDb },
-			dbUserId,
-			stableUserId,
-			messageId: 'msg-1',
-			now: nowIso,
-		}),
-	).rejects.toThrow(/mailbox unavailable/)
-	expect(failingGet).toHaveBeenCalled()
-	expect(getEmailMessageByIdMock).not.toHaveBeenCalled()
 })
 
 test('mailboxMessageToEmailMessageRecord maps DO row with supplied stable userId', () => {
@@ -569,4 +701,30 @@ test('mailboxMessageToEmailMessageRecord maps DO row with supplied stable userId
 		rawMimeKey: 'user-aaa/msg-1.eml',
 	})
 	expect(mapped).not.toHaveProperty('ownerId')
+})
+
+test('gate memo records exposure once', async () => {
+	const dbUserId = 7
+	const stableUserId = 'user-aaa'
+	const readyDb = createCutoverTestDb({
+		flags: { overrideEnabled: true, globalEnabled: null },
+		parityByUserId: new Map([[dbUserId, soakedParity()]]),
+	})
+	recordFeatureFlagExposuresMock.mockClear()
+	const memo: MailboxReadCutoverMemo = {}
+	await isMailboxReadCutoverEnabled({
+		env: { APP_DB: readyDb },
+		dbUserId,
+		stableUserId,
+		now: nowIso,
+		memo,
+	})
+	await isMailboxReadCutoverEnabled({
+		env: { APP_DB: readyDb },
+		dbUserId,
+		stableUserId,
+		now: nowIso,
+		memo,
+	})
+	expect(recordFeatureFlagExposuresMock).toHaveBeenCalledTimes(1)
 })

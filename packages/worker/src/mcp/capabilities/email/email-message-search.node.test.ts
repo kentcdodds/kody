@@ -1,12 +1,15 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	searchEmailMessages: vi.fn(),
+	searchOwnerEmailMessages: vi.fn(),
+	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/repo.ts', () => ({
-	searchEmailMessages: (...args: Array<unknown>) =>
-		mockModule.searchEmailMessages(...args),
+vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+	searchOwnerEmailMessages: (...args: Array<unknown>) =>
+		mockModule.searchOwnerEmailMessages(...args),
+	resolveMailboxReadCutoverDbUserId: (...args: Array<unknown>) =>
+		mockModule.resolveMailboxReadCutoverDbUserId(...args),
 }))
 
 const { emailMessageSearchCapability } =
@@ -66,10 +69,11 @@ test('email_message_search requires a signed-in, verified user and forwards the 
 			},
 		),
 	).rejects.toThrow(/Account email is not verified/)
-	expect(mockModule.searchEmailMessages).not.toHaveBeenCalled()
+	expect(mockModule.searchOwnerEmailMessages).not.toHaveBeenCalled()
 
 	const env = createEnv()
-	mockModule.searchEmailMessages.mockResolvedValueOnce([
+	mockModule.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
+	mockModule.searchOwnerEmailMessages.mockResolvedValueOnce([
 		{
 			id: 'message-1',
 			direction: 'inbound',
@@ -102,9 +106,10 @@ test('email_message_search requires a signed-in, verified user and forwards the 
 		{ env, callerContext: createUserContext() },
 	)
 
-	expect(mockModule.searchEmailMessages).toHaveBeenCalledWith({
-		db: env.APP_DB,
-		userId: 'user-1',
+	expect(mockModule.searchOwnerEmailMessages).toHaveBeenCalledWith({
+		env,
+		dbUserId: 7,
+		stableUserId: 'user-1',
 		query: 'invoice',
 		inboxId: 'inbox-1',
 		direction: 'inbound',

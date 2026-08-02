@@ -112,11 +112,11 @@ function normalizeFeatureFlagNote(note: unknown): string | null {
 	return trimmed
 }
 
-export async function isFeatureEnabled(
+export async function evaluateFeatureFlag(
 	db: D1Database,
 	key: FeatureFlagKey,
 	userId: number | null,
-): Promise<boolean> {
+): Promise<FeatureFlagEvaluation> {
 	if (userId !== null) {
 		const override = await db
 			.prepare(
@@ -127,7 +127,10 @@ export async function isFeatureEnabled(
 			.bind(key, userId)
 			.first<{ enabled: number }>()
 		if (override) {
-			return override.enabled === 1
+			return {
+				enabled: override.enabled === 1,
+				source: 'override',
+			}
 		}
 	}
 
@@ -151,7 +154,15 @@ export async function isFeatureEnabled(
 				}
 			: null,
 		defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
-	}).enabled
+	})
+}
+
+export async function isFeatureEnabled(
+	db: D1Database,
+	key: FeatureFlagKey,
+	userId: number | null,
+): Promise<boolean> {
+	return (await evaluateFeatureFlag(db, key, userId)).enabled
 }
 
 export async function getFeatureFlagEvaluationsForUser(

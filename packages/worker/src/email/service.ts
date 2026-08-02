@@ -34,6 +34,7 @@ import {
 } from './repo.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
+	type EmailAttachmentRecord,
 	type EmailClassification,
 	type EmailDeliveryEventRecord,
 	type EmailDeliveryStatus,
@@ -541,19 +542,17 @@ export async function storeIdempotentInboundEmail(input: {
 	}
 }
 
-export async function getEmailAttachmentById(input: {
-	db: D1Database
-	/** EMAIL_BLOBS bucket for messages whose raw MIME lives in R2. */
+/**
+ * Load attachment bytes after metadata selection. External attachments use
+ * `EMAIL_BLOBS` via `storageKey`; raw-mime attachments parse the message's
+ * raw MIME blob. Metadata may come from D1 or Mailbox.
+ */
+export async function loadEmailAttachmentContent(input: {
 	blobs: R2Bucket
-	userId: string
-	attachmentId: string
+	attachment: EmailAttachmentRecord
+	message: Pick<EmailMessageRecord, 'rawMimeKey'> | null
 }) {
-	const attachment = await getEmailAttachmentRecordById({
-		db: input.db,
-		userId: input.userId,
-		attachmentId: input.attachmentId,
-	})
-	if (!attachment) return null
+	const { attachment } = input
 	// Externally stored attachments (outbound mail) keep their bytes in a
 	// dedicated R2 object instead of inside raw MIME.
 	if (attachment.storageKind === 'external') {
@@ -573,13 +572,8 @@ export async function getEmailAttachmentById(input: {
 	if (attachment.storageKind === 'unavailable') {
 		return { ...attachment, content: null, contentBase64: null }
 	}
-	const message = await getEmailMessageById({
-		db: input.db,
-		userId: input.userId,
-		messageId: attachment.messageId,
-	})
-	const rawMime = message
-		? await loadRawMime({ blobs: input.blobs, message })
+	const rawMime = input.message
+		? await loadRawMime({ blobs: input.blobs, message: input.message })
 		: null
 	if (!rawMime) {
 		return {
@@ -621,6 +615,31 @@ export async function getEmailAttachmentById(input: {
 		content: matched.content,
 		contentBase64: bytesToBase64(bytes),
 	}
+}
+
+export async function getEmailAttachmentById(input: {
+	db: D1Database
+	/** EMAIL_BLOBS bucket for messages whose raw MIME lives in R2. */
+	blobs: R2Bucket
+	userId: string
+	attachmentId: string
+}) {
+	const attachment = await getEmailAttachmentRecordById({
+		db: input.db,
+		userId: input.userId,
+		attachmentId: input.attachmentId,
+	})
+	if (!attachment) return null
+	const message = await getEmailMessageById({
+		db: input.db,
+		userId: input.userId,
+		messageId: attachment.messageId,
+	})
+	return loadEmailAttachmentContent({
+		blobs: input.blobs,
+		attachment,
+		message,
+	})
 }
 
 /**

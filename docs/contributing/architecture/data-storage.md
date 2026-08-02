@@ -940,17 +940,29 @@ purge fails (timeout/error), rebuild state is **not** reset — the user stays
 ineligible for soak, `last_error` records the failure, and the next ticks retry
 purge before advancing cursors.
 
-**Phase 3 read cutover (prepared, not flipped):**
-`packages/worker/src/email/mailbox-read-cutover.ts` defines a default-off
-`mailbox-read-cutover` feature flag plus `getOwnerEmailMessageById` /
-`isMailboxReadCutoverEnabled`. The gate requires the flag **and** per-user
-parity soak: `mailbox_parity_matching_since` at least 24h old,
+**Phase 3 owner-facing read cutover (wired, flag default-off):**
+`packages/worker/src/email/mailbox-read-cutover.ts` gates app `/account/email`
+inbox/detail and MCP `email_message_*` / `email_attachment_get` /
+`email_delivery_event_list` through Mailbox when the default-off
+`mailbox-read-cutover` flag **and** per-user parity soak both pass:
+`mailbox_parity_matching_since` ≥ **2h** (pre-launch; Kent-approved on ~38-user
+fleet evidence — **TODO(launch-hardening):** revisit),
 `mailbox_parity_checked_at` fresh within 6h,
-`mailbox_parity_mismatch_count === 0`, exact `stable_user_id` match, and
-`deleting_at IS NULL` (deleting accounts fail closed to D1). D1 errors, missing
-parity state, and an off flag fail closed to D1 reads. No live reader calls this
-adapter yet; exposure recording is intentionally omitted until a live gate site
-exists (see [Feature flags](./feature-flags.md)).
+`mailbox_parity_mismatch_count === 0`, exact `stable_user_id` match,
+`deleting_at IS NULL`. D1 dual-writes remain. Provider reverse lookup, outbound
+reply/message-id lookup, inbound, and package-subscription reads stay on D1.
+When the gate is on, DO errors propagate with no D1 fallback. Raw MIME / R2
+attachment bytes still load through existing blob helpers after Mailbox metadata
+selection.
+
+**Operator enable prerequisite (before flipping the flag):** confirm a sealed DR
+day covering D1 + `EMAIL_BLOBS` under
+[disaster recovery](../disaster-recovery.md) — bucket `kody-production-backups`
+in the DR (KCD) account, latest `daily/full/<day>/manifest.json` with verified
+stored-object digest/checksum, and
+`admin_mailbox_maintenance({ action: "status" })` showing `matching`/`eligible`
+counts with `mismatch`/`error` at zero for the target cohort. Deploy first; then
+enable per user.
 
 **Retention** is self-enforced inside the DO with alarms
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
@@ -1032,12 +1044,13 @@ backfills all owner messages and delivery events (including pre-claim bounded
 rejection rows), durable content-watermark replays, compares owner-scoped D1 vs
 Mailbox counts, persists soak state on `users` (migration `0125`), re-purges the
 DO when account deletion races the lane, and repairs delete drift via
-purge/rebuild. Direct delete wiring is pending. Live email read/write authority
-is unchanged — D1 `email_*` tables remain authoritative for all live paths. D1
-email rows and existing R2 inventory deletion stay authoritative during expand.
-**Phase 2 contract completion** (every user-mail D1 mutation also writes the DO
-on live paths, including retention deletes) remains pending; terminal inbound +
-parity cover the high-risk live surface today.
+purge/rebuild. Direct delete wiring is pending. D1 remains write authority for
+all live paths; owner-facing reads may use Mailbox when the default-off
+`mailbox-read-cutover` flag and parity soak pass (phase 3). D1 email rows and
+existing R2 inventory deletion stay authoritative during expand. **Phase 2
+contract completion** (every user-mail D1 mutation also writes the DO on live
+paths, including retention deletes) remains pending; terminal inbound + parity
+cover the high-risk live surface today.
 
 1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
    `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
@@ -1067,16 +1080,18 @@ parity cover the high-risk live surface today.
    compares, soak tracking on `users` (migration `0125`), and repairs delete
    drift via purge/rebuild. **Still pending for phase-2 contract completion:**
    direct delete wiring for explicit/retention deletes (including retention
-   sweeper metadata-delete mirrors). D1 authority and read cutover are unchanged
-   (prepared adapter exists; not wired).
-3. **Reads cut over after production soak** — user-mail reads move to the DO
-   only after production parity soak is verified
-   (`mailbox_parity_matching_since` ≥ 24h continuous exact counts, fresh
+   sweeper metadata-delete mirrors). D1 remains write authority; owner-facing
+   read cutover is wired behind the default-off flag (phase 3).
+3. **Owner-facing reads cut over after production soak** — app inbox/detail and
+   MCP list/get/search/attachment/delivery-event reads move to the DO only after
+   production parity soak is verified (`mailbox_parity_matching_since` ≥ 2h
+   continuous exact counts pre-launch — TODO(launch-hardening) revisit, fresh
    `mailbox_parity_checked_at`, zero `mailbox_parity_mismatch_count`, account
    not marked for deletion) **and** the default-off `mailbox-read-cutover` flag
-   is enabled per user. D1 writes continue. A prepared
-   `getOwnerEmailMessageById` adapter exists but is **not wired**; no live
-   reader has flipped and no cutover exposures are recorded yet.
+   is enabled per user. D1 writes continue.
+   Internal/inbound/provider-lookup/package-subscription readers stay on D1.
+   Live gate evaluations record flag exposures (session cache or cutover memo
+   chokepoint).
 4. **D1 write-off / event retirement** — stop writing moved user-mail metadata
    to D1; retire dual-write and event/mirror machinery used only for the
    migration.

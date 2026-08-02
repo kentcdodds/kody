@@ -1,5 +1,5 @@
 /**
- * Default-off, parity-gated Mailbox read cutover (prepared; not wired).
+ * Default-off, parity-gated Mailbox read cutover for owner-facing reads.
  *
  * Gate requires both:
  * 1. feature flag `mailbox-read-cutover` enabled for the numeric `users.id`
@@ -12,20 +12,60 @@
  * to D1-authoritative reads. When the gate is on, Mailbox DO errors propagate
  * with no D1 fallback (fallback would hide parity bugs).
  *
- * Exposure recording is intentionally omitted here: no live caller uses this
- * adapter yet. Future read-path wiring owns the exposure chokepoint (the
- * existing session/MCP evaluation caches once a live gate evaluates the flag,
- * or an explicit `recordFeatureFlagExposures` at the first switched call site).
+ * Soak window is pre-launch 2h (not 24h): continuous exact D1↔Mailbox counts
+ * across the ~38-user fleet plus every-5m parity and fail-closed freshness /
+ * mismatch / deleting / identity checks were Kent-approved as sufficient before
+ * launch. TODO(launch-hardening): revisit extending soak when the fleet grows.
+ *
+ * Live adapters record `mailbox-read-cutover` exposure once per memoized gate
+ * evaluation. App callers that already ran the session flag cache pass
+ * `skipExposureRecording: true` so exposures are not duplicated.
  */
 
-import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
+import {
+	recordFeatureFlagExposures,
+	type FeatureFlagExposureEnv,
+} from '#worker/feature-flags/exposure.ts'
+import { evaluateFeatureFlag } from '#worker/feature-flags/service.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
-import { type MailboxMessageRecord } from './mailbox-types.ts'
-import { getEmailMessageById } from './repo.ts'
-import { type EmailMessageRecord } from './types.ts'
+import {
+	type MailboxAttachmentRecord,
+	type MailboxDeliveryEventRecord,
+	type MailboxMessageRecord,
+} from './mailbox-types.ts'
+import {
+	getEmailAttachmentRecordById,
+	getEmailMessageById,
+	listEmailAttachmentsForMessage,
+	listEmailDeliveryEvents,
+	listEmailMessages,
+	listEmailMessagesPageForUser,
+	searchEmailMessages,
+} from './repo.ts'
+import { loadEmailAttachmentContent, loadRawMime } from './service.ts'
+import {
+	type EmailAttachmentRecord,
+	type EmailClassification,
+	type EmailDeliveryEventRecord,
+	type EmailDeliveryEventType,
+	type EmailDeliveryStatus,
+	type EmailDirection,
+	type EmailMessageRecord,
+	type EmailProcessingStatus,
+} from './types.ts'
 
-/** Continuous exact parity must hold at least this long before cutover. */
-export const mailboxReadCutoverSoakMs = 24 * 60 * 60 * 1000
+/**
+ * Continuous exact parity must hold at least this long before cutover.
+ *
+ * Pre-launch evidence (Kent-approved): ~38-user fleet with continuous exact
+ * D1↔Mailbox counts, every-5m parity lane, and fail-closed freshness /
+ * mismatch / deleting / identity checks. 2h is intentional for pre-launch
+ * cutover speed — not a post-launch default.
+ *
+ * TODO(launch-hardening): revisit lengthening this soak before/at broader
+ * launch when fleet size and mail volume invalidate the 38-user evidence.
+ */
+export const mailboxReadCutoverSoakMs = 2 * 60 * 60 * 1000
 
 /**
  * Parity `checked_at` must be newer than this. Sized for the every-5m parity
@@ -42,8 +82,15 @@ type MailboxParityStateRow = {
 	mailbox_parity_mismatch_count: number
 }
 
-export type MailboxReadCutoverEnv = MailboxEnv & {
-	APP_DB: D1Database
+export type MailboxReadCutoverEnv = MailboxEnv &
+	FeatureFlagExposureEnv & {
+		APP_DB: D1Database
+		EMAIL_BLOBS?: R2Bucket
+	}
+
+/** Caller-owned memo so one request/handler records exposure at most once. */
+export type MailboxReadCutoverMemo = {
+	gatePromise?: Promise<boolean>
 }
 
 /**
@@ -60,34 +107,47 @@ function resolveNowMs(now?: Date | string): number | null {
 	return Number.isFinite(parsed) ? parsed : null
 }
 
-/**
- * Fail-closed cutover eligibility for one account.
- * Never throws: D1 / flag evaluation failures return false.
- */
-export async function isMailboxReadCutoverEnabled(input: {
-	db: D1Database
+async function resolveDbUserId(
+	db: D1Database,
+	stableUserId: string,
+): Promise<number | null> {
+	const row = await db
+		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+		.bind(stableUserId)
+		.first<{ id: number }>()
+	return row?.id ?? null
+}
+
+async function evaluateCutoverGate(input: {
+	env: MailboxReadCutoverEnv
 	dbUserId: number
 	stableUserId: string
 	now?: Date | string
+	skipExposureRecording?: boolean
 }): Promise<boolean> {
 	try {
-		const flagEnabled = await isFeatureEnabled(
-			input.db,
+		const flagEvaluation = await evaluateFeatureFlag(
+			input.env.APP_DB,
 			mailboxReadCutoverFlagKey,
 			input.dbUserId,
 		)
-		if (!flagEnabled) return false
+		if (!input.skipExposureRecording) {
+			await recordFeatureFlagExposures(input.env, {
+				stableUserId: input.stableUserId,
+				evaluations: { [mailboxReadCutoverFlagKey]: flagEvaluation },
+			})
+		}
+		if (!flagEvaluation.enabled) return false
 
-		const row = await input.db
-			.prepare(
-				`SELECT stable_user_id,
+		const row = await input.env.APP_DB.prepare(
+			`SELECT stable_user_id,
 					mailbox_parity_matching_since,
 					mailbox_parity_checked_at,
 					mailbox_parity_mismatch_count
 				FROM users
 				WHERE id = ?
 					AND deleting_at IS NULL`,
-			)
+		)
 			.bind(input.dbUserId)
 			.first<MailboxParityStateRow>()
 
@@ -120,6 +180,29 @@ export async function isMailboxReadCutoverEnabled(input: {
 	} catch {
 		return false
 	}
+}
+
+/**
+ * Fail-closed cutover eligibility for one account.
+ * Never throws: D1 / flag evaluation failures return false.
+ * Records flag exposure once per memo (unless request session cache already did).
+ */
+export async function isMailboxReadCutoverEnabled(input: {
+	env: MailboxReadCutoverEnv
+	dbUserId: number
+	stableUserId: string
+	now?: Date | string
+	/**
+	 * When true, skip FLAG_EXPOSURES write (caller already recorded via the
+	 * session/MCP evaluation cache).
+	 */
+	skipExposureRecording?: boolean
+	memo?: MailboxReadCutoverMemo
+}): Promise<boolean> {
+	if (input.memo?.gatePromise) return input.memo.gatePromise
+	const promise = evaluateCutoverGate(input)
+	if (input.memo) input.memo.gatePromise = promise
+	return promise
 }
 
 /** Map a Mailbox DO message row back to the D1 `EmailMessageRecord` shape. */
@@ -164,24 +247,59 @@ export function mailboxMessageToEmailMessageRecord(
 	}
 }
 
-/**
- * Prepared owner-scoped message get. Selects D1 or Mailbox via the cutover
- * gate. Not wired into existing readers in this PR.
- */
-export async function getOwnerEmailMessageById(input: {
+export function mailboxAttachmentToEmailAttachmentRecord(
+	attachment: MailboxAttachmentRecord,
+): EmailAttachmentRecord {
+	return {
+		id: attachment.id,
+		messageId: attachment.messageId,
+		filename: attachment.filename,
+		contentType: attachment.contentType,
+		contentId: attachment.contentId,
+		disposition: attachment.disposition,
+		size: attachment.size,
+		storageKind: attachment.storageKind,
+		storageKey: attachment.storageKey,
+		createdAt: attachment.createdAt,
+	}
+}
+
+export function mailboxDeliveryEventToEmailDeliveryEventRecord(
+	event: MailboxDeliveryEventRecord,
+	userId: string,
+): EmailDeliveryEventRecord {
+	return {
+		id: event.id,
+		messageId: event.messageId,
+		userId,
+		inboxId: event.inboxId,
+		eventType: event.eventType,
+		provider: event.provider,
+		providerMessageId: event.providerMessageId,
+		providerEventId: event.providerEventId,
+		detailJson: event.detailJson,
+		createdAt: event.createdAt,
+	}
+}
+
+type OwnerReadBase = {
 	env: MailboxReadCutoverEnv
 	dbUserId: number
 	stableUserId: string
-	messageId: string
 	now?: Date | string
-}): Promise<EmailMessageRecord | null> {
-	const useMailbox = await isMailboxReadCutoverEnabled({
-		db: input.env.APP_DB,
-		dbUserId: input.dbUserId,
-		stableUserId: input.stableUserId,
-		now: input.now,
-	})
+	skipExposureRecording?: boolean
+	memo?: MailboxReadCutoverMemo
+}
 
+async function useMailboxReads(input: OwnerReadBase): Promise<boolean> {
+	return isMailboxReadCutoverEnabled(input)
+}
+
+/** Owner-scoped message get. Selects D1 or Mailbox via the cutover gate. */
+export async function getOwnerEmailMessageById(
+	input: OwnerReadBase & { messageId: string },
+): Promise<EmailMessageRecord | null> {
+	const useMailbox = await useMailboxReads(input)
 	if (!useMailbox) {
 		return getEmailMessageById({
 			db: input.env.APP_DB,
@@ -197,4 +315,274 @@ export async function getOwnerEmailMessageById(input: {
 
 	if (!message) return null
 	return mailboxMessageToEmailMessageRecord(message, input.stableUserId)
+}
+
+export async function listOwnerEmailMessages(
+	input: OwnerReadBase & {
+		inboxId?: string | null
+		direction?: EmailDirection | null
+		processingStatus?: EmailProcessingStatus | null
+		deliveryStatus?: EmailDeliveryStatus | null
+		classification?: EmailClassification | null
+		limit: number
+	},
+): Promise<Array<EmailMessageRecord>> {
+	const useMailbox = await useMailboxReads(input)
+	if (!useMailbox) {
+		return listEmailMessages({
+			db: input.env.APP_DB,
+			userId: input.stableUserId,
+			inboxId: input.inboxId,
+			direction: input.direction,
+			processingStatus: input.processingStatus,
+			deliveryStatus: input.deliveryStatus,
+			classification: input.classification,
+			limit: input.limit,
+		})
+	}
+
+	const listed = await mailboxRpc({
+		env: input.env,
+		userId: input.stableUserId,
+	}).listMessages({
+		inboxId: input.inboxId,
+		direction: input.direction,
+		processingStatus: input.processingStatus,
+		deliveryStatus: input.deliveryStatus,
+		classification: input.classification,
+		limit: input.limit,
+	})
+	return listed.messages.map((message) =>
+		mailboxMessageToEmailMessageRecord(message, input.stableUserId),
+	)
+}
+
+export async function searchOwnerEmailMessages(
+	input: OwnerReadBase & {
+		query: string
+		inboxId?: string | null
+		direction?: EmailDirection | null
+		processingStatus?: EmailProcessingStatus | null
+		deliveryStatus?: EmailDeliveryStatus | null
+		classification?: EmailClassification | null
+		limit: number
+	},
+): Promise<Array<EmailMessageRecord>> {
+	const useMailbox = await useMailboxReads(input)
+	if (!useMailbox) {
+		// D1 search has no classification filter; callers that need it use
+		// listOwnerEmailMessagesPage (account inbox) or list with filters.
+		return searchEmailMessages({
+			db: input.env.APP_DB,
+			userId: input.stableUserId,
+			query: input.query,
+			inboxId: input.inboxId,
+			direction: input.direction,
+			processingStatus: input.processingStatus,
+			deliveryStatus: input.deliveryStatus,
+			limit: input.limit,
+		})
+	}
+
+	const searched = await mailboxRpc({
+		env: input.env,
+		userId: input.stableUserId,
+	}).searchMessages({
+		query: input.query,
+		inboxId: input.inboxId,
+		direction: input.direction,
+		processingStatus: input.processingStatus,
+		deliveryStatus: input.deliveryStatus,
+		classification: input.classification,
+		limit: input.limit,
+	})
+	return searched.messages.map((message) =>
+		mailboxMessageToEmailMessageRecord(message, input.stableUserId),
+	)
+}
+
+/**
+ * Account inbox page: total + offset page, optional substring query and
+ * classification filter. Uses Mailbox count/list/search when cutover is on.
+ */
+export async function listOwnerEmailMessagesPage(
+	input: OwnerReadBase & {
+		query: string
+		classification: EmailClassification | null
+		pageSize: number
+		offset: number
+	},
+): Promise<{ total: number; messages: Array<EmailMessageRecord> }> {
+	const useMailbox = await useMailboxReads(input)
+	if (!useMailbox) {
+		return listOwnerEmailMessagesPageFromD1(input)
+	}
+
+	const mailbox = mailboxRpc({
+		env: input.env,
+		userId: input.stableUserId,
+	})
+	const filters = {
+		classification: input.classification,
+		query: input.query || null,
+	}
+	const [{ total }, listed] = await Promise.all([
+		mailbox.countMessages(filters),
+		input.query
+			? mailbox.searchMessages({
+					query: input.query,
+					classification: input.classification,
+					limit: input.pageSize,
+					offset: input.offset,
+				})
+			: mailbox.listMessages({
+					classification: input.classification,
+					limit: input.pageSize,
+					offset: input.offset,
+				}),
+	])
+	return {
+		total,
+		messages: listed.messages.map((message) =>
+			mailboxMessageToEmailMessageRecord(message, input.stableUserId),
+		),
+	}
+}
+
+async function listOwnerEmailMessagesPageFromD1(input: {
+	env: MailboxReadCutoverEnv
+	stableUserId: string
+	query: string
+	classification: EmailClassification | null
+	pageSize: number
+	offset: number
+}): Promise<{ total: number; messages: Array<EmailMessageRecord> }> {
+	return listEmailMessagesPageForUser({
+		db: input.env.APP_DB,
+		userId: input.stableUserId,
+		query: input.query,
+		classification: input.classification,
+		pageSize: input.pageSize,
+		offset: input.offset,
+	})
+}
+
+export async function listOwnerEmailAttachmentsForMessage(
+	input: OwnerReadBase & { messageId: string },
+): Promise<Array<EmailAttachmentRecord>> {
+	const useMailbox = await useMailboxReads(input)
+	if (!useMailbox) {
+		return listEmailAttachmentsForMessage({
+			db: input.env.APP_DB,
+			messageId: input.messageId,
+		})
+	}
+
+	const attachments = await mailboxRpc({
+		env: input.env,
+		userId: input.stableUserId,
+	}).listAttachmentsForMessage({ messageId: input.messageId })
+	return attachments.map(mailboxAttachmentToEmailAttachmentRecord)
+}
+
+export async function getOwnerEmailAttachmentRecordById(
+	input: OwnerReadBase & { attachmentId: string },
+): Promise<EmailAttachmentRecord | null> {
+	const useMailbox = await useMailboxReads(input)
+	if (!useMailbox) {
+		return getEmailAttachmentRecordById({
+			db: input.env.APP_DB,
+			userId: input.stableUserId,
+			attachmentId: input.attachmentId,
+		})
+	}
+
+	const attachment = await mailboxRpc({
+		env: input.env,
+		userId: input.stableUserId,
+	}).getAttachment({ attachmentId: input.attachmentId })
+	return attachment
+		? mailboxAttachmentToEmailAttachmentRecord(attachment)
+		: null
+}
+
+/**
+ * Owner-facing attachment fetch: metadata via cutover, bytes via existing
+ * EMAIL_BLOBS / raw-MIME helpers (never through the DO).
+ */
+export async function getOwnerEmailAttachmentById(
+	input: OwnerReadBase & {
+		blobs: R2Bucket
+		attachmentId: string
+	},
+) {
+	const attachment = await getOwnerEmailAttachmentRecordById(input)
+	if (!attachment) return null
+	const message = await getOwnerEmailMessageById({
+		...input,
+		messageId: attachment.messageId,
+	})
+	return loadEmailAttachmentContent({
+		blobs: input.blobs,
+		attachment,
+		message,
+	})
+}
+
+export async function listOwnerEmailDeliveryEvents(
+	input: OwnerReadBase & {
+		messageId?: string | null
+		eventType?: EmailDeliveryEventType | null
+		limit: number
+	},
+): Promise<Array<EmailDeliveryEventRecord>> {
+	const useMailbox = await useMailboxReads(input)
+	if (!useMailbox) {
+		return listEmailDeliveryEvents({
+			db: input.env.APP_DB,
+			userId: input.stableUserId,
+			messageId: input.messageId,
+			eventType: input.eventType,
+			limit: input.limit,
+		})
+	}
+
+	const events = await mailboxRpc({
+		env: input.env,
+		userId: input.stableUserId,
+	}).listDeliveryEvents({
+		messageId: input.messageId,
+		eventType: input.eventType,
+		limit: input.limit,
+	})
+	return events.map((event) =>
+		mailboxDeliveryEventToEmailDeliveryEventRecord(event, input.stableUserId),
+	)
+}
+
+/** Load raw MIME for an owner message (metadata via cutover, bytes via R2). */
+export async function loadOwnerEmailRawMime(
+	input: OwnerReadBase & {
+		blobs: R2Bucket
+		messageId: string
+	},
+): Promise<string | null> {
+	const message = await getOwnerEmailMessageById(input)
+	if (!message) return null
+	return loadRawMime({ blobs: input.blobs, message })
+}
+
+/**
+ * Resolve numeric `users.id` for MCP callers that only have a stable id.
+ * Returns null when missing (callers fail closed to D1 by skipping cutover).
+ */
+export async function resolveMailboxReadCutoverDbUserId(input: {
+	db: D1Database
+	stableUserId: string
+}): Promise<number | null> {
+	try {
+		return await resolveDbUserId(input.db, input.stableUserId)
+	} catch {
+		return null
+	}
 }

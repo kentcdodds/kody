@@ -97,6 +97,16 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 		}),
 	])
 	expect(
+		await mailboxA.getAttachment({ attachmentId: attachment.id }),
+	).toMatchObject({
+		id: attachment.id,
+		messageId: message.id,
+		storageKind: 'external',
+	})
+	expect(
+		await mailboxA.getAttachment({ attachmentId: 'missing-att' }),
+	).toBeNull()
+	expect(
 		await mailboxA.getMessageByMessageIdHeader({
 			messageIdHeader: message.messageIdHeader!,
 		}),
@@ -109,6 +119,13 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 	expect(
 		(await mailboxA.searchMessages({ query: 'nope' })).messages,
 	).toHaveLength(0)
+	expect(await mailboxA.countMessages({})).toEqual({ total: 1 })
+	expect(
+		await mailboxA.countMessages({
+			query: 'project',
+			classification: 'accepted',
+		}),
+	).toEqual({ total: 1 })
 
 	await mailboxB.mirrorMessage({
 		ownerId: ownerB,
@@ -121,6 +138,9 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 	})
 	expect(await mailboxB.getMessage({ messageId: message.id })).toBeNull()
 	expect(await mailboxA.getMessage({ messageId: 'msg-b' })).toBeNull()
+	expect(
+		await mailboxB.getAttachment({ attachmentId: attachment.id }),
+	).toBeNull()
 	expect(await mailboxA.countMailbox()).toMatchObject({
 		threads: 1,
 		messages: 1,

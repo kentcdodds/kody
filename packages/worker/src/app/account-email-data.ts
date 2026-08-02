@@ -1,11 +1,34 @@
-import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	emailVerificationRequiredMessage,
 	isAccountEmailVerified,
 } from '#app/email-verification.ts'
-import { readPagination } from '#worker/query-params.ts'
+import { hasResolvedRequestFeatureFlags } from '#app/request-feature-flags-cache.ts'
 import { toMessageDetail } from '#mcp/capabilities/email/shared.ts'
+import {
+	getOwnerEmailMessageById,
+	listOwnerEmailAttachmentsForMessage,
+	listOwnerEmailDeliveryEvents,
+	listOwnerEmailMessagesPage,
+	type MailboxReadCutoverMemo,
+} from '#worker/email/mailbox-read-cutover.ts'
+import {
+	buildPlatformEmailAddress,
+	getPlatformEmailDomain,
+} from '#worker/email/platform-address.ts'
+import {
+	listEmailInboxAddressesForUser,
+	listEmailInboxesForUser,
+} from '#worker/email/repo.ts'
+import {
+	emailClassificationValues,
+	type EmailClassification,
+	type EmailDeliveryStatus,
+	type EmailDirection,
+	type EmailMessageRecord,
+	type EmailProcessingStatus,
+} from '#worker/email/types.ts'
 import {
 	resolveEmailResourceLimit,
 	type PlanName,
@@ -16,28 +39,7 @@ import {
 	readEntitlementResourceUsage,
 } from '#worker/entitlements/service.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
-import {
-	buildPlatformEmailAddress,
-	getPlatformEmailDomain,
-} from '#worker/email/platform-address.ts'
-import {
-	getEmailMessageById,
-	listEmailAttachmentsForMessage,
-	listEmailDeliveryEvents,
-	listEmailInboxAddressesForUser,
-	listEmailInboxesForUser,
-} from '#worker/email/repo.ts'
-import {
-	emailClassificationValues,
-	emailDeliveryStatusValues,
-	emailDirectionValues,
-	emailProcessingStatusValues,
-	type EmailClassification,
-	type EmailDeliveryStatus,
-	type EmailDirection,
-	type EmailProcessingStatus,
-} from '#worker/email/types.ts'
-import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { readPagination } from '#worker/query-params.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -184,41 +186,6 @@ export function readAccountEmailSelectedMessageId(
 	return url.searchParams.get('selected')?.trim() || null
 }
 
-/** Escape LIKE wildcards so user queries match literally. */
-function escapeLikePattern(value: string) {
-	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
-}
-
-function parseDirection(value: unknown): EmailDirection {
-	const raw = String(value)
-	return (emailDirectionValues as ReadonlyArray<string>).includes(raw)
-		? (raw as EmailDirection)
-		: 'inbound'
-}
-
-function parseProcessingStatus(value: unknown): EmailProcessingStatus {
-	const raw = String(value)
-	return (emailProcessingStatusValues as ReadonlyArray<string>).includes(raw)
-		? (raw as EmailProcessingStatus)
-		: 'stored'
-}
-
-function parseDeliveryStatus(value: unknown): EmailDeliveryStatus | null {
-	if (value == null) return null
-	const raw = String(value)
-	return (emailDeliveryStatusValues as ReadonlyArray<string>).includes(raw)
-		? (raw as EmailDeliveryStatus)
-		: null
-}
-
-function parseClassification(value: unknown): EmailClassification {
-	if (value == null) return 'accepted'
-	const raw = String(value)
-	return (emailClassificationValues as ReadonlyArray<string>).includes(raw)
-		? (raw as EmailClassification)
-		: 'accepted'
-}
-
 export function readAccountEmailClassificationFilter(
 	requestUrl: string,
 ): EmailClassification | null {
@@ -229,143 +196,34 @@ export function readAccountEmailClassificationFilter(
 		: null
 }
 
-function rowToListItem(
-	row: Record<string, unknown>,
-): AccountEmailMessageListItem {
-	return {
-		id: String(row['id']),
-		direction: parseDirection(row['direction']),
-		inbox_id: row['inbox_id'] == null ? null : String(row['inbox_id']),
-		thread_id: row['thread_id'] == null ? null : String(row['thread_id']),
-		from_address:
-			row['from_address'] == null ? null : String(row['from_address']),
-		envelope_from:
-			row['envelope_from'] == null ? null : String(row['envelope_from']),
-		to_addresses: parseJsonStringArray(row['to_addresses_json']),
-		subject: row['subject'] == null ? null : String(row['subject']),
-		message_id_header:
-			row['message_id_header'] == null
-				? null
-				: String(row['message_id_header']),
-		processing_status: parseProcessingStatus(row['processing_status']),
-		classification: parseClassification(row['classification']),
-		classification_reason:
-			row['classification_reason'] == null
-				? null
-				: String(row['classification_reason']),
-		provider_message_id:
-			row['provider_message_id'] == null
-				? null
-				: String(row['provider_message_id']),
-		delivery_status: parseDeliveryStatus(row['delivery_status']),
-		delivery_status_at:
-			row['delivery_status_at'] == null
-				? null
-				: String(row['delivery_status_at']),
-		error: row['error'] == null ? null : String(row['error']),
-		received_at: row['received_at'] == null ? null : String(row['received_at']),
-		sent_at: row['sent_at'] == null ? null : String(row['sent_at']),
-		created_at: String(row['created_at']),
-		updated_at: String(row['updated_at']),
-	}
+function asStringAddresses(value: Array<unknown>): Array<string> {
+	return value.filter((entry): entry is string => typeof entry === 'string')
 }
 
-async function countAndListMessages(input: {
-	db: D1Database
-	userId: string
-	query: string
-	classification: EmailClassification | null
-	pageSize: number
-	offset: number
-}) {
-	const classification = input.classification
-	if (input.query) {
-		const pattern = `%${escapeLikePattern(input.query.toLowerCase())}%`
-		const [totalResult, messageRows] = await Promise.all([
-			input.db
-				.prepare(
-					`SELECT COUNT(*) AS total
-					FROM email_messages
-					WHERE user_id = ?
-						AND (? IS NULL OR classification = ?)
-						AND (
-							LOWER(subject) LIKE ? ESCAPE '\\'
-							OR LOWER(from_address) LIKE ? ESCAPE '\\'
-							OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
-						)`,
-				)
-				.bind(
-					input.userId,
-					classification,
-					classification,
-					pattern,
-					pattern,
-					pattern,
-				)
-				.first<{ total: number }>(),
-			input.db
-				.prepare(
-					`SELECT *
-					FROM email_messages
-					WHERE user_id = ?
-						AND (? IS NULL OR classification = ?)
-						AND (
-							LOWER(subject) LIKE ? ESCAPE '\\'
-							OR LOWER(from_address) LIKE ? ESCAPE '\\'
-							OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
-						)
-					ORDER BY created_at DESC, id DESC
-					LIMIT ? OFFSET ?`,
-				)
-				.bind(
-					input.userId,
-					classification,
-					classification,
-					pattern,
-					pattern,
-					pattern,
-					input.pageSize,
-					input.offset,
-				)
-				.all<Record<string, unknown>>(),
-		])
-		return {
-			total: Number(totalResult?.total ?? 0),
-			messages: (messageRows.results ?? []).map(rowToListItem),
-		}
-	}
-
-	const [totalResult, messageRows] = await Promise.all([
-		input.db
-			.prepare(
-				`SELECT COUNT(*) AS total
-				FROM email_messages
-				WHERE user_id = ?
-					AND (? IS NULL OR classification = ?)`,
-			)
-			.bind(input.userId, classification, classification)
-			.first<{ total: number }>(),
-		input.db
-			.prepare(
-				`SELECT *
-				FROM email_messages
-				WHERE user_id = ?
-					AND (? IS NULL OR classification = ?)
-				ORDER BY created_at DESC, id DESC
-				LIMIT ? OFFSET ?`,
-			)
-			.bind(
-				input.userId,
-				classification,
-				classification,
-				input.pageSize,
-				input.offset,
-			)
-			.all<Record<string, unknown>>(),
-	])
+function messageToListItem(
+	message: EmailMessageRecord,
+): AccountEmailMessageListItem {
 	return {
-		total: Number(totalResult?.total ?? 0),
-		messages: (messageRows.results ?? []).map(rowToListItem),
+		id: message.id,
+		direction: message.direction,
+		inbox_id: message.inboxId,
+		thread_id: message.threadId,
+		from_address: message.fromAddress,
+		envelope_from: message.envelopeFrom,
+		to_addresses: asStringAddresses(message.toAddresses),
+		subject: message.subject,
+		message_id_header: message.messageIdHeader,
+		processing_status: message.processingStatus,
+		classification: message.classification,
+		classification_reason: message.classificationReason,
+		provider_message_id: message.providerMessageId,
+		delivery_status: message.deliveryStatus,
+		delivery_status_at: message.deliveryStatusAt,
+		error: message.error,
+		received_at: message.receivedAt,
+		sent_at: message.sentAt,
+		created_at: message.createdAt,
+		updated_at: message.updatedAt,
 	}
 }
 
@@ -448,26 +306,39 @@ async function loadInboxes(input: {
 }
 
 async function loadSelectedMessage(input: {
-	db: D1Database
-	userId: string
+	env: Env
+	dbUserId: number
+	stableUserId: string
 	messageId: string
+	skipExposureRecording: boolean
+	memo: MailboxReadCutoverMemo
 }): Promise<AccountEmailMessageDetail | null> {
-	const message = await getEmailMessageById({
-		db: input.db,
-		userId: input.userId,
+	const message = await getOwnerEmailMessageById({
+		env: input.env,
+		dbUserId: input.dbUserId,
+		stableUserId: input.stableUserId,
 		messageId: input.messageId,
+		skipExposureRecording: input.skipExposureRecording,
+		memo: input.memo,
 	})
 	if (!message) return null
 	const [attachments, deliveryEvents] = await Promise.all([
-		listEmailAttachmentsForMessage({
-			db: input.db,
+		listOwnerEmailAttachmentsForMessage({
+			env: input.env,
+			dbUserId: input.dbUserId,
+			stableUserId: input.stableUserId,
 			messageId: message.id,
+			skipExposureRecording: input.skipExposureRecording,
+			memo: input.memo,
 		}),
-		listEmailDeliveryEvents({
-			db: input.db,
-			userId: input.userId,
+		listOwnerEmailDeliveryEvents({
+			env: input.env,
+			dbUserId: input.dbUserId,
+			stableUserId: input.stableUserId,
 			messageId: message.id,
 			limit: deliveryEventsLimit,
+			skipExposureRecording: input.skipExposureRecording,
+			memo: input.memo,
 		}),
 	])
 	const detail = toMessageDetail(message, attachments)
@@ -570,15 +441,21 @@ export async function loadAccountEmailData(input: {
 		input.request.url,
 		input.pathMessageId,
 	)
+	const cutoverMemo: MailboxReadCutoverMemo = {}
+	const dbUserId = input.user.userId
+	const skipExposureRecording = hasResolvedRequestFeatureFlags(input.request)
 
 	const [listResult, inboxes, usage, selectedMessage] = await Promise.all([
-		countAndListMessages({
-			db: input.env.APP_DB,
-			userId,
+		listOwnerEmailMessagesPage({
+			env: input.env,
+			dbUserId,
+			stableUserId: userId,
 			query,
 			classification,
 			pageSize,
 			offset,
+			skipExposureRecording,
+			memo: cutoverMemo,
 		}),
 		loadInboxes({ db: input.env.APP_DB, userId }),
 		loadUsage({
@@ -589,9 +466,12 @@ export async function loadAccountEmailData(input: {
 		}),
 		selectedMessageId
 			? loadSelectedMessage({
-					db: input.env.APP_DB,
-					userId,
+					env: input.env,
+					dbUserId,
+					stableUserId: userId,
 					messageId: selectedMessageId,
+					skipExposureRecording,
+					memo: cutoverMemo,
 				})
 			: Promise.resolve(null),
 	])
@@ -607,7 +487,7 @@ export async function loadAccountEmailData(input: {
 		}),
 		verificationMessage: null,
 		inboxes,
-		messages: listResult.messages,
+		messages: listResult.messages.map(messageToListItem),
 		selectedMessage,
 		usage,
 		page,
