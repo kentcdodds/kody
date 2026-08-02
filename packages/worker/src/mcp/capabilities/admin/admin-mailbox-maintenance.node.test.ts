@@ -5,7 +5,11 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import type * as MailboxMaintenance from '#worker/admin/mailbox-maintenance.ts'
-import { adminMailboxMaintenanceRetentionMaxLimit } from '#worker/admin/mailbox-maintenance.ts'
+import {
+	AdminMailboxMessageNotFoundError,
+	adminMailboxMaintenanceRetentionMaxLimit,
+} from '#worker/admin/mailbox-maintenance.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
 	logAuditEvent: vi.fn(async () => undefined),
@@ -105,14 +109,17 @@ const emptyDeleteResult = {
 }
 
 function createAdminCtx() {
-	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(`
+	const appSqlite = new DatabaseSync(':memory:')
+	appSqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE NOT NULL,
 			username TEXT NOT NULL,
 			email TEXT NOT NULL
 		);
+	`)
+	const auditSqlite = new DatabaseSync(':memory:')
+	auditSqlite.exec(`
 		CREATE TABLE audit_events (
 			id INTEGER PRIMARY KEY,
 			category TEXT NOT NULL,
@@ -126,9 +133,11 @@ function createAdminCtx() {
 			timestamp TEXT NOT NULL
 		);
 	`)
-	const db = createD1FromSqlite(sqlite)
 	return {
-		env: { APP_DB: db } as Env,
+		env: {
+			APP_DB: createD1FromSqlite(appSqlite),
+			AUDIT_DB: createD1FromSqlite(auditSqlite),
+		} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
@@ -336,4 +345,40 @@ test('admin_mailbox_maintenance delete_message is audited with ids and schema-bo
 			ctx,
 		),
 	).rejects.toThrow()
+})
+
+test('admin_mailbox_maintenance delete_message maps missing targets to McpCallerError', async () => {
+	const ctx = createAdminCtx()
+	const stableUserId = testStableUserIdFromEmail('missing-target@example.com')
+	const messageId = 'already-gone'
+	const notFound = new AdminMailboxMessageNotFoundError({
+		stableUserId,
+		messageId,
+	})
+	mockModule.runAdminMailboxMaintenanceDeleteMessage.mockRejectedValueOnce(
+		notFound,
+	)
+
+	await expect(
+		adminMailboxMaintenanceCapability.handler(
+			{
+				action: 'delete_message',
+				stable_user_id: stableUserId,
+				message_id: messageId,
+			},
+			ctx,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === notFound.message &&
+			error.cause === notFound,
+	)
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			action: 'admin_mailbox_maintenance',
+			result: 'failure',
+			reason: notFound.message,
+		}),
+	)
 })

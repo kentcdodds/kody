@@ -81,8 +81,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 	try {
 		const result = await run()
 		await logAuditEvent({
-			db: ctx.env.APP_DB,
-			auditDb: auditDatabaseFromEnv(ctx.env),
+			db: auditDatabaseFromEnv(ctx.env),
 			category: 'admin',
 			action: capabilityName,
 			result: 'success',
@@ -93,8 +92,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 		return result
 	} catch (error) {
 		await logAuditEvent({
-			db: ctx.env.APP_DB,
-			auditDb: auditDatabaseFromEnv(ctx.env),
+			db: auditDatabaseFromEnv(ctx.env),
 			category: 'admin',
 			action: capabilityName,
 			result: 'failure',

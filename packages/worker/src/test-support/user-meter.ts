@@ -36,7 +36,7 @@ type DeletionState = {
 
 /**
  * In-memory UserMeter stub keyed by `idFromName` (stable userId) for node-unit
- * coverage of expand-phase service/usage paths. Workers suites exercise the
+ * coverage of authoritative service/usage paths. Workers suites exercise the
  * real Durable Object binding instead.
  */
 export function createInMemoryUserMeterEnv() {
@@ -47,7 +47,6 @@ export function createInMemoryUserMeterEnv() {
 		Map<string, PackageServiceRow>
 	>()
 	const deletionByUser = new Map<string, DeletionState>()
-
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
@@ -373,6 +372,27 @@ export function createInMemoryUserMeterEnv() {
 				}
 				storageByUser.set(userId, next)
 				return { ...storageReady(next), created: false }
+			},
+			async reconcileStorageBytes(input: {
+				bytes: number
+				expectedRevision: number
+				updatedAt: string
+			}) {
+				const bytes = Math.max(0, Math.trunc(input.bytes) || 0)
+				const existing = storageByUser.get(userId)
+				if (!existing) {
+					return { outcome: 'needs_bootstrap' as const }
+				}
+				if (existing.revision !== input.expectedRevision) {
+					return { ...storageReady(existing), applied: false }
+				}
+				const next = {
+					bytes,
+					revision: existing.revision + 1,
+					updatedAt: input.updatedAt,
+				}
+				storageByUser.set(userId, next)
+				return { ...storageReady(next), applied: true }
 			},
 			async upsertPackageServiceState(input: {
 				packageId: string

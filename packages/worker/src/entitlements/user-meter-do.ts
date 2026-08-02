@@ -27,13 +27,15 @@ export const userMeterDailyCounterRetentionDays = 7
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
 const userMeterSchemaVersion = 7
-/** Singleton row id for expand-phase D1 storage-byte shadow (schema v4). */
+/** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
 const deletionStateRowId = 1
-/** Matches D1 `packageServiceStateStaleMs` (24h); cutover-support RPC only. */
+/**
+ * Matches D1 `packageServiceStateStaleMs` (24h). Used by the authoritative
+ * running-count RPC and its D1 parity comparison.
+ */
 export const userMeterPackageServiceStateStaleMs = 24 * 60 * 60 * 1000
-
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
 const maxInboundDeliveryIdLength = 256
@@ -140,6 +142,15 @@ export type UserMeterStorageBytesInitializeResult =
 export type UserMeterStorageBytesSetResult = UserMeterStorageBytesReadyState & {
 	created: boolean
 }
+
+/**
+ * Result of a revision-guarded absolute reconciliation CAS.
+ * `needs_bootstrap` when the singleton is absent; `applied` distinguishes a
+ * successful overwrite from a CAS miss caused by a concurrent reserve.
+ */
+export type UserMeterStorageBytesReconcileResult =
+	| UserMeterBootstrapState
+	| (UserMeterStorageBytesReadyState & { applied: boolean })
 
 export type UserMeterPackageServiceState = {
 	packageId: string
@@ -285,15 +296,15 @@ export type UserMeterDeletionBootstrapResult = {
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
 	/**
-	 * Non-authoritative D1 storage-byte shadow. Emitted only on the first
-	 * export page (`startAfter` absent); subsequent pages return `null` so
-	 * paged consumers never double-count the singleton shadow.
+	 * Authoritative storage-byte state, retained under the legacy export field
+	 * name. Emitted only on the first export page (`startAfter` absent);
+	 * subsequent pages return `null` so paged consumers never double-count it.
 	 */
 	storageBytesShadow: UserMeterStorageBytesState | null
 	/**
-	 * Non-authoritative D1 `package_service_states` shadow rows. Emitted only
-	 * on the first export page (`startAfter` absent); subsequent pages return
-	 * `null` so paged consumers never double-count the inventory.
+	 * Authoritative package-service liveness rows, retained under the legacy
+	 * export field name. Emitted only on the first export page (`startAfter`
+	 * absent); subsequent pages return `null`.
 	 */
 	packageServiceStatesShadow: Array<UserMeterPackageServiceState> | null
 	/**
@@ -654,7 +665,7 @@ class UserMeterBase extends DurableObject<Env> {
 			`CREATE INDEX IF NOT EXISTS idx_inbound_delivery_claims_day
 			ON inbound_delivery_claims (day)`,
 		)
-		// Expand-phase shadow of D1 `users.d1_storage_bytes` (schema v4).
+		// Authoritative storage-byte state (schema v4).
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS storage_bytes_state (
 				id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
@@ -663,7 +674,7 @@ class UserMeterBase extends DurableObject<Env> {
 				updated_at TEXT NOT NULL
 			)
 		`)
-		// Expand-phase shadow of D1 `package_service_states` (schema v5).
+		// Authoritative package-service liveness state (schema v5).
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS package_service_states (
 				package_id TEXT NOT NULL,
@@ -1056,7 +1067,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return readyState(row.count, row.revision)
 	}
 
-	/** Cutover-support cold seed; expand-phase shadow sync uses {@link setStorageBytes}. */
+	/** Cold seed from the retained D1 mirror when authoritative state is absent. */
 	async initializeStorageBytes(input: {
 		bytes: number
 		updatedAt: string
@@ -1080,7 +1091,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return { ...this.storageReadyState(row.bytes, row.revision), created }
 	}
 
-	/** Cutover-support / shadow read; expand-phase usage and enforcement use D1. */
+	/** Authoritative storage-byte usage read. */
 	async readStorageBytes(): Promise<UserMeterStorageBytesReadResult> {
 		const row = this.readStorageRow()
 		if (!row) return { outcome: 'needs_bootstrap' }
@@ -1088,8 +1099,7 @@ class UserMeterBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Cutover-support atomic reserve. Expand-phase enforcement uses D1 only;
-	 * missing state returns `needs_bootstrap`.
+	 * Authoritative atomic reserve. Missing state returns `needs_bootstrap`.
 	 */
 	async reserveStorageBytes(input: {
 		requested: number
@@ -1193,6 +1203,54 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Revision-guarded absolute reconciliation CAS. Applies `bytes` only when
+	 * the current revision equals `expectedRevision`, preventing a scheduled
+	 * reconcile sweep from clobbering a live reservation that arrived between
+	 * revision capture and the CAS call. Returns `needs_bootstrap` when the
+	 * singleton is absent; `applied: false` when another writer changed the
+	 * revision first.
+	 */
+	async reconcileStorageBytes(input: {
+		bytes: number
+		expectedRevision: number
+		updatedAt: string
+	}): Promise<UserMeterStorageBytesReconcileResult> {
+		const bytes = Math.max(0, Math.trunc(Number(input.bytes) || 0))
+		const existing = this.readStorageRow()
+		if (!existing) {
+			return { outcome: 'needs_bootstrap' }
+		}
+		if (existing.revision !== input.expectedRevision) {
+			// CAS miss: a concurrent reserve or other write changed the revision.
+			return {
+				...this.storageReadyState(existing.bytes, existing.revision),
+				applied: false,
+			}
+		}
+		const nextRevision = existing.revision + 1
+		this.ctx.storage.sql.exec(
+			`UPDATE storage_bytes_state
+			SET bytes = ?,
+				revision = ?,
+				updated_at = ?
+			WHERE id = ? AND revision = ?`,
+			bytes,
+			nextRevision,
+			input.updatedAt,
+			storageBytesStateRowId,
+			existing.revision,
+		)
+		const row = this.readStorageRow()
+		if (!row) {
+			throw new Error('UserMeter reconcileStorageBytes lost storage state.')
+		}
+		return {
+			...this.storageReadyState(row.bytes, row.revision),
+			applied: row.revision === nextRevision,
+		}
+	}
+
 	private packageServiceStateFromRow(
 		row: PackageServiceSqlRow,
 	): UserMeterPackageServiceState {
@@ -1244,8 +1302,8 @@ class UserMeterBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Expand-phase shadow upsert (monotonic on `sourceUpdatedAt`). Stale writes
-	 * are rejected; expand-phase enforcement still reads D1.
+	 * D1-first lifecycle projection into authoritative liveness state,
+	 * monotonic on `sourceUpdatedAt`. Stale writes are rejected.
 	 */
 	async upsertPackageServiceState(input: {
 		packageId: string
@@ -1327,7 +1385,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return { applied: true, created: false, state: row }
 	}
 
-	/** Expand-phase shadow delete; discovery still uses D1. */
+	/** Delete authoritative liveness state; discovery remains in D1. */
 	async deletePackageServiceState(input: {
 		packageId: string
 		serviceName: string
@@ -1343,7 +1401,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return { deleted: cursor.rowsWritten > 0 }
 	}
 
-	/** Cutover-support paged shadow list; expand-phase discovery uses D1. */
+	/** Paged liveness inventory; discovery and account export remain in D1. */
 	async listPackageServiceStates(input: {
 		pageSize?: number
 		startAfter?: string | null
@@ -1394,10 +1452,7 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	/**
-	 * Cutover-support running count from the shadow table. Expand-phase
-	 * enforcement still uses D1 `countRunningPackageServices`.
-	 */
+	/** Authoritative running count for service-start enforcement. */
 	async countRunningPackageServices(input: {
 		staleAfterMs?: number
 		excludeService?: { packageId: string; serviceName: string }
@@ -1442,7 +1497,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return { count: Math.max(0, Number(row?.count ?? 0)) }
 	}
 
-	/** Cutover-support bulk seed; same monotonic guard as upsert. */
+	/** Explicit migration/repair primitive; same monotonic guard as upsert. */
 	async bootstrapPackageServiceStates(input: {
 		states: ReadonlyArray<{
 			packageId: string
@@ -2155,25 +2210,35 @@ export type UserMeterRpc = {
 		day: string
 		updatedAt: string
 	}) => Promise<UserMeterRefundResult>
-	/** Cutover-support cold seed; expand-phase shadow uses setStorageBytes. */
+	/** Cold seed from the retained D1 mirror when authoritative state is absent. */
 	initializeStorageBytes: (input: {
 		bytes: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesInitializeResult>
-	/** Cutover-support / shadow read; expand-phase usage reads D1. */
+	/** Authoritative storage-byte usage read. */
 	readStorageBytes: () => Promise<UserMeterStorageBytesReadResult>
-	/** Cutover-support reserve; expand-phase enforcement uses D1. */
+	/** Authoritative atomic storage-byte reserve. */
 	reserveStorageBytes: (input: {
 		requested: number
 		limit: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesReserveResult>
-	/** Expand-phase absolute shadow-set from D1. */
+	/** Absolute maintenance set; use revision CAS for live reconciliation. */
 	setStorageBytes: (input: {
 		bytes: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesSetResult>
-	/** Expand-phase shadow upsert; not used for enforcement. */
+	/**
+	 * Revision-guarded absolute reconciliation CAS. Applies `bytes` only when
+	 * current revision equals `expectedRevision`. Returns `needs_bootstrap` if
+	 * the singleton is absent; `applied: false` on a CAS miss.
+	 */
+	reconcileStorageBytes: (input: {
+		bytes: number
+		expectedRevision: number
+		updatedAt: string
+	}) => Promise<UserMeterStorageBytesReconcileResult>
+	/** Dual-write shadow upsert (D1 writes first); monotonic sourceUpdatedAt guard. */
 	upsertPackageServiceState: (input: {
 		packageId: string
 		serviceName: string
@@ -2182,23 +2247,28 @@ export type UserMeterRpc = {
 		sourceUpdatedAt: string
 		updatedAt?: string
 	}) => Promise<UserMeterPackageServiceUpsertResult>
-	/** Expand-phase shadow delete. */
+	/** Shadow delete on service stop/purge. D1 delete runs first. */
 	deletePackageServiceState: (input: {
 		packageId: string
 		serviceName: string
 	}) => Promise<UserMeterPackageServiceDeleteResult>
-	/** Cutover-support paged shadow list; discovery uses D1. */
+	/** Paged inventory list. Discovery and account export still use D1. */
 	listPackageServiceStates: (input: {
 		pageSize?: number
 		startAfter?: string | null
 	}) => Promise<UserMeterPackageServiceListResult>
-	/** Cutover-support running count; service-start still uses D1. */
+	/** Authoritative running count for service-start enforcement. */
 	countRunningPackageServices: (input: {
 		staleAfterMs?: number
 		excludeService?: { packageId: string; serviceName: string }
 		now?: string
 	}) => Promise<UserMeterPackageServiceCountResult>
-	/** Cutover-support bulk seed with sourceUpdatedAt monotonic guards. */
+	/**
+	 * Explicit migration/repair primitive: bulk-seed from D1
+	 * `package_service_states` (all statuses). Uses monotonic `sourceUpdatedAt`
+	 * guard so live dual-write shadow rows are never clobbered. Not on the
+	 * enforcement path — `countRunningPackageServices` reads the DO directly.
+	 */
 	bootstrapPackageServiceStates: (input: {
 		states: ReadonlyArray<{
 			packageId: string

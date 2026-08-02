@@ -53,6 +53,7 @@ test('auth denial burst alerts stay quiet below threshold, then notify and cool 
 	const quiet = await checkAuthDenialBurstAndNotify({
 		env: {
 			APP_DB: createDb(10),
+			AUDIT_DB: createDb(10),
 			APP_BASE_URL: 'https://heykody.dev',
 			CLOUDFLARE_ACCOUNT_ID: 'acct',
 			CLOUDFLARE_API_TOKEN: 'token',
@@ -75,6 +76,7 @@ test('auth denial burst alerts stay quiet below threshold, then notify and cool 
 
 	const env = {
 		APP_DB: createDb(80),
+		AUDIT_DB: createDb(80),
 		APP_BASE_URL: 'https://heykody.dev',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',

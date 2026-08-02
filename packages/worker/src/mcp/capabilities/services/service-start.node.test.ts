@@ -2,6 +2,8 @@ import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { type UserMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -34,10 +36,8 @@ const { serviceStartCapability } = await import('./service-start.ts')
 
 function createEntitlementsTestDb(input: {
 	users?: Array<{ email: string; plan: string | null }>
-	runningServices?: Array<{ packageId: string; name: string }>
 }) {
 	const users = input.users ?? []
-	const runningServices = input.runningServices ?? []
 
 	return {
 		prepare(query: string) {
@@ -49,19 +49,10 @@ function createEntitlementsTestDb(input: {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
-							if (query.includes('FROM package_service_states')) {
-								const hasExclusion = query.includes('AND NOT (package_id = ?')
-								const excludedPackageId = hasExclusion ? params[2] : null
-								const excludedName = hasExclusion ? params[3] : null
-								const counted = runningServices.filter(
-									(service) =>
-										!hasExclusion ||
-										service.packageId !== excludedPackageId ||
-										service.name !== excludedName,
-								)
-								return { count: counted.length } as T
-							}
 							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async all<T>(): Promise<{ results: Array<T> }> {
+							throw new Error(`Unsupported all() query: ${query}`)
 						},
 						async run() {
 							throw new Error(`Unsupported run query: ${query}`)
@@ -162,8 +153,28 @@ function mockServiceRpc(input: {
 function buildRunningServices(count: number) {
 	return Array.from({ length: count }, (_, index) => ({
 		packageId: `other-package-${index}`,
-		name: `service-${index}`,
+		serviceName: `service-${index}`,
 	}))
+}
+
+async function seedRunningServicesInMeter(
+	meterEnv: { USER_METER?: DurableObjectNamespace },
+	userId: string,
+	services: ReadonlyArray<{ packageId: string; serviceName: string }>,
+) {
+	const freshAt = new Date().toISOString()
+	const meter = meterEnv.USER_METER!.get(
+		meterEnv.USER_METER!.idFromName(userId),
+	) as unknown as UserMeterRpc
+	for (const service of services) {
+		await meter.upsertPackageServiceState({
+			packageId: service.packageId,
+			serviceName: service.serviceName,
+			status: 'running',
+			startedAt: freshAt,
+			sourceUpdatedAt: freshAt,
+		})
+	}
 }
 
 test('service_start denies persistent services for free plan users', async () => {
@@ -207,11 +218,15 @@ test('service_start denies bounded starts at the package_services limit', async 
 	if (limit === null) {
 		throw new Error('Expected a numeric pro package service limit.')
 	}
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	await seedRunningServicesInMeter(
+		meterEnv,
+		userId,
+		buildRunningServices(limit),
+	)
 	const env = {
-		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'pro' }],
-			runningServices: buildRunningServices(limit),
-		}),
+		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
+		...meterEnv,
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
 
@@ -246,11 +261,10 @@ test('service_start skips enforcement when the service is already running', asyn
 	if (limit === null) {
 		throw new Error('Expected a numeric pro package service limit.')
 	}
+	// Enforcement is skipped entirely when the service is already running;
+	// USER_METER and running service count are not consulted.
 	const env = {
-		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'pro' }],
-			runningServices: buildRunningServices(limit),
-		}),
+		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
 
@@ -291,14 +305,14 @@ test('service_start lets a stale running row for the same service restart at the
 	// The target service itself holds one of the 'running' telemetry rows
 	// (stale after a hard eviction); excluding it keeps the restart under
 	// the limit.
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	await seedRunningServicesInMeter(meterEnv, userId, [
+		...buildRunningServices(limit - 1),
+		{ packageId: 'package-123', serviceName: 'realtime-supervisor' },
+	])
 	const env = {
-		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'pro' }],
-			runningServices: [
-				...buildRunningServices(limit - 1),
-				{ packageId: 'package-123', name: 'realtime-supervisor' },
-			],
-		}),
+		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
+		...meterEnv,
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
 
@@ -323,13 +337,15 @@ test('service_start allows below-max usage and denies at the max plan ceiling', 
 	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const maxLimit = planLimits.max.maxPackageServices
+	const { env: belowMaxMeterEnv } = createInMemoryUserMeterEnv()
+	await seedRunningServicesInMeter(
+		belowMaxMeterEnv,
+		userId,
+		buildRunningServices(planLimits.pro.maxPackageServices + 1),
+	)
 	const belowMaxEnv = {
-		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'max' }],
-			runningServices: buildRunningServices(
-				planLimits.pro.maxPackageServices + 1,
-			),
-		}),
+		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'max' }] }),
+		...belowMaxMeterEnv,
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
 
@@ -349,11 +365,15 @@ test('service_start allows below-max usage and denies at the max plan ceiling', 
 		run_id: 'run-123',
 	})
 
+	const { env: atCeilingMeterEnv } = createInMemoryUserMeterEnv()
+	await seedRunningServicesInMeter(
+		atCeilingMeterEnv,
+		userId,
+		buildRunningServices(maxLimit),
+	)
 	const atCeilingEnv = {
-		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'max' }],
-			runningServices: buildRunningServices(maxLimit),
-		}),
+		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'max' }] }),
+		...atCeilingMeterEnv,
 	} as Env
 	mockModule.getSavedPackageById.mockResolvedValue(
 		createSavedPackage({ userId }),

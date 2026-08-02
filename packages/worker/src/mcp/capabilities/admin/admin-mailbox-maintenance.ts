@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+	AdminMailboxMessageNotFoundError,
 	adminMailboxMaintenanceMaxBatchSize,
 	adminMailboxMaintenanceRetentionMaxLimit,
 	loadAdminMailboxMaintenanceStatus,
@@ -7,6 +8,7 @@ import {
 	runAdminMailboxMaintenanceReconcile,
 	runAdminMailboxMaintenanceRetention,
 } from '#worker/admin/mailbox-maintenance.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -265,12 +267,21 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 							}
 						}
 						case 'delete_message': {
-							const result = await runAdminMailboxMaintenanceDeleteMessage({
-								env: ctx.env,
-								stableUserId: args.stable_user_id,
-								messageId: args.message_id,
-							})
-							return { action: 'delete_message' as const, result }
+							try {
+								const result = await runAdminMailboxMaintenanceDeleteMessage({
+									env: ctx.env,
+									stableUserId: args.stable_user_id,
+									messageId: args.message_id,
+								})
+								return { action: 'delete_message' as const, result }
+							} catch (error) {
+								// Missing/foreign canary targets are caller-supplied ids that
+								// do not resolve — keep them off Sentry via McpCallerError.
+								if (error instanceof AdminMailboxMessageNotFoundError) {
+									throw new McpCallerError(error.message, { cause: error })
+								}
+								throw error
+							}
 						}
 						default: {
 							const exhaustive: never = args

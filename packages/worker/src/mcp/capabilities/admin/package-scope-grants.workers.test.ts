@@ -46,7 +46,10 @@ function createAdminCapabilityContext(input: {
 	email: string
 }) {
 	return {
-		env: { APP_DB: env.APP_DB } as Env,
+		env: {
+			APP_DB: env.APP_DB,
+			SENTRY_ENVIRONMENT: 'test',
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {

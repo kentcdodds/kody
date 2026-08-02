@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
 	assertWithinEntitlement,
-	countRunningPackageServices,
+	countRunningPackageServicesFromD1,
 	packageServiceStateStaleMs,
 } from '#worker/entitlements/service.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -100,14 +100,14 @@ test('package_service_states counts fresh running rows and enforces the plan bou
 	})
 
 	expect(
-		await countRunningPackageServices({
+		await countRunningPackageServicesFromD1({
 			db: env.APP_DB,
 			userId,
 			now,
 		}),
 	).toBe(1)
 	expect(
-		await countRunningPackageServices({
+		await countRunningPackageServicesFromD1({
 			db: env.APP_DB,
 			userId,
 			now,
@@ -124,7 +124,7 @@ test('package_service_states counts fresh running rows and enforces the plan bou
 		updatedAt: fresh,
 	})
 	expect(
-		await countRunningPackageServices({
+		await countRunningPackageServicesFromD1({
 			db: env.APP_DB,
 			userId,
 			now,
@@ -153,12 +153,20 @@ test('package_service_states counts fresh running rows and enforces the plan bou
 		})
 	}
 
+	// assertWithinEntitlement for package_services requires getCurrent with the
+	// authoritative counter (enforcement uses UserMeter; parity/bootstrap uses D1).
 	const denied = await assertWithinEntitlement({
 		db: env.APP_DB,
 		userId: limitUserId,
 		email,
 		resource: 'package_services',
 		now,
+		getCurrent: async () =>
+			await countRunningPackageServicesFromD1({
+				db: env.APP_DB,
+				userId: limitUserId,
+				now,
+			}),
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -182,7 +190,7 @@ test('package_service_states counts fresh running rows and enforces the plan bou
 		resource: 'package_services',
 		now,
 		getCurrent: async () =>
-			await countRunningPackageServices({
+			await countRunningPackageServicesFromD1({
 				db: env.APP_DB,
 				userId: limitUserId,
 				now,

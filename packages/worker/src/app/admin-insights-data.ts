@@ -88,6 +88,7 @@ async function queryAdminInsights(
 	now: Date,
 ): Promise<AdminInsightsLoaderData> {
 	const db = env.APP_DB
+	const auditDb = env.AUDIT_DB
 	const signupCutoff =
 		listUtcWeekStarts(now, adminInsightsSignupWeeks)[0] ?? utcDayKey(now)
 	const monthCutoff = utcMonthKey(
@@ -160,7 +161,7 @@ async function queryAdminInsights(
 				 ORDER BY n DESC`,
 			)
 			.all<PlanRow>(),
-		db
+		auditDb
 			.prepare(
 				`SELECT substr(timestamp, 1, 10) AS day, result, COUNT(*) AS n
 				 FROM audit_events
@@ -169,7 +170,7 @@ async function queryAdminInsights(
 			)
 			.bind(dayCutoff)
 			.all<AuthDayRow>(),
-		db
+		auditDb
 			.prepare(
 				`SELECT category, COUNT(*) AS n
 				 FROM audit_events
@@ -179,7 +180,7 @@ async function queryAdminInsights(
 			)
 			.bind(dayCutoff)
 			.all<AuthCategoryRow>(),
-		db
+		auditDb
 			.prepare(
 				`SELECT substr(timestamp, 1, 10) AS day, substr(timestamp, 12, 2) AS hour, COUNT(*) AS n
 				 FROM audit_events

@@ -44,8 +44,7 @@ export function createCommunityFeatureApiPostHandler(env: Env) {
 					featured: parsed.data.featured,
 				})
 				void logAuditEvent({
-					db: env.APP_DB,
-					auditDb: auditDatabaseFromEnv(env),
+					db: auditDatabaseFromEnv(env),
 					category: 'admin',
 					action: 'community_listing_feature',
 					result: 'success',

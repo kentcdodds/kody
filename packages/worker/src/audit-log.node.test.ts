@@ -18,13 +18,11 @@ function createAuditDb() {
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
-test('persisted audit events dual-write while optional persistence stays optional', async () => {
-	const legacy = createAuditDb()
+test('persisted audit events write only the dedicated sink while optional persistence stays optional', async () => {
 	const audit = createAuditDb()
 
 	await logAuditEvent({
-		db: legacy.db,
-		auditDb: audit.db,
+		db: audit.db,
 		category: 'auth',
 		action: 'authenticate',
 		result: 'failure',
@@ -34,7 +32,6 @@ test('persisted audit events dual-write while optional persistence stays optiona
 		reason: 'invalid_password',
 	})
 	await logAuditEvent({
-		auditDb: audit.db,
 		category: 'account',
 		action: 'profile_view',
 		result: 'success',
@@ -42,10 +39,8 @@ test('persisted audit events dual-write while optional persistence stays optiona
 
 	const query = `SELECT category, action, result, email_hash, ip_hash, path, reason
 		FROM audit_events`
-	const legacyRows = legacy.sqlite.prepare(query).all()
 	const auditRows = audit.sqlite.prepare(query).all()
-	expect(legacyRows).toEqual(auditRows)
-	expect(legacyRows).toEqual([
+	expect(auditRows).toEqual([
 		{
 			category: 'auth',
 			action: 'authenticate',
@@ -72,52 +67,23 @@ function createAuditDbWithRun(run: () => Promise<unknown>) {
 	} as unknown as D1Database
 }
 
-test('audit dual writes retry transient errors and report partial sink failures', async () => {
+test('audit writes retry transient errors and report dedicated sink failures', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const transientRun = vi
 		.fn()
 		.mockRejectedValueOnce(new Error('D1_ERROR: Network connection lost'))
 		.mockResolvedValueOnce({ meta: { changes: 1 } })
-	const retryAudit = createAuditDb()
 	const retryResult = await logAuditEvent({
 		db: createAuditDbWithRun(transientRun),
-		auditDb: retryAudit.db,
 		category: 'account',
 		action: 'transient_retry',
 		result: 'success',
 	})
 	expect(retryResult).toEqual({ persisted: true, failedSinks: [] })
 	expect(transientRun).toHaveBeenCalledTimes(2)
-	expect(
-		retryAudit.sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM audit_events`)
-			.get(),
-	).toEqual({ count: 1 })
 
-	const successfulAudit = createAuditDb()
-	const failedAppResult = await logAuditEvent({
-		db: createAuditDbWithRun(() =>
-			Promise.reject(new Error('APP_DB permanent failure')),
-		),
-		auditDb: successfulAudit.db,
-		category: 'account',
-		action: 'app_failed',
-		result: 'failure',
-	})
-	expect(failedAppResult).toEqual({
-		persisted: false,
-		failedSinks: ['APP_DB'],
-	})
-	expect(
-		successfulAudit.sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM audit_events`)
-			.get(),
-	).toEqual({ count: 1 })
-
-	const successfulApp = createAuditDb()
 	const failedAuditResult = await logAuditEvent({
-		db: successfulApp.db,
-		auditDb: createAuditDbWithRun(() =>
+		db: createAuditDbWithRun(() =>
 			Promise.reject(new Error('AUDIT_DB permanent failure')),
 		),
 		category: 'account',
@@ -128,16 +94,18 @@ test('audit dual writes retry transient errors and report partial sink failures'
 		persisted: false,
 		failedSinks: ['AUDIT_DB'],
 	})
-	expect(
-		successfulApp.sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM audit_events`)
-			.get(),
-	).toEqual({ count: 1 })
-	expect(consoleWarn).toHaveBeenCalledTimes(2)
-	expect(consoleWarn).toHaveBeenCalledWith('audit-event-write-failed', {
-		failedSinks: ['APP_DB'],
-		errors: [expect.any(Error)],
+
+	const missingBindingResult = await logAuditEvent({
+		db: null,
+		category: 'account',
+		action: 'audit_binding_missing',
+		result: 'failure',
 	})
+	expect(missingBindingResult).toEqual({
+		persisted: false,
+		failedSinks: ['AUDIT_DB'],
+	})
+	expect(consoleWarn).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith('audit-event-write-failed', {
 		failedSinks: ['AUDIT_DB'],
 		errors: [expect.any(Error)],

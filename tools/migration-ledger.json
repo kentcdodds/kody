@@ -519,6 +519,10 @@
 		{
 			"filename": "0126-drop-entitlement-daily-counters.sql",
 			"sha256": "1fd413a77395d0dd183533863fe381ee5c006e75c8cf4224a4f00c1a57496e26"
+		},
+		{
+			"filename": "0127-drop-legacy-audit-events.sql",
+			"sha256": "414990ca0d5bf7a1c8cf9d06cffbf46b5e6c3f7cf2dcbfccb00eeca0fa067d70"
 		}
 	]
 }

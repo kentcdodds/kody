@@ -45,8 +45,7 @@ export function createCommunityTrustApiPostHandler(env: Env) {
 					trusted: parsed.data.trusted,
 				})
 				void logAuditEvent({
-					db: env.APP_DB,
-					auditDb: auditDatabaseFromEnv(env),
+					db: auditDatabaseFromEnv(env),
 					category: 'admin',
 					action: 'community_listing_trust',
 					result: 'success',

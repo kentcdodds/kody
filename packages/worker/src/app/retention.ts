@@ -148,14 +148,6 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 			'Local-dev/test flag exposure rollups keep 90 days, matching Analytics Engine retention for the production exposure stream; the metric readout window is the current month.',
 	},
 	{
-		table: 'audit_events',
-		scope: 'global',
-		retentionDays: auditEventRetentionDays,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Global hashed auth/security audit events keep 180 days and are independent of account deletion.',
-	},
-	{
 		table: 'stripe_webhook_events',
 		scope: 'global',
 		retentionDays: stripeWebhookEventRetentionDays,

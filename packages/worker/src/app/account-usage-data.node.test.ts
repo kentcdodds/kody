@@ -182,10 +182,15 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		email: storageEmail,
 		plan: 'pro',
 		packageCount: 0,
-		d1StorageBytes: 4_321,
+		d1StorageBytes: 321,
 	})
 	const storageEnv = withUsageEnv({ APP_DB: storageDb })
-	await storageEnv.meter.seedStorageBytes({ userId: storageUserId, bytes: 321 })
+	// After the storage authority cutover, readCurrentEntitlementResourceUsage
+	// for storage_bytes reads from UserMeter (cold bootstrap from D1 mirror).
+	await storageEnv.meter.seedStorageBytes({
+		userId: storageUserId,
+		bytes: 4_321,
+	})
 	const storageData = await loadAccountUsageData({
 		env: storageEnv as Env,
 		userId: 11,

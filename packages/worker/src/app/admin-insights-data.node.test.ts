@@ -313,9 +313,11 @@ function createInsightsTestDb(
 test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleWarn.mockClear()
+	const db = createInsightsTestDb()
 	const data = await loadAdminInsightsData(
 		{
-			APP_DB: createInsightsTestDb(),
+			APP_DB: db,
+			AUDIT_DB: db,
 			EMAIL_EVENTS: {} as AnalyticsEngineDataset,
 			WRANGLER_IS_LOCAL_DEV: 'true',
 		} as Env,
@@ -401,8 +403,9 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleWarn.mockClear()
+	const db = createInsightsTestDb()
 	const data = await loadAdminInsightsData(
-		{ APP_DB: createInsightsTestDb() } as Env,
+		{ APP_DB: db, AUDIT_DB: db } as Env,
 		now,
 	)
 
@@ -419,9 +422,11 @@ test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async (
 
 test('activation latency excludes users who have no usable verification date', async () => {
 	consoleWarn.mockImplementation(() => {})
+	const db = createInsightsTestDb({ activationLatencyRows: [] })
 	const data = await loadAdminInsightsData(
 		{
-			APP_DB: createInsightsTestDb({ activationLatencyRows: [] }),
+			APP_DB: db,
+			AUDIT_DB: db,
 			WRANGLER_IS_LOCAL_DEV: 'true',
 		} as Env,
 		now,
@@ -466,6 +471,7 @@ test('admin insights reads email reporting from Analytics Engine and degrades wh
 		CLOUDFLARE_API_TOKEN: 'token-1',
 		SENTRY_ENVIRONMENT: 'preview',
 	} as Env
+	env.AUDIT_DB = env.APP_DB
 
 	const data = await loadAdminInsightsData(env, now)
 	expect(data.emailByDay.at(-1)).toEqual({

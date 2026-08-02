@@ -23,18 +23,23 @@ import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
-	countRunningPackageServices,
+	countRunningPackageServicesFromD1,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageEntryBytes,
 	findCachedUserAccountByStableUserId,
 	getCachedUserPlan,
 	getUserPlan,
 	packageServiceStateStaleMs,
+	readCurrentEntitlementResourceUsage,
 	refundDailyEntitlement,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import {
+	createInMemoryUserMeterEnv,
+	createWaitUntilDrain,
+} from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from './user-meter-client.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function createEntitlementsTestDb(
 	input: {
@@ -43,6 +48,7 @@ function createEntitlementsTestDb(
 			plan: string | null
 			stripe_plan?: string | null
 			stable_user_id: string
+			d1_storage_bytes?: number
 		}>
 		counts?: Partial<
 			Record<
@@ -66,13 +72,12 @@ function createEntitlementsTestDb(
 	const users = input.users ?? []
 	const counts = input.counts ?? {}
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
-	const initialStorageBytes = Object.values(counts).reduce(
-		(total, count) => total + (count ?? 0),
-		0,
+	// Track D1 mirror bytes per user (for MAX mirror assertions)
+	const d1StorageByUser = new Map(
+		users.map((user) => [user.stable_user_id, user.d1_storage_bytes ?? 0]),
 	)
-	const storageBytesByUser = new Map(
-		users.map((user) => [user.stable_user_id, initialStorageBytes]),
-	)
+	// Track mirror calls for test assertions
+	const mirrorCalls: Array<{ userId: string; bytes: number }> = []
 
 	function countFor(query: string) {
 		const tableNames = [
@@ -165,7 +170,8 @@ function createEntitlementsTestDb(
 								) as T | null
 							}
 							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
-								const bytes = storageBytesByUser.get(String(params[0]))
+								const userId = String(params[0])
+								const bytes = d1StorageByUser.get(userId)
 								return (bytes === undefined ? null : { bytes }) as T | null
 							}
 							const count = countFor(query)
@@ -175,18 +181,15 @@ function createEntitlementsTestDb(
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async run() {
-							if (
-								query.includes('SET d1_storage_bytes = d1_storage_bytes + ?')
-							) {
+							// D1 mirror update: SET d1_storage_bytes = MAX(d1_storage_bytes, ?)
+							if (query.includes('SET d1_storage_bytes = MAX(')) {
+								const bytes = Number(params[0])
 								const userId = String(params[2])
-								const existing = storageBytesByUser.get(userId)
-								if (
-									existing === undefined ||
-									existing + Number(params[3]) > Number(params[4])
-								) {
-									return { meta: { changes: 0 } }
+								const existing = d1StorageByUser.get(userId)
+								if (existing !== undefined) {
+									d1StorageByUser.set(userId, Math.max(existing, bytes))
+									mirrorCalls.push({ userId, bytes })
 								}
-								storageBytesByUser.set(userId, existing + Number(params[0]))
 								return { meta: { changes: 1 } }
 							}
 							throw new Error(`Unsupported run query: ${query}`)
@@ -197,7 +200,7 @@ function createEntitlementsTestDb(
 		},
 	} as unknown as D1Database
 
-	return { db, queries }
+	return { db, queries, d1StorageByUser, mirrorCalls }
 }
 
 async function readMeterDailyCount(input: {
@@ -1022,15 +1025,23 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 	const proLimit = planLimits.pro.maxStorageBytes
 	const maxLimit = planLimits.max.maxStorageBytes
 
+	// Max plan: already at limit, reserve of 1 should be denied.
+	const { env: maxEnv } = createInMemoryUserMeterEnv()
+	await maxEnv.USER_METER.get(
+		maxEnv.USER_METER.idFromName(userId),
+	).initializeStorageBytes({
+		bytes: maxLimit,
+		updatedAt: new Date().toISOString(),
+	})
 	const maxAt = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
-		counts: { email_messages: maxLimit },
 	})
 	const maxDenied = await assertWithinStorageBytesEntitlement({
 		db: maxAt.db,
 		userId,
 		email: plannedEmail,
 		requested: 1,
+		env: maxEnv,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -1046,15 +1057,23 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 		current: maxLimit,
 	})
 
+	// Pro plan: at limit.
+	const { env: proEnv } = createInMemoryUserMeterEnv()
+	await proEnv.USER_METER.get(
+		proEnv.USER_METER.idFromName(userId),
+	).initializeStorageBytes({
+		bytes: proLimit,
+		updatedAt: new Date().toISOString(),
+	})
 	const atLimit = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
-		counts: { email_messages: proLimit },
 	})
 	const denied = await assertWithinStorageBytesEntitlement({
 		db: atLimit.db,
 		userId,
 		email: plannedEmail,
 		requested: 1,
+		env: proEnv,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -1070,89 +1089,178 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 		current: proLimit,
 	})
 
+	// Under limit: reserve succeeds and schedules D1 mirror.
+	const { env: underEnv } = createInMemoryUserMeterEnv()
+	await underEnv.USER_METER.get(
+		underEnv.USER_METER.idFromName(userId),
+	).initializeStorageBytes({
+		bytes: proLimit - 1,
+		updatedAt: new Date().toISOString(),
+	})
+	const drain = createWaitUntilDrain()
 	const underLimit = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
-		counts: { email_messages: proLimit - 1 },
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: proLimit - 1,
+			},
+		],
 	})
 	await assertWithinStorageBytesEntitlement({
 		db: underLimit.db,
 		userId,
 		email: plannedEmail,
 		requested: 1,
+		env: underEnv,
+		waitUntil: drain.waitUntil.bind(drain),
 	})
+	await drain.drain()
+	// D1 mirror should have been called and advanced to proLimit.
+	expect(underLimit.mirrorCalls.length).toBeGreaterThan(0)
+	expect(underLimit.mirrorCalls.at(-1)?.bytes).toBe(proLimit)
+	// Does not do a payload table SUM scan (no getCurrent path).
 	expect(underLimit.queries.some(({ sql }) => sql.includes('SUM('))).toBe(false)
-	expect(
-		underLimit.queries.some(({ sql }) =>
-			sql.includes('SET d1_storage_bytes = d1_storage_bytes + ?'),
-		),
-	).toBe(true)
 })
 
-test('storage byte reserve retries under contention then fails closed when unresolved', async () => {
+test('storage byte reserve bootstraps from D1 on cold UserMeter, then retries', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const proLimit = planLimits.pro.maxStorageBytes
-	let reserveAttempts = 0
-	let bytes = proLimit - 10
-	const retryDb = {
+	const { env } = createInMemoryUserMeterEnv()
+	// UserMeter has no storage bytes row yet (needs_bootstrap).
+	const drain = createWaitUntilDrain()
+	const coldDb = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: proLimit - 10,
+			},
+		],
+	})
+
+	await assertWithinStorageBytesEntitlement({
+		db: coldDb.db,
+		userId,
+		email: plannedEmail,
+		requested: 5,
+		env,
+		waitUntil: drain.waitUntil.bind(drain),
+	})
+	await drain.drain()
+
+	// UserMeter should now be seeded with proLimit - 10 + 5 = proLimit - 5.
+	const meter = userMeterRpc({ env, userId })
+	const result = await meter.readStorageBytes()
+	expect(result).toMatchObject({ outcome: 'ready', bytes: proLimit - 5 })
+	// D1 mirror should have been called with the DO absolute.
+	expect(coldDb.mirrorCalls.length).toBeGreaterThan(0)
+	expect(coldDb.mirrorCalls.at(-1)?.bytes).toBe(proLimit - 5)
+})
+
+test('storage byte reserve fails at limit after cold bootstrap', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const proLimit = planLimits.pro.maxStorageBytes
+	const { env } = createInMemoryUserMeterEnv()
+	// D1 mirror at limit — cold bootstrap will seed DO at limit, then reserve fails.
+	const db = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: proLimit,
+			},
+		],
+	})
+	const denied = await assertWithinStorageBytesEntitlement({
+		db: db.db,
+		userId,
+		email: plannedEmail,
+		requested: 1,
+		env,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError after cold bootstrap.')
+	}
+	expect(denied.details).toMatchObject({
+		resource: 'storage_bytes',
+		plan: 'pro',
+		limit: proLimit,
+		current: proLimit,
+	})
+})
+
+test('storage byte reserve handles missing user (synthetic context) with free-plan semantics', async () => {
+	// A userId with no D1 row: synthetic context (e.g. test fixture, non-account).
+	// env.USER_METER is present but the user has no D1 row, so the function must
+	// apply free-plan allow/deny without attempting to create a DO entry.
+	const syntheticUserId = 'a'.repeat(64)
+	const { env } = createInMemoryUserMeterEnv()
+	const freeLimit = planLimits.free.maxStorageBytes
+
+	// No users row in D1 — readUserD1StorageBytesRow returns null.
+	const emptyDb = createEntitlementsTestDb({ users: [] })
+
+	// Under free limit: should pass without touching DO.
+	await assertWithinStorageBytesEntitlement({
+		db: emptyDb.db,
+		userId: syntheticUserId,
+		email: null,
+		requested: 1,
+		env,
+	})
+	// No storage bytes row should be created in DO for a non-existent account.
+	const meter = userMeterRpc({ env, userId: syntheticUserId })
+	expect(await meter.readStorageBytes()).toEqual({ outcome: 'needs_bootstrap' })
+
+	// At free limit: should be denied.
+	const { env: env2 } = createInMemoryUserMeterEnv()
+	const emptyDb2 = createEntitlementsTestDb({ users: [] })
+	const denied = await assertWithinStorageBytesEntitlement({
+		db: emptyDb2.db,
+		userId: syntheticUserId,
+		email: null,
+		requested: freeLimit + 1,
+		env: env2,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error(
+			'Expected EntitlementLimitError for synthetic over-limit context.',
+		)
+	}
+	expect(denied.details).toMatchObject({
+		resource: 'storage_bytes',
+		plan: 'free',
+	})
+})
+
+test('storage byte reserve: D1 mirror failure is silent and does not affect success', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const proLimit = planLimits.pro.maxStorageBytes
+	const { env } = createInMemoryUserMeterEnv()
+	await env.USER_METER.get(
+		env.USER_METER.idFromName(userId),
+	).initializeStorageBytes({
+		bytes: proLimit - 10,
+		updatedAt: new Date().toISOString(),
+	})
+
+	const failingMirrorDb = {
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (
-								query.includes('SELECT plan, stripe_plan FROM users') ||
-								query.includes('SELECT plan FROM users')
-							) {
-								return { plan: 'pro', stripe_plan: null } as T
-							}
-							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
-								return { bytes } as T
-							}
-							throw new Error(`Unsupported first query: ${query}`)
-						},
-						async run() {
-							if (
-								query.includes('SET d1_storage_bytes = d1_storage_bytes + ?')
-							) {
-								reserveAttempts += 1
-								if (reserveAttempts === 1) {
-									return { meta: { changes: 0 } }
-								}
-								const requested = Number(params[0])
-								if (bytes + Number(params[3]) > Number(params[4])) {
-									return { meta: { changes: 0 } }
-								}
-								bytes += requested
-								return { meta: { changes: 1 } }
-							}
-							throw new Error(`Unsupported run query: ${query}`)
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	await assertWithinStorageBytesEntitlement({
-		db: retryDb,
-		userId,
-		email: plannedEmail,
-		requested: 5,
-	})
-	expect(reserveAttempts).toBe(2)
-	expect(bytes).toBe(proLimit - 5)
-
-	reserveAttempts = 0
-	const stuckDb = {
-		prepare(query: string) {
-			return {
-				bind() {
-					return {
-						async first<T>() {
-							if (
-								query.includes('SELECT plan, stripe_plan FROM users') ||
-								query.includes('SELECT plan FROM users')
-							) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								return { plan: 'pro', stripe_plan: null } as T
 							}
 							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
@@ -1161,11 +1269,8 @@ test('storage byte reserve retries under contention then fails closed when unres
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async run() {
-							if (
-								query.includes('SET d1_storage_bytes = d1_storage_bytes + ?')
-							) {
-								reserveAttempts += 1
-								return { meta: { changes: 0 } }
+							if (query.includes('SET d1_storage_bytes = MAX(')) {
+								throw new Error('D1 mirror write failed')
 							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
@@ -1175,17 +1280,191 @@ test('storage byte reserve retries under contention then fails closed when unres
 		},
 	} as unknown as D1Database
 
+	const drain = createWaitUntilDrain()
+	// Reserve must succeed even when the D1 mirror write throws.
+	await assertWithinStorageBytesEntitlement({
+		db: failingMirrorDb,
+		userId,
+		email: plannedEmail,
+		requested: 5,
+		env,
+		waitUntil: drain.waitUntil.bind(drain),
+	})
+	// Drain the mirror task; it should fail silently.
+	consoleWarn.mockImplementation(() => {})
+	await drain.drain()
+
+	// UserMeter should have the reservation applied.
+	const meter = userMeterRpc({ env, userId })
+	const result = await meter.readStorageBytes()
+	expect(result).toMatchObject({ outcome: 'ready', bytes: proLimit - 5 })
+})
+
+test('storage byte D1 mirror uses MAX to prevent delayed mirrors from regressing D1', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { env } = createInMemoryUserMeterEnv()
+	await env.USER_METER.get(
+		env.USER_METER.idFromName(userId),
+	).initializeStorageBytes({
+		bytes: 1000,
+		updatedAt: new Date().toISOString(),
+	})
+	const drain = createWaitUntilDrain()
+	const testDb = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: 2000,
+			},
+		],
+	})
+
+	// Reserve 100 bytes (DO at 1000, result will be 1100).
+	await assertWithinStorageBytesEntitlement({
+		db: testDb.db,
+		userId,
+		email: plannedEmail,
+		requested: 100,
+		env,
+		waitUntil: drain.waitUntil.bind(drain),
+	})
+	await drain.drain()
+
+	// D1 mirror had 2000; the mirror call was for 1100.
+	// MAX(2000, 1100) = 2000 — D1 should not have regressed.
+	const mirrorCall = testDb.mirrorCalls.at(-1)
+	expect(mirrorCall?.bytes).toBe(1100)
+	// d1StorageByUser should remain at 2000 due to MAX semantics.
+	expect(testDb.d1StorageByUser.get(userId)).toBe(2000)
+})
+
+test('storage byte reserve without env throws immediately on DO-reserve path', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
+	})
 	await expect(
 		assertWithinStorageBytesEntitlement({
-			db: stuckDb,
+			db,
+			userId,
+			email: plannedEmail,
+			requested: 1,
+			// env intentionally omitted
+		}),
+	).rejects.toThrow(
+		'assertWithinStorageBytesEntitlement requires env.USER_METER',
+	)
+})
+
+test('storage byte reserve concurrent bootstraps converge: second needs_bootstrap after initialize succeeds', async () => {
+	// Both callers see needs_bootstrap; the first initializes, the second retries
+	// and succeeds (initializeStorageBytes is INSERT OR IGNORE — idempotent).
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const proLimit = planLimits.pro.maxStorageBytes
+	const { env } = createInMemoryUserMeterEnv()
+	const db = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: proLimit - 20,
+			},
+		],
+	})
+
+	// Fire two concurrent reserves, both starting before any DO row exists.
+	await Promise.all([
+		assertWithinStorageBytesEntitlement({
+			db: db.db,
 			userId,
 			email: plannedEmail,
 			requested: 5,
+			env,
 		}),
-	).rejects.toThrow(
-		'Storage byte reservation could not complete under concurrent updates.',
-	)
-	expect(reserveAttempts).toBe(5)
+		assertWithinStorageBytesEntitlement({
+			db: db.db,
+			userId,
+			email: plannedEmail,
+			requested: 5,
+			env,
+		}),
+	])
+	// Both reservations succeeded: UserMeter should have proLimit - 10.
+	const result = await userMeterRpc({ env, userId }).readStorageBytes()
+	expect(result).toMatchObject({ outcome: 'ready', bytes: proLimit - 10 })
+})
+
+test('readCurrentEntitlementResourceUsage for storage_bytes reads from UserMeter with cold bootstrap', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { env } = createInMemoryUserMeterEnv()
+	const now = new Date()
+
+	// Cold: no DO row. DB has d1_storage_bytes = 500.
+	const coldDb = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: 500,
+			},
+		],
+	})
+	const coldBytes = await readCurrentEntitlementResourceUsage({
+		db: coldDb.db,
+		env,
+		userId,
+		resource: 'storage_bytes',
+		now,
+	})
+	expect(coldBytes).toBe(500)
+
+	// Warm: DO already has 750.
+	await env.USER_METER.get(env.USER_METER.idFromName(userId)).setStorageBytes({
+		bytes: 750,
+		updatedAt: now.toISOString(),
+	})
+	const warmDb = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+				d1_storage_bytes: 500,
+			},
+		],
+	})
+	const warmBytes = await readCurrentEntitlementResourceUsage({
+		db: warmDb.db,
+		env,
+		userId,
+		resource: 'storage_bytes',
+		now,
+	})
+	expect(warmBytes).toBe(750)
+})
+
+test('storage usage reads do not materialize UserMeter state for missing users', async () => {
+	const userId = await createStableUserIdFromEmail('missing@example.com')
+	const { env } = createInMemoryUserMeterEnv()
+	const db = createEntitlementsTestDb({ users: [] })
+
+	await expect(
+		readCurrentEntitlementResourceUsage({
+			db: db.db,
+			env,
+			userId,
+			resource: 'storage_bytes',
+			now: new Date(),
+		}),
+	).resolves.toBe(0)
+
+	await expect(
+		userMeterRpc({ env, userId }).readStorageBytes(),
+	).resolves.toEqual({ outcome: 'needs_bootstrap' })
 })
 
 test('plan ranking helpers order plans and resolve effective plan from manual vs Stripe', () => {
@@ -1334,7 +1613,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	).toBe('max')
 })
 
-test('countRunningPackageServices queries package_service_states with staleness and excludeService', async () => {
+test('countRunningPackageServicesFromD1 queries package_service_states with staleness and excludeService', async () => {
 	const now = new Date('2026-07-26T12:00:00.000Z')
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const db = {
@@ -1353,7 +1632,7 @@ test('countRunningPackageServices queries package_service_states with staleness 
 	} as unknown as D1Database
 
 	expect(
-		await countRunningPackageServices({
+		await countRunningPackageServicesFromD1({
 			db,
 			userId: 'user-1',
 			now,
@@ -1366,7 +1645,7 @@ test('countRunningPackageServices queries package_service_states with staleness 
 	])
 
 	queries.length = 0
-	await countRunningPackageServices({
+	await countRunningPackageServicesFromD1({
 		db,
 		userId: 'user-1',
 		now,

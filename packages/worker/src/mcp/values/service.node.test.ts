@@ -247,7 +247,8 @@ function createValueTestDb() {
 
 test('value service respects storage context precedence and deletion', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 	const storageContext = {
 		sessionId: 'session-123',
 		appId: 'app-123',
@@ -341,7 +342,8 @@ test('value service respects storage context precedence and deletion', async () 
 
 test('value service rejects unavailable scoped storage', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 
 	await expect(
 		saveValue({
@@ -382,7 +384,8 @@ test('value service rejects unavailable scoped storage', async () => {
 
 test('value service rejects app scope when only storageId is bound', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 	const storageContext = {
 		sessionId: null,
 		appId: null,
@@ -410,7 +413,8 @@ test('value service rejects app scope when only storageId is bound', async () =>
 
 test('value service cannot read legacy app buckets keyed by storageId', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 	const storageContext = {
 		sessionId: null,
 		appId: null,
@@ -465,7 +469,8 @@ test('value service cannot read legacy app buckets keyed by storageId', async ()
 
 test('value service rejects values too large for restorable D1 backups', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 
 	await expect(
 		saveValue({
@@ -496,7 +501,8 @@ test('value service rejects values too large for restorable D1 backups', async (
 
 test('deleteAllAppScopedValues removes all app-scoped values for one app', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 
 	await saveValue({
 		env,
@@ -560,7 +566,8 @@ test('deleteAllAppScopedValues removes all app-scoped values for one app', async
 
 test('listValues uses one metadata query across buckets and preserves ordering', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 	const storageContext = {
 		sessionId: 'session-456',
 		appId: 'app-456',
@@ -642,7 +649,8 @@ test('listValues uses one metadata query across buckets and preserves ordering',
 
 test('saveValue permits underscore-prefixed ordinary value names', async () => {
 	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
+	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const env = { APP_DB: testDb.db, ...meterEnv }
 
 	const saved = await saveValue({
 		env,
@@ -671,22 +679,23 @@ test('saveValue permits underscore-prefixed ordinary value names', async () => {
 	})
 })
 
-test('saveValue awaits atomic D1 storage reserve; D1→UserMeter shadow is deferred and non-blocking', async () => {
+test('saveValue awaits UserMeter atomic reserve; D1 mirror is deferred and non-blocking', async () => {
 	const testDb = createValueTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const drain = createWaitUntilDrain()
 	const userId = 'a'.repeat(64)
 	const email = 'value-storage@example.com'
-	let d1StorageBytes = 100
-	let failShadowPointRead = false
+	let d1MirrorBytes = 7
+	let failMirrorWrite = false
 	await meter.seedStorageBytes({ userId, bytes: 7 })
 
-	let releaseShadowRead!: () => void
-	const shadowReadGate = new Promise<void>((resolve) => {
-		releaseShadowRead = resolve
+	let releaseMirrorWrite!: () => void
+	const mirrorWriteGate = new Promise<void>((resolve) => {
+		releaseMirrorWrite = resolve
 	})
-	let shadowPointReadStarted = false
-	let atomicReserveCompleted = false
+	let mirrorWriteStarted = false
+	let doReserveCompleted = false
+
 	using _patch = withPatchedDbPrepare(testDb.db, (originalPrepare) => {
 		return ((query: string) => {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -703,35 +712,29 @@ test('saveValue awaits atomic D1 storage reserve; D1→UserMeter shadow is defer
 							) {
 								return { plan: 'pro', stripe_plan: null } as T
 							}
+							// d1_storage_bytes bootstrap read returns current mirror value.
 							if (
 								normalized.includes('select d1_storage_bytes as bytes') &&
 								normalized.includes('from users')
 							) {
-								if (failShadowPointRead) {
-									throw new Error('forced D1→UserMeter shadow read failure')
-								}
-								shadowPointReadStarted = true
-								await shadowReadGate
-								return { bytes: d1StorageBytes } as T
+								return { bytes: d1MirrorBytes } as T
 							}
 							return await bound.first<T>()
 						},
 						all: bound.all.bind(bound),
 						raw: bound.raw?.bind(bound),
 						run: async () => {
-							if (
-								normalized.includes(
-									'set d1_storage_bytes = d1_storage_bytes + ?',
-								)
-							) {
-								const requested = Number(params[0])
-								const limit = Number(params[4])
-								if (d1StorageBytes + requested <= limit) {
-									d1StorageBytes += requested
-									atomicReserveCompleted = true
-									return { meta: { changes: 1 } }
+							// D1 MAX mirror write after successful DO reserve.
+							if (normalized.includes('set d1_storage_bytes = max(')) {
+								if (failMirrorWrite) {
+									throw new Error('forced D1 mirror write failure')
 								}
-								return { meta: { changes: 0 } }
+								mirrorWriteStarted = true
+								await mirrorWriteGate
+								const newBytes = Number(params[0])
+								d1MirrorBytes = Math.max(d1MirrorBytes, newBytes)
+								doReserveCompleted = true
+								return { meta: { changes: 1 } }
 							}
 							return await bound.run()
 						},
@@ -752,25 +755,28 @@ test('saveValue awaits atomic D1 storage reserve; D1→UserMeter shadow is defer
 		waitUntil: drain.waitUntil,
 	})
 	expect(saved).toMatchObject({ name: 'metered-value' })
-	expect(atomicReserveCompleted).toBe(true)
-	expect(d1StorageBytes).toBeGreaterThan(100)
-	expect(shadowPointReadStarted).toBe(true)
-	expect(await userMeterRpc({ env, userId }).readStorageBytes()).toMatchObject({
-		outcome: 'ready',
-		bytes: 7,
-	})
+	// DO reserve completed synchronously; D1 mirror is deferred.
+	const meterBytesAfterReserve = await userMeterRpc({
+		env,
+		userId,
+	}).readStorageBytes()
+	expect(meterBytesAfterReserve).toMatchObject({ outcome: 'ready' })
+	if (meterBytesAfterReserve.outcome !== 'ready')
+		throw new Error('Expected ready')
+	expect(meterBytesAfterReserve.bytes).toBeGreaterThan(7)
+	// D1 mirror write not yet completed (gate still held).
+	expect(doReserveCompleted).toBe(false)
 
-	releaseShadowRead()
+	releaseMirrorWrite()
 	await drain.drain()
-	expect(await userMeterRpc({ env, userId }).readStorageBytes()).toMatchObject({
-		outcome: 'ready',
-		bytes: d1StorageBytes,
-	})
+	expect(mirrorWriteStarted).toBe(true)
+	// D1 mirror updated with MAX(existing, DO bytes).
+	expect(d1MirrorBytes).toBe(meterBytesAfterReserve.bytes)
 
-	failShadowPointRead = true
+	failMirrorWrite = true
 	consoleWarn.mockImplementation(() => {})
 	const failingDrain = createWaitUntilDrain()
-	const bytesBeforeFailingSave = d1StorageBytes
+	const bytesBeforeFailingSave = meterBytesAfterReserve.bytes
 	await expect(
 		saveValue({
 			env,
@@ -782,10 +788,17 @@ test('saveValue awaits atomic D1 storage reserve; D1→UserMeter shadow is defer
 			waitUntil: failingDrain.waitUntil,
 		}),
 	).resolves.toMatchObject({ name: 'metered-value-2' })
-	expect(d1StorageBytes).toBeGreaterThan(bytesBeforeFailingSave)
+	const meterBytesAfterSecond = await userMeterRpc({
+		env,
+		userId,
+	}).readStorageBytes()
+	expect(meterBytesAfterSecond).toMatchObject({ outcome: 'ready' })
+	if (meterBytesAfterSecond.outcome !== 'ready')
+		throw new Error('Expected ready')
+	expect(meterBytesAfterSecond.bytes).toBeGreaterThan(bytesBeforeFailingSave)
 	await failingDrain.drain()
 	expect(consoleWarn).toHaveBeenCalledWith(
-		'entitlement-storage-bytes-shadow-failed',
+		'entitlement-storage-bytes-d1-mirror-failed',
 		expect.any(Error),
 	)
 })
