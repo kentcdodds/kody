@@ -235,6 +235,16 @@ function createDeleteMessageDb() {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
+		CREATE TABLE email_outbound_provider_index (
+			provider TEXT NOT NULL,
+			provider_message_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			inbox_id TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (provider, provider_message_id)
+		);
 		CREATE TABLE email_attachments (
 			id TEXT PRIMARY KEY,
 			message_id TEXT NOT NULL,

@@ -1,5 +1,8 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
+import { deleteOutboundProviderIndexByMessageIds } from './outbound-provider-index.ts'
 import { maxRawMimeBytes } from './parser.ts'
+import { buildPlatformEmailAddress } from './platform-address.ts'
 import {
 	createEmailInbox,
 	createEmailInboxAddress,
@@ -9,8 +12,6 @@ import {
 	getEmailInboxById,
 	getEmailInboxByName,
 } from './repo.ts'
-import { buildPlatformEmailAddress } from './platform-address.ts'
-import { systemEmailOwnerId } from './email-owner.ts'
 import { type EmailInboxAddressRecord, type EmailInboxRecord } from './types.ts'
 
 export { systemEmailOwnerId }
@@ -323,6 +324,10 @@ async function deleteSystemEmailMessagesByIds(input: {
 			)
 			.bind(...deletableIds)
 			.run()
+		await deleteOutboundProviderIndexByMessageIds({
+			db: input.db,
+			messageIds: deletableIds,
+		})
 		await input.db
 			.prepare(
 				`DELETE FROM email_messages

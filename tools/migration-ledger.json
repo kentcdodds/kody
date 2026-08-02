@@ -523,6 +523,10 @@
 		{
 			"filename": "0127-drop-legacy-audit-events.sql",
 			"sha256": "414990ca0d5bf7a1c8cf9d06cffbf46b5e6c3f7cf2dcbfccb00eeca0fa067d70"
+		},
+		{
+			"filename": "0128-email-outbound-provider-index.sql",
+			"sha256": "84301bf6d3c533db15f94aaabde2a34d7ecb1fb196578666b6bfd3c2dffd3408"
 		}
 	]
 }

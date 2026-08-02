@@ -240,6 +240,14 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'entity_sources' },
 	{ kind: 'user_id', table: 'email_delivery_events' },
 	{ kind: 'attachment_parent', table: 'email_attachments' },
+	{
+		kind: 'user_id',
+		table: 'email_outbound_provider_index',
+		includeInExport: false,
+		surface: 'email_outbound_provider_index',
+		reason:
+			'Derived global provider→owner reverse lookup rebuilt from outbound email_messages.provider_message_id. Account deletion clears owner rows; export already includes the authoritative message rows and intentionally omits this lookup table.',
+	},
 	{ kind: 'user_id', table: 'email_messages' },
 	{ kind: 'user_id', table: 'email_threads' },
 	{ kind: 'user_id', table: 'email_inbox_addresses' },

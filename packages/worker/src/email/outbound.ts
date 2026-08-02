@@ -751,6 +751,8 @@ export async function sendOutboundEmail(
 				providerMessageId,
 				error: null,
 				sentAt: new Date().toISOString(),
+				userId: input.userId,
+				inboxId: message.inboxId,
 			})
 			await insertEmailDeliveryEvent({
 				db: input.env.APP_DB,

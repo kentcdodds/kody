@@ -760,6 +760,11 @@ export async function setEmailMessageClassification(input: {
 	return true
 }
 
+/**
+ * Record a Cloudflare outbound delivery lifecycle event. Resolution is
+ * index-first via `email_outbound_provider_index`, then an owner-scoped
+ * `email_messages` load — never a full-table provider_message_id scan.
+ */
 export async function recordProviderEmailDeliveryEvent(input: {
 	db: D1Database
 	reportingEnv?: EmailReportingEnv

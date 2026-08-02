@@ -1115,10 +1115,25 @@ below.
   Mailbox objects.
 - **Low-write email config** — sender identities, inboxes, inbox addresses,
   sender rules, and similar low-churn configuration stay in D1.
-- **Provider-message reverse lookup** — outbound `provider_message_id` → owner
-  resolution stays in D1 until the delivery webhook path already knows the
-  owning user. Contextless provider-id reverse lookups must not require
-  enumerating per-user Mailbox objects.
+- **Provider-message reverse lookup** — outbound Cloudflare sending webhooks
+  resolve owner/message through the derived D1 table
+  `email_outbound_provider_index` (migration
+  `0128-email-outbound-provider-index.sql`), keyed by
+  `(provider, provider_message_id)` with `user_id`, `message_id`, `inbox_id`,
+  and created/updated timestamps (indexes on `user_id` and unique `message_id`).
+  `email_messages.provider_message_id` remains authoritative: outbound terminal
+  success / provider-id updates dual-write the index after the message row
+  write; `deleteEmailMessageById`, user/system retention, and account deletion
+  remove owner index rows. Account export treats the table as derived global
+  lookup (`includeInExport: false` /
+  `derivedData.email_outbound_provider_index`) because authoritative outbound
+  message rows are already exported. `recordProviderEmailDeliveryEvent` resolves
+  index-first, then loads the owner-scoped message by `user_id`/`message_id` (no
+  full-table provider scan). `system:email` rows are indexed when they carry a
+  provider id. Read helper `loadOutboundProviderIndexParityReport` compares
+  linked outbound messages vs index counts/missing/mismatched for production
+  evidence. This phase does not flip Mailbox write authority; contextless
+  provider-id reverse lookups must not enumerate per-user Mailbox objects.
 
 ### Inbound durability boundary (D1-authoritative dual-write)
 
@@ -1738,11 +1753,12 @@ Current retention policies:
   batches. Retention deletes the deterministic
   `emailRawMimeKey(userId, messageId)` from `EMAIL_BLOBS` before D1 rows; if the
   blob delete fails, those rows are skipped and still selected on later runs so
-  cleanup can retry. Dependent `email_attachments` rows are deleted before their
-  messages, and threads left with no messages are pruned for the affected users.
-  After Mailbox cut-over, the same 365-day window and blob-before-row ordering
-  are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
-  system-email retention job.
+  cleanup can retry. Dependent `email_attachments` rows and derived
+  `email_outbound_provider_index` rows are deleted before their messages, and
+  threads left with no messages are pruned for the affected users. After Mailbox
+  cut-over, the same 365-day window and blob-before-row ordering are
+  self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
+  system-email retention job (and clears matching provider-index rows).
 - `entitlement_daily_counters`: **retired** — dropped by migration
   `0126-drop-entitlement-daily-counters.sql` after stages 1/2 stopped mirror
   writes and detached runtime inventory. No scheduled retention disposition or

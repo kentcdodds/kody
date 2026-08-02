@@ -10,6 +10,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 		`DROP TABLE IF EXISTS email_sender_rules;`,
 		`DROP TABLE IF EXISTS email_delivery_events;`,
 		`DROP TABLE IF EXISTS email_attachments;`,
+		`DROP TABLE IF EXISTS email_outbound_provider_index;`,
 		`DROP TABLE IF EXISTS email_messages;`,
 		`DROP TABLE IF EXISTS email_threads;`,
 		`DROP TABLE IF EXISTS email_inbox_addresses;`,
@@ -169,6 +170,20 @@ WHERE provider = 'cloudflare-email-routing'
 ON email_messages(provider_message_id)
 WHERE direction = 'outbound'
 	AND provider_message_id IS NOT NULL;`,
+		`CREATE TABLE IF NOT EXISTS email_outbound_provider_index (
+	provider TEXT NOT NULL,
+	provider_message_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	message_id TEXT NOT NULL,
+	inbox_id TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	PRIMARY KEY (provider, provider_message_id)
+);`,
+		`CREATE INDEX IF NOT EXISTS idx_email_outbound_provider_index_user_id
+ON email_outbound_provider_index(user_id);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_outbound_provider_index_message_id
+ON email_outbound_provider_index(message_id);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_provider_event_id
 ON email_delivery_events(provider_event_id)
 WHERE provider_event_id IS NOT NULL;`,

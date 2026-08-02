@@ -5,6 +5,11 @@ import {
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import { parseJsonArray } from '@kody-internal/shared/json-parsing.ts'
 import {
+	deleteOutboundProviderIndexByMessageId,
+	getOutboundProviderIndexRow,
+	upsertOutboundProviderIndex,
+} from './outbound-provider-index.ts'
+import {
 	emailClassificationValues,
 	type EmailAttachmentRecord,
 	type EmailClassification,
@@ -804,7 +809,22 @@ export async function insertEmailMessage(input: {
 			'Inbound delivery storage lease was lost before message insert.',
 		)
 	}
-	return mapMessageRow(row)
+	const message = mapMessageRow(row)
+	if (
+		message.direction === 'outbound' &&
+		message.providerMessageId != null &&
+		message.providerMessageId !== ''
+	) {
+		await upsertOutboundProviderIndex({
+			db: input.db,
+			providerMessageId: message.providerMessageId,
+			userId: message.userId,
+			messageId: message.id,
+			inboxId: message.inboxId,
+			now: message.updatedAt,
+		})
+	}
+	return message
 }
 
 export async function updateEmailMessageDelivery(input: {
@@ -814,7 +834,14 @@ export async function updateEmailMessageDelivery(input: {
 	providerMessageId?: string | null
 	error?: string | null
 	sentAt?: string | null
+	/**
+	 * Owner fields for the derived provider reverse index dual-write. When
+	 * omitted and a provider id is set, the message row is read after update.
+	 */
+	userId?: string
+	inboxId?: string | null
 }) {
+	const updatedAt = nowIso()
 	await input.db
 		.prepare(
 			`UPDATE email_messages
@@ -830,10 +857,44 @@ export async function updateEmailMessageDelivery(input: {
 			input.providerMessageId ?? null,
 			input.error ?? null,
 			input.sentAt ?? null,
-			nowIso(),
+			updatedAt,
 			input.messageId,
 		)
 		.run()
+
+	const providerMessageId = input.providerMessageId ?? null
+	if (providerMessageId == null || providerMessageId === '') {
+		await deleteOutboundProviderIndexByMessageId({
+			db: input.db,
+			messageId: input.messageId,
+		})
+		return
+	}
+
+	let userId = input.userId
+	let inboxId = input.inboxId ?? null
+	if (userId == null) {
+		const row = await input.db
+			.prepare(
+				`SELECT user_id, inbox_id
+				FROM email_messages
+				WHERE id = ?
+				LIMIT 1`,
+			)
+			.bind(input.messageId)
+			.first<{ user_id: string; inbox_id: string | null }>()
+		if (!row) return
+		userId = row.user_id
+		inboxId = row.inbox_id
+	}
+	await upsertOutboundProviderIndex({
+		db: input.db,
+		providerMessageId,
+		userId,
+		messageId: input.messageId,
+		inboxId,
+		now: updatedAt,
+	})
 }
 
 export async function getEmailMessageById(input: {
@@ -888,27 +949,28 @@ export async function updateEmailMessageClassificationInD1(input: {
 	return Number(result.meta.changes ?? 0) > 0
 }
 
+/**
+ * Resolve an outbound message from the derived provider reverse index, then
+ * load the owner-scoped authoritative `email_messages` row. Does not scan the
+ * full messages table by provider_message_id.
+ */
 export async function getOutboundEmailMessageByProviderMessageId(input: {
 	db: D1Database
 	providerMessageId: string
 }) {
-	const result = await input.db
-		.prepare(
-			`SELECT *
-			FROM email_messages
-			WHERE direction = 'outbound'
-				AND provider_message_id = ?
-			LIMIT 2`,
-		)
-		.bind(input.providerMessageId)
-		.all<Record<string, unknown>>()
-	const rows = result.results ?? []
-	if (rows.length > 1) {
-		throw new Error(
-			`Multiple outbound email messages share provider id: ${input.providerMessageId}`,
-		)
-	}
-	return rows[0] ? mapMessageRow(rows[0]) : null
+	const indexRow = await getOutboundProviderIndexRow({
+		db: input.db,
+		providerMessageId: input.providerMessageId,
+	})
+	if (!indexRow) return null
+	const message = await getEmailMessageById({
+		db: input.db,
+		userId: indexRow.userId,
+		messageId: indexRow.messageId,
+	})
+	if (!message || message.direction !== 'outbound') return null
+	if (message.providerMessageId !== input.providerMessageId) return null
+	return message
 }
 
 export async function getEmailMessageByMessageIdHeader(input: {
@@ -1244,9 +1306,13 @@ export async function deleteEmailMessageById(input: {
 	]
 	// Atomic batch: a partial delete (attachments gone, message left) would
 	// lose the storage_key values needed to delete the R2 blobs on retry.
+	// The derived provider reverse index is cleared with the message row.
 	await input.db.batch([
 		input.db
 			.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
+			.bind(input.messageId),
+		input.db
+			.prepare(`DELETE FROM email_outbound_provider_index WHERE message_id = ?`)
 			.bind(input.messageId),
 		input.db
 			.prepare(`DELETE FROM email_messages WHERE id = ?`)
