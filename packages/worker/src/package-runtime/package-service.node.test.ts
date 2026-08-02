@@ -170,6 +170,8 @@ async function waitForRestoreState(state: DurableObjectState) {
 
 async function createPackageServiceInstance(env: Env = {} as Env) {
 	const created = createPackageServiceState()
+	const meter = createInMemoryUserMeterEnv()
+	env.USER_METER ??= meter.env.USER_METER
 	const instance = new PackageServiceInstance(created.state, env)
 	await waitForRestoreState(created.state)
 	return { instance, ...created }
@@ -679,6 +681,7 @@ test('auto-start crash loops back off exponentially and reset after a successful
 		)
 
 		const created = createPackageServiceState()
+		const meter = createInMemoryUserMeterEnv()
 		created.persistedEntries.set('package-service-state', {
 			binding: serviceBinding,
 			autoStart: true,
@@ -698,6 +701,7 @@ test('auto-start crash loops back off exponentially and reset after a successful
 		})
 		const instance = new PackageServiceInstance(created.state, {
 			APP_DB: {},
+			USER_METER: meter.env.USER_METER,
 		} as Env)
 		await waitForRestoreState(created.state)
 
@@ -1085,13 +1089,20 @@ test('package service serializes gated UserMeter shadows so purge stays deleted 
 			USER_METER: gatedMeter.USER_METER,
 		} as Env)
 
-		const start = await postPackageService(created.instance, 'start')
-		expect(start.status).toBe(200)
-		// Lifecycle returned while the first shadow hop is still gated.
-		expect(created.waitUntilTasks.length).toBeGreaterThanOrEqual(2)
+		let startSettled = false
+		const startPromise = postPackageService(created.instance, 'start')
+		void startPromise.then(
+			() => {
+				startSettled = true
+			},
+			() => {
+				startSettled = true
+			},
+		)
 		await waitForGate('upsert:running')
 		expect(gates.map((gate) => gate.label)).toEqual(['upsert:running'])
 		expect(callOrder).toEqual([])
+		expect(startSettled).toBe(false)
 		expect(
 			packageServiceShadowRow(
 				meter,
@@ -1100,19 +1111,16 @@ test('package service serializes gated UserMeter shadows so purge stays deleted 
 				'realtime-supervisor',
 			),
 		).toBeUndefined()
+		gates[0]?.release()
+		const start = await startPromise
+		expect(start.status).toBe(200)
+		expect(created.waitUntilTasks.length).toBeGreaterThanOrEqual(1)
 
-		// Finish the bounded background run while the running shadow stays gated so
-		// the same-ms stopped upsert is chained behind it (not started yet).
-		const backgroundRunTask = created.waitUntilTasks[1]
+		// Finish the bounded background run so its same-ms stopped upsert follows
+		// the required running projection in the per-instance queue.
+		const backgroundRunTask = created.waitUntilTasks[0]
 		expect(backgroundRunTask).toBeDefined()
 		await backgroundRunTask
-		await settleMicrotasks()
-		expect(gates.map((gate) => gate.label)).toEqual(['upsert:running'])
-		expect(callOrder).toEqual([])
-
-		// Same-ms running→stopped: stopped cannot begin until running is released,
-		// so a reordered drain cannot let stopped win first and then regress.
-		gates[0]?.release()
 		await waitForGate('upsert:stopped')
 		expect(callOrder).toEqual(['upsert:running'])
 		expect(gates.map((gate) => gate.label)).toEqual([
@@ -1185,7 +1193,7 @@ test('package service serializes gated UserMeter shadows so purge stays deleted 
 	}
 })
 
-test('package service lifecycle does not await a gated UserMeter shadow', async () => {
+test('package service start retries and awaits the authoritative UserMeter projection before running code', async () => {
 	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
@@ -1195,11 +1203,16 @@ test('package service lifecycle does not await a gated UserMeter shadow', async 
 		releaseShadow = resolve
 	})
 	let shadowFinished = false
+	let upsertAttempts = 0
 	const gatedMeter = {
 		USER_METER: {
 			idFromName: (name: string) => ({ name, toString: () => name }),
 			get: () => ({
 				async upsertPackageServiceState() {
+					upsertAttempts++
+					if (upsertAttempts < 3) {
+						throw new Error('transient projection failure')
+					}
 					await shadowGate
 					shadowFinished = true
 					return {
@@ -1226,15 +1239,36 @@ test('package service lifecycle does not await a gated UserMeter shadow', async 
 
 	try {
 		setupSavedPackage('persistent')
-		mockModule.runBundledModuleWithRegistry.mockImplementation(
-			() => new Promise(() => {}),
-		)
+		let backgroundStarted = false
+		mockModule.runBundledModuleWithRegistry.mockImplementation(() => {
+			backgroundStarted = true
+			return new Promise(() => {})
+		})
 
 		const created = await createPackageServiceInstance({
 			APP_DB: appDb,
 			USER_METER: gatedMeter.USER_METER,
 		} as Env)
-		const start = await postPackageService(created.instance, 'start')
+		let startSettled = false
+		const startPromise = postPackageService(created.instance, 'start')
+		void startPromise.then(
+			() => {
+				startSettled = true
+			},
+			() => {
+				startSettled = true
+			},
+		)
+		for (let i = 0; i < 100 && upsertAttempts < 3; i++) {
+			await Promise.resolve()
+		}
+		expect(upsertAttempts).toBe(3)
+		expect(startSettled).toBe(false)
+		expect(shadowFinished).toBe(false)
+		expect(backgroundStarted).toBe(false)
+
+		releaseShadow()
+		const start = await startPromise
 		expect(start.status).toBe(200)
 		expect(upserts[0]).toEqual([
 			'user-123',
@@ -1244,29 +1278,30 @@ test('package service lifecycle does not await a gated UserMeter shadow', async 
 			'2026-07-05T12:00:00.000Z',
 			'2026-07-05T12:00:00.000Z',
 		])
-		// Lifecycle returned while the shadow DO hop is still gated.
-		expect(shadowFinished).toBe(false)
-		expect(created.waitUntilTasks.length).toBeGreaterThan(0)
-
-		releaseShadow()
-		await drainSettledWaitUntilTasks(created.waitUntilTasks)
 		expect(shadowFinished).toBe(true)
+		expect(created.waitUntilTasks.length).toBeGreaterThan(0)
+		for (let i = 0; i < 100 && !backgroundStarted; i++) {
+			await Promise.resolve()
+		}
+		expect(backgroundStarted).toBe(true)
 	} finally {
 		vi.useRealTimers()
 	}
 })
 
-test('package service UserMeter shadow failure cannot break D1 projection or lifecycle', async () => {
+test('package service fails start after required UserMeter retries and keeps terminal projections best effort', async () => {
 	resetMocks()
 	silenceExpectedConsoleWarns(['package-service-user-meter-shadow-failed'])
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
 	const { appDb, upserts } = createRecordingPackageServiceDb()
+	const meterUpsertStatuses: Array<string> = []
 	const failingMeter = {
 		USER_METER: {
 			idFromName: (name: string) => ({ name, toString: () => name }),
 			get: () => ({
-				async upsertPackageServiceState() {
+				async upsertPackageServiceState(input: { status: string }) {
+					meterUpsertStatuses.push(input.status)
 					throw new Error('shadow write failed')
 				},
 				async deletePackageServiceState() {
@@ -1287,8 +1322,17 @@ test('package service UserMeter shadow failure cannot break D1 projection or lif
 			APP_DB: appDb,
 			USER_METER: failingMeter.USER_METER,
 		} as Env)
-		const start = await postPackageService(created.instance, 'start')
-		expect(start.status).toBe(200)
+		await expect(postPackageService(created.instance, 'start')).rejects.toThrow(
+			'Package service could not confirm running state in UserMeter.',
+		)
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(meterUpsertStatuses).toEqual([
+			'running',
+			'running',
+			'running',
+			'error',
+		])
+		expect(mockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 		expect(upserts[0]).toEqual([
 			'user-123',
 			'package-1',
@@ -1297,14 +1341,13 @@ test('package service UserMeter shadow failure cannot break D1 projection or lif
 			'2026-07-05T12:00:00.000Z',
 			'2026-07-05T12:00:00.000Z',
 		])
-		await flushWaitUntilTasks(created.waitUntilTasks)
 		expect(upserts.at(-1)).toEqual([
 			'user-123',
 			'package-1',
 			'realtime-supervisor',
-			'stopped',
+			'error',
 			null,
-			'2026-07-05T12:00:05.000Z',
+			'2026-07-05T12:00:00.000Z',
 		])
 		expect(consoleWarn).toHaveBeenCalledWith(
 			'package-service-user-meter-shadow-failed',

@@ -25,6 +25,7 @@ import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './publishe
 const serviceStateStorageKey = 'package-service-state'
 const packageServiceRetryDelayMs = 5_000
 const packageServiceRetryMaxDelayMs = 15 * 60 * 1000
+const requiredPackageServiceProjectionAttempts = 3
 /**
  * How often a running service refreshes `package_service_states.updated_at`.
  * Must stay well below `packageServiceStateStaleMs` in entitlements so live
@@ -422,13 +423,15 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	/**
 	 * Best-effort D1 projection of service liveness for entitlement counting,
-	 * plus a non-awaited expand-phase UserMeter shadow via `waitUntil`. D1
-	 * remains sole count/discovery authority and stays on the awaited path;
-	 * shadow DO hops must not gate lifecycle/heartbeat responses.
+	 * plus the authoritative UserMeter projection. New running transitions
+	 * require UserMeter confirmation; non-increasing transitions use a
+	 * non-awaited shadow via `waitUntil`. D1 remains the discovery mirror.
 	 * Stop/error/idle writes still attempt to clear `running` so quota is
 	 * released when D1 is healthy.
 	 */
-	private async projectServiceStateToD1() {
+	private async projectServiceStateToD1(options?: {
+		requireUserMeter?: boolean
+	}) {
 		const binding = this.stateSnapshot.binding
 		if (!binding) return
 		const status = projectPackageServiceStatus(this.stateSnapshot.status)
@@ -447,12 +450,17 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		} catch {
 			// Best-effort: D1 outages must not take down package services.
 		}
-		this.schedulePackageServiceStateShadow({
+		const shadowInput = {
 			binding,
 			status,
 			startedAt,
 			sourceUpdatedAt: updatedAt,
-		})
+		}
+		if (options?.requireUserMeter) {
+			await this.requirePackageServiceStateInUserMeter(shadowInput)
+		} else {
+			this.schedulePackageServiceStateShadow(shadowInput)
+		}
 	}
 
 	/**
@@ -473,6 +481,41 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		)
 	}
 
+	/**
+	 * Confirm a usage-increasing transition in the authoritative UserMeter
+	 * before service code can run. Immediate retries cover transient RPC
+	 * failures without adding delay to the serialized Durable Object request.
+	 */
+	private async requirePackageServiceStateInUserMeter(input: {
+		binding: PackageServiceBindingState
+		status: PackageServiceProjectedStatus
+		startedAt: string | null
+		sourceUpdatedAt: string
+	}) {
+		await this.enqueueShadowTask(
+			async () => {
+				let lastError: unknown
+				for (
+					let attempt = 0;
+					attempt < requiredPackageServiceProjectionAttempts;
+					attempt++
+				) {
+					try {
+						await this.upsertPackageServiceStateInUserMeter(input)
+						return
+					} catch (error) {
+						lastError = error
+					}
+				}
+				throw new Error(
+					'Package service could not confirm running state in UserMeter.',
+					{ cause: lastError },
+				)
+			},
+			{ waitUntil: false },
+		)
+	}
+
 	/** Best-effort UserMeter shadow upsert; catches/logs so waitUntil settles. */
 	private async shadowPackageServiceStateToUserMeter(input: {
 		binding: PackageServiceBindingState
@@ -481,20 +524,29 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		sourceUpdatedAt: string
 	}) {
 		try {
-			const meter = userMeterRpc({
-				env: this.env,
-				userId: input.binding.userId,
-			})
-			await meter.upsertPackageServiceState({
-				packageId: input.binding.packageId,
-				serviceName: input.binding.serviceName,
-				status: input.status,
-				startedAt: input.startedAt,
-				sourceUpdatedAt: input.sourceUpdatedAt,
-			})
+			await this.upsertPackageServiceStateInUserMeter(input)
 		} catch (error) {
 			console.warn('package-service-user-meter-shadow-failed', error)
 		}
+	}
+
+	private async upsertPackageServiceStateInUserMeter(input: {
+		binding: PackageServiceBindingState
+		status: PackageServiceProjectedStatus
+		startedAt: string | null
+		sourceUpdatedAt: string
+	}) {
+		const meter = userMeterRpc({
+			env: this.env,
+			userId: input.binding.userId,
+		})
+		await meter.upsertPackageServiceState({
+			packageId: input.binding.packageId,
+			serviceName: input.binding.serviceName,
+			status: input.status,
+			startedAt: input.startedAt,
+			sourceUpdatedAt: input.sourceUpdatedAt,
+		})
 	}
 
 	/**
@@ -510,12 +562,18 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Run shadow writes in scheduling order and register the chain with
-	 * `waitUntil`. Helpers already catch, so the queue itself does not reject.
+	 * Run UserMeter writes in scheduling order. Best-effort callers register
+	 * their caught task with `waitUntil`; required callers await rejection.
 	 */
-	private enqueueShadowTask(task: () => Promise<void>) {
+	private enqueueShadowTask(
+		task: () => Promise<void>,
+		options: { waitUntil: boolean } = { waitUntil: true },
+	) {
 		this.shadowQueue = this.shadowQueue.then(task, task)
-		this.ctx.waitUntil(this.shadowQueue)
+		if (options.waitUntil) {
+			this.ctx.waitUntil(this.shadowQueue)
+		}
+		return this.shadowQueue
 	}
 
 	/** Best-effort UserMeter shadow delete; catches/logs so waitUntil settles. */
@@ -976,7 +1034,17 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.lastStartedAt = startedAt
 		this.stateSnapshot.lastError = null
 		await this.persistState()
-		await this.projectServiceStateToD1()
+		try {
+			await this.projectServiceStateToD1({ requireUserMeter: true })
+		} catch (error) {
+			this.stateSnapshot.currentRunId = null
+			this.stateSnapshot.status = 'error'
+			this.stateSnapshot.lastError = getErrorMessage(error)
+			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
+			await this.persistState()
+			await this.projectServiceStateToD1()
+			throw error
+		}
 		await this.ensureRunningHeartbeat()
 		const task = this.runServiceInBackground({
 			binding: loaded.resolvedBinding,
@@ -1125,7 +1193,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.stateSnapshot.lastStartedAt = startedAt
 				this.stateSnapshot.lastError = null
 				await this.persistState()
-				await this.projectServiceStateToD1()
+				await this.projectServiceStateToD1({ requireUserMeter: true })
 				await this.ensureRunningHeartbeat()
 				const task = this.runServiceInBackground({
 					binding: loaded.resolvedBinding,
@@ -1136,8 +1204,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.ctx.waitUntil(task)
 			}
 		} catch (error) {
+			this.stateSnapshot.currentRunId = null
 			this.stateSnapshot.lastError = getErrorMessage(error)
 			this.stateSnapshot.status = 'error'
+			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
 			this.stateSnapshot.consecutiveFailureCount += 1
 			await this.persistState()
 			await this.projectServiceStateToD1()

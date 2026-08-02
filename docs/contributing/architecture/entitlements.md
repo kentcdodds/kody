@@ -275,10 +275,12 @@ enforcement time. The meter count is 0 for a new user or a user with no live
 dual-writes; this is correct.
 
 **D1-only fresh-running row:** a D1 fresh-running row that has no corresponding
-meter row means a lifecycle dual-write shadow missed the meter. This is a
-migration anomaly and parity blocker; `admin_user_meter_parity` will expose it.
-The authority count returns 0 (from the empty meter). Roll back D1 authority if
-this is observed in production.
+meter row means an older lifecycle dual-write missed the meter or a required
+running projection exhausted its retries before the compensating error
+projection landed. New service code does not run until its meter projection
+succeeds. This remains a migration anomaly and parity blocker;
+`admin_user_meter_parity` will expose it. Roll back D1 authority if this is
+observed in production.
 
 **`excludeService` and 24h staleness:** both semantics are preserved exactly.
 `excludeService` is forwarded to `meter.countRunningPackageServices`. The 24h
@@ -311,21 +313,24 @@ UserMeter schema **v5** adds the per-service `package_service_states` table
 inside the DO (`status`, `started_at`, monotonic `source_updated_at`,
 `revision`, `updated_at`).
 
-**Dual-write from `PackageServiceInstance`:** D1 upsert/delete runs first; a
-best-effort UserMeter shadow follows on the same lifecycle surfaces:
+**Dual-write from `PackageServiceInstance`:** D1 upsert/delete runs first. A
+transition that makes a service runnable requires the authoritative UserMeter
+`running` upsert to succeed before service code starts. The package-service DO
+makes three immediate, ordered attempts; exhausting them fails the start,
+projects a non-running error state, and never launches the runtime task.
+UserMeter projection remains ordered best-effort for transitions that cannot
+increase usage:
 
-- lifecycle transitions and warm-start restore after upgrades
-  (`projectServiceStateToD1`)
-- running-service heartbeat alarms (1h `packageServiceStateHeartbeatMs`,
-  unchanged)
+- warm-start restore after upgrades (`projectServiceStateToD1`)
+- running-service heartbeat alarms (1h `packageServiceStateHeartbeatMs`)
 - stop, error, and idle projections that clear `running`
 - purge (`deleteProjectedServiceState` deletes D1 then shadow before
   `deleteAll`)
 
-Shadow RPCs are optional when `USER_METER` is unbound and failures log
-`package-service-user-meter-shadow-failed` without affecting the service path.
-Shadow upserts reject stale/out-of-order writes when `sourceUpdatedAt` is older
-than the existing shadow row.
+Best-effort RPCs are optional when `USER_METER` is unbound and failures log
+`package-service-user-meter-shadow-failed` without affecting the service path. A
+missing binding fails a new running transition closed. UserMeter upserts reject
+stale/out-of-order writes when `sourceUpdatedAt` is older than the existing row.
 
 **Account export:** `UserMeter.exportCounters` returns additive
 `packageServiceStatesShadow` on the first page only (`startAfter` absent); later
