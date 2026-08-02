@@ -719,12 +719,18 @@ mirror D1 USER transitions from `inbound-delivery.ts` / `inbound-effects.ts`
 pending with explicit `inserted`/`existed`; claim/release storage lease; mark
 rejected/received with lease/finalization CAS; prune dedupe; defer reconcile;
 claim/complete usage effect; claim/complete/fail subscription effect with
-retry/dead-letter/ suppression; list due stale/effect work). Mutations keep
-promoted columns and `detail_json` in sync and set canonical `updated_at`. The
-DO does **not** perform external usage recording or subscription dispatch.
-Mirror `upsertDeliveryEvent` / `upsertDeliveryEvents` remain the compatibility
-write API. **These CAS RPCs are not live-wired** — D1 stays sole write authority
-for inbound ledger/effects. `system:email` stays on D1 and is never written into
+retry/dead-letter/suppression; list due stale/effect work). Mutations keep
+promoted columns and `detail_json` in sync and set canonical `updated_at`.
+Usage/subscription complete and subscription fail require an exact
+`expectedFinalizationToken` match (`event_type`/`state` = `received`); mismatch
+is `lease-lost`. Storage claim clears finalization plus in-flight effect
+leases/retry (and resets `processing` → `pending`) so reclaim/re-finalization
+cannot be completed by a stale effect worker — stronger than D1's `json_set`
+patch, required because Mailbox promotes those lease columns. The DO does
+**not** perform external usage recording or subscription dispatch. Mirror
+`upsertDeliveryEvent` / `upsertDeliveryEvents` remain the compatibility write
+API. **These CAS RPCs are not live-wired** — D1 stays sole write authority for
+inbound ledger/effects. `system:email` stays on D1 and is never written into
 per-user Mailbox objects.
 
 **Mirror write contract:** `mirrorMessage`, `upsertDeliveryEvent`, and
