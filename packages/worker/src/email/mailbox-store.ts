@@ -727,14 +727,16 @@ export class MailboxStore {
 		id: string
 		direction: EmailDirection
 		created_at: string
+		updated_at: string
 	}> {
 		return this.sql
 			.exec<{
 				id: string
 				direction: EmailDirection
 				created_at: string
+				updated_at: string
 			}>(
-				`SELECT id, direction, created_at FROM email_messages
+				`SELECT id, direction, created_at, updated_at FROM email_messages
 				WHERE created_at < ?
 				ORDER BY created_at ASC, id ASC
 				LIMIT ?`,
@@ -742,6 +744,30 @@ export class MailboxStore {
 				input.limit,
 			)
 			.toArray()
+	}
+
+	getMessageForRetention(messageId: string): {
+		id: string
+		direction: EmailDirection
+		created_at: string
+		updated_at: string
+	} | null {
+		return (
+			this.sql
+				.exec<{
+					id: string
+					direction: EmailDirection
+					created_at: string
+					updated_at: string
+				}>(
+					`SELECT id, direction, created_at, updated_at
+					FROM email_messages
+					WHERE id = ?
+					LIMIT 1`,
+					messageId,
+				)
+				.toArray()[0] ?? null
+		)
 	}
 
 	listAttachmentsForRetention(
