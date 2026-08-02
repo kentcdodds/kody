@@ -3,13 +3,18 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
+	mailboxBlobRefAttachmentCursorPrefix,
+	mailboxBlobRefRawMimeCursorPrefix,
+	parseMailboxBlobRefCursor,
+} from '#worker/email/mailbox-types.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
 	createAccountExport,
 	createAccountExportManifest,
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './export.ts'
 import { accountUserOwnedDurableObjectSurfaces } from './user-owned-surfaces.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -95,6 +100,10 @@ type TestMailboxBlobReference = {
 function createMailboxBinding(input?: {
 	blobReferences?: () => Array<TestMailboxBlobReference>
 }) {
+	const cursorAfter = (reference: TestMailboxBlobReference) =>
+		reference.kind === 'raw_mime'
+			? `${mailboxBlobRefRawMimeCursorPrefix}${reference.messageId}`
+			: `${mailboxBlobRefAttachmentCursorPrefix}${reference.attachmentId}`
 	const listBlobReferences = async ({
 		pageSize = 100,
 		startAfter,
@@ -102,14 +111,29 @@ function createMailboxBinding(input?: {
 		pageSize?: number
 		startAfter?: string | null
 	}) => {
+		const cursor = parseMailboxBlobRefCursor(startAfter ?? null)
 		const references = (input?.blobReferences?.() ?? [])
-			.filter((reference) => startAfter == null || reference.key > startAfter)
-			.sort((left, right) => left.key.localeCompare(right.key))
+			.filter((reference) => {
+				if (cursor.phase === 'raw_mime') {
+					return (
+						reference.kind === 'attachment' ||
+						reference.messageId > cursor.startAfterId
+					)
+				}
+				return (
+					reference.kind === 'attachment' &&
+					(reference.attachmentId ?? '') > cursor.startAfterId
+				)
+			})
+			.sort((left, right) => {
+				if (left.kind !== right.kind) return left.kind === 'raw_mime' ? -1 : 1
+				return cursorAfter(left).localeCompare(cursorAfter(right))
+			})
 		const page = references.slice(0, pageSize)
 		const truncated = references.length > page.length
 		return {
 			references: page,
-			nextStartAfter: truncated ? page.at(-1)?.key : null,
+			nextStartAfter: truncated ? cursorAfter(page.at(-1)!) : null,
 			truncated,
 		}
 	}

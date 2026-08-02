@@ -97,6 +97,74 @@ test('Mailbox R2 helpers share pagination, mapping, and revalidation semantics',
 	).toBeNull()
 })
 
+test('stable Mailbox R2 refs revalidate later items from their preceding cursor', async () => {
+	const references: Array<MailboxBlobReference> = [
+		{
+			kind: 'raw_mime',
+			key: 'email-raw:v1:user-a/message-a',
+			messageId: 'message-a',
+			attachmentId: null,
+		},
+		{
+			kind: 'raw_mime',
+			key: 'email-raw:v1:user-a/message-b',
+			messageId: 'message-b',
+			attachmentId: null,
+		},
+		{
+			kind: 'attachment',
+			key: 'email-attachment:v1:user-a/message-b/attachment-b',
+			messageId: 'message-b',
+			attachmentId: 'attachment-b',
+		},
+	]
+	mocks.listInternalUserEmailBlobReferences.mockImplementation(
+		async ({
+			pageSize,
+			startAfter,
+		}: {
+			pageSize?: number
+			startAfter?: string | null
+		}) => {
+			if (pageSize === 3) {
+				return {
+					references,
+					nextStartAfter: null,
+					truncated: false,
+				}
+			}
+			const index =
+				startAfter == null ? 0 : startAfter === 'raw_mime:message-a' ? 1 : 2
+			return {
+				references: [references[index]!],
+				nextStartAfter:
+					index < 2 ? `raw_mime:message-${index ? 'b' : 'a'}` : null,
+				truncated: index < 2,
+			}
+		},
+	)
+	const env = {} as Env
+	const page = await listMailboxEmailObjectRefPage({
+		env,
+		ownerId: 'user-a',
+		pageSize: 3,
+		startAfter: null,
+	})
+	expect(
+		page.references.map((reference) => reference.source.startAfter),
+	).toEqual([null, 'raw_mime:message-a', 'raw_mime:message-b'])
+	for (const stableReference of page.references.slice(1)) {
+		await expect(
+			resolveMailboxEmailObjectRef({
+				env,
+				ownerId: 'user-a',
+				source: stableReference.source,
+				expectedKey: stableReference.key,
+			}),
+		).resolves.toMatchObject({ key: stableReference.key })
+	}
+})
+
 test('Mailbox R2 pagination fails closed when a cursor does not advance', async () => {
 	mocks.listInternalUserEmailBlobReferences.mockResolvedValue({
 		references: [],
@@ -110,3 +178,27 @@ test('Mailbox R2 pagination fails closed when a cursor does not advance', async 
 		}),
 	).rejects.toThrow('pagination did not advance')
 })
+
+test.each([
+	['unchanged', ['raw_mime:message-a', 'raw_mime:message-a']],
+	[
+		'repeated',
+		['raw_mime:message-a', 'raw_mime:message-b', 'raw_mime:message-a'],
+	],
+] as const)(
+	'Mailbox R2 pagination fails closed on a malformed %s cursor',
+	async (_label, cursors) => {
+		let call = 0
+		mocks.listInternalUserEmailBlobReferences.mockImplementation(async () => ({
+			references: [],
+			nextStartAfter: cursors[Math.min(call++, cursors.length - 1)]!,
+			truncated: true,
+		}))
+		await expect(
+			countMailboxEmailObjectRefs({
+				env: {} as Env,
+				ownerId: 'user-a',
+			}),
+		).rejects.toThrow('Mailbox blob-reference pagination did not advance.')
+	},
+)

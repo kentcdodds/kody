@@ -1,9 +1,15 @@
 import { type MailboxEnv } from '#worker/email/mailbox-client.ts'
 import { listInternalUserEmailBlobReferences } from '#worker/email/mailbox-internal-read.ts'
 import {
+	mailboxBlobRefAttachmentCursorPrefix,
+	mailboxBlobRefRawMimeCursorPrefix,
+	parseMailboxBlobRefCursor,
 	type MailboxBlobReference,
 	type MailboxBlobReferencePage,
 } from '#worker/email/mailbox-types.ts'
+
+const mailboxBlobReferencePaginationError =
+	'Mailbox blob-reference pagination did not advance.'
 
 export type AccountMailboxEmailObjectRef = {
 	surfaceId: 'email_raw_mime' | 'email_attachment_storage_key'
@@ -35,6 +41,62 @@ export function mailboxBlobReferenceToAccountObjectRef(
 	}
 }
 
+function cursorAfterMailboxBlobReference(
+	reference: MailboxBlobReference,
+): string {
+	if (reference.kind === 'raw_mime') {
+		return `${mailboxBlobRefRawMimeCursorPrefix}${reference.messageId}`
+	}
+	if (reference.attachmentId == null) {
+		throw new Error(
+			'Mailbox attachment blob reference is missing attachmentId.',
+		)
+	}
+	return `${mailboxBlobRefAttachmentCursorPrefix}${reference.attachmentId}`
+}
+
+function assertMailboxBlobReferenceCursorAdvanced(input: {
+	startAfter: string | null
+	nextStartAfter: string | null
+	seenCursors?: Set<string>
+}) {
+	const nextStartAfter = input.nextStartAfter
+	if (
+		nextStartAfter == null ||
+		nextStartAfter === input.startAfter ||
+		input.seenCursors?.has(nextStartAfter)
+	) {
+		throw new Error(mailboxBlobReferencePaginationError)
+	}
+	try {
+		const current = parseMailboxBlobRefCursor(input.startAfter)
+		const next = parseMailboxBlobRefCursor(nextStartAfter)
+		const currentPhase = current.phase === 'raw_mime' ? 0 : 1
+		const nextPhase = next.phase === 'raw_mime' ? 0 : 1
+		if (
+			nextPhase < currentPhase ||
+			(nextPhase === currentPhase && next.startAfterId <= current.startAfterId)
+		) {
+			throw new Error(mailboxBlobReferencePaginationError)
+		}
+	} catch {
+		throw new Error(mailboxBlobReferencePaginationError)
+	}
+}
+
+function assertMailboxBlobReferencePageAdvanced(input: {
+	startAfter: string | null
+	page: MailboxBlobReferencePage
+	seenCursors?: Set<string>
+}) {
+	if (!input.page.truncated) return
+	assertMailboxBlobReferenceCursorAdvanced({
+		startAfter: input.startAfter,
+		nextStartAfter: input.page.nextStartAfter,
+		seenCursors: input.seenCursors,
+	})
+}
+
 export async function listMailboxEmailObjectRefPage(input: {
 	env: MailboxEnv
 	ownerId: string
@@ -46,15 +108,29 @@ export async function listMailboxEmailObjectRefPage(input: {
 	truncated: boolean
 }> {
 	const page = await listInternalUserEmailBlobReferences(input)
+	assertMailboxBlobReferencePageAdvanced({
+		startAfter: input.startAfter,
+		page,
+	})
+	let precedingCursor = input.startAfter
 	return {
-		references: page.references.map((reference) => ({
-			...mailboxBlobReferenceToAccountObjectRef(reference),
-			source: {
-				kind: 'mailbox_email_blob',
-				startAfter: input.startAfter,
-				reference,
-			},
-		})),
+		references: page.references.map((reference) => {
+			const referenceCursor = cursorAfterMailboxBlobReference(reference)
+			assertMailboxBlobReferenceCursorAdvanced({
+				startAfter: precedingCursor,
+				nextStartAfter: referenceCursor,
+			})
+			const stableReference: StableAccountMailboxEmailObjectRef = {
+				...mailboxBlobReferenceToAccountObjectRef(reference),
+				source: {
+					kind: 'mailbox_email_blob',
+					startAfter: precedingCursor,
+					reference,
+				},
+			}
+			precedingCursor = referenceCursor
+			return stableReference
+		}),
 		nextStartAfter: page.nextStartAfter,
 		truncated: page.truncated,
 	}
@@ -66,6 +142,7 @@ async function visitMailboxBlobReferencePages(input: {
 	visit: (page: MailboxBlobReferencePage) => void
 }) {
 	let startAfter: string | null = null
+	const seenCursors = new Set<string>()
 	while (true) {
 		const page = await listInternalUserEmailBlobReferences({
 			env: input.env,
@@ -75,9 +152,15 @@ async function visitMailboxBlobReferencePages(input: {
 		})
 		input.visit(page)
 		if (!page.truncated) return
-		if (page.nextStartAfter == null || page.nextStartAfter === startAfter) {
-			throw new Error('Mailbox blob-reference pagination did not advance.')
+		assertMailboxBlobReferencePageAdvanced({
+			startAfter,
+			page,
+			seenCursors,
+		})
+		if (page.nextStartAfter == null) {
+			throw new Error(mailboxBlobReferencePaginationError)
 		}
+		seenCursors.add(page.nextStartAfter)
 		startAfter = page.nextStartAfter
 	}
 }

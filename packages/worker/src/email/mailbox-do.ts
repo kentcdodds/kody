@@ -972,13 +972,15 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async purgeForParityRebuild(input: {
 		ownerId: string
 	}): Promise<{ ok: true }> {
-		this.ctx.storage.transactionSync(() => {
-			this.store.assertOwner(input.ownerId)
-			this.store.purgeMetadataPreservingTombstones()
+		await this.blockConcurrencySafely(async () => {
+			this.ctx.storage.transactionSync(() => {
+				this.store.assertOwner(input.ownerId)
+				this.store.purgeMetadataPreservingTombstones()
+			})
+			await this.ctx.storage.deleteAlarm().catch(() => undefined)
+			this.retentionAlarmArmed = false
+			this.retentionIdleConfirmed = true
 		})
-		await this.ctx.storage.deleteAlarm().catch(() => undefined)
-		this.retentionAlarmArmed = false
-		this.retentionIdleConfirmed = true
 		return { ok: true }
 	}
 
