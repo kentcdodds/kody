@@ -22,7 +22,7 @@ import {
 	userMeterNamespace,
 	userMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
-import { mailboxNamespace, mailboxRpc } from '#worker/email/mailbox-client.ts'
+import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
@@ -652,12 +652,6 @@ async function purgeMailbox(input: {
 	warnings: Array<string>
 }): Promise<number> {
 	try {
-		if (!mailboxNamespace(input.env)) {
-			input.warnings.push(
-				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
-			)
-			return 0
-		}
 		await mailboxRpc({ env: input.env, userId: input.userId }).purge()
 		return 1
 	} catch (error) {
@@ -1175,12 +1169,6 @@ export async function deleteUserAccount(input: {
 			userId: input.mcpUserId,
 			warnings,
 		})
-	result.clearedDurableObjects.mailboxes = await purgeMailbox({
-		env: input.env,
-		userId: input.mcpUserId,
-		warnings,
-	})
-
 	if (input.env.BUNDLE_ARTIFACTS_KV) {
 		const sourceSnapshotKeys = await listKvKeysByPrefix({
 			kv: input.env.BUNDLE_ARTIFACTS_KV,
@@ -1277,6 +1265,17 @@ export async function deleteUserAccount(input: {
 		warnings.push(
 			'OAuth provider binding was unavailable; OAuth grants were not revoked.',
 		)
+	}
+
+	// Mailbox is the authoritative USER email/R2 inventory. Purge it only after
+	// its captured owner-safe blob keys and defensive prefixes were deleted, and
+	// only when every preceding cleanup remains resumable without warnings.
+	if (warnings.length === 0) {
+		result.clearedDurableObjects.mailboxes = await purgeMailbox({
+			env: input.env,
+			userId: input.mcpUserId,
+			warnings,
+		})
 	}
 
 	if (warnings.length > 0) {

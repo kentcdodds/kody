@@ -83,25 +83,28 @@ Deletion must cover these user-owned surfaces:
   `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
   purged through account-deletion RPCs after their D1 identifiers are collected
   (`RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are one object per
-  user and need no D1 id scan). During the Mailbox expand phase,
-  `Mailbox.purge()` clears DO SQLite only; D1 `email_*` rows and `EMAIL_BLOBS`
-  deletion remain the authoritative account- deletion path for mail content (see
-  [Mailbox](#durable-objects-mailbox)). `MCP` objects remain SDK session-keyed,
-  while `mcp_agent_sessions` indexes each Durable Object id by authenticated
-  stable user id so account deletion can purge stored props, conversation state,
-  raw-fetch state, and transport storage before revoking OAuth grants.
+  user and need no D1 id scan). During Mailbox step 3, account deletion first
+  captures the authoritative USER raw-MIME and attachment references through
+  `Mailbox.listBlobReferences`, deletes those owner-safe R2 keys plus defensive
+  owner-prefix sweeps, and only then calls `Mailbox.purge()`. The purge clears
+  DO SQLite only. D1 `email_*` compatibility rows remain explicit deletion
+  targets until step 5 (see [Mailbox](#durable-objects-mailbox)). `MCP` objects
+  remain SDK session-keyed, while `mcp_agent_sessions` indexes each Durable
+  Object id by authenticated stable user id so account deletion can purge stored
+  props, conversation state, raw-fetch state, and transport storage before
+  revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
-- **R2:** raw email MIME and attachment blobs in `EMAIL_BLOBS` are deleted by
-  per-user prefix cleanup (`email-raw:v1:{userId}/` and
-  `email-attachment:v1:{userId}/`) plus any remaining D1-inventoried keys
-  outside those prefixes. A failed object delete aborts D1 finalization so
-  inventory rows remain available for retry. Rows owned by `system:email` keep
-  their blobs here (they are not user data); those blobs are removed when the
-  system-email retention prune deletes the messages through the shared
-  delete-message helper. Mailbox expand-phase `purge` does not delete R2 objects
-  — D1 email rows and this existing R2 prefix deletion stay authoritative during
-  expand.
+- **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
+  inventoried by `Mailbox.listBlobReferences`; the Mailbox store derives raw
+  keys from owner/message ids and emits only canonical external-attachment keys.
+  Deletion also performs per-user prefix cleanup (`email-raw:v1:{userId}/` and
+  `email-attachment:v1:{userId}/`) as defense in depth. A failed inventory or
+  object delete aborts Mailbox purge and D1 finalization, preserving the
+  deletion marker and compatibility rows for retry. Rows owned by `system:email`
+  keep their blobs here (they are not user data); those blobs are removed when
+  system-email retention deletes messages through the D1 helper.
+  `Mailbox.purge()` never deletes R2 objects.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
   community listing snapshots, and per-user package retriever cache/index keys
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
@@ -148,7 +151,10 @@ Exports are versioned JSON documents:
 - `manifest.generatedAt` — UTC timestamp.
 - `manifest.sections` — per-section counts, warnings, and redacted columns.
 - `manifest.security.secretValuesExported` — always `false`.
-- `d1` — user-scoped D1 rows grouped by table.
+- `d1` — user-scoped D1 rows grouped by table. USER `email_threads`,
+  `email_messages`, `email_attachments`, and `email_delivery_events`
+  compatibility rows are deliberately excluded to avoid duplicating the
+  authoritative Mailbox graph.
 - `durableObjects` — exported user-scoped Durable Object state where it is
   durable and enumerable.
 - `oauthGrants` — OAuth grant metadata only.
@@ -222,17 +228,15 @@ Durable Object export behavior:
   and inbound-delivery-claim rows); storage-byte and package-service liveness
   rows are not time-pruned. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
-- `Mailbox` exports per-user email metadata (threads, messages, attachments,
-  delivery events) through the account-export `mailbox` section (`exportMailbox`
-  RPC; keyset pagination with prefixed cursors over those tables). Manifest
-  counts use `countMailbox`. Phase 1 registers this consumption; phase 2 wires
-  live dual-write for outbound terminals, provider delivery-queue graph repair,
-  user classification (`service.ts#setEmailMessageClassification`), and user
-  message-graph paths. USER inbound delivery lifecycle/effect authority is now
-  Mailbox CAS; D1 `email_delivery_events` is its synchronous compatibility
-  mirror and graph-write fence. Other D1 `email_*` rows remain live graph
-  storage and are still exported in the `d1` section. See
-  [Mailbox](#durable-objects-mailbox).
+- `Mailbox` is the sole authoritative USER email graph export. It exports
+  threads, messages, attachments, and delivery events through the account-export
+  `mailbox` section (`exportMailbox` RPC; keyset pagination with prefixed
+  cursors); manifest counts use `countMailbox`. D1 `email_delivery_events`
+  remains the synchronous compatibility mirror and graph-write fence, and the
+  other D1 `email_*` rows remain live compatibility projections/deletion targets
+  during expansion, but none of those four graph tables is duplicated in the D1
+  export. USER R2 export enumerates raw MIME and attachment keys with
+  `Mailbox.listBlobReferences`. See [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -1123,54 +1127,61 @@ max 100, then status), `retention` (natural cutoffs only), and `delete_message`
    a ~10s wall budget (stop scheduling new owners after the deadline; cursor is
    the last considered owner). Per-owner failures are isolated.
 
-`delete_message` takes `stable_user_id` + `message_id`, verifies ownership with
-`getEmailMessageById` (missing/foreign rejected), deletes through
-`deleteEmailMessageById` (`APP_DB` + `EMAIL_BLOBS`, `expectedUserId` fence),
-then verifies the D1 message is absent and every exact captured blob key from
-that delete inventory is absent via `head`. Returns aggregate booleans/counts
-only (no addresses, bodies, filenames, or keys). Audit success reason includes
-the target ids.
+`delete_message` takes `stable_user_id` + `message_id`. For USER owners it
+verifies message existence and captures canonical raw-MIME/attachment refs from
+Mailbox metadata; `system:email` explicitly uses D1. It deletes canonical blobs
+and D1 compatibility rows through `deleteEmailMessageById` (`APP_DB` +
+`EMAIL_BLOBS`, `expectedUserId` fence), then deletes USER Mailbox metadata.
+Exact captured keys are verified absent via `head`. Returns aggregate
+booleans/counts only (no addresses, bodies, filenames, or keys). Audit success
+reason includes the target ids.
 
 Retention returns D1 delete/error totals plus aggregate Mailbox before/after
 counts (no message ids or email content). No seed or arbitrary-cutoff surface.
 
-Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
-result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state
-only and reinitializes schema — it does **not** delete R2 objects. D1 `email_*`
-row deletion and existing `EMAIL_BLOBS` prefix deletion remain authoritative for
-mail content. Account export pages Mailbox state through the `mailbox` section
-(`exportMailbox` / `countMailbox`).
+Account deletion uses one owner-bound Mailbox object (no D1 id scan). Before
+purge it exhaustively pages `listBlobReferences`, deletes those canonical keys
+and the defensive `EMAIL_BLOBS` owner prefixes, and aborts on any inventory or
+cleanup warning. Only then does it call `Mailbox.purge()` (result key
+`mailboxes`). Purge clears DO SQLite/alarm state and reinitializes schema; it
+does **not** delete R2 objects. D1 `email_*` compatibility projections are still
+deleted in the final atomic D1 batch until step 5. Account export pages the sole
+authoritative USER graph through the `mailbox` section (`exportMailbox` /
+`countMailbox`), excludes the four D1 graph tables, and uses
+`listBlobReferences` for USER email R2 bytes.
 
 ### Expand/contract phases
 
-This is an expand/contract migration. **Phase 2 live paths are wired (USER
-inbound authority + graph dual-write + parity):** live dual-write covers
-outbound terminal message/thread/attachment/event graphs, provider
-delivery-queue graph repair (`recorded` / `duplicate` / `stale` with a message,
-via `waitUntil`), user classification (full graph repair after D1 update via
-`service.ts#setEmailMessageClassification`), high-risk inbound terminal paths
-(received graph + rejected delivery-event mirror + post-effects event re-mirror;
-`waitUntil`; no Mailbox before D1/R2 finalization; pre-claim bounded rejections
-parity-lane only; `system:email` excluded). Mirror helpers emit automatic
-namespaced outcome telemetry (`missing` and `timeout` included). Message and
-batch event repair each use one 1s-bounded RPC; each graph attempt emits at most
-two AE writes; event repair batches up to 100 events with explicit truncation
-(newest retained, chronological insertion restored, stable truncation warning)
-and one batch telemetry outcome. Live explicit and retention deletes do not call
-Mailbox mirror helpers; the every-5-minute queue-isolated `mailbox_parity` lane
-backfills all owner messages and delivery events (including pre-claim bounded
-rejection rows), durable content-watermark replays, compares owner-scoped D1 vs
-Mailbox counts, persists soak state on `users` (migration `0125`), re-purges the
-DO when account deletion races the lane, and repairs delete drift via
-purge/rebuild. Direct delete wiring is pending. D1 remains write authority for
-message graphs and non-USER-inbound delivery events; USER inbound lifecycle and
-effect transitions are owner-bound Mailbox CAS, synchronously projected to D1.
-Owner-facing graph reads may use Mailbox when the default-off
-`mailbox-read-cutover` flag and parity soak pass (phase 3). Existing R2
-inventory deletion stays authoritative during expand. **Phase 2 contract
-completion** (every user-mail D1 mutation also writes the DO on live paths,
-including retention deletes) remains pending; terminal inbound + parity cover
-the high-risk live surface today.
+This is an expand/contract migration. **Step 3 internal-reader cutover is wired
+on top of phase 2 USER inbound authority + graph dual-write + parity:** live
+dual-write covers outbound terminal message/thread/attachment/event graphs,
+provider delivery-queue graph repair (`recorded` / `duplicate` / `stale` with a
+message, via `waitUntil`), user classification (full graph repair after D1
+update via `service.ts#setEmailMessageClassification`), high-risk inbound
+terminal paths (received graph + rejected delivery-event mirror + post-effects
+event re-mirror; `waitUntil`; no Mailbox before D1/R2 finalization; pre-claim
+bounded rejections parity-lane only; `system:email` excluded). Mirror helpers
+emit automatic namespaced outcome telemetry (`missing` and `timeout` included).
+Message and batch event repair each use one 1s-bounded RPC; each graph attempt
+emits at most two AE writes; event repair batches up to 100 events with explicit
+truncation (newest retained, chronological insertion restored, stable truncation
+warning) and one batch telemetry outcome. Live explicit and retention deletes do
+not call Mailbox mirror helpers; the every-5-minute queue-isolated
+`mailbox_parity` lane backfills all owner messages and delivery events
+(including pre-claim bounded rejection rows), durable content-watermark replays,
+compares owner-scoped D1 vs Mailbox counts, persists soak state on `users`
+(migration `0125`), re-purges the DO when account deletion races the lane, and
+repairs delete drift via purge/rebuild. Direct delete wiring is pending. D1
+remains write authority for message graphs and non-USER-inbound delivery events;
+USER inbound lifecycle and effect transitions are owner-bound Mailbox CAS,
+synchronously projected to D1. Owner-facing inbox/API graph reads may use
+Mailbox when the default-off `mailbox-read-cutover` flag and parity soak pass.
+Internal USER effect/package payload readers, signed-in `stored_email_messages`
+usage, account export, and account R2 inventory use fail-closed Mailbox RPCs
+without a D1 fallback; `system:email` stays explicitly D1-backed. **Phase 2
+contract completion** (every user-mail D1 mutation also writes the DO on live
+paths, including retention deletes) remains pending; terminal inbound + parity
+cover the high-risk live surface today.
 
 1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
    `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
@@ -1203,18 +1214,26 @@ the high-risk live surface today.
    projection. **Still pending for phase-2 contract completion:** direct delete
    wiring for explicit/retention deletes (including retention sweeper
    metadata-delete mirrors). D1 remains write authority for the message graph
-   and non-USER-inbound events; owner-facing read cutover is wired behind the
-   default-off flag (phase 3).
-3. **Owner-facing reads cut over after production soak** — app inbox/detail and
-   MCP list/get/search/attachment/delivery-event reads move to the DO only after
-   production parity soak is verified (`mailbox_parity_matching_since` ≥ 2h
-   continuous exact counts pre-launch — TODO(launch-hardening) revisit, fresh
-   `mailbox_parity_checked_at`, zero `mailbox_parity_mismatch_count`, account
-   not marked for deletion) **and** the default-off `mailbox-read-cutover` flag
-   is enabled per user. D1 writes continue.
-   Internal/inbound/provider-lookup/package-subscription readers stay on D1.
-   Live gate evaluations record flag exposures (session cache or cutover memo
-   chokepoint).
+   and non-USER-inbound events; owner-facing inbox/API read cutover remains
+   behind the default-off flag.
+3. **Reader/account cutover in staged substeps** — internal USER product reads
+   now pass through `mailbox-internal-read.ts`: message, attachment, count,
+   export, and blob-reference reads fail closed against the owner Mailbox with
+   no feature flag or D1 fallback. `system:email` message/attachment/count reads
+   explicitly remain D1. Inbound effects load the repaired USER message and
+   package attachment payload from Mailbox. Signed-in/user-owner
+   `stored_email_messages` usage reads `Mailbox.countMessages`; compatibility
+   system/admin fleet aggregates may still count D1 until step 4/5. Account
+   export treats Mailbox as the sole USER graph, and account deletion captures
+   Mailbox blob refs before R2 deletion and Mailbox purge. D1 graph-write
+   fences, recovery reads, projection deletion, parity/backfill, and retention
+   remain. App inbox/detail and MCP list/get/search/attachment/delivery-event
+   reads move to the DO only after production parity soak is verified
+   (`mailbox_parity_matching_since` ≥ 2h continuous exact counts pre-launch —
+   TODO(launch-hardening) revisit, fresh `mailbox_parity_checked_at`, zero
+   `mailbox_parity_mismatch_count`, account not marked for deletion) **and** the
+   default-off `mailbox-read-cutover` flag is enabled per user. Live gate
+   evaluations record flag exposures (session cache or cutover memo chokepoint).
 4. **D1 write-off / event retirement** — stop writing moved user-mail metadata
    to D1; retire dual-write and event/mirror machinery used only for the
    migration.

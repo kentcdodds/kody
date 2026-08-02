@@ -74,6 +74,17 @@ namespaces plus `userId` metadata as defense in depth.
 - **Operations** — fleet-wide SQL, shared migrations, and enumeration exist only
   in D1, so every DO move must build export/purge RPCs and any needed index.
 
+### Externally keyed events: thin D1 reverse index
+
+When an external callback identifies an event by a provider key instead of the
+owner's `userId`, keep the owner-local payload and state machine in its per-user
+DO, but maintain a thin D1 reverse index from the external key to
+`(userId, owner-local id)`. The callback resolves the owner through D1, then
+performs the authoritative read or mutation in that owner's DO. The
+`email_outbound_provider_index` (`provider_message_id` → user/message) is the
+precedent. Keep these indexes payload-free, owner-fenced, transactionally
+synchronized where possible, covered by deletion, and parity-checkable.
+
 ### Standing rules
 
 - New awaited D1 writes on hot invocation paths require a budget justification

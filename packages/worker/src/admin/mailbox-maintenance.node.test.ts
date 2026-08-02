@@ -70,6 +70,28 @@ const {
 const now = new Date('2026-08-01T12:00:00.000Z')
 const freshCreatedAt = now.toISOString()
 
+function mockMailboxReadsFromD1(db: D1Database) {
+	mocks.mailboxRpc.mockImplementation(({ userId }: { userId: string }) => ({
+		getMessage: async ({ messageId }: { messageId: string }) => {
+			const message = await EmailRepo.getEmailMessageById({
+				db,
+				userId,
+				messageId,
+			})
+			if (!message) return null
+			const { userId: _userId, ...mailboxMessage } = message
+			return mailboxMessage
+		},
+		listAttachmentsForMessage: async ({ messageId }: { messageId: string }) =>
+			await EmailRepo.listEmailAttachmentsForUserMessage({
+				db,
+				userId,
+				messageId,
+			}),
+		deleteMessageMetadata: async () => ({ status: 'deleted' as const }),
+	}))
+}
+
 function createMaintenanceDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
@@ -761,6 +783,7 @@ test('retention skips DO while owner still has expired D1 rows omitted by global
 
 test('delete_message enforces owner isolation and verifies D1/R2 linkage aggregates', async () => {
 	const { sqlite, db } = createDeleteMessageDb()
+	mockMailboxReadsFromD1(db)
 	const { blobs, objects } = createMemoryEmailBlobs()
 	const ownerA = testStableUserIdFromEmail('owner-a@example.com')
 	const ownerB = testStableUserIdFromEmail('owner-b@example.com')
@@ -925,6 +948,41 @@ test('delete_message head-checks exact keys captured after verification drift', 
 	})
 	const driftAttachmentId = 'att-drifted'
 	const driftKey = emailAttachmentBlobKey(owner, messageId, driftAttachmentId)
+	const message = await EmailRepo.getEmailMessageById({
+		db,
+		userId: owner,
+		messageId,
+	})
+	const attachments = await EmailRepo.listEmailAttachmentsForUserMessage({
+		db,
+		userId: owner,
+		messageId,
+	})
+	if (!message) throw new Error('Expected seeded message.')
+	const { userId: _userId, ...mailboxMessage } = message
+	let mailboxDeleted = false
+	mocks.mailboxRpc.mockImplementation(() => ({
+		getMessage: async () => (mailboxDeleted ? null : mailboxMessage),
+		listAttachmentsForMessage: async () => {
+			// Simulate D1 projection drift after Mailbox verification and inventory.
+			if (!objects.has(driftKey)) {
+				sqlite
+					.prepare(
+						`INSERT INTO email_attachments (
+							id, message_id, filename, content_type, size, storage_kind,
+							storage_key, created_at
+						) VALUES (?, ?, 'drift.txt', 'text/plain', 5, 'external', ?, ?)`,
+					)
+					.run(driftAttachmentId, messageId, driftKey, freshCreatedAt)
+				await blobs.put(driftKey, 'drift')
+			}
+			return attachments
+		},
+		deleteMessageMetadata: async () => {
+			mailboxDeleted = true
+			return { status: 'deleted' as const }
+		},
+	}))
 	const headedKeys: Array<string> = []
 	const trackingBlobs = {
 		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
@@ -944,56 +1002,33 @@ test('delete_message head-checks exact keys captured after verification drift', 
 		EMAIL_BLOBS: trackingBlobs,
 	} as unknown as Env
 
-	const actualGet = EmailRepo.getEmailMessageById
-	const getSpy = vi
-		.spyOn(EmailRepo, 'getEmailMessageById')
-		.mockImplementation(async (input) => {
-			const message = await actualGet(input)
-			// Drift after ownership verification returns, before delete capture.
-			if (message != null && !objects.has(driftKey)) {
-				sqlite
-					.prepare(
-						`INSERT INTO email_attachments (
-							id, message_id, filename, content_type, size, storage_kind,
-							storage_key, created_at
-						) VALUES (?, ?, 'drift.txt', 'text/plain', 5, 'external', ?, ?)`,
-					)
-					.run(driftAttachmentId, messageId, driftKey, freshCreatedAt)
-				await blobs.put(driftKey, 'drift')
-			}
-			return message
-		})
-
-	try {
-		const deleteSpy = vi.spyOn(EmailRepo, 'deleteEmailMessageById')
-		const result = await runAdminMailboxMaintenanceDeleteMessage({
-			env,
-			stableUserId: owner,
+	const deleteSpy = vi.spyOn(EmailRepo, 'deleteEmailMessageById')
+	const result = await runAdminMailboxMaintenanceDeleteMessage({
+		env,
+		stableUserId: owner,
+		messageId,
+	})
+	expect(deleteSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
 			messageId,
-		})
-		expect(deleteSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				messageId,
-				expectedUserId: owner,
-			}),
-		)
-		expect(result).toEqual({
-			d1MessageAbsent: true,
-			attachmentsSeen: 3,
-			externalAttachmentsSeen: 2,
-			rawMimeBlobAbsent: true,
-			externalAttachmentBlobsAbsent: 2,
-			allCapturedBlobsAbsent: true,
-		})
-		expect(headedKeys).toEqual([seeded.rawKey, seeded.attachmentKey, driftKey])
-		expect(objects.has(seeded.rawKey)).toBe(false)
-		expect(objects.has(seeded.attachmentKey)).toBe(false)
-		expect(objects.has(driftKey)).toBe(false)
-		expect(JSON.stringify(result)).not.toMatch(
-			/@|secret body|email-raw:|email-attachment:/,
-		)
-		deleteSpy.mockRestore()
-	} finally {
-		getSpy.mockRestore()
-	}
+			expectedUserId: owner,
+		}),
+	)
+	expect(result).toEqual({
+		d1MessageAbsent: true,
+		attachmentsSeen: 3,
+		externalAttachmentsSeen: 2,
+		rawMimeBlobAbsent: true,
+		externalAttachmentBlobsAbsent: 1,
+		allCapturedBlobsAbsent: true,
+	})
+	expect(headedKeys).toEqual([seeded.rawKey, seeded.attachmentKey])
+	expect(objects.has(seeded.rawKey)).toBe(false)
+	expect(objects.has(seeded.attachmentKey)).toBe(false)
+	// A D1-only projection drift is not an authoritative Mailbox blob ref.
+	expect(objects.has(driftKey)).toBe(true)
+	expect(JSON.stringify(result)).not.toMatch(
+		/@|secret body|email-raw:|email-attachment:/,
+	)
+	deleteSpy.mockRestore()
 })

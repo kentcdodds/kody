@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
+	listInternalEmailAttachmentsForMessage: vi.fn(),
 	listEmailAttachmentsForMessage: vi.fn(async () => []),
 }))
 
@@ -25,6 +26,11 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 vi.mock('./repo.ts', () => ({
 	listEmailAttachmentsForMessage: mocks.listEmailAttachmentsForMessage,
+}))
+
+vi.mock('./mailbox-internal-read.ts', () => ({
+	listInternalEmailAttachmentsForMessage:
+		mocks.listInternalEmailAttachmentsForMessage,
 }))
 
 const {
@@ -211,6 +217,20 @@ async function seedInboundSubscription(topic: string) {
 
 test('accepted inbound messages dispatch email.message.received with classification fields', async () => {
 	mocks.invokePackageSubscription.mockClear()
+	mocks.listInternalEmailAttachmentsForMessage.mockResolvedValueOnce([
+		{
+			id: 'attachment-mailbox-1',
+			messageId: 'accepted-1',
+			filename: 'mailbox.txt',
+			contentType: 'text/plain',
+			contentId: null,
+			disposition: 'attachment',
+			size: 7,
+			storageKind: 'external',
+			storageKey: 'email-attachment:v1:user-1/accepted-1/attachment-mailbox-1',
+			createdAt: '2026-07-17T19:59:00.000Z',
+		},
+	])
 	const savedPackage = await seedInboundSubscription(inboundEmailReceiptTopic)
 	const message = inboundMessageFixture({
 		id: 'accepted-1',
@@ -242,9 +262,22 @@ test('accepted inbound messages dispatch email.message.received with classificat
 					classification: 'accepted',
 					classification_reason: null,
 				}),
+				attachments: [
+					expect.objectContaining({
+						id: 'attachment-mailbox-1',
+						filename: 'mailbox.txt',
+						storage_kind: 'external',
+					}),
+				],
 			}),
 		}),
 	)
+	expect(mocks.listInternalEmailAttachmentsForMessage).toHaveBeenCalledWith({
+		env,
+		ownerId: 'user-1',
+		messageId: 'accepted-1',
+	})
+	expect(mocks.listEmailAttachmentsForMessage).not.toHaveBeenCalled()
 	expect(mocks.invokePackageSubscription.mock.calls[0]?.[0]?.topic).not.toBe(
 		inboundEmailQuarantinedTopic,
 	)
@@ -252,6 +285,7 @@ test('accepted inbound messages dispatch email.message.received with classificat
 
 test('quarantined inbound messages dispatch email.message.quarantined and not received', async () => {
 	mocks.invokePackageSubscription.mockClear()
+	mocks.listInternalEmailAttachmentsForMessage.mockResolvedValueOnce([])
 	const savedPackage = await seedInboundSubscription(
 		inboundEmailQuarantinedTopic,
 	)

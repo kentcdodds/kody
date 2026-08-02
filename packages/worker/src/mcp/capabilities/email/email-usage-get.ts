@@ -8,8 +8,8 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
+	readCurrentEntitlementResourceUsage,
 	readDailyEntitlementResourceUsage,
-	readEntitlementResourceUsage,
 } from '#worker/entitlements/service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
@@ -49,8 +49,9 @@ export const emailUsageGetCapability = defineDomainCapability(
 				email: user.email,
 			})
 			const [storedMessages, sendsToday, receivesToday] = await Promise.all([
-				readEntitlementResourceUsage({
+				readCurrentEntitlementResourceUsage({
 					db,
+					env: ctx.env,
 					userId: user.userId,
 					resource: 'stored_email_messages',
 					now,

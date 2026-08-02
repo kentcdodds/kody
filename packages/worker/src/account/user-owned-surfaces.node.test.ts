@@ -78,6 +78,25 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		binding: 'MAILBOX',
 		deletionResultKey: 'mailboxes',
 		export: 'include',
+		notes: expect.stringMatching(
+			/authoritative email metadata.*lists Mailbox blob references.*D1 email_\* compatibility projections/s,
+		),
+	})
+	expect(
+		accountUserOwnedR2Surfaces.find(
+			(surface) => surface.id === 'email_raw_mime',
+		),
+	).toMatchObject({
+		sourceTable: 'Mailbox.email_messages',
+		sourceColumn: 'id',
+	})
+	expect(
+		accountUserOwnedR2Surfaces.find(
+			(surface) => surface.id === 'email_attachment_storage_key',
+		),
+	).toMatchObject({
+		sourceTable: 'Mailbox.email_attachments',
+		sourceColumn: 'storage_key',
 	})
 	expect(
 		accountUserOwnedKvKeySchemes.some((scheme) =>
@@ -87,7 +106,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	expect(accountExportSource).toContain("'user_meter'")
 	expect(accountExportSource).toContain('userMeterRpc')
 	expect(accountExportSource).toContain("'mailbox'")
-	expect(accountExportSource).toContain('mailboxRpc')
+	expect(accountExportSource).toContain('exportInternalUserMailbox')
 	expect(accountDeletionSource).toContain('userMeterRpc')
 	expect(accountDeletionSource).toContain('userMeters')
 	expect(accountDeletionSource).toContain('mailboxRpc')

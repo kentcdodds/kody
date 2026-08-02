@@ -52,7 +52,13 @@ export type UserScopedDataTarget =
 			reason?: string
 	  }
 	| { kind: 'bucket_parent'; table: string; parentTable: string }
-	| { kind: 'attachment_parent'; table: string }
+	| {
+			kind: 'attachment_parent'
+			table: string
+			includeInExport?: boolean
+			surface?: string
+			reason?: string
+	  }
 	| {
 			kind: 'community_listing_child'
 			table: string
@@ -246,18 +252,46 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'repo_sessions' },
 	{ kind: 'user_id', table: 'saved_packages' },
 	{ kind: 'user_id', table: 'entity_sources' },
-	{ kind: 'user_id', table: 'email_delivery_events' },
-	{ kind: 'attachment_parent', table: 'email_attachments' },
+	{
+		kind: 'user_id',
+		table: 'email_delivery_events',
+		includeInExport: false,
+		surface: 'user_email_delivery_events_projection',
+		reason:
+			'USER delivery events are exported from the authoritative Mailbox section. The D1 compatibility projection remains an account-deletion target during Mailbox migration.',
+	},
+	{
+		kind: 'attachment_parent',
+		table: 'email_attachments',
+		includeInExport: false,
+		surface: 'user_email_attachments_projection',
+		reason:
+			'USER attachment metadata is exported from the authoritative Mailbox section. The D1 compatibility projection remains an account-deletion target during Mailbox migration.',
+	},
 	{
 		kind: 'user_id',
 		table: 'email_outbound_provider_index',
 		includeInExport: false,
 		surface: 'email_outbound_provider_index',
 		reason:
-			'Derived global provider→owner reverse lookup rebuilt from outbound email_messages.provider_message_id. Message deletes cascade index rows via FK; account deletion still lists this table for inventory coverage and explicit owner cleanup. Export already includes the authoritative message rows and omits this lookup table.',
+			'Derived global provider→owner reverse lookup rebuilt from outbound message provider ids. D1 message deletes currently cascade index rows via FK; account deletion still lists this table for inventory coverage and explicit owner cleanup.',
 	},
-	{ kind: 'user_id', table: 'email_messages' },
-	{ kind: 'user_id', table: 'email_threads' },
+	{
+		kind: 'user_id',
+		table: 'email_messages',
+		includeInExport: false,
+		surface: 'user_email_messages_projection',
+		reason:
+			'USER messages are exported from the authoritative Mailbox section. The D1 compatibility projection remains an account-deletion target during Mailbox migration.',
+	},
+	{
+		kind: 'user_id',
+		table: 'email_threads',
+		includeInExport: false,
+		surface: 'user_email_threads_projection',
+		reason:
+			'USER threads are exported from the authoritative Mailbox section. The D1 compatibility projection remains an account-deletion target during Mailbox migration.',
+	},
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },
 	{ kind: 'user_id', table: 'email_sender_identities' },

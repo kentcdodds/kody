@@ -5,10 +5,24 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { loadAccountUsageData } from '#app/account-usage-data.ts'
 
-function withUsageEnv(env: { APP_DB: D1Database } & Record<string, unknown>) {
+function withUsageEnv(
+	env: { APP_DB: D1Database } & Record<string, unknown>,
+	mailboxMessageCount = 0,
+) {
 	const meter = createInMemoryUserMeterEnv()
 	const runLog = createInMemoryRunLogUsageEnv()
-	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
+	const countMessages = async () => ({ total: mailboxMessageCount })
+	return {
+		...env,
+		...meter.env,
+		...runLog.env,
+		MAILBOX: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ countMessages }),
+		},
+		meter,
+		runLog,
+	}
 }
 
 function createUsageTestDb(input: {
@@ -136,7 +150,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		plan: 'pro',
 		packageCount: 4,
 	})
-	const warmEnv = withUsageEnv({ APP_DB: warmDb })
+	const warmEnv = withUsageEnv({ APP_DB: warmDb }, 7)
 	warmEnv.runLog.setActiveWorkflowCount(meterUserId, 3)
 	warmEnv.runLog.setActiveWorkflowCount('other-user', 99)
 	await warmEnv.meter.seed({
@@ -173,6 +187,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(currentFor(authoritative, 'execute_calls_per_day')).toBe(303)
 	expect(currentFor(authoritative, 'outbound_fetches_per_day')).toBe(404)
 	expect(currentFor(authoritative, 'concurrent_workflows')).toBe(3)
+	expect(currentFor(authoritative, 'stored_email_messages')).toBe(7)
 	expect(currentFor(authoritative, 'saved_packages')).toBe(4)
 
 	const storageEmail = 'usage-storage@example.com'

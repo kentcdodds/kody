@@ -172,6 +172,12 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 		getUserPlan: (...args: Array<unknown>) => mockModule.getUserPlan(...args),
 		readEntitlementResourceUsage: (...args: Array<unknown>) =>
 			mockModule.readEntitlementResourceUsage(...args),
+		readCurrentEntitlementResourceUsage: (
+			input: Parameters<typeof actual.readCurrentEntitlementResourceUsage>[0],
+		) =>
+			input.resource === 'stored_email_messages'
+				? mockModule.readEntitlementResourceUsage(input)
+				: actual.readCurrentEntitlementResourceUsage(input),
 	}
 })
 

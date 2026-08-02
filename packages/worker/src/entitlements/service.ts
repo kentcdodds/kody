@@ -1,6 +1,10 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
+import {
+	countInternalEmailMessages,
+	type MailboxInternalReadEnv,
+} from '#worker/email/mailbox-internal-read.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parseStoredPlanName,
@@ -19,8 +23,9 @@ import {
 	type UserMeterEnv,
 } from './user-meter-client.ts'
 
-/** Env surface for authoritative entitlement usage readers (UserMeter + RunLog). */
-export type EntitlementUsageEnv = UserMeterEnv & Pick<Env, 'RUN_LOG'>
+/** Env surface for authoritative entitlement usage readers. */
+export type EntitlementUsageEnv = UserMeterEnv &
+	Pick<Env, 'RUN_LOG' | 'MAILBOX'>
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
@@ -905,6 +910,9 @@ export async function readEntitlementResourceUsage(input: {
 				`${resource} usage must be read from UserMeter (use readDailyEntitlementResourceUsage or readCurrentEntitlementResourceUsage).`,
 			)
 		case 'stored_email_messages':
+			// Compatibility-only D1 reader for system/admin fleet aggregates.
+			// Signed-in/user-owner paths use readCurrentEntitlementResourceUsage,
+			// which reads authoritative Mailbox state below.
 			return await countRows(
 				db,
 				`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`,
@@ -1026,6 +1034,15 @@ export async function readCurrentEntitlementResourceUsage(input: {
 			env: input.env,
 			userId: input.userId,
 			now: input.now,
+		})
+	}
+	if (input.resource === 'stored_email_messages') {
+		return await countInternalEmailMessages({
+			env: {
+				...input.env,
+				APP_DB: input.db,
+			} satisfies MailboxInternalReadEnv,
+			ownerId: input.userId,
 		})
 	}
 	return await readEntitlementResourceUsage({

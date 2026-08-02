@@ -5,7 +5,15 @@ import {
 	pruneUserEmailMessagesForRetention,
 } from '#app/retention.ts'
 import { systemEmailOwnerId } from '#worker/email/email-owner.ts'
+import {
+	emailAttachmentBlobKey,
+	emailRawMimeKey,
+} from '#worker/email/blob-keys.ts'
 import { mailboxRpc, type MailboxEnv } from '#worker/email/mailbox-client.ts'
+import {
+	getInternalEmailMessageById,
+	listInternalEmailAttachmentsForMessage,
+} from '#worker/email/mailbox-internal-read.ts'
 import {
 	mailboxParityUserBatchSize,
 	reconcileMailboxParity,
@@ -21,10 +29,7 @@ import {
 	loadOutboundProviderIndexParityReport,
 	type OutboundProviderIndexParityReport,
 } from '#worker/email/outbound-provider-index.ts'
-import {
-	deleteEmailMessageById,
-	getEmailMessageById,
-} from '#worker/email/repo.ts'
+import { deleteEmailMessageById } from '#worker/email/repo.ts'
 
 /** Cap for admin reconcile batch discovery (hard max). */
 export const adminMailboxMaintenanceMaxBatchSize = 100
@@ -676,9 +681,9 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 }): Promise<AdminMailboxMaintenanceDeleteMessageResult> {
 	const db = input.env.APP_DB
 	const blobs = input.env.EMAIL_BLOBS
-	const message = await getEmailMessageById({
-		db,
-		userId: input.stableUserId,
+	const message = await getInternalEmailMessageById({
+		env: input.env,
+		ownerId: input.stableUserId,
 		messageId: input.messageId,
 	})
 	if (!message) {
@@ -688,16 +693,61 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 		})
 	}
 
+	const attachments = await listInternalEmailAttachmentsForMessage({
+		env: input.env,
+		ownerId: input.stableUserId,
+		messageId: message.id,
+	})
+	const expectedRawMimeKey = emailRawMimeKey(input.stableUserId, message.id)
+	const blobDeletionInventory = [
+		...(message.rawMimeKey === expectedRawMimeKey
+			? [
+					{
+						key: expectedRawMimeKey,
+						role: 'raw_mime' as const,
+					},
+				]
+			: []),
+		...attachments.flatMap((attachment) => {
+			if (attachment.storageKind !== 'external') return []
+			const expected = emailAttachmentBlobKey(
+				input.stableUserId,
+				message.id,
+				attachment.id,
+			)
+			return attachment.storageKey === expected
+				? [{ key: expected, role: 'attachment' as const }]
+				: []
+		}),
+	]
 	const deletion = await deleteEmailMessageById({
 		db,
 		blobs: blobs as R2Bucket,
 		messageId: message.id,
 		expectedUserId: input.stableUserId,
+		blobDeletionInventory,
 	})
 
-	const remaining = await getEmailMessageById({
-		db,
-		userId: input.stableUserId,
+	const deletedAt = new Date().toISOString()
+	if (input.stableUserId !== systemEmailOwnerId) {
+		const mailboxDeletion = await mailboxRpc({
+			env: input.env,
+			userId: input.stableUserId,
+		}).deleteMessageMetadata({
+			ownerId: input.stableUserId,
+			messageId: message.id,
+			deletedAt,
+		})
+		if (mailboxDeletion.status === 'stale') {
+			throw new Error(
+				`Mailbox message changed during delete for message_id=${message.id}.`,
+			)
+		}
+	}
+
+	const remaining = await getInternalEmailMessageById({
+		env: input.env,
+		ownerId: input.stableUserId,
 		messageId: message.id,
 	})
 	const d1MessageAbsent = remaining == null

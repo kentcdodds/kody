@@ -5,7 +5,7 @@ import {
 	dispatchInboundEmailSubscriptionEvents,
 	dispatchSystemInboundEmailSubscriptionEvents,
 } from './package-subscriptions.ts'
-import { getEmailMessageById } from './repo.ts'
+import { getInternalEmailMessageById } from './mailbox-internal-read.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 
 const subscriptionEffectLeaseMs = 5 * 60 * 1000
@@ -320,9 +320,9 @@ async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
 	) {
 		return { outcome: 'stale' as const }
 	}
-	const message = await getEmailMessageById({
-		db: input.env.APP_DB,
-		userId: input.userId,
+	const message = await getInternalEmailMessageById({
+		env: input.env,
+		ownerId: input.userId,
 		messageId: delivery.messageId,
 	})
 	const usageMonth =
@@ -454,9 +454,9 @@ async function processSystemInboundDeliveryEffectsWithLeaseHeld(
 		return { outcome: 'stale' as const }
 	}
 	const finalizationToken = delivery.finalizationToken
-	const message = await getEmailMessageById({
-		db: input.env.APP_DB,
-		userId: input.userId,
+	const message = await getInternalEmailMessageById({
+		env: input.env,
+		ownerId: input.userId,
 		messageId: delivery.messageId,
 	})
 

@@ -39,7 +39,10 @@ import {
 	userMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
 import { type UserMeterExportResult } from '#worker/entitlements/user-meter-do.ts'
-import { mailboxNamespace, mailboxRpc } from '#worker/email/mailbox-client.ts'
+import {
+	countInternalUserMailboxRows,
+	exportInternalUserMailbox,
+} from '#worker/email/mailbox-internal-read.ts'
 import { type MailboxExportResult } from '#worker/email/mailbox-types.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
@@ -1093,11 +1096,10 @@ async function collectManifestInventoryCounts(input: {
 			return countUserMeterExportEntries(page)
 		}),
 		safeCount('mailbox rows', async () => {
-			if (!mailboxNamespace(input.env)) return 0
-			const counts = await mailboxRpc({
+			const counts = await countInternalUserMailboxRows({
 				env: input.env,
-				userId: input.userId,
-			}).countMailbox()
+				ownerId: input.userId,
+			})
 			return (
 				counts.threads +
 				counts.messages +
@@ -1422,16 +1424,9 @@ async function exportMailboxRows(input: {
 	warnings: Array<string>
 }): Promise<MailboxExportResult | null> {
 	try {
-		if (!mailboxNamespace(input.env)) {
-			input.warnings.push(
-				'MAILBOX binding was unavailable; mailbox rows were not exported.',
-			)
-			return null
-		}
-		const page = await mailboxRpc({
+		const page = await exportInternalUserMailbox({
 			env: input.env,
-			userId: input.userId,
-		}).exportMailbox({
+			ownerId: input.userId,
 			pageSize: maxExportPageSize,
 		})
 		if (page.truncated) {
@@ -1758,7 +1753,7 @@ function buildManifest(input: {
 				'Vectorize entries for memories, jobs, and packages are derived from exported D1 rows and are intentionally excluded; rebuild them by reindexing after import.',
 			r2: 'R2 raw MIME, attachment, avatar, and icon bytes are exported through the r2_object section in bounded 256 KiB base64 chunks. Missing objects are returned explicitly instead of being silently omitted.',
 			email_outbound_provider_index:
-				'Derived global provider→owner reverse lookup for outbound delivery webhooks. Rebuilt from exported outbound email_messages.provider_message_id rows; omitted from the D1 export payload.',
+				'Derived global provider→owner reverse lookup for outbound delivery webhooks. Rebuilt from authoritative Mailbox outbound message provider ids; omitted from the D1 export payload.',
 		},
 		excludedDurableObjects: getAccountExportExcludedDurableObjects(),
 		excludedD1Surfaces: getAccountExportExcludedD1Surfaces(),
@@ -2025,14 +2020,10 @@ export async function readAccountExportSection(input: {
 		}
 	}
 	if (input.section === 'mailbox') {
-		if (!mailboxNamespace(input.env)) {
-			throw new Error('MAILBOX binding was unavailable.')
-		}
 		const pageSize = normalizePageSize(input.pageSize)
-		const page = await mailboxRpc({
+		const page = await exportInternalUserMailbox({
 			env: input.env,
-			userId: input.mcpUserId,
-		}).exportMailbox({
+			ownerId: input.mcpUserId,
 			pageSize,
 			startAfter: input.startAfter ?? null,
 		})

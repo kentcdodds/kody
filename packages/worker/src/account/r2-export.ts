@@ -1,19 +1,19 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
-import { emailRawMimeKey } from '#worker/email/repo.ts'
+import { listInternalUserEmailBlobReferences } from '#worker/email/mailbox-internal-read.ts'
+import { type MailboxBlobReference } from '#worker/email/mailbox-types.ts'
 import {
 	type AccountR2Binding,
 	type AccountR2ObjectRef,
 } from './r2-inventory.ts'
 
-const accountR2CursorVersion = 1
+const accountR2CursorVersion = 2
 const accountR2ChunkBytes = 256 * 1024
 
 type R2ScanState =
 	| { stage: 'avatar' }
 	| { stage: 'community_icon'; afterRowid: number }
-	| { stage: 'email_raw_mime'; afterRowid: number }
-	| { stage: 'email_attachment_storage_key'; afterRowid: number }
+	| { stage: 'mailbox_email_blob'; startAfter: string | null }
 	| { stage: 'done' }
 
 type R2ObjectSource =
@@ -24,11 +24,10 @@ type R2ObjectSource =
 			listingId: string
 			commitSlot: 'pinned' | 'icon'
 	  }
-	| { kind: 'email_raw_mime'; rowid: number; messageId: string }
 	| {
-			kind: 'email_attachment_storage_key'
-			rowid: number
-			attachmentId: string
+			kind: 'mailbox_email_blob'
+			startAfter: string | null
+			reference: MailboxBlobReference
 	  }
 
 type StableR2Ref = AccountR2ObjectRef & { source: R2ObjectSource }
@@ -93,10 +92,15 @@ function isScanState(value: unknown): value is R2ScanState {
 	if (!value || typeof value !== 'object' || !('stage' in value)) return false
 	const stage = (value as { stage: unknown }).stage
 	if (stage === 'avatar' || stage === 'done') return true
+	if (stage === 'mailbox_email_blob') {
+		return (
+			'startAfter' in value &&
+			((value as { startAfter: unknown }).startAfter === null ||
+				typeof (value as { startAfter: unknown }).startAfter === 'string')
+		)
+	}
 	return (
-		(stage === 'community_icon' ||
-			stage === 'email_raw_mime' ||
-			stage === 'email_attachment_storage_key') &&
+		stage === 'community_icon' &&
 		'afterRowid' in value &&
 		Number.isSafeInteger((value as { afterRowid: unknown }).afterRowid) &&
 		(value as { afterRowid: number }).afterRowid >= 0
@@ -207,7 +211,7 @@ async function findNextRef(input: {
 				if (!row) {
 					cursor = {
 						v: accountR2CursorVersion,
-						state: { stage: 'email_raw_mime', afterRowid: 0 },
+						state: { stage: 'mailbox_email_blob', startAfter: null },
 					}
 					break
 				}
@@ -244,68 +248,26 @@ async function findNextRef(input: {
 				}
 				break
 			}
-			case 'email_raw_mime': {
-				const row = await input.env.APP_DB.prepare(
-					`SELECT rowid AS source_rowid, id
-					FROM email_messages
-					WHERE user_id = ? AND rowid > ?
-					ORDER BY rowid
-					LIMIT 1`,
-				)
-					.bind(input.userId, cursor.state.afterRowid)
-					.first<{ source_rowid: number; id: string }>()
-				if (!row) {
-					cursor = {
-						v: accountR2CursorVersion,
-						state: {
-							stage: 'email_attachment_storage_key',
-							afterRowid: 0,
-						},
-					}
-					break
-				}
-				cursor = {
-					v: accountR2CursorVersion,
-					state: {
-						stage: 'email_raw_mime',
-						afterRowid: row.source_rowid,
-					},
-					current: {
-						ref: {
-							surfaceId: 'email_raw_mime',
-							binding: 'EMAIL_BLOBS',
-							key: emailRawMimeKey(input.userId, row.id),
-							source: {
-								kind: 'email_raw_mime',
-								rowid: row.source_rowid,
-								messageId: row.id,
+			case 'mailbox_email_blob': {
+				const startAfter = cursor.state.startAfter
+				const page = await listInternalUserEmailBlobReferences({
+					env: input.env,
+					ownerId: input.userId,
+					pageSize: 1,
+					startAfter,
+				})
+				const reference = page.references[0]
+				if (!reference) {
+					if (page.truncated && page.nextStartAfter != null) {
+						cursor = {
+							v: accountR2CursorVersion,
+							state: {
+								stage: 'mailbox_email_blob',
+								startAfter: page.nextStartAfter,
 							},
-						},
-						offset: 0,
-					},
-				}
-				break
-			}
-			case 'email_attachment_storage_key': {
-				const row = await input.env.APP_DB.prepare(
-					`SELECT attachment.rowid AS source_rowid, attachment.id,
-						attachment.storage_key
-					FROM email_attachments AS attachment
-					JOIN email_messages AS message
-						ON message.id = attachment.message_id
-					WHERE message.user_id = ?
-						AND attachment.storage_key IS NOT NULL
-						AND attachment.rowid > ?
-					ORDER BY attachment.rowid
-					LIMIT 1`,
-				)
-					.bind(input.userId, cursor.state.afterRowid)
-					.first<{
-						source_rowid: number
-						id: string
-						storage_key: string
-					}>()
-				if (!row) {
+						}
+						break
+					}
 					cursor = {
 						v: accountR2CursorVersion,
 						state: { stage: 'done' },
@@ -314,19 +276,25 @@ async function findNextRef(input: {
 				}
 				cursor = {
 					v: accountR2CursorVersion,
-					state: {
-						stage: 'email_attachment_storage_key',
-						afterRowid: row.source_rowid,
-					},
+					state:
+						page.truncated && page.nextStartAfter != null
+							? {
+									stage: 'mailbox_email_blob',
+									startAfter: page.nextStartAfter,
+								}
+							: { stage: 'done' },
 					current: {
 						ref: {
-							surfaceId: 'email_attachment_storage_key',
+							surfaceId:
+								reference.kind === 'raw_mime'
+									? 'email_raw_mime'
+									: 'email_attachment_storage_key',
 							binding: 'EMAIL_BLOBS',
-							key: row.storage_key,
+							key: reference.key,
 							source: {
-								kind: 'email_attachment_storage_key',
-								rowid: row.source_rowid,
-								attachmentId: row.id,
+								kind: 'mailbox_email_blob',
+								startAfter,
+								reference,
 							},
 						},
 						offset: 0,
@@ -394,34 +362,21 @@ async function resolveCurrentRef(input: {
 				? input.ref
 				: null
 		}
-		case 'email_raw_mime': {
-			const row = await input.env.APP_DB.prepare(
-				`SELECT id FROM email_messages
-				WHERE user_id = ? AND rowid = ? AND id = ?`,
-			)
-				.bind(input.userId, input.ref.source.rowid, input.ref.source.messageId)
-				.first<{ id: string }>()
-			return row && emailRawMimeKey(input.userId, row.id) === input.ref.key
+		case 'mailbox_email_blob': {
+			const page = await listInternalUserEmailBlobReferences({
+				env: input.env,
+				ownerId: input.userId,
+				pageSize: 1,
+				startAfter: input.ref.source.startAfter,
+			})
+			const current = page.references[0]
+			return current &&
+				current.kind === input.ref.source.reference.kind &&
+				current.key === input.ref.source.reference.key &&
+				current.messageId === input.ref.source.reference.messageId &&
+				current.attachmentId === input.ref.source.reference.attachmentId
 				? input.ref
 				: null
-		}
-		case 'email_attachment_storage_key': {
-			const row = await input.env.APP_DB.prepare(
-				`SELECT attachment.storage_key
-				FROM email_attachments AS attachment
-				JOIN email_messages AS message
-					ON message.id = attachment.message_id
-				WHERE message.user_id = ?
-					AND attachment.rowid = ?
-					AND attachment.id = ?`,
-			)
-				.bind(
-					input.userId,
-					input.ref.source.rowid,
-					input.ref.source.attachmentId,
-				)
-				.first<{ storage_key: string | null }>()
-			return row?.storage_key === input.ref.key ? input.ref : null
 		}
 		default: {
 			const exhaustive: never = input.ref.source
@@ -594,25 +549,29 @@ export async function readAccountR2ExportPage(input: {
 	}
 }
 
+async function countMailboxEmailBlobReferences(env: Env, userId: string) {
+	let count = 0
+	let startAfter: string | null = null
+	while (true) {
+		const page = await listInternalUserEmailBlobReferences({
+			env,
+			ownerId: userId,
+			pageSize: 500,
+			startAfter,
+		})
+		count += page.references.length
+		if (!page.truncated || page.nextStartAfter == null) return count
+		startAfter = page.nextStartAfter
+	}
+}
+
 export async function countAccountR2ObjectRefs(input: {
 	env: Env
 	userId: string
 	dbUserId: number
 }) {
-	const [messages, attachments, icons, avatar] = await Promise.all([
-		input.env.APP_DB.prepare(
-			`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`,
-		)
-			.bind(input.userId)
-			.first<{ count: number }>(),
-		input.env.APP_DB.prepare(
-			`SELECT COUNT(*) AS count
-			FROM email_attachments AS attachment
-			JOIN email_messages AS message ON message.id = attachment.message_id
-			WHERE message.user_id = ? AND attachment.storage_key IS NOT NULL`,
-		)
-			.bind(input.userId)
-			.first<{ count: number }>(),
+	const [emailBlobs, icons, avatar] = await Promise.all([
+		countMailboxEmailBlobReferences(input.env, input.userId),
 		input.env.APP_DB.prepare(
 			`SELECT COALESCE(SUM(
 				CASE
@@ -639,10 +598,5 @@ export async function countAccountR2ObjectRefs(input: {
 			.bind(input.dbUserId)
 			.first<{ count: number }>(),
 	])
-	return (
-		Number(messages?.count ?? 0) +
-		Number(attachments?.count ?? 0) +
-		Number(icons?.count ?? 0) +
-		Number(avatar?.count ?? 0)
-	)
+	return emailBlobs + Number(icons?.count ?? 0) + Number(avatar?.count ?? 0)
 }

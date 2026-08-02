@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
+import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
@@ -41,14 +42,44 @@ async function seedDailyCounter(input: {
 async function seedStoredMessages(userId: string, count: number) {
 	const now = new Date().toISOString()
 	for (let index = 0; index < count; index += 1) {
-		await env.APP_DB.prepare(
-			`INSERT INTO email_messages (
-				id, direction, user_id, from_address, subject,
-				processing_status, created_at, updated_at
-			) VALUES (?, 'inbound', ?, 'sender@example.net', 'Stored', 'stored', ?, ?)`,
-		)
-			.bind(`usage-message-${crypto.randomUUID()}`, userId, now, now)
-			.run()
+		const id = `usage-message-${crypto.randomUUID()}`
+		await mailboxRpc({ env, userId }).mirrorMessage({
+			ownerId: userId,
+			message: {
+				id,
+				direction: 'outbound',
+				inboxId: null,
+				threadId: null,
+				senderIdentityId: null,
+				fromAddress: 'owner@example.test',
+				envelopeFrom: null,
+				toAddresses: ['recipient@example.test'],
+				ccAddresses: [],
+				bccAddresses: [],
+				replyToAddresses: [],
+				subject: 'Stored',
+				messageIdHeader: null,
+				inReplyToHeader: null,
+				references: [],
+				headers: {},
+				authResults: null,
+				textBody: 'body',
+				htmlBody: null,
+				rawMimeKey: null,
+				rawSize: 4,
+				processingStatus: 'stored',
+				classification: 'accepted',
+				classificationReason: null,
+				providerMessageId: null,
+				deliveryStatus: null,
+				deliveryStatusAt: null,
+				error: null,
+				receivedAt: null,
+				sentAt: null,
+				createdAt: now,
+				updatedAt: now,
+			},
+		})
 	}
 }
 

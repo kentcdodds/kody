@@ -35,10 +35,10 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
+	readCurrentEntitlementResourceUsage,
 	readDailyEntitlementResourceUsage,
-	readEntitlementResourceUsage,
+	type EntitlementUsageEnv,
 } from '#worker/entitlements/service.ts'
-import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { readPagination } from '#worker/query-params.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -229,7 +229,7 @@ function messageToListItem(
 
 async function loadUsage(input: {
 	db: D1Database
-	env: UserMeterEnv
+	env: EntitlementUsageEnv
 	userId: string
 	email: string
 }): Promise<AccountEmailUsage> {
@@ -239,8 +239,9 @@ async function loadUsage(input: {
 		email: input.email,
 	})
 	const [storedMessages, sendsToday, receivesToday] = await Promise.all([
-		readEntitlementResourceUsage({
+		readCurrentEntitlementResourceUsage({
 			db: input.db,
+			env: input.env,
 			userId: input.userId,
 			resource: 'stored_email_messages',
 			now,

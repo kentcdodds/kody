@@ -144,6 +144,17 @@ function createLedgerBackedMailboxStub(
 	mailbox: ReturnType<typeof env.MAILBOX.get>,
 ) {
 	return {
+		async countMessages(...args: Parameters<typeof mailbox.countMessages>) {
+			return await mailbox.countMessages(...args)
+		},
+		async getMessage(...args: Parameters<typeof mailbox.getMessage>) {
+			return await mailbox.getMessage(...args)
+		},
+		async listAttachmentsForMessage(
+			...args: Parameters<typeof mailbox.listAttachmentsForMessage>
+		) {
+			return await mailbox.listAttachmentsForMessage(...args)
+		},
 		async getInboundDelivery(
 			...args: Parameters<typeof mailbox.getInboundDelivery>
 		) {

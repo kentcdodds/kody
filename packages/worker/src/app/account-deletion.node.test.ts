@@ -588,7 +588,14 @@ function createSuccessfulDeletionEnv(
 		},
 		MAILBOX: {
 			idFromName: durableObjectId,
-			get: () => ({ purge: async () => ({ ok: true as const }) }),
+			get: () => ({
+				listBlobReferences: async () => ({
+					references: [],
+					nextStartAfter: null,
+					truncated: false as const,
+				}),
+				purge: async () => ({ ok: true as const }),
+			}),
 		},
 		JOB_MANAGER: {
 			idFromName: durableObjectId,
@@ -1103,6 +1110,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	} as unknown as KVNamespace
 
 	const deletedEmailBlobKeys: Array<string> = []
+	const mailboxCleanupOrder: Array<string> = []
 	const emailBlobKeys = new Set([
 		'email-raw:v1:user-aaa/em-1',
 		'email-raw:v1:user-aaa/em-2',
@@ -1119,6 +1127,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			}
 		},
 		async delete(keys: string | Array<string>) {
+			mailboxCleanupOrder.push('delete-email-blob')
 			for (const key of Array.isArray(keys) ? keys : [keys]) {
 				deletedEmailBlobKeys.push(key)
 				emailBlobKeys.delete(key)
@@ -1168,7 +1177,40 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const stripePlanRefreshIdFromNameMock = vi.fn(
 		(name: string) => name as unknown as DurableObjectId,
 	)
-	const purgeMailboxMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeMailboxMock = vi.fn(async () => {
+		mailboxCleanupOrder.push('purge-mailbox')
+		return { ok: true as const }
+	})
+	const listBlobReferencesMock = vi.fn(
+		async ({ startAfter }: { startAfter?: string | null }) => {
+			mailboxCleanupOrder.push('list-blob-references')
+			if (startAfter == null) {
+				return {
+					references: [
+						{
+							kind: 'raw_mime' as const,
+							key: 'email-raw:v1:user-aaa/em-1',
+							messageId: 'em-1',
+							attachmentId: null,
+						},
+						{
+							kind: 'raw_mime' as const,
+							key: 'email-raw:v1:user-aaa/em-2',
+							messageId: 'em-2',
+							attachmentId: null,
+						},
+					],
+					nextStartAfter: null,
+					truncated: false as const,
+				}
+			}
+			return {
+				references: [],
+				nextStartAfter: null,
+				truncated: false as const,
+			}
+		},
+	)
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
@@ -1208,7 +1250,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		},
 		MAILBOX: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ purge: purgeMailboxMock }),
+			get: () => ({
+				listBlobReferences: listBlobReferencesMock,
+				purge: purgeMailboxMock,
+			}),
 		},
 		JOB_MANAGER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -1527,7 +1572,15 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(purgeUserMeterMock).toHaveBeenCalledTimes(1)
 	expect(stripePlanRefreshIdFromNameMock).toHaveBeenCalledWith(userAaa)
 	expect(purgeStripePlanRefreshMock).toHaveBeenCalledWith({ userId: userAaa })
+	expect(listBlobReferencesMock).toHaveBeenCalledTimes(1)
 	expect(purgeMailboxMock).toHaveBeenCalledTimes(1)
+	expect(mailboxCleanupOrder[0]).toBe('list-blob-references')
+	expect(mailboxCleanupOrder.indexOf('delete-email-blob')).toBeGreaterThan(
+		mailboxCleanupOrder.indexOf('list-blob-references'),
+	)
+	expect(mailboxCleanupOrder.indexOf('purge-mailbox')).toBeGreaterThan(
+		mailboxCleanupOrder.lastIndexOf('delete-email-blob'),
+	)
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
 		userId: userAaa,
@@ -1801,19 +1854,6 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 				])
 			},
 		},
-		{
-			envOverrides: { MAILBOX: undefined },
-			cleanupError:
-				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
-			partialResult: {
-				clearedDurableObjects: expect.objectContaining({
-					mailboxes: 0,
-				}),
-			},
-			seed: {
-				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-			},
-		},
 	] as const
 
 	for (const scenario of missingBindings) {
@@ -1838,6 +1878,32 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 			}),
 		])
 	}
+
+	const { db: missingMailboxDb, rows: missingMailboxRows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(missingMailboxDb, {
+				MAILBOX: undefined,
+			}),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toMatchObject({
+		name: 'AccountDeletionInventoryError',
+		inventoryErrors: [
+			expect.stringContaining(
+				'MAILBOX Durable Object binding is not configured',
+			),
+		],
+	})
+	expect(missingMailboxRows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			deleting_at: expect.any(String),
+		}),
+	])
 
 	const { db: missingMeterDb, rows: missingMeterRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],

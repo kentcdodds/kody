@@ -10,6 +10,7 @@ import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
+import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.ts'
 import { listEmailAttachmentsForMessage } from './repo.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
@@ -178,7 +179,7 @@ async function loadMatchingEmailSubscriptions(input: {
 }
 
 export async function dispatchInboundEmailSubscriptionEvents(input: {
-	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
+	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'MAILBOX'>
 	userId: string
 	message: EmailMessageRecord
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -186,8 +187,9 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 	})
-	const attachments = await listEmailAttachmentsForMessage({
-		db: input.env.APP_DB,
+	const attachments = await listInternalEmailAttachmentsForMessage({
+		env: input.env,
+		ownerId: input.userId,
 		messageId: input.message.id,
 	})
 	const topic =

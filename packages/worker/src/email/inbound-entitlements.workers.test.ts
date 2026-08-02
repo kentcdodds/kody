@@ -19,6 +19,7 @@ import {
 	readUserInboundReceiveCount,
 } from './inbound-delivery.ts'
 import { handleInboundEmail } from './inbound.ts'
+import { mirrorMailboxMessageGraphFromD1 } from './mailbox-live-mirror.ts'
 import { listEmailMessages } from './repo.ts'
 import { maxDetailedEmailRejectionEventsPerDay } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
@@ -109,15 +110,33 @@ async function bulkInsertStoredMessages(userId: string, count: number) {
 			SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < ?2
 		)
 		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject,
+			id, direction, user_id, from_address, subject, raw_mime_key,
 			processing_status, created_at, updated_at
 		)
 		SELECT ?1 || '-bulk-' || n, 'inbound', ?1, 'bulk@example.com', 'Bulk',
+			'email-raw:v1:' || ?1 || '/' || ?1 || '-bulk-' || n,
 			'stored', ?3, ?3
 		FROM seq`,
 	)
 		.bind(userId, count, new Date().toISOString())
 		.run()
+	const rows = await env.APP_DB.prepare(
+		`SELECT id FROM email_messages WHERE user_id = ? ORDER BY id`,
+	)
+		.bind(userId)
+		.all<{ id: string }>()
+	for (const row of rows.results ?? []) {
+		const result = await mirrorMailboxMessageGraphFromD1({
+			env: createInboundEnv(),
+			db: env.APP_DB,
+			userId,
+			messageId: row.id,
+			includeDeliveryEvents: false,
+		})
+		if (result.message.status !== 'mirrored') {
+			throw new Error(`Failed to seed Mailbox message ${row.id}.`)
+		}
+	}
 }
 
 async function insertStoredMessageBytes(userId: string, rawSize: number) {

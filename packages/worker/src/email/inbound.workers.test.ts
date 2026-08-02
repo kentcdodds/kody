@@ -6,6 +6,7 @@ import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import { mailboxRpc } from './mailbox-client.ts'
+import { mirrorMailboxMessageGraphFromD1 } from './mailbox-live-mirror.ts'
 import {
 	buildInboundDelivery,
 	claimInboundDeliveryWindow,
@@ -1768,32 +1769,25 @@ test('stored-message count failure happens before durable quota charge', async (
 		username,
 	})
 	const address = `${username}@${platformDomain}`
-	const failingDb = new Proxy(env.APP_DB, {
-		get(target, property, receiver) {
-			if (property === 'prepare') {
-				return (query: string) => {
-					if (
-						query.includes('COUNT(*)') &&
-						query.includes('FROM email_messages')
-					) {
-						return {
-							bind: () => ({
-								first: async () => {
-									throw new Error('simulated stored count failure')
-								},
-							}),
-						}
-					}
-					return target.prepare(query)
-				}
-			}
-			const value = Reflect.get(target, property, receiver)
-			return typeof value === 'function' ? value.bind(target) : value
-		},
-	}) as D1Database
+	const baseEnv = createInboundEnv()
 	const failingEnv = {
-		...createInboundEnv(),
-		APP_DB: failingDb,
+		...baseEnv,
+		MAILBOX: {
+			idFromName: (name: string) => baseEnv.MAILBOX.idFromName(name),
+			get: (id: DurableObjectId) => {
+				const mailbox = baseEnv.MAILBOX.get(id)
+				return new Proxy(mailbox, {
+					get(target, property, receiver) {
+						if (property === 'countMessages') {
+							return async () => {
+								throw new Error('simulated stored count failure')
+							}
+						}
+						return Reflect.get(target, property, receiver)
+					},
+				})
+			},
+		},
 	} as Parameters<typeof handleInboundEmail>[1]
 	const message = createForwardableEmailMessage({
 		from: 'sender@example.net',
@@ -2016,6 +2010,7 @@ test('stale rejection cannot overwrite finalized delivery usage', async () => {
 			id: pending.messageId,
 			direction: 'inbound',
 			userId,
+			rawMimeKey: pending.rawMimeKey,
 			rawSize: 456,
 			processingStatus: 'stored',
 			receivedAt: now.toISOString(),
@@ -2028,6 +2023,14 @@ test('stale rejection cannot overwrite finalized delivery usage', async () => {
 		usageMonth: '2026-07',
 		usageBytes: 456,
 	})
+	const graphRepair = await mirrorMailboxMessageGraphFromD1({
+		env: createInboundEnv(),
+		db: env.APP_DB,
+		userId,
+		messageId: pending.messageId,
+		includeDeliveryEvents: false,
+	})
+	expect(graphRepair.message.status).toBe('mirrored')
 	expect(
 		await getInboundDelivery({
 			db: env.APP_DB,

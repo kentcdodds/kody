@@ -29,10 +29,10 @@ import {
 import { evaluateFeatureFlag } from '#worker/feature-flags/service.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
-	type MailboxAttachmentRecord,
-	type MailboxDeliveryEventRecord,
-	type MailboxMessageRecord,
-} from './mailbox-types.ts'
+	mailboxAttachmentToEmailAttachmentRecord,
+	mailboxDeliveryEventToEmailDeliveryEventRecord,
+	mailboxMessageToEmailMessageRecord,
+} from './mailbox-record-mappers.ts'
 import {
 	getEmailAttachmentRecordById,
 	getEmailMessageById,
@@ -203,83 +203,6 @@ export async function isMailboxReadCutoverEnabled(input: {
 	const promise = evaluateCutoverGate(input)
 	if (input.memo) input.memo.gatePromise = promise
 	return promise
-}
-
-/** Map a Mailbox DO message row back to the D1 `EmailMessageRecord` shape. */
-export function mailboxMessageToEmailMessageRecord(
-	message: MailboxMessageRecord,
-	userId: string,
-): EmailMessageRecord {
-	return {
-		id: message.id,
-		direction: message.direction,
-		userId,
-		inboxId: message.inboxId,
-		threadId: message.threadId,
-		senderIdentityId: message.senderIdentityId,
-		fromAddress: message.fromAddress,
-		envelopeFrom: message.envelopeFrom,
-		toAddresses: message.toAddresses,
-		ccAddresses: message.ccAddresses,
-		bccAddresses: message.bccAddresses,
-		replyToAddresses: message.replyToAddresses,
-		subject: message.subject,
-		messageIdHeader: message.messageIdHeader,
-		inReplyToHeader: message.inReplyToHeader,
-		references: message.references,
-		headers: message.headers,
-		authResults: message.authResults,
-		textBody: message.textBody,
-		htmlBody: message.htmlBody,
-		rawMimeKey: message.rawMimeKey,
-		rawSize: message.rawSize,
-		processingStatus: message.processingStatus,
-		classification: message.classification,
-		classificationReason: message.classificationReason,
-		providerMessageId: message.providerMessageId,
-		deliveryStatus: message.deliveryStatus,
-		deliveryStatusAt: message.deliveryStatusAt,
-		error: message.error,
-		receivedAt: message.receivedAt,
-		sentAt: message.sentAt,
-		createdAt: message.createdAt,
-		updatedAt: message.updatedAt,
-	}
-}
-
-export function mailboxAttachmentToEmailAttachmentRecord(
-	attachment: MailboxAttachmentRecord,
-): EmailAttachmentRecord {
-	return {
-		id: attachment.id,
-		messageId: attachment.messageId,
-		filename: attachment.filename,
-		contentType: attachment.contentType,
-		contentId: attachment.contentId,
-		disposition: attachment.disposition,
-		size: attachment.size,
-		storageKind: attachment.storageKind,
-		storageKey: attachment.storageKey,
-		createdAt: attachment.createdAt,
-	}
-}
-
-export function mailboxDeliveryEventToEmailDeliveryEventRecord(
-	event: MailboxDeliveryEventRecord,
-	userId: string,
-): EmailDeliveryEventRecord {
-	return {
-		id: event.id,
-		messageId: event.messageId,
-		userId,
-		inboxId: event.inboxId,
-		eventType: event.eventType,
-		provider: event.provider,
-		providerMessageId: event.providerMessageId,
-		providerEventId: event.providerEventId,
-		detailJson: event.detailJson,
-		createdAt: event.createdAt,
-	}
 }
 
 type OwnerReadBase = {
@@ -587,3 +510,8 @@ export async function resolveMailboxReadCutoverDbUserId(input: {
 		return null
 	}
 }
+
+export {
+	mailboxAttachmentToEmailAttachmentRecord,
+	mailboxMessageToEmailMessageRecord,
+} from './mailbox-record-mappers.ts'
