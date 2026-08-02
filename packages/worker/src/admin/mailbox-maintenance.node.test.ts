@@ -19,12 +19,14 @@ import { emailMessageRetentionDays } from '#app/retention.ts'
 import type * as RetentionModule from '#app/retention.ts'
 import type * as MailboxClientModule from '#worker/email/mailbox-client.ts'
 import type * as MailboxReconcileModule from '#worker/email/mailbox-reconcile.ts'
+import type * as SystemEmailGraphRepoModule from '#worker/email/system-email-graph-repo.ts'
 
 const mocks = vi.hoisted(() => ({
 	reconcileMailboxParity: vi.fn(),
 	mailboxRpc: vi.fn(),
 	pruneUserEmailMessagesForRetention: vi.fn(),
 	pruneEmailDeliveryEventsForRetention: vi.fn(),
+	loadSystemEmailGraphParityReport: vi.fn(),
 }))
 
 vi.mock('#worker/email/mailbox-reconcile.ts', async (importOriginal) => {
@@ -51,6 +53,14 @@ vi.mock('#app/retention.ts', async (importOriginal) => {
 			mocks.pruneUserEmailMessagesForRetention,
 		pruneEmailDeliveryEventsForRetention:
 			mocks.pruneEmailDeliveryEventsForRetention,
+	}
+})
+
+vi.mock('#worker/email/system-email-graph-repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof SystemEmailGraphRepoModule>()
+	return {
+		...actual,
+		loadSystemEmailGraphParityReport: mocks.loadSystemEmailGraphParityReport,
 	}
 })
 
@@ -402,6 +412,59 @@ async function seedOwnedMessageWithBlobs(input: {
 
 test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', async () => {
 	const { sqlite, db } = createMaintenanceDb()
+	mocks.loadSystemEmailGraphParityReport.mockResolvedValue({
+		threads: {
+			legacyCount: 1,
+			dedicatedCount: 1,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		messages: {
+			legacyCount: 2,
+			dedicatedCount: 2,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		attachments: {
+			legacyCount: 1,
+			dedicatedCount: 1,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		deliveryEvents: {
+			legacyCount: 1,
+			dedicatedCount: 1,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		outboundProviderIndex: {
+			legacyProviderLinkedMessageCount: 0,
+			dedicatedProviderLinkedMessageCount: 0,
+			legacyAuthorityIndexCount: 0,
+			missingFromLegacyAuthorityIndexCount: 0,
+			mismatchedLegacyAuthorityIndexCount: 0,
+			classification: 'no-system-provider-links',
+			authorityDisposition: 'legacy-email-messages-until-4b-routing',
+			parity: true,
+		},
+		parity: true,
+	})
 	const matchingSince = new Date(
 		now.getTime() - mailboxReadCutoverSoakMs - 60_000,
 	).toISOString()
@@ -479,9 +542,22 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			mismatchedCount: 0,
 			parity: true,
 		},
+		systemEmailGraph: {
+			threads: { legacyCount: 1, dedicatedCount: 1, parity: true },
+			messages: { legacyCount: 2, dedicatedCount: 2, parity: true },
+			attachments: { legacyCount: 1, dedicatedCount: 1, parity: true },
+			deliveryEvents: { legacyCount: 1, dedicatedCount: 1, parity: true },
+			outboundProviderIndex: {
+				classification: 'no-system-provider-links',
+				authorityDisposition: 'legacy-email-messages-until-4b-routing',
+				parity: true,
+			},
+			parity: true,
+		},
 	})
 	expect(status).not.toHaveProperty('outboundProviderIndex.sampleMismatches')
 	expect(JSON.stringify(status.outboundProviderIndex)).not.toMatch(/@|prov-1/u)
+	expect(JSON.stringify(status.systemEmailGraph)).not.toMatch(/@|prov-1/u)
 })
 
 test('runAdminMailboxMaintenanceReconcile clamps batch_size and returns status', async () => {

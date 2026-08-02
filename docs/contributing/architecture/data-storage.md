@@ -16,13 +16,17 @@ path.
 
 The deliberate storage exception is **operator-owned system email** for reserved
 platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
-`admin`). Those messages reuse the email tables but are stored under the
-reserved owner id `system:email`, which is not a login account and must not be
-conflated with the `kody@example.com` fixture or Kent's personal account.
-Account deletion and export treat `system:email` rows as platform/operator
-content, not user data; the exclusion is listed in
-`accountUserDataExcludedOwnerIds` with a reason and is covered by guardrail
-tests.
+`admin`). Migration `0130-system-email-graph-expand.sql` adds permanent D1
+tables `system_email_threads`, `system_email_messages`,
+`system_email_attachments`, and `system_email_delivery_events`. They omit
+`user_id` because the operator owner is implicit. During step 4a they are
+copy-only parity targets: legacy rows under reserved owner id `system:email`
+remain live read/write authority and are neither modified nor deleted. The
+reserved id is not a login account and must not be conflated with the
+`kody@example.com` fixture or Kent's personal account. Account deletion and
+export treat both graph copies as platform/operator content, not user data;
+legacy exclusion is listed in `accountUserDataExcludedOwnerIds` and the
+dedicated tables in `accountOperatorOwnedD1Surfaces`, with guardrail tests.
 
 Platform feedback remains user-owned and user-scoped in storage, but has a
 narrow cross-user read and triage path. Only feedback the submitting user
@@ -57,10 +61,11 @@ safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
 and already-cleared Durable Objects are treated as successful no-ops or
 warning-only failures.
 
-System email rows owned by `system:email` are intentionally excluded from
-account deletion. They are operator-owned inbound mail for reserved platform
-addresses, not portable user content, and are bounded by fixed system caps plus
-the scheduled system-email retention prune.
+Legacy system email rows owned by `system:email` and all four dedicated
+`system_email_*` graph tables are intentionally excluded from account deletion.
+They are operator-owned mail for reserved platform addresses, not portable user
+content. Step 4a does not route retention to the dedicated copy; step 4b will
+route the existing 90-day age policy and 5,000-message cap there.
 
 Platform-feedback rows follow two account-deletion behaviors. Deleting the
 submitting account deletes its submissions. When a deleted account was an admin
@@ -132,12 +137,13 @@ export list or pending-drop registry. The hard invariant is the same as every
 storage path: callers pass the authenticated user's stable MCP `userId`, and
 every query or Durable Object lookup is scoped to that id.
 
-System email rows owned by `system:email` are intentionally absent from account
-exports for the same reason they are absent from deletion: they belong to the
-operator inbox surface, not to the exporting user. The export manifest lists
-that omission under `excludedD1Surfaces` so it is explicit. The retired
-`entitlement_daily_counters` D1 mirror is absent from the final schema
-(migration `0126`) and therefore from export inventory and `excludedD1Surfaces`.
+Legacy `system:email` rows and dedicated `system_email_*` rows are intentionally
+absent from account exports for the same reason they are absent from deletion:
+they belong to the operator inbox surface, not to the exporting user. The export
+manifest lists both omissions under `excludedD1Surfaces` so they are explicit.
+The retired `entitlement_daily_counters` D1 mirror is absent from the final
+schema (migration `0126`) and therefore from export inventory and
+`excludedD1Surfaces`.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
@@ -775,6 +781,25 @@ ledger; it drops no tables. Destructive follow-up work remains gated on the
 verified backup whose SHA-256 starts with `7787f8c9`; this change is explicitly
 non-destructive.
 
+**Operator system-email graph split:** migration
+`0130-system-email-graph-expand.sql` is the step 4a non-destructive deploy
+boundary. It creates a dedicated D1 thread/message/attachment/delivery-event
+graph with stable ids, current promoted inbound fields, and internal FKs, then
+copies only legacy `system:email` rows in FK-safe order. The admin mailbox
+maintenance `status` action exposes aggregate `systemEmailGraph` copy parity
+(counts, missing rows, ownership/relationship/key-field mismatches, and no email
+content). Legacy shared rows remain the sole live read/write/retention
+authority; there is no feature flag or behavior cutover in 4a.
+
+The existing `email_outbound_provider_index` deliberately remains unchanged. Its
+`message_id` FK targets legacy `email_messages`; a second FK cannot validly
+target either of two message tables. System outbound/provider-linked rows are
+therefore classified in parity as `legacy-email-messages-until-4b-routing`. Step
+4b must design authority routing, then dual-write the dedicated graph and move
+reads/retention authority. Step 5 may clean up legacy system rows only after 4b
+parity and rollback gates pass: **4a schema/copy/parity → 4b dual-write/read
+authority → step 5 legacy cleanup**.
+
 **Accepted rollback → roll-forward caveat and manual repair:** a rollback to the
 previous Worker can advance USER inbound state in legacy `detail_json` with
 `json_set` without advancing `email_delivery_events.updated_at`. A later
@@ -1267,11 +1292,13 @@ below.
 
 ### What stays in D1
 
-- **`system:email` operator inbox** — remains in D1 for cross-account / admin
-  access, fixed bounded caps, and separate system-email retention. Those rows
-  stay excluded from account deletion and export
-  (`accountUserDataExcludedOwnerIds`). They are not migrated into per-user
-  Mailbox objects.
+- **Operator system-email inbox** — remains permanently in D1 for cross-account
+  admin access, fixed bounded caps, and separate system-email retention. Step 4a
+  copies the legacy `system:email` graph into dedicated `system_email_*` tables;
+  legacy remains live authority until 4b. Both copies stay excluded from account
+  deletion and export (`accountUserDataExcludedOwnerIds` and
+  `accountOperatorOwnedD1Surfaces`). Operator mail is never migrated into
+  per-user Mailbox objects.
 - **Low-write email config** — sender identities, inboxes, inbox addresses,
   sender rules, and similar low-churn configuration stay in D1.
 - **Provider-message reverse lookup** — outbound Cloudflare sending webhooks
@@ -1904,9 +1931,13 @@ Current retention policies:
   which prunes messages (and their `EMAIL_BLOBS` raw-MIME blobs) and delivery
   events older than 90 days in bounded batches within its own time budget,
   deletes stale `system_email_daily_counters`, and caps stored system messages
-  at 5000. After Mailbox cut-over, user-owned delivery-event retention moves to
-  the per-user Mailbox DO alarm (still 90 days, strict blob-before-row); D1
-  policies here remain authoritative until that phase.
+  at 5,000. The four dedicated `system_email_*` tables have explicit
+  `alternate_cleanup` dispositions: in 4a they are copy-only and are not pruned;
+  4b will route this same 90-day policy and 5,000-message cap to the dedicated
+  authority, with attachments following messages and orphan threads pruned.
+  After Mailbox cut-over, user-owned delivery-event retention moves to the
+  per-user Mailbox DO alarm (still 90 days, strict blob-before-row); D1 policies
+  here remain authoritative until that phase.
 - `email_messages` / `email_attachments` / `email_threads`: user-owned messages
   (excluding the `system:email` owner) keep 365 days, deleted oldest first in
   batches. Retention deletes the deterministic

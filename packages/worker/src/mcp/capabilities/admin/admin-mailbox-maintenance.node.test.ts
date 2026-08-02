@@ -67,6 +67,59 @@ const emptyStatus = {
 		mismatchedCount: 0,
 		parity: true,
 	},
+	systemEmailGraph: {
+		threads: {
+			legacyCount: 0,
+			dedicatedCount: 0,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		messages: {
+			legacyCount: 0,
+			dedicatedCount: 0,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		attachments: {
+			legacyCount: 0,
+			dedicatedCount: 0,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		deliveryEvents: {
+			legacyCount: 0,
+			dedicatedCount: 0,
+			missingFromDedicatedCount: 0,
+			missingFromLegacyCount: 0,
+			ownershipMismatchCount: 0,
+			relationshipMismatchCount: 0,
+			keyFieldMismatchCount: 0,
+			parity: true,
+		},
+		outboundProviderIndex: {
+			legacyProviderLinkedMessageCount: 0,
+			dedicatedProviderLinkedMessageCount: 0,
+			legacyAuthorityIndexCount: 0,
+			missingFromLegacyAuthorityIndexCount: 0,
+			mismatchedLegacyAuthorityIndexCount: 0,
+			classification: 'no-system-provider-links',
+			authorityDisposition: 'legacy-email-messages-until-4b-routing',
+			parity: true,
+		},
+		parity: true,
+	},
 }
 
 const emptyRetentionResult = {
@@ -185,6 +238,7 @@ test('admin_mailbox_maintenance routes status, reconcile, retention, and delete 
 		ctx,
 	)
 	expect(status).toEqual({ action: 'status', status: emptyStatus })
+	expect(status.status.systemEmailGraph).toEqual(emptyStatus.systemEmailGraph)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'admin_mailbox_maintenance',

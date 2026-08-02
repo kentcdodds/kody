@@ -79,6 +79,38 @@ export const accountUserDataExcludedOwnerIds = [
 ] as const
 
 /**
+ * D1 tables that are operator/platform owned by construction and have no
+ * user-id ownership column. They are permanently outside account deletion and
+ * export; listing them here keeps that disposition explicit in export manifests.
+ */
+export const accountOperatorOwnedD1Surfaces = [
+	{
+		table: 'system_email_threads',
+		surface: 'system_email_threads',
+		reason:
+			'Dedicated operator-owned system email thread metadata is permanently stored in D1 and excluded from user account deletion/export.',
+	},
+	{
+		table: 'system_email_messages',
+		surface: 'system_email_messages',
+		reason:
+			'Dedicated operator-owned system email messages are permanently stored in D1 and excluded from user account deletion/export.',
+	},
+	{
+		table: 'system_email_attachments',
+		surface: 'system_email_attachments',
+		reason:
+			'Dedicated operator-owned system email attachment metadata is permanently stored in D1 and excluded from user account deletion/export.',
+	},
+	{
+		table: 'system_email_delivery_events',
+		surface: 'system_email_delivery_events',
+		reason:
+			'Dedicated operator-owned system email delivery events are permanently stored in D1 and excluded from user account deletion/export.',
+	},
+] as const
+
+/**
  * Physical D1 tables that still exist in the migrated schema (pending a later
  * drop migration) but are intentionally absent from runtime account
  * deletion/export inventory. Schema coverage guardrails treat these
@@ -118,6 +150,10 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
 		...accountUserDataExcludedOwnerIds.map((exclusion) => ({
 			name: exclusion.surface,
 			reason: exclusion.reason,
+		})),
+		...accountOperatorOwnedD1Surfaces.map((surface) => ({
+			name: surface.surface,
+			reason: surface.reason,
 		})),
 		...accountUserDataPendingDropTargets.map((target) => ({
 			name: target.surface,

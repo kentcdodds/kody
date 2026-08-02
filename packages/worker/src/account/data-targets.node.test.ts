@@ -6,6 +6,7 @@ import {
 	accountExportForeignUserIdColumnsByTable,
 	accountExportRedactedColumnsByTable,
 	accountExportRedactedForeignUserId,
+	accountOperatorOwnedD1Surfaces,
 	accountUserDataPendingDropTargets,
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
@@ -212,6 +213,41 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 			target.table.startsWith('community_'),
 		),
 	).toBe(true)
+})
+
+test('dedicated system email tables are explicit operator-owned exclusions', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrations(db)
+	const expectedTables = [
+		'system_email_attachments',
+		'system_email_delivery_events',
+		'system_email_messages',
+		'system_email_threads',
+	]
+	expect(
+		accountOperatorOwnedD1Surfaces.map((surface) => surface.table).sort(),
+	).toEqual(expectedTables)
+	for (const table of expectedTables) {
+		const columns = db
+			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table)})`)
+			.all() as Array<{ name: string }>
+		expect(columns.map((column) => column.name)).not.toContain('user_id')
+		expect(
+			accountUserDataTargets.some(
+				(target) => 'table' in target && target.table === table,
+			),
+		).toBe(false)
+	}
+	expect(getAccountExportExcludedD1Surfaces()).toEqual(
+		expect.arrayContaining(
+			expectedTables.map((table) =>
+				expect.objectContaining({
+					name: table,
+					reason: expect.stringContaining('operator-owned system email'),
+				}),
+			),
+		),
+	)
 })
 
 test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {

@@ -32,6 +32,30 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 				'Ad-hoc jobs are cleaned by the hourly job_retention sweeper using account/platform retention windows; package-owned and preserved jobs are durable until explicit delete, package sync, or account deletion.',
 		},
 		{
+			table: 'system_email_delivery_events',
+			kind: 'alternate_cleanup',
+			reason:
+				'Operator-owned D1 delivery events are excluded from account retention; step 4b will route the existing 90-day system-email retention policy to this dedicated table.',
+		},
+		{
+			table: 'system_email_messages',
+			kind: 'alternate_cleanup',
+			reason:
+				'Operator-owned D1 messages are excluded from account retention; step 4b will route the existing 90-day age and 5,000-message system cap to this dedicated table.',
+		},
+		{
+			table: 'system_email_attachments',
+			kind: 'alternate_cleanup',
+			reason:
+				'Operator-owned D1 attachment metadata follows dedicated system messages; step 4b will delete it through the routed system-email retention path.',
+		},
+		{
+			table: 'system_email_threads',
+			kind: 'alternate_cleanup',
+			reason:
+				'Operator-owned D1 threads are pruned when orphaned by dedicated system-message retention; routing begins in step 4b.',
+		},
+		{
 			table: 'mcp_memories',
 			kind: 'durable_forever',
 			reason:

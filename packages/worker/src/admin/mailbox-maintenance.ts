@@ -25,6 +25,10 @@ import {
 	type OutboundProviderIndexParityReport,
 } from '#worker/email/outbound-provider-index.ts'
 import {
+	loadSystemEmailGraphParityReport,
+	type SystemEmailGraphParityReport,
+} from '#worker/email/system-email-graph-repo.ts'
+import {
 	deleteEmailMessageById,
 	deleteEmailMessageProjectionById,
 	getEmailMessageById,
@@ -73,6 +77,11 @@ export type AdminMailboxMaintenanceStatus = {
 	 * only — no owner ids, message ids, or email content.
 	 */
 	outboundProviderIndex: OutboundProviderIndexParityReport
+	/**
+	 * Step 4a legacy system:email → dedicated operator graph copy parity.
+	 * Aggregate counts only; legacy remains live authority.
+	 */
+	systemEmailGraph: SystemEmailGraphParityReport
 }
 
 export type AdminMailboxMaintenanceRetentionD1Metrics = {
@@ -454,9 +463,10 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		}
 	}
 
-	const outboundProviderIndex = await loadOutboundProviderIndexParityReport({
-		db: input.db,
-	})
+	const [outboundProviderIndex, systemEmailGraph] = await Promise.all([
+		loadOutboundProviderIndexParityReport({ db: input.db }),
+		loadSystemEmailGraphParityReport({ db: input.db }),
+	])
 
 	return {
 		generatedAt,
@@ -472,6 +482,7 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		newestCheckedAt: row?.newestCheckedAt ?? null,
 		earliestCutoverAt,
 		outboundProviderIndex,
+		systemEmailGraph,
 	}
 }
 
