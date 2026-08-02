@@ -618,6 +618,35 @@ test('Mailbox retention ends after one item so a queued mirror can save the next
 	}
 })
 
+test('parity purge serializes a queued mirror with its retention alarm', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('parity-purge-concurrency')
+	const mailbox = rpcFor(userId)
+	const stub = stubFor(userId)
+	const beforePurge = baseMessage(userId, { id: 'before-parity-purge' })
+	const queued = baseMessage(userId, {
+		id: 'queued-during-parity-purge',
+		createdAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+	})
+	await mailbox.mirrorMessage({ ownerId: userId, message: beforePurge })
+
+	const purge = mailbox.purgeForParityRebuild({ ownerId: userId })
+	const queuedMirror = runInDurableObject(stub, (instance: Mailbox) =>
+		instance.mirrorMessage({ ownerId: userId, message: queued }),
+	)
+	await expect(purge).resolves.toEqual({ ok: true })
+	await expect(queuedMirror).resolves.toEqual({ ok: true, accepted: true })
+
+	expect(await mailbox.getMessage({ messageId: beforePurge.id })).toBeNull()
+	expect(await mailbox.getMessage({ messageId: queued.id })).toMatchObject({
+		id: queued.id,
+	})
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		expect(await state.storage.getAlarm()).not.toBeNull()
+	})
+})
+
 test('Mailbox retention selects one message per turn and revalidates before deletion', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('retention-revalidation')
