@@ -202,6 +202,97 @@ test('dedupe boundary race charges and inserts only the claimed winner id', asyn
 	sqlite.close()
 })
 
+test("uncharged prior-day dedupe winner charges the current retry's quota day", async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	const userId = `user-${crypto.randomUUID()}`
+	const yesterday = new Date('2026-08-01T23:59:00.000Z')
+	const retryNow = new Date('2026-08-02T00:01:00.000Z')
+	const winner = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'From: sender@example.com\r\n\r\nmidnight retry',
+		quotaDay: '2026-08-01',
+		now: yesterday,
+	})
+	const retry = { ...winner, quotaDay: '2026-08-02' }
+	const winnerSnapshot: MailboxInboundDeliverySnapshot = {
+		...winner,
+		state: 'pending',
+		createdAt: yesterday.toISOString(),
+		updatedAt: retryNow.toISOString(),
+	}
+	const consumeInboundDelivery = vi.fn(
+		async (input: { deliveryId: string; day: string }) => ({
+			outcome: 'ready' as const,
+			count: 1,
+			revision: 1,
+			mirrorUpdatedAt: retryNow.toISOString(),
+			consumed: true,
+			replayed: false,
+			day: input.day,
+			resource: 'email_receives_per_day' as const,
+		}),
+	)
+	const insertChargedPendingInboundDelivery = vi.fn(
+		async (input: {
+			delivery: {
+				deliveryId: string
+				messageId: string
+				rawMimeKey: string
+				quotaDay: string
+			}
+		}) => ({
+			status: 'inserted' as const,
+			delivery: {
+				...winnerSnapshot,
+				quotaDay: input.delivery.quotaDay,
+			},
+		}),
+	)
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({ consumeInboundDelivery }),
+			MAILBOX: namespace({
+				getInboundDelivery: vi.fn(async () => null),
+				claimInboundDeliveryWindow: vi.fn(async () => winnerSnapshot),
+				insertChargedPendingInboundDelivery,
+			}),
+		},
+		userId,
+	})
+
+	const result = await authority.charge({
+		delivery: retry,
+		plan: 'pro',
+		limit: 100,
+		now: retryNow,
+	})
+
+	expect(result).toBe(retry)
+	expect(consumeInboundDelivery).toHaveBeenCalledWith(
+		expect.objectContaining({
+			deliveryId: winner.deliveryId,
+			day: '2026-08-02',
+		}),
+	)
+	expect(insertChargedPendingInboundDelivery).toHaveBeenCalledWith(
+		expect.objectContaining({
+			delivery: expect.objectContaining({
+				deliveryId: winner.deliveryId,
+				messageId: winner.messageId,
+				rawMimeKey: winner.rawMimeKey,
+				quotaDay: '2026-08-02',
+			}),
+		}),
+	)
+	sqlite.close()
+})
+
 test('storage claim projection failure releases the authoritative Mailbox lease', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
@@ -265,11 +356,10 @@ test('storage claim projection failure releases the authoritative Mailbox lease'
 	sqlite.close()
 })
 
-test('effect and cleanup claim projection failures warn without stranding leases', async () => {
+test('cleanup projection failure releases its lease and prevents deletion work', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureEmailTestSchema(db)
-	consoleWarn.mockImplementation(() => {})
 	const now = new Date('2026-08-02T12:00:00.000Z')
 	const delivery = await buildInboundDelivery({
 		userId: 'user-claim-owner',
@@ -277,6 +367,133 @@ test('effect and cleanup claim projection failures warn without stranding leases
 		recipient: 'owner@example.com',
 		envelopeFrom: 'sender@example.com',
 		rawMime: 'claim projection',
+		quotaDay: '2026-08-02',
+		now,
+	})
+	const cleanup: MailboxInboundDeliverySnapshot = {
+		...delivery,
+		state: 'cleaning',
+		cleanupLease: 'cleanup-1',
+		cleanupLeaseAt: now.toISOString(),
+		createdAt: now.toISOString(),
+		updatedAt: now.toISOString(),
+	}
+	await mirrorUserInboundDeliverySnapshotToD1({
+		db,
+		userId: 'different-owner',
+		snapshot: cleanup,
+	})
+	const releaseInboundDeliveryCleanup = vi.fn(async () => ({
+		status: 'released' as const,
+		delivery: {
+			...cleanup,
+			state: 'pending' as const,
+			cleanupLease: undefined,
+			cleanupLeaseAt: undefined,
+		},
+	}))
+	const deleteBlob = vi.fn(async () => {})
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				claimInboundDeliveryCleanup: vi.fn(async () => ({
+					status: 'claimed' as const,
+					delivery: cleanup,
+				})),
+				releaseInboundDeliveryCleanup,
+			}),
+		},
+		userId: delivery.userId,
+	})
+
+	await expect(
+		authority
+			.claimCleanup(delivery.deliveryId, now)
+			.then(async () => await deleteBlob()),
+	).rejects.toThrow('owner/provider fence')
+	expect(deleteBlob).not.toHaveBeenCalled()
+	expect(releaseInboundDeliveryCleanup).toHaveBeenCalledWith({
+		ownerId: delivery.userId,
+		deliveryId: delivery.deliveryId,
+		cleanupLease: 'cleanup-1',
+		now: now.toISOString(),
+	})
+	sqlite.close()
+})
+
+test('cleanup projection and compensation failures surface as AggregateError', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId: 'user-cleanup-compensation-owner',
+		inboxId: 'inbox-cleanup-compensation',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'cleanup compensation',
+		quotaDay: '2026-08-02',
+		now,
+	})
+	const cleanup: MailboxInboundDeliverySnapshot = {
+		...delivery,
+		state: 'cleaning',
+		cleanupLease: 'cleanup-compensation-lease',
+		cleanupLeaseAt: now.toISOString(),
+		createdAt: now.toISOString(),
+		updatedAt: now.toISOString(),
+	}
+	await mirrorUserInboundDeliverySnapshotToD1({
+		db,
+		userId: 'different-owner',
+		snapshot: cleanup,
+	})
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				claimInboundDeliveryCleanup: vi.fn(async () => ({
+					status: 'claimed' as const,
+					delivery: cleanup,
+				})),
+				releaseInboundDeliveryCleanup: vi.fn(async () => {
+					throw new Error('cleanup release unavailable')
+				}),
+			}),
+		},
+		userId: delivery.userId,
+	})
+
+	const error = await authority
+		.claimCleanup(delivery.deliveryId, now)
+		.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(AggregateError)
+	expect(error).toMatchObject({
+		message:
+			'Inbound cleanup claim projection failed and its Mailbox lease could not be released.',
+		errors: [
+			expect.objectContaining({ message: expect.stringContaining('fence') }),
+			expect.objectContaining({ message: 'cleanup release unavailable' }),
+		],
+	})
+	sqlite.close()
+})
+
+test('effect claim projection failures warn without stranding leases', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	consoleWarn.mockImplementation(() => {})
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId: 'user-effect-claim-owner',
+		inboxId: 'inbox-effect-claim',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'effect claim projection',
 		quotaDay: '2026-08-02',
 		now,
 	})
@@ -292,12 +509,6 @@ test('effect and cleanup claim projection failures warn without stranding leases
 		userId: 'different-owner',
 		snapshot: base,
 	})
-	const cleanup = {
-		...base,
-		state: 'cleaning' as const,
-		cleanupLease: 'cleanup-1',
-		cleanupLeaseAt: now.toISOString(),
-	}
 	const usage = {
 		...base,
 		usageEffectLease: 'usage-1',
@@ -314,10 +525,6 @@ test('effect and cleanup claim projection failures warn without stranding leases
 			APP_DB: db,
 			USER_METER: namespace({}),
 			MAILBOX: namespace({
-				claimInboundDeliveryCleanup: vi.fn(async () => ({
-					status: 'claimed' as const,
-					delivery: cleanup,
-				})),
 				claimInboundUsageEffect: vi.fn(async () => ({
 					status: 'claimed' as const,
 					delivery: usage,
@@ -332,9 +539,6 @@ test('effect and cleanup claim projection failures warn without stranding leases
 	})
 
 	await expect(
-		authority.claimCleanup(delivery.deliveryId, now),
-	).resolves.toMatchObject({ status: 'claimed' })
-	await expect(
 		authority.claimUsageEffect({ deliveryId: delivery.deliveryId, now }),
 	).resolves.toMatchObject({ status: 'claimed' })
 	await expect(
@@ -343,12 +547,6 @@ test('effect and cleanup claim projection failures warn without stranding leases
 			now,
 		}),
 	).resolves.toMatchObject({ status: 'claimed' })
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'inbound-email-cleanup-claim-projection-failed',
-		delivery.userId,
-		delivery.deliveryId,
-		expect.objectContaining({ message: expect.stringContaining('fence') }),
-	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'inbound-email-usage-effect-claim-projection-failed',
 		delivery.userId,

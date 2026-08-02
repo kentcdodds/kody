@@ -280,26 +280,30 @@ export function createUserInboundDeliveryAuthority(
 		)
 		const existing = await get(claimedDelivery.deliveryId)
 		if (existing) return existing
+		const chargedDelivery = {
+			...claimedDelivery,
+			quotaDay: chargeInput.delivery.quotaDay,
+		}
 		const updatedAt = chargeInput.now.toISOString()
 		const meter = userMeterRpc({ env, userId })
 		let meterResult = await meter.consumeInboundDelivery({
-			deliveryId: claimedDelivery.deliveryId,
+			deliveryId: chargedDelivery.deliveryId,
 			resource: 'email_receives_per_day',
-			day: claimedDelivery.quotaDay,
+			day: chargedDelivery.quotaDay,
 			limit: chargeInput.limit,
 			updatedAt,
 		})
 		if (meterResult.outcome === 'needs_bootstrap') {
 			await meter.initialize({
 				resource: 'email_receives_per_day',
-				day: claimedDelivery.quotaDay,
+				day: chargedDelivery.quotaDay,
 				count: 0,
 				updatedAt,
 			})
 			meterResult = await meter.consumeInboundDelivery({
-				deliveryId: claimedDelivery.deliveryId,
+				deliveryId: chargedDelivery.deliveryId,
 				resource: 'email_receives_per_day',
-				day: claimedDelivery.quotaDay,
+				day: chargedDelivery.quotaDay,
 				limit: chargeInput.limit,
 				updatedAt,
 			})
@@ -320,7 +324,7 @@ export function createUserInboundDeliveryAuthority(
 		}
 		const result = await mailbox.insertChargedPendingInboundDelivery({
 			ownerId: userId,
-			delivery: toInsertInput(claimedDelivery),
+			delivery: toInsertInput(chargedDelivery),
 			now: updatedAt,
 		})
 		await mirror(result.delivery)
@@ -469,10 +473,34 @@ export function createUserInboundDeliveryAuthority(
 				now: now.toISOString(),
 			})
 			if (result.status === 'claimed') {
-				await mirrorClaimBestEffort(
-					result.delivery,
-					'inbound-email-cleanup-claim-projection-failed',
-				)
+				const cleanupLease = result.delivery.cleanupLease
+				if (!cleanupLease) {
+					throw new Error(
+						'Mailbox returned a claimed inbound cleanup delivery without a lease.',
+					)
+				}
+				try {
+					await mirror(result.delivery)
+				} catch (projectionError) {
+					let compensationError: unknown
+					try {
+						await mailbox.releaseInboundDeliveryCleanup({
+							ownerId: userId,
+							deliveryId: result.delivery.deliveryId,
+							cleanupLease,
+							now: now.toISOString(),
+						})
+					} catch (error) {
+						compensationError = error
+					}
+					if (compensationError) {
+						throw new AggregateError(
+							[projectionError, compensationError],
+							'Inbound cleanup claim projection failed and its Mailbox lease could not be released.',
+						)
+					}
+					throw projectionError
+				}
 			} else if (result.delivery) {
 				await mirror(result.delivery)
 			}
