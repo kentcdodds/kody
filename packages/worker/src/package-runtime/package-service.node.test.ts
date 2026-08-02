@@ -1494,3 +1494,275 @@ test('package service restore shadows current D1 projection into UserMeter', asy
 		vi.useRealTimers()
 	}
 })
+
+test('required UserMeter projection rejects unapplied non-running state but accepts newer running state', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const appDb = createNoopPackageServiceDb()
+	let returnedStatus: 'stopped' | 'running' = 'stopped'
+	let upsertAttempts = 0
+	const upsertStatuses: Array<string> = []
+	const meter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState(input: { status: string }) {
+					upsertAttempts++
+					upsertStatuses.push(input.status)
+					return {
+						applied: false,
+						created: false,
+						state: {
+							packageId: 'package-1',
+							serviceName: 'realtime-supervisor',
+							status: returnedStatus,
+							startedAt: null,
+							sourceUpdatedAt: '2026-07-05T12:00:01.000Z',
+							revision: 2,
+							updatedAt: '2026-07-05T12:00:01.000Z',
+							mirrorUpdatedAt: 'r/00000000000000000002',
+						},
+					}
+				},
+				async deletePackageServiceState() {
+					return { deleted: true }
+				},
+			}),
+		},
+	}
+
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		const rejected = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.USER_METER,
+		} as Env)
+		await expect(
+			postPackageService(rejected.instance, 'start'),
+		).rejects.toThrow(
+			'Package service could not confirm running state in UserMeter.',
+		)
+		expect(upsertStatuses).toEqual(['running', 'running', 'running', 'error'])
+		expect(mockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+
+		resetMocks()
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		returnedStatus = 'running'
+		upsertAttempts = 0
+		upsertStatuses.length = 0
+		const accepted = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.USER_METER,
+		} as Env)
+		const response = await postPackageService(accepted.instance, 'start')
+		expect(response.status).toBe(200)
+		expect(upsertAttempts).toBe(1)
+		expect(accepted.waitUntilTasks).toHaveLength(1)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('stop during required projection cancels launch and duplicate start shares the pending outcome', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const appDb = createNoopPackageServiceDb()
+	let releaseProjection!: () => void
+	const projectionGate = new Promise<void>((resolve) => {
+		releaseProjection = resolve
+	})
+	let projectionEntered = false
+	const meter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState(input: { status: string }) {
+					if (input.status === 'running') {
+						projectionEntered = true
+						await projectionGate
+					}
+					return {
+						applied: true,
+						created: true,
+						state: {
+							packageId: 'package-1',
+							serviceName: 'realtime-supervisor',
+							status: input.status,
+							startedAt: null,
+							sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+							revision: 1,
+							updatedAt: '2026-07-05T12:00:00.000Z',
+							mirrorUpdatedAt: 'r/00000000000000000001',
+						},
+					}
+				},
+				async deletePackageServiceState() {
+					return { deleted: true }
+				},
+			}),
+		},
+	}
+
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: meter.USER_METER,
+		} as Env)
+		const firstStart = postPackageService(created.instance, 'start')
+		for (let i = 0; i < 100 && !projectionEntered; i++) {
+			await Promise.resolve()
+		}
+		expect(projectionEntered).toBe(true)
+
+		let secondStartSettled = false
+		const secondStart = postPackageService(created.instance, 'start')
+		void secondStart.then(
+			() => {
+				secondStartSettled = true
+			},
+			() => {
+				secondStartSettled = true
+			},
+		)
+		await Promise.resolve()
+		expect(secondStartSettled).toBe(false)
+
+		await postPackageService(created.instance, 'stop')
+		releaseProjection()
+		await expect(firstStart).rejects.toThrow(
+			'Package service start was canceled.',
+		)
+		await expect(secondStart).rejects.toThrow(
+			'Package service start was canceled.',
+		)
+		expect(mockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+
+		const status = (await (
+			await created.instance.fetch(
+				new Request('https://package-service.invalid/service/status', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ binding: serviceBinding }),
+				}),
+			)
+		).json()) as { active_run_id: string | null; status: string }
+		expect(status).toMatchObject({
+			active_run_id: null,
+			status: 'stopped',
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('stop during an auto-start required projection prevents alarm runtime launch', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	const startedAt = new Date('2026-07-05T12:00:00.000Z')
+	vi.setSystemTime(startedAt)
+	const appDb = createNoopPackageServiceDb()
+	let releaseProjection!: () => void
+	const projectionGate = new Promise<void>((resolve) => {
+		releaseProjection = resolve
+	})
+	let projectionEntered = false
+	const meter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState(input: { status: string }) {
+					if (input.status === 'running') {
+						projectionEntered = true
+						await projectionGate
+					}
+					return {
+						applied: true,
+						created: true,
+						state: {
+							packageId: 'package-1',
+							serviceName: 'realtime-supervisor',
+							status: input.status,
+							startedAt: null,
+							sourceUpdatedAt: startedAt.toISOString(),
+							revision: 1,
+							updatedAt: startedAt.toISOString(),
+							mirrorUpdatedAt: 'r/00000000000000000001',
+						},
+					}
+				},
+				async deletePackageServiceState() {
+					return { deleted: true }
+				},
+			}),
+		},
+	}
+
+	try {
+		mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+		mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+			createPackageSource('persistent', { autoStart: true }),
+		)
+		mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+			artifact: { mainModule: 'main', modules: {} },
+		})
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		const created = createPackageServiceState()
+		created.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: true,
+			mode: 'persistent',
+			timeoutMs: null,
+			stopRequested: false,
+			currentRunId: null,
+			nextAlarmAt: startedAt.toISOString(),
+			nextAlarmSource: 'auto-start',
+			lastStartedAt: null,
+			lastStoppedAt: null,
+			status: 'stopped',
+			lastError: null,
+			lastResult: null,
+			lastRunFinishedAt: null,
+			consecutiveFailureCount: 0,
+		})
+		const instance = new PackageServiceInstance(created.state, {
+			APP_DB: appDb,
+			USER_METER: meter.USER_METER,
+		} as Env)
+		await waitForRestoreState(created.state)
+
+		const alarm = instance.alarm()
+		for (let i = 0; i < 100 && !projectionEntered; i++) {
+			await Promise.resolve()
+		}
+		expect(projectionEntered).toBe(true)
+		await postPackageService(instance, 'stop')
+		releaseProjection()
+		await alarm
+		expect(mockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+
+		const persisted = created.persistedEntries.get('package-service-state') as {
+			currentRunId: string | null
+			status: string
+		}
+		expect(persisted).toMatchObject({
+			currentRunId: null,
+			status: 'stopped',
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})

@@ -345,6 +345,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState =
 		createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
+	private pendingStartProjection: {
+		runId: string
+		promise: Promise<void>
+	} | null = null
 	/** Per-instance shadow write chain so waitUntil hops cannot reorder. */
 	private shadowQueue: Promise<void> = Promise.resolve()
 
@@ -501,8 +505,12 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					attempt++
 				) {
 					try {
-						await this.upsertPackageServiceStateInUserMeter(input)
-						return
+						const result =
+							await this.upsertPackageServiceStateInUserMeter(input)
+						if (result.state.status === 'running') return
+						lastError = new Error(
+							'UserMeter returned a non-running package service state.',
+						)
 					} catch (error) {
 						lastError = error
 					}
@@ -540,7 +548,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			env: this.env,
 			userId: input.binding.userId,
 		})
-		await meter.upsertPackageServiceState({
+		return await meter.upsertPackageServiceState({
 			packageId: input.binding.packageId,
 			serviceName: input.binding.serviceName,
 			status: input.status,
@@ -1005,21 +1013,80 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		return result.result ?? null
 	}
 
+	private async failPendingStart(runId: string, error: unknown) {
+		if (this.stateSnapshot.currentRunId !== runId) return
+		this.stateSnapshot.currentRunId = null
+		this.stateSnapshot.stopRequested = false
+		this.stateSnapshot.status = 'error'
+		this.stateSnapshot.lastError = getErrorMessage(error)
+		this.stateSnapshot.lastStoppedAt = new Date().toISOString()
+		await this.persistState()
+		await this.projectServiceStateToD1()
+	}
+
+	private getOrCreateRequiredStartProjection(runId: string) {
+		const existing = this.pendingStartProjection
+		if (existing?.runId === runId) return existing
+		const promise = Promise.resolve().then(async () => {
+			try {
+				await this.projectServiceStateToD1({ requireUserMeter: true })
+			} catch (error) {
+				await this.failPendingStart(runId, error)
+				throw error
+			}
+		})
+		const pending = { runId, promise }
+		this.pendingStartProjection = pending
+		return pending
+	}
+
+	private assertPendingStartIsCurrent(runId: string) {
+		if (
+			this.stateSnapshot.currentRunId !== runId ||
+			this.stateSnapshot.status !== 'running' ||
+			this.stateSnapshot.stopRequested
+		) {
+			throw new Error('Package service start was canceled.')
+		}
+	}
+
 	private async handleStartRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
+		const pendingAtEntry = this.pendingStartProjection
+		if (
+			pendingAtEntry &&
+			this.stateSnapshot.currentRunId === pendingAtEntry.runId
+		) {
+			const runId = pendingAtEntry.runId
+			await pendingAtEntry.promise
+			this.assertPendingStartIsCurrent(runId)
+			await this.ensureRunningHeartbeat()
+			this.assertPendingStartIsCurrent(runId)
+			return Response.json({
+				ok: true,
+				run_id: runId,
+				started_at:
+					this.stateSnapshot.lastStartedAt ?? new Date().toISOString(),
+				status: 'running',
+				already_running: true,
+			} satisfies PackageServiceRunResult)
+		}
 		const loaded = await this.initializeBinding(input.binding, {
 			armAutoStart: true,
 		})
 		if (this.stateSnapshot.currentRunId) {
-			this.stateSnapshot.stopRequested = false
-			this.stateSnapshot.status = 'running'
-			await this.persistState()
-			await this.projectServiceStateToD1()
+			const runId = this.stateSnapshot.currentRunId
+			const pending = this.pendingStartProjection
+			if (pending?.runId === runId) {
+				await pending.promise
+			}
+			this.assertPendingStartIsCurrent(runId)
 			await this.ensureRunningHeartbeat()
+			this.assertPendingStartIsCurrent(runId)
 			return Response.json({
 				ok: true,
-				run_id: this.stateSnapshot.currentRunId,
+				run_id: runId,
 				started_at:
 					this.stateSnapshot.lastStartedAt ?? new Date().toISOString(),
 				status: 'running',
@@ -1034,18 +1101,22 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.lastStartedAt = startedAt
 		this.stateSnapshot.lastError = null
 		await this.persistState()
+		const pending = this.getOrCreateRequiredStartProjection(runId)
 		try {
-			await this.projectServiceStateToD1({ requireUserMeter: true })
+			await pending.promise
+			this.assertPendingStartIsCurrent(runId)
+			await this.ensureRunningHeartbeat()
+			this.assertPendingStartIsCurrent(runId)
 		} catch (error) {
-			this.stateSnapshot.currentRunId = null
-			this.stateSnapshot.status = 'error'
-			this.stateSnapshot.lastError = getErrorMessage(error)
-			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
-			await this.persistState()
-			await this.projectServiceStateToD1()
+			await this.failPendingStart(runId, error)
+			if (this.pendingStartProjection === pending) {
+				this.pendingStartProjection = null
+			}
 			throw error
 		}
-		await this.ensureRunningHeartbeat()
+		if (this.pendingStartProjection === pending) {
+			this.pendingStartProjection = null
+		}
 		const task = this.runServiceInBackground({
 			binding: loaded.resolvedBinding,
 			runId,
@@ -1089,19 +1160,29 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async handleStopRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
+		const runId = this.stateSnapshot.currentRunId
+		if (runId) {
+			if (
+				this.pendingStartProjection?.runId === runId &&
+				this.activeRunPromise === null
+			) {
+				this.stateSnapshot.currentRunId = null
+				this.stateSnapshot.stopRequested = false
+				this.stateSnapshot.status = 'stopped'
+			} else {
+				this.stateSnapshot.stopRequested = true
+				this.stateSnapshot.status = 'stopping'
+			}
+			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
+		} else {
+			this.stateSnapshot.stopRequested = false
+			this.stateSnapshot.status = 'stopped'
+		}
 		try {
 			await this.initializeBinding(input.binding)
 		} catch {
 			// Allow an in-flight service to be stopped even if its package/source was removed.
 			this.stateSnapshot.binding ??= input.binding
-		}
-		if (this.stateSnapshot.currentRunId) {
-			this.stateSnapshot.stopRequested = true
-			this.stateSnapshot.status = 'stopping'
-			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
-		} else {
-			this.stateSnapshot.stopRequested = false
-			this.stateSnapshot.status = 'stopped'
 		}
 		await this.clearAlarm()
 		await this.projectServiceStateToD1()
@@ -1121,6 +1202,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const binding = this.stateSnapshot.binding ?? input.binding
 		this.stateSnapshot = createInitialPackageServiceState()
 		this.activeRunPromise = null
+		this.pendingStartProjection = null
 		await this.ctx.storage.deleteAlarm().catch(() => {
 			// Best effort cleanup before deleteAll.
 		})
@@ -1160,6 +1242,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const binding = this.stateSnapshot.binding
 		if (!binding) return
 		const alarmSource = this.stateSnapshot.nextAlarmSource ?? 'service'
+		let capturedRunId: string | null = null
 		this.stateSnapshot.nextAlarmAt = null
 		this.stateSnapshot.nextAlarmSource = null
 		await this.persistState()
@@ -1188,13 +1271,20 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			) {
 				const startedAt = new Date().toISOString()
 				const runId = crypto.randomUUID()
+				capturedRunId = runId
 				this.stateSnapshot.currentRunId = runId
 				this.stateSnapshot.status = 'running'
 				this.stateSnapshot.lastStartedAt = startedAt
 				this.stateSnapshot.lastError = null
 				await this.persistState()
-				await this.projectServiceStateToD1({ requireUserMeter: true })
+				const pending = this.getOrCreateRequiredStartProjection(runId)
+				await pending.promise
+				this.assertPendingStartIsCurrent(runId)
 				await this.ensureRunningHeartbeat()
+				this.assertPendingStartIsCurrent(runId)
+				if (this.pendingStartProjection === pending) {
+					this.pendingStartProjection = null
+				}
 				const task = this.runServiceInBackground({
 					binding: loaded.resolvedBinding,
 					runId,
@@ -1204,6 +1294,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.ctx.waitUntil(task)
 			}
 		} catch (error) {
+			if (
+				capturedRunId &&
+				this.pendingStartProjection?.runId === capturedRunId
+			) {
+				this.pendingStartProjection = null
+			}
+			if (
+				capturedRunId &&
+				this.stateSnapshot.currentRunId !== capturedRunId &&
+				this.stateSnapshot.status === 'stopped'
+			) {
+				return
+			}
 			this.stateSnapshot.currentRunId = null
 			this.stateSnapshot.lastError = getErrorMessage(error)
 			this.stateSnapshot.status = 'error'
