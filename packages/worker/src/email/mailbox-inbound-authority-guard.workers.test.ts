@@ -309,3 +309,77 @@ test('bootstrapDeliveryEvents is owner-bound, validated, bounded, transactional,
 		}),
 	).toBeNull()
 })
+
+test('bootstrapDeliveryEvents preserves a received event but detaches its tombstoned message', async () => {
+	const ownerId = uniqueUserId('bootstrap-tombstone')
+	const mailbox = rpcFor(ownerId)
+	const deliveryId = 'email-inbound-delivery:bootstrap-tombstone'
+	const messageId = 'email-inbound-message:bootstrap-tombstone'
+	const fingerprint = 'fingerprint-bootstrap-tombstone'
+	const createdAt = '2026-08-02T12:00:00.000Z'
+	const detail = {
+		fingerprint,
+		deliveryId,
+		messageId,
+		threadId: 'email-inbound-thread:bootstrap-tombstone',
+		rawMimeKey: emailRawMimeKey(ownerId, messageId),
+		userId: ownerId,
+		inboxId: 'inbox-bootstrap-tombstone',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		provider: 'cloudflare-email-routing',
+		quotaDay: '2026-08-02',
+		dedupeExpiresAt: '2026-08-04T12:00:00.000Z',
+		state: 'received' as const,
+		expectedAttachmentCount: 1,
+		finalizationToken: 'finalization-bootstrap-tombstone',
+		usageEffectRecordedAt: '2026-08-02T12:01:00.000Z',
+		usageStartedAt: '2026-08-02T12:00:01.000Z',
+		usageMonth: '2026-08',
+		usageBytes: 128,
+		usageDurationMs: 25,
+		subscriptionEffectState: 'complete' as const,
+	}
+	await mailbox.tombstoneMissingMessage({
+		ownerId,
+		messageId,
+		deletedAt: '2026-08-02T20:00:00.000Z',
+	})
+
+	await expect(
+		mailbox.bootstrapDeliveryEvents({
+			ownerId,
+			events: [
+				baseDeliveryEvent({
+					id: deliveryId,
+					messageId,
+					inboxId: detail.inboxId,
+					eventType: 'received',
+					provider: 'cloudflare-email-routing',
+					providerEventId: deliveryId,
+					detailJson: JSON.stringify(detail),
+					needsEffectReconcile: false,
+					state: 'received',
+					fingerprint,
+					expectedAttachmentCount: detail.expectedAttachmentCount,
+					finalizationToken: detail.finalizationToken,
+					dedupeExpiresAt: detail.dedupeExpiresAt,
+					usageEffectRecordedAt: detail.usageEffectRecordedAt,
+					usageStartedAt: detail.usageStartedAt,
+					usageMonth: detail.usageMonth,
+					usageBytes: detail.usageBytes,
+					usageDurationMs: detail.usageDurationMs,
+					subscriptionEffectState: detail.subscriptionEffectState,
+					createdAt,
+					updatedAt: createdAt,
+				}),
+			],
+		}),
+	).resolves.toMatchObject({ inserted: 1 })
+
+	expect(
+		(await mailbox.listDeliveryEvents({ limit: 10 })).find(
+			(event) => event.id === deliveryId,
+		),
+	).toMatchObject({ messageId: null, state: 'received' })
+})

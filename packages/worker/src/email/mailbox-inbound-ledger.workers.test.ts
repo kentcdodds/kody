@@ -703,3 +703,49 @@ test('inbound ledger rejects non-finite expectedAttachmentCount, usageDurationMs
 		}
 	})
 })
+
+test('Mailbox inbound finalization never attaches a tombstoned message', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('ledger-tombstone')
+	const mailbox = rpcFor(ownerId)
+	const now = '2026-08-02T20:00:00.000Z'
+	const delivery = insertInput(ownerId, {
+		deliveryId: 'email-inbound-delivery:ledger-tombstone',
+		messageId: 'email-inbound-message:ledger-tombstone',
+	})
+	await mailbox.tombstoneMissingMessage({
+		ownerId,
+		messageId: delivery.messageId,
+		deletedAt: now,
+	})
+	await mailbox.insertChargedPendingInboundDelivery({
+		ownerId,
+		delivery,
+		now,
+	})
+	const claim = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	expect(claim.status).toBe('claimed')
+	if (claim.status !== 'claimed') throw new Error('expected claim')
+
+	await expect(
+		mailbox.markInboundDeliveryReceived({
+			ownerId,
+			deliveryId: delivery.deliveryId,
+			storageLease: claim.delivery.storageLease!,
+			usageDurationMs: 1,
+			usageMonth: '2026-08',
+			usageBytes: 1,
+			now: '2026-08-02T20:00:01.000Z',
+		}),
+	).resolves.toMatchObject({ status: 'received' })
+	expect(
+		(await mailbox.listDeliveryEvents({ limit: 10 })).find(
+			(event) => event.id === delivery.deliveryId,
+		),
+	).toMatchObject({ messageId: null, state: 'received' })
+})

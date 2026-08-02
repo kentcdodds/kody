@@ -10,6 +10,7 @@
 
 import { emailRawMimeKey } from './blob-keys.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
+import { isMailboxMessageTombstoned } from './mailbox-message-deletion-tombstones.ts'
 import {
 	assertMailboxCanonicalIsoTimestamp,
 	assertMailboxNonEmptyString,
@@ -728,6 +729,9 @@ export function markMailboxInboundDeliveryReceived(
 	}
 	delete next.storageLease
 	delete next.storageLeaseAt
+	const attachedMessageId = isMailboxMessageTombstoned(sql, current.messageId)
+		? null
+		: current.messageId
 	const cursor = sql.exec(
 		`UPDATE email_delivery_events
 		SET message_id = ?,
@@ -748,7 +752,7 @@ export function markMailboxInboundDeliveryReceived(
 			AND provider = ?
 			AND state = 'storing'
 			AND storage_lease = ?`,
-		current.messageId,
+		attachedMessageId,
 		detailJsonFromMailboxInboundSnapshot(next),
 		storageLease,
 		next.subscriptionEffectState ?? 'pending',

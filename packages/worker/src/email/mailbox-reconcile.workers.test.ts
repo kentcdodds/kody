@@ -8,6 +8,7 @@ import {
 	mailboxLiveMirrorMaxEvents,
 	mirrorMailboxMessageGraphFromD1,
 } from './mailbox-live-mirror.ts'
+import { mirrorMailboxParityDeliveryEventFromD1 } from './mailbox-parity-phases.ts'
 import {
 	countD1MailboxParity,
 	listUsersForMailboxParity,
@@ -934,6 +935,20 @@ test('parity message graph replay cannot recreate a tombstoned message', async (
 			messageId,
 		}),
 	).resolves.toMatchObject({ message: { status: 'stale' } })
+	const eventId = `evt-${messageId}-000`
+	await expect(
+		mirrorMailboxParityDeliveryEventFromD1({
+			env,
+			db: env.APP_DB,
+			userId,
+			eventId,
+		}),
+	).resolves.toMatchObject({ status: 'mirrored' })
 	expect(await mailbox.getMessage({ messageId })).toBeNull()
 	expect((await mailbox.countMailbox()).messages).toBe(0)
+	expect(
+		(await mailbox.listDeliveryEvents({ limit: 10 })).find(
+			(event) => event.id === eventId,
+		),
+	).toMatchObject({ messageId: null })
 })

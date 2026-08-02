@@ -828,3 +828,53 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 		).some((event) => event.id === 'batch-txn-ok'),
 	).toBe(false)
 })
+
+test('Mailbox direct and batch delivery-event writes detach tombstoned messages', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('event-tombstone')
+	const mailbox = rpcFor(userId)
+	const messageId = 'event-tombstoned-message'
+	await mailbox.tombstoneMissingMessage({
+		ownerId: userId,
+		messageId,
+		deletedAt: '2026-08-02T20:00:00.000Z',
+	})
+
+	await expect(
+		mailbox.upsertDeliveryEvent({
+			ownerId: userId,
+			event: baseDeliveryEvent({
+				id: 'event-tombstone-direct',
+				messageId,
+			}),
+		}),
+	).resolves.toMatchObject({ inserted: true, accepted: true })
+	await expect(
+		mailbox.upsertDeliveryEvents({
+			ownerId: userId,
+			events: [
+				baseDeliveryEvent({
+					id: 'event-tombstone-batch',
+					messageId,
+					updatedAt: '2026-07-02T10:00:01.000Z',
+				}),
+			],
+		}),
+	).resolves.toMatchObject({
+		results: [
+			{ eventId: 'event-tombstone-batch', inserted: true, accepted: true },
+		],
+	})
+
+	const events = await mailbox.listDeliveryEvents({ limit: 10 })
+	expect(
+		events
+			.filter((event) => event.id.startsWith('event-tombstone-'))
+			.map((event) => ({ id: event.id, messageId: event.messageId })),
+	).toEqual(
+		expect.arrayContaining([
+			{ id: 'event-tombstone-batch', messageId: null },
+			{ id: 'event-tombstone-direct', messageId: null },
+		]),
+	)
+})
