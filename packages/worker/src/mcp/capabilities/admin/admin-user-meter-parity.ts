@@ -67,12 +67,12 @@ const deletionParitySchema = z.object({
 	temporaryMirrorRetired: z
 		.literal(true)
 		.describe(
-			'True after the same-token D1 mirror was retired (2026-08-01). DO-authority leases no longer write a D1 row on acquire; doOnly is expected and does not indicate a problem.',
+			'Always true: the same-token D1 mirror is retired (2026-08-01). DO-authority leases do not write a D1 row on acquire; doOnly is expected and does not indicate a problem.',
 		),
 	mirrorLeaseParity: z
 		.boolean()
 		.describe(
-			'Lease readiness after mirror retirement: legacyWithoutD1 is zero and inventory is not truncated. doOnly is expected after retirement and does not fail this gate. d1Only reflects legacy email leases and historical stale rows.',
+			'Lease readiness with the temporary D1 mirror retired: legacyWithoutD1 is zero and inventory is not truncated. doOnly is expected and does not fail this gate. d1Only reflects legacy email leases and historical stale rows.',
 		),
 })
 
@@ -108,7 +108,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_meter_parity',
 		description:
-			'Read-only production verification report for one user: UserMeter daily counters plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion write leases. Daily rows report meter counts only after mirror retirement (`mirrorRetired: true`). Deletion parity reports `temporaryMirrorRetired: true`; `doOnly` is expected and does not fail `mirrorLeaseParity` — only `legacyWithoutD1` (legacy-authority meter leases without a D1 row) and truncated inventory do. DO-authority leases no longer write D1 rows. `d1Only` reflects legacy email leases and historical stale pre-retirement rows. Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
+			'Read-only production verification report for one user: UserMeter daily counters plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion write leases. Daily rows report meter counts only when `mirrorRetired: true`. Deletion parity reports `temporaryMirrorRetired: true`; `doOnly` is expected and does not fail `mirrorLeaseParity` — only `legacyWithoutD1` (legacy-authority meter leases without a D1 row) and truncated inventory do. DO-authority leases do not write D1 rows. `d1Only` reflects legacy email leases and historical stale pre-retirement rows. Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
 		keywords: [
 			'admin',
 			'user meter',
