@@ -39,7 +39,7 @@ export const mailboxBlobDeleteMaxKeys = 1000
  * Bump when initializeSchema's DDL set changes. Warm objects run additive
  * migrations (CREATE INDEX IF NOT EXISTS / guarded ALTER) until they match.
  */
-export const mailboxSchemaVersion = 3
+export const mailboxSchemaVersion = 4
 export const mailboxMetaSchemaVersionKey = 'schema_version'
 
 export const mailboxExportThreadCursorPrefix = 'thread:'

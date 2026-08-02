@@ -37,19 +37,8 @@ test('mailbox retention helpers prefer backoff/continue and never postpone earli
 	expect(
 		computeMailboxRetentionReschedule({
 			nowMs,
-			hadBlobDeleteFailures: true,
-			expiredWorkRemaining: true,
-			nextDueAtMs: nowMs + 10_000,
-		}),
-	).toEqual({
-		kind: 'backoff',
-		atMs: nowMs + mailboxRetentionRetryDelayMs,
-	})
-	expect(
-		computeMailboxRetentionReschedule({
-			nowMs,
-			hadBlobDeleteFailures: false,
-			expiredWorkRemaining: true,
+			eligibleExpiredWorkRemaining: true,
+			earliestRetryAtMs: nowMs + mailboxRetentionRetryDelayMs,
 			nextDueAtMs: nowMs + 10_000,
 		}),
 	).toEqual({
@@ -59,16 +48,38 @@ test('mailbox retention helpers prefer backoff/continue and never postpone earli
 	expect(
 		computeMailboxRetentionReschedule({
 			nowMs,
-			hadBlobDeleteFailures: false,
-			expiredWorkRemaining: false,
+			eligibleExpiredWorkRemaining: true,
+			earliestRetryAtMs: nowMs + 500,
+			nextDueAtMs: nowMs + 60_000,
+		}),
+	).toEqual({
+		kind: 'backoff',
+		atMs: nowMs + 500,
+	})
+	expect(
+		computeMailboxRetentionReschedule({
+			nowMs,
+			eligibleExpiredWorkRemaining: false,
+			earliestRetryAtMs: nowMs + mailboxRetentionRetryDelayMs,
 			nextDueAtMs: nowMs + 60_000,
 		}),
 	).toEqual({ kind: 'next-due', atMs: nowMs + 60_000 })
 	expect(
 		computeMailboxRetentionReschedule({
 			nowMs,
-			hadBlobDeleteFailures: false,
-			expiredWorkRemaining: false,
+			eligibleExpiredWorkRemaining: false,
+			earliestRetryAtMs: nowMs + mailboxRetentionRetryDelayMs,
+			nextDueAtMs: null,
+		}),
+	).toEqual({
+		kind: 'backoff',
+		atMs: nowMs + mailboxRetentionRetryDelayMs,
+	})
+	expect(
+		computeMailboxRetentionReschedule({
+			nowMs,
+			eligibleExpiredWorkRemaining: false,
+			earliestRetryAtMs: null,
 			nextDueAtMs: null,
 		}),
 	).toEqual({ kind: 'idle', atMs: null })
@@ -264,14 +275,13 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 				return await state.storage.getAlarm()
 			},
 		)
-		// Overdue retained work (failed R2 delete) must retry with hourly backoff,
-		// not every second.
-		expect(alarmAfterFailure).toBeTypeOf('number')
+		// The failed oldest message is durably deferred, but the next eligible
+		// expired message keeps the alarm on near-immediate continuation.
 		expect(alarmAfterFailure).toBeGreaterThanOrEqual(
-			failureTurnAt + mailboxRetentionRetryDelayMs - 5_000,
+			failureTurnAt + mailboxRetentionContinuationDelayMs - 500,
 		)
 		expect(alarmAfterFailure).toBeLessThanOrEqual(
-			failureTurnAt + mailboxRetentionRetryDelayMs + 5_000,
+			failureTurnAt + mailboxRetentionContinuationDelayMs + 5_000,
 		)
 
 		expect(await env.EMAIL_BLOBS.get(failRawKey)).not.toBeNull()
@@ -292,6 +302,29 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 		).toMatchObject({
 			id: keepMessage.id,
 		})
+		const retry = await runInDurableObject(
+			stub,
+			async (_instance: Mailbox, state) =>
+				state.storage.sql
+					.exec<{
+						retry_at: string
+						attempt_count: number
+						last_error: string
+					}>(
+						`SELECT retry_at, attempt_count, last_error
+						FROM email_message_retention_retries
+						WHERE message_id = ?`,
+						failMessage.id,
+					)
+					.one(),
+		)
+		expect(Date.parse(retry.retry_at)).toBeGreaterThanOrEqual(
+			failureTurnAt + mailboxRetentionRetryDelayMs - 5_000,
+		)
+		expect(retry).toMatchObject({
+			attempt_count: 1,
+			last_error: expect.stringContaining('simulated R2 delete failure'),
+		})
 		const events = await mailbox.listDeliveryEvents({ limit: 10 })
 		expect(events.map((event) => event.id)).toEqual(['fresh-event'])
 		await runInDurableObject(stub, async (_instance: Mailbox, state) => {
@@ -304,25 +337,45 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 				.map((row) => row.message_id)
 			expect(ids).toEqual(['drop-msg'])
 		})
+
+		const alarmAfterNextEligible = await runInDurableObject(
+			stub,
+			async (instance: Mailbox, state) => {
+				await instance.alarm()
+				return await state.storage.getAlarm()
+			},
+		)
+		expect(await env.EMAIL_BLOBS.get(missingRawKey)).toBeNull()
+		expect(
+			await mailbox.getMessage({ messageId: missingKeyMessage.id }),
+		).toBeNull()
+		expect(alarmAfterNextEligible).toBe(Date.parse(retry.retry_at))
 	} finally {
 		env.EMAIL_BLOBS.delete = originalDelete
 	}
 
-	// Each explicit turn advances at most one message.
-	await runInDurableObject(stub, async (instance: Mailbox) => {
+	// Make the durable retry due, then the next turn retries and succeeds.
+	await runInDurableObject(stub, async (instance: Mailbox, state) => {
+		state.storage.sql.exec(
+			`UPDATE email_message_retention_retries
+			SET retry_at = ?
+			WHERE message_id = ?`,
+			new Date(Date.now() - 1_000).toISOString(),
+			failMessage.id,
+		)
 		await instance.alarm()
 	})
 	expect(await env.EMAIL_BLOBS.get(failRawKey)).toBeNull()
 	expect(await mailbox.getMessage({ messageId: failMessage.id })).toBeNull()
-	expect(await env.EMAIL_BLOBS.get(missingRawKey)).not.toBeNull()
-	await runInDurableObject(stub, async (instance: Mailbox) => {
-		await instance.alarm()
-	})
-	expect(await env.EMAIL_BLOBS.get(missingRawKey)).toBeNull()
-	expect(
-		await mailbox.getMessage({ messageId: missingKeyMessage.id }),
-	).toBeNull()
 	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		expect(
+			state.storage.sql
+				.exec<{ count: number }>(
+					`SELECT COUNT(*) AS count
+					FROM email_message_retention_retries`,
+				)
+				.one().count,
+		).toBe(0)
 		const tombstonedIds = state.storage.sql
 			.exec<{ message_id: string }>(
 				`SELECT message_id FROM email_message_deletion_tombstones
@@ -438,6 +491,15 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 
 	// A later invocation retries the one failed item; only then is the next
 	// turn a natural-cutoff no-op.
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		state.storage.sql.exec(
+			`UPDATE email_message_retention_retries
+			SET retry_at = ?
+			WHERE message_id = ?`,
+			new Date(Date.now() - 1_000).toISOString(),
+			failMessage.id,
+		)
+	})
 	const retry = await mailbox.runRetentionNow({ ownerId: userId })
 	expect(retry.after.messages).toBe(1)
 	expect(retry.expiredRemaining).toBe(false)
@@ -618,9 +680,24 @@ test('Mailbox retention selects one message per turn and revalidates before dele
 	expect(calls).toEqual(messages.map((message) => message.id))
 	expect(outcomes).toEqual(['deleted', 'skipped', 'deleted'])
 	expect(results).toEqual([
-		{ hadBlobDeleteFailures: false, expiredWorkRemaining: true },
-		{ hadBlobDeleteFailures: false, expiredWorkRemaining: true },
-		{ hadBlobDeleteFailures: false, expiredWorkRemaining: false },
+		{
+			hadBlobDeleteFailures: false,
+			expiredWorkRemaining: true,
+			eligibleExpiredWorkRemaining: true,
+			earliestRetryAtMs: null,
+		},
+		{
+			hadBlobDeleteFailures: false,
+			expiredWorkRemaining: true,
+			eligibleExpiredWorkRemaining: true,
+			earliestRetryAtMs: null,
+		},
+		{
+			hadBlobDeleteFailures: false,
+			expiredWorkRemaining: false,
+			eligibleExpiredWorkRemaining: false,
+			earliestRetryAtMs: null,
+		},
 	])
 	expect(await mailbox.getMessage({ messageId: messages[0]!.id })).toBeNull()
 	expect(
@@ -876,7 +953,32 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		)
 	})
 
+	const retryPurgeMessage = baseMessage(userId, { id: 'retry-purge-message' })
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		message: retryPurgeMessage,
+	})
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		state.storage.sql.exec(
+			`INSERT INTO email_message_retention_retries (
+				message_id, retry_at, attempt_count, last_error, updated_at
+			) VALUES (?, ?, 1, 'test', ?)`,
+			retryPurgeMessage.id,
+			'2099-01-01T00:00:00.000Z',
+			'2026-08-02T00:00:00.000Z',
+		)
+	})
 	await mailbox.purgeForParityRebuild({ ownerId: userId })
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		expect(
+			state.storage.sql
+				.exec<{ count: number }>(
+					`SELECT COUNT(*) AS count
+					FROM email_message_retention_retries`,
+				)
+				.one().count,
+		).toBe(0)
+	})
 	expect(
 		await mailbox.mirrorMessage({
 			ownerId: userId,
@@ -891,6 +993,13 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 
 	await mailbox.purge()
 	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		const retries = state.storage.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count
+				FROM email_message_retention_retries`,
+			)
+			.one().count
+		expect(Number(retries)).toBe(0)
 		const tombstones = state.storage.sql
 			.exec<{ count: number }>(
 				`SELECT COUNT(*) AS count

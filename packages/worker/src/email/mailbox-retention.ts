@@ -21,6 +21,10 @@ export type MailboxRetentionPassResult = {
 	hadBlobDeleteFailures: boolean
 	/** True when expired rows remain for a later alarm/invocation. */
 	expiredWorkRemaining: boolean
+	/** True when another expired message/event can run immediately. */
+	eligibleExpiredWorkRemaining: boolean
+	/** Earliest deferred message retry, or null when no retry is pending. */
+	earliestRetryAtMs: number | null
 }
 
 export type MailboxRetentionMessageCandidate = {
@@ -48,31 +52,38 @@ export type MailboxRetentionReschedule = {
 
 /**
  * Deterministic next-alarm choice after a retention pass.
- * - Blob delete failures → hourly backoff only
- * - Successful pass with expired rows remaining → near-immediate continuation
- * - Otherwise → future due-time (or idle)
+ * Select the earliest of an eligible-work continuation, a durable per-message
+ * retry, and ordinary future retention work.
  */
 export function computeMailboxRetentionReschedule(input: {
 	nowMs: number
-	hadBlobDeleteFailures: boolean
-	expiredWorkRemaining: boolean
+	eligibleExpiredWorkRemaining: boolean
+	earliestRetryAtMs: number | null
 	nextDueAtMs: number | null
 	continuationDelayMs?: number
-	backoffMs?: number
 }): MailboxRetentionReschedule {
-	const backoffMs = input.backoffMs ?? mailboxRetentionRetryDelayMs
 	const continuationDelayMs =
 		input.continuationDelayMs ?? mailboxRetentionContinuationDelayMs
-	if (input.hadBlobDeleteFailures) {
-		return { kind: 'backoff', atMs: input.nowMs + backoffMs }
+	const choices: Array<MailboxRetentionReschedule> = []
+	if (input.eligibleExpiredWorkRemaining) {
+		choices.push({ kind: 'continue', atMs: input.nowMs + continuationDelayMs })
 	}
-	if (input.expiredWorkRemaining) {
-		return { kind: 'continue', atMs: input.nowMs + continuationDelayMs }
+	if (
+		input.earliestRetryAtMs != null &&
+		input.earliestRetryAtMs > input.nowMs
+	) {
+		choices.push({ kind: 'backoff', atMs: input.earliestRetryAtMs })
 	}
-	if (input.nextDueAtMs == null) {
-		return { kind: 'idle', atMs: null }
+	if (input.nextDueAtMs != null && input.nextDueAtMs > input.nowMs) {
+		choices.push({ kind: 'next-due', atMs: input.nextDueAtMs })
 	}
-	return { kind: 'next-due', atMs: input.nextDueAtMs }
+	return (
+		choices.sort(
+			(left, right) =>
+				(left.atMs ?? Number.POSITIVE_INFINITY) -
+				(right.atMs ?? Number.POSITIVE_INFINITY),
+		)[0] ?? { kind: 'idle', atMs: null }
+	)
 }
 
 /**
@@ -82,6 +93,7 @@ export function computeMailboxRetentionReschedule(input: {
  */
 export function nextMailboxRetentionDueAtMs(
 	store: MailboxStore,
+	nowMs = Date.now(),
 ): number | null {
 	let next: number | null = null
 	const consider = (at: number) => {
@@ -89,13 +101,19 @@ export function nextMailboxRetentionDueAtMs(
 		if (next == null || at < next) next = at
 	}
 
-	const oldestMessage = store.oldestMessageCreatedAt()
+	const oldestMessage = store.oldestMessageCreatedAt(
+		new Date(nowMs).toISOString(),
+	)
 	if (oldestMessage) {
 		consider(Date.parse(oldestMessage) + messageRetentionMs)
 	}
 	const oldestEvent = store.oldestDeliveryEventCreatedAt()
 	if (oldestEvent) {
 		consider(Date.parse(oldestEvent) + deliveryEventRetentionMs)
+	}
+	const earliestRetryAt = store.earliestMessageRetentionRetryAt()
+	if (earliestRetryAt) {
+		consider(Date.parse(earliestRetryAt))
 	}
 	return next
 }
@@ -241,6 +259,15 @@ export async function deleteMailboxRetentionCandidate(input: {
 		await deleteMailboxBlobKeys(input.blobs, keys)
 	} catch (error) {
 		console.warn('mailbox-retention-blob-delete-failed', { error })
+		const failedAtMs = Date.now()
+		input.store.recordMessageRetentionFailure({
+			messageId: current.id,
+			retryAt: new Date(
+				failedAtMs + mailboxRetentionRetryDelayMs,
+			).toISOString(),
+			error: String(error).slice(0, 1_000),
+			updatedAt: new Date(failedAtMs).toISOString(),
+		})
 		return 'blob-delete-failed'
 	}
 	input.store.tombstoneAndDeleteMessage({
@@ -253,10 +280,12 @@ export async function deleteMailboxRetentionCandidate(input: {
 export function selectMailboxRetentionCandidate(
 	store: MailboxStore,
 	cutoff: string,
+	now = new Date().toISOString(),
 ): MailboxRetentionMessageCandidate | null {
 	return (
 		store.listExpiredMessagesForRetention({
 			cutoff,
+			now,
 			limit: mailboxRetentionMessageCandidatesPerTurn,
 		})[0] ?? null
 	)
@@ -297,6 +326,20 @@ export async function enforceMailboxRetention(input: {
 	const expiredWorkRemaining =
 		input.store.hasExpiredMessages(messageCutoff) ||
 		input.store.hasExpiredDeliveryEvents(eventCutoff)
+	const now = new Date().toISOString()
+	const eligibleExpiredWorkRemaining =
+		input.store.hasEligibleExpiredMessages({ cutoff: messageCutoff, now }) ||
+		input.store.hasExpiredDeliveryEvents(eventCutoff)
+	const retryAt = input.store.earliestMessageRetentionRetryAt()
+	const earliestRetryAtMs = retryAt == null ? null : Date.parse(retryAt)
 
-	return { hadBlobDeleteFailures, expiredWorkRemaining }
+	return {
+		hadBlobDeleteFailures,
+		expiredWorkRemaining,
+		eligibleExpiredWorkRemaining,
+		earliestRetryAtMs:
+			earliestRetryAtMs != null && Number.isFinite(earliestRetryAtMs)
+				? earliestRetryAtMs
+				: null,
+	}
 }

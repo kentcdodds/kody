@@ -245,7 +245,10 @@ Durable Object export behavior:
   account purge clears them. They intentionally have no time-based cleanup while
   D1 writers remain, so their growth is bounded by deleted message ids during
   the migration. Tombstone cleanup is safe only after those writers retire in
-  step 5. See [Mailbox](#durable-objects-mailbox).
+  step 5. Internal `email_message_retention_retries` rows defer failed R2
+  deletion attempts without blocking other expired messages; they are likewise
+  excluded from export/counts and removed with message or mailbox purge. See
+  [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -1105,13 +1108,16 @@ most one R2-backed message inside one safe concurrency gate; queued live writes
 run before a continuation turn can select another message. SQLite-only expired
 delivery-event and orphan-thread cleanup remains batched at 100 rows. Successful
 work with expired rows remaining schedules a near-immediate continuation
-(`mailboxRetentionContinuationDelayMs`); R2 delete failures use hourly backoff
-(`mailboxRetentionRetryDelayMs`). Write-path alarm selection never postpones an
-earlier existing alarm under sustained writes (near-equal times within skew keep
-the existing alarm). `alarm` and the RPC share natural production cutoffs and
-the same post-pass alarm reschedule; the RPC returns before/after `countMailbox`
-aggregates plus `blobDeleteFailures` / `expiredRemaining` (no row ids or
-content).
+(`mailboxRetentionContinuationDelayMs`). An R2 failure writes a durable
+per-message hourly `retry_at` (`mailboxRetentionRetryDelayMs`); candidate
+selection skips that message until due, so a failing oldest message cannot
+head-of-line block newer eligible candidates. Alarm scheduling chooses the
+earliest eligible continuation, retry due-time, or ordinary future retention
+due-time. Write-path alarm selection never postpones an earlier existing alarm
+under sustained writes (near-equal times within skew keep the existing alarm).
+`alarm` and the RPC share natural production cutoffs and the same post-pass
+alarm reschedule; the RPC returns before/after `countMailbox` aggregates plus
+`blobDeleteFailures` / `expiredRemaining` (no row ids or content).
 
 **Admin accelerated coverage** (`admin_mailbox_maintenance`;
 `packages/worker/src/admin/mailbox-maintenance.ts`): audited admin-only

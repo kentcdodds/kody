@@ -705,12 +705,17 @@ export class MailboxStore {
 		})
 	}
 
-	oldestMessageCreatedAt(): string | null {
+	oldestMessageCreatedAt(now: string): string | null {
 		const row = this.sql
 			.exec<{ created_at: string }>(
-				`SELECT created_at FROM email_messages
-				ORDER BY created_at ASC, id ASC
+				`SELECT message.created_at
+				FROM email_messages message
+				LEFT JOIN email_message_retention_retries retry
+					ON retry.message_id = message.id
+				WHERE retry.retry_at IS NULL OR retry.retry_at <= ?
+				ORDER BY message.created_at ASC, message.id ASC
 				LIMIT 1`,
+				now,
 			)
 			.toArray()[0]
 		return row?.created_at ?? null
@@ -722,6 +727,7 @@ export class MailboxStore {
 
 	listExpiredMessagesForRetention(input: {
 		cutoff: string
+		now: string
 		limit: number
 	}): Array<{
 		id: string
@@ -736,14 +742,54 @@ export class MailboxStore {
 				created_at: string
 				updated_at: string
 			}>(
-				`SELECT id, direction, created_at, updated_at FROM email_messages
-				WHERE created_at < ?
-				ORDER BY created_at ASC, id ASC
+				`SELECT message.id, message.direction, message.created_at,
+					message.updated_at
+				FROM email_messages message
+				LEFT JOIN email_message_retention_retries retry
+					ON retry.message_id = message.id
+				WHERE message.created_at < ?
+					AND (retry.retry_at IS NULL OR retry.retry_at <= ?)
+				ORDER BY message.created_at ASC, message.id ASC
 				LIMIT ?`,
 				input.cutoff,
+				input.now,
 				input.limit,
 			)
 			.toArray()
+	}
+
+	recordMessageRetentionFailure(input: {
+		messageId: string
+		retryAt: string
+		error: string
+		updatedAt: string
+	}) {
+		this.sql.exec(
+			`INSERT INTO email_message_retention_retries (
+				message_id, retry_at, attempt_count, last_error, updated_at
+			) VALUES (?, ?, 1, ?, ?)
+			ON CONFLICT(message_id) DO UPDATE SET
+				retry_at = excluded.retry_at,
+				attempt_count = email_message_retention_retries.attempt_count + 1,
+				last_error = excluded.last_error,
+				updated_at = excluded.updated_at`,
+			input.messageId,
+			input.retryAt,
+			input.error,
+			input.updatedAt,
+		)
+	}
+
+	earliestMessageRetentionRetryAt(): string | null {
+		const row = this.sql
+			.exec<{ retry_at: string }>(
+				`SELECT retry_at
+				FROM email_message_retention_retries
+				ORDER BY retry_at ASC, message_id ASC
+				LIMIT 1`,
+			)
+			.toArray()[0]
+		return row?.retry_at ?? null
 	}
 
 	getMessageForRetention(messageId: string): {
@@ -804,6 +850,10 @@ export class MailboxStore {
 			`DELETE FROM email_attachments WHERE message_id = ?`,
 			messageId,
 		)
+		this.sql.exec(
+			`DELETE FROM email_message_retention_retries WHERE message_id = ?`,
+			messageId,
+		)
 		this.sql.exec(`DELETE FROM email_messages WHERE id = ?`, messageId)
 		if (message.thread_id != null) {
 			this.sql.exec(
@@ -828,6 +878,7 @@ export class MailboxStore {
 	purgeMetadataPreservingTombstones() {
 		this.sql.exec(`DELETE FROM email_delivery_events`)
 		this.sql.exec(`DELETE FROM email_attachments`)
+		this.sql.exec(`DELETE FROM email_message_retention_retries`)
 		this.sql.exec(`DELETE FROM email_messages`)
 		this.sql.exec(`DELETE FROM email_threads`)
 	}
@@ -844,6 +895,24 @@ export class MailboxStore {
 					WHERE created_at < ?
 					LIMIT 1`,
 					cutoff,
+				)
+				.toArray()[0] != null
+		)
+	}
+
+	hasEligibleExpiredMessages(input: { cutoff: string; now: string }): boolean {
+		return (
+			this.sql
+				.exec<{ ok: number }>(
+					`SELECT 1 AS ok
+					FROM email_messages message
+					LEFT JOIN email_message_retention_retries retry
+						ON retry.message_id = message.id
+					WHERE message.created_at < ?
+						AND (retry.retry_at IS NULL OR retry.retry_at <= ?)
+					LIMIT 1`,
+					input.cutoff,
+					input.now,
 				)
 				.toArray()[0] != null
 		)

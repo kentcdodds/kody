@@ -226,17 +226,17 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 */
 	private async runRetentionPass(): Promise<MailboxRunRetentionNowResult> {
 		const before = this.store.countMailbox()
-		const nowMs = Date.now()
 		const result = await enforceMailboxRetention({
 			store: this.store,
 			deleteMessage: (cutoff) => this.deleteRetentionMessage(cutoff),
 		})
 		const after = this.store.countMailbox()
-		const nextDueAtMs = nextMailboxRetentionDueAtMs(this.store)
+		const nowMs = Date.now()
+		const nextDueAtMs = nextMailboxRetentionDueAtMs(this.store, nowMs)
 		const reschedule = computeMailboxRetentionReschedule({
 			nowMs,
-			hadBlobDeleteFailures: result.hadBlobDeleteFailures,
-			expiredWorkRemaining: result.expiredWorkRemaining,
+			eligibleExpiredWorkRemaining: result.eligibleExpiredWorkRemaining,
+			earliestRetryAtMs: result.earliestRetryAtMs,
 			nextDueAtMs,
 		})
 		if (reschedule.atMs == null) {
