@@ -22,6 +22,18 @@ export type MailboxRetentionPassResult = {
 	expiredWorkRemaining: boolean
 }
 
+export type MailboxRetentionMessageCandidate = {
+	id: string
+	direction: 'inbound' | 'outbound'
+	created_at: string
+	updated_at: string
+}
+
+export type MailboxRetentionMessageDeleteResult =
+	| 'deleted'
+	| 'skipped'
+	| 'blob-delete-failed'
+
 export type MailboxRetentionRescheduleKind =
 	| 'idle'
 	| 'backoff'
@@ -148,19 +160,6 @@ export async function deleteMailboxBlobKeys(
 	}
 }
 
-async function tryDeleteBlobKeys(
-	blobs: Pick<R2Bucket, 'delete'>,
-	keys: Array<string>,
-): Promise<boolean> {
-	try {
-		await deleteMailboxBlobKeys(blobs, keys)
-		return true
-	} catch (error) {
-		console.warn('mailbox-retention-blob-delete-failed', { error })
-		return false
-	}
-}
-
 /**
  * Build owner-safe R2 keys for an expired message. Never deletes arbitrary
  * stored key strings — only canonical inbound raw MIME keys and matching
@@ -208,72 +207,95 @@ export function canonicalRetentionBlobKeys(
 	)
 }
 
-async function pruneExpiredMessages(input: {
+/**
+ * Revalidate one previously selected message, delete its canonical blobs in
+ * bounded R2 chunks, then tombstone/delete metadata. The DO caller must place
+ * exactly this operation inside one safe input gate.
+ */
+export async function deleteMailboxRetentionCandidate(input: {
 	store: MailboxStore
 	blobs: Pick<R2Bucket, 'delete'>
 	ownerId: string
+	candidate: MailboxRetentionMessageCandidate
+	cutoff: string
+}): Promise<MailboxRetentionMessageDeleteResult> {
+	const current = input.store.getMessageForRetention(input.candidate.id)
+	if (
+		current == null ||
+		current.created_at >= input.cutoff ||
+		current.created_at !== input.candidate.created_at ||
+		current.updated_at !== input.candidate.updated_at ||
+		current.direction !== input.candidate.direction
+	) {
+		return 'skipped'
+	}
+
+	const keys = canonicalRetentionBlobKeys({
+		ownerId: input.ownerId,
+		messageId: current.id,
+		direction: current.direction,
+		attachments: input.store.listAttachmentsForRetention([current.id]),
+	})
+	try {
+		await deleteMailboxBlobKeys(input.blobs, keys)
+	} catch (error) {
+		console.warn('mailbox-retention-blob-delete-failed', { error })
+		return 'blob-delete-failed'
+	}
+	input.store.tombstoneAndDeleteMessage({
+		messageId: current.id,
+		deletedAt: new Date().toISOString(),
+	})
+	return 'deleted'
+}
+
+async function pruneExpiredMessages(input: {
+	store: MailboxStore
+	cutoff: string
+	deleteMessage: (
+		candidate: MailboxRetentionMessageCandidate,
+		cutoff: string,
+	) => Promise<MailboxRetentionMessageDeleteResult>
+	yieldBetweenMessages: () => Promise<void>
 }): Promise<boolean> {
-	const cutoff = new Date(Date.now() - messageRetentionMs).toISOString()
 	const rows = input.store.listExpiredMessagesForRetention({
-		cutoff,
+		cutoff: input.cutoff,
 		limit: mailboxRetentionBatchSize,
 	})
 	if (rows.length === 0) return false
 
-	const attachmentRows = input.store.listAttachmentsForRetention(
-		rows.map((row) => row.id),
-	)
-	const attachmentsByMessageId = new Map<
-		string,
-		Array<{ id: string; storage_key: string | null }>
-	>()
-	for (const attachment of attachmentRows) {
-		const list = attachmentsByMessageId.get(attachment.message_id)
-		if (list) list.push(attachment)
-		else {
-			attachmentsByMessageId.set(attachment.message_id, [attachment])
-		}
-	}
-
 	let hadBlobDeleteFailures = false
-	for (const row of rows) {
-		const keys = canonicalRetentionBlobKeys({
-			ownerId: input.ownerId,
-			messageId: row.id,
-			direction: row.direction,
-			attachments: attachmentsByMessageId.get(row.id) ?? [],
-		})
-		const blobsDeleted = await tryDeleteBlobKeys(input.blobs, keys)
-		if (!blobsDeleted) {
+	for (const [index, row] of rows.entries()) {
+		const result = await input.deleteMessage(row, input.cutoff)
+		if (result === 'blob-delete-failed') {
 			hadBlobDeleteFailures = true
-			continue
 		}
-		input.store.tombstoneAndDeleteMessage({
-			messageId: row.id,
-			deletedAt: new Date().toISOString(),
-		})
+		if (index < rows.length - 1) {
+			await input.yieldBetweenMessages()
+		}
 	}
 	return hadBlobDeleteFailures
 }
 
 export async function enforceMailboxRetention(input: {
 	store: MailboxStore
-	blobs: Pick<R2Bucket, 'delete'>
+	deleteMessage: (
+		candidate: MailboxRetentionMessageCandidate,
+		cutoff: string,
+	) => Promise<MailboxRetentionMessageDeleteResult>
+	yieldBetweenMessages: () => Promise<void>
 }): Promise<MailboxRetentionPassResult> {
 	const messageCutoff = new Date(Date.now() - messageRetentionMs).toISOString()
 	const eventCutoff = new Date(
 		Date.now() - deliveryEventRetentionMs,
 	).toISOString()
 
-	const ownerId = input.store.getOwnerId()
-	let hadBlobDeleteFailures = false
-	if (ownerId) {
-		hadBlobDeleteFailures = await pruneExpiredMessages({
-			store: input.store,
-			blobs: input.blobs,
-			ownerId,
-		})
-	}
+	const hadBlobDeleteFailures = await pruneExpiredMessages({
+		store: input.store,
+		cutoff: messageCutoff,
+		deleteMessage: input.deleteMessage,
+		yieldBetweenMessages: input.yieldBetweenMessages,
+	})
 
 	input.store.pruneExpiredDeliveryEvents({
 		cutoff: eventCutoff,

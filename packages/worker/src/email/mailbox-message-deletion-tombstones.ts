@@ -71,6 +71,12 @@ export function tombstoneMissingMailboxMessage(
 	if (messagePresent) return { status: 'message-present' }
 
 	const created = !isMailboxMessageTombstoned(sql, messageId)
+	sql.exec(
+		`UPDATE email_delivery_events
+		SET message_id = NULL
+		WHERE message_id = ?`,
+		messageId,
+	)
 	writeMailboxMessageDeletionTombstone(sql, { messageId, deletedAt })
 	return { status: 'tombstoned', created }
 }

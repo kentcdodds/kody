@@ -9,10 +9,13 @@ import {
 	canonicalMailboxMessageBlobReferences,
 	computeMailboxRetentionReschedule,
 	deleteMailboxBlobKeys,
+	deleteMailboxRetentionCandidate,
 	enforceMailboxRetention,
 	mailboxRetentionAlarmAtMs,
 	nextMailboxRetentionDueAtMs,
 	selectMailboxRetentionWriteAlarm,
+	type MailboxRetentionMessageCandidate,
+	type MailboxRetentionMessageDeleteResult,
 } from './mailbox-retention.ts'
 import { MailboxStore } from './mailbox-store.ts'
 import {
@@ -192,6 +195,31 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	/**
+	 * Revalidate and delete one selected retention candidate under its own
+	 * input gate. A message's keys are sent to R2 in bounded 1,000-key chunks;
+	 * an exceptional message with more keys may require multiple R2 calls, but
+	 * no gate spans multiple messages.
+	 */
+	private async deleteRetentionMessage(
+		candidate: MailboxRetentionMessageCandidate,
+		cutoff: string,
+	): Promise<MailboxRetentionMessageDeleteResult> {
+		return await this.blockConcurrencySafely(async () => {
+			const ownerId = this.store.getOwnerId()
+			if (ownerId == null) {
+				throw new Error('Mailbox retention candidate has no bound owner.')
+			}
+			return await deleteMailboxRetentionCandidate({
+				store: this.store,
+				blobs: this.env.EMAIL_BLOBS,
+				ownerId,
+				candidate,
+				cutoff,
+			})
+		})
+	}
+
+	/**
 	 * Shared retention pass for `alarm` and {@link runRetentionNow}.
 	 * Natural production cutoffs only; exact post-pass alarm scheduling.
 	 */
@@ -200,7 +228,11 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		const nowMs = Date.now()
 		const result = await enforceMailboxRetention({
 			store: this.store,
-			blobs: this.env.EMAIL_BLOBS,
+			deleteMessage: (candidate, cutoff) =>
+				this.deleteRetentionMessage(candidate, cutoff),
+			// Once an item's gate opens, give queued live writes a turn before
+			// the next candidate is revalidated under a new gate.
+			yieldBetweenMessages: () => scheduler.wait(0),
 		})
 		const after = this.store.countMailbox()
 		const nextDueAtMs = nextMailboxRetentionDueAtMs(this.store)
@@ -227,7 +259,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async alarm(): Promise<void> {
-		await this.blockConcurrencySafely(() => this.runRetentionPass())
+		await this.runRetentionPass()
 	}
 
 	/**
@@ -237,10 +269,8 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async runRetentionNow(input: {
 		ownerId: string
 	}): Promise<MailboxRunRetentionNowResult> {
-		return await this.blockConcurrencySafely(async () => {
-			this.store.assertOwner(input.ownerId)
-			return await this.runRetentionPass()
-		})
+		this.store.assertOwner(input.ownerId)
+		return await this.runRetentionPass()
 	}
 
 	async mirrorMessage(input: {
