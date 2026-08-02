@@ -374,13 +374,13 @@ export function normalizeMailboxInboundLimit(limit: number | undefined) {
 	return Math.min(Math.max(Math.trunc(limit), 1), 100)
 }
 
-/** Non-negative finite number; rejects NaN/Infinity before floor/round. */
+/** Non-negative finite number; rejects invalid values before floor/round. */
 export function assertMailboxInboundNonNegativeFiniteNumber(
 	value: unknown,
 	label: string,
 ): number {
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		throw new Error(`Mailbox ${label} must be a finite number.`)
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+		throw new Error(`Mailbox ${label} must be a non-negative finite number.`)
 	}
-	return Math.max(0, value)
+	return value
 }

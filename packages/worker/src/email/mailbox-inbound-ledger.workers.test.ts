@@ -468,7 +468,7 @@ test('inbound ledger rejects non-finite expectedAttachmentCount, usageDurationMs
 			Number.NEGATIVE_INFINITY,
 		]) {
 			await assertMailboxThrows(
-				/expectedAttachmentCount must be a finite number/,
+				/expectedAttachmentCount must be a non-negative finite number/,
 				() =>
 					instance.claimInboundDeliveryStorage({
 						ownerId,
@@ -496,27 +496,31 @@ test('inbound ledger rejects non-finite expectedAttachmentCount, usageDurationMs
 			Number.POSITIVE_INFINITY,
 			Number.NEGATIVE_INFINITY,
 		]) {
-			await assertMailboxThrows(/usageDurationMs must be a finite number/, () =>
-				instance.markInboundDeliveryReceived({
-					ownerId,
-					deliveryId: delivery.deliveryId,
-					storageLease,
-					usageDurationMs: value,
-					usageMonth: '2026-07',
-					usageBytes: 8,
-					now,
-				}),
+			await assertMailboxThrows(
+				/usageDurationMs must be a non-negative finite number/,
+				() =>
+					instance.markInboundDeliveryReceived({
+						ownerId,
+						deliveryId: delivery.deliveryId,
+						storageLease,
+						usageDurationMs: value,
+						usageMonth: '2026-07',
+						usageBytes: 8,
+						now,
+					}),
 			)
-			await assertMailboxThrows(/usageBytes must be a finite number/, () =>
-				instance.markInboundDeliveryReceived({
-					ownerId,
-					deliveryId: delivery.deliveryId,
-					storageLease,
-					usageDurationMs: 5,
-					usageMonth: '2026-07',
-					usageBytes: value,
-					now,
-				}),
+			await assertMailboxThrows(
+				/usageBytes must be a non-negative finite number/,
+				() =>
+					instance.markInboundDeliveryReceived({
+						ownerId,
+						deliveryId: delivery.deliveryId,
+						storageLease,
+						usageDurationMs: 5,
+						usageMonth: '2026-07',
+						usageBytes: value,
+						now,
+					}),
 			)
 		}
 	})

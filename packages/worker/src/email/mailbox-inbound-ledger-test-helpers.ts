@@ -17,7 +17,7 @@ export function insertInput(
 		messageId,
 		threadId:
 			overrides?.threadId ?? `email-inbound-thread:${crypto.randomUUID()}`,
-		rawMimeKey: emailRawMimeKey(ownerId, messageId),
+		rawMimeKey: overrides?.rawMimeKey ?? emailRawMimeKey(ownerId, messageId),
 		inboxId: overrides?.inboxId ?? `inbox-${crypto.randomUUID()}`,
 		recipient: overrides?.recipient ?? 'owner@example.com',
 		envelopeFrom: overrides?.envelopeFrom ?? 'sender@example.com',

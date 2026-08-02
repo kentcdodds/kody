@@ -61,11 +61,12 @@ test('storage lease takeover predicate matches D1 stale window', () => {
 	expect(staleLeaseAt < expiredBefore).toBe(true)
 })
 
-test('assertMailboxInboundNonNegativeFiniteNumber rejects NaN and Infinity', () => {
+test('assertMailboxInboundNonNegativeFiniteNumber rejects invalid values', () => {
 	for (const value of [
 		Number.NaN,
 		Number.POSITIVE_INFINITY,
 		Number.NEGATIVE_INFINITY,
+		-1,
 	]) {
 		for (const label of [
 			'expectedAttachmentCount',
@@ -74,7 +75,7 @@ test('assertMailboxInboundNonNegativeFiniteNumber rejects NaN and Infinity', () 
 		] as const) {
 			expect(() =>
 				assertMailboxInboundNonNegativeFiniteNumber(value, label),
-			).toThrow(new RegExp(`${label} must be a finite number`))
+			).toThrow(new RegExp(`${label} must be a non-negative finite number`))
 		}
 	}
 	expect(assertMailboxInboundNonNegativeFiniteNumber(0, 'usageBytes')).toBe(0)
