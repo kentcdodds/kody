@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as AccountEmailData from '#app/account-email-data.ts'
 
 const loadAccountEmailDataMock = vi.hoisted(() =>
 	vi.fn(async () => ({
@@ -21,8 +22,7 @@ const loadAccountEmailDataMock = vi.hoisted(() =>
 )
 
 vi.mock('#app/account-email-data.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#app/account-email-data.ts')>()
+	const actual = await importOriginal<typeof AccountEmailData>()
 	return {
 		...actual,
 		loadAccountEmailData: (...args: Array<unknown>) =>
