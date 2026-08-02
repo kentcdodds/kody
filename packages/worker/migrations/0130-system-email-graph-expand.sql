@@ -208,7 +208,16 @@ SELECT
 	id, inbox_id, subject_normalized, root_message_id_header, last_message_at,
 	created_at, updated_at
 FROM email_threads
-WHERE user_id = 'system:email';
+WHERE user_id = 'system:email'
+	AND (
+		inbox_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM email_inboxes inbox
+			WHERE inbox.id = email_threads.inbox_id
+				AND inbox.user_id = 'system:email'
+		)
+	);
 
 INSERT OR IGNORE INTO system_email_messages (
 	id, direction, inbox_id, thread_id, sender_identity_id, from_address,
@@ -228,7 +237,33 @@ SELECT
 	created_at, updated_at, raw_mime_key, delivery_status, delivery_status_at,
 	classification, classification_reason
 FROM email_messages
-WHERE user_id = 'system:email';
+WHERE user_id = 'system:email'
+	AND (
+		inbox_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM email_inboxes inbox
+			WHERE inbox.id = email_messages.inbox_id
+				AND inbox.user_id = 'system:email'
+		)
+	)
+	AND (
+		sender_identity_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM email_sender_identities sender
+			WHERE sender.id = email_messages.sender_identity_id
+				AND sender.user_id = 'system:email'
+		)
+	)
+	AND (
+		thread_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM system_email_threads thread
+			WHERE thread.id = email_messages.thread_id
+		)
+	);
 
 INSERT OR IGNORE INTO system_email_attachments (
 	id, message_id, filename, content_type, content_id, disposition, size,
@@ -241,6 +276,8 @@ SELECT
 	attachment.created_at
 FROM email_attachments attachment
 INNER JOIN email_messages message ON message.id = attachment.message_id
+INNER JOIN system_email_messages system_message
+	ON system_message.id = attachment.message_id
 WHERE message.user_id = 'system:email';
 
 INSERT OR IGNORE INTO system_email_delivery_events (
@@ -269,4 +306,21 @@ SELECT
 	subscription_effect_retry_at, subscription_effect_attempt_count,
 	subscription_effect_dead_letter_at, subscription_effect_last_error, updated_at
 FROM email_delivery_events
-WHERE user_id = 'system:email';
+WHERE user_id = 'system:email'
+	AND (
+		inbox_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM email_inboxes inbox
+			WHERE inbox.id = email_delivery_events.inbox_id
+				AND inbox.user_id = 'system:email'
+		)
+	)
+	AND (
+		message_id IS NULL
+		OR EXISTS (
+			SELECT 1
+			FROM system_email_messages message
+			WHERE message.id = email_delivery_events.message_id
+		)
+	);

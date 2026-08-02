@@ -26,6 +26,19 @@ export type OutboundProviderIndexParityReport = {
 	parity: boolean
 }
 
+export function classifyOutboundProviderIndexParity(
+	counts: Omit<OutboundProviderIndexParityReport, 'parity'>,
+): OutboundProviderIndexParityReport {
+	return {
+		...counts,
+		parity:
+			counts.linkedMessageCount === counts.indexCount &&
+			counts.missingFromIndexCount === 0 &&
+			counts.missingFromMessagesCount === 0 &&
+			counts.mismatchedCount === 0,
+	}
+}
+
 function mapIndexRow(
 	row: Record<string, unknown>,
 ): EmailOutboundProviderIndexRow {
@@ -259,16 +272,11 @@ export async function loadOutboundProviderIndexParityReport(input: {
 	const missingFromIndexCount = Number(row?.missing_from_index_count ?? 0)
 	const missingFromMessagesCount = Number(row?.missing_from_messages_count ?? 0)
 	const mismatchedCount = Number(row?.mismatched_count ?? 0)
-	return {
+	return classifyOutboundProviderIndexParity({
 		linkedMessageCount,
 		indexCount,
 		missingFromIndexCount,
 		missingFromMessagesCount,
 		mismatchedCount,
-		parity:
-			linkedMessageCount === indexCount &&
-			missingFromIndexCount === 0 &&
-			missingFromMessagesCount === 0 &&
-			mismatchedCount === 0,
-	}
+	})
 }

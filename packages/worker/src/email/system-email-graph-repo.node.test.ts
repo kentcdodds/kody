@@ -1,8 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { loadSystemEmailGraphParityReport } from './system-email-graph-repo.ts'
+import {
+	loadSystemEmailGraphParityReport,
+	reconcileSystemEmailGraphFromLegacy,
+} from './system-email-graph-repo.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
@@ -127,6 +130,7 @@ test('system email graph report returns aggregate parity and provider dispositio
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -137,6 +141,7 @@ test('system email graph report returns aggregate parity and provider dispositio
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -147,6 +152,7 @@ test('system email graph report returns aggregate parity and provider dispositio
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -157,6 +163,7 @@ test('system email graph report returns aggregate parity and provider dispositio
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -166,6 +173,7 @@ test('system email graph report returns aggregate parity and provider dispositio
 			dedicatedProviderLinkedMessageCount: 1,
 			legacyAuthorityIndexCount: 1,
 			missingFromLegacyAuthorityIndexCount: 0,
+			missingFromLegacyMessagesCount: 0,
 			mismatchedLegacyAuthorityIndexCount: 0,
 			classification: 'legacy-authority-parity',
 			authorityDisposition: 'legacy-email-messages-until-4b-routing',
@@ -227,4 +235,128 @@ test('system email graph report returns aggregate parity and provider dispositio
 		},
 		parity: false,
 	})
+
+	sqlite.exec(`
+		UPDATE email_outbound_provider_index
+		SET inbox_id = 'system-inbox'
+		WHERE provider_message_id = 'provider-system-1';
+		UPDATE email_messages
+		SET subject = 'Updated incident'
+		WHERE id = 'system-inbound';
+		DELETE FROM email_attachments
+		WHERE id = 'system-attachment';
+		INSERT INTO email_attachments (
+			id, message_id, filename, content_type, size, storage_kind, created_at
+		) VALUES (
+			'system-attachment-new', 'system-inbound', 'new.txt', 'text/plain',
+			8, 'raw-mime', '${updatedAt}'
+		);
+	`)
+	const batch = vi.spyOn(db, 'batch')
+	const repaired = await reconcileSystemEmailGraphFromLegacy({ db })
+	expect(batch).toHaveBeenCalledTimes(1)
+	expect(repaired.metrics).toEqual({
+		deleted: {
+			threads: 1,
+			messages: 0,
+			attachments: 1,
+			deliveryEvents: 0,
+		},
+		upserted: {
+			threads: 0,
+			messages: 1,
+			attachments: 1,
+			deliveryEvents: 1,
+		},
+		referencedOwnerMismatchCount: 0,
+	})
+	expect(repaired.postReport.parity).toBe(true)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT subject, thread_id
+				FROM system_email_messages
+				WHERE id = 'system-inbound'`,
+			)
+			.get(),
+	).toEqual({ subject: 'Updated incident', thread_id: 'system-thread' })
+	expect(
+		sqlite.prepare(`SELECT id FROM system_email_attachments ORDER BY id`).all(),
+	).toEqual([{ id: 'system-attachment-new' }])
+
+	const repeated = await reconcileSystemEmailGraphFromLegacy({ db })
+	expect(batch).toHaveBeenCalledTimes(2)
+	expect(repeated.metrics).toEqual({
+		deleted: {
+			threads: 0,
+			messages: 0,
+			attachments: 0,
+			deliveryEvents: 0,
+		},
+		upserted: {
+			threads: 0,
+			messages: 0,
+			attachments: 0,
+			deliveryEvents: 0,
+		},
+		referencedOwnerMismatchCount: 0,
+	})
+	expect(repeated.postReport.parity).toBe(true)
+
+	sqlite.exec(`
+		INSERT INTO email_sender_identities (
+			id, user_id, email, display_name, status, created_at, updated_at
+		) VALUES (
+			'foreign-sender', 'user-1', 'foreign@example.com', 'Foreign',
+			'verified', '${createdAt}', '${updatedAt}'
+		);
+		INSERT INTO email_threads (
+			id, user_id, inbox_id, subject_normalized, last_message_at,
+			created_at, updated_at
+		) VALUES (
+			'invalid-system-thread', 'system:email', 'user-inbox', 'invalid',
+			'${updatedAt}', '${createdAt}', '${updatedAt}'
+		);
+		INSERT INTO email_messages (
+			id, direction, user_id, inbox_id, sender_identity_id, from_address,
+			to_addresses_json, subject, references_json, headers_json, raw_size,
+			processing_status, created_at, updated_at
+		) VALUES (
+			'invalid-system-message', 'outbound', 'system:email', 'user-inbox',
+			'foreign-sender', 'support@example.com', '["recipient@example.net"]',
+			'Invalid owner refs', '[]', '{}', 1, 'stored', '${createdAt}',
+			'${updatedAt}'
+		);
+		INSERT INTO email_attachments (
+			id, message_id, content_type, size, storage_kind, created_at
+		) VALUES (
+			'invalid-system-attachment', 'invalid-system-message', 'text/plain',
+			1, 'raw-mime', '${createdAt}'
+		);
+		INSERT INTO email_delivery_events (
+			id, message_id, user_id, inbox_id, event_type, provider, detail_json,
+			created_at, needs_effect_reconcile
+		) VALUES (
+			'invalid-system-event', 'invalid-system-message', 'system:email',
+			'user-inbox', 'send_requested', 'kody', '{}', '${createdAt}', 0
+		);
+	`)
+	const fenced = await reconcileSystemEmailGraphFromLegacy({ db })
+	expect(fenced.metrics.referencedOwnerMismatchCount).toBe(4)
+	expect(fenced.postReport).toMatchObject({
+		threads: { referencedOwnerMismatchCount: 1, parity: false },
+		messages: { referencedOwnerMismatchCount: 1, parity: false },
+		attachments: { referencedOwnerMismatchCount: 1, parity: false },
+		deliveryEvents: { referencedOwnerMismatchCount: 1, parity: false },
+		parity: false,
+	})
+	expect(
+		sqlite
+			.prepare(
+				`SELECT COUNT(*) AS count
+				FROM system_email_messages
+				WHERE id = 'invalid-system-message'`,
+			)
+			.get(),
+	).toEqual({ count: 0 })
 })

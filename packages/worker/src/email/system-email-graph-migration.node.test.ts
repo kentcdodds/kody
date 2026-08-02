@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { systemEmailGraphColumnContracts } from './system-email-graph-columns.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
@@ -44,10 +45,15 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 		INSERT INTO email_sender_identities (
 			id, user_id, email, display_name, status, verified_at,
 			created_at, updated_at
-		) VALUES (
-			'system-sender', 'system:email', 'support@example.com', 'Support',
-			'verified', '${createdAt}', '${createdAt}', '${updatedAt}'
-		);
+		) VALUES
+			(
+				'system-sender', 'system:email', 'support@example.com', 'Support',
+				'verified', '${createdAt}', '${createdAt}', '${updatedAt}'
+			),
+			(
+				'user-sender', 'user-1', 'user@example.com', 'User',
+				'verified', '${createdAt}', '${createdAt}', '${updatedAt}'
+			);
 
 		INSERT INTO email_threads (
 			id, user_id, inbox_id, subject_normalized, root_message_id_header,
@@ -55,6 +61,8 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 		) VALUES
 			('system-thread', 'system:email', 'system-inbox', 'incident',
 				'<system-root@example.com>', '${updatedAt}', '${createdAt}', '${updatedAt}'),
+			('cross-owner-thread', 'system:email', 'user-inbox', 'cross owner',
+				NULL, '${updatedAt}', '${createdAt}', '${updatedAt}'),
 			('user-thread', 'user-1', 'user-inbox', 'private',
 				'<user-root@example.com>', '${updatedAt}', '${createdAt}', '${updatedAt}');
 
@@ -95,6 +103,14 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 				'{}', NULL, 'private body', NULL, 64, 'stored', NULL, NULL,
 				'${createdAt}', NULL, '${createdAt}', '${updatedAt}', NULL, NULL,
 				NULL, 'accepted', NULL
+			),
+			(
+				'cross-owner-message', 'outbound', 'system:email', 'user-inbox',
+				'user-thread', 'user-sender', 'support@example.com', NULL,
+				'["recipient@example.net"]', '[]', '[]', '[]', 'Cross owner',
+				'<cross-owner@example.com>', NULL, '[]', '{}', NULL, 'body', NULL,
+				32, 'sent', 'provider-cross-owner', NULL, NULL, '${updatedAt}',
+				'${createdAt}', '${updatedAt}', NULL, NULL, NULL, 'accepted', NULL
 			);
 
 		INSERT INTO email_attachments (
@@ -106,7 +122,10 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 				'email-attachment:v1:system:email/system-inbound/system-attachment',
 				'${createdAt}'),
 			('user-attachment', 'user-message', 'private.txt', 'text/plain', NULL,
-				'attachment', 7, 'raw-mime', NULL, '${createdAt}');
+				'attachment', 7, 'raw-mime', NULL, '${createdAt}'),
+			('cross-owner-attachment', 'cross-owner-message', 'cross.txt',
+				'text/plain', NULL, 'attachment', 2, 'raw-mime', NULL,
+				'${createdAt}');
 
 		INSERT INTO email_delivery_events (
 			id, message_id, user_id, inbox_id, event_type, provider,
@@ -140,6 +159,13 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 				'user-fingerprint', NULL, NULL, NULL, NULL, NULL, 0,
 				'user-finalization', NULL, NULL, NULL, '${createdAt}', NULL, NULL,
 				NULL, 'complete', NULL, NULL, NULL, 1, NULL, NULL, '${updatedAt}'
+			),
+			(
+				'cross-owner-delivery', 'cross-owner-message', 'system:email',
+				'user-inbox', 'sent', 'kody', 'provider-cross-owner', NULL, '{}',
+				'${createdAt}', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+				NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+				NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '${updatedAt}'
 			);
 
 		INSERT INTO email_outbound_provider_index (
@@ -175,7 +201,7 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 					(SELECT COUNT(*) FROM email_delivery_events) AS events`,
 			)
 			.get(),
-	).toEqual({ threads: 2, messages: 3, attachments: 2, events: 2 })
+	).toEqual({ threads: 3, messages: 4, attachments: 3, events: 3 })
 
 	expect(
 		db
@@ -242,6 +268,78 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 		const columns = db.prepare(`PRAGMA table_info(${table})`).all()
 		expect(columns.some((column) => column.name === 'user_id')).toBe(false)
 	}
+	for (const contract of systemEmailGraphColumnContracts) {
+		const legacyColumns = db
+			.prepare(`PRAGMA table_info(${contract.legacyTable})`)
+			.all()
+			.map((column) => String(column.name))
+			.filter((column) => column !== 'user_id')
+		const dedicatedColumns = db
+			.prepare(`PRAGMA table_info(${contract.dedicatedTable})`)
+			.all()
+			.map((column) => String(column.name))
+		expect(dedicatedColumns).toEqual(legacyColumns)
+		expect(dedicatedColumns).toEqual(contract.columns)
+		expect([
+			'id',
+			...contract.relationshipColumns,
+			...contract.columns.filter(
+				(column) =>
+					column !== 'id' && !contract.relationshipColumns.includes(column),
+			),
+		]).toEqual(expect.arrayContaining([...contract.columns]))
+	}
+	expect(
+		systemEmailGraphColumnContracts
+			.find((contract) => contract.key === 'deliveryEvents')
+			?.columns.slice(-13),
+	).toEqual([
+		'usage_effect_suppressed_at',
+		'usage_started_at',
+		'usage_effect_retry_at',
+		'usage_effect_lease',
+		'usage_effect_lease_at',
+		'subscription_effect_state',
+		'subscription_effect_lease',
+		'subscription_effect_lease_at',
+		'subscription_effect_retry_at',
+		'subscription_effect_attempt_count',
+		'subscription_effect_dead_letter_at',
+		'subscription_effect_last_error',
+		'updated_at',
+	])
+	expect(
+		db
+			.prepare(
+				`SELECT id FROM system_email_threads
+				WHERE id = 'cross-owner-thread'`,
+			)
+			.get(),
+	).toBeUndefined()
+	expect(
+		db
+			.prepare(
+				`SELECT id FROM system_email_messages
+				WHERE id = 'cross-owner-message'`,
+			)
+			.get(),
+	).toBeUndefined()
+	expect(
+		db
+			.prepare(
+				`SELECT id FROM system_email_attachments
+				WHERE id = 'cross-owner-attachment'`,
+			)
+			.get(),
+	).toBeUndefined()
+	expect(
+		db
+			.prepare(
+				`SELECT id FROM system_email_delivery_events
+				WHERE id = 'cross-owner-delivery'`,
+			)
+			.get(),
+	).toBeUndefined()
 	expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 	expect(
 		db

@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 	pruneUserEmailMessagesForRetention: vi.fn(),
 	pruneEmailDeliveryEventsForRetention: vi.fn(),
 	loadSystemEmailGraphParityReport: vi.fn(),
+	reconcileSystemEmailGraphFromLegacy: vi.fn(),
 }))
 
 vi.mock('#worker/email/mailbox-reconcile.ts', async (importOriginal) => {
@@ -61,6 +62,8 @@ vi.mock('#worker/email/system-email-graph-repo.ts', async (importOriginal) => {
 	return {
 		...actual,
 		loadSystemEmailGraphParityReport: mocks.loadSystemEmailGraphParityReport,
+		reconcileSystemEmailGraphFromLegacy:
+			mocks.reconcileSystemEmailGraphFromLegacy,
 	}
 })
 
@@ -419,6 +422,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -429,6 +433,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -439,6 +444,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -449,6 +455,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			missingFromDedicatedCount: 0,
 			missingFromLegacyCount: 0,
 			ownershipMismatchCount: 0,
+			referencedOwnerMismatchCount: 0,
 			relationshipMismatchCount: 0,
 			keyFieldMismatchCount: 0,
 			parity: true,
@@ -458,6 +465,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			dedicatedProviderLinkedMessageCount: 0,
 			legacyAuthorityIndexCount: 0,
 			missingFromLegacyAuthorityIndexCount: 0,
+			missingFromLegacyMessagesCount: 0,
 			mismatchedLegacyAuthorityIndexCount: 0,
 			classification: 'no-system-provider-links',
 			authorityDisposition: 'legacy-email-messages-until-4b-routing',

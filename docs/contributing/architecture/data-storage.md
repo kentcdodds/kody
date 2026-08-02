@@ -787,18 +787,35 @@ boundary. It creates a dedicated D1 thread/message/attachment/delivery-event
 graph with stable ids, current promoted inbound fields, and internal FKs, then
 copies only legacy `system:email` rows in FK-safe order. The admin mailbox
 maintenance `status` action exposes aggregate `systemEmailGraph` copy parity
-(counts, missing rows, ownership/relationship/key-field mismatches, and no email
-content). Legacy shared rows remain the sole live read/write/retention
-authority; there is no feature flag or behavior cutover in 4a.
+(counts, missing rows, referenced-owner/ownership/relationship/key-field
+mismatches, and no email content). Copy and reconciliation fence shared
+`email_inboxes.user_id` and `email_sender_identities.user_id`: a legacy system
+row that references another owner's inbox, sender identity, or inherited graph
+parent is skipped and keeps aggregate parity false. Legacy shared rows remain
+the sole live read/write/retention authority; there is no feature flag or
+behavior cutover in 4a.
+
+The explicit audited `admin_mailbox_maintenance` action
+`system_email_graph_reconcile` requires `force: true`. In one atomic D1 batch it
+deletes dedicated rows absent from the valid legacy graph in child-first order,
+then upserts every current legacy column in parent-first order. It returns
+aggregate mutation metrics and a post-reconcile parity report, never email
+content. This is an operator repair/catch-up action, not a scheduled write path;
+routine status remains read-only. The full graph comparator runs only when an
+operator explicitly requests maintenance status (also as the post-status of
+reconcile/retention actions).
 
 The existing `email_outbound_provider_index` deliberately remains unchanged. Its
 `message_id` FK targets legacy `email_messages`; a second FK cannot validly
 target either of two message tables. System outbound/provider-linked rows are
 therefore classified in parity as `legacy-email-messages-until-4b-routing`. Step
 4b must design authority routing, then dual-write the dedicated graph and move
-reads/retention authority. Step 5 may clean up legacy system rows only after 4b
-parity and rollback gates pass: **4a schema/copy/parity → 4b dual-write/read
-authority → step 5 legacy cleanup**.
+reads/retention authority. Immediately before that boundary, writes must be
+quiesced or the 4b dual-write path must already be active; an operator must run
+the forced graph reconcile and observe zero graph, referenced-owner, and
+provider-index parity mismatches. Step 5 may clean up legacy system rows only
+after 4b parity and rollback gates pass: **4a schema/copy/parity → 4b
+dual-write/read authority → step 5 legacy cleanup**.
 
 **Accepted rollback → roll-forward caveat and manual repair:** a rollback to the
 previous Worker can advance USER inbound state in legacy `detail_json` with

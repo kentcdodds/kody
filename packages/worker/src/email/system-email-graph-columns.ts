@@ -1,0 +1,144 @@
+export type SystemEmailGraphTableKey =
+	| 'threads'
+	| 'messages'
+	| 'attachments'
+	| 'deliveryEvents'
+
+export type SystemEmailGraphColumnContract = {
+	key: SystemEmailGraphTableKey
+	legacyTable: string
+	dedicatedTable: string
+	columns: ReadonlyArray<string>
+	relationshipColumns: ReadonlyArray<string>
+}
+
+export const systemEmailThreadColumns = [
+	'id',
+	'inbox_id',
+	'subject_normalized',
+	'root_message_id_header',
+	'last_message_at',
+	'created_at',
+	'updated_at',
+] as const
+
+export const systemEmailMessageColumns = [
+	'id',
+	'direction',
+	'inbox_id',
+	'thread_id',
+	'sender_identity_id',
+	'from_address',
+	'envelope_from',
+	'to_addresses_json',
+	'cc_addresses_json',
+	'bcc_addresses_json',
+	'reply_to_addresses_json',
+	'subject',
+	'message_id_header',
+	'in_reply_to_header',
+	'references_json',
+	'headers_json',
+	'auth_results',
+	'text_body',
+	'html_body',
+	'raw_size',
+	'processing_status',
+	'provider_message_id',
+	'error',
+	'received_at',
+	'sent_at',
+	'created_at',
+	'updated_at',
+	'raw_mime_key',
+	'delivery_status',
+	'delivery_status_at',
+	'classification',
+	'classification_reason',
+] as const
+
+export const systemEmailAttachmentColumns = [
+	'id',
+	'message_id',
+	'filename',
+	'content_type',
+	'content_id',
+	'disposition',
+	'size',
+	'storage_kind',
+	'storage_key',
+	'created_at',
+] as const
+
+export const systemEmailDeliveryEventColumns = [
+	'id',
+	'message_id',
+	'inbox_id',
+	'event_type',
+	'provider',
+	'provider_message_id',
+	'provider_event_id',
+	'detail_json',
+	'created_at',
+	'needs_effect_reconcile',
+	'usage_effect_recorded_at',
+	'usage_month',
+	'usage_bytes',
+	'usage_duration_ms',
+	'state',
+	'fingerprint',
+	'storage_lease',
+	'storage_lease_at',
+	'cleanup_lease',
+	'cleanup_lease_at',
+	'cleanup_retry_at',
+	'expected_attachment_count',
+	'finalization_token',
+	'reconcile_after',
+	'dedupe_expires_at',
+	'usage_effect_suppressed_at',
+	'usage_started_at',
+	'usage_effect_retry_at',
+	'usage_effect_lease',
+	'usage_effect_lease_at',
+	'subscription_effect_state',
+	'subscription_effect_lease',
+	'subscription_effect_lease_at',
+	'subscription_effect_retry_at',
+	'subscription_effect_attempt_count',
+	'subscription_effect_dead_letter_at',
+	'subscription_effect_last_error',
+	'updated_at',
+] as const
+
+export const systemEmailGraphColumnContracts: ReadonlyArray<SystemEmailGraphColumnContract> =
+	[
+		{
+			key: 'threads',
+			legacyTable: 'email_threads',
+			dedicatedTable: 'system_email_threads',
+			columns: systemEmailThreadColumns,
+			relationshipColumns: ['inbox_id'],
+		},
+		{
+			key: 'messages',
+			legacyTable: 'email_messages',
+			dedicatedTable: 'system_email_messages',
+			columns: systemEmailMessageColumns,
+			relationshipColumns: ['inbox_id', 'thread_id', 'sender_identity_id'],
+		},
+		{
+			key: 'attachments',
+			legacyTable: 'email_attachments',
+			dedicatedTable: 'system_email_attachments',
+			columns: systemEmailAttachmentColumns,
+			relationshipColumns: ['message_id'],
+		},
+		{
+			key: 'deliveryEvents',
+			legacyTable: 'email_delivery_events',
+			dedicatedTable: 'system_email_delivery_events',
+			columns: systemEmailDeliveryEventColumns,
+			relationshipColumns: ['message_id', 'inbox_id'],
+		},
+	]

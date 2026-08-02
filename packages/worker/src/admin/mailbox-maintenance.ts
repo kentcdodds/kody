@@ -26,7 +26,9 @@ import {
 } from '#worker/email/outbound-provider-index.ts'
 import {
 	loadSystemEmailGraphParityReport,
+	reconcileSystemEmailGraphFromLegacy,
 	type SystemEmailGraphParityReport,
+	type SystemEmailGraphReconcileResult,
 } from '#worker/email/system-email-graph-repo.ts'
 import {
 	deleteEmailMessageById,
@@ -505,6 +507,12 @@ export async function runAdminMailboxMaintenanceReconcile(input: {
 		now,
 	})
 	return { metrics, status }
+}
+
+export async function runAdminMailboxMaintenanceSystemEmailGraphReconcile(input: {
+	db: D1Database
+}): Promise<SystemEmailGraphReconcileResult> {
+	return reconcileSystemEmailGraphFromLegacy({ db: input.db })
 }
 
 /**
