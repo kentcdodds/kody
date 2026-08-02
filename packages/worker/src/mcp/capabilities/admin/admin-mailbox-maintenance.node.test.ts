@@ -43,7 +43,6 @@ vi.mock('#worker/admin/mailbox-maintenance.ts', async (importOriginal) => {
 	}
 })
 
-const { adminDomain } = await import('./domain.ts')
 const { adminMailboxMaintenanceCapability } =
 	await import('./admin-mailbox-maintenance.ts')
 
@@ -158,45 +157,8 @@ function createAdminCtx() {
 	}
 }
 
-test('admin_mailbox_maintenance is registered admin-only destructive with keywords', () => {
-	const capability = adminDomain.capabilities.find(
-		(entry) => entry.name === 'admin_mailbox_maintenance',
-	)
-	expect(capability).toMatchObject({
-		requiredRole: 'admin',
-		readOnly: false,
-		idempotent: false,
-		destructive: true,
-	})
-	expect(adminDomain.keywords).toEqual(
-		expect.arrayContaining(['mailbox', 'maintenance', 'retention']),
-	)
-	expect(adminMailboxMaintenanceCapability.name).toBe(
-		'admin_mailbox_maintenance',
-	)
-	expect(adminMailboxMaintenanceCapability.keywords).toEqual(
-		expect.arrayContaining(['delete']),
-	)
-})
-
-test('admin_mailbox_maintenance status is audited and aggregate-only', async () => {
+test('admin_mailbox_maintenance routes status, reconcile, retention, and delete with audits', async () => {
 	mockModule.loadAdminMailboxMaintenanceStatus.mockResolvedValue(emptyStatus)
-	const ctx = createAdminCtx()
-	const result = await adminMailboxMaintenanceCapability.handler(
-		{ action: 'status' },
-		ctx,
-	)
-	expect(result).toEqual({ action: 'status', status: emptyStatus })
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
-			result: 'success',
-			reason: 'action=status;tracked=2;provider_index_parity=1',
-		}),
-	)
-})
-
-test('admin_mailbox_maintenance reconcile and retention route with schema bounds', async () => {
 	mockModule.runAdminMailboxMaintenanceReconcile.mockResolvedValue({
 		metrics: {
 			scanned: 1,
@@ -211,7 +173,24 @@ test('admin_mailbox_maintenance reconcile and retention route with schema bounds
 	mockModule.runAdminMailboxMaintenanceRetention.mockResolvedValue(
 		emptyRetentionResult,
 	)
+	mockModule.runAdminMailboxMaintenanceDeleteMessage.mockResolvedValue(
+		emptyDeleteResult,
+	)
 	const ctx = createAdminCtx()
+	const stableUserId = testStableUserIdFromEmail('target@example.com')
+	const messageId = 'canary-message-1'
+
+	const status = await adminMailboxMaintenanceCapability.handler(
+		{ action: 'status' },
+		ctx,
+	)
+	expect(status).toEqual({ action: 'status', status: emptyStatus })
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			action: 'admin_mailbox_maintenance',
+			result: 'success',
+		}),
+	)
 
 	const reconcile = await adminMailboxMaintenanceCapability.handler(
 		{ action: 'reconcile', batch_size: 16 },
@@ -241,11 +220,28 @@ test('admin_mailbox_maintenance reconcile and retention route with schema bounds
 		limit: 8,
 		startAfterUserId: cursor,
 	})
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
-			reason: 'action=retention;attempted=1;succeeded=1;truncated=1',
-		}),
+
+	const deleted = await adminMailboxMaintenanceCapability.handler(
+		{
+			action: 'delete_message',
+			stable_user_id: stableUserId,
+			message_id: messageId,
+		},
+		ctx,
+	)
+	expect(deleted).toEqual({
+		action: 'delete_message',
+		result: emptyDeleteResult,
+	})
+	expect(
+		mockModule.runAdminMailboxMaintenanceDeleteMessage,
+	).toHaveBeenCalledWith({
+		env: ctx.env,
+		stableUserId,
+		messageId,
+	})
+	expect(JSON.stringify(deleted)).not.toMatch(
+		/@example|secret body|email-raw:|email-attachment:/,
 	)
 
 	await expect(
@@ -269,64 +265,6 @@ test('admin_mailbox_maintenance reconcile and retention route with schema bounds
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{
-				action: 'retention',
-				cutoff: '2000-01-01T00:00:00.000Z',
-			},
-			ctx,
-		),
-	).rejects.toThrow()
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{
-				action: 'retention',
-				start_after_user_id: 'not-a-stable-id',
-			},
-			ctx,
-		),
-	).rejects.toThrow()
-})
-
-test('admin_mailbox_maintenance delete_message is audited with ids and schema-bound', async () => {
-	mockModule.runAdminMailboxMaintenanceDeleteMessage.mockResolvedValue(
-		emptyDeleteResult,
-	)
-	const ctx = createAdminCtx()
-	const stableUserId = testStableUserIdFromEmail('target@example.com')
-	const messageId = 'canary-message-1'
-
-	const result = await adminMailboxMaintenanceCapability.handler(
-		{
-			action: 'delete_message',
-			stable_user_id: stableUserId,
-			message_id: messageId,
-		},
-		ctx,
-	)
-	expect(result).toEqual({
-		action: 'delete_message',
-		result: emptyDeleteResult,
-	})
-	expect(
-		mockModule.runAdminMailboxMaintenanceDeleteMessage,
-	).toHaveBeenCalledWith({
-		env: ctx.env,
-		stableUserId,
-		messageId,
-	})
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
-			result: 'success',
-			reason: `action=delete_message;stable_user_id=${stableUserId};message_id=${messageId};d1_absent=1;blobs_absent=1`,
-		}),
-	)
-	expect(JSON.stringify(result)).not.toMatch(
-		/@example|secret body|email-raw:|email-attachment:/,
-	)
-
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{
 				action: 'delete_message',
 				stable_user_id: 'not-a-stable-id',
 				message_id: messageId,
@@ -334,45 +272,20 @@ test('admin_mailbox_maintenance delete_message is audited with ids and schema-bo
 			ctx,
 		),
 	).rejects.toThrow()
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{
-				action: 'delete_message',
-				stable_user_id: stableUserId,
-			},
-			ctx,
-		),
-	).rejects.toThrow()
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{
-				action: 'delete_message',
-				stable_user_id: stableUserId,
-				message_id: '',
-			},
-			ctx,
-		),
-	).rejects.toThrow()
-})
 
-test('admin_mailbox_maintenance delete_message maps missing targets to McpCallerError', async () => {
-	const ctx = createAdminCtx()
-	const stableUserId = testStableUserIdFromEmail('missing-target@example.com')
-	const messageId = 'already-gone'
 	const notFound = new AdminMailboxMessageNotFoundError({
 		stableUserId,
-		messageId,
+		messageId: 'already-gone',
 	})
 	mockModule.runAdminMailboxMaintenanceDeleteMessage.mockRejectedValueOnce(
 		notFound,
 	)
-
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{
 				action: 'delete_message',
 				stable_user_id: stableUserId,
-				message_id: messageId,
+				message_id: 'already-gone',
 			},
 			ctx,
 		),

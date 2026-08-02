@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { expandBraceGlobs, searchRepoWorkspace } from './repo-session-search.ts'
 
-test('expandBraceGlobs expands brace alternatives that include wildcards', () => {
+test('brace globs expand for Workspace.glob and reject pathological nesting', async () => {
 	expect(expandBraceGlobs('/{README.md,package.json,**/README*}')).toEqual([
 		'/README.md',
 		'/package.json',
@@ -15,9 +15,13 @@ test('expandBraceGlobs expands brace alternatives that include wildcards', () =>
 	])
 	expect(expandBraceGlobs('plain.txt')).toEqual(['plain.txt'])
 	expect(expandBraceGlobs('{unclosed')).toEqual(['{unclosed'])
-})
 
-test('searchRepoWorkspace accepts brace globs with nested wildcards without calling shell brace conversion', async () => {
+	let nested = 'x'
+	for (let index = 0; index < 20; index += 1) {
+		nested = `{${nested}}`
+	}
+	expect(() => expandBraceGlobs(nested)).toThrow(/brace nesting exceeds 16/)
+
 	const globCalls: Array<string> = []
 	const files = new Map<string, string>([
 		['/README.md', 'hello from readme'],
@@ -67,14 +71,11 @@ test('searchRepoWorkspace accepts brace globs with nested wildcards without call
 		'README.md',
 		'docs/README.extra.md',
 	])
-})
 
-test('searchRepoWorkspace rejects pathological brace expansion', async () => {
 	const workspace = {
 		glob: vi.fn(async () => []),
 		readFile: vi.fn(async () => null),
 	}
-
 	await expect(
 		searchRepoWorkspace({
 			root: '/',
@@ -85,12 +86,4 @@ test('searchRepoWorkspace rejects pathological brace expansion', async () => {
 		}),
 	).rejects.toThrow(/expands to more than 64 patterns/)
 	expect(workspace.glob).not.toHaveBeenCalled()
-})
-
-test('expandBraceGlobs rejects deeply nested single-alternative braces', () => {
-	let nested = 'x'
-	for (let index = 0; index < 20; index += 1) {
-		nested = `{${nested}}`
-	}
-	expect(() => expandBraceGlobs(nested)).toThrow(/brace nesting exceeds 16/)
 })

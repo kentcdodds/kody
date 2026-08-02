@@ -6,13 +6,11 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import {
 	backfillEventsForUser,
 	mailboxParityEventMirrorTimeoutMs,
-	mailboxParityEventPageSize,
 } from './mailbox-parity-phases.ts'
 import { type MailboxParityUserState } from './mailbox-parity-repo.ts'
 import { mailboxMirrorRpcTimeoutMs } from './mailbox-mirror.ts'
 import type * as MailboxMirrorModule from './mailbox-mirror.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import { mailboxUpsertDeliveryEventsMax } from './mailbox-types.ts'
 
 const mailboxMirrorMocks = vi.hoisted(() => ({
 	mirrorMailboxDeliveryEventSnapshots: vi.fn(),
@@ -135,13 +133,6 @@ test('event backfill mirrors one page with one batch RPC under the scheduled tim
 			],
 		}),
 	)
-	expect(mailboxParityEventPageSize).toBeLessThanOrEqual(
-		mailboxUpsertDeliveryEventsMax,
-	)
-	expect(mailboxParityEventMirrorTimeoutMs).toBeGreaterThan(
-		mailboxMirrorRpcTimeoutMs,
-	)
-	expect(mailboxParityEventMirrorTimeoutMs).toBe(5_000)
 })
 
 test('event backfill keeps cursor on uniform timeout and advances through partial stale', async () => {

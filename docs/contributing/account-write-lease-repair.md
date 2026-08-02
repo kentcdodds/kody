@@ -5,19 +5,19 @@ account deletion until an administrator verifies that the process is gone and
 releases its exact token with an audit reason.
 
 Active leases live in the UserMeter DO (`authority='do'`) and/or in D1
-(`account_write_leases`) as legacy email leases or historical stale rows from
-before the temporary D1 mirror was retired (2026-08-01). Admin list unions both,
+(`account_write_leases`) as legacy email leases or historical stale leftovers
+from the retired temporary D1 mirror (2026-08-01). Admin list unions both,
 deduped by token.
 
-**Temporary D1 mirror retired (2026-08-01):** DO-authority callers (those that
-supply `USER_METER`) no longer insert a D1 row on acquire. D1
-`account_write_leases` rows now represent:
+**Temporary D1 mirror (retired 2026-08-01):** DO-authority callers (those that
+supply `USER_METER`) do not insert a D1 row on acquire. D1
+`account_write_leases` rows represent:
 
 - **Legacy email leases** — callers that omit `env` still take the exact D1
   path.
-- **Historical stale rows** — pre-retirement mirrors that were not cleaned up
-  before the deploy. Use `admin_account_write_lease_repair` to clear these via
-  the audited repair path; do not delete rows directly from D1.
+- **Historical stale rows** — leftover mirror rows that were not cleaned up. Use
+  `admin_account_write_lease_repair` to clear these via the audited repair path;
+  do not delete rows directly from D1.
 
 D1 columns and the `account_write_leases` table are **retained** — no schema
 drop is planned yet.

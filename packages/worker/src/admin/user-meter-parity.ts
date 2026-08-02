@@ -88,17 +88,17 @@ type DeletionParity = {
 	tokenSetMismatches: DeletionLeaseTokenMismatches
 	truncated: boolean
 	/**
-	 * True after the temporary same-token D1 mirror was retired (2026-08-01).
-	 * DO-authority leases no longer insert a D1 row on acquire; `doOnly` is
+	 * Always true: the temporary same-token D1 mirror is retired (2026-08-01).
+	 * DO-authority leases do not insert a D1 row on acquire; `doOnly` is
 	 * expected and does not indicate a problem. `d1Only` reflects legacy email
 	 * leases and historical stale pre-retirement rows pending audit repair.
 	 */
 	temporaryMirrorRetired: true
 	/**
-	 * Lease readiness after mirror retirement: no `legacyWithoutD1` (every
-	 * legacy-authority meter lease has a matching D1 row) and the meter page
-	 * walk is complete. `doOnly` is expected after retirement and does not fail
-	 * this gate. `d1Only` is reported separately as a diagnostic.
+	 * Lease readiness with the temporary D1 mirror retired: no
+	 * `legacyWithoutD1` (every legacy-authority meter lease has a matching D1
+	 * row) and the meter page walk is complete. `doOnly` is expected and does
+	 * not fail this gate. `d1Only` is reported separately as a diagnostic.
 	 */
 	mirrorLeaseParity: boolean
 }

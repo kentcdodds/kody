@@ -19,6 +19,8 @@ type TemporalLanguagePattern = {
 export const exemptRelativePaths = new Set([
 	'docs/contributing/documentation.md',
 	'docs/contributing/secret-rotation.md',
+	// Point-in-time migration audit; temporal phrasing is expected.
+	'docs/contributing/architecture/capability-and-primitive-audit-2026-07.md',
 ])
 
 /** Directories whose pages are intentionally point-in-time records. */
@@ -44,14 +46,18 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 			regex: /\bwere(?:\s+\*{1,2})?\s*removed\b(?:\*{1,2})?/i,
 		},
 		{
-			label: 'no longer support/accept/require/use/fan/carry/replay/incur',
+			label:
+				'no longer support/accept/require/use/fan/carry/replay/incur/authoritative/insert/needed',
 			regex:
-				/\bno longer (?:support|accept|require|use|fan|carry|replay|incur)s?\b/i,
+				/\bno longer (?:support|accept|require|use|fan|carry|replay|incur|authoritative|insert|needed)s?\b/i,
 		},
 		{
 			label: 'now support/accept/require/use/store/return/call/read',
 			regex: /\bnow (?:support|accept|require|use|store|return|call|read)s?\b/i,
 		},
+		{ label: 'is now the', regex: /\bis now the\b/i },
+		{ label: 'are now', regex: /\bare now\b/i },
+		{ label: 'previously a/the', regex: /\bpreviously (?:a|the)\b/i },
 		{
 			label: 'recently changed/added/updated/removed/introduced',
 			regex: /\brecently (?:changed|added|updated|removed|introduced)\b/i,

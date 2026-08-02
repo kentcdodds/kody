@@ -214,13 +214,13 @@ Durable Object export behavior:
   (`startAfter` absent): `storageBytesShadow` when the schema-v4 row exists, and
   `packageServiceStatesShadow` when schema-v5 service rows exist (`null` on
   later pages and when never shadowed). Section totals count each shadow
-  inventory once when present, but `package_service_states` is explicitly
-  **non-authoritative** for running counts and enforcement — that still reads D1
-  `package_service_states`. `users.d1_storage_bytes` is a **temporary async
-  mirror** after the 2026-08-01 storage authority cutover; authoritative storage
-  bytes now live in UserMeter. Retention is self-enforced inside the DO (seven
-  UTC days of counter and inbound-delivery-claim rows); shadow storage-byte and
-  package-service liveness rows are not time-pruned. See
+  inventory once when present. UserMeter `package_service_states` is
+  **authoritative** for running-count enforcement; D1 `package_service_states`
+  remains the enumeration export in the `d1` section. `users.d1_storage_bytes`
+  is a **temporary async mirror**; authoritative storage bytes live in
+  UserMeter. Retention is self-enforced inside the DO (seven UTC days of counter
+  and inbound-delivery-claim rows); storage-byte and package-service liveness
+  rows are not time-pruned. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
 - `Mailbox` exports per-user email metadata (threads, messages, attachments,
   delivery events) through the account-export `mailbox` section (`exportMailbox`
@@ -272,13 +272,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   operator-provisioned platform accounts that own official package scopes (see
   [Platform accounts](./platform-accounts.md)). `d1_storage_bytes` and
   `d1_storage_bytes_updated_at` (migration 0122) are a **temporary async
-  mirror** of the UserMeter `storage_bytes_state` singleton after the storage
-  authority cutover (2026-08-01). Enforcement and usage reads are now
-  authoritative in UserMeter; the D1 columns remain for cold bootstrap, parity
-  checks, and the `d1_storage_reconciliation` sweep cursor until they can be
-  safely dropped (a separate schema migration after parity sign-off). UserMeter
-  `storage_bytes_state` (schema v4) drives enforcement; `package_service_states`
-  (schema v5) are optional expand-phase shadows only — see
+  mirror** of the UserMeter `storage_bytes_state` singleton. Enforcement and
+  usage reads are authoritative in UserMeter; the D1 columns remain for cold
+  bootstrap, parity checks, and the `d1_storage_reconciliation` sweep cursor
+  until they can be safely dropped (a separate schema migration after parity
+  sign-off). UserMeter `storage_bytes_state` (schema v4) drives storage-byte
+  enforcement; `package_service_states` (schema v5) is the authoritative
+  running-count source for `package_services` / `service_start` — see
   [Entitlements](./entitlements.md#usermeter-expand-phase). Mailbox expand-phase
   parity/backfill state (migration `0125-mailbox-parity-state.sql`):
   `mailbox_parity_checked_at`, `mailbox_parity_matching_since`,
@@ -320,14 +320,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   sweeper only; terminal run outcomes and counters for observability live in the
   per-user `RunLog` `job_run_observability` table (see
   [Run records](./run-records.md)). Execution history rows live in the same DO.
-- `package_service_states` (`0095-package-service-states.sql`): authoritative
-  per-service liveness projection (`running` / `idle` / `stopped` / `error`) for
-  entitlement concurrency, discovery, and export/deletion inventory. Upserted
-  and heartbeaten (1h) by the `PackageServiceInstance` Durable Object; running
-  counts treat rows stale after 24h without a fresh heartbeat. Not derived from
-  run history. Expand-phase slice 4 Phase A also best-effort shadows each row
-  into the per-user `UserMeter` DO (schema v5); D1 remains sole authority in
-  that slice — see [Entitlements](./entitlements.md#usermeter-expand-phase).
+- `package_service_states` (`0095-package-service-states.sql`): per-service
+  liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
+  account export/deletion inventory, and parity. Upserted and heartbeaten (1h)
+  by the `PackageServiceInstance` Durable Object. Running-count enforcement and
+  `service_start` read the per-user `UserMeter` copy (schema v5; 24h staleness
+  on DO `source_updated_at`). D1 remains the enumeration index and parity mirror
+  — see
+  [Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01).
 - `entity_sources`: durable mapping from user-facing entities to Artifacts repos
   and their latest published commit
 - `saved_packages`: package metadata/search projection derived from published
@@ -587,17 +587,16 @@ Storage split:
 
 Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
-(`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4 adds a
-`storage_bytes_state` singleton that is now the **authoritative** storage-byte
-counter after the 2026-08-01 cutover (previously a best-effort shadow of D1
-`users.d1_storage_bytes`; cutover evidence in
+(`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4
+`storage_bytes_state` is the **authoritative** storage-byte counter (D1
+`users.d1_storage_bytes` is the temporary async mirror; evidence in
 [Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
-Schema v5 adds an optional `package_service_states` table as a **best-effort
-shadow** of D1 `package_service_states` for future cutover — D1 remains sole
-authority for reads, running counts, discovery, and `service_start` enforcement
-in expand-phase slice 4 Phase A. The Worker binding is `USER_METER` (class
-`UserMeter`; Wrangler SQLite migration tag `v21` via `new_sqlite_classes` in
-`packages/worker/wrangler.jsonc`).
+Schema v5 `package_service_states` is the **authoritative running-count source**
+for `package_services` / `service_start`; D1 remains the enumeration index and
+parity mirror (evidence in
+[Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01)).
+The Worker binding is `USER_METER` (class `UserMeter`; Wrangler SQLite migration
+tag `v21` via `new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
 
 Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 `userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
@@ -616,39 +615,35 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   claim's resource/day, post-charge counter, revision, and `claimed_at` so
   Cloudflare Email Routing retries inside the 48-hour inbound dedupe window
   cannot double-charge `email_receives_per_day`.
-- `storage_bytes_state` — **authoritative** D1 payload byte counter after the
-  2026-08-01 cutover (`id = 1` CHECK constraint, `bytes`, monotonic `revision`,
-  `updated_at`). Added in schema v4 as an expand-phase shadow; promoted to
-  authority after the flip. Written by `reserveStorageBytes` (atomic increment
-  with limit check), `initializeStorageBytes` (INSERT OR IGNORE cold bootstrap
-  from D1 mirror), and `setStorageBytes` (absolute set from reconcile).
-  Authoritative for enforcement and usage reads via `readStorageBytes`; D1
-  `users.d1_storage_bytes` is the temporary async mirror (MAX on reserve; direct
-  set on reconcile). StorageRunner bucket estimates stay outside this row (see
+- `storage_bytes_state` — **authoritative** D1 payload byte counter (`id = 1`
+  CHECK constraint, `bytes`, monotonic `revision`, `updated_at`). Written by
+  `reserveStorageBytes` (atomic increment with limit check),
+  `initializeStorageBytes` (INSERT OR IGNORE cold bootstrap from D1 mirror), and
+  `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
+  and usage reads via `readStorageBytes`; D1 `users.d1_storage_bytes` is the
+  temporary async mirror (MAX on reserve; direct set on reconcile).
+  StorageRunner bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter-expand-phase)).
-- `package_service_states` — per-service **shadow** of D1 liveness rows
-  (`package_id`, `service_name`, `status`, `started_at`, `source_updated_at`,
-  monotonic `revision`, `updated_at`; primary key `(package_id, service_name)`).
-  Added in schema v5. Populated by best-effort dual-writes from
-  `PackageServiceInstance` on every D1 projection/delete; monotonic on
-  `source_updated_at`. Never read for enforcement, running counts, discovery, or
-  usage display in expand-phase slice 4 Phase A. Cutover-support RPCs
-  (`listPackageServiceStates`, `countRunningPackageServices`,
-  `bootstrapPackageServiceStates`) mirror D1 semantics for future parity review
-  only.
+- `package_service_states` — per-service liveness rows (`package_id`,
+  `service_name`, `status`, `started_at`, `source_updated_at`, monotonic
+  `revision`, `updated_at`; primary key `(package_id, service_name)`). Added in
+  schema v5. Populated by dual-writes from `PackageServiceInstance` on every D1
+  projection/delete; monotonic on `source_updated_at`. Authoritative for
+  running-count enforcement and `service_start` via
+  `countRunningPackageServices`. D1 remains the enumeration index (discovery,
+  export, deletion) and parity mirror — see
+  [Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
-  / `authority` (`do`|`legacy`) / `pending_repair_id`). Added as shadow in
-  schema v6; schema v7 is the authority cutover. When callers supply
-  `USER_METER`, `authority='do'` rows are authoritative for acquire/held/release
-  and admin union list; `authority='legacy'` rows are the D1 lease snapshot
-  replaced by `markDeleting`. During rolling deploy, DO-authority acquires also
-  mirror the same token into D1 `account_write_leases` so Phase-A marks that
-  only read D1 still observe them (temporary; not the final hot path). D1
-  `users.deleting_at` remains the permanent point gate; email paths omit `env`
-  and keep exact D1 leases. `purge()` preserves an existing deleting tombstone
-  across `deleteAll`. Account export emits a sanitized `deletionShadow` without
-  raw token/holder.
+  / `authority` (`do`|`legacy`) / `pending_repair_id`). Schema v7 is authority
+  for DO-path leases. When callers supply `USER_METER`, `authority='do'` rows
+  are authoritative for acquire/held/release and admin union list; no D1 row is
+  written on acquire. `authority='legacy'` rows are the D1 lease snapshot
+  replaced by `markDeleting`. D1 `account_write_leases` may still hold legacy
+  email leases and historical stale pre-retirement rows. D1 `users.deleting_at`
+  remains the permanent point gate; email paths omit `env` and keep exact D1
+  leases. `purge()` preserves an existing deleting tombstone across `deleteAll`.
+  Account export emits a sanitized `deletionShadow` without raw token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
@@ -1193,10 +1188,10 @@ storage homes as follows:
   `packageStorage()`. Shared durable data for every package surface.
 - **Package coordination** — `PackageServiceInstance` DO holds lifecycle and
   alarms only; durable data stays in package storage. Each lifecycle projection
-  dual-writes D1 `package_service_states` (authority) and a best-effort
-  UserMeter shadow (expand-phase slice 4 Phase A). App facets and
-  package-internal DO namespaces are extra StorageRunner buckets under the
-  package id, not a general actor model.
+  dual-writes D1 `package_service_states` (enumeration/parity) and UserMeter
+  (authoritative running counts). App facets and package-internal DO namespaces
+  are extra StorageRunner buckets under the package id, not a general actor
+  model.
 - **Package jobs** — schedule metadata in D1 `jobs`; run-local scratch in
   `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
   data in package storage.

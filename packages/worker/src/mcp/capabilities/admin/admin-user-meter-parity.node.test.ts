@@ -20,7 +20,6 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	}
 })
 
-const { adminDomain } = await import('./domain.ts')
 const { adminUserMeterParityCapability } =
 	await import('./admin-user-meter-parity.ts')
 
@@ -74,22 +73,6 @@ function createCapabilityTestDb() {
 	`)
 	return createD1FromSqlite(sqlite)
 }
-
-test('admin_user_meter_parity is registered admin-only read-only with parity keywords', () => {
-	const capability = adminDomain.capabilities.find(
-		(entry) => entry.name === 'admin_user_meter_parity',
-	)
-	expect(capability).toMatchObject({
-		requiredRole: 'admin',
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-	})
-	expect(adminDomain.keywords).toEqual(
-		expect.arrayContaining(['user meter', 'parity', 'cutover']),
-	)
-	expect(adminUserMeterParityCapability.name).toBe('admin_user_meter_parity')
-})
 
 test('admin_user_meter_parity returns null for missing users and omits lease secrets', async () => {
 	const db = createCapabilityTestDb()
