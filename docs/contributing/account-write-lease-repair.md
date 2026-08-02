@@ -13,7 +13,8 @@ deduped by token.
 supply `USER_METER`) no longer insert a D1 row on acquire. D1
 `account_write_leases` rows now represent:
 
-- **Legacy email leases** — callers that omit `env` still take the exact D1 path.
+- **Legacy email leases** — callers that omit `env` still take the exact D1
+  path.
 - **Historical stale rows** — pre-retirement mirrors that were not cleaned up
   before the deploy. Use `admin_account_write_lease_repair` to clear these via
   the audited repair path; do not delete rows directly from D1.

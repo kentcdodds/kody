@@ -1059,7 +1059,9 @@ test('env path never executes D1 mirror INSERT or active_write_count operations'
 	// Verify D1 batch is not called on the env/DO path after mirror retirement.
 	const originalBatch = db.batch.bind(db)
 	db.batch = (async () => {
-		throw new Error('D1 batch must not be called in env path after mirror retirement')
+		throw new Error(
+			'D1 batch must not be called in env path after mirror retirement',
+		)
 	}) as D1Database['batch']
 	const mirrorCalls: Array<string> = []
 	const originalPrepare = db.prepare.bind(db)
@@ -1349,7 +1351,12 @@ test('lost finalize response retries clear stale D1 mirror and return stable rep
 			`INSERT INTO account_write_leases (token, user_id, holder, acquired_at, released_at)
 			VALUES (?, ?, ?, ?, NULL)`,
 		)
-		.run(held.token, 'user-a', 'test:stale-mirror-after-finalize', held.acquiredAt)
+		.run(
+			held.token,
+			'user-a',
+			'test:stale-mirror-after-finalize',
+			held.acquiredAt,
+		)
 	sqlite
 		.prepare(
 			`UPDATE users SET active_write_count = active_write_count + 1 WHERE id = 1`,

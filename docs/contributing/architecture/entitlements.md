@@ -139,8 +139,8 @@ for discovery, account export, and deletion, and is the parity mirror — see
 [Package service liveness — UserMeter authority](#package-service-liveness--usermeter-authority-cutover-2026-08-01).
 
 **Account-deletion write fencing** uses a split authority model after the
-temporary D1 mirror was retired (2026-08-01): D1 `users.deleting_at` remains
-the permanent point gate; callers that supply `USER_METER` treat UserMeter
+temporary D1 mirror was retired (2026-08-01): D1 `users.deleting_at` remains the
+permanent point gate; callers that supply `USER_METER` treat UserMeter
 (`authority='do'`) as authoritative for lease acquire/held/release/drain count
 without any D1 row, while email/transition callers that omit `env` keep the
 exact D1 `account_write_leases` path. D1 `account_write_leases` rows are now
@@ -362,20 +362,20 @@ audit-safe DO repair.
   (including `active_write_count`, ALS nested reuse, and `waitUntil` release).
 
 **Temporary D1 mirror retired (2026-08-01):** the same-token dual-write of DO
-leases into D1 `account_write_leases` ended after old-isolate drain. D1 rows
-for DO-authority leases are now historical stale rows from before retirement;
-use `admin_account_write_lease_repair` to clear them via the audited path.
+leases into D1 `account_write_leases` ended after old-isolate drain. D1 rows for
+DO-authority leases are now historical stale rows from before retirement; use
+`admin_account_write_lease_repair` to clear them via the audited path.
 `admin_user_meter_parity` reports `deletion.temporaryMirrorRetired: true`; the
 `doOnly` category is expected and does not fail `mirrorLeaseParity`. Only
-`legacyWithoutD1` (legacy-authority meter leases without a D1 row) and
-truncated inventory fail the gate.
+`legacyWithoutD1` (legacy-authority meter leases without a D1 row) and truncated
+inventory fail the gate.
 
 **`markAccountDeleting`:** always `COALESCE`s D1 `deleting_at` first, then loads
 live D1 leases (legacy email rows only after mirror retirement). With `env`,
 calls authoritative `markDeleting` which sets/preserves the DO tombstone,
-replaces **only legacy** rows with that exact D1 snapshot, preserves DO-authority
-rows, and returns the deduped-by-token union count used for drain waits. Without
-`env`, returns the D1 lease count unchanged.
+replaces **only legacy** rows with that exact D1 snapshot, preserves
+DO-authority rows, and returns the deduped-by-token union count used for drain
+waits. Without `env`, returns the D1 lease count unchanged.
 
 **Admin list / repair:** `listActiveAccountWriteLeases(db, userId, env?)` with
 `env` unions live D1 leases + DO-authority leases (dedupe by token, same
@@ -428,9 +428,9 @@ bootstrap source, and reconcile cursor during the dual-write window.
 
 **Current UserMeter cutover:** slice 5 Phase B moved non-email write leases into
 UserMeter authority; the temporary same-token D1 rollout mirror was retired
-2026-08-01 after old-isolate drain. Email keeps its D1 lease path. Package-service
-authority flip remains a separate high-risk contract follow-up after soak/parity
-review. Storage authority flip is complete (see above).
+2026-08-01 after old-isolate drain. Email keeps its D1 lease path.
+Package-service authority flip remains a separate high-risk contract follow-up
+after soak/parity review. Storage authority flip is complete (see above).
 
 **Daily-counter mirror retirement (three-deploy, complete):** stage 1 (Worker
 `#1133`) stopped all D1 mirror/bootstrap/retention use while leaving the
@@ -458,24 +458,25 @@ Cold meter rows surface as `needsBootstrap` with `meterCount`/`meterBytes` null.
 
 Interpret the structured report as independent gates:
 
-| Gate                             | Pass condition                                                                                                                                                                                                                                                                                                            |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Daily counters (current UTC day) | Final post-drop semantics (`daily.mirrorRetired: true`): report meter counts only; `d1Count`/`delta` are null, each of the four daily resources has `parity: true`, and `mismatchCount === 0` (no D1 comparison). Pre-drop Workers that still see the table compare `d1Count === meterCount` with `mirrorRetired: false`. |
-| Storage bytes                    | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                                                                |
-| Package services                 | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`.                                       |
-| Deletion tombstone               | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                                             |
-| Lease readiness (post-retirement) | `deletion.mirrorLeaseParity` — `legacyWithoutD1 === 0` and inventory not truncated. `doOnly` is expected after mirror retirement and does **not** fail this gate. `d1Only` reflects legacy email leases and historical stale pre-retirement rows. `deletion.temporaryMirrorRetired` is always `true`. |
+| Gate                              | Pass condition                                                                                                                                                                                                                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daily counters (current UTC day)  | Final post-drop semantics (`daily.mirrorRetired: true`): report meter counts only; `d1Count`/`delta` are null, each of the four daily resources has `parity: true`, and `mismatchCount === 0` (no D1 comparison). Pre-drop Workers that still see the table compare `d1Count === meterCount` with `mirrorRetired: false`. |
+| Storage bytes                     | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                                                                |
+| Package services                  | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`.                                       |
+| Deletion tombstone                | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                                                         |
+| Lease readiness (post-retirement) | `deletion.mirrorLeaseParity` — `legacyWithoutD1 === 0` and inventory not truncated. `doOnly` is expected after mirror retirement and does **not** fail this gate. `d1Only` reflects legacy email leases and historical stale pre-retirement rows. `deletion.temporaryMirrorRetired` is always `true`.                     |
 
 **D1-only (legacy) leases:** email paths that omit `env` still take exact D1
 leases, so `d1Only > 0` is expected and normal. Stale pre-retirement D1 mirrors
-also contribute to `d1Only` until cleared via `admin_account_write_lease_repair`.
-Operators confirm legacy holders via `admin_account_write_lease_list`.
+also contribute to `d1Only` until cleared via
+`admin_account_write_lease_repair`. Operators confirm legacy holders via
+`admin_account_write_lease_list`.
 
 **Threshold:** treat unexplained mismatches as blocking for the corresponding
 cutover (daily mirror retirement before the drop migration, storage authority
 flip, or package-service authority flip). Expected cold accounts may report
-`needsBootstrap` until live traffic seeds the DO; that is a bootstrap gap, not
-a silent pass. Truncated inventories fail closed (`parity` / `mirrorLeaseParity`
+`needsBootstrap` until live traffic seeds the DO; that is a bootstrap gap, not a
+silent pass. Truncated inventories fail closed (`parity` / `mirrorLeaseParity`
 false) so operators re-run or raise the bounded page cap rather than approve a
 partial compare.
 
