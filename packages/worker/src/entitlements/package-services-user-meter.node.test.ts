@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import  { type UserMeterRpc } from '#worker/entitlements/user-meter-client.ts'
+import { type UserMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import {
 	countRunningPackageServices,
 	packageServiceStateStaleMs,

@@ -3,7 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import  { type UserMeterRpc } from '#worker/entitlements/user-meter-client.ts'
+import { type UserMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
