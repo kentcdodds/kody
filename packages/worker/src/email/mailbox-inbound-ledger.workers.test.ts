@@ -274,10 +274,12 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 		now: takeoverNow,
 	})
 	expect(usageBusy.status).toBe('not-claimable')
+	const finalizationToken = received.delivery.finalizationToken!
 	const usageDone = await mailboxA.completeInboundUsageEffect({
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
 		usageEffectLease: usageClaim.delivery.usageEffectLease!,
+		expectedFinalizationToken: finalizationToken,
 		mode: 'recorded',
 		usageMonth: '2026-07',
 		usageBytes: 64,
@@ -295,7 +297,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 	const subClaim = await mailboxA.claimInboundSubscriptionEffect({
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
-		expectedFinalizationToken: received.delivery.finalizationToken,
+		expectedFinalizationToken: finalizationToken,
 		now: takeoverNow,
 	})
 	expect(subClaim.status).toBe('claimed')
@@ -304,6 +306,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
 		subscriptionEffectLease: subClaim.delivery.subscriptionEffectLease!,
+		expectedFinalizationToken: finalizationToken,
 		error: 'transient-1',
 		now: takeoverNow,
 	})
@@ -316,6 +319,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 	const subClaim2 = await mailboxA.claimInboundSubscriptionEffect({
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: finalizationToken,
 		now: retryAt,
 	})
 	expect(subClaim2.status).toBe('claimed')
@@ -324,6 +328,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
 		subscriptionEffectLease: subClaim2.delivery.subscriptionEffectLease!,
+		expectedFinalizationToken: finalizationToken,
 		error: 'transient-2',
 		now: retryAt,
 	})
@@ -335,6 +340,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 	const subClaim3 = await mailboxA.claimInboundSubscriptionEffect({
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: finalizationToken,
 		now: retryAt2,
 	})
 	expect(subClaim3.status).toBe('claimed')
@@ -343,6 +349,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 		ownerId: ownerA,
 		deliveryId: delivery.deliveryId,
 		subscriptionEffectLease: subClaim3.delivery.subscriptionEffectLease!,
+		expectedFinalizationToken: finalizationToken,
 		error: 'final',
 		now: retryAt2,
 	})
@@ -387,12 +394,17 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 	if (usageSuppressClaim.status !== 'claimed') {
 		throw new Error('expected usage suppress claim')
 	}
+	const suppressToken =
+		suppressReceived.status === 'received'
+			? suppressReceived.delivery.finalizationToken!
+			: ''
 	expect(
 		(
 			await mailboxA.completeInboundUsageEffect({
 				ownerId: ownerA,
 				deliveryId: suppressDelivery.deliveryId,
 				usageEffectLease: usageSuppressClaim.delivery.usageEffectLease!,
+				expectedFinalizationToken: suppressToken,
 				mode: 'suppressed',
 				usageMonth: '2026-07',
 				usageBytes: 1,
@@ -404,6 +416,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 	const subSuppressClaim = await mailboxA.claimInboundSubscriptionEffect({
 		ownerId: ownerA,
 		deliveryId: suppressDelivery.deliveryId,
+		expectedFinalizationToken: suppressToken,
 		now,
 	})
 	expect(subSuppressClaim.status).toBe('claimed')
@@ -417,6 +430,7 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 				deliveryId: suppressDelivery.deliveryId,
 				subscriptionEffectLease:
 					subSuppressClaim.delivery.subscriptionEffectLease!,
+				expectedFinalizationToken: suppressToken,
 				mode: 'suppressed',
 				suppressionReason: 'quarantine',
 				now,
@@ -570,6 +584,208 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 			.toArray()[0]?.value
 		expect(Number(version)).toBe(mailboxSchemaVersion)
 	})
+})
+
+test('stale effect workers cannot complete or fail after storage reclaim re-finalization', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('reclaim-fence')
+	const mailbox = rpcFor(ownerId)
+	const now = '2026-07-22T00:00:00.000Z'
+	const delivery = insertInput(ownerId, {
+		fingerprint: 'fp-reclaim-fence',
+		deliveryId: 'email-inbound-delivery:reclaim-fence',
+		messageId: 'email-inbound-message:reclaim-fence',
+		threadId: 'email-inbound-thread:reclaim-fence',
+	})
+
+	await mailbox.insertChargedPendingInboundDelivery({
+		ownerId,
+		delivery,
+		now,
+	})
+	const firstClaim = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	expect(firstClaim.status).toBe('claimed')
+	if (firstClaim.status !== 'claimed') throw new Error('expected first claim')
+	const firstReceived = await mailbox.markInboundDeliveryReceived({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		storageLease: firstClaim.delivery.storageLease!,
+		usageDurationMs: 5,
+		usageMonth: '2026-07',
+		usageBytes: 8,
+		now,
+	})
+	expect(firstReceived.status).toBe('received')
+	if (firstReceived.status !== 'received') throw new Error('expected received')
+	const staleToken = firstReceived.delivery.finalizationToken!
+	expect(staleToken).toBeTruthy()
+
+	const staleUsageClaim = await mailbox.claimInboundUsageEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: staleToken,
+		now,
+	})
+	expect(staleUsageClaim.status).toBe('claimed')
+	if (staleUsageClaim.status !== 'claimed') {
+		throw new Error('expected stale usage claim')
+	}
+	const staleUsageLease = staleUsageClaim.delivery.usageEffectLease!
+	const staleSubClaim = await mailbox.claimInboundSubscriptionEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: staleToken,
+		now,
+	})
+	expect(staleSubClaim.status).toBe('claimed')
+	if (staleSubClaim.status !== 'claimed') {
+		throw new Error('expected stale subscription claim')
+	}
+	const staleSubLease = staleSubClaim.delivery.subscriptionEffectLease!
+
+	// Reclaim storage (no message row) — clears finalization + effect leases.
+	const reclaim = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now: '2026-07-22T00:01:00.000Z',
+	})
+	expect(reclaim.status).toBe('claimed')
+	if (reclaim.status !== 'claimed') throw new Error('expected reclaim')
+	expect(reclaim.delivery.finalizationToken).toBeUndefined()
+	expect(reclaim.delivery.usageEffectLease).toBeUndefined()
+	expect(reclaim.delivery.subscriptionEffectLease).toBeUndefined()
+	expect(reclaim.delivery.subscriptionEffectState).toBe('pending')
+
+	const secondReceived = await mailbox.markInboundDeliveryReceived({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		storageLease: reclaim.delivery.storageLease!,
+		usageDurationMs: 9,
+		usageMonth: '2026-07',
+		usageBytes: 16,
+		now: '2026-07-22T00:01:01.000Z',
+	})
+	expect(secondReceived.status).toBe('received')
+	if (secondReceived.status !== 'received') {
+		throw new Error('expected second received')
+	}
+	const freshToken = secondReceived.delivery.finalizationToken!
+	expect(freshToken).toBeTruthy()
+	expect(freshToken).not.toBe(staleToken)
+
+	// Stale workers with prior token/leases cannot complete or fail.
+	expect(
+		(
+			await mailbox.completeInboundUsageEffect({
+				ownerId,
+				deliveryId: delivery.deliveryId,
+				usageEffectLease: staleUsageLease,
+				expectedFinalizationToken: staleToken,
+				mode: 'recorded',
+				usageMonth: '2026-07',
+				usageBytes: 8,
+				usageDurationMs: 5,
+				now: '2026-07-22T00:01:02.000Z',
+			})
+		).status,
+	).toBe('lease-lost')
+	expect(
+		(
+			await mailbox.completeInboundSubscriptionEffect({
+				ownerId,
+				deliveryId: delivery.deliveryId,
+				subscriptionEffectLease: staleSubLease,
+				expectedFinalizationToken: staleToken,
+				mode: 'complete',
+				now: '2026-07-22T00:01:02.000Z',
+			})
+		).status,
+	).toBe('lease-lost')
+	expect(
+		(
+			await mailbox.failInboundSubscriptionEffect({
+				ownerId,
+				deliveryId: delivery.deliveryId,
+				subscriptionEffectLease: staleSubLease,
+				expectedFinalizationToken: staleToken,
+				error: 'stale-fail',
+				now: '2026-07-22T00:01:02.000Z',
+			})
+		).status,
+	).toBe('lease-lost')
+	// Stale lease + fresh token still loses (lease cleared on reclaim).
+	expect(
+		(
+			await mailbox.completeInboundUsageEffect({
+				ownerId,
+				deliveryId: delivery.deliveryId,
+				usageEffectLease: staleUsageLease,
+				expectedFinalizationToken: freshToken,
+				mode: 'recorded',
+				usageMonth: '2026-07',
+				usageBytes: 8,
+				usageDurationMs: 5,
+				now: '2026-07-22T00:01:02.000Z',
+			})
+		).status,
+	).toBe('lease-lost')
+
+	// Fresh worker with the new finalization token can claim and complete.
+	const freshUsageClaim = await mailbox.claimInboundUsageEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: freshToken,
+		now: '2026-07-22T00:01:03.000Z',
+	})
+	expect(freshUsageClaim.status).toBe('claimed')
+	if (freshUsageClaim.status !== 'claimed') {
+		throw new Error('expected fresh usage claim')
+	}
+	expect(
+		(
+			await mailbox.completeInboundUsageEffect({
+				ownerId,
+				deliveryId: delivery.deliveryId,
+				usageEffectLease: freshUsageClaim.delivery.usageEffectLease!,
+				expectedFinalizationToken: freshToken,
+				mode: 'recorded',
+				usageMonth: '2026-07',
+				usageBytes: 16,
+				usageDurationMs: 9,
+				now: '2026-07-22T00:01:03.000Z',
+			})
+		).status,
+	).toBe('recorded')
+
+	const freshSubClaim = await mailbox.claimInboundSubscriptionEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: freshToken,
+		now: '2026-07-22T00:01:04.000Z',
+	})
+	expect(freshSubClaim.status).toBe('claimed')
+	if (freshSubClaim.status !== 'claimed') {
+		throw new Error('expected fresh subscription claim')
+	}
+	expect(
+		(
+			await mailbox.completeInboundSubscriptionEffect({
+				ownerId,
+				deliveryId: delivery.deliveryId,
+				subscriptionEffectLease:
+					freshSubClaim.delivery.subscriptionEffectLease!,
+				expectedFinalizationToken: freshToken,
+				mode: 'complete',
+				now: '2026-07-22T00:01:04.000Z',
+			})
+		).status,
+	).toBe('complete')
 })
 
 test('Mailbox inbound ledger warm-migrates v1 schema indexes to v2', async () => {

@@ -433,6 +433,12 @@ export function claimMailboxInboundDeliveryStorage(
 	if (!canClaim) return { status: 'not-claimed', delivery: current }
 
 	const usageStartedAt = current.usageStartedAt ?? input.usageStartedAt ?? null
+	/**
+	 * Storage reclaim invalidates prior finalization + in-flight effect leases.
+	 * D1 `json_set` only patches storage fields (stale lease keys can linger in
+	 * `detail_json`); promoted Mailbox columns must clear explicitly so a stale
+	 * effect worker cannot complete against a later re-finalization.
+	 */
 	const next: MailboxInboundDeliverySnapshot = {
 		...current,
 		state: 'storing',
@@ -441,8 +447,17 @@ export function claimMailboxInboundDeliveryStorage(
 		expectedAttachmentCount,
 		...(usageStartedAt ? { usageStartedAt } : {}),
 		updatedAt: now,
+		...(current.subscriptionEffectState === 'processing'
+			? { subscriptionEffectState: 'pending' as const }
+			: {}),
 	}
 	delete next.finalizationToken
+	delete next.usageEffectLease
+	delete next.usageEffectLeaseAt
+	delete next.usageEffectRetryAt
+	delete next.subscriptionEffectLease
+	delete next.subscriptionEffectLeaseAt
+	delete next.subscriptionEffectRetryAt
 	sql.exec(
 		`UPDATE email_delivery_events
 		SET event_type = 'receive_started',
@@ -454,6 +469,16 @@ export function claimMailboxInboundDeliveryStorage(
 			expected_attachment_count = ?,
 			usage_started_at = COALESCE(usage_started_at, ?),
 			finalization_token = NULL,
+			usage_effect_lease = NULL,
+			usage_effect_lease_at = NULL,
+			usage_effect_retry_at = NULL,
+			subscription_effect_lease = NULL,
+			subscription_effect_lease_at = NULL,
+			subscription_effect_retry_at = NULL,
+			subscription_effect_state = CASE
+				WHEN subscription_effect_state = 'processing' THEN 'pending'
+				ELSE subscription_effect_state
+			END,
 			updated_at = ?
 		WHERE id = ?
 			AND provider = ?

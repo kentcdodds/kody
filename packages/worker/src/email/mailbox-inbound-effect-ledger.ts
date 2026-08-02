@@ -66,6 +66,8 @@ export type MailboxInboundEffectLedgerRpc = {
 		ownerId: string
 		deliveryId: string
 		usageEffectLease: string
+		/** Must match the delivery's current finalization token (D1 parity). */
+		expectedFinalizationToken: string
 		mode: 'recorded' | 'suppressed'
 		usageMonth: string
 		usageBytes: number
@@ -82,6 +84,8 @@ export type MailboxInboundEffectLedgerRpc = {
 		ownerId: string
 		deliveryId: string
 		subscriptionEffectLease: string
+		/** Must match the delivery's current finalization token (D1 parity). */
+		expectedFinalizationToken: string
 		mode: 'complete' | 'suppressed'
 		suppressionReason?: string | null
 		now?: string
@@ -90,6 +94,8 @@ export type MailboxInboundEffectLedgerRpc = {
 		ownerId: string
 		deliveryId: string
 		subscriptionEffectLease: string
+		/** Must match the delivery's current finalization token (D1 parity). */
+		expectedFinalizationToken: string
 		error: string
 		now?: string
 	}) => Promise<MailboxFailInboundSubscriptionEffectResult>
@@ -187,6 +193,7 @@ export function completeMailboxInboundUsageEffect(
 	input: {
 		deliveryId: string
 		usageEffectLease: string
+		expectedFinalizationToken: string
 		mode: 'recorded' | 'suppressed'
 		usageMonth: string
 		usageBytes: number
@@ -200,9 +207,19 @@ export function completeMailboxInboundUsageEffect(
 		input.usageEffectLease,
 		'usageEffectLease',
 	)
+	const expectedFinalizationToken = assertMailboxNonEmptyString(
+		input.expectedFinalizationToken,
+		'expectedFinalizationToken',
+	)
 	const usageMonth = assertMailboxNonEmptyString(input.usageMonth, 'usageMonth')
 	const current = readMailboxInboundDeliveryById(sql, deliveryId)
 	if (!current) return { status: 'lease-lost' }
+	if (
+		current.state !== 'received' ||
+		current.finalizationToken !== expectedFinalizationToken
+	) {
+		return { status: 'lease-lost' }
+	}
 	if (current.usageEffectRecordedAt || current.usageEffectSuppressedAt) {
 		return { status: 'already-complete', delivery: current }
 	}
@@ -239,6 +256,9 @@ export function completeMailboxInboundUsageEffect(
 			updated_at = ?
 		WHERE id = ?
 			AND provider = ?
+			AND event_type = 'received'
+			AND state = 'received'
+			AND finalization_token = ?
 			AND usage_effect_lease = ?
 			AND usage_effect_recorded_at IS NULL
 			AND usage_effect_suppressed_at IS NULL`,
@@ -252,6 +272,7 @@ export function completeMailboxInboundUsageEffect(
 		now,
 		deliveryId,
 		mailboxInboundProvider,
+		expectedFinalizationToken,
 		usageEffectLease,
 	)
 	const after = readMailboxInboundDeliveryById(sql, deliveryId)
@@ -382,6 +403,7 @@ export function completeMailboxInboundSubscriptionEffect(
 	input: {
 		deliveryId: string
 		subscriptionEffectLease: string
+		expectedFinalizationToken: string
 		mode: 'complete' | 'suppressed'
 		suppressionReason?: string | null
 		now?: string
@@ -393,8 +415,18 @@ export function completeMailboxInboundSubscriptionEffect(
 		input.subscriptionEffectLease,
 		'subscriptionEffectLease',
 	)
+	const expectedFinalizationToken = assertMailboxNonEmptyString(
+		input.expectedFinalizationToken,
+		'expectedFinalizationToken',
+	)
 	const current = readMailboxInboundDeliveryById(sql, deliveryId)
 	if (!current) return { status: 'lease-lost' }
+	if (
+		current.state !== 'received' ||
+		current.finalizationToken !== expectedFinalizationToken
+	) {
+		return { status: 'lease-lost' }
+	}
 	if (
 		current.subscriptionEffectState === 'complete' ||
 		current.subscriptionEffectState === 'dead-letter'
@@ -432,12 +464,16 @@ export function completeMailboxInboundSubscriptionEffect(
 			updated_at = ?
 		WHERE id = ?
 			AND provider = ?
+			AND event_type = 'received'
+			AND state = 'received'
+			AND finalization_token = ?
 			AND subscription_effect_lease = ?`,
 		detailJsonFromMailboxInboundSnapshot(next, extra),
 		needsMailboxEffectReconcile(next) ? 1 : 0,
 		now,
 		deliveryId,
 		mailboxInboundProvider,
+		expectedFinalizationToken,
 		subscriptionEffectLease,
 	)
 	const after = readMailboxInboundDeliveryById(sql, deliveryId)
@@ -461,6 +497,7 @@ export function failMailboxInboundSubscriptionEffect(
 	input: {
 		deliveryId: string
 		subscriptionEffectLease: string
+		expectedFinalizationToken: string
 		error: string
 		now?: string
 	},
@@ -471,9 +508,18 @@ export function failMailboxInboundSubscriptionEffect(
 		input.subscriptionEffectLease,
 		'subscriptionEffectLease',
 	)
+	const expectedFinalizationToken = assertMailboxNonEmptyString(
+		input.expectedFinalizationToken,
+		'expectedFinalizationToken',
+	)
 	const error = assertMailboxNonEmptyString(input.error, 'error')
 	const current = readMailboxInboundDeliveryById(sql, deliveryId)
-	if (!current || current.subscriptionEffectLease !== subscriptionEffectLease) {
+	if (
+		!current ||
+		current.state !== 'received' ||
+		current.finalizationToken !== expectedFinalizationToken ||
+		current.subscriptionEffectLease !== subscriptionEffectLease
+	) {
 		return { status: 'lease-lost' }
 	}
 	const failure = resolveMailboxSubscriptionEffectFailure(
@@ -510,6 +556,9 @@ export function failMailboxInboundSubscriptionEffect(
 			updated_at = ?
 		WHERE id = ?
 			AND provider = ?
+			AND event_type = 'received'
+			AND state = 'received'
+			AND finalization_token = ?
 			AND subscription_effect_lease = ?`,
 		detailJsonFromMailboxInboundSnapshot(next),
 		next.subscriptionEffectState ?? 'pending',
@@ -521,6 +570,7 @@ export function failMailboxInboundSubscriptionEffect(
 		now,
 		deliveryId,
 		mailboxInboundProvider,
+		expectedFinalizationToken,
 		subscriptionEffectLease,
 	)
 	const after = readMailboxInboundDeliveryById(sql, deliveryId)

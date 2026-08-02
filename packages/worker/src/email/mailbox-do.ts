@@ -706,6 +706,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		deliveryId: string
 		usageEffectLease: string
+		expectedFinalizationToken: string
 		mode: 'recorded' | 'suppressed'
 		usageMonth: string
 		usageBytes: number
@@ -743,6 +744,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		deliveryId: string
 		subscriptionEffectLease: string
+		expectedFinalizationToken: string
 		mode: 'complete' | 'suppressed'
 		suppressionReason?: string | null
 		now?: string
@@ -764,6 +766,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		deliveryId: string
 		subscriptionEffectLease: string
+		expectedFinalizationToken: string
 		error: string
 		now?: string
 	}) {
