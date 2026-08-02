@@ -125,12 +125,16 @@ function safeParityErrorText(error: unknown): string {
 async function purgeMailboxMetadata(input: {
 	env: MailboxParityReconcileEnv
 	userId: string
+	preserveMessageTombstones?: boolean
 }): Promise<
 	{ ok: true } | { ok: false; reason: 'timeout' | 'error'; errorText: string }
 > {
 	try {
+		const rpc = mailboxRpc({ env: input.env, userId: input.userId })
 		const raced = await awaitMailboxMirrorRpc(
-			mailboxRpc({ env: input.env, userId: input.userId }).purge(),
+			input.preserveMessageTombstones
+				? rpc.purgeForParityRebuild({ ownerId: input.userId })
+				: rpc.purge(),
 			mailboxMirrorRpcTimeoutMs,
 		)
 		if (!raced.ok) {
@@ -278,11 +282,13 @@ async function compareParityForUser(input: {
 		}
 	}
 
-	// DO may hold extras after D1 deletes. Purge Mailbox metadata (no R2) before
-	// resetting rebuild state so the next ticks authoritatively mirror D1.
+	// DO may hold extras after D1 deletes. Purge graph metadata (no R2) before
+	// rebuilding, but retain deletion tombstones so delayed D1 pages cannot
+	// resurrect explicitly deleted messages during the migration.
 	const purged = await purgeMailboxMetadata({
 		env: input.env,
 		userId: input.state.userId,
+		preserveMessageTombstones: true,
 	})
 	if (!purged.ok) {
 		console.warn(

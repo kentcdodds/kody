@@ -33,6 +33,7 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 					AND name IN (
 						'email_threads', 'email_messages',
 						'email_attachments', 'email_delivery_events',
+						'email_message_deletion_tombstones',
 						'mailbox_owner_identity'
 					)
 				ORDER BY name ASC`,
@@ -42,6 +43,7 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 		expect(tables).toEqual([
 			'email_attachments',
 			'email_delivery_events',
+			'email_message_deletion_tombstones',
 			'email_messages',
 			'email_threads',
 			'mailbox_owner_identity',

@@ -33,6 +33,7 @@ export function setMailboxMeta(
  * Schema bootstrap + warm migrations.
  * - v1: base tables/indexes (deployed).
  * - v2: additive inbound ledger query indexes (state/reconcile/retry/dedupe).
+ * - v3: durable message deletion tombstones for delayed-writer fencing.
  * Warm objects re-run CREATE IF NOT EXISTS then apply any version-gated
  * index additions; never destructive.
  */
@@ -58,6 +59,12 @@ export function initializeMailboxSchema(storage: DurableObjectStorage) {
 		CREATE TABLE IF NOT EXISTS mailbox_owner_identity (
 			singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
 			owner_id TEXT NOT NULL
+		)
+	`)
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS email_message_deletion_tombstones (
+			message_id TEXT PRIMARY KEY NOT NULL,
+			deleted_at TEXT NOT NULL
 		)
 	`)
 

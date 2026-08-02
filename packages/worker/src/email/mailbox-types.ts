@@ -36,7 +36,7 @@ export const mailboxBlobDeleteMaxKeys = 1000
  * Bump when initializeSchema's DDL set changes. Warm objects run additive
  * migrations (CREATE INDEX IF NOT EXISTS / guarded ALTER) until they match.
  */
-export const mailboxSchemaVersion = 2
+export const mailboxSchemaVersion = 3
 export const mailboxMetaSchemaVersionKey = 'schema_version'
 
 export const mailboxExportThreadCursorPrefix = 'thread:'
@@ -328,7 +328,7 @@ export type MailboxBlobReferencePage = {
  * to trusted internal callers for exact post-delete verification.
  */
 export type MailboxDeleteMessageWithBlobsResult =
-	| { status: 'missing' }
+	| { status: 'missing'; tombstoned: boolean }
 	| {
 			status: 'deleted'
 			attachmentsSeen: number
@@ -632,6 +632,8 @@ type MailboxCoreRpc = {
 	runRetentionNow: (input: {
 		ownerId: string
 	}) => Promise<MailboxRunRetentionNowResult>
+	/** Parity rebuild only: clear graph metadata while retaining delete fences. */
+	purgeForParityRebuild: (input: { ownerId: string }) => Promise<{ ok: true }>
 	purge: () => Promise<{ ok: true }>
 }
 

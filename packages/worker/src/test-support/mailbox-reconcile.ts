@@ -224,9 +224,11 @@ export function mockDoCounts(
 	options?: { purge?: () => Promise<{ ok: true }> },
 ) {
 	const purge = options?.purge ?? vi.fn(async () => ({ ok: true as const }))
+	const purgeForParityRebuild = vi.fn(async () => ({ ok: true as const }))
 	mocks.mailboxRpc.mockImplementation(() => ({
 		countMailbox: vi.fn(async () => counts),
 		purge,
+		purgeForParityRebuild,
 	}))
 	mocks.awaitMailboxMirrorRpc.mockImplementation(
 		async (promise: Promise<unknown>) => ({
@@ -234,7 +236,7 @@ export function mockDoCounts(
 			value: await promise,
 		}),
 	)
-	return { purge }
+	return { purge, purgeForParityRebuild }
 }
 
 export function parityEnv(db: D1Database) {

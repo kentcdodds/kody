@@ -32,11 +32,11 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 	const mailboxB = rpcFor(ownerB)
 	const now = '2026-07-22T00:00:00.000Z'
 
-	// Schema v2 indexes present after cold init.
+	// Current schema indexes and deletion-tombstone table exist after cold init.
 	await runInDurableObject(
 		stubFor(ownerA),
 		async (_instance: Mailbox, state) => {
-			expect(mailboxSchemaVersion).toBe(2)
+			expect(mailboxSchemaVersion).toBe(3)
 			const version = state.storage.sql
 				.exec<{ value: number }>(
 					`SELECT value FROM mailbox_meta WHERE key = ?`,
@@ -70,6 +70,15 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 			for (const name of schemaV2Indexes) {
 				expect(indexes.filter((entry) => entry === name)).toHaveLength(1)
 			}
+			expect(
+				state.storage.sql
+					.exec<{ name: string }>(
+						`SELECT name FROM sqlite_master
+						WHERE type = 'table'
+							AND name = 'email_message_deletion_tombstones'`,
+					)
+					.toArray(),
+			).toEqual([{ name: 'email_message_deletion_tombstones' }])
 		},
 	)
 
@@ -525,7 +534,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 			deliveryId: delivery.deliveryId,
 		}),
 	).toBeNull()
-	// Re-init after purge still at schema v2.
+	// Re-init after purge still at the current schema.
 	await runInDurableObject(stubFor(ownerA), async (_instance, state) => {
 		const version = state.storage.sql
 			.exec<{ value: number }>(
@@ -537,7 +546,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 	})
 })
 
-test('Mailbox inbound ledger warm-migrates v1 schema indexes to v2', async () => {
+test('Mailbox warm-migrates v1 indexes and message tombstones to current schema', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const ownerId = uniqueUserId('warm-v2')
 	const stub = stubFor(ownerId)
@@ -562,6 +571,9 @@ test('Mailbox inbound ledger warm-migrates v1 schema indexes to v2', async () =>
 		)
 		state.storage.sql.exec(
 			`DROP INDEX IF EXISTS idx_email_delivery_events_dedupe_provider_expires`,
+		)
+		state.storage.sql.exec(
+			`DROP TABLE IF EXISTS email_message_deletion_tombstones`,
 		)
 		// Re-run schema init (same path as constructor / purge).
 		initializeMailboxSchema(state.storage)
@@ -598,6 +610,15 @@ test('Mailbox inbound ledger warm-migrates v1 schema indexes to v2', async () =>
 		for (const name of schemaV2Indexes) {
 			expect(indexes.filter((entry) => entry === name)).toHaveLength(1)
 		}
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'table'
+						AND name = 'email_message_deletion_tombstones'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'email_message_deletion_tombstones' }])
 	})
 })
 

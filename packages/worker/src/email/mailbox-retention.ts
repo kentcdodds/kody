@@ -248,7 +248,10 @@ async function pruneExpiredMessages(input: {
 			hadBlobDeleteFailures = true
 			continue
 		}
-		input.store.deleteMessageCascade(row.id)
+		input.store.tombstoneAndDeleteMessage({
+			messageId: row.id,
+			deletedAt: new Date().toISOString(),
+		})
 	}
 	return hadBlobDeleteFailures
 }

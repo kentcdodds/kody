@@ -55,6 +55,10 @@ import {
 	listMailboxBlobReferences,
 } from './mailbox-export.ts'
 import { initializeMailboxSchema } from './mailbox-schema.ts'
+import {
+	isMailboxMessageTombstoned,
+	writeMailboxMessageDeletionTombstone,
+} from './mailbox-message-deletion-tombstones.ts'
 
 export type MailboxUpsertResult = {
 	created: boolean
@@ -135,6 +139,10 @@ export class MailboxStore {
 			)
 			.toArray()[0]
 		return row?.owner_id ?? null
+	}
+
+	isMessageTombstoned(messageId: string): boolean {
+		return isMailboxMessageTombstoned(this.sql, messageId)
 	}
 
 	/**
@@ -267,6 +275,9 @@ export class MailboxStore {
 	 */
 	upsertMessageRow(message: MailboxMessageInput): MailboxUpsertResult {
 		const id = assertMailboxNonEmptyString(message.id, 'message.id')
+		if (this.isMessageTombstoned(id)) {
+			return { created: false, accepted: false }
+		}
 		const direction = assertMailboxDirection(message.direction)
 		const processingStatus = assertMailboxProcessingStatus(
 			message.processingStatus,
@@ -779,6 +790,20 @@ export class MailboxStore {
 				message.thread_id,
 			)
 		}
+	}
+
+	tombstoneAndDeleteMessage(input: { messageId: string; deletedAt: string }) {
+		this.storage.transactionSync(() => {
+			writeMailboxMessageDeletionTombstone(this.sql, input)
+			this.deleteMessageCascade(input.messageId)
+		})
+	}
+
+	purgeMetadataPreservingTombstones() {
+		this.sql.exec(`DELETE FROM email_delivery_events`)
+		this.sql.exec(`DELETE FROM email_attachments`)
+		this.sql.exec(`DELETE FROM email_messages`)
+		this.sql.exec(`DELETE FROM email_threads`)
 	}
 
 	pruneExpiredDeliveryEvents(input: { cutoff: string; limit: number }) {

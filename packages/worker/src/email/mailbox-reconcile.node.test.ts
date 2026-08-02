@@ -686,6 +686,7 @@ test('count compare allows slow DO counts, then timeout clears soak and retries'
 	mocks.mailboxRpc.mockImplementation(() => ({
 		countMailbox: vi.fn(async () => counts),
 		purge: vi.fn(async () => ({ ok: true as const })),
+		purgeForParityRebuild: vi.fn(async () => ({ ok: true as const })),
 	}))
 	mocks.awaitMailboxMirrorRpc.mockImplementation(
 		async (promise: Promise<unknown>, timeoutMs?: number) => {
@@ -1001,7 +1002,7 @@ test('mailbox parity deletion race and mismatch purge failure', async () => {
 				attachments: 0,
 				deliveryEvents: 0,
 			})),
-			purge: vi.fn(async () => ({ ok: true as const })),
+			purgeForParityRebuild: vi.fn(async () => ({ ok: true as const })),
 		}))
 		mocks.awaitMailboxMirrorRpc.mockImplementation(
 			async (promise: Promise<unknown>) => {

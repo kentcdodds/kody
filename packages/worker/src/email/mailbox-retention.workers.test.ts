@@ -268,6 +268,16 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 		})
 		const events = await mailbox.listDeliveryEvents({ limit: 10 })
 		expect(events.map((event) => event.id)).toEqual(['fresh-event'])
+		await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+			const ids = state.storage.sql
+				.exec<{ message_id: string }>(
+					`SELECT message_id FROM email_message_deletion_tombstones
+					ORDER BY message_id`,
+				)
+				.toArray()
+				.map((row) => row.message_id)
+			expect(ids).toEqual(['drop-msg', 'missing-key-msg'])
+		})
 	} finally {
 		env.EMAIL_BLOBS.delete = originalDelete
 	}
@@ -277,6 +287,16 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 	})
 	expect(await env.EMAIL_BLOBS.get(failRawKey)).toBeNull()
 	expect(await mailbox.getMessage({ messageId: failMessage.id })).toBeNull()
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		const tombstoned = state.storage.sql
+			.exec<{ found: number }>(
+				`SELECT 1 AS found FROM email_message_deletion_tombstones
+				WHERE message_id = ?`,
+				failMessage.id,
+			)
+			.toArray()[0]
+		expect(tombstoned?.found).toBe(1)
+	})
 })
 
 test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh rows', async () => {
@@ -434,6 +454,9 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 				messageId: message.id,
 			}),
 		)
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.purgeForParityRebuild({ ownerId: otherOwner }),
+		)
 	})
 
 	const originalDelete = env.EMAIL_BLOBS.delete.bind(env.EMAIL_BLOBS)
@@ -457,6 +480,17 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 			await mailbox.listDeliveryEvents({ messageId: message.id }),
 		).toHaveLength(1)
 		expect(await mailbox.getThread({ threadId: thread.id })).not.toBeNull()
+		await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+			const tombstones = state.storage.sql
+				.exec<{ count: number }>(
+					`SELECT COUNT(*) AS count
+					FROM email_message_deletion_tombstones
+					WHERE message_id = ?`,
+					message.id,
+				)
+				.toArray()[0]?.count
+			expect(Number(tombstones)).toBe(0)
+		})
 	} finally {
 		env.EMAIL_BLOBS.delete = originalDelete
 	}
@@ -491,4 +525,78 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 	expect(await mailbox.listDeliveryEvents({ limit: 10 })).toEqual([
 		expect.objectContaining({ id: event.id, messageId: null }),
 	])
+	expect(await mailbox.countMailbox()).toEqual({
+		threads: 0,
+		messages: 0,
+		attachments: 0,
+		deliveryEvents: 1,
+	})
+	expect((await mailbox.exportMailbox({ pageSize: 10 })).rows).toEqual([
+		expect.objectContaining({ kind: 'delivery_event' }),
+	])
+	expect(
+		await mailbox.deleteMessageWithBlobs({
+			ownerId: userId,
+			messageId: message.id,
+		}),
+	).toEqual({ status: 'missing', tombstoned: true })
+
+	// Both a queued stale dual-write and a newer parity snapshot are fenced.
+	expect(
+		await mailbox.mirrorMessage({
+			ownerId: userId,
+			thread,
+			message,
+			attachments: [attachment],
+		}),
+	).toEqual({ ok: true, accepted: false })
+	expect(
+		await mailbox.mirrorMessage({
+			ownerId: userId,
+			thread,
+			message: {
+				...message,
+				updatedAt: '2099-01-01T00:00:00.000Z',
+			},
+			attachments: [attachment],
+		}),
+	).toEqual({ ok: true, accepted: false })
+	expect(await mailbox.getMessage({ messageId: message.id })).toBeNull()
+
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		const tombstone = state.storage.sql
+			.exec<{ deleted_at: string }>(
+				`SELECT deleted_at FROM email_message_deletion_tombstones
+				WHERE message_id = ?`,
+				message.id,
+			)
+			.toArray()[0]
+		expect(tombstone?.deleted_at).toMatch(
+			/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+		)
+	})
+
+	await mailbox.purgeForParityRebuild({ ownerId: userId })
+	expect(
+		await mailbox.mirrorMessage({
+			ownerId: userId,
+			thread,
+			message: {
+				...message,
+				updatedAt: '2099-01-02T00:00:00.000Z',
+			},
+			attachments: [attachment],
+		}),
+	).toEqual({ ok: true, accepted: false })
+
+	await mailbox.purge()
+	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
+		const tombstones = state.storage.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count
+				FROM email_message_deletion_tombstones`,
+			)
+			.toArray()[0]?.count
+		expect(Number(tombstones)).toBe(0)
+	})
 })

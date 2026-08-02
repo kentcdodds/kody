@@ -298,6 +298,15 @@ test('Mailbox deleteMessageMetadata: nulls delivery message_id, no orphan/R2', a
 			}),
 		).toEqual({ status: 'missing' })
 		expect(blobDeleteCalls).toBe(0)
+		expect(
+			await mailbox.mirrorMessage({
+				ownerId: userId,
+				thread,
+				message: { ...alone, updatedAt: '2099-01-01T00:00:00.000Z' },
+				attachments: [attachment],
+			}),
+		).toEqual({ ok: true, accepted: false })
+		expect(await mailbox.getMessage({ messageId: alone.id })).toBeNull()
 
 		expect(
 			await mailbox.deleteThreadIfEmpty({

@@ -239,7 +239,13 @@ Durable Object export behavior:
   other D1 `email_*` rows remain live compatibility projections/deletion targets
   during expansion, but none of those four graph tables is duplicated in the D1
   export. USER R2 export enumerates raw MIME and attachment keys with
-  `Mailbox.listBlobReferences`. See [Mailbox](#durable-objects-mailbox).
+  `Mailbox.listBlobReferences`. Mailbox also retains migration-only
+  `email_message_deletion_tombstones` so delayed D1 dual-write/parity pages
+  cannot recreate deleted messages. Tombstones are not exported or counted;
+  account purge clears them. They intentionally have no time-based cleanup while
+  D1 writers remain, so their growth is bounded by deleted message ids during
+  the migration. Tombstone cleanup is safe only after those writers retire in
+  step 5. See [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service

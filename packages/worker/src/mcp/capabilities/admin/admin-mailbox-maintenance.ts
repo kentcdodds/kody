@@ -162,7 +162,7 @@ const deleteMessageResultSchema = z.object({
 	allCapturedBlobsAbsent: z
 		.boolean()
 		.describe(
-			'True when every blob key captured by deleteEmailMessageById is absent via head.',
+			'True when every authoritative Mailbox or owner-fenced D1 fallback blob key is absent via head.',
 		),
 })
 

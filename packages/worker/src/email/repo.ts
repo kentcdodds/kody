@@ -1343,9 +1343,7 @@ export async function deleteEmailMessageProjectionById(input: {
 		.first<{ user_id: string }>()
 	if (row == null) return { messageDeleted: false }
 	if (row.user_id !== input.expectedUserId) {
-		throw new Error(
-			`Email message projection belongs to a different owner for expected_user_id=${input.expectedUserId} message_id=${input.messageId}`,
-		)
+		return { messageDeleted: false }
 	}
 	await input.db.batch([
 		input.db

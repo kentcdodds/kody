@@ -17,12 +17,12 @@ import {
 import { MailboxStore } from './mailbox-store.ts'
 import {
 	deleteMailboxDeliveryEvent,
-	deleteMailboxMessageMetadata,
 	deleteMailboxThreadIfEmpty,
 	setMailboxMessageClassification,
 	touchMailboxThread,
 	updateMailboxMessageDelivery,
 } from './mailbox-mutations.ts'
+import { deleteMailboxMessageMetadataWithTombstone } from './mailbox-message-deletion-tombstones.ts'
 import {
 	claimMailboxInboundDeliveryCleanup,
 	markMailboxInboundDeliveryOrphanCleaned,
@@ -226,6 +226,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		let accepted = false
 		this.ctx.storage.transactionSync(() => {
 			const ownerId = this.store.assertOwner(input.ownerId)
+			if (this.store.isMessageTombstoned(message.id)) return
 			this.store.validateMessageBlobKeys({
 				ownerId,
 				message,
@@ -385,7 +386,10 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
 			const { ownerId: _ownerId, ...mutationInput } = input
-			result = deleteMailboxMessageMetadata(this.ctx.storage.sql, mutationInput)
+			result = deleteMailboxMessageMetadataWithTombstone(
+				this.ctx.storage.sql,
+				mutationInput,
+			)
 		})
 		return result
 	}
@@ -412,7 +416,13 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 					)
 					const message = this.store.getMessage(messageId)
 					if (!message) {
-						return { ok: true, result: { status: 'missing' } }
+						return {
+							ok: true,
+							result: {
+								status: 'missing',
+								tombstoned: this.store.isMessageTombstoned(messageId),
+							},
+						}
 					}
 
 					const attachments = this.store.listAttachmentsForMessage(messageId)
@@ -430,8 +440,9 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 						blobReferences.map((reference) => reference.key),
 					)
 
-					this.ctx.storage.transactionSync(() => {
-						this.store.deleteMessageCascade(messageId)
+					this.store.tombstoneAndDeleteMessage({
+						messageId,
+						deletedAt: new Date().toISOString(),
 					})
 					return {
 						ok: true,
@@ -906,6 +917,19 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}) {
 		this.store.assertOwner(input.ownerId)
 		return listMailboxDueInboundEffectWork(this.ctx.storage.sql, input)
+	}
+
+	async purgeForParityRebuild(input: {
+		ownerId: string
+	}): Promise<{ ok: true }> {
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			this.store.purgeMetadataPreservingTombstones()
+		})
+		await this.ctx.storage.deleteAlarm().catch(() => undefined)
+		this.retentionAlarmArmed = false
+		this.retentionIdleConfirmed = true
+		return { ok: true }
 	}
 
 	async purge(): Promise<{ ok: true }> {
