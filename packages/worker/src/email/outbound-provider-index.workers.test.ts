@@ -90,8 +90,6 @@ test('insert and delivery update dual-write the outbound provider index', async 
 		messageId: message.id,
 		status: 'sent',
 		providerMessageId: rotatedProviderMessageId,
-		userId,
-		inboxId: null,
 		sentAt: '2026-08-01T12:01:00.000Z',
 	})
 
@@ -336,13 +334,14 @@ test('parity report flags missing and mismatched index rows', async () => {
 		db: env.APP_DB,
 		userId,
 	})
-	expect(report.parity).toBe(false)
-	expect(report.missingFromIndexCount).toBe(1)
-	expect(report.missingFromMessagesCount).toBe(1)
-	expect(report.sampleMismatches.map((row) => row.kind).sort()).toEqual([
-		'missing_from_index',
-		'missing_from_messages',
-	])
+	expect(report).toMatchObject({
+		parity: false,
+		linkedMessageCount: 1,
+		indexCount: 1,
+		missingFromIndexCount: 1,
+		missingFromMessagesCount: 1,
+	})
+	expect(report).not.toHaveProperty('sampleMismatches')
 })
 
 test('sendOutboundEmail dual-writes the provider index on terminal success', async () => {

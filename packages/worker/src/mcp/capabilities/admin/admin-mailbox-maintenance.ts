@@ -44,6 +44,29 @@ const mailboxCountSchema = z.object({
 	deliveryEvents: z.number().int().nonnegative(),
 })
 
+const outboundProviderIndexParitySchema = z.object({
+	linkedMessageCount: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Outbound email_messages rows with a non-null provider_message_id.',
+		),
+	indexCount: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('Rows in email_outbound_provider_index.'),
+	missingFromIndexCount: z.number().int().nonnegative(),
+	missingFromMessagesCount: z.number().int().nonnegative(),
+	mismatchedCount: z.number().int().nonnegative(),
+	parity: z
+		.boolean()
+		.describe(
+			'True when linked and index counts match and missing/mismatched counts are zero.',
+		),
+})
+
 const statusSchema = z.object({
 	generatedAt: z.string(),
 	trackedOwners: z.number().int().nonnegative(),
@@ -68,6 +91,9 @@ const statusSchema = z.object({
 		.describe(
 			'Earliest matching_since + soak duration among matching owners, or null.',
 		),
+	outboundProviderIndex: outboundProviderIndexParitySchema.describe(
+		'Fleet-wide aggregate D1 outbound provider reverse-index parity (counts only; no owner/message content).',
+	),
 })
 
 const reconcileMetricsSchema = z.object({
@@ -214,12 +240,13 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content), bounded reconcileMailboxParity, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, deleteEmailMessageById with expectedUserId fence, post-delete D1/R2 head over exact captured blob keys). Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content) including fleet outbound provider-index parity counts, bounded reconcileMailboxParity, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, deleteEmailMessageById with expectedUserId fence, post-delete D1/R2 head over exact captured blob keys). Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
 			'maintenance',
 			'parity',
+			'provider-index',
 			'reconcile',
 			'retention',
 			'delete',
@@ -295,7 +322,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 					successReason: (result) => {
 						switch (result.action) {
 							case 'status':
-								return `action=status;tracked=${result.status.trackedOwners}`
+								return `action=status;tracked=${result.status.trackedOwners};provider_index_parity=${result.status.outboundProviderIndex.parity ? 1 : 0}`
 							case 'reconcile':
 								return `action=reconcile;scanned=${result.metrics.scanned};matched=${result.metrics.matched}`
 							case 'retention':

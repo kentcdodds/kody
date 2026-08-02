@@ -1121,19 +1121,21 @@ below.
   `0128-email-outbound-provider-index.sql`), keyed by
   `(provider, provider_message_id)` with `user_id`, `message_id`, `inbox_id`,
   and created/updated timestamps (indexes on `user_id` and unique `message_id`).
-  `email_messages.provider_message_id` remains authoritative: outbound terminal
-  success / provider-id updates dual-write the index after the message row
-  write; `deleteEmailMessageById`, user/system retention, and account deletion
-  remove owner index rows. Account export treats the table as derived global
-  lookup (`includeInExport: false` /
+  `email_messages.provider_message_id` remains authoritative: outbound inserts
+  with a provider id and `updateEmailMessageDelivery` commit the message row
+  plus index sync in one `db.batch` (index owner/inbox fields come from the
+  authoritative message row, never caller input). `deleteEmailMessageById`,
+  user/system retention, and account deletion remove owner index rows. Account
+  export treats the table as derived global lookup (`includeInExport: false` /
   `derivedData.email_outbound_provider_index`) because authoritative outbound
   message rows are already exported. `recordProviderEmailDeliveryEvent` resolves
   index-first, then loads the owner-scoped message by `user_id`/`message_id` (no
   full-table provider scan). `system:email` rows are indexed when they carry a
-  provider id. Read helper `loadOutboundProviderIndexParityReport` compares
-  linked outbound messages vs index counts/missing/mismatched for production
-  evidence. This phase does not flip Mailbox write authority; contextless
-  provider-id reverse lookups must not enumerate per-user Mailbox objects.
+  provider id. Aggregate parity (`loadOutboundProviderIndexParityReport`; counts
+  only) is surfaced on `admin_mailbox_maintenance`
+  `status.outboundProviderIndex` for production verification. This phase does
+  not flip Mailbox write authority; contextless provider-id reverse lookups must
+  not enumerate per-user Mailbox objects.
 
 ### Inbound durability boundary (D1-authoritative dual-write)
 

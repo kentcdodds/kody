@@ -18,6 +18,10 @@ import {
 } from '#worker/email/mailbox-read-cutover.ts'
 import { type MailboxCountResult } from '#worker/email/mailbox-types.ts'
 import {
+	loadOutboundProviderIndexParityReport,
+	type OutboundProviderIndexParityReport,
+} from '#worker/email/outbound-provider-index.ts'
+import {
 	deleteEmailMessageById,
 	getEmailMessageById,
 } from '#worker/email/repo.ts'
@@ -55,6 +59,11 @@ export type AdminMailboxMaintenanceStatus = {
 	newestCheckedAt: string | null
 	/** Earliest `matching_since + soak` among matching owners (null if none). */
 	earliestCutoverAt: string | null
+	/**
+	 * Fleet-wide aggregate D1 outbound provider reverse-index parity. Counts
+	 * only — no owner ids, message ids, or email content.
+	 */
+	outboundProviderIndex: OutboundProviderIndexParityReport
 }
 
 export type AdminMailboxMaintenanceRetentionD1Metrics = {
@@ -436,6 +445,10 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		}
 	}
 
+	const outboundProviderIndex = await loadOutboundProviderIndexParityReport({
+		db: input.db,
+	})
+
 	return {
 		generatedAt,
 		trackedOwners: Number(row?.trackedOwners ?? 0) || 0,
@@ -449,6 +462,7 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		oldestCheckedAt: row?.oldestCheckedAt ?? null,
 		newestCheckedAt: row?.newestCheckedAt ?? null,
 		earliestCutoverAt,
+		outboundProviderIndex,
 	}
 }
 

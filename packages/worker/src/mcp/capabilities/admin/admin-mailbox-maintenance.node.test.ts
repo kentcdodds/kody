@@ -60,6 +60,14 @@ const emptyStatus = {
 	oldestCheckedAt: '2026-07-31T00:00:00.000Z',
 	newestCheckedAt: '2026-08-01T11:00:00.000Z',
 	earliestCutoverAt: '2026-07-31T00:00:00.000Z',
+	outboundProviderIndex: {
+		linkedMessageCount: 0,
+		indexCount: 0,
+		missingFromIndexCount: 0,
+		missingFromMessagesCount: 0,
+		mismatchedCount: 0,
+		parity: true,
+	},
 }
 
 const emptyRetentionResult = {
@@ -183,7 +191,7 @@ test('admin_mailbox_maintenance status is audited and aggregate-only', async () 
 		expect.objectContaining({
 			action: 'admin_mailbox_maintenance',
 			result: 'success',
-			reason: 'action=status;tracked=2',
+			reason: 'action=status;tracked=2;provider_index_parity=1',
 		}),
 	)
 })

@@ -17,6 +17,15 @@ export type EmailOutboundProviderIndexRow = {
 	updatedAt: string
 }
 
+export type OutboundProviderIndexParityReport = {
+	linkedMessageCount: number
+	indexCount: number
+	missingFromIndexCount: number
+	missingFromMessagesCount: number
+	mismatchedCount: number
+	parity: boolean
+}
+
 function mapIndexRow(
 	row: Record<string, unknown>,
 ): EmailOutboundProviderIndexRow {
@@ -51,51 +60,68 @@ export async function getOutboundProviderIndexRow(input: {
 }
 
 /**
- * Upsert the derived index for one outbound message. Callers must write the
- * authoritative `email_messages` row first. Replaces any prior mapping for the
- * same `message_id` when the provider id changes.
+ * Prepared statements that sync the derived index from the authoritative
+ * `email_messages` row. Callers must include these in the same `db.batch` as
+ * the message INSERT/UPDATE so message + index commit atomically. Owner and
+ * inbox fields always come from the message row — never from caller input.
  */
-export async function upsertOutboundProviderIndex(input: {
+export function prepareOutboundProviderIndexSyncStatements(input: {
 	db: D1Database
-	provider?: string
-	providerMessageId: string
-	userId: string
 	messageId: string
-	inboxId?: string | null
-	now?: string
-}): Promise<void> {
+	/**
+	 * Target provider id after the accompanying message mutation. Null/empty
+	 * clears every index row for `messageId`.
+	 */
+	providerMessageId: string | null
+	provider?: string
+	now: string
+}): Array<D1PreparedStatement> {
 	const provider = input.provider ?? emailOutboundProviderCloudflare
-	const now = input.now ?? new Date().toISOString()
-	await input.db.batch([
+	const providerMessageId = input.providerMessageId
+	if (providerMessageId == null || providerMessageId === '') {
+		return [
+			input.db
+				.prepare(
+					`DELETE FROM email_outbound_provider_index
+					WHERE message_id = ?`,
+				)
+				.bind(input.messageId),
+		]
+	}
+	return [
 		input.db
 			.prepare(
 				`DELETE FROM email_outbound_provider_index
 				WHERE message_id = ?
 					AND NOT (provider = ? AND provider_message_id = ?)`,
 			)
-			.bind(input.messageId, provider, input.providerMessageId),
+			.bind(input.messageId, provider, providerMessageId),
 		input.db
 			.prepare(
 				`INSERT INTO email_outbound_provider_index (
 					provider, provider_message_id, user_id, message_id, inbox_id,
 					created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?)
+				)
+				SELECT
+					?,
+					message.provider_message_id,
+					message.user_id,
+					message.id,
+					message.inbox_id,
+					?,
+					?
+				FROM email_messages AS message
+				WHERE message.id = ?
+					AND message.direction = 'outbound'
+					AND message.provider_message_id = ?
 				ON CONFLICT(provider, provider_message_id) DO UPDATE SET
 					user_id = excluded.user_id,
 					message_id = excluded.message_id,
 					inbox_id = excluded.inbox_id,
 					updated_at = excluded.updated_at`,
 			)
-			.bind(
-				provider,
-				input.providerMessageId,
-				input.userId,
-				input.messageId,
-				input.inboxId ?? null,
-				now,
-				now,
-			),
-	])
+			.bind(provider, input.now, input.now, input.messageId, providerMessageId),
+	]
 }
 
 export async function deleteOutboundProviderIndexByMessageId(input: {
@@ -134,265 +160,111 @@ export async function deleteOutboundProviderIndexByMessageIds(input: {
 	return deleted
 }
 
-export type OutboundProviderIndexParityMismatch = {
-	kind: 'missing_from_index' | 'missing_from_messages' | 'mismatched'
-	provider: string
-	providerMessageId: string
-	userId: string
-	messageId: string
-	detail: string
-}
-
-export type OutboundProviderIndexParityReport = {
-	linkedMessageCount: number
-	indexCount: number
-	missingFromIndexCount: number
-	missingFromMessagesCount: number
-	mismatchedCount: number
-	sampleMismatches: Array<OutboundProviderIndexParityMismatch>
-	parity: boolean
-}
-
 /**
- * Read-only compare of outbound messages that carry a provider id versus the
- * derived reverse index. Optional `userId` scopes the report to one owner
- * (including `system:email`).
+ * Read-only aggregate compare of outbound messages that carry a provider id
+ * versus the derived reverse index. Optional `userId` scopes the report
+ * (including `system:email`). No message content is returned.
  */
 export async function loadOutboundProviderIndexParityReport(input: {
 	db: D1Database
 	userId?: string
-	sampleLimit?: number
 }): Promise<OutboundProviderIndexParityReport> {
-	const sampleLimit = input.sampleLimit ?? 20
-	const userFilter = input.userId == null ? '' : ' AND user_id = ?'
-	const userBindings = input.userId == null ? [] : [input.userId]
-
-	const linkedMessageCount = Number(
-		(
-			await input.db
-				.prepare(
-					`SELECT COUNT(*) AS count
-					FROM email_messages
-					WHERE direction = 'outbound'
-						AND provider_message_id IS NOT NULL${userFilter}`,
-				)
-				.bind(...userBindings)
-				.first<{ count: number }>()
-		)?.count ?? 0,
-	)
-	const indexCount = Number(
-		(
-			await input.db
-				.prepare(
-					`SELECT COUNT(*) AS count
-					FROM email_outbound_provider_index
-					WHERE 1 = 1${userFilter}`,
-				)
-				.bind(...userBindings)
-				.first<{ count: number }>()
-		)?.count ?? 0,
-	)
-
-	const missingFromIndexRows = await input.db
+	const userId = input.userId ?? null
+	const row = await input.db
 		.prepare(
-			`SELECT
-				message.id AS message_id,
-				message.user_id AS user_id,
-				message.provider_message_id AS provider_message_id
-			FROM email_messages AS message
-			WHERE message.direction = 'outbound'
-				AND message.provider_message_id IS NOT NULL${
-					input.userId == null ? '' : ' AND message.user_id = ?'
-				}
-				AND NOT EXISTS (
-					SELECT 1
-					FROM email_outbound_provider_index AS idx
-					WHERE idx.provider = ?
-						AND idx.provider_message_id = message.provider_message_id
-						AND idx.message_id = message.id
-						AND idx.user_id = message.user_id
-				)
-			ORDER BY message.created_at ASC, message.id ASC
-			LIMIT ?`,
-		)
-		.bind(
-			...(input.userId == null ? [] : [input.userId]),
-			emailOutboundProviderCloudflare,
-			sampleLimit,
-		)
-		.all<{
-			message_id: string
-			user_id: string
-			provider_message_id: string
-		}>()
-
-	const missingFromMessagesRows = await input.db
-		.prepare(
-			`SELECT
-				idx.provider AS provider,
-				idx.provider_message_id AS provider_message_id,
-				idx.user_id AS user_id,
-				idx.message_id AS message_id
-			FROM email_outbound_provider_index AS idx
-			WHERE 1 = 1${input.userId == null ? '' : ' AND idx.user_id = ?'}
-				AND NOT EXISTS (
-					SELECT 1
-					FROM email_messages AS message
-					WHERE message.id = idx.message_id
-						AND message.user_id = idx.user_id
-						AND message.direction = 'outbound'
-						AND message.provider_message_id = idx.provider_message_id
-				)
-			ORDER BY idx.created_at ASC, idx.message_id ASC
-			LIMIT ?`,
-		)
-		.bind(...(input.userId == null ? [] : [input.userId]), sampleLimit)
-		.all<{
-			provider: string
-			provider_message_id: string
-			user_id: string
-			message_id: string
-		}>()
-
-	const mismatchedRows = await input.db
-		.prepare(
-			`SELECT
-				idx.provider AS provider,
-				idx.provider_message_id AS provider_message_id,
-				idx.user_id AS index_user_id,
-				idx.message_id AS message_id,
-				message.user_id AS message_user_id,
-				message.provider_message_id AS message_provider_message_id,
-				message.inbox_id AS message_inbox_id,
-				idx.inbox_id AS index_inbox_id
-			FROM email_outbound_provider_index AS idx
-			JOIN email_messages AS message
-				ON message.id = idx.message_id
-			WHERE 1 = 1${input.userId == null ? '' : ' AND idx.user_id = ?'}
-				AND (
-					message.user_id != idx.user_id
-					OR message.direction != 'outbound'
-					OR message.provider_message_id IS NULL
-					OR message.provider_message_id != idx.provider_message_id
-					OR IFNULL(message.inbox_id, '') != IFNULL(idx.inbox_id, '')
-				)
-			ORDER BY idx.created_at ASC, idx.message_id ASC
-			LIMIT ?`,
-		)
-		.bind(...(input.userId == null ? [] : [input.userId]), sampleLimit)
-		.all<{
-			provider: string
-			provider_message_id: string
-			index_user_id: string
-			message_id: string
-			message_user_id: string
-			message_provider_message_id: string | null
-			message_inbox_id: string | null
-			index_inbox_id: string | null
-		}>()
-
-	const missingFromIndexCount = Number(
-		(
-			await input.db
-				.prepare(
-					`SELECT COUNT(*) AS count
+			`WITH
+				linked_messages AS (
+					SELECT
+						message.id AS message_id,
+						message.user_id AS user_id,
+						message.inbox_id AS inbox_id,
+						message.provider_message_id AS provider_message_id
 					FROM email_messages AS message
 					WHERE message.direction = 'outbound'
-						AND message.provider_message_id IS NOT NULL${
-							input.userId == null ? '' : ' AND message.user_id = ?'
-						}
-						AND NOT EXISTS (
-							SELECT 1
-							FROM email_outbound_provider_index AS idx
-							WHERE idx.provider = ?
-								AND idx.provider_message_id = message.provider_message_id
-								AND idx.message_id = message.id
-								AND idx.user_id = message.user_id
-						)`,
-				)
-				.bind(
-					...(input.userId == null ? [] : [input.userId]),
-					emailOutboundProviderCloudflare,
-				)
-				.first<{ count: number }>()
-		)?.count ?? 0,
-	)
-	const missingFromMessagesCount = Number(
-		(
-			await input.db
-				.prepare(
-					`SELECT COUNT(*) AS count
+						AND message.provider_message_id IS NOT NULL
+						AND (?1 IS NULL OR message.user_id = ?1)
+				),
+				index_rows AS (
+					SELECT
+						idx.provider AS provider,
+						idx.provider_message_id AS provider_message_id,
+						idx.user_id AS user_id,
+						idx.message_id AS message_id,
+						idx.inbox_id AS inbox_id
 					FROM email_outbound_provider_index AS idx
-					WHERE 1 = 1${input.userId == null ? '' : ' AND idx.user_id = ?'}
-						AND NOT EXISTS (
-							SELECT 1
-							FROM email_messages AS message
-							WHERE message.id = idx.message_id
-								AND message.user_id = idx.user_id
-								AND message.direction = 'outbound'
-								AND message.provider_message_id = idx.provider_message_id
-						)`,
+					WHERE ?1 IS NULL OR idx.user_id = ?1
+				),
+				classified AS (
+					SELECT
+						(SELECT COUNT(*) FROM linked_messages) AS linked_message_count,
+						(SELECT COUNT(*) FROM index_rows) AS index_count,
+						(
+							SELECT COUNT(*)
+							FROM linked_messages AS message
+							WHERE NOT EXISTS (
+								SELECT 1
+								FROM index_rows AS idx
+								WHERE idx.provider = ?2
+									AND idx.provider_message_id = message.provider_message_id
+									AND idx.message_id = message.message_id
+									AND idx.user_id = message.user_id
+									AND IFNULL(idx.inbox_id, '') = IFNULL(message.inbox_id, '')
+							)
+						) AS missing_from_index_count,
+						(
+							SELECT COUNT(*)
+							FROM index_rows AS idx
+							WHERE NOT EXISTS (
+								SELECT 1
+								FROM linked_messages AS message
+								WHERE message.message_id = idx.message_id
+									AND message.user_id = idx.user_id
+									AND message.provider_message_id = idx.provider_message_id
+							)
+						) AS missing_from_messages_count,
+						(
+							SELECT COUNT(*)
+							FROM index_rows AS idx
+							JOIN email_messages AS message
+								ON message.id = idx.message_id
+							WHERE (?1 IS NULL OR idx.user_id = ?1)
+								AND (
+									message.user_id != idx.user_id
+									OR message.direction != 'outbound'
+									OR message.provider_message_id IS NULL
+									OR message.provider_message_id != idx.provider_message_id
+									OR IFNULL(message.inbox_id, '') != IFNULL(idx.inbox_id, '')
+								)
+						) AS mismatched_count
 				)
-				.bind(...(input.userId == null ? [] : [input.userId]))
-				.first<{ count: number }>()
-		)?.count ?? 0,
-	)
-	const mismatchedCount = Number(
-		(
-			await input.db
-				.prepare(
-					`SELECT COUNT(*) AS count
-					FROM email_outbound_provider_index AS idx
-					JOIN email_messages AS message
-						ON message.id = idx.message_id
-					WHERE 1 = 1${input.userId == null ? '' : ' AND idx.user_id = ?'}
-						AND (
-							message.user_id != idx.user_id
-							OR message.direction != 'outbound'
-							OR message.provider_message_id IS NULL
-							OR message.provider_message_id != idx.provider_message_id
-							OR IFNULL(message.inbox_id, '') != IFNULL(idx.inbox_id, '')
-						)`,
-				)
-				.bind(...(input.userId == null ? [] : [input.userId]))
-				.first<{ count: number }>()
-		)?.count ?? 0,
-	)
+			SELECT
+				linked_message_count,
+				index_count,
+				missing_from_index_count,
+				missing_from_messages_count,
+				mismatched_count
+			FROM classified`,
+		)
+		.bind(userId, emailOutboundProviderCloudflare)
+		.first<{
+			linked_message_count: number
+			index_count: number
+			missing_from_index_count: number
+			missing_from_messages_count: number
+			mismatched_count: number
+		}>()
 
-	const sampleMismatches: Array<OutboundProviderIndexParityMismatch> = [
-		...(missingFromIndexRows.results ?? []).map((row) => ({
-			kind: 'missing_from_index' as const,
-			provider: emailOutboundProviderCloudflare,
-			providerMessageId: row.provider_message_id,
-			userId: row.user_id,
-			messageId: row.message_id,
-			detail: 'Linked outbound message has no matching index row.',
-		})),
-		...(missingFromMessagesRows.results ?? []).map((row) => ({
-			kind: 'missing_from_messages' as const,
-			provider: row.provider,
-			providerMessageId: row.provider_message_id,
-			userId: row.user_id,
-			messageId: row.message_id,
-			detail: 'Index row has no matching linked outbound message.',
-		})),
-		...(mismatchedRows.results ?? []).map((row) => ({
-			kind: 'mismatched' as const,
-			provider: row.provider,
-			providerMessageId: row.provider_message_id,
-			userId: row.index_user_id,
-			messageId: row.message_id,
-			detail: `Index/message fields diverge (message user=${row.message_user_id}, provider_message_id=${row.message_provider_message_id ?? 'null'}, inbox=${row.message_inbox_id ?? 'null'} vs index inbox=${row.index_inbox_id ?? 'null'}).`,
-		})),
-	].slice(0, sampleLimit)
-
+	const linkedMessageCount = Number(row?.linked_message_count ?? 0)
+	const indexCount = Number(row?.index_count ?? 0)
+	const missingFromIndexCount = Number(row?.missing_from_index_count ?? 0)
+	const missingFromMessagesCount = Number(row?.missing_from_messages_count ?? 0)
+	const mismatchedCount = Number(row?.mismatched_count ?? 0)
 	return {
 		linkedMessageCount,
 		indexCount,
 		missingFromIndexCount,
 		missingFromMessagesCount,
 		mismatchedCount,
-		sampleMismatches,
 		parity:
 			linkedMessageCount === indexCount &&
 			missingFromIndexCount === 0 &&
