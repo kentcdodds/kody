@@ -1,8 +1,8 @@
 /**
  * Mailbox USER inbound ledger authority CAS primitives.
  *
- * Owner-bound SQLite helpers matching D1 USER transitions in
- * `inbound-delivery.ts`. Effect lease CAS lives in
+ * Owner-bound SQLite helpers implementing authoritative USER transitions.
+ * The legacy D1 implementation is system-only. Effect lease CAS lives in
  * `mailbox-inbound-effect-ledger.ts`. No external usage/subscription side
  * effects. D1 receives synchronous compatibility snapshots after CAS;
  * `system:email` stays on D1.
@@ -186,6 +186,9 @@ export type MailboxInboundDeliveryLedgerRpc = {
 	claimInboundDeliveryCleanup: (input: {
 		ownerId: string
 		deliveryId: string
+		expectedState: MailboxInboundDeliveryState
+		expectedUpdatedAt: string
+		staleBefore: string
 		now?: string
 	}) => Promise<MailboxClaimInboundDeliveryCleanupResult>
 	releaseInboundDeliveryCleanup: (input: {

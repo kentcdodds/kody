@@ -121,6 +121,19 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 		null,
 		createdAt,
 	)
+	insert.run(
+		'delivery-system',
+		'system:email',
+		'received',
+		'kody-system-email',
+		JSON.stringify({
+			state: 'received',
+			fingerprint: 'system-fingerprint',
+		}),
+		0,
+		null,
+		createdAt,
+	)
 
 	db.exec('PRAGMA foreign_keys = ON')
 	applyMigrationLikeD1(db, authorityMirrorMigration)
@@ -172,6 +185,19 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 	expect(
 		db
 			.prepare(
+				`SELECT state, fingerprint, updated_at
+				FROM email_delivery_events
+				WHERE id = 'delivery-system'`,
+			)
+			.get(),
+	).toEqual({
+		state: null,
+		fingerprint: null,
+		updated_at: createdAt,
+	})
+	expect(
+		db
+			.prepare(
 				`SELECT state, fingerprint, dedupe_expires_at, updated_at
 				FROM email_delivery_events
 				WHERE id = 'email-inbound-dedupe:fingerprint-dedupe'`,
@@ -191,7 +217,8 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 				WHERE type = 'index'
 					AND name IN (
 						'idx_email_delivery_events_user_state_created',
-						'idx_email_delivery_events_user_dedupe_expires'
+						'idx_email_delivery_events_user_dedupe_expires',
+						'idx_email_inbound_usage_effects_delivery'
 					)
 				ORDER BY name`,
 			)
@@ -199,6 +226,7 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 	).toEqual([
 		{ name: 'idx_email_delivery_events_user_dedupe_expires' },
 		{ name: 'idx_email_delivery_events_user_state_created' },
+		{ name: 'idx_email_inbound_usage_effects_delivery' },
 	])
 	expect(
 		db

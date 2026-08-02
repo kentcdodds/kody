@@ -4,12 +4,9 @@ import PostalMime from 'postal-mime'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { normalizeEmailAddress } from './address.ts'
 import { resolveInboundEmailAuthVerdict } from './auth-verdict.ts'
-import {
-	getInboundDelivery,
-	markInboundDeliveryReceived,
-	type InboundDelivery,
-} from './inbound-delivery.ts'
+import { getInboundDelivery, type InboundDelivery } from './inbound-delivery.ts'
 import { type UserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
+import { markSystemInboundDeliveryReceived } from './system-inbound-delivery-authority.ts'
 import {
 	mirrorMailboxMessageGraphFromD1,
 	type MailboxLiveMirrorEnv,
@@ -508,7 +505,7 @@ export async function storeIdempotentInboundEmail(input: {
 		}
 		finalizedDelivery = input.authority
 			? await input.authority.receive(finalization)
-			: await markInboundDeliveryReceived({
+			: await markSystemInboundDeliveryReceived({
 					db: input.db,
 					...finalization,
 				})

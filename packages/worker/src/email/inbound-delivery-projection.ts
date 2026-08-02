@@ -1,6 +1,5 @@
 import {
-	getInboundDelivery as getD1InboundDelivery,
-	getInboundDeliveryWindow as getD1InboundDeliveryWindow,
+	parseStrictInboundDeliveryDetailJson,
 	type InboundDelivery,
 } from './inbound-delivery.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
@@ -16,10 +15,15 @@ import {
 	type MailboxDeliveryEventInput,
 	type MailboxInboundDeliveryState,
 } from './mailbox-types.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 
 export type UserInboundDeliveryProjectionEnv = {
 	APP_DB: D1Database
 } & MailboxEnv
+
+export type UserInboundDeliveryProjectionResult =
+	| { status: 'mirrored' }
+	| { status: 'stale' }
 
 export function toUserInboundDelivery(
 	userId: string,
@@ -114,13 +118,37 @@ async function d1EventTimestamps(input: {
 }) {
 	return await input.db
 		.prepare(
-			`SELECT created_at, COALESCE(updated_at, created_at) AS updated_at
+			`SELECT detail_json, created_at,
+				COALESCE(updated_at, created_at) AS updated_at
 			FROM email_delivery_events
 			WHERE id = ? AND user_id = ? AND provider = ?
 			LIMIT 1`,
 		)
 		.bind(input.eventId, input.userId, input.provider)
-		.first<{ created_at: string; updated_at: string }>()
+		.first<{
+			detail_json: string | null
+			created_at: string
+			updated_at: string
+		}>()
+}
+
+function validatedBootstrapDelivery(input: {
+	detailJson: unknown
+	userId: string
+	deliveryId?: string
+	fingerprint?: string
+}) {
+	const delivery = parseStrictInboundDeliveryDetailJson(input.detailJson)
+	if (!delivery) return null
+	if (
+		delivery.userId !== input.userId ||
+		delivery.provider !== mailboxInboundProvider ||
+		(input.deliveryId != null && delivery.deliveryId !== input.deliveryId) ||
+		(input.fingerprint != null && delivery.fingerprint !== input.fingerprint)
+	) {
+		return null
+	}
+	return delivery
 }
 
 /**
@@ -134,7 +162,7 @@ export async function mirrorUserInboundDeliverySnapshotToD1(input: {
 	snapshot: MailboxInboundDeliverySnapshot
 	eventId?: string
 	provider?: string
-}) {
+}): Promise<UserInboundDeliveryProjectionResult> {
 	const snapshot = input.snapshot
 	const eventId = input.eventId ?? snapshot.deliveryId
 	const provider = input.provider ?? mailboxInboundProvider
@@ -247,11 +275,29 @@ export async function mirrorUserInboundDeliverySnapshotToD1(input: {
 			snapshot.updatedAt,
 		)
 		.run()
-	if (Number(result.meta.changes ?? 0) < 1) {
+	if (Number(result.meta.changes ?? 0) > 0) return { status: 'mirrored' }
+	const existing = await input.db
+		.prepare(
+			`SELECT user_id, provider, COALESCE(updated_at, created_at) AS updated_at
+			FROM email_delivery_events
+			WHERE id = ?
+			LIMIT 1`,
+		)
+		.bind(eventId)
+		.first<{ user_id: string; provider: string; updated_at: string }>()
+	if (
+		!existing ||
+		existing.user_id !== input.userId ||
+		existing.provider !== provider
+	) {
 		throw new Error(
 			'Mailbox inbound snapshot failed its D1 owner/provider fence.',
 		)
 	}
+	if (existing.updated_at >= snapshot.updatedAt) return { status: 'stale' }
+	throw new Error(
+		'Mailbox inbound snapshot was not applied and D1 has no newer projection.',
+	)
 }
 
 export async function bootstrapUserInboundDeliveryFromD1(input: {
@@ -259,12 +305,7 @@ export async function bootstrapUserInboundDeliveryFromD1(input: {
 	userId: string
 	deliveryId: string
 }) {
-	const delivery = await getD1InboundDelivery({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		deliveryId: input.deliveryId,
-	})
-	if (!delivery) return null
+	if (input.userId === systemEmailOwnerId) return null
 	const timestamps = await d1EventTimestamps({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -272,9 +313,23 @@ export async function bootstrapUserInboundDeliveryFromD1(input: {
 		provider: mailboxInboundProvider,
 	})
 	if (!timestamps) return null
+	const delivery = validatedBootstrapDelivery({
+		detailJson: timestamps.detail_json,
+		userId: input.userId,
+		deliveryId: input.deliveryId,
+	})
+	if (!delivery) {
+		console.warn(
+			'inbound-email-delivery-bootstrap-row-invalid',
+			input.userId,
+			input.deliveryId,
+		)
+		return null
+	}
 	const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
 	await mailbox.upsertDeliveryEvent({
 		ownerId: input.userId,
+		intent: 'user-inbound-bootstrap',
 		event: toMailboxBootstrapEvent({
 			delivery,
 			eventId: input.deliveryId,
@@ -295,13 +350,7 @@ export async function bootstrapUserInboundDeliveryWindowFromD1(input: {
 	fingerprint: string
 	now: Date
 }) {
-	const delivery = await getD1InboundDeliveryWindow({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		fingerprint: input.fingerprint,
-		now: input.now,
-	})
-	if (!delivery) return null
+	if (input.userId === systemEmailOwnerId) return null
 	const eventId = mailboxInboundDedupePointerId(input.fingerprint)
 	const timestamps = await d1EventTimestamps({
 		db: input.env.APP_DB,
@@ -310,9 +359,23 @@ export async function bootstrapUserInboundDeliveryWindowFromD1(input: {
 		provider: mailboxInboundDedupeProvider,
 	})
 	if (!timestamps) return null
+	const delivery = validatedBootstrapDelivery({
+		detailJson: timestamps.detail_json,
+		userId: input.userId,
+		fingerprint: input.fingerprint,
+	})
+	if (!delivery || delivery.dedupeExpiresAt <= input.now.toISOString()) {
+		console.warn(
+			'inbound-email-dedupe-bootstrap-row-invalid',
+			input.userId,
+			eventId,
+		)
+		return null
+	}
 	const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
 	await mailbox.upsertDeliveryEvent({
 		ownerId: input.userId,
+		intent: 'user-inbound-bootstrap',
 		event: toMailboxBootstrapEvent({
 			delivery,
 			eventId,

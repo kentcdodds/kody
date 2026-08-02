@@ -496,8 +496,24 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		updatedLatestStatus: true,
 	})
 
+	const inboundDetail = {
+		fingerprint: 'fp-abc',
+		deliveryId: 'inbound-delivery-1',
+		messageId: 'inbound-msg-1',
+		threadId: 'inbound-thread-1',
+		rawMimeKey: emailRawMimeKey(userId, 'inbound-msg-1'),
+		userId,
+		inboxId: 'inbox-1',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		provider: 'cloudflare-email-routing',
+		quotaDay: '2026-07-02',
+		dedupeExpiresAt: '2026-07-04T11:00:00.000Z',
+		state: 'received' as const,
+	}
 	const inbound = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
+		intent: 'user-inbound-bootstrap',
 		event: baseDeliveryEvent({
 			id: 'inbound-delivery-1',
 			messageId: 'inbound-msg-1',
@@ -517,7 +533,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			usageDurationMs: 120,
 			subscriptionEffectState: 'pending',
 			subscriptionEffectRetryAt: '2026-07-02T12:00:00.000Z',
-			detailJson: JSON.stringify({ recipient: 'owner@example.com' }),
+			detailJson: JSON.stringify(inboundDetail),
 		}),
 	})
 	expect(inbound.inserted).toBe(true)
@@ -543,6 +559,28 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 	})
 	expect(JSON.parse(inboundRow!.detailJson)).toMatchObject({
 		recipient: 'owner@example.com',
+	})
+	const repeatedBootstrap = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
+		intent: 'user-inbound-bootstrap',
+		event: baseDeliveryEvent({
+			id: 'inbound-delivery-1',
+			messageId: 'inbound-msg-1',
+			inboxId: 'inbox-1',
+			eventType: 'rejected',
+			provider: 'cloudflare-email-routing',
+			createdAt: '2026-07-02T11:00:00.000Z',
+			updatedAt: '2026-07-02T12:00:00.000Z',
+			needsEffectReconcile: false,
+			state: 'rejected',
+			fingerprint: 'fp-abc',
+			detailJson: JSON.stringify({ ...inboundDetail, state: 'rejected' }),
+		}),
+	})
+	expect(repeatedBootstrap).toEqual({
+		inserted: false,
+		accepted: false,
+		updatedLatestStatus: false,
 	})
 
 	// Explicit needsEffectReconcile: false is stored as false.

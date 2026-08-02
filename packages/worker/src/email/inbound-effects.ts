@@ -740,10 +740,22 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 		)
 			.bind(input.userId, input.limit ?? 20)
 			.all<{ id: string }>()
-		for (const row of bridgeRows.results ?? []) await authority.get(row.id)
-		const due = await authority.listDueEffects(now, input.limit)
 		let processed = 0
 		let errors = 0
+		for (const row of bridgeRows.results ?? []) {
+			try {
+				await authority.get(row.id)
+			} catch (error) {
+				errors += 1
+				console.warn(
+					'inbound-email-effect-bridge-failed',
+					input.userId,
+					row.id,
+					error,
+				)
+			}
+		}
+		const due = await authority.listDueEffects(now, input.limit)
 		for (const delivery of due.deliveries) {
 			try {
 				await processInboundDeliveryEffects({

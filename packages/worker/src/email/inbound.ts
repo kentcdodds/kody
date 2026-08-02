@@ -26,21 +26,23 @@ import {
 } from './parser.ts'
 import {
 	buildInboundDelivery,
-	claimInboundDeliveryWindow,
-	claimInboundDeliveryStorage,
 	chargeSystemInboundDeliveryOnce,
 	getInboundDeliveryWindow,
 	getInboundDelivery,
-	markInboundDeliveryRejected,
-	pruneExpiredInboundDedupePointers,
-	reconcileStaleInboundDeliveries,
 	readSystemInboundReceiveCount,
 	readUserInboundReceiveCount,
-	releaseInboundDeliveryStorage,
 	systemInboundQuotaDay,
 	type InboundDelivery,
 	userInboundQuotaDay,
 } from './inbound-delivery.ts'
+import {
+	claimSystemInboundDeliveryStorage,
+	claimSystemInboundDeliveryWindow,
+	markSystemInboundDeliveryRejected,
+	pruneSystemExpiredInboundDedupePointers,
+	reconcileSystemStaleInboundDeliveries,
+	releaseSystemInboundDeliveryStorage,
+} from './system-inbound-delivery-authority.ts'
 import {
 	createUserInboundDeliveryAuthority,
 	type UserInboundDeliveryAuthority,
@@ -98,7 +100,7 @@ async function rejectClaimedInboundDelivery(input: {
 	const transitioned = await (
 		input.authority
 			? input.authority.reject(input.delivery, input.reason)
-			: markInboundDeliveryRejected({
+			: markSystemInboundDeliveryRejected({
 					db: input.db,
 					delivery: input.delivery,
 					reason: input.reason,
@@ -161,12 +163,12 @@ async function cleanupInboundDurability(input: {
 }) {
 	try {
 		if (input.userId === systemEmailOwnerId) {
-			await reconcileStaleInboundDeliveries({
+			await reconcileSystemStaleInboundDeliveries({
 				db: input.env.APP_DB,
 				blobs: input.env.EMAIL_BLOBS,
 				userId: input.userId,
 			})
-			await pruneExpiredInboundDedupePointers({
+			await pruneSystemExpiredInboundDedupePointers({
 				db: input.env.APP_DB,
 				userId: input.userId,
 			})
@@ -561,7 +563,7 @@ export async function handleInboundEmail(
 						...delivery,
 						quotaDay: userInboundQuotaDay(quotaNow),
 					}
-					claimedDelivery = await authority.charge({
+					const chargeResult = await authority.charge({
 						delivery: chargeCandidate,
 						plan: account.plan,
 						limit: resolveEmailResourceLimit(
@@ -570,10 +572,8 @@ export async function handleInboundEmail(
 						),
 						now: quotaNow,
 					})
-					// The charge helper returns the candidate object only when this
-					// invocation won the atomic D1 charge. A concurrently committed
-					// delivery is returned as a separately parsed object.
-					chargedReceive = claimedDelivery === chargeCandidate
+					claimedDelivery = chargeResult.delivery
+					chargedReceive = chargeResult.charged
 				}
 			} catch (error) {
 				if (!isEntitlementLimitError(error)) throw error
@@ -865,7 +865,7 @@ async function handleSystemInboundEmail(input: {
 		}
 	}
 	if (!activeWindow) {
-		delivery = await claimInboundDeliveryWindow({
+		delivery = await claimSystemInboundDeliveryWindow({
 			db: input.env.APP_DB,
 			delivery: candidateDelivery,
 			now: quotaNow,
@@ -947,7 +947,7 @@ async function handleSystemInboundEmail(input: {
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
-	const storageClaim = await claimInboundDeliveryStorage({
+	const storageClaim = await claimSystemInboundDeliveryStorage({
 		db: input.env.APP_DB,
 		delivery: claimedDelivery,
 		expectedAttachmentCount: parsed.attachments.length,
@@ -968,7 +968,7 @@ async function handleSystemInboundEmail(input: {
 			parsed,
 		})
 	} catch (error) {
-		await releaseInboundDeliveryStorage({
+		await releaseSystemInboundDeliveryStorage({
 			db: input.env.APP_DB,
 			delivery: storageClaim.delivery,
 		}).catch((releaseError) => {

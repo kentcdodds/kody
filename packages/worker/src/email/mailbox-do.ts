@@ -27,6 +27,10 @@ import {
 	releaseMailboxInboundDeliveryCleanup,
 } from './mailbox-inbound-cleanup-ledger.ts'
 import {
+	assertMailboxD1DeliveryEventBatch,
+	shouldSkipMailboxDeliveryEventWrite,
+} from './mailbox-inbound-bootstrap.ts'
+import {
 	claimMailboxInboundDeliveryStorage,
 	claimMailboxInboundDeliveryWindow,
 	deferMailboxInboundDeliveryReconciliation,
@@ -95,7 +99,6 @@ import {
 
 class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	private readonly store: MailboxStore
-	/** In-isolate alarm scheduling caches. */
 	private retentionAlarmArmed = false
 	private retentionIdleConfirmed = false
 
@@ -212,7 +215,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return this.runRetentionPass()
 	}
 
-	/** Atomic mirror of thread + message + attachments for dual-write. */
 	async mirrorMessage(input: {
 		ownerId: string
 		thread?: MailboxThreadInput | null
@@ -243,13 +245,10 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return { ok: true, accepted }
 	}
 
-	/**
-	 * Upsert a delivery event (idempotent on `provider_event_id`) and optionally
-	 * apply a monotonic latest `delivery_status` update on the message.
-	 */
 	async upsertDeliveryEvent(input: {
 		ownerId: string
 		event: MailboxDeliveryEventInput
+		intent?: 'user-inbound-bootstrap'
 		latestDeliveryStatus?: {
 			messageId: string
 			deliveryStatus: EmailDeliveryStatus
@@ -265,6 +264,16 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		let updatedLatestStatus = false
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
+			if (
+				shouldSkipMailboxDeliveryEventWrite(this.ctx.storage.sql, {
+					ownerId: input.ownerId,
+					event: input.event,
+					intent: input.intent,
+					hasLatestDeliveryStatus: input.latestDeliveryStatus != null,
+				})
+			) {
+				return
+			}
 			const write = this.store.writeDeliveryEventRow(input.event)
 			inserted = write.inserted
 			accepted = write.accepted
@@ -286,12 +295,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return { inserted, accepted, updatedLatestStatus }
 	}
 
-	/**
-	 * Upsert a bounded batch of complete immutable delivery-event snapshots in
-	 * one transaction / one DO RPC. Validates non-empty and
-	 * {@link mailboxUpsertDeliveryEventsMax}. Does not patch message latest
-	 * delivery status. Marks retention dirty once for the batch.
-	 */
 	async upsertDeliveryEvents(input: {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
@@ -304,6 +307,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 				`Mailbox upsertDeliveryEvents events exceed max of ${mailboxUpsertDeliveryEventsMax}.`,
 			)
 		}
+		assertMailboxD1DeliveryEventBatch(input.events)
 		const results: Array<MailboxUpsertDeliveryEventBatchItemResult> = []
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -682,6 +686,9 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async claimInboundDeliveryCleanup(input: {
 		ownerId: string
 		deliveryId: string
+		expectedState: MailboxInboundDeliveryState
+		expectedUpdatedAt: string
+		staleBefore: string
 		now?: string
 	}) {
 		let result!: Awaited<ReturnType<MailboxRpc['claimInboundDeliveryCleanup']>>
@@ -838,10 +845,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return listMailboxDueInboundEffectWork(this.ctx.storage.sql, input)
 	}
 
-	/**
-	 * Clear SQLite state only. During expand, D1 deletion remains authoritative
-	 * for R2 objects.
-	 */
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			await this.ctx.storage.deleteAlarm().catch(() => {

@@ -105,9 +105,8 @@ export async function getEmailDeliveryEventMirrorProjection(input: {
 /**
  * Load and convert one ready Mailbox delivery-event snapshot for dual-write.
  *
- * @param sourceMutationAt - Canonical mirror `updatedAt`. D1 delivery events
- *   lack `updated_at`. Phase-2 high-risk lifecycle mutations must pass the
- *   same timestamp used for the D1 mutation; inserts use `created_at`.
+ * @param sourceMutationAt - Canonical mirror `updatedAt` for D1-authoritative
+ *   message-graph and non-USER-inbound events; inserts use `created_at`.
  */
 export async function getMailboxDeliveryEventMirrorInput(input: {
 	db: D1Database

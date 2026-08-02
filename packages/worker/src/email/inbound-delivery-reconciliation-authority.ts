@@ -6,8 +6,13 @@ import {
 } from './inbound-delivery-authority.ts'
 import {
 	InboundDeliveryLeaseLostError,
-	type InboundDelivery,
+	parseStrictInboundDeliveryDetailJson,
 } from './inbound-delivery.ts'
+import {
+	mailboxInboundDedupePointerId,
+	mailboxInboundProvider,
+	mailboxStaleInboundDeliveryAgeMs,
+} from './mailbox-inbound-ledger.ts'
 import {
 	insertEmailAttachments,
 	getEmailMessageById,
@@ -46,7 +51,16 @@ async function bootstrapPreDeployDueRows(input: {
 		)
 		.all<{ id: string }>()
 	const authority = createUserInboundDeliveryAuthority(input)
-	for (const row of rows.results ?? []) await authority.get(row.id)
+	for (const row of rows.results ?? []) {
+		await authority.get(row.id).catch((error: unknown) => {
+			console.warn(
+				'inbound-email-stale-bootstrap-failed',
+				input.userId,
+				row.id,
+				error,
+			)
+		})
+	}
 }
 
 async function recoverCommittedDelivery(input: {
@@ -151,6 +165,7 @@ export async function reconcileUserStaleInboundDeliveries(input: {
 	})
 	const authority = createUserInboundDeliveryAuthority(input)
 	const due = await authority.listDueStale(now, staleBatchSize)
+	const staleBefore = new Date(now.getTime() - mailboxStaleInboundDeliveryAgeMs)
 	let recovered = 0
 	let cleaned = 0
 	let budgetExhausted = false
@@ -184,12 +199,20 @@ export async function reconcileUserStaleInboundDeliveries(input: {
 					snapshot.deliveryId,
 					error,
 				)
-				await authority.deferReconciliation(snapshot.deliveryId, now)
+				await authority
+					.deferReconciliation(snapshot.deliveryId, now)
+					.catch(() => undefined)
 			}
 			continue
 		}
 
-		const claim = await authority.claimCleanup(snapshot.deliveryId, now)
+		const claim = await authority.claimCleanup({
+			deliveryId: snapshot.deliveryId,
+			expectedState: snapshot.state,
+			expectedUpdatedAt: snapshot.updatedAt,
+			staleBefore,
+			now,
+		})
 		if (claim.status !== 'claimed') continue
 		const racedMessage = await getEmailMessageById({
 			db: input.env.APP_DB,
@@ -241,7 +264,7 @@ export async function pruneUserExpiredInboundDedupePointers(input: {
 	const now = input.now ?? new Date()
 	const authority = createUserInboundDeliveryAuthority(input)
 	const bridgeRows = await input.env.APP_DB.prepare(
-		`SELECT detail_json
+		`SELECT id, detail_json
 		FROM email_delivery_events
 		WHERE user_id = ?
 			AND provider = ?
@@ -258,10 +281,31 @@ export async function pruneUserExpiredInboundDedupePointers(input: {
 			now.toISOString(),
 			input.limit ?? 20,
 		)
-		.all<{ detail_json: string }>()
+		.all<{ id: string; detail_json: string | null }>()
 	for (const row of bridgeRows.results ?? []) {
-		const delivery = JSON.parse(row.detail_json) as InboundDelivery
-		await authority.claimWindow(delivery, now)
+		const delivery = parseStrictInboundDeliveryDetailJson(row.detail_json)
+		if (
+			!delivery ||
+			delivery.userId !== input.userId ||
+			delivery.provider !== mailboxInboundProvider ||
+			delivery.state !== 'pending' ||
+			row.id !== mailboxInboundDedupePointerId(delivery.fingerprint)
+		) {
+			console.warn(
+				'inbound-email-dedupe-bridge-row-invalid',
+				input.userId,
+				row.id,
+			)
+			continue
+		}
+		await authority.claimWindow(delivery, now).catch((error: unknown) => {
+			console.warn(
+				'inbound-email-dedupe-bridge-failed',
+				input.userId,
+				row.id,
+				error,
+			)
+		})
 	}
 	return await authority.pruneExpiredDedupe(now, input.limit)
 }

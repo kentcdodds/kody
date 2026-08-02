@@ -62,6 +62,7 @@ export type MailboxMirrorSkipReason =
 	| 'system-email'
 	| 'mailbox-unconfigured'
 	| 'missing-owner'
+	| 'user-inbound-authority'
 
 export type MailboxMirrorResult =
 	| { status: 'mirrored' }

@@ -33,9 +33,8 @@ import {
  */
 
 /**
- * Complete D1 delivery-event mirror projection: base row fields plus
- * authoritative promoted columns. `detail_json` still owns inbound/effect
- * lease fields that have not been promoted.
+ * Complete D1 delivery-event mirror projection for D1-authoritative events:
+ * base row fields plus promoted compatibility columns.
  *
  * Authoritative D1 columns (never read from `detail_json`):
  * - `needs_effect_reconcile`
@@ -214,9 +213,7 @@ export function toMailboxAttachmentInput(
  * Convert a complete D1 delivery-event projection into a Mailbox input.
  * Promoted columns win; remaining inbound/effect fields come from JSON.
  *
- * `sourceMutationAt` becomes Mailbox `updatedAt`. D1 delivery events lack
- * `updated_at`: phase-2 high-risk lifecycle mutations must pass the same
- * canonical timestamp used for the D1 mutation; inserts use `created_at`.
+ * `sourceMutationAt` becomes Mailbox `updatedAt`; inserts use `created_at`.
  */
 export function toMailboxDeliveryEventInput(input: {
 	projection: EmailDeliveryEventMirrorProjection

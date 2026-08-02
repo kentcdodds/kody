@@ -7,8 +7,10 @@ import { insertInput } from './mailbox-inbound-ledger-test-helpers.ts'
 import {
 	mailboxInboundDedupeProvider,
 	mailboxInboundProvider,
+	mailboxInboundReconciliationRetryMs,
 	mailboxInboundStorageLeaseMs,
 } from './mailbox-inbound-ledger.ts'
+import { mailboxInboundOrphanVerificationMs } from './mailbox-inbound-ledger-shared.ts'
 import { initializeMailboxSchema } from './mailbox-schema.ts'
 import {
 	mailboxMetaSchemaVersionKey,
@@ -252,9 +254,60 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 	expect(
 		dueStale.deliveries.some((d) => d.deliveryId === stalePending.deliveryId),
 	).toBe(true)
+	const racedPending = insertInput(ownerA, {
+		fingerprint: 'fp-stale-race',
+		deliveryId: 'email-inbound-delivery:stale-race',
+		messageId: 'email-inbound-message:stale-race',
+		threadId: 'email-inbound-thread:stale-race',
+	})
+	await mailboxA.insertChargedPendingInboundDelivery({
+		ownerId: ownerA,
+		delivery: racedPending,
+		now: '2026-07-19T00:00:00.000Z',
+	})
+	const racedDue = await mailboxA.listDueStaleInboundDeliveries({
+		ownerId: ownerA,
+		now,
+		limit: 50,
+	})
+	const racedSnapshot = racedDue.deliveries.find(
+		(delivery) => delivery.deliveryId === racedPending.deliveryId,
+	)
+	if (!racedSnapshot) throw new Error('expected stale race snapshot')
+	const racedStorage = await mailboxA.claimInboundDeliveryStorage({
+		ownerId: ownerA,
+		deliveryId: racedPending.deliveryId,
+		expectedAttachmentCount: 0,
+		now: '2026-07-22T00:00:01.000Z',
+	})
+	if (
+		racedStorage.status !== 'claimed' ||
+		!racedStorage.delivery.storageLease
+	) {
+		throw new Error('expected raced storage claim')
+	}
+	await mailboxA.releaseInboundDeliveryStorage({
+		ownerId: ownerA,
+		deliveryId: racedPending.deliveryId,
+		storageLease: racedStorage.delivery.storageLease,
+		now: '2026-07-22T00:00:02.000Z',
+	})
+	expect(
+		await mailboxA.claimInboundDeliveryCleanup({
+			ownerId: ownerA,
+			deliveryId: racedPending.deliveryId,
+			expectedState: racedSnapshot.state,
+			expectedUpdatedAt: racedSnapshot.updatedAt,
+			staleBefore: '2026-07-21T00:00:00.000Z',
+			now: '2026-07-22T00:00:03.000Z',
+		}),
+	).toMatchObject({ status: 'not-claimed' })
 	const cleanupClaim = await mailboxA.claimInboundDeliveryCleanup({
 		ownerId: ownerA,
 		deliveryId: stalePending.deliveryId,
+		expectedState: 'pending',
+		expectedUpdatedAt: '2026-07-19T00:00:00.000Z',
+		staleBefore: '2026-07-21T00:00:00.000Z',
 		now,
 	})
 	expect(cleanupClaim.status).toBe('claimed')
@@ -324,10 +377,14 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 		now,
 	})
 	expect(deferred.status).toBe('deferred')
+	const orphanNow = '2026-07-22T00:30:00.000Z'
 	const orphanClaim = await mailboxA.claimInboundDeliveryCleanup({
 		ownerId: ownerA,
 		deliveryId: stalePending.deliveryId,
-		now,
+		expectedState: 'pending',
+		expectedUpdatedAt: now,
+		staleBefore: '2026-07-21T00:00:00.000Z',
+		now: orphanNow,
 	})
 	if (orphanClaim.status !== 'claimed' || !orphanClaim.delivery.cleanupLease) {
 		throw new Error('expected orphan cleanup claim')
@@ -338,7 +395,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 			deliveryId: stalePending.deliveryId,
 			cleanupLease: 'stale-cleanup-lease',
 			outcome: 'deleted',
-			now,
+			now: orphanNow,
 		}),
 	).toEqual({ status: 'lease-lost' })
 	const orphaned = await mailboxA.markInboundDeliveryOrphanCleaned({
@@ -346,9 +403,48 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 		deliveryId: stalePending.deliveryId,
 		cleanupLease: orphanClaim.delivery.cleanupLease,
 		outcome: 'delete-failed',
-		now,
+		now: orphanNow,
 	})
 	expect(orphaned.status).toBe('orphan-cleaned')
+	if (orphaned.status !== 'orphan-cleaned') {
+		throw new Error('expected orphan-cleaned result')
+	}
+	expect(orphaned.delivery.cleanupRetryAt).toBe(
+		new Date(
+			Date.parse(orphanNow) + mailboxInboundReconciliationRetryMs,
+		).toISOString(),
+	)
+	const deletedNow = '2026-07-22T01:00:00.000Z'
+	const deletedClaim = await mailboxA.claimInboundDeliveryCleanup({
+		ownerId: ownerA,
+		deliveryId: stalePending.deliveryId,
+		expectedState: 'orphan-cleaned',
+		expectedUpdatedAt: orphanNow,
+		staleBefore: '2026-07-21T00:00:00.000Z',
+		now: deletedNow,
+	})
+	if (
+		deletedClaim.status !== 'claimed' ||
+		!deletedClaim.delivery.cleanupLease
+	) {
+		throw new Error('expected deleted verification cleanup claim')
+	}
+	const deleted = await mailboxA.markInboundDeliveryOrphanCleaned({
+		ownerId: ownerA,
+		deliveryId: stalePending.deliveryId,
+		cleanupLease: deletedClaim.delivery.cleanupLease,
+		outcome: 'deleted',
+		now: deletedNow,
+	})
+	expect(deleted.status).toBe('orphan-cleaned')
+	if (deleted.status !== 'orphan-cleaned') {
+		throw new Error('expected deleted orphan-cleaned result')
+	}
+	expect(deleted.delivery.cleanupRetryAt).toBe(
+		new Date(
+			Date.parse(deletedNow) + mailboxInboundOrphanVerificationMs,
+		).toISOString(),
+	)
 
 	// Mirror upsert compatibility still works alongside ledger rows.
 	const mirror = await mailboxA.upsertDeliveryEvent({

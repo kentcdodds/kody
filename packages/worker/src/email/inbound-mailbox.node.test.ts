@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 		eventsTruncated: false,
 	})),
 	authorityGet: vi.fn(async () => ({ state: 'received' as const })),
+	createAuthority: vi.fn(),
 	processInboundDeliveryEffects: vi.fn(async () => ({
 		outcome: 'complete' as const,
 	})),
@@ -20,7 +21,7 @@ vi.mock('./mailbox-live-mirror.ts', () => ({
 }))
 
 vi.mock('./inbound-delivery-authority.ts', () => ({
-	createUserInboundDeliveryAuthority: () => ({ get: mocks.authorityGet }),
+	createUserInboundDeliveryAuthority: mocks.createAuthority,
 }))
 
 vi.mock('./inbound-effects.ts', () => ({
@@ -46,6 +47,7 @@ function createCapturedWaitUntilContext() {
 function resetMocks() {
 	mocks.mirrorMailboxMessageGraphFromD1.mockReset()
 	mocks.authorityGet.mockReset()
+	mocks.createAuthority.mockReset()
 	mocks.processInboundDeliveryEffects.mockReset()
 	mocks.mirrorMailboxMessageGraphFromD1.mockResolvedValue({
 		messageId: 'msg-1',
@@ -54,6 +56,7 @@ function resetMocks() {
 		eventsTruncated: false,
 	})
 	mocks.authorityGet.mockResolvedValue({ state: 'received' as const })
+	mocks.createAuthority.mockReturnValue({ get: mocks.authorityGet })
 	mocks.processInboundDeliveryEffects.mockResolvedValue({
 		outcome: 'complete' as const,
 	})
@@ -220,5 +223,27 @@ test('rejected terminal contains and logs projection repair failures', async () 
 	expect(consoleError).toHaveBeenCalledWith(
 		'Inbound email rejection projection repair failed',
 		expect.objectContaining({ message: 'projection unavailable' }),
+	)
+})
+
+test('rejected terminal contains synchronous authority construction failures', async () => {
+	resetMocks()
+	consoleError.mockImplementation(() => {})
+	mocks.createAuthority.mockImplementation(() => {
+		throw new Error('MAILBOX binding unavailable')
+	})
+
+	await expect(
+		scheduleInboundRejectedTerminalWork({
+			env: { APP_DB: {} } as unknown as Parameters<
+				typeof scheduleInboundRejectedTerminalWork
+			>[0]['env'],
+			userId: 'user-sync-construction',
+			deliveryId: 'delivery-sync-construction',
+		}),
+	).resolves.toBeUndefined()
+	expect(consoleError).toHaveBeenCalledWith(
+		'Inbound email rejection projection repair failed',
+		expect.objectContaining({ message: 'MAILBOX binding unavailable' }),
 	)
 })

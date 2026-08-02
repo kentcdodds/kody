@@ -528,8 +528,8 @@ test(
 			handleInboundEmail(first, failingEnv, failCtx.ctx),
 		).rejects.toBeInstanceOf(RetryableInboundStorageError)
 		expect(first.rejectedReason).toBeNull()
-		// Charge may schedule UserMeter D1 mirror via waitUntil; no Mailbox
-		// terminal work should have produced a message below.
+		// The charged Mailbox delivery survives this retryable graph-storage
+		// failure; no terminal work should have produced a message below.
 		await drainWaitUntil(failCtx.waitUntilPromises)
 		expect(await readUserDailyReceiveCount(userId)).toBe(1)
 		expect(

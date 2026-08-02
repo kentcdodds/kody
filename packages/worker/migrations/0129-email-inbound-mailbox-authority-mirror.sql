@@ -120,3 +120,6 @@ CREATE TABLE email_inbound_usage_effects (
 	PRIMARY KEY (user_id, delivery_id, finalization_token),
 	FOREIGN KEY (delivery_id) REFERENCES email_delivery_events(id) ON DELETE CASCADE
 );
+
+CREATE INDEX IF NOT EXISTS idx_email_inbound_usage_effects_delivery
+ON email_inbound_usage_effects(delivery_id);

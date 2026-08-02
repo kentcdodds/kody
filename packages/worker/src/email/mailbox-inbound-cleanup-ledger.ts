@@ -1,4 +1,9 @@
-import { assertMailboxNonEmptyString } from './mailbox-types.ts'
+import {
+	assertMailboxCanonicalIsoTimestamp,
+	assertMailboxInboundDeliveryState,
+	assertMailboxNonEmptyString,
+	type MailboxInboundDeliveryState,
+} from './mailbox-types.ts'
 import {
 	detailJsonFromMailboxInboundSnapshot,
 	mailboxInboundProvider,
@@ -15,26 +20,45 @@ import { mailboxInboundOrphanVerificationMs } from './mailbox-inbound-ledger-sha
 
 export function claimMailboxInboundDeliveryCleanup(
 	sql: SqlStorage,
-	input: { deliveryId: string; now?: string },
+	input: {
+		deliveryId: string
+		expectedState: MailboxInboundDeliveryState
+		expectedUpdatedAt: string
+		staleBefore: string
+		now?: string
+	},
 ): MailboxClaimInboundDeliveryCleanupResult {
 	const now = normalizeMailboxInboundNow(input.now)
 	const deliveryId = assertMailboxNonEmptyString(input.deliveryId, 'deliveryId')
+	const expectedState = assertMailboxInboundDeliveryState(input.expectedState)
+	const expectedUpdatedAt = assertMailboxCanonicalIsoTimestamp(
+		input.expectedUpdatedAt,
+		'expectedUpdatedAt',
+	)
+	const staleBefore = assertMailboxCanonicalIsoTimestamp(
+		input.staleBefore,
+		'staleBefore',
+	)
 	const current = readMailboxInboundDeliveryById(sql, deliveryId)
 	if (!current) return { status: 'not-claimed', delivery: null }
 	const leaseExpiredBefore = new Date(
 		Date.parse(now) - mailboxInboundStorageLeaseMs,
 	).toISOString()
 	const claimable =
-		current.state === 'pending' ||
-		(current.state === 'storing' &&
-			current.storageLeaseAt != null &&
-			current.storageLeaseAt < leaseExpiredBefore) ||
-		(current.state === 'cleaning' &&
-			current.cleanupLeaseAt != null &&
-			current.cleanupLeaseAt < leaseExpiredBefore) ||
-		(current.state === 'orphan-cleaned' &&
-			current.cleanupRetryAt != null &&
-			current.cleanupRetryAt <= now)
+		current.state === expectedState &&
+		current.updatedAt === expectedUpdatedAt &&
+		current.createdAt < staleBefore &&
+		(current.reconcileAfter == null || current.reconcileAfter <= now) &&
+		(current.state === 'pending' ||
+			(current.state === 'storing' &&
+				current.storageLeaseAt != null &&
+				current.storageLeaseAt < leaseExpiredBefore) ||
+			(current.state === 'cleaning' &&
+				current.cleanupLeaseAt != null &&
+				current.cleanupLeaseAt < leaseExpiredBefore) ||
+			(current.state === 'orphan-cleaned' &&
+				current.cleanupRetryAt != null &&
+				current.cleanupRetryAt <= now))
 	if (!claimable) return { status: 'not-claimed', delivery: current }
 
 	const cleanupLease = crypto.randomUUID()
@@ -54,6 +78,10 @@ export function claimMailboxInboundDeliveryCleanup(
 			updated_at = ?
 		WHERE id = ?
 			AND provider = ?
+			AND state = ?
+			AND updated_at = ?
+			AND created_at < ?
+			AND (reconcile_after IS NULL OR reconcile_after <= ?)
 			AND (
 				state = 'pending'
 				OR (state = 'storing' AND storage_lease_at < ?)
@@ -66,6 +94,10 @@ export function claimMailboxInboundDeliveryCleanup(
 		now,
 		deliveryId,
 		mailboxInboundProvider,
+		expectedState,
+		expectedUpdatedAt,
+		staleBefore,
+		now,
 		leaseExpiredBefore,
 		leaseExpiredBefore,
 		now,

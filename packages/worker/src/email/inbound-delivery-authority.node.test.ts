@@ -8,6 +8,7 @@ import {
 	mirrorUserInboundDeliverySnapshotToD1,
 } from './inbound-delivery-authority.ts'
 import { type MailboxInboundDeliverySnapshot } from './mailbox-inbound-ledger.ts'
+import { claimSystemInboundDeliveryWindow } from './system-inbound-delivery-authority.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 function namespace(stub: object) {
@@ -91,7 +92,7 @@ test('dedupe claim precedes UserMeter, and insert failure replay does not double
 		limit: 100,
 		now,
 	})
-	expect(replay).toBe(delivery)
+	expect(replay).toEqual({ delivery, charged: true })
 	expect(order).toEqual([
 		'mailbox-window',
 		'meter-1',
@@ -194,8 +195,9 @@ test('dedupe boundary race charges and inserts only the claimed winner id', asyn
 		now,
 	})
 
-	expect(first).toBe(winner)
-	expect(boundaryLoser.deliveryId).toBe(winner.deliveryId)
+	expect(first).toEqual({ delivery: winner, charged: true })
+	expect(boundaryLoser.delivery.deliveryId).toBe(winner.deliveryId)
+	expect(boundaryLoser.charged).toBe(false)
 	expect(consumedDeliveryIds).toEqual([winner.deliveryId])
 	expect(insertedDeliveryIds).toEqual([winner.deliveryId])
 	expect(consumedDeliveryIds).not.toContain(loser.deliveryId)
@@ -273,7 +275,8 @@ test("uncharged prior-day dedupe winner charges the current retry's quota day", 
 		now: retryNow,
 	})
 
-	expect(result).toBe(retry)
+	expect(result.delivery).toEqual(retry)
+	expect(result.charged).toBe(true)
 	expect(consumeInboundDelivery).toHaveBeenCalledWith(
 		expect.objectContaining({
 			deliveryId: winner.deliveryId,
@@ -410,7 +413,13 @@ test('cleanup projection failure releases its lease and prevents deletion work',
 
 	await expect(
 		authority
-			.claimCleanup(delivery.deliveryId, now)
+			.claimCleanup({
+				deliveryId: delivery.deliveryId,
+				expectedState: delivery.state,
+				expectedUpdatedAt: cleanup.updatedAt,
+				staleBefore: new Date(now.getTime() - 1),
+				now,
+			})
 			.then(async () => await deleteBlob()),
 	).rejects.toThrow('owner/provider fence')
 	expect(deleteBlob).not.toHaveBeenCalled()
@@ -468,7 +477,13 @@ test('cleanup projection and compensation failures surface as AggregateError', a
 	})
 
 	const error = await authority
-		.claimCleanup(delivery.deliveryId, now)
+		.claimCleanup({
+			deliveryId: delivery.deliveryId,
+			expectedState: delivery.state,
+			expectedUpdatedAt: cleanup.updatedAt,
+			staleBefore: new Date(now.getTime() - 1),
+			now,
+		})
 		.catch((caught: unknown) => caught)
 	expect(error).toBeInstanceOf(AggregateError)
 	expect(error).toMatchObject({
@@ -612,7 +627,7 @@ test('full D1 snapshot mirror cannot cross an owner or provider fence', async ()
 	sqlite.close()
 })
 
-test('stale D1 mirrors fail closed without replacing a newer Mailbox snapshot', async () => {
+test('stale D1 mirrors are safe no-ops without replacing a newer snapshot', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureEmailTestSchema(db)
@@ -652,7 +667,7 @@ test('stale D1 mirrors fail closed without replacing a newer Mailbox snapshot', 
 				updatedAt: older.toISOString(),
 			},
 		}),
-	).rejects.toThrow('owner/provider fence')
+	).resolves.toEqual({ status: 'stale' })
 	expect(
 		await db
 			.prepare(
@@ -678,4 +693,85 @@ test('USER authority refuses the system email owner before bootstrap', () => {
 			userId: 'system:email',
 		}),
 	).toThrow('must remain in D1')
+})
+
+test('bootstrap skips malformed and cross-owner legacy D1 rows', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureEmailTestSchema(db)
+	consoleWarn.mockImplementation(() => {})
+	const ownerId = `owner-${crypto.randomUUID()}`
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const crossOwner = await buildInboundDelivery({
+		userId: `other-${crypto.randomUUID()}`,
+		inboxId: 'inbox-cross-owner',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'cross owner',
+		quotaDay: '2026-08-02',
+		now,
+	})
+	const malformedId = `malformed-${crypto.randomUUID()}`
+	for (const [id, detailJson] of [
+		[crossOwner.deliveryId, JSON.stringify(crossOwner)],
+		[malformedId, '{'],
+	] as const) {
+		await db
+			.prepare(
+				`INSERT INTO email_delivery_events (
+					id, user_id, event_type, provider, provider_event_id,
+					detail_json, created_at
+				) VALUES (?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+			)
+			.bind(id, ownerId, id, detailJson, now.toISOString())
+			.run()
+	}
+	const upsertDeliveryEvent = vi.fn()
+	const authority = createUserInboundDeliveryAuthority({
+		env: {
+			APP_DB: db,
+			USER_METER: namespace({}),
+			MAILBOX: namespace({
+				getInboundDelivery: vi.fn(async () => null),
+				upsertDeliveryEvent,
+			}),
+		},
+		userId: ownerId,
+	})
+
+	await expect(authority.get(crossOwner.deliveryId)).resolves.toBeNull()
+	await expect(authority.get(malformedId)).resolves.toBeNull()
+	expect(upsertDeliveryEvent).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-delivery-bootstrap-row-invalid',
+		ownerId,
+		crossOwner.deliveryId,
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-delivery-bootstrap-row-invalid',
+		ownerId,
+		malformedId,
+	)
+	sqlite.close()
+})
+
+test('system D1 mutation surface rejects USER deliveries before writing', async () => {
+	const now = new Date('2026-08-02T12:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId: 'user-cannot-use-system-d1',
+		inboxId: 'inbox-system-fence',
+		recipient: 'owner@example.com',
+		envelopeFrom: 'sender@example.com',
+		rawMime: 'system fence',
+		quotaDay: '2026-08-02',
+		now,
+	})
+
+	await expect(
+		claimSystemInboundDeliveryWindow({
+			db: {} as D1Database,
+			delivery,
+			now,
+		}),
+	).rejects.toThrow('restricted to system:email')
 })

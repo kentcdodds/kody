@@ -106,10 +106,10 @@ function buildMailboxMessageFilterClauses(input: {
 /**
  * SQLite write/query helpers for one Mailbox DO. No alarm / R2 side effects.
  *
- * Additive step 2a USER inbound ledger/effect CAS helpers live in
- * `mailbox-inbound-ledger.ts` / `mailbox-inbound-effect-ledger.ts` (wired as
- * owner-bound DO RPCs; not live-called — D1 remains authority). Mirror upsert
- * paths below stay the compatibility write API.
+ * USER inbound ledger/effect CAS helpers live in
+ * `mailbox-inbound-ledger.ts` / `mailbox-inbound-effect-ledger.ts` and are
+ * authoritative. Generic mirror upserts are fenced from USER inbound providers;
+ * only the missing-row bootstrap bridge may insert those snapshots.
  */
 export class MailboxStore {
 	private readonly storage: DurableObjectStorage

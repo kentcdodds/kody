@@ -10,6 +10,7 @@ import {
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
 import { normalizeEmailAddress } from './address.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	emailRawMimeKey,
 	getEmailMessageById,
@@ -149,12 +150,12 @@ export async function buildInboundDelivery(input: {
 	}
 }
 
-function parseInboundDelivery(
-	row: InboundDeliveryEventRow | null,
+export function parseInboundDeliveryDetailJson(
+	detailJson: unknown,
 ): InboundDelivery | null {
-	if (!row) return null
+	if (typeof detailJson !== 'string') return null
 	try {
-		const detail = JSON.parse(row.detail_json) as Partial<InboundDelivery>
+		const detail = JSON.parse(detailJson) as Partial<InboundDelivery>
 		if (
 			typeof detail.deliveryId !== 'string' ||
 			typeof detail.fingerprint !== 'string' ||
@@ -280,6 +281,33 @@ function parseInboundDelivery(
 	} catch {
 		return null
 	}
+}
+
+export function parseStrictInboundDeliveryDetailJson(
+	detailJson: unknown,
+): InboundDelivery | null {
+	const delivery = parseInboundDeliveryDetailJson(detailJson)
+	if (!delivery || typeof detailJson !== 'string') return null
+	try {
+		const raw = JSON.parse(detailJson) as unknown
+		if (
+			typeof raw !== 'object' ||
+			raw == null ||
+			!('state' in raw) ||
+			raw.state !== delivery.state
+		) {
+			return null
+		}
+		return delivery
+	} catch {
+		return null
+	}
+}
+
+function parseInboundDelivery(
+	row: InboundDeliveryEventRow | null,
+): InboundDelivery | null {
+	return parseInboundDeliveryDetailJson(row?.detail_json)
 }
 
 export async function getInboundDelivery(input: {
@@ -607,6 +635,9 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 	limit: number
 	now: Date
 }) {
+	if (input.delivery.userId !== systemEmailOwnerId) {
+		throw new Error('System inbound delivery charge requires system:email.')
+	}
 	const existing = await resolveConcurrentDelivery(input)
 	if (existing) return { delivery: existing, overLimit: false as const }
 	const current = await readSystemEmailDailyCounter({

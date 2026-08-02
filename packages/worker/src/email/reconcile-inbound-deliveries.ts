@@ -1,14 +1,14 @@
-import {
-	pruneExpiredInboundDedupePointers,
-	reconcileStaleInboundDeliveries,
-	staleInboundDeliveryAgeMs,
-} from './inbound-delivery.ts'
+import { staleInboundDeliveryAgeMs } from './inbound-delivery.ts'
 import { reconcileInboundDeliveryEffectsForUser } from './inbound-effects.ts'
 import {
 	pruneUserExpiredInboundDedupePointers,
 	reconcileUserStaleInboundDeliveries,
 } from './inbound-delivery-reconciliation-authority.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import {
+	pruneSystemExpiredInboundDedupePointers,
+	reconcileSystemStaleInboundDeliveries,
+} from './system-inbound-delivery-authority.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 
 const reconciliationUserBatchSize = 25
@@ -195,7 +195,7 @@ export async function sweepStaleInboundDeliveries(input: {
 			const reconcileUser = async () => {
 				const systemOwner = userId === systemEmailOwnerId
 				const result = systemOwner
-					? await reconcileStaleInboundDeliveries({
+					? await reconcileSystemStaleInboundDeliveries({
 							db: input.env.APP_DB,
 							blobs: input.env.EMAIL_BLOBS,
 							userId,
@@ -209,7 +209,7 @@ export async function sweepStaleInboundDeliveries(input: {
 							deadlineMs,
 						})
 				const pruned = systemOwner
-					? await pruneExpiredInboundDedupePointers({
+					? await pruneSystemExpiredInboundDedupePointers({
 							db: input.env.APP_DB,
 							userId,
 							now,

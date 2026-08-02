@@ -105,11 +105,14 @@ export async function scheduleInboundRejectedTerminalWork(
 ) {
 	if (isSystemEmailOwner(input.userId)) return
 
-	const task = createUserInboundDeliveryAuthority({
-		env: input.env,
-		userId: input.userId,
-	})
-		.get(input.deliveryId)
+	const task = Promise.resolve()
+		.then(async () => {
+			const authority = createUserInboundDeliveryAuthority({
+				env: input.env,
+				userId: input.userId,
+			})
+			await authority.get(input.deliveryId)
+		})
 		.catch((error: unknown) => {
 			console.error('Inbound email rejection projection repair failed', error)
 		})

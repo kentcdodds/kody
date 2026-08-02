@@ -194,6 +194,13 @@ ON email_delivery_events(user_id, created_at)
 WHERE provider = 'cloudflare-email-routing'
 	AND event_type = 'received'
 	AND needs_effect_reconcile = 1;`,
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_user_state_created
+ON email_delivery_events(user_id, state, created_at, id)
+WHERE provider = 'cloudflare-email-routing' AND state IS NOT NULL;`,
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_user_dedupe_expires
+ON email_delivery_events(user_id, dedupe_expires_at, id)
+WHERE provider = 'cloudflare-email-routing-dedupe'
+	AND dedupe_expires_at IS NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS email_inbound_usage_effects (
 	user_id TEXT NOT NULL,
 	delivery_id TEXT NOT NULL,
@@ -202,6 +209,8 @@ WHERE provider = 'cloudflare-email-routing'
 	PRIMARY KEY (user_id, delivery_id, finalization_token),
 	FOREIGN KEY (delivery_id) REFERENCES email_delivery_events(id) ON DELETE CASCADE
 );`,
+		`CREATE INDEX IF NOT EXISTS idx_email_inbound_usage_effects_delivery
+ON email_inbound_usage_effects(delivery_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_recorded_usage_month
 ON email_delivery_events(usage_month, user_id)
 WHERE provider = 'cloudflare-email-routing'

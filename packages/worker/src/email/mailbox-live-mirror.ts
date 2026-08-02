@@ -17,6 +17,10 @@ import {
 	listEmailAttachmentsForMessage,
 } from './repo.ts'
 import { type EmailThreadRecord } from './types.ts'
+import {
+	mailboxInboundDedupeProvider,
+	mailboxInboundProvider,
+} from './mailbox-inbound-ledger.ts'
 
 /**
  * High-level D1 → Mailbox live-mirror orchestration.
@@ -45,6 +49,13 @@ export const mailboxLiveMirrorMaxEvents = mailboxUpsertDeliveryEventsMax
 export const mailboxLiveMirrorMaxAnalyticsWrites = 2
 
 export type MailboxLiveMirrorEnv = MailboxMirrorEnv
+
+function isUserInboundAuthorityProvider(provider: string | null) {
+	return (
+		provider === mailboxInboundProvider ||
+		provider === mailboxInboundDedupeProvider
+	)
+}
 
 export type MailboxLiveMirrorEventResult = {
 	eventId: string
@@ -96,6 +107,9 @@ export async function mirrorMailboxDeliveryEventFromD1(input: {
 			eventId: input.eventId,
 		})
 		if (!projection) return { status: 'missing' }
+		if (isUserInboundAuthorityProvider(projection.provider)) {
+			return { status: 'skipped', reason: 'user-inbound-authority' }
+		}
 		const sourceMutationAt =
 			input.sourceMutationAt != null && input.sourceMutationAt.length > 0
 				? input.sourceMutationAt
@@ -193,9 +207,11 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 				max: mailboxLiveMirrorMaxEvents,
 			})
 		}
-		const eventInputs = eventsTruncated
-			? loadedEvents.slice(-mailboxLiveMirrorMaxEvents)
-			: loadedEvents
+		const eventInputs = (
+			eventsTruncated
+				? loadedEvents.slice(-mailboxLiveMirrorMaxEvents)
+				: loadedEvents
+		).filter((event) => !isUserInboundAuthorityProvider(event.provider))
 
 		const events =
 			eventInputs.length === 0

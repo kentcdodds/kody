@@ -58,6 +58,11 @@ export type UserInboundDeliveryChargeInput = {
 	now: Date
 }
 
+export type UserInboundDeliveryChargeResult = {
+	delivery: InboundDelivery
+	charged: boolean
+}
+
 export type UserInboundDeliveryReceiveInput = {
 	delivery: InboundDelivery
 	usageDurationMs: number
@@ -74,6 +79,14 @@ export type UserInboundDeliveryOrphanCleanedInput = {
 	deliveryId: string
 	cleanupLease: string
 	outcome: 'deleted' | 'delete-failed'
+	now?: Date
+}
+
+export type UserInboundDeliveryCleanupClaimInput = {
+	deliveryId: string
+	expectedState: InboundDelivery['state']
+	expectedUpdatedAt: string
+	staleBefore: Date
 	now?: Date
 }
 
@@ -124,7 +137,9 @@ export type UserInboundDeliveryAuthority = {
 		delivery: InboundDelivery,
 		now: Date,
 	) => Promise<InboundDelivery>
-	charge: (input: UserInboundDeliveryChargeInput) => Promise<InboundDelivery>
+	charge: (
+		input: UserInboundDeliveryChargeInput,
+	) => Promise<UserInboundDeliveryChargeResult>
 	claimStorage: (
 		delivery: InboundDelivery,
 		expectedAttachmentCount: number,
@@ -147,8 +162,7 @@ export type UserInboundDeliveryAuthority = {
 		limit?: number,
 	) => Promise<MailboxListDueStaleInboundDeliveriesResult>
 	claimCleanup: (
-		deliveryId: string,
-		now?: Date,
+		input: UserInboundDeliveryCleanupClaimInput,
 	) => Promise<MailboxClaimInboundDeliveryCleanupResult>
 	releaseCleanup: (
 		deliveryId: string,
@@ -279,7 +293,7 @@ export function createUserInboundDeliveryAuthority(
 			chargeInput.now,
 		)
 		const existing = await get(claimedDelivery.deliveryId)
-		if (existing) return existing
+		if (existing) return { delivery: existing, charged: false }
 		const chargedDelivery = {
 			...claimedDelivery,
 			quotaDay: chargeInput.delivery.quotaDay,
@@ -327,11 +341,13 @@ export function createUserInboundDeliveryAuthority(
 			delivery: toInsertInput(chargedDelivery),
 			now: updatedAt,
 		})
-		await mirror(result.delivery)
-		return result.status === 'inserted' &&
-			claimedDelivery.deliveryId === chargeInput.delivery.deliveryId
-			? chargeInput.delivery
-			: toUserInboundDelivery(userId, result.delivery)
+		const delivery = await mirror(result.delivery)
+		return {
+			delivery,
+			charged:
+				result.status === 'inserted' &&
+				claimedDelivery.deliveryId === chargeInput.delivery.deliveryId,
+		}
 	}
 	return {
 		get,
@@ -466,10 +482,14 @@ export function createUserInboundDeliveryAuthority(
 				limit,
 			})
 		},
-		async claimCleanup(deliveryId: string, now = new Date()) {
+		async claimCleanup(input: UserInboundDeliveryCleanupClaimInput) {
+			const now = input.now ?? new Date()
 			const result = await mailbox.claimInboundDeliveryCleanup({
 				ownerId: userId,
-				deliveryId,
+				deliveryId: input.deliveryId,
+				expectedState: input.expectedState,
+				expectedUpdatedAt: input.expectedUpdatedAt,
+				staleBefore: input.staleBefore.toISOString(),
 				now: now.toISOString(),
 			})
 			if (result.status === 'claimed') {

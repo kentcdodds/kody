@@ -505,6 +505,8 @@ type MailboxCoreRpc = {
 	upsertDeliveryEvent: (input: {
 		ownerId: string
 		event: MailboxDeliveryEventInput
+		/** Missing-row-only bridge for pre-deploy USER inbound D1 snapshots. */
+		intent?: 'user-inbound-bootstrap'
 		latestDeliveryStatus?: {
 			messageId: string
 			deliveryStatus: EmailDeliveryStatus
