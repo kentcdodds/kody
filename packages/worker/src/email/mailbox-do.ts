@@ -22,6 +22,29 @@ import {
 	updateMailboxMessageDelivery,
 } from './mailbox-mutations.ts'
 import {
+	claimMailboxInboundDeliveryStorage,
+	claimMailboxInboundDeliveryWindow,
+	deferMailboxInboundDeliveryReconciliation,
+	getMailboxInboundDelivery,
+	getMailboxInboundDeliveryWindow,
+	insertMailboxChargedPendingInboundDelivery,
+	listMailboxDueStaleInboundDeliveries,
+	markMailboxInboundDeliveryReceived,
+	markMailboxInboundDeliveryRejected,
+	pruneMailboxExpiredInboundDedupePointers,
+	releaseMailboxInboundDeliveryStorage,
+	type MailboxInboundDeliveryInsertInput,
+	type MailboxInboundDeliverySnapshot,
+} from './mailbox-inbound-ledger.ts'
+import {
+	claimMailboxInboundSubscriptionEffect,
+	claimMailboxInboundUsageEffect,
+	completeMailboxInboundSubscriptionEffect,
+	completeMailboxInboundUsageEffect,
+	failMailboxInboundSubscriptionEffect,
+	listMailboxDueInboundEffectWork,
+} from './mailbox-inbound-effect-ledger.ts'
+import {
 	assertMailboxNonEmptyString,
 	mailboxUpsertDeliveryEventsMax,
 	type MailboxAttachmentInput,
@@ -36,6 +59,7 @@ import {
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
 	type MailboxExportResult,
+	type MailboxInboundDeliveryState,
 	type MailboxListMessagesInput,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
@@ -60,7 +84,9 @@ import {
  * external attachment bytes stay in `EMAIL_BLOBS`; rows retain keys.
  * `system:email` stays in D1 by design.
  *
- * Scaffold only: dual-write / cutover callers are not wired here.
+ * Dual-write / read-cutover live paths are wired elsewhere. Additive step 2a
+ * inbound ledger CAS RPCs are exposed but not live-wired (D1 remains
+ * authority for inbound ledger/effects).
  */
 
 class MailboxBase extends DurableObject<Env> implements MailboxRpc {
@@ -479,6 +505,294 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		startAfter?: string | null
 	}): Promise<MailboxBlobReferencePage> {
 		return this.store.listBlobReferences(input)
+	}
+
+	/**
+	 * Additive step 2a inbound ledger CAS RPCs. Not live-wired — D1 remains
+	 * authority. Mirror `upsertDeliveryEvent(s)` stay the compatibility path.
+	 */
+
+	async getInboundDelivery(input: {
+		ownerId: string
+		deliveryId: string
+	}): Promise<MailboxInboundDeliverySnapshot | null> {
+		this.store.assertOwner(input.ownerId)
+		return getMailboxInboundDelivery(this.ctx.storage.sql, input.deliveryId)
+	}
+
+	async getInboundDeliveryWindow(input: {
+		ownerId: string
+		fingerprint: string
+		now?: string
+	}): Promise<MailboxInboundDeliverySnapshot | null> {
+		this.store.assertOwner(input.ownerId)
+		return getMailboxInboundDeliveryWindow(this.ctx.storage.sql, input)
+	}
+
+	async claimInboundDeliveryWindow(input: {
+		ownerId: string
+		delivery: MailboxInboundDeliveryInsertInput
+		now?: string
+	}): Promise<MailboxInboundDeliverySnapshot> {
+		let result!: MailboxInboundDeliverySnapshot
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = claimMailboxInboundDeliveryWindow(this.ctx.storage.sql, input)
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return result
+	}
+
+	async insertChargedPendingInboundDelivery(input: {
+		ownerId: string
+		delivery: MailboxInboundDeliveryInsertInput
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['insertChargedPendingInboundDelivery']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = insertMailboxChargedPendingInboundDelivery(
+				this.ctx.storage.sql,
+				input,
+			)
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return result
+	}
+
+	async claimInboundDeliveryStorage(input: {
+		ownerId: string
+		deliveryId: string
+		expectedAttachmentCount: number
+		usageStartedAt?: string | null
+		now?: string
+	}) {
+		let result!: Awaited<ReturnType<MailboxRpc['claimInboundDeliveryStorage']>>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = claimMailboxInboundDeliveryStorage(this.ctx.storage.sql, input)
+		})
+		if (result.status === 'claimed') {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async releaseInboundDeliveryStorage(input: {
+		ownerId: string
+		deliveryId: string
+		storageLease: string
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['releaseInboundDeliveryStorage']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = releaseMailboxInboundDeliveryStorage(this.ctx.storage.sql, input)
+		})
+		if (result.status === 'released') {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async markInboundDeliveryRejected(input: {
+		ownerId: string
+		deliveryId: string
+		reason: string
+		expectedStorageLease?: string | null
+		expectedState?: MailboxInboundDeliveryState
+		now?: string
+	}) {
+		let result!: Awaited<ReturnType<MailboxRpc['markInboundDeliveryRejected']>>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = markMailboxInboundDeliveryRejected(this.ctx.storage.sql, input)
+		})
+		if (result.status === 'rejected') {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async markInboundDeliveryReceived(input: {
+		ownerId: string
+		deliveryId: string
+		storageLease: string
+		usageDurationMs: number
+		usageMonth: string
+		usageBytes: number
+		now?: string
+	}) {
+		let result!: Awaited<ReturnType<MailboxRpc['markInboundDeliveryReceived']>>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = markMailboxInboundDeliveryReceived(this.ctx.storage.sql, input)
+		})
+		if (result.status === 'received') {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async pruneExpiredInboundDedupePointers(input: {
+		ownerId: string
+		now?: string
+		limit?: number
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['pruneExpiredInboundDedupePointers']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = pruneMailboxExpiredInboundDedupePointers(
+				this.ctx.storage.sql,
+				input,
+			)
+		})
+		if (result.pruned > 0) {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async deferInboundDeliveryReconciliation(input: {
+		ownerId: string
+		deliveryId: string
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['deferInboundDeliveryReconciliation']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = deferMailboxInboundDeliveryReconciliation(
+				this.ctx.storage.sql,
+				input,
+			)
+		})
+		if (result.status === 'deferred') {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async claimInboundUsageEffect(input: {
+		ownerId: string
+		deliveryId: string
+		expectedFinalizationToken?: string | null
+		now?: string
+	}) {
+		let result!: Awaited<ReturnType<MailboxRpc['claimInboundUsageEffect']>>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = claimMailboxInboundUsageEffect(this.ctx.storage.sql, input)
+		})
+		return result
+	}
+
+	async completeInboundUsageEffect(input: {
+		ownerId: string
+		deliveryId: string
+		usageEffectLease: string
+		mode: 'recorded' | 'suppressed'
+		usageMonth: string
+		usageBytes: number
+		usageDurationMs: number
+		now?: string
+	}) {
+		let result!: Awaited<ReturnType<MailboxRpc['completeInboundUsageEffect']>>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = completeMailboxInboundUsageEffect(this.ctx.storage.sql, input)
+		})
+		return result
+	}
+
+	async claimInboundSubscriptionEffect(input: {
+		ownerId: string
+		deliveryId: string
+		expectedFinalizationToken?: string | null
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['claimInboundSubscriptionEffect']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = claimMailboxInboundSubscriptionEffect(
+				this.ctx.storage.sql,
+				input,
+			)
+		})
+		return result
+	}
+
+	async completeInboundSubscriptionEffect(input: {
+		ownerId: string
+		deliveryId: string
+		subscriptionEffectLease: string
+		mode: 'complete' | 'suppressed'
+		suppressionReason?: string | null
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['completeInboundSubscriptionEffect']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = completeMailboxInboundSubscriptionEffect(
+				this.ctx.storage.sql,
+				input,
+			)
+		})
+		return result
+	}
+
+	async failInboundSubscriptionEffect(input: {
+		ownerId: string
+		deliveryId: string
+		subscriptionEffectLease: string
+		error: string
+		now?: string
+	}) {
+		let result!: Awaited<
+			ReturnType<MailboxRpc['failInboundSubscriptionEffect']>
+		>
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			result = failMailboxInboundSubscriptionEffect(this.ctx.storage.sql, input)
+		})
+		return result
+	}
+
+	async listDueStaleInboundDeliveries(input: {
+		ownerId: string
+		now?: string
+		limit?: number
+	}) {
+		this.store.assertOwner(input.ownerId)
+		return listMailboxDueStaleInboundDeliveries(this.ctx.storage.sql, input)
+	}
+
+	async listDueInboundEffectWork(input: {
+		ownerId: string
+		now?: string
+		limit?: number
+	}) {
+		this.store.assertOwner(input.ownerId)
+		return listMailboxDueInboundEffectWork(this.ctx.storage.sql, input)
 	}
 
 	/**

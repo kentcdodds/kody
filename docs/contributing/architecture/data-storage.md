@@ -697,8 +697,8 @@ persists `ownerId` on first write and rejects cross-owner RPCs. That persisted
 owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
 / `emailAttachmentBlobKey`).
 
-**SQLite ownership** (schema version in `mailbox_meta`; ships as
-`mailboxSchemaVersion = 1`):
+**SQLite ownership** (schema version in `mailbox_meta`; current
+`mailboxSchemaVersion = 2`):
 
 - `mailbox_owner_identity` — singleton `owner_id` for blob-key validation and
   cross-user write rejection
@@ -707,6 +707,25 @@ owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
   tables they will eventually replace)
 - latest per-message delivery status on `email_messages.delivery_status`, kept
   separate from send-request `processing_status`
+- **Schema v2 (warm-safe):** additive inbound-ledger due-work indexes on
+  `email_delivery_events` (reconcile/retry/stale-state/dedupe-provider). Cold
+  objects install the full DDL; warm v1 objects run `CREATE INDEX IF NOT EXISTS`
+  only. No destructive ALTERs.
+
+**Additive inbound ledger CAS (step 2a — no authority flip):** owner-bound
+atomic RPCs in `mailbox-inbound-ledger.ts` / `mailbox-inbound-effect-ledger.ts`
+mirror D1 USER transitions from `inbound-delivery.ts` / `inbound-effects.ts`
+(get delivery + active fingerprint window; claim/rewrite dedupe; insert charged
+pending with explicit `inserted`/`existed`; claim/release storage lease; mark
+rejected/received with lease/finalization CAS; prune dedupe; defer reconcile;
+claim/complete usage effect; claim/complete/fail subscription effect with
+retry/dead-letter/ suppression; list due stale/effect work). Mutations keep
+promoted columns and `detail_json` in sync and set canonical `updated_at`. The
+DO does **not** perform external usage recording or subscription dispatch.
+Mirror `upsertDeliveryEvent` / `upsertDeliveryEvents` remain the compatibility
+write API. **These CAS RPCs are not live-wired** — D1 stays sole write authority
+for inbound ledger/effects. `system:email` stays on D1 and is never written into
+per-user Mailbox objects.
 
 **Mirror write contract:** `mirrorMessage`, `upsertDeliveryEvent`, and
 `upsertDeliveryEvents` take complete snapshots — every persisted field is

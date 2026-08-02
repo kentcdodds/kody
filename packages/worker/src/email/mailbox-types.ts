@@ -10,6 +10,8 @@ import {
 	type EmailDirection,
 	type EmailProcessingStatus,
 } from './types.ts'
+import { type MailboxInboundDeliveryLedgerRpc } from './mailbox-inbound-ledger.ts'
+import { type MailboxInboundEffectLedgerRpc } from './mailbox-inbound-effect-ledger.ts'
 
 /**
  * Mailbox Durable Object wire types, constants, and boundary validators.
@@ -30,8 +32,11 @@ export const mailboxRetentionRetryDelayMs = 60 * 60 * 1000
 export const mailboxRetentionContinuationDelayMs = 1_000
 export const mailboxBlobDeleteMaxKeys = 1000
 
-/** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-export const mailboxSchemaVersion = 1
+/**
+ * Bump when initializeSchema's DDL set changes. Warm objects run additive
+ * migrations (CREATE INDEX IF NOT EXISTS / guarded ALTER) until they match.
+ */
+export const mailboxSchemaVersion = 2
 export const mailboxMetaSchemaVersionKey = 'schema_version'
 
 export const mailboxExportThreadCursorPrefix = 'thread:'
@@ -473,7 +478,12 @@ export type MailboxUpsertDeliveryEventsResult = {
 	results: Array<MailboxUpsertDeliveryEventBatchItemResult>
 }
 
-export type MailboxRpc = {
+/**
+ * Mirror / read / retention / purge surface. Inbound ledger CAS RPCs
+ * (additive step 2a) are intersected below — not live-wired; D1 remains
+ * authority.
+ */
+type MailboxCoreRpc = {
 	mirrorMessage: (input: {
 		/**
 		 * Explicit owner binding. DO name is not introspectable at runtime, so
@@ -489,6 +499,10 @@ export type MailboxRpc = {
 		 */
 		attachments?: Array<MailboxAttachmentInput>
 	}) => Promise<{ ok: true; accepted: boolean }>
+	/**
+	 * Compatibility mirror upsert for complete delivery-event snapshots.
+	 * Remains available during step 2a; CAS ledger RPCs are additive.
+	 */
 	upsertDeliveryEvent: (input: {
 		ownerId: string
 		event: MailboxDeliveryEventInput
@@ -580,6 +594,11 @@ export type MailboxRpc = {
 	}) => Promise<MailboxRunRetentionNowResult>
 	purge: () => Promise<{ ok: true }>
 }
+
+export type MailboxInboundLedgerRpc = MailboxInboundDeliveryLedgerRpc &
+	MailboxInboundEffectLedgerRpc
+
+export type MailboxRpc = MailboxCoreRpc & MailboxInboundLedgerRpc
 
 export function mailboxNowIso() {
 	return new Date().toISOString()

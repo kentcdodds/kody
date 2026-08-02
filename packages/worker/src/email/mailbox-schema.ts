@@ -30,8 +30,11 @@ export function setMailboxMeta(
 }
 
 /**
- * Schema v1 — coherent ship shape (this DO class has never been deployed).
- * No warm ALTER migrations; bump `mailboxSchemaVersion` only with a real plan.
+ * Schema bootstrap + warm migrations.
+ * - v1: base tables/indexes (deployed).
+ * - v2: additive inbound ledger query indexes (state/reconcile/retry/dedupe).
+ * Warm objects re-run CREATE IF NOT EXISTS then apply any version-gated
+ * index additions; never destructive.
  */
 export function initializeMailboxSchema(storage: DurableObjectStorage) {
 	const sql = storage.sql
@@ -299,6 +302,42 @@ export function initializeMailboxSchema(storage: DurableObjectStorage) {
 		ON email_delivery_events(usage_month, created_at ASC)
 		WHERE usage_effect_recorded_at IS NOT NULL`,
 	)
+
+	// v2 — inbound ledger CAS due-work indexes (safe on warm v1 objects).
+	if (installedVersion == null || installedVersion < 2) {
+		sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_reconcile_after
+			ON email_delivery_events(reconcile_after ASC, created_at ASC, id ASC)
+			WHERE reconcile_after IS NOT NULL`,
+		)
+		sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_usage_effect_retry
+			ON email_delivery_events(usage_effect_retry_at ASC, id ASC)
+			WHERE needs_effect_reconcile = 1
+				AND usage_effect_recorded_at IS NULL
+				AND usage_effect_suppressed_at IS NULL`,
+		)
+		sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_subscription_effect_retry
+			ON email_delivery_events(subscription_effect_retry_at ASC, id ASC)
+			WHERE needs_effect_reconcile = 1
+				AND (
+					subscription_effect_state IS NULL
+					OR subscription_effect_state NOT IN ('complete', 'dead-letter')
+				)`,
+		)
+		sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_stale_state
+			ON email_delivery_events(state, created_at ASC, id ASC)
+			WHERE state IN ('pending', 'storing', 'cleaning', 'orphan-cleaned')`,
+		)
+		sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_dedupe_provider_expires
+			ON email_delivery_events(provider, dedupe_expires_at ASC, id ASC)
+			WHERE provider = 'cloudflare-email-routing-dedupe'
+				AND dedupe_expires_at IS NOT NULL`,
+		)
+	}
 
 	setMailboxMeta(storage, mailboxMetaSchemaVersionKey, mailboxSchemaVersion)
 }
