@@ -16,6 +16,7 @@ import {
 	type MailboxInboundDeliveryState,
 } from './mailbox-types.ts'
 import {
+	assertMailboxInboundNonNegativeFiniteNumber,
 	detailJsonFromMailboxInboundSnapshot,
 	mailboxInboundDedupeProvider,
 	mailboxInboundProvider,
@@ -34,6 +35,7 @@ import {
 } from './mailbox-inbound-ledger-shared.ts'
 
 export {
+	assertMailboxInboundNonNegativeFiniteNumber,
 	detailJsonFromMailboxInboundSnapshot,
 	mailboxEffectRetryMs,
 	mailboxInboundDedupeProvider,
@@ -416,9 +418,11 @@ export function claimMailboxInboundDeliveryStorage(
 	const expiredBefore = new Date(
 		Date.parse(now) - mailboxInboundStorageLeaseMs,
 	).toISOString()
-	const expectedAttachmentCount = Math.max(
-		0,
-		Math.floor(input.expectedAttachmentCount),
+	const expectedAttachmentCount = Math.floor(
+		assertMailboxInboundNonNegativeFiniteNumber(
+			input.expectedAttachmentCount,
+			'expectedAttachmentCount',
+		),
 	)
 	const current = readMailboxInboundDeliveryById(sql, deliveryId)
 	if (!current) return { status: 'not-claimed', delivery: null }
@@ -661,8 +665,15 @@ export function markMailboxInboundDeliveryReceived(
 	if (current.state !== 'storing' || current.storageLease !== storageLease) {
 		return { status: 'lease-lost' }
 	}
-	const usageDurationMs = Math.max(0, Math.round(input.usageDurationMs))
-	const usageBytes = Math.max(0, Math.round(input.usageBytes))
+	const usageDurationMs = Math.round(
+		assertMailboxInboundNonNegativeFiniteNumber(
+			input.usageDurationMs,
+			'usageDurationMs',
+		),
+	)
+	const usageBytes = Math.round(
+		assertMailboxInboundNonNegativeFiniteNumber(input.usageBytes, 'usageBytes'),
+	)
 	const next: MailboxInboundDeliverySnapshot = {
 		...current,
 		state: 'received',

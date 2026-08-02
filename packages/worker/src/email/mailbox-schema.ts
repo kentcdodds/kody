@@ -331,6 +331,8 @@ export function initializeMailboxSchema(storage: DurableObjectStorage) {
 			ON email_delivery_events(state, created_at ASC, id ASC)
 			WHERE state IN ('pending', 'storing', 'cleaning', 'orphan-cleaned')`,
 		)
+		// Literal matches mailboxInboundDedupeProvider; keep local to avoid a
+		// mailbox-types ↔ ledger ↔ schema import cycle.
 		sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_dedupe_provider_expires
 			ON email_delivery_events(provider, dedupe_expires_at ASC, id ASC)

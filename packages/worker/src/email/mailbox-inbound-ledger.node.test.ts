@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	assertMailboxInboundNonNegativeFiniteNumber,
 	resolveMailboxSubscriptionEffectFailure,
 	needsMailboxEffectReconcile,
 	mailboxInboundStorageLeaseMs,
@@ -58,4 +59,26 @@ test('storage lease takeover predicate matches D1 stale window', () => {
 	).toISOString()
 	expect(freshLeaseAt < expiredBefore).toBe(false)
 	expect(staleLeaseAt < expiredBefore).toBe(true)
+})
+
+test('assertMailboxInboundNonNegativeFiniteNumber rejects NaN and Infinity', () => {
+	for (const value of [
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+	]) {
+		for (const label of [
+			'expectedAttachmentCount',
+			'usageDurationMs',
+			'usageBytes',
+		] as const) {
+			expect(() =>
+				assertMailboxInboundNonNegativeFiniteNumber(value, label),
+			).toThrow(new RegExp(`${label} must be a finite number`))
+		}
+	}
+	expect(assertMailboxInboundNonNegativeFiniteNumber(0, 'usageBytes')).toBe(0)
+	expect(
+		assertMailboxInboundNonNegativeFiniteNumber(12.5, 'usageDurationMs'),
+	).toBe(12.5)
 })

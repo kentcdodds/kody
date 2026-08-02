@@ -10,6 +10,7 @@
 import { assertMailboxNonEmptyString } from './mailbox-types.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
 import {
+	assertMailboxInboundNonNegativeFiniteNumber,
 	detailJsonFromMailboxInboundSnapshot,
 	mailboxEffectRetryMs,
 	mailboxInboundProvider,
@@ -138,6 +139,8 @@ export function claimMailboxInboundUsageEffect(
 	const expiredBefore = new Date(
 		Date.parse(now) - mailboxUsageEffectLeaseMs,
 	).toISOString()
+	// Fresh lease only when lease+timestamp are both present and unexpired.
+	// NULL lease_at (legacy/imported) is treated as expired/claimable.
 	if (
 		current.usageEffectLease != null &&
 		current.usageEffectLeaseAt != null &&
@@ -165,7 +168,11 @@ export function claimMailboxInboundUsageEffect(
 			AND usage_effect_recorded_at IS NULL
 			AND usage_effect_suppressed_at IS NULL
 			AND (usage_effect_retry_at IS NULL OR usage_effect_retry_at <= ?)
-			AND (usage_effect_lease IS NULL OR usage_effect_lease_at < ?)
+			AND (
+				usage_effect_lease IS NULL
+				OR usage_effect_lease_at IS NULL
+				OR usage_effect_lease_at < ?
+			)
 			AND (? IS NULL OR finalization_token = ?)`,
 		detailJsonFromMailboxInboundSnapshot(next),
 		usageEffectLease,
@@ -226,8 +233,15 @@ export function completeMailboxInboundUsageEffect(
 	if (current.usageEffectLease !== usageEffectLease) {
 		return { status: 'lease-lost' }
 	}
-	const usageBytes = Math.max(0, Math.round(input.usageBytes))
-	const usageDurationMs = Math.max(0, Math.round(input.usageDurationMs))
+	const usageBytes = Math.round(
+		assertMailboxInboundNonNegativeFiniteNumber(input.usageBytes, 'usageBytes'),
+	)
+	const usageDurationMs = Math.round(
+		assertMailboxInboundNonNegativeFiniteNumber(
+			input.usageDurationMs,
+			'usageDurationMs',
+		),
+	)
 	const next: MailboxInboundDeliverySnapshot = {
 		...current,
 		usageMonth,
@@ -332,6 +346,7 @@ export function claimMailboxInboundSubscriptionEffect(
 	const expiredBefore = new Date(
 		Date.parse(now) - mailboxSubscriptionEffectLeaseMs,
 	).toISOString()
+	// processing + NULL lease_at (legacy/imported) is claimable/takeover.
 	if (
 		current.subscriptionEffectState === 'processing' &&
 		current.subscriptionEffectLeaseAt != null &&
@@ -368,7 +383,10 @@ export function claimMailboxInboundSubscriptionEffect(
 				OR subscription_effect_state = 'pending'
 				OR (
 					subscription_effect_state = 'processing'
-					AND subscription_effect_lease_at < ?
+					AND (
+						subscription_effect_lease_at IS NULL
+						OR subscription_effect_lease_at < ?
+					)
 				)
 			)`,
 		detailJsonFromMailboxInboundSnapshot(next),
@@ -614,6 +632,7 @@ export function listMailboxDueInboundEffectWork(
 						)
 						AND (
 							usage_effect_lease IS NULL
+							OR usage_effect_lease_at IS NULL
 							OR usage_effect_lease_at < ?
 						)
 					)
@@ -627,7 +646,9 @@ export function listMailboxDueInboundEffectWork(
 							OR subscription_effect_retry_at <= ?
 						)
 						AND (
-							subscription_effect_state != 'processing'
+							subscription_effect_state IS NULL
+							OR subscription_effect_state != 'processing'
+							OR subscription_effect_lease_at IS NULL
 							OR subscription_effect_lease_at < ?
 						)
 					)

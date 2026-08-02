@@ -68,6 +68,13 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 				)
 				.toArray()[0]?.value
 			expect(Number(version)).toBe(mailboxSchemaVersion)
+			const schemaV2Indexes = [
+				'idx_email_delivery_events_reconcile_after',
+				'idx_email_delivery_events_usage_effect_retry',
+				'idx_email_delivery_events_subscription_effect_retry',
+				'idx_email_delivery_events_stale_state',
+				'idx_email_delivery_events_dedupe_provider_expires',
+			] as const
 			const indexes = state.storage.sql
 				.exec<{ name: string }>(
 					`SELECT name FROM sqlite_master
@@ -77,23 +84,16 @@ test('Mailbox inbound ledger CAS covers USER transition matrix without live flip
 						'idx_email_delivery_events_usage_effect_retry',
 						'idx_email_delivery_events_subscription_effect_retry',
 						'idx_email_delivery_events_stale_state',
-						'idx_email_delivery_events_dedupe_provider_expires',
-						'idx_email_delivery_events_state_created',
-						'idx_email_delivery_events_dedupe_expires'
+						'idx_email_delivery_events_dedupe_provider_expires'
 					)
 				ORDER BY name ASC`,
 				)
 				.toArray()
 				.map((row) => row.name)
-			expect(indexes).toContain('idx_email_delivery_events_reconcile_after')
-			expect(indexes).toContain('idx_email_delivery_events_usage_effect_retry')
-			expect(indexes).toContain(
-				'idx_email_delivery_events_subscription_effect_retry',
-			)
-			expect(indexes).toContain('idx_email_delivery_events_stale_state')
-			expect(indexes).toContain(
-				'idx_email_delivery_events_dedupe_provider_expires',
-			)
+			expect(indexes).toEqual([...schemaV2Indexes].sort())
+			for (const name of schemaV2Indexes) {
+				expect(indexes.filter((entry) => entry === name)).toHaveLength(1)
+			}
 		},
 	)
 
@@ -823,13 +823,292 @@ test('Mailbox inbound ledger warm-migrates v1 schema indexes to v2', async () =>
 			)
 			.toArray()[0]?.value
 		expect(Number(version)).toBe(mailboxSchemaVersion)
-		const hasReconcile = state.storage.sql
+		const schemaV2Indexes = [
+			'idx_email_delivery_events_reconcile_after',
+			'idx_email_delivery_events_usage_effect_retry',
+			'idx_email_delivery_events_subscription_effect_retry',
+			'idx_email_delivery_events_stale_state',
+			'idx_email_delivery_events_dedupe_provider_expires',
+		] as const
+		const indexes = state.storage.sql
 			.exec<{ name: string }>(
 				`SELECT name FROM sqlite_master
 				WHERE type = 'index'
-					AND name = 'idx_email_delivery_events_reconcile_after'`,
+					AND name IN (
+						'idx_email_delivery_events_reconcile_after',
+						'idx_email_delivery_events_usage_effect_retry',
+						'idx_email_delivery_events_subscription_effect_retry',
+						'idx_email_delivery_events_stale_state',
+						'idx_email_delivery_events_dedupe_provider_expires'
+					)
+				ORDER BY name ASC`,
 			)
 			.toArray()
-		expect(hasReconcile.length).toBe(1)
+			.map((row) => row.name)
+		expect(indexes).toEqual([...schemaV2Indexes].sort())
+		for (const name of schemaV2Indexes) {
+			expect(indexes.filter((entry) => entry === name)).toHaveLength(1)
+		}
+	})
+})
+
+test('legacy received rows with null effect lease timestamps and null subscription state are claimable and due', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('null-lease')
+	const mailbox = rpcFor(ownerId)
+	const now = '2026-07-22T00:00:00.000Z'
+	const delivery = insertInput(ownerId, {
+		fingerprint: 'fp-null-lease',
+		deliveryId: 'email-inbound-delivery:null-lease',
+		messageId: 'email-inbound-message:null-lease',
+		threadId: 'email-inbound-thread:null-lease',
+	})
+
+	await mailbox.insertChargedPendingInboundDelivery({
+		ownerId,
+		delivery,
+		now,
+	})
+	const storage = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	expect(storage.status).toBe('claimed')
+	if (storage.status !== 'claimed') throw new Error('expected claim')
+	const received = await mailbox.markInboundDeliveryReceived({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		storageLease: storage.delivery.storageLease!,
+		usageDurationMs: 5,
+		usageMonth: '2026-07',
+		usageBytes: 8,
+		now,
+	})
+	expect(received.status).toBe('received')
+	if (received.status !== 'received') throw new Error('expected received')
+	const finalizationToken = received.delivery.finalizationToken!
+	expect(finalizationToken).toBeTruthy()
+
+	// Simulate legacy/imported received row: null leases + null subscription state
+	// in both columns and detail_json (snapshot falls back to detail).
+	await runInDurableObject(stubFor(ownerId), async (_instance, state) => {
+		state.storage.sql.exec(
+			`UPDATE email_delivery_events
+			 SET usage_effect_lease = 'legacy-usage-lease',
+			     usage_effect_lease_at = NULL,
+			     subscription_effect_state = NULL,
+			     subscription_effect_lease = 'legacy-sub-lease',
+			     subscription_effect_lease_at = NULL,
+			     detail_json = json_remove(
+			       json_remove(
+			         json_remove(
+			           json_remove(
+			             json_remove(detail_json, '$.subscriptionEffectState'),
+			             '$.usageEffectLeaseAt'
+			           ),
+			           '$.subscriptionEffectLeaseAt'
+			         ),
+			         '$.usageEffectLease'
+			       ),
+			       '$.subscriptionEffectLease'
+			     )
+			 WHERE id = ? AND provider = ?`,
+			delivery.deliveryId,
+			mailboxInboundProvider,
+		)
+	})
+
+	const due = await mailbox.listDueInboundEffectWork({
+		ownerId,
+		now: '2026-07-22T00:00:01.000Z',
+		limit: 50,
+	})
+	expect(
+		due.deliveries.some((entry) => entry.deliveryId === delivery.deliveryId),
+	).toBe(true)
+
+	const usage = await mailbox.claimInboundUsageEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: finalizationToken,
+		now: '2026-07-22T00:00:02.000Z',
+	})
+	expect(usage.status).toBe('claimed')
+	if (usage.status !== 'claimed') throw new Error('expected usage claim')
+	expect(usage.delivery.usageEffectLease).not.toBe('legacy-usage-lease')
+
+	const subscription = await mailbox.claimInboundSubscriptionEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: finalizationToken,
+		now: '2026-07-22T00:00:03.000Z',
+	})
+	expect(subscription.status).toBe('claimed')
+	if (subscription.status !== 'claimed') {
+		throw new Error('expected subscription claim')
+	}
+	expect(subscription.delivery.subscriptionEffectLease).not.toBe(
+		'legacy-sub-lease',
+	)
+	expect(subscription.delivery.subscriptionEffectState).toBe('processing')
+})
+
+test('processing subscription rows with null lease_at remain reclaimable and due', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('null-sub-lease-at')
+	const mailbox = rpcFor(ownerId)
+	const now = '2026-07-22T00:00:00.000Z'
+	const delivery = insertInput(ownerId, {
+		fingerprint: 'fp-null-sub-lease-at',
+		deliveryId: 'email-inbound-delivery:null-sub-lease-at',
+		messageId: 'email-inbound-message:null-sub-lease-at',
+		threadId: 'email-inbound-thread:null-sub-lease-at',
+	})
+
+	await mailbox.insertChargedPendingInboundDelivery({
+		ownerId,
+		delivery,
+		now,
+	})
+	const storage = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	expect(storage.status).toBe('claimed')
+	if (storage.status !== 'claimed') throw new Error('expected claim')
+	const received = await mailbox.markInboundDeliveryReceived({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		storageLease: storage.delivery.storageLease!,
+		usageDurationMs: 5,
+		usageMonth: '2026-07',
+		usageBytes: 8,
+		now,
+	})
+	expect(received.status).toBe('received')
+	if (received.status !== 'received') throw new Error('expected received')
+	const finalizationToken = received.delivery.finalizationToken!
+
+	await runInDurableObject(stubFor(ownerId), async (_instance, state) => {
+		state.storage.sql.exec(
+			`UPDATE email_delivery_events
+			 SET subscription_effect_state = 'processing',
+			     subscription_effect_lease = 'stale-lease',
+			     subscription_effect_lease_at = NULL,
+			     detail_json = json_remove(
+			       json_set(
+			         json_set(detail_json, '$.subscriptionEffectState', 'processing'),
+			         '$.subscriptionEffectLease',
+			         'stale-lease'
+			       ),
+			       '$.subscriptionEffectLeaseAt'
+			     )
+			 WHERE id = ? AND provider = ?`,
+			delivery.deliveryId,
+			mailboxInboundProvider,
+		)
+	})
+
+	const due = await mailbox.listDueInboundEffectWork({
+		ownerId,
+		now: '2026-07-22T00:00:01.000Z',
+		limit: 50,
+	})
+	expect(
+		due.deliveries.some((entry) => entry.deliveryId === delivery.deliveryId),
+	).toBe(true)
+
+	const subscription = await mailbox.claimInboundSubscriptionEffect({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedFinalizationToken: finalizationToken,
+		now: '2026-07-22T00:00:02.000Z',
+	})
+	expect(subscription.status).toBe('claimed')
+	if (subscription.status !== 'claimed') {
+		throw new Error('expected subscription claim')
+	}
+	expect(subscription.delivery.subscriptionEffectLease).not.toBe('stale-lease')
+})
+
+test('inbound ledger rejects non-finite expectedAttachmentCount, usageDurationMs, and usageBytes', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('non-finite')
+	const mailbox = rpcFor(ownerId)
+	const now = '2026-07-22T00:00:00.000Z'
+	const delivery = insertInput(ownerId, {
+		fingerprint: 'fp-non-finite',
+		deliveryId: 'email-inbound-delivery:non-finite',
+		messageId: 'email-inbound-message:non-finite',
+		threadId: 'email-inbound-thread:non-finite',
+	})
+	await mailbox.insertChargedPendingInboundDelivery({
+		ownerId,
+		delivery,
+		now,
+	})
+
+	await runInDurableObject(stubFor(ownerId), async (instance: Mailbox) => {
+		for (const value of [
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+		]) {
+			await assertMailboxThrows(
+				/expectedAttachmentCount must be a finite number/,
+				() =>
+					instance.claimInboundDeliveryStorage({
+						ownerId,
+						deliveryId: delivery.deliveryId,
+						expectedAttachmentCount: value,
+						now,
+					}),
+			)
+		}
+	})
+
+	const claim = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId: delivery.deliveryId,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	expect(claim.status).toBe('claimed')
+	if (claim.status !== 'claimed') throw new Error('expected claim')
+	const storageLease = claim.delivery.storageLease!
+
+	await runInDurableObject(stubFor(ownerId), async (instance: Mailbox) => {
+		for (const value of [
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+		]) {
+			await assertMailboxThrows(/usageDurationMs must be a finite number/, () =>
+				instance.markInboundDeliveryReceived({
+					ownerId,
+					deliveryId: delivery.deliveryId,
+					storageLease,
+					usageDurationMs: value,
+					usageMonth: '2026-07',
+					usageBytes: 8,
+					now,
+				}),
+			)
+			await assertMailboxThrows(/usageBytes must be a finite number/, () =>
+				instance.markInboundDeliveryReceived({
+					ownerId,
+					deliveryId: delivery.deliveryId,
+					storageLease,
+					usageDurationMs: 5,
+					usageMonth: '2026-07',
+					usageBytes: value,
+					now,
+				}),
+			)
+		}
 	})
 })
