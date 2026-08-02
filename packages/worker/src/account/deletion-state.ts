@@ -112,9 +112,10 @@ function unionActiveWriteLeases(
 }
 
 /**
- * Temporary rollout mirror: insert the exact DO lease into D1 so old Phase-A
- * isolates that only read D1 still observe every DO-authority acquire.
- * Uses the same atomic batch + lost-response reconcile as the D1 lease path.
+ * Acquire a D1 `account_write_leases` row for the legacy/email path. The
+ * same atomic batch + lost-response reconcile protects against partial D1
+ * batch responses. Not called from the DO-authority path after mirror
+ * retirement.
  */
 async function acquireD1WriteLeaseMirror(input: {
 	db: D1Database
@@ -187,9 +188,9 @@ async function acquireD1WriteLeaseMirror(input: {
 }
 
 /**
- * Release the temporary D1 rollout mirror. Idempotent when the row is already
- * gone (no count decrement). Prefer calling after DO release so a stale D1
- * mirror can overblock old Phase-A marks but never underblock.
+ * Clear a legacy or historically stale D1 `account_write_leases` row.
+ * Idempotent when the row is already gone (no count decrement). Used by the
+ * legacy/email acquire path and by repair to clear pre-retirement stale rows.
  */
 async function releaseD1WriteLeaseMirror(input: {
 	db: D1Database
@@ -475,9 +476,8 @@ export async function withAccountWriteLease<T>(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
 	 * When supplied, UserMeter is authoritative for acquire/held/release
-	 * (fail closed) after a D1 `deleting_at` point gate, with a temporary D1
-	 * rollout mirror of the same lease token. When omitted, retain the exact
-	 * D1 lease path (email transition).
+	 * (fail closed) after a D1 `deleting_at` point gate. When omitted, retain
+	 * the exact D1 lease path (email/legacy callers).
 	 */
 	env?: UserMeterEnv
 	write: () => Promise<T>
@@ -533,41 +533,13 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 		throw new AccountDeletionInProgressError()
 	}
 	try {
-		const mirrored = await acquireD1WriteLeaseMirror({
-			db: input.db,
-			lease,
-		})
-		if (!mirrored) {
-			throw new AccountDeletionInProgressError()
-		}
-	} catch (error) {
-		// Mirror acquire can leave a partial D1 row (insert committed, count
-		// missed/threw). Clear it before DO release; cleanup must not mask
-		// the original error. A failed clear may overblock old Phase-A marks.
-		await releaseD1WriteLeaseMirror({
-			db: input.db,
-			stableUserId: lease.stableUserId,
-			token: lease.token,
-		}).catch(() => {})
-		await meter.releaseWriteLease({ token: lease.token }).catch(() => {})
-		throw error
-	}
-	try {
 		const result = await input.write()
 		const held = await meter.assertWriteLeaseHeld({ token: lease.token })
 		if (!held.held) throw new AccountWriteLeaseLostError()
 		return result
 	} finally {
 		input.frame.active = false
-		// DO release before D1 mirror clear (stale D1 may overblock; never underblock).
-		const releasePromise = (async () => {
-			await meter.releaseWriteLease({ token: lease.token })
-			await releaseD1WriteLeaseMirror({
-				db: input.db,
-				stableUserId: lease.stableUserId,
-				token: lease.token,
-			})
-		})()
+		const releasePromise = meter.releaseWriteLease({ token: lease.token })
 		if (input.waitUntil) input.waitUntil(releasePromise)
 		else await releasePromise
 	}
@@ -666,9 +638,9 @@ export async function repairAccountWriteLease(input: {
 	reason: string
 	/**
 	 * When supplied, DO-authority leases use prepare → audit → finalize DO →
-	 * clear D1 mirror (fail closed). Never clear the D1 mirror while the DO
-	 * lease remains held. D1-only leases keep the existing atomic batch. When
-	 * omitted, retain the exact D1 repair path.
+	 * clear any stale D1 row (fail closed). Never clear the D1 row while the
+	 * DO lease remains held. D1-only leases keep the existing atomic batch.
+	 * When omitted, retain the exact D1 repair path.
 	 */
 	env?: UserMeterEnv
 	/** Kept for API compatibility; DO finalize is awaited. */
@@ -698,7 +670,7 @@ export async function repairAccountWriteLease(input: {
 				reason,
 				now,
 			})
-			// Finalize DO before D1 mirror clear; failed finalize leaves both held.
+			// Finalize DO before clearing any stale D1 row; failed finalize leaves both held.
 			await meter.finalizeWriteLeaseRepair({
 				token: prepared.token,
 				repairId: prepared.repairId,

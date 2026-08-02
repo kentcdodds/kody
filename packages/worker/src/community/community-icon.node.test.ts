@@ -171,7 +171,13 @@ function createCommunityIconTestEnv(input: {
 
 function createCommunityIconDeletionRaceDbMock() {
 	let deleting = false
-	let leaseAcquires = 0
+	// After mirror retirement, the DO-authority path no longer calls DB batch for
+	// lease acquire/release. We simulate the account-deletion race by counting
+	// SELECT deleting_at queries: the first two are from the icon-generation
+	// withAccountWriteLease flow; from the third onward we report deletion so that
+	// isServableIconCommit (called by cache.set after icon creation) returns false
+	// and skips the KV write.
+	let deletingAtSelectCount = 0
 	const db = {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim()
@@ -180,21 +186,13 @@ function createCommunityIconDeletionRaceDbMock() {
 					return {
 						async first<T>() {
 							if (normalized.includes('SELECT deleting_at')) {
+								deletingAtSelectCount++
+								if (deletingAtSelectCount >= 3) deleting = true
 								return { deleting_at: deleting ? 'now' : null } as T
 							}
 							return null
 						},
 						async run() {
-							if (
-								normalized.includes('INSERT INTO account_write_leases') ||
-								normalized.includes(
-									'active_write_count = active_write_count + 1',
-								)
-							) {
-								leaseAcquires += 1
-								if (leaseAcquires === 2) deleting = true
-								return { meta: { changes: deleting ? 0 : 1 } }
-							}
 							return { meta: { changes: 1 } }
 						},
 					}
@@ -202,13 +200,10 @@ function createCommunityIconDeletionRaceDbMock() {
 			}
 		},
 		async batch() {
-			leaseAcquires += 1
-			if (leaseAcquires === 2) deleting = true
-			const changes = deleting ? 0 : 1
-			return [{ meta: { changes } }, { meta: { changes } }]
+			return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]
 		},
 	} as unknown as D1Database
-	return { db, getLeaseAcquires: () => leaseAcquires }
+	return { db }
 }
 
 const listing = {
@@ -416,7 +411,7 @@ test('community icon cache write loses the race to account deletion', async () =
 	const png = createPngHeader(128, 128)
 	const { kv, values: kvValues } = createFakeKv()
 	const { bucket } = createFakeR2()
-	const { db, getLeaseAcquires } = createCommunityIconDeletionRaceDbMock()
+	const { db } = createCommunityIconDeletionRaceDbMock()
 	mocks.readCommunitySnapshot.mockResolvedValue({
 		version: 1,
 		listingId: listing.id,
@@ -436,7 +431,10 @@ test('community icon cache write loses the race to account deletion', async () =
 		listing,
 		iconCommit: listing.pinnedCommit,
 	})
-	expect(getLeaseAcquires()).toBe(2)
+	// After mirror retirement, DB batch calls are no longer used for DO-authority
+	// lease acquire/release. The deletion race is now detected via the D1
+	// deleting_at point gate: isServableIconCommit sees deleting_at set (on its
+	// third SELECT query, after icon generation completes) and skips the KV write.
 	expect(kvValues.size).toBe(0)
 })
 
