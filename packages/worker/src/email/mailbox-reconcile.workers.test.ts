@@ -100,18 +100,35 @@ async function seedMessageGraph(input: {
 	}
 }
 
-async function seedOrphanEvent(input: {
+async function seedPreClaimAuditEvent(input: {
 	userId: string
-	eventId: string
+	inboxId: string
 	createdAt: string
 }) {
+	const day = input.createdAt.slice(0, 10)
+	const eventId = `email-rejections:${input.inboxId}:${day}`
 	await env.APP_DB.prepare(
 		`INSERT INTO email_delivery_events (
-			id, message_id, user_id, event_type, provider, detail_json, created_at
-		) VALUES (?, NULL, ?, 'receive_started', 'cloudflare-email-routing', '{}', ?)`,
+			id, message_id, user_id, inbox_id, event_type, provider,
+			detail_json, created_at
+		) VALUES (?, NULL, ?, ?, 'rejected', 'cloudflare-email-routing', ?, ?)`,
 	)
-		.bind(input.eventId, input.userId, input.createdAt)
+		.bind(
+			eventId,
+			input.userId,
+			input.inboxId,
+			JSON.stringify({
+				aggregate: true,
+				day,
+				count: 2,
+				last_reason: 'Recipient mailbox is over quota.',
+				last_phase: 'entitlement',
+				last_at: input.createdAt,
+			}),
+			input.createdAt,
+		)
 		.run()
+	return eventId
 }
 
 async function readParityState(userId: string) {
@@ -189,9 +206,9 @@ test('reconcileMailboxParity mismatch full reset and soak', async () => {
 			threadId: 'parity-thread-2',
 			createdAt: '2026-07-01T12:01:00.000Z',
 		})
-		await seedOrphanEvent({
+		const auditEventId = await seedPreClaimAuditEvent({
 			userId,
-			eventId: 'parity-orphan-1',
+			inboxId: 'parity-inbox-1',
 			createdAt: '2026-07-01T12:02:00.000Z',
 		})
 		await seedMessageGraph({
@@ -206,7 +223,7 @@ test('reconcileMailboxParity mismatch full reset and soak', async () => {
 
 		const firstNow = new Date('2026-08-01T10:00:00.000Z')
 		vi.setSystemTime(firstNow)
-		// 2 messages + 2 bound events + 1 orphan
+		// 2 messages + 2 bound events + 1 bounded pre-claim audit event
 		await expect(
 			reconcileMailboxParity({ env, now: firstNow, batchSize: 1 }),
 		).resolves.toEqual({
@@ -232,7 +249,7 @@ test('reconcileMailboxParity mismatch full reset and soak', async () => {
 			messagesCompletedAt: expect.any(String),
 			eventsCompletedAt: expect.any(String),
 			messageCursorId: 'parity-msg-2',
-			eventCursorId: 'parity-orphan-1',
+			eventCursorId: auditEventId,
 			lastError: null,
 		})
 

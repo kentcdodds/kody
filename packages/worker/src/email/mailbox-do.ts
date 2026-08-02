@@ -26,10 +26,7 @@ import {
 	markMailboxInboundDeliveryOrphanCleaned,
 	releaseMailboxInboundDeliveryCleanup,
 } from './mailbox-inbound-cleanup-ledger.ts'
-import {
-	assertMailboxD1DeliveryEventBatch,
-	shouldSkipMailboxDeliveryEventWrite,
-} from './mailbox-inbound-bootstrap.ts'
+import { shouldSkipMailboxDeliveryEventWrite } from './mailbox-inbound-bootstrap.ts'
 import {
 	claimMailboxInboundDeliveryStorage,
 	claimMailboxInboundDeliveryWindow,
@@ -107,7 +104,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		this.store = new MailboxStore(ctx.storage)
 		this.ctx.blockConcurrencyWhile(async () => {
 			this.store.initializeSchema()
-			// Observe existing alarm only — never arm in the constructor.
 			this.retentionAlarmArmed = (await this.ctx.storage.getAlarm()) != null
 		})
 	}
@@ -307,18 +303,23 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 				`Mailbox upsertDeliveryEvents events exceed max of ${mailboxUpsertDeliveryEventsMax}.`,
 			)
 		}
-		assertMailboxD1DeliveryEventBatch(input.events)
 		const results: Array<MailboxUpsertDeliveryEventBatchItemResult> = []
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
 			for (const event of input.events) {
 				const eventId = assertMailboxNonEmptyString(event.id, 'event.id')
+				if (
+					shouldSkipMailboxDeliveryEventWrite(this.ctx.storage.sql, {
+						ownerId: input.ownerId,
+						event,
+						hasLatestDeliveryStatus: false,
+					})
+				) {
+					results.push({ eventId, inserted: false, accepted: false })
+					continue
+				}
 				const write = this.store.writeDeliveryEventRow(event)
-				results.push({
-					eventId,
-					inserted: write.inserted,
-					accepted: write.accepted,
-				})
+				results.push({ eventId, ...write })
 			}
 		})
 		this.markRetentionDirty()
@@ -847,9 +848,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
-			await this.ctx.storage.deleteAlarm().catch(() => {
-				// Best effort: deleteAll below still clears persisted alarm state.
-			})
+			await this.ctx.storage.deleteAlarm().catch(() => undefined)
 			await this.ctx.storage.deleteAll()
 			this.retentionAlarmArmed = false
 			this.retentionIdleConfirmed = true
