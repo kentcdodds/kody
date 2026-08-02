@@ -192,7 +192,10 @@ migration-safe chunked interface:
   uses bounded `LIMIT 1` ownership queries rather than reconstructing inventory.
   Continuation cursors bind the source row, object key, size, and ETag;
   ownership/key mutations and object overwrites are reported instead of mixing
-  generations. Missing objects are represented explicitly.
+  generations. Missing objects are represented explicitly. R2 cursors created
+  before the Mailbox-authoritative traversal (version 1) cannot be translated
+  without risking duplicate bytes; callers receive an invalid/unsupported cursor
+  error and must restart the `r2_object` section without `startAfter`.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,

@@ -6,7 +6,9 @@ import {
 	type EmailDeliveryStatus,
 } from './types.ts'
 import {
+	canonicalMailboxMessageBlobReferences,
 	computeMailboxRetentionReschedule,
+	deleteMailboxBlobKeys,
 	enforceMailboxRetention,
 	mailboxRetentionAlarmAtMs,
 	nextMailboxRetentionDueAtMs,
@@ -61,6 +63,7 @@ import {
 	type MailboxCountMessagesInput,
 	type MailboxCountResult,
 	type MailboxDeleteDeliveryEventInput,
+	type MailboxDeleteMessageWithBlobsResult,
 	type MailboxDeleteMessageMetadataInput,
 	type MailboxDeleteResult,
 	type MailboxDeleteThreadIfEmptyInput,
@@ -385,6 +388,72 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 			result = deleteMailboxMessageMetadata(this.ctx.storage.sql, mutationInput)
 		})
 		return result
+	}
+
+	/**
+	 * Delete canonical owner-safe R2 objects before atomically deleting one
+	 * message graph. Blocking input concurrency prevents a mirror/update from
+	 * interleaving across the asynchronous R2 delete boundary.
+	 */
+	async deleteMessageWithBlobs(input: {
+		ownerId: string
+		messageId: string
+	}): Promise<MailboxDeleteMessageWithBlobsResult> {
+		const outcome = await this.ctx.blockConcurrencyWhile(
+			async (): Promise<
+				| { ok: true; result: MailboxDeleteMessageWithBlobsResult }
+				| { ok: false; error: unknown }
+			> => {
+				try {
+					const ownerId = this.store.assertOwner(input.ownerId)
+					const messageId = assertMailboxNonEmptyString(
+						input.messageId,
+						'messageId',
+					)
+					const message = this.store.getMessage(messageId)
+					if (!message) {
+						return { ok: true, result: { status: 'missing' } }
+					}
+
+					const attachments = this.store.listAttachmentsForMessage(messageId)
+					const blobReferences = canonicalMailboxMessageBlobReferences({
+						ownerId,
+						messageId,
+						direction: message.direction,
+						attachments: attachments.map((attachment) => ({
+							id: attachment.id,
+							storage_key: attachment.storageKey,
+						})),
+					})
+					await deleteMailboxBlobKeys(
+						this.env.EMAIL_BLOBS,
+						blobReferences.map((reference) => reference.key),
+					)
+
+					this.ctx.storage.transactionSync(() => {
+						this.store.deleteMessageCascade(messageId)
+					})
+					return {
+						ok: true,
+						result: {
+							status: 'deleted',
+							attachmentsSeen: attachments.length,
+							externalAttachmentsSeen: attachments.filter(
+								(attachment) => attachment.storageKind === 'external',
+							).length,
+							blobReferences,
+						},
+					}
+				} catch (error) {
+					// A rejected blockConcurrencyWhile callback permanently
+					// breaks the DO input gate. Return the failure through the
+					// gate, then throw it to the RPC caller below.
+					return { ok: false, error }
+				}
+			},
+		)
+		if (!outcome.ok) throw outcome.error
+		return outcome.result
 	}
 
 	/**

@@ -1,12 +1,19 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
-import { listInternalUserEmailBlobReferences } from '#worker/email/mailbox-internal-read.ts'
-import { type MailboxBlobReference } from '#worker/email/mailbox-types.ts'
+import {
+	type AccountMailboxEmailObjectSource,
+	countMailboxEmailObjectRefs,
+	listMailboxEmailObjectRefPage,
+	resolveMailboxEmailObjectRef,
+} from './mailbox-r2-references.ts'
 import {
 	type AccountR2Binding,
 	type AccountR2ObjectRef,
 } from './r2-inventory.ts'
 
+// v1 traversed D1 email rows, so its continuation cannot be translated to the
+// Mailbox keyset without risking duplicate bytes. Signed v1 cursors fail with
+// an explicit restart instruction instead.
 const accountR2CursorVersion = 2
 const accountR2ChunkBytes = 256 * 1024
 
@@ -24,11 +31,7 @@ type R2ObjectSource =
 			listingId: string
 			commitSlot: 'pinned' | 'icon'
 	  }
-	| {
-			kind: 'mailbox_email_blob'
-			startAfter: string | null
-			reference: MailboxBlobReference
-	  }
+	| AccountMailboxEmailObjectSource
 
 type StableR2Ref = AccountR2ObjectRef & { source: R2ObjectSource }
 
@@ -136,7 +139,9 @@ async function decodeCursor(
 		}
 		return parsed
 	} catch {
-		throw new Error('Invalid r2_object cursor.')
+		throw new Error(
+			'Invalid or unsupported r2_object cursor; restart without startAfter.',
+		)
 	}
 }
 
@@ -250,7 +255,7 @@ async function findNextRef(input: {
 			}
 			case 'mailbox_email_blob': {
 				const startAfter = cursor.state.startAfter
-				const page = await listInternalUserEmailBlobReferences({
+				const page = await listMailboxEmailObjectRefPage({
 					env: input.env,
 					ownerId: input.userId,
 					pageSize: 1,
@@ -284,19 +289,7 @@ async function findNextRef(input: {
 								}
 							: { stage: 'done' },
 					current: {
-						ref: {
-							surfaceId:
-								reference.kind === 'raw_mime'
-									? 'email_raw_mime'
-									: 'email_attachment_storage_key',
-							binding: 'EMAIL_BLOBS',
-							key: reference.key,
-							source: {
-								kind: 'mailbox_email_blob',
-								startAfter,
-								reference,
-							},
-						},
+						ref: reference,
 						offset: 0,
 					},
 				}
@@ -363,20 +356,12 @@ async function resolveCurrentRef(input: {
 				: null
 		}
 		case 'mailbox_email_blob': {
-			const page = await listInternalUserEmailBlobReferences({
+			return await resolveMailboxEmailObjectRef({
 				env: input.env,
 				ownerId: input.userId,
-				pageSize: 1,
-				startAfter: input.ref.source.startAfter,
+				source: input.ref.source,
+				expectedKey: input.ref.key,
 			})
-			const current = page.references[0]
-			return current &&
-				current.kind === input.ref.source.reference.kind &&
-				current.key === input.ref.source.reference.key &&
-				current.messageId === input.ref.source.reference.messageId &&
-				current.attachmentId === input.ref.source.reference.attachmentId
-				? input.ref
-				: null
 		}
 		default: {
 			const exhaustive: never = input.ref.source
@@ -549,29 +534,16 @@ export async function readAccountR2ExportPage(input: {
 	}
 }
 
-async function countMailboxEmailBlobReferences(env: Env, userId: string) {
-	let count = 0
-	let startAfter: string | null = null
-	while (true) {
-		const page = await listInternalUserEmailBlobReferences({
-			env,
-			ownerId: userId,
-			pageSize: 500,
-			startAfter,
-		})
-		count += page.references.length
-		if (!page.truncated || page.nextStartAfter == null) return count
-		startAfter = page.nextStartAfter
-	}
-}
-
 export async function countAccountR2ObjectRefs(input: {
 	env: Env
 	userId: string
 	dbUserId: number
 }) {
 	const [emailBlobs, icons, avatar] = await Promise.all([
-		countMailboxEmailBlobReferences(input.env, input.userId),
+		countMailboxEmailObjectRefs({
+			env: input.env,
+			ownerId: input.userId,
+		}),
 		input.env.APP_DB.prepare(
 			`SELECT COALESCE(SUM(
 				CASE

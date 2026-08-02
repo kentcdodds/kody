@@ -132,6 +132,40 @@ function createMailboxBinding(input?: {
 	} as unknown as DurableObjectNamespace
 }
 
+function encodeTestBase64Url(bytes: Uint8Array) {
+	let binary = ''
+	for (const byte of bytes) binary += String.fromCharCode(byte)
+	return btoa(binary)
+		.replaceAll('+', '-')
+		.replaceAll('/', '_')
+		.replace(/=+$/u, '')
+}
+
+async function createSignedR2Cursor(input: {
+	secret: string
+	userId: string
+	cursor: unknown
+}) {
+	const payload = encodeTestBase64Url(
+		new TextEncoder().encode(
+			JSON.stringify({ userId: input.userId, cursor: input.cursor }),
+		),
+	)
+	const key = await crypto.subtle.importKey(
+		'raw',
+		new TextEncoder().encode(input.secret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	)
+	const signature = await crypto.subtle.sign(
+		'HMAC',
+		key,
+		new TextEncoder().encode(payload),
+	)
+	return `${payload}.${encodeTestBase64Url(new Uint8Array(signature))}`
+}
+
 test('account export D1 coverage includes every live user-owned schema column', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrations(db)
@@ -623,7 +657,24 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			section: 'r2_object',
 			startAfter: tamperedCursor,
 		}),
-	).rejects.toThrow('Invalid r2_object cursor.')
+	).rejects.toThrow('Invalid or unsupported r2_object cursor')
+	const legacyCursor = await createSignedR2Cursor({
+		secret: 'test-cookie-secret',
+		userId: 'user-aaa',
+		cursor: {
+			v: 1,
+			state: { stage: 'email_raw_mime', afterRowid: 1 },
+		},
+	})
+	await expect(
+		readAccountExportSection({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'r2_object',
+			startAfter: legacyCursor,
+		}),
+	).rejects.toThrow('restart without startAfter')
 	const second = await readAccountExportSection({
 		env,
 		dbUserId: 1,

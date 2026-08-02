@@ -751,11 +751,34 @@ export class MailboxStore {
 	}
 
 	deleteMessageCascade(messageId: string) {
+		const message = this.sql
+			.exec<{ thread_id: string | null }>(
+				`SELECT thread_id FROM email_messages WHERE id = ? LIMIT 1`,
+				messageId,
+			)
+			.toArray()[0]
+		if (!message) return
+		this.sql.exec(
+			`UPDATE email_delivery_events SET message_id = NULL
+			WHERE message_id = ?`,
+			messageId,
+		)
 		this.sql.exec(
 			`DELETE FROM email_attachments WHERE message_id = ?`,
 			messageId,
 		)
 		this.sql.exec(`DELETE FROM email_messages WHERE id = ?`, messageId)
+		if (message.thread_id != null) {
+			this.sql.exec(
+				`DELETE FROM email_threads
+				WHERE id = ?
+					AND NOT EXISTS (
+						SELECT 1 FROM email_messages WHERE thread_id = ?
+					)`,
+				message.thread_id,
+				message.thread_id,
+			)
+		}
 	}
 
 	pruneExpiredDeliveryEvents(input: { cutoff: string; limit: number }) {

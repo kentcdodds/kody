@@ -387,3 +387,108 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 	expect(noop.expiredRemaining).toBe(false)
 	expect(noop.after.messages).toBe(1)
 })
+
+test('Mailbox single-message delete is owner-bound and R2-durable before metadata', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('delete-message')
+	const otherOwner = uniqueUserId('delete-message-other')
+	const mailbox = rpcFor(userId)
+	const stub = stubFor(userId)
+	const thread = baseThread({ id: 'delete-thread' })
+	const message = baseMessage(userId, {
+		id: 'delete-message',
+		threadId: thread.id,
+	})
+	const attachment = baseAttachment(userId, message.id, {
+		id: 'delete-attachment',
+	})
+	const event = baseDeliveryEvent({
+		id: 'delete-event',
+		messageId: message.id,
+		eventType: 'received',
+	})
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		thread,
+		message,
+		attachments: [attachment],
+	})
+	await mailbox.upsertDeliveryEvent({ ownerId: userId, event })
+
+	const rawKey = emailRawMimeKey(userId, message.id)
+	const attachmentKey = emailAttachmentBlobKey(
+		userId,
+		message.id,
+		attachment.id,
+	)
+	await env.EMAIL_BLOBS.put(rawKey, 'raw')
+	await env.EMAIL_BLOBS.put(attachmentKey, 'attachment')
+	await runInDurableObject(stub, async (instance: Mailbox, state) => {
+		state.storage.sql.exec(
+			`UPDATE email_messages SET raw_mime_key = NULL WHERE id = ?`,
+			message.id,
+		)
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.deleteMessageWithBlobs({
+				ownerId: otherOwner,
+				messageId: message.id,
+			}),
+		)
+	})
+
+	const originalDelete = env.EMAIL_BLOBS.delete.bind(env.EMAIL_BLOBS)
+	env.EMAIL_BLOBS.delete = (async () => {
+		throw new Error('simulated R2 delete failure')
+	}) as typeof env.EMAIL_BLOBS.delete
+	try {
+		await runInDurableObject(stub, async (instance: Mailbox) => {
+			await assertMailboxThrows(/simulated R2 delete failure/, () =>
+				instance.deleteMessageWithBlobs({
+					ownerId: userId,
+					messageId: message.id,
+				}),
+			)
+		})
+		expect(await mailbox.getMessage({ messageId: message.id })).not.toBeNull()
+		expect(
+			await mailbox.listAttachmentsForMessage({ messageId: message.id }),
+		).toHaveLength(1)
+		expect(
+			await mailbox.listDeliveryEvents({ messageId: message.id }),
+		).toHaveLength(1)
+		expect(await mailbox.getThread({ threadId: thread.id })).not.toBeNull()
+	} finally {
+		env.EMAIL_BLOBS.delete = originalDelete
+	}
+
+	const result = await mailbox.deleteMessageWithBlobs({
+		ownerId: userId,
+		messageId: message.id,
+	})
+	expect(result).toEqual({
+		status: 'deleted',
+		attachmentsSeen: 1,
+		externalAttachmentsSeen: 1,
+		blobReferences: [
+			{
+				kind: 'raw_mime',
+				key: rawKey,
+				messageId: message.id,
+				attachmentId: null,
+			},
+			{
+				kind: 'attachment',
+				key: attachmentKey,
+				messageId: message.id,
+				attachmentId: attachment.id,
+			},
+		],
+	})
+	expect(await env.EMAIL_BLOBS.get(rawKey)).toBeNull()
+	expect(await env.EMAIL_BLOBS.get(attachmentKey)).toBeNull()
+	expect(await mailbox.getMessage({ messageId: message.id })).toBeNull()
+	expect(await mailbox.getThread({ threadId: thread.id })).toBeNull()
+	expect(await mailbox.listDeliveryEvents({ limit: 10 })).toEqual([
+		expect.objectContaining({ id: event.id, messageId: null }),
+	])
+})

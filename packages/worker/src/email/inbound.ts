@@ -61,7 +61,7 @@ import {
 	scheduleInboundRejectedTerminalWork,
 	type InboundMailboxEnv,
 } from './inbound-mailbox.ts'
-import { countInternalEmailMessages } from './mailbox-internal-read.ts'
+import { countInternalUserEmailMessages } from './mailbox-internal-read.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
@@ -515,7 +515,7 @@ export async function handleInboundEmail(
 						email: account.email,
 						resource: 'stored_email_messages',
 						getCurrent: async () =>
-							await countInternalEmailMessages({
+							await countInternalUserEmailMessages({
 								env,
 								ownerId: userId,
 							}),

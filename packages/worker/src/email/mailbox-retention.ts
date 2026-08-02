@@ -7,6 +7,7 @@ import {
 	mailboxRetentionBatchSize,
 	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
+	type MailboxBlobReference,
 } from './mailbox-types.ts'
 import { type MailboxStore } from './mailbox-store.ts'
 
@@ -136,20 +137,23 @@ export function selectMailboxRetentionWriteAlarm(input: {
 	return { action: 'set', atMs: input.proposedAtMs }
 }
 
-async function deleteBlobKeys(
+export async function deleteMailboxBlobKeys(
+	blobs: Pick<R2Bucket, 'delete'>,
+	keys: Array<string>,
+): Promise<void> {
+	if (keys.length === 0) return
+	for (let index = 0; index < keys.length; index += mailboxBlobDeleteMaxKeys) {
+		const chunk = keys.slice(index, index + mailboxBlobDeleteMaxKeys)
+		await blobs.delete(chunk)
+	}
+}
+
+async function tryDeleteBlobKeys(
 	blobs: Pick<R2Bucket, 'delete'>,
 	keys: Array<string>,
 ): Promise<boolean> {
-	if (keys.length === 0) return true
 	try {
-		for (
-			let index = 0;
-			index < keys.length;
-			index += mailboxBlobDeleteMaxKeys
-		) {
-			const chunk = keys.slice(index, index + mailboxBlobDeleteMaxKeys)
-			await blobs.delete(chunk)
-		}
+		await deleteMailboxBlobKeys(blobs, keys)
 		return true
 	} catch (error) {
 		console.warn('mailbox-retention-blob-delete-failed', { error })
@@ -162,15 +166,20 @@ async function deleteBlobKeys(
  * stored key strings — only canonical inbound raw MIME keys and matching
  * external attachment keys.
  */
-export function canonicalRetentionBlobKeys(input: {
+export function canonicalMailboxMessageBlobReferences(input: {
 	ownerId: string
 	messageId: string
 	direction: 'inbound' | 'outbound'
 	attachments: Array<{ id: string; storage_key: string | null }>
-}): Array<string> {
-	const keys: Array<string> = []
+}): Array<MailboxBlobReference> {
+	const references: Array<MailboxBlobReference> = []
 	if (input.direction === 'inbound') {
-		keys.push(emailRawMimeKey(input.ownerId, input.messageId))
+		references.push({
+			kind: 'raw_mime',
+			key: emailRawMimeKey(input.ownerId, input.messageId),
+			messageId: input.messageId,
+			attachmentId: null,
+		})
 	}
 	for (const attachment of input.attachments) {
 		if (attachment.storage_key == null) continue
@@ -180,10 +189,23 @@ export function canonicalRetentionBlobKeys(input: {
 			attachment.id,
 		)
 		if (attachment.storage_key === expected) {
-			keys.push(expected)
+			references.push({
+				kind: 'attachment',
+				key: expected,
+				messageId: input.messageId,
+				attachmentId: attachment.id,
+			})
 		}
 	}
-	return keys
+	return references
+}
+
+export function canonicalRetentionBlobKeys(
+	input: Parameters<typeof canonicalMailboxMessageBlobReferences>[0],
+): Array<string> {
+	return canonicalMailboxMessageBlobReferences(input).map(
+		(reference) => reference.key,
+	)
 }
 
 async function pruneExpiredMessages(input: {
@@ -221,7 +243,7 @@ async function pruneExpiredMessages(input: {
 			direction: row.direction,
 			attachments: attachmentsByMessageId.get(row.id) ?? [],
 		})
-		const blobsDeleted = await deleteBlobKeys(input.blobs, keys)
+		const blobsDeleted = await tryDeleteBlobKeys(input.blobs, keys)
 		if (!blobsDeleted) {
 			hadBlobDeleteFailures = true
 			continue

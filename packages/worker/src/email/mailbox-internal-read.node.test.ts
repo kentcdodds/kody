@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	countInternalEmailMessages,
+	countInternalUserEmailMessages,
 	exportInternalUserMailbox,
 	getInternalEmailMessageById,
 	listInternalEmailAttachmentsForMessage,
@@ -142,6 +143,12 @@ test('USER internal reads use owner Mailbox only and map shared records', async 
 	])
 	await expect(
 		countInternalEmailMessages({ env, ownerId: 'user-a' }),
+	).resolves.toBe(3)
+	await expect(
+		countInternalUserEmailMessages({
+			env: { MAILBOX: env.MAILBOX },
+			ownerId: 'user-a',
+		}),
 	).resolves.toBe(3)
 	await expect(
 		exportInternalUserMailbox({ env, ownerId: 'user-a' }),

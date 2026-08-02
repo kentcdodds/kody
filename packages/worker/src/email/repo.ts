@@ -1327,6 +1327,37 @@ export async function deleteEmailMessageById(input: {
 	}
 }
 
+/**
+ * Remove a USER Mailbox message's D1 compatibility projection after the
+ * authoritative Mailbox/R2 delete has succeeded. This never touches R2 and is
+ * idempotent when the projection is already absent.
+ */
+export async function deleteEmailMessageProjectionById(input: {
+	db: D1Database
+	messageId: string
+	expectedUserId: string
+}): Promise<{ messageDeleted: boolean }> {
+	const row = await input.db
+		.prepare(`SELECT user_id FROM email_messages WHERE id = ?`)
+		.bind(input.messageId)
+		.first<{ user_id: string }>()
+	if (row == null) return { messageDeleted: false }
+	if (row.user_id !== input.expectedUserId) {
+		throw new Error(
+			`Email message projection belongs to a different owner for expected_user_id=${input.expectedUserId} message_id=${input.messageId}`,
+		)
+	}
+	await input.db.batch([
+		input.db
+			.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
+			.bind(input.messageId),
+		input.db
+			.prepare(`DELETE FROM email_messages WHERE id = ? AND user_id = ?`)
+			.bind(input.messageId, input.expectedUserId),
+	])
+	return { messageDeleted: true }
+}
+
 /** Rows per D1 batch when inserting attachment metadata. */
 const emailAttachmentInsertBatchSize = 50
 

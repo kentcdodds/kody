@@ -1,4 +1,4 @@
-import { isSystemEmailOwner } from './email-owner.ts'
+import { isSystemEmailOwner, systemEmailOwnerId } from './email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
 	mailboxAttachmentToEmailAttachmentRecord,
@@ -25,6 +25,12 @@ import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
  */
 export type MailboxInternalReadEnv = MailboxEnv & {
 	APP_DB: D1Database
+}
+
+function assertUserOwner(ownerId: string) {
+	if (isSystemEmailOwner(ownerId)) {
+		throw new Error('system:email has no Mailbox Durable Object.')
+	}
 }
 
 export async function getInternalEmailMessageById(input: {
@@ -72,11 +78,16 @@ export async function countInternalEmailMessages(input: {
 	ownerId: string
 }): Promise<number> {
 	if (isSystemEmailOwner(input.ownerId)) {
-		return await countEmailMessagesForUser({
-			db: input.env.APP_DB,
-			userId: input.ownerId,
-		})
+		return await countInternalSystemEmailMessages({ env: input.env })
 	}
+	return await countInternalUserEmailMessages(input)
+}
+
+export async function countInternalUserEmailMessages(input: {
+	env: MailboxEnv
+	ownerId: string
+}): Promise<number> {
+	assertUserOwner(input.ownerId)
 	const { total } = await mailboxRpc({
 		env: input.env,
 		userId: input.ownerId,
@@ -84,10 +95,13 @@ export async function countInternalEmailMessages(input: {
 	return total
 }
 
-function assertUserOwner(ownerId: string) {
-	if (isSystemEmailOwner(ownerId)) {
-		throw new Error('system:email has no Mailbox Durable Object.')
-	}
+export async function countInternalSystemEmailMessages(input: {
+	env: { APP_DB: D1Database }
+}): Promise<number> {
+	return await countEmailMessagesForUser({
+		db: input.env.APP_DB,
+		userId: systemEmailOwnerId,
+	})
 }
 
 export async function exportInternalUserMailbox(input: {

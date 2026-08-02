@@ -1588,6 +1588,81 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.warnings).toEqual([])
 })
 
+test('account deletion purges Mailbox only after email and all-surface cleanup complete', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+	})
+	const purgeMailbox = vi.fn(async () => ({ ok: true as const }))
+	const env = createSuccessfulDeletionEnv(db, {
+		EMAIL_BLOBS: {
+			async list() {
+				throw new Error('email R2 unavailable')
+			},
+			async delete() {},
+		} as unknown as R2Bucket,
+		MAILBOX: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				listBlobReferences: async () => ({
+					references: [],
+					nextStartAfter: null,
+					truncated: false as const,
+				}),
+				purge: purgeMailbox,
+			}),
+		} as unknown as DurableObjectNamespace,
+	})
+
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof AccountDeletionCleanupError &&
+			error.cleanupErrors.some((warning) =>
+				warning.includes('email R2 unavailable'),
+			),
+	)
+	expect(purgeMailbox).not.toHaveBeenCalled()
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			stable_user_id: 'user-aaa',
+			deleting_at: expect.any(String),
+		}),
+	])
+
+	const { db: unrelatedDb } = createTestDb({
+		users: [{ id: 1, email: 'b@example.com', stable_user_id: 'user-bbb' }],
+	})
+	const purgeAfterUnrelatedFailure = vi.fn(async () => ({ ok: true as const }))
+	const unrelatedFailureEnv = createSuccessfulDeletionEnv(unrelatedDb, {
+		OAUTH_PROVIDER: undefined,
+		MAILBOX: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				listBlobReferences: async () => ({
+					references: [],
+					nextStartAfter: null,
+					truncated: false as const,
+				}),
+				purge: purgeAfterUnrelatedFailure,
+			}),
+		} as unknown as DurableObjectNamespace,
+	})
+	await expect(
+		deleteUserAccount({
+			env: unrelatedFailureEnv,
+			dbUserId: 1,
+			mcpUserId: 'user-bbb',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionCleanupError)
+	expect(purgeAfterUnrelatedFailure).not.toHaveBeenCalled()
+})
+
 test('account deletion cancels Stripe billing and remains non-blocking on Stripe failures', async () => {
 	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
 	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')

@@ -1,7 +1,6 @@
 import { accountUserOwnedR2Surfaces } from '#worker/account/user-owned-surfaces.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
-import { listInternalUserEmailBlobReferences } from '#worker/email/mailbox-internal-read.ts'
-import { type MailboxBlobReference } from '#worker/email/mailbox-types.ts'
+import { listAllMailboxEmailObjectRefs } from './mailbox-r2-references.ts'
 
 export type AccountR2Binding = 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'
 
@@ -39,23 +38,6 @@ function bindingFor(
 		throw new Error(`Missing chunked R2 export disposition for ${surfaceId}.`)
 	}
 	return surface.binding
-}
-
-async function listUserEmailBlobReferences(env: Env, userId: string) {
-	const references: Array<MailboxBlobReference> = []
-	let startAfter: string | null = null
-	const pageSize = 500
-	while (true) {
-		const page = await listInternalUserEmailBlobReferences({
-			env,
-			ownerId: userId,
-			pageSize,
-			startAfter,
-		})
-		references.push(...page.references)
-		if (!page.truncated || page.nextStartAfter == null) return references
-		startAfter = page.nextStartAfter
-	}
 }
 
 async function listUserCommunityListings(env: Env, userId: string) {
@@ -110,7 +92,10 @@ export async function collectAccountR2Inventory(input: {
 }> {
 	const [emailBlobReferences, communityListings, avatarRow] = await Promise.all(
 		[
-			listUserEmailBlobReferences(input.env, input.userId),
+			listAllMailboxEmailObjectRefs({
+				env: input.env,
+				ownerId: input.userId,
+			}),
 			listUserCommunityListings(input.env, input.userId),
 			input.env.APP_DB.prepare(`SELECT avatar_key FROM users WHERE id = ?`)
 				.bind(input.dbUserId)
@@ -119,17 +104,7 @@ export async function collectAccountR2Inventory(input: {
 	)
 
 	const objects: Array<AccountR2ObjectRef> = [
-		...emailBlobReferences.map((reference) => {
-			const surfaceId =
-				reference.kind === 'raw_mime'
-					? ('email_raw_mime' as const)
-					: ('email_attachment_storage_key' as const)
-			return {
-				surfaceId,
-				binding: bindingFor(surfaceId),
-				key: reference.key,
-			}
-		}),
+		...emailBlobReferences,
 		...communityListings.flatMap((listing) =>
 			[listing.pinnedCommit, listing.iconCommit].map((commit) => ({
 				surfaceId: 'community_icon' as const,

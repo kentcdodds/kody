@@ -323,6 +323,19 @@ export type MailboxBlobReferencePage = {
 	truncated: boolean
 }
 
+/**
+ * Owner-bound single-message delete result. Blob references are returned only
+ * to trusted internal callers for exact post-delete verification.
+ */
+export type MailboxDeleteMessageWithBlobsResult =
+	| { status: 'missing' }
+	| {
+			status: 'deleted'
+			attachmentsSeen: number
+			externalAttachmentsSeen: number
+			blobReferences: Array<MailboxBlobReference>
+	  }
+
 export type MailboxCountResult = {
 	threads: number
 	messages: number
@@ -556,6 +569,14 @@ type MailboxCoreRpc = {
 	deleteMessageMetadata: (
 		input: MailboxDeleteMessageMetadataInput,
 	) => Promise<MailboxDeleteResult>
+	/**
+	 * Authoritative USER delete. Canonical owner-safe R2 objects are deleted
+	 * before message metadata in one owner-bound DO orchestration.
+	 */
+	deleteMessageWithBlobs: (input: {
+		ownerId: string
+		messageId: string
+	}) => Promise<MailboxDeleteMessageWithBlobsResult>
 	deleteDeliveryEvent: (
 		input: MailboxDeleteDeliveryEventInput,
 	) => Promise<MailboxDeleteResult>

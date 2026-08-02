@@ -5,15 +5,7 @@ import {
 	pruneUserEmailMessagesForRetention,
 } from '#app/retention.ts'
 import { systemEmailOwnerId } from '#worker/email/email-owner.ts'
-import {
-	emailAttachmentBlobKey,
-	emailRawMimeKey,
-} from '#worker/email/blob-keys.ts'
 import { mailboxRpc, type MailboxEnv } from '#worker/email/mailbox-client.ts'
-import {
-	getInternalEmailMessageById,
-	listInternalEmailAttachmentsForMessage,
-} from '#worker/email/mailbox-internal-read.ts'
 import {
 	mailboxParityUserBatchSize,
 	reconcileMailboxParity,
@@ -24,12 +16,19 @@ import {
 	mailboxReadCutoverCheckedAtMaxAgeMs,
 	mailboxReadCutoverSoakMs,
 } from '#worker/email/mailbox-read-cutover.ts'
-import { type MailboxCountResult } from '#worker/email/mailbox-types.ts'
+import {
+	type MailboxBlobReference,
+	type MailboxCountResult,
+} from '#worker/email/mailbox-types.ts'
 import {
 	loadOutboundProviderIndexParityReport,
 	type OutboundProviderIndexParityReport,
 } from '#worker/email/outbound-provider-index.ts'
-import { deleteEmailMessageById } from '#worker/email/repo.ts'
+import {
+	deleteEmailMessageById,
+	deleteEmailMessageProjectionById,
+	getEmailMessageById,
+} from '#worker/email/repo.ts'
 
 /** Cap for admin reconcile batch discovery (hard max). */
 export const adminMailboxMaintenanceMaxBatchSize = 100
@@ -111,7 +110,7 @@ export type AdminMailboxMaintenanceDeleteMessageResult = {
 	externalAttachmentsSeen: number
 	rawMimeBlobAbsent: boolean
 	externalAttachmentBlobsAbsent: number
-	/** True when every blob key captured by deleteEmailMessageById is absent. */
+	/** True when every key captured by the authoritative delete is absent. */
 	allCapturedBlobsAbsent: boolean
 }
 
@@ -669,10 +668,10 @@ export class AdminMailboxMessageNotFoundError extends Error {
 
 /**
  * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
- * Verifies ownership via getEmailMessageById, deletes through
- * deleteEmailMessageById with an expectedUserId fence, then confirms D1
- * absence plus every exact captured blob key absent via head. Rejects missing
- * or foreign messages.
+ * USER mail is deleted by the owner-bound Mailbox R2-before-metadata RPC, then
+ * its D1 compatibility projection is removed. `system:email` stays on the
+ * existing D1 path. Exact authoritative keys are head-verified without being
+ * returned to the caller.
  */
 export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 	env: AdminMailboxMaintenanceEnv
@@ -681,103 +680,92 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 }): Promise<AdminMailboxMaintenanceDeleteMessageResult> {
 	const db = input.env.APP_DB
 	const blobs = input.env.EMAIL_BLOBS
-	const message = await getInternalEmailMessageById({
-		env: input.env,
-		ownerId: input.stableUserId,
-		messageId: input.messageId,
-	})
-	if (!message) {
-		throw new AdminMailboxMessageNotFoundError({
-			stableUserId: input.stableUserId,
+	let attachmentsSeen: number
+	let externalAttachmentsSeen: number
+	let blobReferences: Array<MailboxBlobReference>
+	if (input.stableUserId === systemEmailOwnerId) {
+		const message = await getEmailMessageById({
+			db,
+			userId: input.stableUserId,
 			messageId: input.messageId,
 		})
-	}
-
-	const attachments = await listInternalEmailAttachmentsForMessage({
-		env: input.env,
-		ownerId: input.stableUserId,
-		messageId: message.id,
-	})
-	const expectedRawMimeKey = emailRawMimeKey(input.stableUserId, message.id)
-	const blobDeletionInventory = [
-		...(message.rawMimeKey === expectedRawMimeKey
-			? [
-					{
-						key: expectedRawMimeKey,
-						role: 'raw_mime' as const,
-					},
-				]
-			: []),
-		...attachments.flatMap((attachment) => {
-			if (attachment.storageKind !== 'external') return []
-			const expected = emailAttachmentBlobKey(
-				input.stableUserId,
-				message.id,
-				attachment.id,
-			)
-			return attachment.storageKey === expected
-				? [{ key: expected, role: 'attachment' as const }]
-				: []
-		}),
-	]
-	const deletion = await deleteEmailMessageById({
-		db,
-		blobs: blobs as R2Bucket,
-		messageId: message.id,
-		expectedUserId: input.stableUserId,
-		blobDeletionInventory,
-	})
-
-	const deletedAt = new Date().toISOString()
-	if (input.stableUserId !== systemEmailOwnerId) {
+		if (!message) {
+			throw new AdminMailboxMessageNotFoundError({
+				stableUserId: input.stableUserId,
+				messageId: input.messageId,
+			})
+		}
+		const deletion = await deleteEmailMessageById({
+			db,
+			blobs: blobs as R2Bucket,
+			messageId: input.messageId,
+			expectedUserId: input.stableUserId,
+		})
+		attachmentsSeen = deletion.attachmentsSeen
+		externalAttachmentsSeen = deletion.externalAttachmentsSeen
+		blobReferences = deletion.blobDeletions.map((entry) => ({
+			kind: entry.role === 'raw_mime' ? 'raw_mime' : 'attachment',
+			key: entry.key,
+			messageId: input.messageId,
+			attachmentId: null,
+		}))
+	} else {
 		const mailboxDeletion = await mailboxRpc({
 			env: input.env,
 			userId: input.stableUserId,
-		}).deleteMessageMetadata({
+		}).deleteMessageWithBlobs({
 			ownerId: input.stableUserId,
-			messageId: message.id,
-			deletedAt,
+			messageId: input.messageId,
 		})
-		if (mailboxDeletion.status === 'stale') {
-			throw new Error(
-				`Mailbox message changed during delete for message_id=${message.id}.`,
-			)
+		if (mailboxDeletion.status === 'missing') {
+			throw new AdminMailboxMessageNotFoundError({
+				stableUserId: input.stableUserId,
+				messageId: input.messageId,
+			})
 		}
+		attachmentsSeen = mailboxDeletion.attachmentsSeen
+		externalAttachmentsSeen = mailboxDeletion.externalAttachmentsSeen
+		blobReferences = mailboxDeletion.blobReferences
+		await deleteEmailMessageProjectionById({
+			db,
+			messageId: input.messageId,
+			expectedUserId: input.stableUserId,
+		})
 	}
 
-	const remaining = await getInternalEmailMessageById({
-		env: input.env,
-		ownerId: input.stableUserId,
-		messageId: message.id,
+	const remainingD1 = await getEmailMessageById({
+		db,
+		userId: input.stableUserId,
+		messageId: input.messageId,
 	})
-	const d1MessageAbsent = remaining == null
+	const d1MessageAbsent = remainingD1 == null
 
-	const rawMimeEntries = deletion.blobDeletions.filter(
-		(entry) => entry.role === 'raw_mime',
+	const rawMimeReferences = blobReferences.filter(
+		(reference) => reference.kind === 'raw_mime',
 	)
-	const attachmentEntries = deletion.blobDeletions.filter(
-		(entry) => entry.role === 'attachment',
+	const attachmentReferences = blobReferences.filter(
+		(reference) => reference.kind === 'attachment',
 	)
 	let rawMimeBlobAbsent = true
-	for (const entry of rawMimeEntries) {
-		if ((await blobs.head(entry.key)) != null) {
+	for (const reference of rawMimeReferences) {
+		if ((await blobs.head(reference.key)) != null) {
 			rawMimeBlobAbsent = false
 		}
 	}
 	let externalAttachmentBlobsAbsent = 0
-	for (const entry of attachmentEntries) {
-		if ((await blobs.head(entry.key)) == null) {
+	for (const reference of attachmentReferences) {
+		if ((await blobs.head(reference.key)) == null) {
 			externalAttachmentBlobsAbsent += 1
 		}
 	}
 	const allCapturedBlobsAbsent =
 		rawMimeBlobAbsent &&
-		externalAttachmentBlobsAbsent === attachmentEntries.length
+		externalAttachmentBlobsAbsent === attachmentReferences.length
 
 	return {
 		d1MessageAbsent,
-		attachmentsSeen: deletion.attachmentsSeen,
-		externalAttachmentsSeen: deletion.externalAttachmentsSeen,
+		attachmentsSeen,
+		externalAttachmentsSeen,
 		rawMimeBlobAbsent,
 		externalAttachmentBlobsAbsent,
 		allCapturedBlobsAbsent,

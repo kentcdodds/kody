@@ -1,10 +1,7 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
-import {
-	countInternalEmailMessages,
-	type MailboxInternalReadEnv,
-} from '#worker/email/mailbox-internal-read.ts'
+import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parseStoredPlanName,
@@ -1037,11 +1034,8 @@ export async function readCurrentEntitlementResourceUsage(input: {
 		})
 	}
 	if (input.resource === 'stored_email_messages') {
-		return await countInternalEmailMessages({
-			env: {
-				...input.env,
-				APP_DB: input.db,
-			} satisfies MailboxInternalReadEnv,
+		return await countInternalUserEmailMessages({
+			env: input.env,
 			ownerId: input.userId,
 		})
 	}
