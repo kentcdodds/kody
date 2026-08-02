@@ -246,7 +246,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		includeInExport: false,
 		surface: 'email_outbound_provider_index',
 		reason:
-			'Derived global provider→owner reverse lookup rebuilt from outbound email_messages.provider_message_id. Account deletion clears owner rows; export already includes the authoritative message rows and intentionally omits this lookup table.',
+			'Derived global provider→owner reverse lookup rebuilt from outbound email_messages.provider_message_id. Message deletes cascade index rows via FK; account deletion still lists this table for inventory coverage and explicit owner cleanup. Export already includes the authoritative message rows and omits this lookup table.',
 	},
 	{ kind: 'user_id', table: 'email_messages' },
 	{ kind: 'user_id', table: 'email_threads' },

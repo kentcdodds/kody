@@ -96,6 +96,7 @@ function createD1FromSqlite(
 
 function createRetentionDb() {
 	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec('PRAGMA foreign_keys = ON')
 	sqlite.exec(`
 		CREATE TABLE workflow_runs (
 			id TEXT PRIMARY KEY,
@@ -197,7 +198,8 @@ function createRetentionDb() {
 			inbox_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
-			PRIMARY KEY (provider, provider_message_id)
+			PRIMARY KEY (provider, provider_message_id),
+			FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
 		);
 		CREATE TABLE email_attachments (
 			id TEXT PRIMARY KEY,

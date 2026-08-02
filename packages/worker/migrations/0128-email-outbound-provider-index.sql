@@ -3,6 +3,7 @@
 -- derived lookup so contextless delivery webhooks can resolve the owning user
 -- without a full-table provider_message_id scan (and without enumerating
 -- per-user Mailbox objects). Backfill includes system:email when present.
+-- message_id FK cascades with authoritative message deletes.
 
 CREATE TABLE email_outbound_provider_index (
 	provider TEXT NOT NULL,
@@ -12,7 +13,8 @@ CREATE TABLE email_outbound_provider_index (
 	inbox_id TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
-	PRIMARY KEY (provider, provider_message_id)
+	PRIMARY KEY (provider, provider_message_id),
+	FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_email_outbound_provider_index_user_id

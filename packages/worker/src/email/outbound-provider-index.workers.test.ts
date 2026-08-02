@@ -9,11 +9,13 @@ import {
 	getOutboundProviderIndexRow,
 	loadOutboundProviderIndexParityReport,
 } from './outbound-provider-index.ts'
-import { sendOutboundEmail } from './outbound.ts'
+import { OutboundEmailPersistenceError, sendOutboundEmail } from './outbound.ts'
 import {
 	deleteEmailMessageById,
+	getEmailMessageById,
 	getOutboundEmailMessageByProviderMessageId,
 	insertEmailMessage,
+	listEmailDeliveryEvents,
 	updateEmailMessageDelivery,
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -314,6 +316,21 @@ test('parity report flags missing and mismatched index rows', async () => {
 	)
 		.bind(message.id)
 		.run()
+	// Index row points at a real message that is not a linked outbound provider
+	// row (no provider_message_id), so FK stays satisfied while parity flags
+	// missing_from_messages.
+	const orphanHost = await insertEmailMessage({
+		db: env.APP_DB,
+		message: {
+			direction: 'outbound',
+			userId,
+			fromAddress: 'user@inbox.example.com',
+			toAddresses: ['recipient@example.net'],
+			subject: 'Orphan host',
+			processingStatus: 'stored',
+			providerMessageId: null,
+		},
+	})
 	await env.APP_DB.prepare(
 		`INSERT INTO email_outbound_provider_index (
 			provider, provider_message_id, user_id, message_id, inbox_id,
@@ -324,7 +341,7 @@ test('parity report flags missing and mismatched index rows', async () => {
 			emailOutboundProviderCloudflare,
 			`orphan-${crypto.randomUUID()}`,
 			userId,
-			`missing-message-${crypto.randomUUID()}`,
+			orphanHost.id,
 			'2026-08-01T15:00:00.000Z',
 			'2026-08-01T15:00:00.000Z',
 		)
@@ -376,4 +393,88 @@ test('sendOutboundEmail dual-writes the provider index on terminal success', asy
 			userId,
 		}),
 	).toMatchObject({ parity: true, linkedMessageCount: 1, indexCount: 1 })
+}, 30_000)
+
+test('sendOutboundEmail retains provider acceptance when terminal D1 persistence fails', async () => {
+	silenceIncidentalRuntimeWarnings([
+		'email-outbound-terminal-persistence-failed',
+	])
+	await ensureEmailTestSchema(env.APP_DB)
+	const email = `idx-persist-fail-${crypto.randomUUID()}@example.com`
+	const userId = await seedVerifiedAccount(email)
+	const acceptedProviderMessageId = `provider-accepted-${crypto.randomUUID()}`
+	let providerCalls = 0
+	const failingDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'batch') {
+				return async (
+					statements: Parameters<D1Database['batch']>[0],
+				): Promise<ReturnType<D1Database['batch']>> => {
+					// Fail only terminal update+index batches (2+ statements).
+					if (statements.length >= 2) {
+						throw new Error('injected terminal persistence failure')
+					}
+					return target.batch(statements)
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function'
+				? (value as (...args: Array<unknown>) => unknown).bind(target)
+				: value
+		},
+	})
+
+	const error = await sendOutboundEmail({
+		env: {
+			...createBindingSendEnv(),
+			APP_DB: failingDb,
+			EMAIL: {
+				async send() {
+					providerCalls += 1
+					return { messageId: acceptedProviderMessageId }
+				},
+			},
+		},
+		userId,
+		accountEmail: email,
+		recipientPolicy: 'self',
+		subject: 'Persistence failure',
+		text: 'hello',
+	}).catch((caught: unknown) => caught)
+
+	expect(error).toBeInstanceOf(OutboundEmailPersistenceError)
+	expect(error).toMatchObject({
+		messageId: expect.any(String),
+		providerMessageId: acceptedProviderMessageId,
+	})
+	expect(providerCalls).toBe(1)
+
+	const messageId = (error as OutboundEmailPersistenceError).messageId
+	expect(
+		await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId,
+		}),
+	).toMatchObject({
+		processingStatus: 'stored',
+		providerMessageId: null,
+		error: null,
+	})
+	expect(
+		await getOutboundProviderIndexRow({
+			db: env.APP_DB,
+			providerMessageId: acceptedProviderMessageId,
+		}),
+	).toBeNull()
+	const events = await listEmailDeliveryEvents({
+		db: env.APP_DB,
+		userId,
+		messageId,
+		limit: 20,
+	})
+	expect(events.map((event) => event.eventType).sort()).toEqual([
+		'send_requested',
+	])
+	expect(events.some((event) => event.eventType === 'failed')).toBe(false)
 }, 30_000)

@@ -1124,18 +1124,22 @@ below.
   `email_messages.provider_message_id` remains authoritative: outbound inserts
   with a provider id and `updateEmailMessageDelivery` commit the message row
   plus index sync in one `db.batch` (index owner/inbox fields come from the
-  authoritative message row, never caller input). `deleteEmailMessageById`,
-  user/system retention, and account deletion remove owner index rows. Account
-  export treats the table as derived global lookup (`includeInExport: false` /
-  `derivedData.email_outbound_provider_index`) because authoritative outbound
-  message rows are already exported. `recordProviderEmailDeliveryEvent` resolves
-  index-first, then loads the owner-scoped message by `user_id`/`message_id` (no
-  full-table provider scan). `system:email` rows are indexed when they carry a
-  provider id. Aggregate parity (`loadOutboundProviderIndexParityReport`; counts
-  only) is surfaced on `admin_mailbox_maintenance`
-  `status.outboundProviderIndex` for production verification. This phase does
-  not flip Mailbox write authority; contextless provider-id reverse lookups must
-  not enumerate per-user Mailbox objects.
+  authoritative message row, never caller input). `message_id` references
+  `email_messages(id)` with `ON DELETE CASCADE`, so message deletes clear index
+  rows; account deletion still inventories/deletes by `user_id` for coverage.
+  Outbound send separates provider acceptance from terminal D1/index
+  persistence: once the provider returns a `providerMessageId`, persistence uses
+  bounded D1 retries and must not mark the message `failed`, clear the id, or
+  resend. Account export treats the table as derived global lookup
+  (`includeInExport: false` / `derivedData.email_outbound_provider_index`)
+  because authoritative outbound message rows are already exported.
+  `recordProviderEmailDeliveryEvent` resolves index-first, then loads the
+  owner-scoped message by `user_id`/`message_id` (no full-table provider scan).
+  `system:email` rows are indexed when they carry a provider id. Aggregate
+  parity (`loadOutboundProviderIndexParityReport`; counts only) is surfaced on
+  `admin_mailbox_maintenance` `status.outboundProviderIndex` for production
+  verification. This phase does not flip Mailbox write authority; contextless
+  provider-id reverse lookups must not enumerate per-user Mailbox objects.
 
 ### Inbound durability boundary (D1-authoritative dual-write)
 

@@ -10,6 +10,7 @@ const migrationUrl = new URL(
 
 function createPreMigrationDb() {
 	const db = new DatabaseSync(':memory:')
+	db.exec('PRAGMA foreign_keys = ON')
 	db.exec(`
 		CREATE TABLE email_messages (
 			id TEXT PRIMARY KEY,
@@ -84,7 +85,7 @@ test('provider index migration backfills outbound provider ids including system 
 			'2026-08-01T00:04:00.000Z',
 			'2026-08-01T00:04:00.000Z',
 		)
-	}).toThrow(/UNIQUE constraint failed/)
+	}).toThrow(/UNIQUE constraint failed|FOREIGN KEY/u)
 
 	expect(() => {
 		db.prepare(
@@ -146,4 +147,42 @@ test('provider index migration backfill counts match linked outbound messages', 
 	expect(linked.count).toBe(2)
 	expect(indexed.count).toBe(2)
 	expect(missingFromIndex.count).toBe(0)
+})
+
+test('provider index message_id FK cascades on email_messages delete', () => {
+	const db = createPreMigrationDb()
+	db.exec(`
+		INSERT INTO email_messages (
+			id, direction, user_id, inbox_id, provider_message_id, created_at, updated_at
+		) VALUES
+			('keep', 'outbound', 'user-1', NULL, 'prov-keep',
+				'2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z'),
+			('drop', 'outbound', 'user-1', NULL, 'prov-drop',
+				'2026-08-01T00:01:00.000Z', '2026-08-01T00:01:00.000Z');
+	`)
+	db.exec(readFileSync(migrationUrl, 'utf8'))
+
+	const fk = db
+		.prepare(`PRAGMA foreign_key_list(email_outbound_provider_index)`)
+		.all() as Array<{ table: string; from: string; on_delete: string }>
+	expect(fk).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				table: 'email_messages',
+				from: 'message_id',
+				on_delete: 'CASCADE',
+			}),
+		]),
+	)
+
+	db.prepare(`DELETE FROM email_messages WHERE id = 'drop'`).run()
+	expect(
+		db
+			.prepare(
+				`SELECT provider_message_id
+				FROM email_outbound_provider_index
+				ORDER BY provider_message_id`,
+			)
+			.all(),
+	).toEqual([{ provider_message_id: 'prov-keep' }])
 })

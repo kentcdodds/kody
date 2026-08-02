@@ -8,6 +8,7 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,
@@ -128,6 +129,29 @@ export type EmailSendResult = {
 	providerMessageId: string | null
 	status: EmailProcessingStatus
 	error: string | null
+}
+
+/**
+ * Provider accepted the send, but D1 terminal persistence (message + provider
+ * index, and/or the `sent` delivery event) failed after bounded retries. The
+ * message must not be marked `failed` and must not be resent — repair D1.
+ */
+export class OutboundEmailPersistenceError extends Error {
+	override name = 'OutboundEmailPersistenceError'
+	readonly messageId: string
+	readonly providerMessageId: string | null
+	constructor(input: {
+		messageId: string
+		providerMessageId: string | null
+		cause?: unknown
+	}) {
+		super(
+			`Provider accepted outbound email ${input.messageId} (providerMessageId=${input.providerMessageId ?? 'null'}) but D1 terminal persistence failed after retries. Do not resend; repair D1/index for this message.`,
+			{ cause: input.cause },
+		)
+		this.messageId = input.messageId
+		this.providerMessageId = input.providerMessageId
+	}
 }
 
 function resolveSelfRecipients(input: {
@@ -716,54 +740,119 @@ export async function sendOutboundEmail(
 		const sendStartedAtMs = Date.now()
 		let sendOutcome: 'success' | 'error' = 'success'
 		try {
-			const bindingResult = await sendViaBinding({
-				env: input.env,
-				from,
-				to,
-				subject,
-				text,
-				html,
-				replyTo: input.replyTo
-					? (normalizeEmailAddress(input.replyTo) ?? undefined)
-					: undefined,
-				headers: providerHeaders,
-				attachments,
-			})
-			const providerMessageId = bindingResult.sent
-				? bindingResult.messageId
-				: await sendViaRestFallback({
-						env: input.env,
-						from,
-						to,
-						subject,
-						text,
-						html,
-						replyTo: input.replyTo
-							? (normalizeEmailAddress(input.replyTo) ?? undefined)
-							: undefined,
-						headers: providerHeaders,
-						attachments,
-					})
-			await updateEmailMessageDelivery({
-				db: input.env.APP_DB,
-				messageId: message.id,
-				status: 'sent',
-				providerMessageId,
-				error: null,
-				sentAt: new Date().toISOString(),
-				userId: input.userId,
-				inboxId: message.inboxId,
-			})
-			await insertEmailDeliveryEvent({
-				db: input.env.APP_DB,
-				messageId: message.id,
-				userId: input.userId,
-				inboxId: null,
-				eventType: 'sent',
-				provider: 'cloudflare-email',
-				providerMessageId,
-				detail: { providerMessageId },
-			})
+			let acceptedProviderMessageId: string | null
+			try {
+				const bindingResult = await sendViaBinding({
+					env: input.env,
+					from,
+					to,
+					subject,
+					text,
+					html,
+					replyTo: input.replyTo
+						? (normalizeEmailAddress(input.replyTo) ?? undefined)
+						: undefined,
+					headers: providerHeaders,
+					attachments,
+				})
+				acceptedProviderMessageId = bindingResult.sent
+					? bindingResult.messageId
+					: await sendViaRestFallback({
+							env: input.env,
+							from,
+							to,
+							subject,
+							text,
+							html,
+							replyTo: input.replyTo
+								? (normalizeEmailAddress(input.replyTo) ?? undefined)
+								: undefined,
+							headers: providerHeaders,
+							attachments,
+						})
+			} catch (error) {
+				// Provider did not accept the send. Safe to mark failed / clear id.
+				sendOutcome = 'error'
+				const messageText = getErrorMessage(error)
+				await updateEmailMessageDelivery({
+					db: input.env.APP_DB,
+					messageId: message.id,
+					status: 'failed',
+					providerMessageId: null,
+					error: messageText,
+					sentAt: null,
+				}).catch((updateError) => {
+					console.warn(
+						'email-delivery-failure-status-update-failed',
+						updateError,
+					)
+				})
+				await insertEmailDeliveryEvent({
+					db: input.env.APP_DB,
+					messageId: message.id,
+					userId: input.userId,
+					inboxId: null,
+					eventType: 'failed',
+					provider: 'cloudflare-email',
+					providerMessageId: null,
+					detail: { error: messageText },
+				}).catch((eventError) => {
+					console.warn('email-delivery-failure-event-insert-failed', eventError)
+				})
+				await mirrorMailboxGraph()
+				return {
+					message:
+						(await getEmailMessageById({
+							db: input.env.APP_DB,
+							userId: input.userId,
+							messageId: message.id,
+						})) ?? message,
+					providerMessageId: null,
+					status: 'failed',
+					error: messageText,
+				}
+			}
+
+			// Provider accepted — never enter the send-failure branch, clear the
+			// provider id, or call the provider again. Persist terminal D1/index
+			// state with bounded D1 retries; exhausted retries are operational.
+			const sentAt = new Date().toISOString()
+			try {
+				await runD1WithRetry(() =>
+					updateEmailMessageDelivery({
+						db: input.env.APP_DB,
+						messageId: message.id,
+						status: 'sent',
+						providerMessageId: acceptedProviderMessageId,
+						error: null,
+						sentAt,
+					}),
+				)
+				await runD1WithRetry(() =>
+					insertEmailDeliveryEvent({
+						db: input.env.APP_DB,
+						messageId: message.id,
+						userId: input.userId,
+						inboxId: null,
+						eventType: 'sent',
+						provider: 'cloudflare-email',
+						providerMessageId: acceptedProviderMessageId,
+						detail: { providerMessageId: acceptedProviderMessageId },
+					}),
+				)
+			} catch (error) {
+				console.warn('email-outbound-terminal-persistence-failed', {
+					messageId: message.id,
+					providerMessageId: acceptedProviderMessageId,
+					error,
+				})
+				throw new OutboundEmailPersistenceError({
+					messageId: message.id,
+					providerMessageId: acceptedProviderMessageId,
+					cause: error,
+				})
+			}
+
 			await mirrorMailboxGraph()
 			return {
 				message: await requireStoredEmailMessage({
@@ -771,46 +860,9 @@ export async function sendOutboundEmail(
 					userId: input.userId,
 					messageId: message.id,
 				}),
-				providerMessageId,
+				providerMessageId: acceptedProviderMessageId,
 				status: 'sent',
 				error: null,
-			}
-		} catch (error) {
-			sendOutcome = 'error'
-			const messageText = getErrorMessage(error)
-			await updateEmailMessageDelivery({
-				db: input.env.APP_DB,
-				messageId: message.id,
-				status: 'failed',
-				providerMessageId: null,
-				error: messageText,
-				sentAt: null,
-			}).catch((updateError) => {
-				console.warn('email-delivery-failure-status-update-failed', updateError)
-			})
-			await insertEmailDeliveryEvent({
-				db: input.env.APP_DB,
-				messageId: message.id,
-				userId: input.userId,
-				inboxId: null,
-				eventType: 'failed',
-				provider: 'cloudflare-email',
-				providerMessageId: null,
-				detail: { error: messageText },
-			}).catch((eventError) => {
-				console.warn('email-delivery-failure-event-insert-failed', eventError)
-			})
-			await mirrorMailboxGraph()
-			return {
-				message:
-					(await getEmailMessageById({
-						db: input.env.APP_DB,
-						userId: input.userId,
-						messageId: message.id,
-					})) ?? message,
-				providerMessageId: null,
-				status: 'failed',
-				error: messageText,
 			}
 		} finally {
 			if (input.userId) {

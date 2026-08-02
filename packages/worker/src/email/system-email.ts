@@ -1,6 +1,5 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
-import { deleteOutboundProviderIndexByMessageIds } from './outbound-provider-index.ts'
 import { maxRawMimeBytes } from './parser.ts'
 import { buildPlatformEmailAddress } from './platform-address.ts'
 import {
@@ -324,10 +323,7 @@ async function deleteSystemEmailMessagesByIds(input: {
 			)
 			.bind(...deletableIds)
 			.run()
-		await deleteOutboundProviderIndexByMessageIds({
-			db: input.db,
-			messageIds: deletableIds,
-		})
+		// Provider-index rows cascade via FK ON DELETE CASCADE from email_messages.
 		await input.db
 			.prepare(
 				`DELETE FROM email_messages

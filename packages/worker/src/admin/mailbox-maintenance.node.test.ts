@@ -109,7 +109,8 @@ function createMaintenanceDb() {
 			inbox_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
-			PRIMARY KEY (provider, provider_message_id)
+			PRIMARY KEY (provider, provider_message_id),
+			FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
 		);
 		CREATE TABLE email_delivery_events (
 			id TEXT PRIMARY KEY,
@@ -117,6 +118,7 @@ function createMaintenanceDb() {
 			created_at TEXT NOT NULL DEFAULT '${freshCreatedAt}'
 		);
 	`)
+	sqlite.exec('PRAGMA foreign_keys = ON')
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
@@ -256,7 +258,8 @@ function createDeleteMessageDb() {
 			inbox_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
-			PRIMARY KEY (provider, provider_message_id)
+			PRIMARY KEY (provider, provider_message_id),
+			FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
 		);
 		CREATE TABLE email_attachments (
 			id TEXT PRIMARY KEY,
@@ -269,6 +272,7 @@ function createDeleteMessageDb() {
 			created_at TEXT NOT NULL
 		);
 	`)
+	sqlite.exec('PRAGMA foreign_keys = ON')
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 

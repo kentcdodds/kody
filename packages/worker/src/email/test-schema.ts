@@ -178,7 +178,8 @@ WHERE direction = 'outbound'
 	inbox_id TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
-	PRIMARY KEY (provider, provider_message_id)
+	PRIMARY KEY (provider, provider_message_id),
+	FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
 );`,
 		`CREATE INDEX IF NOT EXISTS idx_email_outbound_provider_index_user_id
 ON email_outbound_provider_index(user_id);`,

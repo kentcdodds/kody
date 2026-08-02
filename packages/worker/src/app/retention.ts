@@ -1,5 +1,4 @@
 import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
-import { deleteOutboundProviderIndexByMessageIds } from '#worker/email/outbound-provider-index.ts'
 import { emailRawMimeKey } from '#worker/email/repo.ts'
 import { systemEmailOwnerId } from '#worker/email/system-email.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
@@ -712,10 +711,7 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		idColumn: 'message_id',
 		ids: messageIds,
 	})
-	await deleteOutboundProviderIndexByMessageIds({
-		db: input.db,
-		messageIds: messageIds.map(String),
-	})
+	// Provider-index rows cascade via FK ON DELETE CASCADE from email_messages.
 	result.deletedMessages = await deleteByIds({
 		db: input.db,
 		table: 'email_messages',

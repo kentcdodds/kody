@@ -1274,13 +1274,10 @@ export async function deleteEmailMessageById(input: {
 	]
 	// Atomic batch: a partial delete (attachments gone, message left) would
 	// lose the storage_key values needed to delete the R2 blobs on retry.
-	// The derived provider reverse index is cleared with the message row.
+	// Provider-index rows cascade via FK ON DELETE CASCADE from email_messages.
 	await input.db.batch([
 		input.db
 			.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
-			.bind(input.messageId),
-		input.db
-			.prepare(`DELETE FROM email_outbound_provider_index WHERE message_id = ?`)
 			.bind(input.messageId),
 		input.db
 			.prepare(`DELETE FROM email_messages WHERE id = ?`)
