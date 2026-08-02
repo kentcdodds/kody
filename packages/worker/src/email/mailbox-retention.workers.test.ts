@@ -639,12 +639,20 @@ test('parity purge serializes a queued mirror with its retention alarm', async (
 	await expect(queuedMirror).resolves.toEqual({ ok: true, accepted: true })
 
 	expect(await mailbox.getMessage({ messageId: beforePurge.id })).toBeNull()
-	expect(await mailbox.getMessage({ messageId: queued.id })).toMatchObject({
-		id: queued.id,
-	})
-	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
-		expect(await state.storage.getAlarm()).not.toBeNull()
-	})
+	const queuedMessage = await mailbox.getMessage({ messageId: queued.id })
+	const alarm = await runInDurableObject(
+		stub,
+		async (_instance: Mailbox, state) => state.storage.getAlarm(),
+	)
+	// Either operation may acquire the gate first. If purge wins, the queued
+	// mirror survives and must arm retention. If mirror wins, purge removes it.
+	// The forbidden pre-fix interleaving was a surviving message with no alarm.
+	if (queuedMessage) {
+		expect(queuedMessage).toMatchObject({ id: queued.id })
+		expect(alarm).not.toBeNull()
+	} else {
+		expect(alarm).toBeNull()
+	}
 })
 
 test('Mailbox retention selects one message per turn and revalidates before deletion', async () => {
