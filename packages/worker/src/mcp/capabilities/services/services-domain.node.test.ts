@@ -333,10 +333,7 @@ test('undeclared service get/start throw McpCallerError without RPC', async () =
 	const callerContext = createCallerContext()
 
 	const getError = await serviceGetCapability
-		.handler(
-			{ service_name: 'email-agent-processor' },
-			{ env, callerContext },
-		)
+		.handler({ service_name: 'email-agent-processor' }, { env, callerContext })
 		.catch((caught: unknown) => caught)
 	expect(getError).toBeInstanceOf(McpCallerError)
 	expect(getError).toMatchObject({
@@ -345,10 +342,7 @@ test('undeclared service get/start throw McpCallerError without RPC', async () =
 	expect(status).not.toHaveBeenCalled()
 
 	const startError = await serviceStartCapability
-		.handler(
-			{ service_name: 'email-agent-processor' },
-			{ env, callerContext },
-		)
+		.handler({ service_name: 'email-agent-processor' }, { env, callerContext })
 		.catch((caught: unknown) => caught)
 	expect(startError).toBeInstanceOf(McpCallerError)
 	expect(startError).toMatchObject({

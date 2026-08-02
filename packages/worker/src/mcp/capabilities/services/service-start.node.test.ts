@@ -210,10 +210,7 @@ test('service_start rejects undeclared services as McpCallerError', async () => 
 	}))
 
 	const error = await serviceStartCapability
-		.handler(
-			{ service_name: 'email-agent-processor' },
-			{ env, callerContext },
-		)
+		.handler({ service_name: 'email-agent-processor' }, { env, callerContext })
 		.then(
 			() => null,
 			(thrown: unknown) => thrown,
