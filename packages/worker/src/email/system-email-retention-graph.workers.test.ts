@@ -11,6 +11,21 @@ import {
 } from './system-email.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
+test('system delivery-event test schema enforces provider event uniqueness', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const statement = env.APP_DB.prepare(
+		`INSERT INTO system_email_delivery_events (
+			id, event_type, provider, provider_event_id, created_at
+		) VALUES (?, 'received', 'test', 'system-provider-event-unique', ?)`,
+	)
+	await statement
+		.bind('system-provider-event-a', new Date().toISOString())
+		.run()
+	await expect(
+		statement.bind('system-provider-event-b', new Date().toISOString()).run(),
+	).rejects.toThrow()
+})
+
 test('system email retention bounds the dedicated 4a graph and catches up live legacy rows', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')

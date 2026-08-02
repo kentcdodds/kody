@@ -326,6 +326,9 @@ WHERE direction = 'outbound' AND provider_message_id IS NOT NULL;`,
 		ON DELETE SET NULL,
 	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL
 );`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_email_delivery_events_provider_event_id
+ON system_email_delivery_events(provider_event_id)
+WHERE provider_event_id IS NOT NULL;`,
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_pending_effects
 ON email_delivery_events(user_id, created_at)
 WHERE provider = 'cloudflare-email-routing'
