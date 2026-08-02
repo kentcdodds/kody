@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
@@ -177,6 +178,50 @@ async function seedRunningServicesInMeter(
 	}
 }
 
+test('service_start rejects undeclared services as McpCallerError', async () => {
+	const email = 'undeclared@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createEntitlementsTestDb({
+			users: [{ email, plan: 'pro' }],
+		}),
+	} as Env
+	const callerContext = createPlanUserCallerContext({ userId, email })
+	const start = vi.fn(async () => ({ ok: true }))
+
+	mockModule.getSavedPackageById.mockResolvedValue(
+		createSavedPackage({ userId }),
+	)
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-123',
+			kodyId: 'example',
+		},
+		services: [],
+	})
+	mockModule.packageServiceRpc.mockImplementation(() => ({
+		status: async () => ({
+			package_id: 'package-123',
+			kody_id: 'example',
+			service_name: 'email-agent-processor',
+			status: 'idle',
+		}),
+		start,
+	}))
+
+	const error = await serviceStartCapability
+		.handler({ service_name: 'email-agent-processor' }, { env, callerContext })
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: expect.stringMatching(/was not found for this package/),
+	})
+	expect(start).not.toHaveBeenCalled()
+})
+
 test('service_start denies persistent services for free plan users', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -261,8 +306,9 @@ test('service_start skips enforcement when the service is already running', asyn
 	if (limit === null) {
 		throw new Error('Expected a numeric pro package service limit.')
 	}
-	// Enforcement is skipped entirely when the service is already running;
-	// USER_METER and running service count are not consulted.
+	// Entitlement enforcement is skipped when the service is already running;
+	// USER_METER and running service count are not consulted. Declaration
+	// lookup still runs so undeclared names stay on McpCallerError.
 	const env = {
 		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
 	} as Env
@@ -271,6 +317,7 @@ test('service_start skips enforcement when the service is already running', asyn
 	mockModule.getSavedPackageById.mockResolvedValue(
 		createSavedPackage({ userId }),
 	)
+	mockDeclaredServices('bounded')
 	mockServiceRpc({
 		status: 'running',
 		startResult: {
@@ -292,7 +339,7 @@ test('service_start skips enforcement when the service is already running', asyn
 		run_id: 'run-123',
 		already_running: true,
 	})
-	expect(mockModule.listSavedPackageServices).not.toHaveBeenCalled()
+	expect(mockModule.listSavedPackageServices).toHaveBeenCalledOnce()
 })
 
 test('service_start lets a stale running row for the same service restart at the limit', async () => {

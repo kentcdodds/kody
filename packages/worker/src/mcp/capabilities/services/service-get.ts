@@ -5,6 +5,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	normalizePackageServiceStatus,
 	packageServiceStatusSchema,
+	requireDeclaredPackageService,
 	requirePackageServiceContext,
 } from './shared.ts'
 
@@ -32,9 +33,16 @@ export const serviceGetCapability = defineDomainCapability(
 			})
 			if (!serviceContext.service) {
 				throw new McpCallerError(
-					`Package service "${args.service_name}" was not found.`,
+					`Package service "${args.service_name}" was not found for this package.`,
 				)
 			}
+			await requireDeclaredPackageService({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				savedPackage: serviceContext.savedPackage,
+				userId: serviceContext.user.userId,
+				serviceName: args.service_name,
+			})
 			return normalizePackageServiceStatus(
 				await serviceContext.service.status(),
 			)

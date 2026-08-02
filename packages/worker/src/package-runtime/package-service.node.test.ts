@@ -259,6 +259,63 @@ test('projectPackageServiceStatus maps stopping to running for entitlement slots
 	expect(projectPackageServiceStatus('error')).toBe('error')
 })
 
+test('package service start returns 404 for undeclared service names', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			kody: {
+				id: 'email-received-subscriber',
+				services: {},
+			},
+		},
+		files: {},
+		source: {
+			published_commit: 'abc123',
+		},
+	})
+
+	const created = await createPackageServiceInstance({
+		APP_DB: {},
+	} as Env)
+	const start = await created.instance.fetch(
+		new Request('https://package-service.invalid/service/start', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				binding: {
+					...serviceBinding,
+					kodyId: 'email-received-subscriber',
+					serviceName: 'email-agent-processor',
+				},
+			}),
+		}),
+	)
+	expect(start.status).toBe(404)
+	expect(await start.text()).toBe(
+		'Saved package "email-received-subscriber" does not define service "email-agent-processor".',
+	)
+
+	const newlineName = 'email-agent\nprocessor'
+	const newlineStart = await created.instance.fetch(
+		new Request('https://package-service.invalid/service/start', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				binding: {
+					...serviceBinding,
+					kodyId: 'email-received-subscriber',
+					serviceName: newlineName,
+				},
+			}),
+		}),
+	)
+	expect(newlineStart.status).toBe(404)
+	expect(await newlineStart.text()).toBe(
+		`Saved package "email-received-subscriber" does not define service "${newlineName}".`,
+	)
+})
+
 test('package service start and stop project liveness into package_service_states', async () => {
 	resetMocks()
 	vi.useFakeTimers()

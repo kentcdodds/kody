@@ -186,6 +186,21 @@ test('package service capabilities list, tolerate status failures, and delegate 
 
 	resetMocks()
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-123',
+			kodyId: 'example',
+		},
+		services: [
+			{
+				name: 'realtime-supervisor',
+				entry: 'services/realtime-supervisor.ts',
+				autoStart: false,
+				mode: 'bounded',
+				timeoutMs: null,
+			},
+		],
+	})
 	mockModule.packageServiceRpc.mockImplementation(() => ({
 		status: async () => ({
 			package_id: 'package-123',
@@ -291,4 +306,48 @@ test('package service capabilities list, tolerate status failures, and delegate 
 	expect(unknownPackageError).toMatchObject({
 		message: expect.stringMatching(/Saved package was not found/),
 	})
+})
+
+test('undeclared service get/start throw McpCallerError without RPC', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-123',
+			kodyId: 'example',
+		},
+		services: [],
+	})
+	const start = vi.fn(async () => ({ ok: true }))
+	const status = vi.fn(async () => ({
+		package_id: 'package-123',
+		kody_id: 'example',
+		service_name: 'email-agent-processor',
+		status: 'idle',
+	}))
+	mockModule.packageServiceRpc.mockImplementation(() => ({ start, status }))
+
+	const env = {
+		APP_DB: {} as D1Database,
+	} as Env
+	const callerContext = createCallerContext()
+
+	const getError = await serviceGetCapability
+		.handler({ service_name: 'email-agent-processor' }, { env, callerContext })
+		.catch((caught: unknown) => caught)
+	expect(getError).toBeInstanceOf(McpCallerError)
+	expect(getError).toMatchObject({
+		message: expect.stringMatching(/was not found for this package/),
+	})
+	expect(status).not.toHaveBeenCalled()
+
+	const startError = await serviceStartCapability
+		.handler({ service_name: 'email-agent-processor' }, { env, callerContext })
+		.catch((caught: unknown) => caught)
+	expect(startError).toBeInstanceOf(McpCallerError)
+	expect(startError).toMatchObject({
+		message: expect.stringMatching(/was not found for this package/),
+	})
+	expect(start).not.toHaveBeenCalled()
+	expect(status).not.toHaveBeenCalled()
 })

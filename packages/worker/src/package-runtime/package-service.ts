@@ -297,6 +297,20 @@ async function loadSavedPackageService(input: {
 	}
 }
 
+function isPackageServiceCallerLookupError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return (
+		error.message ===
+			'Saved package was not found for package service operations.' ||
+		// [\s\S] so service/package ids with embedded newlines still match;
+		// otherwise fetch() would rethrow and Sentry DO instrumentation would
+		// treat a caller mistake as an unhandled platform failure.
+		/^Saved package "[\s\S]+" does not define service "[\s\S]+"\.$/.test(
+			error.message,
+		)
+	)
+}
+
 async function readPackageServiceRpcResponse<T>(
 	response: Response,
 ): Promise<T> {
@@ -1223,19 +1237,34 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if (!binding) {
 			return new Response('Missing package service binding.', { status: 400 })
 		}
-		if (request.method === 'POST' && url.pathname.endsWith('/start')) {
-			return await this.handleStartRequest({ binding })
+		try {
+			if (request.method === 'POST' && url.pathname.endsWith('/start')) {
+				return await this.handleStartRequest({ binding })
+			}
+			if (request.method === 'POST' && url.pathname.endsWith('/status')) {
+				return await this.handleStatusRequest({ binding })
+			}
+			if (request.method === 'POST' && url.pathname.endsWith('/stop')) {
+				return await this.handleStopRequest({ binding })
+			}
+			if (request.method === 'POST' && url.pathname.endsWith('/purge')) {
+				return await this.handlePurgeRequest({ binding })
+			}
+			return new Response('Not found', { status: 404 })
+		} catch (error) {
+			// Caller mistakes (undeclared service name, deleted package) must
+			// return an error Response. Throwing here is reported by the DO
+			// Sentry instrumentation as an unhandled platform failure.
+			if (isPackageServiceCallerLookupError(error)) {
+				return new Response(
+					error instanceof Error
+						? error.message
+						: 'Package service request failed.',
+					{ status: 404 },
+				)
+			}
+			throw error
 		}
-		if (request.method === 'POST' && url.pathname.endsWith('/status')) {
-			return await this.handleStatusRequest({ binding })
-		}
-		if (request.method === 'POST' && url.pathname.endsWith('/stop')) {
-			return await this.handleStopRequest({ binding })
-		}
-		if (request.method === 'POST' && url.pathname.endsWith('/purge')) {
-			return await this.handlePurgeRequest({ binding })
-		}
-		return new Response('Not found', { status: 404 })
 	}
 
 	async alarm() {

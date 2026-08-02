@@ -80,6 +80,31 @@ export async function resolveDeclaredPackageService(input: {
 	}
 }
 
+/**
+ * Resolve a service declared under package.json#kody.services, or throw a
+ * caller-clearable error. Agents routinely invent service names (or confuse
+ * package exports with declared services); keep those off Sentry.
+ */
+export async function requireDeclaredPackageService(input: {
+	env: Env
+	callerContext: McpCallerContext
+	savedPackage: {
+		id: string
+		sourceId: string
+		kodyId?: string
+	}
+	userId: string
+	serviceName: string
+}) {
+	const service = await resolveDeclaredPackageService(input)
+	if (!service) {
+		throw new McpCallerError(
+			`Package service "${input.serviceName}" was not found for this package.`,
+		)
+	}
+	return service
+}
+
 export async function requirePackageServiceContext(input: {
 	env: Env
 	callerContext: McpCallerContext
