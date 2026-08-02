@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS system_email_threads (
 	root_message_id_header TEXT,
 	last_message_at TEXT NOT NULL,
 	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	updated_at TEXT NOT NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_system_email_threads_last_message_at

@@ -6,6 +6,55 @@ import { systemEmailGraphColumnContracts } from './system-email-graph-columns.ts
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
 
+type TableInfoColumn = {
+	name: string
+	type: string
+	notnull: number
+	dflt_value: string | null
+	pk: number
+}
+
+type ComparableColumn = {
+	name: string
+	type: string
+	notnull: number
+	defaultValue: string | null
+	pk: number
+}
+
+type DocumentedColumnDifference = {
+	table: string
+	column: string
+	field: Exclude<keyof ComparableColumn, 'name'>
+	dedicatedValue: string | number | null
+	reason: string
+}
+
+type ForeignKeyRow = {
+	table: string
+	from: string
+	to: string
+	on_update: string
+	on_delete: string
+	match: string
+}
+
+type ComparableForeignKey = {
+	from: string
+	toTable: string
+	to: string
+	onUpdate: string
+	onDelete: string
+	match: string
+}
+
+/**
+ * Dedicated graph columns intentionally match canonical legacy metadata after
+ * removing user_id. Any future exception must be added here with a reason.
+ */
+const documentedColumnDifferences: ReadonlyArray<DocumentedColumnDifference> =
+	[]
+
 function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
 	for (const fileName of readdirSync(migrationsDirectory)
 		.filter((file) => file.endsWith('.sql') && file < exclusiveUpperBound)
@@ -25,6 +74,253 @@ function applyMigrationLikeD1(db: DatabaseSync, fileName: string) {
 		throw error
 	}
 }
+
+function tableColumns(
+	db: DatabaseSync,
+	table: string,
+): Array<ComparableColumn> {
+	return (
+		db.prepare(`PRAGMA table_info(${table})`).all() as Array<TableInfoColumn>
+	).map((column) => ({
+		name: column.name,
+		type: column.type,
+		notnull: column.notnull,
+		defaultValue: column.dflt_value,
+		pk: column.pk,
+	}))
+}
+
+function expectedDedicatedColumns(
+	legacyColumns: ReadonlyArray<ComparableColumn>,
+	dedicatedTable: string,
+): Array<ComparableColumn> {
+	return legacyColumns
+		.filter((column) => column.name !== 'user_id')
+		.map((column) => {
+			const expected = { ...column }
+			for (const difference of documentedColumnDifferences) {
+				if (
+					difference.table === dedicatedTable &&
+					difference.column === column.name
+				) {
+					Object.assign(expected, {
+						[difference.field]: difference.dedicatedValue,
+					})
+				}
+			}
+			return expected
+		})
+}
+
+function foreignKeys(
+	db: DatabaseSync,
+	table: string,
+): Array<ComparableForeignKey> {
+	return (
+		db
+			.prepare(`PRAGMA foreign_key_list(${table})`)
+			.all() as Array<ForeignKeyRow>
+	)
+		.map((foreignKey) => ({
+			from: foreignKey.from,
+			toTable: foreignKey.table,
+			to: foreignKey.to,
+			onUpdate: foreignKey.on_update,
+			onDelete: foreignKey.on_delete,
+			match: foreignKey.match,
+		}))
+		.sort((left, right) => left.from.localeCompare(right.from))
+}
+
+function assertForeignKeys(
+	db: DatabaseSync,
+	table: string,
+	expected: ReadonlyArray<ComparableForeignKey>,
+) {
+	expect(
+		foreignKeys(db, table),
+		`${table} foreign-key target/action drift. Update this explicit contract only for an intentional graph relationship change.`,
+	).toEqual(expected)
+}
+
+function normalizeSchemaSql(sql: string): string {
+	return sql
+		.replaceAll(/\s+/gu, ' ')
+		.replaceAll(/\(\s+/gu, '(')
+		.replaceAll(/\s+\)/gu, ')')
+		.trim()
+		.toLowerCase()
+}
+
+function assertTableChecks(
+	db: DatabaseSync,
+	table: string,
+	checks: ReadonlyArray<{ label: string; sql: string }>,
+) {
+	const row = db
+		.prepare(
+			`SELECT sql
+			FROM sqlite_master
+			WHERE type = 'table' AND name = ?`,
+		)
+		.get(table) as { sql: string } | undefined
+	expect(
+		row,
+		`Missing sqlite_master CREATE TABLE SQL for ${table}`,
+	).toBeDefined()
+	const actualSql = normalizeSchemaSql(row?.sql ?? '')
+	for (const check of checks) {
+		const expectedSql = normalizeSchemaSql(check.sql)
+		expect(
+			actualSql,
+			`${table} CHECK drift for ${check.label}\nExpected fragment: ${expectedSql}\nActual SQL: ${actualSql}`,
+		).toContain(expectedSql)
+	}
+}
+
+test('0130 dedicated schema matches canonical metadata, FKs, and checks', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailGraphMigration)
+	applyMigrationLikeD1(db, systemEmailGraphMigration)
+
+	for (const contract of systemEmailGraphColumnContracts) {
+		const legacyColumns = tableColumns(db, contract.legacyTable)
+		const dedicatedColumns = tableColumns(db, contract.dedicatedTable)
+		const expectedColumns = expectedDedicatedColumns(
+			legacyColumns,
+			contract.dedicatedTable,
+		)
+		expect(
+			dedicatedColumns,
+			`${contract.dedicatedTable} PRAGMA table_info drifted from ${contract.legacyTable} minus user_id.\nDocument intentional metadata differences in documentedColumnDifferences.`,
+		).toEqual(expectedColumns)
+		expect(
+			dedicatedColumns.map((column) => column.name),
+			`${contract.dedicatedTable} diverged from its exported copy/compare column contract.`,
+		).toEqual(contract.columns)
+	}
+	const noAction = 'NO ACTION'
+	const noMatch = 'NONE'
+	assertForeignKeys(db, 'system_email_threads', [
+		{
+			from: 'inbox_id',
+			toTable: 'email_inboxes',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'SET NULL',
+			match: noMatch,
+		},
+	])
+	assertForeignKeys(db, 'system_email_messages', [
+		{
+			from: 'inbox_id',
+			toTable: 'email_inboxes',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'SET NULL',
+			match: noMatch,
+		},
+		{
+			from: 'sender_identity_id',
+			toTable: 'email_sender_identities',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'SET NULL',
+			match: noMatch,
+		},
+		{
+			from: 'thread_id',
+			toTable: 'system_email_threads',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'SET NULL',
+			match: noMatch,
+		},
+	])
+	assertForeignKeys(db, 'system_email_attachments', [
+		{
+			from: 'message_id',
+			toTable: 'system_email_messages',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'CASCADE',
+			match: noMatch,
+		},
+	])
+	assertForeignKeys(db, 'system_email_delivery_events', [
+		{
+			from: 'inbox_id',
+			toTable: 'email_inboxes',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'SET NULL',
+			match: noMatch,
+		},
+		{
+			from: 'message_id',
+			toTable: 'system_email_messages',
+			to: 'id',
+			onUpdate: noAction,
+			onDelete: 'SET NULL',
+			match: noMatch,
+		},
+	])
+
+	assertTableChecks(db, 'system_email_messages', [
+		{
+			label: 'direction enum',
+			sql: "CHECK (direction IN ('inbound', 'outbound'))",
+		},
+		{
+			label: 'processing_status enum',
+			sql: "CHECK (processing_status IN ('stored', 'sent', 'failed'))",
+		},
+		{
+			label: 'classification enum',
+			sql: "CHECK (classification IN ('accepted', 'quarantined'))",
+		},
+	])
+	assertTableChecks(db, 'system_email_attachments', [
+		{
+			label: 'storage_kind enum',
+			sql: "CHECK (storage_kind IN ('raw-mime', 'external', 'unavailable'))",
+		},
+	])
+	assertTableChecks(db, 'system_email_delivery_events', [
+		{
+			label: 'event_type enum',
+			sql: `CHECK (
+				event_type IN (
+					'receive_started', 'received', 'rejected', 'send_requested', 'sent',
+					'failed', 'delivered', 'deferred', 'bounced', 'complained'
+				)
+			)`,
+		},
+		{
+			label: 'needs_effect_reconcile boolean',
+			sql: 'CHECK (needs_effect_reconcile IN (0, 1))',
+		},
+		{
+			label: 'state enum',
+			sql: `CHECK (
+				state IS NULL
+				OR state IN (
+					'pending', 'storing', 'cleaning', 'received', 'rejected',
+					'orphan-cleaned'
+				)
+			)`,
+		},
+		{
+			label: 'subscription_effect_state enum',
+			sql: `CHECK (
+				subscription_effect_state IS NULL
+				OR subscription_effect_state IN (
+					'pending', 'processing', 'complete', 'dead-letter'
+				)
+			)`,
+		},
+	])
+})
 
 test('0130 copies only the system graph with promoted fields and preserves legacy authority', () => {
 	using db = new DatabaseSync(':memory:')
@@ -258,37 +554,6 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 			'email-attachment:v1:system:email/system-inbound/system-attachment',
 	})
 
-	const dedicatedTables = [
-		'system_email_threads',
-		'system_email_messages',
-		'system_email_attachments',
-		'system_email_delivery_events',
-	]
-	for (const table of dedicatedTables) {
-		const columns = db.prepare(`PRAGMA table_info(${table})`).all()
-		expect(columns.some((column) => column.name === 'user_id')).toBe(false)
-	}
-	for (const contract of systemEmailGraphColumnContracts) {
-		const legacyColumns = db
-			.prepare(`PRAGMA table_info(${contract.legacyTable})`)
-			.all()
-			.map((column) => String(column.name))
-			.filter((column) => column !== 'user_id')
-		const dedicatedColumns = db
-			.prepare(`PRAGMA table_info(${contract.dedicatedTable})`)
-			.all()
-			.map((column) => String(column.name))
-		expect(dedicatedColumns).toEqual(legacyColumns)
-		expect(dedicatedColumns).toEqual(contract.columns)
-		expect([
-			'id',
-			...contract.relationshipColumns,
-			...contract.columns.filter(
-				(column) =>
-					column !== 'id' && !contract.relationshipColumns.includes(column),
-			),
-		]).toEqual(expect.arrayContaining([...contract.columns]))
-	}
 	expect(
 		systemEmailGraphColumnContracts
 			.find((contract) => contract.key === 'deliveryEvents')
@@ -341,18 +606,6 @@ test('0130 copies only the system graph with promoted fields and preserves legac
 			.get(),
 	).toBeUndefined()
 	expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
-	expect(
-		db
-			.prepare(`PRAGMA foreign_key_list(system_email_messages)`)
-			.all()
-			.map((row) => row.table),
-	).toEqual(
-		expect.arrayContaining([
-			'email_sender_identities',
-			'system_email_threads',
-			'email_inboxes',
-		]),
-	)
 	expect(
 		db.prepare(`PRAGMA foreign_key_list(email_outbound_provider_index)`).all(),
 	).toContainEqual(
