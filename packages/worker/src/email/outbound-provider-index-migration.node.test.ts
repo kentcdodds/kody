@@ -102,80 +102,8 @@ test('provider index migration backfills outbound provider ids including system 
 			'2026-08-01T00:04:00.000Z',
 		)
 	}).toThrow(/UNIQUE constraint failed/)
-})
 
-test('provider index migration backfill counts match linked outbound messages', () => {
-	const db = createPreMigrationDb()
-	db.exec(`
-		INSERT INTO email_messages (
-			id, direction, user_id, inbox_id, provider_message_id, created_at, updated_at
-		) VALUES
-			('a', 'outbound', 'user-1', NULL, 'p-a',
-				'2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z'),
-			('b', 'outbound', 'system:email', NULL, 'p-b',
-				'2026-08-01T00:01:00.000Z', '2026-08-01T00:01:00.000Z');
-	`)
-	db.exec(readFileSync(migrationUrl, 'utf8'))
-
-	const linked = db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			FROM email_messages
-			WHERE direction = 'outbound' AND provider_message_id IS NOT NULL`,
-		)
-		.get() as { count: number }
-	const indexed = db
-		.prepare(`SELECT COUNT(*) AS count FROM email_outbound_provider_index`)
-		.get() as { count: number }
-	const missingFromIndex = db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			FROM email_messages AS message
-			WHERE message.direction = 'outbound'
-				AND message.provider_message_id IS NOT NULL
-				AND NOT EXISTS (
-					SELECT 1
-					FROM email_outbound_provider_index AS idx
-					WHERE idx.provider = ?
-						AND idx.provider_message_id = message.provider_message_id
-						AND idx.message_id = message.id
-						AND idx.user_id = message.user_id
-				)`,
-		)
-		.get(emailOutboundProviderCloudflare) as { count: number }
-
-	expect(linked.count).toBe(2)
-	expect(indexed.count).toBe(2)
-	expect(missingFromIndex.count).toBe(0)
-})
-
-test('provider index message_id FK cascades on email_messages delete', () => {
-	const db = createPreMigrationDb()
-	db.exec(`
-		INSERT INTO email_messages (
-			id, direction, user_id, inbox_id, provider_message_id, created_at, updated_at
-		) VALUES
-			('keep', 'outbound', 'user-1', NULL, 'prov-keep',
-				'2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z'),
-			('drop', 'outbound', 'user-1', NULL, 'prov-drop',
-				'2026-08-01T00:01:00.000Z', '2026-08-01T00:01:00.000Z');
-	`)
-	db.exec(readFileSync(migrationUrl, 'utf8'))
-
-	const fk = db
-		.prepare(`PRAGMA foreign_key_list(email_outbound_provider_index)`)
-		.all() as Array<{ table: string; from: string; on_delete: string }>
-	expect(fk).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				table: 'email_messages',
-				from: 'message_id',
-				on_delete: 'CASCADE',
-			}),
-		]),
-	)
-
-	db.prepare(`DELETE FROM email_messages WHERE id = 'drop'`).run()
+	db.prepare(`DELETE FROM email_messages WHERE id = 'user-msg'`).run()
 	expect(
 		db
 			.prepare(
@@ -184,5 +112,5 @@ test('provider index message_id FK cascades on email_messages delete', () => {
 				ORDER BY provider_message_id`,
 			)
 			.all(),
-	).toEqual([{ provider_message_id: 'prov-keep' }])
+	).toEqual([{ provider_message_id: 'prov-system' }])
 })

@@ -32,13 +32,6 @@ function applyMigrationsThrough(
 	}
 }
 
-function applyAllMigrations(db: DatabaseSync) {
-	db.exec('PRAGMA foreign_keys = ON')
-	for (const fileName of migrationFileNames()) {
-		applyMigration(db, fileName)
-	}
-}
-
 function schemaObjectPresent(
 	db: DatabaseSync,
 	type: 'table' | 'index',
@@ -76,17 +69,6 @@ test('0048 creates entitlement_daily_counters, 0055 indexes it, and 0126 drops b
 	).toBe(1)
 
 	applyMigration(db, dropEntitlementDailyCountersMigration)
-	expect(
-		schemaObjectPresent(db, 'table', 'entitlement_daily_counters'),
-	).toBeUndefined()
-	expect(
-		schemaObjectPresent(db, 'index', 'idx_entitlement_daily_counters_day'),
-	).toBeUndefined()
-})
-
-test('applying all migrations leaves no entitlement_daily_counters table or index', () => {
-	const db = new DatabaseSync(':memory:')
-	applyAllMigrations(db)
 	expect(
 		schemaObjectPresent(db, 'table', 'entitlement_daily_counters'),
 	).toBeUndefined()

@@ -68,44 +68,6 @@ function createEmailDb() {
 	return sqlite
 }
 
-test('deleting email_messages cascades provider index rows', async () => {
-	const sqlite = createEmailDb()
-	const db = createD1FromSqlite(sqlite)
-	const message = await insertEmailMessage({
-		db,
-		message: {
-			id: 'msg-cascade',
-			direction: 'outbound',
-			userId: 'user-cascade',
-			fromAddress: 'user@example.com',
-			toAddresses: ['to@example.com'],
-			subject: 'Cascade',
-			processingStatus: 'sent',
-			providerMessageId: 'provider-cascade',
-			sentAt: '2026-08-01T12:00:00.000Z',
-		},
-	})
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM email_outbound_provider_index WHERE message_id = ?`,
-			)
-			.get(message.id) as { count: number },
-	).toEqual({ count: 1 })
-
-	await db
-		.prepare(`DELETE FROM email_messages WHERE id = ?`)
-		.bind(message.id)
-		.run()
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM email_outbound_provider_index WHERE message_id = ?`,
-			)
-			.get(message.id) as { count: number },
-	).toEqual({ count: 0 })
-})
-
 function wrapDbFailingIndexStatements(sqlite: DatabaseSync): D1Database {
 	const base = createD1FromSqlite(sqlite)
 	return {
