@@ -36,7 +36,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 	await runInDurableObject(
 		stubFor(ownerA),
 		async (_instance: Mailbox, state) => {
-			expect(mailboxSchemaVersion).toBe(3)
+			expect(mailboxSchemaVersion).toBe(4)
 			const version = state.storage.sql
 				.exec<{ value: number }>(
 					`SELECT value FROM mailbox_meta WHERE key = ?`,
@@ -546,7 +546,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 	})
 })
 
-test('Mailbox warm-migrates v1 indexes and message tombstones to current schema', async () => {
+test('Mailbox warm-migrates v1 indexes, tombstones, and retention retries', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const ownerId = uniqueUserId('warm-v2')
 	const stub = stubFor(ownerId)
@@ -574,6 +574,9 @@ test('Mailbox warm-migrates v1 indexes and message tombstones to current schema'
 		)
 		state.storage.sql.exec(
 			`DROP TABLE IF EXISTS email_message_deletion_tombstones`,
+		)
+		state.storage.sql.exec(
+			`DROP TABLE IF EXISTS email_message_retention_retries`,
 		)
 		// Re-run schema init (same path as constructor / purge).
 		initializeMailboxSchema(state.storage)
@@ -619,6 +622,24 @@ test('Mailbox warm-migrates v1 indexes and message tombstones to current schema'
 				)
 				.toArray(),
 		).toEqual([{ name: 'email_message_deletion_tombstones' }])
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'table'
+						AND name = 'email_message_retention_retries'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'email_message_retention_retries' }])
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'index'
+						AND name = 'idx_email_message_retention_retries_retry_at'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'idx_email_message_retention_retries_retry_at' }])
 	})
 })
 

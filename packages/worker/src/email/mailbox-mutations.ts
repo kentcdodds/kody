@@ -169,6 +169,10 @@ export function deleteMailboxMessageMetadata(
 	)
 	sql.exec(`DELETE FROM email_attachments WHERE message_id = ?`, messageId)
 	sql.exec(
+		`DELETE FROM email_message_retention_retries WHERE message_id = ?`,
+		messageId,
+	)
+	sql.exec(
 		`DELETE FROM email_messages
 		WHERE id = ?
 			AND updated_at <= ?`,
