@@ -45,6 +45,7 @@ export function createAccountEmailHandler(env: Env) {
 				request,
 				user,
 				pathMessageId: readPathMessageId(params),
+				skipCutoverExposureRecording: true,
 			})
 			return renderAppPage({
 				request,

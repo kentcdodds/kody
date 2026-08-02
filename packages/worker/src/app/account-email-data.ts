@@ -408,6 +408,12 @@ export async function loadAccountEmailData(input: {
 	request: Request
 	user: AuthenticatedUser
 	pathMessageId?: string
+	/**
+	 * SSR account pages resolve feature flags (and record exposures) in
+	 * `renderAppPage` / session load. Skip cutover exposure here to avoid
+	 * double-recording on the same request.
+	 */
+	skipCutoverExposureRecording?: boolean
 }): Promise<AccountEmailLoaderData> {
 	const url = new URL(input.request.url, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
@@ -443,7 +449,9 @@ export async function loadAccountEmailData(input: {
 	)
 	const cutoverMemo: MailboxReadCutoverMemo = {}
 	const dbUserId = input.user.userId
-	const skipExposureRecording = hasResolvedRequestFeatureFlags(input.request)
+	const skipExposureRecording =
+		input.skipCutoverExposureRecording === true ||
+		hasResolvedRequestFeatureFlags(input.request)
 
 	const [listResult, inboxes, usage, selectedMessage] = await Promise.all([
 		listOwnerEmailMessagesPage({

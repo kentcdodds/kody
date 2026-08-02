@@ -36,7 +36,7 @@ import {
 import {
 	getEmailAttachmentRecordById,
 	getEmailMessageById,
-	listEmailAttachmentsForMessage,
+	listEmailAttachmentsForUserMessage,
 	listEmailDeliveryEvents,
 	listEmailMessages,
 	listEmailMessagesPageForUser,
@@ -472,8 +472,9 @@ export async function listOwnerEmailAttachmentsForMessage(
 ): Promise<Array<EmailAttachmentRecord>> {
 	const useMailbox = await useMailboxReads(input)
 	if (!useMailbox) {
-		return listEmailAttachmentsForMessage({
+		return listEmailAttachmentsForUserMessage({
 			db: input.env.APP_DB,
+			userId: input.stableUserId,
 			messageId: input.messageId,
 		})
 	}

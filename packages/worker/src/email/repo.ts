@@ -1362,6 +1362,25 @@ export async function listEmailAttachmentsForMessage(input: {
 	return (result.results ?? []).map(mapAttachmentRow)
 }
 
+export async function listEmailAttachmentsForUserMessage(input: {
+	db: D1Database
+	userId: string
+	messageId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`SELECT attachment.*
+			FROM email_attachments attachment
+			JOIN email_messages message ON message.id = attachment.message_id
+			WHERE attachment.message_id = ?
+				AND message.user_id = ?
+			ORDER BY attachment.created_at ASC, attachment.id ASC`,
+		)
+		.bind(input.messageId, input.userId)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map(mapAttachmentRow)
+}
+
 export async function getEmailAttachmentRecordById(input: {
 	db: D1Database
 	userId: string

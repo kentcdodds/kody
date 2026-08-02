@@ -3,6 +3,7 @@ import {
 	getOwnerEmailAttachmentById,
 	getOwnerEmailMessageById,
 	isMailboxReadCutoverEnabled,
+	listOwnerEmailAttachmentsForMessage,
 	listOwnerEmailDeliveryEvents,
 	listOwnerEmailMessages,
 	listOwnerEmailMessagesPage,
@@ -25,7 +26,7 @@ const {
 	listEmailMessagesMock,
 	searchEmailMessagesMock,
 	listEmailMessagesPageForUserMock,
-	listEmailAttachmentsForMessageMock,
+	listEmailAttachmentsForUserMessageMock,
 	getEmailAttachmentRecordByIdMock,
 	listEmailDeliveryEventsMock,
 	loadEmailAttachmentContentMock,
@@ -35,7 +36,7 @@ const {
 	listEmailMessagesMock: vi.fn(),
 	searchEmailMessagesMock: vi.fn(),
 	listEmailMessagesPageForUserMock: vi.fn(),
-	listEmailAttachmentsForMessageMock: vi.fn(),
+	listEmailAttachmentsForUserMessageMock: vi.fn(),
 	getEmailAttachmentRecordByIdMock: vi.fn(),
 	listEmailDeliveryEventsMock: vi.fn(),
 	loadEmailAttachmentContentMock: vi.fn(),
@@ -51,8 +52,8 @@ vi.mock('./repo.ts', () => ({
 		searchEmailMessagesMock(...args),
 	listEmailMessagesPageForUser: (...args: Array<unknown>) =>
 		listEmailMessagesPageForUserMock(...args),
-	listEmailAttachmentsForMessage: (...args: Array<unknown>) =>
-		listEmailAttachmentsForMessageMock(...args),
+	listEmailAttachmentsForUserMessage: (...args: Array<unknown>) =>
+		listEmailAttachmentsForUserMessageMock(...args),
 	getEmailAttachmentRecordById: (...args: Array<unknown>) =>
 		getEmailAttachmentRecordByIdMock(...args),
 	listEmailDeliveryEvents: (...args: Array<unknown>) =>
@@ -636,6 +637,60 @@ test('mailbox-read-cutover does not fall back from DO and isolates cross-owner i
 			skipExposureRecording: true,
 		}),
 	).resolves.toBe(false)
+
+	const attachment = {
+		id: 'att-1',
+		messageId: 'msg-1',
+		filename: 'note.txt',
+		contentType: 'text/plain',
+		contentId: null,
+		disposition: 'attachment',
+		size: 12,
+		storageKind: 'inline' as const,
+		storageKey: null,
+		createdAt: '2026-07-01T12:00:00.000Z',
+	}
+	listEmailAttachmentsForUserMessageMock.mockClear()
+	listEmailAttachmentsForUserMessageMock.mockResolvedValue([])
+	await expect(
+		listOwnerEmailAttachmentsForMessage({
+			env: {
+				...fakeMailboxEnv({ listAttachmentsForMessage: vi.fn() }).env,
+				APP_DB: parityErrorDb,
+			},
+			dbUserId,
+			stableUserId: 'user-other',
+			messageId: 'msg-1',
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toEqual([])
+	expect(listEmailAttachmentsForUserMessageMock).toHaveBeenCalledWith({
+		db: parityErrorDb,
+		userId: 'user-other',
+		messageId: 'msg-1',
+	})
+
+	listEmailAttachmentsForUserMessageMock.mockClear()
+	listEmailAttachmentsForUserMessageMock.mockResolvedValue([attachment])
+	await expect(
+		listOwnerEmailAttachmentsForMessage({
+			env: {
+				...fakeMailboxEnv({ listAttachmentsForMessage: vi.fn() }).env,
+				APP_DB: parityErrorDb,
+			},
+			dbUserId,
+			stableUserId,
+			messageId: 'msg-1',
+			now: nowIso,
+			skipExposureRecording: true,
+		}),
+	).resolves.toEqual([attachment])
+	expect(listEmailAttachmentsForUserMessageMock).toHaveBeenCalledWith({
+		db: parityErrorDb,
+		userId: stableUserId,
+		messageId: 'msg-1',
+	})
 })
 
 test('mailbox-read-cutover fails closed on invalid now and future parity timestamps', async () => {
