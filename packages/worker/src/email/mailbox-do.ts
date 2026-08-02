@@ -13,8 +13,8 @@ import {
 	enforceMailboxRetention,
 	mailboxRetentionAlarmAtMs,
 	nextMailboxRetentionDueAtMs,
+	selectMailboxRetentionCandidate,
 	selectMailboxRetentionWriteAlarm,
-	type MailboxRetentionMessageCandidate,
 	type MailboxRetentionMessageDeleteResult,
 } from './mailbox-retention.ts'
 import { MailboxStore } from './mailbox-store.ts'
@@ -195,16 +195,17 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	/**
-	 * Revalidate and delete one selected retention candidate under its own
+	 * Select, revalidate, and delete one retention candidate under its own
 	 * input gate. A message's keys are sent to R2 in bounded 1,000-key chunks;
 	 * an exceptional message with more keys may require multiple R2 calls, but
 	 * no gate spans multiple messages.
 	 */
 	private async deleteRetentionMessage(
-		candidate: MailboxRetentionMessageCandidate,
 		cutoff: string,
-	): Promise<MailboxRetentionMessageDeleteResult> {
+	): Promise<MailboxRetentionMessageDeleteResult | null> {
 		return await this.blockConcurrencySafely(async () => {
+			const candidate = selectMailboxRetentionCandidate(this.store, cutoff)
+			if (candidate == null) return null
 			const ownerId = this.store.getOwnerId()
 			if (ownerId == null) {
 				throw new Error('Mailbox retention candidate has no bound owner.')
@@ -220,19 +221,15 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	/**
-	 * Shared retention pass for `alarm` and {@link runRetentionNow}.
-	 * Natural production cutoffs only; exact post-pass alarm scheduling.
+	 * Shared retention turn for `alarm` and {@link runRetentionNow}. At most one
+	 * R2-backed message; natural cutoffs and exact post-turn alarm scheduling.
 	 */
 	private async runRetentionPass(): Promise<MailboxRunRetentionNowResult> {
 		const before = this.store.countMailbox()
 		const nowMs = Date.now()
 		const result = await enforceMailboxRetention({
 			store: this.store,
-			deleteMessage: (candidate, cutoff) =>
-				this.deleteRetentionMessage(candidate, cutoff),
-			// Once an item's gate opens, give queued live writes a turn before
-			// the next candidate is revalidated under a new gate.
-			yieldBetweenMessages: () => scheduler.wait(0),
+			deleteMessage: (cutoff) => this.deleteRetentionMessage(cutoff),
 		})
 		const after = this.store.countMailbox()
 		const nextDueAtMs = nextMailboxRetentionDueAtMs(this.store)

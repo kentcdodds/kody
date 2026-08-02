@@ -4,8 +4,9 @@ import {
 	mailboxDeliveryEventRetentionDays,
 	mailboxMessageRetentionDays,
 	mailboxRetentionAlarmSkewMs,
-	mailboxRetentionBatchSize,
 	mailboxRetentionContinuationDelayMs,
+	mailboxRetentionMessageCandidatesPerTurn,
+	mailboxRetentionMetadataBatchSize,
 	mailboxRetentionRetryDelayMs,
 	type MailboxBlobReference,
 } from './mailbox-types.ts'
@@ -16,9 +17,9 @@ const deliveryEventRetentionMs =
 	mailboxDeliveryEventRetentionDays * 24 * 60 * 60 * 1000
 
 export type MailboxRetentionPassResult = {
-	/** True when at least one message blob delete failed (row retained). */
+	/** True when this turn's single message blob delete failed (row retained). */
 	hadBlobDeleteFailures: boolean
-	/** True when expired rows remain after a successful bounded pass. */
+	/** True when expired rows remain for a later alarm/invocation. */
 	expiredWorkRemaining: boolean
 }
 
@@ -249,59 +250,49 @@ export async function deleteMailboxRetentionCandidate(input: {
 	return 'deleted'
 }
 
-async function pruneExpiredMessages(input: {
-	store: MailboxStore
+export function selectMailboxRetentionCandidate(
+	store: MailboxStore,
+	cutoff: string,
+): MailboxRetentionMessageCandidate | null {
+	return (
+		store.listExpiredMessagesForRetention({
+			cutoff,
+			limit: mailboxRetentionMessageCandidatesPerTurn,
+		})[0] ?? null
+	)
+}
+
+async function pruneExpiredMessage(input: {
 	cutoff: string
 	deleteMessage: (
-		candidate: MailboxRetentionMessageCandidate,
 		cutoff: string,
-	) => Promise<MailboxRetentionMessageDeleteResult>
-	yieldBetweenMessages: () => Promise<void>
+	) => Promise<MailboxRetentionMessageDeleteResult | null>
 }): Promise<boolean> {
-	const rows = input.store.listExpiredMessagesForRetention({
-		cutoff: input.cutoff,
-		limit: mailboxRetentionBatchSize,
-	})
-	if (rows.length === 0) return false
-
-	let hadBlobDeleteFailures = false
-	for (const [index, row] of rows.entries()) {
-		const result = await input.deleteMessage(row, input.cutoff)
-		if (result === 'blob-delete-failed') {
-			hadBlobDeleteFailures = true
-		}
-		if (index < rows.length - 1) {
-			await input.yieldBetweenMessages()
-		}
-	}
-	return hadBlobDeleteFailures
+	const result = await input.deleteMessage(input.cutoff)
+	return result === 'blob-delete-failed'
 }
 
 export async function enforceMailboxRetention(input: {
 	store: MailboxStore
 	deleteMessage: (
-		candidate: MailboxRetentionMessageCandidate,
 		cutoff: string,
-	) => Promise<MailboxRetentionMessageDeleteResult>
-	yieldBetweenMessages: () => Promise<void>
+	) => Promise<MailboxRetentionMessageDeleteResult | null>
 }): Promise<MailboxRetentionPassResult> {
 	const messageCutoff = new Date(Date.now() - messageRetentionMs).toISOString()
 	const eventCutoff = new Date(
 		Date.now() - deliveryEventRetentionMs,
 	).toISOString()
 
-	const hadBlobDeleteFailures = await pruneExpiredMessages({
-		store: input.store,
+	const hadBlobDeleteFailures = await pruneExpiredMessage({
 		cutoff: messageCutoff,
 		deleteMessage: input.deleteMessage,
-		yieldBetweenMessages: input.yieldBetweenMessages,
 	})
 
 	input.store.pruneExpiredDeliveryEvents({
 		cutoff: eventCutoff,
-		limit: mailboxRetentionBatchSize,
+		limit: mailboxRetentionMetadataBatchSize,
 	})
-	input.store.pruneOrphanThreads(mailboxRetentionBatchSize)
+	input.store.pruneOrphanThreads(mailboxRetentionMetadataBatchSize)
 
 	const expiredWorkRemaining =
 		input.store.hasExpiredMessages(messageCutoff) ||

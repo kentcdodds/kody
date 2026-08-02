@@ -16,6 +16,7 @@ import {
 import {
 	deleteMailboxRetentionCandidate,
 	enforceMailboxRetention,
+	selectMailboxRetentionCandidate,
 	type MailboxRetentionMessageDeleteResult,
 } from './mailbox-retention.ts'
 import { MailboxStore } from './mailbox-store.ts'
@@ -228,8 +229,8 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 	}) as typeof env.EMAIL_BLOBS.delete
 
 	try {
-		const alarmBefore = Date.now()
-		const alarmAfterFailure = await runInDurableObject(
+		const firstTurnAt = Date.now()
+		const alarmAfterFirstTurn = await runInDurableObject(
 			stub,
 			async (instance: Mailbox, state) => {
 				expect(instance).toBeInstanceOf(Mailbox)
@@ -238,30 +239,49 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 				return await state.storage.getAlarm()
 			},
 		)
+		// One R2-backed message per DO event. Remaining expired messages re-arm
+		// a near-immediate continuation instead of extending this alarm turn.
+		expect(alarmAfterFirstTurn).toBeGreaterThanOrEqual(
+			firstTurnAt + mailboxRetentionContinuationDelayMs - 500,
+		)
+		expect(alarmAfterFirstTurn).toBeLessThanOrEqual(
+			firstTurnAt + mailboxRetentionContinuationDelayMs + 5_000,
+		)
+		expect(await env.EMAIL_BLOBS.get(dropRawKey)).toBeNull()
+		expect(await env.EMAIL_BLOBS.get(dropAttKey)).toBeNull()
+		expect(await env.EMAIL_BLOBS.get(failRawKey)).not.toBeNull()
+		expect(await env.EMAIL_BLOBS.get(missingRawKey)).not.toBeNull()
+		expect(await mailbox.getMessage({ messageId: dropMessage.id })).toBeNull()
+		expect(
+			await mailbox.getMessage({ messageId: missingKeyMessage.id }),
+		).toMatchObject({ id: missingKeyMessage.id })
+
+		const failureTurnAt = Date.now()
+		const alarmAfterFailure = await runInDurableObject(
+			stub,
+			async (instance: Mailbox, state) => {
+				await instance.alarm()
+				return await state.storage.getAlarm()
+			},
+		)
 		// Overdue retained work (failed R2 delete) must retry with hourly backoff,
 		// not every second.
 		expect(alarmAfterFailure).toBeTypeOf('number')
 		expect(alarmAfterFailure).toBeGreaterThanOrEqual(
-			alarmBefore + mailboxRetentionRetryDelayMs - 5_000,
+			failureTurnAt + mailboxRetentionRetryDelayMs - 5_000,
 		)
 		expect(alarmAfterFailure).toBeLessThanOrEqual(
-			alarmBefore + mailboxRetentionRetryDelayMs + 5_000,
+			failureTurnAt + mailboxRetentionRetryDelayMs + 5_000,
 		)
 
-		expect(await env.EMAIL_BLOBS.get(dropRawKey)).toBeNull()
-		expect(await env.EMAIL_BLOBS.get(dropAttKey)).toBeNull()
-		expect(await env.EMAIL_BLOBS.get(missingRawKey)).toBeNull()
 		expect(await env.EMAIL_BLOBS.get(failRawKey)).not.toBeNull()
+		expect(await env.EMAIL_BLOBS.get(missingRawKey)).not.toBeNull()
 		expect(await env.EMAIL_BLOBS.get(keepRawKey)).not.toBeNull()
 
-		expect(await mailbox.getMessage({ messageId: dropMessage.id })).toBeNull()
 		expect(
 			await mailbox.listAttachmentsForMessage({ messageId: dropMessage.id }),
 		).toHaveLength(0)
 		expect(await mailbox.getThread({ threadId: 'drop-thread' })).toBeNull()
-		expect(
-			await mailbox.getMessage({ messageId: missingKeyMessage.id }),
-		).toBeNull()
 		expect(
 			await mailbox.getMessage({ messageId: failMessage.id }),
 		).toMatchObject({
@@ -282,26 +302,35 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 				)
 				.toArray()
 				.map((row) => row.message_id)
-			expect(ids).toEqual(['drop-msg', 'missing-key-msg'])
+			expect(ids).toEqual(['drop-msg'])
 		})
 	} finally {
 		env.EMAIL_BLOBS.delete = originalDelete
 	}
 
+	// Each explicit turn advances at most one message.
 	await runInDurableObject(stub, async (instance: Mailbox) => {
 		await instance.alarm()
 	})
 	expect(await env.EMAIL_BLOBS.get(failRawKey)).toBeNull()
 	expect(await mailbox.getMessage({ messageId: failMessage.id })).toBeNull()
+	expect(await env.EMAIL_BLOBS.get(missingRawKey)).not.toBeNull()
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await instance.alarm()
+	})
+	expect(await env.EMAIL_BLOBS.get(missingRawKey)).toBeNull()
+	expect(
+		await mailbox.getMessage({ messageId: missingKeyMessage.id }),
+	).toBeNull()
 	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
-		const tombstoned = state.storage.sql
-			.exec<{ found: number }>(
-				`SELECT 1 AS found FROM email_message_deletion_tombstones
-				WHERE message_id = ?`,
-				failMessage.id,
+		const tombstonedIds = state.storage.sql
+			.exec<{ message_id: string }>(
+				`SELECT message_id FROM email_message_deletion_tombstones
+				ORDER BY message_id`,
 			)
-			.toArray()[0]
-		expect(tombstoned?.found).toBe(1)
+			.toArray()
+			.map((row) => row.message_id)
+		expect(tombstonedIds).toEqual(['drop-msg', 'fail-msg', 'missing-key-msg'])
 	})
 })
 
@@ -380,20 +409,23 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 	}) as typeof env.EMAIL_BLOBS.delete
 
 	try {
-		const result = await mailbox.runRetentionNow({ ownerId: userId })
-		expect(result.before.messages).toBe(3)
-		expect(result.after.messages).toBe(2)
-		expect(result.blobDeleteFailures).toBe(true)
-		expect(result.expiredRemaining).toBe(true)
-		expect(deletedKeys).toEqual(
-			expect.arrayContaining([dropRawKey, failRawKey]),
-		)
-		// R2-before-row via existing fake: successful blob delete drops the
-		// row; failed blob delete retains the row and the R2 object.
+		const first = await mailbox.runRetentionNow({ ownerId: userId })
+		expect(first.before.messages).toBe(3)
+		expect(first.after.messages).toBe(2)
+		expect(first.blobDeleteFailures).toBe(false)
+		expect(first.expiredRemaining).toBe(true)
+		expect(deletedKeys).toEqual([dropRawKey])
 		expect(await env.EMAIL_BLOBS.get(dropRawKey)).toBeNull()
 		expect(await env.EMAIL_BLOBS.get(failRawKey)).not.toBeNull()
 		expect(await env.EMAIL_BLOBS.get(keepRawKey)).not.toBeNull()
 		expect(await mailbox.getMessage({ messageId: dropMessage.id })).toBeNull()
+
+		const second = await mailbox.runRetentionNow({ ownerId: userId })
+		expect(second.before.messages).toBe(2)
+		expect(second.after.messages).toBe(2)
+		expect(second.blobDeleteFailures).toBe(true)
+		expect(second.expiredRemaining).toBe(true)
+		expect(deletedKeys).toEqual([dropRawKey, failRawKey])
 		expect(
 			await mailbox.getMessage({ messageId: failMessage.id }),
 		).toMatchObject({ id: failMessage.id })
@@ -404,9 +436,11 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 		env.EMAIL_BLOBS.delete = originalDelete
 	}
 
-	// Natural cutoff no-op: only fresh rows remain after retry clears the
-	// failed delete — later pass reports no further deletions.
-	await mailbox.runRetentionNow({ ownerId: userId })
+	// A later invocation retries the one failed item; only then is the next
+	// turn a natural-cutoff no-op.
+	const retry = await mailbox.runRetentionNow({ ownerId: userId })
+	expect(retry.after.messages).toBe(1)
+	expect(retry.expiredRemaining).toBe(false)
 	const noop = await mailbox.runRetentionNow({ ownerId: userId })
 	expect(noop.before).toEqual(noop.after)
 	expect(noop.blobDeleteFailures).toBe(false)
@@ -414,7 +448,7 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 	expect(noop.after.messages).toBe(1)
 })
 
-test('Mailbox retention blocks a concurrent mirror during an item R2 gate and continues', async () => {
+test('Mailbox retention ends after one item so a queued mirror can save the next', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('retention-concurrency')
 	const mailbox = rpcFor(userId)
@@ -422,7 +456,7 @@ test('Mailbox retention blocks a concurrent mirror during an item R2 gate and co
 	const oldAt = new Date(
 		Date.now() - (mailboxMessageRetentionDays + 3) * 24 * 60 * 60 * 1000,
 	).toISOString()
-	const messages = ['a', 'b', 'c'].map((suffix) =>
+	const messages = ['a', 'b'].map((suffix) =>
 		baseMessage(userId, {
 			id: `retention-concurrent-${suffix}`,
 			createdAt: oldAt,
@@ -438,10 +472,8 @@ test('Mailbox retention blocks a concurrent mirror during an item R2 gate and co
 	}
 	const first = messages[0]!
 	const updateBeforeGate = messages[1]!
-	const continueAfterSkip = messages[2]!
 	const firstRawKey = emailRawMimeKey(userId, first.id)
 	const updatedRawKey = emailRawMimeKey(userId, updateBeforeGate.id)
-	const continuedRawKey = emailRawMimeKey(userId, continueAfterSkip.id)
 
 	let releaseDelete!: () => void
 	const deleteGate = new Promise<void>((resolve) => {
@@ -461,6 +493,7 @@ test('Mailbox retention blocks a concurrent mirror during an item R2 gate and co
 	}) as typeof env.EMAIL_BLOBS.delete
 
 	try {
+		const firstTurnAt = Date.now()
 		const retention = mailbox.runRetentionNow({ ownerId: userId })
 		while (!deleteStarted) {
 			await new Promise((resolve) => setTimeout(resolve, 1))
@@ -485,20 +518,37 @@ test('Mailbox retention blocks a concurrent mirror during an item R2 gate and co
 
 		releaseDelete()
 		await expect(retention).resolves.toMatchObject({
-			after: { messages: 0 },
-			expiredRemaining: false,
+			before: { messages: 2 },
+			after: { messages: 1 },
+			blobDeleteFailures: false,
+			expiredRemaining: true,
 		})
-		await expect(newerMirror).resolves.toEqual({ ok: true, accepted: false })
+		await expect(newerMirror).resolves.toEqual({ ok: true, accepted: true })
+		const continuationAlarm = await runInDurableObject(
+			stub,
+			async (_instance: Mailbox, state) => state.storage.getAlarm(),
+		)
+		expect(continuationAlarm).toBeGreaterThanOrEqual(
+			firstTurnAt + mailboxRetentionContinuationDelayMs - 500,
+		)
+		expect(continuationAlarm).toBeLessThanOrEqual(
+			firstTurnAt + mailboxRetentionContinuationDelayMs + 5_000,
+		)
 		expect(await mailbox.getMessage({ messageId: first.id })).toBeNull()
 		expect(
 			await mailbox.getMessage({ messageId: updateBeforeGate.id }),
-		).toBeNull()
-		expect(
-			await mailbox.getMessage({ messageId: continueAfterSkip.id }),
-		).toBeNull()
-		expect(deletedKeys).toEqual(
-			expect.arrayContaining([firstRawKey, updatedRawKey, continuedRawKey]),
-		)
+		).toMatchObject({ subject: 'updated before its retention gate' })
+		expect(deletedKeys).toEqual([firstRawKey])
+		expect(await env.EMAIL_BLOBS.get(updatedRawKey)).not.toBeNull()
+
+		// created_at is intentionally immutable, so the live update saves B
+		// from turn A but does not renew its retention age. A new turn selects
+		// and revalidates the updated snapshot before deleting it.
+		const secondTurn = await mailbox.runRetentionNow({ ownerId: userId })
+		expect(secondTurn.before.messages).toBe(1)
+		expect(secondTurn.after.messages).toBe(0)
+		expect(secondTurn.blobDeleteFailures).toBe(false)
+		expect(secondTurn.expiredRemaining).toBe(false)
 		expect(await env.EMAIL_BLOBS.get(updatedRawKey)).toBeNull()
 	} finally {
 		releaseDelete()
@@ -506,7 +556,7 @@ test('Mailbox retention blocks a concurrent mirror during an item R2 gate and co
 	}
 })
 
-test('Mailbox retention revalidates each selected item and continues after a skip', async () => {
+test('Mailbox retention selects one message per turn and revalidates before deletion', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('retention-revalidation')
 	const mailbox = rpcFor(userId)
@@ -529,45 +579,49 @@ test('Mailbox retention revalidates each selected item and continues after a ski
 
 	const calls: Array<string> = []
 	const outcomes: Array<MailboxRetentionMessageDeleteResult> = []
-	const result = await runInDurableObject(
+	const results = await runInDurableObject(
 		stub,
 		async (_instance: Mailbox, state) => {
 			const store = new MailboxStore(state.storage)
-			return await enforceMailboxRetention({
-				store,
-				deleteMessage: async (candidate, cutoff) => {
-					calls.push(candidate.id)
-					if (candidate.id === messages[1]!.id) {
-						state.storage.sql.exec(
-							`UPDATE email_messages
-							SET created_at = ?, updated_at = ?
-							WHERE id = ?`,
-							freshAt,
-							freshAt,
-							candidate.id,
-						)
-					}
-					const outcome = await deleteMailboxRetentionCandidate({
-						store,
-						blobs: env.EMAIL_BLOBS,
-						ownerId: userId,
-						candidate,
-						cutoff,
-					})
-					outcomes.push(outcome)
-					return outcome
-				},
-				yieldBetweenMessages: async () => {},
-			})
+			const runTurn = () =>
+				enforceMailboxRetention({
+					store,
+					deleteMessage: async (cutoff) => {
+						const candidate = selectMailboxRetentionCandidate(store, cutoff)
+						if (candidate == null) return null
+						calls.push(candidate.id)
+						if (candidate.id === messages[1]!.id) {
+							state.storage.sql.exec(
+								`UPDATE email_messages
+								SET created_at = ?, updated_at = ?
+								WHERE id = ?`,
+								freshAt,
+								freshAt,
+								candidate.id,
+							)
+						}
+						const outcome = await deleteMailboxRetentionCandidate({
+							store,
+							blobs: env.EMAIL_BLOBS,
+							ownerId: userId,
+							candidate,
+							cutoff,
+						})
+						outcomes.push(outcome)
+						return outcome
+					},
+				})
+			return [await runTurn(), await runTurn(), await runTurn()]
 		},
 	)
 
 	expect(calls).toEqual(messages.map((message) => message.id))
 	expect(outcomes).toEqual(['deleted', 'skipped', 'deleted'])
-	expect(result).toEqual({
-		hadBlobDeleteFailures: false,
-		expiredWorkRemaining: false,
-	})
+	expect(results).toEqual([
+		{ hadBlobDeleteFailures: false, expiredWorkRemaining: true },
+		{ hadBlobDeleteFailures: false, expiredWorkRemaining: true },
+		{ hadBlobDeleteFailures: false, expiredWorkRemaining: false },
+	])
 	expect(await mailbox.getMessage({ messageId: messages[0]!.id })).toBeNull()
 	expect(
 		await mailbox.getMessage({ messageId: messages[1]!.id }),
