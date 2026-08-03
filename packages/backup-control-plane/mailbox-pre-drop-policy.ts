@@ -16,19 +16,27 @@ const requestIdPattern =
 const noncePattern = /^[0-9a-f]{32}$/
 const maximumRequestAgeMilliseconds = 15 * 60 * 1_000
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value)
+function isPlainDataRecord(value: unknown): value is Record<string, unknown> {
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		!Array.isArray(value) &&
+		Object.getPrototypeOf(value) === Object.prototype
+	)
 }
 
-function hasExactKeys(
+function hasExactDataKeys(
 	value: Record<string, unknown>,
 	expected: ReadonlyArray<string>,
 ): boolean {
-	const actual = Object.keys(value).sort()
-	const sortedExpected = [...expected].sort()
+	const actual = Reflect.ownKeys(value)
 	return (
-		actual.length === sortedExpected.length &&
-		actual.every((key, index) => key === sortedExpected[index])
+		actual.length === expected.length &&
+		actual.every((key) => typeof key === 'string' && expected.includes(key)) &&
+		expected.every((key) => {
+			const descriptor = Object.getOwnPropertyDescriptor(value, key)
+			return descriptor?.enumerable === true && 'value' in descriptor
+		})
 	)
 }
 
@@ -56,8 +64,8 @@ export function parseMailboxPreDropBackupRequest(
 	instanceId: string,
 ): MailboxPreDropBackupRequest {
 	if (
-		!isRecord(value) ||
-		!hasExactKeys(value, ['nonce', 'requestId', 'requestedAt']) ||
+		!isPlainDataRecord(value) ||
+		!hasExactDataKeys(value, ['nonce', 'requestId', 'requestedAt']) ||
 		typeof value.requestId !== 'string' ||
 		!requestIdPattern.test(value.requestId) ||
 		typeof value.nonce !== 'string' ||

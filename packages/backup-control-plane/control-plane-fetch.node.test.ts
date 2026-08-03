@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, createSign } from 'node:crypto'
 
-import { test, vi } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import {
 	encodeJwtPartForTests,
@@ -9,6 +9,10 @@ import {
 } from './access-auth.ts'
 import { environment } from './backup-control-plane-test-support.ts'
 import { handleControlPlaneFetch } from './control-plane-fetch.ts'
+
+afterEach(() => {
+	vi.restoreAllMocks()
+})
 
 function rsaJwksAndSigner() {
 	const { privateKey, publicKey } = generateKeyPairSync('rsa', {
@@ -140,6 +144,9 @@ test('authenticated pre-drop action creates only server-generated workflow param
 		'requestId',
 		'requestedAt',
 	])
-	assert.match(created.id, /^mailbox-pre-drop-/u)
+	assert.equal(
+		created.id,
+		`mailbox-pre-drop-${String(created.params.requestId)}`,
+	)
 	assert.doesNotMatch(JSON.stringify(created), /caller-value/u)
 })

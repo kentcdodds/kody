@@ -160,6 +160,10 @@ are available. The live production `adhoc/` lock and lifecycle were manually
 applied and read back as 35 days on 2026-08-03. Deployments with
 `DR_BACKUP_ADMIN_TOKEN` reconcile and re-verify that policy; deployments without
 the optional secret log a skip and continue deploying the backup Worker.
+Pre-drop manifests record the fixed `retentionTier: "daily"` required by the
+approval contract, but their SQL and manifest objects live under `adhoc/`.
+Consequently, the 35-day `expire-adhoc-backups-after-35-days` lifecycle rule
+applies; the daily-prefix lifecycle does not.
 
 `verifyMailboxPreDropR2Policy` is the canonical trigger gate. Every pre-drop
 Workflow creates a request-local probe and attempts an unconditional destructive

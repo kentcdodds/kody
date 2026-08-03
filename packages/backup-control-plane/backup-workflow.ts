@@ -6,11 +6,16 @@ import {
 import { NonRetryableError } from 'cloudflare:workflows'
 
 import { runBackupRuntime, type BackupRuntimeStep } from './backup-runtime.ts'
-import { BackupError } from './backup-policy.ts'
+import { BackupError, workflowBackupErrorMessage } from './backup-policy.ts'
 import {
 	type BackupEnvironment,
 	type ScheduledBackupWorkflowPayload,
 } from './backup-types.ts'
+import { withNonRetryableBackupErrors } from './workflow-step-boundary.ts'
+
+function nonRetryableBackupError(error: BackupError): NonRetryableError {
+	return new NonRetryableError(workflowBackupErrorMessage(error), error.code)
+}
 
 export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 	BackupEnvironment,
@@ -21,14 +26,14 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 		step: WorkflowStep,
 	) {
 		try {
-			return await runBackupRuntime(
-				this.env,
-				event,
+			const runtimeStep = withNonRetryableBackupErrors(
 				step as unknown as BackupRuntimeStep,
+				nonRetryableBackupError,
 			)
+			return await runBackupRuntime(this.env, event, runtimeStep)
 		} catch (error) {
 			if (error instanceof BackupError && !error.retryable) {
-				throw new NonRetryableError(error.message, error.code)
+				throw nonRetryableBackupError(error)
 			}
 			throw error
 		}

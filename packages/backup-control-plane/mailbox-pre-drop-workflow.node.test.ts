@@ -4,7 +4,7 @@ import {
 	parseBackupManifest,
 	serializeBackupManifest,
 } from '@kody-internal/shared/backup-manifest.ts'
-import { test, vi } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import {
 	DATABASE_ID,
@@ -22,6 +22,10 @@ import {
 } from './mailbox-pre-drop-policy.ts'
 import { runMailboxLegacyGraphPreDropBackup } from './mailbox-pre-drop-runtime.ts'
 import { type MailboxPreDropBackupRequest } from './backup-types.ts'
+
+afterEach(() => {
+	vi.restoreAllMocks()
+})
 
 function healthySnapshot(overrides: Record<string, unknown> = {}) {
 	return {
@@ -380,6 +384,7 @@ test('pre-drop workflow blocks marker, repair, audit, system, and snapshot drift
 	)
 	assert.equal(approvalSql.length, 0)
 	assert.equal(consoleError.mock.calls.length, failures.length + 1)
+	consoleError.mockRestore()
 })
 
 test('pre-drop workflow rejects deletion drift during export', async () => {
@@ -422,9 +427,26 @@ test('request validation, same-day uniqueness, and scheduled lane isolation fail
 		),
 		request,
 	)
+	const accessorRequest = { ...request }
+	Object.defineProperty(accessorRequest, 'requestedAt', {
+		enumerable: true,
+		get: () => request.requestedAt,
+	})
+	const symbolRequest = { ...request }
+	Object.defineProperty(symbolRequest, Symbol('extra'), {
+		enumerable: true,
+		value: 'extra',
+	})
 	for (const invalid of [
 		{ ...request, sourceDatabaseId: DATABASE_ID },
 		{ ...request, nonce: 'A'.repeat(32) },
+		{ ...request, requestedAt: 'not-a-date' },
+		{ ...request, requestedAt: '2026-02-30T12:00:00.000Z' },
+		{ ...request, requestedAt: '2026-08-03T12:00:00Z' },
+		Object.assign(Object.create({ inherited: true }), request),
+		Object.assign(Object.create(null), request),
+		accessorRequest,
+		symbolRequest,
 		{
 			...request,
 			requestedAt: new Date(Date.now() - 16 * 60_000).toISOString(),
@@ -511,5 +533,27 @@ test('request validation, same-day uniqueness, and scheduled lane isolation fail
 			error.code === 'invalid-workflow-payload-kind',
 	)
 	assert.equal(consoleError.mock.calls.length, 2)
+
+	for (const invalidPayload of [
+		{ ...custom, extra: true },
+		Object.assign(Object.create({ inherited: true }), custom),
+	]) {
+		await assert.rejects(
+			runBackupRuntime(
+				env,
+				{
+					instanceId: event.instanceId,
+					payload: invalidPayload,
+					timestamp: event.timestamp,
+				},
+				new TestWorkflowStep(),
+				{ payloadKind: 'mailbox-legacy-graph-pre-drop' },
+			),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'invalid-workflow-payload',
+		)
+	}
+	assert.equal(consoleError.mock.calls.length, 4)
 	consoleError.mockRestore()
 })

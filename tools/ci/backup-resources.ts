@@ -648,7 +648,7 @@ export function assertAdhocBackupPolicyReadback(input: {
 			adhocRetentionSeconds
 	) {
 		throw new Error(
-			'Cloudflare R2 adhoc/ lock and lifecycle read-back verification failed. Re-run `node tools/ci/backup-resources-cli.ts apply` with CLOUDFLARE_API_TOKEN set to the DR backup admin token.',
+			'Cloudflare R2 adhoc/ lock and lifecycle read-back verification failed. Re-run `node tools/ci/backup-resources-cli.ts apply` with CLOUDFLARE_API_TOKEN set to the DR backup admin token, or set DR_BACKUP_ADMIN_TOKEN and re-run `node tools/ci/backup-resources-reconcile-cli.ts`.',
 		)
 	}
 	return {

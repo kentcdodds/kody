@@ -6,12 +6,17 @@ import {
 import { NonRetryableError } from 'cloudflare:workflows'
 
 import { type BackupRuntimeStep } from './backup-runtime.ts'
-import { BackupError } from './backup-policy.ts'
+import { BackupError, workflowBackupErrorMessage } from './backup-policy.ts'
 import {
 	type BackupEnvironment,
 	type MailboxPreDropBackupRequest,
 } from './backup-types.ts'
 import { runMailboxLegacyGraphPreDropBackup } from './mailbox-pre-drop-runtime.ts'
+import { withNonRetryableBackupErrors } from './workflow-step-boundary.ts'
+
+function nonRetryableBackupError(error: BackupError): NonRetryableError {
+	return new NonRetryableError(workflowBackupErrorMessage(error), error.code)
+}
 
 export class MailboxLegacyGraphPreDropBackupWorkflow extends WorkflowEntrypoint<
 	BackupEnvironment,
@@ -22,14 +27,18 @@ export class MailboxLegacyGraphPreDropBackupWorkflow extends WorkflowEntrypoint<
 		step: WorkflowStep,
 	) {
 		try {
+			const runtimeStep = withNonRetryableBackupErrors(
+				step as unknown as BackupRuntimeStep,
+				nonRetryableBackupError,
+			)
 			return await runMailboxLegacyGraphPreDropBackup(
 				this.env,
 				event,
-				step as unknown as BackupRuntimeStep,
+				runtimeStep,
 			)
 		} catch (error) {
 			if (error instanceof BackupError && !error.retryable) {
-				throw new NonRetryableError(error.message, error.code)
+				throw nonRetryableBackupError(error)
 			}
 			throw error
 		}

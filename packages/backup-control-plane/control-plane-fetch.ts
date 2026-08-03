@@ -162,15 +162,15 @@ async function handleAuthenticated(
 
 	switch (path) {
 		case '/actions/mailbox-pre-drop-backup': {
-			const request = {
+			const backupRequest = {
 				requestId: crypto.randomUUID(),
 				nonce: randomNonce(),
 				requestedAt: new Date().toISOString(),
 			}
-			const instanceId = mailboxPreDropWorkflowInstanceId(request)
+			const instanceId = mailboxPreDropWorkflowInstanceId(backupRequest)
 			await env.MAILBOX_PRE_DROP_BACKUP_WORKFLOW.create({
 				id: instanceId,
-				params: request,
+				params: backupRequest,
 			})
 			safeLog({
 				event: 'ui-mailbox-pre-drop-backup',

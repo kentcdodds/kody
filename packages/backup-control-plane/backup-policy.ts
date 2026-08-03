@@ -21,6 +21,12 @@ export class BackupError extends Error {
 	}
 }
 
+export function workflowBackupErrorMessage(
+	error: Pick<BackupError, 'code' | 'message'>,
+): string {
+	return `[${error.code}] ${error.message}`
+}
+
 export function isBackupEnabled(env: BackupEnvironment): boolean {
 	return (
 		env.ENABLE_PRODUCTION_D1_BACKUPS === 'true' &&
@@ -178,5 +184,10 @@ export function safeLog(
 }
 
 export function errorCode(error: unknown): string {
-	return error instanceof BackupError ? error.code : 'unexpected-error'
+	if (error instanceof BackupError) return error.code
+	if (error instanceof Error) {
+		const match = /^\[(?<code>[a-z0-9]+(?:-[a-z0-9]+)*)\] /u.exec(error.message)
+		if (match?.groups?.code) return match.groups.code
+	}
+	return 'unexpected-error'
 }

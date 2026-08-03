@@ -523,6 +523,24 @@ test('adhoc policy proof fails closed on missing, disabled, or weak read-back', 
 			},
 			lifecyclePolicy: desired.lifecyclePolicy,
 		},
+		{
+			lockPolicy: desired.lockPolicy,
+			lifecyclePolicy: {
+				rules: desired.lifecyclePolicy.rules.map((rule) =>
+					rule.conditions.prefix === 'adhoc/'
+						? {
+								...rule,
+								deleteObjectsTransition: {
+									condition: {
+										type: 'Age' as const,
+										maxAge: 34 * 86_400,
+									},
+								},
+							}
+						: rule,
+				),
+			},
+		},
 	]) {
 		expect(() => assertAdhocBackupPolicyReadback(input)).toThrow(
 			'node tools/ci/backup-resources-cli.ts apply',

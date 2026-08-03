@@ -258,8 +258,10 @@ export function assertMailboxPreDropApprovalCanonicalRelation(
 		nonce: row.nonce,
 		requestId: row.request_id,
 	})
-	const expectedManifestKey = `${objectPrefix}/manifest.json`
-	const expectedSqlObjectKey = `${objectPrefix}/backup-request.sql`
+	const { manifestFilename, sqlFilename } =
+		mailboxPreDropApprovalContract.canonicalRelation
+	const expectedManifestKey = `${objectPrefix}/${manifestFilename}`
+	const expectedSqlObjectKey = `${objectPrefix}/${sqlFilename}`
 	const approvalAge = Date.parse(row.expires_at) - Date.parse(row.verified_at)
 	if (
 		row.singleton !== mailboxPreDropApprovalContract.fixedValues.singleton ||

@@ -30,8 +30,8 @@ Do not spawn a one-agent "fleet."
 - **Tracks implement by default.** Hand `orchestrate` only for clear parallel
   ROI inside a track. Sequential slices → one implementer.
 - **Risk posture in every kickoff.** Pre-launch / small-N: evidence or canary
-  gates, soak ≤1h unless the user opts in. No 24h calendar gates for
-  reversible steps. Production / irreversible: say so and raise the bar.
+  gates, soak ≤1h unless the user opts in. No 24h calendar gates for reversible
+  steps. Production / irreversible: say so and raise the bar.
 - **Expand owns contract.** No `STATUS: done` after expand-only — same kickoff
   or a scheduled wake with an owner.
 - **Stop when the goal is met.** Cleanup/drop is a later ask unless the user
@@ -45,9 +45,9 @@ Do not spawn a one-agent "fleet."
 ## Invariants
 
 **PR ownership.** Every code-changing agent pushes and creates/updates its own
-PR via Cursor Cloud `ManagePullRequest` (Kent C. Dodds account) before its
-final response. Never have Kody/workflows/github create the initial PR. State
-this in every kickoff.
+PR via Cursor Cloud `ManagePullRequest` (Kent C. Dodds account) before its final
+response. Never have Kody/workflows/github create the initial PR. State this in
+every kickoff.
 
 **Report-back (wake-ups, not polling).** End of every run — done, partial, or
 blocked — the agent wakes the conductor:
@@ -56,12 +56,13 @@ blocked — the agent wakes the conductor:
 import { createRun } from 'kody:@kentcdodds/cursor/runs'
 await createRun({
 	agentId: '<CONDUCTOR_AGENT_ID>',
-	prompt: '<track> report: STATUS; shipped (PR links); evidence; remains + gate times.',
+	prompt:
+		'<track> report: STATUS; shipped (PR links); evidence; remains + gate times.',
 })
 ```
 
-Get your id from cursor-cloud `run-info` and paste it into kickoffs. Also keep
-a `## Conductor report` section on each PR (durable record).
+Get your id from cursor-cloud `run-info` and paste it into kickoffs. Also keep a
+`## Conductor report` section on each PR (durable record).
 
 Topology: `createRun` wake-ups work only if the conductor is an API-created
 cloud agent. An interactive chat conductor rejects them (400) — use Discord (or
@@ -80,8 +81,8 @@ await kody.job_schedule({
 })
 ```
 
-Schedule the same against your own agent id so the program survives session
-end. Cancel superseded jobs with `job_delete`.
+Schedule the same against your own agent id so the program survives session end.
+Cancel superseded jobs with `job_delete`.
 
 ## Loop
 
@@ -90,10 +91,10 @@ end. Cancel superseded jobs with `job_delete`.
 3. Partition by **file conflict**, not theme. Name each track's out-of-scope
    (what siblings own). One track after partition → demote.
 4. Size agents: implementer by default; `orchestrate` only when fan-out pays.
-5. State shipping policy + risk posture + PR invariant + report-back (with
-   your real agent id) + falsifiable done-definition in every kickoff.
-6. Dispatch, then **end your turn**. Wake-ups/jobs drive the loop. Poll only
-   for silent agents. Verify claims against main before acting.
+5. State shipping policy + risk posture + PR invariant + report-back (with your
+   real agent id) + falsifiable done-definition in every kickoff.
+6. Dispatch, then **end your turn**. Wake-ups/jobs drive the loop. Poll only for
+   silent agents. Verify claims against main before acting.
 7. Nudge idle agents with `createRun` (409 while mid-run — retry or schedule).
    New scope → nearest idle owner; spawn only for new territory.
 8. Final QA is yours — grep main, check deploys. Never report done from claims.
@@ -101,7 +102,8 @@ end. Cancel superseded jobs with `job_delete`.
 ## Companions
 
 Load with `skill_get` and embed when useful: `orchestrate` (in-track fan-out),
-`ship-pr` (merge authority). Skip when the track is small or PRs are review-only.
+`ship-pr` (merge authority). Skip when the track is small or PRs are
+review-only.
 
 ## Spawn sketch
 
