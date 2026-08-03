@@ -711,13 +711,8 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		idColumn: 'message_id',
 		ids: messageIds,
 	})
-	// The retained global provider index has no cross-store message FK.
-	await deleteByIds({
-		db: input.db,
-		table: 'email_outbound_provider_index',
-		idColumn: 'message_id',
-		ids: messageIds,
-	})
+	// The schema compatibility trigger atomically deletes provider-index rows
+	// with each legacy message DELETE.
 	result.deletedMessages = await deleteByIds({
 		db: input.db,
 		table: 'email_messages',

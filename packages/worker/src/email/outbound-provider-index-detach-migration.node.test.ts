@@ -29,7 +29,18 @@ function namedIndexes(db: DatabaseSync) {
 		.all()
 }
 
-test('0132 atomically detaches provider lookup from the legacy USER graph', async () => {
+function compatibilityTrigger(db: DatabaseSync) {
+	return db
+		.prepare(
+			`SELECT sql
+			FROM sqlite_schema
+			WHERE type = 'trigger'
+				AND name = 'email_messages_delete_outbound_provider_index'`,
+		)
+		.get()
+}
+
+test('0132 detaches the FK while preserving rollback message-delete behavior', async () => {
 	using sqlite = new DatabaseSync(':memory:')
 	sqlite.exec('PRAGMA foreign_keys = ON')
 	applyMigrationsBefore(sqlite, providerIndexDetachMigration)
@@ -102,6 +113,7 @@ test('0132 atomically detaches provider lookup from the legacy USER graph', asyn
 			)
 			.get(),
 	).toEqual({ count: 3 })
+	expect(compatibilityTrigger(sqlite)).toBeUndefined()
 
 	sqlite
 		.prepare(
@@ -118,6 +130,9 @@ test('0132 atomically detaches provider lookup from the legacy USER graph', asyn
 			.prepare(`PRAGMA foreign_key_list(email_outbound_provider_index)`)
 			.all(),
 	).toEqual([])
+	expect(compatibilityTrigger(sqlite)).toEqual({
+		sql: expect.stringContaining('DELETE FROM email_outbound_provider_index'),
+	})
 	expect(
 		sqlite
 			.prepare(
@@ -175,9 +190,6 @@ test('0132 atomically detaches provider lookup from the legacy USER graph', asyn
 			),
 	).toThrow(/CHECK constraint failed/u)
 
-	sqlite
-		.prepare(`DELETE FROM email_messages WHERE id = ?`)
-		.run('user-message-1')
 	const d1 = createD1FromSqlite(sqlite)
 	await expect(
 		getOutboundProviderIndexRow({
@@ -190,12 +202,24 @@ test('0132 atomically detaches provider lookup from the legacy USER graph', asyn
 		inboxId: 'inbox-1',
 	})
 
+	// This is the old rollback path: one legacy message DELETE, with no app
+	// provider-index statement. The schema trigger preserves FK-cascade behavior.
+	sqlite
+		.prepare(`DELETE FROM email_messages WHERE id = ?`)
+		.run('user-message-1')
+	await expect(
+		getOutboundProviderIndexRow({
+			db: d1,
+			providerMessageId: 'provider-user-1',
+		}),
+	).resolves.toBeNull()
+
 	const cleanup = sqlite
 		.prepare(
 			`DELETE FROM email_outbound_provider_index
 			WHERE user_id = ?`,
 		)
-		.run('user-1')
+		.run('user-2')
 	expect(cleanup.changes).toBe(1)
 	expect(
 		sqlite
@@ -205,6 +229,6 @@ test('0132 atomically detaches provider lookup from the legacy USER graph', asyn
 				ORDER BY provider_message_id`,
 			)
 			.all(),
-	).toEqual([{ provider_message_id: 'provider-user-2' }])
+	).toEqual([])
 	expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([])
 })

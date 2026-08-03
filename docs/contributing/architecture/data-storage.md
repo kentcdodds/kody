@@ -1359,8 +1359,9 @@ cover the high-risk live surface today.
 5. **USER graph contract (5a then 5b)** — deploy the 5a prerequisite first:
    migration `0132-email-outbound-provider-index-detach.sql` atomically rebuilds
    the retained global provider index without its cross-store-invalid
-   `email_messages` foreign key, and the authority guard contract lands without
-   changing live paths. Verify production reports
+   `email_messages` foreign key and installs a compatibility trigger that
+   preserves the old cascade behavior for legacy message deletes. No live USER
+   authority path flips in this prerequisite. Verify production reports
    `status.outboundProviderIndex.foreignKeyDetached: true` before proceeding. A
    later 5a cutover then moves **all** USER inbound, outbound, provider-index
    synchronization, classification, explicit delete, and retention graph
@@ -1371,12 +1372,15 @@ cover the high-risk live surface today.
    graph tables and migration-only machinery. No USER row or graph table is
    destructively removed by the prerequisite deployment.
 
-   **Rollback caveat:** after Mailbox-only writes begin, the frozen D1 USER
-   graph is stale and must never be re-enabled as authority by a code rollback.
-   A rollback must remain Mailbox-authoritative (or explicitly rebuild D1 from
-   Mailbox before restoring old code). After 5b drops the tables, rollback also
-   requires the verified fresh backup/schema restore; reverting application code
-   alone is not safe.
+   **Rollback caveat:** before the Mailbox-only write flip, old code that issues
+   a single `DELETE FROM email_messages` remains safe because the schema trigger
+   atomically removes the matching provider-index row. After Mailbox-only writes
+   begin, the frozen D1 USER graph is stale and must never be re-enabled as
+   authority by a code rollback. A rollback must remain Mailbox-authoritative
+   (or explicitly rebuild D1 from Mailbox before restoring old code). Step 5b
+   removes the compatibility trigger with `email_messages`; after that drop,
+   rollback also requires the verified fresh backup/schema restore, and
+   reverting application code alone is not safe.
 
 The every-5-minute `mailbox_parity` scheduled lane (queue-isolated sibling in
 `scheduled-lanes.ts`) owns backfill of all owner messages and delivery events,
@@ -1409,22 +1413,25 @@ below.
   plus index sync in one `db.batch` (index owner/inbox fields come from the
   authoritative message row, never caller input). `message_id` is an opaque
   owner-scoped key with no foreign key to `email_messages`: legacy message
-  deletion cannot cascade across the upcoming Mailbox/D1 store boundary.
-  Explicit message and account deletion therefore remove index rows by
-  `message_id`/`user_id`. Outbound send separates provider acceptance from
-  terminal D1/index persistence: once the provider returns a
-  `providerMessageId`, persistence uses bounded D1 retries and must not mark the
-  message `failed`, clear the id, or resend. Account export treats the table as
-  derived global lookup (`includeInExport: false` /
-  `derivedData.email_outbound_provider_index`) because authoritative outbound
-  message rows are already exported. `recordProviderEmailDeliveryEvent` resolves
-  index-first, then loads the owner-scoped message by `user_id`/`message_id` (no
-  full-table provider scan). System outbound is unsupported, and the verified
-  `no-system-provider-links` disposition means `system:email` rows are never
-  added to this global index. Aggregate parity
-  (`loadOutboundProviderIndexParityReport`; counts only) is surfaced on
-  `admin_mailbox_maintenance` `status.outboundProviderIndex` for production
-  verification, alongside the live schema check `foreignKeyDetached`.
+  deletion cannot cascade through a cross-store relationship. While the legacy
+  table exists, trigger `email_messages_delete_outbound_provider_index`
+  atomically deletes index rows by `OLD.id`, preserving the old FK behavior for
+  rollback code; step 5b removes the trigger with `email_messages`. Current
+  explicit message deletion also cleans the index inside the same `db.batch` for
+  cross-version compatibility, and account deletion inventories/deletes by
+  `user_id`. Outbound send separates provider acceptance from terminal D1/index
+  persistence: once the provider returns a `providerMessageId`, persistence uses
+  bounded D1 retries and must not mark the message `failed`, clear the id, or
+  resend. Account export treats the table as derived global lookup
+  (`includeInExport: false` / `derivedData.email_outbound_provider_index`)
+  because authoritative outbound message rows are already exported.
+  `recordProviderEmailDeliveryEvent` resolves index-first, then loads the
+  owner-scoped message by `user_id`/`message_id` (no full-table provider scan).
+  System outbound is unsupported, and the verified `no-system-provider-links`
+  disposition means `system:email` rows are never added to this global index.
+  Aggregate parity (`loadOutboundProviderIndexParityReport`; counts only) is
+  surfaced on `admin_mailbox_maintenance` `status.outboundProviderIndex` for
+  production verification, alongside the live schema check `foreignKeyDetached`.
   Contextless provider-id reverse lookups must not enumerate per-user Mailbox
   objects or resolve a system compatibility mirror.
 

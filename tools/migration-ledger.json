@@ -542,7 +542,7 @@
 		},
 		{
 			"filename": "0132-email-outbound-provider-index-detach.sql",
-			"sha256": "c84f2ca81d5155b35cf8f85f99bc2ea2ef52e138318c458ad503c5ad4bb1296d"
+			"sha256": "d3bb5b668057e29c3ad42cc1962c312ac4a7764e4f183268be3d5ddc29901dff"
 		}
 	]
 }

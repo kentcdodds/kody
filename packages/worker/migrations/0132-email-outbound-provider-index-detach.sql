@@ -8,15 +8,13 @@
 -- cross-store foreign key.
 
 CREATE TABLE email_outbound_provider_index_next (
-	provider TEXT NOT NULL CHECK (length(provider) > 0),
-	provider_message_id TEXT NOT NULL CHECK (length(provider_message_id) > 0),
-	user_id TEXT NOT NULL CHECK (
-		length(user_id) > 0 AND user_id <> 'system:email'
-	),
-	message_id TEXT NOT NULL CHECK (length(message_id) > 0),
-	inbox_id TEXT CHECK (inbox_id IS NULL OR length(inbox_id) > 0),
-	created_at TEXT NOT NULL CHECK (length(created_at) > 0),
-	updated_at TEXT NOT NULL CHECK (length(updated_at) > 0),
+	provider TEXT NOT NULL,
+	provider_message_id TEXT NOT NULL,
+	user_id TEXT NOT NULL CHECK (user_id <> 'system:email'),
+	message_id TEXT NOT NULL,
+	inbox_id TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
 	PRIMARY KEY (provider, provider_message_id)
 );
 
@@ -49,3 +47,14 @@ CREATE INDEX idx_email_outbound_provider_index_user_id
 
 CREATE UNIQUE INDEX idx_email_outbound_provider_index_message_id
 	ON email_outbound_provider_index(message_id);
+
+-- Preserve the old FK's rollback behavior while legacy email_messages remains.
+-- SQLite runs trigger statements in the same transaction as the DELETE, so a
+-- failure rolls back both the message and index cleanup. Step 5b removes this
+-- compatibility trigger with the legacy table.
+CREATE TRIGGER email_messages_delete_outbound_provider_index
+AFTER DELETE ON email_messages
+BEGIN
+	DELETE FROM email_outbound_provider_index
+	WHERE message_id = OLD.id;
+END;
