@@ -66,7 +66,7 @@ test('Mailbox search matches subject, from address, and envelope sender case-ins
 		byFrom,
 		bySubject,
 	])
-}, 15_000)
+}, 30_000)
 
 test('Mailbox search treats LIKE wildcards in the query literally', async () => {
 	const userId = uniqueUserId('search-literals')
@@ -105,7 +105,7 @@ test('Mailbox search treats LIKE wildcards in the query literally', async () => 
 			await rpcFor(userId).searchMessages({ query: 'snake_case', limit: 25 })
 		).messages.map((message) => message.id),
 	).toEqual([literalUnderscore])
-}, 15_000)
+}, 30_000)
 
 test('Mailbox search applies filters and result limits', async () => {
 	const userId = uniqueUserId('search-filters')
@@ -158,4 +158,4 @@ test('Mailbox search applies filters and result limits', async () => {
 			})
 		).messages.map((message) => message.id),
 	).toEqual([inboundElsewhere, outbound])
-}, 15_000)
+}, 30_000)

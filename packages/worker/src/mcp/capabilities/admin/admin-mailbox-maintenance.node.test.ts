@@ -51,7 +51,7 @@ const emptyStatus = {
 	authority: {
 		ownerCount: 2,
 		frozenAt: '2026-08-01T00:00:00.000Z',
-		maxParityAgeHours: 24,
+		maxParityAgeHours: 6,
 	},
 	outboundProviderIndex: {
 		foreignKeyDetached: true,

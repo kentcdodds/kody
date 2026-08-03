@@ -383,11 +383,11 @@ ON email_outbound_provider_index(message_id);`,
 	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
 	owner_count INTEGER NOT NULL CHECK (owner_count >= 0),
 	frozen_at TEXT NOT NULL,
-	max_parity_age_hours INTEGER NOT NULL CHECK (max_parity_age_hours = 24)
+	max_parity_age_hours INTEGER NOT NULL CHECK (max_parity_age_hours = 6)
 );`,
 		`INSERT INTO email_user_graph_authority (
 	singleton, owner_count, frozen_at, max_parity_age_hours
-) VALUES (1, 0, CURRENT_TIMESTAMP, 24);`,
+) VALUES (1, 0, CURRENT_TIMESTAMP, 6);`,
 		`CREATE TABLE IF NOT EXISTS email_inbound_due_owners (
 	user_id TEXT PRIMARY KEY NOT NULL CHECK (user_id != 'system:email'),
 	due_at TEXT NOT NULL,

@@ -1,6 +1,6 @@
 import { systemEmailOwnerId } from './email-owner.ts'
 
-export const userEmailGraphAuthorityMaxParityAgeHours = 24
+export const userEmailGraphAuthorityMaxParityAgeHours = 6
 
 export type UserEmailGraphAuthorityMarker = {
 	ownerCount: number

@@ -241,20 +241,19 @@ Durable Object export behavior:
 - `Mailbox` is the sole authoritative USER email graph export. It exports
   threads, messages, attachments, and delivery events through the account-export
   `mailbox` section (`exportMailbox` RPC; keyset pagination with prefixed
-  cursors); manifest counts use `countMailbox`. D1 `email_delivery_events`
-  remains the synchronous compatibility mirror and graph-write fence, and the
-  other D1 `email_*` rows remain live compatibility projections/deletion targets
-  during expansion, but none of those four graph tables is duplicated in the D1
+  cursors); manifest counts use `countMailbox`. The four shared D1 graph tables
+  are frozen pre-cutover snapshots: no live USER read, write, graph fence,
+  compatibility mirror, parity, or rebuild uses them. They remain only for
+  scoped account-deletion/retention privacy cleanup and aggregate backup audit
+  until the destructive follow-up drops them. They are not duplicated in the D1
   export. USER R2 export enumerates raw MIME and attachment keys with
-  `Mailbox.listBlobReferences`. Mailbox also retains migration-only
-  `email_message_deletion_tombstones` so delayed D1 dual-write/parity pages
-  cannot recreate deleted messages. Tombstones are not exported or counted;
-  account purge clears them. They intentionally have no time-based cleanup while
-  D1 writers remain, so their growth is bounded by deleted message ids during
-  the migration. Tombstone cleanup is safe only after those writers retire in
-  step 5. Internal `email_message_retention_retries` rows defer failed R2
-  deletion attempts without blocking other expired messages; they are likewise
-  excluded from export/counts and removed with message or mailbox purge. See
+  `Mailbox.listBlobReferences`. Mailbox retains migration-only
+  `email_message_deletion_tombstones` to fence delayed pre-cutover snapshots.
+  Tombstones are not exported or counted; account purge clears them, and global
+  removal waits for the destructive frozen-table follow-up. Internal
+  `email_message_retention_retries` rows defer failed R2 deletion attempts
+  without blocking other expired messages; they are likewise excluded from
+  export/counts and removed with message or mailbox purge. See
   [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
@@ -519,23 +518,19 @@ not lost. Runtime types and `ensurePlatformSenderIdentity` provision verified
 rows only.
 
 - Canonical key builders are `emailRawMimeKey` / `emailAttachmentBlobKey` in
-  `packages/worker/src/email/blob-keys.ts` (re-exported from
-  `packages/worker/src/email/repo.ts`).
-- All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
-  which fetches the blob by `raw_mime_key` only. Attachment content extraction
-  re-parses the resolved MIME from that blob.
-- Message deletes always delete the deterministic
-  `emailRawMimeKey(userId, messageId)` from R2 (production writers always store
-  that canonical key). `deleteEmailMessageById` captures ownership + attachment
-  `storage_key` values, optionally enforces an `expectedUserId` owner fence,
-  runs an atomic D1 batch (attachments, then message), then best-effort R2 blob
-  deletes and returns the exact captured blob deletion inventory/outcomes for
-  internal verification. Live explicit and retention deletes do not call Mailbox
-  mirror helpers today; the parity lane repairs DO state via purge/rebuild.
-  Direct delete wiring is pending. User email retention and system-email
-  retention stay strict: blob delete before row delete; failed blob deletes skip
-  the row for retry. Account deletion stays strict before atomic D1
-  finalization; a failed blob delete preserves every message row for retry.
+  `packages/worker/src/email/blob-keys.ts`.
+- USER reads resolve Mailbox metadata and use `loadRawMime` in
+  `packages/worker/src/email/service.ts`, which fetches only the Mailbox-owned
+  `rawMimeKey`. Attachment content extraction re-parses that resolved MIME.
+- USER explicit delete, retention, and account purge call owner Mailbox RPCs.
+  Mailbox deletes each canonical raw-MIME/external-attachment R2 object before
+  deleting authoritative SQLite metadata; a failed blob delete preserves the row
+  and schedules retry. No live path mirrors or repairs a shared D1 graph row.
+  Frozen shared rows are deleted separately only by
+  `legacy-user-email-graph-cleanup.ts` for privacy retention/account deletion,
+  after authoritative Mailbox/R2 inventory and purge where applicable.
+  `system:email` keeps its dedicated D1 retention and transactional legacy
+  system mirror until its separately documented destructive follow-up.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -1111,10 +1106,9 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
   [Entitlements](./entitlements.md#usermeter-expand-phase))
 - `STRIPE_PLAN_REFRESH` (Durable Objects; per-user, activity-driven Stripe plan
   reconciliation alarms)
-- `MAILBOX` (Durable Objects; per-user email metadata — see
-  [Mailbox](#durable-objects-mailbox); phase 1 registers purge/export
-  consumption; phase 2 wires terminal inbound + outbound live dual-write without
-  changing D1 authority)
+- `MAILBOX` (Durable Objects; sole per-user email graph, inbound-ledger,
+  retention, read, export, and mutation authority — see
+  [Mailbox](#durable-objects-mailbox))
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)

@@ -13,6 +13,10 @@ test.each([
 	'SELECT * FROM "email_messages"',
 	'SELECT * FROM `email_attachments`',
 	'SELECT * FROM [email_delivery_events]',
+	"SELECT * FROM 'email_threads'",
+	'SELECT * FROM main."email_messages"',
+	"DELETE FROM 'main'.'email_attachments' WHERE message_id = ?",
+	'UPDATE [main].[email_delivery_events] SET updated_at = ?',
 ])('rejects live graph SQL before preparing it: %s', (sql) => {
 	const prepare = vi.fn()
 	expect(() =>

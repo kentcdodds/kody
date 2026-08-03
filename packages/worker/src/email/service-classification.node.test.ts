@@ -24,7 +24,7 @@ function createEnv() {
 	const first = vi.fn(async () => ({
 		owner_count: 1,
 		frozen_at: '2026-08-03T00:00:00.000Z',
-		max_parity_age_hours: 24,
+		max_parity_age_hours: 6,
 	}))
 	const prepare = vi.fn((sql: string) => {
 		preparedSql.push(sql)

@@ -52,6 +52,98 @@ test('static authority catches live and mailbox-named D1 graph SQL', async () =>
 	)
 })
 
+test('static authority catches quoted, qualified, TSX, and system-prefix SQL bypasses', async () => {
+	await using fixture = await authorityFixture({
+		'packages/worker/src/email/qualified.ts': `
+			export const read = (db: D1Database) =>
+				db.prepare('SELECT * FROM main.email_messages')
+		`,
+		'packages/worker/src/email/double-quoted.ts': `
+			export const read = (db: D1Database) =>
+				db.prepare('SELECT * FROM "main"."email_threads"')
+		`,
+		'packages/worker/src/email/bracketed.ts': `
+			export const read = (db: D1Database) =>
+				db.prepare('SELECT * FROM [main].[email_attachments]')
+		`,
+		'packages/worker/src/email/backtick.ts': `
+			export const read = (db: D1Database) =>
+				db.prepare('SELECT * FROM \`main\`.\`email_delivery_events\`')
+		`,
+		'packages/worker/src/email/single-quoted.tsx': `
+			export const read = (db: D1Database) =>
+				db.prepare("SELECT * FROM 'main'.'email_messages'")
+		`,
+		'packages/worker/src/email/system-escape.ts': `
+			export const read = (db: D1Database) =>
+				db.prepare('DELETE FROM email_threads')
+		`,
+	})
+	const violations = await scanUserEmailD1Authority(fixture.root)
+	for (const file of [
+		'qualified.ts',
+		'double-quoted.ts',
+		'bracketed.ts',
+		'backtick.ts',
+		'single-quoted.tsx',
+		'system-escape.ts',
+	]) {
+		expect(violations).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					file: `packages/worker/src/email/${file}`,
+				}),
+			]),
+		)
+	}
+})
+
+test('static authority catches every legacy import shape and mutator aliases', async () => {
+	await using fixture = await authorityFixture({
+		'packages/worker/src/email/default-import.ts': `
+			import repo from './repo.ts'
+			export { repo }
+		`,
+		'packages/worker/src/email/namespace-import.ts': `
+			import * as repo from './repo.ts'
+			export { repo }
+		`,
+		'packages/worker/src/email/named-alias.ts': `
+			import { insertEmailMessage as hiddenWrite } from './repo.ts'
+			export { hiddenWrite }
+		`,
+		'packages/worker/src/email/dynamic-import.ts': `
+			export const load = () => import('#worker/email/repo.ts')
+		`,
+		'packages/worker/src/email/retired-import.ts': `
+			import { mirror } from './mailbox-live-mirror.ts'
+			export { mirror }
+		`,
+		'packages/worker/src/email/cleanup-import.ts': `
+			import { deleteFrozenUserEmailGraphForAccount } from './legacy-user-email-graph-cleanup.ts'
+			export { deleteFrozenUserEmailGraphForAccount }
+		`,
+	})
+	const violations = await scanUserEmailD1Authority(fixture.root)
+	for (const file of [
+		'default-import.ts',
+		'namespace-import.ts',
+		'named-alias.ts',
+		'dynamic-import.ts',
+		'retired-import.ts',
+		'cleanup-import.ts',
+	]) {
+		expect(violations).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					file: `packages/worker/src/email/${file}`,
+					message: expect.stringContaining('imports'),
+				}),
+			]),
+		)
+	}
+})
+
 test('static authority permits Mailbox SQLite and scoped cleanup SQL', async () => {
 	await using fixture = await authorityFixture({
 		'packages/worker/src/email/mailbox-store.ts': `
@@ -63,6 +155,16 @@ test('static authority permits Mailbox SQLite and scoped cleanup SQL', async () 
 			export function remove(db: D1Database) {
 				return db.prepare(\`DELETE FROM email_messages WHERE id = ?\`)
 			}
+		`,
+		'packages/worker/src/email/system-email-graph-store.ts': `
+			export function read(db: D1Database) {
+				return db.prepare("SELECT * FROM 'main'.'email_messages'")
+			}
+		`,
+		'packages/worker/src/email/unrelated.tsx': `
+			// SELECT * FROM email_messages is documentation, not executable SQL.
+			export const tableLabel = 'email_messages'
+			export const projection = "SELECT 'email_messages' AS label"
 		`,
 	})
 	await expect(scanUserEmailD1Authority(fixture.root)).resolves.toEqual([])

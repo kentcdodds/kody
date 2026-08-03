@@ -9,18 +9,47 @@ const sharedGraphTables = new Set([
 	'email_delivery_events',
 ])
 
-const explicitSharedGraphReferenceFiles = new Set([
-	'packages/worker/src/account/data-targets.ts',
-	'packages/worker/src/account/user-owned-surfaces.ts',
-	'packages/worker/src/app/account-retention-dispositions.ts',
+const mailboxSqlFiles = new Set([
+	'packages/worker/src/email/mailbox-delivery-event-bootstrap.ts',
+	'packages/worker/src/email/mailbox-delivery-events.ts',
+	'packages/worker/src/email/mailbox-do.ts',
+	'packages/worker/src/email/mailbox-export.ts',
+	'packages/worker/src/email/mailbox-inbound-bootstrap.ts',
+	'packages/worker/src/email/mailbox-inbound-cleanup-ledger.ts',
+	'packages/worker/src/email/mailbox-inbound-effect-ledger.ts',
+	'packages/worker/src/email/mailbox-inbound-ledger-shared.ts',
+	'packages/worker/src/email/mailbox-inbound-ledger.ts',
+	'packages/worker/src/email/mailbox-message-deletion-tombstones.ts',
+	'packages/worker/src/email/mailbox-mutations.ts',
+	'packages/worker/src/email/mailbox-schema.ts',
+	'packages/worker/src/email/mailbox-store.ts',
 	'packages/worker/src/email/inbound-due-owners.ts',
-	'packages/worker/src/email/legacy-user-email-graph-cleanup.ts',
-	'packages/worker/src/email/outbound-provider-index.ts',
-	'packages/worker/src/email/user-email-d1-guard.ts',
+])
+
+const systemSharedGraphFiles = new Set([
+	'packages/worker/src/email/system-email-authority.ts',
+	'packages/worker/src/email/system-email-graph-columns.ts',
+	'packages/worker/src/email/system-email-graph-repo.ts',
+	'packages/worker/src/email/system-email-graph-sql.ts',
+	'packages/worker/src/email/system-email-graph-store.ts',
+	'packages/worker/src/email/system-email-graph-transaction.ts',
+	'packages/worker/src/email/system-email.ts',
+	'packages/worker/src/email/system-inbound-delivery-mirror.ts',
+	'packages/worker/src/email/system-inbound-delivery-store.ts',
+])
+
+const legacyCleanupFile =
+	'packages/worker/src/email/legacy-user-email-graph-cleanup.ts'
+
+const allowedSharedGraphSqlFiles = new Set([
+	legacyCleanupFile,
+	...mailboxSqlFiles,
+	...systemSharedGraphFiles,
 ])
 
 const sharedGraphD1SqlFiles = new Set([
-	'packages/worker/src/email/legacy-user-email-graph-cleanup.ts',
+	legacyCleanupFile,
+	...systemSharedGraphFiles,
 ])
 
 const allowedRepoImports = new Set([
@@ -35,30 +64,42 @@ const allowedRepoImports = new Set([
 	'listEmailInboxesForUser',
 ])
 
+const additionalAllowedRepoImports = new Map([
+	[
+		'packages/worker/src/email/system-email-graph-store.ts',
+		new Set([
+			'EmailInboundDeliveryFence',
+			'boundedEmailBody',
+			'emailRawMimeKey',
+			'mapAttachmentRow',
+			'mapMessageRow',
+			'mapThreadRow',
+		]),
+	],
+	['packages/worker/src/email/system-email.ts', new Set(['emailRawMimeKey'])],
+])
+
+const allowedCleanupImports = new Map([
+	[
+		'packages/worker/src/app/account-deletion.ts',
+		new Set(['deleteFrozenUserEmailGraphForAccount']),
+	],
+	[
+		'packages/worker/src/app/retention.ts',
+		new Set(['pruneFrozenUserEmailGraphForRetention']),
+	],
+])
+
+const retiredLegacyEmailModules = new Set([
+	'mailbox-live-mirror',
+	'mailbox-mirror',
+	'mailbox-parity-repo',
+	'mailbox-snapshot-repo',
+	'mailbox-snapshots',
+])
+
 function isTestFile(file: string) {
 	return file.includes('.test.') || file.endsWith('/test-schema.ts')
-}
-
-function isAllowedSharedGraphFile(file: string) {
-	return (
-		explicitSharedGraphReferenceFiles.has(file) ||
-		file.startsWith('packages/worker/src/email/mailbox-') ||
-		file.startsWith('packages/worker/src/email/system-')
-	)
-}
-
-function isAllowedSharedGraphD1SqlFile(file: string) {
-	return (
-		sharedGraphD1SqlFiles.has(file) ||
-		file.startsWith('packages/worker/src/email/system-')
-	)
-}
-
-function isMailboxSqlFile(file: string) {
-	return (
-		file.startsWith('packages/worker/src/email/mailbox-') ||
-		file === 'packages/worker/src/email/inbound-due-owners.ts'
-	)
 }
 
 async function listTypeScriptFiles(directory: string): Promise<Array<string>> {
@@ -68,16 +109,53 @@ async function listTypeScriptFiles(directory: string): Promise<Array<string>> {
 		const absolute = path.join(directory, entry.name)
 		if (entry.isDirectory()) {
 			files.push(...(await listTypeScriptFiles(absolute)))
-		} else if (entry.isFile() && entry.name.endsWith('.ts')) {
+		} else if (
+			entry.isFile() &&
+			(entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))
+		) {
 			files.push(absolute)
 		}
 	}
 	return files
 }
 
-function sharedTablesInLiteral(value: string) {
-	const tokens = value.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? []
-	return [...new Set(tokens.filter((token) => sharedGraphTables.has(token)))]
+const sqlIdentifier =
+	'(?:[A-Za-z_][A-Za-z0-9_]*|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\\[(?:[^\\]]|\\]\\])*\\]|\'(?:[^\']|\'\')*\')'
+const sqlRelation = new RegExp(
+	`\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES|ON)\\s+` +
+		`(?:IF\\s+(?:NOT\\s+)?EXISTS\\s+)?` +
+		`(${sqlIdentifier}(?:\\s*\\.\\s*${sqlIdentifier})?)`,
+	'giu',
+)
+const sqlIdentifierToken = new RegExp(sqlIdentifier, 'gu')
+
+function normalizeSqlIdentifier(value: string) {
+	const trimmed = value.trim()
+	if (
+		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+		(trimmed.startsWith('`') && trimmed.endsWith('`')) ||
+		(trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+		(trimmed.startsWith("'") && trimmed.endsWith("'"))
+	) {
+		const close = trimmed.at(-1) ?? ''
+		return trimmed
+			.slice(1, -1)
+			.replaceAll(close + close, close)
+			.toLowerCase()
+	}
+	return trimmed.toLowerCase()
+}
+
+function sharedTablesInSql(value: string) {
+	const tables = new Set<string>()
+	for (const match of value.matchAll(sqlRelation)) {
+		const identifiers = match[1]?.match(sqlIdentifierToken) ?? []
+		const table = identifiers.at(-1)
+		if (table == null) continue
+		const normalized = normalizeSqlIdentifier(table)
+		if (sharedGraphTables.has(normalized)) tables.add(normalized)
+	}
+	return [...tables]
 }
 
 function stringValue(node: ts.Node): string | null {
@@ -93,11 +171,22 @@ function stringValue(node: ts.Node): string | null {
 	return null
 }
 
-function repoModuleSpecifier(file: string, value: string) {
-	return (
-		(value === './repo.ts' && file.startsWith('packages/worker/src/email/')) ||
-		value.endsWith('/email/repo.ts')
-	)
+type LegacyEmailModule = 'cleanup' | 'repo' | 'retired'
+
+function legacyEmailModule(
+	file: string,
+	value: string,
+): LegacyEmailModule | null {
+	const normalized = value.replace(/\.tsx?$/u, '')
+	const isEmailRelative =
+		normalized.startsWith('.') && file.startsWith('packages/worker/src/email/')
+	const isEmailAlias =
+		normalized.startsWith('#worker/email/') || normalized.includes('/email/')
+	if (!isEmailRelative && !isEmailAlias) return null
+	const name = normalized.split('/').at(-1)
+	if (name === 'repo') return 'repo'
+	if (name === 'legacy-user-email-graph-cleanup') return 'cleanup'
+	return name != null && retiredLegacyEmailModules.has(name) ? 'retired' : null
 }
 
 export type UserEmailD1AuthorityViolation = {
@@ -121,21 +210,50 @@ export async function scanUserEmailD1Authority(
 			text,
 			ts.ScriptTarget.Latest,
 			true,
-			ts.ScriptKind.TS,
+			file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
 		)
 		const report = (node: ts.Node, message: string) => {
 			const line =
 				source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
 			violations.push({ file, line, message })
 		}
+		const reportLegacyImport = (
+			node: ts.Node,
+			moduleKind: LegacyEmailModule,
+			imported: string,
+		) => {
+			if (moduleKind === 'retired') {
+				report(node, `live module imports retired email module "${imported}"`)
+				return
+			}
+			if (moduleKind === 'cleanup') {
+				const allowed = allowedCleanupImports.get(file)
+				if (!allowed?.has(imported)) {
+					report(
+						node,
+						`live module imports scoped legacy cleanup "${imported}"`,
+					)
+				}
+				return
+			}
+			const allowed =
+				allowedRepoImports.has(imported) ||
+				additionalAllowedRepoImports.get(file)?.has(imported) === true
+			if (!allowed) {
+				report(
+					node,
+					`live module imports legacy email repo mutator "${imported}"`,
+				)
+			}
+		}
 		const visit = (node: ts.Node) => {
 			const value = stringValue(node)
-			if (value != null && !isAllowedSharedGraphFile(file)) {
-				const tables = sharedTablesInLiteral(value)
+			if (value != null && !allowedSharedGraphSqlFiles.has(file)) {
+				const tables = sharedTablesInSql(value)
 				if (tables.length > 0) {
 					report(
 						node,
-						`shared USER graph reference outside the static allowlist: ${tables.join(', ')}`,
+						`shared USER graph SQL outside the exact static allowlist: ${tables.join(', ')}`,
 					)
 				}
 			}
@@ -147,15 +265,15 @@ export async function scanUserEmailD1Authority(
 			) {
 				const sqlNode = node.arguments[0]
 				const sql = sqlNode ? stringValue(sqlNode) : null
-				const tables = sql == null ? [] : sharedTablesInLiteral(sql)
+				const tables = sql == null ? [] : sharedTablesInSql(sql)
 				const receiver = node.expression.expression.getText(source)
 				const mailboxSql =
-					isMailboxSqlFile(file) &&
+					mailboxSqlFiles.has(file) &&
 					(receiver === 'sql' || receiver.endsWith('.sql'))
 				if (
 					tables.length > 0 &&
 					!mailboxSql &&
-					!isAllowedSharedGraphD1SqlFile(file)
+					!sharedGraphD1SqlFiles.has(file)
 				) {
 					report(
 						sqlNode ?? node,
@@ -164,28 +282,74 @@ export async function scanUserEmailD1Authority(
 				}
 			}
 			if (
-				(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-				node.moduleSpecifier != null &&
-				ts.isStringLiteral(node.moduleSpecifier) &&
-				repoModuleSpecifier(file, node.moduleSpecifier.text) &&
-				!file.startsWith('packages/worker/src/email/system-')
+				ts.isCallExpression(node) &&
+				(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+					(ts.isIdentifier(node.expression) &&
+						node.expression.text === 'require')) &&
+				node.arguments[0] != null &&
+				ts.isStringLiteral(node.arguments[0])
 			) {
-				const bindings = ts.isImportDeclaration(node)
-					? node.importClause?.namedBindings
-					: node.exportClause
-				if (
-					bindings &&
-					(ts.isNamedImports(bindings) || ts.isNamedExports(bindings))
-				) {
-					for (const element of bindings.elements) {
-						const imported = element.propertyName?.text ?? element.name.text
-						if (!allowedRepoImports.has(imported)) {
-							report(
-								element,
-								`live module imports legacy email repo mutator "${imported}"`,
-							)
+				const moduleKind = legacyEmailModule(file, node.arguments[0].text)
+				if (moduleKind != null) {
+					reportLegacyImport(node, moduleKind, '*dynamic*')
+				}
+			}
+			if (
+				ts.isImportDeclaration(node) &&
+				node.moduleSpecifier != null &&
+				ts.isStringLiteral(node.moduleSpecifier)
+			) {
+				const moduleKind = legacyEmailModule(file, node.moduleSpecifier.text)
+				if (moduleKind != null) {
+					const clause = node.importClause
+					if (clause == null) {
+						reportLegacyImport(node, moduleKind, '*side-effect*')
+					} else {
+						if (clause.name != null) {
+							reportLegacyImport(clause.name, moduleKind, 'default')
+						}
+						const bindings = clause.namedBindings
+						if (bindings != null && ts.isNamespaceImport(bindings)) {
+							reportLegacyImport(bindings, moduleKind, '*namespace*')
+						} else if (bindings != null) {
+							for (const element of bindings.elements) {
+								const imported = element.propertyName?.text ?? element.name.text
+								reportLegacyImport(element, moduleKind, imported)
+							}
 						}
 					}
+				}
+			}
+			if (
+				ts.isExportDeclaration(node) &&
+				node.moduleSpecifier != null &&
+				ts.isStringLiteral(node.moduleSpecifier)
+			) {
+				const moduleKind = legacyEmailModule(file, node.moduleSpecifier.text)
+				if (moduleKind != null) {
+					const bindings = node.exportClause
+					if (bindings == null || !ts.isNamedExports(bindings)) {
+						reportLegacyImport(node, moduleKind, '*re-export*')
+					} else {
+						for (const element of bindings.elements) {
+							const imported = element.propertyName?.text ?? element.name.text
+							reportLegacyImport(element, moduleKind, imported)
+						}
+					}
+				}
+			}
+			if (
+				ts.isImportEqualsDeclaration(node) &&
+				ts.isExternalModuleReference(node.moduleReference) &&
+				node.moduleReference.expression != null &&
+				ts.isStringLiteral(node.moduleReference.expression)
+			) {
+				const moduleKind = legacyEmailModule(
+					file,
+					node.moduleReference.expression.text,
+				)
+				if (moduleKind != null) {
+					reportLegacyImport(node, moduleKind, '*import-equals*')
 				}
 			}
 			ts.forEachChild(node, visit)

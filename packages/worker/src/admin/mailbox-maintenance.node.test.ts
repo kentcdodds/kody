@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 	loadUserEmailGraphAuthorityMarker: vi.fn(async () => ({
 		ownerCount: 2,
 		frozenAt: '2026-08-01T00:00:00.000Z',
-		maxParityAgeHours: 24,
+		maxParityAgeHours: 6,
 	})),
 	assertUserEmailGraphAuthority: vi.fn(async () => undefined),
 	loadProviderIndexRepairHealth: vi.fn(async () => ({
@@ -123,7 +123,7 @@ test('maintenance status reports authority and coordination health', async () =>
 		authority: {
 			ownerCount: 2,
 			frozenAt: '2026-08-01T00:00:00.000Z',
-			maxParityAgeHours: 24,
+			maxParityAgeHours: 6,
 		},
 		outboundProviderIndex: {
 			indexCount: 2,

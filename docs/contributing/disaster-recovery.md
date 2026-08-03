@@ -361,16 +361,14 @@ config, and expect users to reauthorize OAuth and remote connectors.
 
 ### Mailbox authority rollback repair
 
-Rollback from the USER inbound Mailbox-authority Worker to its predecessor has
-an accepted roll-forward caveat: legacy `json_set` lifecycle writes do not bump
-`updated_at`, and the roll-forward does not auto-detect newer D1 state when a
-Mailbox row already exists. Before a roll-forward after such a rollback, use the
-backup-gated, owner-by-owner metadata purge and full D1 parity rebuild procedure
-in
-[Data storage → Mailbox](./architecture/data-storage.md#durable-objects-mailbox).
-That procedure is gated on the verified backup SHA-256 prefix `7787f8c9`, keeps
-the rollback Worker quiesced, and requires effect/finalization verification. Do
-not use normal purge as an exploratory or routine repair.
+The frozen shared USER D1 graph is not a rollback or roll-forward source. It
+contains only the pre-cutover snapshot and may be reduced by account-deletion or
+retention privacy cleanup. A recovery that changes USER email authority must
+quiesce ingress and scheduled/effect consumers, restore the authoritative
+Mailbox and `EMAIL_BLOBS` snapshots, verify owner inventories and
+effect/finalization state, then use reviewed operator tooling to populate any
+replacement target from Mailbox before changing code authority. The retired
+D1-to-Mailbox parity purge/rebuild path must not be reintroduced.
 
 ## Schedules and freshness
 

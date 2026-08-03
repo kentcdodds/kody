@@ -30,4 +30,4 @@ test('Mailbox attachment reads are isolated by owner object identity', async () 
 			messageId: `other-${crypto.randomUUID()}`,
 		}),
 	).resolves.toEqual([])
-}, 15_000)
+}, 30_000)

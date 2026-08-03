@@ -2,9 +2,11 @@
 --
 -- The migration is intentionally fail-closed. Every owner present in the
 -- frozen shared USER graph must have a fresh, successful, complete Mailbox
--- parity record before this deployment can enable Mailbox-only writes. The
--- maximum accepted parity age is 24 hours. `system:email` is operator-owned
--- and remains on its dedicated D1 graph, so it is excluded.
+-- parity record before this deployment can enable Mailbox-only writes. This
+-- preserves the retired production read-cutover eligibility exactly: at least
+-- two hours of continuous matching, a check within six hours, completed
+-- creation backfills, and no active content-replay window/cursor. Deleting
+-- accounts and `system:email` are excluded.
 CREATE TABLE migration_0133_email_user_graph_authority_guard (
 	value INTEGER NOT NULL CHECK (value = 1)
 );
@@ -21,16 +23,34 @@ SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
 FROM frozen_owners AS owner
 LEFT JOIN users AS user ON user.stable_user_id = owner.user_id
 WHERE user.id IS NULL
+	OR user.deleting_at IS NOT NULL
 	OR user.mailbox_parity_matching_since IS NULL
+	OR user.mailbox_parity_matching_since > strftime(
+		'%Y-%m-%dT%H:%M:%fZ',
+		'now',
+		'-2 hours'
+	)
+	OR user.mailbox_parity_matching_since > strftime(
+		'%Y-%m-%dT%H:%M:%fZ',
+		'now'
+	)
 	OR user.mailbox_parity_mismatch_count != 0
 	OR user.mailbox_parity_last_error IS NOT NULL
+	OR user.mailbox_parity_content_watermark_at IS NULL
+	OR user.mailbox_parity_content_replay_upper_at IS NOT NULL
+	OR user.mailbox_parity_content_replay_cursor_updated_at IS NOT NULL
+	OR user.mailbox_parity_content_replay_cursor_id IS NOT NULL
 	OR user.mailbox_parity_message_backfill_completed_at IS NULL
 	OR user.mailbox_parity_event_backfill_completed_at IS NULL
 	OR user.mailbox_parity_checked_at IS NULL
 	OR user.mailbox_parity_checked_at < strftime(
 		'%Y-%m-%dT%H:%M:%fZ',
 		'now',
-		'-24 hours'
+		'-6 hours'
+	)
+	OR user.mailbox_parity_checked_at > strftime(
+		'%Y-%m-%dT%H:%M:%fZ',
+		'now'
 	);
 
 DROP TABLE migration_0133_email_user_graph_authority_guard;
@@ -39,7 +59,7 @@ CREATE TABLE email_user_graph_authority (
 	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
 	owner_count INTEGER NOT NULL CHECK (owner_count >= 0),
 	frozen_at TEXT NOT NULL,
-	max_parity_age_hours INTEGER NOT NULL CHECK (max_parity_age_hours = 24)
+	max_parity_age_hours INTEGER NOT NULL CHECK (max_parity_age_hours = 6)
 );
 
 INSERT INTO email_user_graph_authority (
@@ -55,7 +75,7 @@ WITH frozen_owners(user_id) AS (
 	UNION
 	SELECT user_id FROM email_delivery_events WHERE user_id != 'system:email'
 )
-SELECT 1, COUNT(*), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 24
+SELECT 1, COUNT(*), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 6
 FROM frozen_owners;
 
 -- Thin USER inbound coordination index. It carries no message/event payload;
@@ -71,6 +91,31 @@ CREATE TABLE email_inbound_due_owners (
 
 CREATE INDEX idx_email_inbound_due_owners_due_at
 	ON email_inbound_due_owners(due_at, user_id);
+
+-- Audit every frozen owner once after cutover. The bounded scheduled sweeper
+-- opens each Mailbox, processes stale/effect work, then replaces or removes
+-- this row from the owner-local due hint.
+INSERT INTO email_inbound_due_owners (
+	user_id,
+	due_at,
+	reason,
+	attempt_count,
+	last_error,
+	updated_at
+)
+WITH frozen_owners(user_id) AS (
+	SELECT user_id FROM email_threads WHERE user_id != 'system:email'
+	UNION
+	SELECT user_id FROM email_messages WHERE user_id != 'system:email'
+	UNION
+	SELECT user_id FROM email_delivery_events WHERE user_id != 'system:email'
+),
+cutover_clock(now_at) AS (
+	SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+)
+SELECT owner.user_id, clock.now_at, 'cutover-audit', 0, NULL, clock.now_at
+FROM frozen_owners AS owner
+CROSS JOIN cutover_clock AS clock;
 
 -- Aggregate-only coordination for operator visibility into owner-local
 -- provider-index repair ledgers. No provider or message identifiers live here.

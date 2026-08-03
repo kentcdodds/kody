@@ -38,7 +38,7 @@ test('USER writes require the authority marker while system writes are unaffecte
 	const db = dbWithMarker({
 		owner_count: 12,
 		frozen_at: '2026-08-03T00:00:00.000Z',
-		max_parity_age_hours: 24,
+		max_parity_age_hours: 6,
 	})
 	await expect(
 		assertUserEmailGraphAuthority({ db, ownerId: 'user-1' }),
@@ -46,6 +46,6 @@ test('USER writes require the authority marker while system writes are unaffecte
 	await expect(loadUserEmailGraphAuthorityMarker(db)).resolves.toEqual({
 		ownerCount: 12,
 		frozenAt: '2026-08-03T00:00:00.000Z',
-		maxParityAgeHours: 24,
+		maxParityAgeHours: 6,
 	})
 })

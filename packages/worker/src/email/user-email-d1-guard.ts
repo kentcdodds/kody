@@ -14,6 +14,25 @@ export type UserEmailD1AccessMarker =
 	| 'frozen-backup-audit'
 	| 'drop-tooling'
 
+const sqliteIdentifierPrefixes = new Set([
+	'FROM',
+	'INTO',
+	'JOIN',
+	'ON',
+	'REFERENCES',
+	'TABLE',
+	'UPDATE',
+])
+
+function isSqliteSingleQuotedIdentifier(sql: string, quoteIndex: number) {
+	let cursor = quoteIndex - 1
+	while (cursor >= 0 && /\s/.test(sql[cursor] ?? '')) cursor -= 1
+	if (sql[cursor] === '.') return true
+	const end = cursor + 1
+	while (cursor >= 0 && /[A-Za-z]/.test(sql[cursor] ?? '')) cursor -= 1
+	return sqliteIdentifierPrefixes.has(sql.slice(cursor + 1, end).toUpperCase())
+}
+
 function sqlIdentifiers(sql: string): Set<string> {
 	const identifiers = new Set<string>()
 	const addIdentifier = (value: string) => {
@@ -25,22 +44,12 @@ function sqlIdentifiers(sql: string): Set<string> {
 	let index = 0
 	while (index < sql.length) {
 		const character = sql[index]
-		if (character === "'") {
-			index += 1
-			while (index < sql.length) {
-				if (sql[index] === "'") {
-					if (sql[index + 1] === "'") {
-						index += 2
-						continue
-					}
-					index += 1
-					break
-				}
-				index += 1
-			}
-			continue
-		}
-		if (character === '"' || character === '`' || character === '[') {
+		if (
+			character === "'" ||
+			character === '"' ||
+			character === '`' ||
+			character === '['
+		) {
 			const close = character === '[' ? ']' : character
 			const start = index + 1
 			index = start
@@ -58,7 +67,9 @@ function sqlIdentifiers(sql: string): Set<string> {
 				}
 				break
 			}
-			addIdentifier(identifier || sql.slice(start, index))
+			if (character !== "'" || isSqliteSingleQuotedIdentifier(sql, start - 1)) {
+				addIdentifier(identifier || sql.slice(start, index))
+			}
 			index += index < sql.length ? 1 : 0
 			continue
 		}

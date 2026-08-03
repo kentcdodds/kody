@@ -8,8 +8,8 @@ import { systemEmailOwnerId } from './email-owner.ts'
 
 const authorityMigration = '0133-email-user-graph-authority.sql'
 
-test('0133 aborts on incomplete parity and records only validated USER owners', () => {
-	using sqlite = new DatabaseSync(':memory:')
+function createAuthorityMigrationDatabase() {
+	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec('PRAGMA foreign_keys = ON')
 	applyMigrationsBefore(sqlite, authorityMigration)
 	sqlite.exec(`
@@ -32,8 +32,39 @@ test('0133 aborts on incomplete parity and records only validated USER owners', 
 				'sender@example.test', 'stored',
 				'2026-08-03T00:00:00.000Z', '2026-08-03T00:00:00.000Z'
 			);
-	`)
 
+		UPDATE users
+		SET mailbox_parity_checked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+			mailbox_parity_matching_since = strftime(
+				'%Y-%m-%dT%H:%M:%fZ',
+				'now',
+				'-2 hours'
+			),
+			mailbox_parity_mismatch_count = 0,
+			mailbox_parity_last_error = NULL,
+			mailbox_parity_content_watermark_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 hours'),
+			mailbox_parity_content_replay_upper_at = NULL,
+			mailbox_parity_content_replay_cursor_updated_at = NULL,
+			mailbox_parity_content_replay_cursor_id = NULL,
+			mailbox_parity_message_backfill_cursor_created_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-3 hours'),
+			mailbox_parity_message_backfill_cursor_id = 'last-message',
+			mailbox_parity_message_backfill_completed_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+			mailbox_parity_event_backfill_cursor_created_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-3 hours'),
+			mailbox_parity_event_backfill_cursor_id = 'last-event',
+			mailbox_parity_event_backfill_completed_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE stable_user_id = 'user-authority';
+	`)
+	return sqlite
+}
+
+function expectAuthorityMigrationRejected(update: string) {
+	using sqlite = createAuthorityMigrationDatabase()
+	sqlite.exec(update)
 	expect(() => applyMigrationLikeD1(sqlite, authorityMigration)).toThrow(
 		/CHECK constraint failed/u,
 	)
@@ -45,23 +76,50 @@ test('0133 aborts on incomplete parity and records only validated USER owners', 
 			)
 			.get(),
 	).toBeUndefined()
+}
 
-	sqlite.exec(`
+test('0133 preserves exact soak, freshness, replay, and deletion eligibility', () => {
+	expectAuthorityMigrationRejected(`
 		UPDATE users
-		SET mailbox_parity_checked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-			mailbox_parity_matching_since = strftime(
-				'%Y-%m-%dT%H:%M:%fZ',
-				'now',
-				'-1 hour'
-			),
-			mailbox_parity_mismatch_count = 0,
-			mailbox_parity_last_error = NULL,
-			mailbox_parity_message_backfill_completed_at =
-				strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-			mailbox_parity_event_backfill_completed_at =
-				strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		SET mailbox_parity_matching_since =
+			strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 hour')
 		WHERE stable_user_id = 'user-authority';
 	`)
+
+	expectAuthorityMigrationRejected(`
+		UPDATE users
+		SET mailbox_parity_checked_at =
+			strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-7 hours')
+		WHERE stable_user_id = 'user-authority';
+	`)
+
+	expectAuthorityMigrationRejected(`
+		UPDATE users
+		SET mailbox_parity_content_replay_upper_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+			mailbox_parity_content_replay_cursor_updated_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute'),
+			mailbox_parity_content_replay_cursor_id = 'message-cursor'
+		WHERE stable_user_id = 'user-authority';
+	`)
+
+	expectAuthorityMigrationRejected(`
+		UPDATE users
+		SET mailbox_parity_content_replay_cursor_updated_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute'),
+			mailbox_parity_content_replay_cursor_id = 'dangling-content-cursor'
+		WHERE stable_user_id = 'user-authority';
+	`)
+
+	expectAuthorityMigrationRejected(`
+		UPDATE users
+		SET deleting_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE stable_user_id = 'user-authority';
+	`)
+})
+
+test('0133 records an exactly eligible owner and seeds its cutover audit', () => {
+	using sqlite = createAuthorityMigrationDatabase()
 	applyMigrationLikeD1(sqlite, authorityMigration)
 	expect(
 		sqlite
@@ -71,13 +129,20 @@ test('0133 aborts on incomplete parity and records only validated USER owners', 
 				WHERE singleton = 1`,
 			)
 			.get(),
-	).toEqual({ owner_count: 1, max_parity_age_hours: 24 })
+	).toEqual({ owner_count: 1, max_parity_age_hours: 6 })
 	expect(
 		sqlite
 			.prepare(
-				`SELECT COUNT(*) AS count
+				`SELECT user_id, reason, attempt_count, last_error,
+					due_at = updated_at AS timestamps_match
 				FROM email_inbound_due_owners`,
 			)
 			.get(),
-	).toEqual({ count: 0 })
+	).toEqual({
+		user_id: 'user-authority',
+		reason: 'cutover-audit',
+		attempt_count: 0,
+		last_error: null,
+		timestamps_match: 1,
+	})
 })

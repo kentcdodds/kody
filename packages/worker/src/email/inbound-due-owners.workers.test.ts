@@ -1,12 +1,14 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	listDueInboundOwners,
 	replaceInboundDueOwnerHint,
 } from './inbound-due-owners.ts'
 import { type Mailbox } from './mailbox-do.ts'
 import { rpcFor, stubFor, uniqueUserId } from './mailbox-test-helpers.ts'
+import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 test('Mailbox alarm repairs a missed due-owner transition hint', async () => {
@@ -98,5 +100,76 @@ test('due-owner discovery is bounded and ordered without a users scan', async ()
 		'2026-08-03T11:00:00.000Z',
 		'2026-08-03T11:01:00.000Z',
 		'2026-08-03T11:02:00.000Z',
+	])
+})
+
+test('cutover audit sweep clears a healthy Mailbox and retains its next due work', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-08-03T12:00:00.000Z')
+	const dueAt = now.toISOString()
+	const healthyEmail = `healthy-${crypto.randomUUID()}@example.test`
+	const pendingEmail = `pending-${crypto.randomUUID()}@example.test`
+	const healthyUserId = await createStableUserIdFromEmail(healthyEmail)
+	const pendingUserId = await createStableUserIdFromEmail(pendingEmail)
+	await env.APP_DB.batch([
+		env.APP_DB.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id
+			) VALUES (?, ?, 'hash', ?)`,
+		).bind(`healthy-${crypto.randomUUID()}`, healthyEmail, healthyUserId),
+		env.APP_DB.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id
+			) VALUES (?, ?, 'hash', ?)`,
+		).bind(`pending-${crypto.randomUUID()}`, pendingEmail, pendingUserId),
+	])
+	for (const userId of [healthyUserId, pendingUserId]) {
+		await replaceInboundDueOwnerHint({
+			db: env.APP_DB,
+			userId,
+			dueAt,
+			reason: 'cutover-audit',
+			now,
+		})
+		await rpcFor(userId).getInboundDueWorkHint({ ownerId: userId })
+	}
+
+	await runInDurableObject(
+		stubFor(pendingUserId),
+		async (instance: Mailbox, state) => {
+			await instance.getInboundDueWorkHint({ ownerId: pendingUserId })
+			state.storage.sql.exec(
+				`INSERT INTO email_delivery_events (
+					id, event_type, provider, needs_effect_reconcile, state,
+					created_at, updated_at
+				) VALUES (?, 'receive_started', 'cloudflare-email-routing', 0,
+					'pending', ?, ?)`,
+				`pending-${crypto.randomUUID()}`,
+				dueAt,
+				dueAt,
+			)
+		},
+	)
+
+	await expect(
+		sweepStaleInboundDeliveries({
+			env: { ...env, APP_BASE_URL: 'https://kody.example.com' },
+			now,
+		}),
+	).resolves.toMatchObject({ usersProcessed: 2, errors: 0 })
+	const rows = await env.APP_DB.prepare(
+		`SELECT user_id, due_at, reason
+		FROM email_inbound_due_owners
+		WHERE user_id IN (?, ?)
+		ORDER BY user_id`,
+	)
+		.bind(healthyUserId, pendingUserId)
+		.all<{ user_id: string; due_at: string; reason: string }>()
+	expect(rows.results).toEqual([
+		{
+			user_id: pendingUserId,
+			due_at: new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString(),
+			reason: 'scheduled-refresh',
+		},
 	])
 })
