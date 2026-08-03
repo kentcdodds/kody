@@ -233,10 +233,23 @@ export type RepoSessionWriteJsonEdit = {
 	options?: RepoSessionWriteJsonOptions
 }
 
+export type RepoSessionDeleteEdit = {
+	kind: 'delete'
+	path: string
+}
+
+export type RepoSessionMoveEdit = {
+	kind: 'move'
+	path: string
+	to: string
+}
+
 export type RepoSessionEdit =
 	| RepoSessionWriteEdit
 	| RepoSessionReplaceEdit
 	| RepoSessionWriteJsonEdit
+	| RepoSessionDeleteEdit
+	| RepoSessionMoveEdit
 
 export type RepoSessionApplyEditsResult = {
 	dryRun: boolean

@@ -1172,19 +1172,23 @@ Operational notes:
 - Saved packages are the user-facing repo-backed identity. They resolve through
   D1 metadata to `entity_sources.id` when a repo editing session is opened.
 - `source_id` is the internal durable join key for repo-backed packages, but
-  most MCP callers should prefer package identity with `repo_run_commands`.
+  most MCP callers should prefer package identity with `repo_open_session` and
+  the file-level session capabilities (`repo_edit_files`, etc.).
 - Once repo-backed source exists, the repo snapshot is the durable source of
   truth for later edits and publishes. Search and detail payloads are derived
   projections of that repo-backed source rather than a competing second source
   of truth.
-- `repo_run_commands` parses a constrained git-command string and runs it inside
-  the repo session Durable Object. It accepts only parsed git command forms, not
-  arbitrary shell syntax, and package runtime bundles are loaded from published
-  artifacts rather than a mounted checkout.
+- Repo sessions expose a file-level API inside the RepoSession Durable Object:
+  batch edits (`repo_edit_files`: write/replace/writeJson/delete/move), unified
+  diff apply (`repo_apply_patch`), git inspection (`repo_status`, `repo_diff`,
+  `repo_log`), commit (`repo_commit`), and restore (`repo_restore`). There is no
+  git-command parser channel; branch/checkout/remote operations require the
+  Artifacts git lane via `package_get_git_remote`. Package runtime bundles are
+  loaded from published artifacts rather than a mounted checkout.
 - `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
   a first-class MCP capability for whole-file overwrites. Prefer it over
-  `git apply` heredocs when the agent is replacing an entire file (for example,
-  a single-file job source) instead of patching a hunk with surrounding context.
+  `repo_apply_patch` when the agent is replacing an entire file (for example, a
+  single-file job source) instead of patching a hunk with surrounding context.
 
 ### Direct Artifacts git publishes
 

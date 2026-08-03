@@ -69,6 +69,9 @@ const mockModule = vi.hoisted(() => {
 		git,
 		gitState,
 		rawPush: vi.fn(async () => ({ ok: true, refs: {} })),
+		readBlob: vi.fn(async () => ({
+			blob: new TextEncoder().encode('restored content\n'),
+		})),
 		workspaceExists: vi.fn(
 			async (path: string) => path === '/session/.git/config',
 		),
@@ -349,6 +352,7 @@ vi.mock('@cloudflare/shell/git', () => ({
 vi.mock('isomorphic-git', () => ({
 	default: {
 		push: (...args: Array<unknown>) => mockModule.rawPush(...args),
+		readBlob: (...args: Array<unknown>) => mockModule.readBlob(...args),
 	},
 }))
 
@@ -693,7 +697,7 @@ test('cleanupSessionBranch removes the D1 session row when remote branch delete 
 	)
 })
 
-test('runCommands applies git apply patches (modify, delete, and rename)', async () => {
+test('applyPatch applies unified diff patches (modify, delete, and rename)', async () => {
 	setCommonSessionFixtures()
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
 		if (path === '/session/src/keep.ts') return 'export const keep = false\n'
@@ -704,13 +708,10 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 	})
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 
-	const modifyAndDelete = await repoSession.runCommands({
+	const modifyAndDelete = await repoSession.applyPatch({
 		sessionId: 'session-1',
 		userId: 'user-1',
-		runChecks: false,
-		publish: false,
-		commands: [
-			"git apply <<'PATCH'",
+		patch: [
 			'--- a/src/keep.ts',
 			'+++ b/src/keep.ts',
 			'@@ -1 +1 @@',
@@ -720,7 +721,6 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 			'+++ /dev/null',
 			'@@ -1 +0,0 @@',
 			'-export const remove = true',
-			'PATCH',
 		].join('\n'),
 	})
 
@@ -734,10 +734,7 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 			force: true,
 		},
 	)
-	const modifyAndDeleteEdits = modifyAndDelete.commands[0]?.output as {
-		edits: Array<{ path: string; content: string; diff: string }>
-	}
-	expect(modifyAndDeleteEdits.edits).toEqual([
+	expect(modifyAndDelete.edits).toEqual([
 		expect.objectContaining({
 			path: 'src/keep.ts',
 			content: 'export const keep = true\n',
@@ -747,24 +744,20 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 			content: '',
 		}),
 	])
-	expect(modifyAndDeleteEdits.edits[0]?.diff).toContain('src/keep.ts')
-	expect(modifyAndDeleteEdits.edits[0]?.diff).not.toContain('src/delete.ts')
-	expect(modifyAndDeleteEdits.edits[1]?.diff).toContain('src/delete.ts')
-	expect(modifyAndDeleteEdits.edits[1]?.diff).not.toContain('src/keep.ts')
+	expect(modifyAndDelete.edits[0]?.diff).toContain('src/keep.ts')
+	expect(modifyAndDelete.edits[0]?.diff).not.toContain('src/delete.ts')
+	expect(modifyAndDelete.edits[1]?.diff).toContain('src/delete.ts')
+	expect(modifyAndDelete.edits[1]?.diff).not.toContain('src/keep.ts')
 
-	const rename = await repoSession.runCommands({
+	const rename = await repoSession.applyPatch({
 		sessionId: 'session-1',
 		userId: 'user-1',
-		runChecks: false,
-		publish: false,
-		commands: [
-			"git apply <<'PATCH'",
+		patch: [
 			'--- a/src/old-name.ts',
 			'+++ b/src/new-name.ts',
 			'@@ -1 +1 @@',
 			'-export const name = "old"',
 			'+export const name = "new"',
-			'PATCH',
 		].join('\n'),
 	})
 
@@ -781,10 +774,7 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 		'/session/src/new-name.ts',
 		'export const name = "new"\n',
 	)
-	const renameEdits = rename.commands[0]?.output as {
-		edits: Array<{ path: string; content: string; diff: string }>
-	}
-	expect(renameEdits.edits[0]).toEqual(
+	expect(rename.edits[0]).toEqual(
 		expect.objectContaining({
 			path: 'src/new-name.ts',
 			content: 'export const name = "new"\n',
@@ -792,7 +782,7 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 	)
 })
 
-test('git apply is all-or-nothing when a later patch exceeds the size limit', async () => {
+test('applyPatch is all-or-nothing when a later patch exceeds the size limit', async () => {
 	setCommonSessionFixtures()
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
 		if (path === '/session/src/keep.ts') return 'export const keep = false\n'
@@ -802,13 +792,10 @@ test('git apply is all-or-nothing when a later patch exceeds the size limit', as
 
 	const oversizedLine = 'x'.repeat(maxRepoSourceFileBytes + 1)
 	await expect(
-		repoSession.runCommands({
+		repoSession.applyPatch({
 			sessionId: 'session-1',
 			userId: 'user-1',
-			runChecks: false,
-			publish: false,
-			commands: [
-				"git apply <<'PATCH'",
+			patch: [
 				'--- a/src/keep.ts',
 				'+++ b/src/keep.ts',
 				'@@ -1 +1 @@',
@@ -818,13 +805,143 @@ test('git apply is all-or-nothing when a later patch exceeds the size limit', as
 				'+++ b/assets/huge.txt',
 				'@@ -0,0 +1 @@',
 				`+${oversizedLine}`,
-				'PATCH',
 			].join('\n'),
 		}),
 	).rejects.toThrow(/"assets\/huge\.txt".*per-file limit/s)
-	// The valid first patch must not have been written before the failure.
 	expect(mockModule.workspaceWriteFile).not.toHaveBeenCalled()
 	expect(mockModule.workspaceRm).not.toHaveBeenCalled()
+})
+
+test('applyEdits delete edit removes a file', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceExists.mockImplementation(async (path: string) =>
+		path === '/session/src/remove.ts' ? true : false,
+	)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/remove.ts') return 'export const gone = true\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.applyEdits({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		edits: [{ kind: 'delete', path: 'src/remove.ts' }],
+	})
+
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith(
+		'/session/src/remove.ts',
+		{
+			force: true,
+		},
+	)
+	expect(result.totalChanged).toBe(1)
+	expect(result.edits[0]).toMatchObject({
+		path: 'src/remove.ts',
+		changed: true,
+		content: '',
+	})
+})
+
+test('applyEdits move edit renames a file preserving content', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceExists.mockImplementation(async (path: string) =>
+		path === '/session/src/old.ts' ? true : false,
+	)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/old.ts') return 'export const value = 1\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.applyEdits({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		edits: [{ kind: 'move', path: 'src/old.ts', to: 'src/new.ts' }],
+	})
+
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/new.ts',
+		'export const value = 1\n',
+	)
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith('/session/src/old.ts', {
+		force: true,
+	})
+	expect(result.edits[0]).toMatchObject({
+		path: 'src/new.ts',
+		content: 'export const value = 1\n',
+	})
+})
+
+test('applyEdits move succeeds for a grandfathered oversized file because content is unchanged', async () => {
+	setCommonSessionFixtures()
+	const oversizedContent = 'x'.repeat(maxRepoSourceFileBytes + 1)
+	mockModule.workspaceExists.mockImplementation(async (path: string) =>
+		path === '/session/assets/huge.bin' ? true : false,
+	)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/assets/huge.bin') return oversizedContent
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{
+					kind: 'move',
+					path: 'assets/huge.bin',
+					to: 'assets/huge-renamed.bin',
+				},
+			],
+		}),
+	).resolves.toMatchObject({ totalChanged: 1 })
+})
+
+test('restoreFiles restores modified files to the session base commit', async () => {
+	setCommonSessionFixtures()
+	mockModule.readBlob.mockResolvedValueOnce({
+		blob: new TextEncoder().encode('base content\n'),
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.restoreFiles({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		paths: ['src/index.ts'],
+	})
+
+	expect(mockModule.readBlob).toHaveBeenCalledWith(
+		expect.objectContaining({
+			filepath: 'src/index.ts',
+			oid: 'commit-base',
+		}),
+	)
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/index.ts',
+		'base content\n',
+	)
+	expect(result).toEqual({
+		commit: 'commit-base',
+		restored: ['src/index.ts'],
+	})
+})
+
+test('sessionCommit rejects empty commit messages', async () => {
+	setCommonSessionFixtures()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.sessionCommit({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			message: '   ',
+		}),
+	).rejects.toThrow('Commit message cannot be empty.')
+	expect(mockModule.git.add).not.toHaveBeenCalled()
+	expect(mockModule.git.commit).not.toHaveBeenCalled()
 })
 
 test('applyEdits rejects a write over the per-file repo size limit with hosting guidance', async () => {
@@ -845,89 +962,6 @@ test('applyEdits rejects a write over the per-file repo size limit with hosting 
 		}),
 	).rejects.toThrow(/"assets\/dataset\.csv".*per-file limit.*Cloudflare R2/s)
 	expect(mockModule.workspaceWriteFile).not.toHaveBeenCalled()
-})
-
-test('runCommands rejects publish without checks for direct RPC callers', async () => {
-	setCommonSessionFixtures()
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-
-	await expect(
-		repoSession.runCommands({
-			sessionId: 'session-1',
-			userId: 'user-1',
-			commands: 'git status',
-			runChecks: false,
-			publish: true,
-		}),
-	).rejects.toThrow(
-		'Publishing requires checks. Set runChecks to true when publish is true.',
-	)
-	expect(mockModule.git.status).not.toHaveBeenCalled()
-	expect(mockModule.updateRepoSession).not.toHaveBeenCalled()
-})
-
-test('runCommands fetches session metadata after publish side effects', async () => {
-	// Best-effort publish git-note attachment logs an incidental warning.
-	consoleWarn.mockImplementation(() => {})
-	setCommonSessionFixtures()
-	mockModule.gitState.headCommit = 'commit-published'
-	mockModule.workspaceGlob.mockResolvedValue([
-		{ type: 'file', path: '/session/kody.json' },
-	] as unknown as Array<{ type: 'file'; path: string }>)
-	mockModule.workspaceReadFile.mockResolvedValue(
-		'{"name":"@kody/demo","exports":{"./index":"./src/index.ts"},"kody":{"id":"demo","description":"Demo package"}}',
-	)
-	mockModule.getRepoSessionById.mockResolvedValue({
-		id: 'session-1',
-		user_id: 'user-1',
-		source_id: 'source-1',
-		source_repo_id: 'source-repo',
-		session_branch: 'sessions/session1',
-		source_branch: 'main',
-		base_commit: 'commit-base',
-		status: 'active',
-		last_checkpoint_commit: 'commit-base',
-	})
-	let source = {
-		id: 'source-1',
-		user_id: 'user-1',
-		repo_id: 'source-repo',
-		entity_kind: 'job',
-		published_commit: 'commit-base',
-		manifest_path: 'kody.json',
-		source_root: '/',
-	}
-	mockModule.getEntitySourceById.mockImplementation(async () => source)
-	mockModule.updateEntitySource.mockImplementationOnce(async (_db, update) => {
-		source = {
-			...source,
-			published_commit: update.publishedCommit,
-		}
-	})
-	const repoSession = new RepoSession(createDurableObjectState(), {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
-	} as Env)
-
-	const result = await repoSession.runCommands({
-		sessionId: 'session-1',
-		userId: 'user-1',
-		commands: 'git status',
-		runChecks: true,
-		publish: true,
-	})
-
-	expect(result.publish).toEqual(
-		expect.objectContaining({
-			status: 'ok',
-			publishedCommit: 'commit-published',
-		}),
-	)
-	expect(result.session.published_commit).toBe('commit-published')
-	expect(consoleWarn).toHaveBeenCalledWith(
-		expect.stringContaining('publish_git_note'),
-		expect.anything(),
-	)
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {

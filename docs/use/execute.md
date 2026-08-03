@@ -221,12 +221,12 @@ When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
 instead of internal source ids whenever possible.
 
-For common edit-and-check workflows, `repo_run_commands` accepts a
-newline-separated parsed git-command string, returns command outputs, and can
-run checks plus publish in one response. Commands are parsed by Kody; they are
-not arbitrary shell, only the documented git forms are supported, and
-`git clone` is intentionally unsupported because Kody opens repo sessions for
-you.
+For common edit-and-check workflows, use the file-level repo session API
+documented in [Repo-backed editing sessions](./repo-sessions.md): open a session
+with `repo_open_session`, edit with `repo_edit_files` or `repo_apply_patch`,
+inspect with `repo_diff`, commit with `repo_commit`, validate with
+`repo_run_checks`, and publish with `repo_publish_session`. There is no
+git-command channel inside sessions; use `package_get_git_remote` for full git.
 
 ## Agent turns
 

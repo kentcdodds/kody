@@ -14,9 +14,9 @@ export const repoWriteFileCapability = defineDomainCapability(
 		name: 'repo_write_file',
 		description: [
 			'Overwrite one or more files in the active repo session with exact full-file content.',
-			'Use this for whole-file replacements or for creating new files when crafting a unified diff for `repo_run_commands` `git apply` would be brittle (for example, single-file job sources or generated package modules).',
+			'Use this for whole-file replacements or for creating new files when crafting a unified diff for `repo_apply_patch` would be brittle (for example, single-file job sources or generated package modules).',
 			'Each entry replaces the file at `path` with `content` exactly; missing parent directories are created. Returns a per-file diff plus a `changed` flag for callers that want to confirm a write actually mutated the workspace.',
-			'Writes only mutate the live session overlay; they do not commit, run checks, or publish. Pair with `repo_run_commands` for `git add`/`git commit` and with `repo_publish_session` (or `repo_run_commands` with `publish: true`) to publish.',
+			'Writes only mutate the live session overlay; they do not commit, run checks, or publish. Pair with `repo_commit`, `repo_run_checks`, and `repo_publish_session` to validate and publish.',
 		].join(' '),
 		keywords: [
 			'repo',

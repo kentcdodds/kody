@@ -512,10 +512,12 @@ Retriever implementations should truncate or paginate before returning.
 
 Package source is edited and published through repo-backed flows.
 
-- prefer `repo_run_commands` for package changes
-- `repo_run_commands` accepts a newline-separated parsed git-command string, not
-  arbitrary shell; keep agent-facing guidance aligned with the deployed
-  capability schema
+- prefer `repo_edit_files`, `repo_apply_patch`, and related file-level session
+  capabilities for package changes
+- repo sessions expose a file-level API (write/replace/delete/move, patch apply,
+  status, diff, log, commit, restore), not arbitrary shell or git-command
+  strings; keep agent-facing guidance aligned with the deployed capability
+  schema
 - prefer `repo_write_file` for whole-file replacements (single-file job sources,
   freshly generated package modules, one-line config edits) — it avoids the
   unified-diff context drift that makes `git apply` heredocs brittle

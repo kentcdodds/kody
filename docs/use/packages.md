@@ -509,9 +509,9 @@ commit on the job's repo-backed source, and subsequent runs execute the updated
 module. That is usually the easiest way to change the source of a non-package
 job, since there is no `package_get_git_remote` equivalent for non-package job
 sources. For multi-file edits, open the job's `source_id` with
-`repo_run_commands` instead. Job code must default export a function that
-receives the job `params` as its first argument; `kody:runtime` does not export
-`params`.
+`repo_edit_files`, `repo_apply_patch`, and related file-level session
+capabilities instead. Job code must default export a function that receives the
+job `params` as its first argument; `kody:runtime` does not export `params`.
 
 ## Save and edit packages
 
@@ -532,8 +532,9 @@ Use:
 - `package_get` and `package_list` to inspect saved packages
 - `package_update` to change mutable package settings such as hidden search
   discovery state
-- `repo_run_commands` to edit, check, and publish repo-backed package source
-  after it exists using parsed, git-only command forms rather than shell
+- `repo_edit_files`, `repo_apply_patch`, `repo_commit`, `repo_run_checks`, and
+  `repo_publish_session` to edit, validate, and publish repo-backed package
+  source through the file-level session API
 
 ### Platform maintenance migrations (codemods)
 
@@ -571,8 +572,9 @@ resolve hidden packages.
 
 Saved package source is backed by a Cloudflare Artifacts git repository. You can
 create and edit it with a normal git client without round-tripping each file
-change through `package_save` or `repo_run_commands`. This lane supports binary
-assets, which `package_save` and repo sessions do not.
+change through `package_save` or the file-level repo session capabilities
+(`repo_edit_files`, etc.). This lane supports binary assets, which
+`package_save` and repo sessions do not.
 
 Individual files may be at most 10 MiB (10,485,760 bytes), measured as the
 file's stored byte length — UTF-8 bytes for text files, raw bytes for binary

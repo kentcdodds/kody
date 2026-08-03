@@ -73,6 +73,7 @@ import {
 	type RepoExternalPublishResult,
 	type RepoSourceBootstrapResult,
 	type RepoSessionApplyEditsResult,
+	type RepoSessionEdit,
 	type RepoSessionCheckRun,
 	type RepoSessionCheckStatus,
 	type RepoSessionDiscardResult,
@@ -98,11 +99,6 @@ import {
 	buildPublishGitNote,
 	type KodyPublishGitNoteChecks,
 } from './publish-git-notes.ts'
-import {
-	type RepoGitCommand,
-	type RepoRunCommandsResult,
-	parseRepoGitCommands,
-} from './repo-session-commands.ts'
 import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
 import {
 	buildRepoLargeFileMessage,
@@ -724,98 +720,275 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async applyWorkspaceEdits(input: {
-		edits: Array<{
-			kind: 'write' | 'replace' | 'writeJson'
-			path: string
-			content?: string
-			search?: string
-			replacement?: string
-			value?: unknown
-			options?: {
-				caseSensitive?: boolean
-				regex?: boolean
-				wholeWord?: boolean
-				contextBefore?: number
-				contextAfter?: number
-				maxMatches?: number
-				spaces?: number
-			}
-		}>
+		edits: Array<RepoSessionEdit>
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}): Promise<RepoSessionApplyEditsResult> {
-		const plan = await this.state.planEdits(
-			input.edits.map((edit) => {
-				const path = resolveRepoWorkspacePath(
-					edit.path,
-					repoSessionWorkspacePrefix,
-				)
-				switch (edit.kind) {
-					case 'write':
-						if (typeof edit.content !== 'string') {
-							throw new Error('repo session write edits require content.')
-						}
-						return {
-							kind: 'write' as const,
-							path,
-							content: edit.content,
-						}
-					case 'replace':
-						if (typeof edit.search !== 'string') {
-							throw new Error('repo session replace edits require search.')
-						}
-						return {
-							kind: 'replace' as const,
-							path,
-							search: edit.search,
-							replacement: edit.replacement ?? '',
-							options: edit.options,
-						}
-					case 'writeJson':
-						return {
-							kind: 'writeJson' as const,
-							path,
-							value: edit.value,
-							options:
-								typeof edit.options?.spaces === 'number'
-									? { spaces: edit.options.spaces }
-									: undefined,
-						}
+		type WorkspaceContentEdit = Exclude<
+			RepoSessionEdit,
+			{ kind: 'delete' } | { kind: 'move' }
+		>
+		type WorkspaceStructuralEdit = Extract<
+			RepoSessionEdit,
+			{ kind: 'delete' } | { kind: 'move' }
+		>
+		const contentEdits: Array<WorkspaceContentEdit> = []
+		const structuralEdits: Array<WorkspaceStructuralEdit> = []
+		for (const edit of input.edits) {
+			switch (edit.kind) {
+				case 'write':
+				case 'replace':
+				case 'writeJson':
+					contentEdits.push(edit)
+					break
+				case 'delete':
+				case 'move':
+					structuralEdits.push(edit)
+					break
+				default: {
+					const exhaustive: never = edit
+					return exhaustive
 				}
-			}),
-		)
-		// Gate on planned results rather than raw instructions so replace and
-		// writeJson edits cannot grow a file past the per-file limit either.
-		// Unchanged entries are skipped so a no-op edit touching a grandfathered
-		// oversized file does not fail the batch.
-		for (const plannedEdit of plan.edits) {
-			if (!plannedEdit.changed) continue
-			const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
-			if (byteLength > maxRepoSourceFileBytes) {
-				throw new Error(
-					buildRepoLargeFileMessage({
-						path: toExternalRepoPath(
-							plannedEdit.path,
-							repoSessionWorkspacePrefix,
-						),
-						byteLength,
-					}),
-				)
 			}
 		}
-		const result = await this.state.applyEditPlan(plan, {
-			dryRun: input.dryRun,
-			rollbackOnError: input.rollbackOnError,
-		})
+
+		const contentEditPaths = new Set(
+			contentEdits.map((edit) => edit.path.trim()).filter(Boolean),
+		)
+		type PlannedStructuralEdit = {
+			kind: 'delete' | 'move'
+			path: string
+			to?: string
+			workspacePath: string
+			targetWorkspacePath?: string
+			changed: boolean
+			content: string
+			diff: string
+			deleteSourceOnly?: boolean
+		}
+		const plannedStructural: Array<PlannedStructuralEdit> = []
+		const moveTargets = new Set<string>()
+		for (const edit of structuralEdits) {
+			if (edit.kind === 'delete') {
+				const path = edit.path.trim()
+				if (!path) {
+					throw new Error('repo session delete edits require path.')
+				}
+				const workspacePath = resolveRepoWorkspacePath(
+					path,
+					repoSessionWorkspacePrefix,
+				)
+				const exists = await this.workspace.exists(workspacePath)
+				if (!exists) {
+					throw new Error(
+						`repo session delete edit target "${path}" was not found.`,
+					)
+				}
+				const currentContent =
+					(await this.workspace.readFile(workspacePath)) ?? ''
+				plannedStructural.push({
+					kind: 'delete',
+					path,
+					workspacePath,
+					changed: true,
+					content: '',
+					diff: formatPatch({
+						oldFileName: `a/${path}`,
+						newFileName: '/dev/null',
+						oldHeader: '',
+						newHeader: '',
+						hunks: [
+							{
+								oldStart: 1,
+								oldLines: currentContent.split('\n').length,
+								newStart: 0,
+								newLines: 0,
+								lines: currentContent.split('\n').map((line) => `-${line}`),
+							},
+						],
+					}),
+				})
+				continue
+			}
+			const fromPath = edit.path.trim()
+			const toPath = edit.to?.trim() ?? ''
+			if (!fromPath || !toPath) {
+				throw new Error('repo session move edits require path and to.')
+			}
+			if (fromPath === toPath) {
+				throw new Error(
+					`repo session move edit source and destination are the same: "${fromPath}".`,
+				)
+			}
+			if (moveTargets.has(toPath)) {
+				throw new Error(
+					`repo session move edits cannot target the same destination twice: "${toPath}".`,
+				)
+			}
+			moveTargets.add(toPath)
+			const sourceWorkspacePath = resolveRepoWorkspacePath(
+				fromPath,
+				repoSessionWorkspacePrefix,
+			)
+			const targetWorkspacePath = resolveRepoWorkspacePath(
+				toPath,
+				repoSessionWorkspacePrefix,
+			)
+			const sourceExists = await this.workspace.exists(sourceWorkspacePath)
+			if (!sourceExists) {
+				throw new Error(
+					`repo session move edit source "${fromPath}" was not found.`,
+				)
+			}
+			const destinationWrittenInBatch = contentEditPaths.has(toPath)
+			if (!destinationWrittenInBatch) {
+				const targetExists = await this.workspace.exists(targetWorkspacePath)
+				if (targetExists) {
+					throw new Error(
+						`repo session move edit destination "${toPath}" already exists.`,
+					)
+				}
+			}
+			const currentContent =
+				(await this.workspace.readFile(sourceWorkspacePath)) ?? ''
+			plannedStructural.push({
+				kind: 'move',
+				path: toPath,
+				to: toPath,
+				workspacePath: sourceWorkspacePath,
+				targetWorkspacePath,
+				changed: true,
+				content: currentContent,
+				deleteSourceOnly: destinationWrittenInBatch,
+				diff: formatPatch({
+					oldFileName: `a/${fromPath}`,
+					newFileName: `b/${toPath}`,
+					oldHeader: '',
+					newHeader: '',
+					hunks: [
+						{
+							oldStart: 1,
+							oldLines: currentContent.split('\n').length,
+							newStart: 1,
+							newLines: currentContent.split('\n').length,
+							lines: currentContent.split('\n').map((line) => ` ${line}`),
+						},
+					],
+				}),
+			})
+		}
+
+		let contentResult: RepoSessionApplyEditsResult = {
+			dryRun: input.dryRun ?? false,
+			totalChanged: 0,
+			edits: [],
+		}
+		if (contentEdits.length > 0) {
+			const plan = await this.state.planEdits(
+				contentEdits.map((edit) => {
+					const path = resolveRepoWorkspacePath(
+						edit.path,
+						repoSessionWorkspacePrefix,
+					)
+					switch (edit.kind) {
+						case 'write':
+							if (typeof edit.content !== 'string') {
+								throw new Error('repo session write edits require content.')
+							}
+							return {
+								kind: 'write' as const,
+								path,
+								content: edit.content,
+							}
+						case 'replace':
+							if (typeof edit.search !== 'string') {
+								throw new Error('repo session replace edits require search.')
+							}
+							return {
+								kind: 'replace' as const,
+								path,
+								search: edit.search,
+								replacement: edit.replacement ?? '',
+								options: edit.options,
+							}
+						case 'writeJson':
+							return {
+								kind: 'writeJson' as const,
+								path,
+								value: edit.value,
+								options:
+									typeof edit.options?.spaces === 'number'
+										? { spaces: edit.options.spaces }
+										: undefined,
+							}
+						default: {
+							const exhaustive: never = edit
+							return exhaustive
+						}
+					}
+				}),
+			)
+			for (const plannedEdit of plan.edits) {
+				if (!plannedEdit.changed) continue
+				const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
+				if (byteLength > maxRepoSourceFileBytes) {
+					throw new Error(
+						buildRepoLargeFileMessage({
+							path: toExternalRepoPath(
+								plannedEdit.path,
+								repoSessionWorkspacePrefix,
+							),
+							byteLength,
+						}),
+					)
+				}
+			}
+			const result = await this.state.applyEditPlan(plan, {
+				dryRun: input.dryRun,
+				rollbackOnError: input.rollbackOnError,
+			})
+			contentResult = {
+				dryRun: result.dryRun,
+				totalChanged: result.totalChanged,
+				edits: result.edits.map((edit) => ({
+					path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
+					changed: edit.changed,
+					content: edit.content,
+					diff: edit.diff,
+				})),
+			}
+		}
+
+		if (!input.dryRun) {
+			for (const planned of plannedStructural) {
+				if (planned.kind === 'delete') {
+					await this.workspace.rm(planned.workspacePath, { force: true })
+					continue
+				}
+				if (planned.deleteSourceOnly) {
+					await this.workspace.rm(planned.workspacePath, { force: true })
+					continue
+				}
+				await this.workspace.writeFile(
+					planned.targetWorkspacePath ?? planned.workspacePath,
+					planned.content,
+				)
+				await this.workspace.rm(planned.workspacePath, { force: true })
+			}
+		}
+
+		const structuralResults = plannedStructural.map((planned) => ({
+			path: planned.path,
+			changed: planned.changed,
+			content: planned.content,
+			diff: planned.diff,
+		}))
 		return {
-			dryRun: result.dryRun,
-			totalChanged: result.totalChanged,
-			edits: result.edits.map((edit) => ({
-				path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
-				changed: edit.changed,
-				content: edit.content,
-				diff: edit.diff,
-			})),
+			dryRun: input.dryRun ?? false,
+			totalChanged:
+				contentResult.totalChanged +
+				structuralResults.filter((edit) => edit.changed).length,
+			edits: [...contentResult.edits, ...structuralResults],
 		}
 	}
 
@@ -1051,7 +1224,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}),
 		})
 		await this.applyWorkspaceEdits({
-			edits: input.edits,
+			edits: input.edits as Array<RepoSessionEdit>,
 			dryRun: false,
 			rollbackOnError: true,
 		})
@@ -1478,175 +1651,142 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	private async executeGitCommand(command: RepoGitCommand, dryRun?: boolean) {
-		switch (command.kind) {
-			case 'apply':
-				return this.applyUnifiedDiff({ patch: command.patch, dryRun })
-			case 'status':
-				return this.git.status({ dir: repoSessionWorkspacePrefix })
-			case 'diff':
-				return this.git.diff({ dir: repoSessionWorkspacePrefix })
-			case 'add':
-				return this.git.add({
-					dir: repoSessionWorkspacePrefix,
-					filepath: command.filepath,
-				})
-			case 'rm':
-				return this.git.rm({
-					dir: repoSessionWorkspacePrefix,
-					filepath: command.filepath,
-				})
-			case 'commit':
-				return this.git.commit({
-					dir: repoSessionWorkspacePrefix,
-					message: command.message,
-					author: sessionCommitAuthor,
-				})
-			case 'log':
-				return this.git.log({
-					dir: repoSessionWorkspacePrefix,
-					depth: command.depth,
-				})
-			case 'branch':
-				return this.git.branch({
-					dir: repoSessionWorkspacePrefix,
-					name: command.name,
-					delete: command.delete,
-					list: command.name == null && command.delete == null,
-				})
-			case 'checkout':
-				return this.git.checkout({
-					dir: repoSessionWorkspacePrefix,
-					ref: command.ref,
-					branch: command.branch,
-					force: command.force,
-				})
-			case 'fetch':
-				return this.git.fetch({
-					dir: repoSessionWorkspacePrefix,
-					remote: command.remote,
-					ref: command.ref,
-				})
-			case 'pull':
-				return this.git.pull({
-					dir: repoSessionWorkspacePrefix,
-					remote: command.remote,
-					ref: command.ref,
-					author: sessionCommitAuthor,
-				})
-			case 'push':
-				return this.git.push({
-					dir: repoSessionWorkspacePrefix,
-					remote: command.remote,
-					ref: command.ref,
-					force: command.force,
-				})
-			case 'remote':
-				if (command.action === 'add') {
-					return this.git.remote({
-						dir: repoSessionWorkspacePrefix,
-						add: {
-							name: command.name ?? '',
-							url: command.url ?? '',
-						},
-					})
-				}
-				if (command.action === 'remove') {
-					return this.git.remote({
-						dir: repoSessionWorkspacePrefix,
-						remove: command.name,
-					})
-				}
-				return this.git.remote({
-					dir: repoSessionWorkspacePrefix,
-					list: true,
-				})
-			default: {
-				const exhaustive: never = command
-				return exhaustive
-			}
-		}
-	}
-
-	async runCommands(input: {
+	async applyPatch(input: {
 		sessionId: string
 		userId: string
-		commands: string
+		patch: string
 		dryRun?: boolean
-		runChecks?: boolean
-		publish?: boolean
-		expectedPackageScope?: string
-	}): Promise<RepoRunCommandsResult> {
+	}): Promise<RepoSessionApplyEditsResult> {
 		const { sessionRow } = await this.getSessionState(
 			input.sessionId,
 			input.userId,
 		)
-		const shouldRunChecks = input.runChecks ?? false
-		const shouldPublish = input.publish ?? false
-		if (!shouldRunChecks && shouldPublish) {
-			throw new Error(
-				'Publishing requires checks. Set runChecks to true when publish is true.',
-			)
-		}
-		const commands = parseRepoGitCommands(input.commands)
-		const results = []
-		for (const command of commands) {
-			results.push({
-				line: command.line,
-				command: command.raw,
-				ok: true as const,
-				output: await this.executeGitCommand(command, input.dryRun),
+		const result = await this.applyUnifiedDiff({
+			patch: input.patch,
+			dryRun: input.dryRun,
+		})
+		if (!input.dryRun) {
+			await updateRepoSession(this.env.APP_DB, {
+				id: input.sessionId,
+				userId: sessionRow.user_id,
+				lastCheckpointAt: nowIso(),
 			})
+		}
+		return result
+	}
+
+	async sessionStatus(input: { sessionId: string; userId: string }) {
+		await this.getSessionState(input.sessionId, input.userId)
+		return this.git.status({ dir: repoSessionWorkspacePrefix })
+	}
+
+	async sessionDiff(input: { sessionId: string; userId: string }) {
+		await this.getSessionState(input.sessionId, input.userId)
+		return this.git.diff({ dir: repoSessionWorkspacePrefix })
+	}
+
+	async sessionLog(input: {
+		sessionId: string
+		userId: string
+		depth?: number
+	}) {
+		await this.getSessionState(input.sessionId, input.userId)
+		return this.git.log({
+			dir: repoSessionWorkspacePrefix,
+			depth: input.depth,
+		})
+	}
+
+	async sessionCommit(input: {
+		sessionId: string
+		userId: string
+		message: string
+	}) {
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		if (!input.message.trim()) {
+			throw new Error('Commit message cannot be empty.')
+		}
+		await this.git.add({
+			dir: repoSessionWorkspacePrefix,
+			filepath: '.',
+		})
+		const commit = await this.git.commit({
+			dir: repoSessionWorkspacePrefix,
+			message: input.message,
+			author: sessionCommitAuthor,
+		})
+		await updateRepoSession(this.env.APP_DB, {
+			id: input.sessionId,
+			userId: sessionRow.user_id,
+			lastCheckpointAt: nowIso(),
+			lastCheckpointCommit: commit.oid,
+		})
+		return {
+			oid: commit.oid,
+			message: input.message,
+		}
+	}
+
+	async restoreFiles(input: {
+		sessionId: string
+		userId: string
+		paths: Array<string>
+		commit?: string
+	}) {
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		if (input.paths.length === 0) {
+			throw new Error('Provide at least one path to restore.')
+		}
+		const commit = input.commit ?? sessionRow.base_commit
+		const plannedRestores: Array<{
+			path: string
+			workspacePath: string
+			content: string
+		}> = []
+		for (const path of input.paths) {
+			const trimmedPath = path.trim()
+			if (!trimmedPath) {
+				throw new Error('Restore paths cannot be empty.')
+			}
+			try {
+				const result = await rawGit.readBlob({
+					fs: this.rawGitFileSystem,
+					dir: repoSessionWorkspacePrefix,
+					oid: commit,
+					filepath: trimmedPath,
+				})
+				plannedRestores.push({
+					path: trimmedPath,
+					workspacePath: resolveRepoWorkspacePath(
+						trimmedPath,
+						repoSessionWorkspacePrefix,
+					),
+					content: new TextDecoder().decode(result.blob),
+				})
+			} catch (error) {
+				throw new Error(
+					`Path "${trimmedPath}" was not found at commit ${commit}.`,
+					{ cause: error },
+				)
+			}
+		}
+		for (const restore of plannedRestores) {
+			await this.workspace.writeFile(restore.workspacePath, restore.content)
 		}
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionId,
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
-		if (!shouldRunChecks) {
-			return {
-				session: await this.getSessionInfo(input),
-				commands: results,
-				checks: { status: 'not_requested' },
-				publish: { status: 'not_requested' },
-			}
-		}
-		const checkRun = await this.runChecks({
-			sessionId: input.sessionId,
-			userId: input.userId,
-			expectedPackageScope: input.expectedPackageScope,
-		})
-		if (!checkRun.ok) {
-			const publish = shouldPublish
-				? {
-						status: 'blocked_by_checks' as const,
-						message: 'Publishing skipped because repo checks failed.',
-					}
-				: { status: 'not_requested' as const }
-			return {
-				session: await this.getSessionInfo(input),
-				commands: results,
-				checks: {
-					...checkRun,
-					status: 'failed',
-					ok: false,
-					failedChecks: checkRun.results.filter((entry) => !entry.ok),
-				},
-				publish,
-			}
-		}
-		const publish = shouldPublish
-			? await this.publishSession(input)
-			: { status: 'not_requested' as const }
 		return {
-			session: await this.getSessionInfo(input),
-			commands: results,
-			checks: {
-				...checkRun,
-				status: 'passed',
-				ok: true,
-			},
-			publish,
+			commit,
+			restored: plannedRestores.map((restore) => restore.path),
 		}
 	}
 
@@ -1679,23 +1819,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async applyEdits(input: {
 		sessionId: string
 		userId: string
-		edits: Array<{
-			kind: 'write' | 'replace' | 'writeJson'
-			path: string
-			content?: string
-			search?: string
-			replacement?: string
-			value?: unknown
-			options?: {
-				caseSensitive?: boolean
-				regex?: boolean
-				wholeWord?: boolean
-				contextBefore?: number
-				contextAfter?: number
-				maxMatches?: number
-				spaces?: number
-			}
-		}>
+		edits: Array<RepoSessionEdit>
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}): Promise<RepoSessionApplyEditsResult> {

@@ -119,8 +119,8 @@ Without local filesystem or git access:
 
 1. Create the complete UTF-8 text package with `package_save`, or inspect an
    existing package with `package_get`.
-2. Use `repo_open_session`, `repo_write_file`, and `repo_run_commands` for
-   repo-backed edits and checks.
+2. Use `repo_open_session`, `repo_edit_files` (or `repo_write_file`),
+   `repo_commit`, and `repo_run_checks` for repo-backed edits and validation.
 3. Publish with `repo_publish_session`.
 
 If the work needs binary assets, broad refactors, or a substantial local

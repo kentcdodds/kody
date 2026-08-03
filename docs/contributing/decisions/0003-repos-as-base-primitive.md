@@ -41,9 +41,10 @@ Two supporting policies:
 
 ## Consequences
 
-- The simulated-git command surface (`repo_run_commands`) will be replaced by a
-  file-level session API (read/write/move/delete, commit, log, diff, revert) in
-  a follow-up slice; breaking pre-launch, no compatibility shim.
+- The simulated-git command surface (`repo_run_commands`) has been replaced by
+  the file-level session API (`repo_edit_files`, `repo_apply_patch`,
+  `repo_commit`, `repo_status`, `repo_diff`, `repo_log`, `repo_restore`).
+  Breaking pre-launch, no compatibility shim.
 - "Saved packages are the only top-level persisted primitive" stops being true
   once plain repos ship; docs and MCP guidance then change to "repos are the
   durable home, packages add runtime."

@@ -1,7 +1,6 @@
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { repoSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
-import { type RepoRunCommandsResult } from './repo-session-commands.ts'
 import {
 	type IsolatedArtifactRebuildOutcome,
 	type IsolatedArtifactRebuildRequest,
@@ -96,15 +95,36 @@ export type RepoSessionRpc = {
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}) => Promise<RepoSessionApplyEditsResult>
-	runCommands: (payload: {
+	applyPatch: (payload: {
 		sessionId: string
 		userId: string
-		commands: string
+		patch: string
 		dryRun?: boolean
-		runChecks?: boolean
-		publish?: boolean
-		expectedPackageScope?: string
-	}) => Promise<RepoRunCommandsResult>
+	}) => Promise<RepoSessionApplyEditsResult>
+	sessionStatus: (payload: {
+		sessionId: string
+		userId: string
+	}) => Promise<unknown>
+	sessionDiff: (payload: {
+		sessionId: string
+		userId: string
+	}) => Promise<unknown>
+	sessionLog: (payload: {
+		sessionId: string
+		userId: string
+		depth?: number
+	}) => Promise<unknown>
+	sessionCommit: (payload: {
+		sessionId: string
+		userId: string
+		message: string
+	}) => Promise<{ oid: string; message: string }>
+	restoreFiles: (payload: {
+		sessionId: string
+		userId: string
+		paths: Array<string>
+		commit?: string
+	}) => Promise<{ commit: string; restored: Array<string> }>
 	bootstrapSource: (payload: {
 		sessionId: string
 		sourceId: string
