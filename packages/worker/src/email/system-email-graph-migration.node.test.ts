@@ -511,6 +511,201 @@ test('0131 replaces dedicated drift with legacy authority before cutover', () =>
 	).toEqual({ dedicated: 1, legacy: 1 })
 })
 
+test('0131 replaces stale 0129 inbound columns with the exact JSON transition projection', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailGraphMigration)
+	const createdAt = '2026-08-02T00:00:00.000Z'
+	const insert = db.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, event_type, provider, detail_json, created_at,
+			needs_effect_reconcile
+		) VALUES (?, 'system:email', ?, ?, ?, ?, ?)`,
+	)
+	insert.run(
+		'stale-storing',
+		'receive_started',
+		'cloudflare-email-routing',
+		JSON.stringify({
+			state: 'storing',
+			fingerprint: 'new-fingerprint',
+			storageLease: 'new-storage-lease',
+			storageLeaseAt: '2026-08-03T00:01:00.000Z',
+			expectedAttachmentCount: 2,
+			usageStartedAt: '2026-08-03T00:00:00.000Z',
+			subscriptionEffectState: 'pending',
+		}),
+		createdAt,
+		1,
+	)
+	insert.run(
+		'received-complete',
+		'received',
+		'cloudflare-email-routing',
+		JSON.stringify({
+			state: 'received',
+			fingerprint: 'received-fingerprint',
+			finalizationToken: 'new-finalization',
+			usageEffectRecordedAt: '2026-08-03T00:05:00.000Z',
+			usageMonth: '2026-08',
+			usageBytes: 321,
+			usageDurationMs: 654,
+			subscriptionEffectState: 'complete',
+			subscriptionEffectAttemptCount: 3,
+		}),
+		createdAt,
+		0,
+	)
+	insert.run(
+		'stale-dedupe',
+		'receive_started',
+		'cloudflare-email-routing-dedupe',
+		JSON.stringify({
+			state: 'pending',
+			fingerprint: 'new-dedupe-fingerprint',
+			dedupeExpiresAt: '2026-08-05T00:00:00.000Z',
+		}),
+		createdAt,
+		1,
+	)
+	insert.run(
+		'non-inbound-preserved',
+		'sent',
+		'kody',
+		JSON.stringify({
+			state: 'storing',
+			storageLease: 'json-must-not-win',
+		}),
+		createdAt,
+		0,
+	)
+	db.exec(`
+		UPDATE email_delivery_events
+		SET
+			usage_effect_recorded_at = 'old-usage-recorded',
+			usage_month = '2025-01',
+			usage_bytes = 999,
+			usage_duration_ms = 999,
+			state = 'pending',
+			fingerprint = 'old-fingerprint',
+			storage_lease = 'old-storage-lease',
+			storage_lease_at = '2026-08-01T00:00:00.000Z',
+			cleanup_lease = 'old-cleanup-lease',
+			cleanup_lease_at = '2026-08-01T00:01:00.000Z',
+			cleanup_retry_at = '2026-08-01T00:02:00.000Z',
+			expected_attachment_count = 99,
+			finalization_token = 'old-finalization',
+			reconcile_after = '2026-08-01T00:03:00.000Z',
+			dedupe_expires_at = '2026-08-01T00:04:00.000Z',
+			usage_effect_suppressed_at = '2026-08-01T00:05:00.000Z',
+			usage_started_at = '2026-08-01T00:06:00.000Z',
+			usage_effect_retry_at = '2026-08-01T00:07:00.000Z',
+			usage_effect_lease = 'old-usage-lease',
+			usage_effect_lease_at = '2026-08-01T00:08:00.000Z',
+			subscription_effect_state = 'processing',
+			subscription_effect_lease = 'old-subscription-lease',
+			subscription_effect_lease_at = '2026-08-01T00:09:00.000Z',
+			subscription_effect_retry_at = '2026-08-01T00:10:00.000Z',
+			subscription_effect_attempt_count = 99,
+			subscription_effect_dead_letter_at = '2026-08-01T00:11:00.000Z',
+			subscription_effect_last_error = 'old error',
+			updated_at = '2026-08-01T00:12:00.000Z';
+	`)
+
+	applyMigrationLikeD1(db, systemEmailGraphMigration)
+	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
+
+	const selectProjection = db.prepare(
+		`SELECT
+			needs_effect_reconcile, usage_effect_recorded_at, usage_month,
+			usage_bytes, usage_duration_ms, state, fingerprint, storage_lease,
+			storage_lease_at, cleanup_lease, cleanup_lease_at, cleanup_retry_at,
+			expected_attachment_count, finalization_token, reconcile_after,
+			dedupe_expires_at, usage_effect_suppressed_at, usage_started_at,
+			usage_effect_retry_at, usage_effect_lease, usage_effect_lease_at,
+			subscription_effect_state, subscription_effect_lease,
+			subscription_effect_lease_at, subscription_effect_retry_at,
+			subscription_effect_attempt_count, subscription_effect_dead_letter_at,
+			subscription_effect_last_error, updated_at
+		FROM system_email_delivery_events
+		WHERE id = ?`,
+	)
+	expect(selectProjection.get('stale-storing')).toEqual({
+		needs_effect_reconcile: 1,
+		usage_effect_recorded_at: null,
+		usage_month: null,
+		usage_bytes: null,
+		usage_duration_ms: null,
+		state: 'storing',
+		fingerprint: 'new-fingerprint',
+		storage_lease: 'new-storage-lease',
+		storage_lease_at: '2026-08-03T00:01:00.000Z',
+		cleanup_lease: null,
+		cleanup_lease_at: null,
+		cleanup_retry_at: null,
+		expected_attachment_count: 2,
+		finalization_token: null,
+		reconcile_after: null,
+		dedupe_expires_at: null,
+		usage_effect_suppressed_at: null,
+		usage_started_at: '2026-08-03T00:00:00.000Z',
+		usage_effect_retry_at: null,
+		usage_effect_lease: null,
+		usage_effect_lease_at: null,
+		subscription_effect_state: 'pending',
+		subscription_effect_lease: null,
+		subscription_effect_lease_at: null,
+		subscription_effect_retry_at: null,
+		subscription_effect_attempt_count: null,
+		subscription_effect_dead_letter_at: null,
+		subscription_effect_last_error: null,
+		updated_at: createdAt,
+	})
+	expect(selectProjection.get('received-complete')).toMatchObject({
+		needs_effect_reconcile: 0,
+		usage_effect_recorded_at: '2026-08-03T00:05:00.000Z',
+		usage_month: '2026-08',
+		usage_bytes: 321,
+		usage_duration_ms: 654,
+		state: 'received',
+		fingerprint: 'received-fingerprint',
+		storage_lease: null,
+		cleanup_lease: null,
+		finalization_token: 'new-finalization',
+		usage_effect_lease: null,
+		subscription_effect_state: 'complete',
+		subscription_effect_lease: null,
+		subscription_effect_attempt_count: 3,
+	})
+	expect(selectProjection.get('stale-dedupe')).toMatchObject({
+		state: 'pending',
+		fingerprint: 'new-dedupe-fingerprint',
+		storage_lease: null,
+		dedupe_expires_at: '2026-08-05T00:00:00.000Z',
+		usage_effect_lease: null,
+		subscription_effect_lease: null,
+	})
+	expect(selectProjection.get('non-inbound-preserved')).toMatchObject({
+		needs_effect_reconcile: 0,
+		usage_effect_recorded_at: 'old-usage-recorded',
+		state: 'pending',
+		fingerprint: 'old-fingerprint',
+		storage_lease: 'old-storage-lease',
+		cleanup_lease: 'old-cleanup-lease',
+		finalization_token: 'old-finalization',
+		usage_effect_lease: 'old-usage-lease',
+		subscription_effect_lease: 'old-subscription-lease',
+		updated_at: '2026-08-01T00:12:00.000Z',
+	})
+	expect(
+		db
+			.prepare(
+				`SELECT graph_mismatch_count
+				FROM system_email_graph_authority`,
+			)
+			.get(),
+	).toEqual({ graph_mismatch_count: 0 })
+})
+
 test('0131 catches up create, update, and delete drift across all four graph tables', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, systemEmailGraphMigration)
