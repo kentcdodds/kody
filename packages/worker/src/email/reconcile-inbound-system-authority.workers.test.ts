@@ -67,23 +67,23 @@ async function restoreSystemMarker() {
 	).run()
 }
 
-test('ordinary user reconciliation succeeds without a system authority marker', async () => {
+test('inbound reconciliation keeps user work moving when system authority is unavailable', async () => {
 	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
-	const fixture = await seedStaleUserDelivery(
+
+	const userOnly = await seedStaleUserDelivery(
 		'user-only',
 		'2026-07-31T00:00:00.000Z',
 	)
 	await env.APP_DB.prepare(
 		`DELETE FROM system_email_graph_authority WHERE singleton = 1`,
 	).run()
-
 	try {
-		const result = await sweepStaleInboundDeliveries({
+		const userOnlyResult = await sweepStaleInboundDeliveries({
 			env: { ...env, APP_BASE_URL: appBaseUrl },
 			now: sweepNow,
 		})
-		expect(result).toMatchObject({
+		expect(userOnlyResult).toMatchObject({
 			usersProcessed: 1,
 			recovered: 0,
 			cleaned: 1,
@@ -93,9 +93,9 @@ test('ordinary user reconciliation succeeds without a system authority marker', 
 		})
 		expect(consoleWarn).not.toHaveBeenCalled()
 		expect(
-			await rpcFor(fixture.userId).getInboundDelivery({
-				ownerId: fixture.userId,
-				deliveryId: fixture.deliveryId,
+			await rpcFor(userOnly.userId).getInboundDelivery({
+				ownerId: userOnly.userId,
+				deliveryId: userOnly.deliveryId,
 			}),
 		).toMatchObject({ state: 'orphan-cleaned' })
 		expect(
@@ -103,18 +103,15 @@ test('ordinary user reconciliation succeeds without a system authority marker', 
 				`SELECT state FROM email_delivery_events
 				WHERE id = ? AND user_id = ?`,
 			)
-				.bind(fixture.deliveryId, fixture.userId)
+				.bind(userOnly.deliveryId, userOnly.userId)
 				.first(),
 		).toEqual({ state: 'orphan-cleaned' })
 	} finally {
 		await restoreSystemMarker()
 	}
-})
 
-test('system authority failure is isolated and does not block later user work', async () => {
-	consoleWarn.mockImplementation(() => {})
-	await ensureEmailTestSchema(env.APP_DB)
-	const fixture = await seedStaleUserDelivery(
+	consoleWarn.mockClear()
+	const userAfterSystem = await seedStaleUserDelivery(
 		'user-after-system',
 		'2026-07-31T00:00:00.000Z',
 	)
@@ -134,13 +131,12 @@ test('system authority failure is isolated and does not block later user work', 
 	await env.APP_DB.prepare(
 		`DELETE FROM system_email_graph_authority WHERE singleton = 1`,
 	).run()
-
 	try {
-		const result = await sweepStaleInboundDeliveries({
+		const isolatedResult = await sweepStaleInboundDeliveries({
 			env: { ...env, APP_BASE_URL: appBaseUrl },
 			now: sweepNow,
 		})
-		expect(result).toMatchObject({
+		expect(isolatedResult).toMatchObject({
 			usersProcessed: 2,
 			recovered: 0,
 			cleaned: 1,
@@ -159,9 +155,9 @@ test('system authority failure is isolated and does not block later user work', 
 			}),
 		)
 		expect(
-			await rpcFor(fixture.userId).getInboundDelivery({
-				ownerId: fixture.userId,
-				deliveryId: fixture.deliveryId,
+			await rpcFor(userAfterSystem.userId).getInboundDelivery({
+				ownerId: userAfterSystem.userId,
+				deliveryId: userAfterSystem.deliveryId,
 			}),
 		).toMatchObject({ state: 'orphan-cleaned' })
 		expect(

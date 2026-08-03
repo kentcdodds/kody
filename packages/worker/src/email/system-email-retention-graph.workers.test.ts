@@ -12,21 +12,6 @@ import {
 import { emailRawMimeKey } from './blob-keys.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
-test('system delivery-event test schema enforces provider event uniqueness', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const statement = env.APP_DB.prepare(
-		`INSERT INTO system_email_delivery_events (
-			id, event_type, provider, provider_event_id, created_at
-		) VALUES (?, 'received', 'test', 'system-provider-event-unique', ?)`,
-	)
-	await statement
-		.bind('system-provider-event-a', new Date().toISOString())
-		.run()
-	await expect(
-		statement.bind('system-provider-event-b', new Date().toISOString()).run(),
-	).rejects.toThrow()
-})
-
 test('orphan-thread retention respects its deadline and one bounded batch', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(

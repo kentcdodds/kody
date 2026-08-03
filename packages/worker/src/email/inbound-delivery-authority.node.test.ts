@@ -684,17 +684,6 @@ test('stale D1 mirrors are safe no-ops without replacing a newer snapshot', asyn
 	sqlite.close()
 })
 
-test('USER authority refuses the system email owner before bootstrap', () => {
-	expect(() =>
-		createUserInboundDeliveryAuthority({
-			env: {} as Parameters<
-				typeof createUserInboundDeliveryAuthority
-			>[0]['env'],
-			userId: 'system:email',
-		}),
-	).toThrow('must remain in D1')
-})
-
 test('bootstrap skips malformed and cross-owner legacy D1 rows', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
@@ -807,11 +796,9 @@ test('dedupe prune projects only the exact Mailbox IDs with owner/provider fence
 		wrongProviderId,
 	])
 	sqlite.close()
-})
 
-test('empty Mailbox dedupe prune does not issue a D1 delete', async () => {
 	const prepare = vi.fn()
-	const authority = createUserInboundDeliveryAuthority({
+	const emptyAuthority = createUserInboundDeliveryAuthority({
 		env: {
 			APP_DB: { prepare } as unknown as D1Database,
 			USER_METER: namespace({}),
@@ -824,12 +811,20 @@ test('empty Mailbox dedupe prune does not issue a D1 delete', async () => {
 		},
 		userId: 'owner-empty-prune',
 	})
-
-	expect(await authority.pruneExpiredDedupe()).toBe(0)
+	expect(await emptyAuthority.pruneExpiredDedupe()).toBe(0)
 	expect(prepare).not.toHaveBeenCalled()
 })
 
-test('system D1 mutation surface rejects USER deliveries before writing', async () => {
+test('USER and system inbound authority surfaces refuse the wrong owner', async () => {
+	expect(() =>
+		createUserInboundDeliveryAuthority({
+			env: {} as Parameters<
+				typeof createUserInboundDeliveryAuthority
+			>[0]['env'],
+			userId: 'system:email',
+		}),
+	).toThrow('must remain in D1')
+
 	const now = new Date('2026-08-02T12:00:00.000Z')
 	const delivery = await buildInboundDelivery({
 		userId: 'user-cannot-use-system-d1',
@@ -840,7 +835,6 @@ test('system D1 mutation surface rejects USER deliveries before writing', async 
 		quotaDay: '2026-08-02',
 		now,
 	})
-
 	await expect(
 		claimSystemInboundDeliveryWindow({
 			db: {} as D1Database,

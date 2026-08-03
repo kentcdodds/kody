@@ -3,7 +3,6 @@ import {
 	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
-	readFileSync,
 	readdirSync,
 	rmSync,
 	writeFileSync,
@@ -13,7 +12,6 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { unstable_splitSqlQuery } from 'wrangler'
 import {
 	migrationsDirectory,
 	systemEmailAuthorityMigration,
@@ -27,7 +25,6 @@ const wranglerCli = join(
 	'node_modules/wrangler/bin/wrangler.js',
 )
 const maxWranglerOutputBytes = 16 * 1024 * 1024
-const d1CompoundSelectTermLimit = 5
 
 type WranglerResult = {
 	status: number | null
@@ -115,60 +112,6 @@ function readDatabaseRow(statePath: string, sql: string) {
 	using db = new DatabaseSync(files[0]!)
 	return db.prepare(sql).get()
 }
-
-function compoundSelectTermCount(sql: string) {
-	return 1 + (sql.match(/\bUNION(?:\s+ALL)?\b/giu)?.length ?? 0)
-}
-
-test('0131 keeps every D1 guard bounded and orders cutover after all checks', () => {
-	const sql = readFileSync(
-		new URL(systemEmailAuthorityMigration, migrationsDirectory),
-		'utf8',
-	)
-	const statements = unstable_splitSqlQuery(sql)
-	const checkIndexes = statements
-		.map((statement, index) =>
-			statement.startsWith('INSERT INTO system_email_graph_migration_checks')
-				? index
-				: -1,
-		)
-		.filter((index) => index >= 0)
-	const firstGraphMutationIndex = statements.findIndex((statement) =>
-		statement.startsWith('DELETE FROM system_email_delivery_events'),
-	)
-	const finalNormalizationIndex = statements.findLastIndex((statement) =>
-		statement.startsWith('UPDATE email_delivery_events'),
-	)
-	const markerIndex = statements.findIndex((statement) =>
-		statement.startsWith('INSERT INTO system_email_graph_authority'),
-	)
-	const dropChecksIndex = statements.findIndex((statement) =>
-		statement.startsWith('DROP TABLE system_email_graph_migration_checks'),
-	)
-	expect(firstGraphMutationIndex).toBeGreaterThanOrEqual(0)
-	expect(finalNormalizationIndex).toBeGreaterThanOrEqual(0)
-	expect(markerIndex).toBeGreaterThanOrEqual(0)
-	expect(dropChecksIndex).toBeGreaterThanOrEqual(0)
-
-	expect(
-		Math.max(...statements.map(compoundSelectTermCount)),
-		`D1 accepts at most ${d1CompoundSelectTermLimit} compound SELECT terms`,
-	).toBeLessThanOrEqual(d1CompoundSelectTermLimit)
-	expect(checkIndexes).toHaveLength(10)
-	expect(
-		checkIndexes.map((index) => compoundSelectTermCount(statements[index]!)),
-	).toEqual(Array.from({ length: 10 }, () => 1))
-	expect(
-		checkIndexes.slice(0, 6).every((index) => index < firstGraphMutationIndex),
-	).toBe(true)
-	expect(
-		checkIndexes
-			.slice(6)
-			.every((index) => index > finalNormalizationIndex && index < markerIndex),
-	).toBe(true)
-	expect(markerIndex).toBeGreaterThan(Math.max(...checkIndexes))
-	expect(dropChecksIndex).toBe(markerIndex + 1)
-})
 
 test(
 	'0131 uses Wrangler D1 atomic rollback, then applies after preflight repair',

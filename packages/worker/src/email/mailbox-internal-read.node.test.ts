@@ -118,7 +118,7 @@ function createEnv() {
 	}
 }
 
-test('USER internal reads use owner Mailbox only and map shared records', async () => {
+test('internal reads route USER owners to Mailbox and system:email to the dedicated graph', async () => {
 	const { env, idFromName, rpc } = createEnv()
 
 	await expect(
@@ -166,26 +166,24 @@ test('USER internal reads use owner Mailbox only and map shared records', async 
 	expect(getSystemEmailMessageByIdMock).not.toHaveBeenCalled()
 	expect(listSystemEmailAttachmentsMock).not.toHaveBeenCalled()
 	expect(countSystemEmailMessagesMock).not.toHaveBeenCalled()
-})
 
-test('USER internal reads fail closed without Mailbox and never query D1', async () => {
-	const env = { APP_DB: {} as D1Database }
+	const missingMailboxEnv = { APP_DB: {} as D1Database }
 	await expect(
 		getInternalEmailMessageById({
-			env,
+			env: missingMailboxEnv,
 			ownerId: 'user-a',
 			messageId: 'message-1',
 		}),
 	).rejects.toThrow('MAILBOX Durable Object binding is not configured')
 	await expect(
-		countInternalEmailMessages({ env, ownerId: 'user-a' }),
+		countInternalEmailMessages({
+			env: missingMailboxEnv,
+			ownerId: 'user-a',
+		}),
 	).rejects.toThrow('MAILBOX Durable Object binding is not configured')
 	expect(getSystemEmailMessageByIdMock).not.toHaveBeenCalled()
 	expect(countSystemEmailMessagesMock).not.toHaveBeenCalled()
-})
 
-test('system:email stays on explicit D1 reads and cannot access Mailbox export', async () => {
-	const { env, idFromName } = createEnv()
 	const d1Message = {
 		...mailboxMessage(),
 		userId: 'system:email',
@@ -225,7 +223,7 @@ test('system:email stays on explicit D1 reads and cannot access Mailbox export',
 		}),
 	).rejects.toThrow('system:email has no Mailbox')
 
-	expect(idFromName).not.toHaveBeenCalled()
+	expect(idFromName).not.toHaveBeenCalledWith('system:email')
 	expect(getSystemEmailMessageByIdMock).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		messageId: 'system-message',

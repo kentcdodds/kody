@@ -222,14 +222,14 @@ test('service_start rejects undeclared services as McpCallerError', async () => 
 	expect(start).not.toHaveBeenCalled()
 })
 
-test('service_start denies persistent services for free plan users', async () => {
+test('service_start entitlement gating covers plan limits, running skips, and stale restarts', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'free' }],
-		}),
-	} as Env
+	const proLimit = planLimits.pro.maxPackageServices
+	if (proLimit === null) {
+		throw new Error('Expected a numeric pro package service limit.')
+	}
+	const maxLimit = planLimits.max.maxPackageServices
 	const callerContext = createPlanUserCallerContext({ userId, email })
 
 	mockModule.getSavedPackageById.mockResolvedValue(
@@ -237,86 +237,69 @@ test('service_start denies persistent services for free plan users', async () =>
 	)
 	mockDeclaredServices('persistent')
 	mockServiceRpc({ status: 'stopped' })
-
-	const error = await serviceStartCapability
-		.handler({ service_name: 'realtime-supervisor' }, { env, callerContext })
+	const freeError = await serviceStartCapability
+		.handler(
+			{ service_name: 'realtime-supervisor' },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'free' }],
+					}),
+				} as Env,
+				callerContext,
+			},
+		)
 		.then(
 			() => null,
 			(thrown: unknown) => thrown,
 		)
-	if (!isEntitlementLimitError(error)) {
+	if (!isEntitlementLimitError(freeError)) {
 		throw new Error('Expected an EntitlementLimitError from service_start.')
 	}
-	expect(error.details).toMatchObject({
+	expect(freeError.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'persistent_package_services',
 		plan: 'free',
 		limit: 0,
 		current: 0,
 	})
-})
 
-test('service_start denies bounded starts at the package_services limit', async () => {
-	const email = 'bounded-limit@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxPackageServices
-	if (limit === null) {
-		throw new Error('Expected a numeric pro package service limit.')
-	}
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const { env: boundedMeterEnv } = createInMemoryUserMeterEnv()
 	await seedRunningServicesInMeter(
-		meterEnv,
+		boundedMeterEnv,
 		userId,
-		buildRunningServices(limit),
-	)
-	const env = {
-		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
-		...meterEnv,
-	} as Env
-	const callerContext = createPlanUserCallerContext({ userId, email })
-
-	mockModule.getSavedPackageById.mockResolvedValue(
-		createSavedPackage({ userId }),
+		buildRunningServices(proLimit),
 	)
 	mockDeclaredServices('bounded')
 	mockServiceRpc({ status: 'stopped' })
-
-	const error = await serviceStartCapability
-		.handler({ service_name: 'realtime-supervisor' }, { env, callerContext })
+	const boundedError = await serviceStartCapability
+		.handler(
+			{ service_name: 'realtime-supervisor' },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'pro' }],
+					}),
+					...boundedMeterEnv,
+				} as Env,
+				callerContext,
+			},
+		)
 		.then(
 			() => null,
 			(thrown: unknown) => thrown,
 		)
-	if (!isEntitlementLimitError(error)) {
+	if (!isEntitlementLimitError(boundedError)) {
 		throw new Error('Expected an EntitlementLimitError from service_start.')
 	}
-	expect(error.details).toMatchObject({
+	expect(boundedError.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'package_services',
 		plan: 'pro',
-		limit,
-		current: limit,
+		limit: proLimit,
+		current: proLimit,
 	})
-})
 
-test('service_start skips enforcement when the service is already running', async () => {
-	const email = 'running@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxPackageServices
-	if (limit === null) {
-		throw new Error('Expected a numeric pro package service limit.')
-	}
-	// Entitlement enforcement is skipped when the service is already running;
-	// USER_METER and running service count are not consulted. Declaration
-	// lookup still runs so undeclared names stay on McpCallerError.
-	const env = {
-		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
-	} as Env
-	const callerContext = createPlanUserCallerContext({ userId, email })
-
-	mockModule.getSavedPackageById.mockResolvedValue(
-		createSavedPackage({ userId }),
-	)
 	mockDeclaredServices('bounded')
 	mockServiceRpc({
 		status: 'running',
@@ -328,84 +311,70 @@ test('service_start skips enforcement when the service is already running', asyn
 			already_running: true,
 		},
 	})
-
 	await expect(
 		serviceStartCapability.handler(
 			{ service_name: 'realtime-supervisor' },
-			{ env, callerContext },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'pro' }],
+					}),
+				} as Env,
+				callerContext,
+			},
 		),
 	).resolves.toMatchObject({
 		ok: true,
 		run_id: 'run-123',
 		already_running: true,
 	})
-	expect(mockModule.listSavedPackageServices).toHaveBeenCalledOnce()
-})
+	expect(mockModule.listSavedPackageServices).toHaveBeenCalled()
 
-test('service_start lets a stale running row for the same service restart at the limit', async () => {
-	const email = 'stale-restart@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxPackageServices
-	if (limit === null) {
-		throw new Error('Expected a numeric pro package service limit.')
-	}
-	// The target service itself holds one of the 'running' telemetry rows
-	// (stale after a hard eviction); excluding it keeps the restart under
-	// the limit.
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	await seedRunningServicesInMeter(meterEnv, userId, [
-		...buildRunningServices(limit - 1),
+	const { env: staleMeterEnv } = createInMemoryUserMeterEnv()
+	await seedRunningServicesInMeter(staleMeterEnv, userId, [
+		...buildRunningServices(proLimit - 1),
 		{ packageId: 'package-123', serviceName: 'realtime-supervisor' },
 	])
-	const env = {
-		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'pro' }] }),
-		...meterEnv,
-	} as Env
-	const callerContext = createPlanUserCallerContext({ userId, email })
-
-	mockModule.getSavedPackageById.mockResolvedValue(
-		createSavedPackage({ userId }),
-	)
 	mockDeclaredServices('bounded')
 	mockServiceRpc({ status: 'stopped' })
-
 	await expect(
 		serviceStartCapability.handler(
 			{ service_name: 'realtime-supervisor' },
-			{ env, callerContext },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'pro' }],
+					}),
+					...staleMeterEnv,
+				} as Env,
+				callerContext,
+			},
 		),
 	).resolves.toMatchObject({
 		ok: true,
 		run_id: 'run-123',
 	})
-})
 
-test('service_start allows below-max usage and denies at the max plan ceiling', async () => {
-	const email = 'max@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const maxLimit = planLimits.max.maxPackageServices
 	const { env: belowMaxMeterEnv } = createInMemoryUserMeterEnv()
 	await seedRunningServicesInMeter(
 		belowMaxMeterEnv,
 		userId,
 		buildRunningServices(planLimits.pro.maxPackageServices + 1),
 	)
-	const belowMaxEnv = {
-		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'max' }] }),
-		...belowMaxMeterEnv,
-	} as Env
-	const callerContext = createPlanUserCallerContext({ userId, email })
-
-	mockModule.getSavedPackageById.mockResolvedValue(
-		createSavedPackage({ userId }),
-	)
 	mockDeclaredServices('persistent')
 	mockServiceRpc({ status: 'stopped' })
-
 	await expect(
 		serviceStartCapability.handler(
 			{ service_name: 'realtime-supervisor' },
-			{ env: belowMaxEnv, callerContext },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'max' }],
+					}),
+					...belowMaxMeterEnv,
+				} as Env,
+				callerContext,
+			},
 		),
 	).resolves.toMatchObject({
 		ok: true,
@@ -418,31 +387,31 @@ test('service_start allows below-max usage and denies at the max plan ceiling', 
 		userId,
 		buildRunningServices(maxLimit),
 	)
-	const atCeilingEnv = {
-		APP_DB: createEntitlementsTestDb({ users: [{ email, plan: 'max' }] }),
-		...atCeilingMeterEnv,
-	} as Env
-	mockModule.getSavedPackageById.mockResolvedValue(
-		createSavedPackage({ userId }),
-	)
 	mockDeclaredServices('persistent')
 	mockServiceRpc({ status: 'stopped' })
-
-	const error = await serviceStartCapability
+	const ceilingError = await serviceStartCapability
 		.handler(
 			{ service_name: 'realtime-supervisor' },
-			{ env: atCeilingEnv, callerContext },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'max' }],
+					}),
+					...atCeilingMeterEnv,
+				} as Env,
+				callerContext,
+			},
 		)
 		.then(
 			() => null,
 			(thrown: unknown) => thrown,
 		)
-	if (!isEntitlementLimitError(error)) {
+	if (!isEntitlementLimitError(ceilingError)) {
 		throw new Error(
 			'Expected an EntitlementLimitError at the max package service ceiling.',
 		)
 	}
-	expect(error.details).toMatchObject({
+	expect(ceilingError.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'package_services',
 		plan: 'max',

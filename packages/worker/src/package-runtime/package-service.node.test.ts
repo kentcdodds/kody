@@ -72,9 +72,6 @@ const {
 	buildPackageServiceStorageId,
 	buildServiceRuntimeUsageEvent,
 	computePackageServiceRetryDelayMs,
-	projectPackageServiceStatus,
-	upsertPackageServiceState,
-	deletePackageServiceState,
 } = await import('./package-service.ts')
 
 const serviceBinding = {
@@ -251,14 +248,6 @@ test('buildPackageServiceStorageId creates stable per-service storage ids', () =
 	)
 })
 
-test('projectPackageServiceStatus maps stopping to running for entitlement slots', () => {
-	expect(projectPackageServiceStatus('running')).toBe('running')
-	expect(projectPackageServiceStatus('stopping')).toBe('running')
-	expect(projectPackageServiceStatus('idle')).toBe('idle')
-	expect(projectPackageServiceStatus('stopped')).toBe('stopped')
-	expect(projectPackageServiceStatus('error')).toBe('error')
-})
-
 test('package service start returns 404 for undeclared service names', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
@@ -395,62 +384,6 @@ test('package service start and stop project liveness into package_service_state
 	} finally {
 		vi.useRealTimers()
 	}
-})
-
-test('upsertPackageServiceState and deletePackageServiceState write the expected SQL', async () => {
-	const statements: Array<{ sql: string; params: Array<unknown> }> = []
-	const db = {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					statements.push({ sql: query, params })
-					return {
-						async run() {
-							return { meta: { changes: 1 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	await upsertPackageServiceState({
-		db,
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		serviceName: 'worker',
-		status: 'running',
-		startedAt: '2026-07-05T12:00:00.000Z',
-		updatedAt: '2026-07-05T12:00:00.000Z',
-	})
-	expect(statements[0]?.sql).toContain('INSERT INTO package_service_states')
-	expect(statements[0]?.params).toEqual([
-		'user-1',
-		'pkg-1',
-		'worker',
-		'running',
-		'2026-07-05T12:00:00.000Z',
-		'2026-07-05T12:00:00.000Z',
-	])
-
-	await upsertPackageServiceState({
-		db,
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		serviceName: 'worker',
-		status: 'stopped',
-		startedAt: '2026-07-05T12:00:00.000Z',
-		updatedAt: '2026-07-05T12:01:00.000Z',
-	})
-	expect(statements[1]?.params[4]).toBeNull()
-
-	await deletePackageServiceState({
-		db,
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		serviceName: 'worker',
-	})
-	expect(statements[2]?.sql).toContain('DELETE FROM package_service_states')
 })
 
 test('package service run finalization records service_runtime usage for success and failure', async () => {

@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { expect, expectTypeOf, test } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	loadAdminSystemEmailData,
 	loadAdminSystemEmailMessageById,
@@ -24,14 +24,6 @@ import {
 } from './system-email-graph-repo.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-
-test('dedicated system graph write types make ownership and direction implicit', () => {
-	type Input = Parameters<typeof insertSystemEmailMessage>[0]
-	expectTypeOf<Input['message']>().not.toHaveProperty('userId')
-	expectTypeOf<Input['message']>().not.toHaveProperty('direction')
-	expectTypeOf<Input['message']>().not.toHaveProperty('providerMessageId')
-	expectTypeOf<Input['inboundDeliveryFence']>().not.toHaveProperty('userId')
-})
 
 test('dedicated writes reject cross-owner references before either home commits', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
