@@ -30,6 +30,21 @@ const productionShape = {
 	attachmentCount: 48,
 	eventCount: 295,
 } as const
+const trustedProvenanceMismatchUpdates = [
+	{ field: 'issued_by', value: "'untrusted-control-plane'" },
+	{ field: 'source_account_id', value: `'${'d'.repeat(32)}'` },
+	{
+		field: 'source_database_id',
+		value: "'22222222-2222-4222-8222-222222222222'",
+	},
+	{ field: 'source_database_name', value: "'not-kody'" },
+	{ field: 'manifest_key_id', value: "'kody-dr-2026-08'" },
+	{ field: 'signature_algorithm', value: "'RSA-PSS'" },
+	{ field: 'retention_tier', value: "'weekly'" },
+	{ field: 'restore_baseline_id', value: "'untrusted-baseline'" },
+	{ field: 'restore_baseline_sha256', value: `'${'d'.repeat(64)}'` },
+	{ field: 'build_commit', value: `'${'d'.repeat(40)}'` },
+] as const
 const workspaceDirectory = fileURLToPath(
 	new URL('../../../../', import.meta.url),
 )
@@ -413,7 +428,7 @@ function approvalInsert(
 
 test(
 	'0135 fails closed and drops only the approved legacy graph through Wrangler',
-	{ timeout: 360_000 },
+	{ timeout: 600_000 },
 	() => {
 		using temporary = createTemporaryDirectory()
 		const migrationPath = join(temporary.path, 'migrations')
@@ -689,6 +704,30 @@ test(
 		const wrongCount = runWrangler(temporary.path, ...applyArguments)
 		expect(wrongCount.status).not.toBe(0)
 
+		for (const mismatch of trustedProvenanceMismatchUpdates) {
+			executeSql({
+				workingDirectory: temporary.path,
+				configPath,
+				statePath,
+				sql: `DELETE FROM email_user_graph_drop_approval;
+					${approvalInsert()};
+					PRAGMA ignore_check_constraints = ON;
+					UPDATE email_user_graph_drop_approval
+					SET ${mismatch.field} = ${mismatch.value}
+					WHERE singleton = 1;
+					PRAGMA ignore_check_constraints = OFF;`,
+			})
+			const untrusted = runWrangler(temporary.path, ...applyArguments)
+			expect(
+				untrusted.status,
+				`${mismatch.field}\n${untrusted.stdout}\n${untrusted.stderr}`,
+			).not.toBe(0)
+			expect(
+				`${untrusted.stdout}\n${untrusted.stderr}`,
+				mismatch.field,
+			).toContain('CHECK constraint failed')
+		}
+
 		executeSql({
 			workingDirectory: temporary.path,
 			configPath,
@@ -708,6 +747,98 @@ test(
 			sql: `UPDATE system_email_threads
 				SET subject_normalized = ''
 				WHERE id = 'system-thread';`,
+		})
+
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath,
+			statePath,
+			sql: `ALTER TABLE users ADD COLUMN future_contract TEXT;`,
+		})
+		const futureColumn = runWrangler(temporary.path, ...applyArguments)
+		expect(futureColumn.status).not.toBe(0)
+		expect(`${futureColumn.stdout}\n${futureColumn.stderr}`).toContain(
+			'CHECK constraint failed',
+		)
+		using afterFutureColumnFailure = openDatabase(statePath)
+		expect(
+			afterFutureColumnFailure
+				.prepare(
+					`SELECT
+						(SELECT COUNT(*) FROM users) AS users,
+						(SELECT COUNT(*) FROM pragma_table_info('users')
+							WHERE name = 'future_contract') AS future_columns,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE type = 'table' AND name IN (
+								'email_threads', 'email_messages', 'email_attachments',
+								'email_delivery_events'
+							)) AS legacy_tables,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE name GLOB 'migration_0135_*') AS migration_helpers,
+						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger`,
+				)
+				.get(dropMigration),
+		).toEqual({
+			users: 5001,
+			future_columns: 1,
+			legacy_tables: 4,
+			migration_helpers: 0,
+			ledger: 0,
+		})
+		afterFutureColumnFailure.close()
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath,
+			statePath,
+			sql: `ALTER TABLE users DROP COLUMN future_contract;`,
+		})
+
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath,
+			statePath,
+			sql: `CREATE TABLE future_user_contract (
+					id INTEGER PRIMARY KEY,
+					user_id INTEGER NOT NULL,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				);
+				INSERT INTO future_user_contract (id, user_id) VALUES (1, 1);`,
+		})
+		const unknownChild = runWrangler(temporary.path, ...applyArguments)
+		expect(unknownChild.status).not.toBe(0)
+		expect(`${unknownChild.stdout}\n${unknownChild.stderr}`).toContain(
+			'CHECK constraint failed',
+		)
+		using afterUnknownChildFailure = openDatabase(statePath)
+		expect(
+			afterUnknownChildFailure
+				.prepare(
+					`SELECT
+						(SELECT COUNT(*) FROM users) AS users,
+						(SELECT COUNT(*) FROM future_user_contract) AS child_rows,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE type = 'table' AND name IN (
+								'email_threads', 'email_messages', 'email_attachments',
+								'email_delivery_events'
+							)) AS legacy_tables,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE name GLOB 'migration_0135_*') AS migration_helpers,
+						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger`,
+				)
+				.get(dropMigration),
+		).toEqual({
+			users: 5001,
+			child_rows: 1,
+			legacy_tables: 4,
+			migration_helpers: 0,
+			ledger: 0,
+		})
+		afterUnknownChildFailure.close()
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath,
+			statePath,
+			sql: `DROP TABLE future_user_contract;`,
 		})
 
 		let expectedUserColumns: Array<Record<string, unknown>>
@@ -790,13 +921,12 @@ test(
 			statePath,
 			sql: `DELETE FROM email_user_graph_drop_approval;
 				${approvalInsert({
-					buildCommit: 'current-control-plane-build',
-					manifestKeyId: 'kody-dr-2026-08',
-					sourceAccountId: 'd'.repeat(32),
-					sourceDatabaseId: '22222222-2222-4222-8222-222222222222',
-					sourceDatabaseName: 'current-mailbox-source',
-					restoreBaselineId: 'current-monotonic-baseline',
-					restoreBaselineSha256: 'd'.repeat(64),
+					requestId: '22222222-2222-4222-8222-222222222222',
+					nonce: '1'.repeat(32),
+					sqlSha256: 'd'.repeat(64),
+					r2Etag: 'e'.repeat(32),
+					manifestSignatureSha256: 'f'.repeat(64),
+					exportBookmark: 'newer-bookmark',
 				})}`,
 		})
 		const migrationStartedAt = performance.now()
@@ -857,7 +987,7 @@ test(
 							AS usage_effects,
 						(SELECT COUNT(*) FROM email_user_graph_drop_approval
 							WHERE request_id =
-								'11111111-1111-4111-8111-111111111111')
+								'22222222-2222-4222-8222-222222222222')
 							AS approvals,
 						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger,
 						(SELECT owner_count FROM email_user_graph_authority

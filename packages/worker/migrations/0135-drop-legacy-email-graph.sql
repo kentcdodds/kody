@@ -59,18 +59,19 @@ FROM (
 			ON authority.singleton = approval.singleton
 		WHERE approval.singleton = 1
 			AND approval.issued_by = 'backup-control-plane'
-			AND length(approval.source_account_id) IN (32, 36)
-			AND length(approval.source_database_id) = 36
-			AND length(approval.source_database_name) BETWEEN 1 AND 128
-			AND length(approval.manifest_key_id) BETWEEN 1 AND 128
+			AND approval.source_account_id =
+				'a99ee2e72728dd52902ef288b7b1447d'
+			AND approval.source_database_id =
+				'8c1014d1-6b41-4695-a0a2-159071f0f919'
+			AND approval.source_database_name = 'kody'
+			AND approval.manifest_key_id = 'kody-dr-2026-07'
 			AND approval.signature_algorithm = 'Ed25519'
 			AND approval.retention_tier = 'daily'
-			AND length(approval.restore_baseline_id) BETWEEN 1 AND 128
-			AND length(approval.restore_baseline_sha256) = 64
+			AND approval.restore_baseline_id = 'kody-migration-set-2026-07'
 			AND approval.restore_baseline_sha256 =
-				lower(approval.restore_baseline_sha256)
-			AND approval.restore_baseline_sha256 NOT GLOB '*[^0-9a-f]*'
-			AND length(approval.build_commit) BETWEEN 1 AND 128
+				'feb76eb26ed72a55d5fa25d14ef9ee904d0758fc29842c898b584a921ccfd995'
+			AND approval.build_commit =
+				'fe1ca2772de7f369fc06a7d1bd9aeadc3347b2a7'
 			AND approval.authority_frozen_at = authority.frozen_at
 			AND approval.authority_owner_count = authority.owner_count
 			AND approval.owner_count = authority.owner_count
@@ -602,176 +603,787 @@ WHERE NOT (
 		OR instr(normalized_sql, ' email_delivery_events ') > 0
 	);
 
-CREATE TABLE migration_0135_surviving_foreign_keys (
-	source_table TEXT NOT NULL,
-	referenced_table TEXT NOT NULL
+-- D1 rejects non-literal pragma_foreign_key_list arguments with SQLITE_AUTH.
+-- Make the exhaustive static pragma scan complete by first rejecting every
+-- unknown or missing schema table; the optional d1_migrations table exists only
+-- when Wrangler, rather than the node:sqlite harness, applies this chain.
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN group_concat(name, ',') IN (
+	'account_write_lease_repairs,account_write_leases,agent_package_conversation_uses,archived_job_artifacts,community_activity_events,community_bans,community_forks,community_listings,community_ratings,community_reports,community_stars,email_attachments,email_delivery_alert_events,email_delivery_events,email_inbound_due_owners,email_inbound_usage_effects,email_inbox_addresses,email_inboxes,email_messages,email_outbound_provider_index,email_outbound_provider_index_repair_owners,email_sender_identities,email_sender_rules,email_threads,email_user_graph_authority,email_user_graph_drop_approval,email_verifications,entity_sources,feature_flag_exposure_rollups,feature_flag_user_overrides,feature_flags,invites,jobs,mcp_agent_sessions,mcp_memories,mcp_memory_conversation_suppressions,mcp_server_settings,mcp_user_server_instructions,migration_0135_legacy_email_graph_drop_guard,oauth_connections,package_codemod_run_items,package_codemod_runs,package_invocation_tokens,package_scope_grants,package_service_states,passkeys,password_resets,pending_email_changes,permissions,platform_feedback,published_bundle_artifacts,remote_connector_settings,repo_sessions,role_permissions,roles,saved_packages,secret_buckets,secret_entries,stripe_webhook_events,system_email_attachments,system_email_daily_counters,system_email_delivery_events,system_email_graph_authority,system_email_messages,system_email_threads,usage_rollups,user_activation_milestones,user_follows,user_integrations,user_oauth_apps,user_openapi_binding_operations,user_openapi_bindings,user_package_run_successes,user_roles,user_storage_buckets,users,value_buckets,value_entries,verifications,webhook_endpoints,workflow_runs',
+	'account_write_lease_repairs,account_write_leases,agent_package_conversation_uses,archived_job_artifacts,community_activity_events,community_bans,community_forks,community_listings,community_ratings,community_reports,community_stars,d1_migrations,email_attachments,email_delivery_alert_events,email_delivery_events,email_inbound_due_owners,email_inbound_usage_effects,email_inbox_addresses,email_inboxes,email_messages,email_outbound_provider_index,email_outbound_provider_index_repair_owners,email_sender_identities,email_sender_rules,email_threads,email_user_graph_authority,email_user_graph_drop_approval,email_verifications,entity_sources,feature_flag_exposure_rollups,feature_flag_user_overrides,feature_flags,invites,jobs,mcp_agent_sessions,mcp_memories,mcp_memory_conversation_suppressions,mcp_server_settings,mcp_user_server_instructions,migration_0135_legacy_email_graph_drop_guard,oauth_connections,package_codemod_run_items,package_codemod_runs,package_invocation_tokens,package_scope_grants,package_service_states,passkeys,password_resets,pending_email_changes,permissions,platform_feedback,published_bundle_artifacts,remote_connector_settings,repo_sessions,role_permissions,roles,saved_packages,secret_buckets,secret_entries,stripe_webhook_events,system_email_attachments,system_email_daily_counters,system_email_delivery_events,system_email_graph_authority,system_email_messages,system_email_threads,usage_rollups,user_activation_milestones,user_follows,user_integrations,user_oauth_apps,user_openapi_binding_operations,user_openapi_bindings,user_package_run_successes,user_roles,user_storage_buckets,users,value_buckets,value_entries,verifications,webhook_endpoints,workflow_runs'
+) THEN 1 ELSE 0 END
+FROM (
+	SELECT name FROM sqlite_schema
+	WHERE type = 'table'
+		AND name NOT LIKE 'sqlite_%'
+		AND name NOT LIKE '\_cf\_%' ESCAPE '\'
+	ORDER BY name
 );
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'email_inbox_addresses', "table" FROM pragma_foreign_key_list('email_inbox_addresses');
+-- Exact reviewed users contract through 0134. cid makes the table-info check
+-- ordered as well as complete; any future, missing, reordered, or changed column
+-- aborts before the first destructive statement.
+CREATE TABLE migration_0135_expected_users_columns (
+	cid INTEGER NOT NULL,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL,
+	not_null INTEGER NOT NULL,
+	default_value TEXT,
+	pk INTEGER NOT NULL
+);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'email_verifications', "table" FROM pragma_foreign_key_list('email_verifications');
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
+	(0, 'id', 'INTEGER', 1, NULL, 1),
+	(1, 'username', 'TEXT', 1, NULL, 0),
+	(2, 'email', 'TEXT', 1, NULL, 0),
+	(3, 'password_hash', 'TEXT', 1, NULL, 0),
+	(4, 'created_at', 'TEXT', 1, 'CURRENT_TIMESTAMP', 0),
+	(5, 'updated_at', 'TEXT', 1, 'CURRENT_TIMESTAMP', 0),
+	(6, 'email_verified_at', 'TEXT', 0, NULL, 0),
+	(7, 'plan', 'TEXT', 1, '''free''', 0),
+	(8, 'stable_user_id', 'TEXT', 1, NULL, 0),
+	(9, 'stripe_customer_id', 'TEXT', 0, NULL, 0);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'feature_flag_user_overrides', "table" FROM pragma_foreign_key_list('feature_flag_user_overrides');
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
+	(10, 'stripe_plan', 'TEXT', 0, NULL, 0),
+	(11, 'stripe_plan_refreshed_at', 'TEXT', 0, NULL, 0),
+	(12, 'display_name', 'TEXT', 0, NULL, 0),
+	(13, 'bio', 'TEXT', 0, NULL, 0),
+	(14, 'profile_visibility', 'TEXT', 1, '''public''', 0),
+	(15, 'avatar_key', 'TEXT', 0, NULL, 0),
+	(16, 'account_type', 'TEXT', 1, '''person''', 0),
+	(17, 'deleting_at', 'TEXT', 0, NULL, 0),
+	(18, 'active_write_count', 'INTEGER', 1, '0', 0),
+	(19, 'active_write_expires_at', 'TEXT', 0, NULL, 0);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'feature_flags', "table" FROM pragma_foreign_key_list('feature_flags');
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
+	(20, 'suspended_at', 'TEXT', 0, NULL, 0),
+	(21, 'email_outbound_paused_at', 'TEXT', 0, NULL, 0),
+	(22, 'password_changed_at', 'TEXT', 0, NULL, 0),
+	(23, 'job_retention_success_once_days', 'INTEGER', 0, NULL, 0),
+	(24, 'job_retention_failed_once_days', 'INTEGER', 0, NULL, 0),
+	(25, 'job_retention_disabled_recurring_days', 'INTEGER', 0, NULL, 0),
+	(26, 'd1_storage_bytes', 'INTEGER', 1, '0', 0),
+	(27, 'd1_storage_bytes_updated_at', 'TEXT', 0, NULL, 0),
+	(28, 'mailbox_parity_checked_at', 'TEXT', 0, NULL, 0),
+	(29, 'mailbox_parity_matching_since', 'TEXT', 0, NULL, 0);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'invites', "table" FROM pragma_foreign_key_list('invites');
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
+	(30, 'mailbox_parity_mismatch_count', 'INTEGER', 1, '0', 0),
+	(31, 'mailbox_parity_last_error', 'TEXT', 0, NULL, 0),
+	(32, 'mailbox_parity_content_watermark_at', 'TEXT', 0, NULL, 0),
+	(33, 'mailbox_parity_content_replay_upper_at', 'TEXT', 0, NULL, 0),
+	(34, 'mailbox_parity_content_replay_cursor_updated_at', 'TEXT', 0, NULL, 0),
+	(35, 'mailbox_parity_content_replay_cursor_id', 'TEXT', 0, NULL, 0),
+	(36, 'mailbox_parity_message_backfill_cursor_created_at', 'TEXT', 0, NULL, 0),
+	(37, 'mailbox_parity_message_backfill_cursor_id', 'TEXT', 0, NULL, 0),
+	(38, 'mailbox_parity_message_backfill_completed_at', 'TEXT', 0, NULL, 0),
+	(39, 'mailbox_parity_event_backfill_cursor_created_at', 'TEXT', 0, NULL, 0);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'mcp_memory_conversation_suppressions', "table" FROM pragma_foreign_key_list('mcp_memory_conversation_suppressions');
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
+	(40, 'mailbox_parity_event_backfill_cursor_id', 'TEXT', 0, NULL, 0),
+	(41, 'mailbox_parity_event_backfill_completed_at', 'TEXT', 0, NULL, 0);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'oauth_connections', "table" FROM pragma_foreign_key_list('oauth_connections');
+CREATE TABLE migration_0135_expected_users_indexes (
+	name TEXT NOT NULL,
+	is_unique INTEGER NOT NULL,
+	origin TEXT NOT NULL,
+	partial INTEGER NOT NULL,
+	sql TEXT
+);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'passkeys', "table" FROM pragma_foreign_key_list('passkeys');
+INSERT INTO migration_0135_expected_users_indexes (name, is_unique, origin, partial, sql) VALUES
+	('idx_users_d1_storage_bytes_reconciliation', 0, 'c', 0, 'CREATE INDEX idx_users_d1_storage_bytes_reconciliation
+	ON users(d1_storage_bytes_updated_at, stable_user_id)'),
+	('idx_users_deleting_at', 0, 'c', 1, 'CREATE INDEX idx_users_deleting_at
+	ON users(deleting_at)
+	WHERE deleting_at IS NOT NULL'),
+	('idx_users_email', 0, 'c', 0, 'CREATE INDEX idx_users_email ON users(email)'),
+	('idx_users_mailbox_parity_checked', 0, 'c', 0, 'CREATE INDEX idx_users_mailbox_parity_checked
+	ON users(mailbox_parity_checked_at, stable_user_id)'),
+	('idx_users_stable_user_id', 1, 'c', 0, 'CREATE UNIQUE INDEX idx_users_stable_user_id
+	ON users(stable_user_id)'),
+	('idx_users_stripe_customer_id', 1, 'c', 1, 'CREATE UNIQUE INDEX idx_users_stripe_customer_id
+	ON users(stripe_customer_id)
+	WHERE stripe_customer_id IS NOT NULL'),
+	('idx_users_username', 0, 'c', 0, 'CREATE INDEX idx_users_username ON users(username)'),
+	('sqlite_autoindex_users_1', 1, 'u', 0, NULL),
+	('sqlite_autoindex_users_2', 1, 'u', 0, NULL);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'password_resets', "table" FROM pragma_foreign_key_list('password_resets');
+CREATE TABLE migration_0135_expected_users_foreign_keys (
+	child_table TEXT NOT NULL,
+	from_column TEXT NOT NULL,
+	to_column TEXT NOT NULL,
+	on_update TEXT NOT NULL,
+	on_delete TEXT NOT NULL,
+	match TEXT NOT NULL
+);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'pending_email_changes', "table" FROM pragma_foreign_key_list('pending_email_changes');
+INSERT INTO migration_0135_expected_users_foreign_keys (child_table, from_column, to_column, on_update, on_delete, match) VALUES
+	('email_verifications', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE'),
+	('feature_flag_user_overrides', 'updated_by', 'id', 'NO ACTION', 'SET NULL', 'NONE'),
+	('feature_flag_user_overrides', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE'),
+	('feature_flags', 'updated_by', 'id', 'NO ACTION', 'SET NULL', 'NONE'),
+	('invites', 'created_by', 'id', 'NO ACTION', 'SET NULL', 'NONE'),
+	('oauth_connections', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE'),
+	('passkeys', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE'),
+	('password_resets', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE'),
+	('pending_email_changes', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE'),
+	('user_roles', 'user_id', 'id', 'NO ACTION', 'CASCADE', 'NONE');
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'role_permissions', "table" FROM pragma_foreign_key_list('role_permissions');
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	NOT EXISTS (
+		SELECT cid, name, type, "notnull", dflt_value, pk
+		FROM pragma_table_info('users')
+		EXCEPT
+		SELECT cid, name, type, not_null, default_value, pk
+		FROM migration_0135_expected_users_columns
+	)
+	AND NOT EXISTS (
+		SELECT cid, name, type, not_null, default_value, pk
+		FROM migration_0135_expected_users_columns
+		EXCEPT
+		SELECT cid, name, type, "notnull", dflt_value, pk
+		FROM pragma_table_info('users')
+	)
+THEN 1 ELSE 0 END;
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'secret_entries', "table" FROM pragma_foreign_key_list('secret_entries');
+CREATE TABLE migration_0135_actual_users_indexes (
+	name TEXT NOT NULL,
+	is_unique INTEGER NOT NULL,
+	origin TEXT NOT NULL,
+	partial INTEGER NOT NULL,
+	sql TEXT
+);
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'system_email_attachments', "table" FROM pragma_foreign_key_list('system_email_attachments');
+INSERT INTO migration_0135_actual_users_indexes (
+	name, is_unique, origin, partial, sql
+)
+SELECT
+	index_list.name, index_list."unique", index_list.origin,
+	index_list.partial, schema_object.sql
+FROM pragma_index_list('users') index_list
+LEFT JOIN sqlite_schema schema_object
+	ON schema_object.type = 'index'
+	AND schema_object.name = index_list.name;
 
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'system_email_delivery_events', "table" FROM pragma_foreign_key_list('system_email_delivery_events');
-
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'system_email_messages', "table" FROM pragma_foreign_key_list('system_email_messages');
-
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'system_email_threads', "table" FROM pragma_foreign_key_list('system_email_threads');
-
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'user_integrations', "table" FROM pragma_foreign_key_list('user_integrations');
-
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'user_openapi_binding_operations', "table" FROM pragma_foreign_key_list('user_openapi_binding_operations');
-
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'user_roles', "table" FROM pragma_foreign_key_list('user_roles');
-
-INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
-SELECT 'value_entries', "table" FROM pragma_foreign_key_list('value_entries');
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	NOT EXISTS (
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_actual_users_indexes
+		EXCEPT
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_expected_users_indexes
+	)
+	AND NOT EXISTS (
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_expected_users_indexes
+		EXCEPT
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_actual_users_indexes
+	)
+THEN 1 ELSE 0 END;
 
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
-FROM migration_0135_surviving_foreign_keys
-WHERE referenced_table IN (
-	'email_threads',
-	'email_messages',
-	'email_attachments',
-	'email_delivery_events'
-)
-	OR (
-		referenced_table = 'users'
-		AND source_table NOT IN (
-			'email_verifications',
-			'feature_flag_user_overrides',
-			'feature_flags',
-			'invites',
-			'oauth_connections',
-			'passkeys',
-			'password_resets',
-			'pending_email_changes',
-			'user_roles'
-		)
-	);
+FROM sqlite_schema
+WHERE type = 'trigger' AND tbl_name = 'users';
 
-DROP TABLE migration_0135_surviving_foreign_keys;
+-- Exhaustively inspect every reviewed table with a literal pragma call. The
+-- exact table-name guard above makes this complete: an unknown child cannot
+-- escape the inventory by being absent from this list.
+CREATE TABLE migration_0135_actual_users_foreign_keys (
+	child_table TEXT NOT NULL,
+	from_column TEXT NOT NULL,
+	to_column TEXT NOT NULL,
+	on_update TEXT NOT NULL,
+	on_delete TEXT NOT NULL,
+	match TEXT NOT NULL
+);
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'account_write_lease_repairs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('account_write_lease_repairs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'account_write_leases', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('account_write_leases')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'agent_package_conversation_uses', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('agent_package_conversation_uses')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'archived_job_artifacts', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('archived_job_artifacts')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_activity_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_activity_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_bans', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_bans')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_forks', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_forks')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_listings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_listings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_ratings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_ratings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_reports', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_reports')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_stars', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_stars')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_attachments', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_attachments')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_delivery_alert_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_delivery_alert_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_delivery_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_delivery_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inbound_due_owners', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inbound_due_owners')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inbound_usage_effects', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inbound_usage_effects')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inbox_addresses', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inbox_addresses')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inboxes', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inboxes')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_messages', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_messages')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_outbound_provider_index', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_outbound_provider_index')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_outbound_provider_index_repair_owners', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_outbound_provider_index_repair_owners')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_sender_identities', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_sender_identities')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_sender_rules', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_sender_rules')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_threads', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_threads')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_user_graph_authority', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_user_graph_authority')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_user_graph_drop_approval', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_user_graph_drop_approval')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_verifications', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_verifications')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'entity_sources', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('entity_sources')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'feature_flag_exposure_rollups', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('feature_flag_exposure_rollups')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'feature_flag_user_overrides', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('feature_flag_user_overrides')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'feature_flags', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('feature_flags')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'invites', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('invites')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'jobs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('jobs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_agent_sessions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_agent_sessions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_memories', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_memories')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_memory_conversation_suppressions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_memory_conversation_suppressions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_server_settings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_server_settings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_user_server_instructions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_user_server_instructions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'oauth_connections', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('oauth_connections')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_codemod_run_items', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_codemod_run_items')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_codemod_runs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_codemod_runs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_invocation_tokens', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_invocation_tokens')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_scope_grants', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_scope_grants')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_service_states', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_service_states')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'passkeys', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('passkeys')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'password_resets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('password_resets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'pending_email_changes', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('pending_email_changes')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'permissions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('permissions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'platform_feedback', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('platform_feedback')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'published_bundle_artifacts', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('published_bundle_artifacts')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'remote_connector_settings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('remote_connector_settings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'repo_sessions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('repo_sessions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'role_permissions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('role_permissions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'roles', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('roles')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'saved_packages', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('saved_packages')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'secret_buckets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('secret_buckets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'secret_entries', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('secret_entries')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'stripe_webhook_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('stripe_webhook_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_attachments', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_attachments')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_daily_counters', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_daily_counters')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_delivery_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_delivery_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_graph_authority', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_graph_authority')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_messages', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_messages')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_threads', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_threads')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'usage_rollups', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('usage_rollups')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_activation_milestones', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_activation_milestones')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_follows', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_follows')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_integrations', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_integrations')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_oauth_apps', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_oauth_apps')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_openapi_binding_operations', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_openapi_binding_operations')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_openapi_bindings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_openapi_bindings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_package_run_successes', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_package_run_successes')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_roles', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_roles')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_storage_buckets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_storage_buckets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'users', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('users')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'value_buckets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('value_buckets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'value_entries', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('value_entries')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'verifications', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('verifications')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'webhook_endpoints', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('webhook_endpoints')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'workflow_runs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('workflow_runs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	NOT EXISTS (
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_actual_users_foreign_keys
+		EXCEPT
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_expected_users_foreign_keys
+	)
+	AND NOT EXISTS (
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_expected_users_foreign_keys
+		EXCEPT
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_actual_users_foreign_keys
+	)
+THEN 1 ELSE 0 END;
 
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
 FROM pragma_foreign_key_check;
-
--- Fail closed if any reviewed users child foreign key changed. Rebuilding the
--- parent is safe only after every exact child relation is snapshotted and cleared.
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('email_verifications')
-WHERE "table" = 'users'
-	AND "from" = 'user_id'
-	AND "to" = 'id'
-	AND on_delete = 'CASCADE';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('feature_flags')
-WHERE "table" = 'users'
-	AND "from" = 'updated_by'
-	AND "to" = 'id'
-	AND on_delete = 'SET NULL';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('invites')
-WHERE "table" = 'users'
-	AND "from" = 'created_by'
-	AND "to" = 'id'
-	AND on_delete = 'SET NULL';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('oauth_connections')
-WHERE "table" = 'users'
-	AND "from" = 'user_id'
-	AND "to" = 'id'
-	AND on_delete = 'CASCADE';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('passkeys')
-WHERE "table" = 'users'
-	AND "from" = 'user_id'
-	AND "to" = 'id'
-	AND on_delete = 'CASCADE';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('password_resets')
-WHERE "table" = 'users'
-	AND "from" = 'user_id'
-	AND "to" = 'id'
-	AND on_delete = 'CASCADE';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('pending_email_changes')
-WHERE "table" = 'users'
-	AND "from" = 'user_id'
-	AND "to" = 'id'
-	AND on_delete = 'CASCADE';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('user_roles')
-WHERE "table" = 'users'
-	AND "from" = 'user_id'
-	AND "to" = 'id'
-	AND on_delete = 'CASCADE';
-
-INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END
-FROM pragma_foreign_key_list('feature_flag_user_overrides')
-WHERE "table" = 'users'
-	AND "to" = 'id'
-	AND (
-		("from" = 'user_id' AND on_delete = 'CASCADE')
-		OR ("from" = 'updated_by' AND on_delete = 'SET NULL')
-	);
 
 -- Preserve the stable authority marker without duplicating or renaming any
 -- canonical approval field. The exact 0134 receipt remains in its own table.
@@ -973,7 +1585,8 @@ WHERE sequence IS NOT NULL
 
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_email ON users(email);
-CREATE UNIQUE INDEX idx_users_stable_user_id ON users(stable_user_id);
+CREATE UNIQUE INDEX idx_users_stable_user_id
+	ON users(stable_user_id);
 CREATE UNIQUE INDEX idx_users_stripe_customer_id
 	ON users(stripe_customer_id)
 	WHERE stripe_customer_id IS NOT NULL;
@@ -994,6 +1607,648 @@ INSERT INTO feature_flags SELECT * FROM _mig0135_feature_flags;
 INSERT INTO feature_flag_user_overrides
 SELECT * FROM _mig0135_feature_flag_user_overrides;
 
+-- Reassert the complete rebuilt users contract before releasing temporary
+-- snapshots. Any mismatch aborts and rolls the entire migration back.
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	NOT EXISTS (
+		SELECT cid, name, type, "notnull", dflt_value, pk
+		FROM pragma_table_info('users')
+		EXCEPT
+		SELECT cid, name, type, not_null, default_value, pk
+		FROM migration_0135_expected_users_columns
+		WHERE cid < 28
+	)
+	AND NOT EXISTS (
+		SELECT cid, name, type, not_null, default_value, pk
+		FROM migration_0135_expected_users_columns
+		WHERE cid < 28
+		EXCEPT
+		SELECT cid, name, type, "notnull", dflt_value, pk
+		FROM pragma_table_info('users')
+	)
+THEN 1 ELSE 0 END;
+
+DELETE FROM migration_0135_actual_users_indexes;
+INSERT INTO migration_0135_actual_users_indexes (
+	name, is_unique, origin, partial, sql
+)
+SELECT
+	index_list.name, index_list."unique", index_list.origin,
+	index_list.partial, schema_object.sql
+FROM pragma_index_list('users') index_list
+LEFT JOIN sqlite_schema schema_object
+	ON schema_object.type = 'index'
+	AND schema_object.name = index_list.name;
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	NOT EXISTS (
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_actual_users_indexes
+		EXCEPT
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_expected_users_indexes
+		WHERE name != 'idx_users_mailbox_parity_checked'
+	)
+	AND NOT EXISTS (
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_expected_users_indexes
+		WHERE name != 'idx_users_mailbox_parity_checked'
+		EXCEPT
+		SELECT name, is_unique, origin, partial, sql
+		FROM migration_0135_actual_users_indexes
+	)
+THEN 1 ELSE 0 END;
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+FROM sqlite_schema
+WHERE type = 'trigger' AND tbl_name = 'users';
+
+DELETE FROM migration_0135_actual_users_foreign_keys;
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'account_write_lease_repairs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('account_write_lease_repairs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'account_write_leases', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('account_write_leases')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'agent_package_conversation_uses', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('agent_package_conversation_uses')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'archived_job_artifacts', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('archived_job_artifacts')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_activity_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_activity_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_bans', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_bans')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_forks', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_forks')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_listings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_listings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_ratings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_ratings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_reports', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_reports')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'community_stars', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('community_stars')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_attachments', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_attachments')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_delivery_alert_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_delivery_alert_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_delivery_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_delivery_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inbound_due_owners', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inbound_due_owners')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inbound_usage_effects', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inbound_usage_effects')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inbox_addresses', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inbox_addresses')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_inboxes', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_inboxes')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_messages', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_messages')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_outbound_provider_index', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_outbound_provider_index')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_outbound_provider_index_repair_owners', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_outbound_provider_index_repair_owners')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_sender_identities', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_sender_identities')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_sender_rules', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_sender_rules')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_threads', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_threads')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_user_graph_authority', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_user_graph_authority')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_user_graph_drop_approval', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_user_graph_drop_approval')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'email_verifications', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('email_verifications')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'entity_sources', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('entity_sources')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'feature_flag_exposure_rollups', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('feature_flag_exposure_rollups')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'feature_flag_user_overrides', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('feature_flag_user_overrides')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'feature_flags', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('feature_flags')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'invites', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('invites')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'jobs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('jobs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_agent_sessions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_agent_sessions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_memories', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_memories')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_memory_conversation_suppressions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_memory_conversation_suppressions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_server_settings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_server_settings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'mcp_user_server_instructions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('mcp_user_server_instructions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'oauth_connections', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('oauth_connections')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_codemod_run_items', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_codemod_run_items')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_codemod_runs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_codemod_runs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_invocation_tokens', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_invocation_tokens')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_scope_grants', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_scope_grants')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'package_service_states', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('package_service_states')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'passkeys', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('passkeys')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'password_resets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('password_resets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'pending_email_changes', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('pending_email_changes')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'permissions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('permissions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'platform_feedback', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('platform_feedback')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'published_bundle_artifacts', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('published_bundle_artifacts')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'remote_connector_settings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('remote_connector_settings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'repo_sessions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('repo_sessions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'role_permissions', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('role_permissions')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'roles', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('roles')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'saved_packages', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('saved_packages')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'secret_buckets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('secret_buckets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'secret_entries', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('secret_entries')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'stripe_webhook_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('stripe_webhook_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_attachments', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_attachments')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_daily_counters', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_daily_counters')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_delivery_events', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_delivery_events')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_graph_authority', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_graph_authority')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_messages', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_messages')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'system_email_threads', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('system_email_threads')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'usage_rollups', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('usage_rollups')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_activation_milestones', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_activation_milestones')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_follows', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_follows')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_integrations', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_integrations')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_oauth_apps', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_oauth_apps')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_openapi_binding_operations', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_openapi_binding_operations')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_openapi_bindings', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_openapi_bindings')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_package_run_successes', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_package_run_successes')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_roles', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_roles')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'user_storage_buckets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('user_storage_buckets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'users', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('users')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'value_buckets', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('value_buckets')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'value_entries', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('value_entries')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'verifications', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('verifications')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'webhook_endpoints', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('webhook_endpoints')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_actual_users_foreign_keys (
+	child_table, from_column, to_column, on_update, on_delete, match
+)
+SELECT 'workflow_runs', "from", "to", on_update, on_delete, match
+FROM pragma_foreign_key_list('workflow_runs')
+WHERE "table" = 'users';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	NOT EXISTS (
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_actual_users_foreign_keys
+		EXCEPT
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_expected_users_foreign_keys
+	)
+	AND NOT EXISTS (
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_expected_users_foreign_keys
+		EXCEPT
+		SELECT child_table, from_column, to_column, on_update, on_delete, match
+		FROM migration_0135_actual_users_foreign_keys
+	)
+THEN 1 ELSE 0 END;
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('users');
+
 DROP TABLE _mig0135_password_resets;
 DROP TABLE _mig0135_email_verifications;
 DROP TABLE _mig0135_pending_email_changes;
@@ -1004,6 +2259,11 @@ DROP TABLE _mig0135_invites;
 DROP TABLE _mig0135_feature_flags;
 DROP TABLE _mig0135_feature_flag_user_overrides;
 DROP TABLE _mig0135_users_meta;
+DROP TABLE migration_0135_actual_users_foreign_keys;
+DROP TABLE migration_0135_expected_users_foreign_keys;
+DROP TABLE migration_0135_actual_users_indexes;
+DROP TABLE migration_0135_expected_users_indexes;
+DROP TABLE migration_0135_expected_users_columns;
 
 DROP TRIGGER email_messages_delete_outbound_provider_index;
 DROP TABLE email_attachments;

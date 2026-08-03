@@ -397,12 +397,14 @@ hours. The caller supplies only `requestId`, `nonce`, and `requestedAt`; source
 identity, counts, object keys, hashes, and approval values come from the
 allowlisted control plane.
 
-0135 accepts any current canonical control-plane receipt rather than pinning a
-particular request, SHA, build, signing-key generation, or baseline generation.
-Its monotonic timestamps, canonical manifest/SQL relation, current marker, and
-exact counts must all validate at execution time. The receipt prepared on
-2026-08-03 expires at `21:10:38.879Z`; run the Workflow again if deployment
-occurs later.
+0135 accepts a newer receipt without pinning a particular request, nonce, object
+key, SQL SHA-256, ETag, or signature digest. It does pin the deployed trust
+configuration: production source account/database/name, signing-key id, Ed25519,
+daily retention, restore-baseline id/SHA-256, control-plane issuer, and build
+commit. Its monotonic timestamps, canonical manifest/SQL relation, current
+marker, and exact counts must also validate at execution time. The receipt
+prepared on 2026-08-03 expires at `21:10:38.879Z`; run the same deployed
+Workflow again if deployment occurs later.
 
 The only receipt-free case is a universal-chain bootstrap before seeding. The
 authority marker and all shared, dedicated, provider-index, repair, due-owner,

@@ -35,11 +35,15 @@ Example request body:
    instance with a new request id, nonce, and timestamp.
 
 The current production receipt expires at `2026-08-03T21:10:38.879Z`. It is not
-a value embedded in 0135. The migration accepts any current canonical
-control-plane receipt whose snapshot marker/counts still match and whose
-monotonic export, verification, and expiration timestamps pass. It does not pin
-a request id, object SHA, control-plane build, source identity, signing-key id,
-or restore-baseline generation.
+a value embedded in 0135. A newer receipt may replace it, but it must come from
+the same deployed trust configuration: source account
+`a99ee2e72728dd52902ef288b7b1447d`, database
+`8c1014d1-6b41-4695-a0a2-159071f0f919` / `kody`, key `kody-dr-2026-07`, baseline
+`kody-migration-set-2026-07` /
+`feb76eb26ed72a55d5fa25d14ef9ee904d0758fc29842c898b584a921ccfd995`, and build
+`fe1ca2772de7f369fc06a7d1bd9aeadc3347b2a7`. The migration does not pin the
+request id, request nonce, manifest/SQL object keys, SQL SHA-256, R2 ETag, or
+manifest-signature digest.
 
 The first attempt that encoded `params` as a string failed and is irrelevant: it
 issued no receipt and cannot authorize the migration. Never update or recreate
