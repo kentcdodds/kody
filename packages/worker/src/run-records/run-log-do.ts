@@ -11,11 +11,22 @@ import {
 	countsTowardPackageActivation,
 } from './package-activation-state.ts'
 import {
+	type JobRunObservabilityBatchSeedResult,
 	type JobRunObservabilityRecord,
 	type JobRunObservabilitySeedInput,
 	type JobRunObservabilityStatus,
 	type JobRunObservabilityUpsertInput,
+	jobRunObservabilitySeedMaxBatch,
 } from './job-run-observability.ts'
+import {
+	type LegacyParityVerifyInput,
+	type LegacyParityVerifyResult,
+	assertLegacyParityBoundedArray,
+	bucketParityHolds,
+	emptyLegacyParityBucketCounts,
+	isActivationMilestoneName,
+	normalizeLegacyParityWorkflowCheck,
+} from './legacy-parity.ts'
 import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionReserveResult,
@@ -2173,6 +2184,179 @@ class RunLogBase extends DurableObject<Env> {
 	async seedJobRunObservabilityIfAbsent(
 		input: JobRunObservabilitySeedInput,
 	): Promise<{ seeded: boolean }> {
+		return this.applyJobRunObservabilitySeed(input)
+	}
+
+	/**
+	 * Batch expand-phase D1 → RunLog job-observability seed. Reuses the exact
+	 * once-only additive merge of {@link seedJobRunObservabilityIfAbsent}.
+	 * Hard-capped at {@link jobRunObservabilitySeedMaxBatch}; oversized input
+	 * fails rather than silently slicing.
+	 */
+	async seedJobRunObservabilityBatch(input: {
+		seeds: Array<JobRunObservabilitySeedInput>
+	}): Promise<JobRunObservabilityBatchSeedResult> {
+		if (!Array.isArray(input.seeds)) {
+			throw new Error('seedJobRunObservabilityBatch seeds must be an array')
+		}
+		if (input.seeds.length > jobRunObservabilitySeedMaxBatch) {
+			throw new Error(
+				`seedJobRunObservabilityBatch accepts at most ${jobRunObservabilitySeedMaxBatch} seeds (got ${input.seeds.length})`,
+			)
+		}
+		let seeded = 0
+		let alreadySeeded = 0
+		for (const seed of input.seeds) {
+			const jobId = seed.jobId?.trim() ?? ''
+			if (!jobId) continue
+			const existing = this.getJobRunObservabilitySync(jobId)
+			if (existing?.legacySeeded) {
+				alreadySeeded += 1
+				continue
+			}
+			const result = this.applyJobRunObservabilitySeed(seed)
+			if (result.seeded) {
+				seeded += 1
+			}
+		}
+		return {
+			attempted: input.seeds.length,
+			seeded,
+			alreadySeeded,
+		}
+	}
+
+	/**
+	 * Content-free legacy parity check for a bounded expand-phase inventory.
+	 * Returns only matched/missing/under-count buckets, activationInitialized,
+	 * and one parity boolean — never user-authored names, errors, or messages.
+	 * Each input array is hard-capped; oversized input fails closed.
+	 */
+	async verifyLegacyParity(
+		input: LegacyParityVerifyInput,
+	): Promise<LegacyParityVerifyResult> {
+		const workflows = assertLegacyParityBoundedArray(
+			input.workflows,
+			'verifyLegacyParity workflows',
+		)
+		const jobIds = assertLegacyParityBoundedArray(
+			input.jobIds,
+			'verifyLegacyParity jobIds',
+		)
+		const activationPackages = assertLegacyParityBoundedArray(
+			input.activationPackages,
+			'verifyLegacyParity activationPackages',
+		)
+		const activationMilestones = assertLegacyParityBoundedArray(
+			input.activationMilestones,
+			'verifyLegacyParity activationMilestones',
+		)
+
+		const workflowCounts = emptyLegacyParityBucketCounts()
+		for (const entry of workflows) {
+			const check = normalizeLegacyParityWorkflowCheck(entry)
+			if (!check) {
+				workflowCounts.missing += 1
+				continue
+			}
+			const projection = await this.getWorkflowProjection({ id: check.id })
+			if (!projection) {
+				workflowCounts.missing += 1
+				continue
+			}
+			const minimumUpdatedAt = check.minimumUpdatedAt?.trim() || null
+			if (minimumUpdatedAt && projection.updatedAt < minimumUpdatedAt) {
+				workflowCounts.underCount += 1
+				continue
+			}
+			workflowCounts.matched += 1
+		}
+
+		const jobCounts = emptyLegacyParityBucketCounts()
+		for (const rawJobId of jobIds) {
+			const jobId = rawJobId?.trim() ?? ''
+			if (!jobId) {
+				jobCounts.missing += 1
+				continue
+			}
+			const row = this.getJobRunObservabilitySync(jobId)
+			if (!row) {
+				jobCounts.missing += 1
+				continue
+			}
+			if (!row.legacySeeded) {
+				jobCounts.underCount += 1
+				continue
+			}
+			jobCounts.matched += 1
+		}
+
+		const packageCounts = emptyLegacyParityBucketCounts()
+		for (const check of activationPackages) {
+			const packageId = check.packageId?.trim() ?? ''
+			const minimumSuccessCount = Math.max(
+				0,
+				Math.trunc(check.minimumSuccessCount),
+			)
+			if (!packageId) {
+				packageCounts.missing += 1
+				continue
+			}
+			const row = this.ctx.storage.sql
+				.exec<{ success_count: number }>(
+					`SELECT success_count FROM package_run_successes
+					WHERE package_id = ? LIMIT 1`,
+					packageId,
+				)
+				.toArray()[0]
+			if (!row) {
+				packageCounts.missing += 1
+				continue
+			}
+			const successCount = Number(row.success_count) || 0
+			if (successCount < minimumSuccessCount) {
+				packageCounts.underCount += 1
+				continue
+			}
+			packageCounts.matched += 1
+		}
+
+		const milestoneCounts = emptyLegacyParityBucketCounts()
+		for (const rawMilestone of activationMilestones) {
+			const milestone =
+				typeof rawMilestone === 'string' ? rawMilestone.trim() : ''
+			if (!milestone || !isActivationMilestoneName(milestone)) {
+				milestoneCounts.missing += 1
+				continue
+			}
+			if (this.hasActivationMilestone(milestone)) {
+				milestoneCounts.matched += 1
+			} else {
+				milestoneCounts.missing += 1
+			}
+		}
+
+		const activationInitialized =
+			(this.getMeta(metaActivationInitializedKey) ?? 0) === 1
+		const parity =
+			bucketParityHolds(workflowCounts) &&
+			bucketParityHolds(jobCounts) &&
+			bucketParityHolds(packageCounts) &&
+			bucketParityHolds(milestoneCounts)
+
+		return {
+			workflows: workflowCounts,
+			jobs: jobCounts,
+			activationPackages: packageCounts,
+			activationMilestones: milestoneCounts,
+			activationInitialized,
+			parity,
+		}
+	}
+
+	private applyJobRunObservabilitySeed(input: JobRunObservabilitySeedInput): {
+		seeded: boolean
+	} {
 		const jobId = input.jobId.trim()
 		if (!jobId) return { seeded: false }
 		const existing = this.getJobRunObservabilitySync(jobId)
@@ -3080,6 +3264,12 @@ export type RunLogRpc = {
 	seedJobRunObservabilityIfAbsent: (
 		input: JobRunObservabilitySeedInput,
 	) => Promise<{ seeded: boolean }>
+	seedJobRunObservabilityBatch: (input: {
+		seeds: Array<JobRunObservabilitySeedInput>
+	}) => Promise<JobRunObservabilityBatchSeedResult>
+	verifyLegacyParity: (
+		input: LegacyParityVerifyInput,
+	) => Promise<LegacyParityVerifyResult>
 	getJobRunObservability: (input: {
 		jobId: string
 	}) => Promise<JobRunObservabilityRecord | null>

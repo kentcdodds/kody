@@ -8,11 +8,18 @@ import {
 	countsTowardPackageActivation,
 } from './package-activation-state.ts'
 import {
+	type JobRunObservabilityBatchSeedResult,
 	type JobRunObservabilityRecord,
 	type JobRunObservabilitySeedInput,
 	type JobRunObservabilityStatus,
 	type JobRunObservabilityUpsertInput,
+	jobRunObservabilitySeedMaxBatch,
 } from './job-run-observability.ts'
+import {
+	type LegacyParityVerifyInput,
+	type LegacyParityVerifyResult,
+	assertLegacyParityBoundedArray,
+} from './legacy-parity.ts'
 import {
 	type PackageInvocationClaimInput,
 	type PackageInvocationLedgerKey,
@@ -1309,6 +1316,82 @@ export async function getJobRunObservability(input: {
 	}
 }
 
+/**
+ * Batch expand-phase job-observability seed. Propagates bound/RPC errors so
+ * production sweeps fail closed on oversized batches. Reuses exact once-only
+ * additive merge semantics inside the DO.
+ */
+export async function seedJobRunObservabilityBatch(input: {
+	env: Env
+	userId: string
+	seeds: Array<JobRunObservabilitySeedInput>
+}): Promise<JobRunObservabilityBatchSeedResult> {
+	if (!Array.isArray(input.seeds)) {
+		throw new Error('seedJobRunObservabilityBatch seeds must be an array')
+	}
+	if (input.seeds.length > jobRunObservabilitySeedMaxBatch) {
+		throw new Error(
+			`seedJobRunObservabilityBatch accepts at most ${jobRunObservabilitySeedMaxBatch} seeds (got ${input.seeds.length})`,
+		)
+	}
+	if (!runLogBinding(input.env)) {
+		return { attempted: 0, seeded: 0, alreadySeeded: 0 }
+	}
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).seedJobRunObservabilityBatch({ seeds: input.seeds })
+}
+
+/**
+ * Content-free legacy parity verification. Propagates bound/RPC errors so
+ * oversized inventory arrays fail closed. Never returns user-authored content.
+ */
+export async function verifyLegacyParity(
+	input: {
+		env: Env
+		userId: string
+	} & LegacyParityVerifyInput,
+): Promise<LegacyParityVerifyResult> {
+	if (!runLogBinding(input.env)) {
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
+	}
+	// Fail closed before the DO RPC so oversized batches never cross the stub.
+	assertLegacyParityBoundedArray(
+		input.workflows,
+		'verifyLegacyParity workflows',
+	)
+	assertLegacyParityBoundedArray(input.jobIds, 'verifyLegacyParity jobIds')
+	assertLegacyParityBoundedArray(
+		input.activationPackages,
+		'verifyLegacyParity activationPackages',
+	)
+	assertLegacyParityBoundedArray(
+		input.activationMilestones,
+		'verifyLegacyParity activationMilestones',
+	)
+	const { env, userId, ...checks } = input
+	return await runLogRpc({ env, userId }).verifyLegacyParity(checks)
+}
+
+/**
+ * Mark activation initialized with an empty snapshot (unconditional done for
+ * users with no legacy activation rows). Safe to call repeatedly.
+ */
+export async function importActivationState(input: {
+	env: Env
+	userId: string
+	state: ActivationStateImport
+}): Promise<{ initialized: boolean }> {
+	if (!runLogBinding(input.env)) {
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
+	}
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).importActivationState(input.state)
+}
+
 export async function getJobRunObservabilityBatch(input: {
 	env: Env
 	userId: string
@@ -1377,11 +1460,21 @@ export type {
 } from './package-activation-state.ts'
 export { countsTowardPackageActivation } from './package-activation-state.ts'
 export type {
+	JobRunObservabilityBatchSeedResult,
 	JobRunObservabilityRecord,
 	JobRunObservabilitySeedInput,
 	JobRunObservabilityStatus,
 	JobRunObservabilityUpsertInput,
 } from './job-run-observability.ts'
+export { jobRunObservabilitySeedMaxBatch } from './job-run-observability.ts'
+export type {
+	LegacyParityActivationPackageCheck,
+	LegacyParityBucketCounts,
+	LegacyParityVerifyInput,
+	LegacyParityVerifyResult,
+	LegacyParityWorkflowCheck,
+} from './legacy-parity.ts'
+export { legacyParityVerifyMaxBatch } from './legacy-parity.ts'
 export type {
 	WorkflowBindingName,
 	WorkflowProjectionRecord,

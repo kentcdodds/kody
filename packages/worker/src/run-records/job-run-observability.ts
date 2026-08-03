@@ -44,3 +44,15 @@ export type JobRunObservabilitySeedInput = Omit<
 	JobRunObservabilityRecord,
 	'legacySeeded'
 >
+
+/**
+ * Hard cap for one {@link seedJobRunObservabilityBatch} RPC. Oversized batches
+ * fail closed rather than silently slicing.
+ */
+export const jobRunObservabilitySeedMaxBatch = 500
+
+export type JobRunObservabilityBatchSeedResult = {
+	attempted: number
+	seeded: number
+	alreadySeeded: number
+}
