@@ -366,13 +366,14 @@ config, and expect users to reauthorize OAuth and remote connectors.
 ### Mailbox authority and the pre-drop D1 backup
 
 Migration 0134 installs the canonical approval schema; migration 0135
-permanently drops the shared USER/system rollback graph. The complete immutable
-receipt remains in `email_user_graph_drop_approval`. To inspect or recover
-deleted historical rows, download its exact SQL object, verify the signed
-manifest plus bytes/SHA-256/ETag before import, restore it into an isolated D1
-database, and verify the approved owner/thread/message/attachment/event manifest
-plus `PRAGMA foreign_key_check`. Do not point a live Worker at that isolated
-pre-0135 schema.
+permanently drops the shared USER/system rollback graph. Production retains the
+complete immutable receipt in `email_user_graph_drop_approval`; a newly created,
+provably empty preview database may bootstrap without creating one. To inspect
+or recover deleted historical rows, download the production receipt's exact SQL
+object, verify the signed manifest plus bytes/SHA-256/ETag before import,
+restore it into an isolated D1 database, and verify the approved
+owner/thread/message/attachment/event manifest plus `PRAGMA foreign_key_check`.
+Do not point a live Worker at that isolated pre-0135 schema.
 
 The pre-drop D1 object is forensic/disaster-recovery evidence, not a USER
 serving source. A production recovery must quiesce ingress and scheduled/effect
@@ -395,6 +396,18 @@ counts did not drift, and atomically writes an approval expiring within two
 hours. The caller supplies only `requestId`, `nonce`, and `requestedAt`; source
 identity, counts, object keys, hashes, and approval values come from the
 allowlisted control plane.
+
+0135 accepts any current canonical control-plane receipt rather than pinning a
+particular request, SHA, build, signing-key generation, or baseline generation.
+Its monotonic timestamps, canonical manifest/SQL relation, current marker, and
+exact counts must all validate at execution time. The receipt prepared on
+2026-08-03 expires at `21:10:38.879Z`; run the Workflow again if deployment
+occurs later.
+
+The only receipt-free case is a universal-chain bootstrap before seeding. The
+authority marker and all shared, dedicated, provider-index, repair, due-owner,
+and inbound-effect surfaces must be empty. Any legacy row or nonzero marker
+requires the ordinary signed approval path.
 
 The production `adhoc/` policy was manually applied and read back on 2026-08-03:
 both lock and lifecycle are 35 days. When `DR_BACKUP_ADMIN_TOKEN` is available,

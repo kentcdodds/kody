@@ -842,11 +842,13 @@ singleton authority marker recorded the validated owner count and freeze time.
 
 The temporary USER dual-write, rebuild, soak, and read-flag runtime surfaces
 used during those phases have been removed. Migration 0134 installed the
-canonical approval schema. Migration 0135 consumed every signed provenance
-field, rechecked exact USER counts and exact legacy/dedicated system parity,
-then removed the shared graph, compatibility trigger, and old `users` columns
-atomically. The stable authority marker retains `owner_count`, `frozen_at`, and
-`dropped_at`; the complete canonical receipt remains in
+canonical approval schema. Migration 0135 consumed every signed provenance field
+for nonempty databases, rechecked exact USER counts and exact legacy/dedicated
+system parity, then removed the shared graph, compatibility trigger, and old
+`users` columns atomically. Fresh databases may use the approval-free path only
+before any shared, dedicated, provider, coordination, or idempotency row exists.
+The stable authority marker retains `owner_count`, `frozen_at`, and
+`dropped_at`; approved drops retain the complete canonical receipt in
 `email_user_graph_drop_approval`. See
 [Mailbox legacy graph drop](../mailbox-legacy-graph-drop.md).
 

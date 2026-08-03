@@ -51,7 +51,12 @@ const statusSchema = z.object({
 		.object({
 			ownerCount: z.number().int().nonnegative(),
 			frozenAt: z.string(),
-			droppedAt: z.string(),
+			droppedAt: z
+				.string()
+				.nullable()
+				.describe(
+					'Null while approval schema 0134 is deployed before drop 0135.',
+				),
 		})
 		.nullable(),
 	outboundProviderIndex: outboundProviderIndexHealthSchema.describe(

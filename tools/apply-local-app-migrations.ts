@@ -1,6 +1,26 @@
 import { spawnSync } from 'node:child_process'
 
-const passthroughArguments = process.argv.slice(2)
+function localPersistenceArguments(arguments_: ReadonlyArray<string>) {
+	const allowed: Array<string> = []
+	for (let index = 0; index < arguments_.length; index += 1) {
+		const argument = arguments_[index]!
+		if (argument.startsWith('--persist-to=')) {
+			allowed.push(argument)
+			continue
+		}
+		if (argument === '--persist-to' && arguments_[index + 1]) {
+			allowed.push(argument, arguments_[index + 1]!)
+			index += 1
+			continue
+		}
+		throw new Error(
+			`Unsupported local migration argument: ${argument}. Only --persist-to is allowed.`,
+		)
+	}
+	return allowed
+}
+
+const passthroughArguments = localPersistenceArguments(process.argv.slice(2))
 const migrationArguments = [
 	'--env-file=packages/worker/.env',
 	'./wrangler-env.ts',
@@ -44,9 +64,19 @@ if (initialApply.status === 0) {
 	process.exit(0)
 }
 
-// A fresh local database reaches the non-destructive 0134 approval schema, then
-// 0135 stops because no control-plane receipt exists locally. Insert an explicit
-// test fixture and retry; every other destructive guard still applies.
+// A nonempty pre-0135 local database reaches the approval guard without a
+// control-plane receipt. Insert an explicit test fixture only for that expected
+// guard failure and retry; fresh empty databases use 0135's bootstrap path.
+const initialFailure = output(initialApply)
+if (
+	!initialFailure.includes('0135-drop-legacy-email-graph.sql') ||
+	!initialFailure.includes('CHECK constraint failed: value = 1')
+) {
+	fail(
+		'Local APP_DB migrations failed outside the approval gate.',
+		initialApply,
+	)
+}
 const approval = runWrangler([
 	'--env-file=packages/worker/.env',
 	'./wrangler-env.ts',
@@ -70,6 +100,7 @@ const retryApply = runWrangler(migrationArguments)
 if (retryApply.status !== 0) {
 	fail(
 		'Local APP_DB migrations still failed after approval preparation.',
+		initialApply,
 		retryApply,
 	)
 }

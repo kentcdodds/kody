@@ -1505,26 +1505,41 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.warnings).toEqual([])
 })
 
-test('account deletion purges Mailbox only after email and all-surface cleanup complete', async () => {
+test('account deletion preserves Mailbox references and retry marker when R2 deletion fails', async () => {
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
 	})
 	const purgeMailbox = vi.fn(async () => ({ ok: true as const }))
+	const deleteEmailBlob = vi.fn(async () => {
+		throw new Error('email R2 delete unavailable')
+	})
+	const listBlobReferences = vi.fn(async () => ({
+		references: [
+			{
+				kind: 'raw_mime' as const,
+				key: 'email-raw:v1:user-aaa/message-1',
+				messageId: 'message-1',
+				attachmentId: null,
+			},
+		],
+		nextStartAfter: null,
+		truncated: false as const,
+	}))
 	const env = createSuccessfulDeletionEnv(db, {
 		EMAIL_BLOBS: {
 			async list() {
-				throw new Error('email R2 unavailable')
+				return {
+					objects: [{ key: 'email-raw:v1:user-aaa/message-1' }],
+					delimitedPrefixes: [],
+					truncated: false,
+				}
 			},
-			async delete() {},
+			delete: deleteEmailBlob,
 		} as unknown as R2Bucket,
 		MAILBOX: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({
-				listBlobReferences: async () => ({
-					references: [],
-					nextStartAfter: null,
-					truncated: false as const,
-				}),
+				listBlobReferences,
 				purge: purgeMailbox,
 			}),
 		} as unknown as DurableObjectNamespace,
@@ -1540,9 +1555,11 @@ test('account deletion purges Mailbox only after email and all-surface cleanup c
 		(error: unknown) =>
 			error instanceof AccountDeletionCleanupError &&
 			error.cleanupErrors.some((warning) =>
-				warning.includes('email R2 unavailable'),
+				warning.includes('email R2 delete unavailable'),
 			),
 	)
+	expect(listBlobReferences).toHaveBeenCalledTimes(1)
+	expect(deleteEmailBlob).toHaveBeenCalled()
 	expect(purgeMailbox).not.toHaveBeenCalled()
 	expect(rows.users).toEqual([
 		expect.objectContaining({

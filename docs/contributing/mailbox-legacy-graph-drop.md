@@ -34,6 +34,13 @@ Example request body:
    hours. If conductor merge occurs after expiration, trigger a new Workflow
    instance with a new request id, nonce, and timestamp.
 
+The current production receipt expires at `2026-08-03T21:10:38.879Z`. It is not
+a value embedded in 0135. The migration accepts any current canonical
+control-plane receipt whose snapshot marker/counts still match and whose
+monotonic export, verification, and expiration timestamps pass. It does not pin
+a request id, object SHA, control-plane build, source identity, signing-key id,
+or restore-baseline generation.
+
 The first attempt that encoded `params` as a string failed and is irrelevant: it
 issued no receipt and cannot authorize the migration. Never update or recreate
 `email_user_graph_drop_approval` by hand.
@@ -45,15 +52,24 @@ The canonical preflight is the SQL before the first destructive statement in
 same Wrangler D1 transaction as the drop and aborts on any failed CHECK. It
 requires:
 
-- all canonical 0134 approval provenance, bound to the deployed production
-  source, signing key, restore baseline, control-plane build, 0133 marker, and a
-  currently valid two-hour verification window;
+- all canonical 0134 approval provenance, including source, signing,
+  restore-baseline, control-plane-build, and object evidence, bound to the
+  current 0133 marker and a currently valid two-hour verification window;
 - exact frozen USER owner/thread/message/attachment/event counts;
 - no provider-index repair owner and no `cutover-audit` due-owner backlog;
 - a valid dedicated system authority marker, zero system provider links, and
   bidirectional full-column legacy/dedicated system parity;
 - no unexpected trigger, view, or foreign-key dependency on the shared graph,
   and clean foreign-key checks before and after the rebuild/drop.
+
+There is one approval-free bootstrap path for a database that has never held an
+email graph. It requires no approval row, `owner_count = 0`, zero total rows
+(including `system:email`) in all four shared tables, and empty provider-index,
+repair-owner, due-owner, inbound-usage-effect, and dedicated-system graph
+surfaces. The dedicated authority marker must also be healthy. A single legacy
+row or a nonzero authority marker closes this path and requires a valid
+control-plane receipt. This is what lets a newly created preview database apply
+the universal migration chain before test-data seeding.
 
 `email_inbound_usage_effects` is intentionally retained. The 0134 signed
 contract has no count for it, so 0135 preserves every row and detaches only its
@@ -70,8 +86,9 @@ USER thread/message/attachment/event authority is Mailbox Durable Object SQLite;
 USER raw MIME and external attachment bytes remain in `EMAIL_BLOBS`. Dedicated
 `system_email_*` tables remain the operator inbox authority. D1 retains
 low-write mail configuration, the thin provider reverse index, the detached
-inbound usage idempotency ledger, the cutover marker, and the complete canonical
-approval receipt.
+inbound usage idempotency ledger, and the cutover marker. Environments that used
+the destructive approval path also retain the complete canonical approval
+receipt; empty bootstraps have no synthetic receipt.
 
 For inspection, verify the receipt's manifest signature and SQL bytes/SHA-256/
 ETag, import into an isolated D1 database, run `PRAGMA foreign_key_check`, and

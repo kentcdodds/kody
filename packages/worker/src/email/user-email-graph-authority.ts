@@ -3,7 +3,7 @@ import { systemEmailOwnerId } from './email-owner.ts'
 export type UserEmailGraphAuthorityMarker = {
 	ownerCount: number
 	frozenAt: string
-	droppedAt: string
+	droppedAt: string | null
 }
 
 export async function loadUserEmailGraphAuthorityMarker(
@@ -11,7 +11,7 @@ export async function loadUserEmailGraphAuthorityMarker(
 ): Promise<UserEmailGraphAuthorityMarker | null> {
 	const row = await db
 		.prepare(
-			`SELECT owner_count, frozen_at, dropped_at
+			`SELECT *
 			FROM email_user_graph_authority
 			WHERE singleton = 1
 			LIMIT 1`,
@@ -19,13 +19,13 @@ export async function loadUserEmailGraphAuthorityMarker(
 		.first<{
 			owner_count: number
 			frozen_at: string
-			dropped_at: string
+			dropped_at?: string | null
 		}>()
 	if (!row) return null
 	return {
 		ownerCount: Number(row.owner_count),
 		frozenAt: row.frozen_at,
-		droppedAt: row.dropped_at,
+		droppedAt: row.dropped_at ?? null,
 	}
 }
 

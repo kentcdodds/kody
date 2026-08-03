@@ -386,9 +386,12 @@ export async function insertSystemEmailAttachments(input: {
 			)`
 		: '1'
 	const statements: Array<D1PreparedStatement> = []
+	const attachmentIds: Array<string> = []
 	for (const attachment of input.attachments) {
+		const attachmentId = attachment.id ?? crypto.randomUUID()
+		attachmentIds.push(attachmentId)
 		const values = [
-			attachment.id ?? crypto.randomUUID(),
+			attachmentId,
 			input.messageId,
 			attachment.filename ?? null,
 			attachment.contentType ?? null,
@@ -415,7 +418,40 @@ export async function insertSystemEmailAttachments(input: {
 			)
 		statements.push(dedicated)
 	}
-	await commitSystemEmailAuthorityBatch({ db: input.db, statements })
+	const results = await commitSystemEmailAuthorityBatch({
+		db: input.db,
+		statements,
+	})
+	for (const [index, result] of results.entries()) {
+		if (Number(result?.meta.changes ?? 0) > 0) continue
+		const existing = await input.db
+			.prepare(
+				`SELECT message_id FROM system_email_attachments
+				WHERE id = ? LIMIT 1`,
+			)
+			.bind(attachmentIds[index])
+			.first<{ message_id: string }>()
+		if (input.ignoreConflicts && existing?.message_id === input.messageId) {
+			if (!fence) continue
+			const currentFence = await input.db
+				.prepare(
+					`SELECT 1 AS present FROM system_email_delivery_events
+					WHERE id = ? AND state = 'storing' AND storage_lease = ?
+					LIMIT 1`,
+				)
+				.bind(fence.deliveryId, fence.storageLease)
+				.first<{ present: number }>()
+			if (currentFence) continue
+		}
+		if (fence) {
+			throw new Error(
+				'Inbound delivery storage lease was lost before system attachment insert.',
+			)
+		}
+		throw new Error(
+			'System email attachment insert rejected an invalid dedicated reference.',
+		)
+	}
 }
 
 export async function listSystemEmailAttachments(input: {

@@ -50,17 +50,19 @@ test('dedicated system graph enforces config ownership and reports health', asyn
 			},
 		}),
 	).rejects.toThrow()
-	await insertSystemEmailAttachments({
-		db: env.APP_DB,
-		messageId: 'foreign-owner-message',
-		attachments: [
-			{
-				id: 'cross-owner-attachment',
-				contentType: 'text/plain',
-				storageKind: 'raw-mime',
-			},
-		],
-	})
+	await expect(
+		insertSystemEmailAttachments({
+			db: env.APP_DB,
+			messageId: 'foreign-owner-message',
+			attachments: [
+				{
+					id: 'cross-owner-attachment',
+					contentType: 'text/plain',
+					storageKind: 'raw-mime',
+				},
+			],
+		}),
+	).rejects.toThrow('rejected an invalid dedicated reference')
 	expect(
 		await env.APP_DB.prepare(
 			`SELECT id FROM system_email_attachments
@@ -136,6 +138,48 @@ test('dedicated system graph enforces config ownership and reports health', asyn
 		providerLinkCount: 0,
 		healthy: true,
 	})
+})
+
+test('system attachment inserts fail when an inbound delivery fence writes zero', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const messageId = `fenced-message-${crypto.randomUUID()}`
+	const deliveryId = `fenced-delivery-${crypto.randomUUID()}`
+	await insertSystemEmailMessage({
+		db: env.APP_DB,
+		message: {
+			id: messageId,
+			fromAddress: 'sender@example.test',
+			processingStatus: 'stored',
+		},
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO system_email_delivery_events (
+			id, message_id, event_type, provider, detail_json, state,
+			storage_lease, created_at, updated_at
+		) VALUES (?, ?, 'received', 'test', '{}', 'storing', 'current-lease',
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+	)
+		.bind(deliveryId, messageId)
+		.run()
+
+	await expect(
+		insertSystemEmailAttachments({
+			db: env.APP_DB,
+			messageId,
+			ignoreConflicts: true,
+			inboundDeliveryFence: {
+				deliveryId,
+				storageLease: 'stale-lease',
+			},
+			attachments: [
+				{
+					id: `fenced-attachment-${crypto.randomUUID()}`,
+					contentType: 'text/plain',
+					storageKind: 'raw-mime',
+				},
+			],
+		}),
+	).rejects.toThrow('storage lease was lost')
 })
 
 test('concurrent system rejection auditing keeps the detail bound exact', async () => {

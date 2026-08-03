@@ -24,6 +24,12 @@ import { getAccountD1UserColumnCoverage } from '#worker/account/data-targets.ts'
 import { migrationsDirectory } from '#worker/test-support/system-email-graph-migration.ts'
 
 const dropMigration = '0135-drop-legacy-email-graph.sql'
+const productionShape = {
+	threadCount: 106,
+	messageCount: 194,
+	attachmentCount: 48,
+	eventCount: 295,
+} as const
 const workspaceDirectory = fileURLToPath(
 	new URL('../../../../', import.meta.url),
 )
@@ -87,7 +93,7 @@ test('0135 SQL stays within D1 expression limits and consumes the canonical appr
 					1,
 			),
 	)
-	expect(maximumCompoundTerms).toBeLessThanOrEqual(500)
+	expect(maximumCompoundTerms).toBeLessThanOrEqual(10)
 	for (const column of mailboxPreDropApprovalColumns) {
 		expect(sql, `approval column ${column} is not consumed`).toMatch(
 			new RegExp(`\\bapproval\\.${column}\\b`, 'u'),
@@ -194,6 +200,158 @@ function openDatabase(statePath: string) {
 	return new DatabaseSync(files[0]!)
 }
 
+function prepareWranglerProject(input: {
+	temporaryPath: string
+	includeMigration: (fileName: string) => boolean
+}) {
+	const migrationPath = join(input.temporaryPath, 'migrations')
+	const statePath = join(input.temporaryPath, 'state')
+	const configPath = join(input.temporaryPath, 'wrangler.json')
+	mkdirSync(migrationPath)
+	writeFileSync(
+		join(input.temporaryPath, 'worker.js'),
+		'export default { fetch: () => new Response("ok") }\n',
+	)
+	writeFileSync(
+		configPath,
+		JSON.stringify({
+			name: 'email-graph-drop-test',
+			compatibility_date: '2026-04-16',
+			main: './worker.js',
+			d1_databases: [
+				{
+					binding: 'APP_DB',
+					database_name: 'email-graph-drop-test',
+					database_id: '00000000-0000-0000-0000-000000000000',
+					migrations_dir: './migrations',
+				},
+			],
+		}),
+	)
+	for (const fileName of readdirSync(migrationsDirectory)
+		.filter(
+			(fileName) =>
+				fileName.endsWith('.sql') && input.includeMigration(fileName),
+		)
+		.sort()) {
+		copyFileSync(
+			new URL(fileName, migrationsDirectory),
+			join(migrationPath, fileName),
+		)
+	}
+	return {
+		configPath,
+		migrationPath,
+		statePath,
+		applyArguments: [
+			'd1',
+			'migrations',
+			'apply',
+			'APP_DB',
+			'--local',
+			'--config',
+			configPath,
+			'--persist-to',
+			statePath,
+		],
+	}
+}
+
+test(
+	'fresh preview-shaped database applies the full migration chain without approval',
+	{ timeout: 180_000 },
+	() => {
+		using temporary = createTemporaryDirectory()
+		const rehearsal = prepareWranglerProject({
+			temporaryPath: temporary.path,
+			includeMigration: () => true,
+		})
+		const startedAt = performance.now()
+		expectWranglerSuccess(
+			runWrangler(temporary.path, ...rehearsal.applyArguments),
+		)
+		expect(performance.now() - startedAt).toBeLessThan(60_000)
+		using database = openDatabase(rehearsal.statePath)
+		expect(
+			database
+				.prepare(
+					`SELECT
+						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger,
+						(SELECT COUNT(*) FROM email_user_graph_drop_approval) AS approvals,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE type = 'table' AND name IN (
+								'email_threads', 'email_messages', 'email_attachments',
+								'email_delivery_events'
+							)) AS legacy_tables`,
+				)
+				.get(dropMigration),
+		).toEqual({ ledger: 1, approvals: 0, legacy_tables: 0 })
+
+		const previewWorkflow = readFileSync(
+			join(workspaceDirectory, '.github/workflows/preview.yml'),
+			'utf8',
+		)
+		const remoteMigration =
+			'node ./wrangler-env.ts d1 migrations apply APP_DB --remote'
+		expect(previewWorkflow).toContain(remoteMigration)
+		expect(previewWorkflow.indexOf(remoteMigration)).toBeLessThan(
+			previewWorkflow.indexOf('name: 🌱 Seed preview test data'),
+		)
+	},
+)
+
+test(
+	'empty bootstrap rejects a legacy row or nonzero authority marker without approval',
+	{ timeout: 180_000 },
+	() => {
+		using temporary = createTemporaryDirectory()
+		const rehearsal = prepareWranglerProject({
+			temporaryPath: temporary.path,
+			includeMigration: (fileName) => fileName < dropMigration,
+		})
+		expectWranglerSuccess(
+			runWrangler(temporary.path, ...rehearsal.applyArguments),
+		)
+		copyFileSync(
+			new URL(dropMigration, migrationsDirectory),
+			join(rehearsal.migrationPath, dropMigration),
+		)
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath: rehearsal.configPath,
+			statePath: rehearsal.statePath,
+			sql: `INSERT INTO email_threads (
+				id, user_id, last_message_at, created_at, updated_at
+			) VALUES (
+				'unapproved-row', 'system:email', CURRENT_TIMESTAMP,
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			);`,
+		})
+		const legacyRow = runWrangler(temporary.path, ...rehearsal.applyArguments)
+		expect(legacyRow.status).not.toBe(0)
+		expect(`${legacyRow.stdout}\n${legacyRow.stderr}`).toContain(
+			'CHECK constraint failed',
+		)
+
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath: rehearsal.configPath,
+			statePath: rehearsal.statePath,
+			sql: `DELETE FROM email_threads;
+				UPDATE email_user_graph_authority SET owner_count = 1
+				WHERE singleton = 1;`,
+		})
+		const markerMismatch = runWrangler(
+			temporary.path,
+			...rehearsal.applyArguments,
+		)
+		expect(markerMismatch.status).not.toBe(0)
+		expect(`${markerMismatch.stdout}\n${markerMismatch.stderr}`).toContain(
+			'CHECK constraint failed',
+		)
+	},
+)
+
 function approvalInsert(
 	overrides: Partial<MailboxPreDropApprovalEvidence> = {},
 ) {
@@ -230,10 +388,10 @@ function approvalInsert(
 				overrides.expiresAt ??
 				new Date(Date.parse(verifiedAt) + 2 * 60 * 60 * 1_000).toISOString(),
 			ownerCount: 1,
-			threadCount: 1,
-			messageCount: 1,
-			attachmentCount: 1,
-			eventCount: 1,
+			threadCount: productionShape.threadCount,
+			messageCount: productionShape.messageCount,
+			attachmentCount: productionShape.attachmentCount,
+			eventCount: productionShape.eventCount,
 			issuedBy: 'backup-control-plane',
 			sourceAccountId: 'a99ee2e72728dd52902ef288b7b1447d',
 			sourceDatabaseId,
@@ -331,6 +489,32 @@ test(
 					printf('bulk-stable-%05d', value),
 					printf('Bulk User %05d', value)
 				FROM sequence;
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 250
+				)
+				INSERT INTO password_resets (user_id, token_hash, expires_at)
+				SELECT value, printf('reset-token-%04d', value), 4102444800
+				FROM sequence;
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 250
+				)
+				INSERT INTO email_verifications (user_id, token_hash, expires_at)
+				SELECT value, printf('verify-token-%04d', value), 4102444800
+				FROM sequence;
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 100
+				)
+				INSERT INTO oauth_connections (
+					provider_name, provider_id, user_id
+				)
+				SELECT 'github', printf('provider-%04d', value), value
+				FROM sequence;
 				UPDATE email_user_graph_authority
 				SET owner_count = 1, frozen_at = '2026-08-03T14:53:49.000Z'
 				WHERE singleton = 1;
@@ -353,6 +537,17 @@ test(
 						CURRENT_TIMESTAMP),
 					('system-thread', 'system:email', CURRENT_TIMESTAMP,
 						CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 105
+				)
+				INSERT INTO email_threads (
+					id, user_id, last_message_at, created_at, updated_at
+				)
+				SELECT printf('bulk-thread-%03d', value), 'user-1',
+					CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				FROM sequence;
 				INSERT INTO system_email_threads (
 					id, last_message_at, created_at, updated_at
 				) SELECT id, last_message_at, created_at, updated_at
@@ -367,6 +562,19 @@ test(
 					('system-message', 'inbound', 'system:email', 'system-thread',
 						'sender@example.test', 'stored', CURRENT_TIMESTAMP,
 						CURRENT_TIMESTAMP);
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 193
+				)
+				INSERT INTO email_messages (
+					id, direction, user_id, thread_id, from_address,
+					processing_status, created_at, updated_at
+				)
+				SELECT printf('bulk-message-%03d', value), 'inbound', 'user-1',
+					'user-thread', 'sender@example.test', 'stored',
+					CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				FROM sequence;
 				INSERT INTO system_email_messages (
 					id, direction, thread_id, from_address, processing_status,
 					created_at, updated_at
@@ -381,6 +589,17 @@ test(
 						CURRENT_TIMESTAMP),
 					('system-attachment', 'system-message', 'text/plain', 'raw-mime',
 						CURRENT_TIMESTAMP);
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 47
+				)
+				INSERT INTO email_attachments (
+					id, message_id, content_type, storage_kind, created_at
+				)
+				SELECT printf('bulk-attachment-%03d', value), 'user-message',
+					'text/plain', 'raw-mime', CURRENT_TIMESTAMP
+				FROM sequence;
 				INSERT INTO system_email_attachments (
 					id, message_id, content_type, storage_kind, created_at
 				) SELECT id, message_id, content_type, storage_kind, created_at
@@ -392,6 +611,17 @@ test(
 						CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 					('system-event', 'system-message', 'system:email', 'received',
 						CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+				WITH RECURSIVE sequence(value) AS (
+					VALUES(1)
+					UNION ALL
+					SELECT value + 1 FROM sequence WHERE value < 294
+				)
+				INSERT INTO email_delivery_events (
+					id, message_id, user_id, event_type, created_at, updated_at
+				)
+				SELECT printf('bulk-event-%03d', value), 'user-message', 'user-1',
+					'received', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				FROM sequence;
 				INSERT INTO system_email_delivery_events (
 					id, message_id, event_type, created_at, updated_at
 				) SELECT id, message_id, event_type, created_at, updated_at
@@ -458,30 +688,6 @@ test(
 		})
 		const wrongCount = runWrangler(temporary.path, ...applyArguments)
 		expect(wrongCount.status).not.toBe(0)
-
-		executeSql({
-			workingDirectory: temporary.path,
-			configPath,
-			statePath,
-			sql: `DELETE FROM email_user_graph_drop_approval;
-				${approvalInsert({
-					buildCommit: '0'.repeat(40),
-				})}`,
-		})
-		const wrongBuild = runWrangler(temporary.path, ...applyArguments)
-		expect(wrongBuild.status).not.toBe(0)
-
-		executeSql({
-			workingDirectory: temporary.path,
-			configPath,
-			statePath,
-			sql: `DELETE FROM email_user_graph_drop_approval;
-				${approvalInsert({
-					sourceAccountId: '0'.repeat(32),
-				})}`,
-		})
-		const wrongSource = runWrangler(temporary.path, ...applyArguments)
-		expect(wrongSource.status).not.toBe(0)
 
 		executeSql({
 			workingDirectory: temporary.path,
@@ -560,11 +766,22 @@ test(
 						(SELECT COUNT(*) FROM email_messages) AS messages,
 						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger,
 						(SELECT COUNT(*) FROM users) AS users,
+						(SELECT COUNT(*) FROM password_resets) AS password_resets,
+						(SELECT COUNT(*) FROM email_verifications) AS verifications,
+						(SELECT COUNT(*) FROM oauth_connections) AS oauth_connections,
 						(SELECT COUNT(*) FROM pragma_table_info('users')
 							WHERE name LIKE 'mailbox_parity_%') AS parity_columns`,
 				)
 				.get(dropMigration),
-		).toEqual({ messages: 2, ledger: 0, users: 5001, parity_columns: 14 })
+		).toEqual({
+			messages: productionShape.messageCount + 1,
+			ledger: 0,
+			users: 5001,
+			password_resets: 250,
+			verifications: 250,
+			oauth_connections: 100,
+			parity_columns: 14,
+		})
 		before.close()
 
 		executeSql({
@@ -572,9 +789,19 @@ test(
 			configPath,
 			statePath,
 			sql: `DELETE FROM email_user_graph_drop_approval;
-				${approvalInsert()}`,
+				${approvalInsert({
+					buildCommit: 'current-control-plane-build',
+					manifestKeyId: 'kody-dr-2026-08',
+					sourceAccountId: 'd'.repeat(32),
+					sourceDatabaseId: '22222222-2222-4222-8222-222222222222',
+					sourceDatabaseName: 'current-mailbox-source',
+					restoreBaselineId: 'current-monotonic-baseline',
+					restoreBaselineSha256: 'd'.repeat(64),
+				})}`,
 		})
+		const migrationStartedAt = performance.now()
 		expectWranglerSuccess(runWrangler(temporary.path, ...applyArguments))
+		expect(performance.now() - migrationStartedAt).toBeLessThan(60_000)
 
 		using after = openDatabase(statePath)
 		const tables = after
@@ -622,6 +849,9 @@ test(
 							WHERE user_id = 'user-live-hint') AS due_hints,
 						(SELECT COUNT(*) FROM email_delivery_alert_events) AS alerts,
 						(SELECT COUNT(*) FROM users) AS users,
+						(SELECT COUNT(*) FROM password_resets) AS password_resets,
+						(SELECT COUNT(*) FROM email_verifications) AS verifications,
+						(SELECT COUNT(*) FROM oauth_connections) AS oauth_connections,
 						(SELECT COUNT(*) FROM email_inbound_usage_effects
 							WHERE finalization_token = 'retained-finalization')
 							AS usage_effects,
@@ -650,6 +880,9 @@ test(
 			due_hints: 1,
 			alerts: 1,
 			users: 5001,
+			password_resets: 250,
+			verifications: 250,
+			oauth_connections: 100,
 			usage_effects: 1,
 			approvals: 1,
 			ledger: 1,

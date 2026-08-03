@@ -1,7 +1,8 @@
 -- Final Mailbox contract boundary. This migration is destructive and
 -- fail-closed. Migration 0134 and the independently deployed backup control
 -- plane are the only supported source of email_user_graph_drop_approval.
--- Operators must never manufacture approval rows with direct SQL.
+-- Operators must never manufacture approval rows with direct SQL. A provably
+-- empty, never-seeded database may use the explicit bootstrap branch below.
 --
 -- Wrangler applies this file and its d1_migrations ledger write atomically.
 -- Every preflight check therefore runs before the first destructive statement.
@@ -10,102 +11,151 @@ CREATE TABLE migration_0135_legacy_email_graph_drop_guard (
 );
 
 -- Consume every provenance family in the canonical 0134 approval contract.
--- Fixed deployment identity and trust values bind the receipt to the control
--- plane that is currently deployed for this drop. The request-unique keys bind
--- the signed manifest to its exact SQL object.
+-- Any fresh, monotonic control-plane receipt is accepted; request-unique keys
+-- bind its signed manifest to the exact SQL object. A database that has never
+-- contained email data may bootstrap without manufacturing approval evidence,
+-- but only while every legacy, dedicated, coordination, and idempotency surface
+-- is still empty.
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN
+	EXISTS (SELECT 1 FROM email_user_graph_drop_approval)
+	OR (
+		NOT EXISTS (SELECT 1 FROM email_user_graph_drop_approval)
+		AND EXISTS (
+			SELECT 1 FROM email_user_graph_authority
+			WHERE singleton = 1 AND owner_count = 0
+		)
+		AND (SELECT COUNT(*) FROM email_threads) = 0
+		AND (SELECT COUNT(*) FROM email_messages) = 0
+		AND (SELECT COUNT(*) FROM email_attachments) = 0
+		AND (SELECT COUNT(*) FROM email_delivery_events) = 0
+		AND (SELECT COUNT(*) FROM email_outbound_provider_index) = 0
+		AND (
+			SELECT COUNT(*) FROM email_outbound_provider_index_repair_owners
+		) = 0
+		AND (SELECT COUNT(*) FROM email_inbound_due_owners) = 0
+		AND (SELECT COUNT(*) FROM email_inbound_usage_effects) = 0
+		AND (SELECT COUNT(*) FROM system_email_threads) = 0
+		AND (SELECT COUNT(*) FROM system_email_messages) = 0
+		AND (SELECT COUNT(*) FROM system_email_attachments) = 0
+		AND (SELECT COUNT(*) FROM system_email_delivery_events) = 0
+		AND EXISTS (
+			SELECT 1
+			FROM system_email_graph_authority
+			WHERE singleton = 1
+				AND authority = 'dedicated'
+				AND graph_mismatch_count = 0
+				AND provider_link_count = 0
+		)
+	)
+THEN 1 ELSE 0 END;
+
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
-FROM email_user_graph_drop_approval approval
-INNER JOIN email_user_graph_authority authority
-	ON authority.singleton = approval.singleton
-WHERE approval.singleton = 1
-	AND approval.issued_by = 'backup-control-plane'
-	AND approval.source_account_id = 'a99ee2e72728dd52902ef288b7b1447d'
-	AND approval.source_database_id = '8c1014d1-6b41-4695-a0a2-159071f0f919'
-	AND approval.source_database_name = 'kody'
-	AND approval.manifest_key_id = 'kody-dr-2026-07'
-	AND approval.signature_algorithm = 'Ed25519'
-	AND approval.retention_tier = 'daily'
-	AND approval.restore_baseline_id = 'kody-migration-set-2026-07'
-	AND approval.restore_baseline_sha256 =
-		'feb76eb26ed72a55d5fa25d14ef9ee904d0758fc29842c898b584a921ccfd995'
-	AND approval.build_commit =
-		'fe1ca2772de7f369fc06a7d1bd9aeadc3347b2a7'
-	AND approval.authority_frozen_at = authority.frozen_at
-	AND approval.authority_owner_count = authority.owner_count
-	AND approval.owner_count = authority.owner_count
-	AND length(approval.request_id) = 36
-	AND approval.request_id = lower(approval.request_id)
-	AND substr(approval.request_id, 9, 1) = '-'
-	AND substr(approval.request_id, 14, 1) = '-'
-	AND substr(approval.request_id, 19, 1) = '-'
-	AND substr(approval.request_id, 24, 1) = '-'
-	AND replace(approval.request_id, '-', '') NOT GLOB '*[^0-9a-f]*'
-	AND substr(approval.request_id, 15, 1) GLOB '[1-8]'
-	AND substr(approval.request_id, 20, 1) GLOB '[89ab]'
-	AND length(approval.nonce) = 32
-	AND approval.nonce = lower(approval.nonce)
-	AND approval.nonce NOT GLOB '*[^0-9a-f]*'
-	AND approval.manifest_key =
-		'adhoc/mailbox-drop/d1/' || approval.source_database_id || '/' ||
-		replace(
-			replace(replace(approval.export_scheduled_at, '-', ''), ':', ''),
-			'.',
-			''
-		) || '-' || approval.nonce || '-' || approval.request_id ||
-		'/manifest.json'
-	AND approval.sql_object_key =
-		substr(
-			approval.manifest_key,
-			1,
-			length(approval.manifest_key) - length('manifest.json')
-		) || 'backup-request.sql'
-	AND length(approval.sql_sha256) = 64
-	AND approval.sql_sha256 = lower(approval.sql_sha256)
-	AND approval.sql_sha256 NOT GLOB '*[^0-9a-f]*'
-	AND approval.sql_bytes > 0
-	AND length(approval.r2_etag) = 32
-	AND approval.r2_etag = lower(approval.r2_etag)
-	AND approval.r2_etag NOT GLOB '*[^0-9a-f]*'
-	AND length(approval.manifest_signature_sha256) = 64
-	AND approval.manifest_signature_sha256 =
-		lower(approval.manifest_signature_sha256)
-	AND approval.manifest_signature_sha256 NOT GLOB '*[^0-9a-f]*'
-	AND length(approval.export_bookmark) BETWEEN 1 AND 256
-	AND julianday(approval.authority_frozen_at) IS NOT NULL
-	AND julianday(approval.export_scheduled_at) IS NOT NULL
-	AND julianday(approval.export_started_at) IS NOT NULL
-	AND julianday(approval.export_completed_at) IS NOT NULL
-	AND julianday(approval.verified_at) IS NOT NULL
-	AND julianday(approval.expires_at) IS NOT NULL
-	AND approval.authority_frozen_at =
-		strftime(
-			'%Y-%m-%dT%H:%M:%fZ',
-			approval.authority_frozen_at
-		)
-	AND approval.export_scheduled_at =
-		strftime('%Y-%m-%dT%H:%M:%fZ', approval.export_scheduled_at)
-	AND approval.export_started_at =
-		strftime('%Y-%m-%dT%H:%M:%fZ', approval.export_started_at)
-	AND approval.export_completed_at =
-		strftime('%Y-%m-%dT%H:%M:%fZ', approval.export_completed_at)
-	AND approval.verified_at =
-		strftime('%Y-%m-%dT%H:%M:%fZ', approval.verified_at)
-	AND approval.expires_at =
-		strftime('%Y-%m-%dT%H:%M:%fZ', approval.expires_at)
-	AND julianday(approval.export_scheduled_at) >=
-		julianday(approval.authority_frozen_at)
-	AND julianday(approval.export_started_at) >=
-		julianday(approval.export_scheduled_at)
-	AND julianday(approval.export_completed_at) >=
-		julianday(approval.export_started_at)
-	AND julianday(approval.verified_at) >=
-		julianday(approval.export_completed_at)
-	AND julianday(approval.verified_at) <= julianday('now')
-	AND julianday(approval.expires_at) > julianday('now')
-	AND julianday(approval.expires_at) > julianday(approval.verified_at)
-	AND julianday(approval.expires_at) <=
-		julianday(approval.verified_at, '+2 hours');
+FROM (
+		SELECT 1 AS valid
+		FROM email_user_graph_drop_approval approval
+		INNER JOIN email_user_graph_authority authority
+			ON authority.singleton = approval.singleton
+		WHERE approval.singleton = 1
+			AND approval.issued_by = 'backup-control-plane'
+			AND length(approval.source_account_id) IN (32, 36)
+			AND length(approval.source_database_id) = 36
+			AND length(approval.source_database_name) BETWEEN 1 AND 128
+			AND length(approval.manifest_key_id) BETWEEN 1 AND 128
+			AND approval.signature_algorithm = 'Ed25519'
+			AND approval.retention_tier = 'daily'
+			AND length(approval.restore_baseline_id) BETWEEN 1 AND 128
+			AND length(approval.restore_baseline_sha256) = 64
+			AND approval.restore_baseline_sha256 =
+				lower(approval.restore_baseline_sha256)
+			AND approval.restore_baseline_sha256 NOT GLOB '*[^0-9a-f]*'
+			AND length(approval.build_commit) BETWEEN 1 AND 128
+			AND approval.authority_frozen_at = authority.frozen_at
+			AND approval.authority_owner_count = authority.owner_count
+			AND approval.owner_count = authority.owner_count
+			AND length(approval.request_id) = 36
+			AND approval.request_id = lower(approval.request_id)
+			AND substr(approval.request_id, 9, 1) = '-'
+			AND substr(approval.request_id, 14, 1) = '-'
+			AND substr(approval.request_id, 19, 1) = '-'
+			AND substr(approval.request_id, 24, 1) = '-'
+			AND replace(approval.request_id, '-', '') NOT GLOB '*[^0-9a-f]*'
+			AND substr(approval.request_id, 15, 1) GLOB '[1-8]'
+			AND substr(approval.request_id, 20, 1) GLOB '[89ab]'
+			AND length(approval.nonce) = 32
+			AND approval.nonce = lower(approval.nonce)
+			AND approval.nonce NOT GLOB '*[^0-9a-f]*'
+			AND approval.manifest_key =
+				'adhoc/mailbox-drop/d1/' || approval.source_database_id || '/' ||
+				replace(
+					replace(
+						replace(approval.export_scheduled_at, '-', ''),
+						':',
+						''
+					),
+					'.',
+					''
+				) || '-' || approval.nonce || '-' || approval.request_id ||
+				'/manifest.json'
+			AND approval.sql_object_key =
+				substr(
+					approval.manifest_key,
+					1,
+					length(approval.manifest_key) - length('manifest.json')
+				) || 'backup-request.sql'
+			AND length(approval.sql_sha256) = 64
+			AND approval.sql_sha256 = lower(approval.sql_sha256)
+			AND approval.sql_sha256 NOT GLOB '*[^0-9a-f]*'
+			AND approval.sql_bytes > 0
+			AND length(approval.r2_etag) = 32
+			AND approval.r2_etag = lower(approval.r2_etag)
+			AND approval.r2_etag NOT GLOB '*[^0-9a-f]*'
+			AND length(approval.manifest_signature_sha256) = 64
+			AND approval.manifest_signature_sha256 =
+				lower(approval.manifest_signature_sha256)
+			AND approval.manifest_signature_sha256 NOT GLOB '*[^0-9a-f]*'
+			AND length(approval.export_bookmark) BETWEEN 1 AND 256
+			AND julianday(approval.authority_frozen_at) IS NOT NULL
+			AND julianday(approval.export_scheduled_at) IS NOT NULL
+			AND julianday(approval.export_started_at) IS NOT NULL
+			AND julianday(approval.export_completed_at) IS NOT NULL
+			AND julianday(approval.verified_at) IS NOT NULL
+			AND julianday(approval.expires_at) IS NOT NULL
+			AND approval.authority_frozen_at =
+				strftime(
+					'%Y-%m-%dT%H:%M:%fZ',
+					approval.authority_frozen_at
+				)
+			AND approval.export_scheduled_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', approval.export_scheduled_at)
+			AND approval.export_started_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', approval.export_started_at)
+			AND approval.export_completed_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', approval.export_completed_at)
+			AND approval.verified_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', approval.verified_at)
+			AND approval.expires_at =
+				strftime('%Y-%m-%dT%H:%M:%fZ', approval.expires_at)
+			AND julianday(approval.export_scheduled_at) >=
+				julianday(approval.authority_frozen_at)
+			AND julianday(approval.export_started_at) >=
+				julianday(approval.export_scheduled_at)
+			AND julianday(approval.export_completed_at) >=
+				julianday(approval.export_started_at)
+			AND julianday(approval.verified_at) >=
+				julianday(approval.export_completed_at)
+			AND julianday(approval.verified_at) <= julianday('now')
+			AND julianday(approval.expires_at) > julianday('now')
+			AND julianday(approval.expires_at) >
+				julianday(approval.verified_at)
+			AND julianday(approval.expires_at) <=
+				julianday(approval.verified_at, '+2 hours')
+	UNION ALL
+	SELECT 1 WHERE NOT EXISTS (
+		SELECT 1 FROM email_user_graph_drop_approval
+	)
+);
 
 -- The authority marker must still describe exactly the distinct frozen USER
 -- owners. system:email is checked separately against its dedicated authority.
@@ -124,37 +174,58 @@ WHERE authority.singleton = 1
 GROUP BY authority.owner_count;
 
 -- Approval counts are the exact signed manifest of the current frozen USER
--- graph. event_count is the canonical 0134 contract name.
+-- graph. event_count is the canonical 0134 contract name. The empty bootstrap
+-- has no receipt, so reassert its marker and all four shared-table counts here.
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN
-	approval.owner_count = (
-		SELECT COUNT(*) FROM (
-			SELECT user_id FROM email_threads WHERE user_id != 'system:email'
-			UNION
-			SELECT user_id FROM email_messages WHERE user_id != 'system:email'
-			UNION
-			SELECT user_id FROM email_delivery_events WHERE user_id != 'system:email'
+	EXISTS (
+		SELECT 1
+		FROM email_user_graph_drop_approval approval
+		WHERE approval.singleton = 1
+			AND approval.owner_count = (
+				SELECT COUNT(*) FROM (
+					SELECT user_id FROM email_threads
+					WHERE user_id != 'system:email'
+					UNION
+					SELECT user_id FROM email_messages
+					WHERE user_id != 'system:email'
+					UNION
+					SELECT user_id FROM email_delivery_events
+					WHERE user_id != 'system:email'
+				)
+			)
+			AND approval.thread_count = (
+				SELECT COUNT(*) FROM email_threads
+				WHERE user_id != 'system:email'
+			)
+			AND approval.message_count = (
+				SELECT COUNT(*) FROM email_messages
+				WHERE user_id != 'system:email'
+			)
+			AND approval.attachment_count = (
+				SELECT COUNT(*)
+				FROM email_attachments attachment
+				INNER JOIN email_messages message
+					ON message.id = attachment.message_id
+				WHERE message.user_id != 'system:email'
+			)
+			AND approval.event_count = (
+				SELECT COUNT(*) FROM email_delivery_events
+				WHERE user_id != 'system:email'
+			)
+	)
+	OR (
+		NOT EXISTS (SELECT 1 FROM email_user_graph_drop_approval)
+		AND EXISTS (
+			SELECT 1 FROM email_user_graph_authority
+			WHERE singleton = 1 AND owner_count = 0
 		)
+		AND (SELECT COUNT(*) FROM email_threads) = 0
+		AND (SELECT COUNT(*) FROM email_messages) = 0
+		AND (SELECT COUNT(*) FROM email_attachments) = 0
+		AND (SELECT COUNT(*) FROM email_delivery_events) = 0
 	)
-	AND approval.thread_count = (
-		SELECT COUNT(*) FROM email_threads WHERE user_id != 'system:email'
-	)
-	AND approval.message_count = (
-		SELECT COUNT(*) FROM email_messages WHERE user_id != 'system:email'
-	)
-	AND approval.attachment_count = (
-		SELECT COUNT(*)
-		FROM email_attachments attachment
-		INNER JOIN email_messages message ON message.id = attachment.message_id
-		WHERE message.user_id != 'system:email'
-	)
-	AND approval.event_count = (
-		SELECT COUNT(*) FROM email_delivery_events
-		WHERE user_id != 'system:email'
-	)
-THEN 1 ELSE 0 END
-FROM email_user_graph_drop_approval approval
-WHERE approval.singleton = 1;
+THEN 1 ELSE 0 END;
 
 -- This idempotency-only table was not covered by the immutable 0134 approval
 -- contract. Preserve every row and detach its obsolete graph foreign key
@@ -475,57 +546,231 @@ SELECT CASE WHEN NOT EXISTS (
 
 -- No unexpected schema object may retain a live dependency on the graph.
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
 FROM sqlite_schema
-WHERE type IN ('view', 'trigger')
-	AND name != 'email_messages_delete_outbound_provider_index'
+WHERE type = 'trigger'
+	AND name = 'email_messages_delete_outbound_provider_index'
+	AND tbl_name = 'email_messages'
+	AND instr(lower(sql), 'after delete on email_messages') > 0
+	AND instr(lower(sql), 'delete from email_outbound_provider_index') > 0;
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+WITH schema_objects AS (
+	SELECT
+		type,
+		name,
+		tbl_name,
+		' ' || replace(
+			replace(
+				replace(
+					replace(
+						replace(
+							replace(
+								replace(lower(sql), char(10), ' '),
+								char(9),
+								' '
+							),
+							'"',
+							' '
+						),
+						'[',
+						' '
+					),
+					']',
+					' '
+				),
+				'(',
+				' '
+			),
+			')',
+			' '
+		) || ' ' AS normalized_sql
+	FROM sqlite_schema
+	WHERE type IN ('view', 'trigger')
+)
+SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+FROM schema_objects
+WHERE NOT (
+		type = 'trigger'
+		AND name = 'email_messages_delete_outbound_provider_index'
+		AND tbl_name = 'email_messages'
+	)
 	AND (
-		lower(sql) LIKE '%email_threads%'
-		OR lower(sql) LIKE '%email_messages%'
-		OR lower(sql) LIKE '%email_attachments%'
-		OR lower(sql) LIKE '%email_delivery_events%'
+		instr(normalized_sql, ' email_threads ') > 0
+		OR instr(normalized_sql, ' email_messages ') > 0
+		OR instr(normalized_sql, ' email_attachments ') > 0
+		OR instr(normalized_sql, ' email_delivery_events ') > 0
 	);
+
+CREATE TABLE migration_0135_surviving_foreign_keys (
+	source_table TEXT NOT NULL,
+	referenced_table TEXT NOT NULL
+);
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'email_inbox_addresses', "table" FROM pragma_foreign_key_list('email_inbox_addresses');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'email_verifications', "table" FROM pragma_foreign_key_list('email_verifications');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'feature_flag_user_overrides', "table" FROM pragma_foreign_key_list('feature_flag_user_overrides');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'feature_flags', "table" FROM pragma_foreign_key_list('feature_flags');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'invites', "table" FROM pragma_foreign_key_list('invites');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'mcp_memory_conversation_suppressions', "table" FROM pragma_foreign_key_list('mcp_memory_conversation_suppressions');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'oauth_connections', "table" FROM pragma_foreign_key_list('oauth_connections');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'passkeys', "table" FROM pragma_foreign_key_list('passkeys');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'password_resets', "table" FROM pragma_foreign_key_list('password_resets');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'pending_email_changes', "table" FROM pragma_foreign_key_list('pending_email_changes');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'role_permissions', "table" FROM pragma_foreign_key_list('role_permissions');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'secret_entries', "table" FROM pragma_foreign_key_list('secret_entries');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'system_email_attachments', "table" FROM pragma_foreign_key_list('system_email_attachments');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'system_email_delivery_events', "table" FROM pragma_foreign_key_list('system_email_delivery_events');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'system_email_messages', "table" FROM pragma_foreign_key_list('system_email_messages');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'system_email_threads', "table" FROM pragma_foreign_key_list('system_email_threads');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'user_integrations', "table" FROM pragma_foreign_key_list('user_integrations');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'user_openapi_binding_operations', "table" FROM pragma_foreign_key_list('user_openapi_binding_operations');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'user_roles', "table" FROM pragma_foreign_key_list('user_roles');
+
+INSERT INTO migration_0135_surviving_foreign_keys (source_table, referenced_table)
+SELECT 'value_entries', "table" FROM pragma_foreign_key_list('value_entries');
 
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
-FROM sqlite_schema
-WHERE type = 'table'
-	AND name NOT IN (
-		'email_threads',
-		'email_messages',
-		'email_attachments',
-		'email_delivery_events',
-		'email_inbound_usage_effects'
-	)
-	AND (
-		lower(sql) LIKE '%references email_threads%'
-		OR lower(sql) LIKE '%references email_messages%'
-		OR lower(sql) LIKE '%references email_attachments%'
-		OR lower(sql) LIKE '%references email_delivery_events%'
+FROM migration_0135_surviving_foreign_keys
+WHERE referenced_table IN (
+	'email_threads',
+	'email_messages',
+	'email_attachments',
+	'email_delivery_events'
+)
+	OR (
+		referenced_table = 'users'
+		AND source_table NOT IN (
+			'email_verifications',
+			'feature_flag_user_overrides',
+			'feature_flags',
+			'invites',
+			'oauth_connections',
+			'passkeys',
+			'password_resets',
+			'pending_email_changes',
+			'user_roles'
+		)
 	);
+
+DROP TABLE migration_0135_surviving_foreign_keys;
 
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
 FROM pragma_foreign_key_check;
 
--- Fail closed if main added another users foreign key since the reviewed 0134
--- schema. Rebuilding the parent is safe only after every known child is
--- snapshotted and temporarily cleared.
+-- Fail closed if any reviewed users child foreign key changed. Rebuilding the
+-- parent is safe only after every exact child relation is snapshotted and cleared.
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
-SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
-FROM sqlite_schema
-WHERE type = 'table'
-	AND lower(sql) LIKE '%references users%'
-	AND name NOT IN (
-		'email_verifications',
-		'feature_flag_user_overrides',
-		'feature_flags',
-		'invites',
-		'oauth_connections',
-		'passkeys',
-		'password_resets',
-		'pending_email_changes',
-		'user_roles'
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('email_verifications')
+WHERE "table" = 'users'
+	AND "from" = 'user_id'
+	AND "to" = 'id'
+	AND on_delete = 'CASCADE';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('feature_flags')
+WHERE "table" = 'users'
+	AND "from" = 'updated_by'
+	AND "to" = 'id'
+	AND on_delete = 'SET NULL';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('invites')
+WHERE "table" = 'users'
+	AND "from" = 'created_by'
+	AND "to" = 'id'
+	AND on_delete = 'SET NULL';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('oauth_connections')
+WHERE "table" = 'users'
+	AND "from" = 'user_id'
+	AND "to" = 'id'
+	AND on_delete = 'CASCADE';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('passkeys')
+WHERE "table" = 'users'
+	AND "from" = 'user_id'
+	AND "to" = 'id'
+	AND on_delete = 'CASCADE';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('password_resets')
+WHERE "table" = 'users'
+	AND "from" = 'user_id'
+	AND "to" = 'id'
+	AND on_delete = 'CASCADE';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('pending_email_changes')
+WHERE "table" = 'users'
+	AND "from" = 'user_id'
+	AND "to" = 'id'
+	AND on_delete = 'CASCADE';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('user_roles')
+WHERE "table" = 'users'
+	AND "from" = 'user_id'
+	AND "to" = 'id'
+	AND on_delete = 'CASCADE';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END
+FROM pragma_foreign_key_list('feature_flag_user_overrides')
+WHERE "table" = 'users'
+	AND "to" = 'id'
+	AND (
+		("from" = 'user_id' AND on_delete = 'CASCADE')
+		OR ("from" = 'updated_by' AND on_delete = 'SET NULL')
 	);
 
 -- Preserve the stable authority marker without duplicating or renaming any
@@ -545,9 +790,7 @@ SELECT
 	authority.owner_count,
 	authority.frozen_at,
 	strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-FROM email_user_graph_authority authority
-INNER JOIN email_user_graph_drop_approval approval
-	ON approval.singleton = authority.singleton;
+FROM email_user_graph_authority authority;
 
 -- Detach, but do not delete, the unapproved cross-store idempotency ledger.
 CREATE TABLE email_inbound_usage_effects_next (
