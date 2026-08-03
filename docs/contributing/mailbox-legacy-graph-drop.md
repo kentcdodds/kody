@@ -34,9 +34,11 @@ Example request body:
    hours. If conductor merge occurs after expiration, trigger a new Workflow
    instance with a new request id, nonce, and timestamp.
 
-The current production receipt expires at `2026-08-03T21:10:38.879Z`. It is not
-a value embedded in 0135. A newer receipt may replace it, but it must come from
-the same deployed trust configuration: source account
+Production applied 0135 at `2026-08-03T22:55:40Z` under control-plane receipt
+`963be2ed-0462-4294-ae63-81b8a5ddac38` (verified
+`2026-08-03T22:30:57.969Z`, expired `2026-08-04T00:30:57.969Z`). Receipts are
+not embedded in 0135. A newer receipt may replace an unconsumed one, but it must
+come from the same deployed trust configuration: source account
 `a99ee2e72728dd52902ef288b7b1447d`, database
 `8c1014d1-6b41-4695-a0a2-159071f0f919` / `kody`, key `kody-dr-2026-07`, baseline
 `kody-migration-set-2026-07` /
@@ -44,6 +46,13 @@ the same deployed trust configuration: source account
 `fe1ca2772de7f369fc06a7d1bd9aeadc3347b2a7`. The migration does not pin the
 request id, request nonce, manifest/SQL object keys, SQL SHA-256, R2 ETag, or
 manifest-signature digest.
+
+The frozen table inventory in 0135 rejects unexpected user tables. Live APP_DB
+may contain the runtime auth throttle scratch table `_rate_limits` (created by
+`packages/worker/src/app/rate-limit.ts`, not migration-managed). That table is
+safe to `DROP TABLE IF EXISTS` immediately before applying 0135; the worker
+recreates it on demand. Do not hand-edit `email_user_graph_drop_approval` or
+other approval evidence.
 
 The first attempt that encoded `params` as a string failed and is irrelevant: it
 issued no receipt and cannot authorize the migration. Never update or recreate
