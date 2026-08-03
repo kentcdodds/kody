@@ -5,7 +5,6 @@ import {
 	loadAdminMailboxMaintenanceStatus,
 	runAdminMailboxMaintenanceDeleteMessage,
 	runAdminMailboxMaintenanceRetention,
-	runAdminMailboxMaintenanceSystemEmailGraphReconcile,
 } from '#worker/admin/mailbox-maintenance.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -51,47 +50,15 @@ const outboundProviderIndexHealthSchema = z.object({
 		.describe('True when every thin index row is structurally valid.'),
 })
 
-const systemEmailGraphTableParitySchema = z.object({
-	legacyCount: z.number().int().nonnegative(),
-	dedicatedCount: z.number().int().nonnegative(),
-	missingFromDedicatedCount: z.number().int().nonnegative(),
-	missingFromLegacyCount: z.number().int().nonnegative(),
-	ownershipMismatchCount: z.number().int().nonnegative(),
-	referencedOwnerMismatchCount: z.number().int().nonnegative(),
-	relationshipMismatchCount: z.number().int().nonnegative(),
-	keyFieldMismatchCount: z.number().int().nonnegative(),
-	parity: z.boolean(),
-})
-
-const systemEmailGraphParitySchema = z.object({
-	threads: systemEmailGraphTableParitySchema,
-	messages: systemEmailGraphTableParitySchema,
-	attachments: systemEmailGraphTableParitySchema,
-	deliveryEvents: systemEmailGraphTableParitySchema,
-	outboundProviderIndex: z.object({
-		legacyProviderLinkedMessageCount: z.number().int().nonnegative(),
-		dedicatedProviderLinkedMessageCount: z.number().int().nonnegative(),
-		legacyAuthorityIndexCount: z.number().int().nonnegative(),
-		missingFromLegacyAuthorityIndexCount: z.number().int().nonnegative(),
-		missingFromLegacyMessagesCount: z.number().int().nonnegative(),
-		mismatchedLegacyAuthorityIndexCount: z.number().int().nonnegative(),
-		classification: z.enum([
-			'no-system-provider-links',
-			'unsupported-system-provider-links',
-		]),
-		authorityDisposition: z.literal('dedicated-inbound-only'),
-		parity: z.boolean(),
-	}),
-	parity: z.boolean(),
-})
-
 const statusSchema = z.object({
 	generatedAt: z.string(),
 	authority: z
 		.object({
 			ownerCount: z.number().int().nonnegative(),
 			frozenAt: z.string(),
-			maxParityAgeHours: z.number().int().positive(),
+			droppedAt: z.string(),
+			backupObjectKey: z.string(),
+			backupSha256: z.string(),
 		})
 		.nullable(),
 	outboundProviderIndex: outboundProviderIndexHealthSchema.describe(
@@ -112,22 +79,16 @@ const statusSchema = z.object({
 		lastHourEvents: z.number().int().nonnegative(),
 		oldestEventAt: z.string().nullable(),
 	}),
-	systemEmailGraph: systemEmailGraphParitySchema.describe(
-		'Dedicated system-email authority versus the legacy rollback mirror. No email content is returned.',
-	),
-})
-
-const systemEmailGraphMutationCountsSchema = z.object({
-	threads: z.number().int().nonnegative(),
-	messages: z.number().int().nonnegative(),
-	attachments: z.number().int().nonnegative(),
-	deliveryEvents: z.number().int().nonnegative(),
-})
-
-const systemEmailGraphReconcileMetricsSchema = z.object({
-	upserted: systemEmailGraphMutationCountsSchema,
-	deleted: systemEmailGraphMutationCountsSchema,
-	referencedOwnerMismatchCount: z.number().int().nonnegative(),
+	systemEmail: z.object({
+		authority: z.object({
+			authority: z.literal('dedicated'),
+			cutoverAt: z.string(),
+		}),
+		counts: mailboxCountSchema,
+		invalidReferenceCount: z.number().int().nonnegative(),
+		providerLinkCount: z.number().int().nonnegative(),
+		healthy: z.boolean(),
+	}),
 })
 
 const retentionMetricsSchema = z.object({
@@ -183,27 +144,12 @@ const inputSchema = z.discriminatedUnion('action', [
 		.strict(),
 	z
 		.object({
-			action: z.literal('system_email_graph_reconcile'),
-			force: z
-				.literal(true)
-				.describe(
-					'Required acknowledgement that this rollback repair atomically rewrites the legacy mirror.',
-				),
-			direction: z
-				.literal('dedicated_to_legacy')
-				.describe(
-					'Required safety fence: dedicated authority may repair legacy, never the reverse.',
-				),
-		})
-		.strict(),
-	z
-		.object({
 			action: z.literal('retention'),
 			limit: retentionLimitSchema,
 			start_after_user_id: stableUserIdSchema
 				.optional()
 				.describe(
-					'Stable-user-id keyset cursor from a prior retention nextStartAfter. Ordered by stable_user_id ASC; never parity checked_at.',
+					'Stable-user-id keyset cursor from a prior retention nextStartAfter. Ordered by stable_user_id ASC.',
 				),
 		})
 		.strict(),
@@ -225,11 +171,6 @@ const outputSchema = z.discriminatedUnion('action', [
 	z.object({
 		action: z.literal('status'),
 		status: statusSchema,
-	}),
-	z.object({
-		action: z.literal('system_email_graph_reconcile'),
-		metrics: systemEmailGraphReconcileMetricsSchema,
-		postReport: systemEmailGraphParitySchema,
 	}),
 	z.object({
 		action: z.literal('retention'),
@@ -258,14 +199,13 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox retention/delete maintenance and structural status: authority marker, provider repair, due-owner and delivery-alert health, thin provider-index counts, dedicated system-email rollback parity, keyset-paged Mailbox retention, or owner-scoped delete_message. USER parity/rebuild is retired. Audited.',
+			'Admin-only Mailbox retention/delete maintenance and structural status: final authority marker, provider repair, due-owner and delivery-alert health, thin provider-index counts, dedicated system-email counts/health, keyset-paged Mailbox retention, or owner-scoped delete_message. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
 			'maintenance',
 			'provider-index',
 			'system-email-graph',
-			'reconcile',
 			'retention',
 			'delete',
 			'cutover',
@@ -284,19 +224,6 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 								db: ctx.env.APP_DB,
 							})
 							return { action: 'status' as const, status }
-						}
-						case 'system_email_graph_reconcile': {
-							const result =
-								await runAdminMailboxMaintenanceSystemEmailGraphReconcile({
-									db: ctx.env.APP_DB,
-									direction: args.direction,
-									force: args.force,
-								})
-							return {
-								action: 'system_email_graph_reconcile' as const,
-								metrics: result.metrics,
-								postReport: result.postReport,
-							}
 						}
 						case 'retention': {
 							const result = await runAdminMailboxMaintenanceRetention({
@@ -341,9 +268,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 					successReason: (result) => {
 						switch (result.action) {
 							case 'status':
-								return `action=status;cutover_owners=${result.status.authority?.ownerCount ?? -1};provider_repairs=${result.status.providerIndexRepair.pendingCount};due_owners=${result.status.inboundDueOwners.dueOwners};system_email_graph_parity=${result.status.systemEmailGraph.parity ? 1 : 0}`
-							case 'system_email_graph_reconcile':
-								return `action=system_email_graph_reconcile;upserted_messages=${result.metrics.upserted.messages};deleted_messages=${result.metrics.deleted.messages};owner_reference_mismatches=${result.metrics.referencedOwnerMismatchCount};parity=${result.postReport.parity ? 1 : 0}`
+								return `action=status;cutover_owners=${result.status.authority?.ownerCount ?? -1};provider_repairs=${result.status.providerIndexRepair.pendingCount};due_owners=${result.status.inboundDueOwners.dueOwners};system_email_healthy=${result.status.systemEmail.healthy ? 1 : 0}`
 							case 'retention':
 								return `action=retention;attempted=${result.metrics.mailbox.ownersAttempted};succeeded=${result.metrics.mailbox.ownersSucceeded};truncated=${result.truncated ? 1 : 0}`
 							case 'delete_message': {

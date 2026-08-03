@@ -180,18 +180,13 @@ test('inbound receive quota rejects through Mailbox without a USER D1 graph writ
 		phase: 'entitlement',
 	})
 
-	for (const table of [
-		'email_threads',
-		'email_messages',
-		'email_delivery_events',
-	]) {
-		const row = await env.APP_DB.prepare(
-			`SELECT COUNT(*) AS count FROM ${table} WHERE user_id = ?`,
-		)
-			.bind(userId)
-			.first<{ count: number }>()
-		expect(row?.count).toBe(0)
-	}
+	const legacyTables = await env.APP_DB.prepare(
+		`SELECT name FROM sqlite_schema
+		WHERE type = 'table' AND name IN (
+			'email_threads', 'email_messages', 'email_delivery_events'
+		)`,
+	).all()
+	expect(legacyTables.results).toEqual([])
 }, 30_000)
 
 test('free-plan Mailbox count, storage, and size limits reject before charge while under-quota stores', async () => {

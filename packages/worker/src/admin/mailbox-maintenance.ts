@@ -11,11 +11,9 @@ import {
 	type OutboundProviderIndexHealthReport,
 } from '#worker/email/outbound-provider-index.ts'
 import {
-	loadSystemEmailGraphParityReport,
-	reconcileLegacySystemEmailGraphFromDedicated,
-	type SystemEmailGraphParityReport,
-	type SystemEmailGraphReconcileResult,
-} from '#worker/email/system-email-graph-repo.ts'
+	loadSystemEmailHealth,
+	type SystemEmailHealth,
+} from '#worker/email/system-email-health.ts'
 import {
 	deleteSystemEmailMessageById,
 	getSystemEmailMessageById,
@@ -62,11 +60,8 @@ export type AdminMailboxMaintenanceStatus = {
 	providerIndexRepair: Awaited<ReturnType<typeof loadProviderIndexRepairHealth>>
 	inboundDueOwners: InboundDueOwnersHealth
 	deliveryAlerts: Awaited<ReturnType<typeof loadDeliveryAlertEventsHealth>>
-	/**
-	 * Dedicated system-email authority versus its legacy rollback mirror.
-	 * Aggregate counts only; no email content is exposed.
-	 */
-	systemEmailGraph: SystemEmailGraphParityReport
+	/** Dedicated system-email authority, counts, and reference health. */
+	systemEmail: SystemEmailHealth
 }
 
 export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
@@ -251,7 +246,7 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		providerIndexRepair,
 		inboundDueOwners,
 		deliveryAlerts,
-		systemEmailGraph,
+		systemEmail,
 	] = await Promise.all([
 		loadUserEmailGraphAuthorityMarker(input.db),
 		loadOutboundProviderIndexHealthReport({ db: input.db }),
@@ -259,7 +254,7 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		loadProviderIndexRepairHealth({ db: input.db }),
 		loadInboundDueOwnersHealth({ db: input.db, now }),
 		loadDeliveryAlertEventsHealth({ db: input.db, now }),
-		loadSystemEmailGraphParityReport({ db: input.db }),
+		loadSystemEmailHealth({ db: input.db }),
 	])
 	const outboundProviderIndex = {
 		...outboundProviderIndexHealth,
@@ -273,16 +268,8 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		providerIndexRepair,
 		inboundDueOwners,
 		deliveryAlerts,
-		systemEmailGraph,
+		systemEmail,
 	}
-}
-
-export async function runAdminMailboxMaintenanceSystemEmailGraphReconcile(input: {
-	db: D1Database
-	direction: 'dedicated_to_legacy'
-	force: true
-}): Promise<SystemEmailGraphReconcileResult> {
-	return reconcileLegacySystemEmailGraphFromDedicated(input)
 }
 
 /**

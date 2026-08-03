@@ -10,7 +10,7 @@ import {
 } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
-test('thin provider index persists independently of the frozen USER graph', async () => {
+test('thin provider index persists after the USER graph is removed', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await expect(
 		isOutboundProviderIndexForeignKeyDetached(env.APP_DB),
@@ -41,21 +41,14 @@ test('thin provider index persists independently of the frozen USER graph', asyn
 		malformedCount: 0,
 	})
 
-	for (const table of [
-		'email_threads',
-		'email_messages',
-		'email_attachments',
-		'email_delivery_events',
-	]) {
-		const row = await env.APP_DB.prepare(
-			`SELECT COUNT(*) AS count FROM ${table} WHERE ${
-				table === 'email_attachments' ? 'message_id' : 'user_id'
-			} = ?`,
-		)
-			.bind(table === 'email_attachments' ? messageId : userId)
-			.first<{ count: number }>()
-		expect(row?.count).toBe(0)
-	}
+	const legacyTables = await env.APP_DB.prepare(
+		`SELECT name FROM sqlite_schema
+		WHERE type = 'table' AND name IN (
+			'email_threads', 'email_messages', 'email_attachments',
+			'email_delivery_events'
+		)`,
+	).all()
+	expect(legacyTables.results).toEqual([])
 
 	await deleteOutboundProviderIndexByMessageId({
 		db: env.APP_DB,

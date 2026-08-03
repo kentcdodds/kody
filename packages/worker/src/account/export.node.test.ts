@@ -1,5 +1,4 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -8,7 +7,7 @@ import {
 	parseMailboxBlobRefCursor,
 } from '#worker/email/mailbox-types.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { accountUserDataPendingDropTargets } from './data-targets.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
 	createAccountExport,
 	createAccountExportManifest,
@@ -19,11 +18,7 @@ import { accountUserOwnedDurableObjectSurfaces } from './user-owned-surfaces.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 }
 
 function createD1FromSqlite(
@@ -213,9 +208,6 @@ test('account export D1 coverage includes every live user-owned schema column', 
 			}
 		}
 	}
-	for (const target of accountUserDataPendingDropTargets) {
-		liveUserColumns.add(`${target.table}.${target.column}`)
-	}
 	const coveredColumns = getAccountExportD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -240,12 +232,6 @@ test('account export documents and excludes operator-owned system email rows', a
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
 		);
-
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status, created_at, updated_at
-		) VALUES
-			('user-message', 'inbound', 'user-aaa', 'sender@example.net', 'User mail', 'stored', '2026-07-05', '2026-07-05'),
-			('system-message', 'inbound', 'system:email', 'sender@example.net', 'System mail', 'stored', '2026-07-05', '2026-07-05');
 	`)
 
 	const accountExport = await createAccountExport({
@@ -279,8 +265,8 @@ test('account export documents and excludes operator-owned system email rows', a
 				reason: expect.stringContaining('Operator-owned inbound mail'),
 			}),
 			expect.objectContaining({
-				name: 'frozen_user_email_messages',
-				reason: expect.stringContaining('Frozen rollback snapshot'),
+				name: 'system_email_messages',
+				reason: expect.stringContaining('operator-owned system email'),
 			}),
 		]),
 	)
@@ -618,13 +604,6 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 		) VALUES
 			(1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-aaa', 'user-avatars/user-aaa/avatar.png'),
 			(2, 'user-b', 'b@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-bbb', 'user-avatars/user-bbb/avatar.png');
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES
-			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
-			('mail-z', 'inbound', 'user-aaa', 'sender@example.com', 'Z', 'stored', '2026-07-05', '2026-07-05'),
-			('mail-b', 'inbound', 'user-bbb', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
 	`)
 	const mimeBytes = new TextEncoder().encode('Subject: A\r\n\r\nbody')
 	const getEmailBlob = vi.fn(async (key: string) => {
@@ -765,15 +744,6 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 			'2026-07-05', 'user-aaa'
 		);
 	`)
-	const insert = sqlite.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES (?, 'inbound', 'user-aaa', 'sender@example.com', ?, 'stored', '2026-07-05', '2026-07-05')`,
-	)
-	for (let index = 0; index < 1201; index += 1) {
-		insert.run(`mail-${String(index).padStart(4, '0')}`, `Mail ${index}`)
-	}
 	const page = await readAccountExportSection({
 		env: {
 			APP_DB: db,
@@ -892,12 +862,6 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
 			'2026-07-05', 'user-aaa'
 		);
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES
-			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
-			('mail-b', 'inbound', 'user-aaa', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
 	`)
 	const requestedKeys: Array<string> = []
 	const get = vi.fn(async (key: string) => {
@@ -909,26 +873,27 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 			arrayBuffer: async () => bytes.buffer,
 		}
 	})
+	const blobReferences = [
+		{
+			kind: 'raw_mime' as const,
+			key: 'email-raw:v1:user-aaa/mail-a',
+			messageId: 'mail-a',
+			attachmentId: null,
+		},
+		{
+			kind: 'raw_mime' as const,
+			key: 'email-raw:v1:user-aaa/mail-b',
+			messageId: 'mail-b',
+			attachmentId: null,
+		},
+	]
 	const env = {
 		APP_DB: db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		EMAIL_BLOBS: { get },
 		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 		MAILBOX: createMailboxBinding({
-			blobReferences: () => [
-				{
-					kind: 'raw_mime',
-					key: 'email-raw:v1:user-aaa/mail-a',
-					messageId: 'mail-a',
-					attachmentId: null,
-				},
-				{
-					kind: 'raw_mime',
-					key: 'email-raw:v1:user-aaa/mail-b',
-					messageId: 'mail-b',
-					attachmentId: null,
-				},
-			],
+			blobReferences: () => blobReferences,
 		}),
 	} as unknown as Env
 	const first = await readAccountExportSection({
@@ -937,15 +902,12 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 		mcpUserId: 'user-aaa',
 		section: 'r2_object',
 	})
-	sqlite.exec(`
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES (
-			'mail-00', 'inbound', 'user-aaa', 'sender@example.com', 'Inserted',
-			'stored', '2026-07-05', '2026-07-05'
-		);
-	`)
+	blobReferences.unshift({
+		kind: 'raw_mime',
+		key: 'email-raw:v1:user-aaa/mail-00',
+		messageId: 'mail-00',
+		attachmentId: null,
+	})
 	const second = await readAccountExportSection({
 		env,
 		dbUserId: 1,
@@ -1439,29 +1401,6 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
 		);
-		INSERT INTO email_threads (
-			id, user_id, subject_normalized, last_message_at, created_at, updated_at
-		) VALUES (
-			'thread-1', 'user-aaa', 'hello', '2026-07-30', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_messages (
-			id, direction, user_id, thread_id, from_address, subject,
-			processing_status, created_at, updated_at
-		) VALUES (
-			'message-1', 'inbound', 'user-aaa', 'thread-1', 'a@example.com',
-			'hello', 'stored', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_attachments (
-			id, message_id, filename, content_type, storage_kind, created_at
-		) VALUES (
-			'attachment-1', 'message-1', 'file.txt', 'text/plain', 'unavailable',
-			'2026-07-30'
-		);
-		INSERT INTO email_delivery_events (
-			id, message_id, user_id, event_type, created_at
-		) VALUES (
-			'event-1', 'message-1', 'user-aaa', 'received', '2026-07-30'
-		);
 	`)
 	const totalRows = 1201
 	const insert = sqlite.prepare(
@@ -1943,29 +1882,6 @@ test('account export includes mailbox rows, pages them, and warns on truncation'
 		VALUES (
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-		INSERT INTO email_threads (
-			id, user_id, subject_normalized, last_message_at, created_at, updated_at
-		) VALUES (
-			'thread-1', 'user-aaa', 'hello', '2026-07-30', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_messages (
-			id, direction, user_id, thread_id, from_address, subject,
-			processing_status, created_at, updated_at
-		) VALUES (
-			'message-1', 'inbound', 'user-aaa', 'thread-1', 'a@example.com',
-			'hello', 'stored', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_attachments (
-			id, message_id, filename, content_type, storage_kind, created_at
-		) VALUES (
-			'attachment-1', 'message-1', 'file.txt', 'text/plain', 'unavailable',
-			'2026-07-30'
-		);
-		INSERT INTO email_delivery_events (
-			id, message_id, user_id, event_type, created_at
-		) VALUES (
-			'event-1', 'message-1', 'user-aaa', 'received', '2026-07-30'
 		);
 	`)
 	const rows = [

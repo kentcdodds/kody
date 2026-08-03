@@ -150,7 +150,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'mailboxes',
 			export: 'include',
 			notes:
-				'Per-user authoritative email metadata and R2-reference inventory (MAILBOX binding; idFromName(userId)). Account export pages the sole USER email graph through exportMailbox. Account deletion lists Mailbox blob references before deleting R2 objects and purging the DO; D1 email_* compatibility projections remain deletion targets until migration step 5.',
+				'Per-user authoritative email metadata and R2-reference inventory (MAILBOX binding; idFromName(userId)). Account export pages the sole USER email graph through exportMailbox. Account deletion lists Mailbox blob references before deleting R2 objects and purging the DO; D1 retains only thin provider, due-work, alert, and configuration rows.',
 		},
 		{
 			id: 'mcp',

@@ -1,6 +1,8 @@
 import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
-import { commitSystemEmailGraphMutations } from './system-email-graph-transaction.ts'
-import { systemInboundEventMutation } from './system-inbound-delivery-mirror.ts'
+import {
+	commitSystemInboundEventMutations,
+	systemInboundEventMutation,
+} from './system-inbound-delivery-transaction.ts'
 
 const systemInboundProvider = 'cloudflare-email-routing'
 
@@ -26,11 +28,10 @@ export async function recordBoundedSystemEmailRejection(input: {
 		last_phase: input.phase,
 		last_at: now,
 	})
-	const { mutationResults } = await commitSystemEmailGraphMutations({
+	const { mutationResults } = await commitSystemInboundEventMutations({
 		db: input.db,
 		mutations: [
 			systemInboundEventMutation({
-				db: input.db,
 				eventId: aggregateId,
 				dedicated: input.db
 					.prepare(
@@ -65,7 +66,6 @@ export async function recordBoundedSystemEmailRejection(input: {
 					),
 			}),
 			systemInboundEventMutation({
-				db: input.db,
 				eventId: detailId,
 				dedicated: input.db
 					.prepare(

@@ -79,7 +79,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		deletionResultKey: 'mailboxes',
 		export: 'include',
 		notes: expect.stringMatching(
-			/authoritative email metadata.*lists Mailbox blob references.*D1 email_\* compatibility projections/s,
+			/authoritative email metadata.*lists Mailbox blob references.*D1 retains only thin provider/s,
 		),
 	})
 	expect(

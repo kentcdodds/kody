@@ -1,5 +1,4 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -27,14 +26,11 @@ import {
 	consoleWarn,
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 }
 
 function createD1FromSqlite(

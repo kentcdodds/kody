@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
 	loadUserEmailGraphAuthorityMarker: vi.fn(async () => ({
 		ownerCount: 2,
 		frozenAt: '2026-08-01T00:00:00.000Z',
-		maxParityAgeHours: 6,
+		droppedAt: '2026-08-03T00:00:00.000Z',
+		backupObjectKey: 'd1/backup.sql.gz',
+		backupSha256: 'a'.repeat(64),
 	})),
 	assertUserEmailGraphAuthority: vi.fn(async () => undefined),
 	loadProviderIndexRepairHealth: vi.fn(async () => ({
@@ -31,13 +33,12 @@ const mocks = vi.hoisted(() => ({
 		lastHourEvents: 0,
 		oldestEventAt: null,
 	})),
-	loadSystemEmailGraphParityReport: vi.fn(async () => ({
-		threads: {},
-		messages: {},
-		attachments: {},
-		deliveryEvents: {},
-		outboundProviderIndex: {},
-		parity: true,
+	loadSystemEmailHealth: vi.fn(async () => ({
+		authority: { authority: 'dedicated', cutoverAt: '2026-08-01T00:00:00Z' },
+		counts: { threads: 1, messages: 2, attachments: 3, deliveryEvents: 4 },
+		invalidReferenceCount: 0,
+		providerLinkCount: 0,
+		healthy: true,
 	})),
 }))
 
@@ -54,9 +55,8 @@ vi.mock('#worker/email/outbound-provider-index.ts', () => ({
 		mocks.loadOutboundProviderIndexHealthReport,
 }))
 
-vi.mock('#worker/email/system-email-graph-repo.ts', () => ({
-	loadSystemEmailGraphParityReport: mocks.loadSystemEmailGraphParityReport,
-	reconcileLegacySystemEmailGraphFromDedicated: vi.fn(),
+vi.mock('#worker/email/system-email-health.ts', () => ({
+	loadSystemEmailHealth: mocks.loadSystemEmailHealth,
 }))
 
 vi.mock('#worker/email/user-email-graph-authority.ts', () => ({
@@ -123,7 +123,7 @@ test('maintenance status reports authority and coordination health', async () =>
 		authority: {
 			ownerCount: 2,
 			frozenAt: '2026-08-01T00:00:00.000Z',
-			maxParityAgeHours: 6,
+			droppedAt: '2026-08-03T00:00:00.000Z',
 		},
 		outboundProviderIndex: {
 			indexCount: 2,
@@ -135,7 +135,7 @@ test('maintenance status reports authority and coordination health', async () =>
 		providerIndexRepair: { pendingOwners: 0, pendingCount: 0 },
 		inboundDueOwners: { pendingOwners: 0, dueOwners: 0 },
 		deliveryAlerts: { retainedEvents: 0, lastHourEvents: 0 },
-		systemEmailGraph: { parity: true },
+		systemEmail: { healthy: true, providerLinkCount: 0 },
 	})
 })
 

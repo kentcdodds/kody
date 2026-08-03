@@ -12,29 +12,10 @@ import {
 	getEmailInboxByName,
 } from './repo.ts'
 import { type EmailInboxAddressRecord, type EmailInboxRecord } from './types.ts'
-import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
-import { systemEmailGraphColumnContracts } from './system-email-graph-columns.ts'
 import {
-	commitSystemEmailGraphBulkDeletes,
-	systemEmailGraphContract,
-} from './system-email-graph-transaction.ts'
-
-const threadContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'threads',
-)
-const messageContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'messages',
-)
-const attachmentContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'attachments',
-)
-const deliveryEventContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'deliveryEvents',
-)
+	assertSystemEmailGraphAuthority,
+	commitSystemEmailAuthorityBatch,
+} from './system-email-authority.ts'
 
 export { systemEmailOwnerId }
 
@@ -66,7 +47,7 @@ export const systemEmailPruneTimeBudgetMs = 10_000
 
 /**
  * D1 caps bound parameters per statement at 100. Keep room for owner/cutoff
- * fences used by the compatibility-mirror statements.
+ * fences used by dedicated authority statements.
  */
 const systemEmailDeleteIdsMaxParameters = 40
 
@@ -351,68 +332,30 @@ async function deleteSystemEmailMessagesByIds(input: {
 		}
 		if (deletableIds.length === 0) continue
 		const placeholders = deletableIds.map(() => '?').join(', ')
-		await commitSystemEmailGraphBulkDeletes({
+		const deletes = await commitSystemEmailAuthorityBatch({
 			db: input.db,
-			mutations: [
-				{
-					contract: attachmentContract,
-					ids: deletableIds,
-					matchColumn: 'message_id',
-					dedicated: input.db
-						.prepare(
-							`DELETE FROM system_email_attachments
-					WHERE message_id IN (${placeholders})`,
-						)
-						.bind(...deletableIds),
-					legacy: input.db
-						.prepare(
-							`DELETE FROM email_attachments
-					WHERE message_id IN (${placeholders})
-						AND EXISTS (
-							SELECT 1 FROM email_messages
-							WHERE email_messages.id = email_attachments.message_id
-								AND email_messages.user_id = ?
-						)`,
-						)
-						.bind(...deletableIds, systemEmailOwnerId),
-				},
-				{
-					contract: deliveryEventContract,
-					ids: deletableIds,
-					matchColumn: 'message_id',
-					dedicated: input.db
-						.prepare(
-							`DELETE FROM system_email_delivery_events
-							WHERE message_id IN (${placeholders})`,
-						)
-						.bind(...deletableIds),
-					legacy: input.db
-						.prepare(
-							`DELETE FROM email_delivery_events
-					WHERE user_id = ? AND message_id IN (${placeholders})`,
-						)
-						.bind(systemEmailOwnerId, ...deletableIds),
-				},
-				{
-					contract: messageContract,
-					ids: deletableIds,
-					matchColumn: 'id',
-					dedicated: input.db
-						.prepare(
-							`DELETE FROM system_email_messages
-							WHERE id IN (${placeholders})`,
-						)
-						.bind(...deletableIds),
-					legacy: input.db
-						.prepare(
-							`DELETE FROM email_messages
-					WHERE user_id = ? AND id IN (${placeholders})`,
-						)
-						.bind(systemEmailOwnerId, ...deletableIds),
-				},
+			statements: [
+				input.db
+					.prepare(
+						`DELETE FROM system_email_attachments
+						WHERE message_id IN (${placeholders})`,
+					)
+					.bind(...deletableIds),
+				input.db
+					.prepare(
+						`DELETE FROM system_email_delivery_events
+						WHERE message_id IN (${placeholders})`,
+					)
+					.bind(...deletableIds),
+				input.db
+					.prepare(
+						`DELETE FROM system_email_messages
+						WHERE id IN (${placeholders})`,
+					)
+					.bind(...deletableIds),
 			],
 		})
-		result.deletedMessages += deletableIds.length
+		result.deletedMessages += Number(deletes[2]?.meta.changes ?? 0)
 	}
 	return result
 }
@@ -527,26 +470,15 @@ export async function pruneSystemEmailRetention(input: {
 		deletedEventsInBatch = eventIds.length
 		if (eventIds.length > 0) {
 			const placeholders = eventIds.map(() => '?').join(', ')
-			const deletes = await commitSystemEmailGraphBulkDeletes({
+			const deletes = await commitSystemEmailAuthorityBatch({
 				db: input.db,
-				mutations: [
-					{
-						contract: deliveryEventContract,
-						ids: eventIds,
-						matchColumn: 'id',
-						dedicated: input.db
-							.prepare(
-								`DELETE FROM system_email_delivery_events
-								WHERE id IN (${placeholders})`,
-							)
-							.bind(...eventIds),
-						legacy: input.db
-							.prepare(
-								`DELETE FROM email_delivery_events
-								WHERE user_id = ? AND id IN (${placeholders})`,
-							)
-							.bind(systemEmailOwnerId, ...eventIds),
-					},
+				statements: [
+					input.db
+						.prepare(
+							`DELETE FROM system_email_delivery_events
+							WHERE id IN (${placeholders})`,
+						)
+						.bind(...eventIds),
 				],
 			})
 			deletedEventsInBatch = Number(deletes[0]?.meta.changes ?? 0)
@@ -580,26 +512,15 @@ export async function pruneSystemEmailRetention(input: {
 		const threadIds = (threadRows.results ?? []).map((row) => row.id)
 		if (threadIds.length === 0) return result
 		const placeholders = threadIds.map(() => '?').join(', ')
-		const deletes = await commitSystemEmailGraphBulkDeletes({
+		const deletes = await commitSystemEmailAuthorityBatch({
 			db: input.db,
-			mutations: [
-				{
-					contract: threadContract,
-					ids: threadIds,
-					matchColumn: 'id',
-					dedicated: input.db
-						.prepare(
-							`DELETE FROM system_email_threads
-							WHERE id IN (${placeholders})`,
-						)
-						.bind(...threadIds),
-					legacy: input.db
-						.prepare(
-							`DELETE FROM email_threads
-							WHERE user_id = ? AND id IN (${placeholders})`,
-						)
-						.bind(systemEmailOwnerId, ...threadIds),
-				},
+			statements: [
+				input.db
+					.prepare(
+						`DELETE FROM system_email_threads
+						WHERE id IN (${placeholders})`,
+					)
+					.bind(...threadIds),
 			],
 		})
 		result.deletedThreads += Number(deletes[0]?.meta.changes ?? 0)

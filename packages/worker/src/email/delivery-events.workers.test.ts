@@ -178,21 +178,14 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 		occurred_at: bouncedAt,
 	})
 
-	for (const table of [
-		'email_threads',
-		'email_messages',
-		'email_attachments',
-		'email_delivery_events',
-	]) {
-		const row = await env.APP_DB.prepare(
-			`SELECT COUNT(*) AS count FROM ${table} WHERE ${
-				table === 'email_attachments' ? 'message_id' : 'user_id'
-			} = ?`,
-		)
-			.bind(table === 'email_attachments' ? messageId : userId)
-			.first<{ count: number }>()
-		expect(row?.count).toBe(0)
-	}
+	const legacyTables = await env.APP_DB.prepare(
+		`SELECT name FROM sqlite_schema
+		WHERE type = 'table' AND name IN (
+			'email_threads', 'email_messages', 'email_attachments',
+			'email_delivery_events'
+		)`,
+	).all()
+	expect(legacyTables.results).toEqual([])
 	expect(capturedD1.sql.join('\n')).not.toMatch(
 		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
 	)

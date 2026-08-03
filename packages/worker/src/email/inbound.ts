@@ -34,7 +34,6 @@ import {
 	type UserInboundDeliveryAuthority,
 	type UserInboundDeliveryAuthorityEnv,
 } from './inbound-delivery-authority.ts'
-import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
 import { assertUserEmailGraphAuthority } from './user-email-graph-authority.ts'
 import {
 	pruneUserExpiredInboundDedupePointers,
@@ -217,7 +216,7 @@ export async function handleInboundEmail(
 	}
 	const env = {
 		...inputEnv,
-		APP_DB: liveUserEmailD1Database(inputEnv.APP_DB),
+		APP_DB: inputEnv.APP_DB,
 	}
 
 	const identity = await findPublicUserIdentityByUsername({

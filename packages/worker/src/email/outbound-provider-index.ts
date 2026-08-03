@@ -158,8 +158,7 @@ export async function deleteOutboundProviderIndexByMessageIds(input: {
 }
 
 /**
- * Read-only structural report over the thin reverse index. It deliberately
- * never joins the frozen shared USER message graph.
+ * Read-only structural report over the thin reverse index.
  */
 export async function loadOutboundProviderIndexHealthReport(input: {
 	db: D1Database

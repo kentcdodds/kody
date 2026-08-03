@@ -2,7 +2,6 @@ export type AccountRetentionDisposition =
 	| { table: string; kind: 'scheduled_policy' }
 	| { table: string; kind: 'alternate_cleanup'; reason: string }
 	| { table: string; kind: 'durable_forever'; reason: string }
-	| { table: string; kind: 'pending_drop'; reason: string }
 
 export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposition> =
 	[
@@ -13,30 +12,6 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 		{ table: 'workflow_runs', kind: 'scheduled_policy' },
 		{ table: 'platform_feedback', kind: 'scheduled_policy' },
 		{ table: 'published_bundle_artifacts', kind: 'scheduled_policy' },
-		{
-			table: 'email_delivery_events',
-			kind: 'pending_drop',
-			reason:
-				'Frozen USER rollback snapshot pending physical drop; scoped legacy retention may delete expired metadata and account deletion removes owner rows after Mailbox purge.',
-		},
-		{
-			table: 'email_messages',
-			kind: 'pending_drop',
-			reason:
-				'Frozen USER rollback snapshot pending physical drop; scoped legacy retention may delete expired unindexed metadata and account deletion removes owner rows after Mailbox purge.',
-		},
-		{
-			table: 'email_attachments',
-			kind: 'pending_drop',
-			reason:
-				'Frozen USER rollback snapshot pending physical drop; attachment metadata follows scoped legacy message cleanup only.',
-		},
-		{
-			table: 'email_threads',
-			kind: 'pending_drop',
-			reason:
-				'Frozen USER rollback snapshot pending physical drop; orphan metadata follows scoped legacy message cleanup only.',
-		},
 		{ table: 'usage_rollups', kind: 'scheduled_policy' },
 		{ table: 'feature_flag_exposure_rollups', kind: 'scheduled_policy' },
 		{ table: 'stripe_webhook_events', kind: 'scheduled_policy' },
@@ -56,25 +31,25 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			table: 'system_email_delivery_events',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 delivery events are excluded from account retention; the dedicated system-email retention lane applies its 90-day policy and atomically removes each legacy mirror.',
+				'Operator-owned D1 delivery events are excluded from account retention; the dedicated system-email retention lane applies its 90-day policy.',
 		},
 		{
 			table: 'system_email_messages',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 messages are excluded from account retention; the dedicated authority enforces the 90-day age and 5,000-message cap with R2-before-row deletion and atomic legacy-mirror cleanup.',
+				'Operator-owned D1 messages are excluded from account retention; the dedicated authority enforces the 90-day age and 5,000-message cap with R2-before-row deletion.',
 		},
 		{
 			table: 'system_email_attachments',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 attachment metadata follows dedicated system messages; referenced R2 objects are deleted before authority metadata and the legacy mirror.',
+				'Operator-owned D1 attachment metadata follows dedicated system messages; referenced R2 objects are deleted before authority metadata.',
 		},
 		{
 			table: 'system_email_threads',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 threads are pruned from the dedicated authority when orphaned, with atomic legacy-mirror cleanup.',
+				'Operator-owned D1 threads are pruned from the dedicated authority when orphaned.',
 		},
 		{
 			table: 'mcp_memories',

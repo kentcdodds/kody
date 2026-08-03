@@ -198,21 +198,11 @@ test('static authority rejects dynamic D1 SQL composition, including batched sta
 	}
 })
 
-test('static authority permits Mailbox SQLite and scoped cleanup SQL', async () => {
+test('static authority permits Mailbox SQLite but no production D1 shared graph SQL', async () => {
 	await using fixture = await authorityFixture({
 		'packages/worker/src/email/mailbox-store.ts': `
 			export function read(sql: SqlStorage, statement: string) {
 				return sql.exec(statement)
-			}
-		`,
-		'packages/worker/src/email/legacy-user-email-graph-cleanup.ts': `
-			export function remove(db: D1Database) {
-				return db.prepare(\`DELETE FROM email_messages WHERE id = ?\`)
-			}
-		`,
-		'packages/worker/src/email/system-email-graph-store.ts': `
-			export function read(db: D1Database, table: string) {
-				return db.prepare(\`SELECT * FROM \${table}\`)
 			}
 		`,
 		'packages/worker/src/email/unrelated.tsx': `

@@ -32,7 +32,6 @@ import {
 	upsertOutboundProviderIndexRow,
 } from './outbound-provider-index.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
-import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
 import { assertUserEmailGraphAuthority } from './user-email-graph-authority.ts'
 import {
 	recordEmailReportingEvent,
@@ -516,7 +515,7 @@ export async function sendOutboundEmail(
 		...unsafeInput,
 		env: {
 			...unsafeInput.env,
-			APP_DB: liveUserEmailD1Database(unsafeInput.env.APP_DB),
+			APP_DB: unsafeInput.env.APP_DB,
 		},
 	}
 	const write = async (): Promise<EmailSendResult> => {

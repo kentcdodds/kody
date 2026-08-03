@@ -359,16 +359,23 @@ Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
 config, and expect users to reauthorize OAuth and remote connectors.
 
-### Mailbox authority rollback repair
+### Mailbox authority and the pre-drop D1 backup
 
-The frozen shared USER D1 graph is not a rollback or roll-forward source. It
-contains only the pre-cutover snapshot and may be reduced by account-deletion or
-retention privacy cleanup. A recovery that changes USER email authority must
-quiesce ingress and scheduled/effect consumers, restore the authoritative
-Mailbox and `EMAIL_BLOBS` snapshots, verify owner inventories and
-effect/finalization state, then use reviewed operator tooling to populate any
-replacement target from Mailbox before changing code authority. The retired
-D1-to-Mailbox parity purge/rebuild path must not be reintroduced.
+Migration 0134 permanently drops the shared USER/system rollback graph. Its
+fresh approval records the immutable backup object key and SHA-256 in
+`email_user_graph_authority`. To inspect or recover deleted historical rows,
+download that exact object, verify its SHA-256 before import, restore it into an
+isolated D1 database, and verify the approved owner/thread/message/attachment/
+event manifest plus `PRAGMA foreign_key_check`. Do not point a live Worker at
+that isolated pre-0134 schema.
+
+The pre-drop D1 object is forensic/disaster-recovery evidence, not a USER
+serving source. A production recovery must quiesce ingress and scheduled/effect
+consumers, restore the authoritative Mailbox and `EMAIL_BLOBS` snapshots, and
+verify owner inventories and effect/finalization state. A full D1 restore to
+0133 state also requires the reviewed migration/conductor procedure to recreate
+the approval table and deliberately reapply 0134; the old D1-to-Mailbox
+parity/rebuild path must not be reintroduced.
 
 ## Schedules and freshness
 

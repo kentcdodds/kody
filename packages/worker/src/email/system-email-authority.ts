@@ -11,18 +11,6 @@ const unsupportedSystemProviderLinksSql = `(
 		SELECT 1
 		FROM email_outbound_provider_index provider_index
 		WHERE provider_index.user_id = '${systemEmailOwnerId}'
-			OR EXISTS (
-				SELECT 1
-				FROM email_messages legacy_message
-				WHERE legacy_message.id = provider_index.message_id
-					AND legacy_message.user_id = '${systemEmailOwnerId}'
-			)
-	)
-	OR EXISTS (
-		SELECT 1
-		FROM email_messages legacy_message
-		WHERE legacy_message.user_id = '${systemEmailOwnerId}'
-			AND legacy_message.provider_message_id IS NOT NULL
 	)
 	OR EXISTS (
 		SELECT 1
@@ -81,4 +69,19 @@ export function systemEmailAuthorityGuardStatement(db: D1Database) {
 		)
 		OR ${unsupportedSystemProviderLinksSql}`,
 	)
+}
+
+/**
+ * Commit dedicated system-email statements with the authority/provider gate in
+ * the same D1 batch. The final guard result is intentionally not exposed.
+ */
+export async function commitSystemEmailAuthorityBatch(input: {
+	db: D1Database
+	statements: ReadonlyArray<D1PreparedStatement>
+}) {
+	const results = await input.db.batch([
+		...input.statements,
+		systemEmailAuthorityGuardStatement(input.db),
+	])
+	return results.slice(0, input.statements.length)
 }

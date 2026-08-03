@@ -44,9 +44,7 @@ async function recordUserInboundUsageRollup(input: {
 	usageDurationMs: number
 	now: Date
 }) {
-	// The old local fallback depended on a foreign key into the frozen shared
-	// USER delivery graph. Do not recreate that dependency merely to support a
-	// local aggregate.
+	// Keep this aggregate in Analytics Engine; D1 has no USER delivery graph.
 	if (!input.env.USAGE_EVENTS) return 'suppressed' as const
 	await recordUsage(input.env, {
 		userId: input.userId,

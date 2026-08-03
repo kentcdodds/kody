@@ -284,7 +284,7 @@ async function loadEmailInsightsRows(input: {
 	// Wrangler exposes a local Analytics Engine binding, but its SQL API cannot
 	// query the emulated dataset. The D1 entitlement_daily_counters mirror is
 	// retired, so local/dev email aggregates degrade explicitly to empty rather
-	// than consulting the frozen shared USER graph.
+	// than consulting a D1 USER graph.
 	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
 		console.warn('admin-insights-email-quota-aggregate-unavailable', {
 			reason: 'entitlement-daily-counters-retired-local-dev',

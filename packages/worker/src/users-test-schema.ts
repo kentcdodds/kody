@@ -74,25 +74,6 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	active_write_expires_at: { create: 'TEXT' },
 	d1_storage_bytes: { create: 'INTEGER NOT NULL DEFAULT 0' },
 	d1_storage_bytes_updated_at: { create: 'TEXT' },
-	mailbox_parity_checked_at: { create: 'TEXT' },
-	mailbox_parity_matching_since: { create: 'TEXT' },
-	mailbox_parity_mismatch_count: {
-		create:
-			'INTEGER NOT NULL DEFAULT 0 CHECK (mailbox_parity_mismatch_count >= 0)',
-		alter:
-			'INTEGER NOT NULL DEFAULT 0 CHECK (mailbox_parity_mismatch_count >= 0)',
-	},
-	mailbox_parity_last_error: { create: 'TEXT' },
-	mailbox_parity_content_watermark_at: { create: 'TEXT' },
-	mailbox_parity_content_replay_upper_at: { create: 'TEXT' },
-	mailbox_parity_content_replay_cursor_updated_at: { create: 'TEXT' },
-	mailbox_parity_content_replay_cursor_id: { create: 'TEXT' },
-	mailbox_parity_message_backfill_cursor_created_at: { create: 'TEXT' },
-	mailbox_parity_message_backfill_cursor_id: { create: 'TEXT' },
-	mailbox_parity_message_backfill_completed_at: { create: 'TEXT' },
-	mailbox_parity_event_backfill_cursor_created_at: { create: 'TEXT' },
-	mailbox_parity_event_backfill_cursor_id: { create: 'TEXT' },
-	mailbox_parity_event_backfill_completed_at: { create: 'TEXT' },
 }
 
 /**

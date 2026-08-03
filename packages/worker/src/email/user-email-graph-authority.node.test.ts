@@ -8,7 +8,9 @@ function dbWithMarker(
 	row: {
 		owner_count: number
 		frozen_at: string
-		max_parity_age_hours: number
+		dropped_at: string
+		backup_object_key: string
+		backup_sha256: string
 	} | null,
 ) {
 	return {
@@ -38,7 +40,9 @@ test('USER writes require the authority marker while system writes are unaffecte
 	const db = dbWithMarker({
 		owner_count: 12,
 		frozen_at: '2026-08-03T00:00:00.000Z',
-		max_parity_age_hours: 6,
+		dropped_at: '2026-08-03T15:00:00.000Z',
+		backup_object_key: 'd1/production/fresh.sql.gz',
+		backup_sha256: 'a'.repeat(64),
 	})
 	await expect(
 		assertUserEmailGraphAuthority({ db, ownerId: 'user-1' }),
@@ -46,6 +50,8 @@ test('USER writes require the authority marker while system writes are unaffecte
 	await expect(loadUserEmailGraphAuthorityMarker(db)).resolves.toEqual({
 		ownerCount: 12,
 		frozenAt: '2026-08-03T00:00:00.000Z',
-		maxParityAgeHours: 6,
+		droppedAt: '2026-08-03T15:00:00.000Z',
+		backupObjectKey: 'd1/production/fresh.sql.gz',
+		backupSha256: 'a'.repeat(64),
 	})
 })
