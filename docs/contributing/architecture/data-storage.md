@@ -743,16 +743,17 @@ The only USER mutations are privacy lifecycle deletes from
 frozen rows after Mailbox/R2 inventory and purge, and retention may prune old
 frozen rows. Aggregate backup verification is the only allowed USER read. Static
 import/SQL architecture checks enforce those boundaries. Every live email module
-must pass an inline string literal to D1 `prepare`; template substitutions,
-concatenation, variables, and helper-composed SQL are rejected even when the
-prepared statement is passed inside `batch`. Exact dedicated
-system/legacy-cleanup modules are the authority allowlist, while the runtime
-marked-SQL guard implementation is necessarily exempt because it validates its
-SQL argument before preparing it. That runtime guard is defense in depth. The
-former `mailbox_parity` lane, D1-to-Mailbox rebuild, and `mailbox-read-cutover`
-flag are retired. This step does not drop the tables, columns, triggers, parity
-columns, or tombstones. `system:email` remains on its dedicated D1 graph and
-retention path.
+must pass an inline string literal to D1 `prepare` and direct `exec`; template
+substitutions, concatenation, variables, and helper-composed SQL are rejected
+even when the prepared statement is passed inside `batch`. Durable Object
+`storage.sql` calls remain local SQLite and are exempt by exact file/receiver.
+Exact dedicated system/legacy-cleanup modules are the authority allowlist, while
+the runtime marked-SQL guard implementation is necessarily exempt because it
+validates its SQL argument before preparing it. That runtime guard is defense in
+depth. The former `mailbox_parity` lane, D1-to-Mailbox rebuild, and
+`mailbox-read-cutover` flag are retired. This step does not drop the tables,
+columns, triggers, parity columns, or tombstones. `system:email` remains on its
+dedicated D1 graph and retention path.
 
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy

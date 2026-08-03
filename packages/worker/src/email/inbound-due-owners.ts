@@ -8,6 +8,7 @@ export const mailboxInboundStaleDeliveryAgeMs = 48 * 60 * 60 * 1000
 export type InboundDueOwner = {
 	userId: string
 	dueAt: string
+	reason: string
 	attemptCount: number
 }
 
@@ -89,7 +90,7 @@ export async function listDueInboundOwners(input: {
 }): Promise<Array<InboundDueOwner>> {
 	const rows = await input.db
 		.prepare(
-			`SELECT user_id, due_at, attempt_count
+			`SELECT user_id, due_at, reason, attempt_count
 			FROM email_inbound_due_owners
 			WHERE due_at <= ?
 			ORDER BY
@@ -105,11 +106,13 @@ export async function listDueInboundOwners(input: {
 		.all<{
 			user_id: string
 			due_at: string
+			reason: string
 			attempt_count: number
 		}>()
 	return (rows.results ?? []).map((row) => ({
 		userId: row.user_id,
 		dueAt: row.due_at,
+		reason: row.reason,
 		attemptCount: Number(row.attempt_count),
 	}))
 }
