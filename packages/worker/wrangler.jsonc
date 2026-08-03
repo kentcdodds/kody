@@ -3,6 +3,17 @@
 	"name": "kody",
 	"compatibility_date": "2026-04-16",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// Paid default is 10_000 subrequests/invocation. The MCP Agent Durable
+	// Object keeps a long-lived session and each mutating storage_query pays
+	// several D1 + StorageRunner RPCs (entitlement baseline, sqlQuery,
+	// estimate refresh). Production hit "Too many API requests by single
+	// Worker invocation" (Sentry 7650160242 / KODY-CLOUDFLARE-2S) during a
+	// burst of ~25 storage_query calls in one session — raise the ceiling
+	// for that long-lived DO workload. Inheritable by env.production /
+	// env.preview. https://developers.cloudflare.com/workers/wrangler/configuration/#limits
+	"limits": {
+		"subrequests": 100000,
+	},
 	"main": "./src/index.ts",
 	"minify": true,
 	"upload_source_maps": true,
