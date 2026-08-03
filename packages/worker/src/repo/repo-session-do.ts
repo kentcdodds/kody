@@ -1380,6 +1380,19 @@ class RepoSessionBase extends DurableObject<Env> {
 			content: string
 			diff: string
 		}> = []
+		// Two phases so a patch set is all-or-nothing: plan (and validate) every
+		// patch before any workspace mutation, so an unclean or oversized later
+		// patch cannot leave earlier patches partially applied. The staged
+		// overlay lets sequential patches in one set observe prior results in
+		// both dry-run and real apply.
+		const stagedContents = new Map<string, string | null>()
+		const plannedOps: Array<{
+			workspacePath: string
+			sourceWorkspacePath: string
+			isDelete: boolean
+			isRename: boolean
+			nextContent: string
+		}> = []
 		for (const patch of patches) {
 			const oldPath =
 				patch.oldFileName && patch.oldFileName !== '/dev/null'
@@ -1402,8 +1415,11 @@ class RepoSessionBase extends DurableObject<Env> {
 				sourcePath,
 				repoSessionWorkspacePrefix,
 			)
+			const stagedContent = stagedContents.get(sourceWorkspacePath)
 			const currentContent =
-				(await this.workspace.readFile(sourceWorkspacePath)) ?? ''
+				stagedContent !== undefined
+					? (stagedContent ?? '')
+					: ((await this.workspace.readFile(sourceWorkspacePath)) ?? '')
 			const nextContent = applyPatch(currentContent, patch)
 			if (nextContent === false) {
 				throw new Error(
@@ -1419,22 +1435,41 @@ class RepoSessionBase extends DurableObject<Env> {
 					}),
 				)
 			}
-			if (!input.dryRun) {
-				if (patch.newFileName === '/dev/null') {
-					await this.workspace.rm(workspacePath, { force: true })
-				} else {
-					await this.workspace.writeFile(workspacePath, nextContent)
-					if (oldPath && newPath && oldPath !== newPath) {
-						await this.workspace.rm(sourceWorkspacePath, { force: true })
-					}
+			const isDelete = patch.newFileName === '/dev/null'
+			const isRename = Boolean(oldPath && newPath && oldPath !== newPath)
+			if (isDelete) {
+				stagedContents.set(workspacePath, null)
+			} else {
+				stagedContents.set(workspacePath, nextContent)
+				if (isRename) {
+					stagedContents.set(sourceWorkspacePath, null)
 				}
 			}
+			plannedOps.push({
+				workspacePath,
+				sourceWorkspacePath,
+				isDelete,
+				isRename,
+				nextContent,
+			})
 			edits.push({
 				path: targetPath,
 				changed: nextContent !== currentContent,
 				content: nextContent,
 				diff: formatPatch(patch),
 			})
+		}
+		if (!input.dryRun) {
+			for (const op of plannedOps) {
+				if (op.isDelete) {
+					await this.workspace.rm(op.workspacePath, { force: true })
+				} else {
+					await this.workspace.writeFile(op.workspacePath, op.nextContent)
+					if (op.isRename) {
+						await this.workspace.rm(op.sourceWorkspacePath, { force: true })
+					}
+				}
+			}
 		}
 		return {
 			dryRun: input.dryRun ?? false,

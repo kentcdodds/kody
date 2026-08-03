@@ -574,8 +574,10 @@ create and edit it with a normal git client without round-tripping each file
 change through `package_save` or `repo_run_commands`. This lane supports binary
 assets, which `package_save` and repo sessions do not.
 
-Individual files may be at most 10 MiB. Publish checks reject any file over that
-per-file limit (and any source root over the aggregate publish caps) with
+Individual files may be at most 10 MiB (10,485,760 bytes), measured as the
+file's stored byte length — UTF-8 bytes for text files, raw bytes for binary
+assets. Publish checks reject any file over that per-file limit (and any source
+root over the aggregate publish caps) with
 guidance to host the file on storage you manage — for example Cloudflare R2,
 Amazon S3, Dropbox, or Google Drive — and commit a small link or pointer file
 instead. Kody never rewrites your files into pointers for you. The Artifacts

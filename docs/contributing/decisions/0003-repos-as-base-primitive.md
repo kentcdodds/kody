@@ -29,7 +29,8 @@ repos are live-at-HEAD with no publish step.
 Two supporting policies:
 
 1. **Large files are gated explicitly, never rewritten.** Repo write and publish
-   paths reject files over a per-file limit (10 MiB) with guidance to host large
+   paths reject files over a per-file limit — 10 MiB, meaning 10,485,760 stored
+   bytes (UTF-8 for text, raw bytes for binary) — with guidance to host large
    files externally and commit a link. Kody does not transparently spill files
    to blob storage; Artifacts itself rejects pushes above ~32 MiB of
    decompressed pack content with a raw HTTP 413 (measured 2026-08-03), and git

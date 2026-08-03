@@ -108,6 +108,14 @@ export async function syncArtifactSourceSnapshot(
 	}
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source) return null
+	// Per-user isolation: every caller passes the owning user's id (fleet
+	// codemods pass the package owner, not the acting admin). A mismatch means
+	// a bug upstream, so fail closed before any repo write.
+	if (source.user_id !== input.userId) {
+		throw new Error(
+			'Entity source ownership mismatch: refusing to sync a repo snapshot for another user.',
+		)
+	}
 	const sessionId = buildSyncSessionId(source.id)
 	const session = repoSessionRpc(input.env, sessionId)
 	const edits = Object.entries(input.files).map(([path, content]) => ({

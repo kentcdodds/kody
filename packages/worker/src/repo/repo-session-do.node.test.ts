@@ -792,6 +792,41 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 	)
 })
 
+test('git apply is all-or-nothing when a later patch exceeds the size limit', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/keep.ts') return 'export const keep = false\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const oversizedLine = 'x'.repeat(maxRepoSourceFileBytes + 1)
+	await expect(
+		repoSession.runCommands({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			runChecks: false,
+			publish: false,
+			commands: [
+				"git apply <<'PATCH'",
+				'--- a/src/keep.ts',
+				'+++ b/src/keep.ts',
+				'@@ -1 +1 @@',
+				'-export const keep = false',
+				'+export const keep = true',
+				'--- /dev/null',
+				'+++ b/assets/huge.txt',
+				'@@ -0,0 +1 @@',
+				`+${oversizedLine}`,
+				'PATCH',
+			].join('\n'),
+		}),
+	).rejects.toThrow(/"assets\/huge\.txt".*per-file limit/s)
+	// The valid first patch must not have been written before the failure.
+	expect(mockModule.workspaceWriteFile).not.toHaveBeenCalled()
+	expect(mockModule.workspaceRm).not.toHaveBeenCalled()
+})
+
 test('applyEdits rejects a write over the per-file repo size limit with hosting guidance', async () => {
 	setCommonSessionFixtures()
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
