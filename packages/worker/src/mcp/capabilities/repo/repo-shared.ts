@@ -358,6 +358,7 @@ export const repoLogOutputSchema = z.object({
 export const repoCommitInputSchema = repoSessionIdSchema.extend({
 	message: z
 		.string()
+		.trim()
 		.min(1)
 		.describe('Commit message. Whitespace-only messages are rejected.'),
 })

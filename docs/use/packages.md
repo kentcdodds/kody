@@ -508,10 +508,11 @@ When `job_update` receives a replacement `code` string, Kody publishes a new
 commit on the job's repo-backed source, and subsequent runs execute the updated
 module. That is usually the easiest way to change the source of a non-package
 job, since there is no `package_get_git_remote` equivalent for non-package job
-sources. For multi-file edits, open the job's `source_id` with
-`repo_edit_files`, `repo_apply_patch`, and related file-level session
-capabilities instead. Job code must default export a function that receives the
-job `params` as its first argument; `kody:runtime` does not export `params`.
+sources. For multi-file edits, open a session on the job's `source_id` with
+`repo_open_session` first, then use `repo_edit_files`, `repo_apply_patch`, and
+related file-level session capabilities against that `session_id`. Job code must
+default export a function that receives the job `params` as its first argument;
+`kody:runtime` does not export `params`.
 
 ## Save and edit packages
 

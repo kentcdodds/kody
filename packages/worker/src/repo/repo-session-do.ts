@@ -838,12 +838,12 @@ class RepoSessionBase extends DurableObject<Env> {
 					`repo session move edit source and destination are the same: "${fromPath}".`,
 				)
 			}
-			if (moveTargets.has(toPath)) {
+			if (moveTargets.has(editConflictKey(toPath))) {
 				throw new Error(
 					`repo session move edits cannot target the same destination twice: "${toPath}".`,
 				)
 			}
-			moveTargets.add(toPath)
+			moveTargets.add(editConflictKey(toPath))
 			const sourceWorkspacePath = resolveRepoWorkspacePath(
 				fromPath,
 				repoSessionWorkspacePrefix,
@@ -928,6 +928,9 @@ class RepoSessionBase extends DurableObject<Env> {
 								options: edit.options,
 							}
 						case 'writeJson':
+							if (edit.value === undefined) {
+								throw new Error('repo session writeJson edits require a value.')
+							}
 							return {
 								kind: 'writeJson' as const,
 								path,
@@ -1759,7 +1762,9 @@ class RepoSessionBase extends DurableObject<Env> {
 		const plannedRestores: Array<{
 			path: string
 			workspacePath: string
-			content: string
+			// Raw blob bytes: decoding to a string would corrupt binary files
+			// (invalid UTF-8 becomes U+FFFD), so restores write bytes verbatim.
+			bytes: Uint8Array
 		}> = []
 		for (const path of input.paths) {
 			const trimmedPath = path.trim()
@@ -1779,7 +1784,7 @@ class RepoSessionBase extends DurableObject<Env> {
 						trimmedPath,
 						repoSessionWorkspacePrefix,
 					),
-					content: new TextDecoder().decode(result.blob),
+					bytes: result.blob,
 				})
 			} catch (error) {
 				throw new Error(
@@ -1789,7 +1794,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		}
 		for (const restore of plannedRestores) {
-			await this.workspace.writeFile(restore.workspacePath, restore.content)
+			await this.workspace.writeFileBytes(restore.workspacePath, restore.bytes)
 		}
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionId,

@@ -18,7 +18,8 @@ local filesystem and git access:
 - **Tool-only lane.** Without local filesystem/git access, create with
   `package_save` (complete UTF-8 text file set; no binary files) and edit
   through repo sessions (`repo_open_session`, `repo_edit_files`,
-  `repo_write_file`, `repo_commit`, `repo_publish_session`).
+  `repo_write_file`, `repo_commit`, then `repo_run_checks` before
+  `repo_publish_session`).
 
 If a request needs binary assets, many-file changes, or local build/test loops
 and you are tool-only, tell the user the task fits a coding-capable agent better

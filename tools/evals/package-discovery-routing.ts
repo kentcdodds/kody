@@ -286,11 +286,11 @@ function scoreCompletedResult(
 		const hasScheduleOperation = /\bjob_schedule(?:_once)?\b/.test(code)
 		const authoringOperationCount = countMatches(
 			code,
-			/\b(?:package_save|package_get_git_remote|package_publish_external_push|repo_open_session|repo_write_file|repo_edit_files|repo_run_checks|repo_publish_session)\b/g,
+			/\b(?:package_save|package_get_git_remote|package_publish_external_push|repo_open_session|repo_write_file|repo_edit_files|repo_apply_patch|repo_run_checks|repo_publish_session)\b/g,
 		)
 		const eventAuthoringMutationCount = countMatches(
 			code,
-			/\b(?:package_save|package_publish_external_push|repo_write_file|repo_edit_files|repo_publish_session)\b/g,
+			/\b(?:package_save|package_publish_external_push|repo_write_file|repo_edit_files|repo_apply_patch|repo_publish_session)\b/g,
 		)
 		const hasAuthorOperation = authoringOperationCount > 0
 		if (!countedAuthoringCallIds.has(event.callId)) {

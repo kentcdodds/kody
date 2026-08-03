@@ -82,6 +82,7 @@ const mockModule = vi.hoisted(() => {
 				'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		),
 		workspaceWriteFile: vi.fn(async () => undefined),
+		workspaceWriteFileBytes: vi.fn(async () => undefined),
 		workspaceMkdir: vi.fn(async () => undefined),
 		workspaceRm: vi.fn(async () => undefined),
 		workspaceGlob: vi.fn(async () => []),
@@ -150,6 +151,7 @@ function restoreRepoSessionMockBaseline() {
 			'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 	)
 	mockModule.workspaceWriteFile.mockResolvedValue(undefined)
+	mockModule.workspaceWriteFileBytes.mockResolvedValue(undefined)
 	mockModule.workspaceMkdir.mockResolvedValue(undefined)
 	mockModule.workspaceRm.mockResolvedValue(undefined)
 	mockModule.workspaceGlob.mockResolvedValue([])
@@ -294,6 +296,9 @@ vi.mock('@cloudflare/shell', () => ({
 		}
 		writeFile(path: string, content: string) {
 			return mockModule.workspaceWriteFile(path, content)
+		}
+		writeFileBytes(path: string, content: Uint8Array) {
+			return mockModule.workspaceWriteFileBytes(path, content)
 		}
 		mkdir(path: string, options: unknown) {
 			return mockModule.workspaceMkdir(path, options)
@@ -952,9 +957,9 @@ test('restoreFiles restores modified files to the session base commit', async ()
 			oid: 'commit-base',
 		}),
 	)
-	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+	expect(mockModule.workspaceWriteFileBytes).toHaveBeenCalledWith(
 		'/session/src/index.ts',
-		'base content\n',
+		new TextEncoder().encode('base content\n'),
 	)
 	expect(result).toEqual({
 		commit: 'commit-base',

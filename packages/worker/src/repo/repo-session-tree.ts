@@ -43,6 +43,15 @@ export function resolveRepoWorkspacePath(
 	if (!trimmed) {
 		throw new Error('A non-empty repo path is required.')
 	}
+	// User-supplied paths must stay inside the session workspace and out of
+	// git internals: `..` segments escape the prefix and `.git` writes corrupt
+	// the session repository.
+	const segments = trimmed.split('/')
+	if (segments.includes('..') || segments.includes('.git')) {
+		throw new Error(
+			`Repo path "${trimmed}" is not allowed: paths cannot contain ".." or ".git" segments.`,
+		)
+	}
 	if (
 		trimmed === workspacePrefix ||
 		trimmed.startsWith(`${workspacePrefix}/`)
