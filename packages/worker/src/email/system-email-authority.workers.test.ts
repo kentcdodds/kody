@@ -396,6 +396,71 @@ test('dedicated authority operations fail closed if provider links appear after 
 	).rejects.toThrow('refuses unsupported provider links')
 })
 
+test('concurrent system rejection details stop exactly at the atomic daily limit', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-08-03T12:00:00.000Z')
+	const inboxId = `bounded-rejection-inbox-${crypto.randomUUID()}`
+	const detailLimit = 5
+	const attemptCount = 16
+	await env.APP_DB.prepare(
+		`INSERT INTO email_inboxes (
+			id, user_id, name, description, enabled, created_at, updated_at
+		) VALUES (?, ?, 'Bounded rejection test', '', 1, ?, ?)`,
+	)
+		.bind(inboxId, systemEmailOwnerId, now.toISOString(), now.toISOString())
+		.run()
+
+	const counts = await Promise.all(
+		Array.from({ length: attemptCount }, (_unused, index) =>
+			recordBoundedSystemEmailRejection({
+				db: env.APP_DB,
+				inboxId,
+				recipient: `recipient-${index}@example.test`,
+				reason: `reason-${index}`,
+				phase: 'system-limit',
+				now,
+				detailLimit,
+			}),
+		),
+	)
+	expect(counts.toSorted((left, right) => left - right)).toEqual(
+		Array.from({ length: attemptCount }, (_unused, index) => index + 1),
+	)
+
+	const aggregateId = `email-rejections:${inboxId}:2026-08-03`
+	const aggregate = await env.APP_DB.prepare(
+		`SELECT
+			json_extract(dedicated.detail_json, '$.count') AS dedicated_count,
+			json_extract(legacy.detail_json, '$.count') AS legacy_count
+		FROM system_email_delivery_events dedicated
+		INNER JOIN email_delivery_events legacy ON legacy.id = dedicated.id
+		WHERE dedicated.id = ? AND legacy.user_id = ?`,
+	)
+		.bind(aggregateId, systemEmailOwnerId)
+		.first()
+	expect(aggregate).toEqual({
+		dedicated_count: attemptCount,
+		legacy_count: attemptCount,
+	})
+
+	const dedicatedDetails = await env.APP_DB.prepare(
+		`SELECT id FROM system_email_delivery_events
+		WHERE inbox_id = ? AND event_type = 'rejected' AND id != ?
+		ORDER BY id`,
+	)
+		.bind(inboxId, aggregateId)
+		.all<{ id: string }>()
+	const legacyDetails = await env.APP_DB.prepare(
+		`SELECT id FROM email_delivery_events
+		WHERE user_id = ? AND inbox_id = ? AND event_type = 'rejected' AND id != ?
+		ORDER BY id`,
+	)
+		.bind(systemEmailOwnerId, inboxId, aggregateId)
+		.all<{ id: string }>()
+	expect(dedicatedDetails.results).toHaveLength(detailLimit)
+	expect(legacyDetails.results).toEqual(dedicatedDetails.results)
+})
+
 test('system event mirror fails closed on a user-owned id collision', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-08-02T23:00:00.000Z')
