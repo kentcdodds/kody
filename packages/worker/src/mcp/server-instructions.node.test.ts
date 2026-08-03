@@ -104,9 +104,7 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	expect(instructions).toMatch(/`notes`/)
 	expect(instructions).toContain('Prefer concise replies.')
 	expect(instructions).not.toContain('Connected remote connectors')
-	expect(instructions).not.toContain(
-		'Kody repository (for contributors)',
-	)
+	expect(instructions).not.toContain('Kody repository (for contributors)')
 })
 
 test('domain instruction blurbs truncate long descriptions', () => {

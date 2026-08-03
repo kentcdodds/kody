@@ -7,8 +7,7 @@ import { valueSetCapability } from './value-set.ts'
 
 export const valuesDomain = defineDomain({
 	name: capabilityDomainNames.values,
-	description:
-		'Persisted non-secret config for user, app, or session scope.',
+	description: 'Persisted non-secret config for user, app, or session scope.',
 	keywords: ['value', 'config', 'storage', 'non-secret'],
 	capabilities: [
 		valueSetCapability,

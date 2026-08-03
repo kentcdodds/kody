@@ -16,8 +16,7 @@ import { emailUsageGetCapability } from './email-usage-get.ts'
 
 export const emailDomain = defineDomain({
 	name: capabilityDomainNames.email,
-	description:
-		'Per-user inbox primitives for store, notify-self, and reply.',
+	description: 'Per-user inbox primitives for store, notify-self, and reply.',
 	keywords: ['email', 'mail', 'inbox', 'routing'],
 	capabilities: [
 		emailInboxListCapability,

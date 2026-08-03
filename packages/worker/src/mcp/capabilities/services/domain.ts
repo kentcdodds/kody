@@ -7,8 +7,7 @@ import { serviceStopCapability } from './service-stop.ts'
 
 export const servicesDomain = defineDomain({
 	name: capabilityDomainNames.services,
-	description:
-		'Inspect and control long-lived package-owned service runtimes.',
+	description: 'Inspect and control long-lived package-owned service runtimes.',
 	keywords: ['service', 'package service', 'runtime', 'background', 'gateway'],
 	capabilities: [
 		serviceListCapability,

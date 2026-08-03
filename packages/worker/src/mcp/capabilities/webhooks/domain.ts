@@ -9,8 +9,7 @@ import { webhookUrlRotateCapability } from './webhook-url-rotate.ts'
 
 export const webhooksDomain = defineDomain({
 	name: capabilityDomainNames.webhooks,
-	description:
-		'Package-declared inbound webhooks with minted credential URLs.',
+	description: 'Package-declared inbound webhooks with minted credential URLs.',
 	keywords: [
 		'webhook',
 		'inbound',

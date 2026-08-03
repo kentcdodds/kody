@@ -6,8 +6,7 @@ import { runSummaryCapability } from './run-summary.ts'
 
 export const runsDomain = defineDomain({
 	name: capabilityDomainNames.runs,
-	description:
-		'User-level execution history for debugging failed runtimes.',
+	description: 'User-level execution history for debugging failed runtimes.',
 	keywords: [
 		'runs',
 		'history',
