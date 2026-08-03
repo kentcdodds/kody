@@ -85,6 +85,43 @@ function createUnauthorizedResponse(origin: string) {
 	)
 }
 
+function acceptsMediaType(accept: string, mediaType: string) {
+	return accept.split(',').some((range) => {
+		const [type, ...parameters] = range.trim().split(';')
+		if (type?.trim() !== mediaType) return false
+		const quality = parameters
+			.map((parameter) => parameter.trim())
+			.find((parameter) => parameter.startsWith('q='))
+		return quality ? Number(quality.slice(2)) > 0 : true
+	})
+}
+
+function isBrowserMcpNavigation(request: Request) {
+	if (request.method !== 'GET' || request.headers.has('Authorization')) {
+		return false
+	}
+	const accept = request.headers.get('Accept')?.toLowerCase()
+	if (!accept) return false
+	return (
+		acceptsMediaType(accept, 'text/html') &&
+		!accept.includes('text/event-stream') &&
+		!accept.includes('application/json')
+	)
+}
+
+function createMcpBrowserLandingResponse(request: Request) {
+	const onboardingUrl = new URL('/onboarding', request.url).toString()
+	return new Response(
+		`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kody MCP endpoint</title></head><body><main style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><p style="font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:#57606a">Kody secure connection</p><h1>This endpoint is for AI agents</h1><p>You’ve reached Kody’s MCP endpoint. AI agents use this address to connect to Kody, so there isn’t anything to browse here.</p><p><a href="${onboardingUrl}">Follow the guide to connect your agent</a></p></main></body></html>`,
+		{
+			headers: {
+				'Cache-Control': 'no-store',
+				'Content-Type': 'text/html; charset=utf-8',
+			},
+		},
+	)
+}
+
 export function createEmailVerificationRequiredResponse(origin: string) {
 	return Response.json(
 		{
@@ -147,6 +184,10 @@ export async function handleMcpRequest({
 			ip: getRequestIp(request),
 			path: url.pathname,
 		})
+	}
+
+	if (isBrowserMcpNavigation(request)) {
+		return createMcpBrowserLandingResponse(request)
 	}
 
 	// Rejections before a grant resolves are deliberately not audited. They are

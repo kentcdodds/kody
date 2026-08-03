@@ -349,6 +349,80 @@ async function handleMcpRequestAndDrain(
 	return response
 }
 
+test('mcp endpoint serves browser guidance without changing protocol auth challenges', async () => {
+	const origin = 'https://example.com'
+	const env = createEnv(createHelpers())
+	const fetchMcp = () => {
+		throw new Error(
+			'Unauthenticated requests must not reach the MCP transport.',
+		)
+	}
+
+	const browserResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			headers: {
+				Accept:
+					'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			},
+		}),
+		env,
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(browserResponse.status).toBe(200)
+	expect(browserResponse.headers.get('Content-Type')).toBe(
+		'text/html; charset=utf-8',
+	)
+	expect(await browserResponse.text()).toContain(
+		'href="https://example.com/onboarding"',
+	)
+	expect(browserResponse.headers.get('WWW-Authenticate')).toBeNull()
+
+	const protocolRequests = [
+		new Request(`${origin}${mcpResourcePath}`, {
+			headers: { Accept: 'text/event-stream' },
+		}),
+		new Request(`${origin}${mcpResourcePath}`, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: 1,
+				method: 'initialize',
+			}),
+		}),
+		new Request(`${origin}${mcpResourcePath}`, {
+			headers: {
+				Accept: 'text/html',
+				Authorization: 'Bearer invalid-token',
+			},
+		}),
+	]
+
+	for (const request of protocolRequests) {
+		const response = await handleMcpRequestAndDrain({
+			request,
+			env,
+			ctx: createContext(),
+			fetchMcp,
+		})
+		expect(response.status).toBe(401)
+		expect(response.headers.get('Content-Type')).toMatch(/application\/json/)
+		expect(await response.json()).toEqual({
+			error: 'invalid_token',
+			error_description:
+				'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
+		})
+		expectAuthenticateHeader(
+			response.headers.get('WWW-Authenticate') ?? '',
+			origin,
+		)
+	}
+})
+
 test('protected resource metadata and auth challenge resolve origin consistently', async () => {
 	const requestOrigin = 'https://example.com'
 	const workersDevOrigin = 'https://kody-production.kentcdodds.workers.dev'
