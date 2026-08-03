@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import {
 	buildDiscoveryPrompt,
@@ -20,9 +21,11 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	expect(
 		buildDiscoveryPrompt({
 			env: {},
-			requestUrl: 'https://heykody.dev/onboarding',
+			requestUrl: 'https://preview.example/onboarding',
 		}),
-	).toContain('https://heykody.dev')
+	).toBe(
+		"I'm deciding whether Kody (https://preview.example) would be useful for me. Read https://github.com/kentcdodds/kody/blob/main/docs/use/what-can-kody-do.md and follow its links for anything you need more detail on. Interview me conversationally about the tools I use, recurring chores I do by hand, and automations I've wished for. Ask at most 2 short questions per message, then wait for my answer. Keep each message under roughly 120 words until your final recommendations. Finish with 3–5 specific things Kody could do for me, ranked by payoff versus setup effort, each with a concrete first step. Don't set anything up yet — this works before I have an account. After the ranked list, finish with a short \"Next steps if you want to connect me to Kody\" section. Point me to https://preview.example/onboarding and explain that the only setup is adding Kody as an MCP server there — there is no CLI to install.",
+	)
 
 	expect(
 		loadPublicOnboardingData({
@@ -127,4 +130,29 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)
 	expect(whenProviderListingFails.needsOnboarding).toBe(true)
+})
+
+test('the documented Try it prompt matches the production discovery prompt', async () => {
+	const documentation = await readFile(
+		new URL('../../../../docs/use/what-can-kody-do.md', import.meta.url),
+		'utf8',
+	)
+	const tryItSection = documentation
+		.split(/^## /m)
+		.find((section) => section.startsWith('Try it\n'))
+	expect(tryItSection, 'docs must include a Try it section').toBeDefined()
+
+	const documentedPrompt = tryItSection
+		?.split('\n')
+		.filter((line) => line.startsWith('>'))
+		.map((line) => line.replace(/^>\s?/, ''))
+		.join(' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+	expect(documentedPrompt).toBe(
+		buildDiscoveryPrompt({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
+	)
 })

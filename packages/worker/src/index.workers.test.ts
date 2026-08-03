@@ -52,14 +52,6 @@ const mocks = vi.hoisted(() => ({
 		updated: 0,
 		failed: 0,
 	})),
-	reconcileMailboxParity: vi.fn(async () => ({
-		scanned: 0,
-		backfilled: 0,
-		compared: 0,
-		matched: 0,
-		mismatched: 0,
-		failed: 0,
-	})),
 }))
 
 vi.mock('./jobs/reconcile-artifacts-pushes.ts', () => ({
@@ -76,10 +68,6 @@ vi.mock('#worker/email/system-email.ts', () => ({
 
 vi.mock('#worker/email/reconcile-inbound-deliveries.ts', () => ({
 	sweepStaleInboundDeliveries: mocks.sweepStaleInboundDeliveries,
-}))
-
-vi.mock('#worker/email/mailbox-reconcile.ts', () => ({
-	reconcileMailboxParity: mocks.reconcileMailboxParity,
 }))
 
 vi.mock('#app/retention.ts', () => ({

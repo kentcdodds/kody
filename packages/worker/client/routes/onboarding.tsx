@@ -39,6 +39,7 @@ import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
+	focusRingCss,
 	getAlertCardCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
@@ -310,6 +311,7 @@ export function OnboardingRoute(handle: Handle) {
 											css({
 												...stepIndicatorButtonCss,
 												...(isActive ? activeStepIndicatorButtonCss : {}),
+												'&:focus-visible': focusRingCss,
 											}),
 											on('click', () => selectStep(step.number)),
 										]}
@@ -317,7 +319,11 @@ export function OnboardingRoute(handle: Handle) {
 										<span mix={css(stepNumberCss)}>{step.number}</span>
 										<span>{step.label}</span>
 										{isComplete ? (
-											<span aria-label="Complete" mix={css(stepCompleteCss)}>
+											<span
+												role="img"
+												aria-label="Complete"
+												mix={css(stepCompleteCss)}
+											>
 												✓
 											</span>
 										) : null}

@@ -14,17 +14,15 @@ import {
 	type EmailProcessingStatus,
 	type EmailThreadRecord,
 } from './types.ts'
-import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
+import {
+	assertSystemEmailGraphAuthority,
+	commitSystemEmailAuthorityBatch,
+} from './system-email-authority.ts'
 import {
 	systemEmailAttachmentColumns,
-	systemEmailGraphColumnContracts,
 	systemEmailMessageColumns,
 	systemEmailThreadColumns,
 } from './system-email-graph-columns.ts'
-import {
-	commitSystemEmailGraphMutations,
-	systemEmailGraphContract,
-} from './system-email-graph-transaction.ts'
 
 type DeleteSystemEmailMessageByIdResult = {
 	messageFound: boolean
@@ -37,23 +35,6 @@ type DeleteSystemEmailMessageByIdResult = {
 		deleted: boolean
 	}>
 }
-
-const threadContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'threads',
-)
-const messageContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'messages',
-)
-const attachmentContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'attachments',
-)
-const deliveryEventContract = systemEmailGraphContract(
-	systemEmailGraphColumnContracts,
-	'deliveryEvents',
-)
 
 function nowIso() {
 	return new Date().toISOString()
@@ -219,46 +200,27 @@ export async function createSystemEmailThread(input: {
 			systemEmailOwnerId,
 			...(fence ? [fence.deliveryId, fence.storageLease] : []),
 		)
-	const legacy = input.db
-		.prepare(
-			`${prefix} INTO email_threads (
-				id, user_id, ${systemEmailThreadColumns.slice(1).join(', ')}
-			)
-			SELECT ?, ?, ${systemEmailThreadColumns
-				.slice(1)
-				.map(() => '?')
-				.join(', ')}
-			WHERE ${ownerFence}
-				AND ${
-					fence
-						? `EXISTS (
-							SELECT 1 FROM system_email_delivery_events
-							WHERE id = ? AND state = 'storing' AND storage_lease = ?
-						)`
-						: '1'
-				}`,
-		)
-		.bind(
-			row.id,
-			systemEmailOwnerId,
-			...values.slice(1),
-			row.inbox_id,
-			row.inbox_id,
-			systemEmailOwnerId,
-			...(fence ? [fence.deliveryId, fence.storageLease] : []),
-		)
-	await commitSystemEmailGraphMutations({
+	const [insertResult] = await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		mutations: [
-			{
-				contract: threadContract,
-				id: row.id,
-				dedicated,
-				legacy,
-				expectation: 'present',
-			},
-		],
+		statements: [dedicated],
 	})
+	if (Number(insertResult?.meta.changes ?? 0) === 0) {
+		if (input.ignoreConflict) {
+			const existing = await input.db
+				.prepare(
+					`SELECT *, '${systemEmailOwnerId}' AS user_id
+					FROM system_email_threads
+					WHERE id = ?
+					LIMIT 1`,
+				)
+				.bind(row.id)
+				.first<Record<string, unknown>>()
+			if (existing) return threadRecord(existing)
+		}
+		throw new Error(
+			'System email thread insert rejected an invalid operator-owned inbox reference.',
+		)
+	}
 	return threadRecord(row)
 }
 
@@ -379,51 +341,18 @@ export async function insertSystemEmailMessage(input: {
 			row.thread_id,
 			...(fence ? [fence.deliveryId, fence.storageLease] : []),
 		)
-	const directionIndex = columns.indexOf('direction')
-	if (directionIndex < 0 || columns.indexOf('id') < 0) {
-		throw new Error('System email message columns require id and direction.')
-	}
-	const legacyColumns = [
-		...columns.slice(0, directionIndex + 1),
-		'user_id',
-		...columns.slice(directionIndex + 1),
-	]
-	const legacyValues = legacyColumns.map((column) =>
-		column === 'user_id' ? systemEmailOwnerId : row[column as keyof typeof row],
-	)
-	const legacy = input.db
-		.prepare(
-			`INSERT INTO email_messages (${legacyColumns.join(', ')})
-			SELECT ${legacyColumns.map(() => '?').join(', ')}
-			WHERE ${sharedReferenceFenceSql}
-				AND (? IS NULL OR EXISTS (
-					SELECT 1 FROM email_threads WHERE id = ? AND user_id = ?
-				))
-				AND ${deliveryFenceSql}`,
-		)
-		.bind(
-			...legacyValues,
-			...sharedReferenceValues,
-			row.thread_id,
-			row.thread_id,
-			systemEmailOwnerId,
-			...(fence ? [fence.deliveryId, fence.storageLease] : []),
-		)
-	const { mutationResults } = await commitSystemEmailGraphMutations({
+	const [insertResult] = await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		mutations: [
-			{
-				contract: messageContract,
-				id: row.id,
-				dedicated,
-				legacy,
-				expectation: 'present',
-			},
-		],
+		statements: [dedicated],
 	})
-	if (fence && Number(mutationResults[0]?.dedicated?.meta.changes ?? 0) === 0) {
+	if (Number(insertResult?.meta.changes ?? 0) === 0) {
+		if (fence) {
+			throw new Error(
+				'Inbound delivery storage lease was lost before system message insert.',
+			)
+		}
 		throw new Error(
-			'Inbound delivery storage lease was lost before system message insert.',
+			'System email message insert rejected an invalid dedicated reference.',
 		)
 	}
 	return messageRecord(row)
@@ -456,10 +385,13 @@ export async function insertSystemEmailAttachments(input: {
 				WHERE id = ? AND state = 'storing' AND storage_lease = ?
 			)`
 		: '1'
-	const mutations = []
+	const statements: Array<D1PreparedStatement> = []
+	const attachmentIds: Array<string> = []
 	for (const attachment of input.attachments) {
+		const attachmentId = attachment.id ?? crypto.randomUUID()
+		attachmentIds.push(attachmentId)
 		const values = [
-			attachment.id ?? crypto.randomUUID(),
+			attachmentId,
 			input.messageId,
 			attachment.filename ?? null,
 			attachment.contentType ?? null,
@@ -484,31 +416,42 @@ export async function insertSystemEmailAttachments(input: {
 				input.messageId,
 				...(fence ? [fence.deliveryId, fence.storageLease] : []),
 			)
-		const legacy = input.db
-			.prepare(
-				`${prefix} INTO email_attachments (
-						${systemEmailAttachmentColumns.join(', ')}
-					) SELECT ${systemEmailAttachmentColumns.map(() => '?').join(', ')}
-					WHERE EXISTS (
-						SELECT 1 FROM email_messages
-						WHERE id = ? AND user_id = ?
-					) AND ${deliveryFenceSql}`,
-			)
-			.bind(
-				...values,
-				input.messageId,
-				systemEmailOwnerId,
-				...(fence ? [fence.deliveryId, fence.storageLease] : []),
-			)
-		mutations.push({
-			contract: attachmentContract,
-			id: String(values[0]),
-			dedicated,
-			legacy,
-			expectation: 'present' as const,
-		})
+		statements.push(dedicated)
 	}
-	await commitSystemEmailGraphMutations({ db: input.db, mutations })
+	const results = await commitSystemEmailAuthorityBatch({
+		db: input.db,
+		statements,
+	})
+	for (const [index, result] of results.entries()) {
+		if (Number(result?.meta.changes ?? 0) > 0) continue
+		const existing = await input.db
+			.prepare(
+				`SELECT message_id FROM system_email_attachments
+				WHERE id = ? LIMIT 1`,
+			)
+			.bind(attachmentIds[index])
+			.first<{ message_id: string }>()
+		if (input.ignoreConflicts && existing?.message_id === input.messageId) {
+			if (!fence) continue
+			const currentFence = await input.db
+				.prepare(
+					`SELECT 1 AS present FROM system_email_delivery_events
+					WHERE id = ? AND state = 'storing' AND storage_lease = ?
+					LIMIT 1`,
+				)
+				.bind(fence.deliveryId, fence.storageLease)
+				.first<{ present: number }>()
+			if (currentFence) continue
+		}
+		if (fence) {
+			throw new Error(
+				'Inbound delivery storage lease was lost before system attachment insert.',
+			)
+		}
+		throw new Error(
+			'System email attachment insert rejected an invalid dedicated reference.',
+		)
+	}
 }
 
 export async function listSystemEmailAttachments(input: {
@@ -560,23 +503,9 @@ export async function touchSystemEmailThread(input: {
 				WHERE id = ?`,
 		)
 		.bind(lastMessageAt, updatedAt, input.threadId)
-	const legacy = input.db
-		.prepare(
-			`UPDATE email_threads
-				SET last_message_at = ?, updated_at = ?
-				WHERE id = ? AND user_id = ?`,
-		)
-		.bind(lastMessageAt, updatedAt, input.threadId, systemEmailOwnerId)
-	await commitSystemEmailGraphMutations({
+	await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		mutations: [
-			{
-				contract: threadContract,
-				id: input.threadId,
-				dedicated,
-				legacy,
-			},
-		],
+		statements: [dedicated],
 	})
 }
 
@@ -601,31 +530,11 @@ export async function updateSystemEmailMessageClassification(input: {
 			updatedAt,
 			input.messageId,
 		)
-	const legacy = input.db
-		.prepare(
-			`UPDATE email_messages
-				SET classification = ?, classification_reason = ?, updated_at = ?
-				WHERE id = ? AND user_id = ? AND direction = 'inbound'`,
-		)
-		.bind(
-			input.classification,
-			input.classificationReason ?? null,
-			updatedAt,
-			input.messageId,
-			systemEmailOwnerId,
-		)
-	const { mutationResults } = await commitSystemEmailGraphMutations({
+	const [updateResult] = await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		mutations: [
-			{
-				contract: messageContract,
-				id: input.messageId,
-				dedicated,
-				legacy,
-			},
-		],
+		statements: [dedicated],
 	})
-	return Number(mutationResults[0]?.dedicated?.meta.changes ?? 0) > 0
+	return Number(updateResult?.meta.changes ?? 0) > 0
 }
 
 export async function deleteEmptySystemEmailThreads(input: {
@@ -650,37 +559,22 @@ export async function deleteEmptySystemEmailThreads(input: {
 		.all<{ id: string }>()
 	const ids = (rows.results ?? []).map((row) => row.id)
 	if (ids.length === 0) return 0
-	const mutations = ids.map((id) => {
-		const dedicated = input.db
+	const statements = ids.map((id) =>
+		input.db
 			.prepare(
 				`DELETE FROM system_email_threads
 				WHERE id = ? AND NOT EXISTS (
 					SELECT 1 FROM system_email_messages WHERE thread_id = ?
 				)`,
 			)
-			.bind(id, id)
-		const legacy = input.db
-			.prepare(
-				`DELETE FROM email_threads
-				WHERE id = ? AND user_id = ? AND NOT EXISTS (
-					SELECT 1 FROM email_messages WHERE thread_id = ?
-				)`,
-			)
-			.bind(id, systemEmailOwnerId, id)
-		return {
-			contract: threadContract,
-			id,
-			dedicated,
-			legacy,
-			expectation: 'absent' as const,
-		}
-	})
-	const { mutationResults } = await commitSystemEmailGraphMutations({
+			.bind(id, id),
+	)
+	const results = await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		mutations,
+		statements,
 	})
-	return mutationResults.reduce(
-		(total, result) => total + Number(result.dedicated?.meta.changes ?? 0),
+	return results.reduce(
+		(total, result) => total + Number(result?.meta.changes ?? 0),
 		0,
 	)
 }
@@ -731,52 +625,22 @@ export async function deleteSystemEmailMessageById(input: {
 			'System email blob deletion failed before authoritative row delete.',
 		)
 	}
-	await commitSystemEmailGraphMutations({
+	await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		mutations: [
-			...attachments.map((attachment) => ({
-				contract: attachmentContract,
-				id: attachment.id,
-				dedicated: input.db
+		statements: [
+			...attachments.map((attachment) =>
+				input.db
 					.prepare(`DELETE FROM system_email_attachments WHERE id = ?`)
 					.bind(attachment.id),
-				legacy: input.db
-					.prepare(
-						`DELETE FROM email_attachments
-						WHERE id = ? AND EXISTS (
-							SELECT 1 FROM email_messages
-							WHERE email_messages.id = email_attachments.message_id
-								AND email_messages.user_id = ?
-						)`,
-					)
-					.bind(attachment.id, systemEmailOwnerId),
-				expectation: 'absent' as const,
-			})),
-			...(deliveryEvents.results ?? []).map((event) => ({
-				contract: deliveryEventContract,
-				id: event.id,
-				dedicated: input.db
+			),
+			...(deliveryEvents.results ?? []).map((event) =>
+				input.db
 					.prepare(`DELETE FROM system_email_delivery_events WHERE id = ?`)
 					.bind(event.id),
-				legacy: input.db
-					.prepare(
-						`DELETE FROM email_delivery_events
-						WHERE id = ? AND user_id = ?`,
-					)
-					.bind(event.id, systemEmailOwnerId),
-				expectation: 'absent' as const,
-			})),
-			{
-				contract: messageContract,
-				id: input.messageId,
-				dedicated: input.db
-					.prepare(`DELETE FROM system_email_messages WHERE id = ?`)
-					.bind(input.messageId),
-				legacy: input.db
-					.prepare(`DELETE FROM email_messages WHERE id = ? AND user_id = ?`)
-					.bind(input.messageId, systemEmailOwnerId),
-				expectation: 'absent',
-			},
+			),
+			input.db
+				.prepare(`DELETE FROM system_email_messages WHERE id = ?`)
+				.bind(input.messageId),
 		],
 	})
 	return {

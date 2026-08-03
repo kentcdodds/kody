@@ -1,9 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { openapiBindingDeleteCapability } from './openapi-binding-delete.ts'
 import { openapiBindingGetCapability } from './openapi-binding-get.ts'
@@ -17,11 +17,7 @@ const API_BASE = 'https://api.widgets.example'
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
 function applyAllMigrations(db: DatabaseSync) {
-	for (const fileName of readdirSync(migrationsDirectory)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-	}
+	applyRepositoryMigrations(db, migrationsDirectory)
 }
 
 function createEnv() {

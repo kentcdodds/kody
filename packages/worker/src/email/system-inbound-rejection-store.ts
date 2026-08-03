@@ -1,6 +1,6 @@
 import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
-import { commitSystemEmailGraphMutations } from './system-email-graph-transaction.ts'
-import { systemInboundEventMutation } from './system-inbound-delivery-mirror.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
+import { commitSystemInboundEventMutations } from './system-inbound-delivery-transaction.ts'
 
 const systemInboundProvider = 'cloudflare-email-routing'
 
@@ -26,18 +26,22 @@ export async function recordBoundedSystemEmailRejection(input: {
 		last_phase: input.phase,
 		last_at: now,
 	})
-	const { mutationResults } = await commitSystemEmailGraphMutations({
+	const { mutationResults } = await commitSystemInboundEventMutations({
 		db: input.db,
 		mutations: [
-			systemInboundEventMutation({
-				db: input.db,
+			{
 				eventId: aggregateId,
 				dedicated: input.db
 					.prepare(
 						`INSERT INTO system_email_delivery_events (
 							id, inbox_id, event_type, provider, detail_json,
 							needs_effect_reconcile, created_at, updated_at
-						) VALUES (?, ?, 'rejected', ?, ?, 0, ?, ?)
+						)
+						SELECT ?, ?, 'rejected', ?, ?, 0, ?, ?
+						WHERE EXISTS (
+							SELECT 1 FROM email_inboxes
+							WHERE id = ? AND user_id = ?
+						)
 						ON CONFLICT(id) DO UPDATE SET
 							detail_json = json_set(
 								detail_json,
@@ -62,10 +66,11 @@ export async function recordBoundedSystemEmailRejection(input: {
 						detail,
 						now,
 						now,
+						input.inboxId,
+						systemEmailOwnerId,
 					),
-			}),
-			systemInboundEventMutation({
-				db: input.db,
+			},
+			{
 				eventId: detailId,
 				dedicated: input.db
 					.prepare(
@@ -94,7 +99,7 @@ export async function recordBoundedSystemEmailRejection(input: {
 						aggregateId,
 						input.detailLimit,
 					),
-			}),
+			},
 		],
 	})
 	const aggregateResult = mutationResults[0]?.dedicated

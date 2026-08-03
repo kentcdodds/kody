@@ -5,7 +5,7 @@ import {
 	inboundEffectRetryMs,
 } from './inbound-delivery-transitions.ts'
 import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
-import { commitSystemInboundEventMutation } from './system-inbound-delivery-mirror.ts'
+import { commitSystemInboundEventMutation } from './system-inbound-delivery-transaction.ts'
 
 const systemInboundProvider = 'cloudflare-email-routing'
 

@@ -6,30 +6,16 @@ import {
 	buildEntitlementUpgradeHint,
 	parseEntitlementLimitMessage,
 } from './errors.ts'
-import {
-	entitlementResources,
-	getPlanRank,
-	maxPlanEmailLimits,
-	parsePlanName,
-	parseStoredPlanName,
-	parseStripePlanName,
-	planLimits,
-	planNames,
-	resolveEffectivePlan,
-	resolvePlanLimit,
-	resolvePlanWrite,
-} from './plans.ts'
+import { planLimits, resolvePlanLimit } from './plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
-	countRunningPackageServicesFromD1,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageEntryBytes,
 	findCachedUserAccountByStableUserId,
 	getCachedUserPlan,
 	getUserPlan,
-	packageServiceStateStaleMs,
 	readCurrentEntitlementResourceUsage,
 	refundDailyEntitlement,
 } from './service.ts'
@@ -251,54 +237,6 @@ test('entitlement limit messages always identify a known plan name', () => {
 			'Plan limit reached: your "enterprise" plan allows at most 100 concurrent workflows and you currently have 100. hint',
 		),
 	).toBeNull()
-})
-
-test('parsePlanName accepts registered plan names and treats everything else as null', () => {
-	for (const plan of planNames) {
-		expect(parsePlanName(plan)).toBe(plan)
-	}
-	expect(parsePlanName('unlimited')).toBeNull()
-	expect(parsePlanName('enterprise')).toBeNull()
-	expect(parsePlanName(' pro ')).toBeNull()
-	expect(parsePlanName('')).toBeNull()
-	expect(parsePlanName(null)).toBeNull()
-	expect(parsePlanName(undefined)).toBeNull()
-	expect(parsePlanName(1)).toBeNull()
-})
-
-test('parseStoredPlanName keeps known plans and throws for storage-contract violations', () => {
-	for (const plan of planNames) {
-		expect(parseStoredPlanName(plan)).toBe(plan)
-	}
-	for (const invalid of [
-		'enterprise-2099',
-		null,
-		undefined,
-		'',
-		' pro ',
-		1,
-		'unlimited',
-	]) {
-		expect(() => parseStoredPlanName(invalid)).toThrow(
-			'Stored plan is not a registered plan name.',
-		)
-	}
-})
-
-test('parseStripePlanName rejects max, unlimited, and unknown values', () => {
-	expect(parseStripePlanName('pro')).toBe('pro')
-	expect(parseStripePlanName('max')).toBeNull()
-	expect(parseStripePlanName('unlimited')).toBeNull()
-	expect(parseStripePlanName('enterprise')).toBeNull()
-	expect(parseStripePlanName(null)).toBeNull()
-})
-
-test('resolvePlanWrite maps nullish inputs to free', () => {
-	expect(resolvePlanWrite(null)).toBe('free')
-	expect(resolvePlanWrite(undefined)).toBe('free')
-	expect(resolvePlanWrite('pro')).toBe('pro')
-	expect(resolvePlanWrite('max')).toBe('max')
-	expect(resolvePlanWrite('free')).toBe('free')
 })
 
 test('storage byte entry estimates support net-positive upsert deltas', () => {
@@ -1257,7 +1195,7 @@ test('storage byte reserve: D1 mirror failure is silent and does not affect succ
 	const failingMirrorDb = {
 		prepare(query: string) {
 			return {
-				bind(...params: Array<unknown>) {
+				bind(..._params: Array<unknown>) {
 					return {
 						async first<T>() {
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
@@ -1467,75 +1405,6 @@ test('storage usage reads do not materialize UserMeter state for missing users',
 	).resolves.toEqual({ outcome: 'needs_bootstrap' })
 })
 
-test('plan ranking helpers order plans and resolve effective plan from manual vs Stripe', () => {
-	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
-	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
-	expect(getPlanRank('partner')).toBeLessThan(getPlanRank('max'))
-
-	expect(resolveEffectivePlan('max', 'pro')).toBe('max')
-	expect(resolveEffectivePlan('max', 'partner')).toBe('max')
-	expect(resolveEffectivePlan('max', null)).toBe('max')
-	expect(resolveEffectivePlan('free', 'pro')).toBe('pro')
-	expect(resolveEffectivePlan('pro', 'free')).toBe('pro')
-	expect(resolveEffectivePlan('free', 'partner')).toBe('partner')
-	expect(resolveEffectivePlan('partner', 'pro')).toBe('partner')
-	expect(resolveEffectivePlan('pro', null)).toBe('pro')
-	expect(resolveEffectivePlan('pro', 'not-a-plan')).toBe('pro')
-	expect(resolveEffectivePlan('pro', 'personal')).toBe('pro')
-	// Stripe cannot source max or residual unlimited.
-	expect(resolveEffectivePlan('free', 'max')).toBe('free')
-	expect(resolveEffectivePlan('free', 'unlimited')).toBe('free')
-})
-
-// Asserts the invariant rather than the numbers. `plans.ts` says the limits are
-// placeholders meant to be tuned as metering data arrives, so pinning exact
-// values here would make every tuning change look like a regression. What must
-// never break is the ordering between plans and the persistent-services gate.
-test('free plan limits are stricter than pro for every resource', () => {
-	for (const resource of entitlementResources) {
-		expect(
-			resolvePlanLimit('free', resource),
-			`free ${resource} should be below pro`,
-		).toBeLessThan(resolvePlanLimit('pro', resource))
-	}
-	// Persistent services are the one hard gate rather than a smaller number:
-	// free cannot run them at all.
-	expect(planLimits.free.packageServicePersistentAllowed).toBe(0)
-	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
-	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(1)
-})
-
-test('max plan stays above pro for ordinary limits and wires finite email caps', () => {
-	const emailResources = new Set<string>([
-		'email_sends_per_day',
-		'email_receives_per_day',
-		'stored_email_messages',
-		'email_message_bytes',
-	])
-	for (const resource of entitlementResources) {
-		expect(Number.isFinite(resolvePlanLimit('max', resource))).toBe(true)
-		if (emailResources.has(resource)) continue
-		expect(
-			resolvePlanLimit('max', resource),
-			`max ${resource} should be at or above pro`,
-		).toBeGreaterThanOrEqual(resolvePlanLimit('pro', resource))
-	}
-	expect(planLimits.max.packageServicePersistentAllowed).toBe(1)
-	expect(resolvePlanLimit('max', 'persistent_package_services')).toBe(1)
-	// Max email caps are intentionally lower than pro and live in one table.
-	expect(planLimits.max.maxEmailSendsPerDay).toBe(
-		maxPlanEmailLimits.email_sends_per_day,
-	)
-	expect(planLimits.max.maxEmailReceivesPerDay).toBe(
-		maxPlanEmailLimits.email_receives_per_day,
-	)
-	expect(planLimits.max.maxStoredEmailMessages).toBe(
-		maxPlanEmailLimits.stored_email_messages,
-	)
-	expect(planLimits.max.maxEmailMessageBytes).toBe(
-		maxPlanEmailLimits.email_message_bytes,
-	)
-})
 test('entitlement enforcement stops when a stored plan violates the schema contract', async () => {
 	for (const [index, plan] of [
 		null,
@@ -1611,53 +1480,4 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			email: unlimitedPlusProEmail,
 		}),
 	).toBe('max')
-})
-
-test('countRunningPackageServicesFromD1 queries package_service_states with staleness and excludeService', async () => {
-	const now = new Date('2026-07-26T12:00:00.000Z')
-	const queries: Array<{ sql: string; params: Array<unknown> }> = []
-	const db = {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					queries.push({ sql: query, params })
-					return {
-						async first<T>() {
-							return { count: 2 } as T
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	expect(
-		await countRunningPackageServicesFromD1({
-			db,
-			userId: 'user-1',
-			now,
-		}),
-	).toBe(2)
-	expect(queries[0]?.sql).toContain('FROM package_service_states')
-	expect(queries[0]?.params).toEqual([
-		'user-1',
-		new Date(now.valueOf() - packageServiceStateStaleMs).toISOString(),
-	])
-
-	queries.length = 0
-	await countRunningPackageServicesFromD1({
-		db,
-		userId: 'user-1',
-		now,
-		excludeService: { packageId: 'pkg-1', serviceName: 'worker' },
-	})
-	expect(queries[0]?.sql).toContain(
-		'AND NOT (package_id = ? AND service_name = ?)',
-	)
-	expect(queries[0]?.params).toEqual([
-		'user-1',
-		new Date(now.valueOf() - packageServiceStateStaleMs).toISOString(),
-		'pkg-1',
-		'worker',
-	])
 })

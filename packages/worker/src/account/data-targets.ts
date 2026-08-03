@@ -103,57 +103,6 @@ export const accountOperatorOwnedD1Surfaces = [
 	},
 ] as const
 
-/**
- * Physical D1 tables pending a later drop migration. They are absent from
- * generic account deletion/export inventory so live account code cannot read
- * them. Account deletion invokes the tightly scoped legacy privacy cleanup
- * module after authoritative Mailbox/R2 purge; export never reads these rows.
- * Schema coverage guardrails treat these
- * `user_id` / `*_user_id` columns as covered so the live table does not look
- * like a missing inventory target; runtime deletion and export never query
- * them. Export documents each omission under `excludedD1Surfaces` (no raw
- * rows). Empty after `entitlement_daily_counters` was dropped by migration
- * `0126`.
- */
-export type AccountUserDataPendingDropTarget = {
-	table: string
-	column: string
-	surface: string
-	reason: string
-}
-
-export const accountUserDataPendingDropTargets: ReadonlyArray<AccountUserDataPendingDropTarget> =
-	[
-		{
-			table: 'email_delivery_events',
-			column: 'user_id',
-			surface: 'frozen_user_email_delivery_events',
-			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
-		},
-		{
-			table: 'email_attachments',
-			column: 'message_id',
-			surface: 'frozen_user_email_attachments',
-			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
-		},
-		{
-			table: 'email_messages',
-			column: 'user_id',
-			surface: 'frozen_user_email_messages',
-			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
-		},
-		{
-			table: 'email_threads',
-			column: 'user_id',
-			surface: 'frozen_user_email_threads',
-			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
-		},
-	]
-
 /** Targets that account export should skip (deletion still covers them). */
 export function isExcludedFromAccountExport(
 	target: UserScopedDataTarget,
@@ -163,8 +112,7 @@ export function isExcludedFromAccountExport(
 
 /**
  * Documented D1 surfaces omitted from account export. Includes owner-id
- * exclusions, pending-drop physical tables, plus targets marked
- * includeInExport: false with surface/reason.
+ * exclusions plus targets marked includeInExport: false with surface/reason.
  */
 export function getAccountExportExcludedD1Surfaces(): Array<{
 	name: string
@@ -178,10 +126,6 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
 		...accountOperatorOwnedD1Surfaces.map((surface) => ({
 			name: surface.surface,
 			reason: surface.reason,
-		})),
-		...accountUserDataPendingDropTargets.map((target) => ({
-			name: target.surface,
-			reason: target.reason,
 		})),
 	]
 	for (const target of accountUserDataTargets) {
@@ -207,10 +151,7 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * update.
  * Rows owned by accountUserDataExcludedOwnerIds are operator/platform data,
  * not user data; tests assert those owner ids stay deliberately excluded from
- * user account operations. Physical tables pending a later drop migration are
- * listed in accountUserDataPendingDropTargets instead of here so generic
- * deletion/export never query them while schema coverage still recognizes
- * their user columns. The dedicated privacy cleanup is the only exception.
+ * user account operations.
  *
  * Order matters for deletion: child tables come before parent tables so the
  * cascade is self-contained even on engines / configs where foreign-key
@@ -228,7 +169,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		includeInExport: false,
 		surface: 'email_inbound_usage_effects',
 		reason:
-			'Internal cross-store effect idempotency ledger with no user-exportable content.',
+			'Retained cross-store effect idempotency ledger with no user-exportable content; account deletion removes owner rows.',
 	},
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
@@ -543,9 +484,6 @@ export function getAccountD1UserColumnCoverage() {
 				)
 			}
 		}
-	}
-	for (const target of accountUserDataPendingDropTargets) {
-		covered.add(`${target.table}.${target.column}`)
 	}
 	return covered
 }

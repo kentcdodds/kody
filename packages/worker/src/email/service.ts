@@ -18,7 +18,6 @@ import {
 	type EmailReportingEnv,
 } from './reporting-events.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
-import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
 import { assertUserEmailGraphAuthority } from './user-email-graph-authority.ts'
 import { recordDeliveryAlertEvent } from './delivery-alert-events.ts'
 import {
@@ -504,7 +503,7 @@ export async function recordProviderEmailDeliveryEvent(input: {
 	eventTimestamp: string
 	detail: Record<string, unknown>
 }) {
-	const db = liveUserEmailD1Database(input.env.APP_DB)
+	const db = input.env.APP_DB
 	const index = await getOutboundProviderIndexRow({
 		db,
 		providerMessageId: input.providerMessageId,

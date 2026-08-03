@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	deleteOauthAppIfUnused,
@@ -18,11 +18,7 @@ import {
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 function applyAllMigrations(db: DatabaseSync) {
-	for (const fileName of readdirSync(migrationsDirectory)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-	}
+	applyRepositoryMigrations(db, migrationsDirectory)
 }
 
 function createEnv() {

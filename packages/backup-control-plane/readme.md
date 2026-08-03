@@ -187,13 +187,18 @@ Content-Type: application/json
 
 {
   "instance_id": "mailbox-pre-drop-11111111-1111-4111-8111-111111111111",
-  "params": "{\"requestId\":\"11111111-1111-4111-8111-111111111111\",\"nonce\":\"0123456789abcdef0123456789abcdef\",\"requestedAt\":\"2026-08-03T16:45:00.000Z\"}"
+  "params": {
+    "requestId": "11111111-1111-4111-8111-111111111111",
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "requestedAt": "2026-08-03T16:45:00.000Z"
+  }
 }
 ```
 
 The REST API names the custom id field `instance_id` and requires `params` to be
-a JSON-encoded string. The Workflow receives the decoded three-key object. Do
-not use the binding API's `{ id, params }` shape in this REST request.
+the three-key JSON object shown above. Do not encode `params` as a string. The
+failed first string-param instance issued no approval and is irrelevant. Do not
+use the binding API's `{ id, params }` shape in this REST request.
 
 The authenticated control-plane UI action
 `POST /actions/mailbox-pre-drop-backup` generates those three values server-side

@@ -1,5 +1,4 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import * as stripeClient from '#worker/billing/stripe-client.ts'
@@ -9,10 +8,7 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import {
-	accountUserDataExcludedOwnerIds,
-	accountUserDataPendingDropTargets,
-} from '#worker/account/data-targets.ts'
+import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import {
 	AccountDeletionInProgressError,
@@ -24,6 +20,7 @@ import {
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -287,30 +284,6 @@ function createTestDb(
 									})
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
-							if (
-								lower.startsWith(
-									'select rowid as account_r2_rowid, id from email_messages',
-								)
-							) {
-								const afterRowid = Number(params[1])
-								const limit = Number(params[2])
-								results = (rows.email_messages ?? [])
-									.map((row, index) => ({
-										row,
-										account_r2_rowid: index + 1,
-									}))
-									.filter(
-										(entry) =>
-											entry.row['user_id'] === userId &&
-											entry.account_r2_rowid > afterRowid,
-									)
-									.slice(0, limit)
-									.map((entry) => ({
-										account_r2_rowid: entry.account_r2_rowid,
-										id: entry.row['id'],
-									}))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
 							const m = lower.match(/^select id from (\w+) where user_id = \?/)
 							if (m) {
 								const table = m[1] as string
@@ -483,21 +456,6 @@ function createTestDb(
 								)
 								return { meta: { changes: removed } }
 							}
-							const attachmentMatch = lower.match(
-								/^delete from email_attachments where message_id in \( select id from email_messages where user_id = \? \)/,
-							)
-							if (attachmentMatch) {
-								const messageIds = new Set(
-									selectIds(
-										'email_messages',
-										(row) => row['user_id'] === userId,
-									),
-								)
-								const removed = deleteByPredicate('email_attachments', (row) =>
-									messageIds.has(row['message_id']),
-								)
-								return { meta: { changes: removed } }
-							}
 							const communityListingChildMatch = lower.match(
 								/^delete from (\w+) where (\w+) in \( select id from community_listings where owner_user_id = \? \)/,
 							)
@@ -661,11 +619,7 @@ function createSuccessfulDeletionEnv(
 test('account deletion D1 coverage includes every live user-owned schema column', () => {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
 	const db = new DatabaseSync(':memory:')
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 	const tables = db
 		.prepare(
 			`SELECT name
@@ -685,9 +639,6 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 			}
 		}
 	}
-	for (const target of accountUserDataPendingDropTargets) {
-		liveUserColumns.add(`${target.table}.${target.column}`)
-	}
 	const coveredColumns = getAccountDeletionD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -702,7 +653,7 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 	expect(stale, 'account deletion references stale D1 columns').toEqual([])
 })
 
-test('account deletion removes frozen USER graph rows and preserves system email rows', async () => {
+test('account deletion preserves operator-owned system email configuration', async () => {
 	const systemEmailExclusion = accountUserDataExcludedOwnerIds.find(
 		(exclusion) => exclusion.ownerId === 'system:email',
 	)
@@ -713,14 +664,6 @@ test('account deletion removes frozen USER graph rows and preserves system email
 
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'user@example.com' }],
-		email_messages: [
-			{ id: 'user-message', user_id: 'user-aaa' },
-			{ id: 'system-message', user_id: 'system:email' },
-		],
-		email_delivery_events: [
-			{ id: 'user-event', user_id: 'user-aaa' },
-			{ id: 'system-event', user_id: 'system:email' },
-		],
 		email_inboxes: [
 			{ id: 'user-inbox', user_id: 'user-aaa' },
 			{ id: 'system-inbox', user_id: 'system:email' },
@@ -737,12 +680,6 @@ test('account deletion removes frozen USER graph rows and preserves system email
 		mcpUserId: 'user-aaa',
 	})
 
-	expect(rows.email_messages).toEqual([
-		{ id: 'system-message', user_id: 'system:email' },
-	])
-	expect(rows.email_delivery_events).toEqual([
-		{ id: 'system-event', user_id: 'system:email' },
-	])
 	expect(rows.email_inboxes).toEqual([
 		{ id: 'system-inbox', user_id: 'system:email' },
 	])
@@ -893,22 +830,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		],
 		email_inboxes: [{ id: 'in-1', user_id: userAaa }],
 		email_inbox_addresses: [{ id: 'ia-1', user_id: userAaa }],
-		email_threads: [{ id: 'et-1', user_id: userAaa }],
-		email_messages: [
-			{
-				id: 'em-1',
-				user_id: userAaa,
-				raw_mime_key: 'email-raw:v1:user-aaa/em-1',
-			},
-			{ id: 'em-2', user_id: userAaa, raw_mime_key: null },
-			{
-				id: 'em-3',
-				user_id: userBbb,
-				raw_mime_key: 'email-raw:v1:user-bbb/em-3',
-			},
-		],
-		email_attachments: [{ id: 'ea-1', message_id: 'em-1' }],
-		email_delivery_events: [{ id: 'ed-1', user_id: userAaa }],
 		email_sender_identities: [{ id: 'ei-1', user_id: userAaa }],
 		platform_feedback: [
 			{
@@ -1340,16 +1261,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{ id: 'src-2', user_id: userBbb, published_commit: 'def456' },
 	])
 	expect(rows.repo_sessions).toEqual([])
-	expect(rows.email_attachments).toEqual([])
-	// Frozen rows remain rollback data only for active owners. Privacy cleanup
-	// removes the deleted owner's snapshot after Mailbox supplies its R2 inventory.
-	expect(rows.email_messages).toEqual([
-		{
-			id: 'em-3',
-			user_id: userBbb,
-			raw_mime_key: 'email-raw:v1:user-bbb/em-3',
-		},
-	])
 	expect(deletedEmailBlobKeys.sort()).toEqual([
 		'email-raw:v1:user-aaa/em-1',
 		'email-raw:v1:user-aaa/em-2',
@@ -1525,10 +1436,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	// Result accounting captures the per-table counts.
 	expect(result.deletedRowCounts.jobs).toBe(3)
 	expect(result.deletedRowCounts.users).toBe(1)
-	expect(result.deletedRowCounts.email_threads).toBe(1)
-	expect(result.deletedRowCounts.email_messages).toBe(2)
-	expect(result.deletedRowCounts.email_attachments).toBe(1)
-	expect(result.deletedRowCounts.email_delivery_events).toBe(1)
 	expect(result.deletedRowCounts.package_service_states).toBe(3)
 	expect(result.deletedRowCounts.user_storage_buckets).toBe(1)
 	expect(result.deletedRowCounts.community_listings).toBe(1)
@@ -1598,26 +1505,41 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.warnings).toEqual([])
 })
 
-test('account deletion purges Mailbox only after email and all-surface cleanup complete', async () => {
+test('account deletion preserves Mailbox references and retry marker when R2 deletion fails', async () => {
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
 	})
 	const purgeMailbox = vi.fn(async () => ({ ok: true as const }))
+	const deleteEmailBlob = vi.fn(async () => {
+		throw new Error('email R2 delete unavailable')
+	})
+	const listBlobReferences = vi.fn(async () => ({
+		references: [
+			{
+				kind: 'raw_mime' as const,
+				key: 'email-raw:v1:user-aaa/message-1',
+				messageId: 'message-1',
+				attachmentId: null,
+			},
+		],
+		nextStartAfter: null,
+		truncated: false as const,
+	}))
 	const env = createSuccessfulDeletionEnv(db, {
 		EMAIL_BLOBS: {
 			async list() {
-				throw new Error('email R2 unavailable')
+				return {
+					objects: [{ key: 'email-raw:v1:user-aaa/message-1' }],
+					delimitedPrefixes: [],
+					truncated: false,
+				}
 			},
-			async delete() {},
+			delete: deleteEmailBlob,
 		} as unknown as R2Bucket,
 		MAILBOX: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({
-				listBlobReferences: async () => ({
-					references: [],
-					nextStartAfter: null,
-					truncated: false as const,
-				}),
+				listBlobReferences,
 				purge: purgeMailbox,
 			}),
 		} as unknown as DurableObjectNamespace,
@@ -1633,9 +1555,11 @@ test('account deletion purges Mailbox only after email and all-surface cleanup c
 		(error: unknown) =>
 			error instanceof AccountDeletionCleanupError &&
 			error.cleanupErrors.some((warning) =>
-				warning.includes('email R2 unavailable'),
+				warning.includes('email R2 delete unavailable'),
 			),
 	)
+	expect(listBlobReferences).toHaveBeenCalledTimes(1)
+	expect(deleteEmailBlob).toHaveBeenCalled()
 	expect(purgeMailbox).not.toHaveBeenCalled()
 	expect(rows.users).toEqual([
 		expect.objectContaining({
@@ -1867,13 +1791,6 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 		archived_job_artifacts: [
 			{ id: 'aja-1', user_id: 'user-aaa', kv_key: 'archived:src-1' },
 		],
-		email_messages: [
-			{
-				id: 'em-1',
-				user_id: 'user-aaa',
-				raw_mime_key: 'email-raw:v1:user-aaa/em-1',
-			},
-		],
 	})
 	await expect(
 		deleteUserAccount({
@@ -1907,7 +1824,6 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	})
 	expect(kvFailureRows.published_bundle_artifacts).toHaveLength(1)
 	expect(kvFailureRows.archived_job_artifacts).toHaveLength(1)
-	expect(kvFailureRows.email_messages).toHaveLength(1)
 	expect(kvFailureRows.users).toEqual([
 		expect.objectContaining({
 			id: 1,
@@ -1931,12 +1847,6 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 						stable_user_id: 'user-aaa',
 					},
 				],
-				email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
-			},
-			assertRows: (rows: ReturnType<typeof createTestDb>['rows']) => {
-				expect(rows.email_messages).toEqual([
-					{ id: 'message-a', user_id: 'user-aaa' },
-				])
 			},
 		},
 	] as const

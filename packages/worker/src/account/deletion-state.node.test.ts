@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	userMeterRpc,
@@ -375,12 +375,16 @@ function createGatedDoEnv(input: {
 }
 
 async function waitFor(predicate: () => Promise<boolean>, label: string) {
-	const deadline = Date.now() + 2_000
-	while (Date.now() < deadline) {
-		if (await predicate()) return
-		await new Promise((resolve) => setTimeout(resolve, 5))
-	}
-	throw new Error(`Timed out waiting for ${label}`)
+	await vi
+		.waitFor(
+			async () => {
+				expect(await predicate()).toBe(true)
+			},
+			{ timeout: 2_000, interval: 1 },
+		)
+		.catch(() => {
+			throw new Error(`Timed out waiting for ${label}`)
+		})
 }
 
 function holdDoWriteLease(input: {

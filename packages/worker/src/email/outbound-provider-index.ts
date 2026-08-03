@@ -23,20 +23,6 @@ export type OutboundProviderIndexHealthReport = {
 	healthy: boolean
 }
 
-export async function isOutboundProviderIndexForeignKeyDetached(
-	db: D1Database,
-): Promise<boolean> {
-	const result = await db
-		.prepare(`PRAGMA foreign_key_list(email_outbound_provider_index)`)
-		.all<{ table: string; from: string; to: string }>()
-	return !result.results.some(
-		(foreignKey) =>
-			foreignKey.table === 'email_messages' &&
-			foreignKey.from === 'message_id' &&
-			foreignKey.to === 'id',
-	)
-}
-
 export function classifyOutboundProviderIndexHealth(
 	counts: Pick<
 		OutboundProviderIndexHealthReport,
@@ -158,8 +144,7 @@ export async function deleteOutboundProviderIndexByMessageIds(input: {
 }
 
 /**
- * Read-only structural report over the thin reverse index. It deliberately
- * never joins the frozen shared USER message graph.
+ * Read-only structural report over the thin reverse index.
  */
 export async function loadOutboundProviderIndexHealthReport(input: {
 	db: D1Database

@@ -4,7 +4,7 @@ import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { listEmailInboxesForUser } from './repo.ts'
 import { listSystemEmailMessages } from './system-email-graph-store.ts'
-import { loadSystemEmailGraphParityReport } from './system-email-graph-repo.ts'
+import { loadSystemEmailHealth } from './system-email-health.ts'
 import {
 	maxDetailedEmailRejectionEventsPerDay,
 	RetryableInboundStorageError,
@@ -93,9 +93,9 @@ async function readRejectionEvents() {
 test('reserved system locals store under the operator-owned system inbox', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const legacyEmail = `legacy-kody-${crypto.randomUUID()}@example.com`
-	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
-	await seedVerifiedAccount({ email: legacyEmail, username: 'kody' })
+	const fixtureEmail = `fixture-kody-${crypto.randomUUID()}@example.com`
+	const fixtureUserId = await createStableUserIdFromEmail(fixtureEmail)
+	await seedVerifiedAccount({ email: fixtureEmail, username: 'kody' })
 
 	const message = buildInboundMessage({
 		to: `kody@${systemDomain}`,
@@ -105,7 +105,7 @@ test('reserved system locals store under the operator-owned system inbox', async
 
 	expect(message.rejectedReason).toBeNull()
 	expect(
-		await mailboxRpc({ env, userId: legacyUserId }).listMessages({
+		await mailboxRpc({ env, userId: fixtureUserId }).listMessages({
 			limit: 10,
 		}),
 	).toMatchObject({ messages: [] })
@@ -119,24 +119,15 @@ test('reserved system locals store under the operator-owned system inbox', async
 		fromAddress: 'sender@example.net',
 		processingStatus: 'stored',
 	})
-	expect(
-		await loadSystemEmailGraphParityReport({ db: env.APP_DB }),
-	).toMatchObject({
-		messages: { dedicatedCount: 1, legacyCount: 1, parity: true },
-		deliveryEvents: { parity: true },
-		parity: true,
+	expect(await loadSystemEmailHealth({ db: env.APP_DB })).toMatchObject({
+		counts: { messages: 1, deliveryEvents: 2 },
+		healthy: true,
 	})
-	const deliveryPair = await env.APP_DB.prepare(
-		`SELECT
-			(SELECT detail_json FROM system_email_delivery_events
-				WHERE event_type = 'received' LIMIT 1) AS dedicated,
-			(SELECT detail_json FROM email_delivery_events
-				WHERE user_id = ? AND event_type = 'received' LIMIT 1) AS legacy`,
-	)
-		.bind(systemEmailOwnerId)
-		.first<{ dedicated: string; legacy: string }>()
-	expect(deliveryPair?.dedicated).toBe(deliveryPair?.legacy)
-	expect(JSON.parse(deliveryPair?.dedicated ?? '{}')).toMatchObject({
+	const delivery = await env.APP_DB.prepare(
+		`SELECT detail_json FROM system_email_delivery_events
+		WHERE event_type = 'received' LIMIT 1`,
+	).first<{ detail_json: string }>()
+	expect(JSON.parse(delivery?.detail_json ?? '{}')).toMatchObject({
 		state: 'received',
 		usageEffectRecordedAt: expect.any(String),
 		subscriptionEffectState: 'complete',
@@ -457,12 +448,7 @@ test('system email size and daily caps reject before storage with bounded events
 			`SELECT count FROM system_email_daily_counters WHERE local_part = 'abuse'`,
 		).first(),
 	).toBeNull()
-	await env.APP_DB.batch([
-		env.APP_DB.prepare(`DELETE FROM system_email_delivery_events`),
-		env.APP_DB.prepare(
-			`DELETE FROM email_delivery_events WHERE user_id = ?`,
-		).bind(systemEmailOwnerId),
-	])
+	await env.APP_DB.prepare(`DELETE FROM system_email_delivery_events`).run()
 
 	await env.APP_DB.prepare(
 		`INSERT INTO system_email_daily_counters (local_part, day, count, updated_at)

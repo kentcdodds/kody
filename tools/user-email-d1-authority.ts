@@ -26,33 +26,13 @@ const mailboxSqlFiles = new Set([
 	'packages/worker/src/email/inbound-due-owners.ts',
 ])
 
-const systemSharedGraphFiles = new Set([
+const allowedSharedGraphSqlFiles = mailboxSqlFiles
+const sharedGraphD1SqlFiles = new Set<string>()
+const dynamicD1SqlFiles = new Set([
 	'packages/worker/src/email/system-email-authority.ts',
-	'packages/worker/src/email/system-email-graph-columns.ts',
-	'packages/worker/src/email/system-email-graph-repo.ts',
-	'packages/worker/src/email/system-email-graph-sql.ts',
 	'packages/worker/src/email/system-email-graph-store.ts',
-	'packages/worker/src/email/system-email-graph-transaction.ts',
 	'packages/worker/src/email/system-email.ts',
-	'packages/worker/src/email/system-inbound-delivery-mirror.ts',
-	'packages/worker/src/email/system-inbound-delivery-store.ts',
 ])
-
-const legacyCleanupFile =
-	'packages/worker/src/email/legacy-user-email-graph-cleanup.ts'
-const runtimeGuardFile = 'packages/worker/src/email/user-email-d1-guard.ts'
-
-const allowedSharedGraphSqlFiles = new Set([
-	legacyCleanupFile,
-	...mailboxSqlFiles,
-	...systemSharedGraphFiles,
-])
-
-const sharedGraphD1SqlFiles = new Set([
-	legacyCleanupFile,
-	...systemSharedGraphFiles,
-])
-const dynamicD1SqlFiles = new Set([...sharedGraphD1SqlFiles, runtimeGuardFile])
 
 const allowedRepoImports = new Set([
 	'createEmailInbox',
@@ -81,27 +61,26 @@ const additionalAllowedRepoImports = new Map([
 	['packages/worker/src/email/system-email.ts', new Set(['emailRawMimeKey'])],
 ])
 
-const allowedCleanupImports = new Map([
-	[
-		'packages/worker/src/app/account-deletion.ts',
-		new Set(['deleteFrozenUserEmailGraphForAccount']),
-	],
-	[
-		'packages/worker/src/app/retention.ts',
-		new Set(['pruneFrozenUserEmailGraphForRetention']),
-	],
-])
-
 const retiredLegacyEmailModules = new Set([
+	'legacy-user-email-graph-cleanup',
 	'mailbox-live-mirror',
 	'mailbox-mirror',
 	'mailbox-parity-repo',
 	'mailbox-snapshot-repo',
 	'mailbox-snapshots',
+	'system-email-graph-repo',
+	'system-email-graph-sql',
+	'system-email-graph-transaction',
+	'system-inbound-delivery-mirror',
+	'user-email-d1-guard',
 ])
 
 function isTestFile(file: string) {
-	return file.includes('.test.') || file.endsWith('/test-schema.ts')
+	return (
+		file.includes('.test.') ||
+		file.endsWith('/test-schema.ts') ||
+		file.includes('/test-support/')
+	)
 }
 
 async function listTypeScriptFiles(directory: string): Promise<Array<string>> {
@@ -177,7 +156,7 @@ function isStaticSqlLiteral(node: ts.Node) {
 	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
 }
 
-type LegacyEmailModule = 'cleanup' | 'repo' | 'retired'
+type LegacyEmailModule = 'repo' | 'retired'
 
 function legacyEmailModule(
 	file: string,
@@ -191,7 +170,6 @@ function legacyEmailModule(
 	if (!isEmailRelative && !isEmailAlias) return null
 	const name = normalized.split('/').at(-1)
 	if (name === 'repo') return 'repo'
-	if (name === 'legacy-user-email-graph-cleanup') return 'cleanup'
 	return name != null && retiredLegacyEmailModules.has(name) ? 'retired' : null
 }
 
@@ -230,16 +208,6 @@ export async function scanUserEmailD1Authority(
 		) => {
 			if (moduleKind === 'retired') {
 				report(node, `live module imports retired email module "${imported}"`)
-				return
-			}
-			if (moduleKind === 'cleanup') {
-				const allowed = allowedCleanupImports.get(file)
-				if (!allowed?.has(imported)) {
-					report(
-						node,
-						`live module imports scoped legacy cleanup "${imported}"`,
-					)
-				}
 				return
 			}
 			const allowed =
@@ -298,7 +266,7 @@ export async function scanUserEmailD1Authority(
 				) {
 					report(
 						sqlNode ?? node,
-						`shared USER graph D1 SQL outside cleanup/system rollback boundary: ${tables.join(', ')}`,
+						`shared USER graph D1 SQL remains in production code: ${tables.join(', ')}`,
 					)
 				}
 			}

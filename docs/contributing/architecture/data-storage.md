@@ -19,13 +19,10 @@ platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
 `admin`). Migration `0130-system-email-graph-expand.sql` adds permanent D1
 tables `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events`. They omit
-`user_id` because the operator owner is implicit. Since step 4b they are the
-live authority; legacy rows under reserved owner id `system:email` are atomic
-rollback mirrors through step 5. The reserved id is not a login account and must
+`user_id` because the operator owner is implicit. They are the sole live
+`system:email` graph authority. The reserved id is not a login account and must
 not be conflated with the `kody@example.com` fixture or Kent's personal account.
-Account deletion and export treat both graph copies as platform/operator
-content, not user data; legacy exclusion is listed in
-`accountUserDataExcludedOwnerIds` and the dedicated tables in
+Account deletion and export treat these tables as platform/operator content in
 `accountOperatorOwnedD1Surfaces`, with guardrail tests.
 
 Platform feedback remains user-owned and user-scoped in storage, but has a
@@ -61,12 +58,11 @@ safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
 and already-cleared Durable Objects are treated as successful no-ops or
 warning-only failures.
 
-Legacy system email rows owned by `system:email` and all four dedicated
-`system_email_*` graph tables are intentionally excluded from account deletion.
-They are operator-owned mail for reserved platform addresses, not portable user
-content. The scheduled system-email lane applies its 90-day age policy,
-5,000-message cap, and blob-before-row deletion against the dedicated authority,
-then removes the corresponding legacy mirrors in the same D1 batch.
+All four dedicated `system_email_*` graph tables are intentionally excluded from
+account deletion. They are operator-owned mail for reserved platform addresses,
+not portable user content. The scheduled system-email lane applies its 90-day
+age policy, 5,000-message cap, and blob-before-row deletion against the
+dedicated authority.
 
 Platform-feedback rows follow two account-deletion behaviors. Deleting the
 submitting account deletes its submissions. When a deleted account was an admin
@@ -76,29 +72,25 @@ reference so the row does not retain attribution to a nonexistent account.
 Deletion must cover these user-owned surfaces:
 
 - **D1:** every live table with `user_id` / `*_user_id` ownership columns, plus
-  transitive children (`secret_entries`, `value_entries`, `email_attachments`)
-  and listing children for community-owned listings. Physical tables pending a
-  later drop migration are registered in `accountUserDataPendingDropTargets`
-  (schema coverage only; runtime deletion never queries them). The guardrail
-  test in `packages/worker/src/account/data-targets.node.test.ts` applies the
-  live migrations to SQLite and fails if a user-owned schema column lacks schema
-  coverage in the runtime target list or pending-drop registry, or if those
-  lists reference a stale column.
+  transitive children (`secret_entries`, `value_entries`) and listing children
+  for community-owned listings. The guardrail test in
+  `packages/worker/src/account/data-targets.node.test.ts` applies the live
+  migrations to SQLite and fails if a user-owned schema column lacks schema
+  coverage in the runtime target list or if that list references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
   `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
   purged through account-deletion RPCs after their D1 identifiers are collected
   (`RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are one object per
-  user and need no D1 id scan). During Mailbox step 3, account deletion first
-  captures the authoritative USER raw-MIME and attachment references through
+  user and need no D1 id scan). Account deletion first captures the
+  authoritative USER raw-MIME and attachment references through
   `Mailbox.listBlobReferences`, deletes those owner-safe R2 keys plus defensive
   owner-prefix sweeps, and only then calls `Mailbox.purge()`. The purge clears
-  DO SQLite only. Frozen shared USER email rows are then deleted through the
-  scoped legacy privacy-cleanup module until their physical drop (see
-  [Mailbox](#durable-objects-mailbox)). `MCP` objects remain SDK session-keyed,
-  while `mcp_agent_sessions` indexes each Durable Object id by authenticated
-  stable user id so account deletion can purge stored props, conversation state,
-  raw-fetch state, and transport storage before revoking OAuth grants.
+  DO SQLite only (see [Mailbox](#durable-objects-mailbox)). `MCP` objects remain
+  SDK session-keyed, while `mcp_agent_sessions` indexes each Durable Object id
+  by authenticated stable user id so account deletion can purge stored props,
+  conversation state, raw-fetch state, and transport storage before revoking
+  OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
@@ -107,8 +99,8 @@ Deletion must cover these user-owned surfaces:
   Deletion also performs per-user prefix cleanup (`email-raw:v1:{userId}/` and
   `email-attachment:v1:{userId}/`) as defense in depth. A failed inventory or
   object delete aborts Mailbox purge and D1 finalization, preserving the
-  deletion marker and compatibility rows for retry. Rows owned by `system:email`
-  keep their blobs here (they are not user data); those blobs are removed when
+  deletion marker and Mailbox rows for retry. Rows owned by `system:email` keep
+  their blobs here (they are not user data); those blobs are removed when
   system-email retention deletes messages through the D1 helper.
   `Mailbox.purge()` never deletes R2 objects.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
@@ -126,25 +118,23 @@ Account export is implemented in `packages/worker/src/account/export.ts`. It
 mirrors the deletion inventory so portability and account migration cover the
 same user-owned storage surfaces. The D1 table list and shared kind→SQL match
 builders live in `account/data-targets.ts` (`accountUserDataTargets`,
-`buildUserScopedTargetMatch`); export redaction columns and
-`accountUserDataPendingDropTargets` also live there. Out-of-band surfaces
-(Durable Objects, KV schemes, R2, Vectorize, Artifacts) are declared in
-`account-user-owned-surfaces.ts` and consumed by both deletion and export.
-Growth-table retention dispositions are linked in
+`buildUserScopedTargetMatch`); export redaction columns also live there.
+Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
+declared in `account-user-owned-surfaces.ts` and consumed by both deletion and
+export. Growth-table retention dispositions are linked in
 `account-retention-dispositions.ts`.
 `packages/worker/src/account/export.node.test.ts` applies the live migrations to
 SQLite and fails if a `user_id` / `*_user_id` column is not covered by the
-export list or pending-drop registry. The hard invariant is the same as every
-storage path: callers pass the authenticated user's stable MCP `userId`, and
-every query or Durable Object lookup is scoped to that id.
+export list. The hard invariant is the same as every storage path: callers pass
+the authenticated user's stable MCP `userId`, and every query or Durable Object
+lookup is scoped to that id.
 
-Legacy `system:email` rows and dedicated `system_email_*` rows are intentionally
-absent from account exports for the same reason they are absent from deletion:
-they belong to the operator inbox surface, not to the exporting user. The export
-manifest lists both omissions under `excludedD1Surfaces` so they are explicit.
-The retired `entitlement_daily_counters` D1 mirror is absent from the final
-schema (migration `0126`) and therefore from export inventory and
-`excludedD1Surfaces`.
+Dedicated `system_email_*` rows are intentionally absent from account exports
+for the same reason they are absent from deletion: they belong to the operator
+inbox surface, not to the exporting user. The export manifest lists the
+omissions under `excludedD1Surfaces` so they are explicit. The retired
+`entitlement_daily_counters` D1 mirror is absent from the final schema
+(migration `0126`) and therefore from export inventory and `excludedD1Surfaces`.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
@@ -241,16 +231,9 @@ Durable Object export behavior:
 - `Mailbox` is the sole authoritative USER email graph export. It exports
   threads, messages, attachments, and delivery events through the account-export
   `mailbox` section (`exportMailbox` RPC; keyset pagination with prefixed
-  cursors); manifest counts use `countMailbox`. The four shared D1 graph tables
-  are frozen pre-cutover snapshots: no live USER read, write, graph fence,
-  compatibility mirror, parity, or rebuild uses them. They remain only for
-  scoped account-deletion/retention privacy cleanup and aggregate backup audit
-  until the destructive follow-up drops them. They are not duplicated in the D1
-  export. USER R2 export enumerates raw MIME and attachment keys with
-  `Mailbox.listBlobReferences`. Mailbox retains migration-only
-  `email_message_deletion_tombstones` to fence delayed pre-cutover snapshots.
-  Tombstones are not exported or counted; account purge clears them, and global
-  removal waits for the destructive frozen-table follow-up. Internal
+  cursors); manifest counts use `countMailbox`. The shared D1 graph has been
+  dropped and is not duplicated in the D1 export. USER R2 export enumerates raw
+  MIME and attachment keys with `Mailbox.listBlobReferences`. Internal
   `email_message_retention_retries` rows defer failed R2 deletion attempts
   without blocking other expired messages; they are likewise excluded from
   export/counts and removed with message or mailbox purge. See
@@ -303,21 +286,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   sign-off). UserMeter `storage_bytes_state` (schema v4) drives storage-byte
   enforcement; `package_service_states` (schema v5) is the authoritative
   running-count source for `package_services` / `service_start` — see
-  [Entitlements](./entitlements.md#usermeter-expand-phase). Retired Mailbox
-  expand-phase parity/backfill state remains physically present from migration
-  `0125-mailbox-parity-state.sql`: `mailbox_parity_checked_at`,
-  `mailbox_parity_matching_since`, `mailbox_parity_mismatch_count`,
-  `mailbox_parity_last_error`, `mailbox_parity_content_watermark_at`, durable
-  content-replay window (`mailbox_parity_content_replay_upper_at` plus
-  `(updated_at, id)` cursor), message and **all** owner delivery-event backfill
-  cursors/completion timestamps on the user row. The former
-  `(mailbox_parity_checked_at, stable_user_id)` discovery index and graph keyset
-  indexes remain frozen schema artifacts; no scheduled lane reads them. The same
-  migration adds keyset-friendly composites on
-  `email_messages(user_id, created_at, id)`,
-  `email_messages(user_id, updated_at, id)`, and
-  `email_delivery_events(user_id, created_at, id)`. Inbound email routing does
-  not reverse-resolve stable ids at all — it uses the indexed username lookup
+  [Entitlements](./entitlements.md#usermeter-expand-phase). Migration 0135
+  removed every retired Mailbox parity, replay, backfill, and soak column and
+  its discovery index. Inbound email routing does not reverse-resolve stable ids
+  at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
   with one indexed point read on `users.stable_user_id` (for example
   `findUserAccountByStableUserId`).
@@ -480,12 +452,12 @@ validated derived output or a generated fallback.
 - Bucket names are `kody-community-assets` in production and
   `{worker}-community-assets` for preview deployments.
 
-Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket instead of D1.
-`email_messages` stores an object key in `raw_mime_key`
+Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket. Mailbox
+`email_messages` stores the object key in `raw_mime_key`
 (`email-raw:v1:{userId}/{messageId}`). R2 is required for inbound MIME —
-`insertEmailMessage` puts the payload to `EMAIL_BLOBS` before the D1 insert and
-writes only `raw_mime_key` (never `raw_mime`). On R2 put failure the insert
-throws `EmailRawMimeStorageError` (a `RetryableInboundStorageError`; no D1 row).
+`insertEmailMessage` puts the payload to `EMAIL_BLOBS` before the Mailbox graph
+commit and writes only `raw_mime_key`. On R2 put failure the insert throws
+`EmailRawMimeStorageError` (a `RetryableInboundStorageError`; no Mailbox row).
 The inbound Worker rethrows typed pre-commit failures so Cloudflare Email
 Routing retries; UserMeter delivery-id idempotency prevents a second charge. The
 message-graph commit boundary is message + attachment rows: thread prework, R2
@@ -526,11 +498,8 @@ rows only.
   Mailbox deletes each canonical raw-MIME/external-attachment R2 object before
   deleting authoritative SQLite metadata; a failed blob delete preserves the row
   and schedules retry. No live path mirrors or repairs a shared D1 graph row.
-  Frozen shared rows are deleted separately only by
-  `legacy-user-email-graph-cleanup.ts` for privacy retention/account deletion,
-  after authoritative Mailbox/R2 inventory and purge where applicable.
-  `system:email` keeps its dedicated D1 retention and transactional legacy
-  system mirror until its separately documented destructive follow-up.
+  The shared D1 graph no longer exists. `system:email` uses only its dedicated
+  D1 graph and retention path.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -734,26 +703,16 @@ scheduled inbound reconciliation. Due live-work reasons sort before the seeded
 per tick. `email_delivery_alert_events` preserves short-lived bounced/complained
 signals for operator burst alerts.
 
-The shared D1 `email_threads`, `email_messages`, `email_attachments`, and
-`email_delivery_events` tables are a physically frozen rollback snapshot.
-Post-cutover Mailbox data is not projected into them. Live reads, writes,
-exports, usage, admin insights, and reconciliation never query USER rows there.
-The only USER mutations are privacy lifecycle deletes from
-`legacy-user-email-graph-cleanup.ts`: account deletion removes the owner's
-frozen rows after Mailbox/R2 inventory and purge, and retention may prune old
-frozen rows. Aggregate backup verification is the only allowed USER read. Static
-import/SQL architecture checks enforce those boundaries. Every live email module
-must pass an inline string literal to D1 `prepare` and direct `exec`; template
-substitutions, concatenation, variables, and helper-composed SQL are rejected
-even when the prepared statement is passed inside `batch`. Durable Object
-`storage.sql` calls remain local SQLite and are exempt by exact file/receiver.
-Exact dedicated system/legacy-cleanup modules are the authority allowlist, while
-the runtime marked-SQL guard implementation is necessarily exempt because it
-validates its SQL argument before preparing it. That runtime guard is defense in
-depth. The former `mailbox_parity` lane, D1-to-Mailbox rebuild, and
-`mailbox-read-cutover` flag are retired. This step does not drop the tables,
-columns, triggers, parity columns, or tombstones. `system:email` remains on its
-dedicated D1 graph and retention path.
+Migration `0135-drop-legacy-email-graph.sql` removed the shared D1
+`email_threads`, `email_messages`, `email_attachments`, and
+`email_delivery_events` tables, the provider-index compatibility trigger, and
+all Mailbox migration columns on `users`. The `email_inbound_usage_effects`
+idempotency ledger remains with its rows preserved and obsolete delivery-event
+foreign key detached because the signed 0134 approval did not include its count.
+Static import/SQL architecture checks reject production D1 references to the
+dropped graph tables; only Mailbox Durable Object SQLite, migration history, and
+tests may use those table names. `system:email` remains on its dedicated D1
+graph and retention path.
 
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
@@ -797,68 +756,29 @@ Object. Shared inbox/address/sender configuration remains in D1 because the
 dedicated graph references that operator configuration; account export/deletion
 continues to exclude the reserved owner.
 
-Every authoritative graph or inbound-ledger mutation writes the dedicated row
-first and writes a complete legacy `system:email` compatibility mirror in the
-same transactional D1 batch. The shared transaction composer follows each pair
-with a SQL parity/absence guard, so an exception **or silent no-op** on the
-legacy fence aborts the batch before commit. This composer is the single mirror
-seam removed in step 5. A same-id collision with a user-owned legacy delivery
-event also fails closed. R2 retention is the deliberate cross-service exception:
-it deletes all referenced blobs first, then atomically deletes dedicated
-metadata and its legacy mirror. If any blob delete fails, the authoritative row
-remains for retry. Scheduled retention selects age/cap/events/orphan threads
-only from the dedicated graph; it never copies stale legacy state into dedicated
-tables.
+Every authoritative system graph or inbound-ledger mutation writes only the
+dedicated tables and commits with the dedicated authority/provider-link guard.
+R2 retention deletes all referenced blobs first, then atomically deletes
+dedicated metadata. If any blob delete fails, the authoritative row remains for
+retry. Scheduled retention selects age/cap/events/orphan threads only from the
+dedicated graph.
 
-The admin mailbox maintenance `status` action remains an aggregate, content-free
-parity report. The audited `system_email_graph_reconcile` action is a
-rollback-mirror repair only and requires both `force: true` and
-`direction: "dedicated_to_legacy"`. In one D1 batch it removes legacy drift
-child-first and upserts the complete legacy graph parent-first. There is no
-legacy-to-dedicated reconcile path.
+The admin mailbox maintenance `status` action reports content-free dedicated
+counts, authority marker state, invalid-reference count, and provider-link
+count. There is no legacy parity report or reconcile action.
 
-The existing `email_outbound_provider_index` still has an FK to legacy
-`email_messages`, so it cannot index the dedicated graph. The production cutover
-check found zero provider-linked `system:email` rows; parity reports this
-healthy disposition as `no-system-provider-links` with `dedicated-inbound-only`
-authority. System outbound sends and provider-linked dedicated messages are
-rejected rather than creating a broken cross-authority FK. Immediately before
-deploying 0131, operators must capture fresh production evidence that the
-provider index, legacy provider-linked system messages, and dedicated
-provider-linked messages all remain zero. The marker insert independently
-recounts those surfaces; a nonzero count violates its constraint and rolls back
-the migration. Runtime marker checks repeat the provider gate so any
-provider-linked system rows stop dedicated work. Step 5 may remove legacy system
-rows only after dedicated/mirror parity and rollback gates pass: **4a
-schema/copy/parity → 4b dedicated authority plus rollback mirror → step 5 legacy
-cleanup**.
+The detached `email_outbound_provider_index` does not accept `system:email`.
+System outbound sends and provider-linked dedicated messages remain unsupported.
+Runtime marker checks repeat the provider gate so any provider-linked system row
+stops dedicated work. Migration 0135 verified exact full-row parity between the
+last legacy system snapshot and dedicated authority immediately before deleting
+the legacy graph. A code rollback to a pre-0135 Worker is therefore unsupported.
 
-The pre-4b shared D1 system-delivery engine is retained only as a compatibility
-and rollback reference. Once the dedicated marker exists it rejects
-`system:email` calls; USER Mailbox paths are unaffected. Dedicated and legacy
-implementations share lease/retry timing constants and are covered by
-claim/release/retry/reject/receive/reconcile transition-parity tests. Their SQL
-engines intentionally remain separate during rollback support; step 5 removes
-the legacy system branch instead of attempting a risky state-machine rewrite
-during authority cutover.
-
-Rolling back to the pre-4b Worker is supported because 4b continuously maintains
-the legacy mirror. Once that older Worker accepts a write, however, legacy
-becomes newer and the dedicated graph becomes stale. Do not roll forward to 4b
-directly: quiesce ingress and scheduled/effect consumers, repair or rebuild
-dedicated state with the approved operator procedure, verify full parity and
-zero provider links, and only then redeploy. The 4b reconcile action
-intentionally cannot import those rollback-era legacy writes.
-
-**USER rollback boundary:** the shared USER graph is an immutable pre-step-5
-snapshot, not a roll-forward source. A code-only rollback to a D1-authoritative
-Worker is unsafe because post-cutover messages exist only in Mailbox/R2. Any
-rollback or destructive follow-up must quiesce email writers, use reviewed
-operator tooling with an explicit non-live D1 access marker, and reconcile from
-Mailbox into the chosen target before changing authority. The old scheduled
-D1-to-Mailbox rebuild, parity-soak state machine, and read flag have no runtime
-entry point. Their schema columns remain only to preserve rollback compatibility
-until the destructive migration.
+**USER rollback boundary:** Mailbox/R2 is the only USER graph authority. A
+code-only rollback to a D1-authoritative Worker is impossible because the shared
+graph has been dropped. Recovery must quiesce email writers and restore the
+authoritative Mailbox and `EMAIL_BLOBS` backups; the verified pre-drop D1 backup
+is disaster-recovery evidence, not a serving-source switch.
 
 **Mailbox graph contract:** all live USER RPCs are owner-bound. Complete graph
 writes validate canonical owner-scoped R2 keys. Inbound graph commits
@@ -892,12 +812,10 @@ alarm reschedule; the RPC returns before/after `countMailbox` aggregates plus
 **Admin maintenance** is audited and content-free outside an explicitly
 owner-scoped delete. Fleet status reports the USER authority marker, thin
 provider-index structure, pending provider-index repair owners, inbound due
-owners, delivery-alert health, and dedicated system-email rollback-mirror
-parity; it makes no claim about frozen USER D1 counts. USER retention calls
-`Mailbox.runRetentionNow`; USER explicit delete inventories and deletes
-canonical R2 keys, deletes Mailbox metadata, and idempotently removes any thin
-provider-index row. The separate privacy retention lane may delete frozen
-rollback rows through the scoped cleanup module. The dedicated `system:email`
+owners, delivery-alert health, and dedicated system-email counts/reference
+health. USER retention calls `Mailbox.runRetentionNow`; USER explicit delete
+inventories and deletes canonical R2 keys, deletes Mailbox metadata, and
+idempotently removes any thin provider-index row. The dedicated `system:email`
 maintenance path remains D1-backed.
 
 USER retention returns Mailbox before/after counts (no message ids or email
@@ -908,42 +826,39 @@ scan). Before purge it exhaustively pages `listBlobReferences`, deletes those
 canonical keys and the defensive `EMAIL_BLOBS` owner prefixes, and aborts on any
 inventory or cleanup warning. Only then does it call `Mailbox.purge()` (result
 key `mailboxes`). Purge clears DO SQLite/alarm state and reinitializes schema;
-it does **not** delete R2 objects. After that succeeds, the scoped privacy
-cleanup deletes the owner's frozen D1 graph rows. Account export pages the sole
-authoritative USER graph through the `mailbox` section (`exportMailbox` /
-`countMailbox`), excludes the four D1 graph tables, and uses
-`listBlobReferences` for USER email R2 bytes.
+it does **not** delete R2 objects. Account export pages the sole authoritative
+USER graph through the `mailbox` section (`exportMailbox` / `countMailbox`) and
+uses `listBlobReferences` for USER email R2 bytes.
 
 ### Historical expand/contract phases
 
 Migrations 0125–0129 scaffolded Mailbox migration state and the provider reverse
 index. Migration `0132-email-outbound-provider-index-detach.sql` removed the
 cross-store-invalid foreign key from the operational provider index while
-retaining its legacy-delete compatibility trigger. Migration
+temporarily retaining its legacy-delete compatibility trigger. Migration
 `0133-email-user-graph-authority.sql` then failed closed unless every USER owner
 in the frozen graph had a fresh, successful, complete backfill record; its
-singleton authority marker records the validated owner count and freeze time.
+singleton authority marker recorded the validated owner count and freeze time.
 
 The temporary USER dual-write, rebuild, soak, and read-flag runtime surfaces
-used during those phases have been removed. Their old state columns remain only
-because this cutover is additive. They are not status signals and are not read
-by production maintenance.
-
-The frozen graph is stale immediately after the authority marker is installed
-and must never be made authoritative by reverting application code. Rollback
-must remain Mailbox-authoritative. A future destructive migration may remove the
-shared tables, compatibility trigger, old migration columns, and tombstones only
-after the rollback window and a verified backup.
+used during those phases have been removed. Migration 0134 installed the
+canonical approval schema. Migration 0135 consumed every signed provenance field
+for nonempty databases, rechecked exact USER counts and exact legacy/dedicated
+system parity, then removed the shared graph, compatibility trigger, and old
+`users` columns atomically. Fresh databases may use the approval-free path only
+before any shared, dedicated, provider, coordination, or idempotency row exists.
+The stable authority marker retains `owner_count`, `frozen_at`, and
+`dropped_at`; approved drops retain the complete canonical receipt in
+`email_user_graph_drop_approval`. See
+[Mailbox legacy graph drop](../mailbox-legacy-graph-drop.md).
 
 ### What stays in D1
 
 - **Operator system-email inbox** — remains permanently in D1 for cross-account
   admin access, fixed bounded caps, and separate system-email retention. The
-  dedicated `system_email_*` graph is authoritative; legacy `system:email` rows
-  are atomic rollback mirrors through step 5. Both copies stay excluded from
-  account deletion and export (`accountUserDataExcludedOwnerIds` and
-  `accountOperatorOwnedD1Surfaces`). Operator mail is never migrated into
-  per-user Mailbox objects.
+  dedicated `system_email_*` graph is authoritative and stays excluded from
+  account deletion and export (`accountOperatorOwnedD1Surfaces`). Operator mail
+  is never migrated into per-user Mailbox objects.
 - **Low-write email config** — sender identities, inboxes, inbox addresses,
   sender rules, and similar low-churn configuration stay in D1.
 - **Provider-message reverse lookup** — outbound Cloudflare sending webhooks
@@ -954,26 +869,21 @@ after the rollback window and a verified backup.
   `(provider, provider_message_id)` with `user_id`, `message_id`, `inbox_id`,
   and created/updated timestamps (indexes on `user_id` and unique `message_id`).
   Mailbox `email_messages.provider_message_id` is authoritative. The index
-  `message_id` is an opaque owner-scoped key with no foreign key to the frozen
-  shared `email_messages` table. The legacy
-  `email_messages_delete_outbound_provider_index` trigger remains only for
-  rollback and is not relied on by active USER paths. Mailbox explicit/account
-  deletion removes index rows separately and idempotently. Outbound send
-  separates provider acceptance, bounded Mailbox terminal persistence, and
-  independently retryable index persistence; an index failure never requests a
-  resend. A pending repair is durable in owner Mailbox SQLite, retried by its
-  alarm with bounded backoff, and summarized in D1 without provider/message
-  identifiers. Account export omits the operational reverse index
-  (`includeInExport: false`); exported Mailbox messages retain their provider
-  ids, but no fleet-wide automatic rebuild is claimed.
+  `message_id` is an opaque owner-scoped key with no graph foreign key. Mailbox
+  explicit/account deletion removes index rows separately and idempotently.
+  Outbound send separates provider acceptance, bounded Mailbox terminal
+  persistence, and independently retryable index persistence; an index failure
+  never requests a resend. A pending repair is durable in owner Mailbox SQLite,
+  retried by its alarm with bounded backoff, and summarized in D1 without
+  provider/message identifiers. Account export omits the operational reverse
+  index (`includeInExport: false`); exported Mailbox messages retain their
+  provider ids, but no fleet-wide automatic rebuild is claimed.
   `recordProviderEmailDeliveryEvent` resolves index-first, then loads the
   owner-scoped Mailbox message (no shared-message scan). System outbound is
   unsupported, and the verified `no-system-provider-links` disposition means
   `system:email` rows are never added to this global index. The admin status
-  exposes an index-only structural report and the live schema check
-  `foreignKeyDetached`; it does not compare against frozen messages. Contextless
-  provider-id reverse lookups must not enumerate per-user Mailbox objects or
-  resolve a system compatibility mirror.
+  exposes an index-only structural report. Contextless provider-id reverse
+  lookups must not enumerate per-user Mailbox objects.
 
 ### Inbound durability boundary (USER Mailbox authority)
 
@@ -992,8 +902,7 @@ rejection audits are written directly to Mailbox. No live reverse bridge,
 projection, or shared-D1 graph fallback exists.
 
 `system:email` is the explicit exception: its inbound lifecycle, effects, and
-reconciliation use the dedicated D1 graph and never bootstrap a Mailbox or read
-the legacy compatibility mirror.
+reconciliation use the dedicated D1 graph and never bootstrap a Mailbox.
 
 If R2 succeeds but the fenced graph transaction or finalization fails, Email
 Routing retries the stable delivery id. The graph transaction is idempotent and
@@ -1564,22 +1473,20 @@ Current retention policies:
   the same safety conditions, so per-commit snapshots do not accumulate
   indefinitely. Ambiguous publish/edit cases are intentionally kept.
 - Mailbox `email_delivery_events`: USER events keep 90 days under the per-owner
-  DO alarm/admin RPC. Frozen shared-D1 USER events are not scanned or pruned.
-  System email is governed by the dedicated system-email retention job, which
-  prunes messages, external attachment objects, raw-MIME blobs, and delivery
-  events older than 90 days in parameter-bounded batches within its own time
-  budget, deletes stale `system_email_daily_counters`, caps stored system
-  messages at 5,000, and prunes orphan threads. All R2 objects are deleted
-  before dedicated metadata; a failure preserves authority rows for retry. Each
-  successful dedicated D1 delete removes the system legacy compatibility mirror
-  in the same batch. The four dedicated `system_email_*` tables therefore have
-  explicit `alternate_cleanup` dispositions.
+  DO alarm/admin RPC. System email is governed by the dedicated system-email
+  retention job, which prunes messages, external attachment objects, raw-MIME
+  blobs, and delivery events older than 90 days in parameter-bounded batches
+  within its own time budget, deletes stale `system_email_daily_counters`, caps
+  stored system messages at 5,000, and prunes orphan threads. All R2 objects are
+  deleted before dedicated metadata; a failure preserves authority rows for
+  retry. The four dedicated `system_email_*` tables therefore have explicit
+  `alternate_cleanup` dispositions.
 - Mailbox `email_messages` / `email_attachments` / `email_threads`: USER
   messages keep 365 days. The DO deletes canonical raw-MIME/external-attachment
   R2 objects before metadata and retries failures. It then prunes orphan
-  threads. Derived provider-index cleanup is separately idempotent. Frozen
-  shared-D1 USER graph rows are not retention targets. `system:email` stays on
-  the dedicated D1 retention job and has no provider-index rows.
+  threads. Derived provider-index cleanup is separately idempotent.
+  `system:email` stays on the dedicated D1 retention job and has no
+  provider-index rows.
 - `entitlement_daily_counters`: **retired** — dropped by migration
   `0126-drop-entitlement-daily-counters.sql` after stages 1/2 stopped mirror
   writes and detached runtime inventory. No scheduled retention disposition or

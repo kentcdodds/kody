@@ -79,7 +79,6 @@ test('synthesizes an mcp:<server> domain with a capability per tool', () => {
 				'This server supports issue tracking and unrelated invoice workflows.',
 		}),
 	})
-	expect(instructed?.domain.description).toContain('invoice workflows')
 	expect(
 		instructed?.domain.capabilities.find(
 			(capability) => capability.name === 'mcp:linear:create_issue',

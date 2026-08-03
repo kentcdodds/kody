@@ -167,19 +167,14 @@ test('USER inbound commits graph, attachments, terminal event, and retry only in
 		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 
-	for (const query of [
-		['email_threads', 'user_id', userId],
-		['email_messages', 'user_id', userId],
-		['email_attachments', 'message_id', stored.id],
-		['email_delivery_events', 'user_id', userId],
-	] as const) {
-		const row = await env.APP_DB.prepare(
-			`SELECT COUNT(*) AS count FROM ${query[0]} WHERE ${query[1]} = ?`,
-		)
-			.bind(query[2])
-			.first<{ count: number }>()
-		expect(row?.count).toBe(0)
-	}
+	const legacyTables = await env.APP_DB.prepare(
+		`SELECT name FROM sqlite_schema
+		WHERE type = 'table' AND name IN (
+			'email_threads', 'email_messages', 'email_attachments',
+			'email_delivery_events'
+		)`,
+	).all()
+	expect(legacyTables.results).toEqual([])
 	expect(capturedD1.sql.join('\n')).not.toMatch(
 		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
 	)
@@ -223,12 +218,11 @@ test('preclaim USER rejection audit is bounded in Mailbox without D1 graph rows'
 		reason: 'Account email is not verified.',
 		phase: 'account-verification',
 	})
-	const row = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count FROM email_delivery_events WHERE user_id = ?`,
-	)
-		.bind(userId)
-		.first<{ count: number }>()
-	expect(row?.count).toBe(0)
+	const legacyEventTable = await env.APP_DB.prepare(
+		`SELECT name FROM sqlite_schema
+		WHERE type = 'table' AND name = 'email_delivery_events'`,
+	).first()
+	expect(legacyEventTable).toBeNull()
 }, 30_000)
 
 test('USER inbound R2 failure retries idempotently without a second quota charge', async () => {

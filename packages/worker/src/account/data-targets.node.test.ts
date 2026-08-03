@@ -1,13 +1,12 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
 	accountExportForeignUserIdColumnsByTable,
 	accountExportRedactedColumnsByTable,
 	accountExportRedactedForeignUserId,
 	accountOperatorOwnedD1Surfaces,
-	accountUserDataPendingDropTargets,
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
@@ -19,11 +18,7 @@ import {
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 }
 
 function matchFor(target: UserScopedDataTarget) {
@@ -246,11 +241,6 @@ test('dedicated system email tables are explicit operator-owned exclusions', () 
 
 test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {
 	expect(
-		accountUserDataPendingDropTargets.some(
-			(target) => target.table === 'entitlement_daily_counters',
-		),
-	).toBe(false)
-	expect(
 		accountUserDataTargets.some(
 			(target) =>
 				'table' in target && target.table === 'entitlement_daily_counters',
@@ -306,14 +296,6 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
 				liveUserColumns.add(`${table.name}.${column.name}`)
 			}
-		}
-	}
-	for (const target of accountUserDataPendingDropTargets) {
-		const columns = db
-			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(target.table)})`)
-			.all() as Array<{ name: string }>
-		if (columns.some((column) => column.name === target.column)) {
-			liveUserColumns.add(`${target.table}.${target.column}`)
 		}
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()

@@ -65,57 +65,6 @@ ON email_sender_identities(user_id, email);`,
 	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE CASCADE
 );`,
 
-		`CREATE TABLE IF NOT EXISTS email_threads (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL,
-	inbox_id TEXT,
-	subject_normalized TEXT NOT NULL DEFAULT '',
-	root_message_id_header TEXT,
-	last_message_at TEXT NOT NULL,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-);`,
-
-		`CREATE TABLE IF NOT EXISTS email_messages (
-	id TEXT PRIMARY KEY,
-	direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
-	user_id TEXT NOT NULL,
-	inbox_id TEXT,
-	thread_id TEXT,
-	sender_identity_id TEXT,
-	from_address TEXT NOT NULL,
-	envelope_from TEXT,
-	to_addresses_json TEXT NOT NULL DEFAULT '[]',
-	cc_addresses_json TEXT NOT NULL DEFAULT '[]',
-	bcc_addresses_json TEXT NOT NULL DEFAULT '[]',
-	reply_to_addresses_json TEXT NOT NULL DEFAULT '[]',
-	subject TEXT NOT NULL DEFAULT '',
-	message_id_header TEXT,
-	in_reply_to_header TEXT,
-	references_json TEXT NOT NULL DEFAULT '[]',
-	headers_json TEXT NOT NULL DEFAULT '{}',
-	auth_results TEXT,
-	text_body TEXT,
-	html_body TEXT,
-	raw_mime_key TEXT,
-	raw_size INTEGER NOT NULL DEFAULT 0,
-	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed')),
-	classification TEXT NOT NULL DEFAULT 'accepted' CHECK (classification IN ('accepted', 'quarantined')),
-	classification_reason TEXT,
-	provider_message_id TEXT,
-	delivery_status TEXT CHECK (
-		delivery_status IS NULL OR delivery_status IN (
-			'delivered', 'deferred', 'bounced', 'failed', 'rejected', 'complained'
-		)
-	),
-	delivery_status_at TEXT,
-	error TEXT,
-	received_at TEXT,
-	sent_at TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-);`,
-
 		`CREATE TABLE IF NOT EXISTS email_sender_rules (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL,
@@ -129,75 +78,6 @@ ON email_sender_identities(user_id, email);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_rules_user_kind_value
 ON email_sender_rules(user_id, kind, value);`,
 
-		`CREATE TABLE IF NOT EXISTS email_attachments (
-	id TEXT PRIMARY KEY,
-	message_id TEXT NOT NULL,
-	filename TEXT,
-	content_type TEXT NOT NULL,
-	content_id TEXT,
-	disposition TEXT,
-	size INTEGER NOT NULL DEFAULT 0,
-	storage_kind TEXT NOT NULL CHECK (storage_kind IN ('raw-mime', 'external', 'unavailable')),
-	storage_key TEXT,
-	created_at TEXT NOT NULL
-);`,
-
-		`CREATE TABLE IF NOT EXISTS email_delivery_events (
-	id TEXT PRIMARY KEY,
-	message_id TEXT,
-	user_id TEXT,
-	inbox_id TEXT,
-	event_type TEXT NOT NULL CHECK (
-		event_type IN (
-			'receive_started', 'received', 'rejected', 'send_requested', 'sent',
-			'failed', 'delivered', 'deferred', 'bounced', 'complained'
-		)
-	),
-	provider TEXT NOT NULL DEFAULT 'kody',
-	provider_message_id TEXT,
-	provider_event_id TEXT,
-	detail_json TEXT NOT NULL DEFAULT '{}',
-	needs_effect_reconcile INTEGER NOT NULL DEFAULT 1 CHECK (
-		needs_effect_reconcile IN (0, 1)
-	),
-	usage_effect_recorded_at TEXT,
-	usage_month TEXT,
-	usage_bytes INTEGER,
-	usage_duration_ms INTEGER,
-	state TEXT CHECK (
-		state IS NULL OR state IN (
-			'pending', 'storing', 'cleaning', 'received', 'rejected', 'orphan-cleaned'
-		)
-	),
-	fingerprint TEXT,
-	storage_lease TEXT,
-	storage_lease_at TEXT,
-	cleanup_lease TEXT,
-	cleanup_lease_at TEXT,
-	cleanup_retry_at TEXT,
-	expected_attachment_count INTEGER,
-	finalization_token TEXT,
-	reconcile_after TEXT,
-	dedupe_expires_at TEXT,
-	usage_effect_suppressed_at TEXT,
-	usage_started_at TEXT,
-	usage_effect_retry_at TEXT,
-	usage_effect_lease TEXT,
-	usage_effect_lease_at TEXT,
-	subscription_effect_state TEXT CHECK (
-		subscription_effect_state IS NULL OR subscription_effect_state IN (
-			'pending', 'processing', 'complete', 'dead-letter'
-		)
-	),
-	subscription_effect_lease TEXT,
-	subscription_effect_lease_at TEXT,
-	subscription_effect_retry_at TEXT,
-	subscription_effect_attempt_count INTEGER,
-	subscription_effect_dead_letter_at TEXT,
-	subscription_effect_last_error TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT
-);`,
 		`CREATE TABLE IF NOT EXISTS system_email_threads (
 	id TEXT PRIMARY KEY,
 	inbox_id TEXT,
@@ -334,37 +214,6 @@ WHERE direction = 'outbound' AND provider_message_id IS NOT NULL;`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_email_delivery_events_provider_event_id
 ON system_email_delivery_events(provider_event_id)
 WHERE provider_event_id IS NOT NULL;`,
-		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_pending_effects
-ON email_delivery_events(user_id, created_at)
-WHERE provider = 'cloudflare-email-routing'
-	AND event_type = 'received'
-	AND needs_effect_reconcile = 1;`,
-		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_user_state_created
-ON email_delivery_events(user_id, state, created_at, id)
-WHERE provider = 'cloudflare-email-routing' AND state IS NOT NULL;`,
-		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_user_dedupe_expires
-ON email_delivery_events(user_id, dedupe_expires_at, id)
-WHERE provider = 'cloudflare-email-routing-dedupe'
-	AND dedupe_expires_at IS NOT NULL;`,
-		`CREATE TABLE IF NOT EXISTS email_inbound_usage_effects (
-	user_id TEXT NOT NULL,
-	delivery_id TEXT NOT NULL,
-	finalization_token TEXT NOT NULL,
-	created_at TEXT NOT NULL,
-	PRIMARY KEY (user_id, delivery_id, finalization_token),
-	FOREIGN KEY (delivery_id) REFERENCES email_delivery_events(id) ON DELETE CASCADE
-);`,
-		`CREATE INDEX IF NOT EXISTS idx_email_inbound_usage_effects_delivery
-ON email_inbound_usage_effects(delivery_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_recorded_usage_month
-ON email_delivery_events(usage_month, user_id)
-WHERE provider = 'cloudflare-email-routing'
-	AND event_type = 'received'
-	AND usage_effect_recorded_at IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
-ON email_messages(provider_message_id)
-WHERE direction = 'outbound'
-	AND provider_message_id IS NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS email_outbound_provider_index (
 	provider TEXT NOT NULL,
 	provider_message_id TEXT NOT NULL,
@@ -383,11 +232,13 @@ ON email_outbound_provider_index(message_id);`,
 	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
 	owner_count INTEGER NOT NULL CHECK (owner_count >= 0),
 	frozen_at TEXT NOT NULL,
-	max_parity_age_hours INTEGER NOT NULL CHECK (max_parity_age_hours = 6)
+	dropped_at TEXT NOT NULL
 );`,
 		`INSERT INTO email_user_graph_authority (
-	singleton, owner_count, frozen_at, max_parity_age_hours
-) VALUES (1, 0, CURRENT_TIMESTAMP, 6);`,
+	singleton, owner_count, frozen_at, dropped_at
+) VALUES (
+	1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);`,
 		`CREATE TABLE IF NOT EXISTS email_inbound_due_owners (
 	user_id TEXT PRIMARY KEY NOT NULL CHECK (user_id != 'system:email'),
 	due_at TEXT NOT NULL,
@@ -416,15 +267,6 @@ ON email_inbound_due_owners(
 	owner_hash TEXT,
 	created_at TEXT NOT NULL
 );`,
-		`CREATE TRIGGER IF NOT EXISTS email_messages_delete_outbound_provider_index
-AFTER DELETE ON email_messages
-BEGIN
-	DELETE FROM email_outbound_provider_index
-	WHERE message_id = OLD.id;
-END;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_provider_event_id
-ON email_delivery_events(provider_event_id)
-WHERE provider_event_id IS NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS system_email_daily_counters (
 	local_part TEXT NOT NULL,
 	day TEXT NOT NULL,

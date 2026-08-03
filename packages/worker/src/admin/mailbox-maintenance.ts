@@ -5,17 +5,14 @@ import {
 	type MailboxCountResult,
 } from '#worker/email/mailbox-types.ts'
 import {
-	isOutboundProviderIndexForeignKeyDetached,
 	deleteOutboundProviderIndexByMessageId,
 	loadOutboundProviderIndexHealthReport,
 	type OutboundProviderIndexHealthReport,
 } from '#worker/email/outbound-provider-index.ts'
 import {
-	loadSystemEmailGraphParityReport,
-	reconcileLegacySystemEmailGraphFromDedicated,
-	type SystemEmailGraphParityReport,
-	type SystemEmailGraphReconcileResult,
-} from '#worker/email/system-email-graph-repo.ts'
+	loadSystemEmailHealth,
+	type SystemEmailHealth,
+} from '#worker/email/system-email-health.ts'
 import {
 	deleteSystemEmailMessageById,
 	getSystemEmailMessageById,
@@ -55,18 +52,12 @@ export type AdminMailboxMaintenanceStatus = {
 	 * Structural health of the operational provider reverse index. No owner
 	 * ids, message ids, or email content are exposed.
 	 */
-	outboundProviderIndex: OutboundProviderIndexHealthReport & {
-		/** True only when the deployed schema has no legacy message_id FK. */
-		foreignKeyDetached: boolean
-	}
+	outboundProviderIndex: OutboundProviderIndexHealthReport
 	providerIndexRepair: Awaited<ReturnType<typeof loadProviderIndexRepairHealth>>
 	inboundDueOwners: InboundDueOwnersHealth
 	deliveryAlerts: Awaited<ReturnType<typeof loadDeliveryAlertEventsHealth>>
-	/**
-	 * Dedicated system-email authority versus its legacy rollback mirror.
-	 * Aggregate counts only; no email content is exposed.
-	 */
-	systemEmailGraph: SystemEmailGraphParityReport
+	/** Dedicated system-email authority, counts, and reference health. */
+	systemEmail: SystemEmailHealth
 }
 
 export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
@@ -247,42 +238,27 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 	const [
 		authority,
 		outboundProviderIndexHealth,
-		outboundProviderIndexForeignKeyDetached,
 		providerIndexRepair,
 		inboundDueOwners,
 		deliveryAlerts,
-		systemEmailGraph,
+		systemEmail,
 	] = await Promise.all([
 		loadUserEmailGraphAuthorityMarker(input.db),
 		loadOutboundProviderIndexHealthReport({ db: input.db }),
-		isOutboundProviderIndexForeignKeyDetached(input.db),
 		loadProviderIndexRepairHealth({ db: input.db }),
 		loadInboundDueOwnersHealth({ db: input.db, now }),
 		loadDeliveryAlertEventsHealth({ db: input.db, now }),
-		loadSystemEmailGraphParityReport({ db: input.db }),
+		loadSystemEmailHealth({ db: input.db }),
 	])
-	const outboundProviderIndex = {
-		...outboundProviderIndexHealth,
-		foreignKeyDetached: outboundProviderIndexForeignKeyDetached,
-	}
-
 	return {
 		generatedAt,
 		authority,
-		outboundProviderIndex,
+		outboundProviderIndex: outboundProviderIndexHealth,
 		providerIndexRepair,
 		inboundDueOwners,
 		deliveryAlerts,
-		systemEmailGraph,
+		systemEmail,
 	}
-}
-
-export async function runAdminMailboxMaintenanceSystemEmailGraphReconcile(input: {
-	db: D1Database
-	direction: 'dedicated_to_legacy'
-	force: true
-}): Promise<SystemEmailGraphReconcileResult> {
-	return reconcileLegacySystemEmailGraphFromDedicated(input)
 }
 
 /**

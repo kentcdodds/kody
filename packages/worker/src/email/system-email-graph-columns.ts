@@ -1,17 +1,3 @@
-export type SystemEmailGraphTableKey =
-	| 'threads'
-	| 'messages'
-	| 'attachments'
-	| 'deliveryEvents'
-
-export type SystemEmailGraphColumnContract = {
-	key: SystemEmailGraphTableKey
-	legacyTable: string
-	dedicatedTable: string
-	columns: ReadonlyArray<string>
-	relationshipColumns: ReadonlyArray<string>
-}
-
 export const systemEmailThreadColumns = [
 	'id',
 	'inbox_id',
@@ -110,35 +96,3 @@ export const systemEmailDeliveryEventColumns = [
 	'subscription_effect_last_error',
 	'updated_at',
 ] as const
-
-export const systemEmailGraphColumnContracts: ReadonlyArray<SystemEmailGraphColumnContract> =
-	[
-		{
-			key: 'threads',
-			legacyTable: 'email_threads',
-			dedicatedTable: 'system_email_threads',
-			columns: systemEmailThreadColumns,
-			relationshipColumns: ['inbox_id'],
-		},
-		{
-			key: 'messages',
-			legacyTable: 'email_messages',
-			dedicatedTable: 'system_email_messages',
-			columns: systemEmailMessageColumns,
-			relationshipColumns: ['inbox_id', 'thread_id', 'sender_identity_id'],
-		},
-		{
-			key: 'attachments',
-			legacyTable: 'email_attachments',
-			dedicatedTable: 'system_email_attachments',
-			columns: systemEmailAttachmentColumns,
-			relationshipColumns: ['message_id'],
-		},
-		{
-			key: 'deliveryEvents',
-			legacyTable: 'email_delivery_events',
-			dedicatedTable: 'system_email_delivery_events',
-			columns: systemEmailDeliveryEventColumns,
-			relationshipColumns: ['message_id', 'inbox_id'],
-		},
-	]

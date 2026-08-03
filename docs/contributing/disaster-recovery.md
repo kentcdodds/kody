@@ -363,16 +363,25 @@ Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
 config, and expect users to reauthorize OAuth and remote connectors.
 
-### Mailbox authority rollback repair
+### Mailbox authority and the pre-drop D1 backup
 
-The frozen shared USER D1 graph is not a rollback or roll-forward source. It
-contains only the pre-cutover snapshot and may be reduced by account-deletion or
-retention privacy cleanup. A recovery that changes USER email authority must
-quiesce ingress and scheduled/effect consumers, restore the authoritative
-Mailbox and `EMAIL_BLOBS` snapshots, verify owner inventories and
-effect/finalization state, then use reviewed operator tooling to populate any
-replacement target from Mailbox before changing code authority. The retired
-D1-to-Mailbox parity purge/rebuild path must not be reintroduced.
+Migration 0134 installs the canonical approval schema; migration 0135
+permanently drops the shared USER/system rollback graph. Production retains the
+complete immutable receipt in `email_user_graph_drop_approval`; a newly created,
+provably empty preview database may bootstrap without creating one. To inspect
+or recover deleted historical rows, download the production receipt's exact SQL
+object, verify the signed manifest plus bytes/SHA-256/ETag before import,
+restore it into an isolated D1 database, and verify the approved
+owner/thread/message/attachment/event manifest plus `PRAGMA foreign_key_check`.
+Do not point a live Worker at that isolated pre-0135 schema.
+
+The pre-drop D1 object is forensic/disaster-recovery evidence, not a USER
+serving source. A production recovery must quiesce ingress and scheduled/effect
+consumers, restore the authoritative Mailbox and `EMAIL_BLOBS` snapshots, and
+verify owner inventories and effect/finalization state. A full D1 restore to
+0133 state also requires the reviewed migration/conductor procedure to deploy
+0134, issue a new approval, and deliberately reapply 0135; the old D1-to-Mailbox
+parity/rebuild path must not be reintroduced.
 
 ### Mailbox legacy graph destructive prerequisite
 
@@ -387,6 +396,20 @@ counts did not drift, and atomically writes an approval expiring within two
 hours. The caller supplies only `requestId`, `nonce`, and `requestedAt`; source
 identity, counts, object keys, hashes, and approval values come from the
 allowlisted control plane.
+
+0135 accepts a newer receipt without pinning a particular request, nonce, object
+key, SQL SHA-256, ETag, or signature digest. It does pin the deployed trust
+configuration: production source account/database/name, signing-key id, Ed25519,
+daily retention, restore-baseline id/SHA-256, control-plane issuer, and build
+commit. Its monotonic timestamps, canonical manifest/SQL relation, current
+marker, and exact counts must also validate at execution time. The receipt
+prepared on 2026-08-03 expires at `21:10:38.879Z`; run the same deployed
+Workflow again if deployment occurs later.
+
+The only receipt-free case is a universal-chain bootstrap before seeding. The
+authority marker and all shared, dedicated, provider-index, repair, due-owner,
+and inbound-effect surfaces must be empty. Any legacy row or nonzero marker
+requires the ordinary signed approval path.
 
 The production `adhoc/` policy was manually applied and read back on 2026-08-03:
 both lock and lifecycle are 35 days. When `DR_BACKUP_ADMIN_TOKEN` is available,

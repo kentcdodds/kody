@@ -1,5 +1,4 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { generateTOTP } from '@epic-web/totp'
 import { expect, test } from 'vitest'
@@ -20,16 +19,13 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../../migrations/', import.meta.url)
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 }
 
 function createD1FromSqlite(db: DatabaseSync) {

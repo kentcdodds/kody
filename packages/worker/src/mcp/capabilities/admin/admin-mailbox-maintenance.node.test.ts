@@ -14,7 +14,6 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 const mockModule = vi.hoisted(() => ({
 	logAuditEvent: vi.fn(async () => undefined),
 	loadAdminMailboxMaintenanceStatus: vi.fn(),
-	runAdminMailboxMaintenanceSystemEmailGraphReconcile: vi.fn(),
 	runAdminMailboxMaintenanceRetention: vi.fn(),
 	runAdminMailboxMaintenanceDeleteMessage: vi.fn(),
 }))
@@ -34,8 +33,6 @@ vi.mock('#worker/admin/mailbox-maintenance.ts', async (importOriginal) => {
 		...actual,
 		loadAdminMailboxMaintenanceStatus:
 			mockModule.loadAdminMailboxMaintenanceStatus,
-		runAdminMailboxMaintenanceSystemEmailGraphReconcile:
-			mockModule.runAdminMailboxMaintenanceSystemEmailGraphReconcile,
 		runAdminMailboxMaintenanceRetention:
 			mockModule.runAdminMailboxMaintenanceRetention,
 		runAdminMailboxMaintenanceDeleteMessage:
@@ -51,10 +48,9 @@ const emptyStatus = {
 	authority: {
 		ownerCount: 2,
 		frozenAt: '2026-08-01T00:00:00.000Z',
-		maxParityAgeHours: 6,
+		droppedAt: '2026-08-03T00:00:00.000Z',
 	},
 	outboundProviderIndex: {
-		foreignKeyDetached: true,
 		indexCount: 0,
 		distinctOwnerCount: 0,
 		malformedCount: 0,
@@ -75,63 +71,15 @@ const emptyStatus = {
 		lastHourEvents: 0,
 		oldestEventAt: null,
 	},
-	systemEmailGraph: {
-		threads: {
-			legacyCount: 0,
-			dedicatedCount: 0,
-			missingFromDedicatedCount: 0,
-			missingFromLegacyCount: 0,
-			ownershipMismatchCount: 0,
-			referencedOwnerMismatchCount: 0,
-			relationshipMismatchCount: 0,
-			keyFieldMismatchCount: 0,
-			parity: true,
+	systemEmail: {
+		authority: {
+			authority: 'dedicated' as const,
+			cutoverAt: '2026-08-01T00:00:00.000Z',
 		},
-		messages: {
-			legacyCount: 0,
-			dedicatedCount: 0,
-			missingFromDedicatedCount: 0,
-			missingFromLegacyCount: 0,
-			ownershipMismatchCount: 0,
-			referencedOwnerMismatchCount: 0,
-			relationshipMismatchCount: 0,
-			keyFieldMismatchCount: 0,
-			parity: true,
-		},
-		attachments: {
-			legacyCount: 0,
-			dedicatedCount: 0,
-			missingFromDedicatedCount: 0,
-			missingFromLegacyCount: 0,
-			ownershipMismatchCount: 0,
-			referencedOwnerMismatchCount: 0,
-			relationshipMismatchCount: 0,
-			keyFieldMismatchCount: 0,
-			parity: true,
-		},
-		deliveryEvents: {
-			legacyCount: 0,
-			dedicatedCount: 0,
-			missingFromDedicatedCount: 0,
-			missingFromLegacyCount: 0,
-			ownershipMismatchCount: 0,
-			referencedOwnerMismatchCount: 0,
-			relationshipMismatchCount: 0,
-			keyFieldMismatchCount: 0,
-			parity: true,
-		},
-		outboundProviderIndex: {
-			legacyProviderLinkedMessageCount: 0,
-			dedicatedProviderLinkedMessageCount: 0,
-			legacyAuthorityIndexCount: 0,
-			missingFromLegacyAuthorityIndexCount: 0,
-			missingFromLegacyMessagesCount: 0,
-			mismatchedLegacyAuthorityIndexCount: 0,
-			classification: 'no-system-provider-links',
-			authorityDisposition: 'dedicated-inbound-only',
-			parity: true,
-		},
-		parity: true,
+		counts: { threads: 0, messages: 0, attachments: 0, deliveryEvents: 0 },
+		invalidReferenceCount: 0,
+		providerLinkCount: 0,
+		healthy: true,
 	},
 }
 
@@ -160,25 +108,6 @@ const emptyRetentionResult = {
 	nextStartAfter: 'a'.repeat(64),
 	truncated: true,
 	status: emptyStatus,
-}
-
-const emptySystemEmailGraphReconcileResult = {
-	metrics: {
-		upserted: {
-			threads: 0,
-			messages: 0,
-			attachments: 0,
-			deliveryEvents: 0,
-		},
-		deleted: {
-			threads: 0,
-			messages: 0,
-			attachments: 0,
-			deliveryEvents: 0,
-		},
-		referencedOwnerMismatchCount: 0,
-	},
-	postReport: emptyStatus.systemEmailGraph,
 }
 
 const emptyDeleteResult = {
@@ -232,11 +161,8 @@ function createAdminCtx() {
 	}
 }
 
-test('admin_mailbox_maintenance routes status, system repair, retention, and delete with audits', async () => {
+test('admin_mailbox_maintenance routes final status, retention, and delete with audits', async () => {
 	mockModule.loadAdminMailboxMaintenanceStatus.mockResolvedValue(emptyStatus)
-	mockModule.runAdminMailboxMaintenanceSystemEmailGraphReconcile.mockResolvedValue(
-		emptySystemEmailGraphReconcileResult,
-	)
 	mockModule.runAdminMailboxMaintenanceRetention.mockResolvedValue(
 		emptyRetentionResult,
 	)
@@ -252,38 +178,11 @@ test('admin_mailbox_maintenance routes status, system repair, retention, and del
 		ctx,
 	)
 	expect(status).toMatchObject({ action: 'status', status: emptyStatus })
-	expect(status.status.systemEmailGraph).toEqual(emptyStatus.systemEmailGraph)
+	expect(status.status.systemEmail).toEqual(emptyStatus.systemEmail)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'admin_mailbox_maintenance',
 			result: 'success',
-		}),
-	)
-
-	const systemGraphReconcile = await adminMailboxMaintenanceCapability.handler(
-		{
-			action: 'system_email_graph_reconcile',
-			direction: 'dedicated_to_legacy',
-			force: true,
-		},
-		ctx,
-	)
-	expect(systemGraphReconcile).toEqual({
-		action: 'system_email_graph_reconcile',
-		...emptySystemEmailGraphReconcileResult,
-	})
-	expect(
-		mockModule.runAdminMailboxMaintenanceSystemEmailGraphReconcile,
-	).toHaveBeenCalledWith({
-		db: ctx.env.APP_DB,
-		direction: 'dedicated_to_legacy',
-		force: true,
-	})
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
-			result: 'success',
-			reason: expect.stringContaining('action=system_email_graph_reconcile'),
 		}),
 	)
 
@@ -332,12 +231,6 @@ test('admin_mailbox_maintenance routes status, system repair, retention, and del
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{ action: 'reconcile', batch_size: 101 },
-			ctx,
-		),
-	).rejects.toThrow()
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{ action: 'system_email_graph_reconcile' },
 			ctx,
 		),
 	).rejects.toThrow()

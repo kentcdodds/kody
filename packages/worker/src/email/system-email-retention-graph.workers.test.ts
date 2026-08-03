@@ -1,10 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
-	loadSystemEmailGraphParityReport,
-	reconcileLegacySystemEmailGraphFromDedicated,
-} from './system-email-graph-repo.ts'
-import {
 	pruneSystemEmailRetention,
 	systemEmailLimits,
 	systemEmailOwnerId,
@@ -25,12 +21,6 @@ test('orphan-thread retention respects its deadline and one bounded batch', asyn
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 		FROM sequence`,
 	).run()
-	await reconcileLegacySystemEmailGraphFromDedicated({
-		db: env.APP_DB,
-		direction: 'dedicated_to_legacy',
-		force: true,
-	})
-
 	const expired = await pruneSystemEmailRetention({
 		db: env.APP_DB,
 		blobs: env.EMAIL_BLOBS,
@@ -52,7 +42,7 @@ test('orphan-thread retention respects its deadline and one bounded batch', asyn
 	).toEqual({ count: 20 })
 })
 
-test('system email retention prunes dedicated authority without reading stale legacy rows', async () => {
+test('system email retention prunes dedicated authority and preserves fresh rows', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const old = new Date(
@@ -112,26 +102,6 @@ test('system email retention prunes dedicated authority without reading stale le
 	)
 		.bind(systemEmailLimits.maxStoredMessages, fresh, fresh)
 		.run()
-	const initialMirror = await reconcileLegacySystemEmailGraphFromDedicated({
-		db: env.APP_DB,
-		direction: 'dedicated_to_legacy',
-		force: true,
-	})
-	expect(initialMirror.postReport.parity).toBe(true)
-
-	// A stale rollback-era legacy row must never flow back into authority.
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, processing_status,
-			created_at, updated_at
-		) VALUES (
-			'legacy-only-after-cutover', 'inbound', ?, 'stale@example.net',
-			'stored', ?, ?
-		)`,
-	)
-		.bind(systemEmailOwnerId, fresh, fresh)
-		.run()
-
 	const result = await pruneSystemEmailRetention({
 		db: env.APP_DB,
 		blobs: env.EMAIL_BLOBS,
@@ -150,28 +120,12 @@ test('system email retention prunes dedicated authority without reading stale le
 	const counts = await env.APP_DB.prepare(
 		`SELECT
 			(SELECT COUNT(*) FROM system_email_messages) AS dedicatedMessages,
-			(SELECT COUNT(*) FROM email_messages WHERE user_id = ?) AS legacyMessages,
 			(SELECT COUNT(*) FROM system_email_attachments) AS dedicatedAttachments,
 			(SELECT COUNT(*) FROM system_email_delivery_events) AS dedicatedEvents`,
-	)
-		.bind(systemEmailOwnerId)
-		.first<Record<string, number>>()
+	).first<Record<string, number>>()
 	expect(counts).toEqual({
 		dedicatedMessages: systemEmailLimits.maxStoredMessages,
-		legacyMessages: systemEmailLimits.maxStoredMessages + 1,
 		dedicatedAttachments: 0,
 		dedicatedEvents: 0,
-	})
-	expect(
-		await env.APP_DB.prepare(
-			`SELECT id FROM system_email_messages
-			WHERE id = 'legacy-only-after-cutover'`,
-		).first(),
-	).toBeNull()
-	expect(
-		await loadSystemEmailGraphParityReport({ db: env.APP_DB }),
-	).toMatchObject({
-		messages: { missingFromDedicatedCount: 1, parity: false },
-		parity: false,
 	})
 }, 30_000)

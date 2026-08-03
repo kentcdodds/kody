@@ -51,9 +51,12 @@ export function buildDiscoveryPrompt(input: {
 	return [
 		`I'm deciding whether Kody (${origin}) would be useful for me.`,
 		'Read https://github.com/kentcdodds/kody/blob/main/docs/use/what-can-kody-do.md and follow its links for anything you need more detail on.',
-		"Then interview me about the tools I use, recurring chores I do by hand, and automations I've wished for.",
-		'Finish with 3-5 specific things Kody could do for me, ranked by payoff versus setup effort, each with a concrete first step.',
+		"Interview me conversationally about the tools I use, recurring chores I do by hand, and automations I've wished for.",
+		'Ask at most 2 short questions per message, then wait for my answer.',
+		'Keep each message under roughly 120 words until your final recommendations.',
+		'Finish with 3–5 specific things Kody could do for me, ranked by payoff versus setup effort, each with a concrete first step.',
 		"Don't set anything up yet — this works before I have an account.",
+		`After the ranked list, finish with a short "Next steps if you want to connect me to Kody" section. Point me to ${origin}/onboarding and explain that the only setup is adding Kody as an MCP server there — there is no CLI to install.`,
 	].join(' ')
 }
 

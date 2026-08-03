@@ -1,6 +1,6 @@
 import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
@@ -42,13 +42,16 @@ async function waitFor(
 	timeoutMs = 5_000,
 	label = 'condition',
 ) {
-	const started = Date.now()
-	while (!predicate()) {
-		if (Date.now() - started > timeoutMs) {
+	await vi
+		.waitFor(
+			() => {
+				expect(predicate()).toBe(true)
+			},
+			{ timeout: timeoutMs, interval: 1 },
+		)
+		.catch(() => {
 			throw new Error(`Timed out waiting for ${label}.`)
-		}
-		await new Promise((resolve) => setTimeout(resolve, 5))
-	}
+		})
 }
 
 test('cold daily consume initializes at zero without D1 prepare/run and first unit is 1', async () => {

@@ -1,5 +1,4 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -8,22 +7,17 @@ import {
 	parseMailboxBlobRefCursor,
 } from '#worker/email/mailbox-types.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { accountUserDataPendingDropTargets } from './data-targets.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
 	createAccountExport,
 	createAccountExportManifest,
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './export.ts'
-import { accountUserOwnedDurableObjectSurfaces } from './user-owned-surfaces.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 }
 
 function createD1FromSqlite(
@@ -213,9 +207,6 @@ test('account export D1 coverage includes every live user-owned schema column', 
 			}
 		}
 	}
-	for (const target of accountUserDataPendingDropTargets) {
-		liveUserColumns.add(`${target.table}.${target.column}`)
-	}
 	const coveredColumns = getAccountExportD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -240,12 +231,6 @@ test('account export documents and excludes operator-owned system email rows', a
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
 		);
-
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status, created_at, updated_at
-		) VALUES
-			('user-message', 'inbound', 'user-aaa', 'sender@example.net', 'User mail', 'stored', '2026-07-05', '2026-07-05'),
-			('system-message', 'inbound', 'system:email', 'sender@example.net', 'System mail', 'stored', '2026-07-05', '2026-07-05');
 	`)
 
 	const accountExport = await createAccountExport({
@@ -279,8 +264,8 @@ test('account export documents and excludes operator-owned system email rows', a
 				reason: expect.stringContaining('Operator-owned inbound mail'),
 			}),
 			expect.objectContaining({
-				name: 'frozen_user_email_messages',
-				reason: expect.stringContaining('Frozen rollback snapshot'),
+				name: 'system_email_messages',
+				reason: expect.stringContaining('operator-owned system email'),
 			}),
 		]),
 	)
@@ -618,13 +603,6 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 		) VALUES
 			(1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-aaa', 'user-avatars/user-aaa/avatar.png'),
 			(2, 'user-b', 'b@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-bbb', 'user-avatars/user-bbb/avatar.png');
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES
-			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
-			('mail-z', 'inbound', 'user-aaa', 'sender@example.com', 'Z', 'stored', '2026-07-05', '2026-07-05'),
-			('mail-b', 'inbound', 'user-bbb', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
 	`)
 	const mimeBytes = new TextEncoder().encode('Subject: A\r\n\r\nbody')
 	const getEmailBlob = vi.fn(async (key: string) => {
@@ -765,15 +743,6 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 			'2026-07-05', 'user-aaa'
 		);
 	`)
-	const insert = sqlite.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES (?, 'inbound', 'user-aaa', 'sender@example.com', ?, 'stored', '2026-07-05', '2026-07-05')`,
-	)
-	for (let index = 0; index < 1201; index += 1) {
-		insert.run(`mail-${String(index).padStart(4, '0')}`, `Mail ${index}`)
-	}
 	const page = await readAccountExportSection({
 		env: {
 			APP_DB: db,
@@ -782,7 +751,7 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 			COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 			MAILBOX: createMailboxBinding({
 				blobReferences: () =>
-					Array.from({ length: 1201 }, (_, index) => {
+					Array.from({ length: 502 }, (_, index) => {
 						const messageId = `mail-${String(index).padStart(4, '0')}`
 						return {
 							kind: 'raw_mime' as const,
@@ -892,12 +861,6 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
 			'2026-07-05', 'user-aaa'
 		);
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES
-			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
-			('mail-b', 'inbound', 'user-aaa', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
 	`)
 	const requestedKeys: Array<string> = []
 	const get = vi.fn(async (key: string) => {
@@ -909,26 +872,27 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 			arrayBuffer: async () => bytes.buffer,
 		}
 	})
+	const blobReferences = [
+		{
+			kind: 'raw_mime' as const,
+			key: 'email-raw:v1:user-aaa/mail-a',
+			messageId: 'mail-a',
+			attachmentId: null,
+		},
+		{
+			kind: 'raw_mime' as const,
+			key: 'email-raw:v1:user-aaa/mail-b',
+			messageId: 'mail-b',
+			attachmentId: null,
+		},
+	]
 	const env = {
 		APP_DB: db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		EMAIL_BLOBS: { get },
 		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 		MAILBOX: createMailboxBinding({
-			blobReferences: () => [
-				{
-					kind: 'raw_mime',
-					key: 'email-raw:v1:user-aaa/mail-a',
-					messageId: 'mail-a',
-					attachmentId: null,
-				},
-				{
-					kind: 'raw_mime',
-					key: 'email-raw:v1:user-aaa/mail-b',
-					messageId: 'mail-b',
-					attachmentId: null,
-				},
-			],
+			blobReferences: () => blobReferences,
 		}),
 	} as unknown as Env
 	const first = await readAccountExportSection({
@@ -937,15 +901,12 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 		mcpUserId: 'user-aaa',
 		section: 'r2_object',
 	})
-	sqlite.exec(`
-		INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES (
-			'mail-00', 'inbound', 'user-aaa', 'sender@example.com', 'Inserted',
-			'stored', '2026-07-05', '2026-07-05'
-		);
-	`)
+	blobReferences.unshift({
+		kind: 'raw_mime',
+		key: 'email-raw:v1:user-aaa/mail-00',
+		messageId: 'mail-00',
+		attachmentId: null,
+	})
 	const second = await readAccountExportSection({
 		env,
 		dbUserId: 1,
@@ -1033,7 +994,7 @@ test('DO export sections expose bounded job manager and owned connector state', 
 
 test('durable object discovery pages high-cardinality storage ids without nested arrays', async () => {
 	const ids = Array.from(
-		{ length: 1201 },
+		{ length: 502 },
 		(_, index) => `storage-${String(index).padStart(4, '0')}`,
 	)
 	let maxRows = 0
@@ -1085,76 +1046,8 @@ test('durable object discovery pages high-cardinality storage ids without nested
 		if (!page.truncated) break
 		startAfter = page.nextStartAfter ?? undefined
 	}
-	expect(seen.size).toBe(1201)
+	expect(seen.size).toBe(502)
 	expect(maxRows).toBeLessThanOrEqual(101)
-})
-
-test('durable object discovery paging does not load package manifests', async () => {
-	const loadManifest = vi.spyOn(
-		await import('#worker/package-registry/source.ts'),
-		'loadPackageManifestBySourceId',
-	)
-	loadManifest.mockRejectedValue(new Error('manifest should not be loaded'))
-	try {
-		const { sqlite, db } = createMigratedDb()
-		sqlite.exec(`
-			INSERT INTO users (
-				id, username, email, password_hash, created_at, updated_at,
-				email_verified_at, stable_user_id
-			)
-			VALUES (
-				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-aaa'
-			);
-			INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, tags_json, source_id,
-				has_app, hidden, is_private, created_at, updated_at
-			) VALUES (
-				'pkg-1', 'user-aaa', 'Pkg', 'pkg', '', '[]',
-				'src-1', 0, 0, 1, '2026-07-05', '2026-07-05'
-			);
-			INSERT INTO user_storage_buckets (
-				user_id, storage_id, kind, created_at, last_seen_at
-			) VALUES (
-				'user-aaa', 'exec:page-1', 'execute', '2026-07-05', '2026-07-05'
-			);
-			INSERT INTO package_service_states (
-				user_id, package_id, service_name, status, started_at, updated_at
-			) VALUES (
-				'user-aaa', 'pkg-1', 'worker', 'idle',
-				null, '2026-07-05T00:00:00.000Z'
-			);
-		`)
-
-		const storagePage = await readAccountExportSection({
-			env: { APP_DB: db } as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'durable_object_summaries',
-			kind: 'storage_runner',
-			pageSize: 50,
-		})
-		expect(storagePage.items.length).toBeGreaterThan(0)
-
-		const servicePage = await readAccountExportSection({
-			env: { APP_DB: db } as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'durable_object_summaries',
-			kind: 'package_service',
-			pageSize: 50,
-		})
-		expect(servicePage.items).toEqual([
-			{
-				kind: 'package_service',
-				packageId: 'pkg-1',
-				serviceName: 'worker',
-			},
-		])
-		expect(loadManifest).not.toHaveBeenCalled()
-	} finally {
-		loadManifest.mockRestore()
-	}
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
@@ -1439,31 +1332,8 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
 		);
-		INSERT INTO email_threads (
-			id, user_id, subject_normalized, last_message_at, created_at, updated_at
-		) VALUES (
-			'thread-1', 'user-aaa', 'hello', '2026-07-30', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_messages (
-			id, direction, user_id, thread_id, from_address, subject,
-			processing_status, created_at, updated_at
-		) VALUES (
-			'message-1', 'inbound', 'user-aaa', 'thread-1', 'a@example.com',
-			'hello', 'stored', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_attachments (
-			id, message_id, filename, content_type, storage_kind, created_at
-		) VALUES (
-			'attachment-1', 'message-1', 'file.txt', 'text/plain', 'unavailable',
-			'2026-07-30'
-		);
-		INSERT INTO email_delivery_events (
-			id, message_id, user_id, event_type, created_at
-		) VALUES (
-			'event-1', 'message-1', 'user-aaa', 'received', '2026-07-30'
-		);
 	`)
-	const totalRows = 1201
+	const totalRows = 502
 	const insert = sqlite.prepare(
 		`INSERT INTO mcp_memories (
 			id, user_id, subject, summary, details, created_at, updated_at
@@ -1520,7 +1390,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		if (!page.truncated) break
 		startAfter = page.nextStartAfter ?? undefined
 	}
-	expect(pages).toBe(3)
+	expect(pages).toBe(2)
 	expect(seenIds.size).toBe(totalRows)
 	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(501)
 
@@ -1944,29 +1814,6 @@ test('account export includes mailbox rows, pages them, and warns on truncation'
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
 		);
-		INSERT INTO email_threads (
-			id, user_id, subject_normalized, last_message_at, created_at, updated_at
-		) VALUES (
-			'thread-1', 'user-aaa', 'hello', '2026-07-30', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_messages (
-			id, direction, user_id, thread_id, from_address, subject,
-			processing_status, created_at, updated_at
-		) VALUES (
-			'message-1', 'inbound', 'user-aaa', 'thread-1', 'a@example.com',
-			'hello', 'stored', '2026-07-30', '2026-07-30'
-		);
-		INSERT INTO email_attachments (
-			id, message_id, filename, content_type, storage_kind, created_at
-		) VALUES (
-			'attachment-1', 'message-1', 'file.txt', 'text/plain', 'unavailable',
-			'2026-07-30'
-		);
-		INSERT INTO email_delivery_events (
-			id, message_id, user_id, event_type, created_at
-		) VALUES (
-			'event-1', 'message-1', 'user-aaa', 'received', '2026-07-30'
-		);
 	`)
 	const rows = [
 		{
@@ -2236,24 +2083,6 @@ test('run_records section paging preserves exportRuns cursor across dedicated ph
 	)
 })
 
-test('run_log surface notes document clearAll purging every RunLog table', () => {
-	const runLog = accountUserOwnedDurableObjectSurfaces.find(
-		(surface) => surface.id === 'run_log',
-	)
-	expect(runLog?.binding).toBe('RUN_LOG')
-	expect(runLog?.deletionResultKey).toBe('runLogs')
-	expect(runLog?.notes).toContain('clearAll')
-	for (const table of [
-		'workflow_projections',
-		'job_run_observability',
-		'package_run_successes',
-		'activation_milestones',
-		'package-invocation idempotency ledger',
-	]) {
-		expect(runLog?.notes).toContain(table)
-	}
-})
-
 test('account export includes a package service known only via package_service_states', async () => {
 	consoleWarn.mockImplementation(() => {})
 	try {
@@ -2330,59 +2159,6 @@ test('account export includes a package service known only via package_service_s
 	} finally {
 		consoleWarn.mockReset()
 	}
-})
-
-test('account export includes a storage runner known only via user_storage_buckets', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-		INSERT INTO user_storage_buckets (
-			user_id, storage_id, kind, created_at, last_seen_at
-		) VALUES (
-			'user-aaa', 'exec:export-only', 'execute',
-			'2026-07-05', '2026-07-05'
-		);
-	`)
-
-	const exportStorage = vi.fn(async () => ({
-		entries: [{ key: 'alpha', value: { n: 1 } }],
-		truncated: false,
-		nextStartAfter: null,
-		pageSize: 100,
-		estimatedBytes: 10,
-	}))
-
-	const env = {
-		APP_DB: db,
-		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ exportStorage }),
-		},
-	} as unknown as Env
-
-	const manifest = await createAccountExportManifest({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-	expect(manifest.sections.storage_runners?.count).toBe(1)
-
-	const section = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'storage_runner',
-		storageId: 'exec:export-only',
-	})
-	expect(section.items).toEqual([{ key: 'alpha', value: { n: 1 } }])
-	expect(exportStorage).toHaveBeenCalledTimes(1)
 })
 
 test('storage_runners count matches ids enumerable by discovery paging', async () => {

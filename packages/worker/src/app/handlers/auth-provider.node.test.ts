@@ -1,4 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test } from 'vitest'
@@ -17,6 +16,7 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -36,11 +36,7 @@ afterAll(() => {
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../../migrations/', import.meta.url)
-	for (const fileName of readdirSync(migrationsDir)
-		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDir), 'utf8'))
-	}
+	applyAllMigrations(db, migrationsDir)
 }
 
 function createD1FromSqlite(db: DatabaseSync) {

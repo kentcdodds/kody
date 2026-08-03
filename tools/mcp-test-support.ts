@@ -562,12 +562,7 @@ async function applyMigrations(persistDir: string) {
 		cmd: [
 			nodeBin,
 			'--env-file=packages/worker/.env',
-			'./wrangler-env.ts',
-			'd1',
-			'migrations',
-			'apply',
-			'APP_DB',
-			'--local',
+			'tools/apply-local-app-migrations.ts',
 			'--persist-to',
 			persistDir,
 		],

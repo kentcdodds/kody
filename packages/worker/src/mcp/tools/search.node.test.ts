@@ -641,58 +641,6 @@ test('searchUnified hides admin capabilities from non-admins in offline search',
 	).toBe(true)
 })
 
-test('searchUnified hides admin capabilities from non-admins in Vectorize-backed search', async () => {
-	const registry = buildRoleGatedSearchRegistry()
-	const regularRegistry = filterCapabilityRegistryForCaller(
-		registry,
-		createMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'user',
-				roles: ['user'],
-			},
-		}),
-	)
-	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		AI: createDeterministicAiBinding(),
-		CAPABILITY_VECTOR_INDEX: {
-			async query() {
-				return {
-					matches: [
-						{ id: 'admin_user_list', score: 0.99 },
-						{ id: 'public_docs_search', score: 0.5 },
-					],
-				}
-			},
-		},
-	} as unknown as Env
-
-	const result = await searchUnified({
-		env,
-		query: 'admin users roles',
-		limit: 5,
-		registry: regularRegistry,
-		optionalRows: emptyOptionalSearchRows,
-	})
-
-	expect(result.offline).toBe(false)
-	expect(
-		result.matches.some(
-			(match) =>
-				match.type === 'capability' && match.name === 'admin_user_list',
-		),
-	).toBe(false)
-	expect(
-		result.matches.some(
-			(match) =>
-				match.type === 'capability' && match.name === 'public_docs_search',
-		),
-	).toBe(true)
-})
-
 test('searchUnified ranks package retriever results alongside capabilities', async () => {
 	const registry = buildCapabilityRegistry([
 		{

@@ -22,9 +22,8 @@ import { type SystemEmailLocal } from './system-email.ts'
 import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
 import {
 	commitSystemInboundEventMutation,
-	systemInboundEventMutation,
-} from './system-inbound-delivery-mirror.ts'
-import { commitSystemEmailGraphMutations } from './system-email-graph-transaction.ts'
+	commitSystemInboundEventMutations,
+} from './system-inbound-delivery-transaction.ts'
 
 export {
 	claimSystemInboundSubscriptionEffect,
@@ -503,26 +502,16 @@ export async function pruneSystemExpiredInboundDedupePointers(input: {
 		.all<{ id: string }>()
 	const ids = (rows.results ?? []).map((row) => row.id)
 	if (ids.length === 0) return 0
-	const mutations = ids.map((id) =>
-		systemInboundEventMutation({
-			db: input.db,
-			eventId: id,
-			dedicated: input.db
-				.prepare(
-					`DELETE FROM system_email_delivery_events
+	const mutations = ids.map((id) => ({
+		eventId: id,
+		dedicated: input.db
+			.prepare(
+				`DELETE FROM system_email_delivery_events
 					WHERE id = ? AND provider = ? AND dedupe_expires_at <= ?`,
-				)
-				.bind(id, systemInboundDedupeProvider, now.toISOString()),
-			legacy: input.db
-				.prepare(
-					`DELETE FROM email_delivery_events
-					WHERE id = ? AND user_id = ? AND provider = ?`,
-				)
-				.bind(id, systemEmailOwnerId, systemInboundDedupeProvider),
-			expectation: 'absent',
-		}),
-	)
-	const { mutationResults } = await commitSystemEmailGraphMutations({
+			)
+			.bind(id, systemInboundDedupeProvider, now.toISOString()),
+	}))
+	const { mutationResults } = await commitSystemInboundEventMutations({
 		db: input.db,
 		mutations,
 	})

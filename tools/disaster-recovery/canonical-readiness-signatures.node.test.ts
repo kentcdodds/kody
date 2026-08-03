@@ -248,12 +248,57 @@ async function isD1Ready(
 	).levels['d1-only'].ready
 }
 
-test('signed expiry cannot be extended by index metadata and remains code-age constrained when re-signed', async () => {
+test('signed expiry rejects index-only extension, invalid timestamps, and code-age limits even when re-signed', async () => {
+	expect(
+		Object.keys(
+			JSON.parse(
+				canonicalJson({
+					é: 1,
+					Z: 2,
+					a: 3,
+					A: 4,
+					'\uE000': 5,
+					'😀': 6,
+				}),
+			) as Record<string, unknown>,
+		),
+	).toEqual(['A', 'Z', 'a', 'é', '😀', '\uE000'])
+
 	const directory = await mkdtemp(
 		path.join(os.tmpdir(), 'readiness-signed-expiry-'),
 	)
 	try {
 		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+		const content: EvidenceContent = {
+			changeId: 'CHG-APP-DB-RESTORE',
+			destinationIdentity: null,
+			details: detailsFor('inventory'),
+			expiresAt,
+			kind: 'inventory',
+			outcome: 'passed',
+			performedAt,
+			resourceId: 'APP_DB',
+			sourceIdentity,
+			systemVersion: 'kody-build-2026.07.22',
+			uri: 'inventory.json',
+			verifierIdentity: 'recovery-verifier@example.test',
+		}
+		expect(
+			parseSignedEvidenceEnvelope(signEnvelope(content, privateKey)),
+		).toBeDefined()
+		for (const invalidExpiresAt of [
+			performedAt,
+			'2026-07-22T09:59:59.999Z',
+			'2026-08-22T10:00:00Z',
+			'2026-08-22T10:00:00.000+00:00',
+		]) {
+			expect(
+				parseSignedEvidenceEnvelope(
+					signEnvelope({ ...content, expiresAt: invalidExpiresAt }, privateKey),
+				),
+			).toBeUndefined()
+		}
+
 		const fixture = await createFixture(directory, privateKey)
 		const registry = registryFor(publicKey)
 		expect(
@@ -325,39 +370,6 @@ test('signed expiry cannot be extended by index metadata and remains code-age co
 		).toBe(false)
 	} finally {
 		await rm(directory, { recursive: true, force: true })
-	}
-})
-
-test('signed expiry requires millisecond UTC after performedAt', () => {
-	const { privateKey } = generateKeyPairSync('ed25519')
-	const content: EvidenceContent = {
-		changeId: 'CHG-APP-DB-RESTORE',
-		destinationIdentity: null,
-		details: detailsFor('inventory'),
-		expiresAt,
-		kind: 'inventory',
-		outcome: 'passed',
-		performedAt,
-		resourceId: 'APP_DB',
-		sourceIdentity,
-		systemVersion: 'kody-build-2026.07.22',
-		uri: 'inventory.json',
-		verifierIdentity: 'recovery-verifier@example.test',
-	}
-	expect(
-		parseSignedEvidenceEnvelope(signEnvelope(content, privateKey)),
-	).toBeDefined()
-	for (const invalidExpiresAt of [
-		performedAt,
-		'2026-07-22T09:59:59.999Z',
-		'2026-08-22T10:00:00Z',
-		'2026-08-22T10:00:00.000+00:00',
-	]) {
-		expect(
-			parseSignedEvidenceEnvelope(
-				signEnvelope({ ...content, expiresAt: invalidExpiresAt }, privateKey),
-			),
-		).toBeUndefined()
 	}
 })
 
@@ -477,7 +489,7 @@ test('minimal D1 readiness requires every kind-specific signed envelope', async 
 	}
 })
 
-test('signed D1 provenance must match checked source and every bound digest', async () => {
+test('signed D1 provenance, restore isolation, and account identities fail closed', async () => {
 	const directory = await mkdtemp(
 		path.join(os.tmpdir(), 'readiness-provenance-'),
 	)
@@ -549,26 +561,6 @@ test('signed D1 provenance must match checked source and every bound digest', as
 				false,
 			)
 		}
-	} finally {
-		await rm(directory, { recursive: true, force: true })
-	}
-})
-
-test('signed D1 restore evidence binds an isolated destination UUID and account', async () => {
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-restore-isolation-'),
-	)
-	try {
-		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-		const fixture = await createFixture(directory, privateKey)
-		const registry = registryFor(publicKey)
-		expect(
-			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
-		).toBe(true)
-		const restoreEnvelope = fixture.envelopes.find(
-			(envelope) => envelope.content.kind === 'd1-restore-drill',
-		)
-		if (!restoreEnvelope) throw new Error('fixture lacks restore evidence')
 
 		async function expectRestoreContentNotReady(
 			content: EvidenceContent,
@@ -659,22 +651,6 @@ test('signed D1 restore evidence binds an isolated destination UUID and account'
 			...destinationIdentity,
 			resourceId: sourceIdentity.resourceId.toUpperCase(),
 		})
-	} finally {
-		await rm(directory, { recursive: true, force: true })
-	}
-})
-
-test('signed APP_DB evidence rejects non-canonical Cloudflare account IDs', async () => {
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-account-identities-'),
-	)
-	try {
-		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-		const fixture = await createFixture(directory, privateKey)
-		const registry = registryFor(publicKey)
-		expect(
-			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
-		).toBe(true)
 
 		async function expectAccountIdNotReady(
 			identity: 'source' | 'destination',
@@ -718,16 +694,16 @@ test('signed APP_DB evidence rejects non-canonical Cloudflare account IDs', asyn
 				artifact.destinationIdentity = content.destinationIdentity
 				if (affected) affectedEnvelopeCount += 1
 			}
-			const verified = await verifyLocalArtifactFiles(
+			const nextVerified = await verifyLocalArtifactFiles(
 				evidence,
 				fixture.evidencePath,
 				registry,
 			)
-			expect(verified.size).toBe(
+			expect(nextVerified.size).toBe(
 				fixture.envelopes.length - affectedEnvelopeCount,
 			)
 			expect(
-				assessCanonicalReadiness(evidence, now, verified).levels['d1-only'],
+				assessCanonicalReadiness(evidence, now, nextVerified).levels['d1-only'],
 			).toMatchObject({ ready: false })
 		}
 
@@ -749,7 +725,7 @@ test('signed APP_DB evidence rejects non-canonical Cloudflare account IDs', asyn
 	}
 })
 
-test('unsigned, forged, wrong-key, mismatched, stale-shape, and duplicate evidence fail closed', async () => {
+test('unsigned, forged, untrusted, and duplicate evidence fail closed', async () => {
 	const directory = await mkdtemp(
 		path.join(os.tmpdir(), 'readiness-forgeries-'),
 	)
@@ -867,18 +843,7 @@ test('unsigned, forged, wrong-key, mismatched, stale-shape, and duplicate eviden
 		expect(await isD1Ready(duplicateUri, fixture.evidencePath, registry)).toBe(
 			false,
 		)
-	} finally {
-		await rm(directory, { recursive: true, force: true })
-	}
-})
 
-test('checked-in empty trust registry cannot bless operator-generated evidence', async () => {
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-untrusted-operator-'),
-	)
-	try {
-		const { privateKey } = generateKeyPairSync('ed25519')
-		const fixture = await createFixture(directory, privateKey)
 		const checkedRegistry = parseTrustedPublicKeyRegistry(
 			JSON.parse(
 				await readFile(

@@ -1,6 +1,5 @@
 import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
-import { pruneFrozenUserEmailGraphForRetention } from '#worker/email/legacy-user-email-graph-cleanup.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -125,11 +124,10 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 				disposition,
 			): disposition is Extract<
 				(typeof accountRetentionDispositions)[number],
-				{ kind: 'alternate_cleanup' | 'durable_forever' | 'pending_drop' }
+				{ kind: 'alternate_cleanup' | 'durable_forever' }
 			> =>
 				disposition.kind === 'alternate_cleanup' ||
-				disposition.kind === 'durable_forever' ||
-				disposition.kind === 'pending_drop',
+				disposition.kind === 'durable_forever',
 		)
 		.map((disposition) => ({
 			table: disposition.table,
@@ -145,15 +143,6 @@ export type RetentionPruneResult = {
 		deletedKvKeys: number
 		deletedSnapshotKvKeys: number
 		kvDeleteErrors: number
-	}
-	emailDeliveryEvents: number
-	emailMessages: {
-		deletedMessages: number
-		deletedAttachments: number
-		deletedThreads: number
-		deletedRawMimeBlobs: number
-		deletedAttachmentBlobs: number
-		blobDeleteErrors: number
 	}
 	usageRollups: number
 	featureFlagExposureRollups: number
@@ -575,7 +564,7 @@ export async function pruneStripeWebhookEventsForRetention(input: {
 }
 
 export async function pruneRetention(input: {
-	env: Pick<Env, 'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	env: Pick<Env, 'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV'>
 	now?: Date
 	timeBudgetMs?: number
 }): Promise<RetentionPruneResult> {
@@ -593,15 +582,6 @@ export async function pruneRetention(input: {
 			deletedKvKeys: 0,
 			deletedSnapshotKvKeys: 0,
 			kvDeleteErrors: 0,
-		},
-		emailDeliveryEvents: 0,
-		emailMessages: {
-			deletedMessages: 0,
-			deletedAttachments: 0,
-			deletedThreads: 0,
-			deletedRawMimeBlobs: 0,
-			deletedAttachmentBlobs: 0,
-			blobDeleteErrors: 0,
 		},
 		usageRollups: 0,
 		featureFlagExposureRollups: 0,
@@ -664,21 +644,6 @@ export async function pruneRetention(input: {
 				result.publishedBundleArtifacts.deletedSnapshotKvKeys +=
 					batch.deletedSnapshotKvKeys
 				result.publishedBundleArtifacts.kvDeleteErrors += batch.kvDeleteErrors
-				return batch.hasMore
-			},
-		},
-		{
-			table: 'frozen_user_email_graph',
-			done: false,
-			run: async () => {
-				const batch = await pruneFrozenUserEmailGraphForRetention({
-					db,
-					now,
-				})
-				result.emailDeliveryEvents += batch.emailDeliveryEvents
-				result.emailMessages.deletedMessages += batch.emailMessages
-				result.emailMessages.deletedAttachments += batch.emailAttachments
-				result.emailMessages.deletedThreads += batch.emailThreads
 				return batch.hasMore
 			},
 		},
