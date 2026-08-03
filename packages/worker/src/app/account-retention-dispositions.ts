@@ -35,25 +35,25 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			table: 'system_email_delivery_events',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 delivery events are excluded from account retention; in step 4a the system-email retention lane applies the legacy 90-day policy, then atomically reconciles the dedicated copy.',
+				'Operator-owned D1 delivery events are excluded from account retention; the dedicated system-email retention lane applies its 90-day policy and atomically removes each legacy mirror.',
 		},
 		{
 			table: 'system_email_messages',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 messages are excluded from account retention; in step 4a the legacy-authority 90-day age and 5,000-message cap run first, then atomic reconciliation bounds the dedicated copy.',
+				'Operator-owned D1 messages are excluded from account retention; the dedicated authority enforces the 90-day age and 5,000-message cap with R2-before-row deletion and atomic legacy-mirror cleanup.',
 		},
 		{
 			table: 'system_email_attachments',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 attachment metadata follows dedicated system messages and is explicitly removed child-first by the step 4a post-retention graph reconcile.',
+				'Operator-owned D1 attachment metadata follows dedicated system messages; referenced R2 objects are deleted before authority metadata and the legacy mirror.',
 		},
 		{
 			table: 'system_email_threads',
 			kind: 'alternate_cleanup',
 			reason:
-				'Operator-owned D1 threads are pruned when absent from the legacy-authority graph by the step 4a post-retention atomic reconcile.',
+				'Operator-owned D1 threads are pruned from the dedicated authority when orphaned, with atomic legacy-mirror cleanup.',
 		},
 		{
 			table: 'mcp_memories',

@@ -1,8 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
-import { listEmailMessages } from './repo.ts'
-import { systemEmailOwnerId } from './system-email.ts'
+import { listSystemEmailMessages } from './system-email-graph-store.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
@@ -235,9 +234,8 @@ test(
 				await waitUntilPromises[index]
 			}
 
-			const [stored] = await listEmailMessages({
+			const [stored] = await listSystemEmailMessages({
 				db: env.APP_DB,
-				userId: systemEmailOwnerId,
 				limit: 1,
 			})
 			expect(stored).toBeDefined()
@@ -318,9 +316,8 @@ test('system inbound email dispatch is a no-op without admins or RBAC tables', a
 		await waitUntilPromises[index]
 	}
 
-	const messages = await listEmailMessages({
+	const messages = await listSystemEmailMessages({
 		db: env.APP_DB,
-		userId: systemEmailOwnerId,
 		limit: 5,
 	})
 	expect(messages.some((row) => row.subject === 'No admins yet')).toBe(true)

@@ -7,6 +7,14 @@ import {
 } from './package-subscriptions.ts'
 import { getInternalEmailMessageById } from './mailbox-internal-read.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import {
+	claimSystemInboundSubscriptionEffect,
+	completeSystemInboundSubscriptionEffect,
+	failSystemInboundSubscriptionEffect,
+	getSystemInboundDelivery,
+	listDueSystemInboundEffects,
+	recordSystemInboundUsageEffect,
+} from './system-inbound-delivery-store.ts'
 
 const subscriptionEffectLeaseMs = 5 * 60 * 1000
 const effectRetryMs = 15 * 60 * 1000
@@ -435,9 +443,9 @@ export type ProcessInboundDeliveryEffectsInput = {
 	waitUntil?: (promise: Promise<unknown>) => void
 }
 
-// system:email deliberately retains the legacy D1 authority and effect policy;
-// USER deliveries use the Mailbox CAS engine below. Keep the split explicit.
-async function processSystemInboundDeliveryEffectsWithLeaseHeld(
+// Frozen pre-4b implementation kept only as a rollback reference. No live
+// caller reaches it; the active system path below uses dedicated authority.
+export async function processLegacySystemInboundDeliveryEffectsForRollback(
 	input: ProcessInboundDeliveryEffectsInput,
 ) {
 	const now = input.now ?? new Date()
@@ -703,11 +711,130 @@ async function processSystemInboundDeliveryEffectsWithLeaseHeld(
 	}
 }
 
+async function processDedicatedSystemInboundDeliveryEffects(
+	input: ProcessInboundDeliveryEffectsInput,
+) {
+	const now = input.now ?? new Date()
+	const delivery = await getSystemInboundDelivery({
+		db: input.env.APP_DB,
+		deliveryId: input.deliveryId,
+	})
+	if (
+		delivery?.state !== 'received' ||
+		(input.expectedFinalizationToken != null &&
+			delivery.finalizationToken !== input.expectedFinalizationToken)
+	) {
+		return { outcome: 'stale' as const }
+	}
+	const message = await getInternalEmailMessageById({
+		env: input.env,
+		ownerId: systemEmailOwnerId,
+		messageId: delivery.messageId,
+	})
+	const usageMonth =
+		delivery.usageMonth ??
+		(message
+			? (message.receivedAt ?? message.createdAt).slice(0, 7)
+			: now.toISOString().slice(0, 7))
+	const usageBytes = delivery.usageBytes ?? message?.rawSize ?? 0
+	const usageDurationMs = delivery.usageDurationMs ?? input.durationMs ?? 0
+	try {
+		await recordSystemInboundUsageEffect({
+			db: input.env.APP_DB,
+			delivery,
+			usageMonth,
+			usageBytes,
+			usageDurationMs,
+			now,
+			includeRollup: !input.env.USAGE_EVENTS,
+		})
+	} catch (error) {
+		if (
+			!(error instanceof Error) ||
+			!error.message.includes('no such table: usage_rollups')
+		) {
+			throw error
+		}
+		await recordSystemInboundUsageEffect({
+			db: input.env.APP_DB,
+			delivery,
+			usageMonth,
+			usageBytes,
+			usageDurationMs,
+			now,
+			includeRollup: false,
+		})
+	}
+	const lease = await claimSystemInboundSubscriptionEffect({
+		db: input.env.APP_DB,
+		deliveryId: delivery.deliveryId,
+		finalizationToken: delivery.finalizationToken,
+		now,
+	})
+	if (!lease) return { outcome: 'usage-only' as const }
+	try {
+		if (!message) {
+			const completed = await completeSystemInboundSubscriptionEffect({
+				db: input.env.APP_DB,
+				deliveryId: delivery.deliveryId,
+				lease,
+				now,
+				detailField: '$.subscriptionEffectMissingMessageAt',
+			})
+			if (!completed) return { outcome: 'stale' as const }
+			return { outcome: 'missing-message' as const }
+		}
+		if (message.classification !== 'quarantined') {
+			await dispatchSystemInboundEmailSubscriptionEvents({
+				env: input.env,
+				message,
+				waitUntil: input.waitUntil,
+			})
+		}
+		const completed = await completeSystemInboundSubscriptionEffect({
+			db: input.env.APP_DB,
+			deliveryId: delivery.deliveryId,
+			lease,
+			now,
+			detailField:
+				message.classification === 'quarantined'
+					? '$.subscriptionEffectSuppressedQuarantineAt'
+					: undefined,
+		})
+		if (!completed) return { outcome: 'stale' as const }
+		return { outcome: 'complete' as const }
+	} catch (error) {
+		const failure = resolveSubscriptionEffectFailure(
+			delivery.subscriptionEffectAttemptCount ?? 0,
+		)
+		const failed = await failSystemInboundSubscriptionEffect({
+			db: input.env.APP_DB,
+			deliveryId: delivery.deliveryId,
+			lease,
+			error: error instanceof Error ? error.message : String(error),
+			attemptCount: failure.attemptCount,
+			deadLettered: failure.deadLettered,
+			now,
+		})
+		if (!failed) return { outcome: 'stale' as const }
+		if (failure.deadLettered) {
+			console.error('inbound-email-subscription-effect-dead-lettered', {
+				userId: systemEmailOwnerId,
+				deliveryId: delivery.deliveryId,
+				attemptCount: failure.attemptCount,
+				error,
+			})
+			return { outcome: 'dead-letter' as const }
+		}
+		throw error
+	}
+}
+
 export async function processInboundDeliveryEffects(
 	input: ProcessInboundDeliveryEffectsInput,
 ) {
 	if (input.userId === systemEmailOwnerId) {
-		return await processSystemInboundDeliveryEffectsWithLeaseHeld(input)
+		return await processDedicatedSystemInboundDeliveryEffects(input)
 	}
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -777,67 +904,14 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 		}
 		return { processed, errors }
 	}
-	const leaseExpiredBefore = new Date(
-		now.getTime() - subscriptionEffectLeaseMs,
-	).toISOString()
-	const rows = await input.env.APP_DB.prepare(
-		`SELECT id
-		FROM email_delivery_events
-		WHERE user_id = ?
-			AND provider = 'cloudflare-email-routing'
-			AND event_type = 'received'
-			AND needs_effect_reconcile = 1
-			AND json_extract(detail_json, '$.fingerprint') IS NOT NULL
-			AND (
-				(
-					json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
-					AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
-					AND (
-						json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
-						OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
-					)
-					AND (
-						json_extract(detail_json, '$.usageEffectLease') IS NULL
-						OR json_extract(detail_json, '$.usageEffectLeaseAt') < ?
-					)
-				)
-				OR (
-					(
-						json_extract(detail_json, '$.subscriptionEffectState') IS NULL
-						OR json_extract(
-							detail_json,
-							'$.subscriptionEffectState'
-						) NOT IN ('complete', 'dead-letter')
-					)
-					AND (
-						json_extract(detail_json, '$.subscriptionEffectRetryAt') IS NULL
-						OR json_extract(detail_json, '$.subscriptionEffectRetryAt') <= ?
-					)
-					AND (
-						json_extract(detail_json, '$.subscriptionEffectState') != 'processing'
-						OR json_extract(detail_json, '$.subscriptionEffectLeaseAt') < ?
-					)
-				)
-			)
-		ORDER BY COALESCE(
-			json_extract(detail_json, '$.usageEffectRetryAt'),
-			json_extract(detail_json, '$.subscriptionEffectRetryAt'),
-			created_at
-		) ASC, id ASC
-		LIMIT ?`,
-	)
-		.bind(
-			input.userId,
-			now.toISOString(),
-			leaseExpiredBefore,
-			now.toISOString(),
-			leaseExpiredBefore,
-			input.limit ?? 20,
-		)
-		.all<{ id: string }>()
+	const rows = await listDueSystemInboundEffects({
+		db: input.env.APP_DB,
+		now,
+		limit: input.limit ?? 20,
+	})
 	let processed = 0
 	let errors = 0
-	for (const row of rows.results ?? []) {
+	for (const row of rows) {
 		try {
 			await processInboundDeliveryEffects({
 				env: input.env,

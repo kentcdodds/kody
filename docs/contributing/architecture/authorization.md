@@ -368,7 +368,8 @@ This boundary is enforced structurally:
 2. **Admin account queries touch identity tables only.** `/admin/users*.json`
    and role handlers select explicit column lists from `users`, `user_roles`,
    and `roles`. They never join user content tables. `/admin/system-email*.json`
-   is separate and filters email rows by `user_id = 'system:email'`.
+   is separate and reads only the operator-owned `system_email_*` graph; it
+   never falls back to user rows or a Mailbox Durable Object.
 3. **Platform feedback has a dedicated role-gated service boundary.** Submit
    writes are scoped to the authenticated user and require
    `user_confirmed: true` from an interactive context at the capability

@@ -94,10 +94,9 @@ const systemEmailGraphParitySchema = z.object({
 		mismatchedLegacyAuthorityIndexCount: z.number().int().nonnegative(),
 		classification: z.enum([
 			'no-system-provider-links',
-			'legacy-authority-parity',
-			'legacy-authority-mismatch',
+			'unsupported-system-provider-links',
 		]),
-		authorityDisposition: z.literal('legacy-email-messages-until-4b-routing'),
+		authorityDisposition: z.literal('dedicated-inbound-only'),
 		parity: z.boolean(),
 	}),
 	parity: z.boolean(),
@@ -131,7 +130,7 @@ const statusSchema = z.object({
 		'Fleet-wide aggregate D1 outbound provider reverse-index parity (counts only; no owner/message content).',
 	),
 	systemEmailGraph: systemEmailGraphParitySchema.describe(
-		'Step 4a aggregate copy parity for the operator-owned system email graph. Legacy rows remain live authority; no email content is returned.',
+		'Dedicated system-email authority versus the legacy rollback mirror. No email content is returned.',
 	),
 })
 
@@ -236,7 +235,12 @@ const inputSchema = z.discriminatedUnion('action', [
 			force: z
 				.literal(true)
 				.describe(
-					'Required acknowledgement that this atomically rewrites the dedicated 4a copy from legacy authority.',
+					'Required acknowledgement that this rollback repair atomically rewrites the legacy mirror.',
+				),
+			direction: z
+				.literal('dedicated_to_legacy')
+				.describe(
+					'Required safety fence: dedicated authority may repair legacy, never the reverse.',
 				),
 		})
 		.strict(),
@@ -307,7 +311,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content) including fleet outbound provider-index and step 4a system-email graph parity counts, bounded reconcileMailboxParity, forced atomic system_email_graph_reconcile from legacy 4a authority, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message (getEmailMessageById ownership check, deleteEmailMessageById with expectedUserId fence, post-delete D1/R2 head over exact captured blob keys). Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention/delete maintenance: aggregate status (no email content) including fleet outbound provider-index and dedicated system-email rollback-mirror parity counts, bounded reconcileMailboxParity, forced directional system_email_graph_reconcile from dedicated authority to legacy mirror, keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message. Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
@@ -351,6 +355,8 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 							const result =
 								await runAdminMailboxMaintenanceSystemEmailGraphReconcile({
 									db: ctx.env.APP_DB,
+									direction: args.direction,
+									force: args.force,
 								})
 							return {
 								action: 'system_email_graph_reconcile' as const,

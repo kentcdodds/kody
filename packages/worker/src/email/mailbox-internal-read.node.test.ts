@@ -10,22 +10,22 @@ import {
 import { type MailboxMessageRecord } from './mailbox-types.ts'
 
 const {
-	countEmailMessagesForUserMock,
-	getEmailMessageByIdMock,
-	listEmailAttachmentsForUserMessageMock,
+	countSystemEmailMessagesMock,
+	getSystemEmailMessageByIdMock,
+	listSystemEmailAttachmentsMock,
 } = vi.hoisted(() => ({
-	countEmailMessagesForUserMock: vi.fn(),
-	getEmailMessageByIdMock: vi.fn(),
-	listEmailAttachmentsForUserMessageMock: vi.fn(),
+	countSystemEmailMessagesMock: vi.fn(),
+	getSystemEmailMessageByIdMock: vi.fn(),
+	listSystemEmailAttachmentsMock: vi.fn(),
 }))
 
-vi.mock('./repo.ts', () => ({
-	countEmailMessagesForUser: (...args: Array<unknown>) =>
-		countEmailMessagesForUserMock(...args),
-	getEmailMessageById: (...args: Array<unknown>) =>
-		getEmailMessageByIdMock(...args),
-	listEmailAttachmentsForUserMessage: (...args: Array<unknown>) =>
-		listEmailAttachmentsForUserMessageMock(...args),
+vi.mock('./system-email-graph-store.ts', () => ({
+	countSystemEmailMessages: (...args: Array<unknown>) =>
+		countSystemEmailMessagesMock(...args),
+	getSystemEmailMessageById: (...args: Array<unknown>) =>
+		getSystemEmailMessageByIdMock(...args),
+	listSystemEmailAttachments: (...args: Array<unknown>) =>
+		listSystemEmailAttachmentsMock(...args),
 }))
 
 function mailboxMessage(): MailboxMessageRecord {
@@ -163,9 +163,9 @@ test('USER internal reads use owner Mailbox only and map shared records', async 
 
 	expect(idFromName).toHaveBeenCalledWith('user-a')
 	expect(rpc.getMessage).toHaveBeenCalledWith({ messageId: 'message-1' })
-	expect(getEmailMessageByIdMock).not.toHaveBeenCalled()
-	expect(listEmailAttachmentsForUserMessageMock).not.toHaveBeenCalled()
-	expect(countEmailMessagesForUserMock).not.toHaveBeenCalled()
+	expect(getSystemEmailMessageByIdMock).not.toHaveBeenCalled()
+	expect(listSystemEmailAttachmentsMock).not.toHaveBeenCalled()
+	expect(countSystemEmailMessagesMock).not.toHaveBeenCalled()
 })
 
 test('USER internal reads fail closed without Mailbox and never query D1', async () => {
@@ -180,8 +180,8 @@ test('USER internal reads fail closed without Mailbox and never query D1', async
 	await expect(
 		countInternalEmailMessages({ env, ownerId: 'user-a' }),
 	).rejects.toThrow('MAILBOX Durable Object binding is not configured')
-	expect(getEmailMessageByIdMock).not.toHaveBeenCalled()
-	expect(countEmailMessagesForUserMock).not.toHaveBeenCalled()
+	expect(getSystemEmailMessageByIdMock).not.toHaveBeenCalled()
+	expect(countSystemEmailMessagesMock).not.toHaveBeenCalled()
 })
 
 test('system:email stays on explicit D1 reads and cannot access Mailbox export', async () => {
@@ -194,9 +194,9 @@ test('system:email stays on explicit D1 reads and cannot access Mailbox export',
 		id: 'system-attachment',
 		messageId: 'system-message',
 	}
-	getEmailMessageByIdMock.mockResolvedValue(d1Message)
-	listEmailAttachmentsForUserMessageMock.mockResolvedValue([attachment])
-	countEmailMessagesForUserMock.mockResolvedValue(7)
+	getSystemEmailMessageByIdMock.mockResolvedValue(d1Message)
+	listSystemEmailAttachmentsMock.mockResolvedValue([attachment])
+	countSystemEmailMessagesMock.mockResolvedValue(7)
 
 	await expect(
 		getInternalEmailMessageById({
@@ -226,9 +226,8 @@ test('system:email stays on explicit D1 reads and cannot access Mailbox export',
 	).rejects.toThrow('system:email has no Mailbox')
 
 	expect(idFromName).not.toHaveBeenCalled()
-	expect(getEmailMessageByIdMock).toHaveBeenCalledWith({
+	expect(getSystemEmailMessageByIdMock).toHaveBeenCalledWith({
 		db: env.APP_DB,
-		userId: 'system:email',
 		messageId: 'system-message',
 	})
 })

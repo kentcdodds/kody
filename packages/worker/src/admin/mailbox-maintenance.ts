@@ -26,12 +26,15 @@ import {
 } from '#worker/email/outbound-provider-index.ts'
 import {
 	loadSystemEmailGraphParityReport,
-	reconcileSystemEmailGraphFromLegacy,
+	reconcileLegacySystemEmailGraphFromDedicated,
 	type SystemEmailGraphParityReport,
 	type SystemEmailGraphReconcileResult,
 } from '#worker/email/system-email-graph-repo.ts'
 import {
-	deleteEmailMessageById,
+	deleteSystemEmailMessageById,
+	getSystemEmailMessageById,
+} from '#worker/email/system-email-graph-store.ts'
+import {
 	deleteEmailMessageProjectionById,
 	getEmailMessageById,
 	listEmailAttachmentsForUserMessage,
@@ -80,8 +83,8 @@ export type AdminMailboxMaintenanceStatus = {
 	 */
 	outboundProviderIndex: OutboundProviderIndexParityReport
 	/**
-	 * Step 4a legacy system:email → dedicated operator graph copy parity.
-	 * Aggregate counts only; legacy remains live authority.
+	 * Dedicated system-email authority versus its legacy rollback mirror.
+	 * Aggregate counts only; no email content is exposed.
 	 */
 	systemEmailGraph: SystemEmailGraphParityReport
 }
@@ -511,8 +514,10 @@ export async function runAdminMailboxMaintenanceReconcile(input: {
 
 export async function runAdminMailboxMaintenanceSystemEmailGraphReconcile(input: {
 	db: D1Database
+	direction: 'dedicated_to_legacy'
+	force: true
 }): Promise<SystemEmailGraphReconcileResult> {
-	return reconcileSystemEmailGraphFromLegacy({ db: input.db })
+	return reconcileLegacySystemEmailGraphFromDedicated(input)
 }
 
 /**
@@ -731,7 +736,7 @@ async function loadD1MessageDeletionInventory(input: {
  * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
  * USER mail is deleted by the owner-bound Mailbox R2-before-metadata RPC, then
  * its D1 compatibility projection is removed. `system:email` stays on the
- * existing D1 path. Exact authoritative keys are head-verified without being
+ * dedicated D1 authority path. Exact authoritative keys are head-verified without being
  * returned to the caller.
  */
 export async function runAdminMailboxMaintenanceDeleteMessage(input: {
@@ -745,9 +750,8 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 	let externalAttachmentsSeen: number
 	let blobReferences: Array<MailboxBlobReference>
 	if (input.stableUserId === systemEmailOwnerId) {
-		const message = await getEmailMessageById({
+		const message = await getSystemEmailMessageById({
 			db,
-			userId: input.stableUserId,
 			messageId: input.messageId,
 		})
 		if (!message) {
@@ -756,11 +760,10 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 				messageId: input.messageId,
 			})
 		}
-		const deletion = await deleteEmailMessageById({
+		const deletion = await deleteSystemEmailMessageById({
 			db,
 			blobs: blobs as R2Bucket,
 			messageId: input.messageId,
-			expectedUserId: input.stableUserId,
 		})
 		attachmentsSeen = deletion.attachmentsSeen
 		externalAttachmentsSeen = deletion.externalAttachmentsSeen
@@ -833,11 +836,17 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 		}
 	}
 
-	const remainingD1 = await getEmailMessageById({
-		db,
-		userId: input.stableUserId,
-		messageId: input.messageId,
-	})
+	const remainingD1 =
+		input.stableUserId === systemEmailOwnerId
+			? await getSystemEmailMessageById({
+					db,
+					messageId: input.messageId,
+				})
+			: await getEmailMessageById({
+					db,
+					userId: input.stableUserId,
+					messageId: input.messageId,
+				})
 	const d1MessageAbsent = remainingD1 == null
 
 	const rawMimeReferences = blobReferences.filter(

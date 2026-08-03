@@ -5,6 +5,7 @@ import { systemEmailGraphColumnContracts } from './system-email-graph-columns.ts
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
+const systemEmailAuthorityMigration = '0131-system-email-graph-authority.sql'
 
 type TableInfoColumn = {
 	name: string
@@ -322,7 +323,46 @@ test('0130 dedicated schema matches canonical metadata, FKs, and checks', () => 
 	])
 })
 
-test('0130 copies only the system graph with promoted fields and preserves legacy authority', () => {
+test('0131 marks dedicated authority without deleting either graph', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailAuthorityMigration)
+	db.exec(`
+		INSERT INTO system_email_messages (
+			id, direction, from_address, processing_status, created_at, updated_at
+		) VALUES (
+			'dedicated-kept', 'inbound', 'sender@example.net', 'stored',
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		);
+		INSERT INTO email_messages (
+			id, direction, user_id, from_address, processing_status,
+			created_at, updated_at
+		) VALUES (
+			'legacy-kept', 'inbound', 'system:email', 'sender@example.net',
+			'stored', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		);
+	`)
+
+	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
+	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
+
+	expect(
+		db
+			.prepare(`SELECT singleton, authority FROM system_email_graph_authority`)
+			.get(),
+	).toEqual({ singleton: 1, authority: 'dedicated' })
+	expect(
+		db
+			.prepare(
+				`SELECT
+				(SELECT COUNT(*) FROM system_email_messages) AS dedicated,
+				(SELECT COUNT(*) FROM email_messages WHERE user_id = 'system:email')
+					AS legacy`,
+			)
+			.get(),
+	).toEqual({ dedicated: 1, legacy: 1 })
+})
+
+test('0130 copies only the system graph with promoted fields and preserves legacy rows', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, systemEmailGraphMigration)
 	db.exec('PRAGMA foreign_keys = ON')

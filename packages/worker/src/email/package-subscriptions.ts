@@ -11,7 +11,7 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.ts'
-import { listEmailAttachmentsForMessage } from './repo.ts'
+import { listSystemEmailAttachments } from './system-email-graph-store.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
 const inboundEmailReceiptTopic = 'email.message.received'
@@ -354,7 +354,7 @@ export async function dispatchSystemInboundEmailSubscriptionEvents(input: {
 		baseUrl,
 		topic: systemInboundEmailReceiptTopic,
 		async getParams() {
-			const attachments = await listEmailAttachmentsForMessage({
+			const attachments = await listSystemEmailAttachments({
 				db: input.env.APP_DB,
 				messageId: input.message.id,
 			})

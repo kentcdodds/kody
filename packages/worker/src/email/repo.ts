@@ -4,6 +4,7 @@ import {
 	utf8ByteLength,
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import { parseJsonArray } from '@kody-internal/shared/json-parsing.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	getOutboundProviderIndexRow,
 	prepareOutboundProviderIndexSyncStatements,
@@ -37,7 +38,9 @@ export const emailBodyTruncationNotice =
  * un-importable). The canonical full message remains in the R2 raw MIME
  * object referenced by `raw_mime_key`.
  */
-function boundedEmailBody(body: string | null | undefined): string | null {
+export function boundedEmailBody(
+	body: string | null | undefined,
+): string | null {
 	if (body == null) return null
 	if (utf8ByteLength(body) <= maxRestorableTextColumnBytes) return body
 	return (
@@ -102,7 +105,7 @@ function mapInboxAddressRow(
 	}
 }
 
-function mapThreadRow(row: Record<string, unknown>): EmailThreadRecord {
+export function mapThreadRow(row: Record<string, unknown>): EmailThreadRecord {
 	return {
 		id: String(row['id']),
 		userId: String(row['user_id']),
@@ -131,7 +134,9 @@ function mapClassification(value: unknown): EmailClassification {
 		: 'accepted'
 }
 
-function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
+export function mapMessageRow(
+	row: Record<string, unknown>,
+): EmailMessageRecord {
 	return {
 		id: String(row['id']),
 		direction: String(row['direction']) as EmailDirection,
@@ -206,7 +211,7 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 	}
 }
 
-function mapDeliveryEventRow(
+export function mapDeliveryEventRow(
 	row: Record<string, unknown>,
 ): EmailDeliveryEventRecord {
 	return {
@@ -229,7 +234,9 @@ function mapDeliveryEventRow(
 	}
 }
 
-function mapAttachmentRow(row: Record<string, unknown>): EmailAttachmentRecord {
+export function mapAttachmentRow(
+	row: Record<string, unknown>,
+): EmailAttachmentRecord {
 	return {
 		id: String(row['id']),
 		messageId: String(row['message_id']),
@@ -943,6 +950,7 @@ export async function getOutboundEmailMessageByProviderMessageId(input: {
 		providerMessageId: input.providerMessageId,
 	})
 	if (!indexRow) return null
+	if (indexRow.userId === systemEmailOwnerId) return null
 	const message = await getEmailMessageById({
 		db: input.db,
 		userId: indexRow.userId,

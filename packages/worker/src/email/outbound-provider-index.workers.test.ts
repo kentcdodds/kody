@@ -122,13 +122,10 @@ test('insert and delivery update dual-write the outbound provider index', async 
 	})
 })
 
-test('provider delivery lifecycle resolves through the index for user and system owners', async () => {
+test('provider delivery lifecycle resolves through the index for user owners', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 
-	for (const userId of [
-		`idx-lifecycle-${crypto.randomUUID()}`,
-		'system:email',
-	]) {
+	for (const userId of [`idx-lifecycle-${crypto.randomUUID()}`]) {
 		const providerMessageId = `provider-${crypto.randomUUID()}`
 		const message = await insertEmailMessage({
 			db: env.APP_DB,
@@ -253,6 +250,41 @@ test('provider delivery lifecycle resolves through the index for user and system
 			})
 		).outcome,
 	).toBe('unmatched')
+})
+
+test('provider reverse lookup refuses legacy system owner links', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const providerMessageId = `provider-system-${crypto.randomUUID()}`
+	await insertEmailMessage({
+		db: env.APP_DB,
+		message: {
+			direction: 'outbound',
+			userId: 'system:email',
+			fromAddress: 'support@example.com',
+			toAddresses: ['recipient@example.net'],
+			subject: 'Unsupported system link',
+			processingStatus: 'sent',
+			providerMessageId,
+			sentAt: '2026-08-01T13:00:00.000Z',
+		},
+	})
+
+	expect(
+		await getOutboundEmailMessageByProviderMessageId({
+			db: env.APP_DB,
+			providerMessageId,
+		}),
+	).toBeNull()
+	expect(
+		await loadOutboundProviderIndexParityReport({
+			db: env.APP_DB,
+			userId: 'system:email',
+		}),
+	).toMatchObject({
+		linkedMessageCount: 1,
+		indexCount: 1,
+		parity: true,
+	})
 })
 
 test('deleteEmailMessageById removes the derived provider index row', async () => {

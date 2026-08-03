@@ -20,6 +20,7 @@
  */
 
 import { runD1WithRetry } from '#worker/d1-retry.ts'
+import { listSystemInboundUsageRows } from '#worker/email/system-inbound-delivery-store.ts'
 
 export const usageAggregationCronGateMinutes = 5
 export const usageAggregationCronIntervalMinutes = 60
@@ -280,9 +281,9 @@ export async function readIdempotentInboundEmailUsage(input: {
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
 					AND needs_effect_reconcile = 1
+					AND email_delivery_events.user_id != 'system:email'
 					AND (
-						email_delivery_events.user_id = 'system:email'
-						OR EXISTS (
+						EXISTS (
 							SELECT 1 FROM users
 							WHERE stable_user_id = email_delivery_events.user_id
 								AND deleting_at IS NULL
@@ -334,9 +335,9 @@ export async function readIdempotentInboundEmailUsage(input: {
 				FROM email_delivery_events event
 				WHERE event.provider = 'cloudflare-email-routing'
 					AND event.event_type = 'received'
+					AND event.user_id != 'system:email'
 					AND (
-						event.user_id = 'system:email'
-						OR EXISTS (
+						EXISTS (
 							SELECT 1 FROM users
 							WHERE stable_user_id = event.user_id
 								AND deleting_at IS NULL
@@ -349,7 +350,8 @@ export async function readIdempotentInboundEmailUsage(input: {
 			.bind(...input.months)
 			.all<AnalyticsEngineSqlRow>(),
 	)
-	return result.results ?? []
+	const systemRows = await listSystemInboundUsageRows(input)
+	return [...(result.results ?? []), ...systemRows]
 }
 
 /**

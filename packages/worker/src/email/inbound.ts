@@ -26,15 +26,21 @@ import {
 } from './parser.ts'
 import {
 	buildInboundDelivery,
-	chargeSystemInboundDeliveryOnce,
-	getInboundDeliveryWindow,
-	getInboundDelivery,
 	readSystemInboundReceiveCount,
 	readUserInboundReceiveCount,
 	systemInboundQuotaDay,
 	type InboundDelivery,
 	userInboundQuotaDay,
 } from './inbound-delivery.ts'
+import {
+	deleteEmptySystemEmailThreads,
+	getSystemEmailMessageById,
+} from './system-email-graph-store.ts'
+import {
+	chargeSystemInboundDeliveryOnce,
+	getSystemInboundDelivery,
+	getSystemInboundDeliveryWindow,
+} from './system-inbound-delivery-store.ts'
 import {
 	claimSystemInboundDeliveryStorage,
 	claimSystemInboundDeliveryWindow,
@@ -167,22 +173,27 @@ async function cleanupInboundDurability(input: {
 			await reconcileSystemStaleInboundDeliveries({
 				db: input.env.APP_DB,
 				blobs: input.env.EMAIL_BLOBS,
-				userId: input.userId,
 			})
 			await pruneSystemExpiredInboundDedupePointers({
 				db: input.env.APP_DB,
-				userId: input.userId,
 			})
 		} else {
 			await reconcileUserStaleInboundDeliveries(input)
 			await pruneUserExpiredInboundDedupePointers(input)
 		}
-		await deleteEmptyEmailThreads({
+		const emptyThreadInput = {
 			db: input.env.APP_DB,
-			userId: input.userId,
 			before: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
 			limit: 20,
-		})
+		}
+		if (input.userId === systemEmailOwnerId) {
+			await deleteEmptySystemEmailThreads(emptyThreadInput)
+		} else {
+			await deleteEmptyEmailThreads({
+				...emptyThreadInput,
+				userId: input.userId,
+			})
+		}
 	} catch (error) {
 		console.warn('inbound-email-durability-cleanup-failed', input.userId, error)
 	}
@@ -822,16 +833,14 @@ async function handleSystemInboundEmail(input: {
 		quotaDay: systemInboundQuotaDay(quotaNow),
 		now: quotaNow,
 	})
-	const activeWindow = await getInboundDeliveryWindow({
+	const activeWindow = await getSystemInboundDeliveryWindow({
 		db: input.env.APP_DB,
-		userId: systemEmailOwnerId,
 		fingerprint: candidateDelivery.fingerprint,
 		now: quotaNow,
 	})
 	let delivery = activeWindow ?? candidateDelivery
-	let existingDelivery = await getInboundDelivery({
+	let existingDelivery = await getSystemInboundDelivery({
 		db: input.env.APP_DB,
-		userId: systemEmailOwnerId,
 		deliveryId: delivery.deliveryId,
 	})
 	if (!existingDelivery) {
@@ -880,9 +889,8 @@ async function handleSystemInboundEmail(input: {
 			!existingDelivery ||
 			existingDelivery.deliveryId !== delivery.deliveryId
 		) {
-			existingDelivery = await getInboundDelivery({
+			existingDelivery = await getSystemInboundDelivery({
 				db: input.env.APP_DB,
-				userId: systemEmailOwnerId,
 				deliveryId: delivery.deliveryId,
 			})
 		}
@@ -920,9 +928,8 @@ async function handleSystemInboundEmail(input: {
 		return
 	}
 	if (claimedDelivery.state === 'received') {
-		const existing = await getEmailMessageById({
+		const existing = await getSystemEmailMessageById({
 			db: input.env.APP_DB,
-			userId: systemEmailOwnerId,
 			messageId: claimedDelivery.messageId,
 		})
 		if (existing) {
@@ -965,22 +972,28 @@ async function handleSystemInboundEmail(input: {
 			'Inbound delivery is already being stored; retry the stable delivery.',
 		)
 	}
+	if (!storageClaim.delivery) {
+		throw new RetryableInboundStorageError(
+			'Inbound delivery storage lease disappeared after it was claimed.',
+		)
+	}
+	const storageDelivery = storageClaim.delivery
 	let storedResult
 	try {
 		storedResult = await parseAndStoreInboundEmail({
 			db: input.env.APP_DB,
 			blobs: input.env.EMAIL_BLOBS,
-			delivery: storageClaim.delivery,
+			delivery: storageDelivery,
 			parsed,
 		})
 	} catch (error) {
 		await releaseSystemInboundDeliveryStorage({
 			db: input.env.APP_DB,
-			delivery: storageClaim.delivery,
+			delivery: storageDelivery,
 		}).catch((releaseError) => {
 			console.error(
 				'inbound-email-storage-lease-release-failed',
-				storageClaim.delivery.deliveryId,
+				storageDelivery.deliveryId,
 				releaseError,
 			)
 		})

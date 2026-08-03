@@ -123,7 +123,7 @@ const emptyStatus = {
 			missingFromLegacyMessagesCount: 0,
 			mismatchedLegacyAuthorityIndexCount: 0,
 			classification: 'no-system-provider-links',
-			authorityDisposition: 'legacy-email-messages-until-4b-routing',
+			authorityDisposition: 'dedicated-inbound-only',
 			parity: true,
 		},
 		parity: true,
@@ -287,7 +287,11 @@ test('admin_mailbox_maintenance routes status, reconcile, retention, and delete 
 	})
 
 	const systemGraphReconcile = await adminMailboxMaintenanceCapability.handler(
-		{ action: 'system_email_graph_reconcile', force: true },
+		{
+			action: 'system_email_graph_reconcile',
+			direction: 'dedicated_to_legacy',
+			force: true,
+		},
 		ctx,
 	)
 	expect(systemGraphReconcile).toEqual({
@@ -296,7 +300,11 @@ test('admin_mailbox_maintenance routes status, reconcile, retention, and delete 
 	})
 	expect(
 		mockModule.runAdminMailboxMaintenanceSystemEmailGraphReconcile,
-	).toHaveBeenCalledWith({ db: ctx.env.APP_DB })
+	).toHaveBeenCalledWith({
+		db: ctx.env.APP_DB,
+		direction: 'dedicated_to_legacy',
+		force: true,
+	})
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'admin_mailbox_maintenance',

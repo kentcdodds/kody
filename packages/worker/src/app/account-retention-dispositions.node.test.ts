@@ -58,7 +58,7 @@ test('retention dispositions stay aligned with scheduled policies and documented
 			.every(
 				(disposition) =>
 					disposition.kind === 'alternate_cleanup' &&
-					disposition.reason.includes('step 4a'),
+					disposition.reason.includes('dedicated'),
 			),
 	).toBe(true)
 	expect(

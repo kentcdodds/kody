@@ -2,6 +2,8 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
 import { listEmailInboxesForUser, listEmailMessages } from './repo.ts'
+import { listSystemEmailMessages } from './system-email-graph-store.ts'
+import { loadSystemEmailGraphParityReport } from './system-email-graph-repo.ts'
 import {
 	maxDetailedEmailRejectionEventsPerDay,
 	RetryableInboundStorageError,
@@ -15,10 +17,7 @@ import {
 } from './system-email.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import {
-	consoleWarn,
-	silenceExpectedConsoleErrors,
-} from '#worker/test-support/console-spies.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -76,12 +75,10 @@ async function seedVerifiedAccount(input: { email: string; username: string }) {
 
 async function readRejectionEvents() {
 	const { results } = await env.APP_DB.prepare(
-		`SELECT id, detail_json FROM email_delivery_events
-		WHERE user_id = ? AND event_type = 'rejected'
+		`SELECT id, detail_json FROM system_email_delivery_events
+		WHERE event_type = 'rejected'
 		ORDER BY created_at ASC, id ASC`,
-	)
-		.bind(systemEmailOwnerId)
-		.all<{ id: string; detail_json: string }>()
+	).all<{ id: string; detail_json: string }>()
 	const rows = (results ?? []).map((row) => ({
 		id: row.id,
 		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
@@ -113,9 +110,8 @@ test('reserved system locals store under the operator-owned system inbox', async
 			limit: 10,
 		}),
 	).toEqual([])
-	const messages = await listEmailMessages({
+	const messages = await listSystemEmailMessages({
 		db: env.APP_DB,
-		userId: systemEmailOwnerId,
 		limit: 10,
 	})
 	expect(messages).toHaveLength(1)
@@ -123,6 +119,28 @@ test('reserved system locals store under the operator-owned system inbox', async
 		subject: 'Cloudflare confirmation',
 		fromAddress: 'sender@example.net',
 		processingStatus: 'stored',
+	})
+	expect(
+		await loadSystemEmailGraphParityReport({ db: env.APP_DB }),
+	).toMatchObject({
+		messages: { dedicatedCount: 1, legacyCount: 1, parity: true },
+		deliveryEvents: { parity: true },
+		parity: true,
+	})
+	const deliveryPair = await env.APP_DB.prepare(
+		`SELECT
+			(SELECT detail_json FROM system_email_delivery_events
+				WHERE event_type = 'received' LIMIT 1) AS dedicated,
+			(SELECT detail_json FROM email_delivery_events
+				WHERE user_id = ? AND event_type = 'received' LIMIT 1) AS legacy`,
+	)
+		.bind(systemEmailOwnerId)
+		.first<{ dedicated: string; legacy: string }>()
+	expect(deliveryPair?.dedicated).toBe(deliveryPair?.legacy)
+	expect(JSON.parse(deliveryPair?.dedicated ?? '{}')).toMatchObject({
+		state: 'received',
+		usageEffectRecordedAt: expect.any(String),
+		subscriptionEffectState: 'complete',
 	})
 	const inboxes = await listEmailInboxesForUser({
 		db: env.APP_DB,
@@ -145,9 +163,8 @@ test('reserved system locals store under the operator-owned system inbox', async
 	})
 	await handleInboundEmail(tagged, createInboundEnv())
 	expect(tagged.rejectedReason).toBeNull()
-	const taggedMessages = await listEmailMessages({
+	const taggedMessages = await listSystemEmailMessages({
 		db: env.APP_DB,
-		userId: systemEmailOwnerId,
 		limit: 10,
 	})
 	expect(taggedMessages[0]).toMatchObject({
@@ -320,9 +337,8 @@ test('system inbox R2/D1 failures and retries keep one durable quota charge', as
 		expect(retry.rejectedReason).toBeNull()
 		expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
 		expect(
-			await listEmailMessages({
+			await listSystemEmailMessages({
 				db: env.APP_DB,
-				userId: systemEmailOwnerId,
 				limit: 10,
 			}),
 		).toHaveLength(1)
@@ -367,9 +383,8 @@ test('system inbox ambiguous quota batch response charges once across retry', as
 
 	expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
 	expect(
-		await listEmailMessages({
+		await listSystemEmailMessages({
 			db: env.APP_DB,
-			userId: systemEmailOwnerId,
 			limit: 10,
 		}),
 	).toHaveLength(1)
@@ -383,9 +398,12 @@ test('system stored-message count failure occurs before quota charge', async () 
 				return (query: string) => {
 					if (
 						query.includes('COUNT(*)') &&
-						query.includes('FROM email_messages')
+						query.includes('FROM system_email_messages')
 					) {
 						return {
+							first: async () => {
+								throw new Error('simulated system stored count failure')
+							},
 							bind: () => ({
 								first: async () => {
 									throw new Error('simulated system stored count failure')
@@ -414,71 +432,6 @@ test('system stored-message count failure occurs before quota charge', async () 
 	expect(await readSystemDailyReceiveCount('abuse')).toBe(0)
 })
 
-test('system inbox post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {
-	silenceIncidentalRuntimeWarnings()
-	silenceExpectedConsoleErrors(['inbound-email-post-commit-bookkeeping-failed'])
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	let messageCommitted = false
-	const failingEnv = {
-		...createInboundEnv(),
-		APP_DB: new Proxy(env.APP_DB, {
-			get(target, property, receiver) {
-				if (property === 'prepare') {
-					return (query: string) => {
-						const statement = target.prepare(query)
-						if (query.includes('INSERT INTO email_messages')) {
-							return {
-								bind(...params: Array<unknown>) {
-									const bound = statement.bind(...params)
-									return {
-										run: async () => {
-											const result = await bound.run()
-											messageCommitted = true
-											return result
-										},
-									}
-								},
-							}
-						}
-						if (
-							messageCommitted &&
-							(query.includes('UPDATE email_threads') ||
-								query.includes('INSERT INTO email_delivery_events'))
-						) {
-							return {
-								bind: () => ({
-									run: async () => {
-										throw new Error('simulated post-commit bookkeeping failure')
-									},
-								}),
-							}
-						}
-						return statement
-					}
-				}
-				const value = Reflect.get(target, property, receiver)
-				return typeof value === 'function' ? value.bind(target) : value
-			},
-		}) as D1Database,
-	} as Parameters<typeof handleInboundEmail>[1]
-
-	const message = buildInboundMessage({
-		to: `support@${systemDomain}`,
-		messageId: 'system-post-commit',
-	})
-	await handleInboundEmail(message, failingEnv)
-	expect(message.rejectedReason).toBeNull()
-	expect(await readSystemDailyReceiveCount('support')).toBe(1)
-	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId: systemEmailOwnerId,
-			limit: 10,
-		}),
-	).toHaveLength(1)
-})
-
 test('system email size and daily caps reject before storage with bounded events', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
@@ -494,11 +447,12 @@ test('system email size and daily caps reject before storage with bounded events
 			`SELECT count FROM system_email_daily_counters WHERE local_part = 'abuse'`,
 		).first(),
 	).toBeNull()
-	await env.APP_DB.prepare(
-		`DELETE FROM email_delivery_events WHERE user_id = ?`,
-	)
-		.bind(systemEmailOwnerId)
-		.run()
+	await env.APP_DB.batch([
+		env.APP_DB.prepare(`DELETE FROM system_email_delivery_events`),
+		env.APP_DB.prepare(
+			`DELETE FROM email_delivery_events WHERE user_id = ?`,
+		).bind(systemEmailOwnerId),
+	])
 
 	await env.APP_DB.prepare(
 		`INSERT INTO system_email_daily_counters (local_part, day, count, updated_at)
@@ -520,9 +474,8 @@ test('system email size and daily caps reject before storage with bounded events
 		expect(capped.rejectedReason).toBe('Recipient mailbox is over quota.')
 	}
 	expect(
-		await listEmailMessages({
+		await listSystemEmailMessages({
 			db: env.APP_DB,
-			userId: systemEmailOwnerId,
 			limit: 10,
 		}),
 	).toEqual([])
@@ -547,37 +500,29 @@ test('system email retention prunes old operator-owned messages and counters', a
 	const oldRawMimeKey = `email-raw:v1:${systemEmailOwnerId}/old-system-message`
 	await env.EMAIL_BLOBS.put(oldRawMimeKey, 'old raw mime')
 	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
+		`INSERT INTO system_email_messages (
+			id, direction, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
 		) VALUES
-			('old-system-message', 'inbound', ?, 'old@example.net', 'Old', 'stored', ?, ?, ?),
-			('fresh-system-message', 'inbound', ?, 'fresh@example.net', 'Fresh', 'stored', NULL, ?, ?)`,
+			('old-system-message', 'inbound', 'old@example.net', 'Old', 'stored', ?, ?, ?),
+			('fresh-system-message', 'inbound', 'fresh@example.net', 'Fresh', 'stored', NULL, ?, ?)`,
 	)
-		.bind(
-			systemEmailOwnerId,
-			oldRawMimeKey,
-			old,
-			old,
-			systemEmailOwnerId,
-			fresh,
-			fresh,
-		)
+		.bind(oldRawMimeKey, old, old, fresh, fresh)
 		.run()
 	await env.APP_DB.prepare(
-		`INSERT INTO email_attachments (
+		`INSERT INTO system_email_attachments (
 			id, message_id, filename, content_type, size, storage_kind, created_at
 		) VALUES ('old-attachment', 'old-system-message', 'old.txt', 'text/plain', 1, 'raw-mime', ?)`,
 	)
 		.bind(old)
 		.run()
 	await env.APP_DB.prepare(
-		`INSERT INTO email_delivery_events (
-			id, message_id, user_id, inbox_id, event_type, provider, detail_json, created_at
+		`INSERT INTO system_email_delivery_events (
+			id, message_id, inbox_id, event_type, provider, detail_json, created_at
 		) VALUES
-			('old-event', 'old-system-message', ?, NULL, 'received', 'test', '{}', ?),
-			('fresh-event', 'fresh-system-message', ?, NULL, 'received', 'test', '{}', ?)`,
+			('old-event', 'old-system-message', NULL, 'received', 'test', '{}', ?),
+			('fresh-event', 'fresh-system-message', NULL, 'received', 'test', '{}', ?)`,
 	)
-		.bind(systemEmailOwnerId, old, systemEmailOwnerId, fresh)
+		.bind(old, fresh)
 		.run()
 	await env.APP_DB.prepare(
 		`INSERT INTO system_email_daily_counters (local_part, day, count, updated_at)
@@ -597,34 +542,26 @@ test('system email retention prunes old operator-owned messages and counters', a
 	expect(result.deletedRawMimeBlobs).toBe(1)
 	expect(await env.EMAIL_BLOBS.get(oldRawMimeKey)).toBeNull()
 	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId: systemEmailOwnerId,
-			limit: 10,
-		}),
-	).toEqual([
-		expect.objectContaining({
-			id: 'fresh-system-message',
-			subject: 'Fresh',
-		}),
-	])
+		await env.APP_DB.prepare(
+			`SELECT id, subject FROM system_email_messages ORDER BY id`,
+		).all(),
+	).toMatchObject({
+		results: [{ id: 'fresh-system-message', subject: 'Fresh' }],
+	})
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_attachments WHERE id = 'old-attachment'`,
+			`SELECT id FROM system_email_attachments WHERE id = 'old-attachment'`,
 		).first(),
 	).toBeNull()
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_delivery_events ORDER BY id ASC`,
+			`SELECT id FROM system_email_delivery_events ORDER BY id ASC`,
 		).all(),
 	).toMatchObject({ results: [{ id: 'fresh-event' }] })
 })
 
 test('system email retention deletes blobs before rows and keeps rows when the blob delete fails', async () => {
-	silenceIncidentalRuntimeWarnings([
-		'system-email-raw-mime-blob-delete-failed',
-		'system-email-dedicated-graph-sync-skipped',
-	])
+	silenceIncidentalRuntimeWarnings(['system-email-raw-mime-blob-delete-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const old = new Date(
@@ -633,21 +570,13 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 	const rawMimeKey = `email-raw:v1:${systemEmailOwnerId}/blob-ordering-message`
 	await env.EMAIL_BLOBS.put(rawMimeKey, 'raw mime payload')
 	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
+		`INSERT INTO system_email_messages (
+			id, direction, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
 		) VALUES
-			('blob-ordering-message', 'inbound', ?, 'a@example.net', 'Blob', 'stored', ?, ?, ?),
-			('plain-old-message', 'inbound', ?, 'b@example.net', 'Plain', 'stored', NULL, ?, ?)`,
+			('blob-ordering-message', 'inbound', 'a@example.net', 'Blob', 'stored', ?, ?, ?),
+			('plain-old-message', 'inbound', 'b@example.net', 'Plain', 'stored', NULL, ?, ?)`,
 	)
-		.bind(
-			systemEmailOwnerId,
-			rawMimeKey,
-			old,
-			old,
-			systemEmailOwnerId,
-			old,
-			old,
-		)
+		.bind(rawMimeKey, old, old, old, old)
 		.run()
 	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
 		get(target, property, receiver) {
@@ -677,28 +606,17 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 	expect(failed.deletedMessages).toBe(0)
 	expect(failed.deletedRawMimeBlobs).toBe(0)
 	expect(failed.blobDeleteErrors).toBe(2)
-	expect(failed.dedicatedGraphSync).toEqual({
-		status: 'skipped',
-		reason: 'legacy-blob-delete-errors',
-		blobDeleteErrors: 2,
-	})
-	expect(failed.warnings).toEqual(['dedicated-graph-sync-skipped'])
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'system-email-dedicated-graph-sync-skipped',
-		{
-			reason: 'legacy-blob-delete-errors',
-			blobDeleteErrors: 2,
-		},
-	)
+	expect(failed.authority).toBe('dedicated')
+	expect(failed.warnings).toEqual([])
 	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).not.toBeNull()
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_messages WHERE id = 'blob-ordering-message'`,
+			`SELECT id FROM system_email_messages WHERE id = 'blob-ordering-message'`,
 		).first(),
 	).toMatchObject({ id: 'blob-ordering-message' })
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_messages WHERE id = 'plain-old-message'`,
+			`SELECT id FROM system_email_messages WHERE id = 'plain-old-message'`,
 		).first(),
 	).toMatchObject({ id: 'plain-old-message' })
 
@@ -711,28 +629,22 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 	expect(retried.deletedMessages).toBe(2)
 	expect(retried.deletedRawMimeBlobs).toBe(1)
 	expect(retried.blobDeleteErrors).toBe(0)
-	expect(retried.dedicatedGraphSync).toMatchObject({
-		status: 'reconciled',
-		parity: true,
-	})
+	expect(retried.authority).toBe('dedicated')
 	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).toBeNull()
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_messages WHERE id = 'blob-ordering-message'`,
+			`SELECT id FROM system_email_messages WHERE id = 'blob-ordering-message'`,
 		).first(),
 	).toBeNull()
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_messages WHERE id = 'plain-old-message'`,
+			`SELECT id FROM system_email_messages WHERE id = 'plain-old-message'`,
 		).first(),
 	).toBeNull()
 })
 
 test('system email retention advances past skipped blob rows at the head of a batch', async () => {
-	silenceIncidentalRuntimeWarnings([
-		'system-email-raw-mime-blob-delete-failed',
-		'system-email-dedicated-graph-sync-skipped',
-	])
+	silenceIncidentalRuntimeWarnings(['system-email-raw-mime-blob-delete-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const oldMs =
@@ -760,25 +672,22 @@ test('system email retention advances past skipped blob rows at the head of a ba
 			createdAt: new Date(oldMs - 24 * 60 * 60 * 1000).toISOString(),
 		})
 	}
-	// 5 bindings per row must stay under D1's 100-variable statement limit.
+	// 4 bindings per row must stay under D1's 100-variable statement limit.
 	const insertChunkSize = 18
 	for (let start = 0; start < rows.length; start += insertChunkSize) {
 		const chunk = rows.slice(start, start + insertChunkSize)
 		const values = chunk
-			.map(
-				() => `(?, 'inbound', ?, 'a@example.net', 'Head', 'stored', ?, ?, ?)`,
-			)
+			.map(() => `(?, 'inbound', 'a@example.net', 'Head', 'stored', ?, ?, ?)`)
 			.join(', ')
 		const bindings = chunk.flatMap((row) => [
 			row.id,
-			systemEmailOwnerId,
 			row.rawMimeKey,
 			row.createdAt,
 			row.createdAt,
 		])
 		await env.APP_DB.prepare(
-			`INSERT INTO email_messages (
-				id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
+			`INSERT INTO system_email_messages (
+				id, direction, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
 			) VALUES ${values}`,
 		)
 			.bind(...bindings)
@@ -811,11 +720,11 @@ test('system email retention advances past skipped blob rows at the head of a ba
 		expect.any(Error),
 	)
 	const remainingPlain = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-plain-%'`,
+		`SELECT COUNT(*) AS count FROM system_email_messages WHERE id LIKE 'head-plain-%'`,
 	).first<{ count: number }>()
 	expect(Number(remainingPlain?.count ?? -1)).toBe(plainCount)
 	const remainingBlob = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-blob-%'`,
+		`SELECT COUNT(*) AS count FROM system_email_messages WHERE id LIKE 'head-blob-%'`,
 	).first<{ count: number }>()
 	expect(Number(remainingBlob?.count ?? -1)).toBe(blockedCount)
 
@@ -836,21 +745,20 @@ test('system email retention drains delivery-event backlogs larger than one batc
 		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000,
 	).toISOString()
 	const backlog = systemEmailLimits.pruneBatchSize + 5
-	// 3 bindings per row must stay under D1's 100-variable statement limit.
+	// 2 bindings per row must stay under D1's 100-variable statement limit.
 	const insertChunkSize = 30
 	for (let start = 0; start < backlog; start += insertChunkSize) {
 		const count = Math.min(insertChunkSize, backlog - start)
 		const values = Array.from({ length: count })
-			.map(() => `(?, NULL, ?, NULL, 'received', 'test', '{}', ?)`)
+			.map(() => `(?, NULL, NULL, 'received', 'test', '{}', ?)`)
 			.join(', ')
 		const bindings = Array.from({ length: count }).flatMap((_, index) => [
 			`backlog-event-${start + index}`,
-			systemEmailOwnerId,
 			old,
 		])
 		await env.APP_DB.prepare(
-			`INSERT INTO email_delivery_events (
-				id, message_id, user_id, inbox_id, event_type, provider, detail_json, created_at
+			`INSERT INTO system_email_delivery_events (
+				id, message_id, inbox_id, event_type, provider, detail_json, created_at
 			) VALUES ${values}`,
 		)
 			.bind(...bindings)
@@ -865,10 +773,8 @@ test('system email retention drains delivery-event backlogs larger than one batc
 
 	expect(result.deletedDeliveryEvents).toBeGreaterThanOrEqual(backlog)
 	const remaining = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count FROM email_delivery_events
-		WHERE user_id = ? AND id LIKE 'backlog-event-%'`,
-	)
-		.bind(systemEmailOwnerId)
-		.first<{ count: number }>()
+		`SELECT COUNT(*) AS count FROM system_email_delivery_events
+		WHERE id LIKE 'backlog-event-%'`,
+	).first<{ count: number }>()
 	expect(Number(remaining?.count ?? -1)).toBe(0)
 })

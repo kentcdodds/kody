@@ -47,7 +47,7 @@ export async function sweepStaleInboundDeliveries(input: {
 	// Discover owner ids by oldest due work. All message/blob access below is
 	// still performed under one explicit userId. Deferring failed attempts and
 	// verification tombstones moves them behind older untouched users.
-	const rows = await input.env.APP_DB.prepare(
+	const userRows = await input.env.APP_DB.prepare(
 		`WITH authority(system_owner_id) AS (VALUES (?)),
 			projected_events AS (
 				SELECT email_delivery_events.*,
@@ -105,6 +105,7 @@ export async function sweepStaleInboundDeliveries(input: {
 					END AS authority_subscription_lease_at
 				FROM email_delivery_events
 				CROSS JOIN authority
+				WHERE user_id != system_owner_id
 			),
 			due_users AS (
 				SELECT user_id, created_at AS due_at
@@ -189,7 +190,33 @@ export async function sweepStaleInboundDeliveries(input: {
 			reconciliationUserBatchSize,
 		)
 		.all<{ user_id: string }>()
-	for (const { user_id: userId } of rows.results ?? []) {
+	const systemDue = await input.env.APP_DB.prepare(
+		`SELECT ? AS user_id
+		WHERE EXISTS (
+			SELECT 1 FROM system_email_delivery_events
+			WHERE (
+				provider = 'cloudflare-email-routing'
+				AND event_type = 'receive_started'
+				AND created_at < ?
+				AND (reconcile_after IS NULL OR reconcile_after <= ?)
+			) OR (
+				provider = 'cloudflare-email-routing-dedupe'
+				AND dedupe_expires_at <= ?
+			) OR (
+				provider = 'cloudflare-email-routing'
+				AND event_type = 'received'
+				AND needs_effect_reconcile = 1
+			)
+			LIMIT 1
+		)`,
+	)
+		.bind(systemEmailOwnerId, cutoff, now.toISOString(), now.toISOString())
+		.first<{ user_id: string }>()
+	const dueOwners = [
+		...(systemDue ? [systemDue] : []),
+		...(userRows.results ?? []),
+	]
+	for (const { user_id: userId } of dueOwners) {
 		if (Date.now() >= deadlineMs) break
 		try {
 			const reconcileUser = async () => {
@@ -198,7 +225,6 @@ export async function sweepStaleInboundDeliveries(input: {
 					? await reconcileSystemStaleInboundDeliveries({
 							db: input.env.APP_DB,
 							blobs: input.env.EMAIL_BLOBS,
-							userId,
 							now,
 							deadlineMs,
 						})
@@ -211,7 +237,6 @@ export async function sweepStaleInboundDeliveries(input: {
 				const pruned = systemOwner
 					? await pruneSystemExpiredInboundDedupePointers({
 							db: input.env.APP_DB,
-							userId,
 							now,
 						})
 					: await pruneUserExpiredInboundDedupePointers({

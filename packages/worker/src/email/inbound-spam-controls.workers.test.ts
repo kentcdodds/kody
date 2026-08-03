@@ -7,6 +7,7 @@ import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import { listEmailMessages } from './repo.ts'
 import { upsertEmailSenderRule } from './sender-rules.ts'
 import { systemEmailOwnerId } from './system-email.ts'
+import { listSystemEmailMessages } from './system-email-graph-store.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
@@ -364,9 +365,8 @@ test('system sender rules reject/block and suppress quarantined subscription dis
 	await handleInboundEmail(blocked, createInboundEnv())
 	expect(blocked.rejectedReason).toBe('Message rejected by recipient policy.')
 	expect(
-		await listEmailMessages({
+		await listSystemEmailMessages({
 			db: env.APP_DB,
-			userId: systemEmailOwnerId,
 			limit: 10,
 		}),
 	).toEqual([])
@@ -390,9 +390,8 @@ test('system sender rules reject/block and suppress quarantined subscription dis
 		await promise
 	}
 
-	const [stored] = await listEmailMessages({
+	const [stored] = await listSystemEmailMessages({
 		db: env.APP_DB,
-		userId: systemEmailOwnerId,
 		limit: 1,
 	})
 	expect(stored).toMatchObject({
@@ -410,24 +409,20 @@ test('system sender rules reject/block and suppress quarantined subscription dis
 		`SELECT
 			json_extract(detail_json, '$.subscriptionEffectState') AS subscription_state,
 			json_extract(detail_json, '$.subscriptionEffectSuppressedQuarantineAt') AS suppressed_at
-		FROM email_delivery_events
-		WHERE user_id = ? AND event_type = 'received'
+		FROM system_email_delivery_events
+		WHERE event_type = 'received'
 		ORDER BY created_at DESC
 		LIMIT 1`,
-	)
-		.bind(systemEmailOwnerId)
-		.first<{ subscription_state: string; suppressed_at: string }>()
+	).first<{ subscription_state: string; suppressed_at: string }>()
 	expect(effect?.subscription_state).toBe('complete')
 	expect(effect?.suppressed_at).toEqual(expect.any(String))
 
 	const delivery = await env.APP_DB.prepare(
-		`SELECT id FROM email_delivery_events
-		WHERE user_id = ? AND event_type = 'received'
+		`SELECT id FROM system_email_delivery_events
+		WHERE event_type = 'received'
 		ORDER BY created_at DESC
 		LIMIT 1`,
-	)
-		.bind(systemEmailOwnerId)
-		.first<{ id: string }>()
+	).first<{ id: string }>()
 	if (!delivery) throw new Error('Expected received system delivery.')
 	await processInboundDeliveryEffects({
 		env: createInboundEnv(),

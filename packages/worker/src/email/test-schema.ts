@@ -5,6 +5,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	// exercising email sends needs the entitlement tables too.
 	await ensureEntitlementTestSchema(db)
 	const statements = [
+		`DROP TABLE IF EXISTS system_email_graph_authority;`,
 		`DROP TABLE IF EXISTS system_email_daily_counters;`,
 		`DROP TABLE IF EXISTS system_email_delivery_events;`,
 		`DROP TABLE IF EXISTS system_email_attachments;`,
@@ -385,6 +386,14 @@ WHERE provider_event_id IS NOT NULL;`,
 	updated_at TEXT NOT NULL,
 	PRIMARY KEY (local_part, day)
 );`,
+		`CREATE TABLE IF NOT EXISTS system_email_graph_authority (
+	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+	authority TEXT NOT NULL CHECK (authority = 'dedicated'),
+	cutover_at TEXT NOT NULL
+);`,
+		`INSERT INTO system_email_graph_authority (
+	singleton, authority, cutover_at
+) VALUES (1, 'dedicated', CURRENT_TIMESTAMP);`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

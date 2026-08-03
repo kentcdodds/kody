@@ -1,4 +1,4 @@
-import { isSystemEmailOwner, systemEmailOwnerId } from './email-owner.ts'
+import { isSystemEmailOwner } from './email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
 	mailboxAttachmentToEmailAttachmentRecord,
@@ -10,10 +10,10 @@ import {
 	type MailboxExportResult,
 } from './mailbox-types.ts'
 import {
-	countEmailMessagesForUser,
-	getEmailMessageById,
-	listEmailAttachmentsForUserMessage,
-} from './repo.ts'
+	countSystemEmailMessages,
+	getSystemEmailMessageById,
+	listSystemEmailAttachments,
+} from './system-email-graph-store.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
 /**
@@ -39,9 +39,8 @@ export async function getInternalEmailMessageById(input: {
 	messageId: string
 }): Promise<EmailMessageRecord | null> {
 	if (isSystemEmailOwner(input.ownerId)) {
-		return await getEmailMessageById({
+		return await getSystemEmailMessageById({
 			db: input.env.APP_DB,
-			userId: input.ownerId,
 			messageId: input.messageId,
 		})
 	}
@@ -60,9 +59,8 @@ export async function listInternalEmailAttachmentsForMessage(input: {
 	messageId: string
 }): Promise<Array<EmailAttachmentRecord>> {
 	if (isSystemEmailOwner(input.ownerId)) {
-		return await listEmailAttachmentsForUserMessage({
+		return await listSystemEmailAttachments({
 			db: input.env.APP_DB,
-			userId: input.ownerId,
 			messageId: input.messageId,
 		})
 	}
@@ -98,9 +96,8 @@ export async function countInternalUserEmailMessages(input: {
 export async function countInternalSystemEmailMessages(input: {
 	env: { APP_DB: D1Database }
 }): Promise<number> {
-	return await countEmailMessagesForUser({
+	return await countSystemEmailMessages({
 		db: input.env.APP_DB,
-		userId: systemEmailOwnerId,
 	})
 }
 

@@ -116,7 +116,7 @@ export function systemEmailGraphLegacyCte(
 	return legacyCteByKey[key]
 }
 
-export function buildSystemEmailGraphUpsertSql(
+export function buildLegacySystemEmailGraphUpsertSql(
 	contract: SystemEmailGraphColumnContract,
 ): string {
 	const columns = contract.columns.join(', ')
@@ -127,29 +127,52 @@ export function buildSystemEmailGraphUpsertSql(
 	const changed = contract.columns
 		.filter((column) => column !== 'id')
 		.map(
-			(column) =>
-				`${contract.dedicatedTable}.${column} IS NOT excluded.${column}`,
+			(column) => `${contract.legacyTable}.${column} IS NOT excluded.${column}`,
 		)
 		.join(' OR ')
-	return `WITH ${systemEmailGraphLegacyCtes}
-		INSERT INTO ${contract.dedicatedTable} (${columns})
-		SELECT ${columns}
-		FROM ${systemEmailGraphSourceCte(contract.key)}
+	if (contract.key === 'attachments') {
+		return `INSERT INTO email_attachments (${columns})
+			SELECT ${columns} FROM system_email_attachments
+			WHERE 1
+			ON CONFLICT(id) DO UPDATE SET ${updates}
+			WHERE EXISTS (
+				SELECT 1 FROM email_messages
+				WHERE id = email_attachments.message_id AND user_id = ?1
+			) AND (${changed})`
+	}
+	const legacyColumns = [
+		...contract.columns.slice(0, 1),
+		'user_id',
+		...contract.columns.slice(1),
+	].join(', ')
+	const selected = ['id', '?1', ...contract.columns.slice(1)].join(', ')
+	return `INSERT INTO ${contract.legacyTable} (${legacyColumns})
+		SELECT ${selected} FROM ${contract.dedicatedTable}
 		WHERE 1
 		ON CONFLICT(id) DO UPDATE SET ${updates}
-		WHERE ${changed}`
+		WHERE ${contract.legacyTable}.user_id = ?1 AND (${changed})`
 }
 
-export function buildSystemEmailGraphDeleteDriftSql(
+export function buildLegacySystemEmailGraphDeleteDriftSql(
 	contract: SystemEmailGraphColumnContract,
 ): string {
-	return `WITH ${systemEmailGraphLegacyCtes}
-		DELETE FROM ${contract.dedicatedTable}
-		WHERE NOT EXISTS (
-			SELECT 1
-			FROM ${systemEmailGraphSourceCte(contract.key)} legacy
-			WHERE legacy.id = ${contract.dedicatedTable}.id
-		)`
+	if (contract.key === 'attachments') {
+		return `DELETE FROM email_attachments
+			WHERE EXISTS (
+				SELECT 1 FROM email_messages
+				WHERE id = email_attachments.message_id AND user_id = ?1
+			)
+				AND NOT EXISTS (
+					SELECT 1 FROM system_email_attachments
+					WHERE id = email_attachments.id
+				)`
+	}
+	return `DELETE FROM ${contract.legacyTable}
+		WHERE user_id = ?1
+			AND NOT EXISTS (
+				SELECT 1 FROM ${contract.dedicatedTable}
+				WHERE id = ${contract.legacyTable}.id
+			)`
 }
 
 export function systemEmailGraphContract(

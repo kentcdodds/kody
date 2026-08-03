@@ -4,7 +4,7 @@ import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	loadSystemEmailGraphParityReport,
-	reconcileSystemEmailGraphFromLegacy,
+	reconcileLegacySystemEmailGraphFromDedicated,
 } from './system-email-graph-repo.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -62,7 +62,7 @@ test('system email graph report returns aggregate parity and provider dispositio
 				'system-thread', 'support@example.com',
 				'["recipient@example.net"]', 'Reply',
 				'<system-outbound@example.com>', '[]', '{}', 'reply body', 128,
-				'sent', 'provider-system-1', NULL, '${updatedAt}', '${createdAt}',
+				'sent', NULL, NULL, '${updatedAt}', '${createdAt}',
 				'${updatedAt}', NULL, 'accepted'
 			),
 			(
@@ -106,13 +106,6 @@ test('system email graph report returns aggregate parity and provider dispositio
 				'${updatedAt}'
 			);
 
-		INSERT INTO email_outbound_provider_index (
-			provider, provider_message_id, user_id, message_id, inbox_id,
-			created_at, updated_at
-		) VALUES (
-			'cloudflare-email', 'provider-system-1', 'system:email',
-			'system-outbound', 'system-inbox', '${createdAt}', '${updatedAt}'
-		);
 	`)
 	sqlite.exec(
 		readFileSync(
@@ -169,14 +162,14 @@ test('system email graph report returns aggregate parity and provider dispositio
 			parity: true,
 		},
 		outboundProviderIndex: {
-			legacyProviderLinkedMessageCount: 1,
-			dedicatedProviderLinkedMessageCount: 1,
-			legacyAuthorityIndexCount: 1,
+			legacyProviderLinkedMessageCount: 0,
+			dedicatedProviderLinkedMessageCount: 0,
+			legacyAuthorityIndexCount: 0,
 			missingFromLegacyAuthorityIndexCount: 0,
 			missingFromLegacyMessagesCount: 0,
 			mismatchedLegacyAuthorityIndexCount: 0,
-			classification: 'legacy-authority-parity',
-			authorityDisposition: 'legacy-email-messages-until-4b-routing',
+			classification: 'no-system-provider-links',
+			authorityDisposition: 'dedicated-inbound-only',
 			parity: true,
 		},
 		parity: true,
@@ -200,9 +193,6 @@ test('system email graph report returns aggregate parity and provider dispositio
 		WHERE id = 'system-attachment';
 		DELETE FROM system_email_delivery_events
 		WHERE id = 'system-delivery';
-		UPDATE email_outbound_provider_index
-		SET inbox_id = NULL
-		WHERE provider_message_id = 'provider-system-1';
 	`)
 
 	const mismatched = await loadSystemEmailGraphParityReport({ db })
@@ -227,58 +217,35 @@ test('system email graph report returns aggregate parity and provider dispositio
 			parity: false,
 		},
 		outboundProviderIndex: {
-			missingFromLegacyAuthorityIndexCount: 1,
-			mismatchedLegacyAuthorityIndexCount: 1,
-			classification: 'legacy-authority-mismatch',
-			authorityDisposition: 'legacy-email-messages-until-4b-routing',
-			parity: false,
+			classification: 'no-system-provider-links',
+			authorityDisposition: 'dedicated-inbound-only',
+			parity: true,
 		},
 		parity: false,
 	})
 
 	sqlite.exec(`
-		UPDATE email_outbound_provider_index
-		SET inbox_id = 'system-inbox'
-		WHERE provider_message_id = 'provider-system-1';
-		UPDATE email_messages
-		SET subject = 'Updated incident'
-		WHERE id = 'system-inbound';
-		DELETE FROM email_attachments
-		WHERE id = 'system-attachment';
-		INSERT INTO email_attachments (
-			id, message_id, filename, content_type, size, storage_kind, created_at
-		) VALUES (
-			'system-attachment-new', 'system-inbound', 'new.txt', 'text/plain',
-			8, 'raw-mime', '${updatedAt}'
-		);
-		INSERT INTO system_email_messages (
-			id, direction, from_address, processing_status, created_at, updated_at
-		) VALUES (
-			'dedicated-drift-message', 'inbound', 'drift@example.net', 'stored',
-			'${createdAt}', '${updatedAt}'
-		);
-		INSERT INTO system_email_attachments (
-			id, message_id, content_type, size, storage_kind, created_at
-		) VALUES (
-			'dedicated-drift-attachment', 'dedicated-drift-message', 'text/plain',
-			1, 'raw-mime', '${createdAt}'
-		);
+		DELETE FROM system_email_threads WHERE id = 'user-thread';
 	`)
 	const batch = vi.spyOn(db, 'batch')
-	const repaired = await reconcileSystemEmailGraphFromLegacy({ db })
+	const repaired = await reconcileLegacySystemEmailGraphFromDedicated({
+		db,
+		direction: 'dedicated_to_legacy',
+		force: true,
+	})
 	expect(batch).toHaveBeenCalledTimes(1)
 	expect(repaired.metrics).toEqual({
 		deleted: {
-			threads: 1,
-			messages: 1,
-			attachments: 2,
-			deliveryEvents: 0,
+			threads: 0,
+			messages: 0,
+			attachments: 0,
+			deliveryEvents: 1,
 		},
 		upserted: {
 			threads: 0,
 			messages: 1,
 			attachments: 1,
-			deliveryEvents: 1,
+			deliveryEvents: 0,
 		},
 		referencedOwnerMismatchCount: 0,
 	})
@@ -287,16 +254,25 @@ test('system email graph report returns aggregate parity and provider dispositio
 		sqlite
 			.prepare(
 				`SELECT subject, thread_id
-				FROM system_email_messages
+				FROM email_messages
 				WHERE id = 'system-inbound'`,
 			)
 			.get(),
-	).toEqual({ subject: 'Updated incident', thread_id: 'system-thread' })
+	).toEqual({ subject: 'Incident', thread_id: null })
 	expect(
-		sqlite.prepare(`SELECT id FROM system_email_attachments ORDER BY id`).all(),
-	).toEqual([{ id: 'system-attachment-new' }])
+		sqlite
+			.prepare(
+				`SELECT storage_key FROM email_attachments
+				WHERE id = 'system-attachment'`,
+			)
+			.get(),
+	).toEqual({ storage_key: 'drifted-key' })
 
-	const repeated = await reconcileSystemEmailGraphFromLegacy({ db })
+	const repeated = await reconcileLegacySystemEmailGraphFromDedicated({
+		db,
+		direction: 'dedicated_to_legacy',
+		force: true,
+	})
 	expect(batch).toHaveBeenCalledTimes(2)
 	expect(repeated.metrics).toEqual({
 		deleted: {
@@ -322,38 +298,42 @@ test('system email graph report returns aggregate parity and provider dispositio
 			'foreign-sender', 'user-1', 'foreign@example.com', 'Foreign',
 			'verified', '${createdAt}', '${updatedAt}'
 		);
-		INSERT INTO email_threads (
-			id, user_id, inbox_id, subject_normalized, last_message_at,
+		INSERT INTO system_email_threads (
+			id, inbox_id, subject_normalized, last_message_at,
 			created_at, updated_at
 		) VALUES (
-			'invalid-system-thread', 'system:email', 'user-inbox', 'invalid',
+			'invalid-system-thread', 'user-inbox', 'invalid',
 			'${updatedAt}', '${createdAt}', '${updatedAt}'
 		);
-		INSERT INTO email_messages (
-			id, direction, user_id, inbox_id, sender_identity_id, from_address,
+		INSERT INTO system_email_messages (
+			id, direction, inbox_id, sender_identity_id, from_address,
 			to_addresses_json, subject, references_json, headers_json, raw_size,
 			processing_status, created_at, updated_at
 		) VALUES (
-			'invalid-system-message', 'outbound', 'system:email', 'user-inbox',
+			'invalid-system-message', 'outbound', 'user-inbox',
 			'foreign-sender', 'support@example.com', '["recipient@example.net"]',
 			'Invalid owner refs', '[]', '{}', 1, 'stored', '${createdAt}',
 			'${updatedAt}'
 		);
-		INSERT INTO email_attachments (
+		INSERT INTO system_email_attachments (
 			id, message_id, content_type, size, storage_kind, created_at
 		) VALUES (
 			'invalid-system-attachment', 'invalid-system-message', 'text/plain',
 			1, 'raw-mime', '${createdAt}'
 		);
-		INSERT INTO email_delivery_events (
-			id, message_id, user_id, inbox_id, event_type, provider, detail_json,
+		INSERT INTO system_email_delivery_events (
+			id, message_id, inbox_id, event_type, provider, detail_json,
 			created_at, needs_effect_reconcile
 		) VALUES (
-			'invalid-system-event', 'invalid-system-message', 'system:email',
-			'user-inbox', 'send_requested', 'kody', '{}', '${createdAt}', 0
+			'invalid-system-event', 'invalid-system-message', 'user-inbox',
+			'send_requested', 'kody', '{}', '${createdAt}', 0
 		);
 	`)
-	const fenced = await reconcileSystemEmailGraphFromLegacy({ db })
+	const fenced = await reconcileLegacySystemEmailGraphFromDedicated({
+		db,
+		direction: 'dedicated_to_legacy',
+		force: true,
+	})
 	expect(fenced.metrics.referencedOwnerMismatchCount).toBe(4)
 	expect(fenced.postReport).toMatchObject({
 		threads: { referencedOwnerMismatchCount: 1, parity: false },
@@ -370,5 +350,5 @@ test('system email graph report returns aggregate parity and provider dispositio
 				WHERE id = 'invalid-system-message'`,
 			)
 			.get(),
-	).toEqual({ count: 0 })
+	).toEqual({ count: 1 })
 })

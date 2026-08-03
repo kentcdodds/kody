@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 	pruneUserEmailMessagesForRetention: vi.fn(),
 	pruneEmailDeliveryEventsForRetention: vi.fn(),
 	loadSystemEmailGraphParityReport: vi.fn(),
-	reconcileSystemEmailGraphFromLegacy: vi.fn(),
+	reconcileLegacySystemEmailGraphFromDedicated: vi.fn(),
 }))
 
 vi.mock('#worker/email/mailbox-reconcile.ts', async (importOriginal) => {
@@ -62,8 +62,8 @@ vi.mock('#worker/email/system-email-graph-repo.ts', async (importOriginal) => {
 	return {
 		...actual,
 		loadSystemEmailGraphParityReport: mocks.loadSystemEmailGraphParityReport,
-		reconcileSystemEmailGraphFromLegacy:
-			mocks.reconcileSystemEmailGraphFromLegacy,
+		reconcileLegacySystemEmailGraphFromDedicated:
+			mocks.reconcileLegacySystemEmailGraphFromDedicated,
 	}
 })
 
@@ -468,7 +468,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			missingFromLegacyMessagesCount: 0,
 			mismatchedLegacyAuthorityIndexCount: 0,
 			classification: 'no-system-provider-links',
-			authorityDisposition: 'legacy-email-messages-until-4b-routing',
+			authorityDisposition: 'dedicated-inbound-only',
 			parity: true,
 		},
 		parity: true,
@@ -557,7 +557,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 			deliveryEvents: { legacyCount: 1, dedicatedCount: 1, parity: true },
 			outboundProviderIndex: {
 				classification: 'no-system-provider-links',
-				authorityDisposition: 'legacy-email-messages-until-4b-routing',
+				authorityDisposition: 'dedicated-inbound-only',
 				parity: true,
 			},
 			parity: true,

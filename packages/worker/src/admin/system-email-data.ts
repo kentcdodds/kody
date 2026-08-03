@@ -7,6 +7,11 @@ import { readPagination } from '#worker/query-params.ts'
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
 import { loadRawMime } from '#worker/email/service.ts'
 import {
+	getSystemEmailAdminMessageRow,
+	listSystemEmailAdminMessages,
+	listSystemEmailAttachments,
+} from '#worker/email/system-email-graph-store.ts'
+import {
 	systemEmailLimits,
 	systemEmailLocals,
 	systemEmailOwnerId,
@@ -96,25 +101,16 @@ function toListItem(row: Record<string, unknown>): AdminSystemEmailListItem {
 }
 
 async function listAttachments(db: D1Database, messageId: string) {
-	const result = await db
-		.prepare(
-			`SELECT id, filename, content_type, content_id, disposition, size, storage_kind, created_at
-			FROM email_attachments
-			WHERE message_id = ?
-			ORDER BY created_at ASC, id ASC`,
-		)
-		.bind(messageId)
-		.all<Record<string, unknown>>()
-	return (result.results ?? []).map((row) => ({
-		id: String(row['id']),
-		filename: row['filename'] == null ? null : String(row['filename']),
-		content_type:
-			row['content_type'] == null ? null : String(row['content_type']),
-		content_id: row['content_id'] == null ? null : String(row['content_id']),
-		disposition: row['disposition'] == null ? null : String(row['disposition']),
-		size: Number(row['size'] ?? 0),
-		storage_kind: String(row['storage_kind']),
-		created_at: String(row['created_at']),
+	const attachments = await listSystemEmailAttachments({ db, messageId })
+	return attachments.map((attachment) => ({
+		id: attachment.id,
+		filename: attachment.filename,
+		content_type: attachment.contentType,
+		content_id: attachment.contentId,
+		disposition: attachment.disposition,
+		size: attachment.size,
+		storage_kind: attachment.storageKind,
+		created_at: attachment.createdAt,
 	}))
 }
 
@@ -123,19 +119,7 @@ export async function loadAdminSystemEmailMessageById(
 	messageId: string,
 	blobs: R2Bucket,
 ): Promise<AdminSystemEmailDetail | null> {
-	const row = await db
-		.prepare(
-			`SELECT message.*, address.local_part AS inbox_local_part
-			FROM email_messages AS message
-			LEFT JOIN email_inbox_addresses AS address
-				ON address.inbox_id = message.inbox_id
-				AND address.user_id = message.user_id
-			WHERE message.user_id = ?
-				AND message.id = ?
-			LIMIT 1`,
-		)
-		.bind(systemEmailOwnerId, messageId)
-		.first<Record<string, unknown>>()
+	const row = await getSystemEmailAdminMessageRow({ db, messageId })
 	if (!row) return null
 	return {
 		...toListItem(row),
@@ -180,31 +164,12 @@ export async function loadAdminSystemEmailData(
 		maxPageSize,
 	})
 	const selectedMessageId = url.searchParams.get('messageId')?.trim() || null
-	const [totalResult, messageRows, selectedMessage] = await Promise.all([
-		env.APP_DB.prepare(
-			`SELECT COUNT(*) AS total
-			FROM email_messages
-			WHERE user_id = ?
-				AND direction = 'inbound'`,
-		)
-			.bind(systemEmailOwnerId)
-			.first<{ total: number }>(),
-		env.APP_DB.prepare(
-			`SELECT message.id, address.local_part AS inbox_local_part,
-				message.from_address, message.envelope_from, message.subject,
-				message.processing_status, message.raw_size, message.received_at,
-				message.created_at
-			FROM email_messages AS message
-			LEFT JOIN email_inbox_addresses AS address
-				ON address.inbox_id = message.inbox_id
-				AND address.user_id = message.user_id
-			WHERE message.user_id = ?
-				AND message.direction = 'inbound'
-			ORDER BY message.created_at DESC, message.id DESC
-			LIMIT ? OFFSET ?`,
-		)
-			.bind(systemEmailOwnerId, pageSize, offset)
-			.all<Record<string, unknown>>(),
+	const [list, selectedMessage] = await Promise.all([
+		listSystemEmailAdminMessages({
+			db: env.APP_DB,
+			pageSize,
+			offset,
+		}),
 		selectedMessageId
 			? loadAdminSystemEmailMessageById(
 					env.APP_DB,
@@ -218,10 +183,10 @@ export async function loadAdminSystemEmailData(
 		ownerId: systemEmailOwnerId,
 		systemLocals: [...systemEmailLocals],
 		limits: { ...systemEmailLimits },
-		messages: (messageRows.results ?? []).map(toListItem),
+		messages: list.rows.map(toListItem),
 		selectedMessage,
 		page,
 		pageSize,
-		total: Number(totalResult?.total ?? 0),
+		total: list.total,
 	}
 }

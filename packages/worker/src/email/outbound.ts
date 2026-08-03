@@ -17,6 +17,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	mirrorMailboxMessageGraphFromD1,
 	type MailboxLiveMirrorEnv,
@@ -483,6 +484,9 @@ function outboundEmailContentBytes(
 export async function sendOutboundEmail(
 	input: EmailSendInput,
 ): Promise<EmailSendResult> {
+	if (input.userId === systemEmailOwnerId) {
+		throw new Error('System outbound email is unsupported.')
+	}
 	const write = async (): Promise<EmailSendResult> => {
 		// The from address is always platform-assigned: {username}@<platform
 		// domain>. There is no self-service sender verification. The resolved

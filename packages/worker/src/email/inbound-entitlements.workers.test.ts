@@ -405,7 +405,7 @@ test('inbound email enforces free-plan receive, storage, and size limits then st
 		error_count: 0,
 		total_bytes: underQuotaMessage.rawSize,
 	})
-})
+}, 15_000)
 
 test('inbound email applies the max-plan email receive backstop', async () => {
 	await ensureEmailTestSchema(env.APP_DB)

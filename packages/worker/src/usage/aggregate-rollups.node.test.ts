@@ -24,6 +24,7 @@ function createFakeDb(
 	input: {
 		existingRollups?: Array<RollupKeyRow>
 		emailUsageRows?: Array<EmailUsageRow>
+		systemEmailUsageRows?: Array<EmailUsageRow>
 		liveUserIds?: Array<string>
 	} = {},
 ) {
@@ -51,6 +52,10 @@ function createFakeDb(
 							if (sql.includes('FROM email_delivery_events event')) {
 								selects.push({ sql, params })
 								return { results: input.emailUsageRows ?? [] }
+							}
+							if (sql.includes('FROM system_email_delivery_events')) {
+								selects.push({ sql, params })
+								return { results: input.systemEmailUsageRows ?? [] }
 							}
 							if (!sql.includes('SELECT user_id, metric FROM usage_rollups')) {
 								throw new Error(`Unsupported all query: ${sql}`)

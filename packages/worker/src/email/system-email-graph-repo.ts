@@ -5,8 +5,8 @@ import {
 	type SystemEmailGraphTableKey,
 } from './system-email-graph-columns.ts'
 import {
-	buildSystemEmailGraphDeleteDriftSql,
-	buildSystemEmailGraphUpsertSql,
+	buildLegacySystemEmailGraphDeleteDriftSql,
+	buildLegacySystemEmailGraphUpsertSql,
 	systemEmailGraphLegacyCte,
 	systemEmailGraphLegacyCtes,
 	systemEmailGraphSourceCte,
@@ -37,9 +37,8 @@ export type SystemEmailOutboundProviderParity = {
 	mismatchedLegacyAuthorityIndexCount: number
 	classification:
 		| 'no-system-provider-links'
-		| 'legacy-authority-parity'
-		| 'legacy-authority-mismatch'
-	authorityDisposition: 'legacy-email-messages-until-4b-routing'
+		| 'unsupported-system-provider-links'
+	authorityDisposition: 'dedicated-inbound-only'
 	parity: boolean
 }
 
@@ -232,16 +231,14 @@ function systemProviderParity(
 	dedicatedProviderLinkedMessageCount: number,
 ): SystemEmailOutboundProviderParity {
 	const providerParity =
+		report.linkedMessageCount === 0 &&
+		report.indexCount === 0 &&
+		dedicatedProviderLinkedMessageCount === 0 &&
 		report.parity &&
 		report.linkedMessageCount === dedicatedProviderLinkedMessageCount
-	const classification =
-		report.linkedMessageCount === 0 &&
-		dedicatedProviderLinkedMessageCount === 0 &&
-		report.indexCount === 0
-			? ('no-system-provider-links' as const)
-			: providerParity
-				? ('legacy-authority-parity' as const)
-				: ('legacy-authority-mismatch' as const)
+	const classification = providerParity
+		? ('no-system-provider-links' as const)
+		: ('unsupported-system-provider-links' as const)
 	return {
 		legacyProviderLinkedMessageCount: report.linkedMessageCount,
 		dedicatedProviderLinkedMessageCount,
@@ -250,7 +247,7 @@ function systemProviderParity(
 		missingFromLegacyMessagesCount: report.missingFromMessagesCount,
 		mismatchedLegacyAuthorityIndexCount: report.mismatchedCount,
 		classification,
-		authorityDisposition: 'legacy-email-messages-until-4b-routing',
+		authorityDisposition: 'dedicated-inbound-only',
 		parity: providerParity,
 	}
 }
@@ -333,23 +330,26 @@ function referencedOwnerMismatchCount(
 }
 
 /**
- * Atomically makes the dedicated 4a copy equal to the currently valid legacy
- * system graph. Invalid cross-owner references are skipped, remain visible in
- * parity, and therefore prevent a 4b cutover.
+ * Rollback repair only. Atomically restores the legacy compatibility mirror
+ * from the dedicated authority. The literal direction and force fields make it
+ * impossible for an old 4a caller to overwrite dedicated rows from stale
+ * legacy state after cutover.
  */
-export async function reconcileSystemEmailGraphFromLegacy(input: {
+export async function reconcileLegacySystemEmailGraphFromDedicated(input: {
 	db: D1Database
+	direction: 'dedicated_to_legacy'
+	force: true
 }): Promise<SystemEmailGraphReconcileResult> {
 	const childFirst = [...systemEmailGraphColumnContracts].reverse()
 	const statements = [
 		...childFirst.map((contract) =>
 			input.db
-				.prepare(buildSystemEmailGraphDeleteDriftSql(contract))
+				.prepare(buildLegacySystemEmailGraphDeleteDriftSql(contract))
 				.bind(systemEmailOwnerId),
 		),
 		...systemEmailGraphColumnContracts.map((contract) =>
 			input.db
-				.prepare(buildSystemEmailGraphUpsertSql(contract))
+				.prepare(buildLegacySystemEmailGraphUpsertSql(contract))
 				.bind(systemEmailOwnerId),
 		),
 	]
