@@ -53,11 +53,12 @@ this in every kickoff.
 blocked — the agent wakes the conductor:
 
 ```javascript
-import { createRun } from 'kody:@kentcdodds/cursor/runs'
+import { createRun } from "kody:@kentcdodds/cursor/runs";
 await createRun({
-	agentId: '<CONDUCTOR_AGENT_ID>',
-	prompt: '<track> report: STATUS; shipped (PR links); evidence; remains + gate times.',
-})
+  agentId: "<CONDUCTOR_AGENT_ID>",
+  prompt:
+    "<track> report: STATUS; shipped (PR links); evidence; remains + gate times.",
+});
 ```
 
 Get your id from cursor-cloud `run-info` and paste it into kickoffs. Also keep
@@ -71,13 +72,13 @@ re-dispatch.
 **Time gates → one-shot jobs**, not `sleep`:
 
 ```javascript
-import { kody } from 'kody:runtime'
+import { kody } from "kody:runtime";
 await kody.job_schedule({
-	name: 'wake-<track>-after-<gate>',
-	description: 'Resume <track> when <gate> elapses.',
-	schedule: { type: 'once', run_at: '<ISO datetime>' },
-	code: "import { createRun } from 'kody:@kentcdodds/cursor/runs'\nexport default async function main() { return await createRun({ agentId: '<AGENT_ID>', prompt: '<gate> elapsed; verify evidence, then proceed.' }) }",
-})
+  name: "wake-<track>-after-<gate>",
+  description: "Resume <track> when <gate> elapses.",
+  schedule: { type: "once", run_at: "<ISO datetime>" },
+  code: "import { createRun } from 'kody:@kentcdodds/cursor/runs'\nexport default async function main() { return await createRun({ agentId: '<AGENT_ID>', prompt: '<gate> elapsed; verify evidence, then proceed.' }) }",
+});
 ```
 
 Schedule the same against your own agent id so the program survives session
@@ -106,20 +107,20 @@ Load with `skill_get` and embed when useful: `orchestrate` (in-track fan-out),
 ## Spawn sketch
 
 ```javascript
-import { createAgent } from 'kody:@kentcdodds/cursor/agents'
-import { createRun } from 'kody:@kentcdodds/cursor/runs'
+import { createAgent } from "kody:@kentcdodds/cursor/agents";
+import { createRun } from "kody:@kentcdodds/cursor/runs";
 
 export default async function main() {
-	const { agent } = await createAgent({
-		model: 'gpt-5.6-sol',
-		repository: 'https://github.com/owner/repo',
-		ref: 'main',
-		autoCreatePR: true,
-		name: 'track-short-name',
-		prompt: '…self-contained kickoff with report-back + your conductor id…',
-	})
-	// await createRun({ agentId: agent.id, prompt: 'follow-up…' })
-	return agent
+  const { agent } = await createAgent({
+    model: "gpt-5.6-sol",
+    repository: "https://github.com/owner/repo",
+    ref: "main",
+    autoCreatePR: true,
+    name: "track-short-name",
+    prompt: "…self-contained kickoff with report-back + your conductor id…",
+  });
+  // await createRun({ agentId: agent.id, prompt: 'follow-up…' })
+  return agent;
 }
 ```
 

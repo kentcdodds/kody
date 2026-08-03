@@ -22,7 +22,7 @@ optimized for cheap/fast execution.
   beat one implementer. Sequential slices → implement (or one implementer).
 - **No orchestration theater.** Ban review → recheck → final → CI-watch chains
   per slice. **One** hard-to-reverse review before merge.
-- **One CI wait path** — parent `gh pr checks` *or* a ci-watcher, not both.
+- **One CI wait path** — parent `gh pr checks` _or_ a ci-watcher, not both.
 - **Targeted tests while iterating;** full validate before ready-for-review.
 - Close loops yourself — don't leave humans as the relay.
 
