@@ -144,7 +144,7 @@ function renderActivationFunnel(activation: AdminInsightsActivation) {
 			{activation.steps.map((entry) => {
 				const share = total > 0 ? entry.users / total : 0
 				return (
-					<div mix={css({ display: 'grid', gap: spacing.xs })}>
+					<div key={entry.step} mix={css({ display: 'grid', gap: spacing.xs })}>
 						<div
 							mix={css({
 								display: 'flex',
@@ -423,7 +423,11 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 				<StatCard
 					id="stat-email"
 					label="Stored emails"
-					value={formatIntegerNumber(data.totals.storedEmailMessages)}
+					value={
+						data.totals.storedEmailMessages == null
+							? 'Unavailable'
+							: formatIntegerNumber(data.totals.storedEmailMessages)
+					}
 					sub={`${formatCompactNumber(emailWindowTotal)} sent + received in 28 days`}
 					color={chartColor.cyan}
 					sparkValues={data.emailByDay.map((day) => day.sends + day.receives)}

@@ -283,9 +283,8 @@ async function loadEmailInsightsRows(input: {
 }> {
 	// Wrangler exposes a local Analytics Engine binding, but its SQL API cannot
 	// query the emulated dataset. The D1 entitlement_daily_counters mirror is
-	// retired, so local/dev email quota aggregates degrade explicitly to empty
-	// (with a warning) rather than querying a removed table. Delivery-event
-	// aggregates still come from D1 email_delivery_events.
+	// retired, so local/dev email aggregates degrade explicitly to empty rather
+	// than consulting the frozen shared USER graph.
 	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
 		console.warn('admin-insights-email-quota-aggregate-unavailable', {
 			reason: 'entitlement-daily-counters-retired-local-dev',
@@ -297,18 +296,7 @@ async function loadEmailInsightsRows(input: {
 		})
 	}
 	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true' || !input.env.EMAIL_EVENTS) {
-		const deliveryRows = await input.env.APP_DB.prepare(
-			`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
-			 FROM email_delivery_events
-			 WHERE provider = 'cloudflare-email' AND created_at >= ?
-			 GROUP BY day, event_type`,
-		)
-			.bind(input.dayCutoff)
-			.all<EmailDeliveryDayRow>()
-		return {
-			emailRows: [],
-			deliveryRows: deliveryRows.results ?? [],
-		}
+		return { emailRows: [], deliveryRows: [] }
 	}
 
 	const accountId = input.env.CLOUDFLARE_ACCOUNT_ID?.trim()
@@ -501,7 +489,6 @@ async function queryTotals(
 		savedPackages,
 		workflowRuns,
 		activeMemories,
-		storedEmailMessages,
 		secrets,
 		activeCommunityListings,
 		passkeys,
@@ -518,7 +505,6 @@ async function queryTotals(
 			db,
 			`SELECT COUNT(*) AS n FROM mcp_memories WHERE status = 'active'`,
 		),
-		countQuery(db, `SELECT COUNT(*) AS n FROM email_messages`),
 		countQuery(db, `SELECT COUNT(*) AS n FROM secret_entries`),
 		countQuery(
 			db,
@@ -533,7 +519,7 @@ async function queryTotals(
 		savedPackages,
 		workflowRuns,
 		activeMemories,
-		storedEmailMessages,
+		storedEmailMessages: null,
 		secrets,
 		activeCommunityListings,
 		passkeys,

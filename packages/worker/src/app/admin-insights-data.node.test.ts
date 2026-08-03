@@ -341,7 +341,7 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 		enabledJobs: 3,
 		workflowRuns: 9,
 		activeMemories: 13,
-		storedEmailMessages: 15,
+		storedEmailMessages: null,
 		secrets: 7,
 		activeCommunityListings: 2,
 		passkeys: 3,
@@ -364,9 +364,9 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 	expect(data.emailDeliveryByDay).toHaveLength(28)
 	expect(data.emailDeliveryByDay.at(-1)).toEqual({
 		day: '2026-07-08',
-		delivered: 5,
+		delivered: 0,
 		deferred: 0,
-		bounced: 1,
+		bounced: 0,
 		failed: 0,
 		rejected: 0,
 		complained: 0,

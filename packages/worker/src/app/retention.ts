@@ -1,6 +1,4 @@
 import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
-import { emailRawMimeKey } from '#worker/email/repo.ts'
-import { systemEmailOwnerId } from '#worker/email/system-email.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
@@ -28,12 +26,6 @@ export const retentionCronGateMinutes = 5
 export const retentionCronIntervalMinutes = 60
 export const retentionDefaultBatchSize = 250
 export const retentionDeleteIdsMaxParameters = 100
-/**
- * R2 bulk deletes accept up to 1000 keys per call. A 250-message batch with
- * raw MIME plus up to ten external attachment keys each can exceed that, so
- * blob deletes are chunked below this ceiling.
- */
-export const retentionBlobDeleteMaxKeys = 1000
 export const publishedBundleArtifactRetentionBatchSize = 100
 /**
  * Total wall-clock budget for one retention cron run. Each hourly run keeps
@@ -47,8 +39,6 @@ export const memorySuppressionRetentionDays = 90
 export const workflowRunRetentionDays = 90
 export const platformFeedbackRetentionDays = 365
 export const publishedBundleArtifactRetentionDays = 30
-export const emailDeliveryEventRetentionDays = 90
-export const emailMessageRetentionDays = 365
 export const usageRollupRetentionMonths = 24
 export const featureFlagExposureRetentionDays = 90
 export const auditEventRetentionDays = 180
@@ -103,36 +93,6 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 			'Published bundle rows, KV blobs, and the matching source snapshot KV keys are deleted only when older than 30 days, not current for any source, and not tied to an active repo session.',
 	},
 	{
-		table: 'email_delivery_events',
-		scope: 'per-user',
-		retentionDays: emailDeliveryEventRetentionDays,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'User email delivery events keep 90 days; operator system email remains governed by system-email retention.',
-	},
-	{
-		table: 'email_messages',
-		scope: 'per-user',
-		retentionDays: emailMessageRetentionDays,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'User email messages keep 365 days, oldest first. Deterministic raw-MIME keys are deleted from R2 before their rows; rows whose blob delete fails are skipped and retried. Operator system:email messages remain governed by system-email retention.',
-	},
-	{
-		table: 'email_attachments',
-		scope: 'per-user',
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Attachment rows follow their parent email messages and are deleted before the messages.',
-	},
-	{
-		table: 'email_threads',
-		scope: 'per-user',
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Threads orphaned by email message retention are pruned for the affected users in the same run.',
-	},
-	{
 		table: 'usage_rollups',
 		scope: 'per-user',
 		batchSize: retentionDefaultBatchSize,
@@ -164,10 +124,11 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 				disposition,
 			): disposition is Extract<
 				(typeof accountRetentionDispositions)[number],
-				{ kind: 'alternate_cleanup' | 'durable_forever' }
+				{ kind: 'alternate_cleanup' | 'durable_forever' | 'pending_drop' }
 			> =>
 				disposition.kind === 'alternate_cleanup' ||
-				disposition.kind === 'durable_forever',
+				disposition.kind === 'durable_forever' ||
+				disposition.kind === 'pending_drop',
 		)
 		.map((disposition) => ({
 			table: disposition.table,
@@ -524,240 +485,6 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 	}
 }
 
-export async function pruneEmailDeliveryEventsForRetention(input: {
-	db: D1Database
-	now?: Date
-	batchSize?: number
-}) {
-	const cutoff = cutoffIso(
-		input.now ?? new Date(),
-		emailDeliveryEventRetentionDays,
-	)
-	return selectAndDeleteByIds({
-		db: input.db,
-		bindings: [
-			systemEmailOwnerId,
-			cutoff,
-			input.batchSize ?? retentionDefaultBatchSize,
-		],
-		sql: `SELECT id
-			FROM email_delivery_events
-			WHERE user_id != ?
-				AND created_at < ?
-			ORDER BY created_at ASC, id ASC
-			LIMIT ?`,
-		table: 'email_delivery_events',
-		idColumn: 'id',
-	})
-}
-
-/**
- * Keyset cursor over (created_at, id) marking the last email message row
- * examined (selected, not necessarily deleted). Threading it through batches
- * within one run advances past rows skipped for blob reasons, so a blocked
- * head cannot wedge the prune. Cross-run persistence is unnecessary: the next
- * hourly run starts from the head and retries the skipped rows.
- */
-export type EmailMessageRetentionCursor = {
-	createdAt: string
-	id: string
-}
-
-export type EmailMessageRetentionResult = {
-	deletedMessages: number
-	deletedAttachments: number
-	deletedThreads: number
-	deletedRawMimeBlobs: number
-	deletedAttachmentBlobs: number
-	blobDeleteErrors: number
-	hasMore: boolean
-	nextCursor: EmailMessageRetentionCursor | null
-}
-
-export async function pruneUserEmailMessagesForRetention(input: {
-	db: D1Database
-	blobs: Pick<R2Bucket, 'delete'>
-	now?: Date
-	batchSize?: number
-	cursor?: EmailMessageRetentionCursor | null
-}): Promise<EmailMessageRetentionResult> {
-	const cutoff = cutoffIso(input.now ?? new Date(), emailMessageRetentionDays)
-	const batchSize = input.batchSize ?? retentionDefaultBatchSize
-	const cursor = input.cursor ?? null
-	const cursorClause = cursor
-		? `AND (created_at > ? OR (created_at = ? AND id > ?))`
-		: ''
-	const cursorBindings = cursor
-		? [cursor.createdAt, cursor.createdAt, cursor.id]
-		: []
-	const { results } = await runD1WithRetry(() =>
-		input.db
-			.prepare(
-				`SELECT id, user_id, raw_mime_key, created_at
-			FROM email_messages
-			WHERE user_id != ?
-				AND created_at < ?
-				${cursorClause}
-			ORDER BY created_at ASC, id ASC
-			LIMIT ?`,
-			)
-			.bind(systemEmailOwnerId, cutoff, ...cursorBindings, batchSize)
-			.all<{
-				id: string
-				user_id: string
-				raw_mime_key: string | null
-				created_at: string
-			}>(),
-	)
-	const rows = results ?? []
-	const result: EmailMessageRetentionResult = {
-		deletedMessages: 0,
-		deletedAttachments: 0,
-		deletedThreads: 0,
-		deletedRawMimeBlobs: 0,
-		deletedAttachmentBlobs: 0,
-		blobDeleteErrors: 0,
-		hasMore: false,
-		nextCursor: null,
-	}
-	// Externally stored attachments (outbound mail) have their own R2
-	// objects that must be deleted along with the raw-MIME blobs.
-	const attachmentKeysByMessageId = new Map<string, Array<string>>()
-	for (
-		let index = 0;
-		index < rows.length;
-		index += retentionDeleteIdsMaxParameters
-	) {
-		const chunk = rows.slice(index, index + retentionDeleteIdsMaxParameters)
-		const chunkPlaceholders = chunk.map(() => '?').join(', ')
-		const attachmentRows = await runD1WithRetry(() =>
-			input.db
-				.prepare(
-					`SELECT message_id, storage_key
-				FROM email_attachments
-				WHERE storage_key IS NOT NULL AND message_id IN (${chunkPlaceholders})`,
-				)
-				.bind(...chunk.map((row) => row.id))
-				.all<{ message_id: string; storage_key: string }>(),
-		)
-		for (const attachmentRow of attachmentRows.results ?? []) {
-			const keys = attachmentKeysByMessageId.get(attachmentRow.message_id)
-			if (keys) keys.push(attachmentRow.storage_key)
-			else {
-				attachmentKeysByMessageId.set(attachmentRow.message_id, [
-					attachmentRow.storage_key,
-				])
-			}
-		}
-	}
-	const blobKeysByMessageId = new Map<string, Array<string>>()
-	for (const row of rows) {
-		blobKeysByMessageId.set(row.id, [
-			emailRawMimeKey(row.user_id, row.id),
-			...(attachmentKeysByMessageId.get(row.id) ?? []),
-		])
-	}
-	const blobKeysForRow = (row: (typeof rows)[number]) =>
-		blobKeysByMessageId.get(row.id) ?? []
-	// Every message attempts the deterministic raw-MIME key.
-	const rowsWithBlob = rows.filter((row) => blobKeysForRow(row).length > 0)
-	// Never delete a row whose R2 blobs could not be deleted first: once
-	// the row is gone its blob keys are lost and the blobs are orphaned
-	// forever. Failed rows are skipped and retried on a later run. Deletes
-	// are chunked below R2's bulk-delete key limit, keeping each message's
-	// keys inside one call so a failure skips whole messages.
-	const failedRowIds = new Set<string>()
-	let chunkRows: Array<(typeof rows)[number]> = []
-	let chunkKeys: Array<string> = []
-	const deleteChunk = async () => {
-		if (chunkKeys.length === 0) return
-		try {
-			await input.blobs.delete(chunkKeys)
-			result.deletedRawMimeBlobs += chunkRows.filter(
-				(row) => row.raw_mime_key !== null,
-			).length
-			result.deletedAttachmentBlobs += chunkRows.reduce(
-				(count, row) =>
-					count + (attachmentKeysByMessageId.get(row.id)?.length ?? 0),
-				0,
-			)
-		} catch (error) {
-			result.blobDeleteErrors += chunkKeys.length
-			for (const row of chunkRows) failedRowIds.add(row.id)
-			console.warn('retention-email-blob-delete-failed', { error })
-		}
-		chunkRows = []
-		chunkKeys = []
-	}
-	for (const row of rowsWithBlob) {
-		const keys = blobKeysForRow(row)
-		if (
-			chunkKeys.length > 0 &&
-			chunkKeys.length + keys.length > retentionBlobDeleteMaxKeys
-		) {
-			await deleteChunk()
-		}
-		chunkRows.push(row)
-		chunkKeys.push(...keys)
-	}
-	await deleteChunk()
-	const deletableRows = rows.filter((row) => !failedRowIds.has(row.id))
-	const messageIds = deletableRows.map((row) => row.id)
-	// email_attachments rows reference email_messages via FK, so delete the
-	// dependent attachment rows first.
-	result.deletedAttachments = await deleteByIds({
-		db: input.db,
-		table: 'email_attachments',
-		idColumn: 'message_id',
-		ids: messageIds,
-	})
-	// The schema compatibility trigger atomically deletes provider-index rows
-	// with each legacy message DELETE.
-	result.deletedMessages = await deleteByIds({
-		db: input.db,
-		table: 'email_messages',
-		idColumn: 'id',
-		ids: messageIds,
-	})
-	const affectedUserIds = [...new Set(deletableRows.map((row) => row.user_id))]
-	for (
-		let index = 0;
-		index < affectedUserIds.length;
-		index += retentionDeleteIdsMaxParameters
-	) {
-		const userIds = affectedUserIds.slice(
-			index,
-			index + retentionDeleteIdsMaxParameters,
-		)
-		const threadDelete = await runD1WithRetry(() =>
-			input.db
-				.prepare(
-					`DELETE FROM email_threads
-				WHERE user_id IN (${placeholders(userIds)})
-					AND NOT EXISTS (
-						SELECT 1
-						FROM email_messages
-						WHERE email_messages.thread_id = email_threads.id
-					)`,
-				)
-				.bind(...userIds)
-				.run(),
-		)
-		result.deletedThreads += threadDelete.meta.changes ?? 0
-	}
-	// hasMore is based on the selected count: a full batch means more eligible
-	// rows may follow even when some rows were skipped rather than deleted.
-	// nextCursor points past every examined row so the next batch in this run
-	// moves forward instead of reselecting the skipped head.
-	const lastRow = rows.at(-1)
-	result.hasMore = rows.length >= batchSize
-	result.nextCursor =
-		result.hasMore && lastRow
-			? { createdAt: lastRow.created_at, id: lastRow.id }
-			: null
-	return result
-}
-
 export async function pruneUsageRollupsForRetention(input: {
 	db: D1Database
 	now?: Date
@@ -856,10 +583,6 @@ export async function pruneRetention(input: {
 	const startedAtMs = Date.now()
 	const db = input.env.APP_DB
 	const auditDb = input.env.AUDIT_DB
-	const emailBlobs = input.env.EMAIL_BLOBS
-	// Per-run keyset cursor for the email prune; advances past rows skipped
-	// for blob reasons so a blocked head cannot wedge later batches.
-	let emailMessagesCursor: EmailMessageRetentionCursor | null = null
 	const result: RetentionPruneResult = {
 		memorySuppressions: 0,
 		workflowRuns: 0,
@@ -940,34 +663,6 @@ export async function pruneRetention(input: {
 				result.publishedBundleArtifacts.deletedSnapshotKvKeys +=
 					batch.deletedSnapshotKvKeys
 				result.publishedBundleArtifacts.kvDeleteErrors += batch.kvDeleteErrors
-				return batch.hasMore
-			},
-		},
-		countTask(
-			'email_delivery_events',
-			() => pruneEmailDeliveryEventsForRetention({ db, now }),
-			(count) => {
-				result.emailDeliveryEvents += count
-			},
-		),
-		{
-			table: 'email_messages',
-			done: false,
-			run: async () => {
-				const batch = await pruneUserEmailMessagesForRetention({
-					db,
-					blobs: emailBlobs,
-					now,
-					cursor: emailMessagesCursor,
-				})
-				result.emailMessages.deletedMessages += batch.deletedMessages
-				result.emailMessages.deletedAttachments += batch.deletedAttachments
-				result.emailMessages.deletedThreads += batch.deletedThreads
-				result.emailMessages.deletedRawMimeBlobs += batch.deletedRawMimeBlobs
-				result.emailMessages.deletedAttachmentBlobs +=
-					batch.deletedAttachmentBlobs
-				result.emailMessages.blobDeleteErrors += batch.blobDeleteErrors
-				emailMessagesCursor = batch.nextCursor
 				return batch.hasMore
 			},
 		},

@@ -1,18 +1,14 @@
 import { env } from 'cloudflare:test'
-import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
-	assertWithinStorageBytesEntitlement,
 	calculateUserD1StorageBytes,
 	readUserD1StorageBytes,
 	reconcileUserD1StorageBytes,
 } from './service.ts'
 import { reconcileD1StorageBytes } from './d1-storage-reconciliation.ts'
 import { userMeterRpc } from './user-meter-client.ts'
-import { UserMeter } from './user-meter-do.ts'
-import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 
 async function insertReconciliationUser(input: {
 	userId: string
@@ -33,6 +29,28 @@ async function insertReconciliationUser(input: {
 			input.storedBytes,
 			input.updatedAt,
 		)
+		.run()
+}
+
+async function insertTrackedD1Payload(userId: string, size: number) {
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS mcp_memories (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			category TEXT,
+			subject TEXT,
+			summary TEXT,
+			details TEXT,
+			tags_json TEXT,
+			source_uris_json TEXT,
+			dedupe_key TEXT
+		)`,
+	).run()
+	await env.APP_DB.prepare(
+		`INSERT INTO mcp_memories (id, user_id, subject, summary, details)
+		VALUES (?, ?, 'storage reconciliation', 'tracked payload', ?)`,
+	)
+		.bind(crypto.randomUUID(), userId, 'x'.repeat(size))
 		.run()
 }
 
@@ -57,20 +75,7 @@ test('D1 storage reconciliation is UserMeter-authoritative: sets DO absolute fir
 		storedBytes: 99,
 		updatedAt: '2021-01-01T00:00:00.000Z',
 	})
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, text_body, raw_size,
-			processing_status, created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@example.test', 'subject', 'body', 128,
-			'stored', ?, ?)`,
-	)
-		.bind(
-			crypto.randomUUID(),
-			firstUserId,
-			'2026-07-31T00:00:00.000Z',
-			'2026-07-31T00:00:00.000Z',
-		)
-		.run()
+	await insertTrackedD1Payload(firstUserId, 256)
 
 	const expectedFirstBytes = await calculateUserD1StorageBytes({
 		db: env.APP_DB,
@@ -104,7 +109,7 @@ test('D1 storage reconciliation is UserMeter-authoritative: sets DO absolute fir
 		bytes: expectedFirstBytes,
 	})
 
-	// Second user (no email_messages): reconcile zeros both.
+	// Second user (no tracked payload): reconcile zeros both.
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId: secondUserId }),
 	).resolves.toBe(99)
@@ -141,20 +146,7 @@ test('reconciliation sets UserMeter to physical-payload absolute, not stale D1 u
 		storedBytes: 999_999,
 		updatedAt: '2019-01-01T00:00:00.000Z',
 	})
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, text_body, raw_size,
-			processing_status, created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@example.test', 'subject', 'body', 200,
-			'stored', ?, ?)`,
-	)
-		.bind(
-			crypto.randomUUID(),
-			userId,
-			'2026-07-31T00:00:00.000Z',
-			'2026-07-31T00:00:00.000Z',
-		)
-		.run()
+	await insertTrackedD1Payload(userId, 256)
 
 	// Pre-set UserMeter to a large stale value that physical recompute should replace.
 	const meter = userMeterRpc({ env, userId })
@@ -264,20 +256,7 @@ test('reconcile defers and preserves reserve when CAS misses a concurrent reserv
 		updatedAt: '2019-01-01T00:00:00.000Z',
 	})
 	// Seed physical bytes in D1 so calculateUserD1StorageBytes > 0.
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, text_body, raw_size,
-			processing_status, created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@test', 'sub', 'body', 100,
-			'stored', ?, ?)`,
-	)
-		.bind(
-			crypto.randomUUID(),
-			userId,
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
+	await insertTrackedD1Payload(userId, 256)
 
 	const meter = userMeterRpc({ env, userId })
 	// Seed DO at revision=1 with 100 bytes.
@@ -371,20 +350,7 @@ test('reconcile applies successful downward correction and mirrors D1', async ()
 		updatedAt: '2019-01-01T00:00:00.000Z',
 	})
 	// Seed physical bytes in D1.
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, text_body, raw_size,
-			processing_status, created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@test', 'sub', 'body', 200,
-			'stored', ?, ?)`,
-	)
-		.bind(
-			crypto.randomUUID(),
-			userId,
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
+	await insertTrackedD1Payload(userId, 256)
 
 	// Seed DO with a large stale value that reconciliation should correct downward.
 	const meter = userMeterRpc({ env, userId })
@@ -439,20 +405,7 @@ test('reconcile defers without overwriting when cold init race: another caller c
 		updatedAt: '2019-01-01T00:00:00.000Z',
 	})
 	// Seed physical bytes in D1.
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, text_body, raw_size,
-			processing_status, created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@test', 'sub', 'body', 300,
-			'stored', ?, ?)`,
-	)
-		.bind(
-			crypto.randomUUID(),
-			userId,
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
+	await insertTrackedD1Payload(userId, 256)
 
 	const physicalBytes = await calculateUserD1StorageBytes({
 		db: env.APP_DB,

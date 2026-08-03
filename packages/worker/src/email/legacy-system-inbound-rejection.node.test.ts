@@ -4,7 +4,6 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	buildInboundDelivery,
 	chargeSystemInboundDeliveryOnce,
-	chargeUserInboundDeliveryOnce,
 	claimInboundDeliveryStorage,
 	claimInboundDeliveryWindow,
 	getInboundDelivery,
@@ -88,18 +87,6 @@ test('every legacy system inbound authority entry point rejects after the marker
 					db,
 					delivery,
 					localPart: 'support',
-					limit: 10,
-					now,
-				}),
-		},
-		{
-			name: 'chargeUserInboundDeliveryOnce',
-			run: async () =>
-				await chargeUserInboundDeliveryOnce({
-					db,
-					env: {} as Parameters<typeof chargeUserInboundDeliveryOnce>[0]['env'],
-					delivery,
-					plan: 'pro',
 					limit: 10,
 					now,
 				}),

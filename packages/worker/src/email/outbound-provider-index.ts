@@ -1,8 +1,7 @@
 /**
  * Derived D1 reverse index: outbound provider message id → owning message.
- * `email_messages.provider_message_id` stays authoritative; this table exists
- * so contextless provider webhooks resolve owner/message without scanning the
- * full messages table or enumerating Mailbox objects.
+ * Mailbox is authoritative; this table exists only so contextless provider
+ * webhooks can resolve one owner/message without enumerating Mailbox objects.
  */
 
 export const emailOutboundProviderCloudflare = 'cloudflare-email'
@@ -18,8 +17,12 @@ export type EmailOutboundProviderIndexRow = {
 }
 
 export type OutboundProviderIndexParityReport = {
+	/** Deprecated compatibility field; equals indexCount after graph freeze. */
 	linkedMessageCount: number
 	indexCount: number
+	distinctOwnerCount: number
+	malformedCount: number
+	/** Deprecated compatibility fields; no frozen graph comparison is run. */
 	missingFromIndexCount: number
 	missingFromMessagesCount: number
 	mismatchedCount: number
@@ -41,15 +44,18 @@ export async function isOutboundProviderIndexForeignKeyDetached(
 }
 
 export function classifyOutboundProviderIndexParity(
-	counts: Omit<OutboundProviderIndexParityReport, 'parity'>,
+	counts: Pick<
+		OutboundProviderIndexParityReport,
+		'indexCount' | 'distinctOwnerCount' | 'malformedCount'
+	>,
 ): OutboundProviderIndexParityReport {
 	return {
 		...counts,
-		parity:
-			counts.linkedMessageCount === counts.indexCount &&
-			counts.missingFromIndexCount === 0 &&
-			counts.missingFromMessagesCount === 0 &&
-			counts.mismatchedCount === 0,
+		linkedMessageCount: counts.indexCount,
+		missingFromIndexCount: 0,
+		missingFromMessagesCount: 0,
+		mismatchedCount: 0,
+		parity: counts.malformedCount === 0,
 	}
 }
 
@@ -86,69 +92,38 @@ export async function getOutboundProviderIndexRow(input: {
 	return row ? mapIndexRow(row) : null
 }
 
-/**
- * Prepared statements that sync the derived index from the authoritative
- * `email_messages` row. Callers must include these in the same `db.batch` as
- * the message INSERT/UPDATE so message + index commit atomically. Owner and
- * inbox fields always come from the message row — never from caller input.
- */
-export function prepareOutboundProviderIndexSyncStatements(input: {
+export async function upsertOutboundProviderIndexRow(input: {
 	db: D1Database
-	messageId: string
-	/**
-	 * Target provider id after the accompanying message mutation. Null/empty
-	 * clears every index row for `messageId`.
-	 */
-	providerMessageId: string | null
 	provider?: string
+	providerMessageId: string
+	userId: string
+	messageId: string
+	inboxId: string | null
 	now: string
-}): Array<D1PreparedStatement> {
+}): Promise<void> {
 	const provider = input.provider ?? emailOutboundProviderCloudflare
-	const providerMessageId = input.providerMessageId
-	if (providerMessageId == null || providerMessageId === '') {
-		return [
-			input.db
-				.prepare(
-					`DELETE FROM email_outbound_provider_index
-					WHERE message_id = ?`,
-				)
-				.bind(input.messageId),
-		]
-	}
-	return [
-		input.db
-			.prepare(
-				`DELETE FROM email_outbound_provider_index
-				WHERE message_id = ?
-					AND NOT (provider = ? AND provider_message_id = ?)`,
-			)
-			.bind(input.messageId, provider, providerMessageId),
-		input.db
-			.prepare(
-				`INSERT INTO email_outbound_provider_index (
-					provider, provider_message_id, user_id, message_id, inbox_id,
-					created_at, updated_at
-				)
-				SELECT
-					?,
-					message.provider_message_id,
-					message.user_id,
-					message.id,
-					message.inbox_id,
-					?,
-					?
-				FROM email_messages AS message
-				WHERE message.id = ?
-					AND message.direction = 'outbound'
-					AND message.provider_message_id = ?
-				ON CONFLICT(provider, provider_message_id) DO UPDATE SET
-					user_id = excluded.user_id,
-					message_id = excluded.message_id,
-					inbox_id = excluded.inbox_id,
-					updated_at = excluded.updated_at`,
-			)
-			.bind(provider, input.now, input.now, input.messageId, providerMessageId),
-	]
+	await input.db
+		.prepare(
+			`INSERT INTO email_outbound_provider_index (
+				provider, provider_message_id, user_id, message_id, inbox_id,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(provider, provider_message_id) DO UPDATE SET
+				user_id = excluded.user_id,
+				message_id = excluded.message_id,
+				inbox_id = excluded.inbox_id,
+				updated_at = excluded.updated_at`,
+		)
+		.bind(
+			provider,
+			input.providerMessageId,
+			input.userId,
+			input.messageId,
+			input.inboxId,
+			input.now,
+			input.now,
+		)
+		.run()
 }
 
 export async function deleteOutboundProviderIndexByMessageId(input: {
@@ -188,9 +163,8 @@ export async function deleteOutboundProviderIndexByMessageIds(input: {
 }
 
 /**
- * Read-only aggregate compare of outbound messages that carry a provider id
- * versus the derived reverse index. Optional `userId` scopes the report
- * (including `system:email`). No message content is returned.
+ * Read-only structural report over the thin reverse index. It deliberately
+ * never joins the frozen shared USER message graph.
  */
 export async function loadOutboundProviderIndexParityReport(input: {
 	db: D1Database
@@ -199,98 +173,35 @@ export async function loadOutboundProviderIndexParityReport(input: {
 	const userId = input.userId ?? null
 	const row = await input.db
 		.prepare(
-			`WITH
-				linked_messages AS (
-					SELECT
-						message.id AS message_id,
-						message.user_id AS user_id,
-						message.inbox_id AS inbox_id,
-						message.provider_message_id AS provider_message_id
-					FROM email_messages AS message
-					WHERE message.direction = 'outbound'
-						AND message.provider_message_id IS NOT NULL
-						AND (?1 IS NULL OR message.user_id = ?1)
-				),
-				index_rows AS (
-					SELECT
-						idx.provider AS provider,
-						idx.provider_message_id AS provider_message_id,
-						idx.user_id AS user_id,
-						idx.message_id AS message_id,
-						idx.inbox_id AS inbox_id
-					FROM email_outbound_provider_index AS idx
-					WHERE ?1 IS NULL OR idx.user_id = ?1
-				),
-				classified AS (
-					SELECT
-						(SELECT COUNT(*) FROM linked_messages) AS linked_message_count,
-						(SELECT COUNT(*) FROM index_rows) AS index_count,
-						(
-							SELECT COUNT(*)
-							FROM linked_messages AS message
-							WHERE NOT EXISTS (
-								SELECT 1
-								FROM index_rows AS idx
-								WHERE idx.provider = ?2
-									AND idx.provider_message_id = message.provider_message_id
-									AND idx.message_id = message.message_id
-									AND idx.user_id = message.user_id
-									AND IFNULL(idx.inbox_id, '') = IFNULL(message.inbox_id, '')
-							)
-						) AS missing_from_index_count,
-						(
-							SELECT COUNT(*)
-							FROM index_rows AS idx
-							WHERE NOT EXISTS (
-								SELECT 1
-								FROM linked_messages AS message
-								WHERE message.message_id = idx.message_id
-									AND message.user_id = idx.user_id
-									AND message.provider_message_id = idx.provider_message_id
-							)
-						) AS missing_from_messages_count,
-						(
-							SELECT COUNT(*)
-							FROM index_rows AS idx
-							JOIN email_messages AS message
-								ON message.id = idx.message_id
-							WHERE (?1 IS NULL OR idx.user_id = ?1)
-								AND (
-									message.user_id != idx.user_id
-									OR message.direction != 'outbound'
-									OR message.provider_message_id IS NULL
-									OR message.provider_message_id != idx.provider_message_id
-									OR IFNULL(message.inbox_id, '') != IFNULL(idx.inbox_id, '')
-								)
-						) AS mismatched_count
-				)
-			SELECT
-				linked_message_count,
-				index_count,
-				missing_from_index_count,
-				missing_from_messages_count,
-				mismatched_count
-			FROM classified`,
+			`SELECT
+				COUNT(*) AS index_count,
+				COUNT(DISTINCT user_id) AS distinct_owner_count,
+				COALESCE(SUM(
+					CASE
+						WHEN provider = ''
+							OR provider_message_id = ''
+							OR user_id = ''
+							OR message_id = ''
+						THEN 1
+						ELSE 0
+					END
+				), 0) AS malformed_count
+			FROM email_outbound_provider_index
+			WHERE ?1 IS NULL OR user_id = ?1`,
 		)
-		.bind(userId, emailOutboundProviderCloudflare)
+		.bind(userId)
 		.first<{
-			linked_message_count: number
 			index_count: number
-			missing_from_index_count: number
-			missing_from_messages_count: number
-			mismatched_count: number
+			distinct_owner_count: number
+			malformed_count: number
 		}>()
 
-	const linkedMessageCount = Number(row?.linked_message_count ?? 0)
 	const indexCount = Number(row?.index_count ?? 0)
-	const missingFromIndexCount = Number(row?.missing_from_index_count ?? 0)
-	const missingFromMessagesCount = Number(row?.missing_from_messages_count ?? 0)
-	const mismatchedCount = Number(row?.mismatched_count ?? 0)
+	const distinctOwnerCount = Number(row?.distinct_owner_count ?? 0)
+	const malformedCount = Number(row?.malformed_count ?? 0)
 	return classifyOutboundProviderIndexParity({
-		linkedMessageCount,
 		indexCount,
-		missingFromIndexCount,
-		missingFromMessagesCount,
-		mismatchedCount,
+		distinctOwnerCount,
+		malformedCount,
 	})
 }

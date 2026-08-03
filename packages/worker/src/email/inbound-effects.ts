@@ -1,5 +1,6 @@
-import { getInboundDelivery } from './inbound-delivery.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
+import { getInboundDelivery } from './inbound-delivery.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
@@ -252,59 +253,25 @@ async function recordUserInboundUsageRollup(input: {
 	env: InboundEffectsEnv
 	userId: string
 	deliveryId: string
-	finalizationToken: string
-	usageMonth: string
 	usageBytes: number
 	usageDurationMs: number
 	now: Date
 }) {
-	if (input.env.USAGE_EVENTS) return
-	try {
-		await input.env.APP_DB.batch([
-			input.env.APP_DB.prepare(
-				`INSERT INTO usage_rollups (
-					user_id, metric, month, event_count, error_count,
-					total_duration_ms, total_cpu_ms, total_bytes, updated_at
-				)
-				SELECT ?, 'email_received', ?, 1, 0, ?, 0, ?, ?
-				WHERE NOT EXISTS (
-					SELECT 1 FROM email_inbound_usage_effects
-					WHERE user_id = ? AND delivery_id = ? AND finalization_token = ?
-				)
-				ON CONFLICT (user_id, metric, month) DO UPDATE SET
-					event_count = event_count + 1,
-					total_duration_ms = total_duration_ms + excluded.total_duration_ms,
-					total_bytes = total_bytes + excluded.total_bytes,
-					updated_at = excluded.updated_at`,
-			).bind(
-				input.userId,
-				input.usageMonth,
-				Math.round(input.usageDurationMs),
-				Math.round(input.usageBytes),
-				input.now.toISOString(),
-				input.userId,
-				input.deliveryId,
-				input.finalizationToken,
-			),
-			input.env.APP_DB.prepare(
-				`INSERT OR IGNORE INTO email_inbound_usage_effects (
-					user_id, delivery_id, finalization_token, created_at
-				) VALUES (?, ?, ?, ?)`,
-			).bind(
-				input.userId,
-				input.deliveryId,
-				input.finalizationToken,
-				input.now.toISOString(),
-			),
-		])
-	} catch (error) {
-		if (
-			!(error instanceof Error) ||
-			!error.message.includes('no such table: usage_rollups')
-		) {
-			throw error
-		}
-	}
+	// The old local fallback depended on
+	// email_inbound_usage_effects.delivery_id -> email_delivery_events.id, which
+	// cannot be populated once the shared USER delivery graph is frozen. Do not
+	// recreate a USER graph dependency merely to support a local aggregate.
+	if (!input.env.USAGE_EVENTS) return 'suppressed' as const
+	await recordUsage(input.env, {
+		userId: input.userId,
+		eventType: 'email_received',
+		entityId: input.deliveryId,
+		bytes: input.usageBytes,
+		durationMs: input.usageDurationMs,
+		outcome: 'success',
+		timestamp: input.now.toISOString(),
+	})
+	return 'recorded' as const
 }
 
 async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
@@ -348,12 +315,10 @@ async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
 		now,
 	})
 	if (usageClaim.status === 'claimed') {
-		await recordUserInboundUsageRollup({
+		const usageMode = await recordUserInboundUsageRollup({
 			env: input.env,
 			userId: input.userId,
 			deliveryId: delivery.deliveryId,
-			finalizationToken: delivery.finalizationToken,
-			usageMonth,
 			usageBytes,
 			usageDurationMs,
 			now,
@@ -362,7 +327,7 @@ async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
 			deliveryId: delivery.deliveryId,
 			usageEffectLease: usageClaim.delivery.usageEffectLease!,
 			expectedFinalizationToken: delivery.finalizationToken,
-			mode: 'recorded',
+			mode: usageMode,
 			usageMonth,
 			usageBytes,
 			usageDurationMs,
@@ -450,6 +415,11 @@ export type ProcessInboundDeliveryEffectsInput = {
 export async function processLegacySystemInboundDeliveryEffectsForRollback(
 	input: ProcessInboundDeliveryEffectsInput,
 ) {
+	if (input.userId !== systemEmailOwnerId) {
+		throw new Error(
+			'Legacy shared-D1 inbound effects are restricted to system:email rollback.',
+		)
+	}
 	const now = input.now ?? new Date()
 	const delivery = await getInboundDelivery({
 		db: input.env.APP_DB,
@@ -841,32 +811,8 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 			env: input.env,
 			userId: input.userId,
 		})
-		const bridgeRows = await input.env.APP_DB.prepare(
-			`SELECT id FROM email_delivery_events
-			WHERE user_id = ?
-				AND provider = 'cloudflare-email-routing'
-				AND event_type = 'received'
-				AND needs_effect_reconcile = 1
-			ORDER BY created_at ASC, id ASC
-			LIMIT ?`,
-		)
-			.bind(input.userId, input.limit ?? 20)
-			.all<{ id: string }>()
 		let processed = 0
 		let errors = 0
-		for (const row of bridgeRows.results ?? []) {
-			try {
-				await authority.get(row.id)
-			} catch (error) {
-				errors += 1
-				console.warn(
-					'inbound-email-effect-bridge-failed',
-					input.userId,
-					row.id,
-					error,
-				)
-			}
-		}
 		const due = await authority.listDueEffects(now, input.limit)
 		for (const delivery of due.deliveries) {
 			try {

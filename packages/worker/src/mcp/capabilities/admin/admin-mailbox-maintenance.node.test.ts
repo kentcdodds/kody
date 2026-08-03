@@ -14,7 +14,6 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 const mockModule = vi.hoisted(() => ({
 	logAuditEvent: vi.fn(async () => undefined),
 	loadAdminMailboxMaintenanceStatus: vi.fn(),
-	runAdminMailboxMaintenanceReconcile: vi.fn(),
 	runAdminMailboxMaintenanceSystemEmailGraphReconcile: vi.fn(),
 	runAdminMailboxMaintenanceRetention: vi.fn(),
 	runAdminMailboxMaintenanceDeleteMessage: vi.fn(),
@@ -35,8 +34,6 @@ vi.mock('#worker/admin/mailbox-maintenance.ts', async (importOriginal) => {
 		...actual,
 		loadAdminMailboxMaintenanceStatus:
 			mockModule.loadAdminMailboxMaintenanceStatus,
-		runAdminMailboxMaintenanceReconcile:
-			mockModule.runAdminMailboxMaintenanceReconcile,
 		runAdminMailboxMaintenanceSystemEmailGraphReconcile:
 			mockModule.runAdminMailboxMaintenanceSystemEmailGraphReconcile,
 		runAdminMailboxMaintenanceRetention:
@@ -64,11 +61,9 @@ const emptyStatus = {
 	earliestCutoverAt: '2026-07-31T00:00:00.000Z',
 	outboundProviderIndex: {
 		foreignKeyDetached: true,
-		linkedMessageCount: 0,
 		indexCount: 0,
-		missingFromIndexCount: 0,
-		missingFromMessagesCount: 0,
-		mismatchedCount: 0,
+		distinctOwnerCount: 0,
+		malformedCount: 0,
 		parity: true,
 	},
 	systemEmailGraph: {
@@ -133,20 +128,10 @@ const emptyStatus = {
 
 const emptyRetentionResult = {
 	metrics: {
-		d1: {
-			messagesDeleted: 1,
-			attachmentsDeleted: 0,
-			threadsDeleted: 0,
-			deliveryEventsDeleted: 2,
-			rawMimeBlobsDeleted: 1,
-			attachmentBlobsDeleted: 0,
-			blobDeleteErrors: 0,
-		},
 		mailbox: {
 			ownersAttempted: 1,
 			ownersSucceeded: 1,
 			ownersFailed: 0,
-			pendingD1Owners: 0,
 			before: {
 				threads: 1,
 				messages: 1,
@@ -188,7 +173,7 @@ const emptySystemEmailGraphReconcileResult = {
 }
 
 const emptyDeleteResult = {
-	d1MessageAbsent: true,
+	authoritativeMessageAbsent: true,
 	attachmentsSeen: 2,
 	externalAttachmentsSeen: 1,
 	rawMimeBlobAbsent: true,
@@ -238,19 +223,8 @@ function createAdminCtx() {
 	}
 }
 
-test('admin_mailbox_maintenance routes status, reconcile, retention, and delete with audits', async () => {
+test('admin_mailbox_maintenance routes status, system repair, retention, and delete with audits', async () => {
 	mockModule.loadAdminMailboxMaintenanceStatus.mockResolvedValue(emptyStatus)
-	mockModule.runAdminMailboxMaintenanceReconcile.mockResolvedValue({
-		metrics: {
-			scanned: 1,
-			backfilled: 0,
-			compared: 1,
-			matched: 1,
-			mismatched: 0,
-			failed: 0,
-		},
-		status: emptyStatus,
-	})
 	mockModule.runAdminMailboxMaintenanceSystemEmailGraphReconcile.mockResolvedValue(
 		emptySystemEmailGraphReconcileResult,
 	)
@@ -268,7 +242,7 @@ test('admin_mailbox_maintenance routes status, reconcile, retention, and delete 
 		{ action: 'status' },
 		ctx,
 	)
-	expect(status).toEqual({ action: 'status', status: emptyStatus })
+	expect(status).toMatchObject({ action: 'status', status: emptyStatus })
 	expect(status.status.systemEmailGraph).toEqual(emptyStatus.systemEmailGraph)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -276,16 +250,6 @@ test('admin_mailbox_maintenance routes status, reconcile, retention, and delete 
 			result: 'success',
 		}),
 	)
-
-	const reconcile = await adminMailboxMaintenanceCapability.handler(
-		{ action: 'reconcile', batch_size: 16 },
-		ctx,
-	)
-	expect(reconcile.action).toBe('reconcile')
-	expect(mockModule.runAdminMailboxMaintenanceReconcile).toHaveBeenCalledWith({
-		env: ctx.env,
-		batchSize: 16,
-	})
 
 	const systemGraphReconcile = await adminMailboxMaintenanceCapability.handler(
 		{

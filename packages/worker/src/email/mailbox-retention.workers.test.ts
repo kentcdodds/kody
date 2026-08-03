@@ -917,6 +917,7 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		status: 'deleted',
 		attachmentsSeen: 1,
 		externalAttachmentsSeen: 1,
+		providerMessageId: null,
 		blobReferences: [
 			{
 				kind: 'raw_mime',

@@ -6,7 +6,8 @@ import {
 	maxOutboundEmailAttachments,
 	sendOutboundEmail,
 } from '#worker/email/outbound.ts'
-import { getEmailMessageById } from '#worker/email/repo.ts'
+import { mailboxRpc } from '#worker/email/mailbox-client.ts'
+import { mailboxMessageToEmailMessageRecord } from '#worker/email/mailbox-record-mappers.ts'
 import {
 	emailMessageSummarySchema,
 	stringArray,
@@ -47,11 +48,15 @@ export const emailReplyCapability = defineDomainCapability(
 		outputSchema: emailMessageSummarySchema,
 		async handler(args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
-			const original = await getEmailMessageById({
-				db: ctx.env.APP_DB,
+			const originalRecord = await mailboxRpc({
+				env: ctx.env,
 				userId: user.userId,
+			}).getMessage({
 				messageId: args.message_id,
 			})
+			const original = originalRecord
+				? mailboxMessageToEmailMessageRecord(originalRecord, user.userId)
+				: null
 			if (!original)
 				throw new Error(`Email message not found: ${args.message_id}`)
 			// The recipient is derived from the stored message inside

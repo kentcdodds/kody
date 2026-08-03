@@ -4,14 +4,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	auditEventRetentionDays,
-	emailDeliveryEventRetentionDays,
-	emailMessageRetentionDays,
 	featureFlagExposureRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
-	pruneEmailDeliveryEventsForRetention,
 	pruneFeatureFlagExposuresForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePlatformFeedbackForRetention,
@@ -19,7 +16,6 @@ import {
 	pruneRetention,
 	pruneStripeWebhookEventsForRetention,
 	pruneUsageRollupsForRetention,
-	pruneUserEmailMessagesForRetention,
 	pruneWorkflowRunsForRetention,
 	publishedBundleArtifactRetentionDays,
 	shouldRunRetentionCron,
@@ -452,7 +448,7 @@ test('platform feedback retention prunes terminal rows in bounded batches and ru
 	])
 })
 
-test('memory suppression, email delivery, audit, and stripe webhook retention respect boundaries', async () => {
+test('memory suppression, audit, and stripe webhook retention respect boundaries', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (const [memoryId, lastSeenAt, expiresAt] of [
 		[
@@ -470,23 +466,6 @@ test('memory suppression, email delivery, audit, and stripe webhook retention re
 			) VALUES ('user-1', 'conversation', ?, ?, ?, ?)`,
 			)
 			.run(memoryId, lastSeenAt, lastSeenAt, expiresAt)
-	}
-	for (const [id, userId, createdAt] of [
-		['email-old-user', 'user-1', daysAgo(emailDeliveryEventRetentionDays + 1)],
-		['email-boundary-user', 'user-1', daysAgo(emailDeliveryEventRetentionDays)],
-		[
-			'email-old-system',
-			systemEmailOwnerId,
-			daysAgo(emailDeliveryEventRetentionDays + 1),
-		],
-	]) {
-		sqlite
-			.prepare(
-				`INSERT INTO email_delivery_events (
-				id, user_id, event_type, created_at
-			) VALUES (?, ?, 'received', ?)`,
-			)
-			.run(id, userId, createdAt)
 	}
 	for (const [timestamp] of [
 		[daysAgo(auditEventRetentionDays + 1)],
@@ -517,10 +496,6 @@ test('memory suppression, email delivery, audit, and stripe webhook retention re
 		selected: 1,
 		deleted: 1,
 	})
-	expect(await pruneEmailDeliveryEventsForRetention({ db, now })).toEqual({
-		selected: 1,
-		deleted: 1,
-	})
 	expect(await pruneAuditEventsForRetention({ db, now })).toEqual({
 		selected: 1,
 		deleted: 1,
@@ -541,10 +516,6 @@ test('memory suppression, email delivery, audit, and stripe webhook retention re
 		'memory-active',
 		'memory-boundary',
 	])
-	expect(idsForTable(sqlite, 'email_delivery_events')).toEqual([
-		'email-boundary-user',
-		'email-old-system',
-	])
 	const auditRows = sqlite
 		.prepare(`SELECT timestamp FROM audit_events ORDER BY timestamp`)
 		.all() as Array<{ timestamp: string }>
@@ -560,7 +531,7 @@ test('memory suppression, email delivery, audit, and stripe webhook retention re
 	).toEqual(['evt_boundary'])
 })
 
-test('email message retention deletes old user rows, R2 blobs, attachments, and orphan threads', async () => {
+test.skip('retired frozen-D1 email message retention', async () => {
 	const { sqlite, db } = createRetentionDb()
 	insertEmailThread(sqlite, {
 		id: 'thread-orphan',
@@ -666,7 +637,7 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 	).toEqual(['prov-fresh'])
 })
 
-test('email message retention never deletes rows whose blob cannot be deleted first', async () => {
+test.skip('retired frozen-D1 email blob failure retention', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createRetentionDb()
 	insertEmailMessage(sqlite, {
@@ -720,7 +691,7 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([])
 })
 
-test('email message retention cursor advances past skipped rows when R2 deletes fail', async () => {
+test.skip('retired frozen-D1 email retention cursor', async () => {
 	// Failed blob deletes are already counted via blobDeleteErrors below.
 	silenceExpectedConsoleWarns(['retention-email-blob-delete-failed'])
 	const { sqlite, db } = createRetentionDb()
@@ -804,7 +775,7 @@ test('email message retention cursor advances past skipped rows when R2 deletes 
 	expect(third).toMatchObject({ deletedMessages: 0, hasMore: false })
 })
 
-test('retention run reports blob delete errors across a full email batch when R2 is down', async () => {
+test.skip('retired frozen-D1 email retention error reporting', async () => {
 	// Failed blob deletes are already counted via blobDeleteErrors below.
 	silenceExpectedConsoleWarns(['retention-email-blob-delete-failed'])
 	const { sqlite, db } = createRetentionDb()

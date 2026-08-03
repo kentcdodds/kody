@@ -21,8 +21,6 @@ import {
 	type MailboxListDueInboundEffectWorkResult,
 } from './mailbox-inbound-effect-ledger.ts'
 import {
-	mailboxInboundDedupePointerId,
-	mailboxInboundDedupeProvider,
 	type MailboxClaimInboundDeliveryCleanupResult,
 	type MailboxDeferInboundDeliveryReconcileResult,
 	type MailboxInboundDeliveryInsertInput,
@@ -32,14 +30,12 @@ import {
 	type MailboxReleaseInboundDeliveryCleanupResult,
 } from './mailbox-inbound-ledger.ts'
 import {
-	bootstrapUserInboundDeliveryFromD1,
-	bootstrapUserInboundDeliveryWindowFromD1,
-	mirrorUserInboundDeliverySnapshotToD1,
-	toUserInboundDelivery,
-} from './inbound-delivery-projection.ts'
+	type MailboxAttachmentInput,
+	type MailboxCommitInboundMessageGraphResult,
+	type MailboxMessageInput,
+	type MailboxThreadInput,
+} from './mailbox-types.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
-
-export { mirrorUserInboundDeliverySnapshotToD1 } from './inbound-delivery-projection.ts'
 
 export type UserInboundDeliveryAuthorityEnv = {
 	APP_DB: D1Database
@@ -153,6 +149,17 @@ export type UserInboundDeliveryAuthority = {
 		now?: Date,
 	) => Promise<InboundDelivery | null>
 	receive: (input: UserInboundDeliveryReceiveInput) => Promise<InboundDelivery>
+	commitInboundMessageGraph: (input: {
+		delivery: InboundDelivery
+		thread: MailboxThreadInput
+		message: MailboxMessageInput
+		attachments: Array<MailboxAttachmentInput>
+	}) => Promise<MailboxCommitInboundMessageGraphResult>
+	findThreadForInboundMessage: (input: {
+		inboxId?: string | null
+		references: Array<string>
+		inReplyToHeader?: string | null
+	}) => Promise<MailboxThreadInput | null>
 	deferReconciliation: (
 		deliveryId: string,
 		now?: Date,
@@ -223,56 +230,28 @@ export function createUserInboundDeliveryAuthority(
 		)
 	}
 	const mailbox = mailboxRpc({ env, userId })
-	const mirror = async (
-		snapshot: MailboxInboundDeliverySnapshot,
-		options?: { eventId?: string; provider?: string },
-	) => {
-		await mirrorUserInboundDeliverySnapshotToD1({
-			db: env.APP_DB,
-			userId,
-			snapshot,
-			...options,
-		})
-		return toUserInboundDelivery(userId, snapshot)
+	const toDelivery = (snapshot: MailboxInboundDeliverySnapshot) => {
+		const {
+			createdAt: _createdAt,
+			updatedAt: _updatedAt,
+			...delivery
+		} = snapshot
+		return { ...delivery, userId }
 	}
-	const mirrorClaimBestEffort = async (
-		snapshot: MailboxInboundDeliverySnapshot,
-		logLabel: string,
-	) => {
-		await mirror(snapshot).catch((error: unknown) => {
-			console.warn(logLabel, userId, snapshot.deliveryId, error)
-		})
-	}
-	/**
-	 * Mailbox is authoritative. A successful point read synchronously repairs
-	 * the D1 compatibility projection; only a Mailbox miss may invoke the
-	 * one-time pre-deploy bootstrap bridge.
-	 */
 	const get = async (deliveryId: string) => {
-		const current =
-			(await mailbox.getInboundDelivery({ ownerId: userId, deliveryId })) ??
-			(await bootstrapUserInboundDeliveryFromD1({ env, userId, deliveryId }))
-		return current ? await mirror(current) : null
+		const current = await mailbox.getInboundDelivery({
+			ownerId: userId,
+			deliveryId,
+		})
+		return current ? toDelivery(current) : null
 	}
 	const getWindow = async (fingerprint: string, now: Date) => {
-		const current =
-			(await mailbox.getInboundDeliveryWindow({
-				ownerId: userId,
-				fingerprint,
-				now: now.toISOString(),
-			})) ??
-			(await bootstrapUserInboundDeliveryWindowFromD1({
-				env,
-				userId,
-				fingerprint,
-				now,
-			}))
-		return current
-			? await mirror(current, {
-					eventId: mailboxInboundDedupePointerId(fingerprint),
-					provider: mailboxInboundDedupeProvider,
-				})
-			: null
+		const current = await mailbox.getInboundDeliveryWindow({
+			ownerId: userId,
+			fingerprint,
+			now: now.toISOString(),
+		})
+		return current ? toDelivery(current) : null
 	}
 	const claimWindow = async (delivery: InboundDelivery, now: Date) => {
 		const snapshot = await mailbox.claimInboundDeliveryWindow({
@@ -280,10 +259,7 @@ export function createUserInboundDeliveryAuthority(
 			delivery: toInsertInput(delivery),
 			now: now.toISOString(),
 		})
-		return await mirror(snapshot, {
-			eventId: mailboxInboundDedupePointerId(delivery.fingerprint),
-			provider: mailboxInboundDedupeProvider,
-		})
+		return toDelivery(snapshot)
 	}
 	const charge = async (chargeInput: UserInboundDeliveryChargeInput) => {
 		// Resolve the canonical dedupe winner before charging. Concurrent
@@ -345,7 +321,7 @@ export function createUserInboundDeliveryAuthority(
 			delivery: toInsertInput(chargedDelivery),
 			now: updatedAt,
 		})
-		const delivery = await mirror(result.delivery)
+		const delivery = toDelivery(result.delivery)
 		return {
 			delivery,
 			charged:
@@ -378,48 +354,24 @@ export function createUserInboundDeliveryAuthority(
 						'Mailbox returned a claimed inbound storage delivery without a lease.',
 					)
 				}
-				let projected: InboundDelivery
-				try {
-					projected = await mirror(result.delivery)
-				} catch (projectionError) {
-					let compensationError: unknown
-					try {
-						await mailbox.releaseInboundDeliveryStorage({
-							ownerId: userId,
-							deliveryId: result.delivery.deliveryId,
-							storageLease,
-							now: now.toISOString(),
-						})
-					} catch (error) {
-						compensationError = error
-					}
-					if (compensationError) {
-						throw new AggregateError(
-							[projectionError, compensationError],
-							'Inbound storage claim projection failed and its Mailbox lease could not be released.',
-						)
-					}
-					throw projectionError
-				}
 				return {
 					claimed: true as const,
-					delivery: projected,
+					delivery: toDelivery(result.delivery),
 				}
 			}
 			return {
 				claimed: false as const,
-				delivery: result.delivery ? await mirror(result.delivery) : null,
+				delivery: result.delivery ? toDelivery(result.delivery) : null,
 			}
 		},
 		async releaseStorage(delivery: InboundDelivery, now = new Date()) {
 			if (!delivery.storageLease) return
-			const result = await mailbox.releaseInboundDeliveryStorage({
+			await mailbox.releaseInboundDeliveryStorage({
 				ownerId: userId,
 				deliveryId: delivery.deliveryId,
 				storageLease: delivery.storageLease,
 				now: now.toISOString(),
 			})
-			if (result.status === 'released') await mirror(result.delivery)
 		},
 		async reject(delivery: InboundDelivery, reason: string, now = new Date()) {
 			const result = await mailbox.markInboundDeliveryRejected({
@@ -434,21 +386,9 @@ export function createUserInboundDeliveryAuthority(
 				result.status === 'rejected' ||
 				result.status === 'already-rejected'
 			) {
-				const canonical = toUserInboundDelivery(userId, result.delivery)
-				try {
-					return await mirror(result.delivery)
-				} catch (error) {
-					console.warn(
-						'inbound-email-rejected-projection-failed',
-						userId,
-						result.delivery.deliveryId,
-						error,
-					)
-					return canonical
-				}
+				return toDelivery(result.delivery)
 			}
 			if (result.status === 'already-received') {
-				await mirror(result.delivery)
 				return null
 			}
 			throw new InboundDeliveryLeaseLostError(
@@ -474,11 +414,36 @@ export function createUserInboundDeliveryAuthority(
 				result.status === 'received' ||
 				result.status === 'already-received'
 			) {
-				return await mirror(result.delivery)
+				return toDelivery(result.delivery)
 			}
 			throw new InboundDeliveryLeaseLostError(
 				'Inbound delivery storage lease was lost before finalization.',
 			)
+		},
+		async commitInboundMessageGraph(input) {
+			const storageLease = input.delivery.storageLease
+			if (!storageLease) {
+				throw new InboundDeliveryLeaseLostError(
+					'Inbound graph commit requires an active storage lease.',
+				)
+			}
+			return await mailbox.commitInboundMessageGraph({
+				ownerId: userId,
+				deliveryId: input.delivery.deliveryId,
+				storageLease,
+				thread: input.thread,
+				message: input.message,
+				attachments: input.attachments,
+			})
+		},
+		async findThreadForInboundMessage(input) {
+			const thread = await mailbox.findThreadForInboundMessage(input)
+			return thread
+				? {
+						...thread,
+						subjectNormalized: thread.subjectNormalized ?? '',
+					}
+				: null
 		},
 		async deferReconciliation(deliveryId: string, now = new Date()) {
 			const result = await mailbox.deferInboundDeliveryReconciliation({
@@ -486,7 +451,6 @@ export function createUserInboundDeliveryAuthority(
 				deliveryId,
 				now: now.toISOString(),
 			})
-			if (result.status === 'deferred') await mirror(result.delivery)
 			return result
 		},
 		async listDueStale(now = new Date(), limit?: number) {
@@ -513,30 +477,6 @@ export function createUserInboundDeliveryAuthority(
 						'Mailbox returned a claimed inbound cleanup delivery without a lease.',
 					)
 				}
-				try {
-					await mirror(result.delivery)
-				} catch (projectionError) {
-					let compensationError: unknown
-					try {
-						await mailbox.releaseInboundDeliveryCleanup({
-							ownerId: userId,
-							deliveryId: result.delivery.deliveryId,
-							cleanupLease,
-							now: now.toISOString(),
-						})
-					} catch (error) {
-						compensationError = error
-					}
-					if (compensationError) {
-						throw new AggregateError(
-							[projectionError, compensationError],
-							'Inbound cleanup claim projection failed and its Mailbox lease could not be released.',
-						)
-					}
-					throw projectionError
-				}
-			} else if (result.delivery) {
-				await mirror(result.delivery)
 			}
 			return result
 		},
@@ -551,7 +491,6 @@ export function createUserInboundDeliveryAuthority(
 				cleanupLease,
 				now: now.toISOString(),
 			})
-			if (result.status === 'released') await mirror(result.delivery)
 			return result
 		},
 		async markOrphanCleaned(input: UserInboundDeliveryOrphanCleanedInput) {
@@ -562,7 +501,6 @@ export function createUserInboundDeliveryAuthority(
 				outcome: input.outcome,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.status === 'orphan-cleaned') await mirror(result.delivery)
 			return result
 		},
 		async pruneExpiredDedupe(now = new Date(), limit?: number) {
@@ -571,16 +509,6 @@ export function createUserInboundDeliveryAuthority(
 				now: now.toISOString(),
 				limit,
 			})
-			if (result.prunedEventIds.length === 0) return 0
-			const placeholders = result.prunedEventIds.map(() => '?').join(', ')
-			await env.APP_DB.prepare(
-				`DELETE FROM email_delivery_events
-				WHERE user_id = ?
-					AND provider = ?
-					AND id IN (${placeholders})`,
-			)
-				.bind(userId, mailboxInboundDedupeProvider, ...result.prunedEventIds)
-				.run()
 			return result.pruned
 		},
 		async claimUsageEffect(input: UserInboundUsageEffectClaimInput) {
@@ -590,14 +518,6 @@ export function createUserInboundDeliveryAuthority(
 				expectedFinalizationToken: input.expectedFinalizationToken,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.status === 'claimed') {
-				await mirrorClaimBestEffort(
-					result.delivery,
-					'inbound-email-usage-effect-claim-projection-failed',
-				)
-			} else if (result.delivery) {
-				await mirror(result.delivery)
-			}
 			return result
 		},
 		async completeUsageEffect(input: UserInboundUsageEffectCompleteInput) {
@@ -612,7 +532,6 @@ export function createUserInboundDeliveryAuthority(
 				usageDurationMs: input.usageDurationMs,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.status !== 'lease-lost') await mirror(result.delivery)
 			return result
 		},
 		async claimSubscriptionEffect(
@@ -624,14 +543,6 @@ export function createUserInboundDeliveryAuthority(
 				expectedFinalizationToken: input.expectedFinalizationToken,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.status === 'claimed') {
-				await mirrorClaimBestEffort(
-					result.delivery,
-					'inbound-email-subscription-effect-claim-projection-failed',
-				)
-			} else if (result.delivery) {
-				await mirror(result.delivery)
-			}
 			return result
 		},
 		async completeSubscriptionEffect(
@@ -646,7 +557,6 @@ export function createUserInboundDeliveryAuthority(
 				suppressionReason: input.suppressionReason,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.status !== 'lease-lost') await mirror(result.delivery)
 			return result
 		},
 		async failSubscriptionEffect(
@@ -660,7 +570,6 @@ export function createUserInboundDeliveryAuthority(
 				error: input.error,
 				now: (input.now ?? new Date()).toISOString(),
 			})
-			if (result.status !== 'lease-lost') await mirror(result.delivery)
 			return result
 		},
 		async listDueEffects(now = new Date(), limit?: number) {

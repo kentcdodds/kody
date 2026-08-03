@@ -1,7 +1,6 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
-import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import {
 	EmailRawMimeStorageError,
 	putEmailRawMime,
@@ -10,36 +9,19 @@ import {
 import { resolveInboundEmailClassification } from './inbound-classification.ts'
 import { type InboundDelivery } from './inbound-delivery.ts'
 import { type UserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
+import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
+import { mailboxMessageToEmailMessageRecord } from './mailbox-record-mappers.ts'
+import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { recordBoundedSystemEmailRejection } from './system-inbound-delivery-store.ts'
-import {
-	mirrorMailboxMessageGraphFromD1,
-	type MailboxLiveMirrorEnv,
-} from './mailbox-live-mirror.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
-import {
-	createEmailThread,
-	deleteEmailMessageById,
-	findEmailThreadForInboundMessage,
-	getEmailAttachmentRecordById,
-	getEmailMessageById,
-	getOutboundEmailMessageByProviderMessageId,
-	insertEmailAttachments,
-	insertEmailDeliveryEvent,
-	insertEmailMessage,
-	listEmailAttachmentsForMessage,
-	touchEmailThread,
-	updateEmailMessageClassificationInD1,
-} from './repo.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
 import {
-	deleteSystemEmailMessageById,
 	getSystemEmailAttachmentById,
 	getSystemEmailMessageById,
-	insertSystemEmailAttachments,
-	insertSystemEmailMessage,
 	listSystemEmailAttachments,
 	updateSystemEmailMessageClassification,
 } from './system-email-graph-store.ts'
@@ -55,17 +37,9 @@ import {
 export { EmailRawMimeStorageError, RetryableInboundStorageError }
 
 export {
-	createEmailThread,
 	emailAttachmentBlobKey,
 	emailRawMimeKey,
 	ensurePlatformSenderIdentity,
-	findEmailThreadForInboundMessage,
-	getEmailMessageById,
-	getEmailMessageByMessageIdHeader,
-	insertEmailAttachments,
-	insertEmailDeliveryEvent,
-	touchEmailThread,
-	updateEmailMessageDelivery,
 } from './repo.ts'
 
 function nowIso() {
@@ -87,113 +61,8 @@ export async function loadRawMime(input: {
 	return await object.text()
 }
 
-type InsertEmailMessageInput = Parameters<typeof insertEmailMessage>[0]
-type InsertEmailMessageWithoutRawMimeInput = Omit<
-	InsertEmailMessageInput,
-	'message'
-> & {
-	message: Omit<InsertEmailMessageInput['message'], 'rawMimeKey'>
-}
-type InsertEmailMessageWithRawMimeInput = Omit<
-	InsertEmailMessageInput,
-	'message'
-> & {
-	blobs: R2Bucket
-	message: Omit<InsertEmailMessageInput['message'], 'rawMimeKey'> & {
-		rawMime?: string | null
-	}
-}
-
-function systemInboundMessageInput(
-	message: InsertEmailMessageInput['message'],
-): Parameters<typeof insertSystemEmailMessage>[0]['message'] {
-	if (
-		message.userId !== systemEmailOwnerId ||
-		message.direction !== 'inbound' ||
-		message.providerMessageId != null
-	) {
-		throw new Error(
-			'System inbound email requires system:email ownership without provider IDs.',
-		)
-	}
-	const { direction, providerMessageId, userId, ...systemMessage } = message
-	void direction
-	void providerMessageId
-	void userId
-	return systemMessage
-}
-
-/**
- * Domain insert for messages that must not point at EMAIL_BLOBS raw MIME.
- * Forces `rawMimeKey: null` so callers cannot invent a key without a blob.
- * Inbound mail with raw MIME must use `insertEmailMessageWithRawMime`.
- */
-export async function insertEmailMessageWithoutRawMime(
-	input: InsertEmailMessageWithoutRawMimeInput,
-) {
-	const insertInput = {
-		db: input.db,
-		message: {
-			...input.message,
-			rawMimeKey: null,
-		},
-	}
-	return input.message.userId === systemEmailOwnerId
-		? await insertSystemEmailMessage({
-				db: insertInput.db,
-				message: systemInboundMessageInput(insertInput.message),
-			})
-		: await insertEmailMessage(insertInput)
-}
-
-export async function insertEmailMessageWithRawMime(
-	input: InsertEmailMessageWithRawMimeInput,
-) {
-	const { blobs, db, message } = input
-	const { rawMime, ...messageInput } = message
-	const write = async () => {
-		const messageId = messageInput.id ?? crypto.randomUUID()
-		let rawMimeKey: string | null = null
-		if (rawMime != null) {
-			rawMimeKey = await putEmailRawMime({
-				blobs,
-				userId: messageInput.userId,
-				messageId,
-				rawMime,
-			})
-		}
-		try {
-			const insertInput = {
-				db,
-				message: {
-					...messageInput,
-					id: messageId,
-					rawMimeKey,
-				},
-			}
-			return messageInput.userId === systemEmailOwnerId
-				? await insertSystemEmailMessage({
-						db: insertInput.db,
-						message: systemInboundMessageInput(insertInput.message),
-					})
-				: await insertEmailMessage(insertInput)
-		} catch (error) {
-			if (rawMimeKey != null) {
-				await blobs.delete(rawMimeKey).catch(() => undefined)
-			}
-			throw error
-		}
-	}
-	return messageInput.userId === systemEmailOwnerId
-		? await write()
-		: await withAccountWriteLease({
-				db,
-				stableUserId: messageInput.userId,
-				write,
-			})
-}
-
 export async function getEmailMessageWithAttachmentsById(input: {
+	env: MailboxEnv
 	db: D1Database
 	userId: string
 	messageId: string
@@ -204,7 +73,16 @@ export async function getEmailMessageWithAttachmentsById(input: {
 					db: input.db,
 					messageId: input.messageId,
 				})
-			: await getEmailMessageById(input)
+			: await mailboxRpc({
+					env: input.env,
+					userId: input.userId,
+				})
+					.getMessage({ messageId: input.messageId })
+					.then((record) =>
+						record
+							? mailboxMessageToEmailMessageRecord(record, input.userId)
+							: null,
+					)
 	if (!message) return null
 	const attachments =
 		input.userId === systemEmailOwnerId
@@ -212,103 +90,15 @@ export async function getEmailMessageWithAttachmentsById(input: {
 					db: input.db,
 					messageId: message.id,
 				})
-			: await listEmailAttachmentsForMessage({
-					db: input.db,
-					messageId: message.id,
+			: await mailboxRpc({
+					env: input.env,
+					userId: input.userId,
 				})
+					.listAttachmentsForMessage({ messageId: message.id })
+					.then((records) => records.map((record) => ({ ...record })))
 	return {
 		message,
 		attachments,
-	}
-}
-
-export async function insertEmailMessageWithAttachments(
-	input: InsertEmailMessageWithRawMimeInput & {
-		attachments: Parameters<typeof insertEmailAttachments>[0]['attachments']
-	},
-) {
-	let message
-	try {
-		message = await insertEmailMessageWithRawMime(input)
-	} catch (error) {
-		if (error instanceof RetryableInboundStorageError) throw error
-		throw new RetryableInboundStorageError(
-			'Failed to store inbound email message; delivery should be retried.',
-			error,
-		)
-	}
-	if (input.attachments.length === 0) return message
-	try {
-		const attachmentInput = {
-			db: input.db,
-			messageId: message.id,
-			attachments: input.attachments,
-		}
-		if (message.userId === systemEmailOwnerId) {
-			await insertSystemEmailAttachments(attachmentInput)
-		} else {
-			await insertEmailAttachments(attachmentInput)
-		}
-		return message
-	} catch (attachmentError) {
-		let cleanupError: unknown
-		try {
-			if (message.userId === systemEmailOwnerId) {
-				await deleteSystemEmailMessageById({
-					db: input.db,
-					blobs: input.blobs,
-					messageId: message.id,
-				})
-			} else {
-				await deleteEmailMessageById({
-					db: input.db,
-					blobs: input.blobs,
-					messageId: message.id,
-				})
-			}
-		} catch (error) {
-			cleanupError = error
-		}
-		let remaining: Awaited<ReturnType<typeof getEmailMessageById>>
-		try {
-			remaining =
-				message.userId === systemEmailOwnerId
-					? await getSystemEmailMessageById({
-							db: input.db,
-							messageId: message.id,
-						})
-					: await getEmailMessageById({
-							db: input.db,
-							userId: message.userId,
-							messageId: message.id,
-						})
-		} catch (probeError) {
-			// Probe failed: commit state is ambiguous. Do not retry/refund —
-			// that risks duplicates if the row is still durable.
-			console.error(
-				'inbound-email-attachment-cleanup-probe-failed',
-				message.id,
-				attachmentError,
-				cleanupError,
-				probeError,
-			)
-			return message
-		}
-		if (remaining) {
-			// Message row is durable; retrying would duplicate mail. Acknowledge
-			// the commit and leave operators the cleanup/attachment failure logs.
-			console.error(
-				'inbound-email-attachment-cleanup-failed',
-				message.id,
-				attachmentError,
-				cleanupError,
-			)
-			return remaining
-		}
-		throw new RetryableInboundStorageError(
-			'Failed to store inbound email attachments; message cleaned up and delivery should be retried.',
-			attachmentError,
-		)
 	}
 }
 
@@ -319,7 +109,13 @@ export async function storeIdempotentInboundEmail(input: {
 	parsed: ParsedInboundEmail
 	subjectNormalized: string
 	now: string
-	authority: Pick<UserInboundDeliveryAuthority, 'get' | 'receive'>
+	authority: Pick<
+		UserInboundDeliveryAuthority,
+		| 'commitInboundMessageGraph'
+		| 'findThreadForInboundMessage'
+		| 'get'
+		| 'receive'
+	>
 }) {
 	const { delivery, parsed } = input
 	if (delivery.userId === systemEmailOwnerId) {
@@ -332,11 +128,6 @@ export async function storeIdempotentInboundEmail(input: {
 			'Inbound delivery storage requires an active lease.',
 		)
 	}
-	const inboundDeliveryFence = {
-		deliveryId: delivery.deliveryId,
-		userId: delivery.userId,
-		storageLease: delivery.storageLease,
-	}
 	await putEmailRawMime({
 		blobs: input.blobs,
 		userId: delivery.userId,
@@ -344,132 +135,106 @@ export async function storeIdempotentInboundEmail(input: {
 		rawMime: parsed.rawMime,
 	})
 
-	let stored = await getEmailMessageById({
-		db: input.db,
-		userId: delivery.userId,
-		messageId: delivery.messageId,
+	const existingThread = await input.authority.findThreadForInboundMessage({
+		inboxId: delivery.inboxId,
+		references: parsed.references,
+		inReplyToHeader: parsed.inReplyTo,
 	})
-	if (!stored) {
-		let thread = await findEmailThreadForInboundMessage({
-			db: input.db,
-			userId: delivery.userId,
-			inboxId: delivery.inboxId,
-			references: parsed.references,
-			inReplyToHeader: parsed.inReplyTo,
-		})
-		if (!thread) {
-			const threadInput = {
-				db: input.db,
-				id: delivery.threadId,
+	const threadId = existingThread?.id ?? delivery.threadId
+	const thread = existingThread
+		? {
+				...existingThread,
+				lastMessageAt:
+					existingThread.lastMessageAt > input.now
+						? existingThread.lastMessageAt
+						: input.now,
+				updatedAt: input.now,
+			}
+		: {
+				id: threadId,
 				inboxId: delivery.inboxId,
 				subjectNormalized: input.subjectNormalized,
 				rootMessageIdHeader: parsed.messageId,
 				lastMessageAt: input.now,
-				ignoreConflict: true,
-				inboundDeliveryFence,
+				createdAt: input.now,
+				updatedAt: input.now,
 			}
-			thread = await createEmailThread({
-				...threadInput,
-				userId: delivery.userId,
-			})
-		}
-		const { classification, classificationReason } =
-			await resolveInboundEmailClassification({
-				db: input.db,
-				userId: delivery.userId,
-				envelopeFrom: parsed.envelopeFrom,
-				authResults: parsed.authResults,
-			})
-		try {
-			const messageInput = {
-				db: input.db,
-				inboundDeliveryFence,
-				message: {
-					id: delivery.messageId,
-					direction: 'inbound' as const,
-					userId: delivery.userId,
-					inboxId: delivery.inboxId,
-					threadId: thread.id,
-					senderIdentityId: null,
-					fromAddress: parsed.headerFrom,
-					envelopeFrom: parsed.envelopeFrom,
-					toAddresses: parsed.to.map((entry) => entry.address),
-					ccAddresses: parsed.cc.map((entry) => entry.address),
-					bccAddresses: parsed.bcc.map((entry) => entry.address),
-					replyToAddresses: parsed.replyTo.map((entry) => entry.address),
-					subject: parsed.subject,
-					messageIdHeader: parsed.messageId,
-					inReplyToHeader: parsed.inReplyTo,
-					references: parsed.references,
-					headers: parsed.headers,
-					authResults: parsed.authResults,
-					textBody: parsed.textBody,
-					htmlBody: parsed.htmlBody,
-					rawMimeKey: delivery.rawMimeKey,
-					rawSize: parsed.rawSize,
-					processingStatus: 'stored' as const,
-					classification,
-					classificationReason,
-					providerMessageId: null,
-					error: null,
-					receivedAt: input.now,
-					sentAt: null,
-				},
-			}
-			stored = await insertEmailMessage(messageInput)
-		} catch (error) {
-			stored = await getEmailMessageById({
-				db: input.db,
-				userId: delivery.userId,
-				messageId: delivery.messageId,
-			}).catch(() => null)
-			if (!stored) {
-				throw new RetryableInboundStorageError(
-					'Failed to commit inbound email message; the stable delivery will be retried.',
-					error,
-				)
-			}
-		}
-	}
-
-	try {
-		const attachmentInput = {
+	const { classification, classificationReason } =
+		await resolveInboundEmailClassification({
 			db: input.db,
-			messageId: delivery.messageId,
-			ignoreConflicts: true,
-			inboundDeliveryFence,
-			attachments: parsed.attachments.map((attachment, index) => ({
-				id: `${delivery.messageId}:attachment:${index}`,
-				filename: attachment.filename,
-				contentType: attachment.contentType,
-				contentId: attachment.contentId,
-				disposition: attachment.disposition,
-				size: attachment.size,
-				storageKind: 'raw-mime',
-				storageKey: null,
-			})),
-		}
-		await insertEmailAttachments(attachmentInput)
+			userId: delivery.userId,
+			envelopeFrom: parsed.envelopeFrom,
+			authResults: parsed.authResults,
+		})
+	const message = {
+		id: delivery.messageId,
+		direction: 'inbound' as const,
+		inboxId: delivery.inboxId,
+		threadId,
+		senderIdentityId: null,
+		fromAddress: parsed.headerFrom ?? parsed.envelopeFrom,
+		envelopeFrom: parsed.envelopeFrom,
+		toAddresses: parsed.to.map((entry) => entry.address),
+		ccAddresses: parsed.cc.map((entry) => entry.address),
+		bccAddresses: parsed.bcc.map((entry) => entry.address),
+		replyToAddresses: parsed.replyTo.map((entry) => entry.address),
+		subject: parsed.subject ?? '',
+		messageIdHeader: parsed.messageId,
+		inReplyToHeader: parsed.inReplyTo,
+		references: parsed.references,
+		headers: parsed.headers,
+		authResults: parsed.authResults,
+		textBody: parsed.textBody,
+		htmlBody: parsed.htmlBody,
+		rawMimeKey: delivery.rawMimeKey,
+		rawSize: parsed.rawSize,
+		processingStatus: 'stored' as const,
+		classification,
+		classificationReason,
+		providerMessageId: null,
+		deliveryStatus: null,
+		deliveryStatusAt: null,
+		error: null,
+		receivedAt: input.now,
+		sentAt: null,
+		createdAt: input.now,
+		updatedAt: input.now,
+	}
+	const attachments = parsed.attachments.map((attachment, index) => ({
+		id: `${delivery.messageId}:attachment:${index}`,
+		messageId: delivery.messageId,
+		filename: attachment.filename,
+		contentType: attachment.contentType,
+		contentId: attachment.contentId,
+		disposition: attachment.disposition,
+		size: attachment.size,
+		storageKind: 'raw-mime' as const,
+		storageKey: null,
+		createdAt: input.now,
+	}))
+	let committed
+	try {
+		committed = await input.authority.commitInboundMessageGraph({
+			delivery,
+			thread,
+			message,
+			attachments,
+		})
 	} catch (error) {
 		throw new RetryableInboundStorageError(
-			'Failed to commit inbound email attachments; the stable delivery will be retried.',
+			'Failed to atomically commit the inbound Mailbox graph; the stable delivery will be retried.',
 			error,
 		)
 	}
-	const storedAttachments = await listEmailAttachmentsForMessage({
-		db: input.db,
-		messageId: delivery.messageId,
-	}).catch((error: unknown) => {
+	if (committed.status === 'lease-lost') {
 		throw new RetryableInboundStorageError(
-			'Failed to verify inbound email attachments; the stable delivery will be retried.',
-			error,
-		)
-	})
-	if (storedAttachments.length !== parsed.attachments.length) {
-		throw new RetryableInboundStorageError(
-			'Inbound email attachment commit was incomplete; the stable delivery will be retried.',
+			'Inbound Mailbox graph commit lost its storage lease; the stable delivery will be retried.',
 		)
 	}
+	const stored = mailboxMessageToEmailMessageRecord(
+		committed.message,
+		delivery.userId,
+	)
 
 	const authority = input.authority
 	if (!authority) {
@@ -496,22 +261,6 @@ export async function storeIdempotentInboundEmail(input: {
 		}
 		finalizedDelivery = committed
 	}
-	try {
-		if (stored.threadId) {
-			const touchInput = {
-				db: input.db,
-				threadId: stored.threadId,
-				lastMessageAt: input.now,
-			}
-			await touchEmailThread(touchInput)
-		}
-	} catch (error) {
-		console.error(
-			'inbound-email-post-commit-bookkeeping-failed',
-			stored.id,
-			error,
-		)
-	}
 	return {
 		message: stored,
 		finalizedDelivery,
@@ -523,7 +272,7 @@ export async function storeIdempotentInboundEmail(input: {
 /**
  * Load attachment bytes after metadata selection. External attachments use
  * `EMAIL_BLOBS` via `storageKey`; raw-mime attachments parse the message's
- * raw MIME blob. Metadata may come from D1 or Mailbox.
+ * raw MIME blob. Metadata comes from Mailbox or the dedicated system graph.
  */
 export async function loadEmailAttachmentContent(input: {
 	blobs: R2Bucket
@@ -596,6 +345,7 @@ export async function loadEmailAttachmentContent(input: {
 }
 
 export async function getEmailAttachmentById(input: {
+	env: MailboxEnv
 	db: D1Database
 	/** EMAIL_BLOBS bucket for messages whose raw MIME lives in R2. */
 	blobs: R2Bucket
@@ -608,11 +358,12 @@ export async function getEmailAttachmentById(input: {
 					db: input.db,
 					attachmentId: input.attachmentId,
 				})
-			: await getEmailAttachmentRecordById({
-					db: input.db,
+			: await mailboxRpc({
+					env: input.env,
 					userId: input.userId,
-					attachmentId: input.attachmentId,
 				})
+					.getAttachment({ attachmentId: input.attachmentId })
+					.then((record) => (record ? { ...record } : null))
 	if (!attachment) return null
 	const message =
 		input.userId === systemEmailOwnerId
@@ -620,11 +371,16 @@ export async function getEmailAttachmentById(input: {
 					db: input.db,
 					messageId: attachment.messageId,
 				})
-			: await getEmailMessageById({
-					db: input.db,
+			: await mailboxRpc({
+					env: input.env,
 					userId: input.userId,
-					messageId: attachment.messageId,
 				})
+					.getMessage({ messageId: attachment.messageId })
+					.then((record) =>
+						record
+							? mailboxMessageToEmailMessageRecord(record, input.userId)
+							: null,
+					)
 	return loadEmailAttachmentContent({
 		blobs: input.blobs,
 		attachment,
@@ -651,6 +407,7 @@ export const maxDetailedEmailRejectionEventsPerDay = 5
  * attempt — the denial-of-wallet shape the quotas exist to prevent.
  */
 export async function recordBoundedEmailRejectionEvent(input: {
+	env: MailboxEnv
 	db: D1Database
 	userId: string
 	inboxId: string
@@ -679,62 +436,28 @@ export async function recordBoundedEmailRejectionEvent(input: {
 	}
 	const nowIsoString = now.toISOString()
 	const day = isoTimestampDayKey(nowIsoString)
-	const aggregateDetail = JSON.stringify({
-		aggregate: true,
+	const result = await mailboxRpc({
+		env: input.env,
+		userId: input.userId,
+	}).recordBoundedRejection({
+		ownerId: input.userId,
+		inboxId: input.inboxId,
+		recipient: input.recipient,
+		reason: input.reason,
+		phase: input.phase,
 		day,
-		count: 1,
-		last_reason: input.reason,
-		last_phase: input.phase,
-		last_at: nowIsoString,
+		now: nowIsoString,
+		detailLimit: maxDetailedEmailRejectionEventsPerDay,
+		detailEventId: crypto.randomUUID(),
 	})
-	const row = await input.db
-		.prepare(
-			`INSERT INTO email_delivery_events (
-				id, user_id, inbox_id, event_type, provider, detail_json,
-				needs_effect_reconcile, created_at
-			) VALUES (?, ?, ?, 'rejected', 'cloudflare-email-routing', ?, 0, ?)
-			ON CONFLICT(id) DO UPDATE SET detail_json = json_set(
-				email_delivery_events.detail_json,
-				'$.count', COALESCE(json_extract(email_delivery_events.detail_json, '$.count'), 0) + 1,
-				'$.last_reason', json_extract(excluded.detail_json, '$.last_reason'),
-				'$.last_phase', json_extract(excluded.detail_json, '$.last_phase'),
-				'$.last_at', json_extract(excluded.detail_json, '$.last_at')
-			)
-			RETURNING json_extract(detail_json, '$.count') AS count`,
-		)
-		.bind(
-			`email-rejections:${input.inboxId}:${day}`,
-			input.userId,
-			input.inboxId,
-			aggregateDetail,
-			nowIsoString,
-		)
-		.first<{ count: number }>()
-	const rejectionsToday = Number(row?.count ?? 1)
-	if (rejectionsToday <= maxDetailedEmailRejectionEventsPerDay) {
-		await insertEmailDeliveryEvent({
-			db: input.db,
-			userId: input.userId,
-			inboxId: input.inboxId,
-			eventType: 'rejected',
-			provider: 'cloudflare-email-routing',
-			detail: {
-				recipient: input.recipient,
-				reason: input.reason,
-				phase: input.phase,
-			},
-		})
-	}
-	return rejectionsToday
+	return result.count
 }
 
 /**
- * Reclassify a stored inbound message and, on D1 success only, best-effort
- * mirror the full message graph into Mailbox. Returns the D1 mutation boolean;
- * mirror failures never throw or change that response.
+ * Reclassify a stored inbound message in its authoritative graph.
  */
 export async function setEmailMessageClassification(input: {
-	env: MailboxLiveMirrorEnv
+	env: MailboxEnv
 	db: D1Database
 	userId: string
 	messageId: string
@@ -742,44 +465,35 @@ export async function setEmailMessageClassification(input: {
 	classificationReason?: string | null
 	now?: string
 }) {
-	const updated =
-		input.userId === systemEmailOwnerId
-			? await updateSystemEmailMessageClassification({
-					db: input.db,
-					messageId: input.messageId,
-					classification: input.classification,
-					classificationReason: input.classificationReason,
-					now: input.now,
-				})
-			: await updateEmailMessageClassificationInD1({
-					db: input.db,
-					userId: input.userId,
-					messageId: input.messageId,
-					classification: input.classification,
-					classificationReason: input.classificationReason,
-					now: input.now,
-				})
-	if (!updated) {
-		return false
-	}
-	if (input.userId !== systemEmailOwnerId) {
-		await mirrorMailboxMessageGraphFromD1({
-			env: input.env,
+	if (input.userId === systemEmailOwnerId) {
+		return await updateSystemEmailMessageClassification({
 			db: input.db,
-			userId: input.userId,
 			messageId: input.messageId,
+			classification: input.classification,
+			classificationReason: input.classificationReason,
+			now: input.now,
 		})
 	}
-	return true
+	const result = await mailboxRpc({
+		env: input.env,
+		userId: input.userId,
+	}).setMessageClassification({
+		ownerId: input.userId,
+		messageId: input.messageId,
+		classification: input.classification,
+		classificationReason: input.classificationReason ?? null,
+		updatedAt: input.now ?? nowIso(),
+	})
+	return result.status === 'accepted'
 }
 
 /**
  * Record a Cloudflare outbound delivery lifecycle event. Resolution is
- * index-first via `email_outbound_provider_index`, then an owner-scoped
- * `email_messages` load — never a full-table provider_message_id scan.
+ * index-first via `email_outbound_provider_index`, then an owner Mailbox point
+ * read — never a shared-graph scan.
  */
 export async function recordProviderEmailDeliveryEvent(input: {
-	db: D1Database
+	env: MailboxEnv & { APP_DB: D1Database }
 	reportingEnv?: EmailReportingEnv
 	providerMessageId: string
 	providerEventId: string
@@ -787,87 +501,103 @@ export async function recordProviderEmailDeliveryEvent(input: {
 	eventTimestamp: string
 	detail: Record<string, unknown>
 }) {
-	const message = await getOutboundEmailMessageByProviderMessageId({
-		db: input.db,
+	const db = liveUserEmailD1Database(input.env.APP_DB)
+	const index = await getOutboundProviderIndexRow({
+		db,
 		providerMessageId: input.providerMessageId,
 	})
-	if (!message) {
+	if (!index) {
 		return { outcome: 'unmatched' as const, message: null }
 	}
-
-	const eventId = crypto.randomUUID()
-	const statements = await input.db.batch([
-		input.db
-			.prepare(
-				`INSERT OR IGNORE INTO email_delivery_events (
-					id, message_id, user_id, inbox_id, event_type, provider,
-					provider_message_id, provider_event_id, detail_json, created_at
-				) VALUES (?, ?, ?, ?, ?, 'cloudflare-email', ?, ?, ?, ?)`,
-			)
-			.bind(
-				eventId,
-				message.id,
-				message.userId,
-				message.inboxId,
-				input.deliveryStatus,
-				input.providerMessageId,
-				input.providerEventId,
-				JSON.stringify(input.detail),
-				input.eventTimestamp,
-			),
-		input.db
-			.prepare(
-				`UPDATE email_messages
-				SET delivery_status = ?,
-					delivery_status_at = ?,
-					updated_at = ?
-				WHERE id = ?
-					AND (delivery_status_at IS NULL OR delivery_status_at <= ?)
-					AND EXISTS (
-						SELECT 1
-						FROM email_delivery_events
-						WHERE id = ?
-							AND message_id = ?
-					)`,
-			)
-			.bind(
-				input.deliveryStatus,
-				input.eventTimestamp,
-				nowIso(),
-				message.id,
-				input.eventTimestamp,
-				eventId,
-				message.id,
-			),
-	])
-	const inserted = Number(statements[0]?.meta.changes ?? 0) > 0
-	const updatedLatestStatus = Number(statements[1]?.meta.changes ?? 0) > 0
-	if (!inserted) {
+	const mailbox = mailboxRpc({ env: input.env, userId: index.userId })
+	const current = await mailbox.getMessage({ messageId: index.messageId })
+	if (!current || current.direction !== 'outbound') {
+		return { outcome: 'unmatched' as const, message: null }
+	}
+	const message = mailboxMessageToEmailMessageRecord(current, index.userId)
+	const existing = await mailbox.getDeliveryEventByProviderEventId({
+		providerEventId: input.providerEventId,
+	})
+	if (existing) {
 		const duplicateIsCurrent =
-			message.deliveryStatus === input.deliveryStatus &&
-			message.deliveryStatusAt === input.eventTimestamp
+			existing.eventType === input.deliveryStatus &&
+			existing.providerMessageId === input.providerMessageId
 		return {
 			outcome: duplicateIsCurrent ? ('duplicate' as const) : ('stale' as const),
 			message,
 		}
 	}
+	const eventId = crypto.randomUUID()
+	const updatedAt = nowIso()
+	const write = await mailbox.upsertDeliveryEvent({
+		ownerId: index.userId,
+		event: {
+			id: eventId,
+			messageId: index.messageId,
+			inboxId: index.inboxId,
+			eventType: input.deliveryStatus,
+			provider: 'cloudflare-email',
+			providerMessageId: input.providerMessageId,
+			providerEventId: input.providerEventId,
+			detailJson: JSON.stringify(input.detail),
+			needsEffectReconcile: false,
+			state: null,
+			fingerprint: null,
+			storageLease: null,
+			storageLeaseAt: null,
+			cleanupLease: null,
+			cleanupLeaseAt: null,
+			cleanupRetryAt: null,
+			expectedAttachmentCount: null,
+			finalizationToken: null,
+			reconcileAfter: null,
+			dedupeExpiresAt: null,
+			usageEffectRecordedAt: null,
+			usageEffectSuppressedAt: null,
+			usageStartedAt: null,
+			usageMonth: null,
+			usageBytes: null,
+			usageDurationMs: null,
+			usageEffectRetryAt: null,
+			usageEffectLease: null,
+			usageEffectLeaseAt: null,
+			subscriptionEffectState: null,
+			subscriptionEffectLease: null,
+			subscriptionEffectLeaseAt: null,
+			subscriptionEffectRetryAt: null,
+			subscriptionEffectAttemptCount: null,
+			subscriptionEffectDeadLetterAt: null,
+			subscriptionEffectLastError: null,
+			createdAt: input.eventTimestamp,
+			updatedAt,
+		},
+		latestDeliveryStatus: {
+			messageId: index.messageId,
+			deliveryStatus: input.deliveryStatus,
+			deliveryStatusAt: input.eventTimestamp,
+		},
+	})
+	if (!write.inserted) {
+		return { outcome: 'duplicate' as const, message }
+	}
 	if (input.reportingEnv) {
 		recordEmailReportingEvent(input.reportingEnv, {
-			userId: message.userId,
+			userId: index.userId,
 			eventType: 'email_delivery',
 			outcome: input.deliveryStatus,
 			timestamp: input.eventTimestamp,
 		})
 	}
-	if (!updatedLatestStatus) {
+	if (!write.updatedLatestStatus) {
 		return { outcome: 'stale' as const, message }
 	}
 
-	const updatedMessage = await getEmailMessageById({
-		db: input.db,
-		userId: message.userId,
-		messageId: message.id,
+	const updatedMessageRecord = await mailbox.getMessage({
+		messageId: index.messageId,
 	})
+	const updatedMessage = updatedMessageRecord
+		? mailboxMessageToEmailMessageRecord(updatedMessageRecord, index.userId)
+		: null
 	if (!updatedMessage) {
 		throw new Error(
 			`Email message disappeared after delivery event: ${message.id}`,
@@ -879,8 +609,8 @@ export async function recordProviderEmailDeliveryEvent(input: {
 		event: {
 			id: eventId,
 			messageId: message.id,
-			userId: message.userId,
-			inboxId: message.inboxId,
+			userId: index.userId,
+			inboxId: index.inboxId,
 			eventType: input.deliveryStatus,
 			provider: 'cloudflare-email',
 			providerMessageId: input.providerMessageId,

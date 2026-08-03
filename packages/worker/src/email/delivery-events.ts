@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type MailboxEnv } from './mailbox-client.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
 import { recordProviderEmailDeliveryEvent } from './service.ts'
 import { emailDeliveryStatusValues, type EmailDeliveryStatus } from './types.ts'
@@ -90,7 +91,7 @@ export function parseCloudflareEmailDeliveryEvent(input: unknown) {
 }
 
 export async function processCloudflareEmailDeliveryEvent(input: {
-	db: D1Database
+	env: MailboxEnv & { APP_DB: D1Database }
 	reportingEnv?: EmailReportingEnv
 	body: unknown
 }) {
@@ -104,7 +105,7 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 		}
 	}
 	const result = await recordProviderEmailDeliveryEvent({
-		db: input.db,
+		env: input.env,
 		reportingEnv: input.reportingEnv,
 		providerMessageId: providerEvent.payload.messageId,
 		providerEventId: providerEvent.payload.eventId,

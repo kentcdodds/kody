@@ -69,43 +69,10 @@ The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised
 end-to-end (`e2e/admin-feature-flags.spec.ts`).
 
-### Mailbox read cutover (`mailbox-read-cutover`)
-
-Default-off migration flag for phase 3 of the Mailbox expand/contract track (see
-[Data storage — Mailbox](./data-storage.md#durable-objects-mailbox)). It gates
-whether owner-facing user-mail **reads** (app `/account/email` inbox + detail,
-and MCP `email_message_list` / `get` / `search`, `email_attachment_get`,
-`email_delivery_event_list`) may come from the per-user Mailbox Durable Object
-instead of D1. Writes, inbound, package-subscription, and provider reverse
-lookup stay on D1.
-
-Evaluation alone is not enough. A live read path must also pass the per-user
-parity soak on `users` (migration `0125-mailbox-parity-state.sql`):
-
-- `mailbox_parity_matching_since` at least **2 hours** old (continuous exact
-  D1↔Mailbox count parity). Pre-launch rationale: ~38-user fleet evidence with
-  every-5m parity plus fail-closed freshness/mismatch/deleting/identity checks
-  (Kent-approved). **TODO(launch-hardening):** revisit lengthening soak when the
-  fleet grows.
-- `mailbox_parity_checked_at` fresh within **6 hours** (every-5m lane with
-  bounded batch scaling; not a strict 5m SLA),
-- `mailbox_parity_mismatch_count === 0`,
-- exact `stable_user_id` match between the gate caller and the loaded row,
-- `deleting_at IS NULL` (accounts marked for deletion fail closed to D1).
-
-D1 errors, missing/incomplete parity state, stale `checked_at`, non-zero
-mismatch depth, deleting accounts, and an off flag all **fail closed** to
-D1-authoritative reads. When the gate is on, Mailbox DO read errors propagate
-with no D1 fallback.
-
-Adapters live in `packages/worker/src/email/mailbox-read-cutover.ts`. The gate
-records `mailbox-read-cutover` exposure once per memoized evaluation unless the
-app caller already recorded flags via the session cache
-(`skipExposureRecording`). Deploy with the flag default-off; operators enable
-per user after backup verification (see data-storage).
-
-Success metric: `email_received` error rate should decrease after verified
-parity soak and cutover (`successMetric` on the registry definition).
+The retired `mailbox-read-cutover` migration flag is intentionally absent from
+the registry. USER email reads are unconditionally owner-Mailbox reads; there is
+no D1 fallback or parity-soak gate. The physical D1 graph is a frozen rollback
+snapshot, not a selectable serving source.
 
 ## Success metrics
 

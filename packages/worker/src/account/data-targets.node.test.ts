@@ -72,7 +72,6 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 			table: 'value_entries',
 			parentTable: 'value_buckets',
 		},
-		{ kind: 'attachment_parent', table: 'email_attachments' },
 		{
 			kind: 'community_listing_child',
 			table: 'community_stars',
@@ -162,16 +161,11 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 					)`,
 	)
 	expect(matchFor(samples[8]!).qualifiedWhereSql).toBe(
-		`email_attachments.message_id IN (
-						SELECT id FROM email_messages WHERE user_id = ?
-					)`,
-	)
-	expect(matchFor(samples[9]!).qualifiedWhereSql).toBe(
 		`community_stars.listing_id IN (
 						SELECT id FROM community_listings WHERE owner_user_id = ?
 					)`,
 	)
-	expect(matchFor(samples[10]!)).toEqual({
+	expect(matchFor(samples[9]!)).toEqual({
 		table: 'mcp_memory_conversation_suppressions',
 		whereSql: 'user_id = ?',
 		qualifiedWhereSql: 'mcp_memory_conversation_suppressions.user_id = ?',
@@ -312,6 +306,14 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
 				liveUserColumns.add(`${table.name}.${column.name}`)
 			}
+		}
+	}
+	for (const target of accountUserDataPendingDropTargets) {
+		const columns = db
+			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(target.table)})`)
+			.all() as Array<{ name: string }>
+		if (columns.some((column) => column.name === target.column)) {
+			liveUserColumns.add(`${target.table}.${target.column}`)
 		}
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()

@@ -4,15 +4,13 @@ import {
 	emailVerificationRequiredMessage,
 	isAccountEmailVerified,
 } from '#app/email-verification.ts'
-import { hasResolvedRequestFeatureFlags } from '#app/request-feature-flags-cache.ts'
 import { toMessageDetail } from '#mcp/capabilities/email/shared.ts'
 import {
 	getOwnerEmailMessageById,
 	listOwnerEmailAttachmentsForMessage,
 	listOwnerEmailDeliveryEvents,
 	listOwnerEmailMessagesPage,
-	type MailboxReadCutoverMemo,
-} from '#worker/email/mailbox-read-cutover.ts'
+} from '#worker/email/owner-email-reader.ts'
 import {
 	buildPlatformEmailAddress,
 	getPlatformEmailDomain,
@@ -308,38 +306,26 @@ async function loadInboxes(input: {
 
 async function loadSelectedMessage(input: {
 	env: Env
-	dbUserId: number
 	stableUserId: string
 	messageId: string
-	skipExposureRecording: boolean
-	memo: MailboxReadCutoverMemo
 }): Promise<AccountEmailMessageDetail | null> {
 	const message = await getOwnerEmailMessageById({
 		env: input.env,
-		dbUserId: input.dbUserId,
-		stableUserId: input.stableUserId,
+		ownerId: input.stableUserId,
 		messageId: input.messageId,
-		skipExposureRecording: input.skipExposureRecording,
-		memo: input.memo,
 	})
 	if (!message) return null
 	const [attachments, deliveryEvents] = await Promise.all([
 		listOwnerEmailAttachmentsForMessage({
 			env: input.env,
-			dbUserId: input.dbUserId,
-			stableUserId: input.stableUserId,
+			ownerId: input.stableUserId,
 			messageId: message.id,
-			skipExposureRecording: input.skipExposureRecording,
-			memo: input.memo,
 		}),
 		listOwnerEmailDeliveryEvents({
 			env: input.env,
-			dbUserId: input.dbUserId,
-			stableUserId: input.stableUserId,
+			ownerId: input.stableUserId,
 			messageId: message.id,
 			limit: deliveryEventsLimit,
-			skipExposureRecording: input.skipExposureRecording,
-			memo: input.memo,
 		}),
 	])
 	const detail = toMessageDetail(message, attachments)
@@ -409,12 +395,6 @@ export async function loadAccountEmailData(input: {
 	request: Request
 	user: AuthenticatedUser
 	pathMessageId?: string
-	/**
-	 * SSR account pages resolve feature flags (and record exposures) in
-	 * `renderAppPage` / session load. Skip cutover exposure here to avoid
-	 * double-recording on the same request.
-	 */
-	skipCutoverExposureRecording?: boolean
 }): Promise<AccountEmailLoaderData> {
 	const url = new URL(input.request.url, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
@@ -448,23 +428,14 @@ export async function loadAccountEmailData(input: {
 		input.request.url,
 		input.pathMessageId,
 	)
-	const cutoverMemo: MailboxReadCutoverMemo = {}
-	const dbUserId = input.user.userId
-	const skipExposureRecording =
-		input.skipCutoverExposureRecording === true ||
-		hasResolvedRequestFeatureFlags(input.request)
-
 	const [listResult, inboxes, usage, selectedMessage] = await Promise.all([
 		listOwnerEmailMessagesPage({
 			env: input.env,
-			dbUserId,
-			stableUserId: userId,
+			ownerId: userId,
 			query,
 			classification,
 			pageSize,
 			offset,
-			skipExposureRecording,
-			memo: cutoverMemo,
 		}),
 		loadInboxes({ db: input.env.APP_DB, userId }),
 		loadUsage({
@@ -476,11 +447,8 @@ export async function loadAccountEmailData(input: {
 		selectedMessageId
 			? loadSelectedMessage({
 					env: input.env,
-					dbUserId,
 					stableUserId: userId,
 					messageId: selectedMessageId,
-					skipExposureRecording,
-					memo: cutoverMemo,
 				})
 			: Promise.resolve(null),
 	])

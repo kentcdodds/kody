@@ -6,10 +6,38 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#app/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
 
+const resourceCountsByDb = new WeakMap<
+	D1Database,
+	Record<string, ResourceCount>
+>()
+
 function withUserMeter(env: { APP_DB: D1Database } & Record<string, unknown>) {
 	const meter = createInMemoryUserMeterEnv()
 	const runLog = createInMemoryRunLogUsageEnv()
-	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
+	const resourceCounts = resourceCountsByDb.get(env.APP_DB) ?? {}
+	const mailbox = {
+		idFromName(userId: string) {
+			return { userId } as unknown as DurableObjectId
+		},
+		get(id: DurableObjectId) {
+			const userId = (id as unknown as { userId: string }).userId
+			return {
+				async countMessages() {
+					return {
+						total: resourceCounts[userId]?.stored_email_messages ?? 0,
+					}
+				},
+			}
+		},
+	} as unknown as DurableObjectNamespace
+	return {
+		...env,
+		...meter.env,
+		...runLog.env,
+		MAILBOX: mailbox,
+		meter,
+		runLog,
+	}
 }
 
 type UserRow = {
@@ -72,9 +100,6 @@ function createAdminUserUsageTestDb(input: {
 		if (normalizedQuery.includes('from repo_sessions')) {
 			return counts.repo_sessions ?? 0
 		}
-		if (normalizedQuery.includes('from email_messages')) {
-			return counts.stored_email_messages ?? 0
-		}
 		if (normalizedQuery.includes('from secret_entries')) {
 			return counts.secrets ?? 0
 		}
@@ -131,6 +156,7 @@ function createAdminUserUsageTestDb(input: {
 		},
 	} as unknown as D1Database
 
+	resourceCountsByDb.set(db, resourceCounts)
 	return db
 }
 

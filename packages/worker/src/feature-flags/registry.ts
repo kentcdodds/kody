@@ -49,19 +49,6 @@ export const featureFlagDefinitions = [
 		// exercise the flag system itself (including the "no success metric"
 		// admin notice), not to move a product metric.
 	},
-	{
-		key: 'mailbox-read-cutover',
-		defaultEnabled: false,
-		description:
-			'Serve owner-facing user-mail reads (app inbox + MCP list/get/search/attachment/delivery-events) from the per-user Mailbox Durable Object when the account also has continuous D1↔Mailbox parity soak (matching_since ≥ 2h pre-launch, fresh checked_at, zero mismatches). Default off; deploy first, then enable per user. Fail closed without verified parity.',
-		successMetric: {
-			eventType: 'email_received',
-			measure: 'error_rate',
-			goal: 'decrease',
-			hypothesis:
-				'After verified parity soak, reading owner mail from Mailbox should reduce read-path failures that currently surface alongside inbound mail handling.',
-		},
-	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']

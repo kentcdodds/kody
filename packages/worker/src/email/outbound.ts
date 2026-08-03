@@ -18,33 +18,28 @@ import {
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
+import { mailboxMessageToEmailMessageRecord } from './mailbox-record-mappers.ts'
 import {
-	mirrorMailboxMessageGraphFromD1,
-	type MailboxLiveMirrorEnv,
-} from './mailbox-live-mirror.ts'
+	type MailboxAttachmentInput,
+	type MailboxDeliveryEventInput,
+	type MailboxMessageInput,
+	type MailboxThreadInput,
+} from './mailbox-types.ts'
 import { emailOutboundPausedMessage } from './outbound-abuse.ts'
+import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
+import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
 import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import {
-	createEmailThread,
 	emailAttachmentBlobKey,
 	ensurePlatformSenderIdentity,
-	getEmailMessageById,
-	getEmailMessageByMessageIdHeader,
-	insertEmailAttachments,
-	insertEmailDeliveryEvent,
-	insertEmailMessageWithoutRawMime,
-	updateEmailMessageDelivery,
 } from './service.ts'
-import {
-	type EmailMessageRecord,
-	type EmailProcessingStatus,
-	type EmailThreadRecord,
-} from './types.ts'
+import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
 
 type SendEmailEnv = Pick<
 	Env,
@@ -62,7 +57,7 @@ type SendEmailEnv = Pick<
 	| 'EMAIL_EVENTS'
 > &
 	EmailReportingEnv &
-	MailboxLiveMirrorEnv
+	MailboxEnv
 
 /**
  * Ceiling on the number of files per outbound message. Total size is
@@ -133,9 +128,8 @@ export type EmailSendResult = {
 }
 
 /**
- * Provider accepted the send, but D1 terminal persistence (message + provider
- * index, and/or the `sent` delivery event) failed after bounded retries. The
- * message must not be marked `failed` and must not be resent — repair D1.
+ * Provider accepted the send, but Mailbox terminal persistence failed after
+ * bounded retries. The message must not be marked `failed` or resent.
  */
 export class OutboundEmailPersistenceError extends Error {
 	override name = 'OutboundEmailPersistenceError'
@@ -147,7 +141,7 @@ export class OutboundEmailPersistenceError extends Error {
 		cause?: unknown
 	}) {
 		super(
-			`Provider accepted outbound email ${input.messageId} (providerMessageId=${input.providerMessageId ?? 'null'}) but D1 terminal persistence failed after retries. Do not resend; repair D1/index for this message.`,
+			`Provider accepted outbound email ${input.messageId} (providerMessageId=${input.providerMessageId ?? 'null'}) but terminal persistence failed after retries. Do not resend; repair Mailbox/index state for this message.`,
 			{ cause: input.cause },
 		)
 		this.messageId = input.messageId
@@ -272,20 +266,19 @@ function prepareOutboundAttachments(
 }
 
 /**
- * Persist outbound attachment bytes to R2 and record one email_attachments
- * row per file. A failed blob put degrades that attachment to metadata-only
+ * Persist outbound attachment bytes to R2 and prepare Mailbox metadata.
+ * A failed blob put degrades that attachment to metadata-only
  * (storage_kind 'unavailable') rather than blocking the send — the provider
  * still receives the in-memory bytes.
  */
 async function storeOutboundAttachments(input: {
-	db: D1Database
 	blobs: R2Bucket
 	userId: string
 	messageId: string
 	attachments: Array<PreparedOutboundAttachment>
-}) {
-	if (input.attachments.length === 0) return
-	const rows: Parameters<typeof insertEmailAttachments>[0]['attachments'] = []
+	now: string
+}): Promise<Array<MailboxAttachmentInput>> {
+	const rows: Array<MailboxAttachmentInput> = []
 	for (const attachment of input.attachments) {
 		const attachmentId = crypto.randomUUID()
 		const storageKey = emailAttachmentBlobKey(
@@ -308,38 +301,18 @@ async function storeOutboundAttachments(input: {
 		}
 		rows.push({
 			id: attachmentId,
+			messageId: input.messageId,
 			filename: attachment.filename,
 			contentType: attachment.contentType,
+			contentId: null,
 			disposition: 'attachment',
 			size: attachment.bytes.byteLength,
 			storageKind: stored ? 'external' : 'unavailable',
 			storageKey: stored ? storageKey : null,
+			createdAt: input.now,
 		})
 	}
-	try {
-		await insertEmailAttachments({
-			db: input.db,
-			messageId: input.messageId,
-			attachments: rows,
-		})
-	} catch (error) {
-		// Without rows, cleanup paths (retention, deletion) can never find
-		// these blobs again — delete them now rather than orphan them.
-		await Promise.all(
-			rows
-				.filter((row) => row.storageKey != null)
-				.map((row) =>
-					input.blobs.delete(row.storageKey!).catch((deleteError: unknown) => {
-						console.warn(
-							'email-outbound-attachment-blob-cleanup-failed',
-							row.storageKey,
-							deleteError,
-						)
-					}),
-				),
-		)
-		throw error
-	}
+	return rows
 }
 
 async function requireStoredEmailMessage(input: {
@@ -347,38 +320,16 @@ async function requireStoredEmailMessage(input: {
 	userId: string
 	messageId: string
 }) {
-	const stored = await getEmailMessageById({
-		db: input.env.APP_DB,
+	const stored = await mailboxRpc({
+		env: input.env,
 		userId: input.userId,
-		messageId: input.messageId,
-	})
+	}).getMessage({ messageId: input.messageId })
 	if (!stored) {
 		throw new Error(
 			`Email message disappeared after delivery update: ${input.messageId}`,
 		)
 	}
-	return stored
-}
-
-/**
- * One bounded never-throw D1 → Mailbox graph mirror at outbound terminals.
- * Passes a just-created thread when present; otherwise omits `thread` so
- * `mirrorMailboxMessageGraphFromD1` loads it from D1. Failures never affect
- * send/refund.
- */
-async function mirrorOutboundMailboxMessageGraph(input: {
-	env: SendEmailEnv
-	userId: string
-	messageId: string
-	createdThread: EmailThreadRecord | null
-}) {
-	await mirrorMailboxMessageGraphFromD1({
-		env: input.env,
-		db: input.env.APP_DB,
-		userId: input.userId,
-		messageId: input.messageId,
-		...(input.createdThread ? { thread: input.createdThread } : {}),
-	})
+	return mailboxMessageToEmailMessageRecord(stored, input.userId)
 }
 
 async function sendViaBinding(input: {
@@ -481,13 +432,91 @@ function outboundEmailContentBytes(
 	return bytes
 }
 
+function outboundDeliveryEvent(input: {
+	id?: string
+	messageId: string
+	inboxId: string | null
+	eventType: MailboxDeliveryEventInput['eventType']
+	providerMessageId: string | null
+	detail: Record<string, unknown>
+	now: string
+}): MailboxDeliveryEventInput {
+	return {
+		id: input.id ?? crypto.randomUUID(),
+		messageId: input.messageId,
+		inboxId: input.inboxId,
+		eventType: input.eventType,
+		provider: 'cloudflare-email',
+		providerMessageId: input.providerMessageId,
+		providerEventId: null,
+		detailJson: JSON.stringify(input.detail),
+		needsEffectReconcile: false,
+		state: null,
+		fingerprint: null,
+		storageLease: null,
+		storageLeaseAt: null,
+		cleanupLease: null,
+		cleanupLeaseAt: null,
+		cleanupRetryAt: null,
+		expectedAttachmentCount: null,
+		finalizationToken: null,
+		reconcileAfter: null,
+		dedupeExpiresAt: null,
+		usageEffectRecordedAt: null,
+		usageEffectSuppressedAt: null,
+		usageStartedAt: null,
+		usageMonth: null,
+		usageBytes: null,
+		usageDurationMs: null,
+		usageEffectRetryAt: null,
+		usageEffectLease: null,
+		usageEffectLeaseAt: null,
+		subscriptionEffectState: null,
+		subscriptionEffectLease: null,
+		subscriptionEffectLeaseAt: null,
+		subscriptionEffectRetryAt: null,
+		subscriptionEffectAttemptCount: null,
+		subscriptionEffectDeadLetterAt: null,
+		subscriptionEffectLastError: null,
+		createdAt: input.now,
+		updatedAt: input.now,
+	}
+}
+
+async function retryMailboxTerminal<T>(
+	operation: () => Promise<T>,
+): Promise<T> {
+	let lastError: unknown
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		try {
+			return await operation()
+		} catch (error) {
+			lastError = error
+			if (attempt < 2) {
+				await new Promise<void>((resolve) =>
+					setTimeout(resolve, 50 * 2 ** attempt),
+				)
+			}
+		}
+	}
+	throw lastError
+}
+
 export async function sendOutboundEmail(
-	input: EmailSendInput,
+	unsafeInput: EmailSendInput,
 ): Promise<EmailSendResult> {
-	if (input.userId === systemEmailOwnerId) {
+	if (unsafeInput.userId === systemEmailOwnerId) {
 		throw new Error('System outbound email is unsupported.')
 	}
+	const input: EmailSendInput = {
+		...unsafeInput,
+		env: {
+			...unsafeInput.env,
+			APP_DB: liveUserEmailD1Database(unsafeInput.env.APP_DB),
+		},
+	}
 	const write = async (): Promise<EmailSendResult> => {
+		const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
 		// The from address is always platform-assigned: {username}@<platform
 		// domain>. There is no self-service sender verification. The resolved
 		// account email (recovered from the stable userId when the caller
@@ -539,11 +568,12 @@ export async function sendOutboundEmail(
 		if (input.recipientPolicy === 'reply') {
 			// The recipient is derived from the stored inbound message — callers
 			// can never turn a reply into outreach.
-			const replyOriginal = await getEmailMessageById({
-				db: input.env.APP_DB,
-				userId: input.userId,
+			const replyOriginalRecord = await mailbox.getMessage({
 				messageId: input.replyToMessageId,
 			})
+			const replyOriginal = replyOriginalRecord
+				? mailboxMessageToEmailMessageRecord(replyOriginalRecord, input.userId)
+				: null
 			if (!replyOriginal || replyOriginal.direction !== 'inbound') {
 				throw new Error('Replying requires a stored inbound message.')
 			}
@@ -551,11 +581,12 @@ export async function sendOutboundEmail(
 			to = [deriveReplyRecipient(replyOriginal)]
 		} else {
 			if (input.inReplyToHeader) {
-				original = await getEmailMessageByMessageIdHeader({
-					db: input.env.APP_DB,
-					userId: input.userId,
+				const originalRecord = await mailbox.getMessageByMessageIdHeader({
 					messageIdHeader: input.inReplyToHeader,
 				})
+				original = originalRecord
+					? mailboxMessageToEmailMessageRecord(originalRecord, input.userId)
+					: null
 				if (!original) {
 					throw new Error(
 						`Cannot reply because original message ${input.inReplyToHeader} was not found.`,
@@ -630,110 +661,119 @@ export async function sendOutboundEmail(
 			eventType: 'email_send',
 		})
 
+		const now = new Date().toISOString()
+		const inboxId = original?.inboxId ?? input.inboxId ?? null
 		const existingThreadId = original?.threadId ?? input.threadId ?? null
-		const createdThread = existingThreadId
-			? null
-			: await createEmailThread({
-					db: input.env.APP_DB,
-					userId: input.userId,
-					inboxId: original?.inboxId ?? input.inboxId ?? null,
+		const existingThread = existingThreadId
+			? await mailbox.getThread({ threadId: existingThreadId })
+			: null
+		if (existingThreadId && !existingThread) {
+			throw new Error(`Email thread was not found: ${existingThreadId}`)
+		}
+		const thread: MailboxThreadInput = existingThread
+			? {
+					...existingThread,
+					subjectNormalized: existingThread.subjectNormalized ?? '',
+					lastMessageAt:
+						existingThread.lastMessageAt > now
+							? existingThread.lastMessageAt
+							: now,
+					updatedAt: now,
+				}
+			: {
+					id: crypto.randomUUID(),
+					inboxId,
 					subjectNormalized: subject.toLowerCase(),
 					rootMessageIdHeader: input.inReplyToHeader ?? null,
-					lastMessageAt: new Date().toISOString(),
-				})
-		const threadId = existingThreadId ?? createdThread?.id ?? null
+					lastMessageAt: now,
+					createdAt: now,
+					updatedAt: now,
+				}
+		const messageId = crypto.randomUUID()
 		const providerHeaders = buildProviderHeaders(storedHeaders)
-		const message = await insertEmailMessageWithoutRawMime({
-			db: input.env.APP_DB,
-			message: {
-				direction: 'outbound',
-				userId: input.userId,
-				inboxId: original?.inboxId ?? input.inboxId ?? null,
-				threadId,
-				senderIdentityId: senderIdentity.id,
-				fromAddress: from,
-				envelopeFrom: from,
-				toAddresses: to,
-				ccAddresses: [],
-				bccAddresses: [],
-				replyToAddresses: input.replyTo
-					? [normalizeEmailAddress(input.replyTo)].filter(
-							(value): value is string => typeof value === 'string',
-						)
-					: [],
-				subject,
-				messageIdHeader,
-				inReplyToHeader: input.inReplyToHeader ?? null,
-				references: input.references ?? [],
-				headers: storedHeaders,
-				authResults: null,
-				textBody: text,
-				htmlBody: html,
-				rawSize: null,
-				processingStatus: 'stored',
-				providerMessageId: null,
-				error: null,
-				receivedAt: null,
-				sentAt: null,
-			},
+		const message: MailboxMessageInput = {
+			id: messageId,
+			direction: 'outbound',
+			inboxId,
+			threadId: thread.id,
+			senderIdentityId: senderIdentity.id,
+			fromAddress: from,
+			envelopeFrom: from,
+			toAddresses: to,
+			ccAddresses: [],
+			bccAddresses: [],
+			replyToAddresses: input.replyTo
+				? [normalizeEmailAddress(input.replyTo)].filter(
+						(value): value is string => typeof value === 'string',
+					)
+				: [],
+			subject,
+			messageIdHeader,
+			inReplyToHeader: input.inReplyToHeader ?? null,
+			references: input.references ?? [],
+			headers: storedHeaders,
+			authResults: null,
+			textBody: text,
+			htmlBody: html,
+			rawMimeKey: null,
+			rawSize: 0,
+			processingStatus: 'stored',
+			classification: 'accepted',
+			classificationReason: null,
+			providerMessageId: null,
+			deliveryStatus: null,
+			deliveryStatusAt: null,
+			error: null,
+			receivedAt: null,
+			sentAt: null,
+			createdAt: now,
+			updatedAt: now,
+		}
+		const storedAttachments = await storeOutboundAttachments({
+			blobs: input.env.EMAIL_BLOBS,
+			userId: input.userId,
+			messageId: message.id,
+			attachments,
+			now,
 		})
-		const mirrorMailboxGraph = () =>
-			mirrorOutboundMailboxMessageGraph({
-				env: input.env,
-				userId: input.userId,
-				messageId: message.id,
-				createdThread,
-			})
 		try {
-			await storeOutboundAttachments({
-				db: input.env.APP_DB,
-				blobs: input.env.EMAIL_BLOBS,
-				userId: input.userId,
-				messageId: message.id,
-				attachments,
+			const graph = await mailbox.writeMessageGraph({
+				ownerId: input.userId,
+				thread,
+				message,
+				attachments: storedAttachments,
 			})
+			if (!graph.accepted) {
+				throw new Error('Outbound Mailbox graph rejected the message.')
+			}
 		} catch (error) {
-			// The daily send counter deliberately tracks attempts (see the
-			// consumeDailyEntitlement comment), but the message must not stay in
-			// 'stored' limbo with no delivery attempt recorded.
-			const messageText = getErrorMessage(error)
-			await updateEmailMessageDelivery({
-				db: input.env.APP_DB,
-				messageId: message.id,
-				status: 'failed',
-				providerMessageId: null,
-				error: messageText,
-				sentAt: null,
-			}).catch((updateError) => {
-				console.warn(
-					'email-attachment-failure-status-update-failed',
-					updateError,
-				)
-			})
-			await insertEmailDeliveryEvent({
-				db: input.env.APP_DB,
-				messageId: message.id,
-				userId: input.userId,
-				inboxId: null,
-				eventType: 'failed',
-				provider: 'cloudflare-email',
-				providerMessageId: null,
-				detail: { error: messageText },
-			}).catch((eventError) => {
-				console.warn('email-attachment-failure-event-insert-failed', eventError)
-			})
-			await mirrorMailboxGraph()
+			await Promise.all(
+				storedAttachments
+					.filter((attachment) => attachment.storageKey != null)
+					.map((attachment) =>
+						input.env.EMAIL_BLOBS.delete(attachment.storageKey!).catch(
+							(deleteError: unknown) => {
+								console.warn(
+									'email-outbound-attachment-blob-cleanup-failed',
+									attachment.storageKey,
+									deleteError,
+								)
+							},
+						),
+					),
+			)
 			throw error
 		}
-		await insertEmailDeliveryEvent({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			userId: input.userId,
-			inboxId: null,
-			eventType: 'send_requested',
-			provider: 'cloudflare-email',
-			providerMessageId: null,
-			detail: { to, from, subject, attachmentCount: attachments.length },
+		await mailbox.upsertDeliveryEvent({
+			ownerId: input.userId,
+			event: outboundDeliveryEvent({
+				messageId: message.id,
+				inboxId,
+				eventType: 'send_requested',
+				providerMessageId: null,
+				detail: { to, from, subject, attachmentCount: attachments.length },
+				now,
+			}),
 		})
 
 		const messageContentBytes = outboundEmailContentBytes(
@@ -778,70 +818,61 @@ export async function sendOutboundEmail(
 				// Provider did not accept the send. Safe to mark failed / clear id.
 				sendOutcome = 'error'
 				const messageText = getErrorMessage(error)
-				await updateEmailMessageDelivery({
-					db: input.env.APP_DB,
+				const failedAt = new Date().toISOString()
+				const failedEvent = outboundDeliveryEvent({
 					messageId: message.id,
-					status: 'failed',
-					providerMessageId: null,
-					error: messageText,
-					sentAt: null,
-				}).catch((updateError) => {
-					console.warn(
-						'email-delivery-failure-status-update-failed',
-						updateError,
-					)
-				})
-				await insertEmailDeliveryEvent({
-					db: input.env.APP_DB,
-					messageId: message.id,
-					userId: input.userId,
-					inboxId: null,
+					inboxId,
 					eventType: 'failed',
-					provider: 'cloudflare-email',
 					providerMessageId: null,
 					detail: { error: messageText },
-				}).catch((eventError) => {
-					console.warn('email-delivery-failure-event-insert-failed', eventError)
+					now: failedAt,
 				})
-				await mirrorMailboxGraph()
+				await retryMailboxTerminal(() =>
+					mailbox.commitOutboundTerminal({
+						ownerId: input.userId,
+						messageId: message.id,
+						processingStatus: 'failed',
+						providerMessageId: null,
+						error: messageText,
+						sentAt: null,
+						event: failedEvent,
+					}),
+				)
 				return {
-					message:
-						(await getEmailMessageById({
-							db: input.env.APP_DB,
-							userId: input.userId,
-							messageId: message.id,
-						})) ?? message,
+					message: await requireStoredEmailMessage({
+						env: input.env,
+						userId: input.userId,
+						messageId: message.id,
+					}),
 					providerMessageId: null,
 					status: 'failed',
 					error: messageText,
 				}
 			}
 
-			// Provider accepted — never enter the send-failure branch, clear the
-			// provider id, or call the provider again. Persist terminal D1/index
-			// state with bounded D1 retries; exhausted retries are operational.
+			// Provider accepted — never re-enter the provider call. Persist the
+			// owner Mailbox terminal first.
 			const sentAt = new Date().toISOString()
+			const sentEvent = outboundDeliveryEvent({
+				messageId: message.id,
+				inboxId,
+				eventType: 'sent',
+				providerMessageId: acceptedProviderMessageId,
+				detail: {
+					providerMessageId: acceptedProviderMessageId,
+				},
+				now: sentAt,
+			})
 			try {
-				await runD1WithRetry(() =>
-					updateEmailMessageDelivery({
-						db: input.env.APP_DB,
+				await retryMailboxTerminal(() =>
+					mailbox.commitOutboundTerminal({
+						ownerId: input.userId,
 						messageId: message.id,
-						status: 'sent',
+						processingStatus: 'sent',
 						providerMessageId: acceptedProviderMessageId,
 						error: null,
 						sentAt,
-					}),
-				)
-				await runD1WithRetry(() =>
-					insertEmailDeliveryEvent({
-						db: input.env.APP_DB,
-						messageId: message.id,
-						userId: input.userId,
-						inboxId: null,
-						eventType: 'sent',
-						provider: 'cloudflare-email',
-						providerMessageId: acceptedProviderMessageId,
-						detail: { providerMessageId: acceptedProviderMessageId },
+						event: sentEvent,
 					}),
 				)
 			} catch (error) {
@@ -856,8 +887,28 @@ export async function sendOutboundEmail(
 					cause: error,
 				})
 			}
+			// The reverse index is derived and independently idempotent. A failed
+			// index write must not turn provider acceptance into a resend signal;
+			// operators can replay this exact helper from the Mailbox terminal.
+			if (acceptedProviderMessageId) {
+				await runD1WithRetry(() =>
+					upsertOutboundProviderIndexRow({
+						db: input.env.APP_DB,
+						providerMessageId: acceptedProviderMessageId,
+						userId: input.userId,
+						messageId: message.id,
+						inboxId,
+						now: sentAt,
+					}),
+				).catch((error: unknown) => {
+					console.warn('email-outbound-provider-index-persistence-failed', {
+						messageId: message.id,
+						providerMessageId: acceptedProviderMessageId,
+						error,
+					})
+				})
+			}
 
-			await mirrorMailboxGraph()
 			return {
 				message: await requireStoredEmailMessage({
 					env: input.env,

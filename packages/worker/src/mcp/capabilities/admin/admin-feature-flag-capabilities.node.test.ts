@@ -325,16 +325,6 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 				overrides: [],
 				successMetric: null,
 			}),
-			expect.objectContaining({
-				key: 'mailbox-read-cutover',
-				defaultEnabled: false,
-				stale: false,
-				successMetric: expect.objectContaining({
-					eventType: 'email_received',
-					measure: 'error_rate',
-					goal: 'decrease',
-				}),
-			}),
 		]),
 	)
 	const demoFlag = listResult.flags.find(

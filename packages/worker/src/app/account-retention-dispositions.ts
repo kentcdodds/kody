@@ -2,6 +2,7 @@ export type AccountRetentionDisposition =
 	| { table: string; kind: 'scheduled_policy' }
 	| { table: string; kind: 'alternate_cleanup'; reason: string }
 	| { table: string; kind: 'durable_forever'; reason: string }
+	| { table: string; kind: 'pending_drop'; reason: string }
 
 export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposition> =
 	[
@@ -12,10 +13,30 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 		{ table: 'workflow_runs', kind: 'scheduled_policy' },
 		{ table: 'platform_feedback', kind: 'scheduled_policy' },
 		{ table: 'published_bundle_artifacts', kind: 'scheduled_policy' },
-		{ table: 'email_delivery_events', kind: 'scheduled_policy' },
-		{ table: 'email_messages', kind: 'scheduled_policy' },
-		{ table: 'email_attachments', kind: 'scheduled_policy' },
-		{ table: 'email_threads', kind: 'scheduled_policy' },
+		{
+			table: 'email_delivery_events',
+			kind: 'pending_drop',
+			reason:
+				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+		},
+		{
+			table: 'email_messages',
+			kind: 'pending_drop',
+			reason:
+				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+		},
+		{
+			table: 'email_attachments',
+			kind: 'pending_drop',
+			reason:
+				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+		},
+		{
+			table: 'email_threads',
+			kind: 'pending_drop',
+			reason:
+				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+		},
 		{ table: 'usage_rollups', kind: 'scheduled_policy' },
 		{ table: 'feature_flag_exposure_rollups', kind: 'scheduled_policy' },
 		{ table: 'stripe_webhook_events', kind: 'scheduled_policy' },

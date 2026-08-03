@@ -61,6 +61,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 
 	const projection = await getEmailDeliveryEventMirrorProjection({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		eventId: 'evt-1',
 	})
@@ -85,6 +86,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 	expect(
 		await getEmailDeliveryEventMirrorProjection({
 			db,
+			marker: 'frozen-rollback-audit',
 			ownerId: 'other-user',
 			eventId: 'evt-1',
 		}),
@@ -92,6 +94,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 	expect(
 		await getEmailDeliveryEventMirrorProjection({
 			db,
+			marker: 'frozen-rollback-audit',
 			ownerId: 'user-aaa',
 			eventId: 'missing',
 		}),
@@ -99,6 +102,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 
 	const mailboxInput = await getMailboxDeliveryEventMirrorInput({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		eventId: 'evt-1',
 		sourceMutationAt: '2026-07-02T10:00:00.000Z',
@@ -151,6 +155,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 
 	const projections = await listEmailDeliveryEventMirrorProjectionsForMessage({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		messageId: 'msg-1',
 		limit: 10,
@@ -159,6 +164,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 
 	const mailboxInputs = await listMailboxDeliveryEventMirrorInputsForMessage({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		messageId: 'msg-1',
 		limit: 10,
@@ -177,6 +183,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 	// Newest-N selection: limit 1 returns the newest event, chrono-restored.
 	const newestOnly = await listMailboxDeliveryEventMirrorInputsForMessage({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		messageId: 'msg-1',
 		limit: 1,
@@ -185,6 +192,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 
 	const ownerPage = await listMailboxDeliveryEventMirrorInputsForOwnerKeyset({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		cursor: null,
 		limit: 10,
@@ -192,6 +200,7 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 	expect(ownerPage.map((event) => event.id)).toEqual(['evt-1', 'evt-2'])
 	const afterFirst = await listMailboxDeliveryEventMirrorInputsForOwnerKeyset({
 		db,
+		marker: 'frozen-rollback-audit',
 		ownerId: 'user-aaa',
 		cursor: { createdAt: '2026-07-02T10:00:00.000Z', id: 'evt-1' },
 		limit: 10,

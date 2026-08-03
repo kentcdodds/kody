@@ -334,10 +334,26 @@ export type MailboxDeleteMessageWithBlobsResult =
 	| { status: 'missing'; tombstoned: boolean }
 	| {
 			status: 'deleted'
+			providerMessageId: string | null
 			attachmentsSeen: number
 			externalAttachmentsSeen: number
 			blobReferences: Array<MailboxBlobReference>
 	  }
+
+export type MailboxCommitInboundMessageGraphResult =
+	| { status: 'committed'; message: MailboxMessageRecord }
+	| { status: 'already-committed'; message: MailboxMessageRecord }
+	| { status: 'lease-lost' }
+
+export type MailboxCommitOutboundTerminalInput = {
+	ownerId: string
+	messageId: string
+	processingStatus: 'sent' | 'failed'
+	providerMessageId: string | null
+	error: string | null
+	sentAt: string | null
+	event: MailboxDeliveryEventInput
+}
 
 export type MailboxTombstoneMissingMessageResult =
 	| { status: 'message-present' }
@@ -516,6 +532,29 @@ export type MailboxBootstrapDeliveryEventsResult = {
  * CAS RPCs are intersected below; `system:email` remains D1-only.
  */
 type MailboxCoreRpc = {
+	/**
+	 * Authoritative USER graph write. The entire thread/message/attachment
+	 * graph commits in one owner-local SQLite transaction.
+	 */
+	writeMessageGraph: (input: {
+		ownerId: string
+		thread?: MailboxThreadInput | null
+		message: MailboxMessageInput
+		attachments?: Array<MailboxAttachmentInput>
+	}) => Promise<{ ok: true; accepted: boolean }>
+	/**
+	 * Authoritative USER inbound graph commit. The active `storing` lease and
+	 * graph identity are checked in the same SQLite transaction as all graph
+	 * writes, so an expired/replaced lease cannot commit metadata.
+	 */
+	commitInboundMessageGraph: (input: {
+		ownerId: string
+		deliveryId: string
+		storageLease: string
+		thread: MailboxThreadInput
+		message: MailboxMessageInput
+		attachments: Array<MailboxAttachmentInput>
+	}) => Promise<MailboxCommitInboundMessageGraphResult>
 	mirrorMessage: (input: {
 		/**
 		 * Explicit owner binding. DO name is not introspectable at runtime, so
@@ -531,6 +570,20 @@ type MailboxCoreRpc = {
 		 */
 		attachments?: Array<MailboxAttachmentInput>
 	}) => Promise<{ ok: true; accepted: boolean }>
+	commitOutboundTerminal: (
+		input: MailboxCommitOutboundTerminalInput,
+	) => Promise<{ message: MailboxMessageRecord; eventInserted: boolean }>
+	recordBoundedRejection: (input: {
+		ownerId: string
+		inboxId: string
+		recipient: string
+		reason: string
+		phase: string
+		day: string
+		now: string
+		detailLimit: number
+		detailEventId: string
+	}) => Promise<{ count: number; detailed: boolean }>
 	/**
 	 * Complete delivery-event snapshot upsert. Rejects USER inbound
 	 * lifecycle/dedupe authority snapshots; use `bootstrapDeliveryEvents`.
@@ -603,6 +656,11 @@ type MailboxCoreRpc = {
 	getThread: (input: {
 		threadId: string
 	}) => Promise<MailboxThreadRecord | null>
+	findThreadForInboundMessage: (input: {
+		inboxId?: string | null
+		references: Array<string>
+		inReplyToHeader?: string | null
+	}) => Promise<MailboxThreadRecord | null>
 	getMessage: (input: {
 		messageId: string
 	}) => Promise<MailboxMessageRecord | null>
@@ -633,6 +691,15 @@ type MailboxCoreRpc = {
 		eventType?: EmailDeliveryEventType | null
 		limit?: number
 	}) => Promise<Array<MailboxDeliveryEventRecord>>
+	countDeliveryEvents: (input: {
+		ownerId: string
+		eventType: EmailDeliveryEventType
+		provider: string
+		createdAtGte: string
+	}) => Promise<{ count: number }>
+	getDeliveryEventByProviderEventId: (input: {
+		providerEventId: string
+	}) => Promise<MailboxDeliveryEventRecord | null>
 	countMailbox: () => Promise<MailboxCountResult>
 	exportMailbox: (input: {
 		pageSize?: number

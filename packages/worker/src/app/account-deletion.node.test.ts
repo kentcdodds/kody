@@ -9,7 +9,10 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
+import {
+	accountUserDataExcludedOwnerIds,
+	accountUserDataPendingDropTargets,
+} from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import {
 	AccountDeletionInProgressError,
@@ -682,6 +685,9 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 			}
 		}
 	}
+	for (const target of accountUserDataPendingDropTargets) {
+		liveUserColumns.add(`${target.table}.${target.column}`)
+	}
 	const coveredColumns = getAccountDeletionD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -696,7 +702,7 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 	expect(stale, 'account deletion references stale D1 columns').toEqual([])
 })
 
-test('account deletion documents and preserves operator-owned system email rows', async () => {
+test('account deletion preserves frozen shared graph rows and operator-owned system email rows', async () => {
 	const systemEmailExclusion = accountUserDataExcludedOwnerIds.find(
 		(exclusion) => exclusion.ownerId === 'system:email',
 	)
@@ -732,9 +738,11 @@ test('account deletion documents and preserves operator-owned system email rows'
 	})
 
 	expect(rows.email_messages).toEqual([
+		{ id: 'user-message', user_id: 'user-aaa' },
 		{ id: 'system-message', user_id: 'system:email' },
 	])
 	expect(rows.email_delivery_events).toEqual([
+		{ id: 'user-event', user_id: 'user-aaa' },
 		{ id: 'system-event', user_id: 'system:email' },
 	])
 	expect(rows.email_inboxes).toEqual([
@@ -1334,9 +1342,16 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{ id: 'src-2', user_id: userBbb, published_commit: 'def456' },
 	])
 	expect(rows.repo_sessions).toEqual([])
-	expect(rows.email_attachments).toEqual([])
-	// The other user's message and its R2 raw-MIME blob are untouched.
+	expect(rows.email_attachments).toEqual([{ id: 'ea-1', message_id: 'em-1' }])
+	// Frozen shared graph rows remain for rollback. Mailbox still supplies the
+	// deleted owner's R2 references; the other owner's blob is untouched.
 	expect(rows.email_messages).toEqual([
+		{
+			id: 'em-1',
+			user_id: userAaa,
+			raw_mime_key: 'email-raw:v1:user-aaa/em-1',
+		},
+		{ id: 'em-2', user_id: userAaa, raw_mime_key: null },
 		{
 			id: 'em-3',
 			user_id: userBbb,
@@ -1518,7 +1533,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	// Result accounting captures the per-table counts.
 	expect(result.deletedRowCounts.jobs).toBe(3)
 	expect(result.deletedRowCounts.users).toBe(1)
-	expect(result.deletedRowCounts.email_attachments).toBe(1)
+	expect(result.deletedRowCounts.email_attachments).toBeUndefined()
 	expect(result.deletedRowCounts.package_service_states).toBe(3)
 	expect(result.deletedRowCounts.user_storage_buckets).toBe(1)
 	expect(result.deletedRowCounts.community_listings).toBe(1)

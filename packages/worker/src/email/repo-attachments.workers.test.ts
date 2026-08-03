@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { systemEmailOwnerId } from './email-owner.ts'
 import { listEmailAttachmentsForUserMessage } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -28,7 +29,7 @@ async function insertMessageWithAttachment(input: {
 
 test('listEmailAttachmentsForUserMessage scopes attachments to message owner', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const ownerId = `owner-${crypto.randomUUID()}`
+	const ownerId = systemEmailOwnerId
 	const otherId = `other-${crypto.randomUUID()}`
 	const messageId = `msg-${crypto.randomUUID()}`
 	const attachmentId = `att-${crypto.randomUUID()}`
@@ -51,10 +52,11 @@ test('listEmailAttachmentsForUserMessage scopes attachments to message owner', a
 		}),
 	])
 
-	const crossOwnerAttachments = await listEmailAttachmentsForUserMessage({
-		db: env.APP_DB,
-		userId: otherId,
-		messageId,
-	})
-	expect(crossOwnerAttachments).toEqual([])
+	await expect(
+		listEmailAttachmentsForUserMessage({
+			db: env.APP_DB,
+			userId: otherId,
+			messageId,
+		}),
+	).rejects.toThrow(/Legacy USER D1 email graph operation is disabled/)
 })

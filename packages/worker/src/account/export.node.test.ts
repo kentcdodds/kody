@@ -8,6 +8,7 @@ import {
 	parseMailboxBlobRefCursor,
 } from '#worker/email/mailbox-types.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { accountUserDataPendingDropTargets } from './data-targets.ts'
 import {
 	createAccountExport,
 	createAccountExportManifest,
@@ -212,6 +213,9 @@ test('account export D1 coverage includes every live user-owned schema column', 
 			}
 		}
 	}
+	for (const target of accountUserDataPendingDropTargets) {
+		liveUserColumns.add(`${target.table}.${target.column}`)
+	}
 	const coveredColumns = getAccountExportD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -275,8 +279,8 @@ test('account export documents and excludes operator-owned system email rows', a
 				reason: expect.stringContaining('Operator-owned inbound mail'),
 			}),
 			expect.objectContaining({
-				name: 'user_email_messages_projection',
-				reason: expect.stringContaining('authoritative Mailbox section'),
+				name: 'frozen_user_email_messages',
+				reason: expect.stringContaining('Frozen rollback snapshot'),
 			}),
 		]),
 	)

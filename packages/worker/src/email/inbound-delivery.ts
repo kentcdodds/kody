@@ -1,11 +1,6 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import {
-	buildEntitlementUpgradeHint,
-	EntitlementLimitError,
-} from '#worker/entitlements/errors.ts'
-import { type PlanName } from '#worker/entitlements/plans.ts'
-import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
@@ -336,7 +331,11 @@ async function assertLegacySystemDeliveryEngineAllowed(
 	db: D1Database,
 	userId: string,
 ) {
-	if (userId !== systemEmailOwnerId) return
+	if (userId !== systemEmailOwnerId) {
+		throw new Error(
+			'Legacy USER D1 inbound delivery access is disabled after Mailbox cutover.',
+		)
+	}
 	try {
 		const marker = await db
 			.prepare(
@@ -583,103 +582,6 @@ async function resolveConcurrentDelivery(input: {
 		userId: input.delivery.userId,
 		deliveryId: input.delivery.deliveryId,
 	})
-}
-
-/**
- * Charge one inbound receive via UserMeter, then persist the D1 delivery
- * event. Delivery-id idempotency lives in the DO. Never touches the retired
- * D1 daily counter table.
- */
-export async function chargeUserInboundDeliveryOnce(input: {
-	db: D1Database
-	env: UserMeterEnv
-	delivery: InboundDelivery
-	plan: PlanName
-	limit: number
-	now: Date
-	/**
-	 * Retained for call-site stability. Daily counters no longer schedule D1
-	 * mirror work after mirror retirement.
-	 */
-	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<InboundDelivery> {
-	void input.waitUntil
-	const existing = await resolveConcurrentDelivery(input)
-	if (existing) return existing
-
-	const updatedAt = input.now.toISOString()
-	const meter = userMeterRpc({
-		env: input.env,
-		userId: input.delivery.userId,
-	})
-	let meterResult = await meter.consumeInboundDelivery({
-		deliveryId: input.delivery.deliveryId,
-		resource: 'email_receives_per_day',
-		day: input.delivery.quotaDay,
-		limit: input.limit,
-		updatedAt,
-	})
-	if (meterResult.outcome === 'needs_bootstrap') {
-		await meter.initialize({
-			resource: 'email_receives_per_day',
-			day: input.delivery.quotaDay,
-			count: 0,
-			updatedAt,
-		})
-		meterResult = await meter.consumeInboundDelivery({
-			deliveryId: input.delivery.deliveryId,
-			resource: 'email_receives_per_day',
-			day: input.delivery.quotaDay,
-			limit: input.limit,
-			updatedAt,
-		})
-		if (meterResult.outcome === 'needs_bootstrap') {
-			throw new Error(
-				'UserMeter inbound delivery consume still needs bootstrap after initialize.',
-			)
-		}
-	}
-
-	const accepted = meterResult.consumed || meterResult.replayed
-	if (!accepted) {
-		throw new EntitlementLimitError({
-			resource: 'email_receives_per_day',
-			plan: input.plan,
-			limit: input.limit,
-			current: meterResult.count,
-			upgradeHint: buildEntitlementUpgradeHint('email_receives_per_day'),
-		})
-	}
-
-	try {
-		const insert = await input.db
-			.prepare(
-				`INSERT OR IGNORE INTO email_delivery_events (
-					id, message_id, user_id, inbox_id, event_type, provider,
-					provider_event_id, detail_json, created_at
-				) VALUES (?, NULL, ?, ?, 'receive_started', ?, ?, ?, ?)`,
-			)
-			.bind(
-				input.delivery.deliveryId,
-				input.delivery.userId,
-				input.delivery.inboxId,
-				inboundProvider,
-				input.delivery.deliveryId,
-				JSON.stringify(input.delivery),
-				input.now.toISOString(),
-			)
-			.run()
-		if (Number(insert.meta.changes ?? 0) > 0) return input.delivery
-	} catch (error) {
-		const committed = await resolveConcurrentDelivery(input).catch(() => null)
-		if (committed) return committed
-		throw error
-	}
-	const raced = await resolveConcurrentDelivery(input)
-	if (raced) return raced
-	throw new Error(
-		'Inbound delivery charge was accepted but the delivery event was not persisted.',
-	)
 }
 
 export async function chargeSystemInboundDeliveryOnce(input: {

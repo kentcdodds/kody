@@ -45,98 +45,36 @@ export async function sweepStaleInboundDeliveries(input: {
 	let effectsProcessed = 0
 	let errors = 0
 
-	// Discover owner ids by oldest due work. All message/blob access below is
-	// still performed under one explicit userId. Deferring failed attempts and
-	// verification tombstones moves them behind older untouched users.
-	const userRows = await input.env.APP_DB.prepare(
-		`WITH due_users AS (
-				SELECT user_id, created_at AS due_at
-				FROM email_delivery_events
-				WHERE provider = 'cloudflare-email-routing'
-					AND event_type = 'receive_started'
-					AND user_id != ?
-					AND created_at < ?
-					AND (
-						reconcile_after IS NULL
-						OR reconcile_after <= ?
-					)
-					AND (
-						state != 'orphan-cleaned'
-						OR cleanup_retry_at <= ?
-					)
-				UNION ALL
-				SELECT user_id, dedupe_expires_at
-				FROM email_delivery_events
-				WHERE provider = 'cloudflare-email-routing-dedupe'
-					AND user_id != ?
-					AND dedupe_expires_at <= ?
-				UNION ALL
-				SELECT user_id, COALESCE(
-					usage_effect_retry_at,
-					subscription_effect_retry_at,
-					created_at
-				)
-				FROM email_delivery_events
-				WHERE provider = 'cloudflare-email-routing'
-					AND event_type = 'received'
-					AND user_id != ?
-					AND needs_effect_reconcile = 1
-					AND fingerprint IS NOT NULL
-					AND (
-						(
-							usage_effect_recorded_at IS NULL
-							AND usage_effect_suppressed_at IS NULL
-							AND (
-								usage_effect_retry_at IS NULL
-								OR usage_effect_retry_at <= ?
-							)
-							AND (
-								usage_effect_lease IS NULL
-								OR usage_effect_lease_at IS NULL
-								OR usage_effect_lease_at < ?
-							)
-						)
-						OR (
-							(
-								subscription_effect_state IS NULL
-								OR subscription_effect_state NOT IN (
-									'complete',
-									'dead-letter'
-								)
-							)
-							AND (
-								subscription_effect_retry_at IS NULL
-								OR subscription_effect_retry_at <= ?
-							)
-							AND (
-								subscription_effect_state != 'processing'
-								OR subscription_effect_lease_at IS NULL
-								OR subscription_effect_lease_at < ?
-							)
-						)
-					)
-			)
-			SELECT user_id, MIN(due_at) AS due_at
-			FROM due_users
-			GROUP BY user_id
-			ORDER BY MIN(due_at) ASC, user_id ASC
-			LIMIT ?`,
+	// Shared USER graph tables are frozen. Rotate a bounded window over the
+	// active-user index and ask each owner Mailbox for due work. The offset is
+	// time-derived so every active owner is eventually visited without keeping
+	// a global graph projection or scanning delivery events.
+	const activeUserCountRow = await input.env.APP_DB.prepare(
+		`SELECT COUNT(*) AS count
+		FROM users
+		WHERE deleting_at IS NULL
+			AND stable_user_id IS NOT NULL
+			AND stable_user_id != ?`,
 	)
-		.bind(
-			systemEmailOwnerId,
-			cutoff,
-			now.toISOString(),
-			now.toISOString(),
-			systemEmailOwnerId,
-			now.toISOString(),
-			systemEmailOwnerId,
-			now.toISOString(),
-			effectLeaseExpiredBefore,
-			now.toISOString(),
-			effectLeaseExpiredBefore,
-			reconciliationUserBatchSize,
-		)
-		.all<{ user_id: string; due_at: string }>()
+		.bind(systemEmailOwnerId)
+		.first<{ count: number }>()
+	const activeUserCount = Number(activeUserCountRow?.count ?? 0)
+	const rotation = Math.floor(now.getTime() / (5 * 60 * 1000))
+	const offset =
+		activeUserCount === 0
+			? 0
+			: (rotation * reconciliationUserBatchSize) % activeUserCount
+	const userRows = await input.env.APP_DB.prepare(
+		`SELECT stable_user_id AS user_id
+		FROM users
+		WHERE deleting_at IS NULL
+			AND stable_user_id IS NOT NULL
+			AND stable_user_id != ?
+		ORDER BY stable_user_id ASC
+		LIMIT ? OFFSET ?`,
+	)
+		.bind(systemEmailOwnerId, reconciliationUserBatchSize, offset)
+		.all<{ user_id: string }>()
 	const systemDue = await input.env.APP_DB.prepare(
 		`WITH due_work(due_at) AS (
 			SELECT created_at
@@ -222,7 +160,10 @@ export async function sweepStaleInboundDeliveries(input: {
 		)
 		.first<{ user_id: string; due_at: string }>()
 	const dueOwners = [
-		...(userRows.results ?? []),
+		...(userRows.results ?? []).map((row) => ({
+			...row,
+			due_at: now.toISOString(),
+		})),
 		...(systemDue ? [systemDue] : []),
 	].sort(
 		(left, right) =>

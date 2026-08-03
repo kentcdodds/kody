@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
-import { listEmailInboxesForUser, listEmailMessages } from './repo.ts'
+import { mailboxRpc } from './mailbox-client.ts'
+import { listEmailInboxesForUser } from './repo.ts'
 import { listSystemEmailMessages } from './system-email-graph-store.ts'
 import { loadSystemEmailGraphParityReport } from './system-email-graph-repo.ts'
 import {
@@ -104,12 +105,10 @@ test('reserved system locals store under the operator-owned system inbox', async
 
 	expect(message.rejectedReason).toBeNull()
 	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId: legacyUserId,
+		await mailboxRpc({ env, userId: legacyUserId }).listMessages({
 			limit: 10,
 		}),
-	).toEqual([])
+	).toMatchObject({ messages: [] })
 	const messages = await listSystemEmailMessages({
 		db: env.APP_DB,
 		limit: 10,
@@ -191,7 +190,7 @@ test('reserved system locals store under the operator-owned system inbox', async
 			.map((inbox) => inbox.name)
 			.sort(),
 	).toEqual(['kody', 'support'])
-})
+}, 30_000)
 
 test('non-system reserved locals still reject while username addresses are unaffected', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -230,8 +229,10 @@ test('non-system reserved locals still reject while username addresses are unaff
 	await handleInboundEmail(userMessage, createInboundEnv())
 	expect(userMessage.rejectedReason).toBeNull()
 	expect(
-		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
-	).toHaveLength(1)
+		await mailboxRpc({ env, userId }).listMessages({ limit: 10 }),
+	).toMatchObject({
+		messages: [expect.objectContaining({ direction: 'inbound' })],
+	})
 })
 
 async function readSystemDailyReceiveCount(localPart: string) {

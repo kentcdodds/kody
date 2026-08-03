@@ -8,10 +8,7 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import {
-	readCurrentEntitlementResourceUsage,
-	readEntitlementResourceUsage,
-} from '#worker/entitlements/service.ts'
+import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
@@ -150,24 +147,13 @@ async function readEntitlementConsumption(input: {
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
 		adminUserUsageEntitlementResources.map(async (resource) => {
-			// Admin cross-account usage is a compatibility aggregate until the
-			// fleet-wide Mailbox fan-out work in step 4/5. Signed-in owner paths
-			// use Mailbox through readCurrentEntitlementResourceUsage.
-			const current =
-				resource === 'stored_email_messages'
-					? await readEntitlementResourceUsage({
-							db: input.env.APP_DB,
-							userId: input.usageUserId,
-							resource,
-							now: input.now,
-						})
-					: await readCurrentEntitlementResourceUsage({
-							db: input.env.APP_DB,
-							env: input.env,
-							userId: input.usageUserId,
-							resource,
-							now: input.now,
-						})
+			const current = await readCurrentEntitlementResourceUsage({
+				db: input.env.APP_DB,
+				env: input.env,
+				userId: input.usageUserId,
+				resource,
+				now: input.now,
+			})
 			const limit = resolvePlanLimit(input.plan, resource)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {

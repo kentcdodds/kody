@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import type {
-	WorkflowProjectionRecord,
-	WorkflowProjectionUpsertInput,
+import {
+	type WorkflowProjectionRecord,
+	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'

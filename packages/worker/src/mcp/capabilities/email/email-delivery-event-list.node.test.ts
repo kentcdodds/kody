@@ -3,12 +3,10 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mocks = vi.hoisted(() => ({
 	listOwnerEmailDeliveryEvents: vi.fn(),
-	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	listOwnerEmailDeliveryEvents: mocks.listOwnerEmailDeliveryEvents,
-	resolveMailboxReadCutoverDbUserId: mocks.resolveMailboxReadCutoverDbUserId,
 }))
 
 const { emailDeliveryEventListCapability } =
@@ -39,7 +37,6 @@ function createContext() {
 }
 
 test('email_delivery_event_list returns parsed events scoped to the signed-in user', async () => {
-	mocks.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
 	mocks.listOwnerEmailDeliveryEvents.mockResolvedValueOnce([
 		{
 			id: 'event-1',
@@ -65,8 +62,7 @@ test('email_delivery_event_list returns parsed events scoped to the signed-in us
 
 	expect(mocks.listOwnerEmailDeliveryEvents).toHaveBeenCalledWith({
 		env: context.env,
-		dbUserId: 7,
-		stableUserId: 'user-1',
+		ownerId: 'user-1',
 		messageId: 'message-1',
 		eventType: 'bounced',
 		limit: 10,

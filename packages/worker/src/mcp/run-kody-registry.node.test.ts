@@ -11,9 +11,9 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import type * as ModuleGraph from '#worker/package-runtime/module-graph.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
-import type {
-	WorkflowProjectionRecord,
-	WorkflowProjectionUpsertInput,
+import {
+	type WorkflowProjectionRecord,
+	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
 import {
 	buildKodyFns,

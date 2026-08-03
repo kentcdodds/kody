@@ -10,9 +10,9 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	getEmailAttachmentById,
-	getEmailMessageById,
 	getEmailMessageWithAttachmentsById,
 } from '#worker/email/service.ts'
+import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
@@ -212,6 +212,7 @@ export async function runSavedPackageModuleOnce(
 				emailTools: {
 					getMessage: async (messageId) => {
 						const loaded = await getEmailMessageWithAttachmentsById({
+							env: input.env,
 							db: input.env.APP_DB,
 							userId: input.actor.userId,
 							messageId,
@@ -263,6 +264,7 @@ export async function runSavedPackageModuleOnce(
 					},
 					getAttachment: async (attachmentId) => {
 						const attachment = await getEmailAttachmentById({
+							env: input.env,
 							db: input.env.APP_DB,
 							blobs: input.env.EMAIL_BLOBS,
 							userId: input.actor.userId,
@@ -271,9 +273,9 @@ export async function runSavedPackageModuleOnce(
 						if (!attachment) {
 							throw new Error(`Email attachment not found: ${attachmentId}`)
 						}
-						const message = await getEmailMessageById({
-							db: input.env.APP_DB,
-							userId: input.actor.userId,
+						const message = await getInternalEmailMessageById({
+							env: input.env,
+							ownerId: input.actor.userId,
 							messageId: attachment.messageId,
 						})
 						if (!message) {

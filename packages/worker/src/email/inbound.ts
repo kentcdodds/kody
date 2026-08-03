@@ -34,6 +34,7 @@ import {
 	type UserInboundDeliveryAuthority,
 	type UserInboundDeliveryAuthorityEnv,
 } from './inbound-delivery-authority.ts'
+import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
 import {
 	pruneUserExpiredInboundDedupePointers,
 	reconcileUserStaleInboundDeliveries,
@@ -47,12 +48,14 @@ import {
 	scheduleInboundRejectedTerminalWork,
 	type InboundMailboxEnv,
 } from './inbound-mailbox.ts'
-import { countInternalUserEmailMessages } from './mailbox-internal-read.ts'
+import {
+	countInternalUserEmailMessages,
+	getInternalEmailMessageById,
+} from './mailbox-internal-read.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
-import { deleteEmptyEmailThreads, getEmailMessageById } from './repo.ts'
 import {
 	recordBoundedEmailRejectionEvent,
 	RetryableInboundStorageError,
@@ -72,7 +75,6 @@ function warnRejectionAuditWriteFailed(error: unknown) {
 }
 
 async function rejectClaimedInboundDelivery(input: {
-	db: D1Database
 	message: ForwardableEmailMessage
 	delivery: InboundDelivery
 	reason: string
@@ -142,15 +144,6 @@ async function cleanupInboundDurability(input: {
 	try {
 		await reconcileUserStaleInboundDeliveries(input)
 		await pruneUserExpiredInboundDedupePointers(input)
-		const emptyThreadInput = {
-			db: input.env.APP_DB,
-			before: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-			limit: 20,
-		}
-		await deleteEmptyEmailThreads({
-			...emptyThreadInput,
-			userId: input.userId,
-		})
 	} catch (error) {
 		console.warn('inbound-email-durability-cleanup-failed', input.userId, error)
 	}
@@ -158,7 +151,7 @@ async function cleanupInboundDurability(input: {
 
 export async function handleInboundEmail(
 	message: ForwardableEmailMessage,
-	env: Pick<
+	inputEnv: Pick<
 		Env,
 		| 'APP_DB'
 		| 'EMAIL_BLOBS'
@@ -180,8 +173,8 @@ export async function handleInboundEmail(
 		return
 	}
 
-	const platformDomain = getPlatformEmailDomain(env)
-	const systemDomain = getSystemEmailDomain(env)
+	const platformDomain = getPlatformEmailDomain(inputEnv)
+	const systemDomain = getSystemEmailDomain(inputEnv)
 	if (!platformDomain && !systemDomain) {
 		message.setReject('Email routing is not configured.')
 		return
@@ -205,7 +198,7 @@ export async function handleInboundEmail(
 	) {
 		await handleSystemInboundEmail({
 			message,
-			env,
+			env: inputEnv,
 			recipient,
 			localPart: localBase,
 			systemDomain,
@@ -220,6 +213,10 @@ export async function handleInboundEmail(
 	if (isReservedUsername(localBase)) {
 		message.setReject('This address is reserved for system mail.')
 		return
+	}
+	const env = {
+		...inputEnv,
+		APP_DB: liveUserEmailD1Database(inputEnv.APP_DB),
 	}
 
 	const identity = await findPublicUserIdentityByUsername({
@@ -309,6 +306,7 @@ export async function handleInboundEmail(
 				const reason = 'Account email is not verified.'
 				message.setReject(reason)
 				await recordBoundedEmailRejectionEvent({
+					env,
 					db: env.APP_DB,
 					userId,
 					inboxId: inbox.id,
@@ -327,6 +325,7 @@ export async function handleInboundEmail(
 				const reason = 'Account is suspended.'
 				message.setReject(reason)
 				await recordBoundedEmailRejectionEvent({
+					env,
 					db: env.APP_DB,
 					userId,
 					inboxId: inbox.id,
@@ -349,6 +348,7 @@ export async function handleInboundEmail(
 					const reason = 'Message rejected by recipient policy.'
 					message.setReject(reason)
 					await recordBoundedEmailRejectionEvent({
+						env,
 						db: env.APP_DB,
 						userId,
 						inboxId: inbox.id,
@@ -381,6 +381,7 @@ export async function handleInboundEmail(
 				// traffic is exactly the flood these limits exist to absorb.
 				message.setReject('Recipient mailbox is over quota.')
 				await recordBoundedEmailRejectionEvent({
+					env,
 					db: env.APP_DB,
 					userId,
 					inboxId: inbox.id,
@@ -468,6 +469,7 @@ export async function handleInboundEmail(
 					if (receivesToday >= receiveLimit) {
 						message.setReject('Recipient mailbox is over quota.')
 						await recordBoundedEmailRejectionEvent({
+							env,
 							db: env.APP_DB,
 							userId,
 							inboxId: inbox.id,
@@ -482,6 +484,7 @@ export async function handleInboundEmail(
 					if (!isEntitlementLimitError(error)) throw error
 					message.setReject('Recipient mailbox is over quota.')
 					await recordBoundedEmailRejectionEvent({
+						env,
 						db: env.APP_DB,
 						userId,
 						inboxId: inbox.id,
@@ -519,6 +522,7 @@ export async function handleInboundEmail(
 				if (!isEntitlementLimitError(error)) throw error
 				message.setReject('Recipient mailbox is over quota.')
 				await recordBoundedEmailRejectionEvent({
+					env,
 					db: env.APP_DB,
 					userId,
 					inboxId: inbox.id,
@@ -549,9 +553,9 @@ export async function handleInboundEmail(
 				return
 			}
 			if (claimedDelivery.state === 'received') {
-				const existing = await getEmailMessageById({
-					db: env.APP_DB,
-					userId,
+				const existing = await getInternalEmailMessageById({
+					env,
+					ownerId: userId,
 					messageId: claimedDelivery.messageId,
 				})
 				if (existing) {
@@ -577,7 +581,6 @@ export async function handleInboundEmail(
 						? error.message
 						: 'Failed to parse inbound email.'
 				const rejected = await rejectClaimedInboundDelivery({
-					db: env.APP_DB,
 					message,
 					delivery: claimedDelivery,
 					reason,
@@ -637,7 +640,6 @@ export async function handleInboundEmail(
 					})
 				throw error
 			}
-			// Mailbox dual-write only after durable D1/R2 commit + finalization win.
 			if (!storedResult.wonFinalization) return
 			await scheduleInboundReceivedTerminalWork({
 				env,

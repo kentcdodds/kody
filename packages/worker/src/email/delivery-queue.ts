@@ -1,27 +1,10 @@
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
-import { mirrorMailboxMessageGraphFromD1 } from './mailbox-live-mirror.ts'
 import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
 
 const unmatchedRetryDelaySeconds = 30
 export const emailDeliveryQueueName = 'kody-email-delivery'
-
-function scheduleMailboxGraphMirror(
-	waitUntil: (promise: Promise<unknown>) => void,
-	env: Env,
-	message: { userId: string; id: string } | null,
-) {
-	if (message == null) return
-	waitUntil(
-		mirrorMailboxMessageGraphFromD1({
-			env,
-			db: env.APP_DB,
-			userId: message.userId,
-			messageId: message.id,
-		}),
-	)
-}
 
 export async function handleEmailDeliveryQueue(
 	batch: MessageBatch<unknown>,
@@ -32,7 +15,7 @@ export async function handleEmailDeliveryQueue(
 	for (const queueMessage of batch.messages) {
 		try {
 			const result = await processCloudflareEmailDeliveryEvent({
-				db: env.APP_DB,
+				env,
 				reportingEnv: env as Env & EmailReportingEnv,
 				body: queueMessage.body,
 			})
@@ -59,7 +42,6 @@ export async function handleEmailDeliveryQueue(
 						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: false,
 					})
-					scheduleMailboxGraphMirror(waitUntil, env, result.message)
 					queueMessage.ack()
 					break
 				case 'duplicate':
@@ -80,7 +62,6 @@ export async function handleEmailDeliveryQueue(
 						providerEvent: result.providerEvent,
 						waitUntil,
 					})
-					scheduleMailboxGraphMirror(waitUntil, env, result.message)
 					queueMessage.ack()
 					break
 				}

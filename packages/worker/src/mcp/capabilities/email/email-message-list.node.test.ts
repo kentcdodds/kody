@@ -3,12 +3,10 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mocks = vi.hoisted(() => ({
 	listOwnerEmailMessages: vi.fn(),
-	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	listOwnerEmailMessages: mocks.listOwnerEmailMessages,
-	resolveMailboxReadCutoverDbUserId: mocks.resolveMailboxReadCutoverDbUserId,
 }))
 
 const { emailMessageListCapability } = await import('./email-message-list.ts')
@@ -39,7 +37,6 @@ function createContext() {
 
 test('email_message_list forwards classification filter and returns classification fields', async () => {
 	const context = createContext()
-	mocks.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
 	mocks.listOwnerEmailMessages.mockResolvedValueOnce([
 		{
 			id: 'message-1',
@@ -72,8 +69,7 @@ test('email_message_list forwards classification filter and returns classificati
 
 	expect(mocks.listOwnerEmailMessages).toHaveBeenCalledWith({
 		env: context.env,
-		dbUserId: 7,
-		stableUserId: 'user-1',
+		ownerId: 'user-1',
 		inboxId: null,
 		direction: null,
 		processingStatus: null,

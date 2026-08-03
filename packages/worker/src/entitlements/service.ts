@@ -396,41 +396,6 @@ export async function calculateUserD1StorageBytes(input: {
 		sumStorageBytes(
 			db,
 			`SELECT COALESCE(SUM(
-				COALESCE(raw_size, 0)
-				+ ${textBytesExpression([
-					'from_address',
-					'envelope_from',
-					'to_addresses_json',
-					'cc_addresses_json',
-					'bcc_addresses_json',
-					'reply_to_addresses_json',
-					'subject',
-					'message_id_header',
-					'in_reply_to_header',
-					'references_json',
-					'headers_json',
-					'auth_results',
-					'text_body',
-					'html_body',
-					'provider_message_id',
-					'error',
-				])}
-			), 0) AS count
-			FROM email_messages
-			WHERE user_id = ?`,
-			[userId],
-		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(size), 0) AS count
-			FROM email_attachments ea
-			JOIN email_messages em ON em.id = ea.message_id
-			WHERE em.user_id = ? AND ea.storage_kind = 'external'`,
-			[userId],
-		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
 				${textBytesExpression(['ve.name', 've.description', 've.value'])}
 			), 0) AS count
 			FROM value_entries ve
@@ -907,13 +872,8 @@ export async function readEntitlementResourceUsage(input: {
 				`${resource} usage must be read from UserMeter (use readDailyEntitlementResourceUsage or readCurrentEntitlementResourceUsage).`,
 			)
 		case 'stored_email_messages':
-			// Compatibility-only D1 reader for system/admin fleet aggregates.
-			// Signed-in/user-owner paths use readCurrentEntitlementResourceUsage,
-			// which reads authoritative Mailbox state below.
-			return await countRows(
-				db,
-				`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`,
-				[userId],
+			throw new Error(
+				'stored_email_messages usage must be read from Mailbox (use readCurrentEntitlementResourceUsage).',
 			)
 		case 'secrets':
 			return await countRows(

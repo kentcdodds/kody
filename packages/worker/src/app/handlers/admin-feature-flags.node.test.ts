@@ -375,14 +375,6 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 				global: null,
 				overrides: [],
 			}),
-			expect.objectContaining({
-				key: 'mailbox-read-cutover',
-				stale: false,
-				defaultEnabled: false,
-				successMetric: expect.objectContaining({
-					eventType: 'email_received',
-				}),
-			}),
 		]),
 	)
 

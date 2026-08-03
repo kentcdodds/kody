@@ -3,9 +3,7 @@ import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import { mailboxMirrorRpcTimeoutMs } from './mailbox-mirror.ts'
 import { rpcFor } from './mailbox-test-helpers.ts'
-import { getEmailMessageById } from './repo.ts'
 import { sendOutboundEmail } from './outbound.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
@@ -17,38 +15,6 @@ const cloudflareEmailApi =
 const platformBaseUrl = 'https://kody.example.com'
 // User mail lives on the inbox. subdomain derived from APP_BASE_URL.
 const platformDomain = 'inbox.kody.example.com'
-
-/** MAILBOX stub that fails or hangs every mirror RPC without touching the real DO. */
-function createMailboxStubEnv(input: {
-	mode: 'throw' | 'hang'
-	base?: typeof env
-}) {
-	const base = input.base ?? env
-	const hang = () => new Promise<never>(() => {})
-	const fail = async () => {
-		throw new Error('simulated mailbox failure')
-	}
-	const method = input.mode === 'hang' ? hang : fail
-	const stub = {
-		mirrorMessage: method,
-		upsertDeliveryEvent: method,
-		upsertDeliveryEvents: method,
-		touchThread: method,
-		updateMessageDelivery: method,
-		setMessageClassification: method,
-		deleteMessageMetadata: method,
-		deleteDeliveryEvent: method,
-		deleteThreadIfEmpty: method,
-	}
-	return {
-		...base,
-		APP_BASE_URL: platformBaseUrl,
-		MAILBOX: {
-			idFromName: (name: string) => base.MAILBOX.idFromName(name),
-			get: () => stub,
-		} as unknown as DurableObjectNamespace,
-	}
-}
 
 async function seedVerifiedAccount(input: { email: string }) {
 	const username = `sender-${crypto.randomUUID().slice(0, 8)}`
@@ -202,78 +168,4 @@ test('sendOutboundEmail mirrors failed outbound graph into Mailbox', async () =>
 		'failed',
 		'send_requested',
 	])
-}, 30_000)
-
-test('sendOutboundEmail ignores Mailbox RPC failure and timeout', async () => {
-	silenceIncidentalRuntimeWarnings([
-		'mailbox-mirror-message-failed',
-		'mailbox-mirror-delivery-event-failed',
-		'mailbox-mirror-delivery-event-batch-failed',
-		'mailbox-live-mirror-message-graph-failed',
-	])
-	await ensureEmailTestSchema(env.APP_DB)
-
-	{
-		const accountEmail = `mailbox-err-${crypto.randomUUID()}@example.com`
-		const userId = await createStableUserIdFromEmail(accountEmail)
-		await seedVerifiedAccount({ email: accountEmail })
-		const sendEnv = {
-			...createMailboxStubEnv({ mode: 'throw' }),
-			EMAIL: {
-				async send() {
-					return { messageId: 'provider-mailbox-err' }
-				},
-			},
-		}
-		const result = await sendOutboundEmail({
-			env: sendEnv,
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Mailbox throw ignored',
-			text: 'Body',
-		})
-		expect(result).toMatchObject({
-			status: 'sent',
-			providerMessageId: 'provider-mailbox-err',
-			error: null,
-		})
-		const stored = await getEmailMessageById({
-			db: env.APP_DB,
-			userId,
-			messageId: result.message.id,
-		})
-		expect(stored?.processingStatus).toBe('sent')
-	}
-
-	{
-		const accountEmail = `mailbox-hang-${crypto.randomUUID()}@example.com`
-		const userId = await createStableUserIdFromEmail(accountEmail)
-		await seedVerifiedAccount({ email: accountEmail })
-		const sendEnv = {
-			...createMailboxStubEnv({ mode: 'hang' }),
-			EMAIL: {
-				async send() {
-					return { messageId: 'provider-mailbox-hang' }
-				},
-			},
-		}
-		const startedAt = Date.now()
-		const result = await sendOutboundEmail({
-			env: sendEnv,
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			subject: 'Mailbox hang ignored',
-			text: 'Body',
-		})
-		const elapsedMs = Date.now() - startedAt
-		expect(result).toMatchObject({
-			status: 'sent',
-			providerMessageId: 'provider-mailbox-hang',
-			error: null,
-		})
-		// Message + send_requested + sent each race the mirror RPC bound.
-		expect(elapsedMs).toBeLessThan(mailboxMirrorRpcTimeoutMs * 6)
-	}
 }, 30_000)

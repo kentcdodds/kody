@@ -2,14 +2,11 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	searchOwnerEmailMessages: vi.fn(),
-	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	searchOwnerEmailMessages: (...args: Array<unknown>) =>
 		mockModule.searchOwnerEmailMessages(...args),
-	resolveMailboxReadCutoverDbUserId: (...args: Array<unknown>) =>
-		mockModule.resolveMailboxReadCutoverDbUserId(...args),
 }))
 
 const { emailMessageSearchCapability } =
@@ -72,7 +69,6 @@ test('email_message_search requires a signed-in, verified user and forwards the 
 	expect(mockModule.searchOwnerEmailMessages).not.toHaveBeenCalled()
 
 	const env = createEnv()
-	mockModule.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
 	mockModule.searchOwnerEmailMessages.mockResolvedValueOnce([
 		{
 			id: 'message-1',
@@ -108,8 +104,7 @@ test('email_message_search requires a signed-in, verified user and forwards the 
 
 	expect(mockModule.searchOwnerEmailMessages).toHaveBeenCalledWith({
 		env,
-		dbUserId: 7,
-		stableUserId: 'user-1',
+		ownerId: 'user-1',
 		query: 'invoice',
 		inboxId: 'inbox-1',
 		direction: 'inbound',

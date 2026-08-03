@@ -1,27 +1,12 @@
-import {
-	emailDeliveryEventRetentionDays,
-	emailMessageRetentionDays,
-	pruneEmailDeliveryEventsForRetention,
-	pruneUserEmailMessagesForRetention,
-} from '#app/retention.ts'
 import { systemEmailOwnerId } from '#worker/email/email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from '#worker/email/mailbox-client.ts'
-import {
-	mailboxParityUserBatchSize,
-	reconcileMailboxParity,
-	type MailboxParityReconcileEnv,
-	type MailboxParityReconcileMetrics,
-} from '#worker/email/mailbox-reconcile.ts'
-import {
-	mailboxReadCutoverCheckedAtMaxAgeMs,
-	mailboxReadCutoverSoakMs,
-} from '#worker/email/mailbox-read-cutover.ts'
 import {
 	type MailboxBlobReference,
 	type MailboxCountResult,
 } from '#worker/email/mailbox-types.ts'
 import {
 	isOutboundProviderIndexForeignKeyDetached,
+	deleteOutboundProviderIndexByMessageId,
 	loadOutboundProviderIndexParityReport,
 	type OutboundProviderIndexParityReport,
 } from '#worker/email/outbound-provider-index.ts'
@@ -35,18 +20,6 @@ import {
 	deleteSystemEmailMessageById,
 	getSystemEmailMessageById,
 } from '#worker/email/system-email-graph-store.ts'
-import {
-	deleteEmailMessageProjectionById,
-	getEmailMessageById,
-	listEmailAttachmentsForUserMessage,
-} from '#worker/email/repo.ts'
-import {
-	canonicalMailboxMessageBlobReferences,
-	deleteMailboxBlobKeys,
-} from '#worker/email/mailbox-retention.ts'
-
-/** Cap for admin reconcile batch discovery (hard max). */
-export const adminMailboxMaintenanceMaxBatchSize = 100
 
 /** Retention owner page size default/max (hard max). */
 export const adminMailboxMaintenanceRetentionMaxLimit = 20
@@ -59,10 +32,10 @@ export const adminMailboxMaintenanceRetentionConcurrency = 4
 /** Wall-clock budget for one retention action call. */
 export const adminMailboxMaintenanceRetentionBudgetMs = 10_000
 
-export type AdminMailboxMaintenanceEnv = MailboxParityReconcileEnv &
-	MailboxEnv & {
-		EMAIL_BLOBS: Pick<R2Bucket, 'delete' | 'head'>
-	}
+export type AdminMailboxMaintenanceEnv = MailboxEnv & {
+	APP_DB: D1Database
+	EMAIL_BLOBS: Pick<R2Bucket, 'delete' | 'head'>
+}
 
 export type AdminMailboxMaintenanceStatus = {
 	generatedAt: string
@@ -93,25 +66,10 @@ export type AdminMailboxMaintenanceStatus = {
 	systemEmailGraph: SystemEmailGraphParityReport
 }
 
-export type AdminMailboxMaintenanceRetentionD1Metrics = {
-	messagesDeleted: number
-	attachmentsDeleted: number
-	threadsDeleted: number
-	deliveryEventsDeleted: number
-	rawMimeBlobsDeleted: number
-	attachmentBlobsDeleted: number
-	blobDeleteErrors: number
-}
-
 export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 	ownersAttempted: number
 	ownersSucceeded: number
 	ownersFailed: number
-	/**
-	 * Owners skipped because expired D1 message/event rows remain after the
-	 * global prune batches. Cursor still advances; repeated calls drain via D1.
-	 */
-	pendingD1Owners: number
 	before: MailboxCountResult
 	after: MailboxCountResult
 	blobDeleteFailureOwners: number
@@ -119,7 +77,6 @@ export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 }
 
 export type AdminMailboxMaintenanceRetentionMetrics = {
-	d1: AdminMailboxMaintenanceRetentionD1Metrics
 	mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics
 }
 
@@ -128,91 +85,13 @@ export type AdminMailboxMaintenanceRetentionMetrics = {
  * includes addresses, bodies, filenames, or R2 keys.
  */
 export type AdminMailboxMaintenanceDeleteMessageResult = {
-	d1MessageAbsent: boolean
+	authoritativeMessageAbsent: boolean
 	attachmentsSeen: number
 	externalAttachmentsSeen: number
 	rawMimeBlobAbsent: boolean
 	externalAttachmentBlobsAbsent: number
 	/** True when every key captured by the authoritative delete is absent. */
 	allCapturedBlobsAbsent: boolean
-}
-
-const millisecondsPerDay = 24 * 60 * 60 * 1000
-
-/** Same ISO cutoff formula as `#app/retention` `cutoffIso`. */
-export function adminEmailRetentionCutoffIso(now: Date, days: number) {
-	return new Date(now.getTime() - days * millisecondsPerDay).toISOString()
-}
-
-/**
- * True when the owner still has natural-cutoff-expired D1 mail rows. Owners are
- * already non-system from discovery — no extra system exclusion here.
- */
-export async function ownerHasPendingExpiredD1Retention(input: {
-	db: D1Database
-	userId: string
-	now: Date
-}): Promise<boolean> {
-	const messageCutoff = adminEmailRetentionCutoffIso(
-		input.now,
-		emailMessageRetentionDays,
-	)
-	const eventCutoff = adminEmailRetentionCutoffIso(
-		input.now,
-		emailDeliveryEventRetentionDays,
-	)
-	const row = await input.db
-		.prepare(
-			`SELECT 1 AS ok
-			WHERE EXISTS (
-				SELECT 1 FROM email_messages
-				WHERE user_id = ? AND created_at < ?
-				LIMIT 1
-			)
-			OR EXISTS (
-				SELECT 1 FROM email_delivery_events
-				WHERE user_id = ? AND created_at < ?
-				LIMIT 1
-			)`,
-		)
-		.bind(input.userId, messageCutoff, input.userId, eventCutoff)
-		.first<{ ok: number }>()
-	return row != null
-}
-
-const trackedOwnerSql = `
-	u.deleting_at IS NULL
-	AND u.stable_user_id != ?
-	AND (
-		EXISTS (
-			SELECT 1 FROM email_messages m
-			WHERE m.user_id = u.stable_user_id
-		)
-		OR EXISTS (
-			SELECT 1 FROM email_delivery_events e
-			WHERE e.user_id = u.stable_user_id
-		)
-		OR u.mailbox_parity_checked_at IS NOT NULL
-		OR u.mailbox_parity_matching_since IS NOT NULL
-		OR u.mailbox_parity_last_error IS NOT NULL
-		OR u.mailbox_parity_mismatch_count > 0
-		OR u.mailbox_parity_content_watermark_at IS NOT NULL
-		OR u.mailbox_parity_content_replay_upper_at IS NOT NULL
-		OR u.mailbox_parity_content_replay_cursor_id IS NOT NULL
-		OR u.mailbox_parity_message_backfill_cursor_id IS NOT NULL
-		OR u.mailbox_parity_message_backfill_completed_at IS NOT NULL
-		OR u.mailbox_parity_event_backfill_cursor_id IS NOT NULL
-		OR u.mailbox_parity_event_backfill_completed_at IS NOT NULL
-	)
-`
-
-function clampReconcileBatchSize(batchSize: number | undefined): number {
-	const requested = batchSize ?? mailboxParityUserBatchSize
-	if (!Number.isFinite(requested)) return mailboxParityUserBatchSize
-	return Math.max(
-		1,
-		Math.min(adminMailboxMaintenanceMaxBatchSize, Math.trunc(requested)),
-	)
 }
 
 function clampRetentionLimit(limit: number | undefined): number {
@@ -243,8 +122,7 @@ function addMailboxCounts(
 }
 
 /**
- * List non-deleting owners with mail/parity state ordered by stable_user_id
- * keyset (never by parity checked_at).
+ * List active owners from the account index, ordered by stable_user_id keyset.
  */
 export async function listUsersForAdminMailboxRetention(input: {
 	db: D1Database
@@ -257,7 +135,9 @@ export async function listUsersForAdminMailboxRetention(input: {
 				.prepare(
 					`SELECT u.stable_user_id AS userId
 					FROM users u
-					WHERE ${trackedOwnerSql}
+					WHERE u.deleting_at IS NULL
+						AND u.stable_user_id IS NOT NULL
+						AND u.stable_user_id != ?
 						AND u.stable_user_id > ?
 					ORDER BY u.stable_user_id ASC
 					LIMIT ?`,
@@ -268,7 +148,9 @@ export async function listUsersForAdminMailboxRetention(input: {
 				.prepare(
 					`SELECT u.stable_user_id AS userId
 					FROM users u
-					WHERE ${trackedOwnerSql}
+					WHERE u.deleting_at IS NULL
+						AND u.stable_user_id IS NOT NULL
+						AND u.stable_user_id != ?
 					ORDER BY u.stable_user_id ASC
 					LIMIT ?`,
 				)
@@ -286,7 +168,6 @@ type OwnerRetentionOutcome =
 			expiredRemaining: boolean
 	  }
 	| { status: 'failed' }
-	| { status: 'pending_d1' }
 
 async function runOwnersWithBudget(input: {
 	owners: ReadonlyArray<{ userId: string }>
@@ -360,117 +241,16 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 }): Promise<AdminMailboxMaintenanceStatus> {
 	const now = input.now ?? new Date()
 	const generatedAt = now.toISOString()
-	const nowMs = now.getTime()
-	const soakCutoffIso = new Date(nowMs - mailboxReadCutoverSoakMs).toISOString()
-	const checkedAtMinIso = new Date(
-		nowMs - mailboxReadCutoverCheckedAtMaxAgeMs,
-	).toISOString()
-
 	const row = await input.db
 		.prepare(
-			`SELECT
-				COUNT(*) AS trackedOwners,
-				SUM(
-					CASE
-						WHEN u.mailbox_parity_last_error IS NOT NULL THEN 1
-						ELSE 0
-					END
-				) AS errorCount,
-				SUM(
-					CASE
-						WHEN u.mailbox_parity_last_error IS NULL
-							AND u.mailbox_parity_mismatch_count > 0
-						THEN 1
-						ELSE 0
-					END
-				) AS mismatchCount,
-				SUM(
-					CASE
-						WHEN u.mailbox_parity_last_error IS NULL
-							AND u.mailbox_parity_mismatch_count = 0
-							AND u.mailbox_parity_matching_since IS NOT NULL
-							AND u.mailbox_parity_message_backfill_completed_at IS NOT NULL
-							AND u.mailbox_parity_event_backfill_completed_at IS NOT NULL
-							AND u.mailbox_parity_content_replay_upper_at IS NULL
-						THEN 1
-						ELSE 0
-					END
-				) AS matchingCount,
-				SUM(
-					CASE
-						WHEN u.mailbox_parity_last_error IS NULL
-							AND u.mailbox_parity_mismatch_count = 0
-							AND (
-								u.mailbox_parity_matching_since IS NULL
-								OR u.mailbox_parity_message_backfill_completed_at IS NULL
-								OR u.mailbox_parity_event_backfill_completed_at IS NULL
-								OR u.mailbox_parity_content_replay_upper_at IS NOT NULL
-							)
-						THEN 1
-						ELSE 0
-					END
-				) AS incompleteCount,
-				SUM(
-					CASE
-						WHEN u.mailbox_parity_last_error IS NULL
-							AND u.mailbox_parity_mismatch_count = 0
-							AND u.mailbox_parity_matching_since IS NOT NULL
-							AND u.mailbox_parity_matching_since <= ?
-							AND u.mailbox_parity_matching_since <= ?
-							AND u.mailbox_parity_checked_at IS NOT NULL
-							AND u.mailbox_parity_checked_at >= ?
-							AND u.mailbox_parity_checked_at <= ?
-						THEN 1
-						ELSE 0
-					END
-				) AS eligibleCount,
-				MIN(u.mailbox_parity_matching_since) AS oldestMatchingSince,
-				MAX(u.mailbox_parity_matching_since) AS newestMatchingSince,
-				MIN(u.mailbox_parity_checked_at) AS oldestCheckedAt,
-				MAX(u.mailbox_parity_checked_at) AS newestCheckedAt,
-				MIN(
-					CASE
-						WHEN u.mailbox_parity_last_error IS NULL
-							AND u.mailbox_parity_mismatch_count = 0
-							AND u.mailbox_parity_matching_since IS NOT NULL
-						THEN u.mailbox_parity_matching_since
-						ELSE NULL
-					END
-				) AS earliestMatchingSinceForCutover
-			FROM users u
-			WHERE ${trackedOwnerSql}`,
+			`SELECT COUNT(*) AS trackedOwners
+			FROM users
+			WHERE deleting_at IS NULL
+				AND stable_user_id IS NOT NULL
+				AND stable_user_id != ?`,
 		)
-		.bind(
-			soakCutoffIso,
-			generatedAt,
-			checkedAtMinIso,
-			generatedAt,
-			systemEmailOwnerId,
-		)
-		.first<{
-			trackedOwners: number
-			errorCount: number | null
-			mismatchCount: number | null
-			matchingCount: number | null
-			incompleteCount: number | null
-			eligibleCount: number | null
-			oldestMatchingSince: string | null
-			newestMatchingSince: string | null
-			oldestCheckedAt: string | null
-			newestCheckedAt: string | null
-			earliestMatchingSinceForCutover: string | null
-		}>()
-
-	const earliestMatchingSince = row?.earliestMatchingSinceForCutover ?? null
-	let earliestCutoverAt: string | null = null
-	if (earliestMatchingSince != null) {
-		const matchingMs = Date.parse(earliestMatchingSince)
-		if (Number.isFinite(matchingMs)) {
-			earliestCutoverAt = new Date(
-				matchingMs + mailboxReadCutoverSoakMs,
-			).toISOString()
-		}
-	}
+		.bind(systemEmailOwnerId)
+		.first<{ trackedOwners: number }>()
 
 	const [
 		outboundProviderIndexParity,
@@ -489,40 +269,19 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 	return {
 		generatedAt,
 		trackedOwners: Number(row?.trackedOwners ?? 0) || 0,
-		matching: Number(row?.matchingCount ?? 0) || 0,
-		mismatch: Number(row?.mismatchCount ?? 0) || 0,
-		error: Number(row?.errorCount ?? 0) || 0,
-		incomplete: Number(row?.incompleteCount ?? 0) || 0,
-		eligible: Number(row?.eligibleCount ?? 0) || 0,
-		oldestMatchingSince: row?.oldestMatchingSince ?? null,
-		newestMatchingSince: row?.newestMatchingSince ?? null,
-		oldestCheckedAt: row?.oldestCheckedAt ?? null,
-		newestCheckedAt: row?.newestCheckedAt ?? null,
-		earliestCutoverAt,
+		matching: 0,
+		mismatch: 0,
+		error: 0,
+		incomplete: Number(row?.trackedOwners ?? 0) || 0,
+		eligible: 0,
+		oldestMatchingSince: null,
+		newestMatchingSince: null,
+		oldestCheckedAt: null,
+		newestCheckedAt: null,
+		earliestCutoverAt: null,
 		outboundProviderIndex,
 		systemEmailGraph,
 	}
-}
-
-export async function runAdminMailboxMaintenanceReconcile(input: {
-	env: AdminMailboxMaintenanceEnv
-	batchSize?: number
-	now?: Date
-}): Promise<{
-	metrics: MailboxParityReconcileMetrics
-	status: AdminMailboxMaintenanceStatus
-}> {
-	const now = input.now ?? new Date()
-	const metrics = await reconcileMailboxParity({
-		env: input.env,
-		now,
-		batchSize: clampReconcileBatchSize(input.batchSize),
-	})
-	const status = await loadAdminMailboxMaintenanceStatus({
-		db: input.env.APP_DB,
-		now,
-	})
-	return { metrics, status }
 }
 
 export async function runAdminMailboxMaintenanceSystemEmailGraphReconcile(input: {
@@ -534,11 +293,8 @@ export async function runAdminMailboxMaintenanceSystemEmailGraphReconcile(input:
 }
 
 /**
- * Bounded retention sweep: D1 natural-cutoff prune (authoritative blob-before-row
- * for messages), then per-owner expired-D1 checks, then Mailbox DO passes only
- * when D1 is clear for that owner. Stable-id keyset cursor; wall budget +
- * concurrency bounds; per-owner failures isolated. Pending-D1 owners skip DO
- * but still advance the cursor.
+ * Bounded owner-Mailbox retention sweep. Stable-id keyset cursor, wall budget,
+ * concurrency bounds, and per-owner failure isolation.
  */
 export async function runAdminMailboxMaintenanceRetention(input: {
 	env: AdminMailboxMaintenanceEnv
@@ -571,17 +327,6 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 	const startAfterUserId = input.startAfterUserId ?? null
 	const deadlineMs = nowMs() + budgetMs
 
-	// D1 remains expand-phase authority + blob linkage. Natural cutoffs only.
-	const d1Messages = await pruneUserEmailMessagesForRetention({
-		db: input.env.APP_DB,
-		blobs: input.env.EMAIL_BLOBS,
-		now,
-	})
-	const d1Events = await pruneEmailDeliveryEventsForRetention({
-		db: input.env.APP_DB,
-		now,
-	})
-
 	const owners = await listUsersForAdminMailboxRetention({
 		db: input.env.APP_DB,
 		limit,
@@ -596,17 +341,6 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 			nowMs,
 			async runOwner(userId) {
 				try {
-					// Never DO/R2-delete while this owner still has expired D1 rows
-					// (global oldest-first batches may have omitted them).
-					if (
-						await ownerHasPendingExpiredD1Retention({
-							db: input.env.APP_DB,
-							userId,
-							now,
-						})
-					) {
-						return { status: 'pending_d1' as const }
-					}
 					const result = await mailboxRpc({
 						env: input.env,
 						userId,
@@ -631,7 +365,6 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 		ownersAttempted: 0,
 		ownersSucceeded: 0,
 		ownersFailed: 0,
-		pendingD1Owners: 0,
 		before: emptyMailboxCounts(),
 		after: emptyMailboxCounts(),
 		blobDeleteFailureOwners: 0,
@@ -639,9 +372,6 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 	}
 	for (const outcome of outcomes) {
 		switch (outcome.status) {
-			case 'pending_d1':
-				mailbox.pendingD1Owners += 1
-				break
 			case 'failed':
 				mailbox.ownersAttempted += 1
 				mailbox.ownersFailed += 1
@@ -676,15 +406,6 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 
 	return {
 		metrics: {
-			d1: {
-				messagesDeleted: d1Messages.deletedMessages,
-				attachmentsDeleted: d1Messages.deletedAttachments,
-				threadsDeleted: d1Messages.deletedThreads,
-				deliveryEventsDeleted: d1Events.deleted,
-				rawMimeBlobsDeleted: d1Messages.deletedRawMimeBlobs,
-				attachmentBlobsDeleted: d1Messages.deletedAttachmentBlobs,
-				blobDeleteErrors: d1Messages.blobDeleteErrors,
-			},
 			mailbox,
 		},
 		nextStartAfter,
@@ -708,47 +429,10 @@ export class AdminMailboxMessageNotFoundError extends Error {
 	}
 }
 
-async function loadD1MessageDeletionInventory(input: {
-	db: D1Database
-	ownerId: string
-	messageId: string
-}): Promise<{
-	attachmentsSeen: number
-	externalAttachmentsSeen: number
-	blobReferences: Array<MailboxBlobReference>
-} | null> {
-	const message = await getEmailMessageById({
-		db: input.db,
-		userId: input.ownerId,
-		messageId: input.messageId,
-	})
-	if (!message) return null
-	const attachments = await listEmailAttachmentsForUserMessage({
-		db: input.db,
-		userId: input.ownerId,
-		messageId: input.messageId,
-	})
-	return {
-		attachmentsSeen: attachments.length,
-		externalAttachmentsSeen: attachments.filter(
-			(attachment) => attachment.storageKind === 'external',
-		).length,
-		blobReferences: canonicalMailboxMessageBlobReferences({
-			ownerId: input.ownerId,
-			messageId: input.messageId,
-			direction: message.direction,
-			attachments: attachments.map((attachment) => ({
-				id: attachment.id,
-				storage_key: attachment.storageKey,
-			})),
-		}),
-	}
-}
-
 /**
  * Owner-scoped single-message delete for accelerated Mailbox coverage canaries.
- * USER mail is deleted by the owner-bound Mailbox R2-before-metadata RPC, then
- * its D1 compatibility projection is removed. `system:email` stays on the
+ * USER mail is deleted by the owner-bound Mailbox R2-before-metadata RPC.
+ * `system:email` stays on the
  * dedicated D1 authority path. Exact authoritative keys are head-verified without being
  * returned to the caller.
  */
@@ -762,6 +446,7 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 	let attachmentsSeen: number
 	let externalAttachmentsSeen: number
 	let blobReferences: Array<MailboxBlobReference>
+	let authoritativeMessageAbsent = true
 	if (input.stableUserId === systemEmailOwnerId) {
 		const message = await getSystemEmailMessageById({
 			db,
@@ -796,42 +481,10 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 			messageId: input.messageId,
 		})
 		if (mailboxDeletion.status === 'missing') {
-			const d1Inventory = await loadD1MessageDeletionInventory({
-				db,
-				ownerId: input.stableUserId,
-				messageId: input.messageId,
-			})
-			if (d1Inventory) {
-				if (!mailboxDeletion.tombstoned) {
-					const tombstone = await mailbox.tombstoneMissingMessage({
-						ownerId: input.stableUserId,
-						messageId: input.messageId,
-						deletedAt: new Date().toISOString(),
-					})
-					if (tombstone.status === 'message-present') {
-						throw new Error(
-							'Mailbox message became present before compatibility cleanup.',
-						)
-					}
-				}
-				await deleteMailboxBlobKeys(
-					blobs,
-					d1Inventory.blobReferences.map((reference) => reference.key),
-				)
-				attachmentsSeen = d1Inventory.attachmentsSeen
-				externalAttachmentsSeen = d1Inventory.externalAttachmentsSeen
-				blobReferences = d1Inventory.blobReferences
-			} else {
-				attachmentsSeen = 0
-				externalAttachmentsSeen = 0
-				blobReferences = []
-			}
-			await deleteEmailMessageProjectionById({
-				db,
-				messageId: input.messageId,
-				expectedUserId: input.stableUserId,
-			})
-			if (!mailboxDeletion.tombstoned && d1Inventory == null) {
+			attachmentsSeen = 0
+			externalAttachmentsSeen = 0
+			blobReferences = []
+			if (!mailboxDeletion.tombstoned) {
 				throw new AdminMailboxMessageNotFoundError({
 					stableUserId: input.stableUserId,
 					messageId: input.messageId,
@@ -841,26 +494,20 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 			attachmentsSeen = mailboxDeletion.attachmentsSeen
 			externalAttachmentsSeen = mailboxDeletion.externalAttachmentsSeen
 			blobReferences = mailboxDeletion.blobReferences
-			await deleteEmailMessageProjectionById({
-				db,
-				messageId: input.messageId,
-				expectedUserId: input.stableUserId,
-			})
 		}
+		await deleteOutboundProviderIndexByMessageId({
+			db,
+			messageId: input.messageId,
+		})
 	}
 
-	const remainingD1 =
-		input.stableUserId === systemEmailOwnerId
-			? await getSystemEmailMessageById({
-					db,
-					messageId: input.messageId,
-				})
-			: await getEmailMessageById({
-					db,
-					userId: input.stableUserId,
-					messageId: input.messageId,
-				})
-	const d1MessageAbsent = remainingD1 == null
+	if (input.stableUserId === systemEmailOwnerId) {
+		const remaining = await getSystemEmailMessageById({
+			db,
+			messageId: input.messageId,
+		})
+		authoritativeMessageAbsent = remaining == null
+	}
 
 	const rawMimeReferences = blobReferences.filter(
 		(reference) => reference.kind === 'raw_mime',
@@ -885,7 +532,7 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 		externalAttachmentBlobsAbsent === attachmentReferences.length
 
 	return {
-		d1MessageAbsent,
+		authoritativeMessageAbsent,
 		attachmentsSeen,
 		externalAttachmentsSeen,
 		rawMimeBlobAbsent,

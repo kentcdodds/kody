@@ -8,8 +8,9 @@ import {
 	emailOutboundPausedMessage,
 	outboundEmailBouncePauseThresholdPerDay,
 } from './outbound-abuse.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import { sendOutboundEmail } from './outbound.ts'
-import { insertEmailMessage } from './repo.ts'
+import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
@@ -39,7 +40,7 @@ async function recordProviderEvent(input: {
 	eventTimestamp: string
 }) {
 	const result = await processCloudflareEmailDeliveryEvent({
-		db: env.APP_DB,
+		env,
 		body: {
 			type: `cf.email.sending.message.${input.status}`,
 			source: {
@@ -67,6 +68,61 @@ async function recordProviderEvent(input: {
 	return result
 }
 
+async function seedProviderMessage(input: {
+	userId: string
+	providerMessageId: string
+	subject: string
+	sentAt: string
+}) {
+	const messageId = crypto.randomUUID()
+	await mailboxRpc({ env, userId: input.userId }).writeMessageGraph({
+		ownerId: input.userId,
+		message: {
+			id: messageId,
+			direction: 'outbound',
+			inboxId: null,
+			threadId: null,
+			senderIdentityId: null,
+			fromAddress: 'user@inbox.kody.example.com',
+			envelopeFrom: null,
+			toAddresses: ['recipient@example.net'],
+			ccAddresses: [],
+			bccAddresses: [],
+			replyToAddresses: [],
+			subject: input.subject,
+			messageIdHeader: `<${messageId}@inbox.kody.example.com>`,
+			inReplyToHeader: null,
+			references: [],
+			headers: {},
+			authResults: null,
+			textBody: null,
+			htmlBody: null,
+			rawMimeKey: null,
+			rawSize: 0,
+			processingStatus: 'sent',
+			classification: 'accepted',
+			classificationReason: null,
+			providerMessageId: input.providerMessageId,
+			deliveryStatus: null,
+			deliveryStatusAt: null,
+			error: null,
+			receivedAt: null,
+			sentAt: input.sentAt,
+			createdAt: input.sentAt,
+			updatedAt: input.sentAt,
+		},
+		attachments: [],
+	})
+	await upsertOutboundProviderIndexRow({
+		db: env.APP_DB,
+		providerMessageId: input.providerMessageId,
+		userId: input.userId,
+		messageId,
+		inboxId: null,
+		now: input.sentAt,
+	})
+}
+
 async function readPauseTimestamp(stableUserId: string) {
 	const row = await env.APP_DB.prepare(
 		`SELECT email_outbound_paused_at FROM users WHERE stable_user_id = ?`,
@@ -82,18 +138,11 @@ test('a spam complaint pauses outbound email once and blocks further sends', asy
 	const accountEmail = `complainer-${crypto.randomUUID()}@example.com`
 	const { stableUserId } = await seedVerifiedAccount({ email: accountEmail })
 	const providerMessageId = `provider-${crypto.randomUUID()}`
-	await insertEmailMessage({
-		db: env.APP_DB,
-		message: {
-			direction: 'outbound',
-			userId: stableUserId,
-			fromAddress: 'user@inbox.kody.example.com',
-			toAddresses: ['recipient@example.net'],
-			subject: 'Complaint pause',
-			processingStatus: 'sent',
-			providerMessageId,
-			sentAt: '2026-07-17T20:00:00.000Z',
-		},
+	await seedProviderMessage({
+		userId: stableUserId,
+		providerMessageId,
+		subject: 'Complaint pause',
+		sentAt: '2026-07-17T20:00:00.000Z',
 	})
 	await recordProviderEvent({
 		providerMessageId,
@@ -170,7 +219,7 @@ test('a spam complaint pauses outbound email once and blocks further sends', asy
 	})
 	expect(phantom.paused).toBe(false)
 	expect(await readPauseTimestamp(phantomAccount.stableUserId)).toBeNull()
-})
+}, 30_000)
 
 test('bounces below the daily threshold do not pause; reaching it does', async () => {
 	consoleWarn.mockImplementation(() => {})
@@ -185,18 +234,11 @@ test('bounces below the daily threshold do not pause; reaching it does', async (
 		attempt += 1
 	) {
 		const providerMessageId = `provider-${crypto.randomUUID()}`
-		await insertEmailMessage({
-			db: env.APP_DB,
-			message: {
-				direction: 'outbound',
-				userId: stableUserId,
-				fromAddress: 'user@inbox.kody.example.com',
-				toAddresses: ['recipient@example.net'],
-				subject: `Bounce ${attempt}`,
-				processingStatus: 'sent',
-				providerMessageId,
-				sentAt: now.toISOString(),
-			},
+		await seedProviderMessage({
+			userId: stableUserId,
+			providerMessageId,
+			subject: `Bounce ${attempt}`,
+			sentAt: now.toISOString(),
 		})
 		await recordProviderEvent({
 			providerMessageId,
@@ -219,4 +261,4 @@ test('bounces below the daily threshold do not pause; reaching it does', async (
 			expect(await readPauseTimestamp(stableUserId)).not.toBeNull()
 		}
 	}
-})
+}, 30_000)

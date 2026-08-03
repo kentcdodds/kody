@@ -307,9 +307,9 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		},
 	])
 	const { db, batches, selects } = createFakeDb({
-		emailUsageRows: [
+		systemEmailUsageRows: [
 			{
-				user_id: 'user-a',
+				user_id: 'system:email',
 				metric: 'email_received',
 				month: '2026-07',
 				event_count: 2,
@@ -317,16 +317,6 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 				total_duration_ms: 50,
 				total_cpu_ms: 0,
 				total_bytes: 4096,
-			},
-			{
-				user_id: 'user-c',
-				metric: 'email_received',
-				month: '2026-06',
-				event_count: 1,
-				error_count: 0,
-				total_duration_ms: 25,
-				total_cpu_ms: 0,
-				total_bytes: 512,
 			},
 		],
 	})
@@ -339,7 +329,7 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		month: '2026-07',
 		upsertedRows: 4,
 		deletedRows: 0,
-		users: 3,
+		users: 4,
 	})
 
 	expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -382,11 +372,14 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 	expect(query).toContain('GROUP BY blob1, blob2')
 	expect(selects[0]?.sql).not.toContain('JOIN email_messages')
 	expect(selects[0]?.sql).not.toContain('json_extract')
-	expect(selects[0]?.sql).toContain(
-		'event.usage_effect_recorded_at IS NOT NULL',
-	)
-	expect(selects[0]?.sql).toContain('event.usage_month IN (?, ?)')
-	expect(selects[0]?.params).toEqual(['2026-07', '2026-06'])
+	expect(selects[0]?.sql).toContain('usage_effect_recorded_at IS NOT NULL')
+	expect(selects[0]?.sql).toContain('usage_month IN (?, ?)')
+	expect(selects[0]?.params).toEqual([
+		'system:email',
+		'cloudflare-email-routing',
+		'2026-07',
+		'2026-06',
+	])
 
 	expect(batches).toHaveLength(1)
 	const statements = batches[0] ?? []
@@ -420,15 +413,15 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		'user-c',
 		'email_received',
 		'2026-06',
-		6,
+		5,
 		2,
-		125,
+		100,
 		0,
-		1512,
+		1000,
 		now.toISOString(),
 	])
 	expect(statements[3]?.params).toEqual([
-		'user-a',
+		'system:email',
 		'email_received',
 		'2026-07',
 		2,

@@ -206,7 +206,7 @@ vi.mock('#worker/email/repo.ts', () => ({
 		mockModule.listEmailInboxAddressesForUser(...args),
 }))
 
-vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	listOwnerEmailMessagesPage: (...args: Array<unknown>) =>
 		mockModule.listOwnerEmailMessagesPage(...args),
 	getOwnerEmailMessageById: (...args: Array<unknown>) =>
@@ -362,14 +362,13 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	expect(selectedResponse.status).toBe(200)
 	expect(mockModule.getOwnerEmailMessageById).toHaveBeenCalledWith(
 		expect.objectContaining({
-			dbUserId: 42,
-			stableUserId: 'stable-user-1',
+			ownerId: 'stable-user-1',
 			messageId: 'msg-1',
 		}),
 	)
 	expect(mockModule.listOwnerEmailDeliveryEvents).toHaveBeenCalledWith(
 		expect.objectContaining({
-			stableUserId: 'stable-user-1',
+			ownerId: 'stable-user-1',
 			messageId: 'msg-1',
 		}),
 	)
@@ -621,8 +620,7 @@ test('email API scopes message detail lookups to the signed-in userId', async ()
 	expect(response.status).toBe(200)
 	expect(mockModule.getOwnerEmailMessageById).toHaveBeenCalledWith(
 		expect.objectContaining({
-			dbUserId: 42,
-			stableUserId: 'stable-user-1',
+			ownerId: 'stable-user-1',
 			messageId: 'missing-msg',
 		}),
 	)

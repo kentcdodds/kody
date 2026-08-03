@@ -6,9 +6,9 @@ import {
 	terminalWorkflowStatusValues,
 } from '#worker/package-runtime/workflow-statuses.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
-import type {
-	WorkflowProjectionRecord,
-	WorkflowProjectionUpsertInput,
+import {
+	type WorkflowProjectionRecord,
+	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
 import {
 	consoleWarn,

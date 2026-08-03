@@ -4,7 +4,7 @@ import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import type * as PackageSubscriptionsModule from './package-subscriptions.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
-import { listEmailMessages } from './repo.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import { upsertEmailSenderRule } from './sender-rules.ts'
 import { systemEmailOwnerId } from './system-email.ts'
 import { listSystemEmailMessages } from './system-email-graph-store.ts'
@@ -142,17 +142,15 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 	await handleInboundEmail(blocked, createInboundEnv())
 	expect(blocked.rejectedReason).toBe('Message rejected by recipient policy.')
 	expect(
-		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
-	).toEqual([])
+		await mailboxRpc({ env, userId }).listMessages({ limit: 10 }),
+	).toMatchObject({ messages: [] })
 	expect(await readUserDailyReceiveCount(userId)).toBe(0)
-	const rejectEvents = await env.APP_DB.prepare(
-		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
-	)
-		.bind(userId)
-		.all<{ event_type: string; detail_json: string }>()
-	const rejectDetails = (rejectEvents.results ?? []).map((row) => ({
-		eventType: row.event_type,
-		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
+	const rejectEvents = await mailboxRpc({ env, userId }).listDeliveryEvents({
+		limit: 10,
+	})
+	const rejectDetails = rejectEvents.map((event) => ({
+		eventType: event.eventType,
+		detail: JSON.parse(event.detailJson) as Record<string, unknown>,
 	}))
 	expect(rejectDetails.every((row) => row.eventType === 'rejected')).toBe(true)
 	expect(
@@ -222,9 +220,7 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 	})
 	await handleInboundEmail(clean, createInboundEnv())
 
-	const messages = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
+	const { messages } = await mailboxRpc({ env, userId }).listMessages({
 		limit: 20,
 	})
 	const bySubject = Object.fromEntries(

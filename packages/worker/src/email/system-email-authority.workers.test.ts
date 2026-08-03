@@ -5,7 +5,6 @@ import {
 	loadAdminSystemEmailMessageById,
 } from '#worker/admin/system-email-data.ts'
 import { countInternalSystemEmailMessages } from './mailbox-internal-read.ts'
-import { insertEmailMessage } from './repo.ts'
 import {
 	createSystemEmailThread,
 	getSystemEmailMessageById,
@@ -174,18 +173,6 @@ test('dedicated system graph is the only read authority and remains user-isolate
 	)
 		.bind(systemEmailOwnerId, createdAt, createdAt)
 		.run()
-	await insertEmailMessage({
-		db: env.APP_DB,
-		message: {
-			id: 'user-only-message',
-			direction: 'inbound',
-			userId: 'user-1',
-			fromAddress: 'user@example.net',
-			subject: 'User mail',
-			processingStatus: 'stored',
-			receivedAt: createdAt,
-		},
-	})
 	await insertSystemEmailMessage({
 		db: env.APP_DB,
 		message: {

@@ -4,6 +4,7 @@ import {
 	maxRestorableTextColumnBytes,
 	utf8ByteLength,
 } from '@kody-internal/shared/backup-restore-safety.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	createEmailThread,
 	emailBodyTruncationNotice,
@@ -21,7 +22,7 @@ test('stored email bodies are bounded so D1 backups stay importable', async () =
 		db: env.APP_DB,
 		message: {
 			direction: 'inbound',
-			userId: `user-${crypto.randomUUID()}`,
+			userId: systemEmailOwnerId,
 			fromAddress: 'sender@example.com',
 			toAddresses: ['inbox@example.com'],
 			subject: 'Giant newsletter',
@@ -41,7 +42,7 @@ test('stored email bodies are bounded so D1 backups stay importable', async () =
 
 test('getEmailThreadById is owner-scoped and insertEmailDeliveryEvent returns the row', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const ownerId = `owner-${crypto.randomUUID()}`
+	const ownerId = systemEmailOwnerId
 	const otherUserId = `other-${crypto.randomUUID()}`
 	const thread = await createEmailThread({
 		db: env.APP_DB,
@@ -61,13 +62,13 @@ test('getEmailThreadById is owner-scoped and insertEmailDeliveryEvent returns th
 		userId: ownerId,
 		subjectNormalized: 'hello thread',
 	})
-	expect(
-		await getEmailThreadById({
+	await expect(
+		getEmailThreadById({
 			db: env.APP_DB,
 			userId: otherUserId,
 			threadId: thread.id,
 		}),
-	).toBeNull()
+	).rejects.toThrow(/Legacy USER D1 email graph operation is disabled/)
 
 	const createdAt = '2026-07-15T12:00:00.000Z'
 	const inserted = await insertEmailDeliveryEvent({

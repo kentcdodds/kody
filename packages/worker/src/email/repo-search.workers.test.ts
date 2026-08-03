@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { systemEmailOwnerId } from './email-owner.ts'
 import { searchEmailMessages } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -42,7 +43,7 @@ async function insertMessage(input: {
 
 test('searchEmailMessages matches subject, from address, and envelope sender case-insensitively', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `search-user-${crypto.randomUUID()}`
+	const userId = systemEmailOwnerId
 	const otherUserId = `search-other-${crypto.randomUUID()}`
 	const bySubject = await insertMessage({
 		userId,
@@ -88,7 +89,7 @@ test('searchEmailMessages matches subject, from address, and envelope sender cas
 
 test('searchEmailMessages treats LIKE wildcards in the query literally', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `search-escape-user-${crypto.randomUUID()}`
+	const userId = systemEmailOwnerId
 	const literalPercent = await insertMessage({
 		userId,
 		subject: 'Save 100% today',
@@ -131,7 +132,7 @@ test('searchEmailMessages treats LIKE wildcards in the query literally', async (
 
 test('searchEmailMessages applies filters and the result limit', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `search-filter-user-${crypto.randomUUID()}`
+	const userId = systemEmailOwnerId
 	const inboxId = `inbox-${crypto.randomUUID()}`
 	const inboundInInbox = await insertMessage({
 		userId,

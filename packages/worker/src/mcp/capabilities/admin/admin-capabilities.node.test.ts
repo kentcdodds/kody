@@ -530,6 +530,13 @@ function createAdminCapabilityContext(
 			...userMeter.env,
 			APP_DB: db,
 			AUDIT_DB: db,
+			MAILBOX: {
+				idFromName: (userId: string) =>
+					({ userId }) as unknown as DurableObjectId,
+				get: () => ({
+					countMessages: async () => ({ total: 0 }),
+				}),
+			},
 			EMAIL_BLOBS: blobs ?? {
 				get: async () => null,
 			},

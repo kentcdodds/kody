@@ -5,10 +5,8 @@ import {
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import { parseJsonArray } from '@kody-internal/shared/json-parsing.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
-import {
-	getOutboundProviderIndexRow,
-	prepareOutboundProviderIndexSyncStatements,
-} from './outbound-provider-index.ts'
+import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
+import { assertLegacyUserEmailGraphServiceDisabled } from './user-email-d1-guard.ts'
 import {
 	emailClassificationValues,
 	type EmailAttachmentRecord,
@@ -511,6 +509,10 @@ async function findThreadForMessage(input: {
 	references: Array<string>
 	inReplyToHeader?: string | null
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'findEmailThreadForInboundMessage',
+	})
 	const ids = [
 		...input.references,
 		...(input.inReplyToHeader ? [input.inReplyToHeader] : []),
@@ -536,15 +538,18 @@ async function findThreadForMessage(input: {
 export const findEmailThreadForInboundMessage = findThreadForMessage
 
 /**
- * Owner-scoped thread lookup for D1 → Mailbox graph mirrors and other
- * strictly user-bound readers. Returns null when absent or owned by another
- * user — never use for inbound delivery fencing.
+ * Frozen shared-D1 compatibility lookup. USER callers are rejected before SQL
+ * is prepared; the dedicated system owner is the only permitted legacy owner.
  */
 export async function getEmailThreadById(input: {
 	db: D1Database
 	userId: string
 	threadId: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'getEmailThreadById',
+	})
 	const row = await input.db
 		.prepare(
 			`SELECT *
@@ -569,6 +574,10 @@ export async function createEmailThread(input: {
 	ignoreConflict?: boolean
 	inboundDeliveryFence?: EmailInboundDeliveryFence
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'createEmailThread',
+	})
 	const timestamp = nowIso()
 	const row = {
 		id: input.id ?? crypto.randomUUID(),
@@ -622,6 +631,10 @@ export async function deleteEmptyEmailThreads(input: {
 	before: string
 	limit: number
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'deleteEmptyEmailThreads',
+	})
 	const rows = await input.db
 		.prepare(
 			`SELECT thread.id
@@ -665,6 +678,10 @@ export async function touchEmailThread(input: {
 	threadId: string
 	lastMessageAt?: string | null
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: '',
+		operation: 'touchEmailThread',
+	})
 	await input.db
 		.prepare(
 			`UPDATE email_threads
@@ -711,6 +728,10 @@ export async function insertEmailMessage(input: {
 		sentAt?: string | null
 	}
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.message.userId,
+		operation: 'insertEmailMessage',
+	})
 	const timestamp = nowIso()
 	const messageId = input.message.id ?? crypto.randomUUID()
 	const row = {
@@ -809,23 +830,7 @@ export async function insertEmailMessage(input: {
 			row.updated_at,
 			...(fence ? [fence.deliveryId, fence.userId, fence.storageLease] : []),
 		)
-	const shouldIndexProvider =
-		row.direction === 'outbound' &&
-		row.provider_message_id != null &&
-		row.provider_message_id !== ''
-	const insertResult = shouldIndexProvider
-		? (
-				await input.db.batch([
-					insertStatement,
-					...prepareOutboundProviderIndexSyncStatements({
-						db: input.db,
-						messageId: row.id,
-						providerMessageId: row.provider_message_id,
-						now: row.updated_at,
-					}),
-				])
-			)[0]
-		: await insertStatement.run()
+	const insertResult = await insertStatement.run()
 	if (fence && Number(insertResult?.meta.changes ?? 0) === 0) {
 		throw new Error(
 			'Inbound delivery storage lease was lost before message insert.',
@@ -842,34 +847,31 @@ export async function updateEmailMessageDelivery(input: {
 	error?: string | null
 	sentAt?: string | null
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: '',
+		operation: 'updateEmailMessageDelivery',
+	})
 	const updatedAt = nowIso()
 	const providerMessageId = input.providerMessageId ?? null
-	await input.db.batch([
-		input.db
-			.prepare(
-				`UPDATE email_messages
+	await input.db
+		.prepare(
+			`UPDATE email_messages
 				SET processing_status = ?,
 					provider_message_id = ?,
 					error = ?,
 					sent_at = ?,
 					updated_at = ?
 				WHERE id = ?`,
-			)
-			.bind(
-				input.status,
-				providerMessageId,
-				input.error ?? null,
-				input.sentAt ?? null,
-				updatedAt,
-				input.messageId,
-			),
-		...prepareOutboundProviderIndexSyncStatements({
-			db: input.db,
-			messageId: input.messageId,
+		)
+		.bind(
+			input.status,
 			providerMessageId,
-			now: updatedAt,
-		}),
-	])
+			input.error ?? null,
+			input.sentAt ?? null,
+			updatedAt,
+			input.messageId,
+		)
+		.run()
 }
 
 export async function getEmailMessageById(input: {
@@ -877,6 +879,10 @@ export async function getEmailMessageById(input: {
 	userId: string
 	messageId: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'getEmailMessageById',
+	})
 	const row = await input.db
 		.prepare(
 			`SELECT *
@@ -895,6 +901,10 @@ export async function countEmailMessagesForUser(input: {
 	db: D1Database
 	userId: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'countEmailMessagesForUser',
+	})
 	const row = await input.db
 		.prepare(`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`)
 		.bind(input.userId)
@@ -903,11 +913,8 @@ export async function countEmailMessagesForUser(input: {
 }
 
 /**
- * D1-only inbound classification update. Prefer
- * `setEmailMessageClassification` in `service.ts`, which dual-writes the
- * Mailbox graph mirror after a successful mutation. Reclassifying to
- * `accepted` does not retroactively dispatch package subscription events; the
- * receive-time classification decides dispatch exactly once.
+ * Frozen shared-D1 compatibility mutation. USER callers are rejected before
+ * SQL is prepared; live classification uses the owner Mailbox RPC.
  */
 export async function updateEmailMessageClassificationInD1(input: {
 	db: D1Database
@@ -917,6 +924,10 @@ export async function updateEmailMessageClassificationInD1(input: {
 	classificationReason?: string | null
 	now?: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'updateEmailMessageClassificationInD1',
+	})
 	const result = await input.db
 		.prepare(
 			`UPDATE email_messages
@@ -937,9 +948,8 @@ export async function updateEmailMessageClassificationInD1(input: {
 }
 
 /**
- * Resolve an outbound message from the derived provider reverse index, then
- * load the owner-scoped authoritative `email_messages` row. Does not scan the
- * full messages table by provider_message_id.
+ * Frozen shared-D1 compatibility lookup. Live provider delivery handling
+ * resolves the thin index and point-reads the owner Mailbox instead.
  */
 export async function getOutboundEmailMessageByProviderMessageId(input: {
 	db: D1Database
@@ -951,6 +961,10 @@ export async function getOutboundEmailMessageByProviderMessageId(input: {
 	})
 	if (!indexRow) return null
 	if (indexRow.userId === systemEmailOwnerId) return null
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: indexRow.userId,
+		operation: 'getOutboundEmailMessageByProviderMessageId',
+	})
 	const message = await getEmailMessageById({
 		db: input.db,
 		userId: indexRow.userId,
@@ -966,6 +980,10 @@ export async function getEmailMessageByMessageIdHeader(input: {
 	userId: string
 	messageIdHeader: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'getEmailMessageByMessageIdHeader',
+	})
 	const row = await input.db
 		.prepare(
 			`SELECT *
@@ -989,6 +1007,10 @@ export async function listEmailMessages(input: {
 	classification?: EmailClassification | null
 	limit: number
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'listEmailMessages',
+	})
 	const result = await input.db
 		.prepare(
 			`SELECT *
@@ -1021,8 +1043,7 @@ export async function listEmailMessages(input: {
 }
 
 /**
- * Account-inbox page query: total + OFFSET page with optional substring search
- * and classification filter. Used by the cutover D1 off-path.
+ * Frozen shared-D1 compatibility page query. Live account reads use Mailbox.
  */
 export async function listEmailMessagesPageForUser(input: {
 	db: D1Database
@@ -1032,6 +1053,10 @@ export async function listEmailMessagesPageForUser(input: {
 	pageSize: number
 	offset: number
 }): Promise<{ total: number; messages: Array<EmailMessageRecord> }> {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'listEmailMessagesPageForUser',
+	})
 	const classification = input.classification
 	if (input.query) {
 		const pattern = `%${escapeLikePattern(input.query.toLowerCase())}%`
@@ -1130,6 +1155,10 @@ export async function listEmailDeliveryEvents(input: {
 	eventType?: EmailDeliveryEventType | null
 	limit: number
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'listEmailDeliveryEvents',
+	})
 	const result = await input.db
 		.prepare(
 			`SELECT *
@@ -1158,13 +1187,8 @@ function escapeLikePattern(value: string) {
 }
 
 /**
- * Case-insensitive substring search over stored messages' subject, header
- * From, and envelope sender. Same filters, ordering, and limit contract as
- * `listEmailMessages`; always scoped to one user.
- *
- * The leading-wildcard LIKE is a per-user linear scan (bounded by the
- * stored_email_messages entitlement cap). Revisit with FTS5 or a search
- * index if mailboxes outgrow that.
+ * Frozen shared-D1 compatibility search. USER callers are rejected before SQL
+ * is prepared; live search uses the owner Mailbox RPC.
  */
 export async function searchEmailMessages(input: {
 	db: D1Database
@@ -1176,6 +1200,10 @@ export async function searchEmailMessages(input: {
 	deliveryStatus?: EmailDeliveryStatus | null
 	limit: number
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'searchEmailMessages',
+	})
 	const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
 	const result = await input.db
 		.prepare(
@@ -1254,6 +1282,10 @@ export async function deleteEmailMessageById(input: {
 		role: 'raw_mime' | 'attachment'
 	}>
 }): Promise<DeleteEmailMessageByIdResult> {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.expectedUserId ?? '',
+		operation: 'deleteEmailMessageById',
+	})
 	// Capture ownership and blob keys before D1 delete. A failed read must
 	// abort the delete (and be retried) rather than orphan the R2 blobs; only
 	// the R2 deletes themselves are best-effort.
@@ -1344,15 +1376,18 @@ export async function deleteEmailMessageById(input: {
 }
 
 /**
- * Remove a USER Mailbox message's D1 compatibility projection after the
- * authoritative Mailbox/R2 delete has succeeded. This never touches R2 and is
- * idempotent when the projection is already absent.
+ * Frozen shared-D1 compatibility projection cleanup. USER callers are
+ * rejected; live Mailbox/R2 deletion leaves the rollback snapshot untouched.
  */
 export async function deleteEmailMessageProjectionById(input: {
 	db: D1Database
 	messageId: string
 	expectedUserId: string
 }): Promise<{ messageDeleted: boolean }> {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.expectedUserId,
+		operation: 'deleteEmailMessageProjectionById',
+	})
 	const row = await input.db
 		.prepare(`SELECT user_id FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
@@ -1403,6 +1438,10 @@ export async function insertEmailAttachments(input: {
 		storageKey?: string | null
 	}>
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.inboundDeliveryFence?.userId ?? '',
+		operation: 'insertEmailAttachments',
+	})
 	if (input.attachments.length === 0) return
 	const timestamp = nowIso()
 	// Batched inserts keep typical attachment sets (outbound caps at ten
@@ -1457,6 +1496,10 @@ export async function listEmailAttachmentsForMessage(input: {
 	db: D1Database
 	messageId: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: '',
+		operation: 'listEmailAttachmentsForMessage',
+	})
 	const result = await input.db
 		.prepare(
 			`SELECT *
@@ -1474,6 +1517,10 @@ export async function listEmailAttachmentsForUserMessage(input: {
 	userId: string
 	messageId: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'listEmailAttachmentsForUserMessage',
+	})
 	const result = await input.db
 		.prepare(
 			`SELECT attachment.*
@@ -1493,6 +1540,10 @@ export async function getEmailAttachmentRecordById(input: {
 	userId: string
 	attachmentId: string
 }) {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId,
+		operation: 'getEmailAttachmentRecordById',
+	})
 	const row = await input.db
 		.prepare(
 			`SELECT attachment.*
@@ -1519,6 +1570,10 @@ export async function insertEmailDeliveryEvent(input: {
 	detail?: Record<string, unknown> | null
 	createdAt?: string
 }): Promise<EmailDeliveryEventRecord> {
+	assertLegacyUserEmailGraphServiceDisabled({
+		ownerId: input.userId ?? '',
+		operation: 'insertEmailDeliveryEvent',
+	})
 	const id = crypto.randomUUID()
 	const createdAt = input.createdAt ?? nowIso()
 	const detailJson = JSON.stringify(input.detail ?? {})

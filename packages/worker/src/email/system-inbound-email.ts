@@ -121,6 +121,7 @@ export async function handleSystemInboundEmail(input: {
 			const reason = 'Message rejected by recipient policy.'
 			input.message.setReject(reason)
 			await recordBoundedEmailRejectionEvent({
+				env: input.env,
 				db: input.env.APP_DB,
 				userId: systemEmailOwnerId,
 				inboxId: inbox.id,
@@ -136,6 +137,7 @@ export async function handleSystemInboundEmail(input: {
 	if (input.message.rawSize > systemEmailLimits.maxMessageBytes) {
 		input.message.setReject('Recipient mailbox is over quota.')
 		await recordBoundedEmailRejectionEvent({
+			env: input.env,
 			db: input.env.APP_DB,
 			userId: systemEmailOwnerId,
 			inboxId: inbox.id,
@@ -184,6 +186,7 @@ export async function handleSystemInboundEmail(input: {
 		if (storedMessages >= systemEmailLimits.maxStoredMessages) {
 			input.message.setReject('Recipient mailbox is over quota.')
 			await recordBoundedEmailRejectionEvent({
+				env: input.env,
 				db: input.env.APP_DB,
 				userId: systemEmailOwnerId,
 				inboxId: inbox.id,
@@ -202,6 +205,7 @@ export async function handleSystemInboundEmail(input: {
 		if (receivesToday >= systemEmailLimits.maxReceivesPerDay) {
 			input.message.setReject('Recipient mailbox is over quota.')
 			await recordBoundedEmailRejectionEvent({
+				env: input.env,
 				db: input.env.APP_DB,
 				userId: systemEmailOwnerId,
 				inboxId: inbox.id,
@@ -244,6 +248,7 @@ export async function handleSystemInboundEmail(input: {
 	if (claim.overLimit || !claim.delivery) {
 		input.message.setReject('Recipient mailbox is over quota.')
 		await recordBoundedEmailRejectionEvent({
+			env: input.env,
 			db: input.env.APP_DB,
 			userId: systemEmailOwnerId,
 			inboxId: inbox.id,

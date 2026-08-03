@@ -2,6 +2,10 @@ import {
 	toMailboxDeliveryEventInput,
 	type EmailDeliveryEventMirrorProjection,
 } from './mailbox-snapshots.ts'
+import {
+	prepareUserEmailD1Statement,
+	type UserEmailD1AccessMarker,
+} from './user-email-d1-guard.ts'
 import { type EmailDeliveryEventType } from './types.ts'
 import { type MailboxDeliveryEventInput } from './mailbox-types.ts'
 
@@ -87,16 +91,18 @@ function mapDeliveryEventMirrorRow(
  */
 export async function getEmailDeliveryEventMirrorProjection(input: {
 	db: D1Database
+	marker: UserEmailD1AccessMarker
 	ownerId: string
 	eventId: string
 }): Promise<EmailDeliveryEventMirrorProjection | null> {
-	const row = await input.db
-		.prepare(
-			`${deliveryEventMirrorSelect}
+	const row = await prepareUserEmailD1Statement({
+		db: input.db,
+		marker: input.marker,
+		sql: `${deliveryEventMirrorSelect}
 			WHERE id = ?
 				AND user_id = ?
 			LIMIT 1`,
-		)
+	})
 		.bind(input.eventId, input.ownerId)
 		.first<DeliveryEventMirrorRow>()
 	return row ? mapDeliveryEventMirrorRow(row) : null
@@ -110,12 +116,14 @@ export async function getEmailDeliveryEventMirrorProjection(input: {
  */
 export async function getMailboxDeliveryEventMirrorInput(input: {
 	db: D1Database
+	marker: UserEmailD1AccessMarker
 	ownerId: string
 	eventId: string
 	sourceMutationAt: string
 }): Promise<MailboxDeliveryEventInput | null> {
 	const projection = await getEmailDeliveryEventMirrorProjection({
 		db: input.db,
+		marker: input.marker,
 		ownerId: input.ownerId,
 		eventId: input.eventId,
 	})
@@ -135,18 +143,20 @@ export async function getMailboxDeliveryEventMirrorInput(input: {
  */
 export async function listEmailDeliveryEventMirrorProjectionsForMessage(input: {
 	db: D1Database
+	marker: UserEmailD1AccessMarker
 	ownerId: string
 	messageId: string
 	limit: number
 }): Promise<Array<EmailDeliveryEventMirrorProjection>> {
-	const result = await input.db
-		.prepare(
-			`${deliveryEventMirrorSelect}
+	const result = await prepareUserEmailD1Statement({
+		db: input.db,
+		marker: input.marker,
+		sql: `${deliveryEventMirrorSelect}
 			WHERE message_id = ?
 				AND user_id = ?
 			ORDER BY created_at DESC, id DESC
 			LIMIT ?`,
-		)
+	})
 		.bind(input.messageId, input.ownerId, input.limit)
 		.all<DeliveryEventMirrorRow>()
 	const newestFirst = (result.results ?? []).map(mapDeliveryEventMirrorRow)
@@ -159,6 +169,7 @@ export async function listEmailDeliveryEventMirrorProjectionsForMessage(input: {
  */
 export async function listMailboxDeliveryEventMirrorInputsForMessage(input: {
 	db: D1Database
+	marker: UserEmailD1AccessMarker
 	ownerId: string
 	messageId: string
 	limit: number
@@ -183,24 +194,27 @@ export async function listMailboxDeliveryEventMirrorInputsForMessage(input: {
  */
 export async function listMailboxDeliveryEventMirrorInputsForOwnerKeyset(input: {
 	db: D1Database
+	marker: UserEmailD1AccessMarker
 	ownerId: string
 	cursor: { createdAt: string; id: string } | null
 	limit: number
 }): Promise<Array<MailboxDeliveryEventInput>> {
 	const result =
 		input.cursor == null
-			? await input.db
-					.prepare(
-						`${deliveryEventMirrorSelect}
+			? await prepareUserEmailD1Statement({
+					db: input.db,
+					marker: input.marker,
+					sql: `${deliveryEventMirrorSelect}
 						WHERE user_id = ?
 						ORDER BY created_at ASC, id ASC
 						LIMIT ?`,
-					)
+				})
 					.bind(input.ownerId, input.limit)
 					.all<DeliveryEventMirrorRow>()
-			: await input.db
-					.prepare(
-						`${deliveryEventMirrorSelect}
+			: await prepareUserEmailD1Statement({
+					db: input.db,
+					marker: input.marker,
+					sql: `${deliveryEventMirrorSelect}
 						WHERE user_id = ?
 							AND (
 								created_at > ?
@@ -208,7 +222,7 @@ export async function listMailboxDeliveryEventMirrorInputsForOwnerKeyset(input: 
 							)
 						ORDER BY created_at ASC, id ASC
 						LIMIT ?`,
-					)
+				})
 					.bind(
 						input.ownerId,
 						input.cursor.createdAt,

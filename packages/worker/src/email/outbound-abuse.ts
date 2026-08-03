@@ -13,6 +13,7 @@
 
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import { getSystemEmailDomain } from './platform-address.ts'
 import { type EmailDeliveryStatus } from './types.ts'
 
@@ -33,6 +34,7 @@ type OutboundAbuseEnv = Pick<
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
+	| 'MAILBOX'
 >
 
 /**
@@ -66,7 +68,7 @@ export async function applyOutboundEmailAbusePause(input: {
 			// between recording and pausing), never on its own.
 			if (!input.eventRecorded) {
 				const complaintsToday = await countProviderDeliveryEventsToday({
-					db: input.env.APP_DB,
+					env: input.env,
 					userId: input.userId,
 					eventType: 'complained',
 					now,
@@ -77,7 +79,7 @@ export async function applyOutboundEmailAbusePause(input: {
 		}
 		case 'bounced': {
 			const bouncesToday = await countProviderDeliveryEventsToday({
-				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.userId,
 				eventType: 'bounced',
 				now,
@@ -120,23 +122,22 @@ export async function applyOutboundEmailAbusePause(input: {
 }
 
 async function countProviderDeliveryEventsToday(input: {
-	db: D1Database
+	env: OutboundAbuseEnv
 	userId: string
 	eventType: EmailDeliveryStatus
 	now: Date
 }) {
-	const dayStart = `${utcDayKey(input.now)}T00:00:00`
-	const row = await input.db
-		.prepare(
-			`SELECT COUNT(*) AS count FROM email_delivery_events
-			 WHERE user_id = ?
-				AND event_type = ?
-				AND provider = 'cloudflare-email'
-				AND created_at >= ?`,
-		)
-		.bind(input.userId, input.eventType, dayStart)
-		.first<{ count: number }>()
-	return Number(row?.count ?? 0)
+	const dayStart = `${utcDayKey(input.now)}T00:00:00.000Z`
+	const result = await mailboxRpc({
+		env: input.env,
+		userId: input.userId,
+	}).countDeliveryEvents({
+		ownerId: input.userId,
+		eventType: input.eventType,
+		provider: 'cloudflare-email',
+		createdAtGte: dayStart,
+	})
+	return result.count
 }
 
 /**

@@ -2,14 +2,11 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getOwnerEmailAttachmentById: vi.fn(),
-	resolveMailboxReadCutoverDbUserId: vi.fn(),
 }))
 
-vi.mock('#worker/email/mailbox-read-cutover.ts', () => ({
+vi.mock('#worker/email/owner-email-reader.ts', () => ({
 	getOwnerEmailAttachmentById: (...args: Array<unknown>) =>
 		mockModule.getOwnerEmailAttachmentById(...args),
-	resolveMailboxReadCutoverDbUserId: (...args: Array<unknown>) =>
-		mockModule.resolveMailboxReadCutoverDbUserId(...args),
 }))
 
 const { emailAttachmentGetCapability } =
@@ -64,7 +61,6 @@ test('email capabilities require a signed-in user and return attachment content 
 	).rejects.toThrow(/Account email is not verified/)
 	expect(mockModule.getOwnerEmailAttachmentById).not.toHaveBeenCalled()
 
-	mockModule.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
 	mockModule.getOwnerEmailAttachmentById.mockResolvedValueOnce({
 		id: 'attachment-1',
 		messageId: 'message-1',
@@ -86,8 +82,7 @@ test('email capabilities require a signed-in user and return attachment content 
 
 	expect(mockModule.getOwnerEmailAttachmentById).toHaveBeenCalledWith({
 		env,
-		dbUserId: 7,
-		stableUserId: 'user-1',
+		ownerId: 'user-1',
 		blobs: env.EMAIL_BLOBS,
 		attachmentId: 'attachment-1',
 	})
@@ -102,7 +97,6 @@ test('email capabilities require a signed-in user and return attachment content 
 		data_base64: 'QXR0YWNobWVudCB0ZXh0',
 	})
 
-	mockModule.resolveMailboxReadCutoverDbUserId.mockResolvedValueOnce(7)
 	mockModule.getOwnerEmailAttachmentById.mockResolvedValueOnce(null)
 
 	await expect(

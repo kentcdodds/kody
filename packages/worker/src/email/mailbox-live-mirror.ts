@@ -21,22 +21,14 @@ import {
 	mailboxInboundDedupeProvider,
 	mailboxInboundProvider,
 } from './mailbox-inbound-ledger.ts'
+import { assertLegacyUserEmailGraphServiceDisabled } from './user-email-d1-guard.ts'
 
 /**
- * High-level D1 → Mailbox live-mirror orchestration.
+ * Frozen D1 → Mailbox rollback reference.
  *
- * D1 remains authoritative for the message graph and non-USER-inbound events.
- * These helpers load cohesive snapshots from D1 and call best-effort mirror
- * RPCs; they never throw into caller paths and do not perform deletes or
- * inbound-lifecycle special cases. USER inbound terminal work explicitly omits
- * delivery events because those snapshots flow Mailbox → D1.
- *
- * Callers that just created a thread may pass it via `thread` to avoid a
- * round-trip; otherwise the graph helper loads it with `getEmailThreadById`.
- *
- * Graph event mirroring uses one batch RPC after the message settles (not
- * Promise.all of per-event RPCs). Analytics Engine parity writes are at most
- * two per graph attempt: 1 message outcome + 1 batch outcome.
+ * USER calls are production-blocked before shared graph SQL is prepared. The
+ * implementation remains only to preserve the pre-cutover rollback algorithm;
+ * no live, scheduled, admin, or account path imports it.
  */
 
 /**
@@ -101,8 +93,13 @@ export async function mirrorMailboxDeliveryEventFromD1(input: {
 	sourceMutationAt?: string
 }): Promise<MailboxMirrorResult> {
 	try {
+		assertLegacyUserEmailGraphServiceDisabled({
+			ownerId: input.userId,
+			operation: 'mirrorMailboxDeliveryEventFromD1',
+		})
 		const projection = await getEmailDeliveryEventMirrorProjection({
 			db: input.db,
+			marker: 'frozen-rollback-audit',
 			ownerId: input.userId,
 			eventId: input.eventId,
 		})
@@ -152,6 +149,10 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 	includeDeliveryEvents?: boolean
 }): Promise<MailboxLiveMirrorGraphSummary> {
 	try {
+		assertLegacyUserEmailGraphServiceDisabled({
+			ownerId: input.userId,
+			operation: 'mirrorMailboxMessageGraphFromD1',
+		})
 		const message = await getEmailMessageById({
 			db: input.db,
 			userId: input.userId,
@@ -194,6 +195,7 @@ export async function mirrorMailboxMessageGraphFromD1(input: {
 		// trailing newest max — drop the oldest overflow row at index 0.
 		const loadedEvents = await listMailboxDeliveryEventMirrorInputsForMessage({
 			db: input.db,
+			marker: 'frozen-rollback-audit',
 			ownerId: input.userId,
 			messageId: input.messageId,
 			limit: mailboxLiveMirrorMaxEvents + 1,

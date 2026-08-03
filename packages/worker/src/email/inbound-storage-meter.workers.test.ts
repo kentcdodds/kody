@@ -12,7 +12,7 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { buildInboundDelivery } from './inbound-delivery.ts'
 import { handleInboundEmail } from './inbound.ts'
-import { listEmailMessages } from './repo.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import { RetryableInboundStorageError } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -141,8 +141,10 @@ test(
 		await handleInboundEmail(message, createInboundEnv())
 		expect(message.rejectedReason).toBeNull()
 		expect(
-			await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
-		).toHaveLength(1)
+			await mailboxRpc({ env, userId }).listMessages({ limit: 10 }),
+		).toMatchObject({
+			messages: [expect.objectContaining({ direction: 'inbound' })],
+		})
 
 		const meter = userMeterRpc({ env, userId })
 		// UserMeter is authoritative: cold bootstrap read D1 = initialBytes, reserved.
@@ -278,12 +280,12 @@ test(
 			quotaDay: new Date().toISOString().slice(0, 10),
 		})
 		expect(
-			await listEmailMessages({
-				db: env.APP_DB,
-				userId: retryUserId,
+			await mailboxRpc({ env, userId: retryUserId }).listMessages({
 				limit: 1,
 			}),
-		).toMatchObject([{ id: candidate.messageId }])
+		).toMatchObject({
+			messages: [{ id: candidate.messageId }],
+		})
 	},
 	inboundStorageMeterTimeoutMs,
 )

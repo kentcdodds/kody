@@ -2,12 +2,12 @@ import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mocks = vi.hoisted(() => ({
-	getEmailMessageById: vi.fn(),
+	getMessage: vi.fn(),
 	sendOutboundEmail: vi.fn(),
 }))
 
-vi.mock('#worker/email/repo.ts', () => ({
-	getEmailMessageById: mocks.getEmailMessageById,
+vi.mock('#worker/email/mailbox-client.ts', () => ({
+	mailboxRpc: () => ({ getMessage: mocks.getMessage }),
 }))
 
 vi.mock('#worker/email/outbound.ts', () => ({
@@ -72,7 +72,7 @@ test('email_reply gates unverified accounts, surfaces failed delivery, and forwa
 	).rejects.toThrow(/Account email is not verified/)
 	expect(mocks.sendOutboundEmail).not.toHaveBeenCalled()
 
-	mocks.getEmailMessageById.mockResolvedValue(inboundMessage)
+	mocks.getMessage.mockResolvedValue(inboundMessage)
 	mocks.sendOutboundEmail.mockResolvedValue({
 		status: 'failed',
 		error: 'Invalid email address: Invalid input',

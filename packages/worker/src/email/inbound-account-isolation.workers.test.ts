@@ -5,7 +5,7 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
-import { listEmailMessages } from './repo.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -111,30 +111,19 @@ test('inbound account plan/verification requires matching email and stable_user_
 	// Dual-scoped miss → unverified gate (not the other account's verified/max).
 	expect(message.rejectedReason).toBe('Account email is not verified.')
 
-	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId: recipientUserId,
-			limit: 10,
-		}),
-	).toEqual([])
-	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId: otherUserId,
-			limit: 10,
-		}),
-	).toEqual([])
+	const recipientMailbox = mailboxRpc({ env, userId: recipientUserId })
+	const otherMailbox = mailboxRpc({ env, userId: otherUserId })
+	expect(await recipientMailbox.listMessages({ limit: 10 })).toMatchObject({
+		messages: [],
+	})
+	expect(await otherMailbox.listMessages({ limit: 10 })).toMatchObject({
+		messages: [],
+	})
 
-	const recipientEvents = await env.APP_DB.prepare(
-		`SELECT detail_json FROM email_delivery_events
-			WHERE user_id = ? AND event_type = 'rejected'`,
-	)
-		.bind(recipientUserId)
-		.all<{ detail_json: string }>()
-	expect(
-		(recipientEvents.results ?? []).map((row) => JSON.parse(row.detail_json)),
-	).toEqual(
+	const recipientEvents = await recipientMailbox.listDeliveryEvents({
+		limit: 10,
+	})
+	expect(recipientEvents.map((event) => JSON.parse(event.detailJson))).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				reason: 'Account email is not verified.',
@@ -143,10 +132,5 @@ test('inbound account plan/verification requires matching email and stable_user_
 		]),
 	)
 
-	const otherEvents = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count FROM email_delivery_events WHERE user_id = ?`,
-	)
-		.bind(otherUserId)
-		.first<{ count: number }>()
-	expect(Number(otherEvents?.count ?? 0)).toBe(0)
+	expect(await otherMailbox.listDeliveryEvents({ limit: 10 })).toEqual([])
 })

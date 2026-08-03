@@ -336,7 +336,7 @@ export type AdminInsightsTotals = {
 	enabledJobs: number
 	workflowRuns: number
 	activeMemories: number
-	storedEmailMessages: number
+	storedEmailMessages: number | null
 	secrets: number
 	activeCommunityListings: number
 	passkeys: number

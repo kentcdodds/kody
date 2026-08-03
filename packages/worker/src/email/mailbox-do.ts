@@ -25,6 +25,7 @@ import {
 	touchMailboxThread,
 	updateMailboxMessageDelivery,
 } from './mailbox-mutations.ts'
+import { findDeliveryEventByProviderEventId } from './mailbox-delivery-events.ts'
 import {
 	deleteMailboxMessageMetadataWithTombstone,
 	tombstoneMissingMailboxMessage,
@@ -68,6 +69,8 @@ import {
 	type MailboxBootstrapDeliveryEventsResult,
 	type MailboxCountMessagesInput,
 	type MailboxCountResult,
+	type MailboxCommitInboundMessageGraphResult,
+	type MailboxCommitOutboundTerminalInput,
 	type MailboxDeleteDeliveryEventInput,
 	type MailboxDeleteMessageWithBlobsResult,
 	type MailboxDeleteMessageMetadataInput,
@@ -276,6 +279,15 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		message: MailboxMessageInput
 		attachments?: Array<MailboxAttachmentInput>
 	}): Promise<{ ok: true; accepted: boolean }> {
+		return await this.writeMessageGraph(input)
+	}
+
+	async writeMessageGraph(input: {
+		ownerId: string
+		thread?: MailboxThreadInput | null
+		message: MailboxMessageInput
+		attachments?: Array<MailboxAttachmentInput>
+	}): Promise<{ ok: true; accepted: boolean }> {
 		const message = input.message
 		assertMailboxNonEmptyString(message.id, 'message.id')
 		let accepted = false
@@ -299,6 +311,228 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		this.markRetentionDirty()
 		await this.ensureRetentionAlarm()
 		return { ok: true, accepted }
+	}
+
+	async commitInboundMessageGraph(input: {
+		ownerId: string
+		deliveryId: string
+		storageLease: string
+		thread: MailboxThreadInput
+		message: MailboxMessageInput
+		attachments: Array<MailboxAttachmentInput>
+	}): Promise<MailboxCommitInboundMessageGraphResult> {
+		let result: MailboxCommitInboundMessageGraphResult = {
+			status: 'lease-lost',
+		}
+		this.ctx.storage.transactionSync(() => {
+			const ownerId = this.store.assertOwner(input.ownerId)
+			const delivery = getMailboxInboundDelivery(
+				this.ctx.storage.sql,
+				input.deliveryId,
+			)
+			const existing = this.store.getMessage(input.message.id)
+			if (
+				delivery?.state === 'received' &&
+				delivery.messageId === input.message.id &&
+				delivery.finalizationToken === input.storageLease &&
+				existing
+			) {
+				result = { status: 'already-committed', message: existing }
+				return
+			}
+			if (
+				delivery?.state !== 'storing' ||
+				delivery.storageLease !== input.storageLease ||
+				delivery.messageId !== input.message.id ||
+				delivery.expectedAttachmentCount !== input.attachments.length
+			) {
+				return
+			}
+			if (input.message.direction !== 'inbound') {
+				throw new Error('Inbound graph commit requires an inbound message.')
+			}
+			if (input.message.threadId !== input.thread.id) {
+				throw new Error(
+					'Inbound graph commit message.threadId must match thread.id.',
+				)
+			}
+			if (
+				input.message.inboxId !== delivery.inboxId ||
+				input.thread.inboxId !== delivery.inboxId
+			) {
+				throw new Error(
+					'Inbound graph commit inbox ids must match the delivery inbox.',
+				)
+			}
+			this.store.validateMessageBlobKeys({
+				ownerId,
+				message: input.message,
+				attachments: input.attachments,
+			})
+			this.store.upsertThreadRow(input.thread)
+			const written = this.store.upsertMessageRow(input.message)
+			if (!written.accepted) {
+				throw new Error(
+					'Inbound graph commit was rejected by a newer snapshot.',
+				)
+			}
+			this.store.replaceAttachmentsForMessage(
+				input.message.id,
+				input.attachments,
+			)
+			const message = this.store.getMessage(input.message.id)
+			if (!message) {
+				throw new Error('Inbound graph commit did not persist its message.')
+			}
+			result = { status: 'committed', message }
+		})
+		if (result.status !== 'lease-lost') {
+			this.markRetentionDirty()
+			await this.ensureRetentionAlarm()
+		}
+		return result
+	}
+
+	async commitOutboundTerminal(
+		input: MailboxCommitOutboundTerminalInput,
+	): Promise<{ message: MailboxMessageRecord; eventInserted: boolean }> {
+		let result:
+			| { message: MailboxMessageRecord; eventInserted: boolean }
+			| undefined
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			const mutation = updateMailboxMessageDelivery(this.ctx.storage.sql, {
+				messageId: input.messageId,
+				processingStatus: input.processingStatus,
+				providerMessageId: input.providerMessageId,
+				error: input.error,
+				sentAt: input.sentAt,
+				updatedAt: input.event.updatedAt,
+			})
+			if (mutation.status === 'missing') {
+				throw new Error('Outbound terminal message is missing from Mailbox.')
+			}
+			const eventWrite = this.store.writeDeliveryEventRow(input.event)
+			const message = this.store.getMessage(input.messageId)
+			if (!message) {
+				throw new Error('Outbound terminal message disappeared from Mailbox.')
+			}
+			result = { message, eventInserted: eventWrite.inserted }
+		})
+		if (!result) throw new Error('Outbound terminal transaction did not run.')
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return result
+	}
+
+	async recordBoundedRejection(input: {
+		ownerId: string
+		inboxId: string
+		recipient: string
+		reason: string
+		phase: string
+		day: string
+		now: string
+		detailLimit: number
+		detailEventId: string
+	}): Promise<{ count: number; detailed: boolean }> {
+		let count = 0
+		let detailed = false
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			const aggregateId = `email-rejections:${input.inboxId}:${input.day}`
+			const existing = this.ctx.storage.sql
+				.exec<{ detail_json: string }>(
+					`SELECT detail_json FROM email_delivery_events
+					WHERE id = ?
+					LIMIT 1`,
+					aggregateId,
+				)
+				.toArray()[0]
+			let priorCount = 0
+			if (existing) {
+				try {
+					const detail = JSON.parse(existing.detail_json) as {
+						count?: unknown
+					}
+					if (typeof detail.count === 'number') priorCount = detail.count
+				} catch {
+					priorCount = 0
+				}
+			}
+			count = priorCount + 1
+			const event = (
+				id: string,
+				detailJson: string,
+			): MailboxDeliveryEventInput => ({
+				id,
+				messageId: null,
+				inboxId: input.inboxId,
+				eventType: 'rejected',
+				provider: 'cloudflare-email-routing',
+				providerMessageId: null,
+				providerEventId: null,
+				detailJson,
+				needsEffectReconcile: false,
+				state: null,
+				fingerprint: null,
+				storageLease: null,
+				storageLeaseAt: null,
+				cleanupLease: null,
+				cleanupLeaseAt: null,
+				cleanupRetryAt: null,
+				expectedAttachmentCount: null,
+				finalizationToken: null,
+				reconcileAfter: null,
+				dedupeExpiresAt: null,
+				usageEffectRecordedAt: null,
+				usageEffectSuppressedAt: null,
+				usageStartedAt: null,
+				usageMonth: null,
+				usageBytes: null,
+				usageDurationMs: null,
+				usageEffectRetryAt: null,
+				usageEffectLease: null,
+				usageEffectLeaseAt: null,
+				subscriptionEffectState: null,
+				subscriptionEffectLease: null,
+				subscriptionEffectLeaseAt: null,
+				subscriptionEffectRetryAt: null,
+				subscriptionEffectAttemptCount: null,
+				subscriptionEffectDeadLetterAt: null,
+				subscriptionEffectLastError: null,
+				createdAt: input.now,
+				updatedAt: input.now,
+			})
+			this.store.writeDeliveryEventRow(
+				event(
+					aggregateId,
+					JSON.stringify({
+						aggregate: true,
+						day: input.day,
+						count,
+						last_reason: input.reason,
+						last_phase: input.phase,
+						last_at: input.now,
+					}),
+				),
+			)
+			if (count <= Math.max(0, Math.trunc(input.detailLimit))) {
+				detailed = this.store.writeDeliveryEventRow(
+					event(
+						input.detailEventId,
+						JSON.stringify({
+							recipient: input.recipient,
+							reason: input.reason,
+							phase: input.phase,
+						}),
+					),
+				).inserted
+			}
+		})
+		this.markRetentionDirty()
+		await this.ensureRetentionAlarm()
+		return { count, detailed }
 	}
 
 	async upsertDeliveryEvent(input: {
@@ -493,6 +727,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 			})
 			return {
 				status: 'deleted',
+				providerMessageId: message.providerMessageId,
 				attachmentsSeen: attachments.length,
 				externalAttachmentsSeen: attachments.filter(
 					(attachment) => attachment.storageKind === 'external',
@@ -554,6 +789,14 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return this.store.getThread(input.threadId)
 	}
 
+	async findThreadForInboundMessage(input: {
+		inboxId?: string | null
+		references: Array<string>
+		inReplyToHeader?: string | null
+	}): Promise<MailboxThreadRecord | null> {
+		return this.store.findThreadForInboundMessage(input)
+	}
+
 	async getMessage(input: {
 		messageId: string
 	}): Promise<MailboxMessageRecord | null> {
@@ -611,6 +854,37 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		limit?: number
 	}): Promise<Array<MailboxDeliveryEventRecord>> {
 		return this.store.listDeliveryEvents(input)
+	}
+
+	async countDeliveryEvents(input: {
+		ownerId: string
+		eventType: EmailDeliveryEventType
+		provider: string
+		createdAtGte: string
+	}): Promise<{ count: number }> {
+		this.store.assertOwner(input.ownerId)
+		const row = this.ctx.storage.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count
+				FROM email_delivery_events
+				WHERE event_type = ?
+					AND provider = ?
+					AND created_at >= ?`,
+				input.eventType,
+				input.provider,
+				input.createdAtGte,
+			)
+			.one()
+		return { count: Number(row.count) }
+	}
+
+	async getDeliveryEventByProviderEventId(input: {
+		providerEventId: string
+	}): Promise<MailboxDeliveryEventRecord | null> {
+		return findDeliveryEventByProviderEventId(
+			this.ctx.storage.sql,
+			input.providerEventId,
+		)
 	}
 
 	async countMailbox(): Promise<MailboxCountResult> {

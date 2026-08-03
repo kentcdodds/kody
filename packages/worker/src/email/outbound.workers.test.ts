@@ -5,14 +5,9 @@ import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
+import { emailRawMimeKey } from './blob-keys.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import {
-	deleteEmailMessageById,
-	getEmailMessageById,
-	insertEmailMessage,
-	listEmailAttachmentsForMessage,
-	listEmailMessages,
-} from './repo.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 import { getEmailAttachmentById } from './service.ts'
 import {
 	maxOutboundEmailAttachmentTotalBytes,
@@ -35,6 +30,58 @@ const cloudflareEmailApi =
 const platformBaseUrl = 'https://kody.example.com'
 // User mail lives on the inbox. subdomain derived from APP_BASE_URL.
 const platformDomain = 'inbox.kody.example.com'
+
+async function writeInboundMailboxMessage(input: {
+	userId: string
+	fromAddress: string
+	envelopeFrom: string
+	toAddresses: Array<string>
+	subject: string
+	messageIdHeader: string
+	receivedAt: string
+}) {
+	const id = crypto.randomUUID()
+	const message = {
+		id,
+		direction: 'inbound' as const,
+		inboxId: null,
+		threadId: null,
+		senderIdentityId: null,
+		fromAddress: input.fromAddress,
+		envelopeFrom: input.envelopeFrom,
+		toAddresses: input.toAddresses,
+		ccAddresses: [],
+		bccAddresses: [],
+		replyToAddresses: [],
+		subject: input.subject,
+		messageIdHeader: input.messageIdHeader,
+		inReplyToHeader: null,
+		references: [],
+		headers: {},
+		authResults: null,
+		textBody: null,
+		htmlBody: null,
+		rawMimeKey: emailRawMimeKey(input.userId, id),
+		rawSize: 0,
+		processingStatus: 'stored' as const,
+		classification: 'accepted' as const,
+		classificationReason: null,
+		providerMessageId: null,
+		deliveryStatus: null,
+		deliveryStatusAt: null,
+		error: null,
+		receivedAt: input.receivedAt,
+		sentAt: null,
+		createdAt: input.receivedAt,
+		updatedAt: input.receivedAt,
+	}
+	await mailboxRpc({ env, userId: input.userId }).writeMessageGraph({
+		ownerId: input.userId,
+		message,
+		attachments: [],
+	})
+	return message
+}
 
 function createBindingSendEnv() {
 	return {
@@ -173,9 +220,7 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 	expect(sent[0]?.headers).toEqual({})
 	expect(result.status).toBe('sent')
 	expect(result.providerMessageId).toBe('provider-message-123')
-	const stored = await getEmailMessageById({
-		db: env.APP_DB,
-		userId,
+	const stored = await mailboxRpc({ env, userId }).getMessage({
 		messageId: result.message.id,
 	})
 	expect(stored).toMatchObject({
@@ -205,13 +250,13 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 		domain: platformDomain,
 		status: 'verified',
 	})
-	const listed = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
+	const listed = await mailboxRpc({ env, userId }).listMessages({
 		direction: 'outbound',
 		limit: 5,
 	})
-	expect(listed.map((message) => message.id)).toContain(result.message.id)
+	expect(listed.messages.map((message) => message.id)).toContain(
+		result.message.id,
+	)
 }, 30_000)
 
 test('sendOutboundEmail rejects suspended accounts', async () => {
@@ -490,19 +535,14 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		subject: 'Hello from Kody',
 		text: 'Original body',
 	})
-	const inbound = await insertEmailMessage({
-		db: env.APP_DB,
-		message: {
-			direction: 'inbound',
-			userId,
-			fromAddress: 'recipient@example.com',
-			envelopeFrom: 'recipient@example.com',
-			toAddresses: [accountEmail],
-			subject: 'Hello from Kody',
-			messageIdHeader: '<inbound-root@example.com>',
-			processingStatus: 'stored',
-			receivedAt: new Date().toISOString(),
-		},
+	const inbound = await writeInboundMailboxMessage({
+		userId,
+		fromAddress: 'recipient@example.com',
+		envelopeFrom: 'recipient@example.com',
+		toAddresses: [accountEmail],
+		subject: 'Hello from Kody',
+		messageIdHeader: '<inbound-root@example.com>',
+		receivedAt: new Date().toISOString(),
 	})
 
 	const result = await sendOutboundEmail({
@@ -548,9 +588,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
 		'X-Kody-Email-Message-Id',
 	)
-	const stored = await getEmailMessageById({
-		db: env.APP_DB,
-		userId,
+	const stored = await mailboxRpc({ env, userId }).getMessage({
 		messageId: result.message.id,
 	})
 	expect(stored).toMatchObject({
@@ -601,19 +639,14 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 	const accountEmail = `account-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({ email: accountEmail })
-	const inbound = await insertEmailMessage({
-		db: env.APP_DB,
-		message: {
-			direction: 'inbound',
-			userId,
-			fromAddress: 'recipient@example.com',
-			envelopeFrom: 'recipient@example.com',
-			toAddresses: [accountEmail],
-			subject: 'Needs a file',
-			messageIdHeader: '<inbound-attach@example.com>',
-			processingStatus: 'stored',
-			receivedAt: new Date().toISOString(),
-		},
+	const inbound = await writeInboundMailboxMessage({
+		userId,
+		fromAddress: 'recipient@example.com',
+		envelopeFrom: 'recipient@example.com',
+		toAddresses: [accountEmail],
+		subject: 'Needs a file',
+		messageIdHeader: '<inbound-attach@example.com>',
+		receivedAt: new Date().toISOString(),
 	})
 	const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
 	const sent: Array<Record<string, unknown>> = []
@@ -662,8 +695,7 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 
 	// The attachment is stored as its own R2 object and stays readable via
 	// the normal attachment read path.
-	const stored = await listEmailAttachmentsForMessage({
-		db: env.APP_DB,
+	const stored = await mailboxRpc({ env, userId }).listAttachmentsForMessage({
 		messageId: result.message.id,
 	})
 	expect(stored).toHaveLength(1)
@@ -677,6 +709,7 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 	const storageKey = stored[0]?.storageKey
 	expect(storageKey).toContain(`email-attachment:v1:${userId}/`)
 	const loaded = await getEmailAttachmentById({
+		env,
 		db: env.APP_DB,
 		blobs: env.EMAIL_BLOBS,
 		userId,
@@ -693,15 +726,13 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 	})
 
 	// Deleting the message removes the external attachment blob too.
-	await deleteEmailMessageById({
-		db: env.APP_DB,
-		blobs: env.EMAIL_BLOBS,
+	await mailboxRpc({ env, userId }).deleteMessageWithBlobs({
+		ownerId: userId,
 		messageId: result.message.id,
 	})
 	expect(await env.EMAIL_BLOBS.get(storageKey!)).toBeNull()
 	expect(
-		await listEmailAttachmentsForMessage({
-			db: env.APP_DB,
+		await mailboxRpc({ env, userId }).listAttachmentsForMessage({
 			messageId: result.message.id,
 		}),
 	).toEqual([])
@@ -841,13 +872,11 @@ test('sendOutboundEmail rejects invalid and oversized attachments', async () => 
 	// None of the failures consumed the daily send quota or stored a message.
 	expect(await readDailyEmailSendCounter(userId)).toBe(0)
 	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId,
+		await mailboxRpc({ env, userId }).listMessages({
 			direction: 'outbound',
 			limit: 5,
 		}),
-	).toEqual([])
+	).toMatchObject({ messages: [] })
 }, 30_000)
 
 test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit', async () => {

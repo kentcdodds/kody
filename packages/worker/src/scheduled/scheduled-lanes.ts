@@ -3,10 +3,6 @@ import {
 	checkAuthDenialBurstAndNotify,
 	shouldRunAuthDenialAlertCron,
 } from '#app/auth-denial-alerts.ts'
-import {
-	checkEmailDeliveryBurstAndNotify,
-	shouldRunEmailDeliveryAlertCron,
-} from '#app/email-delivery-alerts.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
@@ -16,7 +12,6 @@ import {
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
-import { reconcileMailboxParity } from '#worker/email/mailbox-reconcile.ts'
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
@@ -45,11 +40,9 @@ export const scheduledLaneNames = [
 	'job_retention',
 	'usage_aggregation',
 	'auth_denial_alert',
-	'email_delivery_alert',
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
-	'mailbox_parity',
 ] as const
 
 export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
@@ -81,7 +74,6 @@ export function getScheduledLanes(input: {
 		'storage_bucket_estimate_backfill',
 		'd1_storage_reconciliation',
 		'oauth_purge_expired',
-		'mailbox_parity',
 	]
 	if (shouldRunRetentionCron(input.scheduledAt)) {
 		lanes.push('retention', 'job_retention')
@@ -91,9 +83,6 @@ export function getScheduledLanes(input: {
 	}
 	if (shouldRunAuthDenialAlertCron(input.scheduledAt)) {
 		lanes.push('auth_denial_alert')
-	}
-	if (shouldRunEmailDeliveryAlertCron(input.scheduledAt)) {
-		lanes.push('email_delivery_alert')
 	}
 	if (
 		shouldRunDrExportCron(input.scheduledAt) &&
@@ -169,11 +158,6 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'email_delivery_alert':
-			return checkEmailDeliveryBurstAndNotify({
-				env: input.env,
-				now: input.scheduledAt,
-			})
 		case 'dr_export':
 			return runDrExportTick({ env: input.env, now: input.scheduledAt })
 		case 'dr_export_watchdog':
@@ -183,11 +167,6 @@ export async function runScheduledLane(input: {
 			})
 		case 'job_schedule_watchdog':
 			return runJobScheduleWatchdogTick({
-				env: input.env,
-				now: input.scheduledAt,
-			})
-		case 'mailbox_parity':
-			return reconcileMailboxParity({
 				env: input.env,
 				now: input.scheduledAt,
 			})
