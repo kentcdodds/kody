@@ -101,15 +101,15 @@ work through these steps:
 
 1. Skim the building blocks and follow any links you need more detail on. The
    [usage index](./index.md) lists every page.
-2. Interview the person: which services and tools do they use daily, which
-   recurring chores do they do by hand, what have they wished happened
-   automatically, and what should keep running when their computer is off?
+2. Interview conversationally, asking at most two short questions at a time and
+   waiting for each answer. Keep each message under roughly 120 words until the
+   final recommendations.
 3. Propose three to five specific opportunities, ranked by payoff versus setup
    effort. For each one, name the Kody pieces involved (an integration, a job, a
    package, the inbox) and the first concrete step.
-4. Be clear about prerequisites: using Kody requires an account, an MCP-capable
-   agent, and for third-party services, the person's own API keys or OAuth apps
-   ([connection guide](./connect-your-agent.md)).
+4. End with a short “Next steps if you want to connect me to Kody” section that
+   points to the deployment's `/onboarding` page. The only setup is adding Kody
+   as an MCP server there; there is no CLI to install.
 
 Nothing in this discovery flow requires an account or an MCP connection.
 
@@ -117,13 +117,18 @@ Nothing in this discovery flow requires an account or an MCP connection.
 
 Paste this into an agent that can fetch URLs or search the web:
 
+If an agent is already interviewing you about Kody, you do not need to paste
+this again — it is the same conversation.
+
 > I'm deciding whether Kody (https://heykody.dev) would be useful for me. Read
 > https://github.com/kentcdodds/kody/blob/main/docs/use/what-can-kody-do.md and
-> follow its links for anything you need more detail on. Then interview me about
-> the tools I use, recurring chores I do by hand, and automations I've wished
-> for. Finish with 3–5 specific things Kody could do for me, ranked by payoff
-> versus setup effort, each with a concrete first step. Don't set anything up
-> yet — this works before I have an account.
-
-When some of the proposals sound useful, the Get started page (`/onboarding`) on
-the deployment walks through connecting your agent.
+> follow its links for anything you need more detail on. Interview me
+> conversationally about the tools I use, recurring chores I do by hand, and
+> automations I've wished for. Ask at most 2 short questions per message, then
+> wait for my answer. Keep each message under roughly 120 words until your final
+> recommendations. Finish with 3–5 specific things Kody could do for me, ranked
+> by payoff versus setup effort, each with a concrete first step. Don't set
+> anything up yet — this works before I have an account. After the ranked list,
+> finish with a short "Next steps if you want to connect me to Kody" section.
+> Point me to https://heykody.dev/onboarding and explain that the only setup is
+> adding Kody as an MCP server there — there is no CLI to install.
