@@ -40,6 +40,8 @@ export default defineConfig({
 			// `wrangler dev`. The extra collector/tail services have crashed the
 			// Playwright webServer mid-suite here; opt out for e2e stability.
 			X_LOCAL_OBSERVABILITY: 'false',
+			// Reduce ProxyWorker "Network connection lost" flakes under e2e load.
+			WRANGLER_CI_DISABLE_CONFIG_WATCHING: 'true',
 		},
 	},
 	projects: [
