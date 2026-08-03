@@ -838,11 +838,11 @@ only from the dedicated graph; it never copies stale legacy state into dedicated
 tables.
 
 The admin mailbox maintenance `status` action remains an aggregate, content-free
-parity report. The audited `system_email_graph_reconcile` action is now a
+parity report. The audited `system_email_graph_reconcile` action is a
 rollback-mirror repair only and requires both `force: true` and
 `direction: "dedicated_to_legacy"`. In one D1 batch it removes legacy drift
 child-first and upserts the complete legacy graph parent-first. There is no
-legacy-to-dedicated reconcile path after cutover.
+legacy-to-dedicated reconcile path.
 
 The existing `email_outbound_provider_index` still has an FK to legacy
 `email_messages`, so it cannot index the dedicated graph. The production cutover
@@ -854,9 +854,9 @@ deploying 0131, operators must capture fresh production evidence that the
 provider index, legacy provider-linked system messages, and dedicated
 provider-linked messages all remain zero. The marker insert independently
 recounts those surfaces; a nonzero count violates its constraint and rolls back
-the migration. Runtime marker checks repeat the provider gate so links created
-after migration also stop dedicated work. Step 5 may remove legacy system rows
-only after dedicated/mirror parity and rollback gates pass: **4a
+the migration. Runtime marker checks repeat the provider gate so any
+provider-linked system rows stop dedicated work. Step 5 may remove legacy system
+rows only after dedicated/mirror parity and rollback gates pass: **4a
 schema/copy/parity → 4b dedicated authority plus rollback mirror → step 5 legacy
 cleanup**.
 
@@ -1095,14 +1095,14 @@ parity pass cannot consume another lane's budget.
 User discovery is **D1-only** — no Mailbox Durable Object enumeration. Each tick
 selects up to sixteen non-deleting owners (`mailboxParityUserBatchSize`) ordered
 by oldest `mailbox_parity_checked_at`, excluding `system:email`. Owners with D1
-mail (`email_messages` or `email_delivery_events`) are always eligible;
-**previously tracked** owners (any non-null parity column on `users`) remain
-discoverable even when D1 mail is empty so DO-only leftovers after the last-row
-delete can be purged and reconciled. Never-tracked empty users stay out.
-Per-user work shares a ~10s wall-clock budget (`mailboxParityTimeBudgetMs`)
-across the batch. The five-minute cron cadence plus that budget is the
-production convergence loop: each tick should make forward progress on the
-oldest owners rather than soaking the lane on per-event RPCs.
+mail (`email_messages` or `email_delivery_events`) are always eligible; owners
+with any non-null parity column on `users` remain discoverable even when D1 mail
+is empty so DO-only leftovers after the last-row delete can be purged and
+reconciled. Never-tracked empty users stay out. Per-user work shares a ~10s
+wall-clock budget (`mailboxParityTimeBudgetMs`) across the batch. The
+five-minute cron cadence plus that budget is the production convergence loop:
+each tick should make forward progress on the oldest owners rather than soaking
+the lane on per-event RPCs.
 
 **Account-deletion races:** `loadUserParityState`, `persistUserParityProgress`,
 and `rotateCheckedAt` require `deleting_at IS NULL` (zero-row updates are
@@ -1336,9 +1336,9 @@ cover the high-risk live surface today.
    and non-USER-inbound events; owner-facing inbox/API read cutover remains
    behind the default-off flag.
 3. **Reader/account cutover in staged substeps** — internal USER product reads
-   now pass through `mailbox-internal-read.ts`: message, attachment, count,
-   export, and blob-reference reads fail closed against the owner Mailbox with
-   no feature flag or D1 fallback. `system:email` message/attachment/count reads
+   pass through `mailbox-internal-read.ts`: message, attachment, count, export,
+   and blob-reference reads fail closed against the owner Mailbox with no
+   feature flag or D1 fallback. `system:email` message/attachment/count reads
    explicitly remain D1. Inbound effects load the repaired USER message and
    package attachment payload from Mailbox. Signed-in/user-owner
    `stored_email_messages` usage reads `Mailbox.countMessages`; compatibility
@@ -1722,17 +1722,17 @@ Reconcile runs through the registry in
 cleanup, system-email retention, general retention, job retention, hourly
 usage-rollup aggregation, and the every-5-minute `mailbox_parity` lane
 (queue-isolated; up to sixteen users per tick within a ~10s budget; D1 user
-discovery including previously tracked empty-mail owners, bounded message +
-page-batched delivery-event backfill (~5s batch timeout under the ~10s lane
-budget), durable content-watermark replay, metadata-only purge + full rebuild on
-count mismatch, and count compare — see [Mailbox](#durable-objects-mailbox)).
-Each production queue message preserves `scheduled_lane_failed` / D1
-lock-contention log and Sentry context. A handled lane failure is acknowledged
-and retried by the next cron tick, matching the old cron semantics. A failed
-enqueue is reported and runs through the inline fallback after all sibling
-enqueue attempts finish; multiple failed enqueues fall back sequentially to
-avoid D1 lock contention. Consumer transport failures retain the configured
-retry/DLQ behavior. No failure can abort or mask a sibling invocation.
+discovery including empty-mail owners that still have parity columns, bounded
+message + page-batched delivery-event backfill (~5s batch timeout under the ~10s
+lane budget), durable content-watermark replay, metadata-only purge + full
+rebuild on count mismatch, and count compare — see
+[Mailbox](#durable-objects-mailbox)). Each production queue message preserves
+`scheduled_lane_failed` / D1 lock-contention log and Sentry context. A handled
+lane failure is acknowledged and retried by the next cron tick. A failed enqueue
+is reported and runs through the inline fallback after all sibling enqueue
+attempts finish; multiple failed enqueues fall back sequentially to avoid D1
+lock contention. Consumer transport failures retain the configured retry/DLQ
+behavior. No failure can abort or mask a sibling invocation.
 
 Production note:
 

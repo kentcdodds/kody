@@ -52,10 +52,11 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 				/\bno longer (?:support|accept|require|use|fan|carry|replay|incur|authoritative|insert|needed)s?\b/i,
 		},
 		{
-			label: 'now support/accept/require/use/store/return/call/read',
-			regex: /\bnow (?:support|accept|require|use|store|return|call|read)s?\b/i,
+			label: 'now support/accept/require/use/store/return/call/read/pass',
+			regex:
+				/\bnow (?:support|accept|require|use|store|return|call|read|pass)(?:es|s)?\b/i,
 		},
-		{ label: 'is now the', regex: /\bis now the\b/i },
+		{ label: 'is now a/the', regex: /\bis now (?:a|an|the)\b/i },
 		{ label: 'are now', regex: /\bare now\b/i },
 		{ label: 'previously a/the', regex: /\bpreviously (?:a|the)\b/i },
 		{
