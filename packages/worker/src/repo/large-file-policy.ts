@@ -23,13 +23,28 @@ function formatMiB(bytes: number) {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
 }
 
+function formatBytes(bytes: number) {
+	return `${bytes.toLocaleString('en-US')} bytes (${formatMiB(bytes)})`
+}
+
+/**
+ * Stable phrase used to recognize large-file rejections after their message
+ * crosses the Durable Object RPC boundary (subclass identity does not
+ * survive RPC). `isRepoLargeFileMessage` and MCP observability depend on it.
+ */
+const repoLargeFileMessagePhrase = 'per-file limit for repo-backed source'
+
+export function isRepoLargeFileMessage(message: string) {
+	return message.includes(repoLargeFileMessagePhrase)
+}
+
 export function buildRepoLargeFileMessage(input: {
 	path: string
 	byteLength: number
 }) {
 	return (
-		`"${input.path}" is ${formatMiB(input.byteLength)}, which is over the ` +
-		`${formatMiB(maxRepoSourceFileBytes)} per-file limit for repo-backed source. ` +
+		`"${input.path}" is ${formatBytes(input.byteLength)}, which is over the ` +
+		`${formatBytes(maxRepoSourceFileBytes)} ${repoLargeFileMessagePhrase}. ` +
 		'Repos store versioned source and small assets, not large files. ' +
 		'Host the file on storage you manage (for example Cloudflare R2, Amazon S3, ' +
 		'Dropbox, or Google Drive) and commit a small link or pointer file instead.'

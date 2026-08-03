@@ -5,6 +5,10 @@ import {
 	writeMockArtifactSnapshot,
 } from './artifacts.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
+import {
+	buildRepoLargeFileMessage,
+	findOversizedRepoSourceFile,
+} from './large-file-policy.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
@@ -117,6 +121,14 @@ export async function syncArtifactSourceSnapshot(
 				input.bootstrapAccess?.remote &&
 				isLoopbackArtifactsRemote(input.bootstrapAccess.remote)
 			) {
+				// The local-dev mock lane skips the RepoSession applyEdits gate, so
+				// enforce the per-file limit here for dev/prod parity.
+				const oversizedFile = findOversizedRepoSourceFile(
+					Object.entries(input.files),
+				)
+				if (oversizedFile) {
+					throw new Error(buildRepoLargeFileMessage(oversizedFile))
+				}
 				const snapshot = await writeMockArtifactSnapshot({
 					env: input.env,
 					repoId: source.repo_id,

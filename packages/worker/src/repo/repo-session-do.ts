@@ -786,7 +786,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		)
 		// Gate on planned results rather than raw instructions so replace and
 		// writeJson edits cannot grow a file past the per-file limit either.
+		// Unchanged entries are skipped so a no-op edit touching a grandfathered
+		// oversized file does not fail the batch.
 		for (const plannedEdit of plan.edits) {
+			if (!plannedEdit.changed) continue
 			const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
 			if (byteLength > maxRepoSourceFileBytes) {
 				throw new Error(

@@ -3,6 +3,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
@@ -97,6 +98,18 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) => entry instanceof CommunityActionError,
+		)
+	) {
+		return true
+	}
+	// Repo large-file rejections raised inside the RepoSession Durable Object
+	// arrive as plain Errors (subclass identity does not survive RPC); match
+	// on the stable message phrase so caller-fixable size denials stay out of
+	// Sentry.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error && isRepoLargeFileMessage(entry.message),
 		)
 	) {
 		return true

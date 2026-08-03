@@ -41,14 +41,14 @@ Two supporting policies:
 
 ## Consequences
 
-- The simulated-git command surface (`repo_run_commands`) is replaced by a
-  file-level session API (read/write/move/delete, commit, log, diff, revert);
-  breaking pre-launch, no compatibility shim.
+- The simulated-git command surface (`repo_run_commands`) will be replaced by
+  a file-level session API (read/write/move/delete, commit, log, diff,
+  revert) in a follow-up slice; breaking pre-launch, no compatibility shim.
 - "Saved packages are the only top-level persisted primitive" stops being
-  true; docs and MCP guidance change to "repos are the durable home, packages
-  add runtime."
-- Entitlements gain a base `repos` count; `saved_packages` remains the cap on
-  the extension.
+  true once plain repos ship; docs and MCP guidance then change to "repos are
+  the durable home, packages add runtime."
+- Entitlements will gain a base `repos` count when plain repos ship;
+  `saved_packages` remains the cap on the extension.
 - Reconcile and retention lanes must stay kind-aware so publish-pointer logic
   never runs for plain repos.
 - Revisit if Artifacts ships LFS or per-file limits change (the 10 MiB gate is

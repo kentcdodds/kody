@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
+	isRepoLargeFileMessage,
 	maxRepoSourceFileBytes,
 	measureRepoSourceFileBytes,
 } from './large-file-policy.ts'
@@ -38,8 +39,24 @@ test('buildRepoLargeFileMessage names the file, sizes, and hosting guidance', ()
 		byteLength: 12 * 1024 * 1024,
 	})
 	expect(message).toContain('"assets/video-notes.md"')
-	expect(message).toContain('12.0 MiB')
-	expect(message).toContain('10.0 MiB per-file limit')
+	expect(message).toContain('12,582,912 bytes (12.0 MiB)')
+	expect(message).toContain(
+		'10,485,760 bytes (10.0 MiB) per-file limit for repo-backed source',
+	)
 	expect(message).toContain('Cloudflare R2')
 	expect(message).toContain('link or pointer file')
+	expect(isRepoLargeFileMessage(message)).toBe(true)
+})
+
+test('buildRepoLargeFileMessage stays unambiguous just over the limit', () => {
+	const message = buildRepoLargeFileMessage({
+		path: 'assets/barely-over.bin',
+		byteLength: maxRepoSourceFileBytes + 1,
+	})
+	expect(message).toContain('10,485,761 bytes')
+	expect(message).toContain('10,485,760 bytes (10.0 MiB) per-file limit')
+})
+
+test('isRepoLargeFileMessage rejects unrelated messages', () => {
+	expect(isRepoLargeFileMessage('Source "x" was not found.')).toBe(false)
 })
