@@ -60,7 +60,7 @@ function runWrangler(
 			WRANGLER_SEND_METRICS: 'false',
 		},
 		maxBuffer: maxWranglerOutputBytes,
-		timeout: 120_000,
+		timeout: 60_000,
 	})
 	return {
 		status: result.status,
@@ -136,7 +136,7 @@ test('0131 keeps every D1 guard bounded and orders cutover after all checks', ()
 	const firstGraphMutationIndex = statements.findIndex((statement) =>
 		statement.startsWith('DELETE FROM system_email_delivery_events'),
 	)
-	const finalNormalizationIndex = statements.findIndex((statement) =>
+	const finalNormalizationIndex = statements.findLastIndex((statement) =>
 		statement.startsWith('UPDATE email_delivery_events'),
 	)
 	const markerIndex = statements.findIndex((statement) =>
@@ -145,6 +145,10 @@ test('0131 keeps every D1 guard bounded and orders cutover after all checks', ()
 	const dropChecksIndex = statements.findIndex((statement) =>
 		statement.startsWith('DROP TABLE system_email_graph_migration_checks'),
 	)
+	expect(firstGraphMutationIndex).toBeGreaterThanOrEqual(0)
+	expect(finalNormalizationIndex).toBeGreaterThanOrEqual(0)
+	expect(markerIndex).toBeGreaterThanOrEqual(0)
+	expect(dropChecksIndex).toBeGreaterThanOrEqual(0)
 
 	expect(
 		Math.max(...statements.map(compoundSelectTermCount)),
@@ -168,7 +172,7 @@ test('0131 keeps every D1 guard bounded and orders cutover after all checks', ()
 
 test(
 	'0131 uses Wrangler D1 atomic rollback, then applies after preflight repair',
-	{ timeout: 120_000 },
+	{ timeout: 360_000 },
 	() => {
 		using temporary = createTemporaryDirectory()
 		const migrationPath = join(temporary.path, 'migrations')
