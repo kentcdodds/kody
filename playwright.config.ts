@@ -36,6 +36,10 @@ export default defineConfig({
 			CLOUDFLARE_ENV: 'test',
 			WRANGLER_LOG_PATH: './logs.local',
 			WRANGLER_DISABLE_REQUEST_BODY_DRAINING: 'true',
+			// Wrangler 4.118+ enables local observability capture by default in
+			// `wrangler dev`. The extra collector/tail services have crashed the
+			// Playwright webServer mid-suite here; opt out for e2e stability.
+			X_LOCAL_OBSERVABILITY: 'false',
 		},
 	},
 	projects: [
