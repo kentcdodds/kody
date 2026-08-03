@@ -105,6 +105,25 @@ type InsertEmailMessageWithRawMimeInput = Omit<
 	}
 }
 
+function systemInboundMessageInput(
+	message: InsertEmailMessageInput['message'],
+): Parameters<typeof insertSystemEmailMessage>[0]['message'] {
+	if (
+		message.userId !== systemEmailOwnerId ||
+		message.direction !== 'inbound' ||
+		message.providerMessageId != null
+	) {
+		throw new Error(
+			'System inbound email requires system:email ownership without provider IDs.',
+		)
+	}
+	const { direction, providerMessageId, userId, ...systemMessage } = message
+	void direction
+	void providerMessageId
+	void userId
+	return systemMessage
+}
+
 /**
  * Domain insert for messages that must not point at EMAIL_BLOBS raw MIME.
  * Forces `rawMimeKey: null` so callers cannot invent a key without a blob.
@@ -121,7 +140,10 @@ export async function insertEmailMessageWithoutRawMime(
 		},
 	}
 	return input.message.userId === systemEmailOwnerId
-		? await insertSystemEmailMessage(insertInput)
+		? await insertSystemEmailMessage({
+				db: insertInput.db,
+				message: systemInboundMessageInput(insertInput.message),
+			})
 		: await insertEmailMessage(insertInput)
 }
 
@@ -151,7 +173,10 @@ export async function insertEmailMessageWithRawMime(
 				},
 			}
 			return messageInput.userId === systemEmailOwnerId
-				? await insertSystemEmailMessage(insertInput)
+				? await insertSystemEmailMessage({
+						db: insertInput.db,
+						message: systemInboundMessageInput(insertInput.message),
+					})
 				: await insertEmailMessage(insertInput)
 		} catch (error) {
 			if (rawMimeKey != null) {

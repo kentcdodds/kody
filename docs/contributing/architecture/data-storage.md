@@ -785,12 +785,18 @@ non-destructive.
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
 boundary. Migration `0131-system-email-graph-authority.sql` is also additive:
-before cutover it fills every null promoted delivery transition/effect column
-from the canonical `detail_json` value copied by 0130. Its singleton
-`system_email_graph_authority` row records the step 4b code cutover without
-deleting any shared rows. The 4b Worker requires that marker on every dedicated
-authority entry point and refuses startup/work when it is missing or invalid.
-The pre-4b rollback Worker does not know about the marker and ignores it.
+before cutover it reconciles changes made after the 0130 snapshot by deleting
+dedicated drift child-first and full-column UPSERTing valid legacy authority
+rows parent-first. It then fills every null promoted delivery transition/effect
+column from canonical `detail_json`. The singleton
+`system_email_graph_authority` insert stores CHECK-constrained
+`graph_mismatch_count = 0` and `provider_link_count = 0` gates. The graph gate
+checks exact counts and full-column values for all four tables, missing/extra
+IDs, and invalid cross-owner inbox/sender references; a nonzero result aborts
+the whole reconciliation and leaves no marker. The migration never deletes
+shared rows. The 4b Worker requires that marker on every dedicated authority
+entry point and refuses startup/work when it is missing or invalid. The pre-4b
+rollback Worker does not know about the marker and ignores it.
 
 After 4b, `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events` are the only live

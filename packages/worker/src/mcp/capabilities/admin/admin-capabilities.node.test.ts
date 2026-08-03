@@ -179,11 +179,12 @@ function createAdminCapabilityTestDb(input: {
 				async first<T>() {
 					if (
 						normalizedQuery.includes(
-							'select authority, provider_link_count from system_email_graph_authority',
+							'select authority, graph_mismatch_count, provider_link_count from system_email_graph_authority',
 						)
 					) {
 						return {
 							authority: 'dedicated',
+							graph_mismatch_count: 0,
 							provider_link_count: 0,
 						} as T
 					}

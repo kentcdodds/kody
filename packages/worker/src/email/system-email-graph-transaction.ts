@@ -60,9 +60,10 @@ function mirrorGuardStatement(input: {
 			),
 			legacy AS (${legacySourceSql(input.contract)})
 			INSERT INTO system_email_graph_authority (
-				singleton, authority, cutover_at, provider_link_count
+				singleton, authority, cutover_at, graph_mismatch_count,
+				provider_link_count
 			)
-			SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0
+			SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0, 0
 			WHERE ${violation}`,
 		)
 		.bind(input.id, systemEmailOwnerId, input.id)
@@ -155,9 +156,10 @@ function bulkAbsenceGuardStatement(
 				})}
 			)
 			INSERT INTO system_email_graph_authority (
-				singleton, authority, cutover_at, provider_link_count
+				singleton, authority, cutover_at, graph_mismatch_count,
+				provider_link_count
 			)
-			SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0
+			SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0, 0
 			WHERE EXISTS (SELECT 1 FROM dedicated)
 				OR EXISTS (SELECT 1 FROM legacy)`,
 		)

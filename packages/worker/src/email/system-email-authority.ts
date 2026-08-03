@@ -2,6 +2,7 @@ import { systemEmailOwnerId } from './email-owner.ts'
 
 type SystemEmailAuthorityRow = {
 	authority: string
+	graph_mismatch_count: number
 	provider_link_count: number
 }
 
@@ -33,7 +34,7 @@ const unsupportedSystemProviderLinksSql = `(
 export async function assertSystemEmailGraphAuthority(db: D1Database) {
 	const marker = await db
 		.prepare(
-			`SELECT authority, provider_link_count
+			`SELECT authority, graph_mismatch_count, provider_link_count
 			FROM system_email_graph_authority
 			WHERE singleton = 1
 			LIMIT 1`,
@@ -41,6 +42,7 @@ export async function assertSystemEmailGraphAuthority(db: D1Database) {
 		.first<SystemEmailAuthorityRow>()
 	if (
 		marker?.authority !== 'dedicated' ||
+		Number(marker.graph_mismatch_count) !== 0 ||
 		Number(marker.provider_link_count) !== 0
 	) {
 		throw new Error(
@@ -65,14 +67,16 @@ export async function assertSystemEmailGraphAuthority(db: D1Database) {
 export function systemEmailAuthorityGuardStatement(db: D1Database) {
 	return db.prepare(
 		`INSERT INTO system_email_graph_authority (
-			singleton, authority, cutover_at, provider_link_count
+			singleton, authority, cutover_at, graph_mismatch_count,
+			provider_link_count
 		)
-		SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0
+		SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0, 0
 		WHERE NOT EXISTS (
 			SELECT 1
 			FROM system_email_graph_authority
 			WHERE singleton = 1
 				AND authority = 'dedicated'
+				AND graph_mismatch_count = 0
 				AND provider_link_count = 0
 		)
 		OR ${unsupportedSystemProviderLinksSql}`,

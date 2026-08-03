@@ -37,7 +37,11 @@ function createFakeDb(
 			return {
 				async first() {
 					if (sql.includes('FROM system_email_graph_authority')) {
-						return { authority: 'dedicated', provider_link_count: 0 }
+						return {
+							authority: 'dedicated',
+							graph_mismatch_count: 0,
+							provider_link_count: 0,
+						}
 					}
 					if (sql.includes('AS unsupported')) {
 						return { unsupported: 0 }

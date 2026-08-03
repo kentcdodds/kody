@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { expect, expectTypeOf, test } from 'vitest'
 import {
 	loadAdminSystemEmailData,
 	loadAdminSystemEmailMessageById,
@@ -21,6 +21,14 @@ import {
 } from './system-email-graph-repo.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+
+test('dedicated system graph write types make ownership and direction implicit', () => {
+	type Input = Parameters<typeof insertSystemEmailMessage>[0]
+	expectTypeOf<Input['message']>().not.toHaveProperty('userId')
+	expectTypeOf<Input['message']>().not.toHaveProperty('direction')
+	expectTypeOf<Input['message']>().not.toHaveProperty('providerMessageId')
+	expectTypeOf<Input['inboundDeliveryFence']>().not.toHaveProperty('userId')
+})
 
 test('dedicated system graph is the only read authority and remains user-isolated', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -52,8 +60,6 @@ test('dedicated system graph is the only read authority and remains user-isolate
 		db: env.APP_DB,
 		message: {
 			id: 'dedicated-system',
-			direction: 'inbound',
-			userId: systemEmailOwnerId,
 			fromAddress: 'sender@example.net',
 			subject: 'Dedicated mail',
 			processingStatus: 'stored',
@@ -95,8 +101,6 @@ test('system graph writes mirror atomically and rollback repair is dedicated to 
 		db: env.APP_DB,
 		message: {
 			id: 'system-message',
-			direction: 'inbound',
-			userId: systemEmailOwnerId,
 			threadId: thread.id,
 			fromAddress: 'sender@example.net',
 			subject: 'Incident',
@@ -155,7 +159,7 @@ test('system graph writes mirror atomically and rollback repair is dedicated to 
 	})
 })
 
-test('legacy mirror failure rolls back authority and system outbound is unsupported', async () => {
+test('legacy mirror failures roll back dedicated authority writes', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(
 		`CREATE TRIGGER reject_system_legacy_message
@@ -170,8 +174,6 @@ test('legacy mirror failure rolls back authority and system outbound is unsuppor
 			db: env.APP_DB,
 			message: {
 				id: 'must-roll-back',
-				direction: 'inbound',
-				userId: systemEmailOwnerId,
 				fromAddress: 'sender@example.net',
 				processingStatus: 'stored',
 			},
@@ -196,8 +198,6 @@ test('legacy mirror failure rolls back authority and system outbound is unsuppor
 			db: env.APP_DB,
 			message: {
 				id: 'mirror-no-op-must-roll-back',
-				direction: 'inbound',
-				userId: systemEmailOwnerId,
 				fromAddress: 'sender@example.net',
 				processingStatus: 'stored',
 			},
@@ -209,19 +209,6 @@ test('legacy mirror failure rolls back authority and system outbound is unsuppor
 			WHERE id = 'mirror-no-op-must-roll-back'`,
 		).first(),
 	).toBeNull()
-
-	await expect(
-		insertSystemEmailMessage({
-			db: env.APP_DB,
-			message: {
-				id: 'system-outbound',
-				direction: 'outbound',
-				userId: systemEmailOwnerId,
-				fromAddress: 'support@example.com',
-				processingStatus: 'stored',
-			},
-		}),
-	).rejects.toThrow('System outbound email is unsupported')
 })
 
 test('dedicated authority operations fail closed without the cutover marker', async () => {
@@ -238,8 +225,6 @@ test('dedicated authority operations fail closed without the cutover marker', as
 			db: env.APP_DB,
 			message: {
 				id: 'marker-required',
-				direction: 'inbound',
-				userId: systemEmailOwnerId,
 				fromAddress: 'sender@example.net',
 				processingStatus: 'stored',
 			},
