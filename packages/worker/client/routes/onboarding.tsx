@@ -64,8 +64,11 @@ function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
 }
 
-function isDiscoveryDeepLink(href: string) {
-	return new URL(href, 'http://localhost').hash === '#discovery'
+function readStepFromHref(href: string): OnboardingStep | null {
+	const hash = new URL(href, 'http://localhost').hash.slice(1)
+	return (
+		onboardingSteps.find((candidate) => candidate.hash === hash)?.number ?? null
+	)
 }
 
 function readOnboardingRedirectTo(handle: Handle) {
@@ -121,10 +124,8 @@ export function OnboardingRoute(handle: Handle) {
 		message = null
 		if (!initializedStep) {
 			activeStep =
-				payload.hasMcpClient &&
-				!isDiscoveryDeepLink(readCurrentRouterHref(handle))
-					? 3
-					: 1
+				readStepFromHref(readCurrentRouterHref(handle)) ??
+				(payload.hasMcpClient ? 3 : 1)
 			initializedStep = true
 		} else if (!wasConnected && payload.hasMcpClient) {
 			activeStep = 3
@@ -146,7 +147,14 @@ export function OnboardingRoute(handle: Handle) {
 	function selectStep(step: OnboardingStep) {
 		activeStep = step
 		updateStepHash(step)
-		handle.update()
+		void handle.update().then((signal) => {
+			if (signal.aborted) return
+			const stepDefinition = onboardingSteps.find(
+				(candidate) => candidate.number === step,
+			)
+			if (!stepDefinition) return
+			document.getElementById(stepDefinition.hash)?.querySelector('h2')?.focus()
+		})
 	}
 
 	async function loadOnboarding(signal: AbortSignal) {
@@ -219,8 +227,9 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	function handleHashChange() {
-		if (window.location.hash !== '#discovery') return
-		activeStep = 1
+		const step = readStepFromHref(window.location.href)
+		if (!step) return
+		activeStep = step
 		handle.update()
 	}
 
@@ -323,7 +332,9 @@ export function OnboardingRoute(handle: Handle) {
 							>
 								<div mix={css(stepHeadingCss)}>
 									<p mix={css(stepEyebrowCss)}>Step 1 · Optional</p>
-									<h2 mix={css(cardTitleCss)}>Discover what Kody can do</h2>
+									<h2 tabIndex={-1} mix={css(cardTitleCss)}>
+										Discover what Kody can do
+									</h2>
 								</div>
 								<p mix={css(descriptionCss)}>
 									Paste this into any AI agent that can fetch a URL or search
@@ -361,7 +372,9 @@ export function OnboardingRoute(handle: Handle) {
 							>
 								<div mix={css(stepHeadingCss)}>
 									<p mix={css(stepEyebrowCss)}>Step 2</p>
-									<h2 mix={css(cardTitleCss)}>Connect your agent</h2>
+									<h2 tabIndex={-1} mix={css(cardTitleCss)}>
+										Connect your agent
+									</h2>
 								</div>
 								<div mix={css(authorizationCalloutCss)} role="note">
 									<strong>One-time authorization required</strong>
@@ -407,7 +420,9 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<div mix={css(stepHeadingCss)}>
 										<p mix={css(stepEyebrowCss)}>Step 3</p>
-										<h2 mix={css(cardTitleCss)}>Install a starter package</h2>
+										<h2 tabIndex={-1} mix={css(cardTitleCss)}>
+											Install a starter package
+										</h2>
 									</div>
 									<p mix={css(descriptionCss)}>
 										{featuredListings.length > 0

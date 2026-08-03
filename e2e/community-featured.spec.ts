@@ -1,3 +1,4 @@
+import type { Route } from '@playwright/test'
 import { expect, test } from './playwright-utils.ts'
 import {
 	executeE2eD1Command,
@@ -100,7 +101,34 @@ test('admins can feature trusted listings and members see them in onboarding', a
 		),
 	).toEqual({ name: 'kody', type: 'http', url: expectedMcpUrl })
 
-	await page.getByRole('button', { name: /Install a starter package/u }).click()
+	await page.reload()
+	await expect(page).toHaveURL(/\/onboarding#connect-agent$/u)
+	await expect(page.getByTestId('onboarding-connect-agent')).toBeVisible()
+
+	async function fulfillConnectedStatus(route: Route) {
+		const response = await route.fetch()
+		const payload = (await response.json()) as Record<string, unknown>
+		await route.fulfill({
+			response,
+			json: { ...payload, hasMcpClient: true },
+		})
+	}
+	await page.route(
+		(url) => url.pathname === '/onboarding.json',
+		fulfillConnectedStatus,
+	)
+	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible({
+		timeout: 7_000,
+	})
+	await expect(
+		page.getByRole('heading', { name: 'You are connected' }),
+	).toBeVisible()
+	await expect(page.getByLabel('Complete')).toHaveCount(2)
+	await page.unroute(
+		(url) => url.pathname === '/onboarding.json',
+		fulfillConnectedStatus,
+	)
+
 	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
 	await expect(page.getByTestId('onboarding-diy-card')).toBeVisible()
 	await expect(page.getByTestId('onboarding-diy-copy')).toBeVisible()
