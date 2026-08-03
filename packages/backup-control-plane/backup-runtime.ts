@@ -15,13 +15,15 @@ import {
 	backupPayload,
 	errorCode,
 	isBackupEnabled,
-	objectKeyForBookmark,
+	objectKeyForPayload,
 	safeLog,
 } from './backup-policy.ts'
+import { mailboxPreDropRuntimePayload } from './mailbox-pre-drop-policy.ts'
 import {
 	type BackupEnvironment,
 	type BackupManifest,
 	type BackupPayload,
+	type LegacyScheduledBackupPayload,
 	type SqlStatementStats,
 } from './backup-types.ts'
 import { signBackupManifest } from './manifest-signing.ts'
@@ -86,7 +88,7 @@ async function recordSqlStatementStats(input: {
 
 interface BackupRuntimeEvent {
 	instanceId: string
-	payload: BackupPayload
+	payload: unknown
 	timestamp: Date
 }
 
@@ -98,19 +100,172 @@ export interface BackupRuntimeStep extends DurableExportStep {
 interface BackupRuntimeOptions {
 	api?: ApiOptions
 	downloadFetcher?: typeof fetch
+	payloadKind?: BackupPayload['kind']
+}
+
+const legacyScheduledPayloadKeys = [
+	'scheduledAt',
+	'day',
+	'objectPrefix',
+	'manifestKey',
+	'retentionTier',
+] as const
+const scheduledPayloadKeys = ['kind', ...legacyScheduledPayloadKeys] as const
+const mailboxPreDropPayloadKeys = [
+	'kind',
+	'requestId',
+	'nonce',
+	'requestedAt',
+	'scheduledAt',
+	'day',
+	'objectPrefix',
+	'manifestKey',
+	'retentionTier',
+] as const
+
+function isPlainDataRecord(value: unknown): value is Record<string, unknown> {
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		!Array.isArray(value) &&
+		Object.getPrototypeOf(value) === Object.prototype
+	)
+}
+
+function hasExactDataKeys(
+	value: Record<string, unknown>,
+	expectedKeys: ReadonlyArray<string>,
+): boolean {
+	const actualKeys = Reflect.ownKeys(value)
+	return (
+		actualKeys.length === expectedKeys.length &&
+		actualKeys.every(
+			(key) => typeof key === 'string' && expectedKeys.includes(key),
+		) &&
+		expectedKeys.every((key) => {
+			const descriptor = Object.getOwnPropertyDescriptor(value, key)
+			return descriptor?.enumerable === true && 'value' in descriptor
+		})
+	)
+}
+
+function canonicalScheduledDate(value: unknown): Date {
+	if (typeof value !== 'string') {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'workflow scheduledAt must be a canonical UTC timestamp',
+		)
+	}
+	const date = new Date(value)
+	if (!Number.isFinite(date.valueOf()) || date.toISOString() !== value) {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'workflow scheduledAt must be a canonical UTC timestamp',
+		)
+	}
+	return date
+}
+
+function matchesExpectedPayload(
+	payload: Record<string, unknown>,
+	expected: BackupPayload | LegacyScheduledBackupPayload,
+): boolean {
+	return Object.entries(expected).every(
+		([key, value]) => payload[key] === value,
+	)
 }
 
 function validatePayload(
 	env: BackupEnvironment,
-	payload: BackupPayload,
+	payload: unknown,
+	allowedKind: BackupPayload['kind'],
 ): BackupPayload {
-	const expected = backupPayload(env, new Date(payload.scheduledAt))
-	if (
-		payload.day !== expected.day ||
-		payload.objectPrefix !== expected.objectPrefix ||
-		payload.manifestKey !== expected.manifestKey ||
-		payload.retentionTier !== expected.retentionTier
-	) {
+	if (!isPlainDataRecord(payload)) {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'workflow payload must be a plain object with exact data fields',
+		)
+	}
+	if (!Object.hasOwn(payload, 'kind')) {
+		if (allowedKind !== 'scheduled') {
+			throw new BackupError(
+				'invalid-workflow-payload-kind',
+				'workflow payload kind is not approved for this Workflow',
+			)
+		}
+		if (!hasExactDataKeys(payload, legacyScheduledPayloadKeys)) {
+			throw new BackupError(
+				'invalid-workflow-payload',
+				'legacy workflow payload did not have exact scheduled fields',
+			)
+		}
+		const expected = backupPayload(
+			env,
+			canonicalScheduledDate(payload.scheduledAt),
+		)
+		const legacyExpected: LegacyScheduledBackupPayload = {
+			scheduledAt: expected.scheduledAt,
+			day: expected.day,
+			objectPrefix: expected.objectPrefix,
+			manifestKey: expected.manifestKey,
+			retentionTier: expected.retentionTier,
+		}
+		if (!matchesExpectedPayload(payload, legacyExpected)) {
+			throw new BackupError(
+				'invalid-workflow-payload',
+				'legacy workflow payload did not match deterministic backup keys',
+			)
+		}
+		if (!env.BUILD_COMMIT) {
+			throw new BackupError('missing-commit', 'BUILD_COMMIT must be configured')
+		}
+		return expected
+	}
+	if (payload.kind !== allowedKind) {
+		throw new BackupError(
+			'invalid-workflow-payload-kind',
+			'workflow payload kind is not approved for this Workflow',
+		)
+	}
+	let expected: BackupPayload
+	switch (payload.kind) {
+		case 'scheduled': {
+			if (!hasExactDataKeys(payload, scheduledPayloadKeys)) {
+				throw new BackupError(
+					'invalid-workflow-payload',
+					'scheduled workflow payload did not have exact fields',
+				)
+			}
+			expected = backupPayload(env, canonicalScheduledDate(payload.scheduledAt))
+			break
+		}
+		case 'mailbox-legacy-graph-pre-drop': {
+			if (
+				!hasExactDataKeys(payload, mailboxPreDropPayloadKeys) ||
+				typeof payload.requestId !== 'string' ||
+				typeof payload.nonce !== 'string' ||
+				typeof payload.requestedAt !== 'string'
+			) {
+				throw new BackupError(
+					'invalid-workflow-payload',
+					'mailbox pre-drop workflow payload did not have exact fields',
+				)
+			}
+			canonicalScheduledDate(payload.requestedAt)
+			expected = mailboxPreDropRuntimePayload(env, {
+				requestId: payload.requestId,
+				nonce: payload.nonce,
+				requestedAt: payload.requestedAt,
+			})
+			break
+		}
+		default:
+			throw new BackupError(
+				'invalid-workflow-payload-kind',
+				'workflow payload kind is not approved for this Workflow',
+			)
+	}
+	if (!matchesExpectedPayload(payload, expected)) {
 		throw new BackupError(
 			'invalid-workflow-payload',
 			'workflow payload did not match deterministic backup keys',
@@ -138,7 +293,11 @@ export async function runBackupRuntime(
 				'backup workflow is explicitly disabled',
 			)
 		}
-		const checkedPayload = validatePayload(env, event.payload)
+		const checkedPayload = validatePayload(
+			env,
+			event.payload,
+			options.payloadKind ?? 'scheduled',
+		)
 		payload = checkedPayload
 		await step.do(
 			'verify-source-identity',
@@ -162,8 +321,8 @@ export async function runBackupRuntime(
 					exported.bookmark,
 					options.api,
 				)
-				const refreshedObjectKey = objectKeyForBookmark(
-					checkedPayload.objectPrefix,
+				const refreshedObjectKey = objectKeyForPayload(
+					checkedPayload,
 					refreshed.bookmark,
 				)
 				const uploaded = await storeSignedDownload(

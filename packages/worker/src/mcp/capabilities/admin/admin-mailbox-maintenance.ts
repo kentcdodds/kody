@@ -33,11 +33,6 @@ const mailboxCountSchema = z.object({
 })
 
 const outboundProviderIndexHealthSchema = z.object({
-	foreignKeyDetached: z
-		.boolean()
-		.describe(
-			'True when the deployed provider-index schema has no message_id foreign key to the legacy shared graph.',
-		),
 	indexCount: z
 		.number()
 		.int()
@@ -57,8 +52,6 @@ const statusSchema = z.object({
 			ownerCount: z.number().int().nonnegative(),
 			frozenAt: z.string(),
 			droppedAt: z.string(),
-			backupObjectKey: z.string(),
-			backupSha256: z.string(),
 		})
 		.nullable(),
 	outboundProviderIndex: outboundProviderIndexHealthSchema.describe(

@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs'
+
 import { expect, test, vi } from 'vitest'
 import {
+	assertAdhocBackupPolicyReadback,
 	createCloudflareBackupApi,
 	ensureBackupResources,
 	generateBackupDesiredState,
@@ -15,6 +18,7 @@ import {
 	parseBackupCliArgs,
 	runBackupResourcesCli,
 } from './backup-resources-cli.ts'
+import { reconcileBackupResources } from './backup-resources-reconcile-cli.ts'
 
 const sourceAccountId = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 const destinationAccountId = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
@@ -22,6 +26,83 @@ const normalizedSourceAccountId = sourceAccountId.toLowerCase()
 const normalizedDestinationAccountId = destinationAccountId.toLowerCase()
 const apiToken = 'provisioner-secret-value'
 const sourceD1Uuid = '9f1c2f54-13f0-4fd4-8cf4-89ec2f9df71a'
+const adhocPolicyProof = {
+	prefix: 'adhoc/',
+	lockRuleId: 'adhoc-backups-immutable-35-days',
+	lockMinimumAgeSeconds: 35 * 86_400,
+	lifecycleRuleId: 'expire-adhoc-backups-after-35-days',
+	lifecycleMinimumAgeSeconds: 35 * 86_400,
+	readBackVerified: true,
+} as const
+
+test('DR deployment reconciles adhoc policy before Worker deploy when authorized', () => {
+	const workflow = readFileSync(
+		new URL('../../.github/workflows/deploy.yml', import.meta.url),
+		'utf8',
+	)
+	const policyStep = workflow.indexOf(
+		'name: 🔒 Reconcile DR backup retention policies when authorized',
+	)
+	const deployStep = workflow.indexOf(
+		'name: ☁️ Deploy backup control plane to DR account',
+	)
+	expect(policyStep).toBeGreaterThan(0)
+	expect(deployStep).toBeGreaterThan(policyStep)
+	expect(workflow).toContain(
+		'DR_BACKUP_ADMIN_TOKEN: ${{ secrets.DR_BACKUP_ADMIN_TOKEN }}',
+	)
+	expect(workflow).toContain(
+		'run: node tools/ci/backup-resources-reconcile-cli.ts',
+	)
+})
+
+test('optional deploy reconciliation skips safely without the admin secret', async () => {
+	const outputs: Array<string> = []
+	const apply = vi.fn()
+	const result = await reconcileBackupResources({
+		env: {},
+		log: (output) => outputs.push(output),
+		apply,
+	})
+
+	expect(result).toEqual({
+		status: 'skipped',
+		reason: 'dr-backup-admin-token-unavailable',
+	})
+	expect(apply).not.toHaveBeenCalled()
+	expect(outputs.join('\n')).toContain('reconciliation skipped')
+	expect(outputs.join('\n')).toContain('mandatory live R2 policy probe')
+})
+
+test('optional deploy reconciliation applies and verifies when authorized', async () => {
+	const outputs: Array<string> = []
+	const apply = vi.fn(async () => ({
+		status: 'applied' as const,
+		adhocPolicyProof,
+	}))
+	const result = await reconcileBackupResources({
+		env: {
+			DR_BACKUP_ADMIN_TOKEN: apiToken,
+			BACKUP_DESTINATION_ACCOUNT_ID: destinationAccountId,
+		},
+		log: (output) => outputs.push(output),
+		apply,
+	})
+
+	expect(result).toEqual({
+		status: 'reconciled',
+		adhocPolicyProof,
+	})
+	expect(apply).toHaveBeenCalledWith(
+		expect.objectContaining({
+			argv: ['apply'],
+			env: expect.objectContaining({
+				CLOUDFLARE_API_TOKEN: apiToken,
+			}),
+		}),
+	)
+	expect(outputs.join('\n')).toContain('reconciliation complete')
+})
 
 function createDesired(): BackupDesiredState {
 	return generateBackupDesiredState({
@@ -103,6 +184,7 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	).toEqual([
 		{ prefix: 'daily/', maxAgeSeconds: 35 * 86_400, enabled: true },
 		{ prefix: 'weekly/', maxAgeSeconds: 400 * 86_400, enabled: true },
+		{ prefix: 'adhoc/', maxAgeSeconds: 35 * 86_400, enabled: true },
 		{ prefix: 'blobs/', maxAgeSeconds: 400 * 86_400, enabled: true },
 		{ prefix: 'escrow/', maxAgeSeconds: 400 * 86_400, enabled: true },
 	])
@@ -115,6 +197,7 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	).toEqual([
 		{ prefix: 'daily/', maxAge: 35 * 86_400, enabled: true },
 		{ prefix: 'weekly/', maxAge: 400 * 86_400, enabled: true },
+		{ prefix: 'adhoc/', maxAge: 35 * 86_400, enabled: true },
 	])
 	expect(desired.retentionSemantics.bucketLockOverridesLifecycle).toBe(true)
 	expect(desired.runtimeContract.accounts).toEqual({
@@ -130,6 +213,7 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 		allowedPrefixes: [
 			'daily/',
 			'weekly/',
+			'adhoc/',
 			'staging/',
 			'blobs/',
 			'escrow/',
@@ -296,6 +380,14 @@ test('plan and apply converge idempotently without provisioning a Worker', async
 		dryRun: false,
 	})
 	expect(applied.appliedActions).toBe(3)
+	expect(applied.adhocPolicyProof).toEqual({
+		prefix: 'adhoc/',
+		lockRuleId: 'adhoc-backups-immutable-35-days',
+		lockMinimumAgeSeconds: 35 * 86_400,
+		lifecycleRuleId: 'expire-adhoc-backups-after-35-days',
+		lifecycleMinimumAgeSeconds: 35 * 86_400,
+		readBackVerified: true,
+	})
 	expect(fake.writes).toEqual([
 		'create-bucket',
 		'put-lock-policy',
@@ -386,6 +478,74 @@ test('apply fails when Cloudflare read-back does not contain written policies', 
 			dryRun: false,
 		}),
 	).rejects.toThrow('did not converge after apply')
+})
+
+test('adhoc policy proof fails closed on missing, disabled, or weak read-back', () => {
+	const desired = createDesired()
+	expect(
+		assertAdhocBackupPolicyReadback({
+			lockPolicy: desired.lockPolicy,
+			lifecyclePolicy: desired.lifecyclePolicy,
+		}),
+	).toMatchObject({ prefix: 'adhoc/', readBackVerified: true })
+	for (const input of [
+		{
+			lockPolicy: {
+				rules: desired.lockPolicy.rules.filter(
+					(rule) => rule.prefix !== 'adhoc/',
+				),
+			},
+			lifecyclePolicy: desired.lifecyclePolicy,
+		},
+		{
+			lockPolicy: desired.lockPolicy,
+			lifecyclePolicy: {
+				rules: desired.lifecyclePolicy.rules.map((rule) =>
+					rule.conditions.prefix === 'adhoc/'
+						? { ...rule, enabled: false }
+						: rule,
+				),
+			},
+		},
+		{
+			lockPolicy: {
+				rules: desired.lockPolicy.rules.map((rule) =>
+					rule.prefix === 'adhoc/'
+						? {
+								...rule,
+								condition: {
+									type: 'Age' as const,
+									maxAgeSeconds: 34 * 86_400,
+								},
+							}
+						: rule,
+				),
+			},
+			lifecyclePolicy: desired.lifecyclePolicy,
+		},
+		{
+			lockPolicy: desired.lockPolicy,
+			lifecyclePolicy: {
+				rules: desired.lifecyclePolicy.rules.map((rule) =>
+					rule.conditions.prefix === 'adhoc/'
+						? {
+								...rule,
+								deleteObjectsTransition: {
+									condition: {
+										type: 'Age' as const,
+										maxAge: 34 * 86_400,
+									},
+								},
+							}
+						: rule,
+				),
+			},
+		},
+	]) {
+		expect(() => assertAdhocBackupPolicyReadback(input)).toThrow(
+			'node tools/ci/backup-resources-cli.ts apply',
+		)
+	}
 })
 
 test('REST adapter uses documented bucket, lock, and lifecycle contracts', async () => {

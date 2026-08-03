@@ -6,7 +6,7 @@ import { accountExportSectionCapability } from './account-export-section.ts'
 export const accountDomain = defineDomain({
 	name: capabilityDomainNames.account,
 	description:
-		'User-owned account operations such as self-service data export for portability, backups, and migration. Secret values are never exported.',
+		'Self-service account export, backup, and migration (secrets never exported).',
 	keywords: ['account', 'export', 'backup', 'migration', 'privacy'],
 	capabilities: [
 		accountExportManifestCapability,

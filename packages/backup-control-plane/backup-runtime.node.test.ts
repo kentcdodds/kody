@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { test, vi } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import { runBackupRuntime } from './backup-runtime.ts'
 import { DEFAULT_BACKUP_MAX_SOURCE_BYTES } from './d1-export-api.ts'
@@ -21,6 +21,10 @@ import {
 	exportEnvelope,
 	identityEnvelope,
 } from './backup-control-plane-test-support.ts'
+
+afterEach(() => {
+	vi.restoreAllMocks()
+})
 
 test('source size gates block export for zero and oversize readings', async () => {
 	const consoleError = vi.spyOn(console, 'error')
@@ -98,6 +102,145 @@ test('source size gates block export for zero and oversize readings', async () =
 		false,
 	)
 	assert.equal(consoleError.mock.calls.length, 2)
+})
+
+test('legacy persisted scheduled payload without kind resumes as scheduled', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const legacyPayload = {
+		scheduledAt: current.scheduledAt,
+		day: current.day,
+		objectPrefix: current.objectPrefix,
+		manifestKey: current.manifestKey,
+		retentionTier: current.retentionTier,
+	}
+	const result = await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, current.day),
+			payload: legacyPayload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		new CachedUploadStep(() => undefined),
+		{
+			api: {
+				fetcher: async (input) =>
+					String(input).endsWith('/export')
+						? exportEnvelope('complete')
+						: identityEnvelope(1_000),
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async () =>
+				new Response('valid', { headers: { 'content-length': '5' } }),
+		},
+	)
+
+	assert.equal(result.payload.export.scheduledAt, legacyPayload.scheduledAt)
+	assert.equal(result.payload.sql.bytes, 5)
+	assert.notEqual(await bucket.get(current.manifestKey), null)
+})
+
+test('legacy scheduled compatibility rejects invalid dates, extra keys, and unusual objects', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const env = environment()
+	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const legacyPayload = {
+		scheduledAt: current.scheduledAt,
+		day: current.day,
+		objectPrefix: current.objectPrefix,
+		manifestKey: current.manifestKey,
+		retentionTier: current.retentionTier,
+	}
+	const accessorPayload = { ...legacyPayload }
+	Object.defineProperty(accessorPayload, 'scheduledAt', {
+		enumerable: true,
+		get: () => current.scheduledAt,
+	})
+	const symbolPayload = { ...legacyPayload }
+	Object.defineProperty(symbolPayload, Symbol('extra'), {
+		enumerable: true,
+		value: 'extra',
+	})
+	for (const invalidPayload of [
+		{ ...legacyPayload, scheduledAt: undefined },
+		{ ...legacyPayload, scheduledAt: null },
+		{ ...legacyPayload, scheduledAt: 'not-a-date' },
+		{ ...legacyPayload, scheduledAt: '2026-07-22' },
+		{ ...legacyPayload, scheduledAt: '2026-07-22T02:15:00Z' },
+		{ ...legacyPayload, scheduledAt: '2026-02-30T02:15:00.000Z' },
+		{ ...legacyPayload, extra: true },
+		Object.assign(Object.create({ inherited: true }), legacyPayload),
+		Object.assign(Object.create(null), legacyPayload),
+		accessorPayload,
+		symbolPayload,
+	]) {
+		await assert.rejects(
+			runBackupRuntime(
+				env,
+				{
+					instanceId: workflowInstanceId(DATABASE_ID, current.day),
+					payload: invalidPayload,
+					timestamp: new Date('2026-07-22T02:15:01Z'),
+				},
+				new CachedUploadStep(() => undefined),
+			),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'invalid-workflow-payload',
+		)
+	}
+	assert.equal(consoleError.mock.calls.length, 11)
+})
+
+test('scheduled discriminants are exact and cannot enter the pre-drop lane', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const env = environment()
+	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const legacyPayload = {
+		scheduledAt: current.scheduledAt,
+		day: current.day,
+		objectPrefix: current.objectPrefix,
+		manifestKey: current.manifestKey,
+		retentionTier: current.retentionTier,
+	}
+	for (const invalidPayload of [
+		{ ...current, extra: true },
+		Object.assign(Object.create({ inherited: true }), current),
+	]) {
+		await assert.rejects(
+			runBackupRuntime(
+				env,
+				{
+					instanceId: workflowInstanceId(DATABASE_ID, current.day),
+					payload: invalidPayload,
+					timestamp: new Date('2026-07-22T02:15:01Z'),
+				},
+				new CachedUploadStep(() => undefined),
+			),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'invalid-workflow-payload',
+		)
+	}
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: workflowInstanceId(DATABASE_ID, current.day),
+				payload: legacyPayload,
+				timestamp: new Date('2026-07-22T02:15:01Z'),
+			},
+			new CachedUploadStep(() => undefined),
+			{ payloadKind: 'mailbox-legacy-graph-pre-drop' },
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'invalid-workflow-payload-kind',
+	)
+	assert.equal(consoleError.mock.calls.length, 3)
 })
 
 test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {

@@ -3,6 +3,7 @@ import {
 	type BackupPayload,
 	type LogRecord,
 	type RetentionTier,
+	type ScheduledBackupPayload,
 } from './backup-types.ts'
 
 const CLOUDFLARE_ID_PATTERN =
@@ -18,6 +19,12 @@ export class BackupError extends Error {
 		this.code = code
 		this.retryable = retryable
 	}
+}
+
+export function workflowBackupErrorMessage(
+	error: Pick<BackupError, 'code' | 'message'>,
+): string {
+	return `[${error.code}] ${error.message}`
 }
 
 export function isBackupEnabled(env: BackupEnvironment): boolean {
@@ -103,12 +110,13 @@ export function retentionTier(day: string): RetentionTier {
 export function backupPayload(
 	env: BackupEnvironment,
 	scheduledAt: Date,
-): BackupPayload {
+): ScheduledBackupPayload {
 	assertConfiguredIdentity(env)
 	const day = utcDay(scheduledAt)
 	const tier = retentionTier(day)
 	const prefix = `${tier}/d1/${env.SOURCE_DATABASE_ID}/${day}`
 	return {
+		kind: 'scheduled',
 		scheduledAt: scheduledAt.toISOString(),
 		day,
 		objectPrefix: prefix,
@@ -137,6 +145,22 @@ export function objectKeyForBookmark(
 	return `${objectPrefix}/backup-${encoded}.sql`
 }
 
+export function objectKeyForPayload(
+	payload: BackupPayload,
+	bookmark: string,
+): string {
+	switch (payload.kind) {
+		case 'scheduled':
+			return objectKeyForBookmark(payload.objectPrefix, bookmark)
+		case 'mailbox-legacy-graph-pre-drop':
+			return `${payload.objectPrefix}/backup-request.sql`
+		default: {
+			const exhaustive: never = payload
+			throw exhaustive
+		}
+	}
+}
+
 export function isBookmarkObjectKey(
 	objectPrefix: string,
 	objectKey: string,
@@ -160,5 +184,10 @@ export function safeLog(
 }
 
 export function errorCode(error: unknown): string {
-	return error instanceof BackupError ? error.code : 'unexpected-error'
+	if (error instanceof BackupError) return error.code
+	if (error instanceof Error) {
+		const match = /^\[(?<code>[a-z0-9]+(?:-[a-z0-9]+)*)\] /u.exec(error.message)
+		if (match?.groups?.code) return match.groups.code
+	}
+	return 'unexpected-error'
 }

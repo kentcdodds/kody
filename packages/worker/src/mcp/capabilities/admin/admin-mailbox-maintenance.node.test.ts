@@ -49,11 +49,8 @@ const emptyStatus = {
 		ownerCount: 2,
 		frozenAt: '2026-08-01T00:00:00.000Z',
 		droppedAt: '2026-08-03T00:00:00.000Z',
-		backupObjectKey: 'd1/backup.sql.gz',
-		backupSha256: 'a'.repeat(64),
 	},
 	outboundProviderIndex: {
-		foreignKeyDetached: true,
 		indexCount: 0,
 		distinctOwnerCount: 0,
 		malformedCount: 0,

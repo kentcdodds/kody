@@ -1,4 +1,5 @@
 const secondsPerDay = 86_400
+const adhocRetentionSeconds = 35 * secondsPerDay
 const sourceD1UuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/i
@@ -96,6 +97,7 @@ export type BackupRuntimeContract = {
 		allowedPrefixes: [
 			'daily/',
 			'weekly/',
+			'adhoc/',
 			'staging/',
 			'blobs/',
 			'escrow/',
@@ -182,6 +184,15 @@ export type BackupResourcePlan = {
 	environment: 'production'
 	desired: BackupDesiredState
 	actions: Array<BackupPlanAction>
+}
+
+export type AdhocBackupPolicyProof = {
+	prefix: 'adhoc/'
+	lockRuleId: 'adhoc-backups-immutable-35-days'
+	lockMinimumAgeSeconds: number
+	lifecycleRuleId: 'expire-adhoc-backups-after-35-days'
+	lifecycleMinimumAgeSeconds: number
+	readBackVerified: true
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -298,6 +309,15 @@ export function generateBackupDesiredState(input: {
 				},
 			},
 			{
+				id: 'adhoc-backups-immutable-35-days',
+				enabled: true,
+				prefix: 'adhoc/',
+				condition: {
+					type: 'Age',
+					maxAgeSeconds: adhocRetentionSeconds,
+				},
+			},
+			{
 				id: 'blob-store-immutable-400-days',
 				enabled: true,
 				prefix: 'blobs/',
@@ -335,6 +355,14 @@ export function generateBackupDesiredState(input: {
 					condition: { type: 'Age', maxAge: 400 * secondsPerDay },
 				},
 			},
+			{
+				id: 'expire-adhoc-backups-after-35-days',
+				enabled: true,
+				conditions: { prefix: 'adhoc/' },
+				deleteObjectsTransition: {
+					condition: { type: 'Age', maxAge: adhocRetentionSeconds },
+				},
+			},
 		],
 	}
 	const runtimeContract: BackupRuntimeContract = {
@@ -369,6 +397,7 @@ export function generateBackupDesiredState(input: {
 			allowedPrefixes: [
 				'daily/',
 				'weekly/',
+				'adhoc/',
 				'staging/',
 				'blobs/',
 				'escrow/',
@@ -597,6 +626,42 @@ async function applyBackupAction(
 	}
 }
 
+export function assertAdhocBackupPolicyReadback(input: {
+	lockPolicy: R2LockPolicy | undefined
+	lifecyclePolicy: R2LifecyclePolicy | undefined
+}): AdhocBackupPolicyProof {
+	const lockRule = input.lockPolicy?.rules.find(
+		(rule) => rule.id === 'adhoc-backups-immutable-35-days',
+	)
+	const lifecycleRule = input.lifecyclePolicy?.rules.find(
+		(rule) => rule.id === 'expire-adhoc-backups-after-35-days',
+	)
+	if (
+		!lockRule?.enabled ||
+		lockRule.prefix !== 'adhoc/' ||
+		lockRule.condition.type !== 'Age' ||
+		lockRule.condition.maxAgeSeconds < adhocRetentionSeconds ||
+		!lifecycleRule?.enabled ||
+		lifecycleRule.conditions.prefix !== 'adhoc/' ||
+		lifecycleRule.deleteObjectsTransition?.condition?.type !== 'Age' ||
+		lifecycleRule.deleteObjectsTransition.condition.maxAge <
+			adhocRetentionSeconds
+	) {
+		throw new Error(
+			'Cloudflare R2 adhoc/ lock and lifecycle read-back verification failed. Re-run `node tools/ci/backup-resources-cli.ts apply` with CLOUDFLARE_API_TOKEN set to the DR backup admin token, or set DR_BACKUP_ADMIN_TOKEN and re-run `node tools/ci/backup-resources-reconcile-cli.ts`.',
+		)
+	}
+	return {
+		prefix: 'adhoc/',
+		lockRuleId: 'adhoc-backups-immutable-35-days',
+		lockMinimumAgeSeconds: lockRule.condition.maxAgeSeconds,
+		lifecycleRuleId: 'expire-adhoc-backups-after-35-days',
+		lifecycleMinimumAgeSeconds:
+			lifecycleRule.deleteObjectsTransition.condition.maxAge,
+		readBackVerified: true,
+	}
+}
+
 export async function ensureBackupResources(input: {
 	api: BackupCloudflareApi
 	desired: BackupDesiredState
@@ -643,10 +708,15 @@ export async function ensureBackupResources(input: {
 			'Cloudflare R2 backup resources did not converge after apply.',
 		)
 	}
+	const adhocPolicyProof = assertAdhocBackupPolicyReadback({
+		lockPolicy,
+		lifecyclePolicy,
+	})
 	return {
 		status: 'applied' as const,
 		plan,
 		appliedActions: plan.actions.length,
+		adhocPolicyProof,
 	}
 }
 

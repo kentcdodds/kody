@@ -17,7 +17,7 @@ import { searchCapability } from './search.ts'
 export const metaDomain = defineDomain({
 	name: capabilityDomainNames.meta,
 	description:
-		'Runtime capability registry inspection, per-user MCP instruction overlays, package-first search/execute workflows, long-term memory management (verify-first: meta_memory_verify before writes or deletes), and consent-gated attributed platform feedback.',
+		'Registry inspection, memories, search/execute workflows, and feedback.',
 	keywords: [
 		'meta',
 		'kody',

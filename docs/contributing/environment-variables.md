@@ -273,9 +273,19 @@ See [Disaster recovery](./disaster-recovery.md).
 
 Lives under `packages/backup-control-plane/` in the DR Cloudflare account. Code
 deploys via the production GitHub Actions workflow when control-plane / shared
-backup contract paths change (secret `DR_DEPLOY_TOKEN` +
-`DR_BACKUP_ACCOUNT_ID`). Enable gates and source identity vars live in that
-package's `wrangler.jsonc`.
+backup contract or backup-resource paths change. GitHub Actions requires
+`DR_DEPLOY_TOKEN` and `DR_BACKUP_ACCOUNT_ID`. An optional
+`DR_BACKUP_ADMIN_TOKEN` with DR-account Workers R2 Storage Write reconciles and
+reads back the lock/lifecycle policy before the Worker deploy. When unavailable,
+Actions logs a reconciliation skip and deploys normally; the mandatory live
+pre-drop R2 policy probe remains the canonical export/approval gate. The admin
+token is never installed as a Worker secret. Enable gates and source identity
+vars live in that package's `wrangler.jsonc`.
+
+Workflow bindings are `BACKUP_WORKFLOW`, `MAILBOX_PRE_DROP_BACKUP_WORKFLOW`, and
+`RESTORE_WORKFLOW`. The dedicated mailbox binding targets
+`kody-mailbox-legacy-graph-pre-drop-backup`; its public Cloudflare Workflow
+params are only `requestId`, `nonce`, and `requestedAt`.
 
 Non-secret vars:
 

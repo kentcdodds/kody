@@ -9,7 +9,7 @@ import { openapiBindingSaveCapability } from './openapi-binding-save.ts'
 export const openapiDomain = defineDomain({
 	name: capabilityDomainNames.openapi,
 	description:
-		'Curated OpenAPI provider bindings for the signed-in user, callable as kody.openapi["name"].operation_slug(input). Bindings are non-secret config; saving one never approves hosts, and specs are untrusted third-party content.',
+		'Curated OpenAPI bindings as kody.openapi["name"].operation_slug(input).',
 	keywords: [
 		'openapi',
 		'rest',

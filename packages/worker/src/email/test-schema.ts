@@ -232,15 +232,12 @@ ON email_outbound_provider_index(message_id);`,
 	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
 	owner_count INTEGER NOT NULL CHECK (owner_count >= 0),
 	frozen_at TEXT NOT NULL,
-	dropped_at TEXT NOT NULL,
-	backup_object_key TEXT NOT NULL,
-	backup_sha256 TEXT NOT NULL
+	dropped_at TEXT NOT NULL
 );`,
 		`INSERT INTO email_user_graph_authority (
-	singleton, owner_count, frozen_at, dropped_at, backup_object_key, backup_sha256
+	singleton, owner_count, frozen_at, dropped_at
 ) VALUES (
-	1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'test/backup.sql.gz',
-	'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 );`,
 		`CREATE TABLE IF NOT EXISTS email_inbound_due_owners (
 	user_id TEXT PRIMARY KEY NOT NULL CHECK (user_id != 'system:email'),

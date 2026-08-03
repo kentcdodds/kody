@@ -549,8 +549,12 @@
 			"sha256": "ddbaa879b80fd84ca99b2ecca32787c68e657f36752fe26c603fd8ec73793c95"
 		},
 		{
-			"filename": "0134-drop-legacy-email-graph.sql",
-			"sha256": "ef97b41c5620833876625fc09e7f4b927cd9cc79d7b383a30b58eaaa816f546a"
+			"filename": "0134-email-user-graph-drop-approval.sql",
+			"sha256": "0970fc808c9723f87b472f32ebedb1d5ced4651993c1cf6d40a617afc2be5054"
+		},
+		{
+			"filename": "0135-drop-legacy-email-graph.sql",
+			"sha256": "1e23c74660e6e2bbbe18d76736c1a0ad5a5dba8bdcd4a7e9a6517ab5e3663edc"
 		}
 	]
 }

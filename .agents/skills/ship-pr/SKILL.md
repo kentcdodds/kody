@@ -1,45 +1,58 @@
 ---
 name: ship-pr
 description: >
-  Babysit a PR. Iterate with AI reviewers and CI. Get it ready and maybe merge.
-  Send summary message.
+  Babysit a PR: iterate with AI reviewers and CI until green, get it ready,
+  optionally squash-merge as Kody and watch the deploy, then send a Discord
+  summary. Medium risk waits for AI reviewer(s) and addresses valid feedback.
+  Use when a pull request needs to be shepherded to done.
 ---
 
 # Ship PR
 
+## Risk → merge authority
+
+Self-assess; user policy overrides.
+
+- **Low** — green CI; nits ignorable; squash-merge when policy allows.
+- **Medium** — wait for AI reviewer(s); address **valid** feedback (ignore
+  insignificant nits / already-fixed / wrong); then merge when policy allows.
+- **High** — leave ready-for-review unless the user granted merge authority.
+
 ## Loop
 
-1. Mark ready — `kody:@kentcdodds/github/pr/set-review-status` with
-   `{ prUrl, status: 'ready' }`, or `{ owner, repo, prNumber, status: 'ready' }`
-2. Wait for CI — `gh pr checks` (compose `loop-on-ci`, `fix-ci`)
-3. Fix failures; address valid AI-reviewer feedback (ignore insignificant nits /
-   already-fixed / wrong); check mergability with base branch and rebase if
-   needed
-4. Green and no valid feedback left → break
-5. Push → repeat
+1. Mark ready — `kody:@kentcdodds/github/pr/set-review-status`
+   `{ prUrl, status: 'ready' }` (or owner/repo/prNumber).
+2. Wait for CI — `gh pr checks` (or compose `loop-on-ci` / `fix-ci`).
+3. Fix failures; for **medium+**, wait on AI reviewer(s) and address valid
+   feedback. Rebase only when actually unmergeable.
+4. Green + (medium+: valid feedback cleared) → break.
+5. Push → repeat.
 
-## Merge and Deploy if requested or the change is low risk
+## Gates ≠ CI
 
-Squash and merge PR as Kody with `kody:@kentcdodds/github/pr/merge` using
-`{ prUrl, mergeMethod: 'squash' }` (or `{ owner, repo, prNumber, ... }`;
-optional `commitTitle`), watch CI deploy. Relevant links for the discord message
-include: agent, PR, CI job, and relevant deployment page(s).
+Blocked on soak / parity CHECK / calendar gate → **end the run** and schedule a
+wake (Kody `job_schedule` + `createRun`). Don't sleep-poll or code-thrash an
+intentional time window.
 
-Other useful exports on the same package: `pr/get-checks` for check-run status
-without `gh`, and `request` / `graphql` (`kody:@kentcdodds/github/request`,
-`kody:@kentcdodds/github/graphql`) for one-off authenticated GitHub calls.
+Batch related expand steps into fewer PRs when risk posture allows.
+
+## Merge / deploy
+
+When policy + risk allow: squash-merge via `kody:@kentcdodds/github/pr/merge`
+`{ prUrl, mergeMethod: 'squash' }`, watch deploy. Useful: `pr/get-checks`,
+`request`, `graphql` on the same package.
 
 ## Done → Discord
 
-When finished (whether merged or not), send a discord summary with relevant
-links.
+Always summarize (merged or not) with agent / PR / CI / deploy links:
 
 ```javascript
 import postMessage from 'kody:@kentcdodds/discord/post-message'
 
 export default async function main() {
-	const content = ` ... `
-	const shipPrChannelId = '1491568683737157683'
-	return postMessage({ channelId: shipPrChannelId, content })
+	return postMessage({
+		channelId: '1491568683737157683',
+		content: '…summary with links…',
+	})
 }
 ```

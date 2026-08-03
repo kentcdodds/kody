@@ -6,8 +6,7 @@ import { sessionListCapability } from './session-list.ts'
 
 export const appsDomain = defineDomain({
 	name: capabilityDomainNames.apps,
-	description:
-		'Hosted app runtime capabilities such as realtime session inspection and websocket event delivery for package apps.',
+	description: 'Package-app realtime sessions and websocket event delivery.',
 	keywords: ['app', 'package app', 'realtime', 'websocket', 'session'],
 	capabilities: [
 		sessionEmitCapability,

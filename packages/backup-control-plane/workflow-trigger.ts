@@ -1,5 +1,5 @@
 import { workflowInstanceId } from './backup-policy.ts'
-import { type BackupPayload } from './backup-types.ts'
+import { type ScheduledBackupPayload } from './backup-types.ts'
 
 export type WorkflowInstanceStatus =
 	| 'queued'
@@ -20,7 +20,10 @@ interface WorkflowHandle {
 }
 
 interface WorkflowStarter {
-	create(options: { id: string; params: BackupPayload }): Promise<unknown>
+	create(options: {
+		id: string
+		params: ScheduledBackupPayload
+	}): Promise<unknown>
 	get(id: string): Promise<WorkflowHandle>
 }
 
@@ -46,7 +49,7 @@ export function primaryBackupTimeForDay(scheduledAt: Date): Date {
 export async function enqueueBackup(
 	workflow: WorkflowStarter,
 	databaseId: string,
-	payload: BackupPayload,
+	payload: ScheduledBackupPayload,
 ): Promise<EnqueueResult> {
 	const id = workflowInstanceId(databaseId, payload.day)
 	try {
@@ -90,7 +93,7 @@ export async function enqueueBackup(
 export async function enqueueBackupRetry(
 	workflow: WorkflowStarter,
 	databaseId: string,
-	payload: BackupPayload,
+	payload: ScheduledBackupPayload,
 	scheduledAt: Date,
 ): Promise<RetryTickResult> {
 	if (!isApprovedRetryWindow(scheduledAt)) return 'outside-window'

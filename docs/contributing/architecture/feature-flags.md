@@ -71,7 +71,7 @@ end-to-end (`e2e/admin-feature-flags.spec.ts`).
 
 The retired `mailbox-read-cutover` migration flag is intentionally absent from
 the registry. USER email reads are unconditionally owner-Mailbox reads; there is
-no D1 fallback or parity-soak gate. Migration 0134 removed the physical shared
+no D1 fallback or parity-soak gate. Migration 0135 removed the physical shared
 D1 graph.
 
 ## Success metrics

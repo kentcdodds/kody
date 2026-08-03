@@ -44,9 +44,9 @@ if (initialApply.status === 0) {
 	process.exit(0)
 }
 
-// A fresh local database reaches 0134 after Wrangler commits 0001-0133, then
-// stops because production's operator-created approval table is intentionally
-// absent. Insert local evidence and retry; every other 0134 guard still applies.
+// A fresh local database reaches the non-destructive 0134 approval schema, then
+// 0135 stops because no control-plane receipt exists locally. Insert an explicit
+// test fixture and retry; every other destructive guard still applies.
 const approval = runWrangler([
 	'--env-file=packages/worker/.env',
 	'./wrangler-env.ts',
@@ -55,7 +55,7 @@ const approval = runWrangler([
 	'APP_DB',
 	'--local',
 	'--file',
-	'tools/local-email-graph-drop-approval.sql',
+	'tools/local-mailbox-pre-drop-approval-fixture.sql',
 	...passthroughArguments,
 ])
 if (approval.status !== 0) {

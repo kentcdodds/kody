@@ -4,8 +4,6 @@ export type UserEmailGraphAuthorityMarker = {
 	ownerCount: number
 	frozenAt: string
 	droppedAt: string
-	backupObjectKey: string
-	backupSha256: string
 }
 
 export async function loadUserEmailGraphAuthorityMarker(
@@ -13,8 +11,7 @@ export async function loadUserEmailGraphAuthorityMarker(
 ): Promise<UserEmailGraphAuthorityMarker | null> {
 	const row = await db
 		.prepare(
-			`SELECT
-				owner_count, frozen_at, dropped_at, backup_object_key, backup_sha256
+			`SELECT owner_count, frozen_at, dropped_at
 			FROM email_user_graph_authority
 			WHERE singleton = 1
 			LIMIT 1`,
@@ -23,16 +20,12 @@ export async function loadUserEmailGraphAuthorityMarker(
 			owner_count: number
 			frozen_at: string
 			dropped_at: string
-			backup_object_key: string
-			backup_sha256: string
 		}>()
 	if (!row) return null
 	return {
 		ownerCount: Number(row.owner_count),
 		frozenAt: row.frozen_at,
 		droppedAt: row.dropped_at,
-		backupObjectKey: row.backup_object_key,
-		backupSha256: row.backup_sha256,
 	}
 }
 

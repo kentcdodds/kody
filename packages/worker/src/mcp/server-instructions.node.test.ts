@@ -19,38 +19,43 @@ test('base MCP server instructions preserve exact prose with domains and popular
 			],
 		}),
 	).toMatchInlineSnapshot(`
-		"End-user documentation (workflows, secrets, troubleshooting):
+		"Kody is a multi-user personal assistant. Each signed-in user gets a fully isolated assistant (packages, jobs, secrets, values, memories, connectors, email, storage) exposed through two MCP tools: \`search\` and \`execute\`.
+
+		End-user documentation (workflows, secrets, troubleshooting):
 		https://github.com/kentcdodds/kody/tree/main/docs/use
 
-		Package lifecycle (use this as the primary mental model):
-		1. Discover and invoke before building: use \`search\` to find an existing built-in capability, connected capability, or saved package, inspect the entity detail for its exact call shape, then invoke it rather than reimplementing it.
-		2. Explore temporarily: use \`execute\` for quick one-off work, capability composition, authenticated smoke tests, and experiments. Execute modules are ephemeral, not the durable home for behavior.
-		3. Prefer a close community package before creating: community listings are excluded from general \`search\`, so call \`community_search\` (prefer \`trusted\` matches) when you need durable reusable behavior and nothing in the user's account fits. If a listing is close to the user's goal, fork with \`community_fork\`, review and adapt it, then publish — do not reimplement from scratch. Create a new package only when no suitable listing exists.
-		4. Create or evolve a repo-backed package when behavior should be reused, maintained, tested, exposed as an app or service, or given a package-owned schedule, and step 3 found nothing suitable. Search once more before creating one so you extend an existing package when that is the better fit.
+		Start here
+		- Almost every task: \`search({ query })\` first; pass \`domain\` to narrow (domain ids listed below).
+		- One-off work / smoke tests: \`execute\`. Durable reusable behavior: a package (after \`community_search\` when nothing in-account fits).
+		- Official guides: \`search({ domain: "coding" })\` or \`search({ query: "… guide" })\`, then \`coding_guide_get\`. Load \`coding_guide_get({ guide: "package_lifecycle" })\` when fork/create/escalate is unclear.
 
-		Escalate from \`execute\` to a package when the user wants reusable named behavior they expect to keep improving, when the code needs multiple files, dependencies, tests, binary assets, version history, or review, when the behavior needs a durable surface (package exports, package-owned jobs, an app, or a service), or when you are repeatedly editing substantially the same execute module. Keep genuinely one-off exploration in \`execute\`. Scheduling alone does not require a package: use \`job_schedule\` for ad hoc or simple self-contained schedules and package-owned jobs when the schedule belongs to reusable, evolving package behavior. Before creating, check \`community_search\` for a trusted close package. Load \`coding_guide_get({ guide: "package_lifecycle" })\` when the fork-vs-create or escalation call is unclear.
+		Package lifecycle (primary mental model):
+		1. Discover and invoke: \`search\` for an existing capability, connected surface, or saved package; open entity detail for the exact call shape; invoke rather than reimplement.
+		2. Explore temporarily: \`execute\` for one-off work, composition, authenticated smoke tests, and experiments. Execute modules are ephemeral.
+		3. Prefer a close community package before creating: community listings are excluded from general \`search\` — use \`community_search\` (prefer \`trusted\`). If close, \`community_fork\`, review, adapt, publish. Create only when nothing suitable exists.
+		4. Create or evolve a repo-backed package when behavior should be reused, maintained, tested, exposed as an app/service, or given a package-owned schedule, and step 3 found nothing. Search once more before creating so you extend an existing package when that fits.
+
+		Escalate from \`execute\` to a package when the user wants reusable named behavior they will keep improving; when the code needs multiple files, dependencies, tests, binary assets, version history, or review; when it needs a durable surface (exports, package-owned jobs, app, or service); or when you keep rewriting substantially the same execute module. Scheduling alone is not a reason to package — use \`job_schedule\` for ad hoc schedules, and package-owned jobs when the schedule belongs to reusable package behavior.
 
 		Package authoring lanes:
-		- Coding agents with local filesystem/git access: \`package_get_git_remote\` (pass \`create: true\` with a new \`kody_id\` to register a stub package and mint its remote in one call), clone into a temporary directory, edit and test normally (binary assets supported), push, then publish with \`package_publish_external_push\`.
-		- Tool-only agents: \`package_save\` (creates or replaces a repo-backed package rooted at \`package.json\` from the complete UTF-8 text file set) plus \`repo_*\` sessions. If the work needs binary assets, many-file changes, or local build/test loops, tell the user it fits a coding-capable agent better and confirm before proceeding tool-only.
-		- When creating or materially changing a package, load \`coding_guide_get({ guide: "package_authoring" })\` and keep a root \`README.md\` \`## Intent\` section with the user's goal; ask the user if unclear and update it when scope expands.
+		- Coding agents with local filesystem/git: \`package_get_git_remote\` (\`create: true\` + new \`kody_id\` registers a stub and mints the remote), clone, edit/test, push, then \`package_publish_external_push\`.
+		- Tool-only agents: \`package_save\` (full UTF-8 file set rooted at \`package.json\`) plus \`repo_*\` sessions. If the work needs binaries, many-file changes, or local build/test loops, prefer a coding-capable agent.
+		- When creating or materially changing a package, load \`coding_guide_get({ guide: "package_authoring" })\` and keep a root \`README.md\` \`## Intent\` section with the user's goal.
 
 		Conventions:
-		- Both tools accept optional \`conversationId\` and \`memoryContext\` fields (documented in their input schemas); reuse the returned \`conversationId\` across related calls.
-		- Credential setup uses the standard setup pages: \`/connect/oauth\` for OAuth integrations and reconnects, \`/account/secrets/new\` for API keys, PATs, and other user-provided secrets. Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.
-		- Integration-backed work: before building packages, package apps, or workflows that depend on third-party auth, call \`coding_guide_get({ guide: "integration_bootstrap" })\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, run a cheap authenticated \`execute\` smoke test, then check \`community_search\` for a trusted close package before creating one. Do not present auth-dependent work as complete until that smoke test succeeds.
-		- Package secret approvals: self-authored packages (and community forks adopted via \`community_fork_adopt\` after a real source review) get automatic read/use access to user secrets; updating or deleting a user secret from package code still needs an \`allowed_packages\` grant. Unadopted community forks still need explicit approval for read/use, or adopt after review. Saving a user secret or passing an ad hoc \`execute\` smoke test does **not** approve community-fork package use. After \`package_save\` / \`package_publish_external_push\`, read \`pending_secret_package_approvals\` from the tool result (non-null only for unadopted community forks). Prefer reviewing + \`community_fork_adopt\`, or send \`bulk_approval_url\` / each \`approval_url\`. Wait when required, then verify with a keyless \`packages.invoke\` smoke test before calling the package complete: pick a read-only export or dry-run input that actually uses the approved secret (invoke runs in the package's own runtime, so secret mounts resolve; a static import cannot verify those, and an export that never reads the secret proves nothing).
-		- Package state: source is the repo; config is secrets/values keyed by the saved package id; durable data is \`packageStorage()\`; coordination is services; schedules are jobs — package apps/jobs/services are package-owned surfaces, not separate primitives.
-		- Jobs, workflows, sessions, services, values, storage, and the other capability groups below are individual capabilities: discover them with \`search\`, whose entity detail includes each capability's exact call shape.
-		- Memory writes are verify-first: run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`.
-		- User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users) are for preferences and workflow notes only — not for maintaining a package inventory (popular packages are hinted automatically when available). Updates apply to **new** MCP sessions.
+		- Credentials: never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat. For API keys/PATs, always send a prefilled \`/account/secrets/new?name=…&description=…&allowedHosts=…&scope=user\` link (see \`coding_guide_get({ guide: "connect_secret" })\` for params) — never the bare secrets page. For OAuth setup or reconnect, link \`/connect/oauth?provider=<integration-name>\` (see \`coding_guide_get({ guide: "oauth" })\`).
+		- Integration-backed work: before building packages/apps that need third-party auth, load \`coding_guide_get({ guide: "integration_bootstrap" })\`, confirm the \`integration\` or \`secret\` via \`search\`, run a cheap authenticated \`execute\` smoke test, then \`community_search\` for a trusted close package. Do not call auth-dependent work complete until that smoke test succeeds.
+		- After \`package_save\` / \`package_publish_external_push\`, read \`pending_secret_package_approvals\` in the tool result when present; follow its guidance before calling the package complete.
+		- Package state: source is the repo; config is secrets/values keyed by saved package id; durable data is \`packageStorage()\`; coordination is services; schedules are jobs — package apps/jobs/services are package-owned surfaces, not separate primitives.
+		- Discover capabilities with \`search\`; entity detail includes the exact call shape. Memory writes are verify-first: \`meta_memory_verify\` before upsert/delete.
+		- Durable user facts and preferences belong in memories. The optional MCP instruction overlay (\`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\`) is only for rare always-on session policy — not package inventory (popular packages are hinted automatically). Overlay updates apply to new MCP sessions.
 
 
-		Often used from agents: \`notes\` — Scratch notes; \`calendar-sync\` — Keep calendars aligned — discover others with \`search\`
+		Often used packages (hints, not inventory — discover others with \`search\`):
+		- \`notes\`
+		- \`calendar-sync\`
 
-		Kody repository (for contributors): https://github.com/kentcdodds/kody
-
-		Domains (builtin capability groups — scope ranked discovery with \`search({ query, domain })\` or list one domain with \`search({ domain })\`)
+		Domains (scope discovery with \`search({ query, domain })\` or list one with \`search({ domain })\`)
 		- \`email\`: Send and read mail
 		- \`jobs\`: Schedule durable work"
 	`)
@@ -69,7 +74,8 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	])
 	expect(section).toMatch(/`email-helper`/)
 	expect(section).toMatch(/`calendar-sync`/)
-	expect(section).toContain('Send and read mail')
+	expect(section).toContain('- `email-helper`')
+	expect(section).not.toContain('Send and read mail')
 
 	const many = Array.from({ length: 12 }, (_, index) => ({
 		kodyId: `pkg-${String(index + 1).padStart(2, '0')}`,
@@ -90,17 +96,6 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 		].length,
 	).toBeLessThanOrEqual(2)
 
-	const truncated = formatPopularPackagesInstructions([
-		{
-			kodyId: 'big-desc',
-			description:
-				'This description is intentionally very long so the formatter must truncate it for the instruction budget',
-		},
-	])
-	expect(truncated).toMatch(/`big-desc`/)
-	expect(truncated).toContain('...')
-	expect(truncated).not.toContain('instruction budget')
-
 	const instructions = buildMcpServerInstructions({
 		popularPackages: [{ kodyId: 'notes', description: 'Scratch notes' }],
 		userOverlay: 'Prefer concise replies.',
@@ -108,4 +103,24 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	})
 	expect(instructions).toMatch(/`notes`/)
 	expect(instructions).toContain('Prefer concise replies.')
+	expect(instructions).not.toContain('Connected remote connectors')
+	expect(instructions).not.toContain('Kody repository (for contributors)')
+})
+
+test('domain instruction blurbs truncate long descriptions', () => {
+	const instructions = buildBaseMcpServerInstructions({
+		domains: [
+			{
+				name: 'admin',
+				description:
+					'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, and much more detail that should not all appear in always-loaded instructions.',
+			},
+		],
+	})
+	const line = instructions
+		.split('\n')
+		.find((entry) => entry.includes('`admin`'))
+	expect(line).toBeTruthy()
+	expect(line!.length).toBeLessThan(130)
+	expect(line).toContain('...')
 })

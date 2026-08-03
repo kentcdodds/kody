@@ -9,8 +9,7 @@ import { webhookUrlRotateCapability } from './webhook-url-rotate.ts'
 
 export const webhooksDomain = defineDomain({
 	name: capabilityDomainNames.webhooks,
-	description:
-		'Package-centered inbound webhooks declared in package.json#kody.webhooks. Declare a webhook bound to a package export, mint a credential URL with webhook_url_mint, then point Sentry/GitHub/Stripe (or any provider) at it. Verification secrets are named secret-store references, never inline values.',
+	description: 'Package-declared inbound webhooks with minted credential URLs.',
 	keywords: [
 		'webhook',
 		'inbound',

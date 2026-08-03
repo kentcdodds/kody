@@ -4,7 +4,6 @@ import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	deleteOutboundProviderIndexByMessageId,
 	getOutboundProviderIndexRow,
-	isOutboundProviderIndexForeignKeyDetached,
 	loadOutboundProviderIndexHealthReport,
 	upsertOutboundProviderIndexRow,
 } from './outbound-provider-index.ts'
@@ -12,9 +11,6 @@ import { ensureEmailTestSchema } from './test-schema.ts'
 
 test('thin provider index persists after the USER graph is removed', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	await expect(
-		isOutboundProviderIndexForeignKeyDetached(env.APP_DB),
-	).resolves.toBe(true)
 	const userId = `index-user-${crypto.randomUUID()}`
 	const messageId = `index-message-${crypto.randomUUID()}`
 	const providerMessageId = `index-provider-${crypto.randomUUID()}`

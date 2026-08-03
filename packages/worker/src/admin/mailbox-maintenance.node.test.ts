@@ -3,7 +3,6 @@ import { expect, test, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
 	mailboxRpc: vi.fn(),
 	deleteOutboundProviderIndexByMessageId: vi.fn(),
-	isOutboundProviderIndexForeignKeyDetached: vi.fn(async () => true),
 	loadOutboundProviderIndexHealthReport: vi.fn(async () => ({
 		indexCount: 2,
 		distinctOwnerCount: 2,
@@ -14,8 +13,6 @@ const mocks = vi.hoisted(() => ({
 		ownerCount: 2,
 		frozenAt: '2026-08-01T00:00:00.000Z',
 		droppedAt: '2026-08-03T00:00:00.000Z',
-		backupObjectKey: 'd1/backup.sql.gz',
-		backupSha256: 'a'.repeat(64),
 	})),
 	assertUserEmailGraphAuthority: vi.fn(async () => undefined),
 	loadProviderIndexRepairHealth: vi.fn(async () => ({
@@ -49,8 +46,6 @@ vi.mock('#worker/email/mailbox-client.ts', () => ({
 vi.mock('#worker/email/outbound-provider-index.ts', () => ({
 	deleteOutboundProviderIndexByMessageId:
 		mocks.deleteOutboundProviderIndexByMessageId,
-	isOutboundProviderIndexForeignKeyDetached:
-		mocks.isOutboundProviderIndexForeignKeyDetached,
 	loadOutboundProviderIndexHealthReport:
 		mocks.loadOutboundProviderIndexHealthReport,
 }))
@@ -129,7 +124,6 @@ test('maintenance status reports authority and coordination health', async () =>
 			indexCount: 2,
 			distinctOwnerCount: 2,
 			malformedCount: 0,
-			foreignKeyDetached: true,
 			healthy: true,
 		},
 		providerIndexRepair: { pendingOwners: 0, pendingCount: 0 },

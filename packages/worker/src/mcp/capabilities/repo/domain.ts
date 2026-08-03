@@ -18,7 +18,7 @@ import { repoWriteFileCapability } from './repo-write-file.ts'
 export const repoDomain = defineDomain({
 	name: capabilityDomainNames.repo,
 	description:
-		'Repo-backed source sessions for MCP-native edits when agents cannot or should not use a local clone: open workspaces, run constrained git command workflows, search code, validate, and publish live overlays.',
+		'MCP-native repo sessions for edit, git, validate, and publish overlays.',
 	keywords: ['repo', 'artifact', 'session', 'workspace', 'git', 'search'],
 	capabilities: [
 		repoListSessionsCapability,

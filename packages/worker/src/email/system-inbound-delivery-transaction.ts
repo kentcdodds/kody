@@ -5,12 +5,6 @@ export type SystemInboundEventMutation = {
 	dedicated: D1PreparedStatement
 }
 
-export function systemInboundEventMutation(
-	input: SystemInboundEventMutation,
-): SystemInboundEventMutation {
-	return input
-}
-
 export async function commitSystemInboundEventMutations(input: {
 	db: D1Database
 	mutations: ReadonlyArray<SystemInboundEventMutation>

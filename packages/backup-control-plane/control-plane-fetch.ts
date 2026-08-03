@@ -19,12 +19,14 @@ import {
 	renderDashboard,
 	renderDrillReport,
 	renderEnqueueResult,
+	renderMailboxPreDropStatusPage,
 	renderMessagePage,
 	renderRestoreAlreadyStartedPage,
 	renderRestorePreparePage,
 	renderRestoreStatusPage,
 	renderSealResult,
 } from './control-plane-ui.ts'
+import { mailboxPreDropWorkflowInstanceId } from './mailbox-pre-drop-policy.ts'
 import {
 	restoreWorkflowInstanceId,
 	validateSealedDayForRestore,
@@ -60,6 +62,12 @@ function requireDay(value: string | null): string {
 	const day = value.trim()
 	assertBackupDay(day)
 	return day
+}
+
+function randomNonce(): string {
+	return [...crypto.getRandomValues(new Uint8Array(16))]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
 }
 
 async function handleAuthenticated(
@@ -108,6 +116,40 @@ async function handleAuthenticated(
 		}
 	}
 
+	if (request.method === 'GET' && path === '/mailbox-pre-drop-status') {
+		const id = url.searchParams.get('id')
+		if (!id) {
+			return htmlResponse(
+				renderMessagePage(
+					'Mailbox pre-drop backup status',
+					'Missing workflow id.',
+					{ danger: true },
+				),
+				400,
+			)
+		}
+		try {
+			const instance = await env.MAILBOX_PRE_DROP_BACKUP_WORKFLOW.get(id)
+			const status = await instance.status()
+			return htmlResponse(
+				renderMailboxPreDropStatusPage({
+					instanceId: id,
+					status: status.status,
+					receipt: 'output' in status ? status.output : undefined,
+				}),
+			)
+		} catch {
+			return htmlResponse(
+				renderMessagePage(
+					'Mailbox pre-drop backup status',
+					'Unable to read the workflow instance.',
+					{ danger: true },
+				),
+				404,
+			)
+		}
+	}
+
 	if (request.method !== 'POST') {
 		return htmlResponse(
 			renderMessagePage('Not found', 'Unknown route.', { danger: true }),
@@ -119,6 +161,35 @@ async function handleAuthenticated(
 	const form = await readForm(request)
 
 	switch (path) {
+		case '/actions/mailbox-pre-drop-backup': {
+			if (!isBackupEnabled(env)) {
+				throw new BackupError(
+					'backup-disabled',
+					'backups are disabled by enable gate',
+				)
+			}
+			const backupRequest = {
+				requestId: crypto.randomUUID(),
+				nonce: randomNonce(),
+				requestedAt: new Date().toISOString(),
+			}
+			const instanceId = mailboxPreDropWorkflowInstanceId(backupRequest)
+			await env.MAILBOX_PRE_DROP_BACKUP_WORKFLOW.create({
+				id: instanceId,
+				params: backupRequest,
+			})
+			safeLog({
+				event: 'ui-mailbox-pre-drop-backup',
+				status: 'success',
+				instanceId,
+			})
+			return htmlResponse(
+				renderMailboxPreDropStatusPage({
+					instanceId,
+					status: 'queued',
+				}),
+			)
+		}
 		case '/actions/run-backup': {
 			if (!isBackupEnabled(env)) {
 				throw new BackupError(

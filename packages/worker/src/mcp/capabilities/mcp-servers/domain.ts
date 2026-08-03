@@ -10,7 +10,7 @@ import { mcpServerSetEnabledCapability } from './mcp-server-set-enabled.ts'
 export const mcpServersDomain = defineDomain({
 	name: capabilityDomainNames.mcpServers,
 	description:
-		'User-added remote MCP servers that Kody connects to as a client: add, list with live status, reconnect, refresh tools, enable/disable, and remove. Connected servers surface as mcp:<server> domains callable via kody.mcp["server-name"].tool_name(...).',
+		'User-added MCP servers callable as kody.mcp["server-name"].tool_name(...).',
 	keywords: [
 		'mcp',
 		'server',

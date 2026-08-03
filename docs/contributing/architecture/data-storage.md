@@ -286,7 +286,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   sign-off). UserMeter `storage_bytes_state` (schema v4) drives storage-byte
   enforcement; `package_service_states` (schema v5) is the authoritative
   running-count source for `package_services` / `service_start` — see
-  [Entitlements](./entitlements.md#usermeter-expand-phase). Migration 0134
+  [Entitlements](./entitlements.md#usermeter-expand-phase). Migration 0135
   removed every retired Mailbox parity, replay, backfill, and soak column and
   its discovery index. Inbound email routing does not reverse-resolve stable ids
   at all — it uses the indexed username lookup
@@ -703,14 +703,16 @@ scheduled inbound reconciliation. Due live-work reasons sort before the seeded
 per tick. `email_delivery_alert_events` preserves short-lived bounced/complained
 signals for operator burst alerts.
 
-Migration `0134-drop-legacy-email-graph.sql` removed the shared D1
+Migration `0135-drop-legacy-email-graph.sql` removed the shared D1
 `email_threads`, `email_messages`, `email_attachments`, and
-`email_delivery_events` tables, the legacy inbound usage-effect ledger, the
-provider-index compatibility trigger, and all Mailbox migration columns on
-`users`. Static import/SQL architecture checks reject any production D1
-reference to those shared graph tables; only Mailbox Durable Object
-`storage.sql`, migration history, and tests may use those table names.
-`system:email` remains on its dedicated D1 graph and retention path.
+`email_delivery_events` tables, the provider-index compatibility trigger, and
+all Mailbox migration columns on `users`. The `email_inbound_usage_effects`
+idempotency ledger remains with its rows preserved and obsolete delivery-event
+foreign key detached because the signed 0134 approval did not include its count.
+Static import/SQL architecture checks reject production D1 references to the
+dropped graph tables; only Mailbox Durable Object SQLite, migration history, and
+tests may use those table names. `system:email` remains on its dedicated D1
+graph and retention path.
 
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
@@ -768,9 +770,9 @@ count. There is no legacy parity report or reconcile action.
 The detached `email_outbound_provider_index` does not accept `system:email`.
 System outbound sends and provider-linked dedicated messages remain unsupported.
 Runtime marker checks repeat the provider gate so any provider-linked system row
-stops dedicated work. Migration 0134 verified exact full-row parity between the
+stops dedicated work. Migration 0135 verified exact full-row parity between the
 last legacy system snapshot and dedicated authority immediately before deleting
-the legacy graph. A code rollback to a pre-0134 Worker is therefore unsupported.
+the legacy graph. A code rollback to a pre-0135 Worker is therefore unsupported.
 
 **USER rollback boundary:** Mailbox/R2 is the only USER graph authority. A
 code-only rollback to a D1-authoritative Worker is impossible because the shared
@@ -839,12 +841,13 @@ in the frozen graph had a fresh, successful, complete backfill record; its
 singleton authority marker recorded the validated owner count and freeze time.
 
 The temporary USER dual-write, rebuild, soak, and read-flag runtime surfaces
-used during those phases have been removed. Migration 0134 required a fresh,
-verified, expiring backup approval, rechecked exact USER counts and exact
-legacy/dedicated system parity, then removed the shared graph, compatibility
-trigger, migration ledger table, and old `users` columns atomically. The stable
-authority marker now retains `owner_count`, `frozen_at`, `dropped_at`, and the
-approving backup object key/SHA-256. See
+used during those phases have been removed. Migration 0134 installed the
+canonical approval schema. Migration 0135 consumed every signed provenance
+field, rechecked exact USER counts and exact legacy/dedicated system parity,
+then removed the shared graph, compatibility trigger, and old `users` columns
+atomically. The stable authority marker retains `owner_count`, `frozen_at`, and
+`dropped_at`; the complete canonical receipt remains in
+`email_user_graph_drop_approval`. See
 [Mailbox legacy graph drop](../mailbox-legacy-graph-drop.md).
 
 ### What stays in D1
@@ -877,9 +880,8 @@ approving backup object key/SHA-256. See
   owner-scoped Mailbox message (no shared-message scan). System outbound is
   unsupported, and the verified `no-system-provider-links` disposition means
   `system:email` rows are never added to this global index. The admin status
-  exposes an index-only structural report and the live schema check
-  `foreignKeyDetached`. Contextless provider-id reverse lookups must not
-  enumerate per-user Mailbox objects.
+  exposes an index-only structural report. Contextless provider-id reverse
+  lookups must not enumerate per-user Mailbox objects.
 
 ### Inbound durability boundary (USER Mailbox authority)
 

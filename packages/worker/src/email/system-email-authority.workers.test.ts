@@ -7,7 +7,9 @@ import {
 	listSystemEmailMessages,
 	updateSystemEmailMessageClassification,
 } from './system-email-graph-store.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import { loadSystemEmailHealth } from './system-email-health.ts'
+import { recordBoundedSystemEmailRejection } from './system-inbound-rejection-store.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 test('dedicated system graph enforces config ownership and reports health', async () => {
@@ -48,6 +50,40 @@ test('dedicated system graph enforces config ownership and reports health', asyn
 			},
 		}),
 	).rejects.toThrow()
+	await insertSystemEmailAttachments({
+		db: env.APP_DB,
+		messageId: 'foreign-owner-message',
+		attachments: [
+			{
+				id: 'cross-owner-attachment',
+				contentType: 'text/plain',
+				storageKind: 'raw-mime',
+			},
+		],
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM system_email_attachments
+			WHERE id = 'cross-owner-attachment'`,
+		).first(),
+	).toBeNull()
+	await expect(
+		recordBoundedSystemEmailRejection({
+			db: env.APP_DB,
+			inboxId: 'foreign-inbox',
+			recipient: 'foreign@example.test',
+			reason: 'cross-owner',
+			phase: 'test',
+			now: new Date('2026-08-03T12:00:00.000Z'),
+			detailLimit: 1,
+		}),
+	).rejects.toThrow('returned an invalid count')
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM system_email_delivery_events
+			WHERE inbox_id = 'foreign-inbox'`,
+		).first(),
+	).toBeNull()
 
 	const thread = await createSystemEmailThread({
 		db: env.APP_DB,
@@ -100,6 +136,55 @@ test('dedicated system graph enforces config ownership and reports health', asyn
 		providerLinkCount: 0,
 		healthy: true,
 	})
+})
+
+test('concurrent system rejection auditing keeps the detail bound exact', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await env.APP_DB.prepare(
+		`INSERT INTO email_inboxes (
+			id, user_id, name, enabled, created_at, updated_at
+		) VALUES (
+			'system-rejection-inbox', ?, 'support', 1,
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		)`,
+	)
+		.bind(systemEmailOwnerId)
+		.run()
+	const attemptCount = 24
+	const detailLimit = 5
+	const counts = await Promise.all(
+		Array.from({ length: attemptCount }, (_, index) =>
+			recordBoundedSystemEmailRejection({
+				db: env.APP_DB,
+				inboxId: 'system-rejection-inbox',
+				recipient: `recipient-${index}@example.test`,
+				reason: `reason-${index}`,
+				phase: 'system-limit',
+				now: new Date('2026-08-03T12:00:00.000Z'),
+				detailLimit,
+			}),
+		),
+	)
+	expect(counts.toSorted((left, right) => left - right)).toEqual(
+		Array.from({ length: attemptCount }, (_, index) => index + 1),
+	)
+	const aggregateId = 'email-rejections:system-rejection-inbox:2026-08-03'
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT json_extract(detail_json, '$.count') AS count
+			FROM system_email_delivery_events WHERE id = ?`,
+		)
+			.bind(aggregateId)
+			.first(),
+	).toEqual({ count: attemptCount })
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM system_email_delivery_events
+			WHERE inbox_id = 'system-rejection-inbox' AND id != ?`,
+		)
+			.bind(aggregateId)
+			.first(),
+	).toEqual({ count: detailLimit })
 })
 
 test('dedicated system operations fail closed on marker or provider-link drift', async () => {
