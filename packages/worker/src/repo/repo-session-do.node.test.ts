@@ -873,6 +873,39 @@ test('applyEdits move edit renames a file preserving content', async () => {
 	})
 })
 
+test('applyEdits rejects batches mixing structural and content edits on the same path', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceExists.mockResolvedValue(true)
+	mockModule.workspaceReadFile.mockResolvedValue('export const value = 1\n')
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	// delete + write on the same path is ambiguous (structural edits run last).
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{ kind: 'delete', path: 'src/a.ts' },
+				{ kind: 'write', path: 'src/a.ts', content: 'export const a = 2\n' },
+			],
+		}),
+	).rejects.toThrow(/cannot combine a delete\/move/)
+
+	// move whose source is rewritten in the same batch would capture stale
+	// content; ./-prefixed paths must still collide after resolution.
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{ kind: 'write', path: './src/a.ts', content: 'export const a = 2\n' },
+				{ kind: 'move', path: 'src/a.ts', to: 'src/b.ts' },
+			],
+		}),
+	).rejects.toThrow(/cannot combine a delete\/move/)
+	expect(mockModule.workspaceRm).not.toHaveBeenCalled()
+})
+
 test('applyEdits move succeeds for a grandfathered oversized file because content is unchanged', async () => {
 	setCommonSessionFixtures()
 	const oversizedContent = 'x'.repeat(maxRepoSourceFileBytes + 1)

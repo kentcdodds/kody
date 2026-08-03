@@ -752,9 +752,27 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		}
 
-		const contentEditPaths = new Set(
-			contentEdits.map((edit) => edit.path.trim()).filter(Boolean),
+		// Structural edits (delete/move) execute after content edits, so a batch
+		// that touches the same path from both sides has ambiguous,
+		// order-dependent results (a write can be silently discarded). Reject
+		// those batches outright: callers split them into separate calls.
+		// Comparison keys strip `./` prefixes and leading slashes so aliased
+		// spellings of one path still collide.
+		const editConflictKey = (path: string) =>
+			path
+				.trim()
+				.replace(/^(\.\/)+/, '')
+				.replace(/^\/+/, '')
+		const contentEditConflictKeys = new Set(
+			contentEdits.map((edit) => editConflictKey(edit.path)).filter(Boolean),
 		)
+		const assertNoContentConflict = (path: string) => {
+			if (contentEditConflictKeys.has(editConflictKey(path))) {
+				throw new Error(
+					`repo session edits cannot combine a delete/move touching "${path}" with a write/replace/writeJson edit for the same path in one call. Split them into separate repo_edit_files calls.`,
+				)
+			}
+		}
 		type PlannedStructuralEdit = {
 			kind: 'delete' | 'move'
 			path: string
@@ -764,7 +782,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			changed: boolean
 			content: string
 			diff: string
-			deleteSourceOnly?: boolean
 		}
 		const plannedStructural: Array<PlannedStructuralEdit> = []
 		const moveTargets = new Set<string>()
@@ -778,6 +795,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					path,
 					repoSessionWorkspacePrefix,
 				)
+				assertNoContentConflict(path)
 				const exists = await this.workspace.exists(workspacePath)
 				if (!exists) {
 					throw new Error(
@@ -834,20 +852,19 @@ class RepoSessionBase extends DurableObject<Env> {
 				toPath,
 				repoSessionWorkspacePrefix,
 			)
+			assertNoContentConflict(fromPath)
+			assertNoContentConflict(toPath)
 			const sourceExists = await this.workspace.exists(sourceWorkspacePath)
 			if (!sourceExists) {
 				throw new Error(
 					`repo session move edit source "${fromPath}" was not found.`,
 				)
 			}
-			const destinationWrittenInBatch = contentEditPaths.has(toPath)
-			if (!destinationWrittenInBatch) {
-				const targetExists = await this.workspace.exists(targetWorkspacePath)
-				if (targetExists) {
-					throw new Error(
-						`repo session move edit destination "${toPath}" already exists.`,
-					)
-				}
+			const targetExists = await this.workspace.exists(targetWorkspacePath)
+			if (targetExists) {
+				throw new Error(
+					`repo session move edit destination "${toPath}" already exists.`,
+				)
 			}
 			const currentContent =
 				(await this.workspace.readFile(sourceWorkspacePath)) ?? ''
@@ -859,7 +876,6 @@ class RepoSessionBase extends DurableObject<Env> {
 				targetWorkspacePath,
 				changed: true,
 				content: currentContent,
-				deleteSourceOnly: destinationWrittenInBatch,
 				diff: formatPatch({
 					oldFileName: `a/${fromPath}`,
 					newFileName: `b/${toPath}`,
@@ -962,10 +978,6 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!input.dryRun) {
 			for (const planned of plannedStructural) {
 				if (planned.kind === 'delete') {
-					await this.workspace.rm(planned.workspacePath, { force: true })
-					continue
-				}
-				if (planned.deleteSourceOnly) {
 					await this.workspace.rm(planned.workspacePath, { force: true })
 					continue
 				}
@@ -1828,11 +1840,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.userId,
 		)
 		const result = await this.applyWorkspaceEdits(input)
-		await updateRepoSession(this.env.APP_DB, {
-			id: input.sessionId,
-			userId: sessionRow.user_id,
-			lastCheckpointAt: nowIso(),
-		})
+		if (!input.dryRun) {
+			await updateRepoSession(this.env.APP_DB, {
+				id: input.sessionId,
+				userId: sessionRow.user_id,
+				lastCheckpointAt: nowIso(),
+			})
+		}
 		return result
 	}
 

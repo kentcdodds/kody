@@ -129,7 +129,7 @@ export type RepoSessionRpc = {
 		sessionId: string
 		sourceId: string
 		userId: string
-		edits: Array<RepoSessionEdit>
+		edits: Array<Exclude<RepoSessionEdit, { kind: 'delete' | 'move' }>>
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
