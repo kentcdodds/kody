@@ -35,11 +35,10 @@ Example request body:
    instance with a new request id, nonce, and timestamp.
 
 Production applied 0135 at `2026-08-03T22:55:40Z` under control-plane receipt
-`963be2ed-0462-4294-ae63-81b8a5ddac38` (verified
-`2026-08-03T22:30:57.969Z`, expired `2026-08-04T00:30:57.969Z`). Receipts are
-not embedded in 0135. A newer receipt may replace an unconsumed one, but it must
-come from the same deployed trust configuration: source account
-`a99ee2e72728dd52902ef288b7b1447d`, database
+`963be2ed-0462-4294-ae63-81b8a5ddac38` (verified `2026-08-03T22:30:57.969Z`,
+expired `2026-08-04T00:30:57.969Z`). Receipts are not embedded in 0135. A newer
+receipt may replace an unconsumed one, but it must come from the same deployed
+trust configuration: source account `a99ee2e72728dd52902ef288b7b1447d`, database
 `8c1014d1-6b41-4695-a0a2-159071f0f919` / `kody`, key `kody-dr-2026-07`, baseline
 `kody-migration-set-2026-07` /
 `feb76eb26ed72a55d5fa25d14ef9ee904d0758fc29842c898b584a921ccfd995`, and build
