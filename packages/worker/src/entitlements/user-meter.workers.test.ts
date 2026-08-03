@@ -42,14 +42,16 @@ async function waitFor(
 	timeoutMs = 5_000,
 	label = 'condition',
 ) {
-	await vi.waitFor(
-		() => {
-			expect(predicate()).toBe(true)
-		},
-		{ timeout: timeoutMs, interval: 1 },
-	).catch(() => {
-		throw new Error(`Timed out waiting for ${label}.`)
-	})
+	await vi
+		.waitFor(
+			() => {
+				expect(predicate()).toBe(true)
+			},
+			{ timeout: timeoutMs, interval: 1 },
+		)
+		.catch(() => {
+			throw new Error(`Timed out waiting for ${label}.`)
+		})
 }
 
 test('cold daily consume initializes at zero without D1 prepare/run and first unit is 1', async () => {

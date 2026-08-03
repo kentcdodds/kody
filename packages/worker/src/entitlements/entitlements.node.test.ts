@@ -1195,7 +1195,7 @@ test('storage byte reserve: D1 mirror failure is silent and does not affect succ
 	const failingMirrorDb = {
 		prepare(query: string) {
 			return {
-				bind(...params: Array<unknown>) {
+				bind(..._params: Array<unknown>) {
 					return {
 						async first<T>() {
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {

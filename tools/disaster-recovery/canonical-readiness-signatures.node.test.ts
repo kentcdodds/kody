@@ -283,7 +283,9 @@ test('signed expiry rejects index-only extension, invalid timestamps, and code-a
 			uri: 'inventory.json',
 			verifierIdentity: 'recovery-verifier@example.test',
 		}
-		expect(parseSignedEvidenceEnvelope(signEnvelope(content, privateKey))).toBeDefined()
+		expect(
+			parseSignedEvidenceEnvelope(signEnvelope(content, privateKey)),
+		).toBeDefined()
 		for (const invalidExpiresAt of [
 			performedAt,
 			'2026-07-22T09:59:59.999Z',

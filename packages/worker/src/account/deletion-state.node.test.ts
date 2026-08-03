@@ -375,14 +375,16 @@ function createGatedDoEnv(input: {
 }
 
 async function waitFor(predicate: () => Promise<boolean>, label: string) {
-	await vi.waitFor(
-		async () => {
-			expect(await predicate()).toBe(true)
-		},
-		{ timeout: 2_000, interval: 1 },
-	).catch(() => {
-		throw new Error(`Timed out waiting for ${label}`)
-	})
+	await vi
+		.waitFor(
+			async () => {
+				expect(await predicate()).toBe(true)
+			},
+			{ timeout: 2_000, interval: 1 },
+		)
+		.catch(() => {
+			throw new Error(`Timed out waiting for ${label}`)
+		})
 }
 
 function holdDoWriteLease(input: {

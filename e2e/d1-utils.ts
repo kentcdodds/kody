@@ -85,4 +85,3 @@ export function clearAuthRateLimitsInE2eDatabase() {
 		DELETE FROM _rate_limits WHERE key LIKE 'auth:ip:%';`,
 	)
 }
-
