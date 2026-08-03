@@ -126,6 +126,61 @@ export function filterFirefoxDomPermissionDeniedSentryEvent<
 	return event
 }
 
+/**
+ * Wallet / browser-injected globals that throw from page `global code`, not
+ * from Kody bundles (no app code references these). Production signatures from
+ * Brave iOS issue 7648833360 and sibling 7648833403:
+ * - `undefined is not an object (evaluating 'window.ethereum…')`
+ * - `undefined is not an object (evaluating 'window.__firefox__…')`
+ * - `Can't find variable: __firefox__`
+ *
+ * Match is intentionally narrow: only these injected-global access patterns.
+ * Never blanket-drop TypeError / ReferenceError.
+ */
+export function isBrowserInjectedGlobalNoiseMessage(message: string) {
+	const withoutTypePrefix = message
+		.trim()
+		.replace(/^(?:TypeError|ReferenceError):\s*/i, '')
+	return (
+		/^undefined is not an object \(evaluating ['"]window\.(?:ethereum|__firefox__)\./i.test(
+			withoutTypePrefix,
+		) ||
+		/^Can'?t find variable: __firefox__\.?$/i.test(withoutTypePrefix) ||
+		/^Cannot find variable: __firefox__\.?$/i.test(withoutTypePrefix) ||
+		/^__firefox__ is not defined\.?$/i.test(withoutTypePrefix)
+	)
+}
+
+export function isBrowserInjectedGlobalNoiseError(error: unknown) {
+	if (typeof error === 'string') {
+		return isBrowserInjectedGlobalNoiseMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isBrowserInjectedGlobalNoiseMessage(error.message)
+}
+
+export function isBrowserInjectedGlobalNoiseSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isBrowserInjectedGlobalNoiseError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isBrowserInjectedGlobalNoiseMessage(message),
+	)
+}
+
+export function filterBrowserInjectedGlobalNoiseSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isBrowserInjectedGlobalNoiseSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -136,6 +191,12 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterFirefoxDomPermissionDeniedSentryEvent(event, originalException) ===
+		null
+	) {
+		return null
+	}
+	if (
+		filterBrowserInjectedGlobalNoiseSentryEvent(event, originalException) ===
 		null
 	) {
 		return null

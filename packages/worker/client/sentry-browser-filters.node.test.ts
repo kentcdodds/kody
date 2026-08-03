@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	filterBrowserAbortSentryEvent,
+	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 } from './sentry-browser-filters.ts'
@@ -110,6 +111,96 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).not.toBeNull()
 
+	// Injected wallet / Firefox-iOS bridge globals only (issue 7648833360).
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.__firefox__.reader')",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.__firefox__.refresh_youtube_quality_2E41B6CA94114F3CB0CAF4E4DA93D5A8')",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: __firefox__",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'something else' }],
+				},
+			},
+			new TypeError(
+				"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
+			),
+		),
+	).toBeNull()
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.someAppApi.foo')",
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserInjectedGlobalNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: ethereum",
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
 	const realBug = {
 		exception: {
 			values: [{ type: 'TypeError', value: 'TypeError: Failed to fetch' }],
@@ -135,6 +226,19 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 					{
 						type: 'Error',
 						value: 'Permission denied to access property "childNodes"',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
 					},
 				],
 			},
