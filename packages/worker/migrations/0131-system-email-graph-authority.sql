@@ -16,58 +16,76 @@ CREATE TABLE IF NOT EXISTS system_email_graph_authority (
 -- Keep idempotency correlation separate from the canonical ISO timestamp.
 ALTER TABLE system_email_daily_counters ADD COLUMN operation_token TEXT;
 
--- Fail before touching either graph when legacy authority contains an
--- ownership violation or any system provider link.
-INSERT INTO system_email_graph_authority (
-	singleton, authority, cutover_at, graph_mismatch_count, provider_link_count
-)
-SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0, 0
-WHERE EXISTS (
-	SELECT 1 FROM email_threads thread
-	LEFT JOIN email_inboxes inbox
-		ON inbox.id = thread.inbox_id AND inbox.user_id = 'system:email'
-	WHERE thread.user_id = 'system:email'
-		AND thread.inbox_id IS NOT NULL AND inbox.id IS NULL
-	UNION ALL
-	SELECT 1 FROM email_messages message
-	LEFT JOIN email_inboxes inbox
-		ON inbox.id = message.inbox_id AND inbox.user_id = 'system:email'
-	LEFT JOIN email_sender_identities sender
-		ON sender.id = message.sender_identity_id
-		AND sender.user_id = 'system:email'
-	LEFT JOIN email_threads thread
-		ON thread.id = message.thread_id AND thread.user_id = 'system:email'
-	WHERE message.user_id = 'system:email' AND (
-		(message.inbox_id IS NOT NULL AND inbox.id IS NULL)
-		OR (message.sender_identity_id IS NOT NULL AND sender.id IS NULL)
-		OR (message.thread_id IS NOT NULL AND thread.id IS NULL)
-	)
-	UNION ALL
-	SELECT 1 FROM email_delivery_events event
-	LEFT JOIN email_inboxes inbox
-		ON inbox.id = event.inbox_id AND inbox.user_id = 'system:email'
-	LEFT JOIN email_messages message
-		ON message.id = event.message_id AND message.user_id = 'system:email'
-	WHERE event.user_id = 'system:email' AND (
-		(event.inbox_id IS NOT NULL AND inbox.id IS NULL)
-		OR (event.message_id IS NOT NULL AND message.id IS NULL)
-	)
-	UNION ALL
-	SELECT 1 FROM email_outbound_provider_index provider_index
-	WHERE provider_index.user_id = 'system:email' OR EXISTS (
-		SELECT 1 FROM email_messages message
-		WHERE message.id = provider_index.message_id
-			AND message.user_id = 'system:email'
-	)
-	UNION ALL
-	SELECT 1 FROM email_messages message
-	WHERE message.user_id = 'system:email'
-		AND message.provider_message_id IS NOT NULL
-	UNION ALL
-	SELECT 1 FROM system_email_messages message
-	WHERE message.provider_message_id IS NOT NULL
-	LIMIT 1
+-- D1's SQLite build has a small compound-SELECT limit. Keep every migration
+-- check in its own bounded statement; the zero-only CHECK aborts the enclosing
+-- Wrangler migration transaction before graph mutation on any violation.
+CREATE TABLE system_email_graph_migration_checks (
+	name TEXT PRIMARY KEY,
+	category TEXT NOT NULL CHECK (category IN ('graph', 'provider')),
+	violation_count INTEGER NOT NULL CHECK (violation_count = 0)
 );
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'legacy-thread-ownership', 'graph', COUNT(*)
+FROM email_threads thread
+WHERE thread.user_id = 'system:email'
+	AND thread.inbox_id IS NOT NULL
+	AND NOT EXISTS (
+		SELECT 1 FROM email_inboxes inbox
+		WHERE inbox.id = thread.inbox_id AND inbox.user_id = 'system:email'
+	);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'legacy-message-ownership', 'graph', COUNT(*)
+FROM email_messages message
+WHERE message.user_id = 'system:email' AND (
+	(message.inbox_id IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM email_inboxes inbox
+		WHERE inbox.id = message.inbox_id AND inbox.user_id = 'system:email'
+	))
+	OR (message.sender_identity_id IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM email_sender_identities sender
+		WHERE sender.id = message.sender_identity_id
+			AND sender.user_id = 'system:email'
+	))
+	OR (message.thread_id IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM email_threads thread
+		WHERE thread.id = message.thread_id AND thread.user_id = 'system:email'
+	))
+);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'legacy-delivery-ownership', 'graph', COUNT(*)
+FROM email_delivery_events event
+WHERE event.user_id = 'system:email' AND (
+	(event.inbox_id IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM email_inboxes inbox
+		WHERE inbox.id = event.inbox_id AND inbox.user_id = 'system:email'
+	))
+	OR (event.message_id IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM email_messages message
+		WHERE message.id = event.message_id AND message.user_id = 'system:email'
+	))
+);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'provider-index-links', 'provider', COUNT(*)
+FROM email_outbound_provider_index provider_index
+WHERE provider_index.user_id = 'system:email' OR EXISTS (
+	SELECT 1 FROM email_messages message
+	WHERE message.id = provider_index.message_id
+		AND message.user_id = 'system:email'
+);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'legacy-message-provider-links', 'provider', COUNT(*)
+FROM email_messages
+WHERE user_id = 'system:email' AND provider_message_id IS NOT NULL;
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'dedicated-message-provider-links', 'provider', COUNT(*)
+FROM system_email_messages
+WHERE provider_message_id IS NOT NULL;
 
 -- 0130 was a point-in-time copy. Catch up every legacy change made while 4a
 -- remained live authority. Delete dedicated drift child-first so foreign-key
@@ -515,306 +533,251 @@ SET
 WHERE user_id = 'system:email'
 	AND provider IN ('cloudflare-email-routing', 'cloudflare-email-routing-dedupe');
 
--- The marker write is the atomic cutover gate. Count parity, missing/extra IDs,
--- invalid cross-owner references, and provider links are persisted into
--- CHECK-constrained columns. Any non-zero result aborts this migration and
--- rolls the graph reconciliation back with the marker absent.
-INSERT INTO system_email_graph_authority (
-	singleton,
-	authority,
-	cutover_at,
-	graph_mismatch_count,
-	provider_link_count
-)
-SELECT
-	1,
-	'dedicated',
-	CURRENT_TIMESTAMP,
+-- Validate each table in a separate bounded statement after catch-up and
+-- normalization. Every check covers count parity, missing/extra IDs, complete
+-- row parity, and dedicated reference ownership where applicable.
+INSERT INTO system_email_graph_migration_checks
+SELECT 'postcopy-threads', 'graph',
 	ABS(
 		(SELECT COUNT(*) FROM email_threads WHERE user_id = 'system:email')
 		- (SELECT COUNT(*) FROM system_email_threads)
-	) + ABS(
-		(SELECT COUNT(*) FROM email_messages WHERE user_id = 'system:email')
-		- (SELECT COUNT(*) FROM system_email_messages)
-	) + ABS(
-		(
-			SELECT COUNT(*)
-			FROM email_attachments attachment
-			INNER JOIN email_messages message ON message.id = attachment.message_id
-			WHERE message.user_id = 'system:email'
-		) - (SELECT COUNT(*) FROM system_email_attachments)
-	) + ABS(
-		(
-			SELECT COUNT(*)
-			FROM email_delivery_events
-			WHERE user_id = 'system:email'
-		) - (SELECT COUNT(*) FROM system_email_delivery_events)
 	) + (
-		SELECT COUNT(*)
-		FROM email_threads legacy
-		WHERE legacy.user_id = 'system:email'
-			AND NOT EXISTS (
-				SELECT 1 FROM system_email_threads dedicated
-				WHERE dedicated.id = legacy.id
-			)
+		SELECT COUNT(*) FROM email_threads legacy
+		WHERE legacy.user_id = 'system:email' AND NOT EXISTS (
+			SELECT 1 FROM system_email_threads dedicated
+			WHERE dedicated.id = legacy.id
+		)
 	) + (
-		SELECT COUNT(*)
-		FROM system_email_threads dedicated
+		SELECT COUNT(*) FROM system_email_threads dedicated
 		WHERE NOT EXISTS (
 			SELECT 1 FROM email_threads legacy
-			WHERE legacy.id = dedicated.id
-				AND legacy.user_id = 'system:email'
-		)
-	) + (
-		SELECT COUNT(*)
-		FROM email_messages legacy
-		WHERE legacy.user_id = 'system:email'
-			AND NOT EXISTS (
-				SELECT 1 FROM system_email_messages dedicated
-				WHERE dedicated.id = legacy.id
-			)
-	) + (
-		SELECT COUNT(*)
-		FROM system_email_messages dedicated
-		WHERE NOT EXISTS (
-			SELECT 1 FROM email_messages legacy
-			WHERE legacy.id = dedicated.id
-				AND legacy.user_id = 'system:email'
-		)
-	) + (
-		SELECT COUNT(*)
-		FROM email_attachments legacy
-		INNER JOIN email_messages owner ON owner.id = legacy.message_id
-		WHERE owner.user_id = 'system:email'
-			AND NOT EXISTS (
-				SELECT 1 FROM system_email_attachments dedicated
-				WHERE dedicated.id = legacy.id
-			)
-	) + (
-		SELECT COUNT(*)
-		FROM system_email_attachments dedicated
-		WHERE NOT EXISTS (
-			SELECT 1
-			FROM email_attachments legacy
-			INNER JOIN email_messages owner ON owner.id = legacy.message_id
-			WHERE legacy.id = dedicated.id
-				AND owner.user_id = 'system:email'
-		)
-	) + (
-		SELECT COUNT(*)
-		FROM email_delivery_events legacy
-		WHERE legacy.user_id = 'system:email'
-			AND NOT EXISTS (
-				SELECT 1 FROM system_email_delivery_events dedicated
-				WHERE dedicated.id = legacy.id
-			)
-	) + (
-		SELECT COUNT(*)
-		FROM system_email_delivery_events dedicated
-		WHERE NOT EXISTS (
-			SELECT 1 FROM email_delivery_events legacy
-			WHERE legacy.id = dedicated.id
-				AND legacy.user_id = 'system:email'
+			WHERE legacy.id = dedicated.id AND legacy.user_id = 'system:email'
 		)
 	) + (
 		SELECT COUNT(*)
 		FROM email_threads legacy
 		INNER JOIN system_email_threads dedicated ON dedicated.id = legacy.id
-		WHERE legacy.user_id = 'system:email'
-			AND json_array(
-				legacy.id, legacy.inbox_id, legacy.subject_normalized,
-				legacy.root_message_id_header, legacy.last_message_at,
-				legacy.created_at, legacy.updated_at
-			) IS NOT json_array(
-				dedicated.id, dedicated.inbox_id, dedicated.subject_normalized,
-				dedicated.root_message_id_header, dedicated.last_message_at,
-				dedicated.created_at, dedicated.updated_at
-			)
+		WHERE legacy.user_id = 'system:email' AND json_array(
+			legacy.id, legacy.inbox_id, legacy.subject_normalized,
+			legacy.root_message_id_header, legacy.last_message_at,
+			legacy.created_at, legacy.updated_at
+		) IS NOT json_array(
+			dedicated.id, dedicated.inbox_id, dedicated.subject_normalized,
+			dedicated.root_message_id_header, dedicated.last_message_at,
+			dedicated.created_at, dedicated.updated_at
+		)
+	) + (
+		SELECT COUNT(*) FROM system_email_threads dedicated
+		WHERE dedicated.inbox_id IS NOT NULL AND NOT EXISTS (
+			SELECT 1 FROM email_inboxes inbox
+			WHERE inbox.id = dedicated.inbox_id AND inbox.user_id = 'system:email'
+		)
+	);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'postcopy-messages', 'graph',
+	ABS(
+		(SELECT COUNT(*) FROM email_messages WHERE user_id = 'system:email')
+		- (SELECT COUNT(*) FROM system_email_messages)
+	) + (
+		SELECT COUNT(*) FROM email_messages legacy
+		WHERE legacy.user_id = 'system:email' AND NOT EXISTS (
+			SELECT 1 FROM system_email_messages dedicated
+			WHERE dedicated.id = legacy.id
+		)
+	) + (
+		SELECT COUNT(*) FROM system_email_messages dedicated
+		WHERE NOT EXISTS (
+			SELECT 1 FROM email_messages legacy
+			WHERE legacy.id = dedicated.id AND legacy.user_id = 'system:email'
+		)
 	) + (
 		SELECT COUNT(*)
 		FROM email_messages legacy
 		INNER JOIN system_email_messages dedicated ON dedicated.id = legacy.id
-		WHERE legacy.user_id = 'system:email'
-			AND json_array(
-				legacy.id, legacy.direction, legacy.inbox_id, legacy.thread_id,
-				legacy.sender_identity_id, legacy.from_address,
-				legacy.envelope_from, legacy.to_addresses_json,
-				legacy.cc_addresses_json, legacy.bcc_addresses_json,
-				legacy.reply_to_addresses_json, legacy.subject,
-				legacy.message_id_header, legacy.in_reply_to_header,
-				legacy.references_json, legacy.headers_json, legacy.auth_results,
-				legacy.text_body, legacy.html_body, legacy.raw_size,
-				legacy.processing_status, legacy.provider_message_id, legacy.error,
-				legacy.received_at, legacy.sent_at, legacy.created_at,
-				legacy.updated_at, legacy.raw_mime_key, legacy.delivery_status,
-				legacy.delivery_status_at, legacy.classification,
-				legacy.classification_reason
-			) IS NOT json_array(
-				dedicated.id, dedicated.direction, dedicated.inbox_id,
-				dedicated.thread_id, dedicated.sender_identity_id,
-				dedicated.from_address, dedicated.envelope_from,
-				dedicated.to_addresses_json, dedicated.cc_addresses_json,
-				dedicated.bcc_addresses_json, dedicated.reply_to_addresses_json,
-				dedicated.subject, dedicated.message_id_header,
-				dedicated.in_reply_to_header, dedicated.references_json,
-				dedicated.headers_json, dedicated.auth_results, dedicated.text_body,
-				dedicated.html_body, dedicated.raw_size,
-				dedicated.processing_status, dedicated.provider_message_id,
-				dedicated.error, dedicated.received_at, dedicated.sent_at,
-				dedicated.created_at, dedicated.updated_at,
-				dedicated.raw_mime_key, dedicated.delivery_status,
-				dedicated.delivery_status_at, dedicated.classification,
-				dedicated.classification_reason
-			)
+		WHERE legacy.user_id = 'system:email' AND json_array(
+			legacy.id, legacy.direction, legacy.inbox_id, legacy.thread_id,
+			legacy.sender_identity_id, legacy.from_address, legacy.envelope_from,
+			legacy.to_addresses_json, legacy.cc_addresses_json,
+			legacy.bcc_addresses_json, legacy.reply_to_addresses_json,
+			legacy.subject, legacy.message_id_header, legacy.in_reply_to_header,
+			legacy.references_json, legacy.headers_json, legacy.auth_results,
+			legacy.text_body, legacy.html_body, legacy.raw_size,
+			legacy.processing_status, legacy.provider_message_id, legacy.error,
+			legacy.received_at, legacy.sent_at, legacy.created_at,
+			legacy.updated_at, legacy.raw_mime_key, legacy.delivery_status,
+			legacy.delivery_status_at, legacy.classification,
+			legacy.classification_reason
+		) IS NOT json_array(
+			dedicated.id, dedicated.direction, dedicated.inbox_id,
+			dedicated.thread_id, dedicated.sender_identity_id,
+			dedicated.from_address, dedicated.envelope_from,
+			dedicated.to_addresses_json, dedicated.cc_addresses_json,
+			dedicated.bcc_addresses_json, dedicated.reply_to_addresses_json,
+			dedicated.subject, dedicated.message_id_header,
+			dedicated.in_reply_to_header, dedicated.references_json,
+			dedicated.headers_json, dedicated.auth_results, dedicated.text_body,
+			dedicated.html_body, dedicated.raw_size,
+			dedicated.processing_status, dedicated.provider_message_id,
+			dedicated.error, dedicated.received_at, dedicated.sent_at,
+			dedicated.created_at, dedicated.updated_at, dedicated.raw_mime_key,
+			dedicated.delivery_status, dedicated.delivery_status_at,
+			dedicated.classification, dedicated.classification_reason
+		)
+	) + (
+		SELECT COUNT(*) FROM system_email_messages message
+		WHERE
+			(message.inbox_id IS NOT NULL AND NOT EXISTS (
+				SELECT 1 FROM email_inboxes inbox
+				WHERE inbox.id = message.inbox_id AND inbox.user_id = 'system:email'
+			))
+			OR (message.sender_identity_id IS NOT NULL AND NOT EXISTS (
+				SELECT 1 FROM email_sender_identities sender
+				WHERE sender.id = message.sender_identity_id
+					AND sender.user_id = 'system:email'
+			))
+			OR (message.thread_id IS NOT NULL AND NOT EXISTS (
+				SELECT 1 FROM system_email_threads thread
+				WHERE thread.id = message.thread_id
+			))
+	);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'postcopy-attachments', 'graph',
+	ABS((
+		SELECT COUNT(*)
+		FROM email_attachments attachment
+		INNER JOIN email_messages owner ON owner.id = attachment.message_id
+		WHERE owner.user_id = 'system:email'
+	) - (SELECT COUNT(*) FROM system_email_attachments)) + (
+		SELECT COUNT(*)
+		FROM email_attachments legacy
+		INNER JOIN email_messages owner ON owner.id = legacy.message_id
+		WHERE owner.user_id = 'system:email' AND NOT EXISTS (
+			SELECT 1 FROM system_email_attachments dedicated
+			WHERE dedicated.id = legacy.id
+		)
+	) + (
+		SELECT COUNT(*) FROM system_email_attachments dedicated
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM email_attachments legacy
+			INNER JOIN email_messages owner ON owner.id = legacy.message_id
+			WHERE legacy.id = dedicated.id AND owner.user_id = 'system:email'
+		)
 	) + (
 		SELECT COUNT(*)
 		FROM email_attachments legacy
 		INNER JOIN email_messages owner ON owner.id = legacy.message_id
 		INNER JOIN system_email_attachments dedicated ON dedicated.id = legacy.id
-		WHERE owner.user_id = 'system:email'
-			AND json_array(
-				legacy.id, legacy.message_id, legacy.filename, legacy.content_type,
-				legacy.content_id, legacy.disposition, legacy.size,
-				legacy.storage_kind, legacy.storage_key, legacy.created_at
-			) IS NOT json_array(
-				dedicated.id, dedicated.message_id, dedicated.filename,
-				dedicated.content_type, dedicated.content_id,
-				dedicated.disposition, dedicated.size, dedicated.storage_kind,
-				dedicated.storage_key, dedicated.created_at
-			)
+		WHERE owner.user_id = 'system:email' AND json_array(
+			legacy.id, legacy.message_id, legacy.filename, legacy.content_type,
+			legacy.content_id, legacy.disposition, legacy.size,
+			legacy.storage_kind, legacy.storage_key, legacy.created_at
+		) IS NOT json_array(
+			dedicated.id, dedicated.message_id, dedicated.filename,
+			dedicated.content_type, dedicated.content_id,
+			dedicated.disposition, dedicated.size, dedicated.storage_kind,
+			dedicated.storage_key, dedicated.created_at
+		)
+	) + (
+		SELECT COUNT(*) FROM system_email_attachments attachment
+		WHERE NOT EXISTS (
+			SELECT 1 FROM system_email_messages message
+			WHERE message.id = attachment.message_id
+		)
+	);
+
+INSERT INTO system_email_graph_migration_checks
+SELECT 'postcopy-delivery-events', 'graph',
+	ABS(
+		(SELECT COUNT(*) FROM email_delivery_events WHERE user_id = 'system:email')
+		- (SELECT COUNT(*) FROM system_email_delivery_events)
+	) + (
+		SELECT COUNT(*) FROM email_delivery_events legacy
+		WHERE legacy.user_id = 'system:email' AND NOT EXISTS (
+			SELECT 1 FROM system_email_delivery_events dedicated
+			WHERE dedicated.id = legacy.id
+		)
+	) + (
+		SELECT COUNT(*) FROM system_email_delivery_events dedicated
+		WHERE NOT EXISTS (
+			SELECT 1 FROM email_delivery_events legacy
+			WHERE legacy.id = dedicated.id AND legacy.user_id = 'system:email'
+		)
 	) + (
 		SELECT COUNT(*)
 		FROM email_delivery_events legacy
 		INNER JOIN system_email_delivery_events dedicated
 			ON dedicated.id = legacy.id
-		WHERE legacy.user_id = 'system:email'
-			AND json_array(
-				dedicated.id, dedicated.message_id, dedicated.inbox_id,
-				dedicated.event_type, dedicated.provider,
-				dedicated.provider_message_id, dedicated.provider_event_id,
-				dedicated.detail_json, dedicated.created_at,
-				dedicated.needs_effect_reconcile,
-				dedicated.usage_effect_recorded_at, dedicated.usage_month,
-				dedicated.usage_bytes, dedicated.usage_duration_ms,
-				dedicated.state, dedicated.fingerprint, dedicated.storage_lease,
-				dedicated.storage_lease_at, dedicated.cleanup_lease,
-				dedicated.cleanup_lease_at, dedicated.cleanup_retry_at,
-				dedicated.expected_attachment_count,
-				dedicated.finalization_token, dedicated.reconcile_after,
-				dedicated.dedupe_expires_at,
-				dedicated.usage_effect_suppressed_at, dedicated.usage_started_at,
-				dedicated.usage_effect_retry_at, dedicated.usage_effect_lease,
-				dedicated.usage_effect_lease_at,
-				dedicated.subscription_effect_state,
-				dedicated.subscription_effect_lease,
-				dedicated.subscription_effect_lease_at,
-				dedicated.subscription_effect_retry_at,
-				dedicated.subscription_effect_attempt_count,
-				dedicated.subscription_effect_dead_letter_at,
-				dedicated.subscription_effect_last_error, dedicated.updated_at
-			) IS NOT json_array(
-				legacy.id, legacy.message_id, legacy.inbox_id, legacy.event_type,
-				legacy.provider, legacy.provider_message_id,
-				legacy.provider_event_id, legacy.detail_json, legacy.created_at,
-				legacy.needs_effect_reconcile,
-				legacy.usage_effect_recorded_at, legacy.usage_month,
-				legacy.usage_bytes, legacy.usage_duration_ms, legacy.state,
-				legacy.fingerprint, legacy.storage_lease, legacy.storage_lease_at,
-				legacy.cleanup_lease, legacy.cleanup_lease_at,
-				legacy.cleanup_retry_at, legacy.expected_attachment_count,
-				legacy.finalization_token, legacy.reconcile_after,
-				legacy.dedupe_expires_at, legacy.usage_effect_suppressed_at,
-				legacy.usage_started_at, legacy.usage_effect_retry_at,
-				legacy.usage_effect_lease, legacy.usage_effect_lease_at,
-				legacy.subscription_effect_state,
-				legacy.subscription_effect_lease,
-				legacy.subscription_effect_lease_at,
-				legacy.subscription_effect_retry_at,
-				legacy.subscription_effect_attempt_count,
-				legacy.subscription_effect_dead_letter_at,
-				legacy.subscription_effect_last_error, legacy.updated_at
-			)
+		WHERE legacy.user_id = 'system:email' AND json_array(
+			legacy.id, legacy.message_id, legacy.inbox_id, legacy.event_type,
+			legacy.provider, legacy.provider_message_id, legacy.provider_event_id,
+			legacy.detail_json, legacy.created_at, legacy.needs_effect_reconcile,
+			legacy.usage_effect_recorded_at, legacy.usage_month,
+			legacy.usage_bytes, legacy.usage_duration_ms, legacy.state,
+			legacy.fingerprint, legacy.storage_lease, legacy.storage_lease_at,
+			legacy.cleanup_lease, legacy.cleanup_lease_at,
+			legacy.cleanup_retry_at, legacy.expected_attachment_count,
+			legacy.finalization_token, legacy.reconcile_after,
+			legacy.dedupe_expires_at, legacy.usage_effect_suppressed_at,
+			legacy.usage_started_at, legacy.usage_effect_retry_at,
+			legacy.usage_effect_lease, legacy.usage_effect_lease_at,
+			legacy.subscription_effect_state, legacy.subscription_effect_lease,
+			legacy.subscription_effect_lease_at,
+			legacy.subscription_effect_retry_at,
+			legacy.subscription_effect_attempt_count,
+			legacy.subscription_effect_dead_letter_at,
+			legacy.subscription_effect_last_error, legacy.updated_at
+		) IS NOT json_array(
+			dedicated.id, dedicated.message_id, dedicated.inbox_id,
+			dedicated.event_type, dedicated.provider,
+			dedicated.provider_message_id, dedicated.provider_event_id,
+			dedicated.detail_json, dedicated.created_at,
+			dedicated.needs_effect_reconcile,
+			dedicated.usage_effect_recorded_at, dedicated.usage_month,
+			dedicated.usage_bytes, dedicated.usage_duration_ms,
+			dedicated.state, dedicated.fingerprint, dedicated.storage_lease,
+			dedicated.storage_lease_at, dedicated.cleanup_lease,
+			dedicated.cleanup_lease_at, dedicated.cleanup_retry_at,
+			dedicated.expected_attachment_count,
+			dedicated.finalization_token, dedicated.reconcile_after,
+			dedicated.dedupe_expires_at,
+			dedicated.usage_effect_suppressed_at, dedicated.usage_started_at,
+			dedicated.usage_effect_retry_at, dedicated.usage_effect_lease,
+			dedicated.usage_effect_lease_at,
+			dedicated.subscription_effect_state,
+			dedicated.subscription_effect_lease,
+			dedicated.subscription_effect_lease_at,
+			dedicated.subscription_effect_retry_at,
+			dedicated.subscription_effect_attempt_count,
+			dedicated.subscription_effect_dead_letter_at,
+			dedicated.subscription_effect_last_error, dedicated.updated_at
+		)
 	) + (
-		SELECT COUNT(*)
-		FROM email_threads thread
-		WHERE thread.user_id = 'system:email'
-			AND thread.inbox_id IS NOT NULL
-			AND NOT EXISTS (
+		SELECT COUNT(*) FROM system_email_delivery_events event
+		WHERE
+			(event.inbox_id IS NOT NULL AND NOT EXISTS (
 				SELECT 1 FROM email_inboxes inbox
-				WHERE inbox.id = thread.inbox_id
-					AND inbox.user_id = 'system:email'
-			)
-	) + (
-		SELECT COUNT(*)
-		FROM email_messages message
-		WHERE message.user_id = 'system:email'
-			AND (
-				(
-					message.inbox_id IS NOT NULL
-					AND NOT EXISTS (
-						SELECT 1 FROM email_inboxes inbox
-						WHERE inbox.id = message.inbox_id
-							AND inbox.user_id = 'system:email'
-					)
-				)
-				OR (
-					message.sender_identity_id IS NOT NULL
-					AND NOT EXISTS (
-						SELECT 1 FROM email_sender_identities sender
-						WHERE sender.id = message.sender_identity_id
-							AND sender.user_id = 'system:email'
-					)
-				)
-				OR (
-					message.thread_id IS NOT NULL
-					AND NOT EXISTS (
-						SELECT 1 FROM email_threads thread
-						WHERE thread.id = message.thread_id
-							AND thread.user_id = 'system:email'
-					)
-				)
-			)
-	) + (
-		SELECT COUNT(*)
-		FROM email_delivery_events event
-		WHERE event.user_id = 'system:email'
-			AND (
-				(
-					event.inbox_id IS NOT NULL
-					AND NOT EXISTS (
-						SELECT 1 FROM email_inboxes inbox
-						WHERE inbox.id = event.inbox_id
-							AND inbox.user_id = 'system:email'
-					)
-				)
-				OR (
-					event.message_id IS NOT NULL
-					AND NOT EXISTS (
-						SELECT 1 FROM email_messages message
-						WHERE message.id = event.message_id
-							AND message.user_id = 'system:email'
-					)
-				)
-			)
-	),
-	(
-		SELECT COUNT(*)
-		FROM email_outbound_provider_index provider_index
-		WHERE provider_index.user_id = 'system:email'
-			OR EXISTS (
-				SELECT 1
-				FROM email_messages legacy_message
-				WHERE legacy_message.id = provider_index.message_id
-					AND legacy_message.user_id = 'system:email'
-			)
-	) + (
-		SELECT COUNT(*)
-		FROM email_messages legacy_message
-		WHERE legacy_message.user_id = 'system:email'
-			AND legacy_message.provider_message_id IS NOT NULL
-	) + (
-		SELECT COUNT(*)
-		FROM system_email_messages dedicated_message
-		WHERE dedicated_message.provider_message_id IS NOT NULL
-	)
-;
+				WHERE inbox.id = event.inbox_id AND inbox.user_id = 'system:email'
+			))
+			OR (event.message_id IS NOT NULL AND NOT EXISTS (
+				SELECT 1 FROM system_email_messages message
+				WHERE message.id = event.message_id
+			))
+	);
+
+-- All bounded checks have succeeded. Persist their zero totals only now, then
+-- remove the migration-only table before committing the cutover.
+INSERT INTO system_email_graph_authority (
+	singleton, authority, cutover_at, graph_mismatch_count, provider_link_count
+)
+SELECT
+	1,
+	'dedicated',
+	CURRENT_TIMESTAMP,
+	COALESCE(SUM(CASE WHEN category = 'graph' THEN violation_count END), 0),
+	COALESCE(SUM(CASE WHEN category = 'provider' THEN violation_count END), 0)
+FROM system_email_graph_migration_checks;
+
+DROP TABLE system_email_graph_migration_checks;

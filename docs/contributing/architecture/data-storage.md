@@ -794,24 +794,27 @@ mirror for Cloudflare inbound and dedupe rows with the canonical `detail_json`
 projection, including clearing stale non-null values when a JSON property is
 absent. `needs_effect_reconcile` remains column-authoritative because legacy
 receive and effect transitions update it in the same statement as JSON.
-Non-inbound providers retain their promoted columns. The singleton
-`system_email_graph_authority` insert stores CHECK-constrained
-`graph_mismatch_count = 0` and `provider_link_count = 0` gates. The graph gate
-checks exact counts and full-column values for all four tables, missing/extra
-IDs, and invalid cross-owner inbox/sender references; a nonzero result aborts
-the whole reconciliation and leaves no marker. The migration never deletes
-shared rows. The 4b Worker requires that marker on every dedicated authority
-entry point and refuses startup/work when it is missing or invalid. The pre-4b
-rollback Worker does not know about the marker and ignores it.
+Non-inbound providers retain their promoted columns. To stay below D1's
+five-term compound-SELECT limit, the migration records each ownership, provider,
+and per-table parity concern with a separate bounded zero-only CHECK row. The
+four post-copy table checks cover exact counts and full-column values,
+missing/extra IDs, and invalid cross-owner inbox/sender references. Any nonzero
+row aborts the whole reconciliation before the singleton
+`system_email_graph_authority` insert persists the validated
+`graph_mismatch_count = 0` and `provider_link_count = 0` totals. The migration
+never deletes shared rows. The 4b Worker requires that marker on every dedicated
+authority entry point and refuses startup/work when it is missing or invalid.
+The pre-4b rollback Worker does not know about the marker and ignores it.
 
 Wrangler submits each migration file together with its `d1_migrations` ledger
 insert as one D1 multi-statement transaction (local execution uses `D1.batch`;
 remote execution uses D1's transactional multi-statement query). Therefore a
 preflight or post-copy CHECK failure rolls back the authority table, the counter
-correlation-token column, and every graph mutation. The migration rollback tests
-deliberately wrap the complete file the same way and prove both early preflight
-and late post-copy parity failures leave the pre-0131 graph unchanged and no
-marker behind.
+correlation-token column, and every graph mutation. The migration tests execute
+the file through Wrangler's local D1 path and prove an early preflight failure
+rolls back DDL, graph changes, and the migration ledger; Node SQLite coverage
+also proves a late post-copy parity failure leaves the pre-0131 graph unchanged
+and no marker behind.
 
 After 4b, `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events` are the only live
