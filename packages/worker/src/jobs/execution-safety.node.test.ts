@@ -178,6 +178,13 @@ test('transient platform failures back off the same occurrence while permanent o
 			),
 		),
 	).toBe(true)
+	expect(
+		isTransientJobExecutionError(
+			new Error(
+				'Durable Object storage operation exceeded timeout which caused object to be reset.',
+			),
+		),
+	).toBe(true)
 	expect(isTransientJobExecutionError(new Error('user code failed'))).toBe(
 		false,
 	)

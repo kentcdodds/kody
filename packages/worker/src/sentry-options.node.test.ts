@@ -6,6 +6,7 @@ import {
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectIsolateCpuResetMessage,
 	durableObjectIsolateMemoryResetMessage,
+	durableObjectStorageOperationTimeoutResetMessage,
 	executorSandboxTimeoutMessage,
 	filterSentryEvent,
 } from './sentry-options.ts'
@@ -235,9 +236,9 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	).not.toBeNull()
 
 	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
-	// update / blockConcurrencyWhile timeout / storage object-reset) are
-	// transient — one representative form per family, plus an
-	// `Error:`-prefixed variant and a missing trailing period. Wrapped
+	// update / blockConcurrencyWhile timeout / storage-op timeout / storage
+	// object-reset) are transient — one representative form per family, plus
+	// an `Error:`-prefixed variant and a missing trailing period. Wrapped
 	// recovery failures and unreferenced storage resets must stay visible.
 	expect(
 		filterSentryEvent({
@@ -274,6 +275,31 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 				values: [
 					{
 						value: `Error: ${durableObjectBlockConcurrencyWhileTimeoutResetMessage}`,
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: `Error: ${durableObjectStorageOperationTimeoutResetMessage}`,
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: durableObjectStorageOperationTimeoutResetMessage.replace(
+							/\.$/,
+							'',
+						),
 					},
 				],
 			},

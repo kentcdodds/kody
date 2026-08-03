@@ -119,13 +119,14 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
  * RPC/alarm (for example cron `oauth_purge_expired` → OAuthPurgeCoordinator),
  * when `blockConcurrencyWhile` exceeds its ~30s deadlock timeout (for
  * example PartyServer awaiting MCP Agent `onStart` via `getServerByName` →
- * `setName`), or when DO SQLite storage hits an opaque internal fault and
- * resets the object, the platform surfaces one of these errors to the caller.
- * The next call gets a fresh isolate / storage handle; app-level retry of
- * non-idempotent work is still unsafe, and moving heavy Agent/MCP startup out
- * of `onStart` is an architectural change outside a triage fix. Match only
- * the bare platform strings (plus the storage form that requires a support
- * `reference =` token) so wrapped failures such as exhausted
+ * `setName`), when a DO SQLite storage operation exceeds the platform timeout
+ * and resets the object, or when DO SQLite storage hits an opaque internal
+ * fault and resets the object, the platform surfaces one of these errors to
+ * the caller. The next call gets a fresh isolate / storage handle; app-level
+ * retry of non-idempotent work is still unsafe, and moving heavy Agent/MCP
+ * startup out of `onStart` is an architectural change outside a triage fix.
+ * Match only the bare platform strings (plus the storage form that requires
+ * a support `reference =` token) so wrapped failures such as exhausted
  * `package_publish_external_push` recovery messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
@@ -139,6 +140,14 @@ export const durableObjectCodeUpdatedResetMessage =
 
 export const durableObjectBlockConcurrencyWhileTimeoutResetMessage =
 	'A call to blockConcurrencyWhile() in a Durable Object waited for too long. The call was canceled and the Durable Object was reset.'
+
+/**
+ * Cloudflare Durable Object SQLite storage operation timeout that resets the
+ * object (KODY-CLOUDFLARE-3M). Same platform-reset class as memory/CPU /
+ * blockConcurrencyWhile timeouts — not an application defect.
+ */
+export const durableObjectStorageOperationTimeoutResetMessage =
+	'Durable Object storage operation exceeded timeout which caused object to be reset.'
 
 /**
  * Cloudflare Durable Object SQLite storage opaque platform fault with a
@@ -171,6 +180,7 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 		normalized === durableObjectIsolateCpuResetMessage ||
 		normalized === durableObjectCodeUpdatedResetMessage ||
 		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage ||
+		normalized === durableObjectStorageOperationTimeoutResetMessage ||
 		isDurableObjectStorageObjectResetMessage(message)
 	)
 }
@@ -240,9 +250,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// paths; see filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
 		// Object platform reset strings (memory/CPU limits, deploy-time code
-		// updates, blockConcurrencyWhile timeouts, and DO storage
-		// object-reset with a support reference) are dropped the same way —
-		// see filterDurableObjectIsolateResetSentryEvent.
+		// updates, blockConcurrencyWhile timeouts, DO storage operation
+		// timeouts, and DO storage object-reset with a support reference) are
+		// dropped the same way — see filterDurableObjectIsolateResetSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }
