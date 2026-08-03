@@ -71,6 +71,14 @@ function readStepFromHref(href: string): OnboardingStep | null {
 	)
 }
 
+function readCurrentStep(handle: Handle): OnboardingStep | null {
+	const href =
+		typeof window === 'undefined'
+			? readCurrentRouterHref(handle)
+			: window.location.href
+	return readStepFromHref(href)
+}
+
 function readOnboardingRedirectTo(handle: Handle) {
 	return normalizeRedirectTo(
 		new URLSearchParams(readRouterSearch(handle)).get('redirectTo'),
@@ -123,9 +131,7 @@ export function OnboardingRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep =
-				readStepFromHref(readCurrentRouterHref(handle)) ??
-				(payload.hasMcpClient ? 3 : 1)
+			activeStep = readCurrentStep(handle) ?? (payload.hasMcpClient ? 3 : 1)
 			initializedStep = true
 		} else if (!wasConnected && payload.hasMcpClient) {
 			activeStep = 3
