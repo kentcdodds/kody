@@ -617,6 +617,9 @@ FROM (
 	WHERE type = 'table'
 		AND name NOT LIKE 'sqlite_%'
 		AND name NOT LIKE '\_cf\_%' ESCAPE '\'
+		-- Runtime auth throttle scratch table (packages/worker/src/app/rate-limit.ts),
+		-- not migration-managed schema.
+		AND name != '_rate_limits'
 	ORDER BY name
 );
 
