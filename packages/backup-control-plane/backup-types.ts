@@ -1,3 +1,5 @@
+import { type MailboxPreDropApprovalEvidence } from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
+
 export { type BackupManifest } from '@kody-internal/shared/backup-manifest.ts'
 
 export type RetentionTier = 'daily' | 'weekly'
@@ -42,6 +44,12 @@ export interface ScheduledBackupPayload {
 	retentionTier: RetentionTier
 }
 
+export type LegacyScheduledBackupPayload = Omit<ScheduledBackupPayload, 'kind'>
+
+export type ScheduledBackupWorkflowPayload =
+	| ScheduledBackupPayload
+	| LegacyScheduledBackupPayload
+
 export interface MailboxPreDropBackupRequest {
 	requestId: string
 	nonce: string
@@ -61,6 +69,8 @@ export type BackupPayload =
 	| ScheduledBackupPayload
 	| MailboxPreDropRuntimePayload
 
+export type BackupRuntimePayload = BackupPayload | LegacyScheduledBackupPayload
+
 export type MailboxLegacyGraphCounts = {
 	ownerCount: number
 	threadCount: number
@@ -74,32 +84,7 @@ export type MailboxPreDropSnapshot = MailboxLegacyGraphCounts & {
 	authorityOwnerCount: number
 }
 
-export type MailboxPreDropApprovalReceipt = MailboxPreDropSnapshot & {
-	requestId: string
-	nonce: string
-	manifestKey: string
-	sqlObjectKey: string
-	sqlSha256: string
-	sqlBytes: number
-	r2Etag: string
-	manifestKeyId: string
-	manifestSignatureSha256: string
-	verifiedAt: string
-	expiresAt: string
-	issuedBy: 'backup-control-plane'
-	sourceAccountId: string
-	sourceDatabaseId: string
-	sourceDatabaseName: string
-	exportBookmark: string
-	exportScheduledAt: string
-	exportStartedAt: string
-	exportCompletedAt: string
-	buildCommit: string
-	retentionTier: RetentionTier
-	restoreBaselineId: string
-	restoreBaselineSha256: string
-	signatureAlgorithm: 'Ed25519'
-}
+export type MailboxPreDropApprovalReceipt = MailboxPreDropApprovalEvidence
 
 export interface ExportReady {
 	kind: 'complete'

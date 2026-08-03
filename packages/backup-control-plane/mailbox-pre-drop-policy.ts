@@ -1,3 +1,5 @@
+import { mailboxPreDropObjectPrefix } from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
+
 import {
 	BackupError,
 	assertConfiguredIdentity,
@@ -94,18 +96,17 @@ export function parseMailboxPreDropBackupRequest(
 	return request
 }
 
-function compactTimestamp(timestamp: string): string {
-	return timestamp.replaceAll(/[-:.]/g, '')
-}
-
 export function mailboxPreDropRuntimePayload(
 	env: BackupEnvironment,
 	request: MailboxPreDropBackupRequest,
 ): MailboxPreDropRuntimePayload {
 	assertConfiguredIdentity(env)
-	const objectPrefix =
-		`adhoc/mailbox-drop/d1/${env.SOURCE_DATABASE_ID}/` +
-		`${compactTimestamp(request.requestedAt)}-${request.nonce}-${request.requestId}`
+	const objectPrefix = mailboxPreDropObjectPrefix({
+		sourceDatabaseId: env.SOURCE_DATABASE_ID,
+		exportScheduledAt: request.requestedAt,
+		nonce: request.nonce,
+		requestId: request.requestId,
+	})
 	return {
 		kind: 'mailbox-legacy-graph-pre-drop',
 		...request,

@@ -154,8 +154,19 @@ The dedicated `kody-mailbox-legacy-graph-pre-drop-backup` Workflow is the only
 supported writer of `email_user_graph_drop_approval`. It accepts no source
 identity, counts, object key, digest, or approval fields. Before triggering it,
 deploy migration `0134-email-user-graph-drop-approval.sql`, deploy this control
-plane, and apply `node tools/ci/backup-resources-cli.ts apply` so the `adhoc/`
-R2 prefix has the managed 35-day immutable lock and lifecycle.
+plane, and retain the backup-control-plane deployment's
+`adhocPolicyProof.readBackVerified: true` output when reconciliation credentials
+are available. The live production `adhoc/` lock and lifecycle were manually
+applied and read back as 35 days on 2026-08-03. Deployments with
+`DR_BACKUP_ADMIN_TOKEN` reconcile and re-verify that policy; deployments without
+the optional secret log a skip and continue deploying the backup Worker.
+
+`verifyMailboxPreDropR2Policy` is the canonical trigger gate. Every pre-drop
+Workflow creates a request-local probe and attempts an unconditional destructive
+overwrite before starting the export. Approval proceeds only when live R2
+rejects that overwrite as bucket-policy locked. Missing or ineffective policy
+therefore fails before export or approval; deploy-time reconciliation only
+improves drift detection.
 
 Create a UUID request id, a fresh 16-byte lowercase hexadecimal nonce, and one
 canonical UTC timestamp. The Workflow instance id is exactly
@@ -215,9 +226,20 @@ Do not use direct SQL to manufacture or update approval evidence. A duplicate
 create or restart with the same request-id-derived instance id is the idempotent
 retry path; reuse the exact params. The request has one deterministic
 `backup-request.sql` key, so a retry that observes different export bytes fails
-against the immutable object instead of approving them. Different same-day
-request ids intentionally produce distinct prefixes and bytes. The remaining
-operational risks are the production-account D1 Edit token's broad Cloudflare
-scope, Workflow/R2/D1 availability during the two-hour window, and the need to
-apply the `adhoc/` bucket lock before relying on the receipt. This change does
-not authorize or perform a destructive drop.
+against the immutable object instead of approving them. After such an immutable
+object mismatch, abandon that instance and create a fresh request id, nonce,
+timestamp, and Workflow instance; never retry the request id with changed
+parameters. Different same-day request ids intentionally produce distinct
+prefixes and bytes.
+
+The unchanged marker and exact counts are a valid backup-snapshot invariant only
+because the frozen USER D1 boundary rejects live reads and writes, runtime
+authority checks reject legacy USER graph mutation paths, and the sole
+post-freeze privacy cleanup marker permits `SELECT`/`DELETE` but rejects
+`INSERT`/`UPDATE`. A deletion therefore changes at least one exact count and
+fails postflight; the atomic approval statement rechecks the marker, health
+gates, and all counts. The destructive consumer must still compare every
+approval count to its own immediate full-row parity query before dropping any
+table. The remaining operational risks are the production-account D1 Edit
+token's broad Cloudflare scope and Workflow/R2/D1 availability during the
+two-hour window. This change does not authorize or perform a destructive drop.

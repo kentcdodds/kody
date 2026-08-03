@@ -1,5 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
 
+import {
+	mailboxPreDropApprovalColumns,
+	mailboxPreDropApprovalContract,
+	mailboxPreDropApprovalInsertSql,
+	mailboxPreDropApprovalRow,
+} from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
 import { expect, test } from 'vitest'
 
 import {
@@ -64,6 +70,46 @@ function validInsert(overrides: Record<string, string | number> = {}): string {
 		VALUES (${literals.join(', ')})`
 }
 
+function generatedProducerInsert(): string {
+	return mailboxPreDropApprovalInsertSql(
+		mailboxPreDropApprovalRow({
+			requestId: '11111111-1111-4111-8111-111111111111',
+			nonce: '0123456789abcdef0123456789abcdef',
+			authorityFrozenAt: '2026-08-03T12:00:00.000Z',
+			authorityOwnerCount: 3,
+			manifestKey:
+				'adhoc/mailbox-drop/d1/22222222-2222-4222-8222-222222222222/20260803T120100000Z-0123456789abcdef0123456789abcdef-11111111-1111-4111-8111-111111111111/manifest.json',
+			sqlObjectKey:
+				'adhoc/mailbox-drop/d1/22222222-2222-4222-8222-222222222222/20260803T120100000Z-0123456789abcdef0123456789abcdef-11111111-1111-4111-8111-111111111111/backup-request.sql',
+			sqlSha256: 'a'.repeat(64),
+			sqlBytes: 123,
+			r2Etag: 'b'.repeat(32),
+			manifestKeyId: 'kody-dr-2026-07',
+			manifestSignatureSha256: 'c'.repeat(64),
+			verifiedAt: '2026-08-03T12:30:00.000Z',
+			expiresAt: '2026-08-03T14:30:00.000Z',
+			ownerCount: 2,
+			threadCount: 3,
+			messageCount: 4,
+			attachmentCount: 5,
+			eventCount: 6,
+			issuedBy: 'backup-control-plane',
+			sourceAccountId: '1'.repeat(32),
+			sourceDatabaseId: '22222222-2222-4222-8222-222222222222',
+			sourceDatabaseName: 'kody',
+			exportBookmark: 'bookmark-1',
+			exportScheduledAt: '2026-08-03T12:01:00.000Z',
+			exportStartedAt: '2026-08-03T12:01:01.000Z',
+			exportCompletedAt: '2026-08-03T12:29:00.000Z',
+			buildCommit: 'abcdef1234567',
+			retentionTier: 'daily',
+			restoreBaselineId: 'kody-migration-set-2026-08',
+			restoreBaselineSha256: 'd'.repeat(64),
+			signatureAlgorithm: 'Ed25519',
+		}),
+	)
+}
+
 test('0134 is non-destructive and creates only the constrained approval table', () => {
 	using sqlite = createDatabaseBeforeApproval()
 	const before = new Set(
@@ -86,7 +132,24 @@ test('0134 is non-destructive and creates only the constrained approval table', 
 		.filter((name) => !before.has(name))
 	expect(additions).toEqual(['email_user_graph_drop_approval'])
 
-	sqlite.exec(validInsert())
+	const schema = sqlite
+		.prepare(`PRAGMA table_info(email_user_graph_drop_approval)`)
+		.all()
+	expect(schema.map((column) => column.name)).toEqual(
+		mailboxPreDropApprovalColumns,
+	)
+	expect(
+		Object.fromEntries(schema.map((column) => [column.name, column.type])),
+	).toEqual(mailboxPreDropApprovalContract.sqliteTypes)
+	expect(
+		Object.values(mailboxPreDropApprovalContract.provenance).flat().sort(),
+	).toEqual(
+		mailboxPreDropApprovalColumns
+			.filter((column) => column !== 'singleton')
+			.sort(),
+	)
+
+	sqlite.exec(generatedProducerInsert())
 	expect(
 		sqlite
 			.prepare(

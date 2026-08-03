@@ -9,15 +9,15 @@ import { runBackupRuntime, type BackupRuntimeStep } from './backup-runtime.ts'
 import { BackupError } from './backup-policy.ts'
 import {
 	type BackupEnvironment,
-	type ScheduledBackupPayload,
+	type ScheduledBackupWorkflowPayload,
 } from './backup-types.ts'
 
 export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 	BackupEnvironment,
-	ScheduledBackupPayload
+	ScheduledBackupWorkflowPayload
 > {
 	override async run(
-		event: Readonly<WorkflowEvent<ScheduledBackupPayload>>,
+		event: Readonly<WorkflowEvent<ScheduledBackupWorkflowPayload>>,
 		step: WorkflowStep,
 	) {
 		try {

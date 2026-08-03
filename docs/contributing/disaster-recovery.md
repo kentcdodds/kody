@@ -388,11 +388,33 @@ hours. The caller supplies only `requestId`, `nonce`, and `requestedAt`; source
 identity, counts, object keys, hashes, and approval values come from the
 allowlisted control plane.
 
-Apply the managed R2 resource policy before triggering so `adhoc/` has its
-35-day object lock. Poll the Cloudflare Workflow API until complete and retain
-the non-secret output receipt as deployment evidence. The future destructive
-migration must consume that row fail-closed; migration 0134 and this control
-plane do not drop data.
+The production `adhoc/` policy was manually applied and read back on 2026-08-03:
+both lock and lifecycle are 35 days. When `DR_BACKUP_ADMIN_TOKEN` is available,
+the backup-control-plane deploy job reconciles the managed policy and requires
+an `adhocPolicyProof.readBackVerified: true` API result. If that optional secret
+is unavailable, the job clearly logs the skipped reconciliation and continues
+the ordinary backup Worker deployment.
+
+The canonical trigger gate is the Workflow's mandatory
+`verifyMailboxPreDropR2Policy` step. It creates a request-local object and
+attempts an unconditional destructive overwrite before any export; R2 must
+reject the overwrite as bucket-policy locked. Missing or ineffective live
+protection therefore prevents both export and approval, independently of
+deploy-time credentials. Poll the Cloudflare Workflow API until complete and
+retain the non-secret output receipt plus any available reconciliation proof.
+
+Exact pre/post counts bind the backup to the destructive snapshot because the
+frozen USER graph has no writer: the static D1 boundary blocks live legacy
+access, runtime authority gates reject legacy mutations, and
+`frozen-privacy-cleanup` permits only reads/deletes. Any retention deletion
+changes an exact count and aborts approval, and the atomic approval statement
+rechecks the marker, health gates, and counts. The destructive consumer must
+nevertheless run its own immediate full-row parity checks before dropping data.
+Migration 0134 and this control plane do not drop data.
+
+If a replay reports an immutable object/source mismatch, do not change params or
+reuse that request id. Generate a fresh request id, nonce, timestamp, and
+Workflow instance.
 
 ## Schedules and freshness
 
@@ -457,8 +479,11 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
       a Worker secret.
 - [ ] Checked-in CLI trust registries populated via code review when you want
       offline drills/readiness (optional if UI-only, recommended).
-- [ ] Managed bucket policy includes the 35-day `adhoc/` lock/lifecycle before
-      any mailbox pre-drop approval is trusted.
+- [ ] The 2026-08-03 manual 35-day `adhoc/` lock/lifecycle proof remains valid;
+      when admin credentials are available, backup-control-plane deploy also
+      emitted `adhocPolicyProof.readBackVerified: true`.
+- [ ] The pre-drop receipt proves its mandatory live destructive policy probe
+      completed before export.
 
 ### 2. Manifest keys and Access
 
@@ -476,10 +501,12 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 
 - [ ] Placeholders in `packages/backup-control-plane/wrangler.jsonc` replaced;
       both enable vars remain `"false"`.
-- [ ] `DR_DEPLOY_TOKEN` GitHub secret set; control plane deploys from Actions to
-      the DR account; `BACKUP_BUCKET` bound; Workflows
-      `kody-production-d1-backup`, `kody-mailbox-legacy-graph-pre-drop-backup`,
-      and `kody-production-dr-restore` present; public bucket access off.
+- [ ] `DR_DEPLOY_TOKEN` is set; optional R2-admin `DR_BACKUP_ADMIN_TOKEN`
+      reconciles policy when accessible and logs a non-blocking skip otherwise;
+      the control plane deploys to the DR account; `BACKUP_BUCKET` bound;
+      Workflows `kody-production-d1-backup`,
+      `kody-mailbox-legacy-graph-pre-drop-backup`, and
+      `kody-production-dr-restore` present; public bucket access off.
 - [ ] UI loads only through Access; unauthenticated and wrong-email JWTs
       get 403.
 

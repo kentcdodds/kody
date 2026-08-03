@@ -85,7 +85,7 @@ jobs:
           fi
 
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
-            '^(packages/backup-control-plane/|packages/shared/src/backup-)'; then
+            '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-|packages/shared/src/mailbox-pre-drop-approval\.ts)'; then
             echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
             echo "Backup control plane deploy: path filter matched."
           else
@@ -389,6 +389,17 @@ jobs:
 
       - name: 📥 Install Dependencies
         run: npm ci
+
+      - name: 🔒 Reconcile DR backup retention policies when authorized
+        env:
+          DR_BACKUP_ADMIN_TOKEN: ${{ secrets.DR_BACKUP_ADMIN_TOKEN }}
+          BACKUP_SOURCE_ACCOUNT_ID: a99ee2e72728dd52902ef288b7b1447d
+          BACKUP_DESTINATION_ACCOUNT_ID: ${{ secrets.DR_BACKUP_ACCOUNT_ID }}
+          BACKUP_R2_BUCKET_NAME: kody-production-backups
+          BACKUP_WORKER_NAME: kody-production-d1-backups
+          BACKUP_SOURCE_D1_ALLOWLIST: >-
+            [{"uuid":"8c1014d1-6b41-4695-a0a2-159071f0f919","name":"kody"}]
+        run: node tools/ci/backup-resources-reconcile-cli.ts
 
       - name: ☁️ Deploy backup control plane to DR account
         env:

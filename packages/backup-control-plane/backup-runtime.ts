@@ -23,6 +23,8 @@ import {
 	type BackupEnvironment,
 	type BackupManifest,
 	type BackupPayload,
+	type BackupRuntimePayload,
+	type LegacyScheduledBackupPayload,
 	type SqlStatementStats,
 } from './backup-types.ts'
 import { signBackupManifest } from './manifest-signing.ts'
@@ -87,7 +89,7 @@ async function recordSqlStatementStats(input: {
 
 interface BackupRuntimeEvent {
 	instanceId: string
-	payload: BackupPayload
+	payload: BackupRuntimePayload
 	timestamp: Date
 }
 
@@ -104,9 +106,44 @@ interface BackupRuntimeOptions {
 
 function validatePayload(
 	env: BackupEnvironment,
-	payload: BackupPayload,
+	payload: BackupRuntimePayload,
 	allowedKind: BackupPayload['kind'],
 ): BackupPayload {
+	if (!('kind' in payload)) {
+		if (allowedKind !== 'scheduled') {
+			throw new BackupError(
+				'invalid-workflow-payload-kind',
+				'workflow payload kind is not approved for this Workflow',
+			)
+		}
+		const expected = backupPayload(env, new Date(payload.scheduledAt))
+		const legacyExpected: LegacyScheduledBackupPayload = {
+			scheduledAt: expected.scheduledAt,
+			day: expected.day,
+			objectPrefix: expected.objectPrefix,
+			manifestKey: expected.manifestKey,
+			retentionTier: expected.retentionTier,
+		}
+		const expectedKeys = Object.keys(legacyExpected).sort()
+		const actualKeys = Object.keys(payload).sort()
+		if (
+			actualKeys.length !== expectedKeys.length ||
+			actualKeys.some((key, index) => key !== expectedKeys[index]) ||
+			Object.entries(legacyExpected).some(
+				([key, value]) =>
+					payload[key as keyof LegacyScheduledBackupPayload] !== value,
+			)
+		) {
+			throw new BackupError(
+				'invalid-workflow-payload',
+				'legacy workflow payload did not match deterministic backup keys',
+			)
+		}
+		if (!env.BUILD_COMMIT) {
+			throw new BackupError('missing-commit', 'BUILD_COMMIT must be configured')
+		}
+		return expected
+	}
 	if (payload.kind !== allowedKind) {
 		throw new BackupError(
 			'invalid-workflow-payload-kind',

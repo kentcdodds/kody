@@ -8,6 +8,7 @@ import {
 	mailboxPreDropRuntimePayload,
 	parseMailboxPreDropBackupRequest,
 } from './mailbox-pre-drop-policy.ts'
+import { verifyMailboxPreDropR2Policy } from './mailbox-pre-drop-r2-policy.ts'
 import { runBackupRuntime, type BackupRuntimeStep } from './backup-runtime.ts'
 import { errorCode, safeLog } from './backup-policy.ts'
 import {
@@ -50,6 +51,14 @@ export async function runMailboxLegacyGraphPreDropBackup(
 			'mailbox-pre-drop-preflight',
 			queryStepConfig,
 			async () => readMailboxPreDropSnapshot(env, options.api),
+		)
+		await step.do(
+			'mailbox-pre-drop-verify-live-r2-policy',
+			{
+				retries: { limit: 0, delay: '1 second' },
+				timeout: '1 minute',
+			},
+			async () => verifyMailboxPreDropR2Policy(env, payload),
 		)
 		await runBackupRuntime(
 			env,

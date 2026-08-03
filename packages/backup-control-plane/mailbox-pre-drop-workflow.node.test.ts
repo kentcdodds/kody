@@ -42,6 +42,12 @@ function healthySnapshot(overrides: Record<string, unknown> = {}) {
 	}
 }
 
+function lockedBucket(): MemoryBucket {
+	const bucket = new MemoryBucket()
+	bucket.enableLockPolicy()
+	return bucket
+}
+
 function queryEnvelope(rows: Array<Record<string, unknown>>): Response {
 	return Response.json({ success: true, result: [{ results: rows }] })
 }
@@ -68,6 +74,7 @@ function returningRowFromApprovalSql(sql: string): Record<string, unknown> {
 function createApi(input: {
 	snapshots?: Array<Record<string, unknown>>
 	approvalSql?: Array<string>
+	exportCalls?: Array<string>
 }) {
 	const snapshots = input.snapshots ?? [healthySnapshot(), healthySnapshot()]
 	let snapshotIndex = 0
@@ -82,23 +89,16 @@ function createApi(input: {
 				if (body.sql.includes('INSERT INTO email_user_graph_drop_approval')) {
 					input.approvalSql?.push(body.sql)
 					const row = returningRowFromApprovalSql(body.sql)
-					return queryEnvelope([
-						{
-							singleton: row.singleton,
-							request_id: row.request_id,
-							manifest_key: row.manifest_key,
-							sql_sha256: row.sql_sha256,
-							manifest_signature_sha256: row.manifest_signature_sha256,
-							verified_at: row.verified_at,
-							expires_at: row.expires_at,
-						},
-					])
+					return queryEnvelope([row])
 				}
 				const row = snapshots[Math.min(snapshotIndex, snapshots.length - 1)]!
 				snapshotIndex += 1
 				return queryEnvelope([row])
 			}
-			if (url.endsWith('/export')) return exportEnvelope('complete')
+			if (url.endsWith('/export')) {
+				input.exportCalls?.push(url)
+				return exportEnvelope('complete')
+			}
 			return identityEnvelope(1_000)
 		},
 		sleep: async () => undefined,
@@ -157,7 +157,7 @@ function workflowEvent(request: MailboxPreDropBackupRequest) {
 }
 
 test('pre-drop workflow creates a unique signed backup and atomically returns a short-lived receipt', async () => {
-	const bucket = new MemoryBucket()
+	const bucket = lockedBucket()
 	const env = environment(bucket)
 	const request = requestAtNow()
 	const approvalSql: Array<string> = []
@@ -197,6 +197,7 @@ test('pre-drop workflow creates a unique signed backup and atomically returns a 
 	)
 	assert.equal(receipt.manifestSignatureSha256.length, 64)
 	assert.equal(approvalSql.length, 1)
+	assert.ok(step.executions.includes('mailbox-pre-drop-verify-live-r2-policy'))
 	assert.match(approvalSql[0]!, /ON CONFLICT\(singleton\) DO UPDATE SET/u)
 	assert.doesNotMatch(
 		approvalSql[0]!,
@@ -246,11 +247,48 @@ test('pre-drop workflow creates a unique signed backup and atomically returns a 
 	consoleError.mockRestore()
 })
 
+test('pre-drop workflow fails before export when the live adhoc policy is absent or weak', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const absentEnv = environment()
+	absentEnv.BACKUP_BUCKET = {
+		async put() {
+			return null
+		},
+		async head() {
+			return null
+		},
+	} as unknown as R2Bucket
+	for (const testCase of [
+		{ name: 'absent', env: absentEnv },
+		{ name: 'weak', env: environment(new MemoryBucket()) },
+	]) {
+		const approvalSql: Array<string> = []
+		const exportCalls: Array<string> = []
+		await assert.rejects(
+			runMailboxLegacyGraphPreDropBackup(
+				testCase.env,
+				workflowEvent(requestAtNow()),
+				new TestWorkflowStep(),
+				{ api: createApi({ approvalSql, exportCalls }) },
+			),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'mailbox-pre-drop-r2-policy-unverified',
+			testCase.name,
+		)
+		assert.equal(exportCalls.length, 0, testCase.name)
+		assert.equal(approvalSql.length, 0, testCase.name)
+	}
+	assert.equal(consoleError.mock.calls.length, 2)
+	consoleError.mockRestore()
+})
+
 test('pre-drop workflow rejects object and manifest tampering before approval', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	for (const tamper of ['object', 'signature'] as const) {
-		const bucket = new MemoryBucket()
+		const bucket = lockedBucket()
 		const env = environment(bucket)
 		const request = requestAtNow()
 		const payload = mailboxPreDropRuntimePayload(env, request)
@@ -287,6 +325,7 @@ test('pre-drop workflow rejects object and manifest tampering before approval', 
 		assert.equal(approvalSql.length, 0)
 	}
 	assert.equal(consoleError.mock.calls.length, 2)
+	consoleError.mockRestore()
 })
 
 test('pre-drop workflow blocks marker, repair, audit, system, and snapshot drift failures', async () => {
@@ -317,7 +356,7 @@ test('pre-drop workflow blocks marker, repair, audit, system, and snapshot drift
 		assert.equal(bucket.puts.length, 0)
 	}
 
-	const bucket = new MemoryBucket()
+	const bucket = lockedBucket()
 	const approvalSql: Array<string> = []
 	await assert.rejects(
 		runMailboxLegacyGraphPreDropBackup(
@@ -341,6 +380,35 @@ test('pre-drop workflow blocks marker, repair, audit, system, and snapshot drift
 	)
 	assert.equal(approvalSql.length, 0)
 	assert.equal(consoleError.mock.calls.length, failures.length + 1)
+})
+
+test('pre-drop workflow rejects deletion drift during export', async () => {
+	const bucket = lockedBucket()
+	const approvalSql: Array<string> = []
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	await assert.rejects(
+		runMailboxLegacyGraphPreDropBackup(
+			environment(bucket),
+			workflowEvent(requestAtNow()),
+			new TestWorkflowStep(),
+			{
+				api: createApi({
+					snapshots: [healthySnapshot(), healthySnapshot({ message_count: 7 })],
+					approvalSql,
+				}),
+				downloadFetcher: async () =>
+					new Response('valid', {
+						headers: { 'content-length': '5' },
+					}),
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'mailbox-pre-drop-snapshot-drift',
+	)
+	assert.equal(approvalSql.length, 0)
+	consoleError.mockRestore()
 })
 
 test('request validation, same-day uniqueness, and scheduled lane isolation fail closed', async () => {
@@ -424,4 +492,24 @@ test('request validation, same-day uniqueness, and scheduled lane isolation fail
 			error.code === 'invalid-workflow-payload-kind',
 	)
 	assert.equal(consoleError.mock.calls.length, 1)
+
+	const { kind: omittedKind, ...missingKind } = custom
+	assert.equal(omittedKind, 'mailbox-legacy-graph-pre-drop')
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: event.instanceId,
+				payload: missingKind,
+				timestamp: event.timestamp,
+			},
+			new TestWorkflowStep(),
+			{ payloadKind: 'mailbox-legacy-graph-pre-drop' },
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'invalid-workflow-payload-kind',
+	)
+	assert.equal(consoleError.mock.calls.length, 2)
+	consoleError.mockRestore()
 })

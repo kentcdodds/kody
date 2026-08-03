@@ -100,6 +100,43 @@ test('source size gates block export for zero and oversize readings', async () =
 	assert.equal(consoleError.mock.calls.length, 2)
 })
 
+test('legacy persisted scheduled payload without kind resumes as scheduled', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const legacyPayload = {
+		scheduledAt: current.scheduledAt,
+		day: current.day,
+		objectPrefix: current.objectPrefix,
+		manifestKey: current.manifestKey,
+		retentionTier: current.retentionTier,
+	}
+	const result = await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, current.day),
+			payload: legacyPayload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		new CachedUploadStep(() => undefined),
+		{
+			api: {
+				fetcher: async (input) =>
+					String(input).endsWith('/export')
+						? exportEnvelope('complete')
+						: identityEnvelope(1_000),
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async () =>
+				new Response('valid', { headers: { 'content-length': '5' } }),
+		},
+	)
+
+	assert.equal(result.payload.export.scheduledAt, legacyPayload.scheduledAt)
+	assert.equal(result.payload.sql.bytes, 5)
+	assert.notEqual(await bucket.get(current.manifestKey), null)
+})
+
 test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
