@@ -255,7 +255,6 @@ async function runDedicatedTransitions(db: D1Database) {
 		db,
 		inboundDeliveryFence: {
 			deliveryId: receivedClaim.delivery!.deliveryId,
-			userId: 'system:email',
 			storageLease: receivedClaim.delivery!.storageLease!,
 		},
 		message: {

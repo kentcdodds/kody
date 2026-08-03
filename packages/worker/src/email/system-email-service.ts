@@ -23,15 +23,16 @@ import { type ParsedInboundEmail } from './types.ts'
 export async function storeIdempotentSystemInboundEmail(input: {
 	db: D1Database
 	blobs: R2Bucket
-	delivery: InboundDelivery
+	delivery: Omit<InboundDelivery, 'userId'>
 	parsed: ParsedInboundEmail
 	subjectNormalized: string
 	now: string
 }) {
-	const { delivery, parsed } = input
-	if (delivery.userId !== systemEmailOwnerId) {
-		throw new Error('System inbound graph orchestration requires system:email.')
+	const delivery: InboundDelivery = {
+		...input.delivery,
+		userId: systemEmailOwnerId,
 	}
+	const { parsed } = input
 	if (!delivery.storageLease) {
 		throw new RetryableInboundStorageError(
 			'Inbound delivery storage requires an active lease.',
@@ -39,7 +40,6 @@ export async function storeIdempotentSystemInboundEmail(input: {
 	}
 	const inboundDeliveryFence = {
 		deliveryId: delivery.deliveryId,
-		userId: systemEmailOwnerId,
 		storageLease: delivery.storageLease,
 	}
 	await putEmailRawMime({
@@ -85,8 +85,6 @@ export async function storeIdempotentSystemInboundEmail(input: {
 				inboundDeliveryFence,
 				message: {
 					id: delivery.messageId,
-					direction: 'inbound',
-					userId: systemEmailOwnerId,
 					inboxId: delivery.inboxId,
 					threadId: thread.id,
 					senderIdentityId: null,
@@ -109,7 +107,6 @@ export async function storeIdempotentSystemInboundEmail(input: {
 					processingStatus: 'stored',
 					classification,
 					classificationReason,
-					providerMessageId: null,
 					error: null,
 					receivedAt: input.now,
 					sentAt: null,

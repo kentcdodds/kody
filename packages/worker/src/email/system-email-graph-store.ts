@@ -155,7 +155,7 @@ export async function createSystemEmailThread(input: {
 	rootMessageIdHeader?: string | null
 	lastMessageAt?: string | null
 	ignoreConflict?: boolean
-	inboundDeliveryFence?: EmailInboundDeliveryFence
+	inboundDeliveryFence?: SystemInboundDeliveryFence
 }) {
 	await assertSystemEmailGraphAuthority(input.db)
 	const timestamp = nowIso()
@@ -235,10 +235,10 @@ export async function createSystemEmailThread(input: {
 	return threadRecord(row)
 }
 
-type SystemMessageInput = {
+type SystemInboundDeliveryFence = Omit<EmailInboundDeliveryFence, 'userId'>
+
+type SystemInboundMessageInput = {
 	id?: string
-	direction: 'inbound' | 'outbound'
-	userId: string
 	inboxId?: string | null
 	threadId?: string | null
 	senderIdentityId?: string | null
@@ -261,7 +261,6 @@ type SystemMessageInput = {
 	processingStatus: EmailProcessingStatus
 	classification?: EmailClassification
 	classificationReason?: string | null
-	providerMessageId?: string | null
 	error?: string | null
 	receivedAt?: string | null
 	sentAt?: string | null
@@ -269,25 +268,14 @@ type SystemMessageInput = {
 
 export async function insertSystemEmailMessage(input: {
 	db: D1Database
-	inboundDeliveryFence?: EmailInboundDeliveryFence
-	message: SystemMessageInput
+	inboundDeliveryFence?: SystemInboundDeliveryFence
+	message: SystemInboundMessageInput
 }) {
 	await assertSystemEmailGraphAuthority(input.db)
-	if (input.message.userId !== systemEmailOwnerId) {
-		throw new Error('System email graph writes require system:email.')
-	}
-	if (
-		input.message.direction !== 'inbound' ||
-		input.message.providerMessageId != null
-	) {
-		throw new Error(
-			'System outbound email is unsupported by the dedicated graph.',
-		)
-	}
 	const timestamp = nowIso()
 	const row = {
 		id: input.message.id ?? crypto.randomUUID(),
-		direction: input.message.direction,
+		direction: 'inbound' as const,
 		inbox_id: input.message.inboxId ?? null,
 		thread_id: input.message.threadId ?? null,
 		sender_identity_id: input.message.senderIdentityId ?? null,
@@ -378,7 +366,7 @@ export async function insertSystemEmailAttachments(input: {
 	db: D1Database
 	messageId: string
 	ignoreConflicts?: boolean
-	inboundDeliveryFence?: EmailInboundDeliveryFence
+	inboundDeliveryFence?: SystemInboundDeliveryFence
 	attachments: Array<{
 		id?: string | null
 		filename?: string | null

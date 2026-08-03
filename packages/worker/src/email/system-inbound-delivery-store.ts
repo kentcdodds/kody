@@ -677,7 +677,6 @@ async function recoverSystemDelivery(input: {
 			ignoreConflicts: true,
 			inboundDeliveryFence: {
 				deliveryId: claim.delivery.deliveryId,
-				userId: systemEmailOwnerId,
 				storageLease: claim.delivery.storageLease,
 			},
 			attachments: parsed.attachments.map((attachment, index) => ({

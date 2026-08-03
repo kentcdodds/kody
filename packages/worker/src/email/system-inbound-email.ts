@@ -1,5 +1,6 @@
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress, normalizeSubject } from './address.ts'
+import { RetryableInboundStorageError } from './email-raw-mime-store.ts'
 import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
 import {
 	buildInboundDelivery,
@@ -27,11 +28,8 @@ import {
 	reconcileSystemStaleInboundDeliveries,
 	releaseSystemInboundDeliveryStorage,
 } from './system-inbound-delivery-store.ts'
-import {
-	recordBoundedEmailRejectionEvent,
-	RetryableInboundStorageError,
-	storeIdempotentInboundEmail,
-} from './service.ts'
+import { storeIdempotentSystemInboundEmail } from './system-email-service.ts'
+import { recordBoundedEmailRejectionEvent } from './service.ts'
 import {
 	countStoredSystemEmailMessages,
 	ensureSystemEmailInbox,
@@ -319,7 +317,7 @@ export async function handleSystemInboundEmail(input: {
 	const storageDelivery = storageClaim.delivery
 	let storedResult
 	try {
-		storedResult = await storeIdempotentInboundEmail({
+		storedResult = await storeIdempotentSystemInboundEmail({
 			db: input.env.APP_DB,
 			blobs: input.env.EMAIL_BLOBS,
 			delivery: storageDelivery,

@@ -189,6 +189,36 @@ function assertTableChecks(
 	}
 }
 
+function graphParityDifferenceCount(
+	db: DatabaseSync,
+	contract: (typeof systemEmailGraphColumnContracts)[number],
+) {
+	const dedicatedColumns = contract.columns
+		.map((column) => `dedicated.${column}`)
+		.join(', ')
+	const legacyColumns = contract.columns
+		.map((column) => `legacy.${column}`)
+		.join(', ')
+	const legacy =
+		contract.key === 'attachments'
+			? `SELECT ${legacyColumns}
+				FROM email_attachments legacy
+				INNER JOIN email_messages owner ON owner.id = legacy.message_id
+				WHERE owner.user_id = 'system:email'`
+			: `SELECT ${legacyColumns}
+				FROM ${contract.legacyTable} legacy
+				WHERE legacy.user_id = 'system:email'`
+	const dedicated = `SELECT ${dedicatedColumns}
+		FROM ${contract.dedicatedTable} dedicated`
+	const difference = (left: string, right: string) =>
+		(
+			db
+				.prepare(`SELECT COUNT(*) AS count FROM (${left} EXCEPT ${right})`)
+				.get() as { count: number }
+		).count
+	return difference(legacy, dedicated) + difference(dedicated, legacy)
+}
+
 test('0130 dedicated schema matches canonical metadata, FKs, and checks', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, systemEmailGraphMigration)
@@ -333,7 +363,7 @@ test('0130 dedicated schema matches canonical metadata, FKs, and checks', () => 
 	])
 })
 
-test('0131 marks dedicated authority without deleting either graph', () => {
+test('0131 replaces dedicated drift with legacy authority before cutover', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, systemEmailAuthorityMigration)
 	db.exec(`
@@ -391,9 +421,9 @@ test('0131 marks dedicated authority without deleting either graph', () => {
 		subscriptionEffectLastError: 'retry me',
 	}
 	db.prepare(
-		`INSERT INTO system_email_delivery_events (
-			id, event_type, provider, detail_json, created_at
-		) VALUES (?, 'received', 'cloudflare-email-routing', ?, ?)`,
+		`INSERT INTO email_delivery_events (
+			id, user_id, event_type, provider, detail_json, created_at
+		) VALUES (?, 'system:email', 'received', 'cloudflare-email-routing', ?, ?)`,
 	).run(
 		jsonOnlyDelivery.deliveryId,
 		JSON.stringify(jsonOnlyDelivery),
@@ -406,13 +436,15 @@ test('0131 marks dedicated authority without deleting either graph', () => {
 	expect(
 		db
 			.prepare(
-				`SELECT singleton, authority, provider_link_count
+				`SELECT singleton, authority, graph_mismatch_count,
+					provider_link_count
 				FROM system_email_graph_authority`,
 			)
 			.get(),
 	).toEqual({
 		singleton: 1,
 		authority: 'dedicated',
+		graph_mismatch_count: 0,
 		provider_link_count: 0,
 	})
 	expect(
@@ -479,6 +511,111 @@ test('0131 marks dedicated authority without deleting either graph', () => {
 	).toEqual({ dedicated: 1, legacy: 1 })
 })
 
+test('0131 catches up create, update, and delete drift across all four graph tables', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailGraphMigration)
+	const createdAt = '2026-08-02T00:00:00.000Z'
+	db.exec(`
+		INSERT INTO email_threads (
+			id, user_id, subject_normalized, last_message_at, created_at, updated_at
+		) VALUES
+			('thread-kept', 'system:email', 'before', '${createdAt}',
+				'${createdAt}', '${createdAt}'),
+			('thread-deleted', 'system:email', 'delete', '${createdAt}',
+				'${createdAt}', '${createdAt}');
+		INSERT INTO email_messages (
+			id, direction, user_id, thread_id, from_address, subject,
+			processing_status, created_at, updated_at
+		) VALUES
+			('message-kept', 'inbound', 'system:email', 'thread-kept',
+				'sender@example.net', 'before', 'stored', '${createdAt}', '${createdAt}'),
+			('message-deleted', 'inbound', 'system:email', 'thread-deleted',
+				'sender@example.net', 'delete', 'stored', '${createdAt}', '${createdAt}');
+		INSERT INTO email_attachments (
+			id, message_id, filename, content_type, size, storage_kind, created_at
+		) VALUES
+			('attachment-kept', 'message-kept', 'before.txt', 'text/plain', 1,
+				'raw-mime', '${createdAt}'),
+			('attachment-deleted', 'message-deleted', 'delete.txt', 'text/plain', 2,
+				'raw-mime', '${createdAt}');
+		INSERT INTO email_delivery_events (
+			id, message_id, user_id, event_type, provider, detail_json, created_at,
+			state, updated_at
+		) VALUES
+			('event-kept', 'message-kept', 'system:email', 'received', 'test', '{}',
+				'${createdAt}', 'received', '${createdAt}'),
+			('event-deleted', 'message-deleted', 'system:email', 'received', 'test',
+				'{}', '${createdAt}', 'received', '${createdAt}');
+	`)
+	applyMigrationLikeD1(db, systemEmailGraphMigration)
+
+	const updatedAt = '2026-08-03T00:00:00.000Z'
+	db.exec(`
+		UPDATE email_threads
+		SET subject_normalized = 'after', updated_at = '${updatedAt}'
+		WHERE id = 'thread-kept';
+		UPDATE email_messages
+		SET subject = 'after', updated_at = '${updatedAt}'
+		WHERE id = 'message-kept';
+		UPDATE email_attachments
+		SET filename = 'after.txt'
+		WHERE id = 'attachment-kept';
+		UPDATE email_delivery_events
+		SET detail_json = '{"caughtUp":true}', updated_at = '${updatedAt}'
+		WHERE id = 'event-kept';
+
+		DELETE FROM email_delivery_events WHERE id = 'event-deleted';
+		DELETE FROM email_attachments WHERE id = 'attachment-deleted';
+		DELETE FROM email_messages WHERE id = 'message-deleted';
+		DELETE FROM email_threads WHERE id = 'thread-deleted';
+
+		INSERT INTO email_threads (
+			id, user_id, subject_normalized, last_message_at, created_at, updated_at
+		) VALUES (
+			'thread-created', 'system:email', 'created', '${updatedAt}',
+			'${updatedAt}', '${updatedAt}'
+		);
+		INSERT INTO email_messages (
+			id, direction, user_id, thread_id, from_address, subject,
+			processing_status, created_at, updated_at
+		) VALUES (
+			'message-created', 'inbound', 'system:email', 'thread-created',
+			'new@example.net', 'created', 'stored', '${updatedAt}', '${updatedAt}'
+		);
+		INSERT INTO email_attachments (
+			id, message_id, filename, content_type, size, storage_kind, created_at
+		) VALUES (
+			'attachment-created', 'message-created', 'created.txt', 'text/plain', 3,
+			'raw-mime', '${updatedAt}'
+		);
+		INSERT INTO email_delivery_events (
+			id, message_id, user_id, event_type, provider, detail_json, created_at,
+			state, updated_at
+		) VALUES (
+			'event-created', 'message-created', 'system:email', 'received', 'test',
+			'{}', '${updatedAt}', 'received', '${updatedAt}'
+		);
+	`)
+
+	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
+
+	for (const contract of systemEmailGraphColumnContracts) {
+		expect(
+			graphParityDifferenceCount(db, contract),
+			`${contract.key} differs after legacy catch-up`,
+		).toBe(0)
+	}
+	expect(
+		db
+			.prepare(
+				`SELECT graph_mismatch_count
+				FROM system_email_graph_authority
+				WHERE singleton = 1`,
+			)
+			.get(),
+	).toEqual({ graph_mismatch_count: 0 })
+})
+
 test('0131 aborts cutover when a system provider link exists', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, systemEmailAuthorityMigration)
@@ -511,6 +648,97 @@ test('0131 aborts cutover when a system provider link exists', () => {
 			)
 			.get(),
 	).toBeUndefined()
+})
+
+test('0131 rolls back catch-up and leaves no marker for invalid cross-owner references', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailAuthorityMigration)
+	db.exec(`
+		INSERT INTO email_inboxes (
+			id, user_id, name, enabled, created_at, updated_at
+		) VALUES (
+			'user-inbox', 'user-1', 'private', 1, CURRENT_TIMESTAMP,
+			CURRENT_TIMESTAMP
+		);
+		INSERT INTO email_threads (
+			id, user_id, inbox_id, subject_normalized, last_message_at,
+			created_at, updated_at
+		) VALUES
+			(
+				'valid-new-thread', 'system:email', NULL, 'valid', CURRENT_TIMESTAMP,
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			),
+			(
+				'invalid-cross-owner-thread', 'system:email', 'user-inbox',
+				'invalid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			);
+	`)
+
+	expect(() =>
+		applyMigrationLikeD1(db, systemEmailAuthorityMigration),
+	).toThrow()
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM sqlite_master
+				WHERE type = 'table' AND name = 'system_email_graph_authority'`,
+			)
+			.get(),
+	).toBeUndefined()
+	expect(
+		db
+			.prepare(
+				`SELECT id FROM system_email_threads
+				WHERE id = 'valid-new-thread'`,
+			)
+			.get(),
+	).toBeUndefined()
+})
+
+test('0131 mismatch gate rolls back when a valid legacy row cannot be copied', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailGraphMigration)
+	db.exec(`
+		INSERT INTO email_threads (
+			id, user_id, subject_normalized, last_message_at, created_at, updated_at
+		) VALUES (
+			'forced-mismatch', 'system:email', 'before', CURRENT_TIMESTAMP,
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		);
+	`)
+	applyMigrationLikeD1(db, systemEmailGraphMigration)
+	db.exec(`
+		UPDATE email_threads
+		SET subject_normalized = 'after'
+		WHERE id = 'forced-mismatch';
+		CREATE TRIGGER force_system_thread_copy_mismatch
+		BEFORE UPDATE ON system_email_threads
+		WHEN NEW.id = 'forced-mismatch'
+		BEGIN
+			SELECT RAISE(IGNORE);
+		END;
+	`)
+
+	expect(() =>
+		applyMigrationLikeD1(db, systemEmailAuthorityMigration),
+	).toThrow()
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM sqlite_master
+				WHERE type = 'table' AND name = 'system_email_graph_authority'`,
+			)
+			.get(),
+	).toBeUndefined()
+	expect(
+		db
+			.prepare(
+				`SELECT subject_normalized
+				FROM system_email_threads
+				WHERE id = 'forced-mismatch'`,
+			)
+			.get(),
+	).toEqual({ subject_normalized: 'before' })
 })
 
 test('0131 promotes JSON-only stale, dedupe, and effect rows into live processing', async () => {
