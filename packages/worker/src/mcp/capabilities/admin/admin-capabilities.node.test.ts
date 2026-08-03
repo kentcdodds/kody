@@ -177,6 +177,19 @@ function createAdminCapabilityTestDb(input: {
 			const normalizedQuery = normalizeQuery(query)
 			const createStatement = (params: Array<unknown>) => ({
 				async first<T>() {
+					if (
+						normalizedQuery.includes(
+							'select authority, provider_link_count from system_email_graph_authority',
+						)
+					) {
+						return {
+							authority: 'dedicated',
+							provider_link_count: 0,
+						} as T
+					}
+					if (normalizedQuery.includes('as unsupported')) {
+						return { unsupported: 0 } as T
+					}
 					if (normalizedQuery.includes('select count(*) as total from users')) {
 						return { total: users.length } as T
 					}

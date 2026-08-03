@@ -8,6 +8,10 @@ import {
 import { getInternalEmailMessageById } from './mailbox-internal-read.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import {
+	inboundEffectLeaseMs,
+	inboundEffectRetryMs,
+} from './inbound-delivery-transitions.ts'
+import {
 	claimSystemInboundSubscriptionEffect,
 	completeSystemInboundSubscriptionEffect,
 	failSystemInboundSubscriptionEffect,
@@ -16,8 +20,6 @@ import {
 	recordSystemInboundUsageEffect,
 } from './system-inbound-delivery-store.ts'
 
-const subscriptionEffectLeaseMs = 5 * 60 * 1000
-const effectRetryMs = 15 * 60 * 1000
 const maxSubscriptionEffectAttempts = 3
 
 export function resolveSubscriptionEffectFailure(attemptCount: number) {
@@ -522,7 +524,7 @@ export async function processLegacySystemInboundDeliveryEffectsForRollback(
 	const effectLease = crypto.randomUUID()
 	const effectLeaseAt = now.toISOString()
 	const expiredBefore = new Date(
-		now.getTime() - subscriptionEffectLeaseMs,
+		now.getTime() - inboundEffectLeaseMs,
 	).toISOString()
 	const subscriptionClaim = await input.env.APP_DB.prepare(
 		`UPDATE email_delivery_events
@@ -688,7 +690,7 @@ export async function processLegacySystemInboundDeliveryEffectsForRollback(
 				deadLettered ? 'dead-letter' : 'pending',
 				deadLettered
 					? null
-					: new Date(now.getTime() + effectRetryMs).toISOString(),
+					: new Date(now.getTime() + inboundEffectRetryMs).toISOString(),
 				nextAttempt,
 				error instanceof Error ? error.message : String(error),
 				deadLettered ? now.toISOString() : null,

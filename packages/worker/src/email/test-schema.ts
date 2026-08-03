@@ -389,11 +389,12 @@ WHERE provider_event_id IS NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS system_email_graph_authority (
 	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 	authority TEXT NOT NULL CHECK (authority = 'dedicated'),
-	cutover_at TEXT NOT NULL
+	cutover_at TEXT NOT NULL,
+	provider_link_count INTEGER NOT NULL CHECK (provider_link_count = 0)
 );`,
 		`INSERT INTO system_email_graph_authority (
-	singleton, authority, cutover_at
-) VALUES (1, 'dedicated', CURRENT_TIMESTAMP);`,
+	singleton, authority, cutover_at, provider_link_count
+) VALUES (1, 'dedicated', CURRENT_TIMESTAMP, 0);`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

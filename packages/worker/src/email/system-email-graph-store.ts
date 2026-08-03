@@ -15,6 +15,34 @@ import {
 	type EmailProcessingStatus,
 	type EmailThreadRecord,
 } from './types.ts'
+import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
+import {
+	systemEmailAttachmentColumns,
+	systemEmailGraphColumnContracts,
+	systemEmailMessageColumns,
+	systemEmailThreadColumns,
+} from './system-email-graph-columns.ts'
+import {
+	commitSystemEmailGraphMutations,
+	systemEmailGraphContract,
+} from './system-email-graph-transaction.ts'
+
+const threadContract = systemEmailGraphContract(
+	systemEmailGraphColumnContracts,
+	'threads',
+)
+const messageContract = systemEmailGraphContract(
+	systemEmailGraphColumnContracts,
+	'messages',
+)
+const attachmentContract = systemEmailGraphContract(
+	systemEmailGraphColumnContracts,
+	'attachments',
+)
+const deliveryEventContract = systemEmailGraphContract(
+	systemEmailGraphColumnContracts,
+	'deliveryEvents',
+)
 
 function nowIso() {
 	return new Date().toISOString()
@@ -37,6 +65,7 @@ export async function getSystemEmailMessageById(input: {
 	db: D1Database
 	messageId: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const row = await input.db
 		.prepare(
 			`${messageSelect()}
@@ -52,6 +81,7 @@ export async function countSystemEmailMessages(input: {
 	db: D1Database
 	direction?: 'inbound' | 'outbound'
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const row = await input.db
 		.prepare(
 			`SELECT COUNT(*) AS count
@@ -69,6 +99,7 @@ export async function listSystemEmailMessages(input: {
 	classification?: EmailClassification | null
 	limit: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const result = await input.db
 		.prepare(
 			`${messageSelect()}
@@ -94,6 +125,7 @@ export async function findSystemEmailThreadForInboundMessage(input: {
 	references: Array<string>
 	inReplyToHeader?: string | null
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const ids = [
 		...input.references,
 		...(input.inReplyToHeader ? [input.inReplyToHeader] : []),
@@ -125,6 +157,7 @@ export async function createSystemEmailThread(input: {
 	ignoreConflict?: boolean
 	inboundDeliveryFence?: EmailInboundDeliveryFence
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const timestamp = nowIso()
 	const row = {
 		id: input.id ?? crypto.randomUUID(),
@@ -146,31 +179,33 @@ export async function createSystemEmailThread(input: {
 	]
 	const fence = input.inboundDeliveryFence
 	const prefix = input.ignoreConflict ? 'INSERT OR IGNORE' : 'INSERT'
+	const placeholders = systemEmailThreadColumns.map(() => '?').join(', ')
 	const dedicated = input.db
 		.prepare(
 			`${prefix} INTO system_email_threads (
-				id, inbox_id, subject_normalized, root_message_id_header,
-				last_message_at, created_at, updated_at
+				${systemEmailThreadColumns.join(', ')}
 			) ${
 				fence
-					? `SELECT ?, ?, ?, ?, ?, ?, ?
+					? `SELECT ${placeholders}
 						WHERE EXISTS (
 							SELECT 1 FROM system_email_delivery_events
 							WHERE id = ?
 								AND state = 'storing'
 								AND storage_lease = ?
 						)`
-					: 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+					: `VALUES (${placeholders})`
 			}`,
 		)
 		.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
 	const legacy = input.db
 		.prepare(
 			`${prefix} INTO email_threads (
-				id, user_id, inbox_id, subject_normalized, root_message_id_header,
-				last_message_at, created_at, updated_at
+				id, user_id, ${systemEmailThreadColumns.slice(1).join(', ')}
 			)
-			SELECT ?, ?, ?, ?, ?, ?, ?, ?
+			SELECT ?, ?, ${systemEmailThreadColumns
+				.slice(1)
+				.map(() => '?')
+				.join(', ')}
 			WHERE ${
 				fence
 					? `EXISTS (
@@ -186,7 +221,17 @@ export async function createSystemEmailThread(input: {
 			...values.slice(1),
 			...(fence ? [fence.deliveryId, fence.storageLease] : []),
 		)
-	await input.db.batch([dedicated, legacy])
+	await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations: [
+			{
+				contract: threadContract,
+				id: row.id,
+				dedicated,
+				legacy,
+			},
+		],
+	})
 	return threadRecord(row)
 }
 
@@ -227,6 +272,7 @@ export async function insertSystemEmailMessage(input: {
 	inboundDeliveryFence?: EmailInboundDeliveryFence
 	message: SystemMessageInput
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	if (input.message.userId !== systemEmailOwnerId) {
 		throw new Error('System email graph writes require system:email.')
 	}
@@ -277,40 +323,7 @@ export async function insertSystemEmailMessage(input: {
 		classification: input.message.classification ?? 'accepted',
 		classification_reason: input.message.classificationReason ?? null,
 	}
-	const columns = [
-		'id',
-		'direction',
-		'inbox_id',
-		'thread_id',
-		'sender_identity_id',
-		'from_address',
-		'envelope_from',
-		'to_addresses_json',
-		'cc_addresses_json',
-		'bcc_addresses_json',
-		'reply_to_addresses_json',
-		'subject',
-		'message_id_header',
-		'in_reply_to_header',
-		'references_json',
-		'headers_json',
-		'auth_results',
-		'text_body',
-		'html_body',
-		'raw_size',
-		'processing_status',
-		'provider_message_id',
-		'error',
-		'received_at',
-		'sent_at',
-		'created_at',
-		'updated_at',
-		'raw_mime_key',
-		'delivery_status',
-		'delivery_status_at',
-		'classification',
-		'classification_reason',
-	] as const
+	const columns = systemEmailMessageColumns
 	const values = columns.map((column) => row[column])
 	const placeholders = columns.map(() => '?').join(', ')
 	const fence = input.inboundDeliveryFence
@@ -342,7 +355,17 @@ export async function insertSystemEmailMessage(input: {
 			...legacyValues,
 			...(fence ? [fence.deliveryId, fence.storageLease] : []),
 		)
-	const results = await input.db.batch([dedicated, legacy])
+	const results = await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations: [
+			{
+				contract: messageContract,
+				id: row.id,
+				dedicated,
+				legacy,
+			},
+		],
+	})
 	if (fence && Number(results[0]?.meta.changes ?? 0) === 0) {
 		throw new Error(
 			'Inbound delivery storage lease was lost before system message insert.',
@@ -367,6 +390,7 @@ export async function insertSystemEmailAttachments(input: {
 		storageKey?: string | null
 	}>
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	if (input.attachments.length === 0) return
 	const timestamp = nowIso()
 	const prefix = input.ignoreConflicts ? 'INSERT OR IGNORE' : 'INSERT'
@@ -377,7 +401,7 @@ export async function insertSystemEmailAttachments(input: {
 				WHERE id = ? AND state = 'storing' AND storage_lease = ?
 			)`
 		: ''
-	const statements: Array<D1PreparedStatement> = []
+	const mutations = []
 	for (const attachment of input.attachments) {
 		const values = [
 			attachment.id ?? crypto.randomUUID(),
@@ -391,38 +415,37 @@ export async function insertSystemEmailAttachments(input: {
 			attachment.storageKey ?? null,
 			timestamp,
 		]
-		statements.push(
-			input.db
-				.prepare(
-					`${prefix} INTO system_email_attachments (
-						id, message_id, filename, content_type, content_id, disposition,
-						size, storage_kind, storage_key, created_at
-					) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${fenceSql}`,
-				)
-				.bind(
-					...values,
-					...(fence ? [fence.deliveryId, fence.storageLease] : []),
-				),
-			input.db
-				.prepare(
-					`${prefix} INTO email_attachments (
-						id, message_id, filename, content_type, content_id, disposition,
-						size, storage_kind, storage_key, created_at
-					) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${fenceSql}`,
-				)
-				.bind(
-					...values,
-					...(fence ? [fence.deliveryId, fence.storageLease] : []),
-				),
-		)
+		const dedicated = input.db
+			.prepare(
+				`${prefix} INTO system_email_attachments (
+						${systemEmailAttachmentColumns.join(', ')}
+					) SELECT ${systemEmailAttachmentColumns.map(() => '?').join(', ')}
+					${fenceSql}`,
+			)
+			.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
+		const legacy = input.db
+			.prepare(
+				`${prefix} INTO email_attachments (
+						${systemEmailAttachmentColumns.join(', ')}
+					) SELECT ${systemEmailAttachmentColumns.map(() => '?').join(', ')}
+					${fenceSql}`,
+			)
+			.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
+		mutations.push({
+			contract: attachmentContract,
+			id: String(values[0]),
+			dedicated,
+			legacy,
+		})
 	}
-	await input.db.batch(statements)
+	await commitSystemEmailGraphMutations({ db: input.db, mutations })
 }
 
 export async function listSystemEmailAttachments(input: {
 	db: D1Database
 	messageId: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const result = await input.db
 		.prepare(
 			`SELECT *
@@ -439,6 +462,7 @@ export async function getSystemEmailAttachmentById(input: {
 	db: D1Database
 	attachmentId: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const row = await input.db
 		.prepare(
 			`SELECT attachment.*
@@ -456,24 +480,34 @@ export async function touchSystemEmailThread(input: {
 	threadId: string
 	lastMessageAt?: string | null
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const updatedAt = nowIso()
 	const lastMessageAt = input.lastMessageAt ?? updatedAt
-	await input.db.batch([
-		input.db
-			.prepare(
-				`UPDATE system_email_threads
+	const dedicated = input.db
+		.prepare(
+			`UPDATE system_email_threads
 				SET last_message_at = ?, updated_at = ?
 				WHERE id = ?`,
-			)
-			.bind(lastMessageAt, updatedAt, input.threadId),
-		input.db
-			.prepare(
-				`UPDATE email_threads
+		)
+		.bind(lastMessageAt, updatedAt, input.threadId)
+	const legacy = input.db
+		.prepare(
+			`UPDATE email_threads
 				SET last_message_at = ?, updated_at = ?
 				WHERE id = ? AND user_id = ?`,
-			)
-			.bind(lastMessageAt, updatedAt, input.threadId, systemEmailOwnerId),
-	])
+		)
+		.bind(lastMessageAt, updatedAt, input.threadId, systemEmailOwnerId)
+	await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations: [
+			{
+				contract: threadContract,
+				id: input.threadId,
+				dedicated,
+				legacy,
+			},
+		],
+	})
 }
 
 export async function updateSystemEmailMessageClassification(input: {
@@ -483,34 +517,44 @@ export async function updateSystemEmailMessageClassification(input: {
 	classificationReason?: string | null
 	now?: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const updatedAt = input.now ?? nowIso()
-	const results = await input.db.batch([
-		input.db
-			.prepare(
-				`UPDATE system_email_messages
+	const dedicated = input.db
+		.prepare(
+			`UPDATE system_email_messages
 				SET classification = ?, classification_reason = ?, updated_at = ?
 				WHERE id = ? AND direction = 'inbound'`,
-			)
-			.bind(
-				input.classification,
-				input.classificationReason ?? null,
-				updatedAt,
-				input.messageId,
-			),
-		input.db
-			.prepare(
-				`UPDATE email_messages
+		)
+		.bind(
+			input.classification,
+			input.classificationReason ?? null,
+			updatedAt,
+			input.messageId,
+		)
+	const legacy = input.db
+		.prepare(
+			`UPDATE email_messages
 				SET classification = ?, classification_reason = ?, updated_at = ?
 				WHERE id = ? AND user_id = ? AND direction = 'inbound'`,
-			)
-			.bind(
-				input.classification,
-				input.classificationReason ?? null,
-				updatedAt,
-				input.messageId,
-				systemEmailOwnerId,
-			),
-	])
+		)
+		.bind(
+			input.classification,
+			input.classificationReason ?? null,
+			updatedAt,
+			input.messageId,
+			systemEmailOwnerId,
+		)
+	const results = await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations: [
+			{
+				contract: messageContract,
+				id: input.messageId,
+				dedicated,
+				legacy,
+			},
+		],
+	})
 	return Number(results[0]?.meta.changes ?? 0) > 0
 }
 
@@ -519,6 +563,7 @@ export async function deleteEmptySystemEmailThreads(input: {
 	before: string
 	limit: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const rows = await input.db
 		.prepare(
 			`SELECT thread.id
@@ -535,28 +580,38 @@ export async function deleteEmptySystemEmailThreads(input: {
 		.all<{ id: string }>()
 	const ids = (rows.results ?? []).map((row) => row.id)
 	if (ids.length === 0) return 0
-	const statements = ids.flatMap((id) => [
-		input.db
+	const mutations = ids.map((id) => {
+		const dedicated = input.db
 			.prepare(
 				`DELETE FROM system_email_threads
 				WHERE id = ? AND NOT EXISTS (
 					SELECT 1 FROM system_email_messages WHERE thread_id = ?
 				)`,
 			)
-			.bind(id, id),
-		input.db
+			.bind(id, id)
+		const legacy = input.db
 			.prepare(
 				`DELETE FROM email_threads
 				WHERE id = ? AND user_id = ? AND NOT EXISTS (
 					SELECT 1 FROM email_messages WHERE thread_id = ?
 				)`,
 			)
-			.bind(id, systemEmailOwnerId, id),
-	])
-	const results = await input.db.batch(statements)
-	return results.reduce(
-		(total, result, index) =>
-			index % 2 === 0 ? total + Number(result.meta.changes ?? 0) : total,
+			.bind(id, systemEmailOwnerId, id)
+		return {
+			contract: threadContract,
+			id,
+			dedicated,
+			legacy,
+			expectation: 'absent' as const,
+		}
+	})
+	const results = await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations,
+	})
+	return mutations.reduce(
+		(total, _mutation, index) =>
+			total + Number(results[index * 3]?.meta.changes ?? 0),
 		0,
 	)
 }
@@ -577,6 +632,10 @@ export async function deleteSystemEmailMessageById(input: {
 		}
 	}
 	const attachments = await listSystemEmailAttachments(input)
+	const deliveryEvents = await input.db
+		.prepare(`SELECT id FROM system_email_delivery_events WHERE message_id = ?`)
+		.bind(input.messageId)
+		.all<{ id: string }>()
 	const inventory = [
 		{
 			key: emailRawMimeKey(systemEmailOwnerId, input.messageId),
@@ -603,36 +662,54 @@ export async function deleteSystemEmailMessageById(input: {
 			'System email blob deletion failed before authoritative row delete.',
 		)
 	}
-	await input.db.batch([
-		input.db
-			.prepare(`DELETE FROM system_email_attachments WHERE message_id = ?`)
-			.bind(input.messageId),
-		input.db
-			.prepare(`DELETE FROM system_email_delivery_events WHERE message_id = ?`)
-			.bind(input.messageId),
-		input.db
-			.prepare(`DELETE FROM system_email_messages WHERE id = ?`)
-			.bind(input.messageId),
-		input.db
-			.prepare(
-				`DELETE FROM email_attachments
-				WHERE message_id = ? AND EXISTS (
-					SELECT 1 FROM email_messages
-					WHERE email_messages.id = email_attachments.message_id
-						AND email_messages.user_id = ?
-				)`,
-			)
-			.bind(input.messageId, systemEmailOwnerId),
-		input.db
-			.prepare(
-				`DELETE FROM email_delivery_events
-				WHERE message_id = ? AND user_id = ?`,
-			)
-			.bind(input.messageId, systemEmailOwnerId),
-		input.db
-			.prepare(`DELETE FROM email_messages WHERE id = ? AND user_id = ?`)
-			.bind(input.messageId, systemEmailOwnerId),
-	])
+	await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations: [
+			...attachments.map((attachment) => ({
+				contract: attachmentContract,
+				id: attachment.id,
+				dedicated: input.db
+					.prepare(`DELETE FROM system_email_attachments WHERE id = ?`)
+					.bind(attachment.id),
+				legacy: input.db
+					.prepare(
+						`DELETE FROM email_attachments
+						WHERE id = ? AND EXISTS (
+							SELECT 1 FROM email_messages
+							WHERE email_messages.id = email_attachments.message_id
+								AND email_messages.user_id = ?
+						)`,
+					)
+					.bind(attachment.id, systemEmailOwnerId),
+				expectation: 'absent' as const,
+			})),
+			...(deliveryEvents.results ?? []).map((event) => ({
+				contract: deliveryEventContract,
+				id: event.id,
+				dedicated: input.db
+					.prepare(`DELETE FROM system_email_delivery_events WHERE id = ?`)
+					.bind(event.id),
+				legacy: input.db
+					.prepare(
+						`DELETE FROM email_delivery_events
+						WHERE id = ? AND user_id = ?`,
+					)
+					.bind(event.id, systemEmailOwnerId),
+				expectation: 'absent' as const,
+			})),
+			{
+				contract: messageContract,
+				id: input.messageId,
+				dedicated: input.db
+					.prepare(`DELETE FROM system_email_messages WHERE id = ?`)
+					.bind(input.messageId),
+				legacy: input.db
+					.prepare(`DELETE FROM email_messages WHERE id = ? AND user_id = ?`)
+					.bind(input.messageId, systemEmailOwnerId),
+				expectation: 'absent',
+			},
+		],
+	})
 	return {
 		messageFound: true,
 		ownerUserId: systemEmailOwnerId,
@@ -651,6 +728,7 @@ export async function listSystemEmailAdminMessages(input: {
 	pageSize: number
 	offset: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const [total, rows] = await Promise.all([
 		input.db
 			.prepare(
@@ -686,6 +764,7 @@ export async function getSystemEmailAdminMessageRow(input: {
 	db: D1Database
 	messageId: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	return await input.db
 		.prepare(
 			`SELECT message.*, address.local_part AS inbox_local_part

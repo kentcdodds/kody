@@ -12,6 +12,11 @@ import {
 import { normalizeEmailAddress } from './address.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import {
+	inboundOrphanVerificationMs,
+	inboundReconciliationRetryMs,
+	inboundStorageLeaseMs,
+} from './inbound-delivery-transitions.ts'
+import {
 	emailRawMimeKey,
 	getEmailMessageById,
 	insertEmailAttachments,
@@ -24,9 +29,6 @@ const inboundProvider = 'cloudflare-email-routing'
 const inboundDedupeProvider = 'cloudflare-email-routing-dedupe'
 export const staleInboundDeliveryAgeMs = 48 * 60 * 60 * 1000
 const staleInboundDeliveryBatchSize = 20
-const inboundStorageLeaseMs = 5 * 60 * 1000
-const inboundReconciliationRetryMs = 15 * 60 * 1000
-const inboundOrphanVerificationMs = 60 * 60 * 1000
 export const inboundDeliveryDedupeWindowMs = 48 * 60 * 60 * 1000
 
 export type InboundDelivery = {
@@ -330,11 +332,40 @@ function parseInboundDelivery(
 	return parseInboundDeliveryDetailJson(row?.detail_json)
 }
 
+async function assertLegacySystemDeliveryEngineAllowed(
+	db: D1Database,
+	userId: string,
+) {
+	if (userId !== systemEmailOwnerId) return
+	try {
+		const marker = await db
+			.prepare(
+				`SELECT authority FROM system_email_graph_authority
+				WHERE singleton = 1`,
+			)
+			.first<{ authority: string }>()
+		if (marker?.authority === 'dedicated') {
+			throw new Error(
+				'Legacy system inbound D1 engine is compatibility-only after cutover.',
+			)
+		}
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.includes('no such table: system_email_graph_authority')
+		) {
+			return
+		}
+		throw error
+	}
+}
+
 export async function getInboundDelivery(input: {
 	db: D1Database
 	userId: string
 	deliveryId: string
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.userId)
 	const row = await input.db
 		.prepare(
 			`SELECT event_type, detail_json
@@ -354,6 +385,7 @@ export async function claimInboundDeliveryWindow(input: {
 	delivery: InboundDelivery
 	now: Date
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.delivery.userId)
 	const pointerId = `email-inbound-dedupe:${input.delivery.fingerprint}`
 	const row = await input.db
 		.prepare(
@@ -406,6 +438,7 @@ export async function getInboundDeliveryWindow(input: {
 	fingerprint: string
 	now: Date
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.userId)
 	const pointerId = `email-inbound-dedupe:${input.fingerprint}`
 	const row = await input.db
 		.prepare(
@@ -431,6 +464,7 @@ export async function pruneExpiredInboundDedupePointers(input: {
 	now?: Date
 	limit?: number
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.userId)
 	const now = input.now ?? new Date()
 	const rows = await input.db
 		.prepare(
@@ -655,6 +689,7 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 	limit: number
 	now: Date
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.delivery.userId)
 	if (input.delivery.userId !== systemEmailOwnerId) {
 		throw new Error('System inbound delivery charge requires system:email.')
 	}
@@ -737,6 +772,7 @@ export async function markInboundDeliveryRejected(input: {
 	delivery: InboundDelivery
 	reason: string
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.delivery.userId)
 	const detail = {
 		...input.delivery,
 		state: 'rejected' as const,
@@ -796,6 +832,7 @@ export async function claimInboundDeliveryStorage(input: {
 	usageStartedAt?: string
 	now?: Date
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.delivery.userId)
 	const now = input.now ?? new Date()
 	const storageLease = crypto.randomUUID()
 	const storageLeaseAt = now.toISOString()
@@ -879,6 +916,7 @@ export async function releaseInboundDeliveryStorage(input: {
 	db: D1Database
 	delivery: InboundDelivery
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.delivery.userId)
 	if (!input.delivery.storageLease) return
 	await input.db
 		.prepare(
@@ -910,6 +948,7 @@ export async function markInboundDeliveryReceived(input: {
 	usageMonth: string
 	usageBytes: number
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.delivery.userId)
 	if (!input.delivery.storageLease) {
 		throw new InboundDeliveryLeaseLostError(
 			'Inbound delivery finalization requires a storage lease.',
@@ -1102,6 +1141,7 @@ export async function reconcileStaleInboundDeliveries(input: {
 	now?: Date
 	deadlineMs?: number
 }) {
+	await assertLegacySystemDeliveryEngineAllowed(input.db, input.userId)
 	const now = input.now ?? new Date()
 	const cutoff = new Date(
 		now.getTime() - staleInboundDeliveryAgeMs,

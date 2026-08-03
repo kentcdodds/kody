@@ -785,8 +785,12 @@ non-destructive.
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
 boundary. Migration `0131-system-email-graph-authority.sql` is also additive:
-its singleton `system_email_graph_authority` row records the step 4b code
-cutover without deleting any shared rows.
+before cutover it fills every null promoted delivery transition/effect column
+from the canonical `detail_json` value copied by 0130. Its singleton
+`system_email_graph_authority` row records the step 4b code cutover without
+deleting any shared rows. The 4b Worker requires that marker on every dedicated
+authority entry point and refuses startup/work when it is missing or invalid.
+The pre-4b rollback Worker does not know about the marker and ignores it.
 
 After 4b, `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events` are the only live
@@ -798,13 +802,16 @@ continues to exclude the reserved owner.
 
 Every authoritative graph or inbound-ledger mutation writes the dedicated row
 first and writes a complete legacy `system:email` compatibility mirror in the
-same transactional D1 batch. A mirror failure rolls back the authority write,
-including a same-id collision with a user-owned legacy delivery event. R2
-retention is the deliberate cross-service exception: it deletes all referenced
-blobs first, then atomically deletes dedicated metadata and its legacy mirror.
-If any blob delete fails, the authoritative row remains for retry. Scheduled
-retention selects age/cap/events/orphan threads only from the dedicated graph;
-it never copies stale legacy state into dedicated tables.
+same transactional D1 batch. The shared transaction composer follows each pair
+with a SQL parity/absence guard, so an exception **or silent no-op** on the
+legacy fence aborts the batch before commit. This composer is the single mirror
+seam removed in step 5. A same-id collision with a user-owned legacy delivery
+event also fails closed. R2 retention is the deliberate cross-service exception:
+it deletes all referenced blobs first, then atomically deletes dedicated
+metadata and its legacy mirror. If any blob delete fails, the authoritative row
+remains for retry. Scheduled retention selects age/cap/events/orphan threads
+only from the dedicated graph; it never copies stale legacy state into dedicated
+tables.
 
 The admin mailbox maintenance `status` action remains an aggregate, content-free
 parity report. The audited `system_email_graph_reconcile` action is now a
@@ -818,10 +825,25 @@ The existing `email_outbound_provider_index` still has an FK to legacy
 check found zero provider-linked `system:email` rows; parity reports this
 healthy disposition as `no-system-provider-links` with `dedicated-inbound-only`
 authority. System outbound sends and provider-linked dedicated messages are
-rejected rather than creating a broken cross-authority FK. Step 5 may remove
-legacy system rows only after dedicated/mirror parity and rollback gates pass:
-**4a schema/copy/parity → 4b dedicated authority plus rollback mirror → step 5
-legacy cleanup**.
+rejected rather than creating a broken cross-authority FK. Immediately before
+deploying 0131, operators must capture fresh production evidence that the
+provider index, legacy provider-linked system messages, and dedicated
+provider-linked messages all remain zero. The marker insert independently
+recounts those surfaces; a nonzero count violates its constraint and rolls back
+the migration. Runtime marker checks repeat the provider gate so links created
+after migration also stop dedicated work. Step 5 may remove legacy system rows
+only after dedicated/mirror parity and rollback gates pass: **4a
+schema/copy/parity → 4b dedicated authority plus rollback mirror → step 5 legacy
+cleanup**.
+
+The pre-4b shared D1 system-delivery engine is retained only as a compatibility
+and rollback reference. Once the dedicated marker exists it rejects
+`system:email` calls; USER Mailbox paths are unaffected. Dedicated and legacy
+implementations share lease/retry timing constants and are covered by
+claim/release/retry/reject/receive/reconcile transition-parity tests. Their SQL
+engines intentionally remain separate during rollback support; step 5 removes
+the legacy system branch instead of attempting a risky state-machine rewrite
+during authority cutover.
 
 Rolling back to the pre-4b Worker is supported because 4b continuously maintains
 the legacy mirror. Once that older Worker accepts a write, however, legacy

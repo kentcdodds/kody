@@ -294,17 +294,10 @@ test('system inbox R2/D1 failures and retries keep one durable quota charge', as
 			get(target, property, receiver) {
 				if (property === 'prepare') {
 					return (query: string) => {
-						const statement = target.prepare(query)
-						if (!query.includes('INSERT INTO email_messages')) {
-							return statement
+						if (query.includes('INSERT INTO system_email_messages')) {
+							throw new Error('simulated D1 insert failure')
 						}
-						return {
-							bind: () => ({
-								run: async () => {
-									throw new Error('simulated D1 insert failure')
-								},
-							}),
-						}
+						return target.prepare(query)
 					}
 				}
 				const value = Reflect.get(target, property, receiver)

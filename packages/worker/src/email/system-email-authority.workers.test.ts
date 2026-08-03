@@ -182,6 +182,33 @@ test('legacy mirror failure rolls back authority and system outbound is unsuppor
 			`SELECT id FROM system_email_messages WHERE id = 'must-roll-back'`,
 		).first(),
 	).toBeNull()
+	await env.APP_DB.prepare(`DROP TRIGGER reject_system_legacy_message`).run()
+	await env.APP_DB.prepare(
+		`CREATE TRIGGER ignore_system_legacy_message
+		BEFORE INSERT ON email_messages
+		WHEN NEW.user_id = 'system:email'
+		BEGIN
+			SELECT RAISE(IGNORE);
+		END`,
+	).run()
+	await expect(
+		insertSystemEmailMessage({
+			db: env.APP_DB,
+			message: {
+				id: 'mirror-no-op-must-roll-back',
+				direction: 'inbound',
+				userId: systemEmailOwnerId,
+				fromAddress: 'sender@example.net',
+				processingStatus: 'stored',
+			},
+		}),
+	).rejects.toThrow()
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM system_email_messages
+			WHERE id = 'mirror-no-op-must-roll-back'`,
+		).first(),
+	).toBeNull()
 
 	await expect(
 		insertSystemEmailMessage({
@@ -195,6 +222,62 @@ test('legacy mirror failure rolls back authority and system outbound is unsuppor
 			},
 		}),
 	).rejects.toThrow('System outbound email is unsupported')
+})
+
+test('dedicated authority operations fail closed without the cutover marker', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await env.APP_DB.prepare(
+		`DELETE FROM system_email_graph_authority WHERE singleton = 1`,
+	).run()
+
+	await expect(
+		listSystemEmailMessages({ db: env.APP_DB, limit: 10 }),
+	).rejects.toThrow('authority marker is missing or invalid')
+	await expect(
+		insertSystemEmailMessage({
+			db: env.APP_DB,
+			message: {
+				id: 'marker-required',
+				direction: 'inbound',
+				userId: systemEmailOwnerId,
+				fromAddress: 'sender@example.net',
+				processingStatus: 'stored',
+			},
+		}),
+	).rejects.toThrow('authority marker is missing or invalid')
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM system_email_messages WHERE id = 'marker-required'`,
+		).first(),
+	).toBeNull()
+})
+
+test('dedicated authority operations fail closed if provider links appear after cutover', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = '2026-08-03T00:00:00.000Z'
+	await env.APP_DB.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, from_address, processing_status,
+			provider_message_id, created_at, updated_at
+		) VALUES (
+			'post-cutover-provider-link', 'outbound', ?, 'support@example.com',
+			'sent', 'provider-message-after-cutover', ?, ?
+		)`,
+	)
+		.bind(systemEmailOwnerId, now, now)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO email_outbound_provider_index (
+			provider, provider_message_id, user_id, message_id, created_at,
+			updated_at
+		) VALUES ('resend', 'provider-message-after-cutover', ?, ?, ?, ?)`,
+	)
+		.bind(systemEmailOwnerId, 'post-cutover-provider-link', now, now)
+		.run()
+
+	await expect(
+		listSystemEmailMessages({ db: env.APP_DB, limit: 10 }),
+	).rejects.toThrow('refuses unsupported provider links')
 })
 
 test('system event mirror fails closed on a user-owned id collision', async () => {

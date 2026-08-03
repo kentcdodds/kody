@@ -1,5 +1,9 @@
 import { systemEmailOwnerId } from './email-owner.ts'
 import {
+	assertSystemEmailGraphAuthority,
+	systemEmailAuthorityGuardStatement,
+} from './system-email-authority.ts'
+import {
 	systemEmailGraphColumnContracts,
 	type SystemEmailGraphColumnContract,
 	type SystemEmailGraphTableKey,
@@ -261,6 +265,7 @@ function systemProviderParity(
 export async function loadSystemEmailGraphParityReport(input: {
 	db: D1Database
 }): Promise<SystemEmailGraphParityReport> {
+	await assertSystemEmailGraphAuthority(input.db)
 	const [row, providerReport] = await Promise.all([
 		input.db
 			.prepare(graphParitySql)
@@ -340,6 +345,7 @@ export async function reconcileLegacySystemEmailGraphFromDedicated(input: {
 	direction: 'dedicated_to_legacy'
 	force: true
 }): Promise<SystemEmailGraphReconcileResult> {
+	await assertSystemEmailGraphAuthority(input.db)
 	const childFirst = [...systemEmailGraphColumnContracts].reverse()
 	const statements = [
 		...childFirst.map((contract) =>
@@ -352,6 +358,7 @@ export async function reconcileLegacySystemEmailGraphFromDedicated(input: {
 				.prepare(buildLegacySystemEmailGraphUpsertSql(contract))
 				.bind(systemEmailOwnerId),
 		),
+		systemEmailAuthorityGuardStatement(input.db),
 	]
 	const results = await input.db.batch<unknown>(statements)
 	const postReport = await loadSystemEmailGraphParityReport({ db: input.db })

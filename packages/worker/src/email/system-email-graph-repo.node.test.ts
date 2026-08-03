@@ -9,6 +9,7 @@ import {
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
+const systemEmailAuthorityMigration = '0131-system-email-graph-authority.sql'
 
 function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
 	for (const fileName of readdirSync(migrationsDirectory)
@@ -110,6 +111,12 @@ test('system email graph report returns aggregate parity and provider dispositio
 	sqlite.exec(
 		readFileSync(
 			new URL(systemEmailGraphMigration, migrationsDirectory),
+			'utf8',
+		),
+	)
+	sqlite.exec(
+		readFileSync(
+			new URL(systemEmailAuthorityMigration, migrationsDirectory),
 			'utf8',
 		),
 	)

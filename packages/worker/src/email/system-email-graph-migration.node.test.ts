@@ -1,7 +1,17 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { systemEmailGraphColumnContracts } from './system-email-graph-columns.ts'
+import {
+	claimSystemInboundSubscriptionEffect,
+	completeSystemInboundSubscriptionEffect,
+	listDueSystemInboundEffects,
+} from './system-inbound-effect-store.ts'
+import {
+	pruneSystemExpiredInboundDedupePointers,
+	reconcileSystemStaleInboundDeliveries,
+} from './system-inbound-delivery-store.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
@@ -341,15 +351,122 @@ test('0131 marks dedicated authority without deleting either graph', () => {
 			'stored', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 		);
 	`)
+	const jsonOnlyDelivery = {
+		fingerprint: 'json-only-fingerprint',
+		deliveryId: 'json-only-delivery',
+		messageId: 'json-only-message',
+		threadId: 'json-only-thread',
+		rawMimeKey: 'email-raw:v1:system:email/json-only-message',
+		userId: 'system:email',
+		inboxId: 'json-only-inbox',
+		recipient: 'support@example.com',
+		envelopeFrom: 'sender@example.net',
+		provider: 'cloudflare-email-routing',
+		quotaDay: '2026-08-02',
+		dedupeExpiresAt: '2026-08-04T00:00:00.000Z',
+		state: 'received',
+		storageLease: 'storage-lease',
+		storageLeaseAt: '2026-08-02T00:01:00.000Z',
+		cleanupLease: 'cleanup-lease',
+		cleanupLeaseAt: '2026-08-02T00:02:00.000Z',
+		cleanupRetryAt: '2026-08-02T00:03:00.000Z',
+		expectedAttachmentCount: 2,
+		finalizationToken: 'finalization-token',
+		reconcileAfter: '2026-08-02T00:04:00.000Z',
+		usageEffectRecordedAt: '2026-08-02T00:04:30.000Z',
+		usageEffectSuppressedAt: '2026-08-02T00:05:00.000Z',
+		usageStartedAt: '2026-08-02T00:06:00.000Z',
+		usageDurationMs: 321,
+		usageMonth: '2026-08',
+		usageBytes: 654,
+		usageEffectRetryAt: '2026-08-02T00:07:00.000Z',
+		usageEffectLease: 'usage-lease',
+		usageEffectLeaseAt: '2026-08-02T00:08:00.000Z',
+		subscriptionEffectState: 'processing',
+		subscriptionEffectLease: 'subscription-lease',
+		subscriptionEffectLeaseAt: '2026-08-02T00:09:00.000Z',
+		subscriptionEffectRetryAt: '2026-08-02T00:10:00.000Z',
+		subscriptionEffectAttemptCount: 2,
+		subscriptionEffectDeadLetterAt: '2026-08-02T00:11:00.000Z',
+		subscriptionEffectLastError: 'retry me',
+	}
+	db.prepare(
+		`INSERT INTO system_email_delivery_events (
+			id, event_type, provider, detail_json, created_at
+		) VALUES (?, 'received', 'cloudflare-email-routing', ?, ?)`,
+	).run(
+		jsonOnlyDelivery.deliveryId,
+		JSON.stringify(jsonOnlyDelivery),
+		'2026-08-02T00:00:00.000Z',
+	)
 
 	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
 	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
 
 	expect(
 		db
-			.prepare(`SELECT singleton, authority FROM system_email_graph_authority`)
+			.prepare(
+				`SELECT singleton, authority, provider_link_count
+				FROM system_email_graph_authority`,
+			)
 			.get(),
-	).toEqual({ singleton: 1, authority: 'dedicated' })
+	).toEqual({
+		singleton: 1,
+		authority: 'dedicated',
+		provider_link_count: 0,
+	})
+	expect(
+		db
+			.prepare(
+				`SELECT state, fingerprint, storage_lease, storage_lease_at,
+					cleanup_lease, cleanup_lease_at, cleanup_retry_at,
+					expected_attachment_count, finalization_token, reconcile_after,
+					dedupe_expires_at, usage_effect_recorded_at,
+					usage_effect_suppressed_at, usage_started_at,
+					usage_duration_ms, usage_month, usage_bytes, usage_effect_retry_at,
+					usage_effect_lease, usage_effect_lease_at,
+					subscription_effect_state, subscription_effect_lease,
+					subscription_effect_lease_at, subscription_effect_retry_at,
+					subscription_effect_attempt_count,
+					subscription_effect_dead_letter_at,
+					subscription_effect_last_error, updated_at
+				FROM system_email_delivery_events
+				WHERE id = ?`,
+			)
+			.get(jsonOnlyDelivery.deliveryId),
+	).toEqual({
+		state: 'received',
+		fingerprint: jsonOnlyDelivery.fingerprint,
+		storage_lease: jsonOnlyDelivery.storageLease,
+		storage_lease_at: jsonOnlyDelivery.storageLeaseAt,
+		cleanup_lease: jsonOnlyDelivery.cleanupLease,
+		cleanup_lease_at: jsonOnlyDelivery.cleanupLeaseAt,
+		cleanup_retry_at: jsonOnlyDelivery.cleanupRetryAt,
+		expected_attachment_count: jsonOnlyDelivery.expectedAttachmentCount,
+		finalization_token: jsonOnlyDelivery.finalizationToken,
+		reconcile_after: jsonOnlyDelivery.reconcileAfter,
+		dedupe_expires_at: jsonOnlyDelivery.dedupeExpiresAt,
+		usage_effect_recorded_at: jsonOnlyDelivery.usageEffectRecordedAt,
+		usage_effect_suppressed_at: jsonOnlyDelivery.usageEffectSuppressedAt,
+		usage_started_at: jsonOnlyDelivery.usageStartedAt,
+		usage_duration_ms: jsonOnlyDelivery.usageDurationMs,
+		usage_month: jsonOnlyDelivery.usageMonth,
+		usage_bytes: jsonOnlyDelivery.usageBytes,
+		usage_effect_retry_at: jsonOnlyDelivery.usageEffectRetryAt,
+		usage_effect_lease: jsonOnlyDelivery.usageEffectLease,
+		usage_effect_lease_at: jsonOnlyDelivery.usageEffectLeaseAt,
+		subscription_effect_state: jsonOnlyDelivery.subscriptionEffectState,
+		subscription_effect_lease: jsonOnlyDelivery.subscriptionEffectLease,
+		subscription_effect_lease_at: jsonOnlyDelivery.subscriptionEffectLeaseAt,
+		subscription_effect_retry_at: jsonOnlyDelivery.subscriptionEffectRetryAt,
+		subscription_effect_attempt_count:
+			jsonOnlyDelivery.subscriptionEffectAttemptCount,
+		subscription_effect_dead_letter_at:
+			jsonOnlyDelivery.subscriptionEffectDeadLetterAt,
+		subscription_effect_last_error:
+			jsonOnlyDelivery.subscriptionEffectLastError,
+		updated_at: '2026-08-02T00:00:00.000Z',
+	})
 	expect(
 		db
 			.prepare(
@@ -360,6 +477,174 @@ test('0131 marks dedicated authority without deleting either graph', () => {
 			)
 			.get(),
 	).toEqual({ dedicated: 1, legacy: 1 })
+})
+
+test('0131 aborts cutover when a system provider link exists', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, systemEmailAuthorityMigration)
+	db.exec(`
+		INSERT INTO email_messages (
+			id, direction, user_id, from_address, processing_status,
+			provider_message_id, created_at, updated_at
+		) VALUES (
+			'provider-linked-system', 'outbound', 'system:email',
+			'support@example.com', 'sent', 'provider-message-1',
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		);
+		INSERT INTO email_outbound_provider_index (
+			provider, provider_message_id, user_id, message_id, created_at,
+			updated_at
+		) VALUES (
+			'resend', 'provider-message-1', 'system:email',
+			'provider-linked-system', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		);
+	`)
+
+	expect(() =>
+		applyMigrationLikeD1(db, systemEmailAuthorityMigration),
+	).toThrow()
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM sqlite_master
+				WHERE type = 'table' AND name = 'system_email_graph_authority'`,
+			)
+			.get(),
+	).toBeUndefined()
+})
+
+test('0131 promotes JSON-only stale, dedupe, and effect rows into live processing', async () => {
+	using sqlite = new DatabaseSync(':memory:')
+	applyMigrationsBefore(sqlite, systemEmailGraphMigration)
+	const now = new Date('2026-08-03T00:00:00.000Z')
+	const createdAt = '2026-07-30T00:00:00.000Z'
+	const base = {
+		fingerprint: 'json-only-fingerprint',
+		messageId: 'json-only-message',
+		threadId: 'json-only-thread',
+		rawMimeKey: 'email-raw:v1:system:email/json-only-message',
+		userId: 'system:email',
+		inboxId: 'json-only-inbox',
+		recipient: 'support@example.com',
+		envelopeFrom: 'sender@example.net',
+		provider: 'cloudflare-email-routing',
+		quotaDay: '2026-07-30',
+	}
+	const rows = [
+		{
+			id: 'json-only-stale',
+			provider: 'cloudflare-email-routing',
+			eventType: 'receive_started',
+			detail: {
+				...base,
+				deliveryId: 'json-only-stale',
+				state: 'pending',
+				dedupeExpiresAt: '2026-08-05T00:00:00.000Z',
+				reconcileAfter: '2026-08-02T00:00:00.000Z',
+			},
+		},
+		{
+			id: 'email-inbound-dedupe:json-only-fingerprint',
+			provider: 'cloudflare-email-routing-dedupe',
+			eventType: 'receive_started',
+			detail: {
+				...base,
+				deliveryId: 'json-only-dedupe-delivery',
+				state: 'pending',
+				dedupeExpiresAt: '2026-08-02T00:00:00.000Z',
+			},
+		},
+		{
+			id: 'json-only-effect',
+			provider: 'cloudflare-email-routing',
+			eventType: 'received',
+			detail: {
+				...base,
+				deliveryId: 'json-only-effect',
+				state: 'received',
+				dedupeExpiresAt: '2026-08-05T00:00:00.000Z',
+				finalizationToken: 'json-only-finalization',
+				usageEffectRecordedAt: '2026-08-02T00:00:00.000Z',
+				subscriptionEffectState: 'pending',
+			},
+		},
+	]
+	const insert = sqlite.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, event_type, provider, provider_event_id, detail_json,
+			created_at
+		) VALUES (?, 'system:email', ?, ?, ?, ?, ?)`,
+	)
+	for (const row of rows) {
+		insert.run(
+			row.id,
+			row.eventType,
+			row.provider,
+			row.id,
+			JSON.stringify(row.detail),
+			createdAt,
+		)
+	}
+
+	applyMigrationLikeD1(sqlite, systemEmailGraphMigration)
+	applyMigrationLikeD1(sqlite, systemEmailAuthorityMigration)
+	const db = createD1FromSqlite(sqlite)
+
+	expect(await listDueSystemInboundEffects({ db, now, limit: 10 })).toEqual([
+		{ id: 'json-only-effect' },
+	])
+	const effectLease = await claimSystemInboundSubscriptionEffect({
+		db,
+		deliveryId: 'json-only-effect',
+		finalizationToken: 'json-only-finalization',
+		now,
+	})
+	expect(effectLease).toEqual(expect.any(String))
+	expect(
+		await completeSystemInboundSubscriptionEffect({
+			db,
+			deliveryId: 'json-only-effect',
+			lease: effectLease!,
+			now,
+		}),
+	).toBe(true)
+
+	expect(
+		await pruneSystemExpiredInboundDedupePointers({ db, now, limit: 10 }),
+	).toBe(1)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT
+					(SELECT COUNT(*) FROM system_email_delivery_events
+						WHERE id = 'email-inbound-dedupe:json-only-fingerprint')
+						AS dedicated,
+					(SELECT COUNT(*) FROM email_delivery_events
+						WHERE id = 'email-inbound-dedupe:json-only-fingerprint')
+						AS legacy`,
+			)
+			.get(),
+	).toEqual({ dedicated: 0, legacy: 0 })
+
+	expect(
+		await reconcileSystemStaleInboundDeliveries({
+			db,
+			blobs: {
+				delete: async () => undefined,
+			} as R2Bucket,
+			now,
+		}),
+	).toMatchObject({ cleaned: 1, recovered: 0 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT dedicated.state, legacy.state AS legacy_state
+				FROM system_email_delivery_events dedicated
+				INNER JOIN email_delivery_events legacy ON legacy.id = dedicated.id
+				WHERE dedicated.id = 'json-only-stale'`,
+			)
+			.get(),
+	).toEqual({ state: 'orphan-cleaned', legacy_state: 'orphan-cleaned' })
 })
 
 test('0130 copies only the system graph with promoted fields and preserves legacy rows', () => {

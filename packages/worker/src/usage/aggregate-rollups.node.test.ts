@@ -35,6 +35,15 @@ function createFakeDb(
 	const db = {
 		prepare(sql: string) {
 			return {
+				async first() {
+					if (sql.includes('FROM system_email_graph_authority')) {
+						return { authority: 'dedicated', provider_link_count: 0 }
+					}
+					if (sql.includes('AS unsupported')) {
+						return { unsupported: 0 }
+					}
+					throw new Error(`Unsupported first query: ${sql}`)
+				},
 				bind(...params: Array<unknown>) {
 					return {
 						sql,

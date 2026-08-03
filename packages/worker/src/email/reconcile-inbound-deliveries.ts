@@ -5,6 +5,8 @@ import {
 	reconcileUserStaleInboundDeliveries,
 } from './inbound-delivery-reconciliation-authority.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
+import { inboundEffectLeaseMs } from './inbound-delivery-transitions.ts'
 import {
 	pruneSystemExpiredInboundDedupePointers,
 	reconcileSystemStaleInboundDeliveries,
@@ -13,7 +15,6 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 
 const reconciliationUserBatchSize = 25
 const reconciliationTimeBudgetMs = 10_000
-const inboundEffectLeaseMs = 5 * 60 * 1000
 
 export async function sweepStaleInboundDeliveries(input: {
 	env: Pick<
@@ -28,6 +29,7 @@ export async function sweepStaleInboundDeliveries(input: {
 	>
 	now?: Date
 }) {
+	await assertSystemEmailGraphAuthority(input.env.APP_DB)
 	const now = input.now ?? new Date()
 	const cutoff = new Date(
 		now.getTime() - staleInboundDeliveryAgeMs,

@@ -1,18 +1,22 @@
 import { systemEmailOwnerId } from './email-owner.ts'
 import { type InboundDelivery } from './inbound-delivery.ts'
-import { legacySystemInboundEventMirrorStatement as legacyMirrorStatement } from './system-inbound-delivery-mirror.ts'
+import {
+	inboundEffectLeaseMs,
+	inboundEffectRetryMs,
+} from './inbound-delivery-transitions.ts'
+import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
+import { commitSystemInboundEventMutation } from './system-inbound-delivery-mirror.ts'
 
 const systemInboundProvider = 'cloudflare-email-routing'
-const effectLeaseMs = 5 * 60 * 1000
-const effectRetryMs = 15 * 60 * 1000
 
 export async function listDueSystemInboundEffects(input: {
 	db: D1Database
 	now: Date
 	limit: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const expiredBefore = new Date(
-		input.now.getTime() - effectLeaseMs,
+		input.now.getTime() - inboundEffectLeaseMs,
 	).toISOString()
 	const rows = await input.db
 		.prepare(
@@ -61,12 +65,15 @@ export async function claimSystemInboundSubscriptionEffect(input: {
 	finalizationToken: string | undefined
 	now: Date
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const lease = crypto.randomUUID()
 	const expiredBefore = new Date(
-		input.now.getTime() - effectLeaseMs,
+		input.now.getTime() - inboundEffectLeaseMs,
 	).toISOString()
-	const results = await input.db.batch([
-		input.db
+	const { dedicatedResult } = await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET subscription_effect_state = 'processing',
@@ -103,9 +110,8 @@ export async function claimSystemInboundSubscriptionEffect(input: {
 				input.now.toISOString(),
 				expiredBefore,
 			),
-		legacyMirrorStatement(input.db, input.deliveryId),
-	])
-	return Number(results[0]?.meta.changes ?? 0) > 0 ? lease : null
+	})
+	return Number(dedicatedResult?.meta.changes ?? 0) > 0 ? lease : null
 }
 
 export async function completeSystemInboundSubscriptionEffect(input: {
@@ -115,9 +121,12 @@ export async function completeSystemInboundSubscriptionEffect(input: {
 	now: Date
 	detailField?: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const path = input.detailField ?? '$.subscriptionEffectCompletedAt'
-	const results = await input.db.batch([
-		input.db
+	const { dedicatedResult } = await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET subscription_effect_state = 'complete',
@@ -149,9 +158,8 @@ export async function completeSystemInboundSubscriptionEffect(input: {
 				input.deliveryId,
 				input.lease,
 			),
-		legacyMirrorStatement(input.db, input.deliveryId),
-	])
-	return Number(results[0]?.meta.changes ?? 0) > 0
+	})
+	return Number(dedicatedResult?.meta.changes ?? 0) > 0
 }
 
 export async function failSystemInboundSubscriptionEffect(input: {
@@ -163,11 +171,14 @@ export async function failSystemInboundSubscriptionEffect(input: {
 	deadLettered: boolean
 	now: Date
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const retryAt = input.deadLettered
 		? null
-		: new Date(input.now.getTime() + effectRetryMs).toISOString()
-	const results = await input.db.batch([
-		input.db
+		: new Date(input.now.getTime() + inboundEffectRetryMs).toISOString()
+	const { dedicatedResult } = await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET subscription_effect_state = ?,
@@ -212,9 +223,8 @@ export async function failSystemInboundSubscriptionEffect(input: {
 				input.deliveryId,
 				input.lease,
 			),
-		legacyMirrorStatement(input.db, input.deliveryId),
-	])
-	return Number(results[0]?.meta.changes ?? 0) > 0
+	})
+	return Number(dedicatedResult?.meta.changes ?? 0) > 0
 }
 
 export async function recordSystemInboundUsageEffect(input: {
@@ -226,9 +236,10 @@ export async function recordSystemInboundUsageEffect(input: {
 	now: Date
 	includeRollup: boolean
 }) {
-	const statements: Array<D1PreparedStatement> = []
+	await assertSystemEmailGraphAuthority(input.db)
+	const before: Array<D1PreparedStatement> = []
 	if (input.includeRollup) {
-		statements.push(
+		before.push(
 			input.db
 				.prepare(
 					`INSERT INTO usage_rollups (
@@ -262,8 +273,11 @@ export async function recordSystemInboundUsageEffect(input: {
 				),
 		)
 	}
-	statements.push(
-		input.db
+	await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.delivery.deliveryId,
+		before,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET usage_effect_recorded_at = ?, usage_month = ?, usage_bytes = ?,
@@ -298,15 +312,14 @@ export async function recordSystemInboundUsageEffect(input: {
 				input.delivery.finalizationToken ?? null,
 				input.delivery.finalizationToken ?? null,
 			),
-		legacyMirrorStatement(input.db, input.delivery.deliveryId),
-	)
-	await input.db.batch(statements)
+	})
 }
 
 export async function listSystemInboundUsageRows(input: {
 	db: D1Database
 	months: [string, string]
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const result = await input.db
 		.prepare(
 			`SELECT

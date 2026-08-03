@@ -13,8 +13,18 @@ import {
 	staleInboundDeliveryAgeMs,
 	type InboundDelivery,
 } from './inbound-delivery.ts'
+import {
+	inboundOrphanVerificationMs,
+	inboundReconciliationRetryMs,
+	inboundStorageLeaseMs,
+} from './inbound-delivery-transitions.ts'
 import { type SystemEmailLocal } from './system-email.ts'
-import { legacySystemInboundEventMirrorStatement as legacyMirrorStatement } from './system-inbound-delivery-mirror.ts'
+import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
+import {
+	commitSystemInboundEventMutation,
+	systemInboundEventMutation,
+} from './system-inbound-delivery-mirror.ts'
+import { commitSystemEmailGraphMutations } from './system-email-graph-transaction.ts'
 
 export {
 	claimSystemInboundSubscriptionEffect,
@@ -27,9 +37,6 @@ export {
 
 export const systemInboundProvider = 'cloudflare-email-routing'
 export const systemInboundDedupeProvider = 'cloudflare-email-routing-dedupe'
-const storageLeaseMs = 5 * 60 * 1000
-const reconcileRetryMs = 15 * 60 * 1000
-const orphanVerificationMs = 60 * 60 * 1000
 const staleBatchSize = 20
 
 type DeliveryRow = {
@@ -37,7 +44,8 @@ type DeliveryRow = {
 	detail_json: string
 }
 
-function assertSystemDelivery(delivery: InboundDelivery) {
+async function assertSystemDelivery(db: D1Database, delivery: InboundDelivery) {
+	await assertSystemEmailGraphAuthority(db)
 	if (delivery.userId !== systemEmailOwnerId) {
 		throw new Error('System inbound delivery writes require system:email.')
 	}
@@ -55,6 +63,7 @@ export async function getSystemInboundDelivery(input: {
 	db: D1Database
 	deliveryId: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const row = await input.db
 		.prepare(
 			`SELECT event_type, detail_json
@@ -72,6 +81,7 @@ export async function getSystemInboundDeliveryWindow(input: {
 	fingerprint: string
 	now: Date
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const row = await input.db
 		.prepare(
 			`SELECT event_type, detail_json
@@ -93,11 +103,13 @@ export async function claimSystemInboundDeliveryWindow(input: {
 	delivery: InboundDelivery
 	now: Date
 }) {
-	assertSystemDelivery(input.delivery)
+	await assertSystemDelivery(input.db, input.delivery)
 	const pointerId = `email-inbound-dedupe:${input.delivery.fingerprint}`
 	try {
-		await input.db.batch([
-			input.db
+		await commitSystemInboundEventMutation({
+			db: input.db,
+			eventId: pointerId,
+			dedicated: input.db
 				.prepare(
 					`INSERT INTO system_email_delivery_events (
 					id, message_id, inbox_id, event_type, provider, provider_event_id,
@@ -126,8 +138,7 @@ export async function claimSystemInboundDeliveryWindow(input: {
 					input.now.toISOString(),
 					input.now.toISOString(),
 				),
-			legacyMirrorStatement(input.db, pointerId),
-		])
+		})
 	} catch (error) {
 		const committed = await getSystemInboundDeliveryPointer({
 			db: input.db,
@@ -153,6 +164,7 @@ async function getSystemInboundDeliveryPointer(input: {
 	eventId: string
 	provider: string
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const row = await input.db
 		.prepare(
 			`SELECT event_type, detail_json
@@ -172,7 +184,7 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 	limit: number
 	now: Date
 }) {
-	assertSystemDelivery(input.delivery)
+	await assertSystemDelivery(input.db, input.delivery)
 	const existing = await getSystemInboundDelivery({
 		db: input.db,
 		deliveryId: input.delivery.deliveryId,
@@ -182,10 +194,13 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 		.toISOString()
 		.replace('Z', `${crypto.randomUUID().replaceAll('-', '').slice(0, 10)}Z`)
 	try {
-		await input.db.batch([
-			input.db
-				.prepare(
-					`INSERT INTO system_email_daily_counters (
+		await commitSystemInboundEventMutation({
+			db: input.db,
+			eventId: input.delivery.deliveryId,
+			before: [
+				input.db
+					.prepare(
+						`INSERT INTO system_email_daily_counters (
 					local_part, day, count, updated_at
 				) VALUES (?, ?, 1, ?)
 				ON CONFLICT(local_part, day) DO UPDATE SET
@@ -194,15 +209,16 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 					AND NOT EXISTS (
 						SELECT 1 FROM system_email_delivery_events WHERE id = ?
 					)`,
-				)
-				.bind(
-					input.localPart,
-					input.delivery.quotaDay,
-					operationTimestamp,
-					input.limit,
-					input.delivery.deliveryId,
-				),
-			input.db
+					)
+					.bind(
+						input.localPart,
+						input.delivery.quotaDay,
+						operationTimestamp,
+						input.limit,
+						input.delivery.deliveryId,
+					),
+			],
+			dedicated: input.db
 				.prepare(
 					`INSERT OR IGNORE INTO system_email_delivery_events (
 					id, message_id, inbox_id, event_type, provider, provider_event_id,
@@ -229,8 +245,7 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 					input.delivery.quotaDay,
 					operationTimestamp,
 				),
-			legacyMirrorStatement(input.db, input.delivery.deliveryId),
-		])
+		})
 	} catch (error) {
 		const committed = await getSystemInboundDelivery({
 			db: input.db,
@@ -255,13 +270,17 @@ export async function claimSystemInboundDeliveryStorage(input: {
 	usageStartedAt?: string
 	now?: Date
 }) {
-	assertSystemDelivery(input.delivery)
+	await assertSystemDelivery(input.db, input.delivery)
 	const now = input.now ?? new Date()
 	const storageLease = crypto.randomUUID()
 	const storageLeaseAt = now.toISOString()
-	const expiredBefore = new Date(now.getTime() - storageLeaseMs).toISOString()
-	const results = await input.db.batch([
-		input.db
+	const expiredBefore = new Date(
+		now.getTime() - inboundStorageLeaseMs,
+	).toISOString()
+	const { dedicatedResult } = await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.delivery.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET event_type = 'receive_started', message_id = NULL,
@@ -300,14 +319,13 @@ export async function claimSystemInboundDeliveryStorage(input: {
 				input.delivery.deliveryId,
 				expiredBefore,
 			),
-		legacyMirrorStatement(input.db, input.delivery.deliveryId),
-	])
+	})
 	const delivery = await getSystemInboundDelivery({
 		db: input.db,
 		deliveryId: input.delivery.deliveryId,
 	})
 	return {
-		claimed: Number(results[0]?.meta.changes ?? 0) > 0,
+		claimed: Number(dedicatedResult?.meta.changes ?? 0) > 0,
 		delivery,
 	}
 }
@@ -316,10 +334,12 @@ export async function releaseSystemInboundDeliveryStorage(input: {
 	db: D1Database
 	delivery: InboundDelivery
 }) {
-	assertSystemDelivery(input.delivery)
+	await assertSystemDelivery(input.db, input.delivery)
 	if (!input.delivery.storageLease) return
-	await input.db.batch([
-		input.db
+	await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.delivery.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET detail_json = json_remove(
@@ -335,8 +355,7 @@ export async function releaseSystemInboundDeliveryStorage(input: {
 				input.delivery.deliveryId,
 				input.delivery.storageLease,
 			),
-		legacyMirrorStatement(input.db, input.delivery.deliveryId),
-	])
+	})
 }
 
 export async function markSystemInboundDeliveryRejected(input: {
@@ -344,7 +363,7 @@ export async function markSystemInboundDeliveryRejected(input: {
 	delivery: InboundDelivery
 	reason: string
 }) {
-	assertSystemDelivery(input.delivery)
+	await assertSystemDelivery(input.db, input.delivery)
 	const detail = {
 		...input.delivery,
 		state: 'rejected' as const,
@@ -353,8 +372,10 @@ export async function markSystemInboundDeliveryRejected(input: {
 	delete detail.storageLease
 	delete detail.storageLeaseAt
 	const expectedLease = input.delivery.storageLease ?? null
-	const results = await input.db.batch([
-		input.db
+	const { dedicatedResult } = await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.delivery.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET event_type = 'rejected', detail_json = ?, state = 'rejected',
@@ -372,9 +393,8 @@ export async function markSystemInboundDeliveryRejected(input: {
 				expectedLease,
 				expectedLease,
 			),
-		legacyMirrorStatement(input.db, input.delivery.deliveryId),
-	])
-	if (Number(results[0]?.meta.changes ?? 0) > 0) return true
+	})
+	if (Number(dedicatedResult?.meta.changes ?? 0) > 0) return true
 	const current = await getSystemInboundDelivery({
 		db: input.db,
 		deliveryId: input.delivery.deliveryId,
@@ -401,7 +421,7 @@ export async function markSystemInboundDeliveryReceived(input: {
 	usageMonth: string
 	usageBytes: number
 }) {
-	assertSystemDelivery(input.delivery)
+	await assertSystemDelivery(input.db, input.delivery)
 	if (!input.delivery.storageLease) {
 		throw new InboundDeliveryLeaseLostError(
 			'System inbound finalization requires a storage lease.',
@@ -419,8 +439,10 @@ export async function markSystemInboundDeliveryReceived(input: {
 	delete detail.storageLease
 	delete detail.storageLeaseAt
 	const now = new Date().toISOString()
-	const results = await input.db.batch([
-		input.db
+	const { dedicatedResult } = await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.delivery.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET message_id = ?, event_type = 'received', detail_json = ?,
@@ -442,9 +464,8 @@ export async function markSystemInboundDeliveryReceived(input: {
 				input.delivery.deliveryId,
 				input.delivery.storageLease,
 			),
-		legacyMirrorStatement(input.db, input.delivery.deliveryId),
-	])
-	if (Number(results[0]?.meta.changes ?? 0) > 0) return detail
+	})
+	if (Number(dedicatedResult?.meta.changes ?? 0) > 0) return detail
 	const current = await getSystemInboundDelivery({
 		db: input.db,
 		deliveryId: input.delivery.deliveryId,
@@ -464,6 +485,7 @@ export async function recordBoundedSystemEmailRejection(input: {
 	now: Date
 	detailLimit: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const day = input.now.toISOString().slice(0, 10)
 	const aggregateId = `email-rejections:${input.inboxId}:${day}`
 	const detail = JSON.stringify({
@@ -474,8 +496,10 @@ export async function recordBoundedSystemEmailRejection(input: {
 		last_phase: input.phase,
 		last_at: input.now.toISOString(),
 	})
-	await input.db.batch([
-		input.db
+	await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: aggregateId,
+		dedicated: input.db
 			.prepare(
 				`INSERT INTO system_email_delivery_events (
 					id, inbox_id, event_type, provider, detail_json,
@@ -498,8 +522,7 @@ export async function recordBoundedSystemEmailRejection(input: {
 				input.now.toISOString(),
 				input.now.toISOString(),
 			),
-		legacyMirrorStatement(input.db, aggregateId),
-	])
+	})
 	const aggregate = await input.db
 		.prepare(
 			`SELECT json_extract(detail_json, '$.count') AS count
@@ -510,8 +533,10 @@ export async function recordBoundedSystemEmailRejection(input: {
 	const count = Number(aggregate?.count ?? 1)
 	if (count <= input.detailLimit) {
 		const id = crypto.randomUUID()
-		await input.db.batch([
-			input.db
+		await commitSystemInboundEventMutation({
+			db: input.db,
+			eventId: id,
+			dedicated: input.db
 				.prepare(
 					`INSERT INTO system_email_delivery_events (
 						id, inbox_id, event_type, provider, detail_json,
@@ -530,8 +555,7 @@ export async function recordBoundedSystemEmailRejection(input: {
 					input.now.toISOString(),
 					input.now.toISOString(),
 				),
-			legacyMirrorStatement(input.db, id),
-		])
+		})
 	}
 	return count
 }
@@ -541,6 +565,7 @@ export async function pruneSystemExpiredInboundDedupePointers(input: {
 	now?: Date
 	limit?: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const now = input.now ?? new Date()
 	const rows = await input.db
 		.prepare(
@@ -552,24 +577,32 @@ export async function pruneSystemExpiredInboundDedupePointers(input: {
 		.all<{ id: string }>()
 	const ids = (rows.results ?? []).map((row) => row.id)
 	if (ids.length === 0) return 0
-	const statements = ids.flatMap((id) => [
-		input.db
-			.prepare(
-				`DELETE FROM system_email_delivery_events
-				WHERE id = ? AND provider = ? AND dedupe_expires_at <= ?`,
-			)
-			.bind(id, systemInboundDedupeProvider, now.toISOString()),
-		input.db
-			.prepare(
-				`DELETE FROM email_delivery_events
-				WHERE id = ? AND user_id = ? AND provider = ?`,
-			)
-			.bind(id, systemEmailOwnerId, systemInboundDedupeProvider),
-	])
-	const results = await input.db.batch(statements)
-	return results.reduce(
-		(total, result, index) =>
-			index % 2 === 0 ? total + Number(result.meta.changes ?? 0) : total,
+	const mutations = ids.map((id) =>
+		systemInboundEventMutation({
+			db: input.db,
+			eventId: id,
+			dedicated: input.db
+				.prepare(
+					`DELETE FROM system_email_delivery_events
+					WHERE id = ? AND provider = ? AND dedupe_expires_at <= ?`,
+				)
+				.bind(id, systemInboundDedupeProvider, now.toISOString()),
+			legacy: input.db
+				.prepare(
+					`DELETE FROM email_delivery_events
+					WHERE id = ? AND user_id = ? AND provider = ?`,
+				)
+				.bind(id, systemEmailOwnerId, systemInboundDedupeProvider),
+			expectation: 'absent',
+		}),
+	)
+	const results = await commitSystemEmailGraphMutations({
+		db: input.db,
+		mutations,
+	})
+	return mutations.reduce(
+		(total, _mutation, index) =>
+			total + Number(results[index * 3]?.meta.changes ?? 0),
 		0,
 	)
 }
@@ -587,9 +620,14 @@ async function deferSystemReconciliation(input: {
 	deliveryId: string
 	now: Date
 }) {
-	const retryAt = new Date(input.now.getTime() + reconcileRetryMs).toISOString()
-	await input.db.batch([
-		input.db
+	await assertSystemEmailGraphAuthority(input.db)
+	const retryAt = new Date(
+		input.now.getTime() + inboundReconciliationRetryMs,
+	).toISOString()
+	await commitSystemInboundEventMutation({
+		db: input.db,
+		eventId: input.deliveryId,
+		dedicated: input.db
 			.prepare(
 				`UPDATE system_email_delivery_events
 				SET detail_json = json_set(detail_json, '$.reconcileAfter', ?),
@@ -597,8 +635,7 @@ async function deferSystemReconciliation(input: {
 				WHERE id = ? AND event_type = 'receive_started'`,
 			)
 			.bind(retryAt, retryAt, input.now.toISOString(), input.deliveryId),
-		legacyMirrorStatement(input.db, input.deliveryId),
-	])
+	})
 }
 
 async function recoverSystemDelivery(input: {
@@ -688,12 +725,13 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 	now?: Date
 	deadlineMs?: number
 }) {
+	await assertSystemEmailGraphAuthority(input.db)
 	const now = input.now ?? new Date()
 	const cutoff = new Date(
 		now.getTime() - staleInboundDeliveryAgeMs,
 	).toISOString()
 	const leaseExpiredBefore = new Date(
-		now.getTime() - storageLeaseMs,
+		now.getTime() - inboundStorageLeaseMs,
 	).toISOString()
 	const rows = await input.db
 		.prepare(
@@ -767,8 +805,10 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 			continue
 		}
 		const cleanupLease = crypto.randomUUID()
-		const results = await input.db.batch([
-			input.db
+		const { dedicatedResult } = await commitSystemInboundEventMutation({
+			db: input.db,
+			eventId: delivery.deliveryId,
+			dedicated: input.db
 				.prepare(
 					`UPDATE system_email_delivery_events
 					SET state = 'cleaning', cleanup_lease = ?, cleanup_lease_at = ?,
@@ -797,9 +837,8 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 					now.toISOString(),
 					delivery.messageId,
 				),
-			legacyMirrorStatement(input.db, delivery.deliveryId),
-		])
-		if (Number(results[0]?.meta.changes ?? 0) === 0) continue
+		})
+		if (Number(dedicatedResult?.meta.changes ?? 0) === 0) continue
 		let deleteFailed = false
 		try {
 			await input.blobs.delete(delivery.rawMimeKey)
@@ -812,10 +851,15 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 			)
 		}
 		const retryAt = new Date(
-			now.getTime() + (deleteFailed ? reconcileRetryMs : orphanVerificationMs),
+			now.getTime() +
+				(deleteFailed
+					? inboundReconciliationRetryMs
+					: inboundOrphanVerificationMs),
 		).toISOString()
-		await input.db.batch([
-			input.db
+		await commitSystemInboundEventMutation({
+			db: input.db,
+			eventId: delivery.deliveryId,
+			dedicated: input.db
 				.prepare(
 					`UPDATE system_email_delivery_events
 					SET state = 'orphan-cleaned', cleanup_lease = NULL,
@@ -837,8 +881,7 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 					delivery.deliveryId,
 					cleanupLease,
 				),
-			legacyMirrorStatement(input.db, delivery.deliveryId),
-		])
+		})
 		if (!deleteFailed) cleaned += 1
 	}
 	return {
