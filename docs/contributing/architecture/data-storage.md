@@ -811,11 +811,11 @@ only from the dedicated graph; it never copies stale legacy state into dedicated
 tables.
 
 The admin mailbox maintenance `status` action remains an aggregate, content-free
-parity report. The audited `system_email_graph_reconcile` action is now a
+parity report. The audited `system_email_graph_reconcile` action is a
 rollback-mirror repair only and requires both `force: true` and
 `direction: "dedicated_to_legacy"`. In one D1 batch it removes legacy drift
 child-first and upserts the complete legacy graph parent-first. There is no
-legacy-to-dedicated reconcile path after cutover.
+legacy-to-dedicated reconcile path.
 
 The existing `email_outbound_provider_index` still has an FK to legacy
 `email_messages`, so it cannot index the dedicated graph. The production cutover
@@ -827,9 +827,9 @@ deploying 0131, operators must capture fresh production evidence that the
 provider index, legacy provider-linked system messages, and dedicated
 provider-linked messages all remain zero. The marker insert independently
 recounts those surfaces; a nonzero count violates its constraint and rolls back
-the migration. Runtime marker checks repeat the provider gate so links created
-after migration also stop dedicated work. Step 5 may remove legacy system rows
-only after dedicated/mirror parity and rollback gates pass: **4a
+the migration. Runtime marker checks repeat the provider gate so any
+provider-linked system rows stop dedicated work. Step 5 may remove legacy system
+rows only after dedicated/mirror parity and rollback gates pass: **4a
 schema/copy/parity → 4b dedicated authority plus rollback mirror → step 5 legacy
 cleanup**.
 
@@ -850,7 +850,7 @@ dedicated state with the approved operator procedure, verify full parity and
 zero provider links, and only then redeploy. The 4b reconcile action
 intentionally cannot import those rollback-era legacy writes.
 
-**USER rollback boundary:** the shared USER graph is now an immutable pre-step-5
+**USER rollback boundary:** the shared USER graph is an immutable pre-step-5
 snapshot, not a roll-forward source. A code-only rollback to a D1-authoritative
 Worker is unsafe because post-cutover messages exist only in Mailbox/R2. Any
 rollback or destructive follow-up must quiesce email writers, use reviewed

@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import { resolveInboundEmailClassification } from './inbound-classification.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
-test('classification falls through to the auth verdict when sender rules are not deployed', async () => {
+test('classification falls through when sender rules are missing and propagates other schema failures', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(`DROP TABLE email_sender_rules`).run()
 
@@ -18,15 +18,10 @@ test('classification falls through to the auth verdict when sender rules are not
 		classification: 'quarantined',
 		classificationReason: 'Sender failed DMARC authentication.',
 	})
-})
 
-test('classification propagates sender-rule database failures other than a missing table', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await env.APP_DB.batch([
-		env.APP_DB.prepare(`DROP TABLE email_sender_rules`),
-		env.APP_DB.prepare(`CREATE TABLE email_sender_rules (id TEXT PRIMARY KEY)`),
-	])
-
+	await env.APP_DB.prepare(
+		`CREATE TABLE email_sender_rules (id TEXT PRIMARY KEY)`,
+	).run()
 	await expect(
 		resolveInboundEmailClassification({
 			db: env.APP_DB,

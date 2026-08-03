@@ -49,7 +49,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({ line: 6, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 6,
-			pattern: 'now support/accept/require/use/store/return/call/read',
+			pattern: 'now support/accept/require/use/store/return/call/read/pass',
 		}),
 	])
 
@@ -69,7 +69,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({ line: 2, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 2,
-			pattern: 'now support/accept/require/use/store/return/call/read',
+			pattern: 'now support/accept/require/use/store/return/call/read/pass',
 		}),
 	])
 
@@ -93,7 +93,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({
 			line: 5,
 			column: 22,
-			pattern: 'now support/accept/require/use/store/return/call/read',
+			pattern: 'now support/accept/require/use/store/return/call/read/pass',
 		}),
 	])
 
@@ -121,7 +121,9 @@ test.each([
 	['Confirm the columns are no longer needed.', 'no longer support'],
 	['The API now supports this option.', 'now support'],
 	['Point-read surfaces now call the meter helper.', 'now support'],
-	['UserMeter is now the authoritative source.', 'is now the'],
+	['Internal USER product reads now pass through the helper.', 'now support'],
+	['UserMeter is now the authoritative source.', 'is now a/the'],
+	['The reconcile action is now a rollback-mirror repair.', 'is now a/the'],
 	['Running services are now counted from the meter.', 'are now'],
 	['Previously a best-effort shadow of D1.', 'previously a/the'],
 	['This guide was recently updated.', 'recently changed'],
@@ -228,7 +230,7 @@ test('exempts principles and migration pages and scans discovered docs', async (
 			expect.objectContaining({
 				file: 'docs/use/example.md',
 				line: 1,
-				pattern: 'now support/accept/require/use/store/return/call/read',
+				pattern: 'now support/accept/require/use/store/return/call/read/pass',
 			}),
 		])
 	} finally {

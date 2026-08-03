@@ -665,6 +665,7 @@ test('inbound ledger rejects non-finite expectedAttachmentCount, usageDurationMs
 			Number.NaN,
 			Number.POSITIVE_INFINITY,
 			Number.NEGATIVE_INFINITY,
+			-1,
 		]) {
 			await assertMailboxThrows(
 				/expectedAttachmentCount must be a non-negative finite number/,
@@ -694,6 +695,7 @@ test('inbound ledger rejects non-finite expectedAttachmentCount, usageDurationMs
 			Number.NaN,
 			Number.POSITIVE_INFINITY,
 			Number.NEGATIVE_INFINITY,
+			-1,
 		]) {
 			await assertMailboxThrows(
 				/usageDurationMs must be a non-negative finite number/,

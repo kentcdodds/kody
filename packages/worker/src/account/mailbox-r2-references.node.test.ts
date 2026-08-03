@@ -165,21 +165,8 @@ test('stable Mailbox R2 refs revalidate later items from their preceding cursor'
 	}
 })
 
-test('Mailbox R2 pagination fails closed when a cursor does not advance', async () => {
-	mocks.listInternalUserEmailBlobReferences.mockResolvedValue({
-		references: [],
-		nextStartAfter: null,
-		truncated: true,
-	})
-	await expect(
-		countMailboxEmailObjectRefs({
-			env: {} as Env,
-			ownerId: 'user-a',
-		}),
-	).rejects.toThrow('pagination did not advance')
-})
-
 test.each([
+	['null', [null]],
 	['unchanged', ['raw_mime:message-a', 'raw_mime:message-a']],
 	[
 		'repeated',
@@ -199,6 +186,6 @@ test.each([
 				env: {} as Env,
 				ownerId: 'user-a',
 			}),
-		).rejects.toThrow('Mailbox blob-reference pagination did not advance.')
+		).rejects.toThrow(/pagination did not advance/)
 	},
 )
