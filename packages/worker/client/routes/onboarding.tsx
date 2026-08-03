@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { on } from '#client/event-mixin.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -38,14 +39,33 @@ import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
+	getAlertCardCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
 	insetCardCss,
 	layoutMaxWidths,
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 
+type OnboardingStep = 1 | 2 | 3
+
+const onboardingSteps = [
+	{ number: 1, label: 'Discover', hash: 'discovery' },
+	{ number: 2, label: 'Connect your agent', hash: 'connect-agent' },
+	{ number: 3, label: 'Install a starter package', hash: 'starter-packages' },
+] as const satisfies ReadonlyArray<{
+	number: OnboardingStep
+	label: string
+	hash: string
+}>
+
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
+}
+
+function isDiscoveryDeepLink(href: string) {
+	return new URL(href, 'http://localhost').hash === '#discovery'
 }
 
 function readOnboardingRedirectTo(handle: Handle) {
@@ -85,9 +105,12 @@ export function OnboardingRoute(handle: Handle) {
 	let discoveryPrompt = ''
 	let hasMcpClient = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
+	let activeStep: OnboardingStep = 1
+	let initializedStep = false
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: OnboardingPayload) {
+		const wasConnected = hasMcpClient
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
@@ -96,6 +119,34 @@ export function OnboardingRoute(handle: Handle) {
 		featuredListings = payload.featuredListings ?? []
 		status = 'ready'
 		message = null
+		if (!initializedStep) {
+			activeStep =
+				payload.hasMcpClient &&
+				!isDiscoveryDeepLink(readCurrentRouterHref(handle))
+					? 3
+					: 1
+			initializedStep = true
+		} else if (!wasConnected && payload.hasMcpClient) {
+			activeStep = 3
+			updateStepHash(3)
+		}
+	}
+
+	function updateStepHash(step: OnboardingStep) {
+		if (typeof window === 'undefined') return
+		const stepDefinition = onboardingSteps.find(
+			(candidate) => candidate.number === step,
+		)
+		if (!stepDefinition) return
+		const url = new URL(window.location.href)
+		url.hash = stepDefinition.hash
+		window.history.replaceState(window.history.state, '', url)
+	}
+
+	function selectStep(step: OnboardingStep) {
+		activeStep = step
+		updateStepHash(step)
+		handle.update()
 	}
 
 	async function loadOnboarding(signal: AbortSignal) {
@@ -161,6 +212,16 @@ export function OnboardingRoute(handle: Handle) {
 	if (typeof document !== 'undefined') {
 		pollIntervalId = setInterval(pollForMcpConnection, 5000)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
+		window.addEventListener('hashchange', handleHashChange)
+		handle.signal.addEventListener('abort', () =>
+			window.removeEventListener('hashchange', handleHashChange),
+		)
+	}
+
+	function handleHashChange() {
+		if (window.location.hash !== '#discovery') return
+		activeStep = 1
+		handle.update()
 	}
 
 	function applyRouteLoaderData(href: string) {
@@ -215,85 +276,173 @@ export function OnboardingRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
-						{hasMcpClient ? (
-							<section mix={css(cardCss)}>
+						<nav aria-label="Onboarding steps" mix={css(stepIndicatorCss)}>
+							{onboardingSteps.map((step) => {
+								const isActive = activeStep === step.number
+								const isComplete = hasMcpClient && step.number < 3
+								return (
+									<button
+										key={step.number}
+										type="button"
+										aria-current={isActive ? 'step' : undefined}
+										mix={[
+											css({
+												...stepIndicatorButtonCss,
+												...(isActive ? activeStepIndicatorButtonCss : {}),
+											}),
+											on('click', () => selectStep(step.number)),
+										]}
+									>
+										<span mix={css(stepNumberCss)}>{step.number}</span>
+										<span>{step.label}</span>
+										{isComplete ? (
+											<span aria-label="Complete" mix={css(stepCompleteCss)}>
+												✓
+											</span>
+										) : null}
+									</button>
+								)
+							})}
+						</nav>
+
+						{hasMcpClient && activeStep === 3 ? (
+							<section mix={css(connectedCardCss)} role="status">
 								<h2 mix={css(cardTitleCss)}>You are connected</h2>
 								<p mix={css(descriptionCss)}>
-									At least one AI agent has already authorized access to this
-									account, so the first steps below are collapsed. Open them any
-									time to connect another host or re-run setup with your agent.
+									Your agent has authorized access. Steps 1 and 2 are complete,
+									so you can choose a starter package.
 								</p>
 							</section>
 						) : null}
 
-						{renderOnboardingStep({
-							title: '1. Not sure what you\u2019d use Kody for?',
-							collapsed: hasMcpClient,
-							id: 'discovery',
-							testId: 'onboarding-discovery',
-							children: (
-								<>
-									<p mix={css(descriptionCss)}>
-										Paste this into any AI agent that can fetch a URL or search
-										the web — ChatGPT, Claude, Grok, or whatever you already
-										use. It has the agent read Kody&apos;s docs, interview you,
-										and suggest concrete automations. No account or setup needed
-										yet.
-									</p>
-									<pre mix={css(codeBlockCss)}>{discoveryPrompt}</pre>
+						{activeStep === 1 ? (
+							<section
+								id="discovery"
+								mix={css(cardCss)}
+								data-testid="onboarding-discovery"
+							>
+								<div mix={css(stepHeadingCss)}>
+									<p mix={css(stepEyebrowCss)}>Step 1 · Optional</p>
+									<h2 mix={css(cardTitleCss)}>Discover what Kody can do</h2>
+								</div>
+								<p mix={css(descriptionCss)}>
+									Paste this into any AI agent that can fetch a URL or search
+									the web — ChatGPT, Claude, Grok, or whatever you already use.
+									It reads Kody&apos;s docs, interviews you, and suggests
+									concrete automations. You can also skip this and connect
+									directly.
+								</p>
+								<pre mix={css(codeBlockCss)}>{discoveryPrompt}</pre>
+								<div mix={css(discoveryActionsCss)}>
 									<CopyTextButton
 										value={discoveryPrompt}
 										idleLabel="Copy discovery prompt"
 										variant="secondary"
 									/>
-								</>
-							),
-						})}
+									<button
+										type="button"
+										mix={[css(skipButtonCss), on('click', () => selectStep(2))]}
+									>
+										Skip discovery
+									</button>
+								</div>
+								<WizardNavigation
+									activeStep={activeStep}
+									onSelectStep={selectStep}
+								/>
+							</section>
+						) : null}
 
-						{renderOnboardingStep({
-							title: '2. Add Kody as an MCP server',
-							collapsed: hasMcpClient,
-							children: (
-								<>
+						{activeStep === 2 ? (
+							<section
+								id="connect-agent"
+								mix={css(cardCss)}
+								data-testid="onboarding-connect-agent"
+							>
+								<div mix={css(stepHeadingCss)}>
+									<p mix={css(stepEyebrowCss)}>Step 2</p>
+									<h2 mix={css(cardTitleCss)}>Connect your agent</h2>
+								</div>
+								<div mix={css(authorizationCalloutCss)} role="note">
+									<strong>One-time authorization required</strong>
+									<span>
+										After you add the server, your client opens a browser window
+										or shows an <strong>Authenticate</strong> button. Approve
+										the request to finish connecting.
+									</span>
+								</div>
+								<div
+									mix={css(connectionStatusCss)}
+									role="status"
+									aria-live="polite"
+								>
+									{hasMcpClient ? (
+										<>
+											<span mix={css(statusIconCss)} aria-hidden="true">
+												✓
+											</span>
+											<strong>You are connected</strong>
+										</>
+									) : (
+										<>
+											<span mix={css(spinnerCss)} aria-hidden="true" />
+											<strong>Waiting for your agent to connect…</strong>
+										</>
+									)}
+								</div>
+								<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
+								<WizardNavigation
+									activeStep={activeStep}
+									onSelectStep={selectStep}
+								/>
+							</section>
+						) : null}
+
+						{activeStep === 3 ? (
+							<>
+								<section
+									id="starter-packages"
+									mix={css(cardCss)}
+									data-testid="onboarding-starter-packages"
+								>
+									<div mix={css(stepHeadingCss)}>
+										<p mix={css(stepEyebrowCss)}>Step 3</p>
+										<h2 mix={css(cardTitleCss)}>Install a starter package</h2>
+									</div>
 									<p mix={css(descriptionCss)}>
-										Pick your MCP client below for host-specific setup. When the
-										agent connects, it starts an OAuth flow — sign in to Kody if
-										needed, approve the request, and the agent receives a token
-										scoped to your account.
+										{featuredListings.length > 0
+											? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
+											: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
 									</p>
-									<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
-								</>
-							),
-						})}
-
-						<section
-							mix={css(cardCss)}
-							data-testid="onboarding-starter-packages"
-						>
-							<h2 mix={css(cardTitleCss)}>3. Install a starter package</h2>
-							<p mix={css(descriptionCss)}>
-								{featuredListings.length > 0
-									? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
-									: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
-							</p>
-							<ul mix={css(starterGridCss)}>
-								{featuredListings.map((listing) => (
-									<OnboardingStarterCard
-										key={listing.id}
-										listing={listing}
-										loggedIn={loggedIn}
+									<ul mix={css(starterGridCss)}>
+										{featuredListings.map((listing) => (
+											<OnboardingStarterCard
+												key={listing.id}
+												listing={listing}
+												loggedIn={loggedIn}
+											/>
+										))}
+										<OnboardingDiyCard setupPrompt={setupPrompt} />
+									</ul>
+									<p mix={css({ margin: 0 })}>
+										<a href="/community" mix={css(primaryLinkCss)}>
+											Browse all community packages
+										</a>
+									</p>
+									<WizardNavigation
+										activeStep={activeStep}
+										onSelectStep={selectStep}
 									/>
-								))}
-								<OnboardingDiyCard setupPrompt={setupPrompt} />
-							</ul>
-							<p mix={css({ margin: 0 })}>
-								<a href="/community" mix={css(primaryLinkCss)}>
-									Browse all community packages
-								</a>
-							</p>
-						</section>
+								</section>
 
-						{renderByokExplainer({ image: 'handoff' })}
+								<details mix={css(byokDetailsCss)}>
+									<summary mix={css(byokSummaryCss)}>
+										Bring your own API keys
+									</summary>
+									{renderByokExplainer({ image: 'handoff' })}
+								</details>
+							</>
+						) : null}
 
 						{loggedIn ? null : (
 							<p mix={css({ margin: 0 })}>
@@ -313,55 +462,208 @@ export function OnboardingRoute(handle: Handle) {
 	}
 }
 
-type OnboardingStepSlot = any
+function WizardNavigation(
+	handle: Handle<{
+		activeStep: OnboardingStep
+		onSelectStep: (step: OnboardingStep) => void
+	}>,
+) {
+	return () => {
+		const previousStep =
+			handle.props.activeStep > 1
+				? ((handle.props.activeStep - 1) as OnboardingStep)
+				: null
+		const nextStep =
+			handle.props.activeStep < 3
+				? ((handle.props.activeStep + 1) as OnboardingStep)
+				: null
 
-/**
- * Renders an onboarding step as an open card, or — once an MCP client is
- * already connected — as a collapsed `<details>` card the user can reopen to
- * redo the step (e.g. connect another host).
- */
-function renderOnboardingStep(input: {
-	title: string
-	collapsed: boolean
-	id?: string
-	testId?: string
-	children: OnboardingStepSlot
-}) {
-	if (!input.collapsed) {
 		return (
-			<section id={input.id} mix={css(cardCss)} data-testid={input.testId}>
-				<h2 mix={css(cardTitleCss)}>{input.title}</h2>
-				{input.children}
-			</section>
+			<div mix={css(wizardNavigationCss)}>
+				<button
+					type="button"
+					disabled={previousStep == null}
+					mix={[
+						css(wizardSecondaryButtonCss),
+						on('click', () => {
+							if (previousStep) handle.props.onSelectStep(previousStep)
+						}),
+					]}
+				>
+					Back
+				</button>
+				<button
+					type="button"
+					disabled={nextStep == null}
+					mix={[
+						css(wizardPrimaryButtonCss),
+						on('click', () => {
+							if (nextStep) handle.props.onSelectStep(nextStep)
+						}),
+					]}
+				>
+					Next
+				</button>
+			</div>
 		)
 	}
-	return (
-		<details id={input.id} mix={css(cardCss)} data-testid={input.testId}>
-			<summary mix={css(collapsedStepSummaryCss)}>
-				<h2 mix={css(collapsedStepTitleCss)}>{input.title}</h2>
-				<span mix={css(collapsedStepHintCss)}>Done — open to revisit</span>
-			</summary>
-			{input.children}
-		</details>
-	)
 }
 
-const collapsedStepSummaryCss = {
-	cursor: 'pointer',
-	'&::marker': {
-		color: colors.textMuted,
+const stepIndicatorCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+	gap: spacing.sm,
+	[mq.mobile]: {
+		gridTemplateColumns: '1fr',
 	},
 }
 
-const collapsedStepTitleCss = {
-	...cardTitleCss,
-	display: 'inline' as const,
+const stepIndicatorButtonCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.sm,
+	padding: spacing.sm,
+	border: `1px solid ${colors.border}`,
+	borderRadius: 'var(--radius-md)',
+	backgroundColor: colors.surface,
+	color: colors.textMuted,
+	fontFamily: typography.fontFamily,
+	fontSize: typography.fontSize.sm,
+	textAlign: 'left' as const,
+	cursor: 'pointer',
+	'&:hover': {
+		borderColor: colors.primary,
+		backgroundColor: colors.primarySoftest,
+	},
 }
 
-const collapsedStepHintCss = {
-	marginLeft: spacing.sm,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
+const activeStepIndicatorButtonCss = {
+	borderColor: colors.primary,
+	backgroundColor: colors.primarySoft,
+	color: colors.primaryText,
+	fontWeight: typography.fontWeight.semibold,
+}
+
+const stepNumberCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	flex: '0 0 auto',
+	width: '1.75rem',
+	height: '1.75rem',
+	borderRadius: '999px',
+	backgroundColor: colors.primary,
+	color: colors.onPrimary,
+	fontWeight: typography.fontWeight.semibold,
+}
+
+const stepCompleteCss = {
+	marginLeft: 'auto',
+	color: colors.primaryText,
+	fontWeight: typography.fontWeight.bold,
+}
+
+const connectedCardCss = {
+	...cardCss,
+	borderColor: colors.primary,
+	backgroundColor: colors.primarySoftest,
+}
+
+const stepHeadingCss = {
+	display: 'grid',
+	gap: spacing.xs,
+}
+
+const stepEyebrowCss = {
+	margin: 0,
+	color: colors.primaryText,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+	textTransform: 'uppercase' as const,
+	letterSpacing: '0.08em',
+}
+
+const discoveryActionsCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.sm,
+	flexWrap: 'wrap' as const,
+}
+
+const skipButtonCss = {
+	...getSecondaryButtonCss(),
+}
+
+const authorizationCalloutCss = {
+	...getAlertCardCss('info'),
+	display: 'grid',
+	gap: spacing.xs,
+	borderWidth: '2px',
+	fontSize: typography.fontSize.base,
+	lineHeight: 1.5,
+}
+
+const connectionStatusCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.sm,
+	margin: 0,
+	padding: `${spacing.sm} ${spacing.md}`,
+	borderRadius: 'var(--radius-md)',
+	backgroundColor: colors.primarySoftest,
+	color: colors.primaryText,
+}
+
+const statusIconCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '1.5rem',
+	height: '1.5rem',
+	borderRadius: '999px',
+	backgroundColor: colors.primary,
+	color: colors.onPrimary,
+}
+
+const spinnerCss = {
+	width: '1rem',
+	height: '1rem',
+	border: `2px solid ${colors.border}`,
+	borderTopColor: colors.primary,
+	borderRadius: '999px',
+	animation: 'onboarding-spinner 0.8s linear infinite',
+	'@keyframes onboarding-spinner': {
+		to: { transform: 'rotate(360deg)' },
+	},
+}
+
+const wizardNavigationCss = {
+	display: 'flex',
+	justifyContent: 'space-between',
+	gap: spacing.sm,
+	paddingTop: spacing.sm,
+	borderTop: `1px solid ${colors.border}`,
+}
+
+const wizardPrimaryButtonCss = {
+	...getPrimaryButtonCss(),
+	minWidth: '6rem',
+}
+
+const wizardSecondaryButtonCss = {
+	...getSecondaryButtonCss(),
+	minWidth: '6rem',
+}
+
+const byokDetailsCss = {
+	display: 'grid',
+	gap: spacing.md,
+}
+
+const byokSummaryCss = {
+	color: colors.primaryText,
+	fontWeight: typography.fontWeight.semibold,
+	cursor: 'pointer',
 }
 
 const codeBlockCss = {

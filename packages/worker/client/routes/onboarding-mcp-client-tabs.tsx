@@ -5,9 +5,11 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
+	buildCursorInstallUrl,
 	buildCursorMcpJson,
 	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
+	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
 	codingAgentPackageHint,
@@ -27,6 +29,7 @@ import {
 import {
 	descriptionCss,
 	focusRingCss,
+	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	pageEyebrowCss,
 } from '#client/styles/style-primitives.ts'
@@ -77,18 +80,35 @@ function ClientNote(handle: Handle<ClientNoteProps>) {
 	)
 }
 
+function InstallDeepLink(
+	handle: Handle<{ href: string; label: 'Add to Cursor' | 'Add to VS Code' }>,
+) {
+	return () => (
+		<div mix={css(deepLinkActionCss)}>
+			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
+				{handle.props.label}
+			</a>
+			<p mix={css(deepLinkNoteCss)}>
+				Your client will still ask you to authorize access afterwards.
+			</p>
+		</div>
+	)
+}
+
 function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 	switch (kind) {
 		case 'cursor': {
 			const cursorJson = buildCursorMcpJson(mcpServerUrl)
+			const installUrl = buildCursorInstallUrl(mcpServerUrl)
 			return (
 				<>
 					<p mix={css(descriptionCss)}>
-						In Cursor, open <strong>Customize</strong> and add a remote MCP
-						server with this URL, or merge the JSON below into{' '}
-						<code>~/.cursor/mcp.json</code> (global) or{' '}
+						Install Kody directly, or open <strong>Customize</strong> and add a
+						remote MCP server with the URL below. You can also merge the JSON
+						into <code>~/.cursor/mcp.json</code> (global) or{' '}
 						<code>.cursor/mcp.json</code> (project).
 					</p>
+					<InstallDeepLink href={installUrl} label="Add to Cursor" />
 					<CopyCard
 						label="MCP URL"
 						value={mcpServerUrl}
@@ -267,14 +287,16 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 		}
 		case 'vscode': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
+			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
 			return (
 				<>
 					<p mix={css(descriptionCss)}>
-						Create or edit <code>.vscode/mcp.json</code> in your workspace (or
-						open user MCP config via the{' '}
-						<strong>MCP: Open User Configuration</strong> command). VS Code uses
+						Install Kody directly, create or edit <code>.vscode/mcp.json</code>{' '}
+						in your workspace, or open user MCP config via the{' '}
+						<strong>MCP: Open User Configuration</strong> command. VS Code uses
 						the root key <code>servers</code>, not <code>mcpServers</code>:
 					</p>
+					<InstallDeepLink href={installUrl} label="Add to VS Code" />
 					<CopyCard
 						label=".vscode/mcp.json"
 						value={vsCodeJson}
@@ -469,4 +491,23 @@ const noteCss = {
 	borderRadius: radius.md,
 	border: `1px solid ${colors.border}`,
 	background: colors.primarySoftest,
+}
+
+const deepLinkActionCss = {
+	display: 'grid',
+	justifyItems: 'start',
+	gap: spacing.xs,
+}
+
+const deepLinkButtonCss = {
+	...getPrimaryButtonCss({ weight: 'semibold' }),
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	textDecoration: 'none',
+}
+
+const deepLinkNoteCss = {
+	...descriptionCss,
+	fontSize: typography.fontSize.sm,
 }

@@ -57,7 +57,50 @@ test('admins can feature trusted listings and members see them in onboarding', a
 
 	// Without any featured listings, onboarding still shows the starter step
 	// with the Choose your own adventure card.
-	await page.goto('/onboarding')
+	await page.goto('/onboarding#discovery')
+	await expect(page.getByTestId('onboarding-discovery')).toBeVisible()
+	await expect(page.getByTestId('onboarding-connect-agent')).toHaveCount(0)
+	await page.getByRole('button', { name: /Connect your agent/u }).click()
+	await expect(page).toHaveURL(/\/onboarding#connect-agent$/u)
+	await expect(page.getByText('One-time authorization required')).toBeVisible()
+	await expect(
+		page.getByText('Waiting for your agent to connect…'),
+	).toBeVisible()
+
+	const expectedMcpUrl = `${new URL(page.url()).origin}/mcp`
+	const cursorInstallHref = await page
+		.getByRole('link', { name: 'Add to Cursor' })
+		.getAttribute('href')
+	expect(cursorInstallHref).toBeTruthy()
+	const cursorInstallUrl = new URL(cursorInstallHref!)
+	expect(cursorInstallUrl.protocol).toBe('cursor:')
+	const cursorConfig = cursorInstallUrl.searchParams.get('config')
+	expect(cursorConfig).toBeTruthy()
+	expect(
+		JSON.parse(
+			atob(
+				cursorConfig!
+					.replaceAll('-', '+')
+					.replaceAll('_', '/')
+					.padEnd(Math.ceil(cursorConfig!.length / 4) * 4, '='),
+			),
+		),
+	).toEqual({ url: expectedMcpUrl })
+
+	await page.getByRole('tab', { name: 'VS Code' }).click()
+	const vsCodeInstallHref = await page
+		.getByRole('link', { name: 'Add to VS Code' })
+		.getAttribute('href')
+	expect(vsCodeInstallHref).toBeTruthy()
+	expect(
+		JSON.parse(
+			decodeURIComponent(
+				vsCodeInstallHref!.slice('vscode:mcp/install?'.length),
+			),
+		),
+	).toEqual({ name: 'kody', type: 'http', url: expectedMcpUrl })
+
+	await page.getByRole('button', { name: /Install a starter package/u }).click()
 	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
 	await expect(page.getByTestId('onboarding-diy-card')).toBeVisible()
 	await expect(page.getByTestId('onboarding-diy-copy')).toBeVisible()
@@ -117,6 +160,7 @@ test('admins can feature trusted listings and members see them in onboarding', a
 		},
 	)
 	await page.goto('/onboarding')
+	await page.getByRole('button', { name: /Install a starter package/u }).click()
 	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
 	const starterCard = page.getByTestId(`onboarding-starter-${trustedListingId}`)
 	await expect(starterCard).toBeVisible()
@@ -153,6 +197,7 @@ test('admins can feature trusted listings and members see them in onboarding', a
 		0,
 	)
 	await page.goto('/onboarding')
+	await page.getByRole('button', { name: /Install a starter package/u }).click()
 	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
 	await expect(
 		page.getByTestId(`onboarding-starter-${trustedListingId}`),

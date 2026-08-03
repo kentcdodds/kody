@@ -3,9 +3,11 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
+	buildCursorInstallUrl,
 	buildCursorMcpJson,
 	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
+	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	mcpClientTabs,
 } from './onboarding-mcp-clients.ts'
@@ -69,4 +71,34 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
 		'https://heykody.dev/apple-touch-icon.png',
 	)
+
+	const cursorInstallUrl = new URL(buildCursorInstallUrl(mcpServerUrl))
+	expect(cursorInstallUrl.protocol).toBe('cursor:')
+	expect(cursorInstallUrl.hostname).toBe('anysphere.cursor-deeplink')
+	expect(cursorInstallUrl.pathname).toBe('/mcp/install')
+	expect(cursorInstallUrl.searchParams.get('name')).toBe('kody')
+	const cursorConfig = cursorInstallUrl.searchParams.get('config')
+	expect(cursorConfig).toMatch(/^[\w-]+$/u)
+	expect(
+		JSON.parse(
+			atob(
+				cursorConfig!
+					.replaceAll('-', '+')
+					.replaceAll('_', '/')
+					.padEnd(Math.ceil(cursorConfig!.length / 4) * 4, '='),
+			),
+		),
+	).toEqual({ url: mcpServerUrl })
+
+	const vsCodeInstallUrl = buildVsCodeInstallUrl(mcpServerUrl)
+	expect(vsCodeInstallUrl.startsWith('vscode:mcp/install?')).toBe(true)
+	expect(
+		JSON.parse(
+			decodeURIComponent(vsCodeInstallUrl.slice('vscode:mcp/install?'.length)),
+		),
+	).toEqual({
+		name: 'kody',
+		type: 'http',
+		url: mcpServerUrl,
+	})
 })
