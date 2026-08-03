@@ -188,8 +188,9 @@ test('admin invite signup and email verification happy path', async ({
 
 	await page.goto('/onboarding')
 	await expect(page).toHaveURL(/\/onboarding$/)
+	await page.getByRole('button', { name: /Connect your agent/u }).click()
 	await expect(
-		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),
+		page.getByRole('heading', { name: 'Connect your agent' }),
 	).toBeVisible()
 	await expect(
 		page.getByRole('tablist', { name: 'MCP client setup instructions' }),
