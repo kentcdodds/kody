@@ -267,77 +267,82 @@ const runRecordMocks = vi.hoisted(() => {
 	}
 })
 
-vi.mock('#worker/run-records/service.ts', () => ({
-	beginRunRecord: (...args: Array<unknown>) =>
-		runRecordMocks.beginRunRecord(...args),
-	finishRunRecord: (...args: Array<unknown>) =>
-		runRecordMocks.finishRunRecord(...args),
-	upsertWorkflowProjection: (...args: Array<unknown>) =>
-		runRecordMocks.upsertWorkflowProjection(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					projection: WorkflowProjectionUpsertInput
-				},
-			]),
-		),
-	importWorkflowProjections: (...args: Array<unknown>) =>
-		runRecordMocks.importWorkflowProjections(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					projections: Array<WorkflowProjectionUpsertInput>
-				},
-			]),
-		),
-	getWorkflowProjection: (...args: Array<unknown>) =>
-		runRecordMocks.getWorkflowProjection(
-			...(args as [{ env: Env; userId: string; id: string }]),
-		),
-	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
-		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					idempotencyKey: string
-					bindingName?: string | null
-				},
-			]),
-		),
-	listWorkflowProjections: (...args: Array<unknown>) =>
-		runRecordMocks.listWorkflowProjections(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					limit?: number | null
-					status?: string | null
-					bindingName?: string | null
-				},
-			]),
-		),
-	countActiveWorkflowProjections: (...args: Array<unknown>) =>
-		runRecordMocks.countActiveWorkflowProjections(
-			...(args as [{ env: Env; userId: string }]),
-		),
-	reserveWorkflowProjectionSlot: (...args: Array<unknown>) =>
-		runRecordMocks.reserveWorkflowProjectionSlot(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					projection: WorkflowProjectionUpsertInput
-				},
-			]),
-		),
-	deleteWorkflowProjectionIfCreating: (...args: Array<unknown>) =>
-		runRecordMocks.deleteWorkflowProjectionIfCreating(
-			...(args as [{ env: Env; userId: string; id: string }]),
-		),
-}))
+vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	return {
+		...actual,
+		beginRunRecord: (...args: Array<unknown>) =>
+			runRecordMocks.beginRunRecord(...args),
+		finishRunRecord: (...args: Array<unknown>) =>
+			runRecordMocks.finishRunRecord(...args),
+		upsertWorkflowProjection: (...args: Array<unknown>) =>
+			runRecordMocks.upsertWorkflowProjection(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						projection: WorkflowProjectionUpsertInput
+					},
+				]),
+			),
+		importWorkflowProjections: (...args: Array<unknown>) =>
+			runRecordMocks.importWorkflowProjections(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						projections: Array<WorkflowProjectionUpsertInput>
+					},
+				]),
+			),
+		getWorkflowProjection: (...args: Array<unknown>) =>
+			runRecordMocks.getWorkflowProjection(
+				...(args as [{ env: Env; userId: string; id: string }]),
+			),
+		findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
+			runRecordMocks.findWorkflowProjectionByIdempotencyKey(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						idempotencyKey: string
+						bindingName?: string | null
+					},
+				]),
+			),
+		listWorkflowProjections: (...args: Array<unknown>) =>
+			runRecordMocks.listWorkflowProjections(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						limit?: number | null
+						status?: string | null
+						bindingName?: string | null
+					},
+				]),
+			),
+		countActiveWorkflowProjections: (...args: Array<unknown>) =>
+			runRecordMocks.countActiveWorkflowProjections(
+				...(args as [{ env: Env; userId: string }]),
+			),
+		reserveWorkflowProjectionSlot: (...args: Array<unknown>) =>
+			runRecordMocks.reserveWorkflowProjectionSlot(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						projection: WorkflowProjectionUpsertInput
+					},
+				]),
+			),
+		deleteWorkflowProjectionIfCreating: (...args: Array<unknown>) =>
+			runRecordMocks.deleteWorkflowProjectionIfCreating(
+				...(args as [{ env: Env; userId: string; id: string }]),
+			),
+	}
+})
 
 function createWaitUntilFlusher() {
 	const pending: Array<Promise<unknown>> = []

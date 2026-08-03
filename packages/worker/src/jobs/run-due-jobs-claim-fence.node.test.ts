@@ -34,13 +34,18 @@ vi.mock('./repo.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/run-records/service.ts', () => ({
-	claimRunRecord: (...args: Array<unknown>) =>
-		claimRunRecord(...(args as [never])),
-	abandonRunRecord: vi.fn(),
-	finishRunRecord: vi.fn(),
-	getRunRecord: vi.fn(),
-}))
+vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	return {
+		...actual,
+		claimRunRecord: (...args: Array<unknown>) =>
+			claimRunRecord(...(args as [never])),
+		abandonRunRecord: vi.fn(),
+		finishRunRecord: vi.fn(),
+		getRunRecord: vi.fn(),
+	}
+})
 
 vi.mock('./archived-artifacts-repo.ts', () => ({
 	listArchivedJobArtifactsDueBefore: (...args: Array<unknown>) =>

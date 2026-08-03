@@ -276,12 +276,17 @@ vi.mock('#mcp/secrets/package-access.ts', () => ({
 		packageAppRuntimeMock.resolvePackageMountedSecret(...args),
 }))
 
-vi.mock('#worker/run-records/service.ts', () => ({
-	beginRunRecord: (...args: Array<unknown>) =>
-		packageAppRuntimeMock.beginRunRecord(...args),
-	finishRunRecord: (...args: Array<unknown>) =>
-		packageAppRuntimeMock.finishRunRecord(...args),
-}))
+vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	return {
+		...actual,
+		beginRunRecord: (...args: Array<unknown>) =>
+			packageAppRuntimeMock.beginRunRecord(...args),
+		finishRunRecord: (...args: Array<unknown>) =>
+			packageAppRuntimeMock.finishRunRecord(...args),
+	}
+})
 
 function createPackageAppTestSource() {
 	return {

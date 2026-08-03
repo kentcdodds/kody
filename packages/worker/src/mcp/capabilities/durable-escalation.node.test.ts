@@ -130,40 +130,45 @@ vi.mock(
 	},
 )
 
-vi.mock('#worker/run-records/service.ts', () => ({
-	upsertWorkflowProjection: (...args: Array<unknown>) =>
-		runRecordMocks.upsertWorkflowProjection(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					projection: WorkflowProjectionUpsertInput
-				},
-			]),
-		),
-	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
-		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					idempotencyKey: string
-					bindingName?: string | null
-				},
-			]),
-		),
-	findWorkflowProjectionByBindingIdempotencyKey: (...args: Array<unknown>) =>
-		runRecordMocks.findWorkflowProjectionByBindingIdempotencyKey(
-			...(args as [
-				{
-					env: Env
-					userId: string
-					bindingName: string
-					idempotencyKey: string
-				},
-			]),
-		),
-}))
+vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	return {
+		...actual,
+		upsertWorkflowProjection: (...args: Array<unknown>) =>
+			runRecordMocks.upsertWorkflowProjection(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						projection: WorkflowProjectionUpsertInput
+					},
+				]),
+			),
+		findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
+			runRecordMocks.findWorkflowProjectionByIdempotencyKey(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						idempotencyKey: string
+						bindingName?: string | null
+					},
+				]),
+			),
+		findWorkflowProjectionByBindingIdempotencyKey: (...args: Array<unknown>) =>
+			runRecordMocks.findWorkflowProjectionByBindingIdempotencyKey(
+				...(args as [
+					{
+						env: Env
+						userId: string
+						bindingName: string
+						idempotencyKey: string
+					},
+				]),
+			),
+	}
+})
 
 const projectionBindingName = 'DYNAMIC_CALLABLE_WORKFLOWS'
 
