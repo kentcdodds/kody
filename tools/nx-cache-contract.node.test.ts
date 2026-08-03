@@ -1,10 +1,10 @@
-import { readFile } from 'node:fs/promises'
 import {
+	createProjectGraphAsync,
 	hashArray,
 	type FileData,
 	type NxJsonConfiguration,
-	type ProjectConfiguration,
 	type ProjectGraphProjectNode,
+	readJsonFile,
 } from 'nx/src/devkit-exports.js'
 import {
 	filterUsingGlobPatterns,
@@ -12,20 +12,15 @@ import {
 } from 'nx/src/hasher/task-hasher.js'
 import { expect, test } from 'vitest'
 
-async function readJson<T>(filename: string): Promise<T> {
-	return JSON.parse(await readFile(filename, 'utf8')) as T
-}
-
 async function getWorkerTargetPatterns(target: string): Promise<Array<string>> {
-	const [nxJson, worker] = await Promise.all([
-		readJson<NxJsonConfiguration>('nx.json'),
-		readJson<ProjectConfiguration>('packages/worker/project.json'),
+	// Nx 23 merges `nx.json` targetDefaults onto project targets during graph
+	// construction. `getTargetInputs` no longer re-reads targetDefaults itself,
+	// so the contract must use the graph-merged target config.
+	const [nxJson, projectGraph] = await Promise.all([
+		readJsonFile<NxJsonConfiguration>('nx.json'),
+		createProjectGraphAsync(),
 	])
-	const projectNode: ProjectGraphProjectNode = {
-		name: 'worker',
-		type: 'app',
-		data: worker,
-	}
+	const projectNode = projectGraph.nodes['worker'] as ProjectGraphProjectNode
 	return getTargetInputs(nxJson, projectNode, target).selfInputs
 }
 
