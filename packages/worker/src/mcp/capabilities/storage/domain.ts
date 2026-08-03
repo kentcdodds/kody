@@ -6,7 +6,7 @@ import { storageQueryCapability } from './storage-query.ts'
 export const storageDomain = defineDomain({
 	name: capabilityDomainNames.storage,
 	description:
-		'Inspect and query durable storage buckets by storage id. Use for debugging, migrations, and cross-storage analysis.',
+		'Inspect and query durable storage buckets by storage id.',
 	keywords: ['storage', 'sqlite', 'query', 'export', 'introspection'],
 	capabilities: [storageExportCapability, storageQueryCapability],
 })

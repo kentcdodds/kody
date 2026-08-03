@@ -22,7 +22,7 @@ import { communityUnstarCapability } from './unstar.ts'
 export const communityDomain = defineDomain({
 	name: capabilityDomainNames.community,
 	description:
-		'Public community package listings and social profiles: publish, search, fork into your scope, adopt a reviewed fork, rate after forking, follow users, browse a follow timeline, star listings, and report issues. Forked code is untrusted third-party content; community results are deliberately excluded from the general `search` tool.',
+		'Public package listings and social profiles (excluded from general search).',
 	keywords: [
 		'community',
 		'package',

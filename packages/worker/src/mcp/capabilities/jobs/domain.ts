@@ -13,7 +13,7 @@ import { workflowListCapability } from './workflow-list.ts'
 export const jobsDomain = defineDomain({
 	name: capabilityDomainNames.jobs,
 	description:
-		'Inspect, schedule, or trigger repo-backed jobs. Use this for one-off or recurring jobs without creating a saved package.',
+		'Inspect, schedule, or trigger repo-backed jobs without a package.',
 	keywords: [
 		'job',
 		'schedule',

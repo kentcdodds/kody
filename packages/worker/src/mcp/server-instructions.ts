@@ -9,62 +9,45 @@ const baseMcpServerInstructionsBeforePopular =
 const baseMcpServerInstructionsAfterPopular =
 	baseMcpServerInstructionFragmentsAfterPopular.join('\n\n')
 
-function formatDomainInstructions(
-	domains: ReadonlyArray<CapabilityDomainMetadata>,
-) {
-	return domains
-		.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
-		.join('\n')
-}
-
-const maxRemoteConnectorDescriptionChars = 240
-
-/** Soft budget for the popular-packages hint section (names + short blurbs). */
+/** Soft budget for the popular-packages hint section (header + name bullets). */
 export const popularPackagesInstructionCharBudget = 550
-const maxPopularPackageDescriptionChars = 48
 
-export type RemoteConnectorInstructionSummary = {
-	name: string
-	domain: string
-	description?: string | null
-}
+/** Hard cap matching the popularity query's top-N. */
+export const popularPackagesInstructionMaxCount = 8
+
+/** Keep domain blurbs short in always-loaded instructions. */
+export const domainInstructionDescriptionMaxChars = 90
 
 export type PopularPackageInstructionSummary = {
 	kodyId: string
 	description?: string | null
 }
 
-function truncateRemoteConnectorDescription(description: string) {
-	if (description.length <= maxRemoteConnectorDescriptionChars) {
-		return description
-	}
-	return `${description.slice(0, maxRemoteConnectorDescriptionChars - 3).trimEnd()}...`
-}
-
-function truncatePopularPackageDescription(description: string) {
+function truncateInstructionDescription(description: string, maxChars: number) {
 	const trimmed = description.trim().replace(/\s+/g, ' ')
 	if (!trimmed) return ''
-	if (trimmed.length <= maxPopularPackageDescriptionChars) {
-		return trimmed
-	}
-	return `${trimmed.slice(0, maxPopularPackageDescriptionChars - 3).trimEnd()}...`
+	if (trimmed.length <= maxChars) return trimmed
+	const slice = trimmed.slice(0, maxChars - 3).trimEnd()
+	const lastSpace = slice.lastIndexOf(' ')
+	const clipped =
+		lastSpace >= Math.floor(maxChars * 0.6) ? slice.slice(0, lastSpace) : slice
+	return `${clipped}...`
 }
 
-function formatRemoteConnectorInstructions(
-	connectors: ReadonlyArray<RemoteConnectorInstructionSummary> | undefined,
+function formatDomainInstructions(
+	domains: ReadonlyArray<CapabilityDomainMetadata>,
 ) {
-	if (!connectors?.length) return ''
-	const lines = connectors.map((connector) => {
-		const description = connector.description?.trim()
-		return description
-			? `- \`${connector.name}\` (\`${connector.domain}\`): ${truncateRemoteConnectorDescription(description)}`
-			: `- \`${connector.name}\` (\`${connector.domain}\`)`
-	})
-	return `
-
-Connected remote connectors
-${lines.join('\n')}
-`
+	return domains
+		.map((domain) => {
+			const description = truncateInstructionDescription(
+				domain.description,
+				domainInstructionDescriptionMaxChars,
+			)
+			return description
+				? `- \`${domain.name}\`: ${description}`
+				: `- \`${domain.name}\``
+		})
+		.join('\n')
 }
 
 /**
@@ -77,46 +60,44 @@ export function formatPopularPackagesInstructions(
 ): string {
 	if (!packages?.length) return ''
 	const charBudget = options.charBudget ?? popularPackagesInstructionCharBudget
-	const prefix = 'Often used from agents: '
-	const suffix = ' — discover others with `search`'
-	const parts: Array<string> = []
-	let used = prefix.length + suffix.length
+	const header =
+		'Often used packages (hints, not inventory — discover others with `search`):'
+	const lines: Array<string> = []
+	let used = header.length + 1 // trailing newline before first bullet
 
 	for (const pkg of packages) {
+		if (lines.length >= popularPackagesInstructionMaxCount) break
 		const kodyId = pkg.kodyId.trim()
 		if (!kodyId) continue
-		const description = truncatePopularPackageDescription(pkg.description ?? '')
-		const part = description
-			? `\`${kodyId}\` — ${description}`
-			: `\`${kodyId}\``
-		const separatorCost = parts.length > 0 ? 2 : 0 // "; "
-		if (used + separatorCost + part.length > charBudget) {
-			if (parts.length === 0) {
+		const line = `- \`${kodyId}\``
+		const separatorCost = lines.length > 0 ? 1 : 0 // "\n"
+		if (used + separatorCost + line.length > charBudget) {
+			if (lines.length === 0) {
 				// Always include at least the first kody id, truncated if needed.
 				const available = Math.max(8, charBudget - used)
-				parts.push(
-					part.length <= available
-						? part
-						: `${part.slice(0, available - 3)}...`,
+				lines.push(
+					line.length <= available
+						? line
+						: `${line.slice(0, available - 3)}...`,
 				)
 			}
 			break
 		}
-		used += separatorCost + part.length
-		parts.push(part)
+		used += separatorCost + line.length
+		lines.push(line)
 	}
 
-	if (parts.length === 0) return ''
+	if (lines.length === 0) return ''
 	return `
 
-${prefix}${parts.join('; ')}${suffix}
+${header}
+${lines.join('\n')}
 `
 }
 
 export function buildBaseMcpServerInstructions(
 	input: {
 		domains?: ReadonlyArray<CapabilityDomainMetadata>
-		remoteConnectors?: ReadonlyArray<RemoteConnectorInstructionSummary>
 		popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
 	} = {},
 ): string {
@@ -126,7 +107,6 @@ ${baseMcpServerInstructionsBeforePopular}
 ${formatPopularPackagesInstructions(input.popularPackages)}
 ${baseMcpServerInstructionsAfterPopular}
 ${domainInstructions}
-${formatRemoteConnectorInstructions(input.remoteConnectors)}
 	`.trim()
 }
 
@@ -138,7 +118,6 @@ export function buildMcpServerInstructions(
 		| {
 				userOverlay?: string | null | undefined
 				domains?: ReadonlyArray<CapabilityDomainMetadata>
-				remoteConnectors?: ReadonlyArray<RemoteConnectorInstructionSummary>
 				popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
 		  },
 ): string {
@@ -146,7 +125,6 @@ export function buildMcpServerInstructions(
 		typeof input === 'object' && input !== null ? input : { userOverlay: input }
 	const base = buildBaseMcpServerInstructions({
 		domains: normalizedInput.domains,
-		remoteConnectors: normalizedInput.remoteConnectors,
 		popularPackages: normalizedInput.popularPackages,
 	})
 	const userOverlay = normalizedInput.userOverlay

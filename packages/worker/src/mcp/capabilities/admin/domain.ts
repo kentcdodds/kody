@@ -35,7 +35,7 @@ import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.t
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, operator-owned system email, attributed platform feedback users explicitly submit for admin review, UserMeter↔D1 parity verification and storage-byte reconciliation maintenance, Mailbox parity/retention maintenance aggregates (no inbox content), and metadata about activity on public community listings; never exposes private package source or unrelated user content such as secrets, memories, jobs, or user inbox email.',
+		'Admin-only operator tools for accounts, flags, maintenance, and community metadata.',
 	keywords: [
 		'admin',
 		'rbac',

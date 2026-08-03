@@ -314,12 +314,12 @@ Users can read or replace their own MCP server instruction overlay with
 **`meta_set_mcp_server_instructions`**.
 
 This overlay is appended to Kody's built-in server instructions for that user.
-Use it for preferences and workflow notes only — not for maintaining a package
-inventory. When agents have used saved packages via MCP `execute`, Kody may
-include a short “often used from agents” hint of those packages automatically;
-discover others with **`search`**. Pass an empty string to clear the overlay.
-Changes apply to new MCP sessions, so reconnect the MCP client if the host
-caches server instructions.
+Prefer **memories** for durable facts and preferences; use the overlay only for
+rare always-on session policy — not for maintaining a package inventory. When
+agents have used saved packages via MCP `execute`, Kody may include a short
+“often used packages” hint automatically; discover others with **`search`**.
+Pass an empty string to clear the overlay. Changes apply to new MCP sessions, so
+reconnect the MCP client if the host caches server instructions.
 
 ## Network and OAuth helpers
 

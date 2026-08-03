@@ -11,7 +11,6 @@ import { registerTools } from './register-tools.ts'
 import { createKodyMcpServer } from './sentry-mcp-server.ts'
 import { getMcpUserServerInstructions } from './user-server-instructions-repo.ts'
 import { getCapabilityRegistryForContext } from './capabilities/registry.ts'
-import { loadRemoteConnectorInstructionSummaries } from './remote-connector-instruction-summaries.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
@@ -44,28 +43,22 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				doId: this.ctx.id.toString(),
 			})
 		}
-		const [overlay, remoteConnectors, registry, popularPackages] =
-			await Promise.all([
-				userId !== null
-					? getMcpUserServerInstructions(this.env.APP_DB, userId)
-					: Promise.resolve(null),
-				loadRemoteConnectorInstructionSummaries({
-					env: this.env,
-					caller,
-				}),
-				getCapabilityRegistryForContext({
-					env: this.env,
-					callerContext: caller,
-				}),
-				userId !== null
-					? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
-					: Promise.resolve([]),
-			])
+		const [overlay, registry, popularPackages] = await Promise.all([
+			userId !== null
+				? getMcpUserServerInstructions(this.env.APP_DB, userId)
+				: Promise.resolve(null),
+			getCapabilityRegistryForContext({
+				env: this.env,
+				callerContext: caller,
+			}),
+			userId !== null
+				? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
+				: Promise.resolve([]),
+		])
 		this.server = createKodyMcpServer({
 			instructions: buildMcpServerInstructions({
 				userOverlay: overlay,
 				domains: registry.capabilityDomains,
-				remoteConnectors,
 				popularPackages,
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
