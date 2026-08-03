@@ -78,6 +78,42 @@ function expectAuthorityMigrationRejected(update: string) {
 	).toBeUndefined()
 }
 
+function numericTimestampGateRejects(input: {
+	matchingSince: string | null
+	checkedAt: string | null
+	now: string
+}) {
+	using sqlite = new DatabaseSync(':memory:')
+	const row = sqlite
+		.prepare(
+			`WITH
+			input(matching_since, checked_at, now_at) AS (VALUES (?, ?, ?)),
+			clock(now_jd, matching_since_min_jd, checked_at_min_jd) AS (
+				SELECT
+					julianday(now_at),
+					julianday(now_at, '-2 hours'),
+					julianday(now_at, '-6 hours')
+				FROM input
+			)
+			SELECT CASE WHEN
+				matching_since IS NULL
+				OR julianday(matching_since) IS NULL
+				OR julianday(matching_since) > matching_since_min_jd
+				OR julianday(matching_since) > now_jd
+				OR checked_at IS NULL
+				OR julianday(checked_at) IS NULL
+				OR julianday(checked_at) < checked_at_min_jd
+				OR julianday(checked_at) > now_jd
+			THEN 1 ELSE 0 END AS rejected
+			FROM input
+			CROSS JOIN clock`,
+		)
+		.get(input.matchingSince, input.checkedAt, input.now) as {
+		rejected: number
+	}
+	return row.rejected === 1
+}
+
 test('0133 preserves exact soak, freshness, and replay eligibility', () => {
 	expectAuthorityMigrationRejected(`
 		UPDATE users
@@ -110,6 +146,85 @@ test('0133 preserves exact soak, freshness, and replay eligibility', () => {
 			mailbox_parity_content_replay_cursor_id = 'dangling-content-cursor'
 		WHERE stable_user_id = 'user-authority';
 	`)
+})
+
+test('0133 timestamp gate uses numeric instants with millisecond boundaries', () => {
+	const now = '2026-08-03T12:00:00.500Z'
+	expect(
+		numericTimestampGateRejects({
+			matchingSince: '2026-08-03T10:00:00.500Z',
+			checkedAt: '2026-08-03T06:00:00.500Z',
+			now,
+		}),
+	).toBe(false)
+	expect(
+		numericTimestampGateRejects({
+			matchingSince: '2026-08-03T10:00:00.501Z',
+			checkedAt: '2026-08-03T06:00:00.500Z',
+			now,
+		}),
+	).toBe(true)
+	expect(
+		numericTimestampGateRejects({
+			matchingSince: '2026-08-03T10:00:00.499Z',
+			checkedAt: '2026-08-03T06:00:00.500Z',
+			now,
+		}),
+	).toBe(false)
+	expect(
+		numericTimestampGateRejects({
+			matchingSince: '2026-08-03T10:00:00.500Z',
+			checkedAt: '2026-08-03T06:00:00.499Z',
+			now,
+		}),
+	).toBe(true)
+	expect(
+		numericTimestampGateRejects({
+			matchingSince: '2026-08-03T10:00:00.500Z',
+			checkedAt: '2026-08-03T06:00:00.501Z',
+			now,
+		}),
+	).toBe(false)
+})
+
+test('0133 timestamp gate treats equivalent ISO offsets as equal instants', () => {
+	expect(
+		numericTimestampGateRejects({
+			matchingSince: '2026-08-03T12:00:00.500+02:00',
+			checkedAt: '2026-08-03T08:00:00.500+02:00',
+			now: '2026-08-03T12:00:00.500Z',
+		}),
+	).toBe(false)
+
+	using sqlite = createAuthorityMigrationDatabase()
+	sqlite.exec(`
+		UPDATE users
+		SET mailbox_parity_matching_since =
+				strftime('%Y-%m-%dT%H:%M:%f', 'now') || '+02:00',
+			mailbox_parity_checked_at =
+				strftime('%Y-%m-%dT%H:%M:%f', 'now', '+2 hours') || '+02:00'
+		WHERE stable_user_id = 'user-authority';
+	`)
+	expect(() => applyMigrationLikeD1(sqlite, authorityMigration)).not.toThrow()
+})
+
+test('0133 rejects null, invalid, and future parity timestamps', () => {
+	for (const update of [
+		`mailbox_parity_matching_since = NULL`,
+		`mailbox_parity_checked_at = NULL`,
+		`mailbox_parity_matching_since = 'not-a-timestamp'`,
+		`mailbox_parity_checked_at = 'not-a-timestamp'`,
+		`mailbox_parity_matching_since =
+			strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 hour')`,
+		`mailbox_parity_checked_at =
+			strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 hour')`,
+	]) {
+		expectAuthorityMigrationRejected(`
+			UPDATE users
+			SET ${update}
+			WHERE stable_user_id = 'user-authority';
+		`)
+	}
 })
 
 test('0133 blocks a deleting frozen owner until privacy cleanup finishes', () => {

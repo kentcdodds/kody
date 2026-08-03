@@ -20,22 +20,26 @@ WITH frozen_owners(user_id) AS (
 	SELECT user_id FROM email_messages WHERE user_id != 'system:email'
 	UNION
 	SELECT user_id FROM email_delivery_events WHERE user_id != 'system:email'
+),
+cutover_clock(now_jd, matching_since_min_jd, checked_at_min_jd) AS (
+	SELECT
+		julianday('now'),
+		julianday('now', '-2 hours'),
+		julianday('now', '-6 hours')
 )
+-- `julianday` compares instants rather than timestamp spellings. Its NULL
+-- result for malformed input is rejected explicitly below, as is SQL NULL.
 SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
 FROM frozen_owners AS owner
 LEFT JOIN users AS user ON user.stable_user_id = owner.user_id
+CROSS JOIN cutover_clock AS clock
 WHERE user.id IS NULL
 	OR user.deleting_at IS NOT NULL
 	OR user.mailbox_parity_matching_since IS NULL
-	OR user.mailbox_parity_matching_since > strftime(
-		'%Y-%m-%dT%H:%M:%fZ',
-		'now',
-		'-2 hours'
-	)
-	OR user.mailbox_parity_matching_since > strftime(
-		'%Y-%m-%dT%H:%M:%fZ',
-		'now'
-	)
+	OR julianday(user.mailbox_parity_matching_since) IS NULL
+	OR julianday(user.mailbox_parity_matching_since) >
+		clock.matching_since_min_jd
+	OR julianday(user.mailbox_parity_matching_since) > clock.now_jd
 	OR user.mailbox_parity_mismatch_count != 0
 	OR user.mailbox_parity_last_error IS NOT NULL
 	OR user.mailbox_parity_content_watermark_at IS NULL
@@ -45,15 +49,9 @@ WHERE user.id IS NULL
 	OR user.mailbox_parity_message_backfill_completed_at IS NULL
 	OR user.mailbox_parity_event_backfill_completed_at IS NULL
 	OR user.mailbox_parity_checked_at IS NULL
-	OR user.mailbox_parity_checked_at < strftime(
-		'%Y-%m-%dT%H:%M:%fZ',
-		'now',
-		'-6 hours'
-	)
-	OR user.mailbox_parity_checked_at > strftime(
-		'%Y-%m-%dT%H:%M:%fZ',
-		'now'
-	);
+	OR julianday(user.mailbox_parity_checked_at) IS NULL
+	OR julianday(user.mailbox_parity_checked_at) < clock.checked_at_min_jd
+	OR julianday(user.mailbox_parity_checked_at) > clock.now_jd;
 
 DROP TABLE migration_0133_email_user_graph_authority_guard;
 
