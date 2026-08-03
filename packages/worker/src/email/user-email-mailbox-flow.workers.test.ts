@@ -15,7 +15,6 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
-import { sendOutboundEmail } from './outbound.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -118,14 +117,43 @@ async function seedSubscribedPackage(input: {
 			entryPoint: 'src/on-email.ts',
 			mainModule: 'dist/subscription.js',
 			modules: {
+				'.__kody_virtual__/runtime.js': `
+import { AsyncLocalStorage } from 'node:async_hooks';
+const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+const __kodyGlobal = globalThis;
+const __kodyRuntimeStorage =
+  __kodyGlobal[__kodyRuntimeStorageSymbol] ??
+  (__kodyGlobal[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
+const runtime = __kodyRuntimeStorage.getStore() ?? {};
+export const kody = runtime.kody;
+export const email = runtime.email ?? null;
+`.trim(),
 				'dist/subscription.js': `
+import { email } from '../.__kody_virtual__/runtime.js'
+
 export default async function main(input = {}) {
+	const message = await email.getMessage(input.message.id)
+	const firstAttachment = Array.isArray(input.attachments)
+		? input.attachments[0]
+		: null
+	const attachment = firstAttachment?.id
+		? await email.getAttachment(firstAttachment.id)
+		: null
+	const attachmentText = attachment?.content_base64
+		? atob(attachment.content_base64)
+		: null
+	const reply = await email.reply({
+		message_id: input.message.id,
+		text: 'Thanks for the note.',
+	})
 	return {
 		event: input.event,
-		messageId: input.message?.id ?? null,
-		subject: input.message?.subject ?? null,
-		attachmentCount: input.attachments?.length ?? 0,
-		attachmentName: input.attachments?.[0]?.filename ?? null,
+		messageId: message.id,
+		subject: message.subject,
+		textBody: message.text_body,
+		attachmentText,
+		replyMessageId: reply.id,
+		replyDirection: reply.direction,
 	}
 }
 `,
@@ -290,31 +318,24 @@ test('USER inbound attachment, package event, reply, and provider index stay Mai
 				event: inboundTopic,
 				messageId: inboundMessage.id,
 				subject: 'Integrated Mailbox flow',
-				attachmentCount: 1,
-				attachmentName: 'note.txt',
+				textBody: 'Please reply.\n',
+				attachmentText: 'Attachment bytes.\n',
+				replyMessageId: expect.any(String),
+				replyDirection: 'outbound',
 			},
 		},
 	})
 
-	const reply = await sendOutboundEmail({
-		env: flowEnv,
-		userId,
-		accountEmail,
-		recipientPolicy: 'reply',
-		replyToMessageId: inboundMessage.id,
-		subject: 'Re: Integrated Mailbox flow',
-		text: 'Thanks for the note.',
-		inReplyToHeader: inboundMessage.messageIdHeader,
-		references: inboundMessage.messageIdHeader
-			? [inboundMessage.messageIdHeader]
-			: [],
+	const outboundPage = await mailbox.listMessages({
+		direction: 'outbound',
+		limit: 10,
 	})
-	expect(reply.status).toBe('sent')
+	expect(outboundPage.messages).toHaveLength(1)
+	const reply = outboundPage.messages[0]
+	if (!reply) throw new Error('Expected package-triggered Mailbox reply.')
 	expect(sent).toHaveLength(1)
 	expect(sent[0]).toMatchObject({ to: 'sender@example.net' })
-	await expect(
-		mailbox.getMessage({ messageId: reply.message.id }),
-	).resolves.toMatchObject({
+	expect(reply).toMatchObject({
 		direction: 'outbound',
 		processingStatus: 'sent',
 		providerMessageId,
@@ -327,7 +348,7 @@ test('USER inbound attachment, package event, reply, and provider index stay Mai
 		}),
 	).resolves.toMatchObject({
 		userId,
-		messageId: reply.message.id,
+		messageId: reply.id,
 	})
 	expect(
 		captured.statements.filter((sql) => sharedUserGraphTable.test(sql)),

@@ -157,6 +157,69 @@ test('live due work precedes and cannot starve behind a bounded cutover audit ba
 	expect(drainedUserIds).toHaveLength(101)
 })
 
+test('sweep time budget processes live work before an older cutover audit', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-08-03T12:00:00.000Z')
+	const auditEmail = `budget-audit-${crypto.randomUUID()}@example.test`
+	const liveEmail = `budget-live-${crypto.randomUUID()}@example.test`
+	const auditUserId = await createStableUserIdFromEmail(auditEmail)
+	const liveUserId = await createStableUserIdFromEmail(liveEmail)
+	await env.APP_DB.batch([
+		env.APP_DB.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id
+			) VALUES (?, ?, 'hash', ?)`,
+		).bind(`audit-${crypto.randomUUID()}`, auditEmail, auditUserId),
+		env.APP_DB.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id
+			) VALUES (?, ?, 'hash', ?)`,
+		).bind(`live-${crypto.randomUUID()}`, liveEmail, liveUserId),
+	])
+	await replaceInboundDueOwnerHint({
+		db: env.APP_DB,
+		userId: auditUserId,
+		dueAt: '2026-08-03T10:00:00.000Z',
+		reason: 'cutover-audit',
+		now,
+	})
+	await replaceInboundDueOwnerHint({
+		db: env.APP_DB,
+		userId: liveUserId,
+		dueAt: '2026-08-03T11:00:00.000Z',
+		reason: 'mailbox-due-work',
+		now,
+	})
+	await Promise.all([
+		rpcFor(auditUserId).getInboundDueWorkHint({ ownerId: auditUserId }),
+		rpcFor(liveUserId).getInboundDueWorkHint({ ownerId: liveUserId }),
+	])
+	const clockValues = [0, 0, 10_001, 10_001]
+
+	await expect(
+		sweepStaleInboundDeliveries({
+			env: { ...env, APP_BASE_URL: 'https://kody.example.com' },
+			now,
+			clock: () => clockValues.shift() ?? 10_001,
+		}),
+	).resolves.toMatchObject({
+		usersProcessed: 1,
+		errors: 0,
+		budgetExhausted: true,
+	})
+	const rows = await env.APP_DB.prepare(
+		`SELECT user_id, reason
+		FROM email_inbound_due_owners
+		WHERE user_id IN (?, ?)
+		ORDER BY user_id`,
+	)
+		.bind(auditUserId, liveUserId)
+		.all<{ user_id: string; reason: string }>()
+	expect(rows.results).toEqual([
+		{ user_id: auditUserId, reason: 'cutover-audit' },
+	])
+})
+
 test('cutover audit sweep clears a healthy Mailbox and retains its next due work', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-08-03T12:00:00.000Z')

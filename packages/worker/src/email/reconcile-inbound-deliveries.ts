@@ -34,12 +34,14 @@ export async function sweepStaleInboundDeliveries(input: {
 		| 'USER_METER'
 	>
 	now?: Date
+	clock?: () => number
 }) {
 	const now = input.now ?? new Date()
 	const cutoff = new Date(
 		now.getTime() - staleInboundDeliveryAgeMs,
 	).toISOString()
-	const startedAt = Date.now()
+	const clock = input.clock ?? Date.now
+	const startedAt = clock()
 	const deadlineMs = startedAt + reconciliationTimeBudgetMs
 	const effectLeaseExpiredBefore = new Date(
 		now.getTime() - inboundEffectLeaseMs,
@@ -146,15 +148,17 @@ export async function sweepStaleInboundDeliveries(input: {
 		...userRows.map((row) => ({
 			user_id: row.userId,
 			due_at: row.dueAt,
+			priority: row.reason === 'cutover-audit' ? 1 : 0,
 		})),
-		...(systemDue ? [systemDue] : []),
+		...(systemDue ? [{ ...systemDue, priority: 0 }] : []),
 	].sort(
 		(left, right) =>
+			left.priority - right.priority ||
 			left.due_at.localeCompare(right.due_at) ||
 			left.user_id.localeCompare(right.user_id),
 	)
 	for (const { user_id: userId } of dueOwners) {
-		if (Date.now() >= deadlineMs) break
+		if (clock() >= deadlineMs) break
 		try {
 			const reconcileUser = async () => {
 				const systemOwner = userId === systemEmailOwnerId
@@ -241,6 +245,6 @@ export async function sweepStaleInboundDeliveries(input: {
 		pointersPruned,
 		effectsProcessed,
 		errors,
-		budgetExhausted: Date.now() >= deadlineMs,
+		budgetExhausted: clock() >= deadlineMs,
 	}
 }

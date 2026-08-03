@@ -168,6 +168,14 @@ test('static authority rejects dynamic D1 SQL composition, including batched sta
 					env.APP_DB.prepare(\`DELETE FROM \${table} WHERE user_id = ?\`),
 				])
 		`,
+		'packages/worker/src/email/exec-template.ts': `
+			export const write = (db: D1Database, table: string) =>
+				db.exec(\`DELETE FROM \${table}\`)
+		`,
+		'packages/worker/src/email/exec-concatenated.ts': `
+			export const write = (db: D1Database, suffix: string) =>
+				db.exec('DELETE FROM email_' + suffix)
+		`,
 	})
 	const violations = await scanUserEmailD1Authority(fixture.root)
 	for (const file of [
@@ -176,6 +184,8 @@ test('static authority rejects dynamic D1 SQL composition, including batched sta
 		'nonliteral-variable.ts',
 		'helper-composed.ts',
 		'batched.ts',
+		'exec-template.ts',
+		'exec-concatenated.ts',
 	]) {
 		expect(violations).toEqual(
 			expect.arrayContaining([
@@ -191,8 +201,8 @@ test('static authority rejects dynamic D1 SQL composition, including batched sta
 test('static authority permits Mailbox SQLite and scoped cleanup SQL', async () => {
 	await using fixture = await authorityFixture({
 		'packages/worker/src/email/mailbox-store.ts': `
-			export function read(sql: SqlStorage) {
-				return sql.exec('SELECT * FROM email_messages')
+			export function read(sql: SqlStorage, statement: string) {
+				return sql.exec(statement)
 			}
 		`,
 		'packages/worker/src/email/legacy-user-email-graph-cleanup.ts': `

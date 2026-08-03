@@ -280,7 +280,6 @@ export async function scanUserEmailD1Authority(
 					'packages/worker/src/email/',
 				)
 				if (
-					node.expression.name.text === 'prepare' &&
 					sqlNode != null &&
 					!isStaticSqlLiteral(sqlNode) &&
 					liveEmailD1Boundary &&
@@ -289,7 +288,7 @@ export async function scanUserEmailD1Authority(
 				) {
 					report(
 						sqlNode,
-						'live D1 prepare SQL must be an inline string literal; dynamic SQL can conceal shared USER graph access',
+						'live D1 prepare/exec SQL must be an inline string literal; dynamic SQL can conceal shared USER graph access',
 					)
 				}
 				if (
