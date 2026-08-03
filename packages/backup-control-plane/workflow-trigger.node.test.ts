@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import { backupPayload } from './backup-policy.ts'
-import { type BackupPayload } from './backup-types.ts'
+import { type ScheduledBackupPayload } from './backup-types.ts'
 import {
 	enqueueBackup,
 	enqueueBackupRetry,
@@ -17,9 +17,9 @@ import {
 } from './backup-control-plane-test-support.ts'
 
 test('workflow creation omits explicit retention and active overlap stays duplicate', async () => {
-	let createdOptions: { id: string; params: BackupPayload } | undefined
+	let createdOptions: { id: string; params: ScheduledBackupPayload } | undefined
 	const workflow = {
-		async create(options: { id: string; params: BackupPayload }) {
+		async create(options: { id: string; params: ScheduledBackupPayload }) {
 			if (createdOptions) throw new Error('instance already exists')
 			createdOptions = options
 		},
@@ -139,9 +139,9 @@ test('hourly freshness retries are bounded to 02:45 through 05:45 UTC', () => {
 
 test('missed 02:15 creation is caught up with the canonical payload', async () => {
 	let creates = 0
-	let created: { id: string; params: BackupPayload } | undefined
+	let created: { id: string; params: ScheduledBackupPayload } | undefined
 	const workflow = {
-		async create(options: { id: string; params: BackupPayload }) {
+		async create(options: { id: string; params: ScheduledBackupPayload }) {
 			creates += 1
 			created = options
 		},

@@ -547,6 +547,10 @@
 		{
 			"filename": "0133-email-user-graph-authority.sql",
 			"sha256": "ddbaa879b80fd84ca99b2ecca32787c68e657f36752fe26c603fd8ec73793c95"
+		},
+		{
+			"filename": "0134-email-user-graph-drop-approval.sql",
+			"sha256": "0970fc808c9723f87b472f32ebedb1d5ced4651993c1cf6d40a617afc2be5054"
 		}
 	]
 }

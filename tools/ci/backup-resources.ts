@@ -96,6 +96,7 @@ export type BackupRuntimeContract = {
 		allowedPrefixes: [
 			'daily/',
 			'weekly/',
+			'adhoc/',
 			'staging/',
 			'blobs/',
 			'escrow/',
@@ -298,6 +299,15 @@ export function generateBackupDesiredState(input: {
 				},
 			},
 			{
+				id: 'adhoc-backups-immutable-35-days',
+				enabled: true,
+				prefix: 'adhoc/',
+				condition: {
+					type: 'Age',
+					maxAgeSeconds: 35 * secondsPerDay,
+				},
+			},
+			{
 				id: 'blob-store-immutable-400-days',
 				enabled: true,
 				prefix: 'blobs/',
@@ -335,6 +345,14 @@ export function generateBackupDesiredState(input: {
 					condition: { type: 'Age', maxAge: 400 * secondsPerDay },
 				},
 			},
+			{
+				id: 'expire-adhoc-backups-after-35-days',
+				enabled: true,
+				conditions: { prefix: 'adhoc/' },
+				deleteObjectsTransition: {
+					condition: { type: 'Age', maxAge: 35 * secondsPerDay },
+				},
+			},
 		],
 	}
 	const runtimeContract: BackupRuntimeContract = {
@@ -369,6 +387,7 @@ export function generateBackupDesiredState(input: {
 			allowedPrefixes: [
 				'daily/',
 				'weekly/',
+				'adhoc/',
 				'staging/',
 				'blobs/',
 				'escrow/',

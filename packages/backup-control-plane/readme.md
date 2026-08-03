@@ -147,3 +147,77 @@ the canonical manifest. Run a separate periodic restore drill that downloads the
 object, verifies its SHA-256 against the manifest, and restores it into a
 non-production D1 database. The metadata freshness check is not a replacement
 for that deep checksum and restore drill.
+
+## Mailbox legacy graph pre-drop approval
+
+The dedicated `kody-mailbox-legacy-graph-pre-drop-backup` Workflow is the only
+supported writer of `email_user_graph_drop_approval`. It accepts no source
+identity, counts, object key, digest, or approval fields. Before triggering it,
+deploy migration `0134-email-user-graph-drop-approval.sql`, deploy this control
+plane, and apply `node tools/ci/backup-resources-cli.ts apply` so the `adhoc/`
+R2 prefix has the managed 35-day immutable lock and lifecycle.
+
+Create a UUID request id, a fresh 16-byte lowercase hexadecimal nonce, and one
+canonical UTC timestamp. The Workflow instance id is exactly
+`mailbox-pre-drop-<requestId>`; params with extra keys, a mismatched id, or a
+`requestedAt` more than 15 minutes before Workflow creation are rejected. The
+timestamp must not be in the future. Keying the instance only by request id
+means a retry cannot substitute a different nonce or produce different bytes.
+Using a Cloudflare API token accepted for Workers Scripts Write, trigger:
+
+```http
+POST https://api.cloudflare.com/client/v4/accounts/<DR_ACCOUNT_ID>/workflows/kody-mailbox-legacy-graph-pre-drop-backup/instances
+Authorization: Bearer <WORKFLOWS_API_TOKEN>
+Content-Type: application/json
+
+{
+  "instance_id": "mailbox-pre-drop-11111111-1111-4111-8111-111111111111",
+  "params": "{\"requestId\":\"11111111-1111-4111-8111-111111111111\",\"nonce\":\"0123456789abcdef0123456789abcdef\",\"requestedAt\":\"2026-08-03T16:45:00.000Z\"}"
+}
+```
+
+The REST API names the custom id field `instance_id` and requires `params` to be
+a JSON-encoded string. The Workflow receives the decoded three-key object. Do
+not use the binding API's `{ id, params }` shape in this REST request.
+
+The authenticated control-plane UI action
+`POST /actions/mailbox-pre-drop-backup` generates those three values server-side
+as an alternative. It does not accept backup evidence from the request.
+
+Poll the same instance through the Workflow API:
+
+```http
+GET https://api.cloudflare.com/client/v4/accounts/<DR_ACCOUNT_ID>/workflows/kody-mailbox-legacy-graph-pre-drop-backup/instances/<INSTANCE_ID>
+Authorization: Bearer <WORKFLOWS_API_TOKEN>
+```
+
+Wait for `result.status: "complete"`. `result.output` is the Workflow receipt
+(the REST response may expose the structured output as a JSON-encoded string).
+It contains `requestId`, `nonce`, immutable `manifestKey` and `sqlObjectKey`,
+SQL bytes/SHA-256/R2 ETag, manifest key id and signature SHA-256,
+source/export/build/baseline provenance, the frozen-authority timestamp and
+original marker owner count, the current exact
+owner/thread/message/attachment/event counts, and
+`verifiedAt`/`expiresAt`/`issuedBy`. It contains no signed URL or secret.
+`expiresAt` is exactly two hours after `verifiedAt`.
+
+The Workflow verifies the configured production D1 identity and health gates,
+captures exact USER graph counts, creates a request-unique immutable SQL object
+and standard signed v2 manifest under
+`adhoc/mailbox-drop/d1/<database>/<timestamp>-<nonce>-<requestId>/`, then
+requires the marker and counts to remain unchanged. It re-reads canonical
+manifest bytes and all SQL bytes from R2, verifies size, ETag, SHA-256, and the
+Ed25519 signature with the configured public key, and only then atomically
+UPSERTs the singleton approval while rechecking the database gates and exact
+counts in the same D1 statement.
+
+Do not use direct SQL to manufacture or update approval evidence. A duplicate
+create or restart with the same request-id-derived instance id is the idempotent
+retry path; reuse the exact params. The request has one deterministic
+`backup-request.sql` key, so a retry that observes different export bytes fails
+against the immutable object instead of approving them. Different same-day
+request ids intentionally produce distinct prefixes and bytes. The remaining
+operational risks are the production-account D1 Edit token's broad Cloudflare
+scope, Workflow/R2/D1 availability during the two-hour window, and the need to
+apply the `adhoc/` bucket lock before relying on the receipt. This change does
+not authorize or perform a destructive drop.

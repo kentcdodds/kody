@@ -5,6 +5,7 @@ export type RetentionTier = 'daily' | 'weekly'
 export interface BackupEnvironment {
 	BACKUP_BUCKET: R2Bucket
 	BACKUP_WORKFLOW: Workflow
+	MAILBOX_PRE_DROP_BACKUP_WORKFLOW: Workflow
 	RESTORE_WORKFLOW: Workflow
 	CLOUDFLARE_API_TOKEN: string
 	SOURCE_ACCOUNT_ID: string
@@ -32,12 +33,72 @@ export interface BackupEnvironment {
 	DR_RESTORE_SECRET?: string
 }
 
-export interface BackupPayload {
+export interface ScheduledBackupPayload {
+	kind: 'scheduled'
 	scheduledAt: string
 	day: string
 	objectPrefix: string
 	manifestKey: string
 	retentionTier: RetentionTier
+}
+
+export interface MailboxPreDropBackupRequest {
+	requestId: string
+	nonce: string
+	requestedAt: string
+}
+
+export interface MailboxPreDropRuntimePayload extends MailboxPreDropBackupRequest {
+	kind: 'mailbox-legacy-graph-pre-drop'
+	scheduledAt: string
+	day: string
+	objectPrefix: string
+	manifestKey: string
+	retentionTier: 'daily'
+}
+
+export type BackupPayload =
+	| ScheduledBackupPayload
+	| MailboxPreDropRuntimePayload
+
+export type MailboxLegacyGraphCounts = {
+	ownerCount: number
+	threadCount: number
+	messageCount: number
+	attachmentCount: number
+	eventCount: number
+}
+
+export type MailboxPreDropSnapshot = MailboxLegacyGraphCounts & {
+	authorityFrozenAt: string
+	authorityOwnerCount: number
+}
+
+export type MailboxPreDropApprovalReceipt = MailboxPreDropSnapshot & {
+	requestId: string
+	nonce: string
+	manifestKey: string
+	sqlObjectKey: string
+	sqlSha256: string
+	sqlBytes: number
+	r2Etag: string
+	manifestKeyId: string
+	manifestSignatureSha256: string
+	verifiedAt: string
+	expiresAt: string
+	issuedBy: 'backup-control-plane'
+	sourceAccountId: string
+	sourceDatabaseId: string
+	sourceDatabaseName: string
+	exportBookmark: string
+	exportScheduledAt: string
+	exportStartedAt: string
+	exportCompletedAt: string
+	buildCommit: string
+	retentionTier: RetentionTier
+	restoreBaselineId: string
+	restoreBaselineSha256: string
+	signatureAlgorithm: 'Ed25519'
 }
 
 export interface ExportReady {
@@ -101,6 +162,9 @@ export interface LogRecord {
 		| 'full-backup-already-sealed'
 		| 'full-backup-seal-skipped'
 		| 'full-backup-seal-failure'
+		| 'mailbox-pre-drop-backup-approved'
+		| 'mailbox-pre-drop-backup-failure'
+		| 'ui-mailbox-pre-drop-backup'
 		| 'restore-drill-started'
 		| 'restore-drill-success'
 		| 'restore-drill-failure'

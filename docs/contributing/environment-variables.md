@@ -277,6 +277,11 @@ backup contract paths change (secret `DR_DEPLOY_TOKEN` +
 `DR_BACKUP_ACCOUNT_ID`). Enable gates and source identity vars live in that
 package's `wrangler.jsonc`.
 
+Workflow bindings are `BACKUP_WORKFLOW`, `MAILBOX_PRE_DROP_BACKUP_WORKFLOW`, and
+`RESTORE_WORKFLOW`. The dedicated mailbox binding targets
+`kody-mailbox-legacy-graph-pre-drop-backup`; its public Cloudflare Workflow
+params are only `requestId`, `nonce`, and `requestedAt`.
+
 Non-secret vars:
 
 - `ENABLE_PRODUCTION_D1_BACKUPS` / `BACKUP_BENCHMARK_APPROVED` — both must be

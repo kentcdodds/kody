@@ -15,9 +15,10 @@ import {
 	backupPayload,
 	errorCode,
 	isBackupEnabled,
-	objectKeyForBookmark,
+	objectKeyForPayload,
 	safeLog,
 } from './backup-policy.ts'
+import { mailboxPreDropRuntimePayload } from './mailbox-pre-drop-policy.ts'
 import {
 	type BackupEnvironment,
 	type BackupManifest,
@@ -98,18 +99,41 @@ export interface BackupRuntimeStep extends DurableExportStep {
 interface BackupRuntimeOptions {
 	api?: ApiOptions
 	downloadFetcher?: typeof fetch
+	payloadKind?: BackupPayload['kind']
 }
 
 function validatePayload(
 	env: BackupEnvironment,
 	payload: BackupPayload,
+	allowedKind: BackupPayload['kind'],
 ): BackupPayload {
-	const expected = backupPayload(env, new Date(payload.scheduledAt))
+	if (payload.kind !== allowedKind) {
+		throw new BackupError(
+			'invalid-workflow-payload-kind',
+			'workflow payload kind is not approved for this Workflow',
+		)
+	}
+	let expected: BackupPayload
+	switch (payload.kind) {
+		case 'scheduled':
+			expected = backupPayload(env, new Date(payload.scheduledAt))
+			break
+		case 'mailbox-legacy-graph-pre-drop':
+			expected = mailboxPreDropRuntimePayload(env, payload)
+			break
+		default: {
+			const exhaustive: never = payload
+			throw exhaustive
+		}
+	}
+	const expectedKeys = Object.keys(expected).sort()
+	const actualKeys = Object.keys(payload).sort()
 	if (
-		payload.day !== expected.day ||
-		payload.objectPrefix !== expected.objectPrefix ||
-		payload.manifestKey !== expected.manifestKey ||
-		payload.retentionTier !== expected.retentionTier
+		actualKeys.length !== expectedKeys.length ||
+		actualKeys.some((key, index) => key !== expectedKeys[index]) ||
+		Object.entries(expected).some(
+			([key, value]) => payload[key as keyof BackupPayload] !== value,
+		)
 	) {
 		throw new BackupError(
 			'invalid-workflow-payload',
@@ -138,7 +162,11 @@ export async function runBackupRuntime(
 				'backup workflow is explicitly disabled',
 			)
 		}
-		const checkedPayload = validatePayload(env, event.payload)
+		const checkedPayload = validatePayload(
+			env,
+			event.payload,
+			options.payloadKind ?? 'scheduled',
+		)
 		payload = checkedPayload
 		await step.do(
 			'verify-source-identity',
@@ -162,8 +190,8 @@ export async function runBackupRuntime(
 					exported.bookmark,
 					options.api,
 				)
-				const refreshedObjectKey = objectKeyForBookmark(
-					checkedPayload.objectPrefix,
+				const refreshedObjectKey = objectKeyForPayload(
+					checkedPayload,
 					refreshed.bookmark,
 				)
 				const uploaded = await storeSignedDownload(

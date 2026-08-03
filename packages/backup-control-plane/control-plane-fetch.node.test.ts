@@ -38,7 +38,9 @@ function rsaJwksAndSigner() {
 const routes: Array<{ method: string; path: string }> = [
 	{ method: 'GET', path: '/' },
 	{ method: 'GET', path: '/restore-status?id=demo' },
+	{ method: 'GET', path: '/mailbox-pre-drop-status?id=demo' },
 	{ method: 'POST', path: '/actions/run-backup' },
+	{ method: 'POST', path: '/actions/mailbox-pre-drop-backup' },
 	{ method: 'POST', path: '/actions/seal-day' },
 	{ method: 'POST', path: '/actions/run-drill' },
 	{ method: 'POST', path: '/actions/restore/prepare' },
@@ -93,4 +95,51 @@ test('fetch handler serves the dashboard with a valid Access JWT', async () => {
 	)
 	assert.equal(response.status, 200)
 	assert.match(response.headers.get('content-type') ?? '', /text\/html/)
+})
+
+test('authenticated pre-drop action creates only server-generated workflow params', async () => {
+	resetAccessJwksCacheForTests()
+	const { kid, jwks, sign } = rsaJwksAndSigner()
+	const env = environment()
+	const now = Math.floor(Date.now() / 1000)
+	const jwt = sign(
+		{ alg: 'RS256', kid },
+		{
+			iss: `https://${env.ACCESS_TEAM_DOMAIN}`,
+			aud: env.ACCESS_APP_AUD,
+			email: env.ACCESS_ALLOWED_EMAIL,
+			iat: now - 5,
+			exp: now + 3600,
+		},
+	)
+	let created: { id: string; params: Record<string, unknown> } | undefined
+	env.MAILBOX_PRE_DROP_BACKUP_WORKFLOW = {
+		async create(input: { id: string; params: Record<string, unknown> }) {
+			created = input
+		},
+	} as unknown as Workflow
+	const response = await handleControlPlaneFetch(
+		new Request(
+			'https://backup.example/actions/mailbox-pre-drop-backup?sqlSha256=caller-value',
+			{
+				method: 'POST',
+				headers: {
+					'cf-access-jwt-assertion': jwt,
+					'sec-fetch-site': 'same-origin',
+				},
+				body: 'manifestKey=caller-value',
+			},
+		),
+		env,
+		async () => Response.json(jwks),
+	)
+	assert.equal(response.status, 200)
+	assert.ok(created)
+	assert.deepEqual(Object.keys(created.params).sort(), [
+		'nonce',
+		'requestId',
+		'requestedAt',
+	])
+	assert.match(created.id, /^mailbox-pre-drop-/u)
+	assert.doesNotMatch(JSON.stringify(created), /caller-value/u)
 })

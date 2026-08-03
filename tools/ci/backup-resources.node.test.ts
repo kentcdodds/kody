@@ -103,6 +103,7 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	).toEqual([
 		{ prefix: 'daily/', maxAgeSeconds: 35 * 86_400, enabled: true },
 		{ prefix: 'weekly/', maxAgeSeconds: 400 * 86_400, enabled: true },
+		{ prefix: 'adhoc/', maxAgeSeconds: 35 * 86_400, enabled: true },
 		{ prefix: 'blobs/', maxAgeSeconds: 400 * 86_400, enabled: true },
 		{ prefix: 'escrow/', maxAgeSeconds: 400 * 86_400, enabled: true },
 	])
@@ -115,6 +116,7 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	).toEqual([
 		{ prefix: 'daily/', maxAge: 35 * 86_400, enabled: true },
 		{ prefix: 'weekly/', maxAge: 400 * 86_400, enabled: true },
+		{ prefix: 'adhoc/', maxAge: 35 * 86_400, enabled: true },
 	])
 	expect(desired.retentionSemantics.bucketLockOverridesLifecycle).toBe(true)
 	expect(desired.runtimeContract.accounts).toEqual({
@@ -130,6 +132,7 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 		allowedPrefixes: [
 			'daily/',
 			'weekly/',
+			'adhoc/',
 			'staging/',
 			'blobs/',
 			'escrow/',

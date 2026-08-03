@@ -3,6 +3,7 @@ import {
 	type BackupPayload,
 	type LogRecord,
 	type RetentionTier,
+	type ScheduledBackupPayload,
 } from './backup-types.ts'
 
 const CLOUDFLARE_ID_PATTERN =
@@ -103,12 +104,13 @@ export function retentionTier(day: string): RetentionTier {
 export function backupPayload(
 	env: BackupEnvironment,
 	scheduledAt: Date,
-): BackupPayload {
+): ScheduledBackupPayload {
 	assertConfiguredIdentity(env)
 	const day = utcDay(scheduledAt)
 	const tier = retentionTier(day)
 	const prefix = `${tier}/d1/${env.SOURCE_DATABASE_ID}/${day}`
 	return {
+		kind: 'scheduled',
 		scheduledAt: scheduledAt.toISOString(),
 		day,
 		objectPrefix: prefix,
@@ -135,6 +137,22 @@ export function objectKeyForBookmark(
 		.map((byte) => byte.toString(16).padStart(2, '0'))
 		.join('')
 	return `${objectPrefix}/backup-${encoded}.sql`
+}
+
+export function objectKeyForPayload(
+	payload: BackupPayload,
+	bookmark: string,
+): string {
+	switch (payload.kind) {
+		case 'scheduled':
+			return objectKeyForBookmark(payload.objectPrefix, bookmark)
+		case 'mailbox-legacy-graph-pre-drop':
+			return `${payload.objectPrefix}/backup-request.sql`
+		default: {
+			const exhaustive: never = payload
+			throw exhaustive
+		}
+	}
 }
 
 export function isBookmarkObjectKey(

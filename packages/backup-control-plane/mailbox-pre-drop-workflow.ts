@@ -5,23 +5,24 @@ import {
 } from 'cloudflare:workers'
 import { NonRetryableError } from 'cloudflare:workflows'
 
-import { runBackupRuntime, type BackupRuntimeStep } from './backup-runtime.ts'
+import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { BackupError } from './backup-policy.ts'
 import {
 	type BackupEnvironment,
-	type ScheduledBackupPayload,
+	type MailboxPreDropBackupRequest,
 } from './backup-types.ts'
+import { runMailboxLegacyGraphPreDropBackup } from './mailbox-pre-drop-runtime.ts'
 
-export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
+export class MailboxLegacyGraphPreDropBackupWorkflow extends WorkflowEntrypoint<
 	BackupEnvironment,
-	ScheduledBackupPayload
+	MailboxPreDropBackupRequest
 > {
 	override async run(
-		event: Readonly<WorkflowEvent<ScheduledBackupPayload>>,
+		event: Readonly<WorkflowEvent<MailboxPreDropBackupRequest>>,
 		step: WorkflowStep,
 	) {
 		try {
-			return await runBackupRuntime(
+			return await runMailboxLegacyGraphPreDropBackup(
 				this.env,
 				event,
 				step as unknown as BackupRuntimeStep,

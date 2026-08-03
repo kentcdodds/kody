@@ -17,6 +17,11 @@
 			"class_name": "ProductionD1BackupWorkflow",
 		},
 		{
+			"binding": "MAILBOX_PRE_DROP_BACKUP_WORKFLOW",
+			"name": "kody-mailbox-legacy-graph-pre-drop-backup",
+			"class_name": "MailboxLegacyGraphPreDropBackupWorkflow",
+		},
+		{
 			"binding": "RESTORE_WORKFLOW",
 			"name": "kody-production-dr-restore",
 			"class_name": "ProductionDrRestoreWorkflow",
@@ -48,7 +53,7 @@
 		// deployment commit; recompute when adding a migration (recipe in
 		// docs/contributing/disaster-recovery.md).
 		"TRUSTED_RESTORE_BASELINE_ID": "kody-migration-set-2026-07",
-		"TRUSTED_RESTORE_BASELINE_SHA256": "98fdc7b903645bad2df504f03ea6c6bd80a8ba0b7b28939cae515a408563c310",
+		"TRUSTED_RESTORE_BASELINE_SHA256": "feb76eb26ed72a55d5fa25d14ef9ee904d0758fc29842c898b584a921ccfd995",
 		"BACKUP_MAX_AGE_HOURS": "26",
 		// D1 GET file_size must remain strictly below this single-object ceiling.
 		"BACKUP_MAX_SOURCE_BYTES": "4500000000",
