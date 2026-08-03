@@ -126,6 +126,52 @@ export function filterFirefoxDomPermissionDeniedSentryEvent<
 	return event
 }
 
+/**
+ * Firefox (and some WebKit browsers that inject Firefox-compat shims) expose a
+ * privileged `window.__firefox__` bridge for reader mode / media helpers.
+ * Injected page scripts sometimes evaluate that bridge before it exists, which
+ * surfaces as unhandled `onerror` noise such as:
+ *   - TypeError: undefined is not an object (evaluating 'window.__firefox__.reader')
+ *   - TypeError: undefined is not an object (evaluating 'window.__firefox__.refresh_youtube_quality_…')
+ *   - ReferenceError: Can't find variable: __firefox__
+ *
+ * Signature from production issues KODY-CLOUDFLARE-3G / 3E / 3F. Not present in
+ * app source — not actionable. Match only messages that name `__firefox__`
+ * specifically; never blanket-drop TypeError / ReferenceError.
+ */
+const firefoxInjectedApiNoiseMessage =
+	/(?:undefined is not an object \(evaluating ['"]window\.__firefox__\.[^'"]+['"]\)|Can't find variable: __firefox__|__firefox__ is not defined)/
+
+export function isFirefoxInjectedApiNoiseMessage(message: string) {
+	return firefoxInjectedApiNoiseMessage.test(message)
+}
+
+export function isFirefoxInjectedApiNoiseError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isFirefoxInjectedApiNoiseMessage(error.message)
+}
+
+export function isFirefoxInjectedApiNoiseSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isFirefoxInjectedApiNoiseError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isFirefoxInjectedApiNoiseMessage(message),
+	)
+}
+
+export function filterFirefoxInjectedApiNoiseSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isFirefoxInjectedApiNoiseSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -137,6 +183,11 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	if (
 		filterFirefoxDomPermissionDeniedSentryEvent(event, originalException) ===
 		null
+	) {
+		return null
+	}
+	if (
+		filterFirefoxInjectedApiNoiseSentryEvent(event, originalException) === null
 	) {
 		return null
 	}

@@ -29,8 +29,10 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		replaysSessionSampleRate: 0,
 		replaysOnErrorSampleRate: 1.0,
 		// Drop expected browser noise (AbortError aborts, Firefox DOM
-		// permission-denied from Replay/hydration on restricted nodes) —
-		// see filterBrowserSentryEvent / KODY-CLOUDFLARE-23 / issue 7639685398.
+		// permission-denied from Replay/hydration on restricted nodes,
+		// injected window.__firefox__ bridge misses) — see
+		// filterBrowserSentryEvent / KODY-CLOUDFLARE-23 / 7639685398 /
+		// KODY-CLOUDFLARE-3G.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},
