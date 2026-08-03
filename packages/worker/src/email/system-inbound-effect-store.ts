@@ -28,7 +28,11 @@ export async function listDueSystemInboundEffects(input: {
 						usage_effect_recorded_at IS NULL
 						AND usage_effect_suppressed_at IS NULL
 						AND (usage_effect_retry_at IS NULL OR usage_effect_retry_at <= ?)
-						AND (usage_effect_lease IS NULL OR usage_effect_lease_at < ?)
+						AND (
+							usage_effect_lease IS NULL
+							OR usage_effect_lease_at IS NULL
+							OR usage_effect_lease_at < ?
+						)
 					)
 					OR (
 						COALESCE(subscription_effect_state, 'pending')
@@ -39,6 +43,7 @@ export async function listDueSystemInboundEffects(input: {
 						)
 						AND (
 							COALESCE(subscription_effect_state, 'pending') != 'processing'
+							OR subscription_effect_lease_at IS NULL
 							OR subscription_effect_lease_at < ?
 						)
 					)
@@ -94,7 +99,10 @@ export async function claimSystemInboundSubscriptionEffect(input: {
 						OR subscription_effect_state = 'pending'
 						OR (
 							subscription_effect_state = 'processing'
-							AND subscription_effect_lease_at < ?
+							AND (
+								subscription_effect_lease_at IS NULL
+								OR subscription_effect_lease_at < ?
+							)
 						)
 					)`,
 			)
@@ -323,7 +331,7 @@ export async function listSystemInboundUsageRows(input: {
 	const result = await input.db
 		.prepare(
 			`SELECT
-				'${systemEmailOwnerId}' AS user_id,
+				? AS user_id,
 				'email_received' AS metric,
 				usage_month AS month,
 				COUNT(*) AS event_count,
@@ -337,7 +345,7 @@ export async function listSystemInboundUsageRows(input: {
 				AND usage_month IN (?, ?)
 			GROUP BY usage_month`,
 		)
-		.bind(systemInboundProvider, ...input.months)
+		.bind(systemEmailOwnerId, systemInboundProvider, ...input.months)
 		.all<{
 			user_id: string
 			metric: string

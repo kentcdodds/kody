@@ -43,7 +43,6 @@ import {
 	listSystemEmailAttachments,
 	updateSystemEmailMessageClassification,
 } from './system-email-graph-store.ts'
-import { storeIdempotentSystemInboundEmail } from './system-email-service.ts'
 import {
 	type EmailAttachmentRecord,
 	type EmailClassification,
@@ -320,11 +319,13 @@ export async function storeIdempotentInboundEmail(input: {
 	parsed: ParsedInboundEmail
 	subjectNormalized: string
 	now: string
-	authority?: Pick<UserInboundDeliveryAuthority, 'get' | 'receive'>
+	authority: Pick<UserInboundDeliveryAuthority, 'get' | 'receive'>
 }) {
 	const { delivery, parsed } = input
 	if (delivery.userId === systemEmailOwnerId) {
-		return await storeIdempotentSystemInboundEmail(input)
+		throw new Error(
+			'System inbound storage must use the dedicated system email service.',
+		)
 	}
 	if (!delivery.storageLease) {
 		throw new RetryableInboundStorageError(
@@ -470,6 +471,10 @@ export async function storeIdempotentInboundEmail(input: {
 		)
 	}
 
+	const authority = input.authority
+	if (!authority) {
+		throw new Error('User inbound finalization requires Mailbox authority.')
+	}
 	let finalizedDelivery: InboundDelivery
 	try {
 		const finalization = {
@@ -480,14 +485,9 @@ export async function storeIdempotentInboundEmail(input: {
 			usageMonth: (stored.receivedAt ?? stored.createdAt).slice(0, 7),
 			usageBytes: stored.rawSize ?? 0,
 		}
-		if (!input.authority) {
-			throw new Error('User inbound finalization requires Mailbox authority.')
-		}
-		finalizedDelivery = await input.authority.receive(finalization)
+		finalizedDelivery = await authority.receive(finalization)
 	} catch (error) {
-		const committed = await input.authority
-			?.get(delivery.deliveryId)
-			.catch(() => null)
+		const committed = await authority.get(delivery.deliveryId).catch(() => null)
 		if (committed?.state !== 'received') {
 			throw new RetryableInboundStorageError(
 				'Failed to finalize the inbound delivery ledger; the stable delivery will be retried.',

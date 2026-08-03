@@ -14,7 +14,10 @@ import {
 	listSystemEmailMessages,
 	updateSystemEmailMessageClassification,
 } from './system-email-graph-store.ts'
-import { recordBoundedSystemEmailRejection } from './system-inbound-delivery-store.ts'
+import {
+	chargeSystemInboundDeliveryOnce,
+	recordBoundedSystemEmailRejection,
+} from './system-inbound-delivery-store.ts'
 import {
 	loadSystemEmailGraphParityReport,
 	reconcileLegacySystemEmailGraphFromDedicated,
@@ -28,6 +31,133 @@ test('dedicated system graph write types make ownership and direction implicit',
 	expectTypeOf<Input['message']>().not.toHaveProperty('direction')
 	expectTypeOf<Input['message']>().not.toHaveProperty('providerMessageId')
 	expectTypeOf<Input['inboundDeliveryFence']>().not.toHaveProperty('userId')
+})
+
+test('dedicated writes reject cross-owner references before either home commits', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await env.APP_DB.batch([
+		env.APP_DB.prepare(
+			`INSERT INTO email_inboxes (
+				id, user_id, name, enabled, created_at, updated_at
+			) VALUES (
+				'foreign-write-inbox', 'foreign-user', 'private', 1,
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			)`,
+		),
+		env.APP_DB.prepare(
+			`INSERT INTO email_sender_identities (
+				id, user_id, email, status, created_at, updated_at
+			) VALUES (
+				'foreign-write-sender', 'foreign-user', 'foreign@example.com',
+				'verified', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			)`,
+		),
+		env.APP_DB.prepare(
+			`INSERT INTO email_threads (
+				id, user_id, inbox_id, subject_normalized, last_message_at,
+				created_at, updated_at
+			) VALUES (
+				'foreign-write-thread', 'foreign-user', 'foreign-write-inbox',
+				'private', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			)`,
+		),
+		env.APP_DB.prepare(
+			`INSERT INTO email_messages (
+				id, direction, user_id, inbox_id, thread_id, from_address,
+				processing_status, created_at, updated_at
+			) VALUES (
+				'foreign-write-message', 'inbound', 'foreign-user',
+				'foreign-write-inbox', 'foreign-write-thread', 'foreign@example.com',
+				'stored', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			)`,
+		),
+	])
+
+	await expect(
+		createSystemEmailThread({
+			db: env.APP_DB,
+			id: 'cross-owner-system-thread',
+			inboxId: 'foreign-write-inbox',
+		}),
+	).rejects.toThrow()
+	await expect(
+		insertSystemEmailMessage({
+			db: env.APP_DB,
+			message: {
+				id: 'cross-owner-system-message',
+				inboxId: 'foreign-write-inbox',
+				threadId: 'foreign-write-thread',
+				senderIdentityId: 'foreign-write-sender',
+				processingStatus: 'stored',
+			},
+		}),
+	).rejects.toThrow()
+	await expect(
+		insertSystemEmailAttachments({
+			db: env.APP_DB,
+			messageId: 'foreign-write-message',
+			attachments: [
+				{
+					id: 'cross-owner-system-attachment',
+					storageKind: 'raw-mime',
+				},
+			],
+		}),
+	).rejects.toThrow()
+	await expect(
+		chargeSystemInboundDeliveryOnce({
+			db: env.APP_DB,
+			localPart: 'support',
+			limit: 10,
+			now: new Date('2026-08-03T00:00:00.000Z'),
+			delivery: {
+				deliveryId: 'cross-owner-system-event',
+				messageId: 'cross-owner-event-message',
+				threadId: 'cross-owner-event-thread',
+				rawMimeKey: 'email-raw:v1:system:email/cross-owner-event-message',
+				userId: systemEmailOwnerId,
+				inboxId: 'foreign-write-inbox',
+				recipient: 'support@example.com',
+				envelopeFrom: 'sender@example.net',
+				provider: 'cloudflare-email-routing',
+				quotaDay: '2026-08-03',
+				dedupeExpiresAt: '2026-08-05T00:00:00.000Z',
+				fingerprint: 'cross-owner-event-fingerprint',
+				state: 'pending',
+			},
+		}),
+	).rejects.toThrow()
+
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT
+				(SELECT COUNT(*) FROM system_email_threads
+					WHERE id = 'cross-owner-system-thread') AS dedicated_threads,
+				(SELECT COUNT(*) FROM email_threads
+					WHERE id = 'cross-owner-system-thread') AS legacy_threads,
+				(SELECT COUNT(*) FROM system_email_messages
+					WHERE id = 'cross-owner-system-message') AS dedicated_messages,
+				(SELECT COUNT(*) FROM email_messages
+					WHERE id = 'cross-owner-system-message') AS legacy_messages,
+				(SELECT COUNT(*) FROM system_email_attachments
+					WHERE id = 'cross-owner-system-attachment') AS dedicated_attachments,
+				(SELECT COUNT(*) FROM email_attachments
+					WHERE id = 'cross-owner-system-attachment') AS legacy_attachments,
+				(SELECT COUNT(*) FROM system_email_delivery_events
+					WHERE id = 'cross-owner-system-event') AS dedicated_events,
+				(SELECT COUNT(*) FROM email_delivery_events
+					WHERE id = 'cross-owner-system-event') AS legacy_events`,
+		).first(),
+	).toEqual({
+		dedicated_threads: 0,
+		legacy_threads: 0,
+		dedicated_messages: 0,
+		legacy_messages: 0,
+		dedicated_attachments: 0,
+		legacy_attachments: 0,
+		dedicated_events: 0,
+		legacy_events: 0,
+	})
 })
 
 test('dedicated system graph is the only read authority and remains user-isolated', async () => {
@@ -209,6 +339,7 @@ test('legacy mirror failures roll back dedicated authority writes', async () => 
 			WHERE id = 'mirror-no-op-must-roll-back'`,
 		).first(),
 	).toBeNull()
+	await env.APP_DB.prepare(`DROP TRIGGER ignore_system_legacy_message`).run()
 })
 
 test('dedicated authority operations fail closed without the cutover marker', async () => {

@@ -142,6 +142,16 @@ test('reserved system locals store under the operator-owned system inbox', async
 		usageEffectRecordedAt: expect.any(String),
 		subscriptionEffectState: 'complete',
 	})
+	const counter = await env.APP_DB.prepare(
+		`SELECT updated_at, operation_token
+		FROM system_email_daily_counters WHERE local_part = 'kody'`,
+	).first<{ updated_at: string; operation_token: string }>()
+	expect(counter?.updated_at).toMatch(
+		/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u,
+	)
+	expect(counter?.operation_token).toMatch(
+		/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u,
+	)
 	const inboxes = await listEmailInboxesForUser({
 		db: env.APP_DB,
 		userId: systemEmailOwnerId,
@@ -340,6 +350,7 @@ test('system inbox R2/D1 failures and retries keep one durable quota charge', as
 
 test('system inbox ambiguous quota batch response charges once across retry', async () => {
 	silenceIncidentalRuntimeWarnings()
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	let batchResponseFailed = false
@@ -381,6 +392,11 @@ test('system inbox ambiguous quota batch response charges once across retry', as
 			limit: 10,
 		}),
 	).toHaveLength(1)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'system-inbound-dedupe-window-claim-recovered',
+		expect.stringContaining('email-inbound-dedupe:'),
+		expect.any(Error),
+	)
 })
 
 test('system stored-message count failure occurs before quota charge', async () => {

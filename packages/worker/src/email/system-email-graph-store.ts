@@ -180,23 +180,34 @@ export async function createSystemEmailThread(input: {
 	const fence = input.inboundDeliveryFence
 	const prefix = input.ignoreConflict ? 'INSERT OR IGNORE' : 'INSERT'
 	const placeholders = systemEmailThreadColumns.map(() => '?').join(', ')
+	const ownerFence = `(? IS NULL OR EXISTS (
+		SELECT 1 FROM email_inboxes
+		WHERE id = ? AND user_id = ?
+	))`
 	const dedicated = input.db
 		.prepare(
 			`${prefix} INTO system_email_threads (
 				${systemEmailThreadColumns.join(', ')}
-			) ${
-				fence
-					? `SELECT ${placeholders}
-						WHERE EXISTS (
+			) SELECT ${placeholders}
+			WHERE ${ownerFence}
+				AND ${
+					fence
+						? `EXISTS (
 							SELECT 1 FROM system_email_delivery_events
 							WHERE id = ?
 								AND state = 'storing'
 								AND storage_lease = ?
 						)`
-					: `VALUES (${placeholders})`
-			}`,
+						: '1'
+				}`,
 		)
-		.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
+		.bind(
+			...values,
+			row.inbox_id,
+			row.inbox_id,
+			systemEmailOwnerId,
+			...(fence ? [fence.deliveryId, fence.storageLease] : []),
+		)
 	const legacy = input.db
 		.prepare(
 			`${prefix} INTO email_threads (
@@ -206,19 +217,23 @@ export async function createSystemEmailThread(input: {
 				.slice(1)
 				.map(() => '?')
 				.join(', ')}
-			WHERE ${
-				fence
-					? `EXISTS (
+			WHERE ${ownerFence}
+				AND ${
+					fence
+						? `EXISTS (
 							SELECT 1 FROM system_email_delivery_events
 							WHERE id = ? AND state = 'storing' AND storage_lease = ?
 						)`
-					: '1'
-			}`,
+						: '1'
+				}`,
 		)
 		.bind(
 			row.id,
 			systemEmailOwnerId,
 			...values.slice(1),
+			row.inbox_id,
+			row.inbox_id,
+			systemEmailOwnerId,
 			...(fence ? [fence.deliveryId, fence.storageLease] : []),
 		)
 	await commitSystemEmailGraphMutations({
@@ -229,6 +244,7 @@ export async function createSystemEmailThread(input: {
 				id: row.id,
 				dedicated,
 				legacy,
+				expectation: 'present',
 			},
 		],
 	})
@@ -315,35 +331,74 @@ export async function insertSystemEmailMessage(input: {
 	const values = columns.map((column) => row[column])
 	const placeholders = columns.map(() => '?').join(', ')
 	const fence = input.inboundDeliveryFence
-	const fenceSql = fence
-		? `WHERE EXISTS (
+	const deliveryFenceSql = fence
+		? `EXISTS (
 				SELECT 1 FROM system_email_delivery_events
 				WHERE id = ? AND state = 'storing' AND storage_lease = ?
 			)`
-		: ''
+		: '1'
+	const sharedReferenceFenceSql = `(? IS NULL OR EXISTS (
+			SELECT 1 FROM email_inboxes WHERE id = ? AND user_id = ?
+		))
+		AND (? IS NULL OR EXISTS (
+			SELECT 1 FROM email_sender_identities WHERE id = ? AND user_id = ?
+		))`
+	const sharedReferenceValues = [
+		row.inbox_id,
+		row.inbox_id,
+		systemEmailOwnerId,
+		row.sender_identity_id,
+		row.sender_identity_id,
+		systemEmailOwnerId,
+	]
 	const dedicated = input.db
 		.prepare(
 			`INSERT INTO system_email_messages (${columns.join(', ')})
-			SELECT ${placeholders} ${fenceSql}`,
+			SELECT ${placeholders}
+			WHERE ${sharedReferenceFenceSql}
+				AND (? IS NULL OR EXISTS (
+					SELECT 1 FROM system_email_threads WHERE id = ?
+				))
+				AND ${deliveryFenceSql}`,
 		)
-		.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
-	const legacyColumns = [...columns.slice(0, 2), 'user_id', ...columns.slice(2)]
-	const legacyValues = [
-		row.id,
-		row.direction,
-		systemEmailOwnerId,
-		...values.slice(2),
+		.bind(
+			...values,
+			...sharedReferenceValues,
+			row.thread_id,
+			row.thread_id,
+			...(fence ? [fence.deliveryId, fence.storageLease] : []),
+		)
+	const directionIndex = columns.indexOf('direction')
+	if (directionIndex < 0 || columns.indexOf('id') < 0) {
+		throw new Error('System email message columns require id and direction.')
+	}
+	const legacyColumns = [
+		...columns.slice(0, directionIndex + 1),
+		'user_id',
+		...columns.slice(directionIndex + 1),
 	]
+	const legacyValues = legacyColumns.map((column) =>
+		column === 'user_id' ? systemEmailOwnerId : row[column as keyof typeof row],
+	)
 	const legacy = input.db
 		.prepare(
 			`INSERT INTO email_messages (${legacyColumns.join(', ')})
-			SELECT ${legacyColumns.map(() => '?').join(', ')} ${fenceSql}`,
+			SELECT ${legacyColumns.map(() => '?').join(', ')}
+			WHERE ${sharedReferenceFenceSql}
+				AND (? IS NULL OR EXISTS (
+					SELECT 1 FROM email_threads WHERE id = ? AND user_id = ?
+				))
+				AND ${deliveryFenceSql}`,
 		)
 		.bind(
 			...legacyValues,
+			...sharedReferenceValues,
+			row.thread_id,
+			row.thread_id,
+			systemEmailOwnerId,
 			...(fence ? [fence.deliveryId, fence.storageLease] : []),
 		)
-	const results = await commitSystemEmailGraphMutations({
+	const { mutationResults } = await commitSystemEmailGraphMutations({
 		db: input.db,
 		mutations: [
 			{
@@ -351,10 +406,11 @@ export async function insertSystemEmailMessage(input: {
 				id: row.id,
 				dedicated,
 				legacy,
+				expectation: 'present',
 			},
 		],
 	})
-	if (fence && Number(results[0]?.meta.changes ?? 0) === 0) {
+	if (fence && Number(mutationResults[0]?.dedicated?.meta.changes ?? 0) === 0) {
 		throw new Error(
 			'Inbound delivery storage lease was lost before system message insert.',
 		)
@@ -383,12 +439,12 @@ export async function insertSystemEmailAttachments(input: {
 	const timestamp = nowIso()
 	const prefix = input.ignoreConflicts ? 'INSERT OR IGNORE' : 'INSERT'
 	const fence = input.inboundDeliveryFence
-	const fenceSql = fence
-		? `WHERE EXISTS (
+	const deliveryFenceSql = fence
+		? `EXISTS (
 				SELECT 1 FROM system_email_delivery_events
 				WHERE id = ? AND state = 'storing' AND storage_lease = ?
 			)`
-		: ''
+		: '1'
 	const mutations = []
 	for (const attachment of input.attachments) {
 		const values = [
@@ -408,22 +464,37 @@ export async function insertSystemEmailAttachments(input: {
 				`${prefix} INTO system_email_attachments (
 						${systemEmailAttachmentColumns.join(', ')}
 					) SELECT ${systemEmailAttachmentColumns.map(() => '?').join(', ')}
-					${fenceSql}`,
+					WHERE EXISTS (
+						SELECT 1 FROM system_email_messages WHERE id = ?
+					) AND ${deliveryFenceSql}`,
 			)
-			.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
+			.bind(
+				...values,
+				input.messageId,
+				...(fence ? [fence.deliveryId, fence.storageLease] : []),
+			)
 		const legacy = input.db
 			.prepare(
 				`${prefix} INTO email_attachments (
 						${systemEmailAttachmentColumns.join(', ')}
 					) SELECT ${systemEmailAttachmentColumns.map(() => '?').join(', ')}
-					${fenceSql}`,
+					WHERE EXISTS (
+						SELECT 1 FROM email_messages
+						WHERE id = ? AND user_id = ?
+					) AND ${deliveryFenceSql}`,
 			)
-			.bind(...values, ...(fence ? [fence.deliveryId, fence.storageLease] : []))
+			.bind(
+				...values,
+				input.messageId,
+				systemEmailOwnerId,
+				...(fence ? [fence.deliveryId, fence.storageLease] : []),
+			)
 		mutations.push({
 			contract: attachmentContract,
 			id: String(values[0]),
 			dedicated,
 			legacy,
+			expectation: 'present' as const,
 		})
 	}
 	await commitSystemEmailGraphMutations({ db: input.db, mutations })
@@ -532,7 +603,7 @@ export async function updateSystemEmailMessageClassification(input: {
 			input.messageId,
 			systemEmailOwnerId,
 		)
-	const results = await commitSystemEmailGraphMutations({
+	const { mutationResults } = await commitSystemEmailGraphMutations({
 		db: input.db,
 		mutations: [
 			{
@@ -543,7 +614,7 @@ export async function updateSystemEmailMessageClassification(input: {
 			},
 		],
 	})
-	return Number(results[0]?.meta.changes ?? 0) > 0
+	return Number(mutationResults[0]?.dedicated?.meta.changes ?? 0) > 0
 }
 
 export async function deleteEmptySystemEmailThreads(input: {
@@ -593,13 +664,12 @@ export async function deleteEmptySystemEmailThreads(input: {
 			expectation: 'absent' as const,
 		}
 	})
-	const results = await commitSystemEmailGraphMutations({
+	const { mutationResults } = await commitSystemEmailGraphMutations({
 		db: input.db,
 		mutations,
 	})
-	return mutations.reduce(
-		(total, _mutation, index) =>
-			total + Number(results[index * 3]?.meta.changes ?? 0),
+	return mutationResults.reduce(
+		(total, result) => total + Number(result.dedicated?.meta.changes ?? 0),
 		0,
 	)
 }

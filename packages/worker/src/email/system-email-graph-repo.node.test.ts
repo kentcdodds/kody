@@ -336,19 +336,28 @@ test('system email graph report returns aggregate parity and provider dispositio
 			'send_requested', 'kody', '{}', '${createdAt}', 0
 		);
 	`)
-	const fenced = await reconcileLegacySystemEmailGraphFromDedicated({
-		db,
-		direction: 'dedicated_to_legacy',
-		force: true,
-	})
-	expect(fenced.metrics.referencedOwnerMismatchCount).toBe(4)
-	expect(fenced.postReport).toMatchObject({
-		threads: { referencedOwnerMismatchCount: 1, parity: false },
-		messages: { referencedOwnerMismatchCount: 1, parity: false },
-		attachments: { referencedOwnerMismatchCount: 1, parity: false },
-		deliveryEvents: { referencedOwnerMismatchCount: 1, parity: false },
-		parity: false,
-	})
+	await expect(
+		reconcileLegacySystemEmailGraphFromDedicated({
+			db,
+			direction: 'dedicated_to_legacy',
+			force: true,
+		}),
+	).rejects.toThrow()
+	expect(
+		sqlite
+			.prepare(
+				`SELECT
+					(SELECT COUNT(*) FROM email_threads
+						WHERE id = 'invalid-system-thread') AS threads,
+					(SELECT COUNT(*) FROM email_messages
+						WHERE id = 'invalid-system-message') AS messages,
+					(SELECT COUNT(*) FROM email_attachments
+						WHERE id = 'invalid-system-attachment') AS attachments,
+					(SELECT COUNT(*) FROM email_delivery_events
+						WHERE id = 'invalid-system-event') AS events`,
+			)
+			.get(),
+	).toEqual({ threads: 0, messages: 0, attachments: 0, events: 0 })
 	expect(
 		sqlite
 			.prepare(

@@ -27,6 +27,46 @@ test('system delivery-event test schema enforces provider event uniqueness', asy
 	).rejects.toThrow()
 })
 
+test('orphan-thread retention respects its deadline and one bounded batch', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await env.APP_DB.prepare(
+		`WITH RECURSIVE sequence(value) AS (
+			VALUES(0) UNION ALL SELECT value + 1 FROM sequence WHERE value < 59
+		)
+		INSERT INTO system_email_threads (
+			id, subject_normalized, last_message_at, created_at, updated_at
+		)
+		SELECT printf('bounded-orphan-%02d', value), 'orphan',
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		FROM sequence`,
+	).run()
+	await reconcileLegacySystemEmailGraphFromDedicated({
+		db: env.APP_DB,
+		direction: 'dedicated_to_legacy',
+		force: true,
+	})
+
+	const expired = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		timeBudgetMs: 0,
+	})
+	expect(expired.deletedThreads).toBe(0)
+
+	const bounded = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		timeBudgetMs: 10_000,
+	})
+	expect(bounded.deletedThreads).toBe(40)
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM system_email_threads
+			WHERE id LIKE 'bounded-orphan-%'`,
+		).first(),
+	).toEqual({ count: 20 })
+})
+
 test('system email retention prunes dedicated authority without reading stale legacy rows', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
@@ -71,6 +111,7 @@ test('system email retention prunes dedicated authority without reading stale le
 			)`,
 		).bind(old),
 	])
+	// The seed plus inclusive bound intentionally creates maxStoredMessages + 1.
 	await env.APP_DB.prepare(
 		`WITH RECURSIVE sequence(value) AS (
 			VALUES(0)

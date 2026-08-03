@@ -119,6 +119,11 @@ export function systemEmailGraphLegacyCte(
 export function buildLegacySystemEmailGraphUpsertSql(
 	contract: SystemEmailGraphColumnContract,
 ): string {
+	if (contract.columns[0] !== 'id') {
+		throw new Error(
+			`System email graph contract ${contract.key} must start with id.`,
+		)
+	}
 	const columns = contract.columns.join(', ')
 	const updates = contract.columns
 		.filter((column) => column !== 'id')
@@ -133,7 +138,14 @@ export function buildLegacySystemEmailGraphUpsertSql(
 	if (contract.key === 'attachments') {
 		return `INSERT INTO email_attachments (${columns})
 			SELECT ${columns} FROM system_email_attachments
-			WHERE 1
+			WHERE EXISTS (
+				SELECT 1 FROM system_email_messages dedicated_parent
+				WHERE dedicated_parent.id = system_email_attachments.message_id
+			) AND EXISTS (
+				SELECT 1 FROM email_messages legacy_parent
+				WHERE legacy_parent.id = system_email_attachments.message_id
+					AND legacy_parent.user_id = ?1
+			)
 			ON CONFLICT(id) DO UPDATE SET ${updates}
 			WHERE EXISTS (
 				SELECT 1 FROM email_messages
@@ -146,9 +158,66 @@ export function buildLegacySystemEmailGraphUpsertSql(
 		...contract.columns.slice(1),
 	].join(', ')
 	const selected = ['id', '?1', ...contract.columns.slice(1)].join(', ')
+	const referenceFence = (() => {
+		switch (contract.key) {
+			case 'threads':
+				return `(inbox_id IS NULL OR EXISTS (
+					SELECT 1 FROM email_inboxes inbox
+					WHERE inbox.id = system_email_threads.inbox_id
+						AND inbox.user_id = ?1
+				))`
+			case 'messages':
+				return `(inbox_id IS NULL OR EXISTS (
+						SELECT 1 FROM email_inboxes inbox
+						WHERE inbox.id = system_email_messages.inbox_id
+							AND inbox.user_id = ?1
+					))
+					AND (sender_identity_id IS NULL OR EXISTS (
+						SELECT 1 FROM email_sender_identities sender
+						WHERE sender.id = system_email_messages.sender_identity_id
+							AND sender.user_id = ?1
+					))
+					AND (thread_id IS NULL OR (
+						EXISTS (
+							SELECT 1 FROM system_email_threads dedicated_thread
+							WHERE dedicated_thread.id = system_email_messages.thread_id
+						)
+						AND EXISTS (
+							SELECT 1 FROM email_threads legacy_thread
+							WHERE legacy_thread.id = system_email_messages.thread_id
+								AND legacy_thread.user_id = ?1
+						)
+					))`
+			case 'deliveryEvents':
+				return `(inbox_id IS NULL OR EXISTS (
+						SELECT 1 FROM email_inboxes inbox
+						WHERE inbox.id = system_email_delivery_events.inbox_id
+							AND inbox.user_id = ?1
+					))
+					AND (message_id IS NULL OR (
+						EXISTS (
+							SELECT 1 FROM system_email_messages dedicated_message
+							WHERE dedicated_message.id =
+								system_email_delivery_events.message_id
+						)
+						AND EXISTS (
+							SELECT 1 FROM email_messages legacy_message
+							WHERE legacy_message.id =
+								system_email_delivery_events.message_id
+								AND legacy_message.user_id = ?1
+						)
+					))`
+			default: {
+				const exhaustive: never = contract.key
+				throw new Error(
+					`Unsupported system email graph table: ${String(exhaustive)}`,
+				)
+			}
+		}
+	})()
 	return `INSERT INTO ${contract.legacyTable} (${legacyColumns})
 		SELECT ${selected} FROM ${contract.dedicatedTable}
-		WHERE 1
+		WHERE ${referenceFence}
 		ON CONFLICT(id) DO UPDATE SET ${updates}
 		WHERE ${contract.legacyTable}.user_id = ?1 AND (${changed})`
 }

@@ -15,20 +15,11 @@ export async function resolveInboundEmailClassification(input: {
 	const senderAddress = normalizeEmailAddress(input.envelopeFrom)
 	let ruleMatch: Awaited<ReturnType<typeof evaluateEmailSenderRules>> = null
 	if (senderAddress) {
-		try {
-			ruleMatch = await evaluateEmailSenderRules({
-				db: input.db,
-				userId: input.userId,
-				senderAddress,
-			})
-		} catch (error) {
-			if (
-				!(error instanceof Error) ||
-				!error.message.includes('no such table: email_sender_rules')
-			) {
-				throw error
-			}
-		}
+		ruleMatch = await evaluateEmailSenderRules({
+			db: input.db,
+			userId: input.userId,
+			senderAddress,
+		})
 	}
 
 	if (ruleMatch) {

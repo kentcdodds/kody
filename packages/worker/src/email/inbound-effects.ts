@@ -740,33 +740,16 @@ async function processDedicatedSystemInboundDeliveryEffects(
 			: now.toISOString().slice(0, 7))
 	const usageBytes = delivery.usageBytes ?? message?.rawSize ?? 0
 	const usageDurationMs = delivery.usageDurationMs ?? input.durationMs ?? 0
-	try {
-		await recordSystemInboundUsageEffect({
-			db: input.env.APP_DB,
-			delivery,
-			usageMonth,
-			usageBytes,
-			usageDurationMs,
-			now,
-			includeRollup: !input.env.USAGE_EVENTS,
-		})
-	} catch (error) {
-		if (
-			!(error instanceof Error) ||
-			!error.message.includes('no such table: usage_rollups')
-		) {
-			throw error
-		}
-		await recordSystemInboundUsageEffect({
-			db: input.env.APP_DB,
-			delivery,
-			usageMonth,
-			usageBytes,
-			usageDurationMs,
-			now,
-			includeRollup: false,
-		})
-	}
+	const includeRollup = !input.env.USAGE_EVENTS
+	await recordSystemInboundUsageEffect({
+		db: input.env.APP_DB,
+		delivery,
+		usageMonth,
+		usageBytes,
+		usageDurationMs,
+		now,
+		includeRollup,
+	})
 	const lease = await claimSystemInboundSubscriptionEffect({
 		db: input.env.APP_DB,
 		deliveryId: delivery.deliveryId,

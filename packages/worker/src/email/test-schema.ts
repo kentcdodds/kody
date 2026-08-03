@@ -384,6 +384,7 @@ WHERE provider_event_id IS NOT NULL;`,
 	day TEXT NOT NULL,
 	count INTEGER NOT NULL DEFAULT 0,
 	updated_at TEXT NOT NULL,
+	operation_token TEXT,
 	PRIMARY KEY (local_part, day)
 );`,
 		`CREATE TABLE IF NOT EXISTS system_email_graph_authority (

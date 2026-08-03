@@ -563,45 +563,42 @@ export async function pruneSystemEmailRetention(input: {
 		.run()
 	result.deletedCounters = counterDelete.meta.changes ?? 0
 
-	const threadRows = await input.db
-		.prepare(
-			`SELECT id FROM system_email_threads
-			WHERE NOT EXISTS (
-					SELECT 1 FROM system_email_messages
-					WHERE system_email_messages.thread_id = system_email_threads.id
-				)`,
-		)
-		.all<{ id: string }>()
-	const threadIds = (threadRows.results ?? []).map((row) => row.id)
-	for (
-		let index = 0;
-		index < threadIds.length;
-		index += systemEmailDeleteIdsMaxParameters
-	) {
-		const chunk = threadIds.slice(
-			index,
-			index + systemEmailDeleteIdsMaxParameters,
-		)
-		const placeholders = chunk.map(() => '?').join(', ')
+	if (Date.now() < deadlineMs) {
+		const threadRows = await input.db
+			.prepare(
+				`SELECT id FROM system_email_threads
+				WHERE NOT EXISTS (
+						SELECT 1 FROM system_email_messages
+						WHERE system_email_messages.thread_id =
+							system_email_threads.id
+					)
+				ORDER BY created_at ASC, id ASC
+				LIMIT ?`,
+			)
+			.bind(systemEmailDeleteIdsMaxParameters)
+			.all<{ id: string }>()
+		const threadIds = (threadRows.results ?? []).map((row) => row.id)
+		if (threadIds.length === 0) return result
+		const placeholders = threadIds.map(() => '?').join(', ')
 		const deletes = await commitSystemEmailGraphBulkDeletes({
 			db: input.db,
 			mutations: [
 				{
 					contract: threadContract,
-					ids: chunk,
+					ids: threadIds,
 					matchColumn: 'id',
 					dedicated: input.db
 						.prepare(
 							`DELETE FROM system_email_threads
 							WHERE id IN (${placeholders})`,
 						)
-						.bind(...chunk),
+						.bind(...threadIds),
 					legacy: input.db
 						.prepare(
 							`DELETE FROM email_threads
 							WHERE user_id = ? AND id IN (${placeholders})`,
 						)
-						.bind(systemEmailOwnerId, ...chunk),
+						.bind(systemEmailOwnerId, ...threadIds),
 				},
 			],
 		})

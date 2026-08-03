@@ -1,7 +1,13 @@
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import {
+	applyMigrationLikeD1,
+	applyMigrationsBefore,
+	systemEmailAuthorityMigration,
+	systemEmailGraphMigration,
+} from '#worker/test-support/system-email-graph-migration.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import { systemEmailGraphColumnContracts } from './system-email-graph-columns.ts'
 import {
 	claimSystemInboundSubscriptionEffect,
@@ -12,10 +18,6 @@ import {
 	pruneSystemExpiredInboundDedupePointers,
 	reconcileSystemStaleInboundDeliveries,
 } from './system-inbound-delivery-store.ts'
-
-const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const systemEmailGraphMigration = '0130-system-email-graph-expand.sql'
-const systemEmailAuthorityMigration = '0131-system-email-graph-authority.sql'
 
 type TableInfoColumn = {
 	name: string
@@ -65,26 +67,6 @@ type ComparableForeignKey = {
  */
 const documentedColumnDifferences: ReadonlyArray<DocumentedColumnDifference> =
 	[]
-
-function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
-	for (const fileName of readdirSync(migrationsDirectory)
-		.filter((file) => file.endsWith('.sql') && file < exclusiveUpperBound)
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-	}
-}
-
-function applyMigrationLikeD1(db: DatabaseSync, fileName: string) {
-	const sql = readFileSync(new URL(fileName, migrationsDirectory), 'utf8')
-	db.exec('BEGIN')
-	try {
-		db.exec(sql)
-		db.exec('COMMIT')
-	} catch (error) {
-		db.exec('ROLLBACK')
-		throw error
-	}
-}
 
 function tableColumns(
 	db: DatabaseSync,
@@ -204,17 +186,17 @@ function graphParityDifferenceCount(
 			? `SELECT ${legacyColumns}
 				FROM email_attachments legacy
 				INNER JOIN email_messages owner ON owner.id = legacy.message_id
-				WHERE owner.user_id = 'system:email'`
+				WHERE owner.user_id = ?`
 			: `SELECT ${legacyColumns}
 				FROM ${contract.legacyTable} legacy
-				WHERE legacy.user_id = 'system:email'`
+				WHERE legacy.user_id = ?`
 	const dedicated = `SELECT ${dedicatedColumns}
 		FROM ${contract.dedicatedTable} dedicated`
 	const difference = (left: string, right: string) =>
 		(
 			db
 				.prepare(`SELECT COUNT(*) AS count FROM (${left} EXCEPT ${right})`)
-				.get() as { count: number }
+				.get(systemEmailOwnerId) as { count: number }
 		).count
 	return difference(legacy, dedicated) + difference(dedicated, legacy)
 }
@@ -430,7 +412,6 @@ test('0131 replaces dedicated drift with legacy authority before cutover', () =>
 		'2026-08-02T00:00:00.000Z',
 	)
 
-	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
 	applyMigrationLikeD1(db, systemEmailAuthorityMigration)
 
 	expect(
@@ -867,11 +848,16 @@ test('0131 rolls back catch-up and leaves no marker for invalid cross-owner refe
 				'invalid-cross-owner-thread', 'system:email', 'user-inbox',
 				'invalid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 			);
+		CREATE TRIGGER fail_if_graph_mutation_reached
+		BEFORE INSERT ON system_email_threads
+		BEGIN
+			SELECT RAISE(ABORT, 'graph mutation reached');
+		END;
 	`)
 
-	expect(() =>
-		applyMigrationLikeD1(db, systemEmailAuthorityMigration),
-	).toThrow()
+	expect(() => applyMigrationLikeD1(db, systemEmailAuthorityMigration)).toThrow(
+		/CHECK constraint failed/u,
+	)
 	expect(
 		db
 			.prepare(

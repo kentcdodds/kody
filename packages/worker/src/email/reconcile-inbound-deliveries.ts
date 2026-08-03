@@ -29,7 +29,6 @@ export async function sweepStaleInboundDeliveries(input: {
 	>
 	now?: Date
 }) {
-	await assertSystemEmailGraphAuthority(input.env.APP_DB)
 	const now = input.now ?? new Date()
 	const cutoff = new Date(
 		now.getTime() - staleInboundDeliveryAgeMs,
@@ -50,130 +49,74 @@ export async function sweepStaleInboundDeliveries(input: {
 	// still performed under one explicit userId. Deferring failed attempts and
 	// verification tombstones moves them behind older untouched users.
 	const userRows = await input.env.APP_DB.prepare(
-		`WITH authority(system_owner_id) AS (VALUES (?)),
-			projected_events AS (
-				SELECT email_delivery_events.*,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.reconcileAfter')
-						ELSE reconcile_after
-					END AS authority_reconcile_after,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.state')
-						ELSE state
-					END AS authority_state,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.cleanupRetryAt')
-						ELSE cleanup_retry_at
-					END AS authority_cleanup_retry_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.dedupeExpiresAt')
-						ELSE dedupe_expires_at
-					END AS authority_dedupe_expires_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.fingerprint')
-						ELSE fingerprint
-					END AS authority_fingerprint,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.usageEffectRecordedAt')
-						ELSE usage_effect_recorded_at
-					END AS authority_usage_recorded_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.usageEffectSuppressedAt')
-						ELSE usage_effect_suppressed_at
-					END AS authority_usage_suppressed_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.usageEffectRetryAt')
-						ELSE usage_effect_retry_at
-					END AS authority_usage_retry_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.usageEffectLease')
-						ELSE usage_effect_lease
-					END AS authority_usage_lease,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.usageEffectLeaseAt')
-						ELSE usage_effect_lease_at
-					END AS authority_usage_lease_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.subscriptionEffectState')
-						ELSE subscription_effect_state
-					END AS authority_subscription_state,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.subscriptionEffectRetryAt')
-						ELSE subscription_effect_retry_at
-					END AS authority_subscription_retry_at,
-					CASE WHEN user_id = system_owner_id
-						THEN json_extract(detail_json, '$.subscriptionEffectLeaseAt')
-						ELSE subscription_effect_lease_at
-					END AS authority_subscription_lease_at
-				FROM email_delivery_events
-				CROSS JOIN authority
-				WHERE user_id != system_owner_id
-			),
-			due_users AS (
+		`WITH due_users AS (
 				SELECT user_id, created_at AS due_at
-				FROM projected_events
+				FROM email_delivery_events
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'receive_started'
+					AND user_id != ?
 					AND created_at < ?
 					AND (
-						authority_reconcile_after IS NULL
-						OR authority_reconcile_after <= ?
+						reconcile_after IS NULL
+						OR reconcile_after <= ?
 					)
 					AND (
-						authority_state != 'orphan-cleaned'
-						OR authority_cleanup_retry_at <= ?
+						state != 'orphan-cleaned'
+						OR cleanup_retry_at <= ?
 					)
 				UNION ALL
-				SELECT user_id, authority_dedupe_expires_at
-				FROM projected_events
+				SELECT user_id, dedupe_expires_at
+				FROM email_delivery_events
 				WHERE provider = 'cloudflare-email-routing-dedupe'
-					AND authority_dedupe_expires_at <= ?
+					AND user_id != ?
+					AND dedupe_expires_at <= ?
 				UNION ALL
 				SELECT user_id, COALESCE(
-					authority_usage_retry_at,
-					authority_subscription_retry_at,
+					usage_effect_retry_at,
+					subscription_effect_retry_at,
 					created_at
 				)
-				FROM projected_events
+				FROM email_delivery_events
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
+					AND user_id != ?
 					AND needs_effect_reconcile = 1
-					AND authority_fingerprint IS NOT NULL
+					AND fingerprint IS NOT NULL
 					AND (
 						(
-							authority_usage_recorded_at IS NULL
-							AND authority_usage_suppressed_at IS NULL
+							usage_effect_recorded_at IS NULL
+							AND usage_effect_suppressed_at IS NULL
 							AND (
-								authority_usage_retry_at IS NULL
-								OR authority_usage_retry_at <= ?
+								usage_effect_retry_at IS NULL
+								OR usage_effect_retry_at <= ?
 							)
 							AND (
-								authority_usage_lease IS NULL
-								OR authority_usage_lease_at IS NULL
-								OR authority_usage_lease_at < ?
+								usage_effect_lease IS NULL
+								OR usage_effect_lease_at IS NULL
+								OR usage_effect_lease_at < ?
 							)
 						)
 						OR (
 							(
-								authority_subscription_state IS NULL
-								OR authority_subscription_state NOT IN (
+								subscription_effect_state IS NULL
+								OR subscription_effect_state NOT IN (
 									'complete',
 									'dead-letter'
 								)
 							)
 							AND (
-								authority_subscription_retry_at IS NULL
-								OR authority_subscription_retry_at <= ?
+								subscription_effect_retry_at IS NULL
+								OR subscription_effect_retry_at <= ?
 							)
 							AND (
-								authority_subscription_state != 'processing'
-								OR authority_subscription_lease_at IS NULL
-								OR authority_subscription_lease_at < ?
+								subscription_effect_state != 'processing'
+								OR subscription_effect_lease_at IS NULL
+								OR subscription_effect_lease_at < ?
 							)
 						)
 					)
 			)
-			SELECT user_id
+			SELECT user_id, MIN(due_at) AS due_at
 			FROM due_users
 			GROUP BY user_id
 			ORDER BY MIN(due_at) ASC, user_id ASC
@@ -184,45 +127,116 @@ export async function sweepStaleInboundDeliveries(input: {
 			cutoff,
 			now.toISOString(),
 			now.toISOString(),
+			systemEmailOwnerId,
 			now.toISOString(),
+			systemEmailOwnerId,
 			now.toISOString(),
 			effectLeaseExpiredBefore,
 			now.toISOString(),
 			effectLeaseExpiredBefore,
 			reconciliationUserBatchSize,
 		)
-		.all<{ user_id: string }>()
+		.all<{ user_id: string; due_at: string }>()
 	const systemDue = await input.env.APP_DB.prepare(
-		`SELECT ? AS user_id
-		WHERE EXISTS (
-			SELECT 1 FROM system_email_delivery_events
-			WHERE (
+		`WITH due_work(due_at) AS (
+			SELECT created_at
+			FROM system_email_delivery_events
+			WHERE
 				provider = 'cloudflare-email-routing'
 				AND event_type = 'receive_started'
 				AND created_at < ?
 				AND (reconcile_after IS NULL OR reconcile_after <= ?)
-			) OR (
+				AND (
+					state = 'pending'
+					OR (
+						state = 'storing'
+						AND (storage_lease_at IS NULL OR storage_lease_at < ?)
+					)
+					OR (
+						state = 'cleaning'
+						AND (cleanup_lease_at IS NULL OR cleanup_lease_at < ?)
+					)
+					OR (state = 'orphan-cleaned' AND cleanup_retry_at <= ?)
+				)
+			UNION ALL
+			SELECT dedupe_expires_at
+			FROM system_email_delivery_events
+			WHERE
 				provider = 'cloudflare-email-routing-dedupe'
 				AND dedupe_expires_at <= ?
-			) OR (
+			UNION ALL
+			SELECT COALESCE(
+				usage_effect_retry_at, subscription_effect_retry_at, created_at
+			)
+			FROM system_email_delivery_events
+			WHERE
 				provider = 'cloudflare-email-routing'
 				AND event_type = 'received'
 				AND needs_effect_reconcile = 1
-			)
-			LIMIT 1
-		)`,
+				AND fingerprint IS NOT NULL
+				AND (
+					(
+						usage_effect_recorded_at IS NULL
+						AND usage_effect_suppressed_at IS NULL
+						AND (
+							usage_effect_retry_at IS NULL OR usage_effect_retry_at <= ?
+						)
+						AND (
+							usage_effect_lease IS NULL
+							OR usage_effect_lease_at IS NULL
+							OR usage_effect_lease_at < ?
+						)
+					)
+					OR (
+						COALESCE(subscription_effect_state, 'pending')
+							NOT IN ('complete', 'dead-letter')
+						AND (
+							subscription_effect_retry_at IS NULL
+							OR subscription_effect_retry_at <= ?
+						)
+						AND (
+							COALESCE(subscription_effect_state, 'pending') !=
+								'processing'
+							OR subscription_effect_lease_at IS NULL
+							OR subscription_effect_lease_at < ?
+						)
+					)
+				)
+		)
+		SELECT ? AS user_id, MIN(due_at) AS due_at
+		FROM due_work
+		HAVING COUNT(*) > 0`,
 	)
-		.bind(systemEmailOwnerId, cutoff, now.toISOString(), now.toISOString())
-		.first<{ user_id: string }>()
+		.bind(
+			cutoff,
+			now.toISOString(),
+			effectLeaseExpiredBefore,
+			effectLeaseExpiredBefore,
+			now.toISOString(),
+			now.toISOString(),
+			now.toISOString(),
+			effectLeaseExpiredBefore,
+			now.toISOString(),
+			effectLeaseExpiredBefore,
+			systemEmailOwnerId,
+		)
+		.first<{ user_id: string; due_at: string }>()
 	const dueOwners = [
-		...(systemDue ? [systemDue] : []),
 		...(userRows.results ?? []),
-	]
+		...(systemDue ? [systemDue] : []),
+	].sort(
+		(left, right) =>
+			left.due_at.localeCompare(right.due_at) ||
+			left.user_id.localeCompare(right.user_id),
+	)
 	for (const { user_id: userId } of dueOwners) {
 		if (Date.now() >= deadlineMs) break
 		try {
 			const reconcileUser = async () => {
 				const systemOwner = userId === systemEmailOwnerId
+				if (systemOwner) {
+					await assertSystemEmailGraphAuthority(input.env.APP_DB)
+				}
 				const result = systemOwner
 					? await reconcileSystemStaleInboundDeliveries({
 							db: input.env.APP_DB,

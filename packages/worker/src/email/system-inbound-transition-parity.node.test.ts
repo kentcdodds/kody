@@ -56,7 +56,7 @@ function createDatabase(authority: 'legacy' | 'dedicated') {
 			'2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z'
 		)
 	`)
-	return { sqlite, db: createD1FromSqlite(sqlite) }
+	return sqlite
 }
 
 function delivery(id: string, now: Date): InboundDelivery {
@@ -334,9 +334,9 @@ async function runDedicatedTransitions(db: D1Database) {
 }
 
 test('legacy and dedicated system inbound transitions stay behaviorally exhaustive', async () => {
-	using legacy = createDatabase('legacy').sqlite
+	using legacy = createDatabase('legacy')
 	const legacyResult = await runLegacyTransitions(createD1FromSqlite(legacy))
-	using dedicated = createDatabase('dedicated').sqlite
+	using dedicated = createDatabase('dedicated')
 	const dedicatedResult = await runDedicatedTransitions(
 		createD1FromSqlite(dedicated),
 	)

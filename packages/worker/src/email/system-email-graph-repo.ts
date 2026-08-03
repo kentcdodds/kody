@@ -15,6 +15,7 @@ import {
 	systemEmailGraphLegacyCtes,
 	systemEmailGraphSourceCte,
 } from './system-email-graph-sql.ts'
+import { systemEmailDedicatedReferenceGuardStatement } from './system-email-graph-transaction.ts'
 import {
 	loadOutboundProviderIndexParityReport,
 	type OutboundProviderIndexParityReport,
@@ -238,8 +239,7 @@ function systemProviderParity(
 		report.linkedMessageCount === 0 &&
 		report.indexCount === 0 &&
 		dedicatedProviderLinkedMessageCount === 0 &&
-		report.parity &&
-		report.linkedMessageCount === dedicatedProviderLinkedMessageCount
+		report.parity
 	const classification = providerParity
 		? ('no-system-provider-links' as const)
 		: ('unsupported-system-provider-links' as const)
@@ -264,8 +264,11 @@ function systemProviderParity(
  */
 export async function loadSystemEmailGraphParityReport(input: {
 	db: D1Database
+	authorityAlreadyAsserted?: boolean
 }): Promise<SystemEmailGraphParityReport> {
-	await assertSystemEmailGraphAuthority(input.db)
+	if (!input.authorityAlreadyAsserted) {
+		await assertSystemEmailGraphAuthority(input.db)
+	}
 	const [row, providerReport] = await Promise.all([
 		input.db
 			.prepare(graphParitySql)
@@ -314,12 +317,13 @@ function mutationCounts(
 
 function deletedMutationCounts(
 	results: ReadonlyArray<D1Result<unknown>>,
+	offset = 0,
 ): SystemEmailGraphMutationCounts {
 	return {
-		threads: Number(results[3]?.meta.changes ?? 0),
-		messages: Number(results[2]?.meta.changes ?? 0),
-		attachments: Number(results[1]?.meta.changes ?? 0),
-		deliveryEvents: Number(results[0]?.meta.changes ?? 0),
+		threads: Number(results[offset + 3]?.meta.changes ?? 0),
+		messages: Number(results[offset + 2]?.meta.changes ?? 0),
+		attachments: Number(results[offset + 1]?.meta.changes ?? 0),
+		deliveryEvents: Number(results[offset]?.meta.changes ?? 0),
 	}
 }
 
@@ -348,6 +352,7 @@ export async function reconcileLegacySystemEmailGraphFromDedicated(input: {
 	await assertSystemEmailGraphAuthority(input.db)
 	const childFirst = [...systemEmailGraphColumnContracts].reverse()
 	const statements = [
+		systemEmailDedicatedReferenceGuardStatement(input.db),
 		...childFirst.map((contract) =>
 			input.db
 				.prepare(buildLegacySystemEmailGraphDeleteDriftSql(contract))
@@ -361,11 +366,14 @@ export async function reconcileLegacySystemEmailGraphFromDedicated(input: {
 		systemEmailAuthorityGuardStatement(input.db),
 	]
 	const results = await input.db.batch<unknown>(statements)
-	const postReport = await loadSystemEmailGraphParityReport({ db: input.db })
+	const postReport = await loadSystemEmailGraphParityReport({
+		db: input.db,
+		authorityAlreadyAsserted: true,
+	})
 	return {
 		metrics: {
-			deleted: deletedMutationCounts(results),
-			upserted: mutationCounts(results, 4),
+			deleted: deletedMutationCounts(results, 1),
+			upserted: mutationCounts(results, 5),
 			referencedOwnerMismatchCount: referencedOwnerMismatchCount(postReport),
 		},
 		postReport,

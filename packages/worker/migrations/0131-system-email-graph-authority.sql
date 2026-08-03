@@ -2,6 +2,73 @@
 -- system:email read/write authority. Legacy shared rows remain atomic rollback
 -- mirrors through step 5 and are intentionally not deleted by this migration.
 
+-- Wrangler submits one migration file plus its d1_migrations ledger insert as
+-- one D1 multi-statement transaction. The CHECK sentinel below therefore
+-- rolls this schema/data migration back as a unit on any preflight violation.
+CREATE TABLE IF NOT EXISTS system_email_graph_authority (
+	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+	authority TEXT NOT NULL CHECK (authority = 'dedicated'),
+	cutover_at TEXT NOT NULL,
+	graph_mismatch_count INTEGER NOT NULL CHECK (graph_mismatch_count = 0),
+	provider_link_count INTEGER NOT NULL CHECK (provider_link_count = 0)
+);
+
+-- Keep idempotency correlation separate from the canonical ISO timestamp.
+ALTER TABLE system_email_daily_counters ADD COLUMN operation_token TEXT;
+
+-- Fail before touching either graph when legacy authority contains an
+-- ownership violation or any system provider link.
+INSERT INTO system_email_graph_authority (
+	singleton, authority, cutover_at, graph_mismatch_count, provider_link_count
+)
+SELECT 2, 'dedicated', CURRENT_TIMESTAMP, 0, 0
+WHERE EXISTS (
+	SELECT 1 FROM email_threads thread
+	LEFT JOIN email_inboxes inbox
+		ON inbox.id = thread.inbox_id AND inbox.user_id = 'system:email'
+	WHERE thread.user_id = 'system:email'
+		AND thread.inbox_id IS NOT NULL AND inbox.id IS NULL
+	UNION ALL
+	SELECT 1 FROM email_messages message
+	LEFT JOIN email_inboxes inbox
+		ON inbox.id = message.inbox_id AND inbox.user_id = 'system:email'
+	LEFT JOIN email_sender_identities sender
+		ON sender.id = message.sender_identity_id
+		AND sender.user_id = 'system:email'
+	LEFT JOIN email_threads thread
+		ON thread.id = message.thread_id AND thread.user_id = 'system:email'
+	WHERE message.user_id = 'system:email' AND (
+		(message.inbox_id IS NOT NULL AND inbox.id IS NULL)
+		OR (message.sender_identity_id IS NOT NULL AND sender.id IS NULL)
+		OR (message.thread_id IS NOT NULL AND thread.id IS NULL)
+	)
+	UNION ALL
+	SELECT 1 FROM email_delivery_events event
+	LEFT JOIN email_inboxes inbox
+		ON inbox.id = event.inbox_id AND inbox.user_id = 'system:email'
+	LEFT JOIN email_messages message
+		ON message.id = event.message_id AND message.user_id = 'system:email'
+	WHERE event.user_id = 'system:email' AND (
+		(event.inbox_id IS NOT NULL AND inbox.id IS NULL)
+		OR (event.message_id IS NOT NULL AND message.id IS NULL)
+	)
+	UNION ALL
+	SELECT 1 FROM email_outbound_provider_index provider_index
+	WHERE provider_index.user_id = 'system:email' OR EXISTS (
+		SELECT 1 FROM email_messages message
+		WHERE message.id = provider_index.message_id
+			AND message.user_id = 'system:email'
+	)
+	UNION ALL
+	SELECT 1 FROM email_messages message
+	WHERE message.user_id = 'system:email'
+		AND message.provider_message_id IS NOT NULL
+	UNION ALL
+	SELECT 1 FROM system_email_messages message
+	WHERE message.provider_message_id IS NOT NULL
+	LIMIT 1
+);
+
 -- 0130 was a point-in-time copy. Catch up every legacy change made while 4a
 -- remained live authority. Delete dedicated drift child-first so foreign-key
 -- actions cannot preserve children whose valid legacy parent disappeared.
@@ -384,8 +451,7 @@ ON CONFLICT(id) DO UPDATE SET
 -- transition updates it in the same statement as detail_json.
 UPDATE system_email_delivery_events
 SET
-	usage_effect_recorded_at =
-		json_extract(detail_json, '$.usageEffectRecordedAt'),
+	usage_effect_recorded_at = json_extract(detail_json, '$.usageEffectRecordedAt'),
 	usage_month = json_extract(detail_json, '$.usageMonth'),
 	usage_bytes = json_extract(detail_json, '$.usageBytes'),
 	usage_duration_ms = json_extract(detail_json, '$.usageDurationMs'),
@@ -396,47 +462,58 @@ SET
 	cleanup_lease = json_extract(detail_json, '$.cleanupLease'),
 	cleanup_lease_at = json_extract(detail_json, '$.cleanupLeaseAt'),
 	cleanup_retry_at = json_extract(detail_json, '$.cleanupRetryAt'),
-	expected_attachment_count =
-		json_extract(detail_json, '$.expectedAttachmentCount'),
+	expected_attachment_count = json_extract(detail_json, '$.expectedAttachmentCount'),
 	finalization_token = json_extract(detail_json, '$.finalizationToken'),
 	reconcile_after = json_extract(detail_json, '$.reconcileAfter'),
 	dedupe_expires_at = json_extract(detail_json, '$.dedupeExpiresAt'),
-	usage_effect_suppressed_at =
-		json_extract(detail_json, '$.usageEffectSuppressedAt'),
+	usage_effect_suppressed_at = json_extract(detail_json, '$.usageEffectSuppressedAt'),
 	usage_started_at = json_extract(detail_json, '$.usageStartedAt'),
 	usage_effect_retry_at = json_extract(detail_json, '$.usageEffectRetryAt'),
 	usage_effect_lease = json_extract(detail_json, '$.usageEffectLease'),
 	usage_effect_lease_at = json_extract(detail_json, '$.usageEffectLeaseAt'),
-	subscription_effect_state =
-		json_extract(detail_json, '$.subscriptionEffectState'),
-	subscription_effect_lease =
-		json_extract(detail_json, '$.subscriptionEffectLease'),
-	subscription_effect_lease_at =
-		json_extract(detail_json, '$.subscriptionEffectLeaseAt'),
-	subscription_effect_retry_at =
-		json_extract(detail_json, '$.subscriptionEffectRetryAt'),
-	subscription_effect_attempt_count =
-		json_extract(detail_json, '$.subscriptionEffectAttemptCount'),
-	subscription_effect_dead_letter_at =
-		json_extract(detail_json, '$.subscriptionEffectDeadLetterAt'),
-	subscription_effect_last_error =
-		json_extract(detail_json, '$.subscriptionEffectLastError'),
-	updated_at = COALESCE(
-		json_extract(detail_json, '$.updatedAt'),
-		created_at
-	)
-WHERE provider IN (
-	'cloudflare-email-routing',
-	'cloudflare-email-routing-dedupe'
-);
+	subscription_effect_state = json_extract(detail_json, '$.subscriptionEffectState'),
+	subscription_effect_lease = json_extract(detail_json, '$.subscriptionEffectLease'),
+	subscription_effect_lease_at = json_extract(detail_json, '$.subscriptionEffectLeaseAt'),
+	subscription_effect_retry_at = json_extract(detail_json, '$.subscriptionEffectRetryAt'),
+	subscription_effect_attempt_count = json_extract(detail_json, '$.subscriptionEffectAttemptCount'),
+	subscription_effect_dead_letter_at = json_extract(detail_json, '$.subscriptionEffectDeadLetterAt'),
+	subscription_effect_last_error = json_extract(detail_json, '$.subscriptionEffectLastError'),
+	updated_at = COALESCE(json_extract(detail_json, '$.updatedAt'), created_at)
+WHERE provider IN ('cloudflare-email-routing', 'cloudflare-email-routing-dedupe');
 
-CREATE TABLE IF NOT EXISTS system_email_graph_authority (
-	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-	authority TEXT NOT NULL CHECK (authority = 'dedicated'),
-	cutover_at TEXT NOT NULL,
-	graph_mismatch_count INTEGER NOT NULL CHECK (graph_mismatch_count = 0),
-	provider_link_count INTEGER NOT NULL CHECK (provider_link_count = 0)
-);
+-- The rollback mirror must expose the same canonical promoted projection.
+UPDATE email_delivery_events
+SET
+	usage_effect_recorded_at = json_extract(detail_json, '$.usageEffectRecordedAt'),
+	usage_month = json_extract(detail_json, '$.usageMonth'),
+	usage_bytes = json_extract(detail_json, '$.usageBytes'),
+	usage_duration_ms = json_extract(detail_json, '$.usageDurationMs'),
+	state = json_extract(detail_json, '$.state'),
+	fingerprint = json_extract(detail_json, '$.fingerprint'),
+	storage_lease = json_extract(detail_json, '$.storageLease'),
+	storage_lease_at = json_extract(detail_json, '$.storageLeaseAt'),
+	cleanup_lease = json_extract(detail_json, '$.cleanupLease'),
+	cleanup_lease_at = json_extract(detail_json, '$.cleanupLeaseAt'),
+	cleanup_retry_at = json_extract(detail_json, '$.cleanupRetryAt'),
+	expected_attachment_count = json_extract(detail_json, '$.expectedAttachmentCount'),
+	finalization_token = json_extract(detail_json, '$.finalizationToken'),
+	reconcile_after = json_extract(detail_json, '$.reconcileAfter'),
+	dedupe_expires_at = json_extract(detail_json, '$.dedupeExpiresAt'),
+	usage_effect_suppressed_at = json_extract(detail_json, '$.usageEffectSuppressedAt'),
+	usage_started_at = json_extract(detail_json, '$.usageStartedAt'),
+	usage_effect_retry_at = json_extract(detail_json, '$.usageEffectRetryAt'),
+	usage_effect_lease = json_extract(detail_json, '$.usageEffectLease'),
+	usage_effect_lease_at = json_extract(detail_json, '$.usageEffectLeaseAt'),
+	subscription_effect_state = json_extract(detail_json, '$.subscriptionEffectState'),
+	subscription_effect_lease = json_extract(detail_json, '$.subscriptionEffectLease'),
+	subscription_effect_lease_at = json_extract(detail_json, '$.subscriptionEffectLeaseAt'),
+	subscription_effect_retry_at = json_extract(detail_json, '$.subscriptionEffectRetryAt'),
+	subscription_effect_attempt_count = json_extract(detail_json, '$.subscriptionEffectAttemptCount'),
+	subscription_effect_dead_letter_at = json_extract(detail_json, '$.subscriptionEffectDeadLetterAt'),
+	subscription_effect_last_error = json_extract(detail_json, '$.subscriptionEffectLastError'),
+	updated_at = COALESCE(json_extract(detail_json, '$.updatedAt'), created_at)
+WHERE user_id = 'system:email'
+	AND provider IN ('cloudflare-email-routing', 'cloudflare-email-routing-dedupe');
 
 -- The marker write is the atomic cutover gate. Count parity, missing/extra IDs,
 -- invalid cross-owner references, and provider links are persisted into
@@ -640,172 +717,22 @@ SELECT
 				legacy.provider, legacy.provider_message_id,
 				legacy.provider_event_id, legacy.detail_json, legacy.created_at,
 				legacy.needs_effect_reconcile,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageEffectRecordedAt')
-				ELSE legacy.usage_effect_recorded_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN json_extract(legacy.detail_json, '$.usageMonth')
-				ELSE legacy.usage_month END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN json_extract(legacy.detail_json, '$.usageBytes')
-				ELSE legacy.usage_bytes END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageDurationMs')
-				ELSE legacy.usage_duration_ms END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN json_extract(legacy.detail_json, '$.state')
-				ELSE legacy.state END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.fingerprint')
-				ELSE legacy.fingerprint END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.storageLease')
-				ELSE legacy.storage_lease END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.storageLeaseAt')
-				ELSE legacy.storage_lease_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.cleanupLease')
-				ELSE legacy.cleanup_lease END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.cleanupLeaseAt')
-				ELSE legacy.cleanup_lease_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.cleanupRetryAt')
-				ELSE legacy.cleanup_retry_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.expectedAttachmentCount')
-				ELSE legacy.expected_attachment_count END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.finalizationToken')
-				ELSE legacy.finalization_token END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.reconcileAfter')
-				ELSE legacy.reconcile_after END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.dedupeExpiresAt')
-				ELSE legacy.dedupe_expires_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageEffectSuppressedAt')
-				ELSE legacy.usage_effect_suppressed_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageStartedAt')
-				ELSE legacy.usage_started_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageEffectRetryAt')
-				ELSE legacy.usage_effect_retry_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageEffectLease')
-				ELSE legacy.usage_effect_lease END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.usageEffectLeaseAt')
-				ELSE legacy.usage_effect_lease_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectState')
-				ELSE legacy.subscription_effect_state END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectLease')
-				ELSE legacy.subscription_effect_lease END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectLeaseAt')
-				ELSE legacy.subscription_effect_lease_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectRetryAt')
-				ELSE legacy.subscription_effect_retry_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectAttemptCount')
-				ELSE legacy.subscription_effect_attempt_count END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectDeadLetterAt')
-				ELSE legacy.subscription_effect_dead_letter_at END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN
-					json_extract(legacy.detail_json, '$.subscriptionEffectLastError')
-				ELSE legacy.subscription_effect_last_error END,
-				CASE WHEN legacy.provider IN (
-					'cloudflare-email-routing',
-					'cloudflare-email-routing-dedupe'
-				) THEN COALESCE(
-					json_extract(legacy.detail_json, '$.updatedAt'),
-					legacy.created_at
-				) ELSE legacy.updated_at END
+				legacy.usage_effect_recorded_at, legacy.usage_month,
+				legacy.usage_bytes, legacy.usage_duration_ms, legacy.state,
+				legacy.fingerprint, legacy.storage_lease, legacy.storage_lease_at,
+				legacy.cleanup_lease, legacy.cleanup_lease_at,
+				legacy.cleanup_retry_at, legacy.expected_attachment_count,
+				legacy.finalization_token, legacy.reconcile_after,
+				legacy.dedupe_expires_at, legacy.usage_effect_suppressed_at,
+				legacy.usage_started_at, legacy.usage_effect_retry_at,
+				legacy.usage_effect_lease, legacy.usage_effect_lease_at,
+				legacy.subscription_effect_state,
+				legacy.subscription_effect_lease,
+				legacy.subscription_effect_lease_at,
+				legacy.subscription_effect_retry_at,
+				legacy.subscription_effect_attempt_count,
+				legacy.subscription_effect_dead_letter_at,
+				legacy.subscription_effect_last_error, legacy.updated_at
 			)
 	) + (
 		SELECT COUNT(*)
@@ -890,8 +817,4 @@ SELECT
 		FROM system_email_messages dedicated_message
 		WHERE dedicated_message.provider_message_id IS NOT NULL
 	)
-ON CONFLICT(singleton) DO UPDATE SET
-	authority = excluded.authority,
-	cutover_at = excluded.cutover_at,
-	graph_mismatch_count = excluded.graph_mismatch_count,
-	provider_link_count = excluded.provider_link_count;
+;

@@ -76,11 +76,8 @@ async function rejectClaimedInboundDelivery(input: {
 	message: ForwardableEmailMessage
 	delivery: InboundDelivery
 	reason: string
-	authority?: UserInboundDeliveryAuthority
+	authority: UserInboundDeliveryAuthority
 }) {
-	if (!input.authority) {
-		throw new Error('User inbound rejection requires Mailbox authority.')
-	}
 	const transitioned = await input.authority
 		.reject(input.delivery, input.reason)
 		.catch((error: unknown) => {
@@ -113,8 +110,11 @@ async function parseAndStoreInboundEmail(input: {
 	blobs: R2Bucket
 	delivery: InboundDelivery
 	parsed: Awaited<ReturnType<typeof parseForwardableEmailRawMime>>
-	authority?: UserInboundDeliveryAuthority
+	authority: UserInboundDeliveryAuthority
 }) {
+	if (!input.authority) {
+		throw new Error('User inbound storage requires Mailbox authority.')
+	}
 	const now = new Date().toISOString()
 	try {
 		return await storeIdempotentInboundEmail({

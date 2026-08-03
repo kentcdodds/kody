@@ -13,6 +13,14 @@ const deliveryEventContract = systemEmailGraphContract(
 	systemEmailGraphColumnContracts,
 	'deliveryEvents',
 )
+if (
+	systemEmailDeliveryEventColumns[0] !== 'id' ||
+	systemEmailDeliveryEventColumns[1] !== 'message_id'
+) {
+	throw new Error(
+		'systemEmailDeliveryEventColumns must start with id, message_id.',
+	)
+}
 const insertColumns = [
 	'id',
 	'message_id',
@@ -44,15 +52,19 @@ export function legacySystemInboundEventMirrorStatement(
 		.prepare(
 			`INSERT INTO email_delivery_events (${insertColumns.join(', ')})
 			SELECT ${selectColumns.join(', ')}
-			FROM system_email_delivery_events
+			FROM system_email_delivery_events event
 			WHERE id = ?
+				AND (event.inbox_id IS NULL OR EXISTS (
+					SELECT 1 FROM email_inboxes inbox
+					WHERE inbox.id = event.inbox_id AND inbox.user_id = ?
+				))
+				AND (event.message_id IS NULL OR EXISTS (
+					SELECT 1 FROM email_messages message
+					WHERE message.id = event.message_id AND message.user_id = ?
+				))
 			ON CONFLICT(id) DO UPDATE SET
 				${updateColumns
-					.map((column) =>
-						column === 'message_id'
-							? 'message_id = excluded.message_id'
-							: `${column} = excluded.${column}`,
-					)
+					.map((column) => `${column} = excluded.${column}`)
 					.join(',\n\t\t\t\t')},
 				user_id = CASE
 					WHEN email_delivery_events.user_id = excluded.user_id
@@ -60,7 +72,7 @@ export function legacySystemInboundEventMirrorStatement(
 					ELSE NULL
 				END`,
 		)
-		.bind(systemEmailOwnerId, eventId)
+		.bind(systemEmailOwnerId, eventId, systemEmailOwnerId, systemEmailOwnerId)
 }
 
 export function systemInboundEventMutation(input: {
@@ -68,7 +80,7 @@ export function systemInboundEventMutation(input: {
 	eventId: string
 	dedicated: D1PreparedStatement
 	legacy?: D1PreparedStatement
-	expectation?: 'parity' | 'absent'
+	expectation?: 'parity' | 'present' | 'absent'
 }): SystemEmailGraphMutation {
 	return {
 		contract: deliveryEventContract,
@@ -88,10 +100,9 @@ export async function commitSystemInboundEventMutation(input: {
 	legacy?: D1PreparedStatement
 	before?: ReadonlyArray<D1PreparedStatement>
 	after?: ReadonlyArray<D1PreparedStatement>
-	expectation?: 'parity' | 'absent'
+	expectation?: 'parity' | 'present' | 'absent'
 }) {
-	const beforeCount = input.before?.length ?? 0
-	const results = await commitSystemEmailGraphMutations({
+	const { results, mutationResults } = await commitSystemEmailGraphMutations({
 		db: input.db,
 		before: input.before,
 		mutations: [systemInboundEventMutation(input)],
@@ -99,7 +110,7 @@ export async function commitSystemInboundEventMutation(input: {
 	})
 	return {
 		results,
-		dedicatedResult: results[beforeCount],
-		legacyResult: results[beforeCount + 1],
+		dedicatedResult: mutationResults[0]?.dedicated,
+		legacyResult: mutationResults[0]?.legacy,
 	}
 }

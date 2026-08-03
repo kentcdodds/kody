@@ -34,6 +34,7 @@ export {
 	listSystemInboundUsageRows,
 	recordSystemInboundUsageEffect,
 } from './system-inbound-effect-store.ts'
+export { recordBoundedSystemEmailRejection } from './system-inbound-rejection-store.ts'
 
 export const systemInboundProvider = 'cloudflare-email-routing'
 export const systemInboundDedupeProvider = 'cloudflare-email-routing-dedupe'
@@ -146,6 +147,11 @@ export async function claimSystemInboundDeliveryWindow(input: {
 			provider: systemInboundDedupeProvider,
 		}).catch(() => null)
 		if (!committed) throw error
+		console.warn(
+			'system-inbound-dedupe-window-claim-recovered',
+			pointerId,
+			error,
+		)
 		return committed
 	}
 	const claimed = await getSystemInboundDeliveryPointer({
@@ -190,9 +196,8 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 		deliveryId: input.delivery.deliveryId,
 	})
 	if (existing) return { delivery: existing, overLimit: false as const }
-	const operationTimestamp = input.now
-		.toISOString()
-		.replace('Z', `${crypto.randomUUID().replaceAll('-', '').slice(0, 10)}Z`)
+	const operationToken = crypto.randomUUID()
+	const operationTimestamp = input.now.toISOString()
 	try {
 		await commitSystemInboundEventMutation({
 			db: input.db,
@@ -201,10 +206,11 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 				input.db
 					.prepare(
 						`INSERT INTO system_email_daily_counters (
-					local_part, day, count, updated_at
-				) VALUES (?, ?, 1, ?)
+					local_part, day, count, updated_at, operation_token
+				) VALUES (?, ?, 1, ?, ?)
 				ON CONFLICT(local_part, day) DO UPDATE SET
-					count = count + 1, updated_at = excluded.updated_at
+					count = count + 1, updated_at = excluded.updated_at,
+					operation_token = excluded.operation_token
 				WHERE count + 1 <= ?
 					AND NOT EXISTS (
 						SELECT 1 FROM system_email_delivery_events WHERE id = ?
@@ -214,6 +220,7 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 						input.localPart,
 						input.delivery.quotaDay,
 						operationTimestamp,
+						operationToken,
 						input.limit,
 						input.delivery.deliveryId,
 					),
@@ -228,7 +235,7 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 				SELECT ?, NULL, ?, 'receive_started', ?, ?, ?, ?, 'pending', ?, ?, ?
 				WHERE EXISTS (
 					SELECT 1 FROM system_email_daily_counters
-					WHERE local_part = ? AND day = ? AND updated_at = ?
+					WHERE local_part = ? AND day = ? AND operation_token = ?
 				)`,
 				)
 				.bind(
@@ -243,7 +250,7 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 					input.now.toISOString(),
 					input.localPart,
 					input.delivery.quotaDay,
-					operationTimestamp,
+					operationToken,
 				),
 		})
 	} catch (error) {
@@ -297,7 +304,10 @@ export async function claimSystemInboundDeliveryStorage(input: {
 					updated_at = ?
 				WHERE id = ? AND (
 					state = 'pending'
-					OR (state = 'storing' AND storage_lease_at < ?)
+					OR (
+						state = 'storing'
+						AND (storage_lease_at IS NULL OR storage_lease_at < ?)
+					)
 					OR (state = 'received' AND NOT EXISTS (
 						SELECT 1 FROM system_email_messages
 						WHERE id = json_extract(
@@ -476,90 +486,6 @@ export async function markSystemInboundDeliveryReceived(input: {
 	)
 }
 
-export async function recordBoundedSystemEmailRejection(input: {
-	db: D1Database
-	inboxId: string
-	recipient: string
-	reason: string
-	phase: string
-	now: Date
-	detailLimit: number
-}) {
-	await assertSystemEmailGraphAuthority(input.db)
-	const day = input.now.toISOString().slice(0, 10)
-	const aggregateId = `email-rejections:${input.inboxId}:${day}`
-	const detail = JSON.stringify({
-		aggregate: true,
-		day,
-		count: 1,
-		last_reason: input.reason,
-		last_phase: input.phase,
-		last_at: input.now.toISOString(),
-	})
-	await commitSystemInboundEventMutation({
-		db: input.db,
-		eventId: aggregateId,
-		dedicated: input.db
-			.prepare(
-				`INSERT INTO system_email_delivery_events (
-					id, inbox_id, event_type, provider, detail_json,
-					needs_effect_reconcile, created_at, updated_at
-				) VALUES (?, ?, 'rejected', ?, ?, 0, ?, ?)
-				ON CONFLICT(id) DO UPDATE SET
-					detail_json = json_set(
-						detail_json,
-						'$.count', COALESCE(json_extract(detail_json, '$.count'), 0) + 1,
-						'$.last_reason', json_extract(excluded.detail_json, '$.last_reason'),
-						'$.last_phase', json_extract(excluded.detail_json, '$.last_phase'),
-						'$.last_at', json_extract(excluded.detail_json, '$.last_at')
-					), updated_at = excluded.updated_at`,
-			)
-			.bind(
-				aggregateId,
-				input.inboxId,
-				systemInboundProvider,
-				detail,
-				input.now.toISOString(),
-				input.now.toISOString(),
-			),
-	})
-	const aggregate = await input.db
-		.prepare(
-			`SELECT json_extract(detail_json, '$.count') AS count
-			FROM system_email_delivery_events WHERE id = ?`,
-		)
-		.bind(aggregateId)
-		.first<{ count: number }>()
-	const count = Number(aggregate?.count ?? 1)
-	if (count <= input.detailLimit) {
-		const id = crypto.randomUUID()
-		await commitSystemInboundEventMutation({
-			db: input.db,
-			eventId: id,
-			dedicated: input.db
-				.prepare(
-					`INSERT INTO system_email_delivery_events (
-						id, inbox_id, event_type, provider, detail_json,
-						needs_effect_reconcile, created_at, updated_at
-					) VALUES (?, ?, 'rejected', ?, ?, 0, ?, ?)`,
-				)
-				.bind(
-					id,
-					input.inboxId,
-					systemInboundProvider,
-					JSON.stringify({
-						recipient: input.recipient,
-						reason: input.reason,
-						phase: input.phase,
-					}),
-					input.now.toISOString(),
-					input.now.toISOString(),
-				),
-		})
-	}
-	return count
-}
-
 export async function pruneSystemExpiredInboundDedupePointers(input: {
 	db: D1Database
 	now?: Date
@@ -596,13 +522,12 @@ export async function pruneSystemExpiredInboundDedupePointers(input: {
 			expectation: 'absent',
 		}),
 	)
-	const results = await commitSystemEmailGraphMutations({
+	const { mutationResults } = await commitSystemEmailGraphMutations({
 		db: input.db,
 		mutations,
 	})
-	return mutations.reduce(
-		(total, _mutation, index) =>
-			total + Number(results[index * 3]?.meta.changes ?? 0),
+	return mutationResults.reduce(
+		(total, result) => total + Number(result.dedicated?.meta.changes ?? 0),
 		0,
 	)
 }
@@ -741,8 +666,14 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 				AND (reconcile_after IS NULL OR reconcile_after <= ?)
 				AND (
 					state = 'pending'
-					OR (state = 'storing' AND storage_lease_at < ?)
-					OR (state = 'cleaning' AND cleanup_lease_at < ?)
+					OR (
+						state = 'storing'
+						AND (storage_lease_at IS NULL OR storage_lease_at < ?)
+					)
+					OR (
+						state = 'cleaning'
+						AND (cleanup_lease_at IS NULL OR cleanup_lease_at < ?)
+					)
 					OR (state = 'orphan-cleaned' AND cleanup_retry_at <= ?)
 				)
 			ORDER BY created_at ASC, id ASC LIMIT ?`,
@@ -817,8 +748,14 @@ export async function reconcileSystemStaleInboundDeliveries(input: {
 						), updated_at = ?
 					WHERE id = ? AND (
 						state = 'pending'
-						OR (state = 'storing' AND storage_lease_at < ?)
-						OR (state = 'cleaning' AND cleanup_lease_at < ?)
+						OR (
+							state = 'storing'
+							AND (storage_lease_at IS NULL OR storage_lease_at < ?)
+						)
+						OR (
+							state = 'cleaning'
+							AND (cleanup_lease_at IS NULL OR cleanup_lease_at < ?)
+						)
 						OR (state = 'orphan-cleaned' AND cleanup_retry_at <= ?)
 					) AND NOT EXISTS (
 						SELECT 1 FROM system_email_messages WHERE id = ?

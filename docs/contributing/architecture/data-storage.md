@@ -785,14 +785,16 @@ non-destructive.
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
 boundary. Migration `0131-system-email-graph-authority.sql` is also additive:
-before cutover it reconciles changes made after the 0130 snapshot by deleting
-dedicated drift child-first and full-column UPSERTing valid legacy authority
-rows parent-first. It then replaces every promoted transition/effect column for
-Cloudflare inbound and dedupe rows with the canonical `detail_json` projection,
-including clearing stale non-null values when a JSON property is absent.
-`needs_effect_reconcile` remains column-authoritative because legacy receive and
-effect transitions update it in the same statement as JSON. Non-inbound
-providers retain their promoted columns. The singleton
+before changing either graph, a CHECK sentinel rejects provider links and
+cross-owner inbox/sender/thread/message references. It then reconciles changes
+made after the 0130 snapshot by deleting dedicated drift child-first and
+full-column UPSERTing valid legacy authority rows parent-first. It then replaces
+every promoted transition/effect column in both the dedicated graph and rollback
+mirror for Cloudflare inbound and dedupe rows with the canonical `detail_json`
+projection, including clearing stale non-null values when a JSON property is
+absent. `needs_effect_reconcile` remains column-authoritative because legacy
+receive and effect transitions update it in the same statement as JSON.
+Non-inbound providers retain their promoted columns. The singleton
 `system_email_graph_authority` insert stores CHECK-constrained
 `graph_mismatch_count = 0` and `provider_link_count = 0` gates. The graph gate
 checks exact counts and full-column values for all four tables, missing/extra
@@ -801,6 +803,15 @@ the whole reconciliation and leaves no marker. The migration never deletes
 shared rows. The 4b Worker requires that marker on every dedicated authority
 entry point and refuses startup/work when it is missing or invalid. The pre-4b
 rollback Worker does not know about the marker and ignores it.
+
+Wrangler submits each migration file together with its `d1_migrations` ledger
+insert as one D1 multi-statement transaction (local execution uses `D1.batch`;
+remote execution uses D1's transactional multi-statement query). Therefore a
+preflight or post-copy CHECK failure rolls back the authority table, the counter
+correlation-token column, and every graph mutation. The migration rollback tests
+deliberately wrap the complete file the same way and prove both early preflight
+and late post-copy parity failures leave the pre-0131 graph unchanged and no
+marker behind.
 
 After 4b, `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events` are the only live
@@ -827,7 +838,7 @@ The admin mailbox maintenance `status` action remains an aggregate, content-free
 parity report. The audited `system_email_graph_reconcile` action is now a
 rollback-mirror repair only and requires both `force: true` and
 `direction: "dedicated_to_legacy"`. In one D1 batch it removes legacy drift
-child-first and upserts the complete dedicated graph parent-first. There is no
+child-first and upserts the complete legacy graph parent-first. There is no
 legacy-to-dedicated reconcile path after cutover.
 
 The existing `email_outbound_provider_index` still has an FK to legacy

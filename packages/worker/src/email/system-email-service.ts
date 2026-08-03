@@ -126,6 +126,10 @@ export async function storeIdempotentSystemInboundEmail(input: {
 		}
 	}
 
+	let storedAttachments:
+		| Awaited<ReturnType<typeof listSystemEmailAttachments>>
+		| null
+		| undefined
 	try {
 		await insertSystemEmailAttachments({
 			db: input.db,
@@ -144,12 +148,18 @@ export async function storeIdempotentSystemInboundEmail(input: {
 			})),
 		})
 	} catch (error) {
-		throw new RetryableInboundStorageError(
-			'Failed to commit inbound email attachments; the stable delivery will be retried.',
-			error,
-		)
+		storedAttachments = await listSystemEmailAttachments({
+			db: input.db,
+			messageId: delivery.messageId,
+		}).catch(() => null)
+		if (storedAttachments?.length !== parsed.attachments.length) {
+			throw new RetryableInboundStorageError(
+				'Failed to commit inbound email attachments; the stable delivery will be retried.',
+				error,
+			)
+		}
 	}
-	const storedAttachments = await listSystemEmailAttachments({
+	storedAttachments ??= await listSystemEmailAttachments({
 		db: input.db,
 		messageId: delivery.messageId,
 	}).catch((error: unknown) => {
