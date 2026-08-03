@@ -63,3 +63,41 @@ test('audit-shaped D1 snapshots cannot overwrite authoritative Mailbox rows', as
 		fingerprint: 'authoritative-fingerprint',
 	})
 }, 30_000)
+
+test('generic upserts reject inbound authority state and allow pre-claim audits', async () => {
+	const ownerId = uniqueUserId('generic-authority-guard')
+	const mailbox = rpcFor(ownerId)
+	const authorityEvent = baseDeliveryEvent({
+		id: 'email-inbound-delivery:generic-authority-guard',
+		eventType: 'receive_started',
+		provider: 'cloudflare-email-routing',
+		state: 'pending',
+		fingerprint: 'generic-authority-fingerprint',
+	})
+	const audit = preClaimAuditEvent({
+		inboxId: 'inbox-generic-authority-guard',
+		day: '2026-08-03',
+	})
+
+	await expect(
+		mailbox.upsertDeliveryEvents({
+			ownerId,
+			events: [authorityEvent, audit],
+		}),
+	).resolves.toEqual({
+		results: [
+			{
+				eventId: authorityEvent.id,
+				inserted: false,
+				accepted: false,
+			},
+			{ eventId: audit.id, inserted: true, accepted: true },
+		],
+	})
+	await expect(
+		mailbox.getInboundDelivery({
+			ownerId,
+			deliveryId: authorityEvent.id,
+		}),
+	).resolves.toBeNull()
+})

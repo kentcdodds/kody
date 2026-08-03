@@ -123,7 +123,11 @@ export function shouldSkipMailboxDeliveryEventWrite(
 		event: MailboxDeliveryEventInput
 	},
 ) {
-	if (!isPreClaimAuditSnapshot(input.event)) return false
+	const preClaimAudit = isPreClaimAuditSnapshot(input.event)
+	if (input.event.provider === mailboxInboundProvider && !preClaimAudit) {
+		return true
+	}
+	if (!preClaimAudit) return false
 	const existing = readMailboxDeliveryEvent(sql, input.event.id)
 	return existing != null && !isPreClaimAuditSnapshot(existing)
 }
