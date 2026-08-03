@@ -396,6 +396,12 @@ ON email_outbound_provider_index(message_id);`,
 	last_error TEXT,
 	updated_at TEXT NOT NULL
 );`,
+		`CREATE INDEX IF NOT EXISTS idx_email_inbound_due_owners_priority_due_at
+ON email_inbound_due_owners(
+	CASE WHEN reason = 'cutover-audit' THEN 1 ELSE 0 END,
+	due_at,
+	user_id
+);`,
 		`CREATE TABLE IF NOT EXISTS email_outbound_provider_index_repair_owners (
 	user_id TEXT PRIMARY KEY NOT NULL,
 	pending_count INTEGER NOT NULL,

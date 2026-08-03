@@ -5,8 +5,10 @@
 -- parity record before this deployment can enable Mailbox-only writes. This
 -- preserves the retired production read-cutover eligibility exactly: at least
 -- two hours of continuous matching, a check within six hours, completed
--- creation backfills, and no active content-replay window/cursor. Deleting
--- accounts and `system:email` are excluded.
+-- creation backfills, and no active content-replay window/cursor. The migration
+-- excludes only `system:email`: a frozen USER owner with `deleting_at` set
+-- intentionally blocks deployment until account-deletion cleanup completes, at
+-- which point operators retry this migration.
 CREATE TABLE migration_0133_email_user_graph_authority_guard (
 	value INTEGER NOT NULL CHECK (value = 1)
 );
@@ -89,8 +91,12 @@ CREATE TABLE email_inbound_due_owners (
 	updated_at TEXT NOT NULL
 );
 
-CREATE INDEX idx_email_inbound_due_owners_due_at
-	ON email_inbound_due_owners(due_at, user_id);
+CREATE INDEX idx_email_inbound_due_owners_priority_due_at
+	ON email_inbound_due_owners(
+		CASE WHEN reason = 'cutover-audit' THEN 1 ELSE 0 END,
+		due_at,
+		user_id
+	);
 
 -- Audit every frozen owner once after cutover. The bounded scheduled sweeper
 -- opens each Mailbox, processes stale/effect work, then replaces or removes

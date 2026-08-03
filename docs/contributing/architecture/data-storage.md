@@ -93,12 +93,12 @@ Deletion must cover these user-owned surfaces:
   captures the authoritative USER raw-MIME and attachment references through
   `Mailbox.listBlobReferences`, deletes those owner-safe R2 keys plus defensive
   owner-prefix sweeps, and only then calls `Mailbox.purge()`. The purge clears
-  DO SQLite only. D1 `email_*` compatibility rows remain explicit deletion
-  targets until step 5 (see [Mailbox](#durable-objects-mailbox)). `MCP` objects
-  remain SDK session-keyed, while `mcp_agent_sessions` indexes each Durable
-  Object id by authenticated stable user id so account deletion can purge stored
-  props, conversation state, raw-fetch state, and transport storage before
-  revoking OAuth grants.
+  DO SQLite only. Frozen shared USER email rows are then deleted through the
+  scoped legacy privacy-cleanup module until their physical drop (see
+  [Mailbox](#durable-objects-mailbox)). `MCP` objects remain SDK session-keyed,
+  while `mcp_agent_sessions` indexes each Durable Object id by authenticated
+  stable user id so account deletion can purge stored props, conversation state,
+  raw-fetch state, and transport storage before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
@@ -725,11 +725,14 @@ retries failures with bounded backoff and publishes aggregate repair health.
 Migration `0133-email-user-graph-authority.sql` installs the production cutover
 marker after verifying every frozen USER owner has a fresh successful complete
 backfill. USER write entry points fail closed when the marker is absent;
-`system:email` is unaffected. The same migration adds two non-payload
-coordination surfaces: `email_inbound_due_owners` provides bounded owner
-discovery for scheduled inbound reconciliation, and
-`email_delivery_alert_events` preserves short-lived bounced/complained signals
-for operator burst alerts.
+`system:email` is unaffected. A frozen owner with `users.deleting_at` set
+intentionally blocks the migration; account-deletion cleanup must finish before
+operators retry deployment. The same migration adds two non-payload coordination
+surfaces: `email_inbound_due_owners` provides bounded owner discovery for
+scheduled inbound reconciliation. Due live-work reasons sort before the seeded
+`cutover-audit` backlog, then by due time and owner, with 25 owners processed
+per tick. `email_delivery_alert_events` preserves short-lived bounced/complained
+signals for operator burst alerts.
 
 The shared D1 `email_threads`, `email_messages`, `email_attachments`, and
 `email_delivery_events` tables are a physically frozen rollback snapshot.
@@ -739,11 +742,17 @@ The only USER mutations are privacy lifecycle deletes from
 `legacy-user-email-graph-cleanup.ts`: account deletion removes the owner's
 frozen rows after Mailbox/R2 inventory and purge, and retention may prune old
 frozen rows. Aggregate backup verification is the only allowed USER read. Static
-import/SQL architecture checks enforce those boundaries; the marked SQL guard is
-defense in depth. The former `mailbox_parity` lane, D1-to-Mailbox rebuild, and
-`mailbox-read-cutover` flag are retired. This step does not drop the tables,
-columns, triggers, parity columns, or tombstones. `system:email` remains on its
-dedicated D1 graph and retention path.
+import/SQL architecture checks enforce those boundaries. Every live email module
+must pass an inline string literal to D1 `prepare`; template substitutions,
+concatenation, variables, and helper-composed SQL are rejected even when the
+prepared statement is passed inside `batch`. Exact dedicated
+system/legacy-cleanup modules are the authority allowlist, while the runtime
+marked-SQL guard implementation is necessarily exempt because it validates its
+SQL argument before preparing it. That runtime guard is defense in depth. The
+former `mailbox_parity` lane, D1-to-Mailbox rebuild, and `mailbox-read-cutover`
+flag are retired. This step does not drop the tables, columns, triggers, parity
+columns, or tombstones. `system:email` remains on its dedicated D1 graph and
+retention path.
 
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy

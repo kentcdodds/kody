@@ -144,6 +144,50 @@ test('static authority catches every legacy import shape and mutator aliases', a
 	}
 })
 
+test('static authority rejects dynamic D1 SQL composition, including batched statements', async () => {
+	await using fixture = await authorityFixture({
+		'packages/worker/src/email/template-expression.ts': `
+			export const read = (db: D1Database, table: string) =>
+				db.prepare(\`SELECT * FROM \${table}\`)
+		`,
+		'packages/worker/src/email/concatenated.ts': `
+			export const read = (db: D1Database, suffix: string) =>
+				db.prepare('SELECT * FROM email_' + suffix)
+		`,
+		'packages/worker/src/email/nonliteral-variable.ts': `
+			export const read = (db: D1Database, sql: string) => db.prepare(sql)
+		`,
+		'packages/worker/src/email/helper-composed.ts': `
+			const tableSql = (table: string) => \`SELECT * FROM \${table}\`
+			export const read = (db: D1Database) =>
+				db.prepare(tableSql('email_messages'))
+		`,
+		'packages/worker/src/email/batched.ts': `
+			export const write = (env: Env, table: string) =>
+				env.APP_DB.batch([
+					env.APP_DB.prepare(\`DELETE FROM \${table} WHERE user_id = ?\`),
+				])
+		`,
+	})
+	const violations = await scanUserEmailD1Authority(fixture.root)
+	for (const file of [
+		'template-expression.ts',
+		'concatenated.ts',
+		'nonliteral-variable.ts',
+		'helper-composed.ts',
+		'batched.ts',
+	]) {
+		expect(violations).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					file: `packages/worker/src/email/${file}`,
+					message: expect.stringContaining('inline string literal'),
+				}),
+			]),
+		)
+	}
+})
+
 test('static authority permits Mailbox SQLite and scoped cleanup SQL', async () => {
 	await using fixture = await authorityFixture({
 		'packages/worker/src/email/mailbox-store.ts': `
@@ -157,8 +201,8 @@ test('static authority permits Mailbox SQLite and scoped cleanup SQL', async () 
 			}
 		`,
 		'packages/worker/src/email/system-email-graph-store.ts': `
-			export function read(db: D1Database) {
-				return db.prepare("SELECT * FROM 'main'.'email_messages'")
+			export function read(db: D1Database, table: string) {
+				return db.prepare(\`SELECT * FROM \${table}\`)
 			}
 		`,
 		'packages/worker/src/email/unrelated.tsx': `

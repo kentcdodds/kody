@@ -3,6 +3,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
+	hintInboundDueOwner,
 	listDueInboundOwners,
 	replaceInboundDueOwnerHint,
 } from './inbound-due-owners.ts'
@@ -101,6 +102,59 @@ test('due-owner discovery is bounded and ordered without a users scan', async ()
 		'2026-08-03T11:01:00.000Z',
 		'2026-08-03T11:02:00.000Z',
 	])
+})
+
+test('live due work precedes and cannot starve behind a bounded cutover audit backlog', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-08-03T12:00:00.000Z')
+	const auditDueAt = '2026-08-03T11:00:00.000Z'
+	const liveDueAt = '2026-08-03T11:59:00.000Z'
+	const liveUserId = `live-${crypto.randomUUID()}`
+	await env.APP_DB.batch([
+		...Array.from({ length: 100 }, (_, index) =>
+			env.APP_DB.prepare(
+				`INSERT INTO email_inbound_due_owners (
+						user_id, due_at, reason, attempt_count, last_error, updated_at
+					) VALUES (?, ?, 'cutover-audit', 0, NULL, ?)`,
+			).bind(
+				`audit-${String(index).padStart(3, '0')}-${crypto.randomUUID()}`,
+				auditDueAt,
+				now.toISOString(),
+			),
+		),
+		env.APP_DB.prepare(
+			`INSERT INTO email_inbound_due_owners (
+					user_id, due_at, reason, attempt_count, last_error, updated_at
+				) VALUES (?, ?, 'mailbox-due-work', 0, NULL, ?)`,
+		).bind(liveUserId, liveDueAt, now.toISOString()),
+	])
+	await hintInboundDueOwner({
+		db: env.APP_DB,
+		userId: liveUserId,
+		dueAt: auditDueAt,
+		reason: 'cutover-audit',
+		now,
+	})
+
+	const batchSizes: Array<number> = []
+	const drainedUserIds: Array<string> = []
+	for (;;) {
+		const due = await listDueInboundOwners({ db: env.APP_DB, now })
+		if (due.length === 0) break
+		batchSizes.push(due.length)
+		drainedUserIds.push(...due.map((owner) => owner.userId))
+		await env.APP_DB.batch(
+			due.map((owner) =>
+				env.APP_DB.prepare(
+					`DELETE FROM email_inbound_due_owners WHERE user_id = ?`,
+				).bind(owner.userId),
+			),
+		)
+	}
+
+	expect(drainedUserIds[0]).toBe(liveUserId)
+	expect(batchSizes).toEqual([25, 25, 25, 25, 1])
+	expect(drainedUserIds).toHaveLength(101)
 })
 
 test('cutover audit sweep clears a healthy Mailbox and retains its next due work', async () => {

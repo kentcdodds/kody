@@ -1,0 +1,335 @@
+import { env } from 'cloudflare:workers'
+import { expect, test } from 'vitest'
+import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	clearRunRecords,
+	exportRunRecords,
+} from '#worker/run-records/service.ts'
+import {
+	ensurePackageSubscriptionTestSchema,
+	seedAccount,
+} from '#worker/test-support/workers-seed.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
+import { handleInboundEmail } from './inbound.ts'
+import { mailboxRpc } from './mailbox-client.ts'
+import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
+import { sendOutboundEmail } from './outbound.ts'
+import { createForwardableEmailMessage } from './test-fixtures.ts'
+import { ensureEmailTestSchema } from './test-schema.ts'
+
+const platformBaseUrl = 'https://kody.example.com'
+const platformDomain = 'inbox.kody.example.com'
+const inboundTopic = 'email.message.received'
+const sharedUserGraphTable =
+	/\bemail_(?:threads|messages|attachments|delivery_events)\b/u
+
+function captureD1Sql(db: D1Database) {
+	const statements: Array<string> = []
+	return {
+		statements,
+		db: new Proxy(db, {
+			get(target, property, receiver) {
+				if (property === 'prepare') {
+					return (sql: string) => {
+						statements.push(sql)
+						return target.prepare(sql)
+					}
+				}
+				if (property === 'exec') {
+					return (sql: string) => {
+						statements.push(sql)
+						return target.exec(sql)
+					}
+				}
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			},
+		}),
+	}
+}
+
+async function seedSubscribedPackage(input: {
+	bundleKv: Map<string, string>
+	userId: string
+}) {
+	const sourceId = `source-${crypto.randomUUID()}`
+	const packageId = `package-${crypto.randomUUID()}`
+	const now = new Date().toISOString()
+	await env.APP_DB.batch([
+		env.APP_DB.prepare(
+			`INSERT INTO saved_packages (
+					id, user_id, name, kody_id, description, tags_json,
+					search_text, source_id, has_app, created_at, updated_at
+				) VALUES (?, ?, ?, 'mailbox-flow', 'Mailbox flow', '[]',
+					NULL, ?, 0, ?, ?)`,
+		).bind(
+			packageId,
+			input.userId,
+			`@flow-${crypto.randomUUID().slice(0, 8)}/mailbox-flow`,
+			sourceId,
+			now,
+			now,
+		),
+		env.APP_DB.prepare(
+			`INSERT INTO entity_sources (
+					id, user_id, entity_kind, entity_id, repo_id,
+					published_commit, indexed_commit, manifest_path,
+					source_root, created_at, updated_at
+				) VALUES (?, ?, 'package', ?, 'repo-1', 'commit-1', NULL,
+					'package.json', '/', ?, ?)`,
+		).bind(sourceId, input.userId, packageId, now, now),
+	])
+	const manifest = {
+		name: '@flow/mailbox-flow',
+		exports: { '.': './src/index.ts' },
+		kody: {
+			id: 'mailbox-flow',
+			description: 'Mailbox flow',
+			subscriptions: {
+				[inboundTopic]: { handler: './src/on-email.ts' },
+			},
+		},
+	}
+	input.bundleKv.set(
+		buildPublishedSourceManifestSnapshotKvKey({
+			sourceId,
+			publishedCommit: 'commit-1',
+		}),
+		JSON.stringify({
+			version: 1,
+			sourceId,
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			manifestContent: JSON.stringify(manifest),
+			createdAt: now,
+		}),
+	)
+	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:${inboundTopic}:src/on-email.ts`
+	input.bundleKv.set(
+		artifactKey,
+		JSON.stringify({
+			version: 1,
+			kind: 'module',
+			artifactName: `subscription:${inboundTopic}`,
+			sourceId,
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/on-email.ts',
+			mainModule: 'dist/subscription.js',
+			modules: {
+				'dist/subscription.js': `
+export default async function main(input = {}) {
+	return {
+		event: input.event,
+		messageId: input.message?.id ?? null,
+		subject: input.message?.subject ?? null,
+		attachmentCount: input.attachments?.length ?? 0,
+		attachmentName: input.attachments?.[0]?.filename ?? null,
+	}
+}
+`,
+			},
+			dependencies: [],
+			packageContext: {
+				packageId,
+				kodyId: 'mailbox-flow',
+				sourceId,
+			},
+			serviceContext: null,
+			createdAt: now,
+		}),
+	)
+	await env.APP_DB.prepare(
+		`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind,
+				artifact_name, entry_point, kv_key, dependencies_json,
+				created_at, updated_at
+			) VALUES (?, ?, ?, 'commit-1', 'module', ?,
+				'src/on-email.ts', ?, '[]', ?, ?)`,
+	)
+		.bind(
+			`artifact-${crypto.randomUUID()}`,
+			input.userId,
+			sourceId,
+			`subscription:${inboundTopic}`,
+			artifactKey,
+			now,
+			now,
+		)
+		.run()
+	return packageId
+}
+
+function bundleArtifactsKv(bundleKv: Map<string, string>) {
+	return {
+		async get(key: string, type?: string) {
+			const value = bundleKv.get(key) ?? null
+			if (value == null) return null
+			if (type === 'json') return JSON.parse(value) as unknown
+			return value
+		},
+		async put() {
+			return undefined
+		},
+		async delete() {
+			return undefined
+		},
+	}
+}
+
+test('USER inbound attachment, package event, reply, and provider index stay Mailbox-authoritative', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	await ensurePackageSubscriptionTestSchema(env.APP_DB)
+	const username = `mailbox-flow-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `${username}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+		plan: 'max',
+		stableUserId: userId,
+	})
+	await clearRunRecords({ env, userId })
+	const bundleKv = new Map<string, string>()
+	const packageId = await seedSubscribedPackage({ bundleKv, userId })
+	const captured = captureD1Sql(env.APP_DB)
+	const providerMessageId = `provider-${crypto.randomUUID()}`
+	const sent: Array<Record<string, unknown>> = []
+	const flowEnv = {
+		...env,
+		APP_DB: captured.db,
+		APP_BASE_URL: platformBaseUrl,
+		BUNDLE_ARTIFACTS_KV: bundleArtifactsKv(bundleKv),
+		EMAIL: {
+			async send(message: Record<string, unknown>) {
+				sent.push(message)
+				return { messageId: providerMessageId }
+			},
+		} as unknown as SendEmail,
+	}
+	const waitUntilPromises: Array<Promise<unknown>> = []
+	const ctx = {
+		waitUntil(promise: Promise<unknown>) {
+			waitUntilPromises.push(promise)
+		},
+		passThroughOnException() {},
+	} as ExecutionContext
+	const address = `${username}@${platformDomain}`
+	const inbound = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Integrated Mailbox flow',
+			`Message-ID: <flow-${crypto.randomUUID()}@example.net>`,
+			'Content-Type: multipart/mixed; boundary="mailbox-flow-boundary"',
+			'',
+			'--mailbox-flow-boundary',
+			'Content-Type: text/plain; charset="utf-8"',
+			'',
+			'Please reply.',
+			'--mailbox-flow-boundary',
+			'Content-Type: text/plain; name="note.txt"',
+			'Content-Disposition: attachment; filename="note.txt"',
+			'',
+			'Attachment bytes.',
+			'--mailbox-flow-boundary--',
+		].join('\r\n'),
+	})
+
+	await handleInboundEmail(inbound, flowEnv, ctx)
+	for (let index = 0; index < waitUntilPromises.length; index += 1) {
+		await waitUntilPromises[index]
+	}
+	expect(inbound.rejectedReason).toBeNull()
+
+	const mailbox = mailboxRpc({ env, userId })
+	const inboundPage = await mailbox.listMessages({
+		direction: 'inbound',
+		limit: 10,
+	})
+	expect(inboundPage.messages).toHaveLength(1)
+	const inboundMessage = inboundPage.messages[0]
+	if (!inboundMessage) throw new Error('Expected inbound Mailbox message.')
+	expect(inboundMessage).toMatchObject({
+		subject: 'Integrated Mailbox flow',
+		processingStatus: 'stored',
+	})
+	await expect(
+		mailbox.listAttachmentsForMessage({ messageId: inboundMessage.id }),
+	).resolves.toEqual([
+		expect.objectContaining({
+			filename: 'note.txt',
+			storageKind: 'raw-mime',
+		}),
+	])
+
+	const invocations = (
+		await exportRunRecords({ env: flowEnv, userId, pageSize: 100 })
+	).packageInvocations
+	expect(invocations).toHaveLength(1)
+	expect(invocations[0]).toMatchObject({
+		packageId,
+		topic: inboundTopic,
+		source: 'email',
+	})
+	const responseJson = invocations[0]?.responseJson
+	if (!responseJson) throw new Error('Expected package sandbox response.')
+	expect(
+		JSON.parse(responseJson) as {
+			body: { result: Record<string, unknown> }
+		},
+	).toMatchObject({
+		body: {
+			result: {
+				event: inboundTopic,
+				messageId: inboundMessage.id,
+				subject: 'Integrated Mailbox flow',
+				attachmentCount: 1,
+				attachmentName: 'note.txt',
+			},
+		},
+	})
+
+	const reply = await sendOutboundEmail({
+		env: flowEnv,
+		userId,
+		accountEmail,
+		recipientPolicy: 'reply',
+		replyToMessageId: inboundMessage.id,
+		subject: 'Re: Integrated Mailbox flow',
+		text: 'Thanks for the note.',
+		inReplyToHeader: inboundMessage.messageIdHeader,
+		references: inboundMessage.messageIdHeader
+			? [inboundMessage.messageIdHeader]
+			: [],
+	})
+	expect(reply.status).toBe('sent')
+	expect(sent).toHaveLength(1)
+	expect(sent[0]).toMatchObject({ to: 'sender@example.net' })
+	await expect(
+		mailbox.getMessage({ messageId: reply.message.id }),
+	).resolves.toMatchObject({
+		direction: 'outbound',
+		processingStatus: 'sent',
+		providerMessageId,
+		inReplyToHeader: inboundMessage.messageIdHeader,
+	})
+	await expect(
+		getOutboundProviderIndexRow({
+			db: captured.db,
+			providerMessageId,
+		}),
+	).resolves.toMatchObject({
+		userId,
+		messageId: reply.message.id,
+	})
+	expect(
+		captured.statements.filter((sql) => sharedUserGraphTable.test(sql)),
+	).toEqual([])
+}, 60_000)

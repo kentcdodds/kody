@@ -139,15 +139,20 @@ export async function deleteOutboundProviderIndexByMessageIds(input: {
 	const chunkSize = 100
 	for (let index = 0; index < input.messageIds.length; index += chunkSize) {
 		const chunk = input.messageIds.slice(index, index + chunkSize)
-		const placeholders = chunk.map(() => '?').join(', ')
-		const result = await input.db
-			.prepare(
-				`DELETE FROM email_outbound_provider_index
-				WHERE message_id IN (${placeholders})`,
-			)
-			.bind(...chunk)
-			.run()
-		deleted += Number(result.meta.changes ?? 0)
+		const results = await input.db.batch(
+			chunk.map((messageId) =>
+				input.db
+					.prepare(
+						`DELETE FROM email_outbound_provider_index
+						WHERE message_id = ?`,
+					)
+					.bind(messageId),
+			),
+		)
+		deleted += results.reduce(
+			(total, result) => total + Number(result.meta.changes ?? 0),
+			0,
+		)
 	}
 	return deleted
 }

@@ -78,7 +78,7 @@ function expectAuthorityMigrationRejected(update: string) {
 	).toBeUndefined()
 }
 
-test('0133 preserves exact soak, freshness, replay, and deletion eligibility', () => {
+test('0133 preserves exact soak, freshness, and replay eligibility', () => {
 	expectAuthorityMigrationRejected(`
 		UPDATE users
 		SET mailbox_parity_matching_since =
@@ -110,12 +110,33 @@ test('0133 preserves exact soak, freshness, replay, and deletion eligibility', (
 			mailbox_parity_content_replay_cursor_id = 'dangling-content-cursor'
 		WHERE stable_user_id = 'user-authority';
 	`)
+})
 
-	expectAuthorityMigrationRejected(`
+test('0133 blocks a deleting frozen owner until privacy cleanup finishes', () => {
+	using sqlite = createAuthorityMigrationDatabase()
+	sqlite.exec(`
 		UPDATE users
 		SET deleting_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 		WHERE stable_user_id = 'user-authority';
 	`)
+	expect(() => applyMigrationLikeD1(sqlite, authorityMigration)).toThrow(
+		/CHECK constraint failed/u,
+	)
+
+	sqlite.exec(`
+		DELETE FROM email_messages
+		WHERE user_id = 'user-authority';
+	`)
+	expect(() => applyMigrationLikeD1(sqlite, authorityMigration)).not.toThrow()
+	expect(
+		sqlite
+			.prepare(
+				`SELECT owner_count
+				FROM email_user_graph_authority
+				WHERE singleton = 1`,
+			)
+			.get(),
+	).toEqual({ owner_count: 0 })
 })
 
 test('0133 records an exactly eligible owner and seeds its cutover audit', () => {

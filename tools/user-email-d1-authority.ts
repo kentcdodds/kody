@@ -40,6 +40,7 @@ const systemSharedGraphFiles = new Set([
 
 const legacyCleanupFile =
 	'packages/worker/src/email/legacy-user-email-graph-cleanup.ts'
+const runtimeGuardFile = 'packages/worker/src/email/user-email-d1-guard.ts'
 
 const allowedSharedGraphSqlFiles = new Set([
 	legacyCleanupFile,
@@ -51,6 +52,7 @@ const sharedGraphD1SqlFiles = new Set([
 	legacyCleanupFile,
 	...systemSharedGraphFiles,
 ])
+const dynamicD1SqlFiles = new Set([...sharedGraphD1SqlFiles, runtimeGuardFile])
 
 const allowedRepoImports = new Set([
 	'createEmailInbox',
@@ -171,6 +173,10 @@ function stringValue(node: ts.Node): string | null {
 	return null
 }
 
+function isStaticSqlLiteral(node: ts.Node) {
+	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+}
+
 type LegacyEmailModule = 'cleanup' | 'repo' | 'retired'
 
 function legacyEmailModule(
@@ -270,6 +276,22 @@ export async function scanUserEmailD1Authority(
 				const mailboxSql =
 					mailboxSqlFiles.has(file) &&
 					(receiver === 'sql' || receiver.endsWith('.sql'))
+				const liveEmailD1Boundary = file.startsWith(
+					'packages/worker/src/email/',
+				)
+				if (
+					node.expression.name.text === 'prepare' &&
+					sqlNode != null &&
+					!isStaticSqlLiteral(sqlNode) &&
+					liveEmailD1Boundary &&
+					!mailboxSql &&
+					!dynamicD1SqlFiles.has(file)
+				) {
+					report(
+						sqlNode,
+						'live D1 prepare SQL must be an inline string literal; dynamic SQL can conceal shared USER graph access',
+					)
+				}
 				if (
 					tables.length > 0 &&
 					!mailboxSql &&
