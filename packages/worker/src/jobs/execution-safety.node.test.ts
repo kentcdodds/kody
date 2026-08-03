@@ -171,6 +171,13 @@ test('transient platform failures back off the same occurrence while permanent o
 			),
 		),
 	).toBe(true)
+	expect(
+		isTransientJobExecutionError(
+			new Error(
+				'Internal error in Durable Object storage caused object to be reset; reference = 849rqmf61lg3qbmtb3j6moc4',
+			),
+		),
+	).toBe(true)
 	expect(isTransientJobExecutionError(new Error('user code failed'))).toBe(
 		false,
 	)

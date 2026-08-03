@@ -235,9 +235,10 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	).not.toBeNull()
 
 	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
-	// update / blockConcurrencyWhile timeout) are transient — one
-	// representative form per family, plus an `Error:`-prefixed variant and a
-	// missing trailing period. Wrapped recovery failures must stay visible.
+	// update / blockConcurrencyWhile timeout / storage object-reset) are
+	// transient — one representative form per family, plus an
+	// `Error:`-prefixed variant and a missing trailing period. Wrapped
+	// recovery failures and unreferenced storage resets must stay visible.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -278,6 +279,30 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			},
 		}),
 	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Internal error in Durable Object storage caused object to be reset; reference = 849rqmf61lg3qbmtb3j6moc4',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Error: Internal error in Durable Object storage caused object to be reset; reference = 849rqmf61lg3qbmtb3j6moc4',
+					},
+				],
+			},
+		}),
+	).toBeNull()
 
 	const exhaustedPublishRecovery = {
 		exception: {
@@ -290,6 +315,20 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(exhaustedPublishRecovery)).toBe(
 		exhaustedPublishRecovery,
+	)
+
+	const unreferencedDoStorageReset = {
+		exception: {
+			values: [
+				{
+					value:
+						'Internal error in Durable Object storage caused object to be reset',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(unreferencedDoStorageReset)).toBe(
+		unreferencedDoStorageReset,
 	)
 
 	const unrelatedDoFailure = {

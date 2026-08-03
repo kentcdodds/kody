@@ -117,13 +117,15 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
  * Exact Cloudflare Durable Object platform-reset messages. When a DO hits its
  * memory or CPU limit, when a deploy replaces DO code under an in-flight
  * RPC/alarm (for example cron `oauth_purge_expired` → OAuthPurgeCoordinator),
- * or when `blockConcurrencyWhile` exceeds its ~30s deadlock timeout (for
+ * when `blockConcurrencyWhile` exceeds its ~30s deadlock timeout (for
  * example PartyServer awaiting MCP Agent `onStart` via `getServerByName` →
- * `setName`), the platform resets the isolate and surfaces one of these
- * errors to the caller. The next call gets a fresh isolate; app-level retry
- * is unsafe for non-idempotent jobs, and moving heavy Agent/MCP startup out
+ * `setName`), or when DO SQLite storage hits an opaque internal fault and
+ * resets the object, the platform surfaces one of these errors to the caller.
+ * The next call gets a fresh isolate / storage handle; app-level retry of
+ * non-idempotent work is still unsafe, and moving heavy Agent/MCP startup out
  * of `onStart` is an architectural change outside a triage fix. Match only
- * the bare platform strings so wrapped failures such as exhausted
+ * the bare platform strings (plus the storage form that requires a support
+ * `reference =` token) so wrapped failures such as exhausted
  * `package_publish_external_push` recovery messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
@@ -138,11 +140,28 @@ export const durableObjectCodeUpdatedResetMessage =
 export const durableObjectBlockConcurrencyWhileTimeoutResetMessage =
 	'A call to blockConcurrencyWhile() in a Durable Object waited for too long. The call was canceled and the Durable Object was reset.'
 
+/**
+ * Cloudflare Durable Object SQLite storage opaque platform fault with a
+ * support reference, e.g.
+ * `Internal error in Durable Object storage caused object to be reset; reference = <id>`.
+ * Same class as D1's `Internal error in D1 DB storage caused object to be
+ * reset` (see `d1-retry.ts`): not an application defect — DO storage hit an
+ * internal fault. Require `reference =` and this exact phrasing so bare /
+ * unrelated "Durable Object storage …" messages stay Sentry-visible.
+ */
+const durableObjectStorageObjectResetPattern =
+	/^internal error in Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9]+$/i
+
 function normalizeDurableObjectIsolateResetMessage(message: string) {
 	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
 	return withoutErrorPrefix.endsWith('.')
 		? withoutErrorPrefix
 		: `${withoutErrorPrefix}.`
+}
+
+export function isDurableObjectStorageObjectResetMessage(message: string) {
+	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
+	return durableObjectStorageObjectResetPattern.test(withoutErrorPrefix)
 }
 
 export function isDurableObjectIsolateResetMessage(message: string) {
@@ -151,7 +170,8 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 		normalized === durableObjectIsolateMemoryResetMessage ||
 		normalized === durableObjectIsolateCpuResetMessage ||
 		normalized === durableObjectCodeUpdatedResetMessage ||
-		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage
+		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage ||
+		isDurableObjectStorageObjectResetMessage(message)
 	)
 }
 
@@ -220,8 +240,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// paths; see filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
 		// Object platform reset strings (memory/CPU limits, deploy-time code
-		// updates, and blockConcurrencyWhile timeouts) are dropped the same
-		// way — see filterDurableObjectIsolateResetSentryEvent.
+		// updates, blockConcurrencyWhile timeouts, and DO storage
+		// object-reset with a support reference) are dropped the same way —
+		// see filterDurableObjectIsolateResetSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }
