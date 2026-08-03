@@ -110,9 +110,8 @@ test('Mailbox search treats LIKE wildcards in the query literally', async () => 
 test('Mailbox search accepts queries longer than DO SQLite LIKE 50-byte limit', async () => {
 	const userId = uniqueUserId('search-long')
 	// DO SQLite caps LIKE/GLOB patterns at 50 bytes; `%…%` wrapping used to
-	// 500 any needle longer than ~48 chars (KODY-CLOUDFLARE-3J).
-	const longNeedle =
-		'quarterly-invoice-reconciliation-status-update-2026-08'
+	// fail once the wrapped pattern exceeds 50 bytes (KODY-CLOUDFLARE-3J).
+	const longNeedle = 'quarterly-invoice-reconciliation-status-update-2026-08'
 	expect(longNeedle.length).toBeGreaterThan(48)
 	const matchId = await insertMessage({
 		userId,
