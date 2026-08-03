@@ -473,18 +473,6 @@ export type MailboxUpsertDeliveryEventsResult = {
 	results: Array<MailboxUpsertDeliveryEventBatchItemResult>
 }
 
-export type MailboxBootstrapDeliveryEventItemResult = {
-	eventId: string
-	status: 'inserted' | 'existing' | 'skipped'
-}
-
-export type MailboxBootstrapDeliveryEventsResult = {
-	inserted: number
-	existing: number
-	skipped: number
-	results: Array<MailboxBootstrapDeliveryEventItemResult>
-}
-
 /**
  * Mirror / read / retention / purge surface. Authoritative USER inbound ledger
  * CAS RPCs are intersected below; `system:email` remains D1-only.
@@ -536,8 +524,8 @@ type MailboxCoreRpc = {
 		detailEventId: string
 	}) => Promise<{ count: number; detailed: boolean }>
 	/**
-	 * Complete delivery-event snapshot upsert. Rejects USER inbound
-	 * lifecycle/dedupe authority snapshots; use `bootstrapDeliveryEvents`.
+	 * Complete delivery-event snapshot upsert. Bounded pre-claim audits cannot
+	 * replace authoritative Mailbox rows.
 	 */
 	upsertDeliveryEvent: (input: {
 		ownerId: string
@@ -561,14 +549,6 @@ type MailboxCoreRpc = {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
 	}) => Promise<MailboxUpsertDeliveryEventsResult>
-	/**
-	 * Missing-row-only deployment bridge for validated legacy USER inbound
-	 * lifecycle/dedupe snapshots. Existing rows are never updated.
-	 */
-	bootstrapDeliveryEvents: (input: {
-		ownerId: string
-		events: Array<MailboxDeliveryEventInput>
-	}) => Promise<MailboxBootstrapDeliveryEventsResult>
 	touchThread: (
 		input: MailboxTouchThreadInput,
 	) => Promise<MailboxPartialMutationResult>

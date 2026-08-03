@@ -10,7 +10,6 @@ const sharedGraphTables = new Set([
 ])
 
 const mailboxSqlFiles = new Set([
-	'packages/worker/src/email/mailbox-delivery-event-bootstrap.ts',
 	'packages/worker/src/email/mailbox-delivery-events.ts',
 	'packages/worker/src/email/mailbox-do.ts',
 	'packages/worker/src/email/mailbox-export.ts',

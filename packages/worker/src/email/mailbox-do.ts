@@ -25,7 +25,6 @@ import {
 	deleteMailboxMessageMetadataWithTombstone,
 	tombstoneMissingMailboxMessage,
 } from './mailbox-message-deletion-tombstones.ts'
-import { bootstrapMailboxDeliveryEvents } from './mailbox-delivery-event-bootstrap.ts'
 import { upsertMailboxDeliveryEvents } from './mailbox-delivery-event-upsert.ts'
 import { shouldSkipMailboxDeliveryEventWrite } from './mailbox-inbound-bootstrap.ts'
 import {
@@ -37,7 +36,6 @@ import {
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
-	type MailboxBootstrapDeliveryEventsResult,
 	type MailboxCountMessagesInput,
 	type MailboxCountResult,
 	type MailboxCommitInboundMessageGraphResult,
@@ -318,22 +316,6 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		})
 		if (!result) throw new Error('Mailbox upsert transaction did not run.')
 		await this.maintenance.markDirtyAndEnsure()
-		return result
-	}
-
-	async bootstrapDeliveryEvents(input: {
-		ownerId: string
-		events: Array<MailboxDeliveryEventInput>
-	}): Promise<MailboxBootstrapDeliveryEventsResult> {
-		let result: MailboxBootstrapDeliveryEventsResult | undefined
-		this.ctx.storage.transactionSync(() => {
-			this.store.assertOwner(input.ownerId)
-			result = bootstrapMailboxDeliveryEvents(this.ctx.storage.sql, input)
-		})
-		if (!result) throw new Error('Mailbox bootstrap transaction did not run.')
-		if (result.inserted > 0) {
-			await this.maintenance.markDirtyAndEnsure()
-		}
 		return result
 	}
 

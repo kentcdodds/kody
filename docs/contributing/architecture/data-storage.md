@@ -288,8 +288,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   running-count source for `package_services` / `service_start` — see
   [Entitlements](./entitlements.md#usermeter-expand-phase). Migration 0135
   removed every retired Mailbox parity, replay, backfill, and soak column and
-  its discovery index. Inbound email routing does not reverse-resolve stable ids
-  at all — it uses the indexed username lookup
+  its discovery index. A post-deploy production `pragma_table_xinfo('users')`
+  query for `mailbox_parity_%` columns returned zero rows, so no follow-up
+  `DROP COLUMN` migration is required. Inbound email routing does not
+  reverse-resolve stable ids at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
   with one indexed point read on `users.stable_user_id` (for example
   `findUserAccountByStableUserId`).

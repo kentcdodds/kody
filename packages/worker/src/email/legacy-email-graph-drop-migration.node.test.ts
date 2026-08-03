@@ -1,9 +1,14 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { mailboxPreDropApprovalColumns } from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
 import { expect, test } from 'vitest'
-import { migrationsDirectory } from '#worker/test-support/system-email-graph-migration.ts'
+import {
+	applyMigrationLikeD1,
+	applyMigrationsBefore,
+	migrationsDirectory,
+} from '#worker/test-support/system-email-graph-migration.ts'
 
 const dropMigration = '0135-drop-legacy-email-graph.sql'
 
@@ -68,6 +73,32 @@ test('0135 SQL stays within D1 expression limits and consumes the canonical appr
 			new RegExp(`\\bapproval\\.${column}\\b`, 'u'),
 		)
 	}
+})
+
+test('0135 removes every retired Mailbox parity users column and index', () => {
+	using db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, dropMigration)
+	applyMigrationLikeD1(db, dropMigration)
+
+	expect(
+		db
+			.prepare(
+				`SELECT name
+				FROM pragma_table_xinfo('users')
+				WHERE name LIKE 'mailbox_parity_%'
+				ORDER BY name`,
+			)
+			.all(),
+	).toEqual([])
+	expect(
+		db
+			.prepare(
+				`SELECT name
+				FROM pragma_index_list('users')
+				WHERE name = 'idx_users_mailbox_parity_checked'`,
+			)
+			.all(),
+	).toEqual([])
 })
 
 test('dedicated system runtime has no dropped shared-graph reference', () => {
