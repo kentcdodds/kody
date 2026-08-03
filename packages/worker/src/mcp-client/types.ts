@@ -1,3 +1,4 @@
+import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { type Tool } from '@modelcontextprotocol/sdk/types.js'
 
 export type McpServerConnectionState =
@@ -9,12 +10,20 @@ export type McpServerConnectionState =
 	| 'failed'
 	| 'disconnected'
 
+/**
+ * Tool metadata from a connected MCP server.
+ *
+ * Schemas use codemode's JSON Schema shape (JSONSchema7) so they line up with
+ * capability registration. Agents' `connection.tools` types are a looser
+ * JSON-Schema-like inference from MCP SDK v1.30 / client v2 and are narrowed
+ * at the hub mapping boundary.
+ */
 export type McpServerToolDescriptor = {
 	name: string
 	title?: string
 	description?: string
-	inputSchema: Tool['inputSchema']
-	outputSchema?: Tool['outputSchema']
+	inputSchema: JsonSchemaToolDescriptor['inputSchema']
+	outputSchema?: JsonSchemaToolDescriptor['outputSchema']
 	annotations?: Tool['annotations']
 }
 

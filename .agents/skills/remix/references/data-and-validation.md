@@ -97,9 +97,7 @@ Tables can define `validate`, `beforeWrite`, and `afterRead` hooks:
 ```typescript
 export const books = table({
 	name: 'books',
-	columns: {
-		/* ... */
-	},
+	columns: {/* ... */},
 	validate({ operation, value }) {
 		let issues = []
 		if (operation === 'create' && !value.slug) {

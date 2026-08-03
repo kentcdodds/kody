@@ -236,12 +236,10 @@ async function queryAdminInsights(
 			now,
 			adminInsightsActivityDays,
 		),
-		plans: (planRows.results ?? []).map(
-			(row): AdminInsightsPlanSlice => ({
-				plan: row.plan,
-				count: Number(row.n),
-			}),
-		),
+		plans: (planRows.results ?? []).map((row): AdminInsightsPlanSlice => ({
+			plan: row.plan,
+			count: Number(row.n),
+		})),
 		authByDay: buildAuthDays(
 			authDayRows.results ?? [],
 			now,

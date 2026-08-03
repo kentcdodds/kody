@@ -277,9 +277,7 @@ Modelled on the
    		surface: 'my_surface',
    		name: entityName,
    		packageId, // optional
-   		metadata: {
-   			/* small, non-secret */
-   		},
+   		metadata: {/* small, non-secret */},
    	},
    	waitUntil: ctx.waitUntil.bind(ctx),
    })

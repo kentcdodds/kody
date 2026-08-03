@@ -73,12 +73,11 @@ export function toRepoSessionTreeResult(input: {
 		name: input.node.name,
 		type: input.node.type,
 		size: input.node.size,
-		children: input.node.children?.map(
-			(child): RepoSessionTreeResult =>
-				toRepoSessionTreeResult({
-					node: normalizeUnknownTreeChild(child, input.node.path),
-					workspacePrefix: input.workspacePrefix,
-				}),
+		children: input.node.children?.map((child): RepoSessionTreeResult =>
+			toRepoSessionTreeResult({
+				node: normalizeUnknownTreeChild(child, input.node.path),
+				workspacePrefix: input.workspacePrefix,
+			}),
 		),
 	}
 }

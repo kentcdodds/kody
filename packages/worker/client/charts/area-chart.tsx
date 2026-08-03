@@ -59,9 +59,10 @@ export function AreaChart(handle: Handle<AreaChartProps>) {
 				: pad.left + (plotWidth * index) / (pointCount - 1)
 		const yAt = (value: number) => baselineY - (plotHeight * value) / topTick
 		const seriesPoints = series.map((entry) =>
-			entry.values.map(
-				(value, index): ChartPoint => ({ x: xAt(index), y: yAt(value ?? 0) }),
-			),
+			entry.values.map((value, index): ChartPoint => ({
+				x: xAt(index),
+				y: yAt(value ?? 0),
+			})),
 		)
 		const xTickEvery =
 			handle.props.xTickEvery ?? Math.max(1, Math.ceil(pointCount / 6))

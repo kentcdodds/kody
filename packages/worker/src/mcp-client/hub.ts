@@ -14,6 +14,7 @@ import {
 	type McpServerConnectionState,
 	type McpServerOAuthCallbackOutcome,
 	type McpServerSnapshot,
+	type McpServerToolDescriptor,
 } from './types.ts'
 
 const mcpClientName = 'Kody'
@@ -80,14 +81,22 @@ class McpClientHubBase extends DurableObject<Env> {
 	}): McpServerSnapshot {
 		const connection = this.manager.mcpConnections[row.id]
 		const state = this.connectionStateFor(row.id)
-		const tools =
+		const tools: McpServerSnapshot['tools'] =
 			connection && state === 'ready'
 				? connection.tools.map((tool) => ({
 						name: tool.name,
 						...(tool.title ? { title: tool.title } : {}),
 						...(tool.description ? { description: tool.description } : {}),
-						inputSchema: tool.inputSchema,
-						...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+						// Agents exposes a looser JSON-Schema-like inference than
+						// JSONSchema7 / Tool['inputSchema']; values are plain JSON Schema.
+						inputSchema:
+							tool.inputSchema as McpServerToolDescriptor['inputSchema'],
+						...(tool.outputSchema
+							? {
+									outputSchema:
+										tool.outputSchema as McpServerToolDescriptor['outputSchema'],
+								}
+							: {}),
 						...(tool.annotations ? { annotations: tool.annotations } : {}),
 					}))
 				: []

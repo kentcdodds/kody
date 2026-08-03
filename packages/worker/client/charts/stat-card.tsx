@@ -101,12 +101,10 @@ export function StatCard(handle: Handle<StatCardProps>) {
 
 function renderSparkline(id: string, color: string, values: Array<number>) {
 	const maxValue = Math.max(1, ...values)
-	const points = values.map(
-		(value, index): ChartPoint => ({
-			x: (sparkWidth * index) / (values.length - 1),
-			y: sparkHeight - 5 - (sparkHeight - 12) * (value / maxValue),
-		}),
-	)
+	const points = values.map((value, index): ChartPoint => ({
+		x: (sparkWidth * index) / (values.length - 1),
+		y: sparkHeight - 5 - (sparkHeight - 12) * (value / maxValue),
+	}))
 	const lastPoint = points[points.length - 1]
 	return (
 		<svg

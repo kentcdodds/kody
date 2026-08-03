@@ -393,9 +393,9 @@ test('admin codemods run POST rejects invalid requests and allows omitted filter
 		}),
 	)
 	expect(omittedFilters.status).toBe(200)
-	const omittedCall = mockModule.runPackageCodemodStep.mock.calls.at(-1)?.[0] as
-		| { filters?: unknown }
-		| undefined
+	const omittedCall = mockModule.runPackageCodemodStep.mock.calls.at(
+		-1,
+	)?.[0] as { filters?: unknown } | undefined
 	expect(omittedCall).toBeDefined()
 	expect(omittedCall).not.toHaveProperty('filters')
 })

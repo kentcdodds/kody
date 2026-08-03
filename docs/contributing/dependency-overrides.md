@@ -13,16 +13,17 @@ file's scope.
 
 ## Production overrides
 
-### `@modelcontextprotocol/sdk` → `1.29.0`
+### `@modelcontextprotocol/sdk` → `1.30.0`
 
 The MCP SDK is pinned to a single version so that all workspaces resolve the
 same copy. Without this override, npm may hoist conflicting versions from
-transitive consumers (`agents`, `@kody/worker`).
+transitive consumers (`agents`, `@kody/worker`). `agents@0.20.x` peers this
+exact version.
 
 ### `hono` → `>=4.12.27 <5.0.0`
 
 Keeps the transitive hono copy at or above the current advisory floor. Upstream
-`@modelcontextprotocol/sdk@1.29.0` still declares `hono@^4.11.4`, which allows
+`@modelcontextprotocol/sdk@1.30.0` still declares `hono@^4.11.4`, which allows
 vulnerable releases below `4.12.27`, so this override cannot be removed yet.
 
 Notable patched floors covered by `>=4.12.27` include:
@@ -43,9 +44,10 @@ avoid breaking changes.
 ### `@hono/node-server` → `>=2.0.10 <3.0.0`
 
 Keeps the transitive `@hono/node-server` copy at or above the current advisory
-floor. Upstream `@modelcontextprotocol/sdk@1.29.0` still declares
-`@hono/node-server@^1.19.9`. That 1.x range cannot reach the patched 2.x
-releases, so this override forces a major bump and cannot be removed yet.
+floor. Upstream `@modelcontextprotocol/sdk@1.30.0` declares
+`@hono/node-server@^1.19.9 || ^2.0.5`, which can still resolve a vulnerable 1.x
+or a 2.x below `2.0.10`, so this override forces the patched 2.x floor and
+cannot be removed yet.
 
 Advisories requiring the 2.x floor:
 

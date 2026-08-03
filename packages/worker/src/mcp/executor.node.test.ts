@@ -1120,7 +1120,7 @@ test('createToolDispatchers rejects duplicate sanitized tool names', () => {
 	)
 })
 
-test('createToolDispatchers forwards rest args for codemode 0.4 ToolDispatcher', async () => {
+test('createToolDispatchers forwards rest args for codemode ToolDispatcher', async () => {
 	const dispatchers = createToolDispatchers(
 		[
 			{

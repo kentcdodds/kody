@@ -10,7 +10,7 @@ Primary docs:
 - https://developers.cloudflare.com/agents/
 
 Installed in this repo as `agents` in `packages/worker/package.json` (currently
-pinned to `0.17.4`).
+pinned to `0.20.1`).
 
 ## Quick pointers for this repo
 

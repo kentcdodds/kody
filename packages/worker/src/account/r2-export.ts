@@ -226,22 +226,20 @@ async function findNextRef(input: {
 						row.source_published_commit ?? row.pinned_commit,
 					]),
 				)
-				const refs = commits.map(
-					(commit, index): StableR2Ref => ({
-						surfaceId: 'community_icon',
-						binding: 'COMMUNITY_ASSETS',
-						key: buildCommunityIconR2Key({
-							listingId: row.id,
-							commit,
-						}),
-						source: {
-							kind: 'community_icon',
-							rowid: row.source_rowid,
-							listingId: row.id,
-							commitSlot: index === 0 ? 'pinned' : 'icon',
-						},
+				const refs = commits.map((commit, index): StableR2Ref => ({
+					surfaceId: 'community_icon',
+					binding: 'COMMUNITY_ASSETS',
+					key: buildCommunityIconR2Key({
+						listingId: row.id,
+						commit,
 					}),
-				)
+					source: {
+						kind: 'community_icon',
+						rowid: row.source_rowid,
+						listingId: row.id,
+						commitSlot: index === 0 ? 'pinned' : 'icon',
+					},
+				}))
 				cursor = {
 					v: accountR2CursorVersion,
 					state: {

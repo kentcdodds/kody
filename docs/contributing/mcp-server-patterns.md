@@ -294,9 +294,7 @@ tool module and registers them.
 export async function registerSearchTool(agent: MCP) {
 	agent.server.registerTool(
 		'search',
-		{
-			/* metadata + schemas */
-		},
+		{/* metadata + schemas */},
 		async (args) => {
 			// handler
 		},
