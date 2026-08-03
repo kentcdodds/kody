@@ -1,5 +1,6 @@
 import {
 	isBrowserAbortError,
+	isFirefoxBridgeNoiseError,
 	isFirefoxDomPermissionDeniedError,
 } from '#client/sentry-browser-filters.ts'
 import {
@@ -44,7 +45,11 @@ let onWindowError: ((event: ErrorEvent) => void) | null = null
 let onUnhandledRejection: ((event: PromiseRejectionEvent) => void) | null = null
 
 function shouldIgnoreBufferedError(error: unknown) {
-	return isBrowserAbortError(error) || isFirefoxDomPermissionDeniedError(error)
+	return (
+		isBrowserAbortError(error) ||
+		isFirefoxDomPermissionDeniedError(error) ||
+		isFirefoxBridgeNoiseError(error)
+	)
 }
 
 function enqueueBufferedError(error: unknown) {

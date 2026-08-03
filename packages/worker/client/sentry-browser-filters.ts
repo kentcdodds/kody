@@ -126,6 +126,50 @@ export function filterFirefoxDomPermissionDeniedSentryEvent<
 	return event
 }
 
+/**
+ * Firefox (including Firefox-for-iOS / WebKit shells) exposes
+ * `window.__firefox__` for reader mode and the content bridge. Injected or
+ * browser-internal scripts reference it; when the bridge is absent they throw
+ * ReferenceError / TypeError that Sentry's global onerror captures as in-app
+ * "global code" with no app frames. Kody app source never mentions
+ * `__firefox__` (KODY-CLOUDFLARE-3F / 3E).
+ *
+ * Match only messages that name `__firefox__` with these known wordings —
+ * never blanket-drop ReferenceError or TypeError.
+ */
+const firefoxBridgeNoiseMessage =
+	/(?:Can't find variable:\s*__firefox__|__firefox__ is not defined|undefined is not an object \(evaluating ['"]window\.__firefox__|null is not an object \(evaluating ['"]window\.__firefox__)/
+
+export function isFirefoxBridgeNoiseMessage(message: string) {
+	return firefoxBridgeNoiseMessage.test(message)
+}
+
+export function isFirefoxBridgeNoiseError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isFirefoxBridgeNoiseMessage(error.message)
+}
+
+export function isFirefoxBridgeNoiseSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isFirefoxBridgeNoiseError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isFirefoxBridgeNoiseMessage(message),
+	)
+}
+
+export function filterFirefoxBridgeNoiseSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isFirefoxBridgeNoiseSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -138,6 +182,9 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		filterFirefoxDomPermissionDeniedSentryEvent(event, originalException) ===
 		null
 	) {
+		return null
+	}
+	if (filterFirefoxBridgeNoiseSentryEvent(event, originalException) === null) {
 		return null
 	}
 	return event

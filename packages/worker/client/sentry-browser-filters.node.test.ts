@@ -2,10 +2,11 @@ import { expect, test } from 'vitest'
 import {
 	filterBrowserAbortSentryEvent,
 	filterBrowserSentryEvent,
+	filterFirefoxBridgeNoiseSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 } from './sentry-browser-filters.ts'
 
-test('browser Sentry filters drop AbortError and Firefox Xray noise and keep real errors', () => {
+test('browser Sentry filters drop AbortError, Firefox Xray, and __firefox__ bridge noise and keep real errors', () => {
 	// AbortError family (including originalException), but not timeout/network.
 	expect(
 		filterBrowserAbortSentryEvent({
@@ -110,6 +111,94 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).not.toBeNull()
 
+	// Firefox bridge / reader-mode `__firefox__` noise (KODY-CLOUDFLARE-3F / 3E).
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: __firefox__",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.__firefox__.reader')",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: '__firefox__ is not defined',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'something else' }],
+				},
+			},
+			new ReferenceError("Can't find variable: __firefox__"),
+		),
+	).toBeNull()
+	// Must not drop unrelated ReferenceError / TypeError / messages that only
+	// mention "firefox" without the bridge identifier.
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: updateCurrentEntry",
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'n.updateCurrentEntry')",
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterFirefoxBridgeNoiseSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'firefox reader failed',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
 	const realBug = {
 		exception: {
 			values: [{ type: 'TypeError', value: 'TypeError: Failed to fetch' }],
@@ -135,6 +224,31 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 					{
 						type: 'Error',
 						value: 'Permission denied to access property "childNodes"',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: __firefox__",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.__firefox__.reader')",
 					},
 				],
 			},
