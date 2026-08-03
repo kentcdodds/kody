@@ -43,7 +43,7 @@ async function seedStoredMessages(userId: string, count: number) {
 	const now = new Date().toISOString()
 	for (let index = 0; index < count; index += 1) {
 		const id = `usage-message-${crypto.randomUUID()}`
-		await mailboxRpc({ env, userId }).mirrorMessage({
+		await mailboxRpc({ env, userId }).upsertMessageGraph({
 			ownerId: userId,
 			message: {
 				id,

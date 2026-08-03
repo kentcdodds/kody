@@ -4,15 +4,32 @@ const mocks = vi.hoisted(() => ({
 	mailboxRpc: vi.fn(),
 	deleteOutboundProviderIndexByMessageId: vi.fn(),
 	isOutboundProviderIndexForeignKeyDetached: vi.fn(async () => true),
-	loadOutboundProviderIndexParityReport: vi.fn(async () => ({
-		linkedMessageCount: 2,
+	loadOutboundProviderIndexHealthReport: vi.fn(async () => ({
 		indexCount: 2,
 		distinctOwnerCount: 2,
 		malformedCount: 0,
-		missingFromIndexCount: 0,
-		missingFromMessagesCount: 0,
-		mismatchedCount: 0,
-		parity: true,
+		healthy: true,
+	})),
+	loadUserEmailGraphAuthorityMarker: vi.fn(async () => ({
+		ownerCount: 2,
+		frozenAt: '2026-08-01T00:00:00.000Z',
+		maxParityAgeHours: 24,
+	})),
+	assertUserEmailGraphAuthority: vi.fn(async () => undefined),
+	loadProviderIndexRepairHealth: vi.fn(async () => ({
+		pendingOwners: 0,
+		pendingCount: 0,
+		oldestPendingAt: null,
+	})),
+	loadInboundDueOwnersHealth: vi.fn(async () => ({
+		pendingOwners: 0,
+		dueOwners: 0,
+		oldestDueAt: null,
+	})),
+	loadDeliveryAlertEventsHealth: vi.fn(async () => ({
+		retainedEvents: 0,
+		lastHourEvents: 0,
+		oldestEventAt: null,
 	})),
 	loadSystemEmailGraphParityReport: vi.fn(async () => ({
 		threads: {},
@@ -33,13 +50,30 @@ vi.mock('#worker/email/outbound-provider-index.ts', () => ({
 		mocks.deleteOutboundProviderIndexByMessageId,
 	isOutboundProviderIndexForeignKeyDetached:
 		mocks.isOutboundProviderIndexForeignKeyDetached,
-	loadOutboundProviderIndexParityReport:
-		mocks.loadOutboundProviderIndexParityReport,
+	loadOutboundProviderIndexHealthReport:
+		mocks.loadOutboundProviderIndexHealthReport,
 }))
 
 vi.mock('#worker/email/system-email-graph-repo.ts', () => ({
 	loadSystemEmailGraphParityReport: mocks.loadSystemEmailGraphParityReport,
 	reconcileLegacySystemEmailGraphFromDedicated: vi.fn(),
+}))
+
+vi.mock('#worker/email/user-email-graph-authority.ts', () => ({
+	assertUserEmailGraphAuthority: mocks.assertUserEmailGraphAuthority,
+	loadUserEmailGraphAuthorityMarker: mocks.loadUserEmailGraphAuthorityMarker,
+}))
+
+vi.mock('#worker/email/provider-index-repair-health.ts', () => ({
+	loadProviderIndexRepairHealth: mocks.loadProviderIndexRepairHealth,
+}))
+
+vi.mock('#worker/email/inbound-due-owners.ts', () => ({
+	loadInboundDueOwnersHealth: mocks.loadInboundDueOwnersHealth,
+}))
+
+vi.mock('#worker/email/delivery-alert-events.ts', () => ({
+	loadDeliveryAlertEventsHealth: mocks.loadDeliveryAlertEventsHealth,
 }))
 
 const {
@@ -78,7 +112,7 @@ function createUsersDb(userIds: ReadonlyArray<string>) {
 	return { prepare } as unknown as D1Database
 }
 
-test('maintenance status reports only active-owner and structural index counts', async () => {
+test('maintenance status reports authority and coordination health', async () => {
 	const db = createUsersDb(['user-1', 'user-2'])
 	const status = await loadAdminMailboxMaintenanceStatus({
 		db,
@@ -86,19 +120,21 @@ test('maintenance status reports only active-owner and structural index counts',
 	})
 
 	expect(status).toMatchObject({
-		trackedOwners: 2,
-		matching: 0,
-		mismatch: 0,
-		error: 0,
-		incomplete: 2,
-		eligible: 0,
+		authority: {
+			ownerCount: 2,
+			frozenAt: '2026-08-01T00:00:00.000Z',
+			maxParityAgeHours: 24,
+		},
 		outboundProviderIndex: {
 			indexCount: 2,
 			distinctOwnerCount: 2,
 			malformedCount: 0,
 			foreignKeyDetached: true,
-			parity: true,
+			healthy: true,
 		},
+		providerIndexRepair: { pendingOwners: 0, pendingCount: 0 },
+		inboundDueOwners: { pendingOwners: 0, dueOwners: 0 },
+		deliveryAlerts: { retainedEvents: 0, lastHourEvents: 0 },
 		systemEmailGraph: { parity: true },
 	})
 })

@@ -34,7 +34,7 @@ test('Mailbox mutation RPCs: owner bind, accepted/missing/stale updates', async 
 		classification: 'accepted',
 		updatedAt: '2026-07-01T12:00:00.000Z',
 	})
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: ownerA,
 		thread,
 		message,
@@ -230,7 +230,7 @@ test('Mailbox deleteMessageMetadata: nulls delivery message_id, no orphan/R2', a
 		updatedAt: '2026-07-01T12:00:00.000Z',
 	})
 	const attachment = baseAttachment(userId, alone.id, { id: 'del-att' })
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread,
 		message: alone,
@@ -299,7 +299,7 @@ test('Mailbox deleteMessageMetadata: nulls delivery message_id, no orphan/R2', a
 		).toEqual({ status: 'missing' })
 		expect(blobDeleteCalls).toBe(0)
 		expect(
-			await mailbox.mirrorMessage({
+			await mailbox.upsertMessageGraph({
 				ownerId: userId,
 				thread,
 				message: { ...alone, updatedAt: '2099-01-01T00:00:00.000Z' },
@@ -353,12 +353,12 @@ test('Mailbox deleteMessageMetadata: nulls delivery message_id, no orphan/R2', a
 		threadId: sharedThread.id,
 		updatedAt: '2026-07-02T10:00:00.000Z',
 	})
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread: sharedThread,
 		message: keep,
 	})
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: drop,
 	})
@@ -391,7 +391,7 @@ test('Mailbox deleteDeliveryEvent: stale, deleted, and missing outcomes', async 
 		processingStatus: 'sent',
 		rawMimeKey: null,
 	})
-	await mailbox.mirrorMessage({ ownerId: userId, message })
+	await mailbox.upsertMessageGraph({ ownerId: userId, message })
 	await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
 		event: baseDeliveryEvent({

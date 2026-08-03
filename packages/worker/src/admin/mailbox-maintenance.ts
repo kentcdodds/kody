@@ -7,8 +7,8 @@ import {
 import {
 	isOutboundProviderIndexForeignKeyDetached,
 	deleteOutboundProviderIndexByMessageId,
-	loadOutboundProviderIndexParityReport,
-	type OutboundProviderIndexParityReport,
+	loadOutboundProviderIndexHealthReport,
+	type OutboundProviderIndexHealthReport,
 } from '#worker/email/outbound-provider-index.ts'
 import {
 	loadSystemEmailGraphParityReport,
@@ -20,6 +20,17 @@ import {
 	deleteSystemEmailMessageById,
 	getSystemEmailMessageById,
 } from '#worker/email/system-email-graph-store.ts'
+import {
+	assertUserEmailGraphAuthority,
+	loadUserEmailGraphAuthorityMarker,
+	type UserEmailGraphAuthorityMarker,
+} from '#worker/email/user-email-graph-authority.ts'
+import { loadProviderIndexRepairHealth } from '#worker/email/provider-index-repair-health.ts'
+import {
+	loadInboundDueOwnersHealth,
+	type InboundDueOwnersHealth,
+} from '#worker/email/inbound-due-owners.ts'
+import { loadDeliveryAlertEventsHealth } from '#worker/email/delivery-alert-events.ts'
 
 /** Retention owner page size default/max (hard max). */
 export const adminMailboxMaintenanceRetentionMaxLimit = 20
@@ -39,26 +50,18 @@ export type AdminMailboxMaintenanceEnv = MailboxEnv & {
 
 export type AdminMailboxMaintenanceStatus = {
 	generatedAt: string
-	trackedOwners: number
-	matching: number
-	mismatch: number
-	error: number
-	incomplete: number
-	eligible: number
-	oldestMatchingSince: string | null
-	newestMatchingSince: string | null
-	oldestCheckedAt: string | null
-	newestCheckedAt: string | null
-	/** Earliest `matching_since + soak` among matching owners (null if none). */
-	earliestCutoverAt: string | null
+	authority: UserEmailGraphAuthorityMarker | null
 	/**
-	 * Fleet-wide aggregate D1 outbound provider reverse-index parity. Counts
-	 * only — no owner ids, message ids, or email content.
+	 * Structural health of the operational provider reverse index. No owner
+	 * ids, message ids, or email content are exposed.
 	 */
-	outboundProviderIndex: OutboundProviderIndexParityReport & {
+	outboundProviderIndex: OutboundProviderIndexHealthReport & {
 		/** True only when the deployed schema has no legacy message_id FK. */
 		foreignKeyDetached: boolean
 	}
+	providerIndexRepair: Awaited<ReturnType<typeof loadProviderIndexRepairHealth>>
+	inboundDueOwners: InboundDueOwnersHealth
+	deliveryAlerts: Awaited<ReturnType<typeof loadDeliveryAlertEventsHealth>>
 	/**
 	 * Dedicated system-email authority versus its legacy rollback mirror.
 	 * Aggregate counts only; no email content is exposed.
@@ -232,7 +235,7 @@ async function runOwnersWithBudget(input: {
 }
 
 /**
- * Aggregate-only Mailbox parity status for operators. Never returns email
+ * Aggregate-only Mailbox authority status for operators. Never returns email
  * content, message ids, or per-owner identity (except retention cursors).
  */
 export async function loadAdminMailboxMaintenanceStatus(input: {
@@ -241,45 +244,35 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 }): Promise<AdminMailboxMaintenanceStatus> {
 	const now = input.now ?? new Date()
 	const generatedAt = now.toISOString()
-	const row = await input.db
-		.prepare(
-			`SELECT COUNT(*) AS trackedOwners
-			FROM users
-			WHERE deleting_at IS NULL
-				AND stable_user_id IS NOT NULL
-				AND stable_user_id != ?`,
-		)
-		.bind(systemEmailOwnerId)
-		.first<{ trackedOwners: number }>()
-
 	const [
-		outboundProviderIndexParity,
+		authority,
+		outboundProviderIndexHealth,
 		outboundProviderIndexForeignKeyDetached,
+		providerIndexRepair,
+		inboundDueOwners,
+		deliveryAlerts,
 		systemEmailGraph,
 	] = await Promise.all([
-		loadOutboundProviderIndexParityReport({ db: input.db }),
+		loadUserEmailGraphAuthorityMarker(input.db),
+		loadOutboundProviderIndexHealthReport({ db: input.db }),
 		isOutboundProviderIndexForeignKeyDetached(input.db),
+		loadProviderIndexRepairHealth({ db: input.db }),
+		loadInboundDueOwnersHealth({ db: input.db, now }),
+		loadDeliveryAlertEventsHealth({ db: input.db, now }),
 		loadSystemEmailGraphParityReport({ db: input.db }),
 	])
 	const outboundProviderIndex = {
-		...outboundProviderIndexParity,
+		...outboundProviderIndexHealth,
 		foreignKeyDetached: outboundProviderIndexForeignKeyDetached,
 	}
 
 	return {
 		generatedAt,
-		trackedOwners: Number(row?.trackedOwners ?? 0) || 0,
-		matching: 0,
-		mismatch: 0,
-		error: 0,
-		incomplete: Number(row?.trackedOwners ?? 0) || 0,
-		eligible: 0,
-		oldestMatchingSince: null,
-		newestMatchingSince: null,
-		oldestCheckedAt: null,
-		newestCheckedAt: null,
-		earliestCutoverAt: null,
+		authority,
 		outboundProviderIndex,
+		providerIndexRepair,
+		inboundDueOwners,
+		deliveryAlerts,
 		systemEmailGraph,
 	}
 }
@@ -341,6 +334,10 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 			nowMs,
 			async runOwner(userId) {
 				try {
+					await assertUserEmailGraphAuthority({
+						db: input.env.APP_DB,
+						ownerId: userId,
+					})
 					const result = await mailboxRpc({
 						env: input.env,
 						userId,
@@ -472,6 +469,10 @@ export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 			attachmentId: null,
 		}))
 	} else {
+		await assertUserEmailGraphAuthority({
+			db,
+			ownerId: input.stableUserId,
+		})
 		const mailbox = mailboxRpc({
 			env: input.env,
 			userId: input.stableUserId,

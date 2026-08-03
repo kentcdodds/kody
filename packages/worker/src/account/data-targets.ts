@@ -104,9 +104,11 @@ export const accountOperatorOwnedD1Surfaces = [
 ] as const
 
 /**
- * Physical D1 tables that still exist in the migrated schema (pending a later
- * drop migration) but are intentionally absent from runtime account
- * deletion/export inventory. Schema coverage guardrails treat these
+ * Physical D1 tables pending a later drop migration. They are absent from
+ * generic account deletion/export inventory so live account code cannot read
+ * them. Account deletion invokes the tightly scoped legacy privacy cleanup
+ * module after authoritative Mailbox/R2 purge; export never reads these rows.
+ * Schema coverage guardrails treat these
  * `user_id` / `*_user_id` columns as covered so the live table does not look
  * like a missing inventory target; runtime deletion and export never query
  * them. Export documents each omission under `excludedD1Surfaces` (no raw
@@ -127,28 +129,28 @@ export const accountUserDataPendingDropTargets: ReadonlyArray<AccountUserDataPen
 			column: 'user_id',
 			surface: 'frozen_user_email_delivery_events',
 			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; runtime account export/deletion must not query it.',
+				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
 		},
 		{
 			table: 'email_attachments',
 			column: 'message_id',
 			surface: 'frozen_user_email_attachments',
 			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; runtime account export/deletion must not query it.',
+				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
 		},
 		{
 			table: 'email_messages',
 			column: 'user_id',
 			surface: 'frozen_user_email_messages',
 			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; runtime account export/deletion must not query it.',
+				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
 		},
 		{
 			table: 'email_threads',
 			column: 'user_id',
 			surface: 'frozen_user_email_threads',
 			reason:
-				'Frozen rollback snapshot after USER Mailbox-only cutover; runtime account export/deletion must not query it.',
+				'Frozen rollback snapshot after USER Mailbox-only cutover; excluded from export and deleted only by the scoped legacy privacy cleanup after Mailbox purge.',
 		},
 	]
 
@@ -206,9 +208,9 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * Rows owned by accountUserDataExcludedOwnerIds are operator/platform data,
  * not user data; tests assert those owner ids stay deliberately excluded from
  * user account operations. Physical tables pending a later drop migration are
- * listed in accountUserDataPendingDropTargets instead of here so runtime
+ * listed in accountUserDataPendingDropTargets instead of here so generic
  * deletion/export never query them while schema coverage still recognizes
- * their user columns.
+ * their user columns. The dedicated privacy cleanup is the only exception.
  *
  * Order matters for deletion: child tables come before parent tables so the
  * cascade is self-contained even on engines / configs where foreign-key
@@ -312,11 +314,27 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'entity_sources' },
 	{
 		kind: 'user_id',
+		table: 'email_inbound_due_owners',
+		includeInExport: false,
+		surface: 'email_inbound_due_owners',
+		reason:
+			'Operational Mailbox due-work coordination omitted from portable export; account deletion removes the owner hint.',
+	},
+	{
+		kind: 'user_id',
+		table: 'email_outbound_provider_index_repair_owners',
+		includeInExport: false,
+		surface: 'email_outbound_provider_index_repair_owners',
+		reason:
+			'Aggregate provider-index repair health omitted from portable export; account deletion removes the owner health row.',
+	},
+	{
+		kind: 'user_id',
 		table: 'email_outbound_provider_index',
 		includeInExport: false,
 		surface: 'email_outbound_provider_index',
 		reason:
-			'Derived global provider→owner reverse lookup rebuilt from Mailbox outbound provider ids. Its legacy message foreign key is detached; account deletion keeps explicit owner cleanup.',
+			'Operational global provider→owner reverse lookup omitted from portable export. Mailbox rows retain provider ids, but no fleet-wide automatic rebuild is claimed; account deletion keeps explicit owner cleanup.',
 	},
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },

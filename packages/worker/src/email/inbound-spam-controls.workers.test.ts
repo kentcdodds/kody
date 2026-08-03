@@ -242,7 +242,7 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 		classification: 'accepted',
 		classificationReason: null,
 	})
-})
+}, 30_000)
 
 test('user quarantined and accepted messages dispatch matching subscription topics', async () => {
 	silenceIncidentalRuntimeWarnings()

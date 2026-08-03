@@ -27,9 +27,13 @@ import {
 	type MailboxThreadInput,
 } from './mailbox-types.ts'
 import { emailOutboundPausedMessage } from './outbound-abuse.ts'
-import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
+import {
+	emailOutboundProviderCloudflare,
+	upsertOutboundProviderIndexRow,
+} from './outbound-provider-index.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
+import { assertUserEmailGraphAuthority } from './user-email-graph-authority.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
@@ -516,6 +520,10 @@ export async function sendOutboundEmail(
 		},
 	}
 	const write = async (): Promise<EmailSendResult> => {
+		await assertUserEmailGraphAuthority({
+			db: input.env.APP_DB,
+			ownerId: input.userId,
+		})
 		const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
 		// The from address is always platform-assigned: {username}@<platform
 		// domain>. There is no self-service sender verification. The resolved
@@ -737,7 +745,7 @@ export async function sendOutboundEmail(
 			now,
 		})
 		try {
-			const graph = await mailbox.writeMessageGraph({
+			const graph = await mailbox.upsertMessageGraph({
 				ownerId: input.userId,
 				thread,
 				message,
@@ -873,6 +881,17 @@ export async function sendOutboundEmail(
 						error: null,
 						sentAt,
 						event: sentEvent,
+						...(acceptedProviderMessageId
+							? {
+									providerIndexRepair: {
+										provider: emailOutboundProviderCloudflare,
+										providerMessageId: acceptedProviderMessageId,
+										messageId: message.id,
+										inboxId,
+										createdAt: sentAt,
+									},
+								}
+							: {}),
 					}),
 				)
 			} catch (error) {
@@ -887,9 +906,9 @@ export async function sendOutboundEmail(
 					cause: error,
 				})
 			}
-			// The reverse index is derived and independently idempotent. A failed
+			// The operational reverse index is independently idempotent. A failed
 			// index write must not turn provider acceptance into a resend signal;
-			// operators can replay this exact helper from the Mailbox terminal.
+			// the Mailbox alarm retries its durable pending repair.
 			if (acceptedProviderMessageId) {
 				await runD1WithRetry(() =>
 					upsertOutboundProviderIndexRow({
@@ -900,13 +919,21 @@ export async function sendOutboundEmail(
 						inboxId,
 						now: sentAt,
 					}),
-				).catch((error: unknown) => {
-					console.warn('email-outbound-provider-index-persistence-failed', {
-						messageId: message.id,
-						providerMessageId: acceptedProviderMessageId,
-						error,
+				)
+					.then(async () => {
+						await mailbox.completeOutboundProviderIndexRepair({
+							ownerId: input.userId,
+							provider: emailOutboundProviderCloudflare,
+							providerMessageId: acceptedProviderMessageId,
+						})
 					})
-				})
+					.catch((error: unknown) => {
+						console.warn('email-outbound-provider-index-persistence-failed', {
+							messageId: message.id,
+							providerMessageId: acceptedProviderMessageId,
+							error,
+						})
+					})
 			}
 
 			return {

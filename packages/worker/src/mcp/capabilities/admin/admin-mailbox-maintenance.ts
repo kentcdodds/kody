@@ -33,11 +33,11 @@ const mailboxCountSchema = z.object({
 	deliveryEvents: z.number().int().nonnegative(),
 })
 
-const outboundProviderIndexParitySchema = z.object({
+const outboundProviderIndexHealthSchema = z.object({
 	foreignKeyDetached: z
 		.boolean()
 		.describe(
-			'True when the deployed provider-index schema has no message_id foreign key to legacy email_messages.',
+			'True when the deployed provider-index schema has no message_id foreign key to the legacy shared graph.',
 		),
 	indexCount: z
 		.number()
@@ -46,7 +46,7 @@ const outboundProviderIndexParitySchema = z.object({
 		.describe('Rows in email_outbound_provider_index.'),
 	distinctOwnerCount: z.number().int().nonnegative(),
 	malformedCount: z.number().int().nonnegative(),
-	parity: z
+	healthy: z
 		.boolean()
 		.describe('True when every thin index row is structurally valid.'),
 })
@@ -87,31 +87,31 @@ const systemEmailGraphParitySchema = z.object({
 
 const statusSchema = z.object({
 	generatedAt: z.string(),
-	trackedOwners: z.number().int().nonnegative(),
-	matching: z.number().int().nonnegative(),
-	mismatch: z.number().int().nonnegative(),
-	error: z.number().int().nonnegative(),
-	incomplete: z.number().int().nonnegative(),
-	eligible: z
-		.number()
-		.int()
-		.nonnegative()
-		.describe(
-			'Tracked owners meeting parity soak timing (matching_since age + fresh checked_at, zero mismatch/error). Does not require the read-cutover feature flag.',
-		),
-	oldestMatchingSince: z.string().nullable(),
-	newestMatchingSince: z.string().nullable(),
-	oldestCheckedAt: z.string().nullable(),
-	newestCheckedAt: z.string().nullable(),
-	earliestCutoverAt: z
-		.string()
-		.nullable()
-		.describe(
-			'Earliest matching_since + soak duration among matching owners, or null.',
-		),
-	outboundProviderIndex: outboundProviderIndexParitySchema.describe(
-		'Fleet-wide aggregate D1 outbound provider reverse-index parity (counts only; no owner/message content).',
+	authority: z
+		.object({
+			ownerCount: z.number().int().nonnegative(),
+			frozenAt: z.string(),
+			maxParityAgeHours: z.number().int().positive(),
+		})
+		.nullable(),
+	outboundProviderIndex: outboundProviderIndexHealthSchema.describe(
+		'Fleet-wide aggregate thin D1 outbound provider reverse-index health.',
 	),
+	providerIndexRepair: z.object({
+		pendingOwners: z.number().int().nonnegative(),
+		pendingCount: z.number().int().nonnegative(),
+		oldestPendingAt: z.string().nullable(),
+	}),
+	inboundDueOwners: z.object({
+		pendingOwners: z.number().int().nonnegative(),
+		dueOwners: z.number().int().nonnegative(),
+		oldestDueAt: z.string().nullable(),
+	}),
+	deliveryAlerts: z.object({
+		retainedEvents: z.number().int().nonnegative(),
+		lastHourEvents: z.number().int().nonnegative(),
+		oldestEventAt: z.string().nullable(),
+	}),
 	systemEmailGraph: systemEmailGraphParitySchema.describe(
 		'Dedicated system-email authority versus the legacy rollback mirror. No email content is returned.',
 	),
@@ -216,7 +216,7 @@ const inputSchema = z.discriminatedUnion('action', [
 			message_id: z
 				.string()
 				.min(1)
-				.describe('email_messages.id to delete for the given owner.'),
+				.describe('Authoritative Mailbox message id to delete for the owner.'),
 		})
 		.strict(),
 ])
@@ -258,19 +258,17 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox retention/delete maintenance and structural status: aggregate thin provider-index counts, dedicated system-email rollback-mirror parity, forced directional system_email_graph_reconcile, keyset-paged Mailbox retention (limit≤20; concurrency≤4; ~10s budget), or owner-scoped delete_message. USER shared-D1 parity/rebuild is retired and frozen graph tables are never queried. Audited.',
+			'Admin-only Mailbox retention/delete maintenance and structural status: authority marker, provider repair, due-owner and delivery-alert health, thin provider-index counts, dedicated system-email rollback parity, keyset-paged Mailbox retention, or owner-scoped delete_message. USER parity/rebuild is retired. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',
 			'maintenance',
-			'parity',
 			'provider-index',
 			'system-email-graph',
 			'reconcile',
 			'retention',
 			'delete',
 			'cutover',
-			'soak',
 		],
 		destructive: true,
 		inputSchema,
@@ -343,7 +341,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 					successReason: (result) => {
 						switch (result.action) {
 							case 'status':
-								return `action=status;tracked=${result.status.trackedOwners};provider_index_parity=${result.status.outboundProviderIndex.parity ? 1 : 0};system_email_graph_parity=${result.status.systemEmailGraph.parity ? 1 : 0}`
+								return `action=status;cutover_owners=${result.status.authority?.ownerCount ?? -1};provider_repairs=${result.status.providerIndexRepair.pendingCount};due_owners=${result.status.inboundDueOwners.dueOwners};system_email_graph_parity=${result.status.systemEmailGraph.parity ? 1 : 0}`
 							case 'system_email_graph_reconcile':
 								return `action=system_email_graph_reconcile;upserted_messages=${result.metrics.upserted.messages};deleted_messages=${result.metrics.deleted.messages};owner_reference_mismatches=${result.metrics.referencedOwnerMismatchCount};parity=${result.postReport.parity ? 1 : 0}`
 							case 'retention':

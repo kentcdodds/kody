@@ -5,6 +5,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
+import { replaceInboundDueOwnerHint } from './inbound-due-owners.ts'
 import { rpcFor } from './mailbox-test-helpers.ts'
 import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -46,6 +47,13 @@ async function seedStaleUserDelivery(label: string, createdAt: string) {
 			dedupeExpiresAt: '2026-08-04T00:00:00.000Z',
 		},
 		now: createdAt,
+	})
+	await replaceInboundDueOwnerHint({
+		db: env.APP_DB,
+		userId,
+		dueAt: createdAt,
+		reason: 'test-stale-delivery',
+		now: sweepNow,
 	})
 	const authority = createUserInboundDeliveryAuthority({
 		env: { ...env, APP_BASE_URL: appBaseUrl },

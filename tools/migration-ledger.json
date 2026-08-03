@@ -543,6 +543,10 @@
 		{
 			"filename": "0132-email-outbound-provider-index-detach.sql",
 			"sha256": "d3bb5b668057e29c3ad42cc1962c312ac4a7764e4f183268be3d5ddc29901dff"
+		},
+		{
+			"filename": "0133-email-user-graph-authority.sql",
+			"sha256": "cf5643601fa48db8d05acdf12f7da7e637e02fd420d8a5ec38e4cab2cacb63a1"
 		}
 	]
 }

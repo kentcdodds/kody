@@ -48,23 +48,32 @@ const { adminMailboxMaintenanceCapability } =
 
 const emptyStatus = {
 	generatedAt: '2026-08-01T12:00:00.000Z',
-	trackedOwners: 2,
-	matching: 1,
-	mismatch: 0,
-	error: 0,
-	incomplete: 1,
-	eligible: 0,
-	oldestMatchingSince: '2026-07-30T00:00:00.000Z',
-	newestMatchingSince: '2026-07-30T00:00:00.000Z',
-	oldestCheckedAt: '2026-07-31T00:00:00.000Z',
-	newestCheckedAt: '2026-08-01T11:00:00.000Z',
-	earliestCutoverAt: '2026-07-31T00:00:00.000Z',
+	authority: {
+		ownerCount: 2,
+		frozenAt: '2026-08-01T00:00:00.000Z',
+		maxParityAgeHours: 24,
+	},
 	outboundProviderIndex: {
 		foreignKeyDetached: true,
 		indexCount: 0,
 		distinctOwnerCount: 0,
 		malformedCount: 0,
-		parity: true,
+		healthy: true,
+	},
+	providerIndexRepair: {
+		pendingOwners: 0,
+		pendingCount: 0,
+		oldestPendingAt: null,
+	},
+	inboundDueOwners: {
+		pendingOwners: 0,
+		dueOwners: 0,
+		oldestDueAt: null,
+	},
+	deliveryAlerts: {
+		retainedEvents: 0,
+		lastHourEvents: 0,
+		oldestEventAt: null,
 	},
 	systemEmailGraph: {
 		threads: {

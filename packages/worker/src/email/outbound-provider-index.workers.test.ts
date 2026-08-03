@@ -5,7 +5,7 @@ import {
 	deleteOutboundProviderIndexByMessageId,
 	getOutboundProviderIndexRow,
 	isOutboundProviderIndexForeignKeyDetached,
-	loadOutboundProviderIndexParityReport,
+	loadOutboundProviderIndexHealthReport,
 	upsertOutboundProviderIndexRow,
 } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -35,9 +35,9 @@ test('thin provider index persists independently of the frozen USER graph', asyn
 		}),
 	).toMatchObject({ userId, messageId, providerMessageId })
 	expect(
-		await loadOutboundProviderIndexParityReport({ db: env.APP_DB }),
+		await loadOutboundProviderIndexHealthReport({ db: env.APP_DB }),
 	).toMatchObject({
-		parity: true,
+		healthy: true,
 		malformedCount: 0,
 	})
 

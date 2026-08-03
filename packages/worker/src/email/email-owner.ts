@@ -1,9 +1,8 @@
 /**
  * Lightweight email ownership constants.
  *
- * Kept free of system-email / service imports so dual-write helpers
- * (`mailbox-mirror`) can skip the reserved operator inbox without creating
- * import cycles (service → mailbox-mirror → … → service).
+ * Kept free of system-email / service imports so Mailbox and the dedicated
+ * system-email graph can skip the reserved operator inbox without cycles.
  */
 
 /** Reserved owner id for the platform operator inbox (stays in D1 only). */

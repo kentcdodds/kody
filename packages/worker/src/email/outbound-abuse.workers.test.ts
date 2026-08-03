@@ -75,7 +75,7 @@ async function seedProviderMessage(input: {
 	sentAt: string
 }) {
 	const messageId = crypto.randomUUID()
-	await mailboxRpc({ env, userId: input.userId }).writeMessageGraph({
+	await mailboxRpc({ env, userId: input.userId }).upsertMessageGraph({
 		ownerId: input.userId,
 		message: {
 			id: messageId,

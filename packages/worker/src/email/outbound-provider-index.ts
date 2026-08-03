@@ -16,17 +16,11 @@ export type EmailOutboundProviderIndexRow = {
 	updatedAt: string
 }
 
-export type OutboundProviderIndexParityReport = {
-	/** Deprecated compatibility field; equals indexCount after graph freeze. */
-	linkedMessageCount: number
+export type OutboundProviderIndexHealthReport = {
 	indexCount: number
 	distinctOwnerCount: number
 	malformedCount: number
-	/** Deprecated compatibility fields; no frozen graph comparison is run. */
-	missingFromIndexCount: number
-	missingFromMessagesCount: number
-	mismatchedCount: number
-	parity: boolean
+	healthy: boolean
 }
 
 export async function isOutboundProviderIndexForeignKeyDetached(
@@ -43,19 +37,15 @@ export async function isOutboundProviderIndexForeignKeyDetached(
 	)
 }
 
-export function classifyOutboundProviderIndexParity(
+export function classifyOutboundProviderIndexHealth(
 	counts: Pick<
-		OutboundProviderIndexParityReport,
+		OutboundProviderIndexHealthReport,
 		'indexCount' | 'distinctOwnerCount' | 'malformedCount'
 	>,
-): OutboundProviderIndexParityReport {
+): OutboundProviderIndexHealthReport {
 	return {
 		...counts,
-		linkedMessageCount: counts.indexCount,
-		missingFromIndexCount: 0,
-		missingFromMessagesCount: 0,
-		mismatchedCount: 0,
-		parity: counts.malformedCount === 0,
+		healthy: counts.malformedCount === 0,
 	}
 }
 
@@ -166,10 +156,10 @@ export async function deleteOutboundProviderIndexByMessageIds(input: {
  * Read-only structural report over the thin reverse index. It deliberately
  * never joins the frozen shared USER message graph.
  */
-export async function loadOutboundProviderIndexParityReport(input: {
+export async function loadOutboundProviderIndexHealthReport(input: {
 	db: D1Database
 	userId?: string
-}): Promise<OutboundProviderIndexParityReport> {
+}): Promise<OutboundProviderIndexHealthReport> {
 	const userId = input.userId ?? null
 	const row = await input.db
 		.prepare(
@@ -199,7 +189,7 @@ export async function loadOutboundProviderIndexParityReport(input: {
 	const indexCount = Number(row?.index_count ?? 0)
 	const distinctOwnerCount = Number(row?.distinct_owner_count ?? 0)
 	const malformedCount = Number(row?.malformed_count ?? 0)
-	return classifyOutboundProviderIndexParity({
+	return classifyOutboundProviderIndexHealth({
 		indexCount,
 		distinctOwnerCount,
 		malformedCount,

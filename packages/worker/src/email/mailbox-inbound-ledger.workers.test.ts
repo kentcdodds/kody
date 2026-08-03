@@ -36,7 +36,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 	await runInDurableObject(
 		stubFor(ownerA),
 		async (_instance: Mailbox, state) => {
-			expect(mailboxSchemaVersion).toBe(4)
+			expect(mailboxSchemaVersion).toBe(5)
 			const version = state.storage.sql
 				.exec<{ value: number }>(
 					`SELECT value FROM mailbox_meta WHERE key = ?`,

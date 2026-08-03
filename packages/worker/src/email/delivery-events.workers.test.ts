@@ -5,6 +5,31 @@ import { mailboxRpc } from './mailbox-client.ts'
 import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
+function captureD1Sql(db: D1Database) {
+	const sql: Array<string> = []
+	return {
+		sql,
+		db: new Proxy(db, {
+			get(target, property, receiver) {
+				if (property === 'prepare') {
+					return (statement: string) => {
+						sql.push(statement)
+						return target.prepare(statement)
+					}
+				}
+				if (property === 'exec') {
+					return (statement: string) => {
+						sql.push(statement)
+						return target.exec(statement)
+					}
+				}
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			},
+		}),
+	}
+}
+
 function providerEvent(input: {
 	providerMessageId: string
 	providerEventId: string
@@ -42,7 +67,7 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 	const providerMessageId = `provider-${crypto.randomUUID()}`
 	const createdAt = '2026-08-03T01:00:00.000Z'
 	const mailbox = mailboxRpc({ env, userId })
-	await mailbox.writeMessageGraph({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: {
 			id: messageId,
@@ -96,8 +121,10 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 		status: 'delivered',
 		at: deliveredAt,
 	})
+	const capturedD1 = captureD1Sql(env.APP_DB)
+	const flowEnv = { ...env, APP_DB: capturedD1.db }
 	const recorded = await processCloudflareEmailDeliveryEvent({
-		env,
+		env: flowEnv,
 		body: event,
 	})
 	expect(recorded).toMatchObject({
@@ -111,7 +138,7 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 		event: { messageId, userId, eventType: 'delivered' },
 	})
 	expect(
-		await processCloudflareEmailDeliveryEvent({ env, body: event }),
+		await processCloudflareEmailDeliveryEvent({ env: flowEnv, body: event }),
 	).toMatchObject({ outcome: 'duplicate' })
 	expect(await mailbox.getMessage({ messageId })).toMatchObject({
 		deliveryStatus: 'delivered',
@@ -123,6 +150,33 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 			providerMessageId,
 		}),
 	])
+	const bouncedEventId = `event-${crypto.randomUUID()}`
+	const bouncedAt = '2026-08-03T01:03:00.000Z'
+	const bounced = providerEvent({
+		providerMessageId,
+		providerEventId: bouncedEventId,
+		status: 'bounced',
+		at: bouncedAt,
+	})
+	await expect(
+		processCloudflareEmailDeliveryEvent({ env: flowEnv, body: bounced }),
+	).resolves.toMatchObject({ outcome: 'recorded' })
+	await expect(
+		processCloudflareEmailDeliveryEvent({ env: flowEnv, body: bounced }),
+	).resolves.toMatchObject({ outcome: 'duplicate' })
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT provider, event_type, occurred_at
+			FROM email_delivery_alert_events
+			WHERE provider_event_id = ?`,
+		)
+			.bind(bouncedEventId)
+			.first(),
+	).toEqual({
+		provider: 'cloudflare-email',
+		event_type: 'bounced',
+		occurred_at: bouncedAt,
+	})
 
 	for (const table of [
 		'email_threads',
@@ -139,4 +193,7 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 			.first<{ count: number }>()
 		expect(row?.count).toBe(0)
 	}
+	expect(capturedD1.sql.join('\n')).not.toMatch(
+		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
+	)
 }, 30_000)

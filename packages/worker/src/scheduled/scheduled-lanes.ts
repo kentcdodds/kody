@@ -3,6 +3,10 @@ import {
 	checkAuthDenialBurstAndNotify,
 	shouldRunAuthDenialAlertCron,
 } from '#app/auth-denial-alerts.ts'
+import {
+	checkEmailDeliveryBurstAndNotify,
+	shouldRunEmailDeliveryAlertCron,
+} from '#app/email-delivery-alerts.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
@@ -40,6 +44,7 @@ export const scheduledLaneNames = [
 	'job_retention',
 	'usage_aggregation',
 	'auth_denial_alert',
+	'email_delivery_alert',
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
@@ -83,6 +88,9 @@ export function getScheduledLanes(input: {
 	}
 	if (shouldRunAuthDenialAlertCron(input.scheduledAt)) {
 		lanes.push('auth_denial_alert')
+	}
+	if (shouldRunEmailDeliveryAlertCron(input.scheduledAt)) {
+		lanes.push('email_delivery_alert')
 	}
 	if (
 		shouldRunDrExportCron(input.scheduledAt) &&
@@ -155,6 +163,11 @@ export async function runScheduledLane(input: {
 			return aggregateUsageRollups(input.env, input.scheduledAt)
 		case 'auth_denial_alert':
 			return checkAuthDenialBurstAndNotify({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'email_delivery_alert':
+			return checkEmailDeliveryBurstAndNotify({
 				env: input.env,
 				now: input.scheduledAt,
 			})

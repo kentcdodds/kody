@@ -1,5 +1,6 @@
 import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
+import { pruneFrozenUserEmailGraphForRetention } from '#worker/email/legacy-user-email-graph-cleanup.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -663,6 +664,21 @@ export async function pruneRetention(input: {
 				result.publishedBundleArtifacts.deletedSnapshotKvKeys +=
 					batch.deletedSnapshotKvKeys
 				result.publishedBundleArtifacts.kvDeleteErrors += batch.kvDeleteErrors
+				return batch.hasMore
+			},
+		},
+		{
+			table: 'frozen_user_email_graph',
+			done: false,
+			run: async () => {
+				const batch = await pruneFrozenUserEmailGraphForRetention({
+					db,
+					now,
+				})
+				result.emailDeliveryEvents += batch.emailDeliveryEvents
+				result.emailMessages.deletedMessages += batch.emailMessages
+				result.emailMessages.deletedAttachments += batch.emailAttachments
+				result.emailMessages.deletedThreads += batch.emailThreads
 				return batch.hasMore
 			},
 		},

@@ -35,6 +35,7 @@ import {
 	type UserInboundDeliveryAuthorityEnv,
 } from './inbound-delivery-authority.ts'
 import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
+import { assertUserEmailGraphAuthority } from './user-email-graph-authority.ts'
 import {
 	pruneUserExpiredInboundDedupePointers,
 	reconcileUserStaleInboundDeliveries,
@@ -233,6 +234,10 @@ export async function handleInboundEmail(
 		db: env.APP_DB,
 		stableUserId: userId,
 		async write() {
+			await assertUserEmailGraphAuthority({
+				db: env.APP_DB,
+				ownerId: userId,
+			})
 			const authority = createUserInboundDeliveryAuthority({ env, userId })
 			// Require email + canonical stable id together (same contract as
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair

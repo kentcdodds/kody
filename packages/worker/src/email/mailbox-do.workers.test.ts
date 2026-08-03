@@ -16,7 +16,7 @@ import {
 } from './mailbox-test-helpers.ts'
 import { mailboxUpsertDeliveryEventsMax } from './mailbox-types.ts'
 
-test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', async () => {
+test('Mailbox upserts, reads, searches, isolates owners, and stays idempotent', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const ownerA = uniqueUserId('a')
 	const ownerB = uniqueUserId('b')
@@ -62,13 +62,13 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 	})
 	const attachment = baseAttachment(ownerA, message.id, { id: 'att-1' })
 
-	await mailboxA.mirrorMessage({
+	await mailboxA.upsertMessageGraph({
 		ownerId: ownerA,
 		thread,
 		message,
 		attachments: [attachment],
 	})
-	await mailboxA.mirrorMessage({
+	await mailboxA.upsertMessageGraph({
 		ownerId: ownerA,
 		thread,
 		message: {
@@ -131,7 +131,7 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 		}),
 	).toEqual({ total: 1 })
 
-	await mailboxB.mirrorMessage({
+	await mailboxB.upsertMessageGraph({
 		ownerId: ownerB,
 		thread: baseThread({ id: 'thread-b' }),
 		message: baseMessage(ownerB, {
@@ -159,7 +159,7 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 	})
 
 	const outboundId = 'msg-out-1'
-	await mailboxA.mirrorMessage({
+	await mailboxA.upsertMessageGraph({
 		ownerId: ownerA,
 		message: baseMessage(ownerA, {
 			id: outboundId,
@@ -179,13 +179,13 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 	// Cross-user ownerId and forged blob keys must be rejected.
 	await runInDurableObject(stubA, async (instance: Mailbox) => {
 		await assertMailboxThrows(/ownerId mismatch/, () =>
-			instance.mirrorMessage({
+			instance.upsertMessageGraph({
 				ownerId: ownerB,
 				message: baseMessage(ownerA, { id: 'cross-user' }),
 			}),
 		)
 		await assertMailboxThrows(/rawMimeKey must equal/, () =>
-			instance.mirrorMessage({
+			instance.upsertMessageGraph({
 				ownerId: ownerA,
 				message: baseMessage(ownerA, {
 					id: 'bad-key',
@@ -194,7 +194,7 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 			}),
 		)
 		await assertMailboxThrows(/storageKey must equal/, () =>
-			instance.mirrorMessage({
+			instance.upsertMessageGraph({
 				ownerId: ownerA,
 				message: baseMessage(ownerA, { id: 'bad-att-msg' }),
 				attachments: [
@@ -226,7 +226,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 	})
 	const attachment = baseAttachment(userId, message.id, { id: 'stale-att' })
 
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread,
 		message,
@@ -234,7 +234,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 	})
 
 	// Omitted attachments leave existing metadata unchanged.
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: {
 			...message,
@@ -247,7 +247,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 	).toHaveLength(1)
 
 	// Stale snapshot must not regress classification, thread time, or attachments.
-	const staleMirror = await mailbox.mirrorMessage({
+	const staleUpsert = await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread: {
 			...thread,
@@ -262,7 +262,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 		},
 		attachments: [],
 	})
-	expect(staleMirror.accepted).toBe(false)
+	expect(staleUpsert.accepted).toBe(false)
 	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
 		classification: 'accepted',
 		subject: 'edited without attachments field',
@@ -276,7 +276,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 	).toHaveLength(1)
 
 	// Explicit [] clears only when the message snapshot is accepted.
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: {
 			...message,
@@ -298,8 +298,8 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
 		updatedAt: '2026-07-02T10:00:00.000Z',
 	})
-	await mailbox.mirrorMessage({ ownerId: userId, message: outbound })
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({ ownerId: userId, message: outbound })
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: {
 			...outbound,
@@ -433,20 +433,20 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 	const inboundAttachment = baseAttachment(userId, inboundBlobMessage.id, {
 		id: 'export-inbound-att',
 	})
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread,
 		message,
 		attachments: [attachment],
 	})
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: inboundBlobMessage,
 		attachments: [inboundAttachment],
 	})
 
-	// Stale dual-write replay must not regress a newer delivery status.
-	await mailbox.mirrorMessage({
+	// A stale replay must not regress a newer delivery status.
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: {
 			...message,
@@ -461,7 +461,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 	})
 
 	// Equal timestamps may update (matches D1 <= semantics).
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		message: {
 			...message,
@@ -579,7 +579,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			instance.listBlobReferences({ pageSize: 1, startAfter: 'bad' }),
 		)
 		await assertMailboxThrows(/canonical ISO-8601/, () =>
-			instance.mirrorMessage({
+			instance.upsertMessageGraph({
 				ownerId: userId,
 				message: baseMessage(userId, {
 					id: 'bad-iso',
@@ -689,11 +689,13 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 		deliveryStatus: 'delivered',
 		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
 	})
-	await mailbox.mirrorMessage({ ownerId: userId, message })
+	await mailbox.upsertMessageGraph({ ownerId: userId, message })
 
-	await assertMailboxThrows(/events must be non-empty/, () =>
-		mailbox.upsertDeliveryEvents({ ownerId: userId, events: [] }),
-	)
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/events must be non-empty/, () =>
+			instance.upsertDeliveryEvents({ ownerId: userId, events: [] }),
+		)
+	})
 	const tooMany = Array.from(
 		{ length: mailboxUpsertDeliveryEventsMax + 1 },
 		(_, index) =>
@@ -706,9 +708,11 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 				updatedAt: '2026-07-02T10:00:00.000Z',
 			}),
 	)
-	await assertMailboxThrows(/exceed max of/, () =>
-		mailbox.upsertDeliveryEvents({ ownerId: userId, events: tooMany }),
-	)
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/exceed max of/, () =>
+			instance.upsertDeliveryEvents({ ownerId: userId, events: tooMany }),
+		)
+	})
 
 	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
 		await state.storage.deleteAlarm()
@@ -784,45 +788,49 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 		],
 	})
 
-	await assertMailboxThrows(/ownerId mismatch/, () =>
-		mailbox.upsertDeliveryEvents({
-			ownerId: otherUserId,
-			events: [
-				baseDeliveryEvent({
-					id: 'batch-evt-other',
-					messageId: message.id,
-					eventType: 'sent',
-					provider: 'kody',
-				}),
-			],
-		}),
-	)
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.upsertDeliveryEvents({
+				ownerId: otherUserId,
+				events: [
+					baseDeliveryEvent({
+						id: 'batch-evt-other',
+						messageId: message.id,
+						eventType: 'sent',
+						provider: 'kody',
+					}),
+				],
+			}),
+		)
+	})
 
 	// Transactionality: a mid-batch validation failure rolls back prior writes.
 	const beforeCount = (await mailbox.countMailbox()).deliveryEvents
-	await assertMailboxThrows(/canonical ISO-8601/, () =>
-		mailbox.upsertDeliveryEvents({
-			ownerId: userId,
-			events: [
-				baseDeliveryEvent({
-					id: 'batch-txn-ok',
-					messageId: message.id,
-					eventType: 'delivered',
-					provider: 'kody',
-					createdAt: '2026-07-02T12:00:00.000Z',
-					updatedAt: '2026-07-02T12:00:00.000Z',
-				}),
-				baseDeliveryEvent({
-					id: 'batch-txn-bad',
-					messageId: message.id,
-					eventType: 'delivered',
-					provider: 'kody',
-					createdAt: '2026-07-02T12:00:00Z',
-					updatedAt: '2026-07-02T12:00:00Z',
-				}),
-			],
-		}),
-	)
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/canonical ISO-8601/, () =>
+			instance.upsertDeliveryEvents({
+				ownerId: userId,
+				events: [
+					baseDeliveryEvent({
+						id: 'batch-txn-ok',
+						messageId: message.id,
+						eventType: 'delivered',
+						provider: 'kody',
+						createdAt: '2026-07-02T12:00:00.000Z',
+						updatedAt: '2026-07-02T12:00:00.000Z',
+					}),
+					baseDeliveryEvent({
+						id: 'batch-txn-bad',
+						messageId: message.id,
+						eventType: 'delivered',
+						provider: 'kody',
+						createdAt: '2026-07-02T12:00:00Z',
+						updatedAt: '2026-07-02T12:00:00Z',
+					}),
+				],
+			}),
+		)
+	})
 	expect((await mailbox.countMailbox()).deliveryEvents).toBe(beforeCount)
 	expect(
 		(

@@ -167,7 +167,7 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 		createdAt: oldMessageAt,
 	})
 
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread: baseThread({
 			id: 'drop-thread',
@@ -178,9 +178,12 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 		message: dropMessage,
 		attachments: [dropAttachment],
 	})
-	await mailbox.mirrorMessage({ ownerId: userId, message: keepMessage })
-	await mailbox.mirrorMessage({ ownerId: userId, message: failMessage })
-	await mailbox.mirrorMessage({ ownerId: userId, message: missingKeyMessage })
+	await mailbox.upsertMessageGraph({ ownerId: userId, message: keepMessage })
+	await mailbox.upsertMessageGraph({ ownerId: userId, message: failMessage })
+	await mailbox.upsertMessageGraph({
+		ownerId: userId,
+		message: missingKeyMessage,
+	})
 	await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
 		event: baseDeliveryEvent({
@@ -424,8 +427,8 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 		updatedAt: oldMessageAt,
 	})
 
-	await mailbox.mirrorMessage({ ownerId: userId, message: keepMessage })
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({ ownerId: userId, message: keepMessage })
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread: baseThread({
 			id: 'drop-thread',
@@ -435,7 +438,7 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 		}),
 		message: dropMessage,
 	})
-	await mailbox.mirrorMessage({ ownerId: userId, message: failMessage })
+	await mailbox.upsertMessageGraph({ ownerId: userId, message: failMessage })
 
 	await runInDurableObject(stub, async (instance: Mailbox) => {
 		await assertMailboxThrows(/ownerId mismatch/, () =>
@@ -510,7 +513,7 @@ test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh ro
 	expect(noop.after.messages).toBe(1)
 })
 
-test('Mailbox retention ends after one item so a queued mirror can save the next', async () => {
+test('Mailbox retention ends after one item so a queued update can save the next', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('retention-concurrency')
 	const mailbox = rpcFor(userId)
@@ -526,7 +529,7 @@ test('Mailbox retention ends after one item so a queued mirror can save the next
 		}),
 	)
 	for (const message of messages) {
-		await mailbox.mirrorMessage({ ownerId: userId, message })
+		await mailbox.upsertMessageGraph({ ownerId: userId, message })
 		await env.EMAIL_BLOBS.put(
 			emailRawMimeKey(userId, message.id),
 			`raw-${message.id}`,
@@ -562,7 +565,7 @@ test('Mailbox retention ends after one item so a queued mirror can save the next
 		}
 		let mirrorSettled = false
 		const newerMirror = runInDurableObject(stub, (instance: Mailbox) =>
-			instance.mirrorMessage({
+			instance.upsertMessageGraph({
 				ownerId: userId,
 				message: {
 					...updateBeforeGate,
@@ -618,43 +621,6 @@ test('Mailbox retention ends after one item so a queued mirror can save the next
 	}
 })
 
-test('parity purge serializes a queued mirror with its retention alarm', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const userId = uniqueUserId('parity-purge-concurrency')
-	const mailbox = rpcFor(userId)
-	const stub = stubFor(userId)
-	const beforePurge = baseMessage(userId, { id: 'before-parity-purge' })
-	const queued = baseMessage(userId, {
-		id: 'queued-during-parity-purge',
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString(),
-	})
-	await mailbox.mirrorMessage({ ownerId: userId, message: beforePurge })
-
-	const purge = mailbox.purgeForParityRebuild({ ownerId: userId })
-	const queuedMirror = runInDurableObject(stub, (instance: Mailbox) =>
-		instance.mirrorMessage({ ownerId: userId, message: queued }),
-	)
-	await expect(purge).resolves.toEqual({ ok: true })
-	await expect(queuedMirror).resolves.toEqual({ ok: true, accepted: true })
-
-	expect(await mailbox.getMessage({ messageId: beforePurge.id })).toBeNull()
-	const queuedMessage = await mailbox.getMessage({ messageId: queued.id })
-	const alarm = await runInDurableObject(
-		stub,
-		async (_instance: Mailbox, state) => state.storage.getAlarm(),
-	)
-	// Either operation may acquire the gate first. If purge wins, the queued
-	// mirror survives and must arm retention. If mirror wins, purge removes it.
-	// The forbidden pre-fix interleaving was a surviving message with no alarm.
-	if (queuedMessage) {
-		expect(queuedMessage).toMatchObject({ id: queued.id })
-		expect(alarm).not.toBeNull()
-	} else {
-		expect(alarm).toBeNull()
-	}
-})
-
 test('Mailbox retention selects one message per turn and revalidates before deletion', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const userId = uniqueUserId('retention-revalidation')
@@ -672,7 +638,7 @@ test('Mailbox retention selects one message per turn and revalidates before dele
 		}),
 	)
 	for (const message of messages) {
-		await mailbox.mirrorMessage({ ownerId: userId, message })
+		await mailbox.upsertMessageGraph({ ownerId: userId, message })
 		await env.EMAIL_BLOBS.put(emailRawMimeKey(userId, message.id), 'raw')
 	}
 
@@ -753,7 +719,7 @@ test('Mailbox can idempotently tombstone only an owner-bound missing message', a
 	const mailbox = rpcFor(userId)
 	const deletedAt = '2026-08-02T20:00:00.000Z'
 	const present = baseMessage(userId, { id: 'present-message' })
-	await mailbox.mirrorMessage({ ownerId: userId, message: present })
+	await mailbox.upsertMessageGraph({ ownerId: userId, message: present })
 
 	await expect(
 		mailbox.tombstoneMissingMessage({
@@ -815,7 +781,7 @@ test('Mailbox can idempotently tombstone only an owner-bound missing message', a
 		events.find((event) => event.id === 'other-message-event'),
 	).toMatchObject({ messageId: 'other-message' })
 	await expect(
-		mailbox.mirrorMessage({
+		mailbox.upsertMessageGraph({
 			ownerId: userId,
 			message: baseMessage(userId, { id: 'missing-message' }),
 		}),
@@ -841,7 +807,7 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		messageId: message.id,
 		eventType: 'received',
 	})
-	await mailbox.mirrorMessage({
+	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread,
 		message,
@@ -867,9 +833,6 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 				ownerId: otherOwner,
 				messageId: message.id,
 			}),
-		)
-		await assertMailboxThrows(/ownerId mismatch/, () =>
-			instance.purgeForParityRebuild({ ownerId: otherOwner }),
 		)
 	})
 
@@ -956,9 +919,9 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		}),
 	).toEqual({ status: 'missing', tombstoned: true })
 
-	// Both a queued stale dual-write and a newer parity snapshot are fenced.
+	// Both a queued stale update and a newer snapshot are fenced.
 	expect(
-		await mailbox.mirrorMessage({
+		await mailbox.upsertMessageGraph({
 			ownerId: userId,
 			thread,
 			message,
@@ -966,7 +929,7 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		}),
 	).toEqual({ ok: true, accepted: false })
 	expect(
-		await mailbox.mirrorMessage({
+		await mailbox.upsertMessageGraph({
 			ownerId: userId,
 			thread,
 			message: {
@@ -991,34 +954,8 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		)
 	})
 
-	const retryPurgeMessage = baseMessage(userId, { id: 'retry-purge-message' })
-	await mailbox.mirrorMessage({
-		ownerId: userId,
-		message: retryPurgeMessage,
-	})
-	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
-		state.storage.sql.exec(
-			`INSERT INTO email_message_retention_retries (
-				message_id, retry_at, attempt_count, last_error, updated_at
-			) VALUES (?, ?, 1, 'test', ?)`,
-			retryPurgeMessage.id,
-			'2099-01-01T00:00:00.000Z',
-			'2026-08-02T00:00:00.000Z',
-		)
-	})
-	await mailbox.purgeForParityRebuild({ ownerId: userId })
-	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
-		expect(
-			state.storage.sql
-				.exec<{ count: number }>(
-					`SELECT COUNT(*) AS count
-					FROM email_message_retention_retries`,
-				)
-				.one().count,
-		).toBe(0)
-	})
 	expect(
-		await mailbox.mirrorMessage({
+		await mailbox.upsertMessageGraph({
 			ownerId: userId,
 			thread,
 			message: {

@@ -5,6 +5,10 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	// exercising email sends needs the entitlement tables too.
 	await ensureEntitlementTestSchema(db)
 	const statements = [
+		`DROP TABLE IF EXISTS email_delivery_alert_events;`,
+		`DROP TABLE IF EXISTS email_outbound_provider_index_repair_owners;`,
+		`DROP TABLE IF EXISTS email_inbound_due_owners;`,
+		`DROP TABLE IF EXISTS email_user_graph_authority;`,
 		`DROP TABLE IF EXISTS system_email_graph_authority;`,
 		`DROP TABLE IF EXISTS system_email_daily_counters;`,
 		`DROP TABLE IF EXISTS system_email_delivery_events;`,
@@ -375,6 +379,37 @@ WHERE direction = 'outbound'
 ON email_outbound_provider_index(user_id);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_outbound_provider_index_message_id
 ON email_outbound_provider_index(message_id);`,
+		`CREATE TABLE IF NOT EXISTS email_user_graph_authority (
+	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+	owner_count INTEGER NOT NULL CHECK (owner_count >= 0),
+	frozen_at TEXT NOT NULL,
+	max_parity_age_hours INTEGER NOT NULL CHECK (max_parity_age_hours = 24)
+);`,
+		`INSERT INTO email_user_graph_authority (
+	singleton, owner_count, frozen_at, max_parity_age_hours
+) VALUES (1, 0, CURRENT_TIMESTAMP, 24);`,
+		`CREATE TABLE IF NOT EXISTS email_inbound_due_owners (
+	user_id TEXT PRIMARY KEY NOT NULL CHECK (user_id != 'system:email'),
+	due_at TEXT NOT NULL,
+	reason TEXT NOT NULL,
+	attempt_count INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT,
+	updated_at TEXT NOT NULL
+);`,
+		`CREATE TABLE IF NOT EXISTS email_outbound_provider_index_repair_owners (
+	user_id TEXT PRIMARY KEY NOT NULL,
+	pending_count INTEGER NOT NULL,
+	oldest_pending_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
+		`CREATE TABLE IF NOT EXISTS email_delivery_alert_events (
+	provider_event_id TEXT PRIMARY KEY NOT NULL,
+	provider TEXT NOT NULL,
+	event_type TEXT NOT NULL,
+	occurred_at TEXT NOT NULL,
+	owner_hash TEXT,
+	created_at TEXT NOT NULL
+);`,
 		`CREATE TRIGGER IF NOT EXISTS email_messages_delete_outbound_provider_index
 AFTER DELETE ON email_messages
 BEGIN

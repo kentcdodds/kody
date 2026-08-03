@@ -429,35 +429,9 @@ Analytics Engine SQL API: both email quota and delivery-outcome aggregates
 degrade to empty (with an explicit warning) rather than reading the frozen
 shared USER graph.
 
-**Historical Mailbox expand-phase parity events (retired)** reused the same
-`EMAIL_EVENTS` dataset with a separate row shape defined in
-`packages/worker/src/email/mailbox-parity-events.ts`
-(`recordMailboxParityEvent`). Mirror helpers recorded one namespaced outcome per
-attempted operation; the former `mailbox_parity` reconcile lane recorded one
-outcome per count comparison (`compare_threads`, `compare_messages`,
-`compare_attachments`, `compare_delivery_events`). These rows do not feed the
-admin insights charts today:
-
-- `index1` — stable user id (per-user isolation; `system:email` is excluded)
-- `blob1` — namespaced event type (`mailbox_mirror:<operation>` or
-  `mailbox_parity:<operation>`) so unfiltered consumers can distinguish these
-  from `email_send` / `email_receive` / `email_delivery`
-- `blob2` — operation outcome
-- `blob3` — source event timestamp (ISO 8601)
-- `double1` — event weight (always `1`, matching reporting)
-- `double2` — D1-minus-DO count delta (`d1Count - doCount` for parity compares;
-  `0` when absent or not applicable)
-
-Mirror operations: `mirror_message`, `upsert_delivery_event`,
-`upsert_delivery_event_batch`, `touch_thread`, `update_message_delivery`,
-`set_message_classification`, `delete_message_metadata`,
-`delete_delivery_event`, `delete_thread_if_empty`. Mirror outcomes: `mirrored`,
-`stale`, `missing`, `timeout`, `skipped`, `error`. Parity operations:
-`compare_threads`, `compare_messages`, `compare_attachments`,
-`compare_delivery_events`. Parity outcomes: `match`, `mismatch`. Mirror outcome
-writes came from the old dual-write helpers; parity compare writes came from the
-scheduled reconcile lane after owner-scoped D1 and Mailbox counts were compared.
-No live or scheduled Step 5 path emits these migration events.
+Historical Mailbox expand-phase mirror/parity telemetry is retired. No emitters
+or operation registry remain, and no live or scheduled Step 5 path writes those
+migration-only events.
 
 Two D1 reporting projections deliberately remain:
 
@@ -721,12 +695,14 @@ owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
 / `emailAttachmentBlobKey`).
 
 **SQLite ownership** (schema version in `mailbox_meta`; current
-`mailboxSchemaVersion = 4`):
+`mailboxSchemaVersion = 5`):
 
 - `mailbox_owner_identity` — singleton `owner_id` for blob-key validation and
   cross-user write rejection
 - `email_threads`, `email_messages`, `email_attachments`, and
   `email_delivery_events` for the owning user
+- `email_outbound_provider_index_repairs` for accepted sends whose operational
+  D1 reverse-index write still needs retry
 - latest per-message delivery status on `email_messages.delivery_status`, kept
   separate from send-request `processing_status`
 - warm-safe additive inbound-ledger due-work indexes, effect leases, retention
@@ -747,19 +723,32 @@ Mailbox. D1 `email_outbound_provider_index` is the only USER email
 graph-adjacent runtime table: it is a thin, independently idempotent
 `providerMessageId → ownerId/messageId/inboxId` lookup. Contextless provider
 webhooks resolve that index and mutate Mailbox; they never join shared D1 graph
-tables.
+tables. The terminal Mailbox transaction also records a pending provider-index
+repair. Immediate D1 synchronization clears it on success; the Mailbox alarm
+retries failures with bounded backoff and publishes aggregate repair health.
+
+Migration `0133-email-user-graph-authority.sql` installs the production cutover
+marker after verifying every frozen USER owner has a fresh successful complete
+backfill. USER write entry points fail closed when the marker is absent;
+`system:email` is unaffected. The same migration adds two non-payload
+coordination surfaces: `email_inbound_due_owners` provides bounded owner
+discovery for scheduled inbound reconciliation, and
+`email_delivery_alert_events` preserves short-lived bounced/complained signals
+for operator burst alerts.
 
 The shared D1 `email_threads`, `email_messages`, `email_attachments`, and
 `email_delivery_events` tables are a physically frozen rollback snapshot.
-Post-cutover Mailbox data is not projected into them. Runtime account
-export/deletion, retention, usage, admin insights, reconciliation, and reads do
-not query or delete USER rows there. The former `mailbox_parity` lane,
-D1-to-Mailbox rebuild, and `mailbox-read-cutover` flag are retired.
-Rollback/drop tools must opt into an explicit non-live access marker; production
-live USER SQL is guarded before D1 prepares a statement targeting these four
-tables. This step does not drop the tables, columns, triggers, parity columns,
-or tombstones. `system:email` remains on its dedicated D1 graph and retention
-path.
+Post-cutover Mailbox data is not projected into them. Live reads, writes,
+exports, usage, admin insights, and reconciliation never query USER rows there.
+The only USER mutations are privacy lifecycle deletes from
+`legacy-user-email-graph-cleanup.ts`: account deletion removes the owner's
+frozen rows after Mailbox/R2 inventory and purge, and retention may prune old
+frozen rows. Aggregate backup verification is the only allowed USER read. Static
+import/SQL architecture checks enforce those boundaries; the marked SQL guard is
+defense in depth. The former `mailbox_parity` lane, D1-to-Mailbox rebuild, and
+`mailbox-read-cutover` flag are retired. This step does not drop the tables,
+columns, triggers, parity columns, or tombstones. `system:email` remains on its
+dedicated D1 graph and retention path.
 
 **Operator system-email graph split:** migration
 `0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
@@ -896,150 +885,50 @@ alarm reschedule; the RPC returns before/after `countMailbox` aggregates plus
 `blobDeleteFailures` / `expiredRemaining` (no row ids or content).
 
 **Admin maintenance** is audited and content-free outside an explicitly
-owner-scoped delete. Fleet status reports the thin provider-index structure and
-dedicated system-email rollback-mirror parity; it makes no claim about frozen
-USER D1 counts. USER retention calls `Mailbox.runRetentionNow`; USER explicit
-delete inventories and deletes canonical R2 keys, deletes Mailbox metadata, and
-idempotently removes any thin provider-index row. Neither action queries or
-deletes the frozen graph. The dedicated `system:email` maintenance path remains
-D1-backed.
+owner-scoped delete. Fleet status reports the USER authority marker, thin
+provider-index structure, pending provider-index repair owners, inbound due
+owners, delivery-alert health, and dedicated system-email rollback-mirror
+parity; it makes no claim about frozen USER D1 counts. USER retention calls
+`Mailbox.runRetentionNow`; USER explicit delete inventories and deletes
+canonical R2 keys, deletes Mailbox metadata, and idempotently removes any thin
+provider-index row. The separate privacy retention lane may delete frozen
+rollback rows through the scoped cleanup module. The dedicated `system:email`
+maintenance path remains D1-backed.
 
 USER retention returns Mailbox before/after counts (no message ids or email
 content). It has no shared-D1 gate or USER D1 delete/error totals.
 
-Account deletion uses one owner-bound Mailbox object (no D1 id scan). Before
-purge it exhaustively pages `listBlobReferences`, deletes those canonical keys
-and the defensive `EMAIL_BLOBS` owner prefixes, and aborts on any inventory or
-cleanup warning. Only then does it call `Mailbox.purge()` (result key
-`mailboxes`). Purge clears DO SQLite/alarm state and reinitializes schema; it
-does **not** delete R2 objects. Frozen D1 `email_*` rows are deliberately left
-untouched. Account export pages the sole authoritative USER graph through the
-`mailbox` section (`exportMailbox` / `countMailbox`), excludes the four D1 graph
-tables, and uses `listBlobReferences` for USER email R2 bytes.
+Account deletion uses one owner-bound Mailbox object (no shared-graph D1 id
+scan). Before purge it exhaustively pages `listBlobReferences`, deletes those
+canonical keys and the defensive `EMAIL_BLOBS` owner prefixes, and aborts on any
+inventory or cleanup warning. Only then does it call `Mailbox.purge()` (result
+key `mailboxes`). Purge clears DO SQLite/alarm state and reinitializes schema;
+it does **not** delete R2 objects. After that succeeds, the scoped privacy
+cleanup deletes the owner's frozen D1 graph rows. Account export pages the sole
+authoritative USER graph through the `mailbox` section (`exportMailbox` /
+`countMailbox`), excludes the four D1 graph tables, and uses
+`listBlobReferences` for USER email R2 bytes.
 
 ### Historical expand/contract phases
 
-The phase record below explains migrations 0125–0132 and rollback provenance. It
-is not a description of the current runtime. The Step 5 authority contract above
-supersedes its dual-write, parity-lane, read-flag, D1 projection, and D1
-retention statements. Those mechanisms are retired from live USER paths.
+Migrations 0125–0129 scaffolded Mailbox migration state and the provider reverse
+index. Migration `0132-email-outbound-provider-index-detach.sql` removed the
+cross-store-invalid foreign key from the operational provider index while
+retaining its legacy-delete compatibility trigger. Migration
+`0133-email-user-graph-authority.sql` then failed closed unless every USER owner
+in the frozen graph had a fresh, successful, complete backfill record; its
+singleton authority marker records the validated owner count and freeze time.
 
-This is an expand/contract migration. **Step 3 internal-reader cutover is wired
-on top of phase 2 USER inbound authority + graph dual-write + parity:** live
-dual-write covers outbound terminal message/thread/attachment/event graphs,
-provider delivery-queue graph repair (`recorded` / `duplicate` / `stale` with a
-message, via `waitUntil`), user classification (full graph repair after D1
-update via `service.ts#setEmailMessageClassification`), high-risk inbound
-terminal paths (received graph + rejected delivery-event mirror + post-effects
-event re-mirror; `waitUntil`; no Mailbox before D1/R2 finalization; pre-claim
-bounded rejections parity-lane only; `system:email` excluded). Mirror helpers
-emit automatic namespaced outcome telemetry (`missing` and `timeout` included).
-Message and batch event repair each use one 1s-bounded RPC; each graph attempt
-emits at most two AE writes; event repair batches up to 100 events with explicit
-truncation (newest retained, chronological insertion restored, stable truncation
-warning) and one batch telemetry outcome. Live explicit and retention deletes do
-not call Mailbox mirror helpers; the every-5-minute queue-isolated
-`mailbox_parity` lane backfills all owner messages and delivery events
-(including pre-claim bounded rejection rows), durable content-watermark replays,
-compares owner-scoped D1 vs Mailbox counts, persists soak state on `users`
-(migration `0125`), re-purges the DO when account deletion races the lane, and
-repairs delete drift via purge/rebuild. Direct delete wiring is pending. D1
-remains write authority for message graphs and non-USER-inbound delivery events;
-USER inbound lifecycle and effect transitions are owner-bound Mailbox CAS,
-synchronously projected to D1. Owner-facing inbox/API graph reads may use
-Mailbox when the default-off `mailbox-read-cutover` flag and parity soak pass.
-Internal USER effect/package payload readers, signed-in `stored_email_messages`
-usage, account export, and account R2 inventory use fail-closed Mailbox RPCs
-without a D1 fallback; `system:email` stays explicitly D1-backed. **Phase 2
-contract completion** (every user-mail D1 mutation also writes the DO on live
-paths, including retention deletes) remains pending; terminal inbound + parity
-cover the high-risk live surface today.
+The temporary USER dual-write, rebuild, soak, and read-flag runtime surfaces
+used during those phases have been removed. Their old state columns remain only
+because this cutover is additive. They are not status signals and are not read
+by production maintenance.
 
-1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
-   `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
-   `upsertDeliveryEvents` / `exportMailbox` / `countMailbox` / `purge` RPCs and
-   alarm retention, and register account deletion/export consumption. No
-   dual-write; D1 remains sole authority for live mail.
-2. **D1-authoritative dual-write + parity** — every user-mail mutation that
-   writes D1 also writes the DO; parity counters and reconciliation prove DO
-   completeness against D1. D1 stays authoritative for reads. Library surface:
-   `email-owner.ts`, `mailbox-types.ts`, `mailbox-snapshots.ts`,
-   `mailbox-snapshot-repo.ts`, `mailbox-mirror.ts`, `mailbox-live-mirror.ts`,
-   `mailbox-mutations.ts` + matching DO RPCs (`touchThread`,
-   `updateMessageDelivery`, `setMessageClassification`, `deleteMessageMetadata`,
-   `deleteDeliveryEvent`, `deleteThreadIfEmpty`, `upsertDeliveryEvents`), and
-   `mailbox-parity-events.ts`, `mailbox-parity-repo.ts`,
-   `mailbox-parity-phases.ts`, and `mailbox-reconcile.ts`. **Live during this
-   historical phase (terminal inbound + parity):** outbound terminals, provider
-   delivery-queue outcomes with a message (`recorded`, `duplicate`, `stale`;
-   `waitUntil`), user classification
-   (`service.ts#setEmailMessageClassification`), inbound terminal paths in
-   `inbound.ts` (received graph via `waitUntil` only after D1/R2 + finalization;
-   rejected delivery-event mirror; post-effects event re-mirror;
-   already-received idempotent repair; pre-claim bounded rejections parity-lane
-   only; `system:email` excluded) call the live mirror helpers; graph repair
-   uses message RPC + one batch event RPC (at most two AE writes per attempt).
-   The every-5-minute `mailbox_parity` scheduled lane backfills all owner
-   messages and delivery events, durable content-watermark replays, count
-   compares, soak tracking on `users` (migration `0125`), and repairs delete
-   drift via purge/rebuild. USER inbound delivery lifecycle/effect state is the
-   exception: Mailbox is authoritative and D1 is its synchronous compatibility
-   projection. **Still pending for phase-2 contract completion:** direct delete
-   wiring for explicit/retention deletes (including retention sweeper
-   metadata-delete mirrors). D1 remains write authority for the message graph
-   and non-USER-inbound events; owner-facing inbox/API read cutover remains
-   behind the default-off flag.
-3. **Reader/account cutover in staged substeps** — internal USER product reads
-   now pass through `mailbox-internal-read.ts`: message, attachment, count,
-   export, and blob-reference reads fail closed against the owner Mailbox with
-   no feature flag or D1 fallback. `system:email` message/attachment/count reads
-   explicitly remain D1. Inbound effects load the repaired USER message and
-   package attachment payload from Mailbox. Signed-in/user-owner
-   `stored_email_messages` usage reads `Mailbox.countMessages`; compatibility
-   system/admin fleet aggregates may still count D1 until step 4/5. Account
-   export treats Mailbox as the sole USER graph, and account deletion captures
-   Mailbox blob refs before R2 deletion and Mailbox purge. D1 graph-write
-   fences, recovery reads, projection deletion, parity/backfill, and retention
-   remain. App inbox/detail and MCP list/get/search/attachment/delivery-event
-   reads move to the DO only after production parity soak is verified
-   (`mailbox_parity_matching_since` ≥ 2h continuous exact counts pre-launch —
-   TODO(launch-hardening) revisit, fresh `mailbox_parity_checked_at`, zero
-   `mailbox_parity_mismatch_count`, account not marked for deletion) **and** the
-   default-off `mailbox-read-cutover` flag is enabled per user. Live gate
-   evaluations record flag exposures (session cache or cutover memo chokepoint).
-4. **D1 write-off / event retirement** — retire dual-write and event/mirror
-   machinery used only for the migration as part of the ordered step 5 cutover
-   below.
-5. **USER graph contract (5a then 5b)** — deploy the 5a prerequisite first:
-   migration `0132-email-outbound-provider-index-detach.sql` atomically rebuilds
-   the retained global provider index without its cross-store-invalid
-   `email_messages` foreign key and installs a compatibility trigger that
-   preserves the old cascade behavior for legacy message deletes. No live USER
-   authority path flips in this prerequisite. Verify production reports
-   `status.outboundProviderIndex.foreignKeyDetached: true` before proceeding. A
-   later 5a cutover then moves **all** USER inbound, outbound, provider-index
-   synchronization, classification, explicit delete, and retention graph
-   mutations to Mailbox-only authority and freezes the four shared USER graph
-   tables (`email_threads`, `email_messages`, `email_attachments`, and
-   `email_delivery_events`). After the frozen-table verification window, take
-   and verify a fresh production backup; only then may 5b drop the retired USER
-   graph tables and migration-only machinery. No USER row or graph table is
-   destructively removed by the prerequisite deployment.
-
-   **Rollback caveat:** before the Mailbox-only write flip, old code that issues
-   a single `DELETE FROM email_messages` remains safe because the schema trigger
-   atomically removes the matching provider-index row. After Mailbox-only writes
-   begin, the frozen D1 USER graph is stale and must never be re-enabled as
-   authority by a code rollback. A rollback must remain Mailbox-authoritative
-   (or explicitly rebuild D1 from Mailbox before restoring old code). Step 5b
-   removes the compatibility trigger with `email_messages`; after that drop,
-   rollback also requires the verified fresh backup/schema restore, and
-   reverting application code alone is not safe.
-
-Historically, the every-five-minute `mailbox_parity` scheduled lane owned
-backfill, replay, parity, and mismatch rebuild. Step 5 removed that lane;
-Mailbox now owns live USER graph storage, alarm retention, and the inbound
-durability boundary below without consulting the frozen D1 graph.
+The frozen graph is stale immediately after the authority marker is installed
+and must never be made authoritative by reverting application code. Rollback
+must remain Mailbox-authoritative. A future destructive migration may remove the
+shared tables, compatibility trigger, old migration columns, and tombstones only
+after the rollback window and a verified backup.
 
 ### What stays in D1
 
@@ -1053,7 +942,7 @@ durability boundary below without consulting the frozen D1 graph.
 - **Low-write email config** — sender identities, inboxes, inbox addresses,
   sender rules, and similar low-churn configuration stay in D1.
 - **Provider-message reverse lookup** — outbound Cloudflare sending webhooks
-  resolve owner/message through the derived D1 table
+  resolve owner/message through the operational D1 lookup table
   `email_outbound_provider_index` (migration
   `0128-email-outbound-provider-index.sql`, detached by prerequisite migration
   `0132-email-outbound-provider-index-detach.sql`), keyed by
@@ -1067,9 +956,11 @@ durability boundary below without consulting the frozen D1 graph.
   deletion removes index rows separately and idempotently. Outbound send
   separates provider acceptance, bounded Mailbox terminal persistence, and
   independently retryable index persistence; an index failure never requests a
-  resend. Account export treats the table as derived global lookup
-  (`includeInExport: false` / `derivedData.email_outbound_provider_index`)
-  because authoritative outbound message rows are already exported.
+  resend. A pending repair is durable in owner Mailbox SQLite, retried by its
+  alarm with bounded backoff, and summarized in D1 without provider/message
+  identifiers. Account export omits the operational reverse index
+  (`includeInExport: false`); exported Mailbox messages retain their provider
+  ids, but no fleet-wide automatic rebuild is claimed.
   `recordProviderEmailDeliveryEvent` resolves index-first, then loads the
   owner-scoped Mailbox message (no shared-message scan). System outbound is
   unsupported, and the verified `no-system-provider-links` disposition means

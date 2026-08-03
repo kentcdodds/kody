@@ -35,6 +35,7 @@ export function setMailboxMeta(
  * - v2: additive inbound ledger query indexes (state/reconcile/retry/dedupe).
  * - v3: durable message deletion tombstones for delayed-writer fencing.
  * - v4: durable per-message retention retry eligibility and diagnostics.
+ * - v5: durable outbound provider-index repair ledger.
  * Warm objects re-run CREATE IF NOT EXISTS then apply any version-gated
  * index additions; never destructive.
  */
@@ -181,6 +182,24 @@ export function initializeMailboxSchema(storage: DurableObjectStorage) {
 		`CREATE INDEX IF NOT EXISTS idx_email_messages_raw_mime_key
 		ON email_messages(id ASC)
 		WHERE raw_mime_key IS NOT NULL`,
+	)
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS email_outbound_provider_index_repairs (
+			provider TEXT NOT NULL,
+			provider_message_id TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			inbox_id TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			retry_at TEXT NOT NULL,
+			attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+			last_error TEXT,
+			PRIMARY KEY (provider, provider_message_id)
+		)
+	`)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_outbound_provider_index_repairs_retry
+		ON email_outbound_provider_index_repairs(retry_at, provider, provider_message_id)`,
 	)
 	sql.exec(`
 		CREATE TABLE IF NOT EXISTS email_message_retention_retries (

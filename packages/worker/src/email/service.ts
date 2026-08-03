@@ -19,6 +19,8 @@ import {
 } from './reporting-events.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import { liveUserEmailD1Database } from './user-email-d1-guard.ts'
+import { assertUserEmailGraphAuthority } from './user-email-graph-authority.ts'
+import { recordDeliveryAlertEvent } from './delivery-alert-events.ts'
 import {
 	getSystemEmailAttachmentById,
 	getSystemEmailMessageById,
@@ -36,11 +38,8 @@ import {
 
 export { EmailRawMimeStorageError, RetryableInboundStorageError }
 
-export {
-	emailAttachmentBlobKey,
-	emailRawMimeKey,
-	ensurePlatformSenderIdentity,
-} from './repo.ts'
+export { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
+export { ensurePlatformSenderIdentity } from './repo.ts'
 
 function nowIso() {
 	return new Date().toISOString()
@@ -474,6 +473,10 @@ export async function setEmailMessageClassification(input: {
 			now: input.now,
 		})
 	}
+	await assertUserEmailGraphAuthority({
+		db: input.db,
+		ownerId: input.userId,
+	})
 	const result = await mailboxRpc({
 		env: input.env,
 		userId: input.userId,
@@ -509,10 +512,26 @@ export async function recordProviderEmailDeliveryEvent(input: {
 	if (!index) {
 		return { outcome: 'unmatched' as const, message: null }
 	}
+	await assertUserEmailGraphAuthority({
+		db,
+		ownerId: index.userId,
+	})
 	const mailbox = mailboxRpc({ env: input.env, userId: index.userId })
 	const current = await mailbox.getMessage({ messageId: index.messageId })
 	if (!current || current.direction !== 'outbound') {
 		return { outcome: 'unmatched' as const, message: null }
+	}
+	if (
+		input.deliveryStatus === 'bounced' ||
+		input.deliveryStatus === 'complained'
+	) {
+		await recordDeliveryAlertEvent({
+			db,
+			providerEventId: input.providerEventId,
+			provider: 'cloudflare-email',
+			eventType: input.deliveryStatus,
+			occurredAt: input.eventTimestamp,
+		})
 	}
 	const message = mailboxMessageToEmailMessageRecord(current, index.userId)
 	const existing = await mailbox.getDeliveryEventByProviderEventId({

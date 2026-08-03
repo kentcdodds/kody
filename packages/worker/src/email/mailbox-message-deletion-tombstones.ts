@@ -8,8 +8,8 @@ import {
 } from './mailbox-types.ts'
 
 /**
- * Migration-only fence against delayed D1 dual-write/parity resurrection.
- * Tombstones are intentionally retained until D1 message writers retire.
+ * Fence against delayed pre-cutover snapshots resurrecting deleted messages.
+ * Tombstones remain until the destructive frozen-graph follow-up.
  */
 export function isMailboxMessageTombstoned(
 	sql: SqlStorage,

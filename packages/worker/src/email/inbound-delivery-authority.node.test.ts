@@ -54,6 +54,10 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 	}
 	const mailbox = {
 		getInboundDelivery: vi.fn(async () => null),
+		getInboundDueWorkHint: vi.fn(async () => {
+			order.push('mailbox-hint')
+			return { dueAt: delivery.dedupeExpiresAt }
+		}),
 		claimInboundDeliveryWindow: vi.fn(async () => {
 			order.push('mailbox-window')
 			return snapshot
@@ -65,7 +69,13 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 			return { status: 'inserted' as const, delivery: snapshot }
 		}),
 	}
-	const prepare = vi.fn()
+	const run = vi.fn(async () => {
+		order.push('d1-hint')
+		return { success: true }
+	})
+	const prepare = vi.fn(() => ({
+		bind: vi.fn(() => ({ run })),
+	}))
 	const authority = createUserInboundDeliveryAuthority({
 		env: {
 			APP_DB: { prepare } as unknown as D1Database,
@@ -89,8 +99,15 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 		'mailbox-window',
 		'meter-2',
 		'mailbox-2',
+		'mailbox-hint',
+		'd1-hint',
 	])
-	expect(prepare).not.toHaveBeenCalled()
+	const statements = prepare.mock.calls.map(([sql]) => String(sql))
+	expect(statements).toHaveLength(1)
+	expect(statements[0]).toContain('email_inbound_due_owners')
+	expect(statements[0]).not.toMatch(
+		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
+	)
 })
 
 test('commitInboundMessageGraph forwards the active storage lease to one owner Mailbox RPC', async () => {

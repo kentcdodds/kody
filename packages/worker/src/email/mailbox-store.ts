@@ -903,14 +903,6 @@ export class MailboxStore {
 		})
 	}
 
-	purgeMetadataPreservingTombstones() {
-		this.sql.exec(`DELETE FROM email_delivery_events`)
-		this.sql.exec(`DELETE FROM email_attachments`)
-		this.sql.exec(`DELETE FROM email_message_retention_retries`)
-		this.sql.exec(`DELETE FROM email_messages`)
-		this.sql.exec(`DELETE FROM email_threads`)
-	}
-
 	pruneExpiredDeliveryEvents(input: { cutoff: string; limit: number }) {
 		pruneExpiredMailboxDeliveryEvents(this.sql, input)
 	}

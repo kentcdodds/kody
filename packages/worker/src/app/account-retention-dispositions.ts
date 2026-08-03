@@ -17,25 +17,25 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			table: 'email_delivery_events',
 			kind: 'pending_drop',
 			reason:
-				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+				'Frozen USER rollback snapshot pending physical drop; scoped legacy retention may delete expired metadata and account deletion removes owner rows after Mailbox purge.',
 		},
 		{
 			table: 'email_messages',
 			kind: 'pending_drop',
 			reason:
-				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+				'Frozen USER rollback snapshot pending physical drop; scoped legacy retention may delete expired unindexed metadata and account deletion removes owner rows after Mailbox purge.',
 		},
 		{
 			table: 'email_attachments',
 			kind: 'pending_drop',
 			reason:
-				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+				'Frozen USER rollback snapshot pending physical drop; attachment metadata follows scoped legacy message cleanup only.',
 		},
 		{
 			table: 'email_threads',
 			kind: 'pending_drop',
 			reason:
-				'Frozen USER rollback snapshot; Mailbox retention is authoritative.',
+				'Frozen USER rollback snapshot pending physical drop; orphan metadata follows scoped legacy message cleanup only.',
 		},
 		{ table: 'usage_rollups', kind: 'scheduled_policy' },
 		{ table: 'feature_flag_exposure_rollups', kind: 'scheduled_policy' },

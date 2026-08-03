@@ -1,20 +1,20 @@
 import { expect, test } from 'vitest'
-import { classifyOutboundProviderIndexParity } from './outbound-provider-index.ts'
+import { classifyOutboundProviderIndexHealth } from './outbound-provider-index.ts'
 
 test('outbound provider index structural report fails only for malformed rows', () => {
 	expect(
-		classifyOutboundProviderIndexParity({
+		classifyOutboundProviderIndexHealth({
 			indexCount: 1,
 			distinctOwnerCount: 1,
 			malformedCount: 0,
 		}),
-	).toMatchObject({ parity: true })
+	).toMatchObject({ healthy: true })
 
 	expect(
-		classifyOutboundProviderIndexParity({
+		classifyOutboundProviderIndexHealth({
 			indexCount: 2,
 			distinctOwnerCount: 1,
 			malformedCount: 1,
 		}),
-	).toMatchObject({ parity: false })
+	).toMatchObject({ healthy: false })
 })

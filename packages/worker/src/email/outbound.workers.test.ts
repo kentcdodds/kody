@@ -8,6 +8,9 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { mailboxRpc } from './mailbox-client.ts'
+import { type Mailbox } from './mailbox-do.ts'
+import { stubFor } from './mailbox-test-helpers.ts'
+import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { getEmailAttachmentById } from './service.ts'
 import {
 	maxOutboundEmailAttachmentTotalBytes,
@@ -30,6 +33,31 @@ const cloudflareEmailApi =
 const platformBaseUrl = 'https://kody.example.com'
 // User mail lives on the inbox. subdomain derived from APP_BASE_URL.
 const platformDomain = 'inbox.kody.example.com'
+
+function captureD1Sql(db: D1Database) {
+	const sql: Array<string> = []
+	return {
+		sql,
+		db: new Proxy(db, {
+			get(target, property, receiver) {
+				if (property === 'prepare') {
+					return (statement: string) => {
+						sql.push(statement)
+						return target.prepare(statement)
+					}
+				}
+				if (property === 'exec') {
+					return (statement: string) => {
+						sql.push(statement)
+						return target.exec(statement)
+					}
+				}
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			},
+		}),
+	}
+}
 
 async function writeInboundMailboxMessage(input: {
 	userId: string
@@ -75,7 +103,7 @@ async function writeInboundMailboxMessage(input: {
 		createdAt: input.receivedAt,
 		updatedAt: input.receivedAt,
 	}
-	await mailboxRpc({ env, userId: input.userId }).writeMessageGraph({
+	await mailboxRpc({ env, userId: input.userId }).upsertMessageGraph({
 		ownerId: input.userId,
 		message,
 		attachments: [],
@@ -194,8 +222,10 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	const { from } = await seedVerifiedAccount({ email: accountEmail })
 	const sent: Array<EmailMessage> = []
+	const capturedD1 = captureD1Sql(env.APP_DB)
 	const sendEnv = {
 		...env,
+		APP_DB: capturedD1.db,
 		APP_BASE_URL: platformBaseUrl,
 		EMAIL: {
 			async send(message: EmailMessage) {
@@ -256,6 +286,115 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 	})
 	expect(listed.messages.map((message) => message.id)).toContain(
 		result.message.id,
+	)
+	expect(capturedD1.sql.join('\n')).not.toMatch(
+		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
+	)
+}, 30_000)
+
+test('provider acceptance survives D1 index outage and the Mailbox alarm repairs without resend', async () => {
+	silenceIncidentalRuntimeWarnings()
+	consoleWarn.mockImplementation(() => {})
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `repair-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+	const providerMessageId = `provider-repair-${crypto.randomUUID()}`
+	let sendCount = 0
+	const unavailableIndexDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property !== 'prepare') {
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			}
+			return (sql: string) => {
+				const statement = target.prepare(sql)
+				if (!sql.includes('INSERT INTO email_outbound_provider_index')) {
+					return statement
+				}
+				return new Proxy(statement, {
+					get(statementTarget, statementProperty) {
+						if (statementProperty !== 'bind') {
+							const value = Reflect.get(statementTarget, statementProperty)
+							return typeof value === 'function'
+								? value.bind(statementTarget)
+								: value
+						}
+						return (...values: Array<unknown>) => {
+							const bound = statementTarget.bind(...values)
+							return new Proxy(bound, {
+								get(boundTarget, boundProperty) {
+									if (boundProperty === 'run') {
+										return async () => {
+											throw new Error('injected provider-index D1 outage')
+										}
+									}
+									const value = Reflect.get(boundTarget, boundProperty)
+									return typeof value === 'function'
+										? value.bind(boundTarget)
+										: value
+								},
+							})
+						}
+					},
+				})
+			}
+		},
+	})
+	const result = await sendOutboundEmail({
+		env: {
+			...env,
+			APP_DB: unavailableIndexDb,
+			APP_BASE_URL: platformBaseUrl,
+			EMAIL: {
+				async send() {
+					sendCount += 1
+					return { messageId: providerMessageId }
+				},
+			},
+		},
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		subject: 'Repair after acceptance',
+		text: 'Body',
+	})
+
+	expect(result.status).toBe('sent')
+	expect(sendCount).toBe(1)
+	await expect(
+		getOutboundProviderIndexRow({ db: env.APP_DB, providerMessageId }),
+	).resolves.toBeNull()
+	const mailbox = mailboxRpc({ env, userId })
+	await expect(
+		mailbox.getOutboundProviderIndexRepairStatus({ ownerId: userId }),
+	).resolves.toMatchObject({ pendingCount: 1 })
+	await runInDurableObject(
+		stubFor(userId),
+		async (instance: Mailbox, state) => {
+			state.storage.sql.exec(
+				`UPDATE email_outbound_provider_index_repairs
+			SET retry_at = ?`,
+				'2026-08-03T00:00:00.000Z',
+			)
+			await instance.alarm()
+		},
+	)
+
+	expect(sendCount).toBe(1)
+	await expect(
+		getOutboundProviderIndexRow({ db: env.APP_DB, providerMessageId }),
+	).resolves.toMatchObject({ userId, messageId: result.message.id })
+	await expect(
+		mailbox.getOutboundProviderIndexRepairStatus({ ownerId: userId }),
+	).resolves.toMatchObject({ pendingCount: 0 })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'email-outbound-provider-index-persistence-failed',
+		expect.objectContaining({
+			messageId: result.message.id,
+			providerMessageId,
+			error: expect.any(Error),
+		}),
 	)
 }, 30_000)
 

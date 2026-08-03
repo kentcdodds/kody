@@ -181,6 +181,8 @@ export type AccountExportManifest = {
 	derivedData: {
 		vectorize: string
 		r2: string
+	}
+	excludedOperationalData: {
 		email_outbound_provider_index: string
 	}
 	excludedDurableObjects: Array<{
@@ -1752,8 +1754,10 @@ function buildManifest(input: {
 			vectorize:
 				'Vectorize entries for memories, jobs, and packages are derived from exported D1 rows and are intentionally excluded; rebuild them by reindexing after import.',
 			r2: 'R2 raw MIME, attachment, avatar, and icon bytes are exported through the r2_object section in bounded 256 KiB base64 chunks. Missing objects are returned explicitly instead of being silently omitted.',
+		},
+		excludedOperationalData: {
 			email_outbound_provider_index:
-				'Derived global provider→owner reverse lookup for outbound delivery webhooks. Rebuilt from authoritative Mailbox outbound message provider ids; omitted from the D1 export payload.',
+				'Operational global provider→owner reverse lookup for outbound delivery webhooks. It is omitted from the D1 export payload; Mailbox messages retain provider ids, but this export does not claim or perform a fleet-wide rebuild.',
 		},
 		excludedDurableObjects: getAccountExportExcludedDurableObjects(),
 		excludedD1Surfaces: getAccountExportExcludedD1Surfaces(),

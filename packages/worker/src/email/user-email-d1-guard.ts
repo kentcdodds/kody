@@ -10,7 +10,8 @@ export const frozenUserEmailGraphTables = [
 export type UserEmailD1AccessMarker =
 	| 'live-user'
 	| 'system-legacy-rollback'
-	| 'frozen-rollback-audit'
+	| 'frozen-privacy-cleanup'
+	| 'frozen-backup-audit'
 	| 'drop-tooling'
 
 function sqlIdentifiers(sql: string): Set<string> {
@@ -43,8 +44,21 @@ function sqlIdentifiers(sql: string): Set<string> {
 			const close = character === '[' ? ']' : character
 			const start = index + 1
 			index = start
-			while (index < sql.length && sql[index] !== close) index += 1
-			addIdentifier(sql.slice(start, index))
+			let identifier = ''
+			while (index < sql.length) {
+				if (sql[index] !== close) {
+					identifier += sql[index]
+					index += 1
+					continue
+				}
+				if (sql[index + 1] === close) {
+					identifier += close
+					index += 2
+					continue
+				}
+				break
+			}
+			addIdentifier(identifier || sql.slice(start, index))
 			index += index < sql.length ? 1 : 0
 			continue
 		}
@@ -76,15 +90,37 @@ export function assertUserEmailD1StatementAllowed(input: {
 	sql: string
 	marker: UserEmailD1AccessMarker
 }) {
-	if (input.marker !== 'live-user') return
 	const identifiers = sqlIdentifiers(input.sql)
 	const targeted = frozenUserEmailGraphTables.filter((table) =>
 		identifiers.has(table),
 	)
-	if (targeted.length > 0) {
-		throw new Error(
-			`Live USER D1 access to frozen email graph is forbidden: ${targeted.join(', ')}`,
-		)
+	if (targeted.length === 0) return
+	switch (input.marker) {
+		case 'live-user':
+			throw new Error(
+				`Live USER D1 access to frozen email graph is forbidden: ${targeted.join(', ')}`,
+			)
+		case 'frozen-privacy-cleanup':
+			if (!/^\s*(?:SELECT|DELETE)\b/i.test(input.sql)) {
+				throw new Error(
+					`Frozen USER privacy cleanup permits only SELECT/DELETE: ${targeted.join(', ')}`,
+				)
+			}
+			return
+		case 'frozen-backup-audit':
+			if (!/^\s*SELECT\b/i.test(input.sql)) {
+				throw new Error(
+					`Frozen USER backup audit is read-only: ${targeted.join(', ')}`,
+				)
+			}
+			return
+		case 'system-legacy-rollback':
+		case 'drop-tooling':
+			return
+		default: {
+			const exhaustive: never = input.marker
+			throw new Error(`Unhandled USER email D1 marker: ${exhaustive}`)
+		}
 	}
 }
 
@@ -105,6 +141,13 @@ export function prepareUserEmailD1Statement(input: {
  * came through `prepare`, so the check still happens before execution.
  */
 export function liveUserEmailD1Database(db: D1Database): D1Database {
+	return markedUserEmailD1Database(db, 'live-user')
+}
+
+export function markedUserEmailD1Database(
+	db: D1Database,
+	marker: UserEmailD1AccessMarker,
+): D1Database {
 	return new Proxy(db, {
 		get(target, property, receiver) {
 			if (property === 'prepare') {
@@ -112,14 +155,14 @@ export function liveUserEmailD1Database(db: D1Database): D1Database {
 					prepareUserEmailD1Statement({
 						db: target,
 						sql,
-						marker: 'live-user',
+						marker,
 					})
 			}
 			if (property === 'exec') {
 				return (sql: string) => {
 					assertUserEmailD1StatementAllowed({
 						sql,
-						marker: 'live-user',
+						marker,
 					})
 					return target.exec(sql)
 				}

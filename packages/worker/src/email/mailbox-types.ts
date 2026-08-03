@@ -12,6 +12,7 @@ import {
 } from './types.ts'
 import { type MailboxInboundDeliveryLedgerRpc } from './mailbox-inbound-ledger.ts'
 import { type MailboxInboundEffectLedgerRpc } from './mailbox-inbound-effect-ledger.ts'
+import { type MailboxProviderIndexRepairStatus } from './mailbox-provider-index-repair.ts'
 
 /**
  * Mailbox Durable Object wire types, constants, and boundary validators.
@@ -39,7 +40,7 @@ export const mailboxBlobDeleteMaxKeys = 1000
  * Bump when initializeSchema's DDL set changes. Warm objects run additive
  * migrations (CREATE INDEX IF NOT EXISTS / guarded ALTER) until they match.
  */
-export const mailboxSchemaVersion = 4
+export const mailboxSchemaVersion = 5
 export const mailboxMetaSchemaVersionKey = 'schema_version'
 
 export const mailboxExportThreadCursorPrefix = 'thread:'
@@ -353,6 +354,13 @@ export type MailboxCommitOutboundTerminalInput = {
 	error: string | null
 	sentAt: string | null
 	event: MailboxDeliveryEventInput
+	providerIndexRepair?: {
+		provider: string
+		providerMessageId: string
+		messageId: string
+		inboxId: string | null
+		createdAt: string
+	}
 }
 
 export type MailboxTombstoneMissingMessageResult =
@@ -536,7 +544,7 @@ type MailboxCoreRpc = {
 	 * Authoritative USER graph write. The entire thread/message/attachment
 	 * graph commits in one owner-local SQLite transaction.
 	 */
-	writeMessageGraph: (input: {
+	upsertMessageGraph: (input: {
 		ownerId: string
 		thread?: MailboxThreadInput | null
 		message: MailboxMessageInput
@@ -555,24 +563,17 @@ type MailboxCoreRpc = {
 		message: MailboxMessageInput
 		attachments: Array<MailboxAttachmentInput>
 	}) => Promise<MailboxCommitInboundMessageGraphResult>
-	mirrorMessage: (input: {
-		/**
-		 * Explicit owner binding. DO name is not introspectable at runtime, so
-		 * writers must pass the owning user id for blob-key validation and
-		 * singleton identity checks.
-		 */
-		ownerId: string
-		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput
-		/**
-		 * Omitted → leave existing attachment metadata unchanged.
-		 * Explicit `[]` → clear attachments (only when the message snapshot is accepted).
-		 */
-		attachments?: Array<MailboxAttachmentInput>
-	}) => Promise<{ ok: true; accepted: boolean }>
 	commitOutboundTerminal: (
 		input: MailboxCommitOutboundTerminalInput,
 	) => Promise<{ message: MailboxMessageRecord; eventInserted: boolean }>
+	completeOutboundProviderIndexRepair: (input: {
+		ownerId: string
+		provider: string
+		providerMessageId: string
+	}) => Promise<{ cleared: boolean }>
+	getOutboundProviderIndexRepairStatus: (input: {
+		ownerId: string
+	}) => Promise<MailboxProviderIndexRepairStatus>
 	recordBoundedRejection: (input: {
 		ownerId: string
 		inboxId: string
@@ -716,8 +717,9 @@ type MailboxCoreRpc = {
 	runRetentionNow: (input: {
 		ownerId: string
 	}) => Promise<MailboxRunRetentionNowResult>
-	/** Parity rebuild only: clear graph metadata while retaining delete fences. */
-	purgeForParityRebuild: (input: { ownerId: string }) => Promise<{ ok: true }>
+	getInboundDueWorkHint: (input: {
+		ownerId: string
+	}) => Promise<{ dueAt: string | null }>
 	purge: () => Promise<{ ok: true }>
 }
 

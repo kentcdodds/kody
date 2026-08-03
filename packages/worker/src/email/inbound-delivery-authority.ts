@@ -36,6 +36,7 @@ import {
 	type MailboxThreadInput,
 } from './mailbox-types.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
+import { replaceInboundDueOwnerHint } from './inbound-due-owners.ts'
 
 export type UserInboundDeliveryAuthorityEnv = {
 	APP_DB: D1Database
@@ -230,6 +231,20 @@ export function createUserInboundDeliveryAuthority(
 		)
 	}
 	const mailbox = mailboxRpc({ env, userId })
+	const refreshDueHint = async (reason: string, now = new Date()) => {
+		try {
+			const hint = await mailbox.getInboundDueWorkHint({ ownerId: userId })
+			await replaceInboundDueOwnerHint({
+				db: env.APP_DB,
+				userId,
+				dueAt: hint.dueAt,
+				reason,
+				now,
+			})
+		} catch (error) {
+			console.warn('inbound-due-owner-hint-write-failed', error)
+		}
+	}
 	const toDelivery = (snapshot: MailboxInboundDeliverySnapshot) => {
 		const {
 			createdAt: _createdAt,
@@ -321,6 +336,7 @@ export function createUserInboundDeliveryAuthority(
 			delivery: toInsertInput(chargedDelivery),
 			now: updatedAt,
 		})
+		await refreshDueHint('inbound-charge', chargeInput.now)
 		const delivery = toDelivery(result.delivery)
 		return {
 			delivery,
@@ -382,6 +398,7 @@ export function createUserInboundDeliveryAuthority(
 				expectedState: delivery.state,
 				now: now.toISOString(),
 			})
+			await refreshDueHint('inbound-rejected', now)
 			if (
 				result.status === 'rejected' ||
 				result.status === 'already-rejected'
@@ -410,6 +427,7 @@ export function createUserInboundDeliveryAuthority(
 				usageBytes: input.usageBytes,
 				now: (input.now ?? new Date()).toISOString(),
 			})
+			await refreshDueHint('inbound-received', input.now)
 			if (
 				result.status === 'received' ||
 				result.status === 'already-received'
@@ -451,6 +469,7 @@ export function createUserInboundDeliveryAuthority(
 				deliveryId,
 				now: now.toISOString(),
 			})
+			await refreshDueHint('inbound-reconcile-deferred', now)
 			return result
 		},
 		async listDueStale(now = new Date(), limit?: number) {
@@ -491,6 +510,7 @@ export function createUserInboundDeliveryAuthority(
 				cleanupLease,
 				now: now.toISOString(),
 			})
+			await refreshDueHint('inbound-cleanup-released', now)
 			return result
 		},
 		async markOrphanCleaned(input: UserInboundDeliveryOrphanCleanedInput) {
@@ -501,6 +521,7 @@ export function createUserInboundDeliveryAuthority(
 				outcome: input.outcome,
 				now: (input.now ?? new Date()).toISOString(),
 			})
+			await refreshDueHint('inbound-orphan-cleaned', input.now)
 			return result
 		},
 		async pruneExpiredDedupe(now = new Date(), limit?: number) {
@@ -509,6 +530,7 @@ export function createUserInboundDeliveryAuthority(
 				now: now.toISOString(),
 				limit,
 			})
+			await refreshDueHint('inbound-dedupe-pruned', now)
 			return result.pruned
 		},
 		async claimUsageEffect(input: UserInboundUsageEffectClaimInput) {
@@ -532,6 +554,7 @@ export function createUserInboundDeliveryAuthority(
 				usageDurationMs: input.usageDurationMs,
 				now: (input.now ?? new Date()).toISOString(),
 			})
+			await refreshDueHint('inbound-usage-effect-complete', input.now)
 			return result
 		},
 		async claimSubscriptionEffect(
@@ -557,6 +580,7 @@ export function createUserInboundDeliveryAuthority(
 				suppressionReason: input.suppressionReason,
 				now: (input.now ?? new Date()).toISOString(),
 			})
+			await refreshDueHint('inbound-subscription-effect-complete', input.now)
 			return result
 		},
 		async failSubscriptionEffect(
@@ -570,6 +594,7 @@ export function createUserInboundDeliveryAuthority(
 				error: input.error,
 				now: (input.now ?? new Date()).toISOString(),
 			})
+			await refreshDueHint('inbound-subscription-effect-failed', input.now)
 			return result
 		},
 		async listDueEffects(now = new Date(), limit?: number) {

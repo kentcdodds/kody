@@ -1,62 +1,33 @@
-import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { systemEmailOwnerId } from './email-owner.ts'
-import { listEmailAttachmentsForUserMessage } from './repo.ts'
-import { ensureEmailTestSchema } from './test-schema.ts'
+import {
+	baseAttachment,
+	baseMessage,
+	rpcFor,
+	uniqueUserId,
+} from './mailbox-test-helpers.ts'
 
-async function insertMessageWithAttachment(input: {
-	userId: string
-	messageId: string
-	attachmentId: string
-}) {
-	const createdAt = '2026-07-01T12:00:00.000Z'
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status,
-			created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@example.com', 'Hello', 'stored', ?, ?)`,
-	)
-		.bind(input.messageId, input.userId, createdAt, createdAt)
-		.run()
-	await env.APP_DB.prepare(
-		`INSERT INTO email_attachments (
-			id, message_id, filename, content_type, size, storage_kind, created_at
-		) VALUES (?, ?, 'note.txt', 'text/plain', 12, 'unavailable', ?)`,
-	)
-		.bind(input.attachmentId, input.messageId, createdAt)
-		.run()
-}
-
-test('listEmailAttachmentsForUserMessage scopes attachments to message owner', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const ownerId = systemEmailOwnerId
-	const otherId = `other-${crypto.randomUUID()}`
-	const messageId = `msg-${crypto.randomUUID()}`
-	const attachmentId = `att-${crypto.randomUUID()}`
-	await insertMessageWithAttachment({
-		userId: ownerId,
-		messageId,
-		attachmentId,
+test('Mailbox attachment reads are isolated by owner object identity', async () => {
+	const ownerId = uniqueUserId('attachment-owner')
+	const message = baseMessage(ownerId)
+	const attachment = baseAttachment(ownerId, message.id)
+	await rpcFor(ownerId).upsertMessageGraph({
+		ownerId,
+		message,
+		attachments: [attachment],
 	})
 
-	const ownerAttachments = await listEmailAttachmentsForUserMessage({
-		db: env.APP_DB,
-		userId: ownerId,
-		messageId,
-	})
-	expect(ownerAttachments).toEqual([
+	await expect(
+		rpcFor(ownerId).listAttachmentsForMessage({ messageId: message.id }),
+	).resolves.toEqual([
 		expect.objectContaining({
-			id: attachmentId,
-			messageId,
+			id: attachment.id,
+			messageId: message.id,
 			filename: 'note.txt',
 		}),
 	])
-
 	await expect(
-		listEmailAttachmentsForUserMessage({
-			db: env.APP_DB,
-			userId: otherId,
-			messageId,
+		rpcFor(ownerId).listAttachmentsForMessage({
+			messageId: `other-${crypto.randomUUID()}`,
 		}),
-	).rejects.toThrow(/Legacy USER D1 email graph operation is disabled/)
-})
+	).resolves.toEqual([])
+}, 15_000)

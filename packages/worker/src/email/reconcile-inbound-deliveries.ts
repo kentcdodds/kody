@@ -12,6 +12,12 @@ import {
 	reconcileSystemStaleInboundDeliveries,
 } from './system-inbound-delivery-authority.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import {
+	deferInboundDueOwner,
+	listDueInboundOwners,
+	replaceInboundDueOwnerHint,
+} from './inbound-due-owners.ts'
+import { mailboxRpc } from './mailbox-client.ts'
 
 const reconciliationUserBatchSize = 25
 const reconciliationTimeBudgetMs = 10_000
@@ -45,36 +51,13 @@ export async function sweepStaleInboundDeliveries(input: {
 	let effectsProcessed = 0
 	let errors = 0
 
-	// Shared USER graph tables are frozen. Rotate a bounded window over the
-	// active-user index and ask each owner Mailbox for due work. The offset is
-	// time-derived so every active owner is eventually visited without keeping
-	// a global graph projection or scanning delivery events.
-	const activeUserCountRow = await input.env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count
-		FROM users
-		WHERE deleting_at IS NULL
-			AND stable_user_id IS NOT NULL
-			AND stable_user_id != ?`,
-	)
-		.bind(systemEmailOwnerId)
-		.first<{ count: number }>()
-	const activeUserCount = Number(activeUserCountRow?.count ?? 0)
-	const rotation = Math.floor(now.getTime() / (5 * 60 * 1000))
-	const offset =
-		activeUserCount === 0
-			? 0
-			: (rotation * reconciliationUserBatchSize) % activeUserCount
-	const userRows = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id AS user_id
-		FROM users
-		WHERE deleting_at IS NULL
-			AND stable_user_id IS NOT NULL
-			AND stable_user_id != ?
-		ORDER BY stable_user_id ASC
-		LIMIT ? OFFSET ?`,
-	)
-		.bind(systemEmailOwnerId, reconciliationUserBatchSize, offset)
-		.all<{ user_id: string }>()
+	// Thin coordination rows discover only owner Mailboxes that reported due
+	// work. Runtime is independent of total account fleet size.
+	const userRows = await listDueInboundOwners({
+		db: input.env.APP_DB,
+		now,
+		limit: reconciliationUserBatchSize,
+	})
 	const systemDue = await input.env.APP_DB.prepare(
 		`WITH due_work(due_at) AS (
 			SELECT created_at
@@ -160,9 +143,9 @@ export async function sweepStaleInboundDeliveries(input: {
 		)
 		.first<{ user_id: string; due_at: string }>()
 	const dueOwners = [
-		...(userRows.results ?? []).map((row) => ({
-			...row,
-			due_at: now.toISOString(),
+		...userRows.map((row) => ({
+			user_id: row.userId,
+			due_at: row.dueAt,
 		})),
 		...(systemDue ? [systemDue] : []),
 	].sort(
@@ -222,10 +205,31 @@ export async function sweepStaleInboundDeliveries(input: {
 			effectsProcessed += effectResult.processed
 			errors += effectResult.errors
 			usersProcessed += 1
+			if (userId !== systemEmailOwnerId) {
+				const hint = await mailboxRpc({
+					env: input.env,
+					userId,
+				}).getInboundDueWorkHint({ ownerId: userId })
+				await replaceInboundDueOwnerHint({
+					db: input.env.APP_DB,
+					userId,
+					dueAt: hint.dueAt,
+					reason: 'scheduled-refresh',
+					now,
+				})
+			}
 			if (result.budgetExhausted) break
 		} catch (error) {
 			errors += 1
 			usersProcessed += 1
+			if (userId !== systemEmailOwnerId) {
+				await deferInboundDueOwner({
+					db: input.env.APP_DB,
+					userId,
+					error,
+					now,
+				}).catch(() => undefined)
+			}
 			console.warn('inbound-email-user-reconciliation-failed', userId, error)
 		}
 	}

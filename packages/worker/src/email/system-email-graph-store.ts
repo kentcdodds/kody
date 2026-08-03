@@ -4,7 +4,6 @@ import {
 	mapAttachmentRow,
 	mapMessageRow,
 	mapThreadRow,
-	type DeleteEmailMessageByIdResult,
 	type EmailInboundDeliveryFence,
 } from './repo.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
@@ -26,6 +25,18 @@ import {
 	commitSystemEmailGraphMutations,
 	systemEmailGraphContract,
 } from './system-email-graph-transaction.ts'
+
+type DeleteSystemEmailMessageByIdResult = {
+	messageFound: boolean
+	ownerUserId: string | null
+	attachmentsSeen: number
+	externalAttachmentsSeen: number
+	blobDeletions: Array<{
+		key: string
+		role: 'raw_mime' | 'attachment'
+		deleted: boolean
+	}>
+}
 
 const threadContract = systemEmailGraphContract(
 	systemEmailGraphColumnContracts,
@@ -678,7 +689,7 @@ export async function deleteSystemEmailMessageById(input: {
 	db: D1Database
 	blobs: R2Bucket
 	messageId: string
-}): Promise<DeleteEmailMessageByIdResult> {
+}): Promise<DeleteSystemEmailMessageByIdResult> {
 	const message = await getSystemEmailMessageById(input)
 	if (!message) {
 		return {
@@ -705,7 +716,7 @@ export async function deleteSystemEmailMessageById(input: {
 				: [],
 		),
 	]
-	const blobDeletions: DeleteEmailMessageByIdResult['blobDeletions'] = []
+	const blobDeletions: DeleteSystemEmailMessageByIdResult['blobDeletions'] = []
 	for (const entry of inventory) {
 		try {
 			await input.blobs.delete(entry.key)

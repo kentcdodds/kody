@@ -20,13 +20,32 @@ vi.mock('./system-email-graph-store.ts', () => ({
 const { setEmailMessageClassification } = await import('./service.ts')
 
 function createEnv() {
-	return {
-		APP_DB: { prepare: vi.fn() } as unknown as D1Database,
+	const preparedSql: Array<string> = []
+	const first = vi.fn(async () => ({
+		owner_count: 1,
+		frozen_at: '2026-08-03T00:00:00.000Z',
+		max_parity_age_hours: 24,
+	}))
+	const prepare = vi.fn((sql: string) => {
+		preparedSql.push(sql)
+		return { first }
+	})
+	const env = {
+		APP_DB: { prepare } as unknown as D1Database,
 	} as Env
+	return { env, preparedSql }
+}
+
+function expectOnlyAuthorityMarkerSql(preparedSql: ReadonlyArray<string>) {
+	expect(preparedSql).toHaveLength(1)
+	expect(preparedSql[0]).toContain('email_user_graph_authority')
+	expect(preparedSql[0]).not.toMatch(
+		/\bemail_(?:threads|messages|attachments|delivery_events)\b/,
+	)
 }
 
 test('setEmailMessageClassification mutates the owner Mailbox without preparing USER graph SQL', async () => {
-	const env = createEnv()
+	const { env, preparedSql } = createEnv()
 	mocks.setMessageClassification.mockResolvedValue({
 		status: 'accepted',
 	})
@@ -49,11 +68,11 @@ test('setEmailMessageClassification mutates the owner Mailbox without preparing 
 		classificationReason: 'Reclassified by user.',
 		updatedAt: expect.any(String),
 	})
-	expect(env.APP_DB.prepare).not.toHaveBeenCalled()
+	expectOnlyAuthorityMarkerSql(preparedSql)
 })
 
 test('setEmailMessageClassification reports missing Mailbox messages', async () => {
-	const env = createEnv()
+	const { env, preparedSql } = createEnv()
 	mocks.setMessageClassification.mockResolvedValueOnce({ status: 'missing' })
 
 	await expect(
@@ -67,11 +86,11 @@ test('setEmailMessageClassification reports missing Mailbox messages', async () 
 		}),
 	).resolves.toBe(false)
 
-	expect(env.APP_DB.prepare).not.toHaveBeenCalled()
+	expectOnlyAuthorityMarkerSql(preparedSql)
 })
 
 test('setEmailMessageClassification preserves the dedicated system graph path', async () => {
-	const env = createEnv()
+	const { env } = createEnv()
 	mocks.updateSystemEmailMessageClassification.mockResolvedValueOnce(true)
 
 	await expect(

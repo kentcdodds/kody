@@ -23,6 +23,7 @@ import {
 	userMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
+import { deleteFrozenUserEmailGraphForAccount } from '#worker/email/legacy-user-email-graph-cleanup.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
@@ -1310,6 +1311,26 @@ export async function deleteUserAccount(input: {
 		})
 	}
 
+	// Frozen pre-cutover rows remain personal data until their physical tables
+	// are dropped. Delete them only after authoritative Mailbox/R2 inventory and
+	// purge have completed, through the sole legacy graph cleanup boundary.
+	if (result.clearedDurableObjects.mailboxes === 1 && warnings.length === 0) {
+		try {
+			const frozenEmailDeletes = await deleteFrozenUserEmailGraphForAccount({
+				db: input.env.APP_DB,
+				userId: input.mcpUserId,
+			})
+			result.deletedRowCounts = {
+				...result.deletedRowCounts,
+				...frozenEmailDeletes,
+			}
+		} catch (error) {
+			warnings.push(
+				`Frozen USER email graph privacy cleanup failed: ${getErrorMessage(error)}`,
+			)
+		}
+	}
+
 	if (warnings.length > 0) {
 		throw new AccountDeletionCleanupError(warnings, result)
 	}
@@ -1336,7 +1357,10 @@ export async function deleteUserAccount(input: {
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
 		})
-		result.deletedRowCounts = d1Cleanup.deletedRowCounts
+		result.deletedRowCounts = {
+			...result.deletedRowCounts,
+			...d1Cleanup.deletedRowCounts,
+		}
 		result.updatedRowCounts = d1Cleanup.updatedRowCounts
 	} catch (error) {
 		const failure = `Atomic D1 account deletion failed: ${getErrorMessage(error)}`

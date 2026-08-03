@@ -17,8 +17,8 @@ import {
 } from './system-email-graph-sql.ts'
 import { systemEmailDedicatedReferenceGuardStatement } from './system-email-graph-transaction.ts'
 import {
-	loadOutboundProviderIndexParityReport,
-	type OutboundProviderIndexParityReport,
+	loadOutboundProviderIndexHealthReport,
+	type OutboundProviderIndexHealthReport,
 } from './outbound-provider-index.ts'
 
 export type SystemEmailGraphTableParity = {
@@ -232,24 +232,23 @@ function tableParity(
 }
 
 function systemProviderParity(
-	report: OutboundProviderIndexParityReport,
+	report: OutboundProviderIndexHealthReport,
 	dedicatedProviderLinkedMessageCount: number,
 ): SystemEmailOutboundProviderParity {
 	const providerParity =
-		report.linkedMessageCount === 0 &&
 		report.indexCount === 0 &&
 		dedicatedProviderLinkedMessageCount === 0 &&
-		report.parity
+		report.healthy
 	const classification = providerParity
 		? ('no-system-provider-links' as const)
 		: ('unsupported-system-provider-links' as const)
 	return {
-		legacyProviderLinkedMessageCount: report.linkedMessageCount,
+		legacyProviderLinkedMessageCount: report.indexCount,
 		dedicatedProviderLinkedMessageCount,
 		legacyAuthorityIndexCount: report.indexCount,
-		missingFromLegacyAuthorityIndexCount: report.missingFromIndexCount,
-		missingFromLegacyMessagesCount: report.missingFromMessagesCount,
-		mismatchedLegacyAuthorityIndexCount: report.mismatchedCount,
+		missingFromLegacyAuthorityIndexCount: 0,
+		missingFromLegacyMessagesCount: 0,
+		mismatchedLegacyAuthorityIndexCount: 0,
 		classification,
 		authorityDisposition: 'dedicated-inbound-only',
 		parity: providerParity,
@@ -274,7 +273,7 @@ export async function loadSystemEmailGraphParityReport(input: {
 			.prepare(graphParitySql)
 			.bind(systemEmailOwnerId)
 			.first<ParityRow>(),
-		loadOutboundProviderIndexParityReport({
+		loadOutboundProviderIndexHealthReport({
 			db: input.db,
 			userId: systemEmailOwnerId,
 		}),
