@@ -134,10 +134,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 
 test('the documented Try it prompt matches the production discovery prompt', async () => {
 	const documentation = await readFile(
-		new URL(
-			'../../../../docs/use/what-can-kody-do.md',
-			import.meta.url,
-		),
+		new URL('../../../../docs/use/what-can-kody-do.md', import.meta.url),
 		'utf8',
 	)
 	const tryItSection = documentation
