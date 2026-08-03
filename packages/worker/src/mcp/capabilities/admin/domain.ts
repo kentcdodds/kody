@@ -31,6 +31,7 @@ import { adminAccountWriteLeaseRepairCapability } from './admin-account-write-le
 import { adminUserMeterParityCapability } from './admin-user-meter-parity.ts'
 import { adminUserMeterStorageReconcileCapability } from './admin-user-meter-storage-reconcile.ts'
 import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.ts'
+import { adminRunLogLegacySeedCapability } from './admin-run-log-legacy-seed.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -62,6 +63,12 @@ export const adminDomain = defineDomain({
 		'mailbox',
 		'maintenance',
 		'retention',
+		'run log',
+		'legacy',
+		'seed',
+		'workflow runs',
+		'job observability',
+		'activation',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -71,6 +78,7 @@ export const adminDomain = defineDomain({
 		adminUserMeterParityCapability,
 		adminUserMeterStorageReconcileCapability,
 		adminMailboxMaintenanceCapability,
+		adminRunLogLegacySeedCapability,
 		adminAccountWriteLeaseListCapability,
 		adminAccountWriteLeaseRepairCapability,
 		adminPlatformAccountCreateCapability,
