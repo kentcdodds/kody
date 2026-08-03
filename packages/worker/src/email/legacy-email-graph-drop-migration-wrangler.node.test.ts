@@ -384,6 +384,133 @@ test(
 )
 
 test(
+	'local approval fixture replaces a stale singleton before a successful 0135 retry',
+	{ timeout: 180_000 },
+	() => {
+		using temporary = createTemporaryDirectory()
+		const rehearsal = prepareWranglerProject({
+			temporaryPath: temporary.path,
+			includeMigration: (fileName) => fileName < dropMigration,
+		})
+		expectWranglerSuccess(
+			runWrangler(temporary.path, ...rehearsal.applyArguments),
+		)
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath: rehearsal.configPath,
+			statePath: rehearsal.statePath,
+			sql: `UPDATE email_user_graph_authority
+				SET owner_count = 1
+				WHERE singleton = 1;`,
+		})
+		const applyLocalApprovalFixture = () =>
+			expectWranglerSuccess(
+				runWrangler(
+					temporary.path,
+					'd1',
+					'execute',
+					'APP_DB',
+					'--local',
+					'--config',
+					rehearsal.configPath,
+					'--persist-to',
+					rehearsal.statePath,
+					'--file',
+					join(
+						workspaceDirectory,
+						'tools/local-mailbox-pre-drop-approval-fixture.sql',
+					),
+				),
+			)
+		applyLocalApprovalFixture()
+		copyFileSync(
+			new URL(dropMigration, migrationsDirectory),
+			join(rehearsal.migrationPath, dropMigration),
+		)
+
+		const failedApply = runWrangler(temporary.path, ...rehearsal.applyArguments)
+		expect(failedApply.status).not.toBe(0)
+		expect(`${failedApply.stdout}\n${failedApply.stderr}`).toContain(
+			'CHECK constraint failed',
+		)
+		let database = openDatabase(rehearsal.statePath)
+		expect(
+			database
+				.prepare(
+					`SELECT
+						(SELECT COUNT(*) FROM email_user_graph_drop_approval)
+							AS approvals,
+						(SELECT owner_count FROM email_user_graph_drop_approval
+							WHERE singleton = 1) AS approved_owners,
+						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE type = 'table' AND name IN (
+								'email_threads', 'email_messages', 'email_attachments',
+								'email_delivery_events'
+							)) AS legacy_tables`,
+				)
+				.get(dropMigration),
+		).toEqual({
+			approvals: 1,
+			approved_owners: 1,
+			ledger: 0,
+			legacy_tables: 4,
+		})
+		database.close()
+
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath: rehearsal.configPath,
+			statePath: rehearsal.statePath,
+			sql: `UPDATE email_user_graph_authority
+				SET owner_count = 0
+				WHERE singleton = 1;`,
+		})
+		applyLocalApprovalFixture()
+		database = openDatabase(rehearsal.statePath)
+		expect(
+			database
+				.prepare(
+					`SELECT
+						COUNT(*) AS approvals,
+						MIN(singleton) AS singleton,
+						MIN(authority_owner_count) AS authority_owners,
+						MIN(owner_count) AS approved_owners
+					FROM email_user_graph_drop_approval`,
+				)
+				.get(),
+		).toEqual({
+			approvals: 1,
+			singleton: 1,
+			authority_owners: 0,
+			approved_owners: 0,
+		})
+		database.close()
+
+		expectWranglerSuccess(
+			runWrangler(temporary.path, ...rehearsal.applyArguments),
+		)
+		database = openDatabase(rehearsal.statePath)
+		expect(
+			database
+				.prepare(
+					`SELECT
+						(SELECT COUNT(*) FROM email_user_graph_drop_approval)
+							AS approvals,
+						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE type = 'table' AND name IN (
+								'email_threads', 'email_messages', 'email_attachments',
+								'email_delivery_events'
+							)) AS legacy_tables`,
+				)
+				.get(dropMigration),
+		).toEqual({ approvals: 1, ledger: 1, legacy_tables: 0 })
+		database.close()
+	},
+)
+
+test(
 	'empty bootstrap rolls back before destruction for a stored generated users column',
 	{ timeout: 180_000 },
 	() => {

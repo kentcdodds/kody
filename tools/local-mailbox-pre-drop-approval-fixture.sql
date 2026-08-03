@@ -1,5 +1,9 @@
 -- Local development bootstrap only. Production approval is issued exclusively
 -- by the backup-control-plane Workflow.
+-- Replace the singleton so rerunning the local helper after a failed 0135
+-- attempt refreshes counts and expiry instead of colliding on its primary key.
+DELETE FROM email_user_graph_drop_approval;
+
 WITH fixture AS (
 	SELECT
 		'11111111-1111-4111-8111-111111111111' AS request_id,
