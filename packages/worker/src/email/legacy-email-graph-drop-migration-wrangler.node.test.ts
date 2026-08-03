@@ -30,6 +30,22 @@ const productionShape = {
 	attachmentCount: 48,
 	eventCount: 295,
 } as const
+const usersChildTables = [
+	'password_resets',
+	'email_verifications',
+	'pending_email_changes',
+	'passkeys',
+	'oauth_connections',
+	'user_roles',
+	'invites',
+	'feature_flags',
+	'feature_flag_user_overrides',
+] as const
+type UsersChildTable = (typeof usersChildTables)[number]
+type UsersChildSnapshots = Record<
+	UsersChildTable,
+	Array<Record<string, unknown>>
+>
 const trustedProvenanceMismatchUpdates = [
 	{ field: 'issued_by', value: "'untrusted-control-plane'" },
 	{ field: 'source_account_id', value: `'${'d'.repeat(32)}'` },
@@ -367,6 +383,61 @@ test(
 	},
 )
 
+test(
+	'empty bootstrap rolls back before destruction for a stored generated users column',
+	{ timeout: 180_000 },
+	() => {
+		using temporary = createTemporaryDirectory()
+		const rehearsal = prepareWranglerProject({
+			temporaryPath: temporary.path,
+			includeMigration: (fileName) => fileName < dropMigration,
+		})
+		expectWranglerSuccess(
+			runWrangler(temporary.path, ...rehearsal.applyArguments),
+		)
+		executeSql({
+			workingDirectory: temporary.path,
+			configPath: rehearsal.configPath,
+			statePath: rehearsal.statePath,
+			sql: `ALTER TABLE users ADD COLUMN future_stored_contract TEXT
+				GENERATED ALWAYS AS (username || ':' || email) STORED;`,
+		})
+		copyFileSync(
+			new URL(dropMigration, migrationsDirectory),
+			join(rehearsal.migrationPath, dropMigration),
+		)
+
+		const result = runWrangler(temporary.path, ...rehearsal.applyArguments)
+		expect(result.status).not.toBe(0)
+		expect(`${result.stdout}\n${result.stderr}`).toContain(
+			'CHECK constraint failed',
+		)
+		using database = openDatabase(rehearsal.statePath)
+		expect(
+			database
+				.prepare(
+					`SELECT
+						(SELECT hidden FROM pragma_table_xinfo('users')
+							WHERE name = 'future_stored_contract') AS future_hidden,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE type = 'table' AND name IN (
+								'email_threads', 'email_messages', 'email_attachments',
+								'email_delivery_events'
+							)) AS legacy_tables,
+						(SELECT COUNT(*) FROM sqlite_schema
+							WHERE name GLOB 'migration_0135_*') AS migration_helpers,
+						(SELECT COUNT(*) FROM d1_migrations WHERE name = ?) AS ledger`,
+				)
+				.get(dropMigration),
+		).toEqual({
+			future_hidden: 3,
+			legacy_tables: 4,
+			migration_helpers: 0,
+			ledger: 0,
+		})
+	},
+)
+
 function approvalInsert(
 	overrides: Partial<MailboxPreDropApprovalEvidence> = {},
 ) {
@@ -530,6 +601,53 @@ test(
 				)
 				SELECT 'github', printf('provider-%04d', value), value
 				FROM sequence;
+				INSERT INTO pending_email_changes (
+					user_id, new_email, token_hash, expires_at, created_at
+				) VALUES (
+					1, 'replacement@example.test', 'pending-token', 4102444800,
+					'2026-08-03T15:00:01.000Z'
+				);
+				INSERT INTO passkeys (
+					id, aaguid, public_key, user_id, webauthn_user_handle, counter,
+					device_type, backed_up, transports, created_at, updated_at, name,
+					last_used_at
+				) VALUES (
+					'migration-passkey', 'migration-aaguid', 'migration-public-key',
+					1, 'migration-user-handle', 7, 'multiDevice', 1,
+					'["internal","hybrid"]', '2026-08-03T15:00:02.000Z',
+					'2026-08-03T15:00:03.000Z', 'Migration Passkey',
+					'2026-08-03T15:00:04.000Z'
+				);
+				INSERT INTO roles (
+					name, description, created_at, updated_at
+				) VALUES (
+					'migration-review-role', 'Preserved users child relation',
+					'2026-08-03T15:00:05.000Z', '2026-08-03T15:00:06.000Z'
+				);
+				INSERT INTO user_roles (user_id, role_id, created_at)
+				SELECT
+					1, id, '2026-08-03T15:00:07.000Z'
+				FROM roles
+				WHERE name = 'migration-review-role';
+				INSERT INTO invites (
+					code, created_by, note, max_uses, use_count, expires_at,
+					created_at, plan
+				) VALUES (
+					'MIGRATION-INVITE', 1, 'Preserved invite', 3, 1,
+					'2026-09-03T15:00:00.000Z', '2026-08-03T15:00:08.000Z', 'pro'
+				);
+				INSERT INTO feature_flags (
+					key, enabled, rollout_percent, note, updated_by, updated_at
+				) VALUES (
+					'migration-review-flag', 1, 25, 'Preserved feature flag', 1,
+					'2026-08-03T15:00:09.000Z'
+				);
+				INSERT INTO feature_flag_user_overrides (
+					flag_key, user_id, enabled, updated_by, updated_at
+				) VALUES (
+					'migration-review-flag', 1, 0, 1,
+					'2026-08-03T15:00:10.000Z'
+				);
 				UPDATE email_user_graph_authority
 				SET owner_count = 1, frozen_at = '2026-08-03T14:53:49.000Z'
 				WHERE singleton = 1;
@@ -753,7 +871,8 @@ test(
 			workingDirectory: temporary.path,
 			configPath,
 			statePath,
-			sql: `ALTER TABLE users ADD COLUMN future_contract TEXT;`,
+			sql: `ALTER TABLE users ADD COLUMN future_contract TEXT
+				GENERATED ALWAYS AS (username || ':' || email) VIRTUAL;`,
 		})
 		const futureColumn = runWrangler(temporary.path, ...applyArguments)
 		expect(futureColumn.status).not.toBe(0)
@@ -766,8 +885,12 @@ test(
 				.prepare(
 					`SELECT
 						(SELECT COUNT(*) FROM users) AS users,
-						(SELECT COUNT(*) FROM pragma_table_info('users')
+						(SELECT COUNT(*) FROM pragma_table_xinfo('users')
 							WHERE name = 'future_contract') AS future_columns,
+						(SELECT hidden FROM pragma_table_xinfo('users')
+							WHERE name = 'future_contract') AS future_hidden,
+						(SELECT COUNT(*) FROM pragma_table_info('users')
+							WHERE name = 'future_contract') AS visible_future_columns,
 						(SELECT COUNT(*) FROM sqlite_schema
 							WHERE type = 'table' AND name IN (
 								'email_threads', 'email_messages', 'email_attachments',
@@ -781,6 +904,8 @@ test(
 		).toEqual({
 			users: 5001,
 			future_columns: 1,
+			future_hidden: 2,
+			visible_future_columns: 0,
 			legacy_tables: 4,
 			migration_helpers: 0,
 			ledger: 0,
@@ -845,10 +970,12 @@ test(
 		let expectedUserForeignKeys: Array<Record<string, unknown>>
 		let expectedUserIndexes: Array<Record<string, unknown>>
 		let expectedUnrelatedSchema: Array<Record<string, unknown>>
+		let expectedUsersChildRows: UsersChildSnapshots
+		let expectedUsersChildForeignKeys: UsersChildSnapshots
 		let expectedUserSequence: number
 		using before = openDatabase(statePath)
 		expectedUserColumns = before
-			.prepare(`PRAGMA table_info('users')`)
+			.prepare(`PRAGMA table_xinfo('users')`)
 			.all()
 			.filter(
 				(column) =>
@@ -883,6 +1010,25 @@ test(
 				ORDER BY type, name`,
 			)
 			.all()
+		expectedUsersChildRows = Object.fromEntries(
+			usersChildTables.map((table) => [
+				table,
+				before.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all(),
+			]),
+		) as UsersChildSnapshots
+		expectedUsersChildForeignKeys = Object.fromEntries(
+			usersChildTables.map((table) => [
+				table,
+				before.prepare(`PRAGMA foreign_key_list("${table}")`).all(),
+			]),
+		) as UsersChildSnapshots
+		for (const table of usersChildTables) {
+			expect(expectedUsersChildRows[table].length, table).toBeGreaterThan(0)
+			expect(
+				expectedUsersChildForeignKeys[table].length,
+				`${table} foreign keys`,
+			).toBeGreaterThan(0)
+		}
 		expectedUserSequence = Number(
 			(
 				before
@@ -900,7 +1046,7 @@ test(
 						(SELECT COUNT(*) FROM password_resets) AS password_resets,
 						(SELECT COUNT(*) FROM email_verifications) AS verifications,
 						(SELECT COUNT(*) FROM oauth_connections) AS oauth_connections,
-						(SELECT COUNT(*) FROM pragma_table_info('users')
+						(SELECT COUNT(*) FROM pragma_table_xinfo('users')
 							WHERE name LIKE 'mailbox_parity_%') AS parity_columns`,
 				)
 				.get(dropMigration),
@@ -951,7 +1097,7 @@ test(
 		])
 		const parityColumns = after
 			.prepare(
-				`SELECT name FROM pragma_table_info('users')
+				`SELECT name FROM pragma_table_xinfo('users')
 				WHERE name LIKE 'mailbox_parity_%'`,
 			)
 			.all()
@@ -1020,7 +1166,7 @@ test(
 			frozen_at: '2026-08-03T14:53:49.000Z',
 			dropped_at: expect.any(String),
 		})
-		expect(after.prepare(`PRAGMA table_info('users')`).all()).toEqual(
+		expect(after.prepare(`PRAGMA table_xinfo('users')`).all()).toEqual(
 			expectedUserColumns,
 		)
 		expect(after.prepare(`PRAGMA foreign_key_list('users')`).all()).toEqual(
@@ -1054,6 +1200,16 @@ test(
 				.prepare(`PRAGMA foreign_key_list('email_inbound_usage_effects')`)
 				.all(),
 		).toEqual([])
+		for (const table of usersChildTables) {
+			expect(
+				after.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all(),
+				`${table} rows`,
+			).toEqual(expectedUsersChildRows[table])
+			expect(
+				after.prepare(`PRAGMA foreign_key_list("${table}")`).all(),
+				`${table} foreign keys`,
+			).toEqual(expectedUsersChildForeignKeys[table])
+		}
 		expect(
 			Number(
 				(

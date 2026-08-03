@@ -620,7 +620,58 @@ FROM (
 	ORDER BY name
 );
 
--- Exact reviewed users contract through 0134. cid makes the table-info check
+-- Preserve semantic DDL details that table_xinfo does not expose. Removing
+-- whitespace, identifier quotes, and keyword case avoids formatting-only drift
+-- while retaining CHECK, COLLATE, and generated-column expressions.
+CREATE TABLE migration_0135_expected_users_table_sql (
+	phase TEXT PRIMARY KEY NOT NULL,
+	normalized_sql TEXT NOT NULL
+);
+
+INSERT INTO migration_0135_expected_users_table_sql (phase, normalized_sql) VALUES
+	('pre', 'createtableusers(idintegerprimarykeyautoincrementnotnull,usernametextnotnullunique,emailtextnotnullunique,password_hashtextnotnull,created_attextnotnulldefault(current_timestamp),updated_attextnotnulldefault(current_timestamp),email_verified_attext,plantextnotnulldefault''free''check(planin(''free'',''partner'',''pro'',''max'')),stable_user_idtextnotnull,stripe_customer_idtext,stripe_plantext,stripe_plan_refreshed_attext,display_nametext,biotext,profile_visibilitytextnotnulldefault''public''check(profile_visibilityin(''public'',''private'')),avatar_keytext,account_typetextnotnulldefault''person''check(account_typein(''person'',''platform'')),deleting_attext,active_write_countintegernotnulldefault0,active_write_expires_attext,suspended_attext,email_outbound_paused_attext,password_changed_attext,job_retention_success_once_daysintegercheck(job_retention_success_once_daysisnullor(job_retention_success_once_days>=1andjob_retention_success_once_days<=365)),job_retention_failed_once_daysintegercheck(job_retention_failed_once_daysisnullor(job_retention_failed_once_days>=1andjob_retention_failed_once_days<=365)),job_retention_disabled_recurring_daysintegercheck(job_retention_disabled_recurring_daysisnullor(job_retention_disabled_recurring_days>=1andjob_retention_disabled_recurring_days<=365)),d1_storage_bytesintegernotnulldefault0,d1_storage_bytes_updated_attext,mailbox_parity_checked_attext,mailbox_parity_matching_sincetext,mailbox_parity_mismatch_countintegernotnulldefault0check(mailbox_parity_mismatch_count>=0),mailbox_parity_last_errortext,mailbox_parity_content_watermark_attext,mailbox_parity_content_replay_upper_attext,mailbox_parity_content_replay_cursor_updated_attext,mailbox_parity_content_replay_cursor_idtext,mailbox_parity_message_backfill_cursor_created_attext,mailbox_parity_message_backfill_cursor_idtext,mailbox_parity_message_backfill_completed_attext,mailbox_parity_event_backfill_cursor_created_attext,mailbox_parity_event_backfill_cursor_idtext,mailbox_parity_event_backfill_completed_attext)'),
+	('post', 'createtableusers(idintegerprimarykeyautoincrementnotnull,usernametextnotnullunique,emailtextnotnullunique,password_hashtextnotnull,created_attextnotnulldefault(current_timestamp),updated_attextnotnulldefault(current_timestamp),email_verified_attext,plantextnotnulldefault''free''check(planin(''free'',''partner'',''pro'',''max'')),stable_user_idtextnotnull,stripe_customer_idtext,stripe_plantext,stripe_plan_refreshed_attext,display_nametext,biotext,profile_visibilitytextnotnulldefault''public''check(profile_visibilityin(''public'',''private'')),avatar_keytext,account_typetextnotnulldefault''person''check(account_typein(''person'',''platform'')),deleting_attext,active_write_countintegernotnulldefault0,active_write_expires_attext,suspended_attext,email_outbound_paused_attext,password_changed_attext,job_retention_success_once_daysintegercheck(job_retention_success_once_daysisnullor(job_retention_success_once_days>=1andjob_retention_success_once_days<=365)),job_retention_failed_once_daysintegercheck(job_retention_failed_once_daysisnullor(job_retention_failed_once_days>=1andjob_retention_failed_once_days<=365)),job_retention_disabled_recurring_daysintegercheck(job_retention_disabled_recurring_daysisnullor(job_retention_disabled_recurring_days>=1andjob_retention_disabled_recurring_days<=365)),d1_storage_bytesintegernotnulldefault0,d1_storage_bytes_updated_attext)');
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM sqlite_schema schema_object
+INNER JOIN migration_0135_expected_users_table_sql expected
+	ON expected.phase = 'pre'
+	AND expected.normalized_sql = lower(
+			replace(
+				replace(
+					replace(
+						replace(
+							replace(
+								replace(
+									replace(
+										replace(schema_object.sql, ' ', ''),
+										char(9),
+										''
+									),
+									char(10),
+									''
+								),
+								char(13),
+								''
+							),
+							'"',
+							''
+						),
+						char(96),
+						''
+					),
+					'[',
+					''
+				),
+				']',
+				''
+			)
+		)
+WHERE schema_object.type = 'table'
+	AND schema_object.name = 'users';
+
+-- Exact reviewed users contract through 0134. cid makes the table-xinfo check
 -- ordered as well as complete; any future, missing, reordered, or changed column
 -- aborts before the first destructive statement.
 CREATE TABLE migration_0135_expected_users_columns (
@@ -629,60 +680,61 @@ CREATE TABLE migration_0135_expected_users_columns (
 	type TEXT NOT NULL,
 	not_null INTEGER NOT NULL,
 	default_value TEXT,
-	pk INTEGER NOT NULL
+	pk INTEGER NOT NULL,
+	hidden INTEGER NOT NULL
 );
 
-INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
-	(0, 'id', 'INTEGER', 1, NULL, 1),
-	(1, 'username', 'TEXT', 1, NULL, 0),
-	(2, 'email', 'TEXT', 1, NULL, 0),
-	(3, 'password_hash', 'TEXT', 1, NULL, 0),
-	(4, 'created_at', 'TEXT', 1, 'CURRENT_TIMESTAMP', 0),
-	(5, 'updated_at', 'TEXT', 1, 'CURRENT_TIMESTAMP', 0),
-	(6, 'email_verified_at', 'TEXT', 0, NULL, 0),
-	(7, 'plan', 'TEXT', 1, '''free''', 0),
-	(8, 'stable_user_id', 'TEXT', 1, NULL, 0),
-	(9, 'stripe_customer_id', 'TEXT', 0, NULL, 0);
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk, hidden) VALUES
+	(0, 'id', 'INTEGER', 1, NULL, 1, 0),
+	(1, 'username', 'TEXT', 1, NULL, 0, 0),
+	(2, 'email', 'TEXT', 1, NULL, 0, 0),
+	(3, 'password_hash', 'TEXT', 1, NULL, 0, 0),
+	(4, 'created_at', 'TEXT', 1, 'CURRENT_TIMESTAMP', 0, 0),
+	(5, 'updated_at', 'TEXT', 1, 'CURRENT_TIMESTAMP', 0, 0),
+	(6, 'email_verified_at', 'TEXT', 0, NULL, 0, 0),
+	(7, 'plan', 'TEXT', 1, '''free''', 0, 0),
+	(8, 'stable_user_id', 'TEXT', 1, NULL, 0, 0),
+	(9, 'stripe_customer_id', 'TEXT', 0, NULL, 0, 0);
 
-INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
-	(10, 'stripe_plan', 'TEXT', 0, NULL, 0),
-	(11, 'stripe_plan_refreshed_at', 'TEXT', 0, NULL, 0),
-	(12, 'display_name', 'TEXT', 0, NULL, 0),
-	(13, 'bio', 'TEXT', 0, NULL, 0),
-	(14, 'profile_visibility', 'TEXT', 1, '''public''', 0),
-	(15, 'avatar_key', 'TEXT', 0, NULL, 0),
-	(16, 'account_type', 'TEXT', 1, '''person''', 0),
-	(17, 'deleting_at', 'TEXT', 0, NULL, 0),
-	(18, 'active_write_count', 'INTEGER', 1, '0', 0),
-	(19, 'active_write_expires_at', 'TEXT', 0, NULL, 0);
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk, hidden) VALUES
+	(10, 'stripe_plan', 'TEXT', 0, NULL, 0, 0),
+	(11, 'stripe_plan_refreshed_at', 'TEXT', 0, NULL, 0, 0),
+	(12, 'display_name', 'TEXT', 0, NULL, 0, 0),
+	(13, 'bio', 'TEXT', 0, NULL, 0, 0),
+	(14, 'profile_visibility', 'TEXT', 1, '''public''', 0, 0),
+	(15, 'avatar_key', 'TEXT', 0, NULL, 0, 0),
+	(16, 'account_type', 'TEXT', 1, '''person''', 0, 0),
+	(17, 'deleting_at', 'TEXT', 0, NULL, 0, 0),
+	(18, 'active_write_count', 'INTEGER', 1, '0', 0, 0),
+	(19, 'active_write_expires_at', 'TEXT', 0, NULL, 0, 0);
 
-INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
-	(20, 'suspended_at', 'TEXT', 0, NULL, 0),
-	(21, 'email_outbound_paused_at', 'TEXT', 0, NULL, 0),
-	(22, 'password_changed_at', 'TEXT', 0, NULL, 0),
-	(23, 'job_retention_success_once_days', 'INTEGER', 0, NULL, 0),
-	(24, 'job_retention_failed_once_days', 'INTEGER', 0, NULL, 0),
-	(25, 'job_retention_disabled_recurring_days', 'INTEGER', 0, NULL, 0),
-	(26, 'd1_storage_bytes', 'INTEGER', 1, '0', 0),
-	(27, 'd1_storage_bytes_updated_at', 'TEXT', 0, NULL, 0),
-	(28, 'mailbox_parity_checked_at', 'TEXT', 0, NULL, 0),
-	(29, 'mailbox_parity_matching_since', 'TEXT', 0, NULL, 0);
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk, hidden) VALUES
+	(20, 'suspended_at', 'TEXT', 0, NULL, 0, 0),
+	(21, 'email_outbound_paused_at', 'TEXT', 0, NULL, 0, 0),
+	(22, 'password_changed_at', 'TEXT', 0, NULL, 0, 0),
+	(23, 'job_retention_success_once_days', 'INTEGER', 0, NULL, 0, 0),
+	(24, 'job_retention_failed_once_days', 'INTEGER', 0, NULL, 0, 0),
+	(25, 'job_retention_disabled_recurring_days', 'INTEGER', 0, NULL, 0, 0),
+	(26, 'd1_storage_bytes', 'INTEGER', 1, '0', 0, 0),
+	(27, 'd1_storage_bytes_updated_at', 'TEXT', 0, NULL, 0, 0),
+	(28, 'mailbox_parity_checked_at', 'TEXT', 0, NULL, 0, 0),
+	(29, 'mailbox_parity_matching_since', 'TEXT', 0, NULL, 0, 0);
 
-INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
-	(30, 'mailbox_parity_mismatch_count', 'INTEGER', 1, '0', 0),
-	(31, 'mailbox_parity_last_error', 'TEXT', 0, NULL, 0),
-	(32, 'mailbox_parity_content_watermark_at', 'TEXT', 0, NULL, 0),
-	(33, 'mailbox_parity_content_replay_upper_at', 'TEXT', 0, NULL, 0),
-	(34, 'mailbox_parity_content_replay_cursor_updated_at', 'TEXT', 0, NULL, 0),
-	(35, 'mailbox_parity_content_replay_cursor_id', 'TEXT', 0, NULL, 0),
-	(36, 'mailbox_parity_message_backfill_cursor_created_at', 'TEXT', 0, NULL, 0),
-	(37, 'mailbox_parity_message_backfill_cursor_id', 'TEXT', 0, NULL, 0),
-	(38, 'mailbox_parity_message_backfill_completed_at', 'TEXT', 0, NULL, 0),
-	(39, 'mailbox_parity_event_backfill_cursor_created_at', 'TEXT', 0, NULL, 0);
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk, hidden) VALUES
+	(30, 'mailbox_parity_mismatch_count', 'INTEGER', 1, '0', 0, 0),
+	(31, 'mailbox_parity_last_error', 'TEXT', 0, NULL, 0, 0),
+	(32, 'mailbox_parity_content_watermark_at', 'TEXT', 0, NULL, 0, 0),
+	(33, 'mailbox_parity_content_replay_upper_at', 'TEXT', 0, NULL, 0, 0),
+	(34, 'mailbox_parity_content_replay_cursor_updated_at', 'TEXT', 0, NULL, 0, 0),
+	(35, 'mailbox_parity_content_replay_cursor_id', 'TEXT', 0, NULL, 0, 0),
+	(36, 'mailbox_parity_message_backfill_cursor_created_at', 'TEXT', 0, NULL, 0, 0),
+	(37, 'mailbox_parity_message_backfill_cursor_id', 'TEXT', 0, NULL, 0, 0),
+	(38, 'mailbox_parity_message_backfill_completed_at', 'TEXT', 0, NULL, 0, 0),
+	(39, 'mailbox_parity_event_backfill_cursor_created_at', 'TEXT', 0, NULL, 0, 0);
 
-INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk) VALUES
-	(40, 'mailbox_parity_event_backfill_cursor_id', 'TEXT', 0, NULL, 0),
-	(41, 'mailbox_parity_event_backfill_completed_at', 'TEXT', 0, NULL, 0);
+INSERT INTO migration_0135_expected_users_columns (cid, name, type, not_null, default_value, pk, hidden) VALUES
+	(40, 'mailbox_parity_event_backfill_cursor_id', 'TEXT', 0, NULL, 0, 0),
+	(41, 'mailbox_parity_event_backfill_completed_at', 'TEXT', 0, NULL, 0, 0);
 
 CREATE TABLE migration_0135_expected_users_indexes (
 	name TEXT NOT NULL,
@@ -734,18 +786,18 @@ INSERT INTO migration_0135_expected_users_foreign_keys (child_table, from_column
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN
 	NOT EXISTS (
-		SELECT cid, name, type, "notnull", dflt_value, pk
-		FROM pragma_table_info('users')
+		SELECT cid, name, type, "notnull", dflt_value, pk, hidden
+		FROM pragma_table_xinfo('users')
 		EXCEPT
-		SELECT cid, name, type, not_null, default_value, pk
+		SELECT cid, name, type, not_null, default_value, pk, hidden
 		FROM migration_0135_expected_users_columns
 	)
 	AND NOT EXISTS (
-		SELECT cid, name, type, not_null, default_value, pk
+		SELECT cid, name, type, not_null, default_value, pk, hidden
 		FROM migration_0135_expected_users_columns
 		EXCEPT
-		SELECT cid, name, type, "notnull", dflt_value, pk
-		FROM pragma_table_info('users')
+		SELECT cid, name, type, "notnull", dflt_value, pk, hidden
+		FROM pragma_table_xinfo('users')
 	)
 THEN 1 ELSE 0 END;
 
@@ -1610,22 +1662,61 @@ SELECT * FROM _mig0135_feature_flag_user_overrides;
 -- Reassert the complete rebuilt users contract before releasing temporary
 -- snapshots. Any mismatch aborts and rolls the entire migration back.
 INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
+SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END
+FROM sqlite_schema schema_object
+INNER JOIN migration_0135_expected_users_table_sql expected
+	ON expected.phase = 'post'
+	AND expected.normalized_sql = lower(
+			replace(
+				replace(
+					replace(
+						replace(
+							replace(
+								replace(
+									replace(
+										replace(schema_object.sql, ' ', ''),
+										char(9),
+										''
+									),
+									char(10),
+									''
+								),
+								char(13),
+								''
+							),
+							'"',
+							''
+						),
+						char(96),
+						''
+					),
+					'[',
+					''
+				),
+				']',
+				''
+			)
+		)
+WHERE schema_object.type = 'table'
+	AND schema_object.name = 'users';
+
+INSERT INTO migration_0135_legacy_email_graph_drop_guard (value)
 SELECT CASE WHEN
 	NOT EXISTS (
-		SELECT cid, name, type, "notnull", dflt_value, pk
-		FROM pragma_table_info('users')
+		SELECT cid, name, type, "notnull", dflt_value, pk, hidden
+		FROM pragma_table_xinfo('users')
 		EXCEPT
-		SELECT cid, name, type, not_null, default_value, pk
+		SELECT cid, name, type, not_null, default_value, pk, hidden
 		FROM migration_0135_expected_users_columns
 		WHERE cid < 28
 	)
 	AND NOT EXISTS (
-		SELECT cid, name, type, not_null, default_value, pk
+		SELECT cid, name, type, not_null, default_value, pk, hidden
 		FROM migration_0135_expected_users_columns
 		WHERE cid < 28
 		EXCEPT
-		SELECT cid, name, type, "notnull", dflt_value, pk
-		FROM pragma_table_info('users')
+		SELECT cid, name, type, "notnull", dflt_value, pk, hidden
+		FROM pragma_table_xinfo('users')
 	)
 THEN 1 ELSE 0 END;
 
@@ -2264,6 +2355,7 @@ DROP TABLE migration_0135_expected_users_foreign_keys;
 DROP TABLE migration_0135_actual_users_indexes;
 DROP TABLE migration_0135_expected_users_indexes;
 DROP TABLE migration_0135_expected_users_columns;
+DROP TABLE migration_0135_expected_users_table_sql;
 
 DROP TRIGGER email_messages_delete_outbound_provider_index;
 DROP TABLE email_attachments;
