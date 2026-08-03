@@ -787,8 +787,12 @@ non-destructive.
 boundary. Migration `0131-system-email-graph-authority.sql` is also additive:
 before cutover it reconciles changes made after the 0130 snapshot by deleting
 dedicated drift child-first and full-column UPSERTing valid legacy authority
-rows parent-first. It then fills every null promoted delivery transition/effect
-column from canonical `detail_json`. The singleton
+rows parent-first. It then replaces every promoted transition/effect column for
+Cloudflare inbound and dedupe rows with the canonical `detail_json` projection,
+including clearing stale non-null values when a JSON property is absent.
+`needs_effect_reconcile` remains column-authoritative because legacy receive and
+effect transitions update it in the same statement as JSON. Non-inbound
+providers retain their promoted columns. The singleton
 `system_email_graph_authority` insert stores CHECK-constrained
 `graph_mismatch_count = 0` and `provider_link_count = 0` gates. The graph gate
 checks exact counts and full-column values for all four tables, missing/extra

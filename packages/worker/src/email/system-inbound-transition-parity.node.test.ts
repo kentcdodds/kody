@@ -172,6 +172,14 @@ async function runLegacyTransitions(db: D1Database) {
 		userId: 'system:email',
 		now,
 	})
+	const receivedProjection = await db
+		.prepare(
+			`SELECT needs_effect_reconcile
+			FROM email_delivery_events
+			WHERE id = ? AND user_id = 'system:email'`,
+		)
+		.bind(received.deliveryId)
+		.first<{ needs_effect_reconcile: number }>()
 	return {
 		firstClaim: firstClaim.delivery?.state,
 		retryClaim: secondClaim.delivery?.state,
@@ -196,6 +204,8 @@ async function runLegacyTransitions(db: D1Database) {
 				deliveryId: stale.deliveryId,
 			})
 		)?.state,
+		receivedNeedsEffectReconcile:
+			receivedProjection?.needs_effect_reconcile ?? null,
 		reconciliation,
 	}
 }
@@ -259,8 +269,6 @@ async function runDedicatedTransitions(db: D1Database) {
 		},
 		message: {
 			id: received.messageId,
-			direction: 'inbound',
-			userId: 'system:email',
 			inboxId: received.inboxId,
 			fromAddress: received.envelopeFrom,
 			processingStatus: 'stored',
@@ -290,6 +298,14 @@ async function runDedicatedTransitions(db: D1Database) {
 		blobs: { delete: async () => undefined } as R2Bucket,
 		now,
 	})
+	const receivedProjection = await db
+		.prepare(
+			`SELECT needs_effect_reconcile
+			FROM system_email_delivery_events
+			WHERE id = ?`,
+		)
+		.bind(received.deliveryId)
+		.first<{ needs_effect_reconcile: number }>()
 	return {
 		firstClaim: firstClaim.delivery?.state,
 		retryClaim: secondClaim.delivery?.state,
@@ -311,6 +327,8 @@ async function runDedicatedTransitions(db: D1Database) {
 				deliveryId: stale.deliveryId,
 			})
 		)?.state,
+		receivedNeedsEffectReconcile:
+			receivedProjection?.needs_effect_reconcile ?? null,
 		reconciliation,
 	}
 }
@@ -329,6 +347,7 @@ test('legacy and dedicated system inbound transitions stay behaviorally exhausti
 		rejected: 'rejected',
 		received: 'received',
 		stale: 'orphan-cleaned',
+		receivedNeedsEffectReconcile: 1,
 		reconciliation: expect.objectContaining({ cleaned: 1, recovered: 0 }),
 	})
 	expect(dedicatedResult).toEqual(legacyResult)
