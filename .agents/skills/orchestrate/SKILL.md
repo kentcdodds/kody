@@ -4,8 +4,8 @@ description: >
   Orchestrate sub-agents for large tasks inside a single environment: plan,
   delegate coding to cheap/fast models, parallelize the critical path, keep
   reviews lean, and close every loop. Use when acting as an orchestrator or
-  writing a kickoff for one. Prefer implement when fan-out does not clearly
-  pay. For multi-environment fleets, use conduct instead.
+  writing a kickoff for one. Prefer implement when fan-out does not clearly pay.
+  For multi-environment fleets, use conduct instead.
 ---
 
 # Orchestrate
@@ -31,7 +31,8 @@ optimized for cheap/fast execution.
 1. Plan, delegate, integrate, ship. Bulk-code only when fan-out costs more.
 2. Frontier model orchestrates; cheap/fast models implement (prefer Grok 4.5 /
    `composer-2.5-fast` for mechanical work).
-3. Critical path first; parallelize non-conflicting files; serialize shared ones.
+3. Critical path first; parallelize non-conflicting files; serialize shared
+   ones.
 4. **You do final QA.** Never declare done from sub-agent claims.
 
 ## Fan-out (when it pays)
