@@ -1046,6 +1046,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 										type="checkbox"
 										role="switch"
 										checked={editorState.enabled}
+										aria-checked={editorState.enabled}
 										disabled={isMutating}
 										mix={[
 											css(switchCss),
@@ -1080,6 +1081,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 										type="checkbox"
 										role="switch"
 										checked={editorState.attached}
+										aria-checked={editorState.attached}
 										disabled={isMutating || !editorState.enabled}
 										mix={[
 											css(switchCss),
