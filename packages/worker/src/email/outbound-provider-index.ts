@@ -26,6 +26,20 @@ export type OutboundProviderIndexParityReport = {
 	parity: boolean
 }
 
+export async function isOutboundProviderIndexForeignKeyDetached(
+	db: D1Database,
+): Promise<boolean> {
+	const result = await db
+		.prepare(`PRAGMA foreign_key_list(email_outbound_provider_index)`)
+		.all<{ table: string; from: string; to: string }>()
+	return !result.results.some(
+		(foreignKey) =>
+			foreignKey.table === 'email_messages' &&
+			foreignKey.from === 'message_id' &&
+			foreignKey.to === 'id',
+	)
+}
+
 export function classifyOutboundProviderIndexParity(
 	counts: Omit<OutboundProviderIndexParityReport, 'parity'>,
 ): OutboundProviderIndexParityReport {

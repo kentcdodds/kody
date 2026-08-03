@@ -382,14 +382,16 @@ test('dedicated authority operations fail closed if provider links appear after 
 	)
 		.bind(systemEmailOwnerId, now, now)
 		.run()
-	await env.APP_DB.prepare(
-		`INSERT INTO email_outbound_provider_index (
-			provider, provider_message_id, user_id, message_id, created_at,
-			updated_at
-		) VALUES ('resend', 'provider-message-after-cutover', ?, ?, ?, ?)`,
-	)
-		.bind(systemEmailOwnerId, 'post-cutover-provider-link', now, now)
-		.run()
+	await expect(
+		env.APP_DB.prepare(
+			`INSERT INTO email_outbound_provider_index (
+				provider, provider_message_id, user_id, message_id, created_at,
+				updated_at
+			) VALUES ('resend', 'provider-message-after-cutover', ?, ?, ?, ?)`,
+		)
+			.bind(systemEmailOwnerId, 'post-cutover-provider-link', now, now)
+			.run(),
+	).rejects.toThrow(/CHECK constraint failed/u)
 
 	await expect(
 		listSystemEmailMessages({ db: env.APP_DB, limit: 10 }),

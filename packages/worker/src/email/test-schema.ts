@@ -362,15 +362,14 @@ ON email_messages(provider_message_id)
 WHERE direction = 'outbound'
 	AND provider_message_id IS NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS email_outbound_provider_index (
-	provider TEXT NOT NULL,
-	provider_message_id TEXT NOT NULL,
-	user_id TEXT NOT NULL,
-	message_id TEXT NOT NULL,
-	inbox_id TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
-	PRIMARY KEY (provider, provider_message_id),
-	FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
+	provider TEXT NOT NULL CHECK (length(provider) > 0),
+	provider_message_id TEXT NOT NULL CHECK (length(provider_message_id) > 0),
+	user_id TEXT NOT NULL CHECK (length(user_id) > 0 AND user_id <> 'system:email'),
+	message_id TEXT NOT NULL CHECK (length(message_id) > 0),
+	inbox_id TEXT CHECK (inbox_id IS NULL OR length(inbox_id) > 0),
+	created_at TEXT NOT NULL CHECK (length(created_at) > 0),
+	updated_at TEXT NOT NULL CHECK (length(updated_at) > 0),
+	PRIMARY KEY (provider, provider_message_id)
 );`,
 		`CREATE INDEX IF NOT EXISTS idx_email_outbound_provider_index_user_id
 ON email_outbound_provider_index(user_id);`,

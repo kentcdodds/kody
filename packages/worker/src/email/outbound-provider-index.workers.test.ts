@@ -7,6 +7,7 @@ import {
 	deleteOutboundProviderIndexByMessageId,
 	emailOutboundProviderCloudflare,
 	getOutboundProviderIndexRow,
+	isOutboundProviderIndexForeignKeyDetached,
 	loadOutboundProviderIndexParityReport,
 } from './outbound-provider-index.ts'
 import { OutboundEmailPersistenceError, sendOutboundEmail } from './outbound.ts'
@@ -56,6 +57,9 @@ async function seedVerifiedAccount(email: string) {
 
 test('insert and delivery update dual-write the outbound provider index', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await expect(
+		isOutboundProviderIndexForeignKeyDetached(env.APP_DB),
+	).resolves.toBe(true)
 	const userId = `idx-user-${crypto.randomUUID()}`
 	const providerMessageId = `provider-${crypto.randomUUID()}`
 	const message = await insertEmailMessage({
@@ -252,22 +256,24 @@ test('provider delivery lifecycle resolves through the index for user owners', a
 	).toBe('unmatched')
 })
 
-test('provider reverse lookup refuses legacy system owner links', async () => {
+test('provider index blocks system owner links', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const providerMessageId = `provider-system-${crypto.randomUUID()}`
-	await insertEmailMessage({
-		db: env.APP_DB,
-		message: {
-			direction: 'outbound',
-			userId: 'system:email',
-			fromAddress: 'support@example.com',
-			toAddresses: ['recipient@example.net'],
-			subject: 'Unsupported system link',
-			processingStatus: 'sent',
-			providerMessageId,
-			sentAt: '2026-08-01T13:00:00.000Z',
-		},
-	})
+	await expect(
+		insertEmailMessage({
+			db: env.APP_DB,
+			message: {
+				direction: 'outbound',
+				userId: 'system:email',
+				fromAddress: 'support@example.com',
+				toAddresses: ['recipient@example.net'],
+				subject: 'Unsupported system link',
+				processingStatus: 'sent',
+				providerMessageId,
+				sentAt: '2026-08-01T13:00:00.000Z',
+			},
+		}),
+	).rejects.toThrow(/CHECK constraint failed/u)
 
 	expect(
 		await getOutboundEmailMessageByProviderMessageId({
@@ -281,8 +287,8 @@ test('provider reverse lookup refuses legacy system owner links', async () => {
 			userId: 'system:email',
 		}),
 	).toMatchObject({
-		linkedMessageCount: 1,
-		indexCount: 1,
+		linkedMessageCount: 0,
+		indexCount: 0,
 		parity: true,
 	})
 })

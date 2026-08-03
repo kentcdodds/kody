@@ -63,6 +63,7 @@ const emptyStatus = {
 	newestCheckedAt: '2026-08-01T11:00:00.000Z',
 	earliestCutoverAt: '2026-07-31T00:00:00.000Z',
 	outboundProviderIndex: {
+		foreignKeyDetached: true,
 		linkedMessageCount: 0,
 		indexCount: 0,
 		missingFromIndexCount: 0,

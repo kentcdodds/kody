@@ -195,8 +195,7 @@ function createMaintenanceDb() {
 			inbox_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
-			PRIMARY KEY (provider, provider_message_id),
-			FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
+			PRIMARY KEY (provider, provider_message_id)
 		);
 		CREATE TABLE email_delivery_events (
 			id TEXT PRIMARY KEY,
@@ -543,6 +542,7 @@ test('loadAdminMailboxMaintenanceStatus aggregates buckets without owner ids', a
 		incomplete: 1,
 		eligible: 1,
 		outboundProviderIndex: {
+			foreignKeyDetached: true,
 			linkedMessageCount: 1,
 			indexCount: 1,
 			missingFromIndexCount: 0,

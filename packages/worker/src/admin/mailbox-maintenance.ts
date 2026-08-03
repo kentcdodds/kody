@@ -21,6 +21,7 @@ import {
 	type MailboxCountResult,
 } from '#worker/email/mailbox-types.ts'
 import {
+	isOutboundProviderIndexForeignKeyDetached,
 	loadOutboundProviderIndexParityReport,
 	type OutboundProviderIndexParityReport,
 } from '#worker/email/outbound-provider-index.ts'
@@ -81,7 +82,10 @@ export type AdminMailboxMaintenanceStatus = {
 	 * Fleet-wide aggregate D1 outbound provider reverse-index parity. Counts
 	 * only — no owner ids, message ids, or email content.
 	 */
-	outboundProviderIndex: OutboundProviderIndexParityReport
+	outboundProviderIndex: OutboundProviderIndexParityReport & {
+		/** True only when the deployed schema has no legacy message_id FK. */
+		foreignKeyDetached: boolean
+	}
 	/**
 	 * Dedicated system-email authority versus its legacy rollback mirror.
 	 * Aggregate counts only; no email content is exposed.
@@ -468,10 +472,19 @@ export async function loadAdminMailboxMaintenanceStatus(input: {
 		}
 	}
 
-	const [outboundProviderIndex, systemEmailGraph] = await Promise.all([
+	const [
+		outboundProviderIndexParity,
+		outboundProviderIndexForeignKeyDetached,
+		systemEmailGraph,
+	] = await Promise.all([
 		loadOutboundProviderIndexParityReport({ db: input.db }),
+		isOutboundProviderIndexForeignKeyDetached(input.db),
 		loadSystemEmailGraphParityReport({ db: input.db }),
 	])
+	const outboundProviderIndex = {
+		...outboundProviderIndexParity,
+		foreignKeyDetached: outboundProviderIndexForeignKeyDetached,
+	}
 
 	return {
 		generatedAt,

@@ -711,7 +711,13 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		idColumn: 'message_id',
 		ids: messageIds,
 	})
-	// Provider-index rows cascade via FK ON DELETE CASCADE from email_messages.
+	// The retained global provider index has no cross-store message FK.
+	await deleteByIds({
+		db: input.db,
+		table: 'email_outbound_provider_index',
+		idColumn: 'message_id',
+		ids: messageIds,
+	})
 	result.deletedMessages = await deleteByIds({
 		db: input.db,
 		table: 'email_messages',

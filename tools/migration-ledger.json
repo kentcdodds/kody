@@ -539,6 +539,10 @@
 		{
 			"filename": "0131-system-email-graph-authority.sql",
 			"sha256": "e2b8cecc90501c54c6a7391da9e2d0ab334c62c6ff749bbb128167a7db2480e8"
+		},
+		{
+			"filename": "0132-email-outbound-provider-index-detach.sql",
+			"sha256": "c84f2ca81d5155b35cf8f85f99bc2ea2ef52e138318c458ad503c5ad4bb1296d"
 		}
 	]
 }

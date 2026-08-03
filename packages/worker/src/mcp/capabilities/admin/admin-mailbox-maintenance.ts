@@ -46,6 +46,11 @@ const mailboxCountSchema = z.object({
 })
 
 const outboundProviderIndexParitySchema = z.object({
+	foreignKeyDetached: z
+		.boolean()
+		.describe(
+			'True when the deployed provider-index schema has no message_id foreign key to legacy email_messages.',
+		),
 	linkedMessageCount: z
 		.number()
 		.int()

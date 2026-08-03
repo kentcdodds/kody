@@ -1305,8 +1305,14 @@ export async function deleteEmailMessageById(input: {
 		: d1CapturedBlobs
 	// Atomic batch: a partial delete (attachments gone, message left) would
 	// lose the storage_key values needed to delete the R2 blobs on retry.
-	// Provider-index rows cascade via FK ON DELETE CASCADE from email_messages.
+	// The global provider index intentionally has no cross-store message FK.
 	await input.db.batch([
+		input.db
+			.prepare(
+				`DELETE FROM email_outbound_provider_index
+				WHERE message_id = ?`,
+			)
+			.bind(input.messageId),
 		input.db
 			.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
 			.bind(input.messageId),
@@ -1354,6 +1360,12 @@ export async function deleteEmailMessageProjectionById(input: {
 		return { messageDeleted: false }
 	}
 	await input.db.batch([
+		input.db
+			.prepare(
+				`DELETE FROM email_outbound_provider_index
+				WHERE message_id = ?`,
+			)
+			.bind(input.messageId),
 		input.db
 			.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
 			.bind(input.messageId),
