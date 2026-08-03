@@ -66,8 +66,7 @@ Get your id from cursor-cloud `run-info` and paste it into kickoffs. Also keep a
 
 Topology: `createRun` wake-ups work only if the conductor is an API-created
 cloud agent. An interactive chat conductor rejects them (400) — use Discord (or
-another channel you check) as primary, plus an outer watchdog job for
-re-dispatch.
+another channel you check) as primary.
 
 **Time gates → one-shot jobs**, not `sleep`:
 
