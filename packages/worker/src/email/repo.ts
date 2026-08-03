@@ -1305,7 +1305,9 @@ export async function deleteEmailMessageById(input: {
 		: d1CapturedBlobs
 	// Atomic batch: a partial delete (attachments gone, message left) would
 	// lose the storage_key values needed to delete the R2 blobs on retry.
-	// The global provider index intentionally has no cross-store message FK.
+	// Keep explicit provider-index cleanup in this same atomic batch for
+	// mixed-version schemas. The old FK and new compatibility trigger both
+	// tolerate the row already being absent.
 	await input.db.batch([
 		input.db
 			.prepare(
@@ -1359,6 +1361,8 @@ export async function deleteEmailMessageProjectionById(input: {
 	if (row.user_id !== input.expectedUserId) {
 		return { messageDeleted: false }
 	}
+	// Same-batch explicit cleanup keeps this projection delete safe across the
+	// legacy-FK and compatibility-trigger schemas.
 	await input.db.batch([
 		input.db
 			.prepare(

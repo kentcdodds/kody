@@ -193,14 +193,19 @@ function createRetentionDb() {
 		CREATE TABLE email_outbound_provider_index (
 			provider TEXT NOT NULL,
 			provider_message_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
+			user_id TEXT NOT NULL CHECK (user_id <> 'system:email'),
 			message_id TEXT NOT NULL,
 			inbox_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
-			PRIMARY KEY (provider, provider_message_id),
-			FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE CASCADE
+			PRIMARY KEY (provider, provider_message_id)
 		);
+		CREATE TRIGGER email_messages_delete_outbound_provider_index
+		AFTER DELETE ON email_messages
+		BEGIN
+			DELETE FROM email_outbound_provider_index
+			WHERE message_id = OLD.id;
+		END;
 		CREATE TABLE email_attachments (
 			id TEXT PRIMARY KEY,
 			message_id TEXT NOT NULL,
@@ -615,17 +620,9 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 				created_at, updated_at
 			) VALUES
 				('cloudflare-email', 'prov-old-blob', 'user-1', 'msg-old-blob', NULL, ?, ?),
-				('cloudflare-email', 'prov-fresh', 'user-1', 'msg-fresh', NULL, ?, ?),
-				('cloudflare-email', 'prov-system', 'system:email', 'msg-old-system', NULL, ?, ?)`,
+				('cloudflare-email', 'prov-fresh', 'user-1', 'msg-fresh', NULL, ?, ?)`,
 		)
-		.run(
-			indexCreatedAt,
-			indexCreatedAt,
-			daysAgo(1),
-			daysAgo(1),
-			indexCreatedAt,
-			indexCreatedAt,
-		)
+		.run(indexCreatedAt, indexCreatedAt, daysAgo(1), daysAgo(1))
 	const blobDelete = vi.fn(async () => undefined)
 
 	const result = await pruneUserEmailMessagesForRetention({
@@ -666,7 +663,7 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 				)
 				.all() as Array<{ provider_message_id: string }>
 		).map((row) => row.provider_message_id),
-	).toEqual(['prov-fresh', 'prov-system'])
+	).toEqual(['prov-fresh'])
 })
 
 test('email message retention never deletes rows whose blob cannot be deleted first', async () => {
