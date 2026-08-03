@@ -8,6 +8,10 @@ import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import {
+	buildRepoLargeFileMessage,
+	findOversizedRepoSourceFile,
+} from '#worker/repo/large-file-policy.ts'
+import {
 	assertPackageSourceOverwriteAllowed,
 	assertPackagePrivateVisibilityChangeAllowed,
 	defaultPackagePrivateGuidance,
@@ -171,6 +175,10 @@ export const savePackageCapability = defineDomainCapability(
 				throw new McpCallerError(
 					'Saved packages require a root package.json file.',
 				)
+			}
+			const oversizedFile = findOversizedRepoSourceFile(Object.entries(files))
+			if (oversizedFile) {
+				throw new McpCallerError(buildRepoLargeFileMessage(oversizedFile))
 			}
 			const expectedPackageScope = owner.ownerScope
 			const existing =

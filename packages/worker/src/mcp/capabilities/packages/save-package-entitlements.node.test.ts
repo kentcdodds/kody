@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import type * as sourceSafetyPolicyModule from '#worker/repo/source-safety-policy.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
+import { maxRepoSourceFileBytes } from '#worker/repo/large-file-policy.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -397,6 +398,38 @@ test('package_save does not gate updates to an existing package at the limit', a
 
 	expect(mockModule.ensureEntitySource).toHaveBeenCalled()
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+})
+
+test('package_save rejects a file over the per-file repo size limit with hosting guidance', async () => {
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const db = createDatabase({
+		users: [
+			{ email, plan: 'max', username: 'planned', stable_user_id: userId },
+		],
+	})
+	setupPersistenceMocks()
+	const ctx = createHandlerContext({ db, userId, email })
+
+	const files = [
+		...buildPackageFiles('oversized-package', 'planned'),
+		{
+			path: 'assets/dataset.csv',
+			content: 'x'.repeat(maxRepoSourceFileBytes + 1),
+		},
+	]
+	const error = await savePackageCapability.handler({ files }, ctx).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+
+	expect(error).toBeInstanceOf(Error)
+	const message = (error as Error).message
+	expect(message).toContain('"assets/dataset.csv"')
+	expect(message).toContain('per-file limit')
+	expect(message).toContain('Cloudflare R2')
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
 test('package_save responses steer coding agents toward the git lane', async () => {

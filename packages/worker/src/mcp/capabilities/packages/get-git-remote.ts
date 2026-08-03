@@ -76,7 +76,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 	{
 		name: 'package_get_git_remote',
 		description:
-			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with package_publish_external_push. Pass `create: true` with a new `kody_id` to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of package_save file blobs. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish.',
+			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with package_publish_external_push. Pass `create: true` with a new `kody_id` to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of package_save file blobs. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Keep individual files under 10 MiB: publish rejects larger files with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
 		keywords: [
 			'package',
 			'create',

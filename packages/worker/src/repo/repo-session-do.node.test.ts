@@ -403,6 +403,7 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 const { RepoSession } = await import('./repo-session-do.ts')
 const { deleteRepoSession, insertRepoSession } =
 	await import('./repo-sessions.ts')
+const { maxRepoSourceFileBytes } = await import('./large-file-policy.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -759,6 +760,26 @@ test('runCommands applies git apply patches (modify, delete, and rename)', async
 			content: 'export const name = "new"\n',
 		}),
 	)
+})
+
+test('applyEdits rejects a write over the per-file repo size limit with hosting guidance', async () => {
+	setCommonSessionFixtures()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{
+					kind: 'write',
+					path: 'assets/dataset.csv',
+					content: 'x'.repeat(maxRepoSourceFileBytes + 1),
+				},
+			],
+		}),
+	).rejects.toThrow(/"assets\/dataset\.csv".*per-file limit.*Cloudflare R2/s)
+	expect(mockModule.workspaceWriteFile).not.toHaveBeenCalled()
 })
 
 test('runCommands rejects publish without checks for direct RPC callers', async () => {

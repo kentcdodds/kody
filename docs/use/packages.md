@@ -574,6 +574,15 @@ create and edit it with a normal git client without round-tripping each file
 change through `package_save` or `repo_run_commands`. This lane supports binary
 assets, which `package_save` and repo sessions do not.
 
+Keep individual files under 10 MiB. Publish checks reject any file over that
+per-file limit (and any source root over the aggregate publish caps) with
+guidance to host the file on storage you manage — for example Cloudflare R2,
+Amazon S3, Dropbox, or Google Drive — and commit a small link or pointer file
+instead. Kody never rewrites your files into pointers for you. The Artifacts
+remote itself also fails pushes above roughly 32 MiB of pack content with a
+raw HTTP 413 before Kody is involved, so oversized files can fail at
+`git push` with an unhelpful error even before publish checks run.
+
 1. Mint a short-lived remote credential:
 
    ```json

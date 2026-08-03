@@ -33,6 +33,7 @@ import {
 	runRepoChecks,
 } from './checks.ts'
 import { isolatedBundleChunkSize } from './isolated-check-phases.ts'
+import { maxRepoSourceFileBytes } from './large-file-policy.ts'
 
 type MockSnapshot = {
 	read: ReturnType<typeof vi.fn>
@@ -238,6 +239,31 @@ test('runRepoChecks fails when the source root exceeds publish size caps', async
 		expect.objectContaining({ kind: 'manifest', ok: true }),
 		expect.objectContaining({ kind: 'bundle', ok: false }),
 	])
+})
+
+test('runRepoChecks fails a single file over the per-file limit with hosting guidance', async () => {
+	const oversized = 'x'.repeat(maxRepoSourceFileBytes + 1)
+	const result = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/one-large-file',
+					kodyId: 'one-large-file',
+					description: 'Exceeds the per-file publish limit',
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+			['assets/dataset.csv', oversized],
+		]),
+	)
+	expect(result.ok).toBe(false)
+	expect(result.sourceFiles).toEqual({})
+	const bundleCheck = result.results.find((check) => check.kind === 'bundle')
+	expect(bundleCheck?.ok).toBe(false)
+	expect(bundleCheck?.message).toContain('"assets/dataset.csv"')
+	expect(bundleCheck?.message).toContain('per-file limit')
+	expect(bundleCheck?.message).toContain('Cloudflare R2')
 })
 
 test('runRepoChecks keeps non-code source files for publish snapshots while excluding git internals', async () => {

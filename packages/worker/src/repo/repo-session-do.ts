@@ -104,6 +104,11 @@ import {
 	parseRepoGitCommands,
 } from './repo-session-commands.ts'
 import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
+import {
+	buildRepoLargeFileMessage,
+	maxRepoSourceFileBytes,
+	measureRepoSourceFileBytes,
+} from './large-file-policy.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -746,15 +751,22 @@ class RepoSessionBase extends DurableObject<Env> {
 					repoSessionWorkspacePrefix,
 				)
 				switch (edit.kind) {
-					case 'write':
+					case 'write': {
 						if (typeof edit.content !== 'string') {
 							throw new Error('repo session write edits require content.')
+						}
+						const byteLength = measureRepoSourceFileBytes(edit.content)
+						if (byteLength > maxRepoSourceFileBytes) {
+							throw new Error(
+								buildRepoLargeFileMessage({ path: edit.path, byteLength }),
+							)
 						}
 						return {
 							kind: 'write' as const,
 							path,
 							content: edit.content,
 						}
+					}
 					case 'replace':
 						if (typeof edit.search !== 'string') {
 							throw new Error('repo session replace edits require search.')

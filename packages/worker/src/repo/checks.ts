@@ -43,6 +43,10 @@ import {
 	isolatedBundleChunkSize,
 	type IsolatedCheckPhaseRunner,
 } from './isolated-check-phases.ts'
+import {
+	buildRepoLargeFileMessage,
+	maxRepoSourceFileBytes,
+} from './large-file-policy.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 export type RepoCheckKind =
@@ -1162,7 +1166,17 @@ export async function runRepoChecks(input: {
 					message: `Repo checks aborted: source root "${sourceRoot || '/'}" contains more than the ${repoChecksSourceMaxFiles}-file publish check limit. Remove files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
 				}
 			}
-			totalBytes += encoder.encode(content).byteLength
+			const fileBytes = encoder.encode(content).byteLength
+			if (fileBytes > maxRepoSourceFileBytes) {
+				return {
+					ok: false as const,
+					message: `Repo checks aborted: ${buildRepoLargeFileMessage({
+						path,
+						byteLength: fileBytes,
+					})}`,
+				}
+			}
+			totalBytes += fileBytes
 			if (totalBytes > repoChecksSourceMaxTotalBytes) {
 				return {
 					ok: false as const,
