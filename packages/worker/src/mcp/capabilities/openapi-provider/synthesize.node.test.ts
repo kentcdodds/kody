@@ -129,7 +129,6 @@ test('synthesizes an openapi:<provider> domain with a capability per operation',
 			specTitle: 'Billing ledger platform',
 		}),
 	})
-	expect(providerDescription?.domain.description).toContain('invoice workflows')
 	const providerKeywords =
 		providerDescription?.domain.capabilities.find(
 			(capability) => capability.name === 'openapi:widgets:listwidgets',

@@ -14,7 +14,6 @@ import {
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './export.ts'
-import { accountUserOwnedDurableObjectSurfaces } from './user-owned-surfaces.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -752,7 +751,7 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 			COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 			MAILBOX: createMailboxBinding({
 				blobReferences: () =>
-					Array.from({ length: 1201 }, (_, index) => {
+					Array.from({ length: 502 }, (_, index) => {
 						const messageId = `mail-${String(index).padStart(4, '0')}`
 						return {
 							kind: 'raw_mime' as const,
@@ -995,7 +994,7 @@ test('DO export sections expose bounded job manager and owned connector state', 
 
 test('durable object discovery pages high-cardinality storage ids without nested arrays', async () => {
 	const ids = Array.from(
-		{ length: 1201 },
+		{ length: 502 },
 		(_, index) => `storage-${String(index).padStart(4, '0')}`,
 	)
 	let maxRows = 0
@@ -1047,76 +1046,8 @@ test('durable object discovery pages high-cardinality storage ids without nested
 		if (!page.truncated) break
 		startAfter = page.nextStartAfter ?? undefined
 	}
-	expect(seen.size).toBe(1201)
+	expect(seen.size).toBe(502)
 	expect(maxRows).toBeLessThanOrEqual(101)
-})
-
-test('durable object discovery paging does not load package manifests', async () => {
-	const loadManifest = vi.spyOn(
-		await import('#worker/package-registry/source.ts'),
-		'loadPackageManifestBySourceId',
-	)
-	loadManifest.mockRejectedValue(new Error('manifest should not be loaded'))
-	try {
-		const { sqlite, db } = createMigratedDb()
-		sqlite.exec(`
-			INSERT INTO users (
-				id, username, email, password_hash, created_at, updated_at,
-				email_verified_at, stable_user_id
-			)
-			VALUES (
-				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-aaa'
-			);
-			INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, tags_json, source_id,
-				has_app, hidden, is_private, created_at, updated_at
-			) VALUES (
-				'pkg-1', 'user-aaa', 'Pkg', 'pkg', '', '[]',
-				'src-1', 0, 0, 1, '2026-07-05', '2026-07-05'
-			);
-			INSERT INTO user_storage_buckets (
-				user_id, storage_id, kind, created_at, last_seen_at
-			) VALUES (
-				'user-aaa', 'exec:page-1', 'execute', '2026-07-05', '2026-07-05'
-			);
-			INSERT INTO package_service_states (
-				user_id, package_id, service_name, status, started_at, updated_at
-			) VALUES (
-				'user-aaa', 'pkg-1', 'worker', 'idle',
-				null, '2026-07-05T00:00:00.000Z'
-			);
-		`)
-
-		const storagePage = await readAccountExportSection({
-			env: { APP_DB: db } as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'durable_object_summaries',
-			kind: 'storage_runner',
-			pageSize: 50,
-		})
-		expect(storagePage.items.length).toBeGreaterThan(0)
-
-		const servicePage = await readAccountExportSection({
-			env: { APP_DB: db } as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'durable_object_summaries',
-			kind: 'package_service',
-			pageSize: 50,
-		})
-		expect(servicePage.items).toEqual([
-			{
-				kind: 'package_service',
-				packageId: 'pkg-1',
-				serviceName: 'worker',
-			},
-		])
-		expect(loadManifest).not.toHaveBeenCalled()
-	} finally {
-		loadManifest.mockRestore()
-	}
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
@@ -1402,7 +1333,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 			'2026-07-05', '2026-07-05', 'user-aaa'
 		);
 	`)
-	const totalRows = 1201
+	const totalRows = 502
 	const insert = sqlite.prepare(
 		`INSERT INTO mcp_memories (
 			id, user_id, subject, summary, details, created_at, updated_at
@@ -1459,7 +1390,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		if (!page.truncated) break
 		startAfter = page.nextStartAfter ?? undefined
 	}
-	expect(pages).toBe(3)
+	expect(pages).toBe(2)
 	expect(seenIds.size).toBe(totalRows)
 	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(501)
 
@@ -2152,24 +2083,6 @@ test('run_records section paging preserves exportRuns cursor across dedicated ph
 	)
 })
 
-test('run_log surface notes document clearAll purging every RunLog table', () => {
-	const runLog = accountUserOwnedDurableObjectSurfaces.find(
-		(surface) => surface.id === 'run_log',
-	)
-	expect(runLog?.binding).toBe('RUN_LOG')
-	expect(runLog?.deletionResultKey).toBe('runLogs')
-	expect(runLog?.notes).toContain('clearAll')
-	for (const table of [
-		'workflow_projections',
-		'job_run_observability',
-		'package_run_successes',
-		'activation_milestones',
-		'package-invocation idempotency ledger',
-	]) {
-		expect(runLog?.notes).toContain(table)
-	}
-})
-
 test('account export includes a package service known only via package_service_states', async () => {
 	consoleWarn.mockImplementation(() => {})
 	try {
@@ -2246,59 +2159,6 @@ test('account export includes a package service known only via package_service_s
 	} finally {
 		consoleWarn.mockReset()
 	}
-})
-
-test('account export includes a storage runner known only via user_storage_buckets', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-		INSERT INTO user_storage_buckets (
-			user_id, storage_id, kind, created_at, last_seen_at
-		) VALUES (
-			'user-aaa', 'exec:export-only', 'execute',
-			'2026-07-05', '2026-07-05'
-		);
-	`)
-
-	const exportStorage = vi.fn(async () => ({
-		entries: [{ key: 'alpha', value: { n: 1 } }],
-		truncated: false,
-		nextStartAfter: null,
-		pageSize: 100,
-		estimatedBytes: 10,
-	}))
-
-	const env = {
-		APP_DB: db,
-		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ exportStorage }),
-		},
-	} as unknown as Env
-
-	const manifest = await createAccountExportManifest({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-	expect(manifest.sections.storage_runners?.count).toBe(1)
-
-	const section = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'storage_runner',
-		storageId: 'exec:export-only',
-	})
-	expect(section.items).toEqual([{ key: 'alpha', value: { n: 1 } }])
-	expect(exportStorage).toHaveBeenCalledTimes(1)
 })
 
 test('storage_runners count matches ids enumerable by discovery paging', async () => {

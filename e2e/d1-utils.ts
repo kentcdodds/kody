@@ -2,7 +2,6 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { hashVerificationToken } from '../packages/worker/src/app/email-verification.ts'
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 import { buildRoleAssignmentSql, buildSeedUserSql } from '../tools/seed-sql.ts'
 import { seedCommunitySnapshotInE2eKv } from './kv-utils.ts'
@@ -77,34 +76,6 @@ export async function seedUserInE2eDatabase(input: {
 	)
 }
 
-export async function seedSavedPackageInE2eDatabase(input: {
-	ownerEmail: string
-	packageId: string
-	kodyId: string
-	name: string
-}) {
-	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
-	const sourceId = `source-${input.packageId}`
-	executeE2eD1Command(
-		`INSERT INTO saved_packages (
-			id, user_id, name, kody_id, description, tags_json, source_id, has_app
-		) VALUES (
-			${quoteSqlString(input.packageId)},
-			${quoteSqlString(ownerUserId)},
-			${quoteSqlString(input.name)},
-			${quoteSqlString(input.kodyId)},
-			'Package seeded for account picker e2e coverage.',
-			'[]',
-			${quoteSqlString(sourceId)},
-			0
-		)
-		ON CONFLICT(id) DO UPDATE SET
-			name = excluded.name,
-			kody_id = excluded.kody_id,
-			updated_at = CURRENT_TIMESTAMP;`,
-	)
-}
-
 export function assignRoleInE2eDatabase(email: string, role: string) {
 	executeE2eD1Command(buildRoleAssignmentSql({ email, role }))
 }
@@ -118,23 +89,6 @@ export function clearAuthRateLimitsInE2eDatabase() {
 		);
 		DELETE FROM _rate_limits WHERE key LIKE 'auth:ip:%';`,
 	)
-}
-
-export async function setEmailVerificationTokenInE2eDatabase(input: {
-	email: string
-	token: string
-	expiresAt?: number
-}) {
-	const tokenHash = await hashVerificationToken(input.token)
-	const expiresAt = input.expiresAt ?? Date.now() + 60 * 60 * 1000
-	const sql = `
-DELETE FROM email_verifications
-WHERE user_id IN (SELECT id FROM users WHERE email = ${quoteSqlString(input.email)});
-INSERT INTO email_verifications (user_id, token_hash, expires_at)
-SELECT id, ${quoteSqlString(tokenHash)}, ${expiresAt}
-FROM users
-WHERE email = ${quoteSqlString(input.email)};`.trim()
-	executeE2eD1Command(sql)
 }
 
 export async function seedCommunityListingInE2eDatabase(input: {
@@ -252,42 +206,3 @@ function buildE2eCommunityPackageFiles(input: {
 	}
 }
 
-export function updateCommunityListingDescriptionInE2eDatabase(input: {
-	listingId: string
-	description: string
-}) {
-	const sql = `
-UPDATE community_listings
-SET description = ${quoteSqlString(input.description)},
-    updated_at = CURRENT_TIMESTAMP
-WHERE id = ${quoteSqlString(input.listingId)};`.trim()
-	executeE2eD1Command(sql)
-}
-
-export async function seedCommunityForkInE2eDatabase(input: {
-	listingId: string
-	forkerEmail: string
-	forkId?: string
-}) {
-	const forkerUserId = await createStableUserIdFromEmail(input.forkerEmail)
-	const forkId = input.forkId ?? `fork-${input.listingId}`
-	const sql = `
-INSERT INTO community_forks (
-	id,
-	listing_id,
-	forker_user_id,
-	origin_commit,
-	forked_package_id,
-	forked_source_id,
-	target_kody_id
-) VALUES (
-	${quoteSqlString(forkId)},
-	${quoteSqlString(input.listingId)},
-	${quoteSqlString(forkerUserId)},
-	${quoteSqlString(e2eCommunityPinnedCommit)},
-	${quoteSqlString(`pkg-fork-${forkId}`)},
-	${quoteSqlString(`src-fork-${forkId}`)},
-	${quoteSqlString(input.listingId)}
-);`.trim()
-	executeE2eD1Command(sql)
-}

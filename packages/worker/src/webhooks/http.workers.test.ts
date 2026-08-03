@@ -444,21 +444,31 @@ test('webhook delivery records real startedAt duration and explicit delivered ou
 	})
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 
+	vi.useFakeTimers({ shouldAdvanceTime: true })
+	let releaseHandler!: () => void
+	const handlerGate = new Promise<void>((resolve) => {
+		releaseHandler = resolve
+	})
 	mocks.invokePackageExport.mockReset()
 	mocks.invokePackageExport.mockImplementation(async () => {
-		await new Promise((resolve) => setTimeout(resolve, 25))
+		await handlerGate
 		return {
 			status: 200,
 			body: { ok: true, result: { handled: true } },
 		}
 	})
 
-	const response = await postWebhook({
+	const responsePromise = postWebhook({
 		packageKodyId: 'sentry-bridge',
 		webhookName: 'sync-hook',
 		urlSecret,
 		body: JSON.stringify({ sync: true }),
 	})
+	await vi.waitFor(() => mocks.invokePackageExport.mock.calls.length === 1)
+	await vi.advanceTimersByTimeAsync(25)
+	releaseHandler()
+	const response = await responsePromise
+	vi.useRealTimers()
 	expect(response.status).toBe(200)
 
 	const invokeArgs = mocks.invokePackageExport.mock.calls[0]?.[0] as {

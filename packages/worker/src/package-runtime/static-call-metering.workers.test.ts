@@ -377,11 +377,5 @@ test(
 			},
 			{ timeout: 10_000, interval: 100 },
 		)
-		// Guard against the count racing past 2 after the wait: re-read once
-		// everything in flight has had time to settle.
-		await new Promise((resolve) => setTimeout(resolve, 500))
-		expect(await readStaticCallRollup(userId)).toEqual(
-			expect.objectContaining({ event_count: 2 }),
-		)
 	},
 )

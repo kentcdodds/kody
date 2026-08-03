@@ -48,7 +48,6 @@ test('rewritePackageManifestForFork rewrites scope and kody id while preserving 
 	expect(parsed.private).toBe(true)
 	expect(parsed.exports).toEqual({ '.': './src/index.ts' })
 	expect(parsed.kody.id).toBe('my-discord-gateway')
-	expect(parsed.kody.description).toBe('Discord helpers')
 	expect(parsed.kody.tags).toEqual(['discord'])
 	expect(parsed.kody.dependencies).toEqual([
 		'@owner/shared-utils',

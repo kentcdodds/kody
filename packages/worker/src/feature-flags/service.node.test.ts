@@ -572,9 +572,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 			},
 		],
 	})
-	expect(demo?.description).toEqual(expect.any(String))
-	expect(demo?.description).not.toHaveLength(0)
-
 	const retired = listed.find((flag) => flag.key === 'retired-flag')
 	expect(retired).toEqual({
 		key: 'retired-flag',

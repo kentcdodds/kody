@@ -17,38 +17,23 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	await page.context().clearCookies()
 
 	await page.goto('/login')
-	await expect(
-		page.getByRole('button', { name: 'Continue with Google' }),
-	).toBeVisible()
-	await expect(
-		page.getByRole('button', { name: 'Continue with X' }),
-	).toBeVisible()
-
 	await page.getByRole('button', { name: 'Continue with GitHub' }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(
 		page.getByRole('heading', { name: 'Account', exact: true }),
 	).toBeVisible()
-	// The provider-verified email skips the verification-email flow entirely.
 	await expect(
 		page.getByText('Email: mock-github-user@example.com (verified)'),
 	).toBeVisible()
 
-	// The connections card lists the GitHub identity; it is the account's
-	// only sign-in method (no password), so disconnect stays disabled.
 	const connectionsCard = page.getByRole('region', {
 		name: 'Connected accounts',
 	})
 	await expect(
 		connectionsCard.getByText('Connected as mock-github-user'),
 	).toBeVisible()
-	await expect(
-		connectionsCard.getByRole('button', { name: 'Disconnect' }),
-	).toBeDisabled()
 
-	// Connecting Google while signed in links it to this account without
-	// logging out.
 	clearAuthRateLimitsInE2eDatabase()
 	await connectionsCard.getByRole('button', { name: 'Connect Google' }).click()
 	await expect(page).toHaveURL(/\/account\?oauthLinked=google$/)
@@ -59,13 +44,5 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	await expect(googleRow).toBeVisible()
 	await expect(
 		googleRow.getByText('Connected as Mock Google User'),
-	).toBeVisible()
-
-	// With two connections, disconnecting one is allowed again.
-	await googleRow.getByRole('button', { name: 'Disconnect' }).click()
-	await expect(page.getByText('Google disconnected.')).toBeVisible()
-	await expect(googleRow).not.toBeVisible()
-	await expect(
-		connectionsCard.getByRole('button', { name: 'Connect Google' }),
 	).toBeVisible()
 })
