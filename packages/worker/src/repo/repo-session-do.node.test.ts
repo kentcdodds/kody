@@ -306,8 +306,38 @@ vi.mock('@cloudflare/shell', () => ({
 		constructor(_workspace: unknown) {}
 	},
 	createWorkspaceStateBackend: vi.fn(() => ({
-		planEdits: vi.fn(),
-		applyEditPlan: vi.fn(),
+		// Mirror the real backend closely enough for the applyEdits size gate:
+		// planned edits carry the resulting content per instruction.
+		planEdits: vi.fn(
+			async (
+				instructions: Array<{ kind: string; path: string; content?: string }>,
+			) => ({
+				edits: instructions.map((instruction) => ({
+					instruction,
+					path: instruction.path,
+					changed: true,
+					content: instruction.content ?? '',
+					diff: '',
+				})),
+				totalChanged: instructions.length,
+				totalInstructions: instructions.length,
+			}),
+		),
+		applyEditPlan: vi.fn(
+			async (plan: {
+				edits: Array<{ path: string; content: string; diff: string }>
+				totalChanged: number
+			}) => ({
+				dryRun: false,
+				totalChanged: plan.totalChanged,
+				edits: plan.edits.map((edit) => ({
+					path: edit.path,
+					changed: true,
+					content: edit.content,
+					diff: edit.diff,
+				})),
+			}),
+		),
 		walkTree: vi.fn(),
 	})),
 }))

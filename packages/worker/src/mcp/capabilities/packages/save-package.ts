@@ -176,10 +176,6 @@ export const savePackageCapability = defineDomainCapability(
 					'Saved packages require a root package.json file.',
 				)
 			}
-			const oversizedFile = findOversizedRepoSourceFile(Object.entries(files))
-			if (oversizedFile) {
-				throw new McpCallerError(buildRepoLargeFileMessage(oversizedFile))
-			}
 			const expectedPackageScope = owner.ownerScope
 			const existing =
 				args.package_id !== undefined
@@ -203,6 +199,12 @@ export const savePackageCapability = defineDomainCapability(
 				})
 				packageJsonContent = injectDefaultPrivateField(packageJsonContent)
 				files = { ...files, 'package.json': packageJsonContent }
+			}
+			// Gate on the final file set (after injectDefaultPrivateField) so the
+			// exact bytes handed to syncArtifactSourceSnapshot are what was checked.
+			const oversizedFile = findOversizedRepoSourceFile(Object.entries(files))
+			if (oversizedFile) {
+				throw new McpCallerError(buildRepoLargeFileMessage(oversizedFile))
 			}
 			const manifest = parseSavedPackageManifest({
 				content: packageJsonContent,

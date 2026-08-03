@@ -751,22 +751,15 @@ class RepoSessionBase extends DurableObject<Env> {
 					repoSessionWorkspacePrefix,
 				)
 				switch (edit.kind) {
-					case 'write': {
+					case 'write':
 						if (typeof edit.content !== 'string') {
 							throw new Error('repo session write edits require content.')
-						}
-						const byteLength = measureRepoSourceFileBytes(edit.content)
-						if (byteLength > maxRepoSourceFileBytes) {
-							throw new Error(
-								buildRepoLargeFileMessage({ path: edit.path, byteLength }),
-							)
 						}
 						return {
 							kind: 'write' as const,
 							path,
 							content: edit.content,
 						}
-					}
 					case 'replace':
 						if (typeof edit.search !== 'string') {
 							throw new Error('repo session replace edits require search.')
@@ -791,6 +784,22 @@ class RepoSessionBase extends DurableObject<Env> {
 				}
 			}),
 		)
+		// Gate on planned results rather than raw instructions so replace and
+		// writeJson edits cannot grow a file past the per-file limit either.
+		for (const plannedEdit of plan.edits) {
+			const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
+			if (byteLength > maxRepoSourceFileBytes) {
+				throw new Error(
+					buildRepoLargeFileMessage({
+						path: toExternalRepoPath(
+							plannedEdit.path,
+							repoSessionWorkspacePrefix,
+						),
+						byteLength,
+					}),
+				)
+			}
+		}
 		const result = await this.state.applyEditPlan(plan, {
 			dryRun: input.dryRun,
 			rollbackOnError: input.rollbackOnError,
@@ -1299,6 +1308,12 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		const byteLength = measureRepoSourceFileBytes(input.content)
+		if (byteLength > maxRepoSourceFileBytes) {
+			throw new Error(
+				buildRepoLargeFileMessage({ path: input.path, byteLength }),
+			)
+		}
 		await this.workspace.writeFile(
 			resolveRepoWorkspacePath(input.path, repoSessionWorkspacePrefix),
 			input.content,
@@ -1390,6 +1405,15 @@ class RepoSessionBase extends DurableObject<Env> {
 			if (nextContent === false) {
 				throw new Error(
 					`git apply patch did not apply cleanly to ${targetPath}.`,
+				)
+			}
+			const patchedByteLength = measureRepoSourceFileBytes(nextContent)
+			if (patchedByteLength > maxRepoSourceFileBytes) {
+				throw new Error(
+					buildRepoLargeFileMessage({
+						path: targetPath,
+						byteLength: patchedByteLength,
+					}),
 				)
 			}
 			if (!input.dryRun) {
