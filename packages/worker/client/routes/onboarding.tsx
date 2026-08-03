@@ -71,14 +71,6 @@ function readStepFromHref(href: string): OnboardingStep | null {
 	)
 }
 
-function readCurrentStep(handle: Handle): OnboardingStep | null {
-	const href =
-		typeof window === 'undefined'
-			? readCurrentRouterHref(handle)
-			: window.location.href
-	return readStepFromHref(href)
-}
-
 function readOnboardingRedirectTo(handle: Handle) {
 	return normalizeRedirectTo(
 		new URLSearchParams(readRouterSearch(handle)).get('redirectTo'),
@@ -118,6 +110,7 @@ export function OnboardingRoute(handle: Handle) {
 	let featuredListings: Array<OnboardingFeaturedListing> = []
 	let activeStep: OnboardingStep = 1
 	let initializedStep = false
+	let appliedInitialHash = false
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: OnboardingPayload) {
@@ -131,7 +124,7 @@ export function OnboardingRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = readCurrentStep(handle) ?? (payload.hasMcpClient ? 3 : 1)
+			activeStep = payload.hasMcpClient ? 3 : 1
 			initializedStep = true
 		} else if (!wasConnected && payload.hasMcpClient) {
 			activeStep = 3
@@ -269,6 +262,19 @@ export function OnboardingRoute(handle: Handle) {
 		})
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadOnboarding)
+		}
+		if (
+			status === 'ready' &&
+			typeof document !== 'undefined' &&
+			!appliedInitialHash
+		) {
+			appliedInitialHash = true
+			handle.queueTask(() => {
+				const step = readStepFromHref(window.location.href)
+				if (!step || step === activeStep) return
+				activeStep = step
+				handle.update()
+			})
 		}
 
 		return (
