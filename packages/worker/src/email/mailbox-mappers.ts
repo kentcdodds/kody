@@ -58,10 +58,6 @@ function parseOptionalJsonRecord(value: string | null) {
 	}
 }
 
-export function escapeLikePattern(value: string) {
-	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
-}
-
 function requirePersistedEnum<T extends string>(
 	values: ReadonlyArray<T>,
 	value: unknown,

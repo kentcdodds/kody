@@ -107,6 +107,33 @@ test('Mailbox search treats LIKE wildcards in the query literally', async () => 
 	).toEqual([literalUnderscore])
 }, 30_000)
 
+test('Mailbox search accepts queries longer than DO SQLite LIKE 50-byte limit', async () => {
+	const userId = uniqueUserId('search-long')
+	// DO SQLite caps LIKE/GLOB patterns at 50 bytes; `%…%` wrapping used to
+	// 500 any needle longer than ~48 chars (KODY-CLOUDFLARE-3J).
+	const longNeedle =
+		'quarterly-invoice-reconciliation-status-update-2026-08'
+	expect(longNeedle.length).toBeGreaterThan(48)
+	const matchId = await insertMessage({
+		userId,
+		sequence: 1,
+		subject: `Please review ${longNeedle} before Friday`,
+		fromAddress: 'billing@acme.example',
+	})
+	await insertMessage({
+		userId,
+		sequence: 2,
+		subject: 'Unrelated short note',
+		fromAddress: 'friend@example.net',
+	})
+
+	const results = await rpcFor(userId).searchMessages({
+		query: longNeedle,
+		limit: 25,
+	})
+	expect(results.messages.map((message) => message.id)).toEqual([matchId])
+}, 30_000)
+
 test('Mailbox search applies filters and result limits', async () => {
 	const userId = uniqueUserId('search-filters')
 	const inboxId = `inbox-${crypto.randomUUID()}`

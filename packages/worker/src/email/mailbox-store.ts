@@ -37,7 +37,6 @@ import {
 import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
 	boundedEmailBody,
-	escapeLikePattern,
 	mapMailboxAttachmentRow,
 	mapMailboxMessageRow,
 	mapMailboxThreadRow,
@@ -76,13 +75,15 @@ function buildMailboxMessageFilterClauses(input: {
 	const clauses: Array<string> = ['1 = 1']
 	const params: Array<SqlStorageValue> = []
 	if (typeof input.query === 'string') {
-		const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
+		// Substring match via INSTR — DO SQLite rejects LIKE/GLOB patterns over
+		// 50 bytes (Cloudflare limit), and MCP allows queries up to 256 chars.
+		const needle = input.query.trim().toLowerCase()
 		clauses.push(`(
-			LOWER(subject) LIKE ? ESCAPE '\\'
-			OR LOWER(from_address) LIKE ? ESCAPE '\\'
-			OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
+			INSTR(LOWER(subject), ?) > 0
+			OR INSTR(LOWER(from_address), ?) > 0
+			OR INSTR(LOWER(COALESCE(envelope_from, '')), ?) > 0
 		)`)
-		params.push(pattern, pattern, pattern)
+		params.push(needle, needle, needle)
 	}
 	if (input.inboxId) {
 		clauses.push('inbox_id = ?')
