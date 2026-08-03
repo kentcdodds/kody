@@ -222,7 +222,7 @@ async function* workspaceFilesForSnapshot(input: {
 	workspace: {
 		glob(pattern: string): Promise<Array<{ path: string; type: string }>>
 		readFile(path: string): Promise<string | null>
-		stat?(path: string): Promise<{ size: number }>
+		stat?(path: string): Promise<{ size: number } | null>
 	}
 	root: string
 }) {
@@ -246,9 +246,10 @@ async function* workspaceFilesForSnapshot(input: {
 		// Prefer the filesystem's byte size: readFile UTF-8-decodes binary
 		// blobs lossily, so re-encoding the string can overstate a binary
 		// file's size by up to 3x.
-		const byteLength = input.workspace.stat
-			? (await input.workspace.stat(file.path)).size
-			: encoder.encode(content).byteLength
+		const stats = input.workspace.stat
+			? await input.workspace.stat(file.path)
+			: null
+		const byteLength = stats?.size ?? encoder.encode(content).byteLength
 		yield [relativePath, content, byteLength] as const
 	}
 }
@@ -1101,7 +1102,7 @@ export async function runRepoChecks(input: {
 		 * workspace), per-file size checks use it so binary files are measured
 		 * exactly instead of via lossy UTF-8 round-tripping.
 		 */
-		stat?(path: string): Promise<{ size: number }>
+		stat?(path: string): Promise<{ size: number } | null>
 	}
 	manifestPath: string
 	sourceRoot: string
