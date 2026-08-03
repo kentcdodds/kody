@@ -150,3 +150,66 @@ test('authenticated pre-drop action creates only server-generated workflow param
 	)
 	assert.doesNotMatch(JSON.stringify(created), /caller-value/u)
 })
+
+test('authenticated pre-drop action stays disabled when either backup gate is false', async () => {
+	resetAccessJwksCacheForTests()
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const { kid, jwks, sign } = rsaJwksAndSigner()
+	const baseEnv = environment()
+	const now = Math.floor(Date.now() / 1000)
+	const jwt = sign(
+		{ alg: 'RS256', kid },
+		{
+			iss: `https://${baseEnv.ACCESS_TEAM_DOMAIN}`,
+			aud: baseEnv.ACCESS_APP_AUD,
+			email: baseEnv.ACCESS_ALLOWED_EMAIL,
+			iat: now - 5,
+			exp: now + 3600,
+		},
+	)
+
+	for (const disabledGate of [
+		'ENABLE_PRODUCTION_D1_BACKUPS',
+		'BACKUP_BENCHMARK_APPROVED',
+	] as const) {
+		const env = environment()
+		env[disabledGate] = 'false'
+		const create = vi.fn(async () => undefined)
+		env.MAILBOX_PRE_DROP_BACKUP_WORKFLOW = {
+			create,
+		} as unknown as Workflow
+
+		const response = await handleControlPlaneFetch(
+			new Request('https://backup.example/actions/mailbox-pre-drop-backup', {
+				method: 'POST',
+				headers: {
+					'cf-access-jwt-assertion': jwt,
+					'sec-fetch-site': 'same-origin',
+				},
+				body: '',
+			}),
+			env,
+			async () => Response.json(jwks),
+		)
+
+		assert.equal(response.status, 400, disabledGate)
+		const html = await response.text()
+		assert.match(html, /Action failed/u, disabledGate)
+		assert.match(html, /backup-disabled/u, disabledGate)
+		assert.equal(create.mock.calls.length, 0, disabledGate)
+		const log = JSON.parse(
+			String(consoleError.mock.calls.at(-1)?.[0]),
+		) as Record<string, unknown>
+		assert.deepEqual(
+			log,
+			{
+				event: 'ui-action-failure',
+				status: 'failure',
+				errorCode: 'backup-disabled',
+			},
+			disabledGate,
+		)
+	}
+	assert.equal(consoleError.mock.calls.length, 2)
+})

@@ -162,6 +162,12 @@ async function handleAuthenticated(
 
 	switch (path) {
 		case '/actions/mailbox-pre-drop-backup': {
+			if (!isBackupEnabled(env)) {
+				throw new BackupError(
+					'backup-disabled',
+					'backups are disabled by enable gate',
+				)
+			}
 			const backupRequest = {
 				requestId: crypto.randomUUID(),
 				nonce: randomNonce(),
