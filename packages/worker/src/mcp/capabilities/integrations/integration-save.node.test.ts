@@ -165,7 +165,11 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 			},
 			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
-	).rejects.toThrow(McpCallerError)
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			/missing or invalid required fields/i.test(error.message),
+	)
 
 	await expect(
 		integrationSaveCapability.handler(
