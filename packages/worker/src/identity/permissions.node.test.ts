@@ -37,8 +37,9 @@ test('permission registry and migration seed rows stay aligned', () => {
 		access: PermissionAccess
 	}
 	const seededPermissions = (
-		db.prepare(`SELECT action, entity, access FROM permissions`).all() as
-			Array<PermissionRow>
+		db
+			.prepare(`SELECT action, entity, access FROM permissions`)
+			.all() as Array<PermissionRow>
 	).map((row) => buildPermissionString(row))
 	expect(seededPermissions.sort()).toEqual(
 		listRegistryPermissionStrings().sort(),
