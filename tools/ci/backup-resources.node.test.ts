@@ -71,7 +71,9 @@ test('optional deploy reconciliation skips safely without the admin secret', asy
 	})
 	expect(apply).not.toHaveBeenCalled()
 	expect(outputs.join('\n')).toContain('reconciliation skipped')
-	expect(outputs.join('\n')).toContain('Existing bucket policies remain unchanged')
+	expect(outputs.join('\n')).toContain(
+		'Existing bucket policies remain unchanged',
+	)
 })
 
 test('optional deploy reconciliation applies and verifies when authorized', async () => {
