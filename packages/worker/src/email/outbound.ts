@@ -962,6 +962,7 @@ export async function sendOutboundEmail(
 		? await withAccountWriteLease({
 				db: input.env.APP_DB,
 				stableUserId: input.userId,
+				env: input.env,
 				write,
 			})
 		: await write()

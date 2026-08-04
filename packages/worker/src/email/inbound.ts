@@ -232,6 +232,7 @@ export async function handleInboundEmail(
 	return await withAccountWriteLease({
 		db: env.APP_DB,
 		stableUserId: userId,
+		env,
 		async write() {
 			await assertUserEmailGraphAuthority({
 				db: env.APP_DB,

@@ -305,6 +305,7 @@ export async function processInboundDeliveryEffects(
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		write: async () =>
 			await processUserInboundDeliveryEffectsWithLeaseHeld(input),
 	})
