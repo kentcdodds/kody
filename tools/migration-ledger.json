@@ -563,6 +563,10 @@
 		{
 			"filename": "0137-drop-legacy-runlog-d1-projections.sql",
 			"sha256": "8d8bbe00581a581c32f497a6a578759aaa47573f690a43e6e217b02704fd314f"
+		},
+		{
+			"filename": "0138-entity-sources-artifacts-push-subscription.sql",
+			"sha256": "21e8e7a4b123ecd73b571d18f4928e3c164fbdd2b8c005d65fcb7cf50a3cf963"
 		}
 	]
 }

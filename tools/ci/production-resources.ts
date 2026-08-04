@@ -554,8 +554,8 @@ async function ensureProductionResources(options: CliOptions) {
 		zoneId: zoneId ?? 'dry-run-zone',
 		dryRun: options.dryRun,
 	})
-	const artifactsEventSubscription = await ensureArtifactsAccountEventSubscription(
-		{
+	const artifactsEventSubscription =
+		await ensureArtifactsAccountEventSubscription({
 			accountId: accountId ?? 'dry-run-account',
 			apiToken: apiToken ?? 'dry-run-token',
 			name: truncateWithSuffix(
@@ -565,8 +565,7 @@ async function ensureProductionResources(options: CliOptions) {
 			),
 			queueId: artifactsRepoEventsQueue.id,
 			dryRun: options.dryRun,
-		},
-	)
+		})
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,

@@ -5,10 +5,7 @@ import {
 import { getArtifactsNamespace, hasArtifactsAccess } from './artifacts.ts'
 import { artifactsRepoEventsQueueName } from './artifacts-event-queue-names.ts'
 import { isSessionArtifactRepoName } from './artifacts-events.ts'
-import {
-	getEntitySourceById,
-	updateEntitySource,
-} from './entity-sources.ts'
+import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 
 type CloudflareQueueListItem = {
 	queue_id?: string
@@ -30,8 +27,11 @@ type CloudflareEventSubscription = {
 const pushEventTypes = ['pushed'] as const
 const subscriptionNameMaxLen = 63
 
-let cachedQueueId: { accountId: string; queueName: string; queueId: string } | null =
-	null
+let cachedQueueId: {
+	accountId: string
+	queueName: string
+	queueId: string
+} | null = null
 
 function buildPushSubscriptionName(input: {
 	namespace: string
@@ -54,7 +54,9 @@ function readCloudflareResult<T>(body: unknown): T | null {
 	return (record['result'] as T | undefined) ?? null
 }
 
-async function resolveArtifactsRepoEventsQueueId(env: Env): Promise<string | null> {
+async function resolveArtifactsRepoEventsQueueId(
+	env: Env,
+): Promise<string | null> {
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) return null
@@ -102,7 +104,10 @@ async function resolveArtifactsRepoEventsQueueId(env: Env): Promise<string | nul
 				: null
 		totalPages =
 			info && typeof info === 'object' && !Array.isArray(info)
-				? Math.max(1, Number((info as Record<string, unknown>)['total_pages'] ?? 1))
+				? Math.max(
+						1,
+						Number((info as Record<string, unknown>)['total_pages'] ?? 1),
+					)
 				: 1
 		page += 1
 	} while (page <= totalPages)
@@ -138,14 +143,20 @@ async function listEventSubscriptions(env: Env, accountId: string) {
 				: null
 		totalPages =
 			info && typeof info === 'object' && !Array.isArray(info)
-				? Math.max(1, Number((info as Record<string, unknown>)['total_pages'] ?? 1))
+				? Math.max(
+						1,
+						Number((info as Record<string, unknown>)['total_pages'] ?? 1),
+					)
 				: 1
 		page += 1
 	} while (page <= totalPages)
 	return subscriptions
 }
 
-function sameStringSet(left: ReadonlyArray<string>, right: ReadonlyArray<string>) {
+function sameStringSet(
+	left: ReadonlyArray<string>,
+	right: ReadonlyArray<string>,
+) {
 	return (
 		left.length === right.length &&
 		new Set(left).size === new Set(right).size &&
@@ -175,7 +186,10 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 	const accountId = input.env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	if (!accountId) return { subscriptionId: null, skipped: true }
 
-	const existingSource = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const existingSource = await getEntitySourceById(
+		input.env.APP_DB,
+		input.sourceId,
+	)
 	if (
 		existingSource?.artifacts_push_event_subscription_id &&
 		existingSource.user_id === input.userId
@@ -198,7 +212,9 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 	const namespace = getArtifactsNamespace(input.env)
 	const name = buildPushSubscriptionName({ namespace, repoName })
 	const subscriptions = await listEventSubscriptions(input.env, accountId)
-	const existing = subscriptions.find((subscription) => subscription.name === name)
+	const existing = subscriptions.find(
+		(subscription) => subscription.name === name,
+	)
 	const events = [...pushEventTypes]
 	const sourceIsCurrent =
 		existing?.source['type'] === 'artifacts.repo' &&
@@ -233,7 +249,9 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 				{ status: response.status },
 			)
 		}
-		const result = readCloudflareResult<CloudflareEventSubscription>(response.body)
+		const result = readCloudflareResult<CloudflareEventSubscription>(
+			response.body,
+		)
 		subscriptionId = result?.id ?? existing.id
 	} else {
 		if (existing) {
@@ -263,7 +281,9 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 				{ status: response.status },
 			)
 		}
-		const result = readCloudflareResult<CloudflareEventSubscription>(response.body)
+		const result = readCloudflareResult<CloudflareEventSubscription>(
+			response.body,
+		)
 		if (!result?.id) {
 			throw new Error(
 				`Cloudflare created Artifacts push event subscription without an id: ${name}`,
@@ -298,7 +318,8 @@ export async function deleteArtifactsRepoPushSubscription(input: {
 			repoName: input.repoName.trim(),
 		})
 		const subscriptions = await listEventSubscriptions(input.env, accountId)
-		subscriptionId = subscriptions.find((entry) => entry.name === name)?.id ?? null
+		subscriptionId =
+			subscriptions.find((entry) => entry.name === name)?.id ?? null
 	}
 	if (!subscriptionId) return false
 

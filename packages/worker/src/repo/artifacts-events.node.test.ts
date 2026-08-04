@@ -104,7 +104,7 @@ test('isSessionArtifactRepoName detects session forks', () => {
 			'package-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-session-11111111-2222-3333-4444-555555555555',
 		),
 	).toBe(true)
-	expect(isSessionArtifactRepoName('repo-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')).toBe(
-		false,
-	)
+	expect(
+		isSessionArtifactRepoName('repo-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
+	).toBe(false)
 })

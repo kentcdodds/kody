@@ -305,14 +305,13 @@ export async function dispatchRepoSubscriptionEvents(input: {
 		providerEvent: input.providerEvent,
 	})
 
-	const { subscriptions, discoveryErrors } = await loadMatchingRepoSubscriptions(
-		{
+	const { subscriptions, discoveryErrors } =
+		await loadMatchingRepoSubscriptions({
 			env: input.env,
 			baseUrl,
 			userId: input.source.user_id,
 			topic,
-		},
-	)
+		})
 
 	const settled = await runWithDynamicWorkerEvaluationBudget(
 		async () =>

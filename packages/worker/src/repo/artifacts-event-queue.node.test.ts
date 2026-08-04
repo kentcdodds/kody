@@ -13,9 +13,8 @@ vi.mock('./package-subscriptions.ts', () => ({
 		mocks.processCloudflareArtifactsRepoEvent,
 }))
 
-const { handleArtifactsRepoEventsQueue } = await import(
-	'./artifacts-event-queue.ts'
-)
+const { handleArtifactsRepoEventsQueue } =
+	await import('./artifacts-event-queue.ts')
 
 function createQueueMessage(id: string, body: unknown) {
 	return {
@@ -42,44 +41,46 @@ test('artifacts repo events queue acks terminal outcomes and retries unmatched c
 	})
 	const failed = createQueueMessage('q-failed', { kind: 'failed' })
 
-	mocks.processCloudflareArtifactsRepoEvent.mockImplementation(async (input) => {
-		const kind = (input.body as { kind: string }).kind
-		switch (kind) {
-			case 'dispatched':
-				return {
-					outcome: 'dispatched',
-					providerEvent: { type: 'cf.artifacts.repo.pushed' },
-					source: {},
-				}
-			case 'ignored':
-				return {
-					outcome: 'ignored',
-					providerEvent: { type: 'cf.artifacts.repo.pushed' },
-				}
-			case 'invalid':
-				return { outcome: 'invalid', providerEvent: null }
-			case 'unmatched-push':
-				return {
-					outcome: 'unmatched',
-					providerEvent: {
-						type: 'cf.artifacts.repo.pushed',
-						source: { repoName: 'repo-1', namespace: 'production' },
-					},
-				}
-			case 'unmatched-deleted':
-				return {
-					outcome: 'unmatched',
-					providerEvent: {
-						type: 'cf.artifacts.repo.deleted',
-						source: { repoName: 'repo-1', namespace: 'production' },
-					},
-				}
-			case 'failed':
-				throw new Error('boom')
-			default:
-				throw new Error(`unexpected ${kind}`)
-		}
-	})
+	mocks.processCloudflareArtifactsRepoEvent.mockImplementation(
+		async (input) => {
+			const kind = (input.body as { kind: string }).kind
+			switch (kind) {
+				case 'dispatched':
+					return {
+						outcome: 'dispatched',
+						providerEvent: { type: 'cf.artifacts.repo.pushed' },
+						source: {},
+					}
+				case 'ignored':
+					return {
+						outcome: 'ignored',
+						providerEvent: { type: 'cf.artifacts.repo.pushed' },
+					}
+				case 'invalid':
+					return { outcome: 'invalid', providerEvent: null }
+				case 'unmatched-push':
+					return {
+						outcome: 'unmatched',
+						providerEvent: {
+							type: 'cf.artifacts.repo.pushed',
+							source: { repoName: 'repo-1', namespace: 'production' },
+						},
+					}
+				case 'unmatched-deleted':
+					return {
+						outcome: 'unmatched',
+						providerEvent: {
+							type: 'cf.artifacts.repo.deleted',
+							source: { repoName: 'repo-1', namespace: 'production' },
+						},
+					}
+				case 'failed':
+					throw new Error('boom')
+				default:
+					throw new Error(`unexpected ${kind}`)
+			}
+		},
+	)
 
 	await handleArtifactsRepoEventsQueue(
 		{

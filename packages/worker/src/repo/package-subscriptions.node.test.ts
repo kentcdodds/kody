@@ -36,17 +36,16 @@ vi.mock('./user-repos.ts', () => ({
 }))
 
 vi.mock('./artifacts-push-subscriptions.ts', () => ({
-	ensureArtifactsRepoPushSubscription: mocks.ensureArtifactsRepoPushSubscription,
+	ensureArtifactsRepoPushSubscription:
+		mocks.ensureArtifactsRepoPushSubscription,
 }))
 
 vi.mock('./artifacts.ts', () => ({
 	getArtifactsNamespace: mocks.getArtifactsNamespace,
 }))
 
-const {
-	dispatchRepoSubscriptionEvents,
-	processCloudflareArtifactsRepoEvent,
-} = await import('./package-subscriptions.ts')
+const { dispatchRepoSubscriptionEvents, processCloudflareArtifactsRepoEvent } =
+	await import('./package-subscriptions.ts')
 
 const source = {
 	id: 'source-1',
