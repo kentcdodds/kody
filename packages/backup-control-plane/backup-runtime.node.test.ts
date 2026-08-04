@@ -287,6 +287,60 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	assert.ok(stats.maxStatementBytes > 0)
 })
 
+test('oversized SQL writes stats then fails retryably without a day manifest', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-31T02:15:00Z'))
+	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
+	const sql = `INSERT INTO t VALUES ('${'x'.repeat(100_001)}');`
+
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+				payload,
+				timestamp: new Date('2026-07-31T02:15:01Z'),
+			},
+			new CachedUploadStep(() => undefined),
+			{
+				api: {
+					fetcher: async (input) =>
+						String(input).endsWith('/export')
+							? exportEnvelope('complete')
+							: identityEnvelope(1_000),
+					sleep: async () => undefined,
+				},
+				downloadFetcher: async () =>
+					new Response(sql, {
+						headers: { 'content-length': String(sql.length) },
+					}),
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'backup-unrestorable-statements' &&
+			error.retryable,
+	)
+
+	const statsObject = await bucket.get(`${objectKey}.stats.json`)
+	assert.notEqual(statsObject, null)
+	const stats = (await statsObject!.json()) as {
+		oversizedStatementCount: number
+	}
+	assert.equal(stats.oversizedStatementCount, 1)
+	assert.equal(await bucket.head(payload.manifestKey), null)
+	const events = consoleError.mock.calls.map(([record]) =>
+		JSON.parse(String(record)),
+	) as Array<{ event: string }>
+	assert.ok(
+		events.some(({ event }) => event === 'backup-unrestorable-statements'),
+	)
+	assert.ok(events.some(({ event }) => event === 'backup-failure'))
+})
+
 test('initial upload ignores a stale cached signed URL and refreshes it in the callback', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)

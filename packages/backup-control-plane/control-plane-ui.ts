@@ -15,6 +15,7 @@ import { type DrillReport } from './restore-drill.ts'
 import { type ProductionRestoreProgress } from './production-restore.ts'
 import { type RestoreConfirmToken } from './restore-confirm-token.ts'
 import { readFullManifest } from './seal-full-backup.ts'
+import { readSqlRestorability } from './sql-statement-stats.ts'
 import { type EnqueueResult } from './workflow-trigger.ts'
 
 const DASHBOARD_DAY_COUNT = 14
@@ -138,8 +139,9 @@ function statusLabel(
 	ok: boolean | null,
 	presentLabel = 'yes',
 	absentLabel = 'no',
+	unknownLabel = '—',
 ): string {
-	if (ok === null) return '—'
+	if (ok === null) return unknownLabel
 	return ok ? presentLabel : absentLabel
 }
 
@@ -147,6 +149,7 @@ export type DayStatus = {
 	day: string
 	d1Present: boolean
 	d1Verified: boolean | null
+	d1Restorable: boolean | null
 	stagingPresent: boolean
 	sealedPresent: boolean
 	sealedVerified: boolean | null
@@ -169,12 +172,50 @@ export async function collectDayStatuses(
 		).manifestKey
 		let d1Present = false
 		let d1Verified: boolean | null = null
+		let d1Restorable: boolean | null = null
 		try {
 			const manifest = await readManifest(env.BACKUP_BUCKET, d1Key)
 			d1Present = manifest !== null
 			if (manifest !== null) {
 				d1Verified = await verifyBackupManifestSignature(env, manifest)
 				if (!d1Verified) warnings.push('D1 manifest signature invalid')
+				else {
+					const restorability = await readSqlRestorability(
+						env.BACKUP_BUCKET,
+						day,
+						manifest.payload.sql.objectKey,
+					)
+					switch (restorability.kind) {
+						case 'restorable':
+							d1Restorable = true
+							break
+						case 'unrestorable':
+							d1Restorable = false
+							warnings.push(
+								'D1 SQL contains oversized statements and cannot be restored',
+							)
+							break
+						case 'legacy-unknown':
+							warnings.push(
+								'D1 restorability unknown: legacy backup has no SQL stats',
+							)
+							break
+						case 'missing':
+							warnings.push(
+								'D1 restorability unknown: required SQL stats are missing',
+							)
+							break
+						case 'corrupt':
+							warnings.push(
+								'D1 restorability unknown: SQL stats are unreadable',
+							)
+							break
+						default: {
+							const exhaustive: never = restorability
+							throw exhaustive
+						}
+					}
+				}
 			}
 		} catch {
 			d1Verified = null
@@ -205,6 +246,7 @@ export async function collectDayStatuses(
 			day,
 			d1Present,
 			d1Verified,
+			d1Restorable,
 			stagingPresent,
 			sealedPresent,
 			sealedVerified,
@@ -241,6 +283,7 @@ export async function renderDashboard(
 <td><code>${escapeHtml(day.day)}</code></td>
 <td class="${statusClass(day.d1Present)}">${escapeHtml(statusLabel(day.d1Present))}</td>
 <td class="${statusClass(day.d1Verified)}">${escapeHtml(statusLabel(day.d1Verified, 'verified', 'unverified'))}</td>
+<td class="${statusClass(day.d1Restorable)}">${escapeHtml(statusLabel(day.d1Restorable, 'yes', 'no', 'unknown'))}</td>
 <td class="${statusClass(day.stagingPresent)}">${escapeHtml(statusLabel(day.stagingPresent))}</td>
 <td class="${statusClass(day.sealedPresent)}">${escapeHtml(statusLabel(day.sealedPresent))}</td>
 <td class="${statusClass(day.sealedVerified)}">${escapeHtml(statusLabel(day.sealedVerified, 'verified', 'unverified'))}</td>
@@ -282,6 +325,7 @@ ${options.flashHtml ?? ''}
 				<th>Day</th>
 				<th>D1 manifest</th>
 				<th>D1 verified</th>
+				<th>D1 restorable</th>
 				<th>Staging</th>
 				<th>Sealed</th>
 				<th>Seal verified</th>

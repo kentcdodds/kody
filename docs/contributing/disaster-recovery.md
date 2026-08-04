@@ -370,8 +370,12 @@ config, and expect users to reauthorize OAuth and remote connectors.
 | Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days |
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
-`freshness-stale`, size-ceiling hits, missing manifests, seal failures,
-`backup-unrestorable-statements`, or unexpected disablement of the enable gates.
+`freshness-unrestorable` (the SQL contains statements D1 cannot import),
+`freshness-stale`, size-ceiling hits, missing manifests or required SQL stats,
+seal failures, `backup-unrestorable-statements`, or unexpected disablement of
+the enable gates. An unrestorable export never receives a canonical day
+manifest; catch-up retries can re-export the day after the oversized row or
+write path is bounded.
 
 ## Offline CLI fallback
 

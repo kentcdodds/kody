@@ -14,6 +14,7 @@ import { test, vi } from 'vitest'
 
 import {
 	MemoryBucket,
+	badSqlStatsFixture,
 	environment,
 	manifest,
 	signedManifest,
@@ -119,7 +120,7 @@ async function seedCompleteDay(
 		warnings: [],
 	}
 	await bucket.put(stagingSummaryKey(day), JSON.stringify(summary))
-	return { env, day }
+	return { env, day, sqlKey }
 }
 
 test('sealFullBackupDay seals a complete day and is idempotent', async () => {
@@ -191,6 +192,40 @@ test('sealFullBackupDay fails closed on staging sha mismatch', async () => {
 		sealFullBackupDay(env, day, new Date(`${day}T04:00:00.000Z`)),
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'staging-sha-mismatch',
+	)
+	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+})
+
+test('sealFullBackupDay refuses oversized SQL stats before sealing', async () => {
+	const bucket = new MemoryBucket()
+	const { env, day, sqlKey } = await seedCompleteDay(bucket, '2026-07-31')
+	await bucket.put(
+		`${sqlKey}.stats.json`,
+		JSON.stringify(badSqlStatsFixture(day, sqlKey)),
+	)
+
+	assert.deepEqual(
+		await sealFullBackupDay(env, day, new Date(`${day}T04:00:00.000Z`)),
+		{
+			kind: 'incomplete',
+			day,
+			reason: 'backup-unrestorable-statements',
+		},
+	)
+	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+})
+
+test('sealFullBackupDay fails closed when required SQL stats are missing', async () => {
+	const bucket = new MemoryBucket()
+	const { env, day } = await seedCompleteDay(bucket, '2026-07-31')
+
+	assert.deepEqual(
+		await sealFullBackupDay(env, day, new Date(`${day}T04:00:00.000Z`)),
+		{
+			kind: 'incomplete',
+			day,
+			reason: 'backup-sql-stats-missing',
+		},
 	)
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
 })

@@ -6,6 +6,11 @@ import {
 	canonicalBackupManifestPayload,
 	type BackupManifestPayload,
 } from '@kody-internal/shared/backup-manifest.ts'
+import {
+	backupSqlStatsKey,
+	backupSqlStatsSchemaVersion,
+	type BackupSqlStats,
+} from '@kody-internal/shared/backup-sql-stats.ts'
 import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { type DurableExportStep } from './durable-export.ts'
 import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
@@ -178,6 +183,36 @@ export const DATABASE_ID = '22222222-2222-4222-8222-222222222222'
 export const DRILL_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333'
 export const BASELINE_SHA256 = 'b'.repeat(64)
 const manifestSigningKeys = generateKeyPairSync('ed25519')
+
+export function badSqlStatsFixture(
+	day: string,
+	objectKey: string,
+): BackupSqlStats {
+	return {
+		schemaVersion: backupSqlStatsSchemaVersion,
+		day,
+		objectKey,
+		maxStatementBytes: 1_495_663,
+		oversizedStatementCount: 1,
+		importStatementLimitBytes: 100_000,
+	}
+}
+
+export async function putSqlStatsFixture(
+	bucket: MemoryBucket,
+	day: string,
+	objectKey: string,
+	options: { oversized?: boolean } = {},
+): Promise<void> {
+	const stats = options.oversized
+		? badSqlStatsFixture(day, objectKey)
+		: {
+				...badSqlStatsFixture(day, objectKey),
+				maxStatementBytes: 50_000,
+				oversizedStatementCount: 0,
+			}
+	await bucket.put(backupSqlStatsKey(objectKey), JSON.stringify(stats))
+}
 
 export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 	return {

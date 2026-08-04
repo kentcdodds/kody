@@ -35,6 +35,7 @@ import {
 	readManifest,
 } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
+import { readSqlRestorability } from './sql-statement-stats.ts'
 
 const sha256Pattern = /^[0-9a-f]{64}$/
 
@@ -385,6 +386,37 @@ export async function sealFullBackupDay(
 			'd1-manifest-signature-invalid',
 			`D1 manifest signature invalid for ${day}`,
 		)
+	}
+	const restorability = await readSqlRestorability(
+		env.BACKUP_BUCKET,
+		day,
+		d1Manifest.payload.sql.objectKey,
+	)
+	switch (restorability.kind) {
+		case 'restorable':
+			break
+		case 'legacy-unknown':
+			safeLog({
+				event: 'backup-stats-legacy-missing',
+				status: 'stale-success',
+				day,
+				objectKey: d1Manifest.payload.sql.objectKey,
+			})
+			break
+		case 'unrestorable':
+			return {
+				kind: 'incomplete',
+				day,
+				reason: 'backup-unrestorable-statements',
+			}
+		case 'missing':
+			return { kind: 'incomplete', day, reason: 'backup-sql-stats-missing' }
+		case 'corrupt':
+			return { kind: 'incomplete', day, reason: 'backup-sql-stats-corrupt' }
+		default: {
+			const exhaustive: never = restorability
+			throw exhaustive
+		}
 	}
 	const d1ManifestObject = await env.BACKUP_BUCKET.get(d1Payload.manifestKey)
 	if (d1ManifestObject === null) {

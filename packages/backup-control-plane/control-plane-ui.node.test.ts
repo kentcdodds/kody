@@ -1,44 +1,32 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import {
-	ACCOUNT_ID,
 	MemoryBucket,
 	badSqlStatsFixture,
 	environment,
+	identityEnvelope,
 	manifest,
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
-import { BackupError, backupPayload } from './backup-policy.ts'
+import { backupPayload, objectKeyForBookmark } from './backup-policy.ts'
+import { collectDayStatuses, renderDashboard } from './control-plane-ui.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
-import { assertDrillAccountIsolated, runRestoreDrill } from './restore-drill.ts'
 
-test('restore drill refuses same account and accepts an isolated account', () => {
-	const env = environment()
-	env.DRILL_ACCOUNT_ID = ACCOUNT_ID
-	assert.throws(
-		() => assertDrillAccountIsolated(env),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'drill-account-not-isolated',
-	)
-	assert.doesNotThrow(() => assertDrillAccountIsolated(environment()))
-})
-
-test('restore drill refuses SQL with oversized statement stats before import', async () => {
+test('dashboard renders oversized D1 SQL as not restorable with a warning', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const day = '2026-07-31'
 	const payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
 	const sql = 'CREATE TABLE t(id INTEGER);\n'
+	const sqlObjectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
 	const template = manifest({
 		bytes: sql.length,
 		sha256: createHash('sha256').update(sql).digest('hex'),
 		r2Etag: createHash('md5').update(sql).digest('hex'),
 	})
-	const sqlObjectKey = template.payload.sql.objectKey.replace('2026-07-22', day)
 	await bucket.put(sqlObjectKey, sql)
 	await bucket.put(
 		`${sqlObjectKey}.stats.json`,
@@ -59,17 +47,20 @@ test('restore drill refuses SQL with oversized statement stats before import', a
 		}),
 	)
 
-	let fetchCalls = 0
-	await assert.rejects(
-		runRestoreDrill(env, day, {
-			fetcher: async () => {
-				fetchCalls += 1
-				throw new Error('import should not start')
-			},
-		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'backup-unrestorable-statements',
+	const now = new Date(`${day}T12:00:00.000Z`)
+	const [status] = await collectDayStatuses(env, now)
+	assert.equal(status?.d1Restorable, false)
+	assert.ok(
+		status?.warnings.some((warning) => warning.includes('cannot be restored')),
 	)
-	assert.equal(fetchCalls, 0)
+
+	const fetcher = vi.spyOn(globalThis, 'fetch')
+	fetcher.mockResolvedValue(identityEnvelope(1_000))
+	const html = await renderDashboard(env, { now })
+	assert.match(html, /<th>D1 restorable<\/th>/)
+	assert.match(html, /<td class="bad">no<\/td>/)
+	assert.match(
+		html,
+		/D1 SQL contains oversized statements and cannot be restored/,
+	)
 })

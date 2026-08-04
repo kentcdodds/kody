@@ -7,12 +7,13 @@ import { test, vi } from 'vitest'
 
 import {
 	MemoryBucket,
+	badSqlStatsFixture,
 	environment,
 	exportEnvelope,
 	manifest,
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
-import { backupPayload } from './backup-policy.ts'
+import { BackupError, backupPayload } from './backup-policy.ts'
 import { d1ImportForeignKeysOffPrefix } from './d1-import-api.ts'
 import { signBackupFullManifest } from './full-manifest-signing.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
@@ -36,10 +37,11 @@ async function seedSealedRestoreDay(bucket: MemoryBucket, day = '2026-07-22') {
 		sha256: sha256Text(sqlBody),
 		r2Etag: sqlMd5,
 	})
-	await bucket.put(template.payload.sql.objectKey, sqlBody)
+	const sqlObjectKey = template.payload.sql.objectKey.replace('2026-07-22', day)
+	await bucket.put(sqlObjectKey, sqlBody)
 	const dayManifest = signedManifest({
 		...template.payload,
-		sql: template.payload.sql,
+		sql: { ...template.payload.sql, objectKey: sqlObjectKey },
 	})
 	await putImmutableManifest(
 		bucket as unknown as R2Bucket,
@@ -70,7 +72,7 @@ async function seedSealedRestoreDay(bucket: MemoryBucket, day = '2026-07-22') {
 		sealedFullManifestKey(day),
 		serializeBackupFullManifest(full),
 	)
-	return { env, day, preparedImportMd5 }
+	return { env, day, preparedImportMd5, sqlObjectKey }
 }
 
 test('runProductionRestore returns failed progress when dr-restore emits warnings', async () => {
@@ -153,4 +155,36 @@ test('runProductionRestore returns failed progress when dr-restore emits warning
 	assert.equal(progress.safetyExportBytes, sql.length)
 	assert.ok(safetyExportKey)
 	assert.ok(await bucket.head(safetyExportKey))
+})
+
+test('production restore refuses SQL with oversized statement stats', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const { env, day, sqlObjectKey } = await seedSealedRestoreDay(
+		bucket,
+		'2026-07-31',
+	)
+	await bucket.put(
+		`${sqlObjectKey}.stats.json`,
+		JSON.stringify(badSqlStatsFixture(day, sqlObjectKey)),
+	)
+
+	let fetchCalls = 0
+	await assert.rejects(
+		runProductionRestore(
+			env,
+			{ day, requestedAt: `${day}T12:00:00.000Z` },
+			{
+				fetcher: async () => {
+					fetchCalls += 1
+					throw new Error('restore should not start')
+				},
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'backup-unrestorable-statements',
+	)
+	assert.equal(fetchCalls, 0)
 })

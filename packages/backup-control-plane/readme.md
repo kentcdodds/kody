@@ -38,11 +38,18 @@ While streaming the upload, the runtime also measures SQL statement lengths
 ~100 KB statement limit with `statement too long: SQLITE_TOOBIG`, so an
 oversized statement means the object is not restorable through the D1 import
 API. The measurements are persisted as `<objectKey>.stats.json` next to the SQL
-object and logged as `backup-sql-stats`; an oversized count above zero
-additionally logs `backup-unrestorable-statements` with failure status. The
-backup itself completes — application write paths bound row sizes (see
-`packages/shared/src/backup-restore-safety.ts`), so a nonzero count indicates a
-new unbounded write path that must be fixed.
+object before manifest finalization and logged as `backup-sql-stats`. An
+oversized count above zero additionally logs `backup-unrestorable-statements`,
+fails the Workflow retryably, and leaves the day without a canonical manifest.
+The hourly catch-up window can then re-export the same day after the offending
+write path or row is bounded.
+
+Sealing, freshness, restore drills, production restore, and the dashboard all
+read the SQL object's stats sibling. Oversized statements prevent sealing and
+import, freshness emits `freshness-unrestorable`, and the dashboard marks the
+day's D1 media as not restorable. Missing stats are tolerated with a structured
+legacy warning only for retained objects before 2026-07-28; newer objects fail
+closed.
 
 Every canonical manifest uses schema v2 and is an Ed25519-signed envelope. Its
 signature covers deterministic canonical JSON for the SQL key, bytes, SHA-256,
@@ -143,7 +150,8 @@ Cloudflare dashboard.
 ## Integrity checks
 
 The hourly freshness check compares the immutable object's R2 size and ETag to
-the canonical manifest. Run a separate periodic restore drill that downloads the
-object, verifies its SHA-256 against the manifest, and restores it into a
-non-production D1 database. The metadata freshness check is not a replacement
-for that deep checksum and restore drill.
+the canonical manifest and requires restorable SQL statement stats for new
+backup days. Run a separate periodic restore drill that downloads the object,
+verifies its SHA-256 against the manifest, and restores it into a non-production
+D1 database. The metadata freshness check is not a replacement for that deep
+checksum and restore drill.
