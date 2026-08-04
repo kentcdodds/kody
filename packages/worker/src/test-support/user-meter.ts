@@ -530,12 +530,12 @@ export function createInMemoryUserMeterEnv() {
 			}) {
 				const existing = deletion.leases.get(input.token)
 				if (existing) return { acquired: true }
-			if (deletion.deletingAt != null) return { acquired: false }
-			deletion.leases.set(input.token, {
-				holder: input.holder,
-				acquiredAt: input.acquiredAt,
-				pendingRepairId: null,
-			})
+				if (deletion.deletingAt != null) return { acquired: false }
+				deletion.leases.set(input.token, {
+					holder: input.holder,
+					acquiredAt: input.acquiredAt,
+					pendingRepairId: null,
+				})
 				return { acquired: true }
 			},
 			async releaseWriteLease(input: { token: string }) {

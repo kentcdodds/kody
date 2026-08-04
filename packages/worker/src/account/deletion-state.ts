@@ -370,9 +370,7 @@ export async function repairAccountWriteLease(input: {
 		if (!stillHeld.held) {
 			return { repaired: true as const, repairId: existingAudit.id }
 		}
-		throw new Error(
-			'Active account write lease did not match repair request.',
-		)
+		throw new Error('Active account write lease did not match repair request.')
 	}
 	throw new Error('Active account write lease did not match repair request.')
 }
