@@ -308,7 +308,7 @@ export type AccountExportSectionResult = {
 	warnings: Array<string>
 	/**
 	 * Authoritative UserMeter storage-byte state. Present only on the first
-	 * `user_meter` page (`startAfter` absent); later pages omit it.
+	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
 	 */
 	storageBytesState?: UserMeterExportResult['storageBytesState']
 	/**

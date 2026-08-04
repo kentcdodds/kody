@@ -30,6 +30,15 @@ test('0141 drops the D1 lease table and removes only retired flags', () => {
 			'retired-lease', 'usr_0141migrationuser', 'test-holder',
 			'2026-08-03T00:00:00.000Z', NULL
 		);
+		INSERT INTO account_write_lease_repairs (
+			id, target_user_id, lease_token, lease_holder, lease_acquired_at,
+			repaired_by_user_id, reason, created_at
+		) VALUES (
+			'retained-repair', 'usr_0141migrationuser', 'repaired-lease',
+			'test-holder', '2026-08-02T00:00:00.000Z',
+			'usr_0141migrationuser', 'Verified writer termination.',
+			'2026-08-03T00:00:00.000Z'
+		);
 		INSERT INTO feature_flags (key, enabled, note)
 		VALUES
 			('demo-indicator', 1, 'keep'),
@@ -72,4 +81,18 @@ test('0141 drops the D1 lease table and removes only retired flags', () => {
 			)
 			.all(),
 	).toEqual([{ name: 'account_write_lease_repairs' }])
+	expect(
+		db
+			.prepare(
+				`SELECT id, lease_token, reason
+				FROM account_write_lease_repairs`,
+			)
+			.all(),
+	).toEqual([
+		{
+			id: 'retained-repair',
+			lease_token: 'repaired-lease',
+			reason: 'Verified writer termination.',
+		},
+	])
 })
