@@ -147,6 +147,7 @@ export function parseProductionQueueResources(input: {
 		queueName: packageEventsDispatchQueueName,
 		deadLetterQueueName: packageEventsDispatchDeadLetterQueueName,
 		configPath: input.configPath,
+		maxConcurrency: 16,
 	})
 	const producers = queueConfig.producers
 	if (!Array.isArray(producers)) {

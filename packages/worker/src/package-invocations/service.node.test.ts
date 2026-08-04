@@ -1326,7 +1326,7 @@ test('package runtime dispatch enqueues declared events to the package events qu
 
 test('package runtime dispatch validates payloads against the declared payloadSchema', async () => {
 	const db = createDatabase()
-	const { manifests } = seedRuntimeDispatchPackages()
+	const { manifests, sourceFiles } = seedRuntimeDispatchPackages()
 	const gatewayManifest = manifests.get('source-gateway') as {
 		kody: {
 			emits?: Record<
@@ -1348,6 +1348,12 @@ test('package runtime dispatch validates payloads against the declared payloadSc
 				additionalProperties: false,
 			},
 		},
+	}
+	// Keep the serialized source snapshot in sync with the mutated manifest
+	// so every manifest loader observes the same emits declaration.
+	const gatewayFiles = sourceFiles.get('source-gateway')
+	if (gatewayFiles) {
+		gatewayFiles['package.json'] = JSON.stringify(gatewayManifest)
 	}
 	const send = vi.fn<(message: unknown) => Promise<undefined>>(
 		async () => undefined,
@@ -1494,7 +1500,7 @@ test('package events deliver to same-user package subscriptions with idempotent 
 
 test('package event subscription filters gate delivery on payload values', async () => {
 	const db = createDatabase()
-	const { manifests } = seedRuntimeDispatchPackages()
+	const { manifests, sourceFiles } = seedRuntimeDispatchPackages()
 	const subscriberManifest = manifests.get('source-subscriber') as {
 		kody: {
 			subscriptions?: Record<
@@ -1508,6 +1514,10 @@ test('package event subscription filters gate delivery on payload values', async
 			handler: './src/handle-discord-message-created.ts',
 			filters: { channelId: '456' },
 		},
+	}
+	const subscriberFiles = sourceFiles.get('source-subscriber')
+	if (subscriberFiles) {
+		subscriberFiles['package.json'] = JSON.stringify(subscriberManifest)
 	}
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
@@ -1567,7 +1577,7 @@ test('package events fall back to inline delivery without a queue binding', asyn
 		payload: { messageId: 'inline-1' },
 	})
 
-	expect(result).toMatchObject({ status: 'enqueued' })
+	expect(result).toMatchObject({ status: 'delivered_inline' })
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 	expect(
 		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[3],
@@ -1596,7 +1606,7 @@ test('package events fall back to inline delivery without a queue binding', asyn
 			idempotencyKey: 'discord:message-create:inline-error',
 			payload: { messageId: 'inline-2' },
 		}),
-	).resolves.toMatchObject({ status: 'enqueued' })
+	).resolves.toMatchObject({ status: 'delivered_inline' })
 	expect(consoleError).toHaveBeenCalledWith(
 		'package-events-inline-delivery-failed',
 		expect.objectContaining({

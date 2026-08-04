@@ -259,22 +259,23 @@ export function listJsonSchemaSubsetValueErrors(
 				}
 			}
 		}
+		// Missing `properties` means an empty declared set, so
+		// `additionalProperties: false` rejects every key (standard JSON
+		// Schema behavior).
 		const properties = isPlainObject(schema['properties'])
 			? schema['properties']
-			: null
-		if (properties) {
-			for (const [key, propertySchema] of Object.entries(properties)) {
-				if (!(key in value) || !isPlainObject(propertySchema)) continue
-				errors.push(
-					...listJsonSchemaSubsetValueErrors(
-						propertySchema,
-						value[key],
-						`${path}.${key}`,
-					),
-				)
-			}
+			: {}
+		for (const [key, propertySchema] of Object.entries(properties)) {
+			if (!(key in value) || !isPlainObject(propertySchema)) continue
+			errors.push(
+				...listJsonSchemaSubsetValueErrors(
+					propertySchema,
+					value[key],
+					`${path}.${key}`,
+				),
+			)
 		}
-		if (schema['additionalProperties'] === false && properties) {
+		if (schema['additionalProperties'] === false) {
 			for (const key of Object.keys(value)) {
 				if (!(key in properties)) {
 					errors.push(`${path} has unexpected property "${key}".`)

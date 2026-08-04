@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { packageEventsDispatchQueueName } from '#worker/package-events/dispatch-queue-names.ts'
 import { scheduledDispatchQueueName } from '#worker/scheduled/scheduled-dispatch-queue-names.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
@@ -62,7 +63,7 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	const artifactsBatch = createBatch('kody-artifacts-repo-events')
 	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
 	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
-	const packageEventsBatch = createBatch('kody-package-events-dispatch')
+	const packageEventsBatch = createBatch(packageEventsDispatchQueueName)
 	const scheduledBatch = createBatch(scheduledDispatchQueueName)
 	const unknownBatch = createBatch('unexpected-queue')
 

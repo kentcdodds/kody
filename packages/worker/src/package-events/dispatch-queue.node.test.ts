@@ -129,6 +129,19 @@ test('package events queue message parsing rejects malformed bodies', () => {
 	expect(
 		parsePackageEventsDispatchQueueMessage(createMessageBody({ topic: ' ' })),
 	).toBeNull()
+	// userId selects whose packages receive the event, so it enforces
+	// per-user isolation across the queue boundary.
+	expect(
+		parsePackageEventsDispatchQueueMessage(createMessageBody({ userId: ' ' })),
+	).toBeNull()
+	expect(
+		parsePackageEventsDispatchQueueMessage(createMessageBody({ userId: 42 })),
+	).toBeNull()
+	expect(
+		parsePackageEventsDispatchQueueMessage(
+			createMessageBody({ userId: ' user-123 ', topic: ' topic.a ' }),
+		),
+	).toMatchObject({ userId: 'user-123', topic: 'topic.a' })
 	expect(
 		parsePackageEventsDispatchQueueMessage(
 			createMessageBody({ idempotencyKey: '' }),

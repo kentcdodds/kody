@@ -99,6 +99,14 @@ test('listJsonSchemaSubsetValueErrors validates values against the subset', () =
 	expect(
 		listJsonSchemaSubsetValueErrors(schema, { messageId: 'm', extra: true }),
 	).toEqual(['payload has unexpected property "extra".'])
+	// Missing `properties` means an empty declared set, so
+	// additionalProperties: false rejects every key.
+	expect(
+		listJsonSchemaSubsetValueErrors(
+			{ type: 'object', additionalProperties: false },
+			{ anything: 1 },
+		),
+	).toEqual(['payload has unexpected property "anything".'])
 })
 
 test('listJsonSchemaSubsetValueErrors handles const and union types', () => {

@@ -65,10 +65,3 @@ export function parsePackageEventsDispatchQueueMessage(
 		invokeDepth,
 	}
 }
-
-export async function enqueuePackageEventDispatch(input: {
-	queue: Pick<Queue<PackageEventsDispatchQueueMessage>, 'send'>
-	message: PackageEventsDispatchQueueMessage
-}) {
-	await input.queue.send(input.message)
-}

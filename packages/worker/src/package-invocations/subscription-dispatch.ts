@@ -405,7 +405,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 					kodyId: packageContext.kodyId,
 				},
 				idempotencyKey: request.idempotencyKey,
-				status: 'enqueued',
+				status: enqueued ? 'enqueued' : 'delivered_inline',
 			}
 		},
 	}

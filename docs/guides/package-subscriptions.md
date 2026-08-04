@@ -154,8 +154,9 @@ type PackageEventEnvelope = {
   rather than re-running — and stay visible in run records.
 - Event-driven chains carry the same nested invocation depth budget as
   `packages.invoke` (max 8 hops), so emit cycles between packages terminate.
-- In environments without the Queue binding (local dev, preview), dispatch falls
-  back to inline delivery with the same consumer code path.
+- In environments without the Queue binding (local dev, preview) — or when an
+  enqueue fails — dispatch falls back to inline delivery with the same consumer
+  code path and reports `status: "delivered_inline"` instead of `"enqueued"`.
 
 ### Filters on package-emitted topics
 

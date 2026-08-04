@@ -320,6 +320,10 @@
 						"max_batch_size": 10,
 						"max_batch_timeout": 5,
 						"max_retries": 3,
+						// Each event fans out to dynamic Worker isolate loads per
+						// subscriber; cap consumer concurrency so an emit burst
+						// cannot multiply into unbounded isolate loads.
+						"max_concurrency": 16,
 						"dead_letter_queue": "kody-package-events-dispatch-dlq",
 					},
 				],

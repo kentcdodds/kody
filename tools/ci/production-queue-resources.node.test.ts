@@ -66,6 +66,7 @@ function createProductionEnv() {
 					max_batch_size: 10,
 					max_batch_timeout: 5,
 					max_retries: 3,
+					max_concurrency: 16,
 					dead_letter_queue: 'kody-package-events-dispatch-dlq',
 				},
 			],
