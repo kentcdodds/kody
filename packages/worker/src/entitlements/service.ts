@@ -463,7 +463,6 @@ export async function calculateUserD1StorageBytes(input: {
 					'timezone',
 					'caller_context_json',
 					'last_run_status',
-					'last_run_error',
 					'source_id',
 					'published_commit',
 					'storage_id',

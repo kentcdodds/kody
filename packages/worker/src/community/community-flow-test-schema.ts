@@ -177,12 +177,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			updated_at TEXT NOT NULL,
 			last_run_at TEXT,
 			last_run_status TEXT,
-			last_run_error TEXT,
-			last_duration_ms INTEGER,
-			next_run_at TEXT NOT NULL,
-			run_count INTEGER NOT NULL DEFAULT 0,
-			success_count INTEGER NOT NULL DEFAULT 0,
-			error_count INTEGER NOT NULL DEFAULT 0
+			next_run_at TEXT NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
 			id TEXT PRIMARY KEY,
