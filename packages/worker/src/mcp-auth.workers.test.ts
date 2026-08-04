@@ -134,18 +134,6 @@ function createMockDb(options: MockDbOptions = {}) {
 					options.auditInserts?.push(boundParams)
 					return { meta: { changes: 1 } }
 				}
-				if (normalized.startsWith('delete from account_write_leases')) {
-					if (!boundParams.includes(expectedLeaseUserId)) {
-						throw new Error('Unscoped account write lease delete.')
-					}
-					return { meta: { changes: 1 } }
-				}
-				if (normalized.startsWith('insert into account_write_leases')) {
-					if (!boundParams.includes(expectedLeaseUserId)) {
-						throw new Error('Unscoped account write lease insert.')
-					}
-					return { meta: { changes: 1 } }
-				}
 				if (normalized.startsWith('update users')) {
 					if (
 						!normalized.includes('where stable_user_id = ?') ||
@@ -190,9 +178,6 @@ function createMockDb(options: MockDbOptions = {}) {
 						deleting_at: null,
 						suspended_at: options.suspendedAt ?? null,
 					} satisfies MockAccountRow
-				}
-				if (normalized.includes('select 1 as held from account_write_leases')) {
-					return { held: 1 }
 				}
 				if (normalized.includes('select deleting_at from users')) {
 					if (!boundStableUserId) return null

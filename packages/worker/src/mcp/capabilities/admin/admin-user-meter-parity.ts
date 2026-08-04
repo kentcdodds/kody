@@ -64,7 +64,6 @@ const deletionParitySchema = z.object({
 		.describe(
 			'Count of active DO write leases in UserMeter. D1 account_write_leases is quiescent and not queried.',
 		),
-	truncated: z.boolean(),
 })
 
 const reportSchema = z.object({

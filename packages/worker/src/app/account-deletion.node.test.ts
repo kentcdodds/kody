@@ -105,25 +105,6 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower.includes(
-									'select count(*) as count from account_write_leases',
-								)
-							) {
-								const user = (rows.users ?? []).find(
-									(row) => row['id'] === params[0],
-								)
-								results = [
-									{
-										count: (rows.account_write_leases ?? []).filter(
-											(row) =>
-												row['user_id'] === user?.['stable_user_id'] &&
-												row['released_at'] == null,
-										).length,
-									},
-								]
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
 								lower ===
 								'select stable_user_id, deleting_at from users where id = ?'
 							) {
@@ -134,32 +115,6 @@ function createTestDb(
 										stable_user_id: row['stable_user_id'],
 										deleting_at: row['deleting_at'] ?? null,
 									}))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								lower.startsWith(
-									'select token, holder, acquired_at from account_write_leases',
-								)
-							) {
-								const stableUserId = params[0] as string
-								results = (rows.account_write_leases ?? [])
-									.filter(
-										(row) =>
-											row['user_id'] === stableUserId &&
-											row['released_at'] == null,
-									)
-									.map((row) => ({
-										token: row['token'],
-										holder: row['holder'],
-										acquired_at: row['acquired_at'],
-									}))
-									.sort((left, right) => {
-										const byAcquired = String(left.acquired_at).localeCompare(
-											String(right.acquired_at),
-										)
-										if (byAcquired !== 0) return byAcquired
-										return String(left.token).localeCompare(String(right.token))
-									})
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (

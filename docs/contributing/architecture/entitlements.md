@@ -342,10 +342,11 @@ pages return `null`. The field reflects the authoritative DO inventory.
 
 ### Account-deletion write fencing — UserMeter authority (contract complete 2026-08-03)
 
-UserMeter schema **v7** stores `account_write_leases` with a warm `authority`
-column (`do`|`legacy`; kept for schema compatibility — all new rows are
-`authority='do'`; the physical column is ignored by code and will be dropped on
-a later schema bump after production objects report `schema_version >= 7`).
+UserMeter schema **v7** stores `account_write_leases` with `pending_repair_id`
+added at v7 and a warm `authority` column retained on v7 objects (NOT NULL
+DEFAULT 'legacy'; the column is not referenced by any query; physical cleanup is
+deferred to a later schema migration after all production objects report
+`schema_version >= 7`).
 
 **Authority:** D1 `users.deleting_at` remains the **permanent point gate** (auth
 projection / purge failures fail closed). All callers supply `env`; UserMeter is
@@ -441,9 +442,8 @@ Interpret the structured report as independent gates:
 cutover (daily mirror retirement before the drop migration, storage authority
 flip, or package-service authority flip). Expected cold accounts may report
 `needsBootstrap` until live traffic seeds the DO; that is a bootstrap gap, not a
-silent pass. Truncated inventories fail closed (`parity` / `mirrorLeaseParity`
-false) so operators re-run or raise the bounded page cap rather than approve a
-partial compare.
+silent pass. Truncated inventories fail closed (`parity` false) so operators
+re-run or raise the bounded page cap rather than approve a partial compare.
 
 ### Post-flip storage reconciliation (`admin_user_meter_storage_reconcile`)
 

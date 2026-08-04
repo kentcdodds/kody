@@ -56,12 +56,6 @@ const packageServiceShadowStatuses = [
 	'stopped',
 	'error',
 ] as const
-/** Write-lease authority values stored in the SQLite `authority` column.
- * All new leases use `'do'`; `'legacy'` rows are quiescent pending a future
- * destructive schema migration after production objects report
- * `schema_version >= 7`. */
-export const userMeterWriteLeaseAuthorities = ['do', 'legacy'] as const
-
 export type UserMeterPackageServiceStatus =
 	(typeof packageServiceShadowStatuses)[number]
 
@@ -189,18 +183,6 @@ export type UserMeterPackageServiceCountResult = {
 export type UserMeterPackageServiceBootstrapResult = {
 	applied: number
 	skipped: number
-}
-
-export type UserMeterWriteLeaseAuthority =
-	(typeof userMeterWriteLeaseAuthorities)[number]
-
-/** @deprecated Authority discrimination is retired; all active leases are DO-authority. */
-export function isUserMeterWriteLeaseAuthority(
-	authority: string,
-): authority is UserMeterWriteLeaseAuthority {
-	return (userMeterWriteLeaseAuthorities as ReadonlyArray<string>).includes(
-		authority,
-	)
 }
 
 /** Paged write-lease entry returned by {@link UserMeterRpc.listWriteLeases}. */
@@ -331,7 +313,6 @@ type WriteLeaseSqlRow = {
 	token: string
 	holder: string
 	acquired_at: string
-	authority: string
 	pending_repair_id: string | null
 }
 
@@ -650,7 +631,7 @@ class UserMeterBase extends DurableObject<Env> {
 			`CREATE INDEX IF NOT EXISTS idx_package_service_states_status_source
 			ON package_service_states (status, source_updated_at)`,
 		)
-		// Deletion fence / write leases (schema v6+; v7 adds authority/pending_repair_id).
+		// Deletion fence / write leases (schema v6+; pending_repair_id added at v7).
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS deletion_state (
 				id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
@@ -662,23 +643,10 @@ class UserMeterBase extends DurableObject<Env> {
 				token TEXT PRIMARY KEY NOT NULL,
 				holder TEXT NOT NULL,
 				acquired_at TEXT NOT NULL,
-				authority TEXT NOT NULL DEFAULT 'legacy',
 				pending_repair_id TEXT
 			)
 		`)
 		if (version != null && version < 7) {
-			try {
-				// TODO: Remove this ALTER after production objects report
-				// schema_version >= 7; the physical `authority` column is kept
-				// for warm-object compatibility but its value is no longer
-				// used to branch code paths.
-				this.ctx.storage.sql.exec(
-					`ALTER TABLE account_write_leases
-					ADD COLUMN authority TEXT NOT NULL DEFAULT 'legacy'`,
-				)
-			} catch {
-				// Column already present on a partially migrated object.
-			}
 			try {
 				this.ctx.storage.sql.exec(
 					`ALTER TABLE account_write_leases
@@ -688,13 +656,14 @@ class UserMeterBase extends DurableObject<Env> {
 				// Column already present on a partially migrated object.
 			}
 		}
+		// Warm v7 objects may retain an ignored physical `authority` column and
+		// its associated index (NOT NULL DEFAULT 'legacy') from the schema that
+		// originally created them. No query references that column; physical
+		// cleanup is deferred to a later schema migration after all production
+		// objects report schema_version >= 7.
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_account_write_leases_acquired_token
 			ON account_write_leases (acquired_at, token)`,
-		)
-		this.ctx.storage.sql.exec(
-			`CREATE INDEX IF NOT EXISTS idx_account_write_leases_authority_acquired_token
-			ON account_write_leases (authority, acquired_at, token)`,
 		)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO user_meter_meta (key, value) VALUES (?, ?)
@@ -1511,7 +1480,7 @@ class UserMeterBase extends DurableObject<Env> {
 	private readWriteLeaseRow(token: string): WriteLeaseSqlRow | null {
 		const row = this.ctx.storage.sql
 			.exec<WriteLeaseSqlRow>(
-				`SELECT token, holder, acquired_at, authority, pending_repair_id
+				`SELECT token, holder, acquired_at, pending_repair_id
 				FROM account_write_leases
 				WHERE token = ?`,
 				token,
@@ -1529,7 +1498,7 @@ class UserMeterBase extends DurableObject<Env> {
 	private listAllWriteLeaseRows(): Array<UserMeterWriteLeaseEntry> {
 		const rows = this.ctx.storage.sql
 			.exec<WriteLeaseSqlRow>(
-				`SELECT token, holder, acquired_at, authority, pending_repair_id
+				`SELECT token, holder, acquired_at, pending_repair_id
 				FROM account_write_leases
 				ORDER BY acquired_at ASC, token ASC`,
 			)
@@ -1579,7 +1548,7 @@ class UserMeterBase extends DurableObject<Env> {
 		const rows = (
 			cursor
 				? this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
-						`SELECT token, holder, acquired_at, authority, pending_repair_id
+						`SELECT token, holder, acquired_at, pending_repair_id
 						FROM account_write_leases
 						WHERE acquired_at > ?
 							OR (acquired_at = ? AND token > ?)
@@ -1591,7 +1560,7 @@ class UserMeterBase extends DurableObject<Env> {
 						pageSize + 1,
 					)
 				: this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
-						`SELECT token, holder, acquired_at, authority, pending_repair_id
+						`SELECT token, holder, acquired_at, pending_repair_id
 							FROM account_write_leases
 							ORDER BY acquired_at ASC, token ASC
 							LIMIT ?`,
@@ -1644,7 +1613,7 @@ class UserMeterBase extends DurableObject<Env> {
 		})
 	}
 
-	/** Authoritative lease acquire (`authority='do'`). */
+	/** Authoritative lease acquire. */
 	async acquireWriteLease(input: {
 		token: string
 		holder: string
@@ -1660,9 +1629,9 @@ class UserMeterBase extends DurableObject<Env> {
 		if (this.readDeletingAt() != null) return { acquired: false }
 		const cursor = this.ctx.storage.sql.exec(
 			`INSERT INTO account_write_leases (
-				token, holder, acquired_at, authority, pending_repair_id
+				token, holder, acquired_at, pending_repair_id
 			)
-			VALUES (?, ?, ?, 'do', NULL)
+			VALUES (?, ?, ?, NULL)
 			ON CONFLICT(token) DO NOTHING`,
 			token,
 			holder,
@@ -2030,13 +1999,13 @@ export type UserMeterRpc = {
 	markDeleting: (input: {
 		deletingAt: string
 	}) => Promise<UserMeterMarkDeletingResult>
-	/** Authoritative lease acquire (`authority='do'`). */
+	/** Authoritative lease acquire. */
 	acquireWriteLease: (input: {
 		token: string
 		holder: string
 		acquiredAt: string
 	}) => Promise<UserMeterAcquireWriteLeaseResult>
-	/** Authoritative release of a DO-authority lease. */
+	/** Authoritative lease release. */
 	releaseWriteLease: (input: {
 		token: string
 	}) => Promise<UserMeterReleaseWriteLeaseResult>
@@ -2044,12 +2013,12 @@ export type UserMeterRpc = {
 	assertWriteLeaseHeld: (input: {
 		token: string
 	}) => Promise<UserMeterAssertWriteLeaseHeldResult>
-	/** Prepare an audit-safe DO lease repair; retries reuse repairId. */
+	/** Prepare an audit-safe lease repair; retries reuse repairId. */
 	prepareWriteLeaseRepair: (input: {
 		token: string
 		expectedAcquiredAt: string
 	}) => Promise<UserMeterPrepareWriteLeaseRepairResult>
-	/** Finalize an exact pending DO repair by deleting the lease. */
+	/** Finalize an exact pending repair by deleting the lease. */
 	finalizeWriteLeaseRepair: (input: {
 		token: string
 		repairId: string

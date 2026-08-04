@@ -319,7 +319,6 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 			meterDeletingAt: null,
 			deletingAtParity: true,
 			activeLeaseCount: 1,
-			truncated: false,
 		},
 	})
 	expect(report?.daily.resources).toHaveLength(4)
@@ -369,7 +368,6 @@ test('loadAdminUserMeterParityReport D1 lease rows are quiescent; activeLeaseCou
 		meterDeletingAt: null,
 		deletingAtParity: true,
 		activeLeaseCount: 0,
-		truncated: false,
 	})
 	assertNoLeaseSecrets(report)
 })
@@ -483,7 +481,6 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 		meterDeletingAt: null,
 		deletingAtParity: true,
 		activeLeaseCount: 2,
-		truncated: false,
 	})
 
 	// Confirm the report was read-only (meter bootstrap state is unchanged).
@@ -534,7 +531,6 @@ test('loadAdminUserMeterParityReport reports deletingAtParity mismatch and corre
 		meterDeletingAt: null,
 		deletingAtParity: false,
 		activeLeaseCount: 0,
-		truncated: false,
 	})
 
 	// Align meter; parity restores and activeLeaseCount remains 0.
@@ -550,7 +546,6 @@ test('loadAdminUserMeterParityReport reports deletingAtParity mismatch and corre
 		meterDeletingAt: '2026-08-01T08:00:00.000Z',
 		deletingAtParity: true,
 		activeLeaseCount: 0,
-		truncated: false,
 	})
 	assertNoLeaseSecrets(mismatchReport)
 	assertNoLeaseSecrets(parityReport)
@@ -635,7 +630,6 @@ test('loadAdminUserMeterParityReport fails closed on repeated package-service cu
 		meterDeletingAt: null,
 		deletingAtParity: true,
 		activeLeaseCount: 0,
-		truncated: false,
 	})
 })
 
@@ -709,7 +703,6 @@ test('loadAdminUserMeterParityReport reports mirrorRetired when entitlement_dail
 		meterDeletingAt: null,
 		deletingAtParity: true,
 		activeLeaseCount: 0,
-		truncated: false,
 	})
 })
 
@@ -801,6 +794,5 @@ test('loadAdminUserMeterParityReport still compares D1 daily counts when mirror 
 		meterDeletingAt: null,
 		deletingAtParity: true,
 		activeLeaseCount: 0,
-		truncated: false,
 	})
 })

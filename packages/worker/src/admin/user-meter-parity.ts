@@ -77,11 +77,6 @@ type DeletionParity = {
 	deletingAtParity: boolean
 	/** Active DO write-lease count (meter-only; D1 lease mirror is retired). */
 	activeLeaseCount: number
-	/**
-	 * True when the meter page walk completed without hitting the inventory
-	 * cap. Truncated counts are reported but should not trigger alerts.
-	 */
-	truncated: boolean
 }
 
 export type AdminUserMeterParityReport = {
@@ -468,7 +463,6 @@ async function readDeletionParity(input: {
 		meterDeletingAt: meterDeletion.deletingAt,
 		deletingAtParity,
 		activeLeaseCount: leaseCount.count,
-		truncated: false,
 	}
 }
 
