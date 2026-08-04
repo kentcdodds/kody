@@ -1068,16 +1068,17 @@ function createEntitlementsDatabase(input: {
 
 	return {
 		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
-			return await writeLeaseDb.runWriteLeaseBatch(statements)
+			const results = []
+			for (const statement of statements) {
+				results.push(await statement.run())
+			}
+			return results
 		},
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
 					return {
 						async run() {
-							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
-								return writeLeaseDb.writeLeaseRunResult()
-							}
 							if (
 								query.includes(
 									'DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?',
@@ -1107,9 +1108,6 @@ function createEntitlementsDatabase(input: {
 						async first<T>() {
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
-							}
-							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
-								return writeLeaseDb.heldLeaseFirstResult() as T
 							}
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = users.find((row) => row.email === params[0])

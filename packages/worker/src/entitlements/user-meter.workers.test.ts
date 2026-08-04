@@ -1042,15 +1042,15 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 	})
 }, 30_000)
 
-test('UserMeter deletion leases distinguish do/legacy authority, repair, export, and purge tombstone', async () => {
+test('UserMeter deletion leases: mark, acquire, release, repair, export, and purge tombstone', async () => {
 	const userA = await seedFreeUser('meter-deletion-a')
 	const userB = await seedFreeUser('meter-deletion-b')
 	const meterA = userMeterRpc({ env, userId: userA.userId })
 	const meterB = userMeterRpc({ env, userId: userB.userId })
 
+	// markDeleting preserves tombstone; repeated calls return the first timestamp.
 	const firstMark = await meterA.markDeleting({
 		deletingAt: '2026-08-01 10:00:00',
-		legacyLeases: [],
 	})
 	expect(firstMark).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
@@ -1059,7 +1059,6 @@ test('UserMeter deletion leases distinguish do/legacy authority, repair, export,
 	})
 	const secondMark = await meterA.markDeleting({
 		deletingAt: '2026-08-01 11:00:00',
-		legacyLeases: [],
 	})
 	expect(secondMark).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
@@ -1067,51 +1066,48 @@ test('UserMeter deletion leases distinguish do/legacy authority, repair, export,
 		leaseCount: 0,
 	})
 
+	// acquireWriteLease is idempotent (same token).
 	await expect(
 		meterB.acquireWriteLease({
 			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-			holder: 'test:writer',
+			holder: 'test:writer-1',
 			acquiredAt: '2026-08-01 10:05:00',
 		}),
 	).resolves.toEqual({ acquired: true })
 	await expect(
 		meterB.acquireWriteLease({
 			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-			holder: 'test:writer',
+			holder: 'test:writer-1',
 			acquiredAt: '2026-08-01 10:05:00',
 		}),
 	).resolves.toEqual({ acquired: true })
 	await expect(
-		meterB.shadowAcquireWriteLease({
+		meterB.acquireWriteLease({
 			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			holder: 'test:legacy',
+			holder: 'test:writer-2',
 			acquiredAt: '2026-08-01 10:06:00',
 		}),
 	).resolves.toEqual({ acquired: true })
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
-	expect(await meterB.listDoAuthorityWriteLeases({})).toEqual({
-		leases: [
-			{
-				token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-				holder: 'test:writer',
-				acquiredAt: '2026-08-01 10:05:00',
-				authority: 'do',
-			},
-		],
-		nextStartAfter: null,
-		truncated: false,
-	})
 
+	// listWriteLeases is paged and returns entries without authority field.
 	const listed = await meterB.listWriteLeases({ pageSize: 1 })
 	expect(listed.leases).toHaveLength(1)
 	expect(listed.truncated).toBe(true)
+	expect(listed.leases[0]).toEqual(
+		expect.objectContaining({ token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+	)
 	const listedRest = await meterB.listWriteLeases({
 		pageSize: 10,
 		startAfter: listed.nextStartAfter,
 	})
 	expect(listedRest.leases).toHaveLength(1)
 	expect(listedRest.truncated).toBe(false)
+	expect(listedRest.leases[0]).toEqual(
+		expect.objectContaining({ token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+	)
 
+	// releaseWriteLease removes the row.
 	await expect(
 		meterB.releaseWriteLease({
 			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -1119,6 +1115,7 @@ test('UserMeter deletion leases distinguish do/legacy authority, repair, export,
 	).resolves.toEqual({ released: true })
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
 
+	// Acquiring on a deleted account is blocked.
 	await expect(
 		meterA.acquireWriteLease({
 			token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
@@ -1127,106 +1124,53 @@ test('UserMeter deletion leases distinguish do/legacy authority, repair, export,
 		}),
 	).resolves.toEqual({ acquired: false })
 
-	const bootstrap = await meterB.bootstrapDeletionState({
-		deletingAt: '2026-08-01 12:00:00',
-		leases: [
-			{
-				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-				holder: 'test:legacy',
-				acquiredAt: '2026-08-01 10:06:00',
-			},
-			{
-				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-				holder: 'test:boot-do',
-				acquiredAt: '2026-08-01 10:08:00',
-				authority: 'do',
-			},
-		],
-	})
-	expect(bootstrap).toEqual({
-		deletingAtApplied: true,
-		leasesApplied: 1,
-		leasesSkipped: 1,
-	})
-
-	const marked = await meterB.markDeleting({
-		deletingAt: '2026-08-01 12:30:00',
-		legacyLeases: [
-			{
-				token: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-				holder: 'test:d1-snapshot',
-				acquiredAt: '2026-08-01 10:09:00',
-			},
-		],
-	})
-	expect(marked).toEqual({
-		deletingAt: '2026-08-01 12:00:00',
-		created: false,
-		leaseCount: 2,
-	})
-	expect(await meterB.listWriteLeases({})).toEqual({
-		leases: [
-			{
-				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-				holder: 'test:boot-do',
-				acquiredAt: '2026-08-01 10:08:00',
-				authority: 'do',
-			},
-			{
-				token: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-				holder: 'test:d1-snapshot',
-				acquiredAt: '2026-08-01 10:09:00',
-				authority: 'legacy',
-			},
-		],
-		nextStartAfter: null,
-		truncated: false,
-	})
-
+	// Repair: prepare + finalize (idempotent).
 	const prepared = await meterB.prepareWriteLeaseRepair({
-		token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-		expectedAcquiredAt: '2026-08-01 10:08:00',
+		token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+		expectedAcquiredAt: '2026-08-01 10:06:00',
 	})
 	expect(prepared).toEqual(
 		expect.objectContaining({
 			prepared: true,
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-			acquiredAt: '2026-08-01 10:08:00',
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+			acquiredAt: '2026-08-01 10:06:00',
 		}),
 	)
 	const repairId =
 		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
 	await expect(
 		meterB.prepareWriteLeaseRepair({
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-			expectedAcquiredAt: '2026-08-01 10:08:00',
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+			expectedAcquiredAt: '2026-08-01 10:06:00',
 		}),
 	).resolves.toEqual(expect.objectContaining({ prepared: true, repairId }))
 	await expect(
 		meterB.assertWriteLeaseHeld({
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 		}),
 	).resolves.toEqual({ held: true })
 	await expect(
 		meterB.finalizeWriteLeaseRepair({
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 			repairId,
-			expectedAcquiredAt: '2026-08-01 10:08:00',
+			expectedAcquiredAt: '2026-08-01 10:06:00',
 		}),
 	).resolves.toEqual({ finalized: true })
 	await expect(
 		meterB.assertWriteLeaseHeld({
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 		}),
 	).resolves.toEqual({ held: false })
+	// Idempotent finalize: already gone, returns finalized: true.
 	await expect(
 		meterB.finalizeWriteLeaseRepair({
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 			repairId,
-			expectedAcquiredAt: '2026-08-01 10:08:00',
+			expectedAcquiredAt: '2026-08-01 10:06:00',
 		}),
 	).resolves.toEqual({ finalized: true })
 
+	// Export: deletionShadow emitted on first page only.
 	const day = '2026-08-01'
 	for (const resource of [
 		'email_receives_per_day',
@@ -1252,6 +1196,7 @@ test('UserMeter deletion leases distinguish do/legacy authority, repair, export,
 	})
 	expect(secondPage.deletionShadow).toBeNull()
 
+	// Purge resets counters but preserves the deletion tombstone.
 	await expect(meterA.purge()).resolves.toEqual({ ok: true })
 	expect(await meterA.readDeletionState()).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
@@ -1280,17 +1225,14 @@ test('UserMeter deletion leases distinguish do/legacy authority, repair, export,
 		}),
 	).resolves.toEqual({ acquired: false })
 
-	expect(await meterB.readDeletionState()).toEqual({
-		deletingAt: '2026-08-01 12:00:00',
-	})
+	expect(await meterB.readDeletionState()).toEqual({ deletingAt: null })
 	await expect(
 		meterB.markDeleting({
 			deletingAt: '2026-08-01 15:00:00',
-			legacyLeases: [],
 		}),
 	).resolves.toEqual({
-		deletingAt: '2026-08-01 12:00:00',
-		created: false,
+		deletingAt: '2026-08-01 15:00:00',
+		created: true,
 		leaseCount: 0,
 	})
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 0 })
