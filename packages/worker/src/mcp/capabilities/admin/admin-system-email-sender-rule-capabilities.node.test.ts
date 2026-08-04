@@ -8,9 +8,9 @@ import {
 } from '#worker/test-support/audit-log-spy.ts'
 
 const mocks = vi.hoisted(() => ({
-	listEmailSenderRules: vi.fn(),
-	upsertEmailSenderRule: vi.fn(),
-	deleteEmailSenderRule: vi.fn(),
+	listEmailSenderRules: vi.fn<typeof EmailSenderRules.listEmailSenderRules>(),
+	upsertEmailSenderRule: vi.fn<typeof EmailSenderRules.upsertEmailSenderRule>(),
+	deleteEmailSenderRule: vi.fn<typeof EmailSenderRules.deleteEmailSenderRule>(),
 }))
 
 vi.mock('#worker/email/sender-rules.ts', async (importOriginal) => {
