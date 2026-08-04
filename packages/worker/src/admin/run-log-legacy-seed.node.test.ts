@@ -196,8 +196,20 @@ function emptyParity(overrides?: Partial<LegacyParityVerifyResult>) {
 function createTrackingRpc(input?: {
 	failUserIds?: ReadonlySet<string>
 	initializedByDefault?: boolean
+	failHooks?: Partial<
+		Record<
+			| 'workflow_seed'
+			| 'workflow_verify'
+			| 'job_seed'
+			| 'job_verify'
+			| 'activation_seed'
+			| 'activation_verify',
+			ReadonlySet<string>
+		>
+	>
 }) {
 	const failUserIds = input?.failUserIds ?? new Set<string>()
+	const failHooks = input?.failHooks ?? {}
 	const initializedUsers = new Set<string>()
 	const seededJobIdsByUser = new Map<string, Set<string>>()
 	const importedWorkflowsByUser = new Map<
@@ -239,7 +251,7 @@ function createTrackingRpc(input?: {
 
 	const rpc: AdminRunLogLegacySeedRpc = {
 		async importWorkflowProjections({ userId, projections }) {
-			if (failUserIds.has(userId)) {
+			if (failUserIds.has(userId) || failHooks.workflow_seed?.has(userId)) {
 				throw new Error(`injected-workflow-import-failure:${userId}`)
 			}
 			callOrder.push('importWorkflowProjections')
@@ -260,7 +272,7 @@ function createTrackingRpc(input?: {
 			return { imported: projections.length }
 		},
 		async seedJobRunObservabilityBatch({ userId, seeds }) {
-			if (failUserIds.has(userId)) {
+			if (failUserIds.has(userId) || failHooks.job_seed?.has(userId)) {
 				throw new Error(`injected-job-seed-failure:${userId}`)
 			}
 			callOrder.push('seedJobRunObservabilityBatch')
@@ -287,7 +299,7 @@ function createTrackingRpc(input?: {
 			return { attempted: seeds.length, seeded, alreadySeeded }
 		},
 		async importActivationState({ userId, state }) {
-			if (failUserIds.has(userId)) {
+			if (failUserIds.has(userId) || failHooks.activation_seed?.has(userId)) {
 				throw new Error(`injected-activation-import-failure:${userId}`)
 			}
 			callOrder.push('importActivationState')
@@ -301,10 +313,6 @@ function createTrackingRpc(input?: {
 		},
 		async verifyLegacyParity(args) {
 			const userId = args.userId
-			if (failUserIds.has(userId)) {
-				throw new Error(`injected-verify-failure:${userId}`)
-			}
-			callOrder.push('verifyLegacyParity')
 			const workflowChecks: Array<LegacyParityWorkflowCheck> = (
 				args.workflows ?? []
 			).map((entry) =>
@@ -318,6 +326,18 @@ function createTrackingRpc(input?: {
 			const jobIds = args.jobIds ?? []
 			const packages = args.activationPackages ?? []
 			const milestones = args.activationMilestones ?? []
+			const isWorkflowVerify = workflowChecks.length > 0
+			const isJobVerify = jobIds.length > 0
+			const isActivationVerify = !isWorkflowVerify && !isJobVerify
+			if (
+				failUserIds.has(userId) ||
+				(isWorkflowVerify && failHooks.workflow_verify?.has(userId)) ||
+				(isJobVerify && failHooks.job_verify?.has(userId)) ||
+				(isActivationVerify && failHooks.activation_verify?.has(userId))
+			) {
+				throw new Error(`injected-verify-failure:${userId}`)
+			}
+			callOrder.push('verifyLegacyParity')
 			calls.verifyLegacyParity.push({
 				userId,
 				workflowCount: workflowChecks.length,
@@ -556,6 +576,8 @@ test('seed marks empty-user activation unconditional-done and reaches parity', a
 		{
 			stableUserId: userA,
 			failed: false,
+			failureStage: null,
+			failurePhase: null,
 			parity: true,
 			activationInitialized: true,
 			workflows: emptyLegacyParityBucketCounts(),
@@ -799,6 +821,8 @@ test('activation package inventory respects injectable max with +1 fail-closed',
 		expect.objectContaining({
 			stableUserId: userA,
 			failed: true,
+			failureStage: 'activation_inventory',
+			failurePhase: 'd1',
 			parity: false,
 			activationInitialized: false,
 		}),
@@ -952,13 +976,24 @@ test('partial failure continues other users and fails closed for the failing use
 	const ok = result.users.find((user) => user.stableUserId === ordered[1])
 	expect(failed).toMatchObject({
 		failed: true,
+		failureStage: 'workflow_inventory',
+		failurePhase: 'seed',
 		parity: false,
 		activationInitialized: false,
 	})
-	expect(ok).toMatchObject({ failed: false, parity: true })
+	expect(ok).toMatchObject({
+		failed: false,
+		failureStage: null,
+		failurePhase: null,
+		parity: true,
+	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-run-log-legacy-seed-user-failed',
-		expect.objectContaining({ stableUserId: ordered[0] }),
+		expect.objectContaining({
+			stableUserId: ordered[0],
+			failureStage: 'workflow_inventory',
+			failurePhase: 'seed',
+		}),
 	)
 	assertContentFree(result)
 })
@@ -1053,6 +1088,8 @@ test('missing workflow_runs relation fails user closed without empty activation 
 		{
 			stableUserId: userA,
 			failed: true,
+			failureStage: 'workflow_inventory',
+			failurePhase: 'd1',
 			parity: false,
 			activationInitialized: false,
 			workflows: emptyLegacyParityBucketCounts(),
@@ -1081,6 +1118,8 @@ test('missing jobs relation fails user closed without empty activation seed', as
 	expect(result.users[0]).toMatchObject({
 		stableUserId: userA,
 		failed: true,
+		failureStage: 'job_inventory',
+		failurePhase: 'd1',
 		parity: false,
 		activationInitialized: false,
 	})
@@ -1104,6 +1143,8 @@ test('missing activation package table fails user closed without marking initial
 	expect(result.users[0]).toMatchObject({
 		stableUserId: userA,
 		failed: true,
+		failureStage: 'activation_inventory',
+		failurePhase: 'd1',
 		parity: false,
 		activationInitialized: false,
 	})
@@ -1126,6 +1167,8 @@ test('missing activation milestones table fails user closed without marking init
 	expect(result.users[0]).toMatchObject({
 		stableUserId: userA,
 		failed: true,
+		failureStage: 'activation_inventory',
+		failurePhase: 'd1',
 		parity: false,
 		activationInitialized: false,
 	})
@@ -1150,6 +1193,8 @@ test('partial activation query failure after package rows load fails closed', as
 	expect(result.users[0]).toMatchObject({
 		stableUserId: userA,
 		failed: true,
+		failureStage: 'activation_inventory',
+		failurePhase: 'd1',
 		parity: false,
 		activationInitialized: false,
 	})
@@ -1157,3 +1202,127 @@ test('partial activation query failure after package rows load fails closed', as
 	expect(calls.importActivationState).toEqual([])
 	assertContentFree(result)
 })
+
+test('success user results expose null failureStage and failurePhase', async () => {
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	insertWorkflow(sqlite, { userId: userA, id: 'wf-ok' })
+	const { rpc } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+	expect(result.users[0]).toMatchObject({
+		failed: false,
+		failureStage: null,
+		failurePhase: null,
+		parity: true,
+	})
+	assertContentFree(result)
+})
+
+test.each([
+	{
+		label: 'workflow seed',
+		hook: 'workflow_seed' as const,
+		setup: (sqlite: DatabaseSync) => {
+			insertUser(sqlite, { stableUserId: userA })
+			insertWorkflow(sqlite, { userId: userA, id: 'wf-fail' })
+		},
+		action: 'seed' as const,
+		expectedStage: 'workflow_inventory' as const,
+		expectedPhase: 'seed' as const,
+	},
+	{
+		label: 'workflow verify',
+		hook: 'workflow_verify' as const,
+		setup: (sqlite: DatabaseSync) => {
+			insertUser(sqlite, { stableUserId: userA })
+			insertWorkflow(sqlite, { userId: userA, id: 'wf-fail' })
+		},
+		action: 'status' as const,
+		expectedStage: 'workflow_inventory' as const,
+		expectedPhase: 'verify' as const,
+	},
+	{
+		label: 'job seed',
+		hook: 'job_seed' as const,
+		setup: (sqlite: DatabaseSync) => {
+			insertUser(sqlite, { stableUserId: userA })
+			insertJob(sqlite, { userId: userA, id: 'job-fail' })
+		},
+		action: 'seed' as const,
+		expectedStage: 'job_inventory' as const,
+		expectedPhase: 'seed' as const,
+	},
+	{
+		label: 'job verify',
+		hook: 'job_verify' as const,
+		setup: (sqlite: DatabaseSync) => {
+			insertUser(sqlite, { stableUserId: userA })
+			insertJob(sqlite, { userId: userA, id: 'job-fail' })
+		},
+		action: 'status' as const,
+		expectedStage: 'job_inventory' as const,
+		expectedPhase: 'verify' as const,
+	},
+	{
+		label: 'activation seed',
+		hook: 'activation_seed' as const,
+		setup: (sqlite: DatabaseSync) => {
+			insertUser(sqlite, { stableUserId: userA })
+		},
+		action: 'seed' as const,
+		expectedStage: 'activation_inventory' as const,
+		expectedPhase: 'seed' as const,
+	},
+	{
+		label: 'activation verify',
+		hook: 'activation_verify' as const,
+		setup: (sqlite: DatabaseSync) => {
+			insertUser(sqlite, { stableUserId: userA })
+		},
+		action: 'status' as const,
+		expectedStage: 'activation_inventory' as const,
+		expectedPhase: 'verify' as const,
+	},
+])(
+	'injected $label failure reports failureStage and failurePhase content-free',
+	async ({ hook, setup, action, expectedStage, expectedPhase }) => {
+		silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+		const { sqlite, db } = createSweepDb()
+		setup(sqlite)
+		const { rpc } = createTrackingRpc({
+			failHooks: { [hook]: new Set([userA]) },
+		})
+		const result = await runAdminRunLogLegacySeed({
+			env: createEnv(db),
+			action,
+			limit: 1,
+			rpc,
+		})
+		expect(result.users[0]).toMatchObject({
+			stableUserId: userA,
+			failed: true,
+			failureStage: expectedStage,
+			failurePhase: expectedPhase,
+			parity: false,
+			activationInitialized: false,
+			workflows: emptyLegacyParityBucketCounts(),
+			jobs: emptyLegacyParityBucketCounts(),
+			activationPackages: emptyLegacyParityBucketCounts(),
+			activationMilestones: emptyLegacyParityBucketCounts(),
+		})
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'admin-run-log-legacy-seed-user-failed',
+			expect.objectContaining({
+				stableUserId: userA,
+				failureStage: expectedStage,
+				failurePhase: expectedPhase,
+			}),
+		)
+		assertContentFree(result)
+	},
+)

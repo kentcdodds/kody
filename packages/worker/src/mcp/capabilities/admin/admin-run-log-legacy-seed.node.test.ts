@@ -47,6 +47,8 @@ const sampleResult = {
 		{
 			stableUserId: targetUserId,
 			failed: false,
+			failureStage: null,
+			failurePhase: null,
 			parity: true,
 			activationInitialized: true,
 			workflows: emptyLegacyParityBucketCounts(),
@@ -207,4 +209,20 @@ test('admin_run_log_legacy_seed description states bounded one-shot activation',
 	expect(description).toContain(
 		String(adminRunLogLegacySeedDefaultWorkflowImportPageSize),
 	)
+})
+
+test('admin_run_log_legacy_seed output schema declares failureStage and failurePhase', () => {
+	const outputType = adminRunLogLegacySeedCapability.outputTypeDefinition ?? ''
+	expect(outputType).toContain('failureStage')
+	expect(outputType).toContain('failurePhase')
+	expect(outputType).toContain('workflow_inventory')
+	expect(outputType).toContain('job_inventory')
+	expect(outputType).toContain('activation_inventory')
+	expect(outputType).toMatch(/failureStage.*null|null.*failureStage/s)
+})
+
+test('admin_run_log_legacy_seed description mentions failureStage diagnostics', () => {
+	const description = adminRunLogLegacySeedCapability.description
+	expect(description).toContain('failureStage')
+	expect(description).toContain('failurePhase')
 })

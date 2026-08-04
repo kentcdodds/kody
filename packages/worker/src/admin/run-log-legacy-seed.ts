@@ -67,6 +67,13 @@ export type AdminRunLogLegacySeedEnv = {
 	RUN_LOG: DurableObjectNamespace
 }
 
+export type AdminRunLogLegacySeedFailureStage =
+	| 'workflow_inventory'
+	| 'job_inventory'
+	| 'activation_inventory'
+
+export type AdminRunLogLegacySeedFailurePhase = 'd1' | 'seed' | 'verify'
+
 export type AdminRunLogLegacySeedUserResult = {
 	stableUserId: string
 	/**
@@ -74,6 +81,10 @@ export type AdminRunLogLegacySeedUserResult = {
 	 * production evidence and must be rerun; bucket counts are zeroed.
 	 */
 	failed: boolean
+	/** Null on success; which inventory surface threw on failure. */
+	failureStage: AdminRunLogLegacySeedFailureStage | null
+	/** Null on success; which step within the surface threw on failure. */
+	failurePhase: AdminRunLogLegacySeedFailurePhase | null
 	parity: boolean
 	activationInitialized: boolean
 	workflows: LegacyParityBucketCounts
@@ -224,12 +235,51 @@ function resolveBatchSizes(
 	}
 }
 
+type AdminRunLogLegacySeedSurfaceFailure = {
+	stage: AdminRunLogLegacySeedFailureStage
+	phase: AdminRunLogLegacySeedFailurePhase
+}
+
+class AdminRunLogLegacySeedSurfaceError extends Error {
+	readonly failure: AdminRunLogLegacySeedSurfaceFailure
+
+	constructor(failure: AdminRunLogLegacySeedSurfaceFailure) {
+		super('admin-run-log-legacy-seed-surface-failure')
+		this.failure = failure
+	}
+}
+
+function isSurfaceFailure(
+	error: unknown,
+): error is AdminRunLogLegacySeedSurfaceError {
+	return error instanceof AdminRunLogLegacySeedSurfaceError
+}
+
+async function runSurfaceStep<T>(input: {
+	stage: AdminRunLogLegacySeedFailureStage
+	phase: AdminRunLogLegacySeedFailurePhase
+	run: () => Promise<T>
+}): Promise<T> {
+	try {
+		return await input.run()
+	} catch (error) {
+		if (isSurfaceFailure(error)) throw error
+		throw new AdminRunLogLegacySeedSurfaceError({
+			stage: input.stage,
+			phase: input.phase,
+		})
+	}
+}
+
 function failedUserResult(
 	stableUserId: string,
+	failure: AdminRunLogLegacySeedSurfaceFailure,
 ): AdminRunLogLegacySeedUserResult {
 	return {
 		stableUserId,
 		failed: true,
+		failureStage: failure.stage,
+		failurePhase: failure.phase,
 		parity: false,
 		activationInitialized: false,
 		workflows: emptyLegacyParityBucketCounts(),
@@ -524,11 +574,16 @@ async function processWorkflowPages(input: {
 	let activationInitialized = false
 	let startAfterId: string | null = null
 	for (;;) {
-		const rows = await fetchWorkflowPage({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			pageSize: input.batchSizes.workflowImport,
-			startAfterId,
+		const rows = await runSurfaceStep({
+			stage: 'workflow_inventory',
+			phase: 'd1',
+			run: () =>
+				fetchWorkflowPage({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					pageSize: input.batchSizes.workflowImport,
+					startAfterId,
+				}),
 		})
 		if (rows.length === 0) break
 
@@ -536,10 +591,15 @@ async function processWorkflowPages(input: {
 			case 'status':
 				break
 			case 'seed': {
-				await input.rpc.importWorkflowProjections({
-					env: input.env as Env,
-					userId: input.userId,
-					projections: rows.map(mapWorkflowProjection),
+				await runSurfaceStep({
+					stage: 'workflow_inventory',
+					phase: 'seed',
+					run: () =>
+						input.rpc.importWorkflowProjections({
+							env: input.env as Env,
+							userId: input.userId,
+							projections: rows.map(mapWorkflowProjection),
+						}),
 				})
 				break
 			}
@@ -551,12 +611,17 @@ async function processWorkflowPages(input: {
 			}
 		}
 
-		const verified = await verifyWorkflowChecks({
-			env: input.env,
-			userId: input.userId,
-			checks: rows.map(mapWorkflowParityCheck),
-			verifyBatchSize: input.batchSizes.verify,
-			rpc: input.rpc,
+		const verified = await runSurfaceStep({
+			stage: 'workflow_inventory',
+			phase: 'verify',
+			run: () =>
+				verifyWorkflowChecks({
+					env: input.env,
+					userId: input.userId,
+					checks: rows.map(mapWorkflowParityCheck),
+					verifyBatchSize: input.batchSizes.verify,
+					rpc: input.rpc,
+				}),
 		})
 		counts = addBucketCounts(counts, verified.counts)
 		activationInitialized =
@@ -565,7 +630,10 @@ async function processWorkflowPages(input: {
 		const lastId = rows.at(-1)?.id
 		if (!lastId || rows.length < input.batchSizes.workflowImport) break
 		if (lastId === startAfterId) {
-			throw new Error('workflow_runs keyset cursor did not advance')
+			throw new AdminRunLogLegacySeedSurfaceError({
+				stage: 'workflow_inventory',
+				phase: 'd1',
+			})
 		}
 		startAfterId = lastId
 	}
@@ -591,11 +659,16 @@ async function processJobPages(input: {
 	let activationInitialized = false
 	let startAfterId: string | null = null
 	for (;;) {
-		const rows = await fetchJobPage({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			pageSize: input.batchSizes.jobSeed,
-			startAfterId,
+		const rows = await runSurfaceStep({
+			stage: 'job_inventory',
+			phase: 'd1',
+			run: () =>
+				fetchJobPage({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					pageSize: input.batchSizes.jobSeed,
+					startAfterId,
+				}),
 		})
 		if (rows.length === 0) break
 
@@ -603,10 +676,15 @@ async function processJobPages(input: {
 			case 'status':
 				break
 			case 'seed': {
-				await input.rpc.seedJobRunObservabilityBatch({
-					env: input.env as Env,
-					userId: input.userId,
-					seeds: rows.map(mapJobSeed),
+				await runSurfaceStep({
+					stage: 'job_inventory',
+					phase: 'seed',
+					run: () =>
+						input.rpc.seedJobRunObservabilityBatch({
+							env: input.env as Env,
+							userId: input.userId,
+							seeds: rows.map(mapJobSeed),
+						}),
 				})
 				break
 			}
@@ -618,12 +696,17 @@ async function processJobPages(input: {
 			}
 		}
 
-		const verified = await verifyJobIds({
-			env: input.env,
-			userId: input.userId,
-			jobIds: rows.map((row) => String(row.id)),
-			verifyBatchSize: input.batchSizes.verify,
-			rpc: input.rpc,
+		const verified = await runSurfaceStep({
+			stage: 'job_inventory',
+			phase: 'verify',
+			run: () =>
+				verifyJobIds({
+					env: input.env,
+					userId: input.userId,
+					jobIds: rows.map((row) => String(row.id)),
+					verifyBatchSize: input.batchSizes.verify,
+					rpc: input.rpc,
+				}),
 		})
 		counts = addBucketCounts(counts, verified.counts)
 		activationInitialized =
@@ -632,7 +715,10 @@ async function processJobPages(input: {
 		const lastId = rows.at(-1)?.id
 		if (!lastId || rows.length < input.batchSizes.jobSeed) break
 		if (lastId === startAfterId) {
-			throw new Error('jobs keyset cursor did not advance')
+			throw new AdminRunLogLegacySeedSurfaceError({
+				stage: 'job_inventory',
+				phase: 'd1',
+			})
 		}
 		startAfterId = lastId
 	}
@@ -702,11 +788,16 @@ async function processActivation(input: {
 	activationMilestones: LegacyParityBucketCounts
 	activationInitialized: boolean
 }> {
-	const activation = await readActivationInventory({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		maxPackages: input.batchSizes.activationMaxPackages,
-		maxMilestones: input.batchSizes.activationMaxMilestones,
+	const activation = await runSurfaceStep({
+		stage: 'activation_inventory',
+		phase: 'd1',
+		run: () =>
+			readActivationInventory({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				maxPackages: input.batchSizes.activationMaxPackages,
+				maxMilestones: input.batchSizes.activationMaxMilestones,
+			}),
 	})
 
 	switch (input.action) {
@@ -715,10 +806,15 @@ async function processActivation(input: {
 		case 'seed':
 			// Unconditional: empty legacy activation still marks initialized so
 			// every non-deleting user can reach parity without D1 activation rows.
-			await input.rpc.importActivationState({
-				env: input.env as Env,
-				userId: input.userId,
-				state: activation,
+			await runSurfaceStep({
+				stage: 'activation_inventory',
+				phase: 'seed',
+				run: () =>
+					input.rpc.importActivationState({
+						env: input.env as Env,
+						userId: input.userId,
+						state: activation,
+					}),
 			})
 			break
 		default: {
@@ -748,11 +844,16 @@ async function processActivation(input: {
 	let milestones = emptyLegacyParityBucketCounts()
 	let activationInitialized = false
 	for (let round = 0; round < roundCount; round += 1) {
-		const result = await input.rpc.verifyLegacyParity({
-			env: input.env as Env,
-			userId: input.userId,
-			activationPackages: packageChunks[round] ?? [],
-			activationMilestones: milestoneChunks[round] ?? [],
+		const result = await runSurfaceStep({
+			stage: 'activation_inventory',
+			phase: 'verify',
+			run: () =>
+				input.rpc.verifyLegacyParity({
+					env: input.env as Env,
+					userId: input.userId,
+					activationPackages: packageChunks[round] ?? [],
+					activationMilestones: milestoneChunks[round] ?? [],
+				}),
 		})
 		packages = addBucketCounts(packages, result.activationPackages)
 		milestones = addBucketCounts(milestones, result.activationMilestones)
@@ -780,6 +881,8 @@ function toUserResult(
 	return {
 		stableUserId,
 		failed: false,
+		failureStage: null,
+		failurePhase: null,
 		parity,
 		activationInitialized: aggregated.activationInitialized,
 		workflows: aggregated.workflows,
@@ -796,50 +899,89 @@ async function processUser(input: {
 	batchSizes: AdminRunLogLegacySeedBatchSizes
 	rpc: AdminRunLogLegacySeedRpc
 }): Promise<AdminRunLogLegacySeedUserResult> {
+	let workflows: Awaited<ReturnType<typeof processWorkflowPages>>
 	try {
-		const workflows = await processWorkflowPages({
+		workflows = await processWorkflowPages({
 			env: input.env,
 			userId: input.userId,
 			action: input.action,
 			batchSizes: input.batchSizes,
 			rpc: input.rpc,
 		})
-		const jobs = await processJobPages({
-			env: input.env,
-			userId: input.userId,
-			action: input.action,
-			batchSizes: input.batchSizes,
-			rpc: input.rpc,
-		})
-		const activation = await processActivation({
-			env: input.env,
-			userId: input.userId,
-			action: input.action,
-			batchSizes: input.batchSizes,
-			rpc: input.rpc,
-		})
-
-		const aggregated: AggregatedParity = {
-			workflows: workflows.counts,
-			jobs: jobs.counts,
-			activationPackages: activation.activationPackages,
-			activationMilestones: activation.activationMilestones,
-			activationInitialized:
-				workflows.activationInitialized ||
-				jobs.activationInitialized ||
-				activation.activationInitialized,
-		}
-		return toUserResult(input.userId, aggregated)
 	} catch (error) {
-		// Fail closed for this user; never surface error text in the result.
-		// Missing D1 relations/columns are failures in this pre-drop evidence
-		// sweep — not successful empty inventory.
+		const failure = isSurfaceFailure(error)
+			? error.failure
+			: ({
+					stage: 'workflow_inventory',
+					phase: 'd1',
+				} satisfies AdminRunLogLegacySeedSurfaceFailure)
 		console.warn('admin-run-log-legacy-seed-user-failed', {
 			stableUserId: input.userId,
-			error,
+			failureStage: failure.stage,
+			failurePhase: failure.phase,
 		})
-		return failedUserResult(input.userId)
+		return failedUserResult(input.userId, failure)
 	}
+
+	let jobs: Awaited<ReturnType<typeof processJobPages>>
+	try {
+		jobs = await processJobPages({
+			env: input.env,
+			userId: input.userId,
+			action: input.action,
+			batchSizes: input.batchSizes,
+			rpc: input.rpc,
+		})
+	} catch (error) {
+		const failure = isSurfaceFailure(error)
+			? error.failure
+			: ({
+					stage: 'job_inventory',
+					phase: 'd1',
+				} satisfies AdminRunLogLegacySeedSurfaceFailure)
+		console.warn('admin-run-log-legacy-seed-user-failed', {
+			stableUserId: input.userId,
+			failureStage: failure.stage,
+			failurePhase: failure.phase,
+		})
+		return failedUserResult(input.userId, failure)
+	}
+
+	let activation: Awaited<ReturnType<typeof processActivation>>
+	try {
+		activation = await processActivation({
+			env: input.env,
+			userId: input.userId,
+			action: input.action,
+			batchSizes: input.batchSizes,
+			rpc: input.rpc,
+		})
+	} catch (error) {
+		const failure = isSurfaceFailure(error)
+			? error.failure
+			: ({
+					stage: 'activation_inventory',
+					phase: 'd1',
+				} satisfies AdminRunLogLegacySeedSurfaceFailure)
+		console.warn('admin-run-log-legacy-seed-user-failed', {
+			stableUserId: input.userId,
+			failureStage: failure.stage,
+			failurePhase: failure.phase,
+		})
+		return failedUserResult(input.userId, failure)
+	}
+
+	const aggregated: AggregatedParity = {
+		workflows: workflows.counts,
+		jobs: jobs.counts,
+		activationPackages: activation.activationPackages,
+		activationMilestones: activation.activationMilestones,
+		activationInitialized:
+			workflows.activationInitialized ||
+			jobs.activationInitialized ||
+			activation.activationInitialized,
+	}
+	return toUserResult(input.userId, aggregated)
 }
 
 /**
