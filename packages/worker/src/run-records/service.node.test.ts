@@ -23,6 +23,7 @@ const {
 	listActivationMilestones,
 	listPackageRunSuccesses,
 	recordRunRecord,
+	seedJobRunObservabilityBatch,
 } = await import('./service.ts')
 
 function createEnv(overrides: Partial<Env> = {}) {
@@ -235,4 +236,26 @@ test('activation reads never throw when RunLog is missing or RPC fails', async (
 		'activation-milestones-list-failed',
 		expect.any(Error),
 	)
+})
+
+test('seedJobRunObservabilityBatch throws when RUN_LOG binding is missing', async () => {
+	await expect(
+		seedJobRunObservabilityBatch({
+			env: {} as Env,
+			userId: 'user-1',
+			seeds: [
+				{
+					jobId: 'job-1',
+					lastRunAt: null,
+					lastRunStatus: null,
+					lastRunError: null,
+					lastDurationMs: null,
+					runCount: 0,
+					successCount: 0,
+					errorCount: 0,
+					updatedAt: '2026-07-01T00:00:00.000Z',
+				},
+			],
+		}),
+	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
 })

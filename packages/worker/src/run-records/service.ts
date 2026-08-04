@@ -1318,8 +1318,8 @@ export async function getJobRunObservability(input: {
 
 /**
  * Batch expand-phase job-observability seed. Propagates bound/RPC errors so
- * production sweeps fail closed on oversized batches. Reuses exact once-only
- * additive merge semantics inside the DO.
+ * production sweeps fail closed on oversized batches or a missing RUN_LOG
+ * binding. Reuses exact once-only additive merge semantics inside the DO.
  */
 export async function seedJobRunObservabilityBatch(input: {
 	env: Env
@@ -1335,7 +1335,7 @@ export async function seedJobRunObservabilityBatch(input: {
 		)
 	}
 	if (!runLogBinding(input.env)) {
-		return { attempted: 0, seeded: 0, alreadySeeded: 0 }
+		throw new Error('RUN_LOG Durable Object binding is not configured.')
 	}
 	return await runLogRpc({
 		env: input.env,

@@ -1,8 +1,12 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
 import {
 	adminRunLogLegacySeedActivationMaxMilestones,
 	adminRunLogLegacySeedActivationMaxPackages,
@@ -210,6 +214,8 @@ function createTrackingRpc(input?: {
 			userId: string
 			count: number
 			ids: Array<string>
+			seeded: number
+			alreadySeeded: number
 		}>,
 		importActivationState: [] as Array<{
 			userId: string
@@ -257,11 +263,6 @@ function createTrackingRpc(input?: {
 			}
 			callOrder.push('seedJobRunObservabilityBatch')
 			const ids = seeds.map((row) => row.jobId)
-			calls.seedJobRunObservabilityBatch.push({
-				userId,
-				count: seeds.length,
-				ids,
-			})
 			const set = seededJobIdsByUser.get(userId) ?? new Set<string>()
 			let seeded = 0
 			let alreadySeeded = 0
@@ -274,6 +275,13 @@ function createTrackingRpc(input?: {
 				}
 			}
 			seededJobIdsByUser.set(userId, set)
+			calls.seedJobRunObservabilityBatch.push({
+				userId,
+				count: seeds.length,
+				ids,
+				seeded,
+				alreadySeeded,
+			})
 			return { attempted: seeds.length, seeded, alreadySeeded }
 		},
 		async importActivationState({ userId, state }) {
@@ -677,97 +685,66 @@ test('newer D1 workflow updatedAt surfaces underCount on status after stale seed
 	assertContentFree(status)
 })
 
-test(
-	'exactly max activation package rows can seed and verify as one-shot snapshot',
-	{ timeout: 30_000 },
-	async () => {
-		expect(adminRunLogLegacySeedActivationMaxPackages).toBe(10_000)
-		const { sqlite, db } = createSweepDb()
-		insertUser(sqlite, { stableUserId: userA })
-		const insert = sqlite.prepare(
-			`INSERT INTO user_package_run_successes (
-				user_id, package_id, success_count, updated_at
-			) VALUES (?, ?, 1, ?)`,
-		)
-		const updatedAt = '2026-07-01T00:00:00.000Z'
-		sqlite.exec('BEGIN')
-		for (
-			let index = 0;
-			index < adminRunLogLegacySeedActivationMaxPackages;
-			index += 1
-		) {
-			insert.run(userA, `pkg-${String(index).padStart(5, '0')}`, updatedAt)
-		}
-		sqlite.exec('COMMIT')
+test('production activation package cap equals max plan saved packages', () => {
+	expect(adminRunLogLegacySeedActivationMaxPackages).toBe(
+		planLimits.max.maxSavedPackages,
+	)
+	expect(adminRunLogLegacySeedActivationMaxPackages).toBe(10_000)
+})
 
-		const { rpc, calls } = createTrackingRpc()
-		const result = await runAdminRunLogLegacySeed({
-			env: createEnv(db),
-			action: 'seed',
-			limit: 1,
-			rpc,
-		})
-		expect(result.users[0]?.parity).toBe(true)
-		expect(result.users[0]?.activationInitialized).toBe(true)
-		expect(calls.importActivationState).toEqual([
-			{
-				userId: userA,
-				packageCount: adminRunLogLegacySeedActivationMaxPackages,
-				milestoneCount: 0,
-			},
-		])
-		const packageMatched = calls.verifyLegacyParity.reduce(
-			(sum, call) => sum + call.packageCount,
-			0,
-		)
-		expect(packageMatched).toBe(adminRunLogLegacySeedActivationMaxPackages)
-		assertContentFree(result)
-	},
-)
+test('activation package inventory respects injectable max with +1 fail-closed', async () => {
+	const packageCap = 3
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	const insert = sqlite.prepare(
+		`INSERT INTO user_package_run_successes (
+			user_id, package_id, success_count, updated_at
+		) VALUES (?, ?, 1, ?)`,
+	)
+	const updatedAt = '2026-07-01T00:00:00.000Z'
+	for (let index = 0; index < packageCap; index += 1) {
+		insert.run(userA, `pkg-${index}`, updatedAt)
+	}
 
-test(
-	'activation package max+1 fails closed without leaking inventory details',
-	{ timeout: 30_000 },
-	async () => {
-		silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
-		const { sqlite, db } = createSweepDb()
-		insertUser(sqlite, { stableUserId: userA })
-		const insert = sqlite.prepare(
-			`INSERT INTO user_package_run_successes (
-				user_id, package_id, success_count, updated_at
-			) VALUES (?, ?, 1, ?)`,
-		)
-		const updatedAt = '2026-07-01T00:00:00.000Z'
-		sqlite.exec('BEGIN')
-		for (
-			let index = 0;
-			index < adminRunLogLegacySeedActivationMaxPackages + 1;
-			index += 1
-		) {
-			insert.run(userA, `pkg-${String(index).padStart(5, '0')}`, updatedAt)
-		}
-		sqlite.exec('COMMIT')
+	const { rpc, calls } = createTrackingRpc()
+	const atCap = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+		batchSizes: { activationMaxPackages: packageCap },
+	})
+	expect(atCap.users[0]?.parity).toBe(true)
+	expect(calls.importActivationState).toEqual([
+		{
+			userId: userA,
+			packageCount: packageCap,
+			milestoneCount: 0,
+		},
+	])
+	assertContentFree(atCap)
 
-		const { rpc, calls } = createTrackingRpc()
-		const result = await runAdminRunLogLegacySeed({
-			env: createEnv(db),
-			action: 'seed',
-			limit: 1,
-			rpc,
-		})
-		expect(result.users).toEqual([
-			expect.objectContaining({
-				stableUserId: userA,
-				parity: false,
-				activationInitialized: false,
-			}),
-		])
-		expect(calls.importActivationState).toEqual([])
-		assertContentFree(result)
-	},
-)
+	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	insert.run(userA, `pkg-${packageCap}`, updatedAt)
+	const overflow = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+		batchSizes: { activationMaxPackages: packageCap },
+	})
+	expect(overflow.users).toEqual([
+		expect.objectContaining({
+			stableUserId: userA,
+			parity: false,
+			activationInitialized: false,
+		}),
+	])
+	expect(calls.importActivationState).toHaveLength(1)
+	assertContentFree(overflow)
+})
 
-test('activation milestones use intrinsic bound separately from package cap', async () => {
+test('activation milestones filter unknown rows and keep intrinsic known-name bound', async () => {
 	expect(adminRunLogLegacySeedActivationMaxMilestones).toBe(
 		activationMilestoneValues.length,
 	)
@@ -784,24 +761,7 @@ test('activation milestones use intrinsic bound separately from package cap', as
 			)
 			.run(userA, milestone, '2026-07-01T00:00:00.000Z')
 	}
-	const { rpc, calls } = createTrackingRpc()
-	const atCap = await runAdminRunLogLegacySeed({
-		env: createEnv(db),
-		action: 'seed',
-		limit: 1,
-		rpc,
-	})
-	expect(atCap.users[0]?.parity).toBe(true)
-	expect(calls.importActivationState).toEqual([
-		{
-			userId: userA,
-			packageCount: 0,
-			milestoneCount: adminRunLogLegacySeedActivationMaxMilestones,
-		},
-	])
-	assertContentFree(atCap)
-
-	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	// Unknown/retired row must not consume the known-milestone cap.
 	sqlite
 		.prepare(
 			`INSERT INTO user_activation_milestones (
@@ -809,22 +769,23 @@ test('activation milestones use intrinsic bound separately from package cap', as
 			) VALUES (?, 'bogus_extra_milestone', ?, NULL)`,
 		)
 		.run(userA, '2026-07-01T00:00:00.000Z')
-	const overflow = await runAdminRunLogLegacySeed({
+
+	const { rpc, calls } = createTrackingRpc()
+	const seeded = await runAdminRunLogLegacySeed({
 		env: createEnv(db),
 		action: 'seed',
 		limit: 1,
 		rpc,
 	})
-	expect(overflow.users).toEqual([
-		expect.objectContaining({
-			stableUserId: userA,
-			parity: false,
-			activationInitialized: false,
-		}),
+	expect(seeded.users[0]?.parity).toBe(true)
+	expect(calls.importActivationState).toEqual([
+		{
+			userId: userA,
+			packageCount: 0,
+			milestoneCount: adminRunLogLegacySeedActivationMaxMilestones,
+		},
 	])
-	// Overflow fails before a second import; only the successful at-cap import ran.
-	expect(calls.importActivationState).toHaveLength(1)
-	assertContentFree(overflow)
+	assertContentFree(seeded)
 })
 
 test('cross-user isolation: each user only verifies its own inventory ids', async () => {
@@ -863,7 +824,7 @@ test('cross-user isolation: each user only verifies its own inventory ids', asyn
 	assertContentFree(result)
 })
 
-test('idempotent reseed keeps parity and reuses already-seeded job path', async () => {
+test('idempotent reseed keeps parity and reports alreadySeeded on job path', async () => {
 	const { sqlite, db } = createSweepDb()
 	insertUser(sqlite, { stableUserId: userA })
 	insertJob(sqlite, { userId: userA, id: 'job-idem' })
@@ -883,7 +844,22 @@ test('idempotent reseed keeps parity and reuses already-seeded job path', async 
 	})
 	expect(first.users[0]?.parity).toBe(true)
 	expect(second.users[0]?.parity).toBe(true)
-	expect(calls.seedJobRunObservabilityBatch).toHaveLength(2)
+	expect(calls.seedJobRunObservabilityBatch).toEqual([
+		{
+			userId: userA,
+			count: 1,
+			ids: ['job-idem'],
+			seeded: 1,
+			alreadySeeded: 0,
+		},
+		{
+			userId: userA,
+			count: 1,
+			ids: ['job-idem'],
+			seeded: 0,
+			alreadySeeded: 1,
+		},
+	])
 	expect(calls.importActivationState).toHaveLength(2)
 	assertContentFree(first)
 	assertContentFree(second)
@@ -916,6 +892,10 @@ test('partial failure continues other users and fails closed for the failing use
 		activationInitialized: false,
 	})
 	expect(ok?.parity).toBe(true)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-run-log-legacy-seed-user-failed',
+		expect.objectContaining({ stableUserId: ordered[0] }),
+	)
 	assertContentFree(result)
 })
 

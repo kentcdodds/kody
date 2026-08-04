@@ -51,8 +51,19 @@ export type JobRunObservabilitySeedInput = Omit<
  */
 export const jobRunObservabilitySeedMaxBatch = 500
 
+/**
+ * Batch seed counters. `attempted` is the input array length (including blank
+ * `jobId` entries). Blank ids are neither `seeded` nor `alreadySeeded`, so
+ * `attempted` may exceed `seeded + alreadySeeded`.
+ */
 export type JobRunObservabilityBatchSeedResult = {
 	attempted: number
 	seeded: number
 	alreadySeeded: number
 }
+
+/** Outcome of one once-only job-observability seed attempt. */
+export type JobRunObservabilitySeedApplyStatus =
+	| 'seeded'
+	| 'already-seeded'
+	| 'blank'

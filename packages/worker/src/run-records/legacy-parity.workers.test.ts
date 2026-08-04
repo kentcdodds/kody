@@ -386,6 +386,89 @@ test('seedJobRunObservabilityBatch merges once onto post-cutover counters', asyn
 	expect(again).toEqual({ attempted: 1, seeded: 0, alreadySeeded: 1 })
 })
 
+test('seedJobRunObservabilityBatch attempted includes blanks; already-seeded is classified once', async () => {
+	const userId = uniqueUserId('attempted-semantics')
+	const jobId = `job-attempted-${crypto.randomUUID()}`
+
+	const withBlank = await seedJobRunObservabilityBatch({
+		env,
+		userId,
+		seeds: [
+			jobSeed({ jobId }),
+			jobSeed({ jobId: '   ' }),
+			jobSeed({ jobId: '' }),
+		],
+	})
+	// attempted is input length; blanks are neither seeded nor alreadySeeded.
+	expect(withBlank).toEqual({
+		attempted: 3,
+		seeded: 1,
+		alreadySeeded: 0,
+	})
+	expect(withBlank.attempted).toBeGreaterThan(
+		withBlank.seeded + withBlank.alreadySeeded,
+	)
+
+	const reseed = await seedJobRunObservabilityBatch({
+		env,
+		userId,
+		seeds: [jobSeed({ jobId, runCount: 50 }), jobSeed({ jobId: '' })],
+	})
+	expect(reseed).toEqual({
+		attempted: 2,
+		seeded: 0,
+		alreadySeeded: 1,
+	})
+})
+
+test('verifyLegacyParity fails closed on malformed activation package minimums', async () => {
+	const userId = uniqueUserId('malformed-min')
+	const packageId = `pkg-malformed-${crypto.randomUUID()}`
+	await importActivationState({
+		env,
+		userId,
+		state: {
+			packageRunSuccesses: [
+				{
+					packageId,
+					successCount: 3,
+					updatedAt: '2026-07-01T00:00:00.000Z',
+				},
+			],
+			milestones: [],
+		},
+	})
+
+	const report = await verifyLegacyParity({
+		env,
+		userId,
+		activationPackages: [
+			{ packageId, minimumSuccessCount: 2 },
+			{
+				packageId,
+				minimumSuccessCount: Number.NaN,
+			},
+			{
+				packageId,
+				minimumSuccessCount: Number.POSITIVE_INFINITY,
+			},
+			{
+				packageId,
+				// Runtime-malformed inventory payload (typed as number).
+				minimumSuccessCount: undefined as unknown as number,
+			},
+			{ packageId: '', minimumSuccessCount: 1 },
+		],
+	})
+	expect(report.activationPackages).toEqual({
+		matched: 1,
+		missing: 1,
+		underCount: 3,
+	})
+	expect(report.parity).toBe(false)
+	expect(JSON.stringify(report)).not.toContain(packageId)
+})
+
 test('upsertWorkflowProjection rows remain visible to importWorkflowProjections batch seeding', async () => {
 	const userId = uniqueUserId('wf-batch')
 	const id = `wf-batch-${crypto.randomUUID()}`

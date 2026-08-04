@@ -105,3 +105,31 @@ export function isActivationMilestoneName(
 export function bucketParityHolds(counts: LegacyParityBucketCounts): boolean {
 	return counts.missing === 0 && counts.underCount === 0
 }
+
+/**
+ * Build a bounded `IN (?, …)` placeholder list. Empty and over-cap counts fail
+ * closed so callers never emit an unbounded SQL parameter list.
+ */
+export function legacyParitySqlInPlaceholders(
+	count: number,
+	max = legacyParityVerifyMaxBatch,
+): string {
+	if (!Number.isInteger(count) || count <= 0 || count > max) {
+		throw new Error(
+			`legacyParitySqlInPlaceholders count must be 1..${max} (got ${String(count)})`,
+		)
+	}
+	return Array.from({ length: count }, () => '?').join(', ')
+}
+
+/**
+ * Coerce an activation package minimum. Non-finite values fail closed so the
+ * caller can count `underCount` instead of treating the check as matched.
+ */
+export function coerceLegacyParityMinimumSuccessCount(
+	value: unknown,
+): number | null {
+	const raw = typeof value === 'number' ? value : Number(value)
+	if (!Number.isFinite(raw)) return null
+	return Math.max(0, Math.trunc(raw))
+}

@@ -673,15 +673,21 @@ async function readActivationInventory(input: {
 			throw new Error('activation package inventory exceeds defensive hard cap')
 		}
 
+		// Only known milestone names count toward the intrinsic cap so
+		// unknown/retired rows cannot exhaust the one-shot snapshot budget.
+		const milestonePlaceholders = activationMilestoneValues
+			.map(() => '?')
+			.join(', ')
 		const milestoneRows = await input.db
 			.prepare(
 				`SELECT milestone, reached_at, package_id
 				FROM user_activation_milestones
 				WHERE user_id = ?
+					AND milestone IN (${milestonePlaceholders})
 				ORDER BY milestone ASC
 				LIMIT ?`,
 			)
-			.bind(input.userId, input.maxMilestones + 1)
+			.bind(input.userId, ...activationMilestoneValues, input.maxMilestones + 1)
 			.all<D1ActivationMilestoneRow>()
 		const milestones = milestoneRows.results ?? []
 		if (milestones.length > input.maxMilestones) {
@@ -837,7 +843,10 @@ async function processUser(input: {
 		return toUserResult(input.userId, aggregated)
 	} catch (error) {
 		// Fail closed for this user; never surface error text in the result.
-		console.warn('admin-run-log-legacy-seed-user-failed', { error })
+		console.warn('admin-run-log-legacy-seed-user-failed', {
+			stableUserId: input.userId,
+			error,
+		})
 		return emptyUserResult(input.userId)
 	}
 }
