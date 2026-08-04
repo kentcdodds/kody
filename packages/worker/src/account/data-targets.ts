@@ -250,6 +250,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'repo_sessions' },
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
+	{ kind: 'user_id', table: 'entity_source_artifacts_push_subscriptions' },
 	{ kind: 'user_id', table: 'entity_sources' },
 	{
 		kind: 'user_id',
