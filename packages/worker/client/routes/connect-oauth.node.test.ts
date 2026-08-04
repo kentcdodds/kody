@@ -882,9 +882,9 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 	expect(isBrowserFetchNetworkError(firefox)).toBe(true)
 	expect(isBrowserFetchNetworkError(chromium)).toBe(true)
 	expect(isBrowserFetchNetworkError(webkit)).toBe(true)
-	expect(isBrowserFetchNetworkError(new TypeError('null is not an object'))).toBe(
-		false,
-	)
+	expect(
+		isBrowserFetchNetworkError(new TypeError('null is not an object')),
+	).toBe(false)
 	expect(isBrowserFetchNetworkError(new Error('Failed to fetch'))).toBe(false)
 	expect(formatConnectOauthCaughtError(firefox, 'fallback')).toBe(
 		'Network error. Please try again.',
@@ -893,7 +893,10 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 		'Network error. Please try again.',
 	)
 	expect(
-		formatConnectOauthCaughtError(new Error('Unable to save secret.'), 'fallback'),
+		formatConnectOauthCaughtError(
+			new Error('Unable to save secret.'),
+			'fallback',
+		),
 	).toBe('Unable to save secret.')
 	expect(formatConnectOauthCaughtError('nope', 'fallback')).toBe('fallback')
 })

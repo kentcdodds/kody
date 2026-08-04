@@ -622,7 +622,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			// fetch() TypeError (Firefox NetworkError / Chromium Failed to fetch)
 			// must not escape as unhandledrejection — KODY-CLOUDFLARE-3P.
 			setStatus(
-				formatConnectOauthCaughtError(error, 'Network error. Please try again.'),
+				formatConnectOauthCaughtError(
+					error,
+					'Network error. Please try again.',
+				),
 				'error',
 			)
 		} finally {
@@ -732,7 +735,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			// Same class as setup submit: token exchange / save fetch failures
 			// must surface in-page, not as unhandledrejection (KODY-CLOUDFLARE-3P).
 			setStatus(
-				formatConnectOauthCaughtError(error, 'Network error. Please try again.'),
+				formatConnectOauthCaughtError(
+					error,
+					'Network error. Please try again.',
+				),
 				'error',
 			)
 			setStep('connect')
@@ -917,10 +923,7 @@ export function ConnectOauthRoute(handle: Handle) {
 							})
 						: null)
 				if (!nextConfig) {
-					setStatus(
-						'Missing required OAuth configuration parameters.',
-						'error',
-					)
+					setStatus('Missing required OAuth configuration parameters.', 'error')
 					return
 				}
 				config = nextConfig
@@ -953,7 +956,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			// Initial integration/secrets reads use fetch(); a transient network
 			// failure must not escape queueTask as unhandledrejection.
 			setStatus(
-				formatConnectOauthCaughtError(error, 'Network error. Please try again.'),
+				formatConnectOauthCaughtError(
+					error,
+					'Network error. Please try again.',
+				),
 				'error',
 			)
 		}
