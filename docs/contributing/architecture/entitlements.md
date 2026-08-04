@@ -139,13 +139,11 @@ index for discovery, account export, and deletion, and is the parity mirror —
 see
 [Package service liveness — UserMeter authority](#package-service-liveness--usermeter-authority-cutover-2026-08-01).
 
-**Account-deletion write fencing** uses a split authority model (temporary D1
-mirror retired 2026-08-01): D1 `users.deleting_at` remains the permanent point
-gate; callers that supply `USER_METER` treat UserMeter (`authority='do'`) as
-authoritative for lease acquire/held/release/drain count without any D1 row,
-while email/transition callers that omit `env` keep the exact D1
-`account_write_leases` path. D1 `account_write_leases` rows are legacy email
-leases and historical stale pre-retirement rows. See
+**Account-deletion write fencing:** D1 `users.deleting_at` remains the permanent
+point gate. All callers (including email paths) supply `env`; UserMeter is
+authoritative for all lease acquire/held/release/count operations. D1
+`account_write_leases` is quiescent — no new rows are written and the table is
+not queried on any runtime path. See
 [Account-deletion write fencing — UserMeter authority](#account-deletion-write-fencing--usermeter-authority-expand-phase-slice-5-phase-b).
 
 StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
@@ -342,61 +340,41 @@ pages return `null`. The field reflects the authoritative DO inventory.
 **Account purge:** `UserMeter.purge()` clears package-service shadow rows via
 `deleteAll` then schema re-init.
 
-### Account-deletion write fencing — UserMeter authority (expand phase slice 5, Phase B; mirror retired 2026-08-01)
+### Account-deletion write fencing — UserMeter authority (contract complete 2026-08-03)
 
-UserMeter schema **v7** stores `account_write_leases.authority` (`do` |
-`legacy`; rows created under v6 default to `legacy`) and `pending_repair_id` for
-audit-safe DO repair.
+UserMeter schema **v7** stores `account_write_leases` with a warm `authority`
+column (`do`|`legacy`; kept for schema compatibility — all new rows are
+`authority='do'`; the physical column is ignored by code and will be dropped on
+a later schema bump after production objects report `schema_version >= 7`).
 
-**Split authority:**
+**Authority:** D1 `users.deleting_at` remains the **permanent point gate** (auth
+projection / purge failures fail closed). All callers supply `env`; UserMeter is
+authoritative for lease acquire / held / release / count via `acquireWriteLease`
+/ `assertWriteLeaseHeld` / `releaseWriteLease` / `countActiveWriteLeases`.
+Missing `USER_METER` binding **fails closed**. No D1 row is written on acquire.
+D1 `account_write_leases` is **quiescent** — no new rows are written and the
+table is not queried on any runtime path. D1 `account_write_lease_repairs`
+remains the audit log for repairs. ALS nested-lease reuse propagates per
+`stableUserId` across the async call chain.
 
-- D1 `users.deleting_at` remains the **permanent point gate** (auth projection /
-  purge failures fail closed). Assert-only readers (`assertAccountWritable*`)
-  stay D1-only. D1 `account_write_leases` / `account_write_lease_repairs` tables
-  are **not** retired; the columns and table are kept for legacy email leases,
-  historical stale rows, and audit repair records.
-- When `env.USER_METER` is supplied (all non-email callers), UserMeter is
-  **authoritative** for lease acquire / held / release via `acquireWriteLease` /
-  `assertWriteLeaseHeld` / `releaseWriteLease` (`authority='do'`). Missing
-  binding or DO failures **fail closed**. No D1 row is written on acquire.
-- When `env` is omitted (email/legacy), retain the **exact D1 lease path**
-  (including `active_write_count`, ALS nested reuse, and `waitUntil` release).
+**`markAccountDeleting`:** `COALESCE`s D1 `deleting_at` (idempotent), then calls
+`markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO
+lease count for drain waits.
 
-**Temporary D1 mirror (retired 2026-08-01):** DO-authority acquires do not write
-D1 rows. D1 rows for DO-authority leases are historical stale leftovers; use
-`admin_account_write_lease_repair` to clear them via the audited path.
-`admin_user_meter_parity` reports `deletion.temporaryMirrorRetired: true`; the
-`doOnly` category is expected and does not fail `mirrorLeaseParity`. Only
-`legacyWithoutD1` (legacy-authority meter leases without a D1 row) and truncated
-inventory fail the gate.
+**Admin list / repair:** `listActiveAccountWriteLeases(env, userId)` reads DO
+leases via `listWriteLeases` pages — no D1 union. Repair is DO-only and
+audit-first: prepare (stable `repairId`, lease stays held) → insert/verify D1
+audit row → finalize exact pending DO repair. Finalize failure leaves DO held
+and fails closed; retry resumes from the existing audit row. Retry after a lost
+finalize response returns success when the matching audit exists and the DO
+lease is absent. Wrong user, stale `acquiredAt`, or short reason requests fail
+closed.
 
-**`markAccountDeleting`:** always `COALESCE`s D1 `deleting_at` first, then loads
-live D1 leases (legacy email rows only). With `env`, calls authoritative
-`markDeleting` which sets/preserves the DO tombstone, replaces **only legacy**
-rows with that exact D1 snapshot, preserves DO-authority rows, and returns the
-deduped-by-token union count used for drain waits. Without `env`, returns the D1
-lease count unchanged.
-
-**Admin list / repair:** `listActiveAccountWriteLeases(db, userId, env?)` with
-`env` unions live D1 leases + DO-authority leases (dedupe by token, same
-`acquired_at, token` order); without `env` exact D1 behavior. DO repair is
-audit-first and idempotent: prepare (stable `repairId`, lease stays held) →
-insert/verify D1 audit → finalize exact pending DO repair → then idempotently
-clear any stale D1 row. A stale D1 row is never cleared while the DO lease
-remains held. Finalize failure without commit leaves DO held and the stale D1
-row (if any) in place, and fails closed; retry resumes the pending repair. Retry
-after finalize commit / lost response returns success when the matching audit
-exists and the DO lease is absent (clears any stale D1 row; never falls through
-to a mismatched D1 atomic batch). Post-write held checks treat pending repair as
-held until finalize, then surface `AccountWriteLeaseLostError`. Pure D1 leases
-keep the existing atomic audit-before-release batch.
-
-**Account export / purge:** first-page sanitized `deletionShadow` still omits
-raw token/holder. `purge()` clears leases/counters/shadows via `deleteAll` then
-restores any deleting tombstone; D1 `deleting_at` remains the gate.
-
-Public errors, ALS nested-lease reuse, holder strings, and `waitUntil` release
-detachment stay parity-compatible with the pre-cutover surface.
+**Account export / purge:** first-page sanitized `deletionShadow` omits raw
+token/holder (count and `acquiredAt` only). `purge()` clears leases/counters/
+shadows via `deleteAll` then restores any deleting tombstone; D1 `deleting_at`
+remains the gate. Post-write held checks treat pending repair as held until
+finalize, then surface `AccountWriteLeaseLostError`.
 
 ### Package-service authority flip (complete, 2026-08-01)
 
@@ -426,10 +404,10 @@ parity sign-off).
 **Do not drop the D1 columns yet.** They serve as the async mirror, cold
 bootstrap source, and reconcile cursor during the dual-write window.
 
-**Current UserMeter authority:** non-email write leases, storage bytes, and
-package-service running counts are authoritative in UserMeter. The temporary
-same-token D1 write-lease mirror is retired (2026-08-01); email keeps its D1
-lease path. See the storage, package-service, and write-fencing sections above.
+**Current UserMeter authority:** all write leases (including email), storage
+bytes, and package-service running counts are authoritative in UserMeter. D1
+`account_write_leases` is quiescent (no new rows written or read). See the
+storage, package-service, and write-fencing sections above.
 
 **Daily-counter mirror (retired):** live schema has no
 `entitlement_daily_counters` table (Workers `#1133` / `#1134`, then migration
@@ -457,13 +435,7 @@ Interpret the structured report as independent gates:
 | Storage bytes            | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                          |
 | Package services         | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`. |
 | Deletion tombstone       | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                   |
-| Lease readiness          | `deletion.mirrorLeaseParity` — `legacyWithoutD1 === 0` and inventory not truncated. `doOnly` is expected and does **not** fail this gate. `d1Only` reflects legacy email leases and historical stale pre-retirement rows. `deletion.temporaryMirrorRetired` is always `true`.       |
-
-**D1-only (legacy) leases:** email paths that omit `env` still take exact D1
-leases, so `d1Only > 0` is expected and normal. Stale pre-retirement D1 mirrors
-also contribute to `d1Only` until cleared via
-`admin_account_write_lease_repair`. Operators confirm legacy holders via
-`admin_account_write_lease_list`.
+| Active lease count       | `deletion.activeLeaseCount` — count of active DO write leases in UserMeter. D1 `account_write_leases` is not queried. Alert on unexplained non-zero counts after all known writer processes have been verified terminated.                                                          |
 
 **Threshold:** treat unexplained mismatches as blocking for the corresponding
 cutover (daily mirror retirement before the drop migration, storage authority
