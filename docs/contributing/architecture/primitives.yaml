@@ -173,10 +173,26 @@ primitives:
     docs:
       - docs/contributing/adding-capabilities.md
 
+  - id: repos
+    group: assistant
+    name: Repos
+    summary:
+      User-owned plain Artifacts repos; the base primitive packages extend.
+    code:
+      - packages/worker/src/repo/user-repos.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-create.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-list.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-get.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-delete.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-get-git-remote.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-promote-to-package.ts
+    docs:
+      - docs/use/repos.md
+
   - id: saved-packages
     group: assistant
     name: Saved packages
-    summary: Repo-backed packages rooted at package.json.
+    summary: Explicitly activated package extension over repo-backed source.
     code:
       - packages/worker/src/mcp/capabilities/packages/
       - packages/worker/src/package-registry/

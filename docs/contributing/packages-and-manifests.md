@@ -1,6 +1,8 @@
 # Packages and manifests
 
-Kody's only top-level saved primitive is the **package**.
+Repos are Kody's base persisted primitive; a **package** is a repo with the
+package extension activated (runtime surfaces, publish checks — see
+[ADR 0003](./decisions/0003-repos-as-base-primitive.md)).
 
 A saved package is a repo-backed module rooted at `package.json`. The standard
 package fields describe the package shape, and `package.json#kody` holds the
@@ -83,7 +85,7 @@ The top-level saved identity is the package.
 
 ## Package state model
 
-A saved package is the only top-level persisted primitive. Five concepts:
+A saved package is a repo with the package extension activated. Five concepts:
 
 1. **Package source** — Artifacts repo + D1 `entity_sources` projection;
    manifest rooted at `package.json`.

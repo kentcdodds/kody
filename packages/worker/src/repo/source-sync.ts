@@ -49,6 +49,9 @@ function validateEntitySourceManifest(input: {
 		})
 		return
 	}
+	if (input.entityKind === 'repo') {
+		return
+	}
 	parseRepoManifest({
 		content: input.content,
 		manifestPath: input.manifestPath,

@@ -12,6 +12,10 @@ import {
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
 import {
+	buildPlainRepoPromotionErrorMessage,
+	findPlainRepoPromotionHint,
+} from '#worker/repo/user-repos.ts'
+import {
 	parseKodyPackageSpecifier,
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
@@ -191,8 +195,14 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 					specifier: parsed,
 				}))
 			if (!row) {
+				const plainRepo = await findPlainRepoPromotionHint(input.env.APP_DB, {
+					userId: input.userId,
+					packageIdOrKodyId: parsed.packageName,
+				})
 				throw new Error(
-					`Saved package "${parsed.packageName}" was not found for this user.`,
+					plainRepo
+						? buildPlainRepoPromotionErrorMessage(parsed.packageName)
+						: `Saved package "${parsed.packageName}" was not found for this user.`,
 				)
 			}
 			const loaded =

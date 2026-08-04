@@ -6,6 +6,10 @@ import {
 } from '#mcp/run-kody-registry.ts'
 import { type PackageExportProjection } from '#worker/package-registry/manifest.ts'
 import {
+	buildPlainRepoPromotionErrorMessage,
+	findPlainRepoPromotionHint,
+} from '#worker/repo/user-repos.ts'
+import {
 	buildSavedPackageNotFoundMessage,
 	normalizeExportName,
 } from './common.ts'
@@ -100,7 +104,13 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 		packageIdOrKodyId: request.packageIdOrKodyId,
 	})
 	if (!savedPackage) {
-		const message = buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
+		const plainRepo = await findPlainRepoPromotionHint(input.env.APP_DB, {
+			userId: input.userId,
+			packageIdOrKodyId: request.packageIdOrKodyId,
+		})
+		const message = plainRepo
+			? buildPlainRepoPromotionErrorMessage(request.packageIdOrKodyId)
+			: buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
 		return {
 			result: createPackageInvokeCheckFailure({
 				message,

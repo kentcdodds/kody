@@ -555,6 +555,10 @@
 		{
 			"filename": "0135-drop-legacy-email-graph.sql",
 			"sha256": "8b740c29456e2ad2d0b6c3a8febbf9a2b761bff8f60c7258ebcb2b42a7b8580a"
+		},
+		{
+			"filename": "0136-user-repos.sql",
+			"sha256": "89321951281dab27f56d2fbcd64b5b761cbd66d4fffb183062bbfe9878eaf634"
 		}
 	]
 }

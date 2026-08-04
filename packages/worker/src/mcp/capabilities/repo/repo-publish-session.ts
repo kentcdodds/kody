@@ -1,7 +1,12 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	buildPlainRepoPackageShapedFields,
+	isPlainRepoPackageShapedAtCommit,
+} from './plain-repo-package-shaped.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {
 	repoPublishSessionInputSchema,
@@ -50,12 +55,33 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
+					return {
+						status: 'ok' as const,
+						session_id: result.sessionId,
+						published_commit: result.publishedCommit,
+						message: result.message,
+					}
 				}
+				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
+					id: sessionInfo.source_id,
+					userId: user.userId,
+				})
+				const packageShaped = source
+					? await isPlainRepoPackageShapedAtCommit({
+							env: ctx.env,
+							repoId: source.repo_id,
+							commit: result.publishedCommit,
+						})
+					: false
+				const shapedFields = buildPlainRepoPackageShapedFields({
+					packageShaped,
+				})
 				return {
 					status: 'ok' as const,
 					session_id: result.sessionId,
 					published_commit: result.publishedCommit,
 					message: result.message,
+					...shapedFields,
 				}
 			}
 			if (result.status === 'checks_outdated') {

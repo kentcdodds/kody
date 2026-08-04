@@ -1401,3 +1401,67 @@ export async function runRepoChecks(input: {
 		sourceFiles,
 	})
 }
+
+type RepoSourceWalkWorkspace = {
+	readFile(path: string): Promise<string | null>
+	glob(pattern: string): Promise<Array<{ path: string; type: string }>>
+	stat?(path: string): Promise<{ size: number } | null>
+}
+
+/**
+ * Plain-repo publish gate: walk the source tree and enforce per-file and
+ * aggregate size limits only (no manifest, bundle, typecheck, or lint).
+ */
+export async function runRepoSourceWalkChecks(input: {
+	workspace: RepoSourceWalkWorkspace
+	sourceRoot: string
+}): Promise<{
+	ok: boolean
+	message: string
+	sourceFiles: Record<string, string>
+}> {
+	const sourceRoot = normalizeRepoWorkspacePath(input.sourceRoot).replace(
+		/\/+$/,
+		'',
+	)
+	const collected: Record<string, string> = {}
+	let fileCount = 0
+	let totalBytes = 0
+	for await (const [path, content, fileBytes] of workspaceFilesForSnapshot({
+		workspace: input.workspace,
+		root: sourceRoot,
+	})) {
+		fileCount += 1
+		if (fileCount > repoChecksSourceMaxFiles) {
+			return {
+				ok: false,
+				message: `Repo checks aborted: source root "${sourceRoot || '/'}" contains more than the ${repoChecksSourceMaxFiles}-file publish check limit. Remove files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
+				sourceFiles: {},
+			}
+		}
+		if (fileBytes > maxRepoSourceFileBytes) {
+			return {
+				ok: false,
+				message: `Repo checks aborted: ${buildRepoLargeFileMessage({
+					path,
+					byteLength: fileBytes,
+				})}`,
+				sourceFiles: {},
+			}
+		}
+		totalBytes += fileBytes
+		if (totalBytes > repoChecksSourceMaxTotalBytes) {
+			return {
+				ok: false,
+				message: `Repo checks aborted: source root "${sourceRoot || '/'}" exceeds the ${repoChecksSourceMaxTotalBytes}-byte (${Math.round(repoChecksSourceMaxTotalBytes / (1024 * 1024))} MiB) publish check limit. Remove or shrink large files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
+				sourceFiles: {},
+			}
+		}
+		collected[path] = content
+	}
+	return {
+		ok: true,
+		message: `Validated ${fileCount} source file(s) within size limits.`,
+		sourceFiles: collected,
+	}
+}

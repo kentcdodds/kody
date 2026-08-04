@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 
-export const entityKindValues = ['job', 'package'] as const
+export const entityKindValues = ['job', 'package', 'repo'] as const
 export type EntityKind = (typeof entityKindValues)[number]
 
 export const entitySourceRowSchema = z.object({

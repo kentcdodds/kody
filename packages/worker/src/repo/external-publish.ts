@@ -189,6 +189,11 @@ export async function publishFromExternalRef(input: {
 			})
 		}
 	}
+	if (source.entity_kind === 'repo') {
+		throw new Error(
+			'Plain repos are live-at-HEAD and do not use external publish reconciliation.',
+		)
+	}
 	const checks = await runRepoChecks({
 		workspace: input.workspace,
 		manifestPath: input.manifestPath ?? source.manifest_path,

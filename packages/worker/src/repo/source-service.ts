@@ -43,7 +43,9 @@ function buildEntitySourceRow(input: {
 		indexed_commit: input.indexedCommit ?? null,
 		manifest_path:
 			input.manifestPath ??
-			(input.entityKind === 'package' ? 'package.json' : 'kody.json'),
+			(input.entityKind === 'package' || input.entityKind === 'repo'
+				? 'package.json'
+				: 'kody.json'),
 		source_root: input.sourceRoot ?? '/',
 		last_external_check_at: null,
 		external_check_until: null,

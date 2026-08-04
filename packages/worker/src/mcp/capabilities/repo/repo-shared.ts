@@ -25,6 +25,20 @@ const repoTargetShapeSchema = z.union([
 				'Saved package kody id to open or edit by user-facing identity.',
 			),
 	}),
+	z.object({
+		kind: z.literal('repo'),
+		repo_id: z
+			.string()
+			.min(1)
+			.describe('Plain repo id to open or edit by stable identifier.'),
+	}),
+	z.object({
+		kind: z.literal('repo'),
+		name: z
+			.string()
+			.min(1)
+			.describe('Plain repo name to open or edit by user-facing identity.'),
+	}),
 ])
 
 /**
@@ -46,6 +60,10 @@ function normalizeRepoTargetAliases(value: unknown) {
 		normalized['kody_id'] = record['kodyId']
 		delete normalized['kodyId']
 	}
+	if (normalized['repo_id'] === undefined && 'repoId' in record) {
+		normalized['repo_id'] = record['repoId']
+		delete normalized['repoId']
+	}
 	return normalized
 }
 
@@ -66,6 +84,12 @@ export const repoResolvedTargetSchema = z.union([
 		source_id: z.string(),
 		package_id: z.string(),
 		kody_id: z.string(),
+		name: z.string(),
+	}),
+	z.object({
+		kind: z.literal('repo'),
+		source_id: z.string(),
+		repo_id: z.string(),
 		name: z.string(),
 	}),
 ])
@@ -569,6 +593,8 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		session_id: z.string(),
 		published_commit: z.string(),
 		message: z.string(),
+		package_shaped: z.boolean().optional(),
+		notice: z.string().nullable().optional(),
 	}),
 	z.object({
 		status: z.literal('checks_outdated'),
