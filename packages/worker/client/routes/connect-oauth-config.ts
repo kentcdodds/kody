@@ -452,6 +452,38 @@ export function summarizeStoredSetupState(input: {
 }
 
 /**
+ * Browser `fetch()` network failures that reject as TypeError. Exact strings
+ * only — Firefox (KODY-CLOUDFLARE-3P), Chromium, and WebKit — so unrelated
+ * TypeErrors still surface their own message.
+ */
+export function isBrowserFetchNetworkError(error: unknown): boolean {
+	if (!(error instanceof TypeError)) return false
+	const message = error.message.trim().replace(/^TypeError:\s*/i, '')
+	return (
+		message === 'NetworkError when attempting to fetch resource.' ||
+		message === 'Failed to fetch' ||
+		message === 'Load failed'
+	)
+}
+
+/**
+ * Map caught client errors to in-page status text. Network fetch TypeErrors
+ * become a stable UX string so they never need to escape as unhandledrejection.
+ */
+export function formatConnectOauthCaughtError(
+	error: unknown,
+	fallback: string,
+): string {
+	if (isBrowserFetchNetworkError(error)) {
+		return 'Network error. Please try again.'
+	}
+	if (error instanceof Error && error.message.trim()) {
+		return error.message
+	}
+	return fallback
+}
+
+/**
  * Distinguish real Kody session expiry (401 Unauthorized) from provider token
  * exchange failures that historically leaked through as HTTP 401.
  */

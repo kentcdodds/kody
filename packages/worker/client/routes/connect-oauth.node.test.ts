@@ -4,7 +4,9 @@ import {
 	createCodeChallenge,
 	createCodeVerifier,
 	decodeBase64Payload,
+	formatConnectOauthCaughtError,
 	formatOAuthExchangeFailure,
+	isBrowserFetchNetworkError,
 	isMostlyPrintable,
 	isOAuthExchangeSessionExpired,
 	isSafeExternalUrl,
@@ -869,4 +871,29 @@ test('PKCE helpers match RFC 7636 S256 vector and current verifier shape', async
 	await expect(createCodeChallenge(verifier)).resolves.toMatch(
 		/^[A-Za-z0-9_-]+$/,
 	)
+})
+
+test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOUDFLARE-3P)', () => {
+	const firefox = new TypeError(
+		'NetworkError when attempting to fetch resource.',
+	)
+	const chromium = new TypeError('Failed to fetch')
+	const webkit = new TypeError('Load failed')
+	expect(isBrowserFetchNetworkError(firefox)).toBe(true)
+	expect(isBrowserFetchNetworkError(chromium)).toBe(true)
+	expect(isBrowserFetchNetworkError(webkit)).toBe(true)
+	expect(isBrowserFetchNetworkError(new TypeError('null is not an object'))).toBe(
+		false,
+	)
+	expect(isBrowserFetchNetworkError(new Error('Failed to fetch'))).toBe(false)
+	expect(formatConnectOauthCaughtError(firefox, 'fallback')).toBe(
+		'Network error. Please try again.',
+	)
+	expect(formatConnectOauthCaughtError(chromium, 'fallback')).toBe(
+		'Network error. Please try again.',
+	)
+	expect(
+		formatConnectOauthCaughtError(new Error('Unable to save secret.'), 'fallback'),
+	).toBe('Unable to save secret.')
+	expect(formatConnectOauthCaughtError('nope', 'fallback')).toBe('fallback')
 })

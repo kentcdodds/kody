@@ -47,6 +47,7 @@ import {
 	type StoredIntegrationConfig,
 	createCodeChallenge,
 	createCodeVerifier,
+	formatConnectOauthCaughtError,
 	formatMissingSetupFields,
 	formatOAuthExchangeFailure,
 	isSafeExternalUrl,
@@ -150,7 +151,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			setStatus('All hosts approved.', 'info')
 		} catch (error) {
 			setStatus(
-				error instanceof Error ? error.message : 'Unable to approve all hosts.',
+				formatConnectOauthCaughtError(error, 'Unable to approve all hosts.'),
 				'error',
 			)
 		} finally {
@@ -617,6 +618,13 @@ export function ConnectOauthRoute(handle: Handle) {
 			hasStoredClientId = true
 			setStatus('Saved OAuth client configuration.', 'info')
 			setStep('connect')
+		} catch (error) {
+			// fetch() TypeError (Firefox NetworkError / Chromium Failed to fetch)
+			// must not escape as unhandledrejection — KODY-CLOUDFLARE-3P.
+			setStatus(
+				formatConnectOauthCaughtError(error, 'Network error. Please try again.'),
+				'error',
+			)
 		} finally {
 			submitting = false
 			update()
@@ -632,7 +640,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			window.location.assign(url)
 		} catch (error) {
 			setStatus(
-				error instanceof Error ? error.message : 'Unable to start OAuth.',
+				formatConnectOauthCaughtError(error, 'Unable to start OAuth.'),
 				'error',
 			)
 		} finally {
@@ -644,79 +652,91 @@ export function ConnectOauthRoute(handle: Handle) {
 	const handleCallback = async () => {
 		if (!config) return
 		setStep('callback')
-		const callback = readCallback()
-		if (callback.kind !== 'none') {
-			window.history.replaceState(null, '', getRedirectUri())
-		}
-		if (callback.kind === 'error') {
+		try {
+			const callback = readCallback()
+			if (callback.kind !== 'none') {
+				window.history.replaceState(null, '', getRedirectUri())
+			}
+			if (callback.kind === 'error') {
+				setStatus(
+					callback.description || `OAuth error: ${callback.error}`,
+					'error',
+				)
+				setStep('connect')
+				return
+			}
+			if (callback.kind !== 'success') return
+			const valid = validateState(
+				getStateKey(config.providerKey),
+				callback.state,
+			)
+			if (!valid) {
+				setStatus('State mismatch. Restart the OAuth flow.', 'error')
+				setStep('connect')
+				return
+			}
+			const exchange = await exchangeOAuthCode(config, callback.code)
+			if (!exchange.ok) {
+				setStatus(exchange.error, 'error')
+				setStep(
+					exchange.error.includes('client ID') ||
+						exchange.error.includes('client secret')
+						? 'setup'
+						: 'connect',
+				)
+				return
+			}
+			const callbackUrl = window.location.href
+			const response = await fetch('/account/secrets.json', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'connect_oauth',
+					provider: config.provider,
+					callbackUrl,
+					authorizeUrl: config.authorizeUrl,
+					tokenUrl: config.tokenUrl,
+					apiBaseUrl: config.apiBaseUrl,
+					scopes: config.scopes,
+					scopeSeparator: config.scopeSeparator,
+					extraAuthorizeParams: config.extraAuthorizeParams,
+					flow: config.flow,
+					usePkce: config.usePkce,
+					tokenExchangeStyle: config.tokenExchangeStyle,
+					clientId: config.clientId,
+					clientSecretSecretName: config.clientSecretSecretName,
+					allowedHosts: config.allowedHosts,
+					accessTokenSecretName: config.accessTokenSecretName,
+					refreshTokenSecretName: config.refreshTokenSecretName,
+					tokenPayload: exchange.data,
+				}),
+			})
+			if (redirectToLoginOn401(response)) return
+			const payload = await response.json().catch(() => null)
+			if (!response.ok || payload?.ok !== true) {
+				setStatus(payload?.error || 'Unable to save OAuth tokens.', 'error')
+				setStep('connect')
+				return
+			}
+			accessTokenSaved = payload.accessTokenSaved === true
+			refreshTokenSaved = payload.refreshTokenSaved === true
+			setHostApprovalLinks(parseHostApprovalLinks(payload.hostApprovalLinks))
+			setNextSteps(parseConnectOauthNextSteps(payload.nextSteps))
+			setStatus('OAuth tokens saved.', 'info')
+			setStep('success')
+		} catch (error) {
+			// Same class as setup submit: token exchange / save fetch failures
+			// must surface in-page, not as unhandledrejection (KODY-CLOUDFLARE-3P).
 			setStatus(
-				callback.description || `OAuth error: ${callback.error}`,
+				formatConnectOauthCaughtError(error, 'Network error. Please try again.'),
 				'error',
 			)
 			setStep('connect')
-			return
 		}
-		if (callback.kind !== 'success') return
-		const valid = validateState(getStateKey(config.providerKey), callback.state)
-		if (!valid) {
-			setStatus('State mismatch. Restart the OAuth flow.', 'error')
-			setStep('connect')
-			return
-		}
-		const exchange = await exchangeOAuthCode(config, callback.code)
-		if (!exchange.ok) {
-			setStatus(exchange.error, 'error')
-			setStep(
-				exchange.error.includes('client ID') ||
-					exchange.error.includes('client secret')
-					? 'setup'
-					: 'connect',
-			)
-			return
-		}
-		const callbackUrl = window.location.href
-		const response = await fetch('/account/secrets.json', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json',
-			},
-			credentials: 'include',
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: config.provider,
-				callbackUrl,
-				authorizeUrl: config.authorizeUrl,
-				tokenUrl: config.tokenUrl,
-				apiBaseUrl: config.apiBaseUrl,
-				scopes: config.scopes,
-				scopeSeparator: config.scopeSeparator,
-				extraAuthorizeParams: config.extraAuthorizeParams,
-				flow: config.flow,
-				usePkce: config.usePkce,
-				tokenExchangeStyle: config.tokenExchangeStyle,
-				clientId: config.clientId,
-				clientSecretSecretName: config.clientSecretSecretName,
-				allowedHosts: config.allowedHosts,
-				accessTokenSecretName: config.accessTokenSecretName,
-				refreshTokenSecretName: config.refreshTokenSecretName,
-				tokenPayload: exchange.data,
-			}),
-		})
-		if (redirectToLoginOn401(response)) return
-		const payload = await response.json().catch(() => null)
-		if (!response.ok || payload?.ok !== true) {
-			setStatus(payload?.error || 'Unable to save OAuth tokens.', 'error')
-			setStep('connect')
-			return
-		}
-		accessTokenSaved = payload.accessTokenSaved === true
-		refreshTokenSaved = payload.refreshTokenSaved === true
-		setHostApprovalLinks(parseHostApprovalLinks(payload.hostApprovalLinks))
-		setNextSteps(parseConnectOauthNextSteps(payload.nextSteps))
-		setStatus('OAuth tokens saved.', 'info')
-		setStep('success')
-		return
 	}
 
 	const renderRedirectUriCard = () => {
@@ -882,48 +902,61 @@ export function ConnectOauthRoute(handle: Handle) {
 	handle.queueTask(async () => {
 		if (initialLoadStarted) return
 		initialLoadStarted = true
-		const callback = readCallback()
-		if (callback.kind === 'success' || callback.kind === 'error') {
-			const storedConfig = readStoredConfig()
-			const queryConfig = storedConfig ? null : readQueryConfig()
-			const nextConfig =
-				storedConfig ??
-				(queryConfig
-					? mergeConnectOauthConfig({
-							queryConfig,
-							storedIntegration:
-								await readExistingIntegrationConfig(queryConfig),
-						})
-					: null)
+		try {
+			const callback = readCallback()
+			if (callback.kind === 'success' || callback.kind === 'error') {
+				const storedConfig = readStoredConfig()
+				const queryConfig = storedConfig ? null : readQueryConfig()
+				const nextConfig =
+					storedConfig ??
+					(queryConfig
+						? mergeConnectOauthConfig({
+								queryConfig,
+								storedIntegration:
+									await readExistingIntegrationConfig(queryConfig),
+							})
+						: null)
+				if (!nextConfig) {
+					setStatus(
+						'Missing required OAuth configuration parameters.',
+						'error',
+					)
+					return
+				}
+				config = nextConfig
+				if (!connectOauthHandled) {
+					connectOauthHandled = true
+					await handleCallback()
+				}
+				return
+			}
+			const queryConfig = readQueryConfig()
+			if (!queryConfig) {
+				setStatus('Missing required OAuth configuration parameters.', 'error')
+				return
+			}
+			const existingIntegration =
+				await readExistingIntegrationConfig(queryConfig)
+			existingIntegrationConfig = existingIntegration
+			const nextConfig = mergeConnectOauthConfig({
+				queryConfig,
+				storedIntegration: existingIntegration,
+			})
 			if (!nextConfig) {
+				hasConfigError = true
 				setStatus('Missing required OAuth configuration parameters.', 'error')
 				return
 			}
 			config = nextConfig
-			if (!connectOauthHandled) {
-				connectOauthHandled = true
-				await handleCallback()
-			}
-			return
+			await initializeSetupState(nextConfig)
+		} catch (error) {
+			// Initial integration/secrets reads use fetch(); a transient network
+			// failure must not escape queueTask as unhandledrejection.
+			setStatus(
+				formatConnectOauthCaughtError(error, 'Network error. Please try again.'),
+				'error',
+			)
 		}
-		const queryConfig = readQueryConfig()
-		if (!queryConfig) {
-			setStatus('Missing required OAuth configuration parameters.', 'error')
-			return
-		}
-		const existingIntegration = await readExistingIntegrationConfig(queryConfig)
-		existingIntegrationConfig = existingIntegration
-		const nextConfig = mergeConnectOauthConfig({
-			queryConfig,
-			storedIntegration: existingIntegration,
-		})
-		if (!nextConfig) {
-			hasConfigError = true
-			setStatus('Missing required OAuth configuration parameters.', 'error')
-			return
-		}
-		config = nextConfig
-		await initializeSetupState(nextConfig)
 	})
 
 	return () => {
