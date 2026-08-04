@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import type * as RepoChecks from '#worker/repo/checks.ts'
 import {
@@ -97,15 +97,7 @@ function createKv() {
 
 function createEngineDb() {
 	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0111-package-codemod-ledger.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	return createD1FromSqlite(sqlite)
 }
 
@@ -815,15 +807,7 @@ test('package codemod revert skips when HEAD no longer matches applied afterComm
 
 test('package codemod ledger bounds stored JSON/text columns', async () => {
 	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0111-package-codemod-ledger.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
 	const { createPackageCodemodRun, insertPackageCodemodRunItem } =
 		await import('./ledger.ts')

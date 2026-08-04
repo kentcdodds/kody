@@ -1,4 +1,13 @@
-CREATE TABLE platform_feedback (
+import { type DatabaseSync } from 'node:sqlite'
+
+/**
+ * Mirrors the `platform_feedback` schema in
+ * `packages/worker/migrations/0001-squashed-init.sql` for `*.node.test.ts`
+ * suites that build their sqlite fixture by hand.
+ */
+export function createPlatformFeedbackTestSchema(sqlite: DatabaseSync) {
+	sqlite.exec(`
+CREATE TABLE IF NOT EXISTS "platform_feedback" (
 	id TEXT PRIMARY KEY NOT NULL,
 	submitter_user_id TEXT NOT NULL,
 	category TEXT NOT NULL CHECK (
@@ -20,33 +29,24 @@ CREATE TABLE platform_feedback (
 	),
 	revision INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	updated_at TEXT NOT NULL,
+	submitter_username TEXT NOT NULL,
+	submitter_email TEXT NOT NULL
 );
-
--- Admin list ordering without filters.
 CREATE INDEX idx_platform_feedback_created_at_id
 ON platform_feedback(created_at DESC, id DESC);
-
--- Admin status and category filters preserve the requested list ordering.
 CREATE INDEX idx_platform_feedback_status_created_at_id
 ON platform_feedback(status, created_at DESC, id DESC);
-
 CREATE INDEX idx_platform_feedback_category_created_at_id
 ON platform_feedback(category, created_at DESC, id DESC);
-
--- Reviewer account cleanup.
 CREATE INDEX idx_platform_feedback_reviewer
 ON platform_feedback(reviewed_by_user_id);
-
--- Atomic active-queue counts plus submitter deletion/export paths.
 CREATE INDEX idx_platform_feedback_submitter_status
 ON platform_feedback(submitter_user_id, status);
-
--- Rolling per-submitter submission counts.
 CREATE INDEX idx_platform_feedback_submitter_created_at
 ON platform_feedback(submitter_user_id, created_at);
-
--- Terminal feedback retention scans only resolved/dismissed rows by age.
 CREATE INDEX idx_platform_feedback_terminal_updated_at_id
 ON platform_feedback(updated_at, id)
 WHERE status IN ('resolved', 'dismissed');
+`)
+}

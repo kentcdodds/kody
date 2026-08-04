@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
@@ -55,39 +54,63 @@ function createCommunityDb() {
 		password_hash TEXT NOT NULL,
 		stable_user_id TEXT
 	)`)
-	sqlite.exec(
-		readFileSync(
-			new URL('../../migrations/0045-community-listings.sql', import.meta.url),
-			'utf8',
-		),
-	)
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0070-community-fork-listing-snapshots.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0037-package-runtime-debug.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0094-activation-milestones.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
+	// Mirrors the community_listings, community_ratings, and community_forks
+	// schemas in packages/worker/migrations/0001-squashed-init.sql.
+	sqlite.exec(`
+CREATE TABLE community_listings (
+	id TEXT PRIMARY KEY NOT NULL,
+	owner_user_id TEXT NOT NULL,
+	package_id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	kody_id TEXT NOT NULL,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL,
+	tags_json TEXT NOT NULL DEFAULT '[]',
+	search_text TEXT,
+	readme_content TEXT,
+	license TEXT NOT NULL,
+	pinned_commit TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'delisted')),
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	published_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+, trusted_commit TEXT, trusted_by_user_id TEXT, trusted_at TEXT, featured_at TEXT);
+CREATE TABLE community_ratings (
+	id TEXT PRIMARY KEY NOT NULL,
+	listing_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+	adaptation_effort INTEGER NOT NULL CHECK (adaptation_effort BETWEEN 1 AND 5),
+	note TEXT,
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE TABLE IF NOT EXISTS "community_forks" (
+	id TEXT PRIMARY KEY NOT NULL,
+	listing_id TEXT NOT NULL,
+	forker_user_id TEXT NOT NULL,
+	origin_commit TEXT NOT NULL,
+	forked_package_id TEXT NOT NULL,
+	forked_source_id TEXT NOT NULL,
+	target_kody_id TEXT NOT NULL,
+	listing_name TEXT,
+	listing_kody_id TEXT,
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+, adopted_at TEXT, adoption_note TEXT, actor TEXT
+CHECK (actor IS NULL OR actor IN ('human', 'agent')));
+CREATE UNIQUE INDEX idx_community_listings_owner_package
+ON community_listings(owner_user_id, package_id);
+CREATE INDEX idx_community_listings_status
+ON community_listings(status);
+CREATE UNIQUE INDEX idx_community_ratings_listing_user
+ON community_ratings(listing_id, user_id);
+CREATE INDEX idx_community_forks_listing_id
+	ON community_forks(listing_id);
+CREATE INDEX idx_community_forks_forker_listing
+	ON community_forks(forker_user_id, listing_id);
+CREATE INDEX idx_community_forks_forked_package_id
+ON community_forks(forked_package_id);
+`)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
@@ -266,70 +289,5 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		'listing-1': 2,
 		'listing-2': 1,
 		'listing-without-forks': 0,
-	})
-})
-
-test('fork snapshot migration also handles preview schemas that already have snapshot columns', () => {
-	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(
-		readFileSync(
-			new URL('../../migrations/0045-community-listings.sql', import.meta.url),
-			'utf8',
-		),
-	)
-	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN listing_name TEXT`)
-	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN listing_kody_id TEXT`)
-	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN actor TEXT`)
-	sqlite.exec(`
-		INSERT INTO community_listings (
-			id, owner_user_id, package_id, source_id, kody_id, name, description,
-			tags_json, license, pinned_commit, status, created_at, updated_at,
-			published_at
-		) VALUES (
-			'listing-preview', 'owner', 'package', 'source', 'current-kody',
-			'@owner/current-name', 'description', '[]', 'MIT', 'commit', 'active',
-			'2026-07-20T00:00:00.000Z', '2026-07-20T00:00:00.000Z',
-			'2026-07-20T00:00:00.000Z'
-		);
-		INSERT INTO community_forks (
-			id, listing_id, forker_user_id, origin_commit, forked_package_id,
-			forked_source_id, target_kody_id, listing_name, listing_kody_id,
-			created_at
-		) VALUES (
-			'fork-preview', 'listing-preview', 'forker', 'commit', 'fork-package',
-			'fork-source', 'fork-kody', '@owner/stale-name', 'stale-kody',
-			'2026-07-20T00:01:00.000Z'
-		);
-	`)
-
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0070-community-fork-listing-snapshots.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
-
-	const columns = sqlite
-		.prepare(`PRAGMA table_info(community_forks)`)
-		.all() as Array<{ name: string }>
-	expect(
-		columns.filter((column) => column.name === 'listing_name'),
-	).toHaveLength(1)
-	expect(
-		columns.filter((column) => column.name === 'listing_kody_id'),
-	).toHaveLength(1)
-	expect(
-		sqlite
-			.prepare(
-				`SELECT listing_name, listing_kody_id FROM community_forks
-				 WHERE id = 'fork-preview'`,
-			)
-			.get(),
-	).toEqual({
-		listing_name: '@owner/current-name',
-		listing_kody_id: 'current-kody',
 	})
 })

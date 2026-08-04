@@ -1,6 +1,4 @@
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -81,15 +79,24 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 function createEnv(userId: string) {
 	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(
-		readFileSync(
-			path.join(
-				process.cwd(),
-				'packages/worker/migrations/0090-webhook-endpoints.sql',
-			),
-			'utf8',
-		),
-	)
+	// Mirrors the webhook_endpoints schema in
+	// packages/worker/migrations/0001-squashed-init.sql.
+	sqlite.exec(`
+		CREATE TABLE webhook_endpoints (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			webhook_name TEXT NOT NULL,
+			url_secret_hash TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			created_at TEXT NOT NULL,
+			rotated_at TEXT NOT NULL
+		);
+		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
+		ON webhook_endpoints(user_id, package_id, webhook_name);
+		CREATE INDEX idx_webhook_endpoints_user_created_at
+		ON webhook_endpoints(user_id, created_at);
+	`)
 	sqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
