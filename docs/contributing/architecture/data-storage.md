@@ -180,19 +180,19 @@ migration-safe chunked interface:
   with `section: "storage_runner"` and a `storage_id`, using the same
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability. User meter counters use `section: "user_meter"` and
-  the `UserMeter.exportCounters` RPC (daily counters plus additive shadow fields
-  on the first page only when present: `storageBytesShadow` and
-  `packageServiceStatesShadow`; explicitly non-authoritative). Mailbox metadata
-  uses `section: "mailbox"` and the `Mailbox.exportMailbox` RPC. R2 raw MIME,
-  attachment, avatar, and icon objects use `section: "r2_object"`; each response
-  contains at most one 256 KiB base64 chunk and an opaque cursor. Each request
-  uses bounded `LIMIT 1` ownership queries rather than reconstructing inventory.
-  Continuation cursors bind the source row, object key, size, and ETag;
-  ownership/key mutations and object overwrites are reported instead of mixing
-  generations. Missing objects are represented explicitly. R2 cursors created
-  before the Mailbox-authoritative traversal (version 1) cannot be translated
-  without risking duplicate bytes; callers receive an invalid/unsupported cursor
-  error and must restart the `r2_object` section without `startAfter`.
+  the `UserMeter.exportCounters` RPC (daily counters plus authoritative
+  `storageBytesState`, `packageServiceStates`, and sanitized `deletionState` on
+  the first page only when present). Mailbox metadata uses `section: "mailbox"`
+  and the `Mailbox.exportMailbox` RPC. R2 raw MIME, attachment, avatar, and icon
+  objects use `section: "r2_object"`; each response contains at most one 256 KiB
+  base64 chunk and an opaque cursor. Each request uses bounded `LIMIT 1`
+  ownership queries rather than reconstructing inventory. Continuation cursors
+  bind the source row, object key, size, and ETag; ownership/key mutations and
+  object overwrites are reported instead of mixing generations. Missing objects
+  are represented explicitly. R2 cursors created before the
+  Mailbox-authoritative traversal (version 1) cannot be translated without
+  risking duplicate bytes; callers receive an invalid/unsupported cursor error
+  and must restart the `r2_object` section without `startAfter`.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -222,10 +222,9 @@ Durable Object export behavior:
   [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
-  The same RPC may return additive shadow fields on the first page only
-  (`startAfter` absent): `storageBytesShadow` when the schema-v4 row exists, and
-  `packageServiceStatesShadow` when schema-v5 service rows exist (`null` on
-  later pages and when never shadowed). Section totals count each shadow
+  The same RPC returns authoritative `storageBytesState`,
+  `packageServiceStates`, and sanitized `deletionState` on the first page only
+  (`startAfter` absent; `null` on later pages). Section totals count each state
   inventory once when present. UserMeter `package_service_states` is
   **authoritative** for running-count enforcement; D1 `package_service_states`
   remains the enumeration export in the `d1` section. `users.d1_storage_bytes`
@@ -286,7 +285,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   columns (migration 0122) were dropped by migration 0139; the
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
-  `storage_bytes_state` (schema v4) drives storage-byte enforcement;
+  `storage_bytes_state` (schema v4) drives storage-byte enforcement; UserMeter
   `package_service_states` (schema v5) is the authoritative running-count source
   for `package_services` / `service_start` — see
   [Entitlements](./entitlements.md#usermeter). Migration 0135 removed every
@@ -331,12 +330,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing)).
 - `package_service_states` (`0095-package-service-states.sql`): per-service
   liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
-  account export/deletion inventory, and parity. Upserted and heartbeaten (1h)
-  by the `PackageServiceInstance` Durable Object. Running-count enforcement and
-  `service_start` read the per-user `UserMeter` copy (schema v5; 24h staleness
-  on DO `source_updated_at`). D1 remains the enumeration index and parity mirror
-  — see
-  [Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01).
+  account export/deletion inventory, and disaster recovery. Upserted and
+  heartbeaten (1h) by the `PackageServiceInstance` Durable Object. Running-count
+  enforcement and `service_start` read the per-user `UserMeter` copy (schema v5;
+  24h staleness on DO `source_updated_at`). D1 remains only the enumeration
+  index — see [Entitlements](./entitlements.md#package-service-liveness).
 - `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
   or `repo`) to Artifacts repos and their latest published commit (packages
   only; plain repos are live-at-HEAD without a publish pointer)
@@ -573,11 +571,10 @@ live in a per-user `UserMeter` Durable Object with SQLite
 `users.d1_storage_bytes` was dropped by migration 0139; evidence in
 [Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
 Schema v5 `package_service_states` is the **authoritative running-count source**
-for `package_services` / `service_start`; D1 remains the enumeration index and
-parity mirror (evidence in
-[Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01)).
-The Worker binding is `USER_METER` (class `UserMeter`; Wrangler SQLite migration
-tag `v21` via `new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
+for `package_services` / `service_start`; D1 remains only the enumeration index
+([Entitlements](./entitlements.md#package-service-liveness)). The Worker binding
+is `USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
+`new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
 
 Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 `userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
@@ -585,7 +582,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**7**):
+**8**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -613,20 +610,17 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   projection/delete; monotonic on `source_updated_at`. Authoritative for
   running-count enforcement and `service_start` via
   `countRunningPackageServices`. D1 remains the enumeration index (discovery,
-  export, deletion) and parity mirror — see
-  [Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01).
+  export, deletion) only — see
+  [Entitlements](./entitlements.md#package-service-liveness).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
-  / `pending_repair_id`). Schema v7 is authoritative for all leases. All callers
-  supply `USER_METER`; every new lease is inserted as `authority='do'`. The warm
-  `authority` column is kept for schema compatibility — code treats every row as
-  authoritative DO and ignores the column value. The column will be dropped on a
-  later schema bump after production objects report `schema_version >= 7`. D1
-  `account_write_leases` is **quiescent** — no new rows are written and the
-  table is not queried on any runtime path. D1 `users.deleting_at` remains the
-  permanent point gate. `purge()` preserves an existing deleting tombstone
-  across `deleteAll`. Account export emits a sanitized `deletionShadow` without
-  raw token/holder.
+  / `pending_repair_id`). Schema v8 is authoritative for all leases and rebuilds
+  warm v7 tables without the unreferenced `authority` column. All callers supply
+  `USER_METER`. D1 `account_write_leases` was dropped by migration 0141; D1
+  `account_write_lease_repairs` remains the repair audit log and
+  `users.deleting_at` remains the permanent point gate. `purge()` preserves an
+  existing deleting tombstone across `deleteAll`. Account export emits a
+  sanitized `deletionState` without raw token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
@@ -649,13 +643,12 @@ reports meter-only daily counts. See
 D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
-`deleteAll` clears counters, claims, storage-byte shadow, package-service
-shadow, and write-lease shadow, while preserving an existing deleting
-tombstone). Account export pages `UserMeter.exportCounters` through the
-`user_meter` manifest section / `account_export_section` (daily counters plus
-additive `storageBytesShadow`, `packageServiceStatesShadow`, and
-`deletionShadow` on the first page only when present; shadow fields are
-non-authoritative).
+`deleteAll` clears counters, claims, storage bytes, package-service state, and
+write leases while preserving an existing deleting tombstone). Account export
+pages `UserMeter.exportCounters` through the `user_meter` manifest section /
+`account_export_section` (daily counters plus authoritative `storageBytesState`,
+`packageServiceStates`, and sanitized `deletionState` on the first page only
+when present).
 
 ## Durable Objects (`Mailbox`)
 
@@ -945,10 +938,9 @@ Package and plain-repo state maps onto storage homes as follows:
   `packageStorage()`. Shared durable data for every package surface.
 - **Package coordination** — `PackageServiceInstance` DO holds lifecycle and
   alarms only; durable data stays in package storage. Each lifecycle projection
-  dual-writes D1 `package_service_states` (enumeration/parity) and UserMeter
-  (authoritative running counts). App facets and package-internal DO namespaces
-  are extra StorageRunner buckets under the package id, not a general actor
-  model.
+  writes D1 `package_service_states` (enumeration) and UserMeter (authoritative
+  running counts). App facets and package-internal DO namespaces are extra
+  StorageRunner buckets under the package id, not a general actor model.
 - **Package jobs** — schedule metadata in D1 `jobs`; run-local scratch in
   `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
   data in package storage.
@@ -970,8 +962,8 @@ via `durableObjectNameFromParts`); domain helpers such as
   [Run records](./run-records.md).
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
-  plus optional schema-v4 D1 storage-byte shadow and schema-v5 package-service
-  liveness shadow. See [Entitlements](./entitlements.md#usermeter).
+  plus authoritative schema-v4 storage-byte and schema-v5 package-service
+  liveness state. See [Entitlements](./entitlements.md#usermeter).
 - `StripePlanRefresh` — `stripePlanRefreshDurableObjectName(userId)` →
   `idFromName(userId)`. One ephemeral, one-shot reconciliation alarm per user;
   checkout and subscription webhook activity arm it as a backstop to the
@@ -1314,8 +1306,8 @@ to `durableObjectNameFromParts`).
 - `JobManager`: `idFromName(userId)` (no trim).
 - `RunLog`: `idFromName(userId)` (no trim); one execution-history DO per user.
 - `UserMeter`: `idFromName(userId)` (no trim); one daily-entitlement meter DO
-  per user, plus optional schema-v4 D1 storage-byte shadow and schema-v5
-  package-service liveness shadow.
+  per user, plus authoritative schema-v4 storage-byte and schema-v5
+  package-service liveness state.
 - `StripePlanRefresh`: `idFromName(userId)` (no trim); one ephemeral billing
   reconciliation alarm DO per user.
 - `Mailbox`: `idFromName(userId)` (no trim); one email-metadata DO per user.

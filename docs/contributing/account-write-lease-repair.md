@@ -5,13 +5,9 @@ account deletion until an administrator verifies that the process is gone and
 releases its exact token with an audit reason.
 
 Active leases live in the UserMeter DO. All callers supply `env` (including
-email paths), so every new lease is a DO-authority row. D1
-`account_write_leases` is quiescent — no new rows are written, and the table is
-not queried on any runtime path. `account_write_lease_repairs` remains the audit
-log for all repairs.
-
-D1 `account_write_leases` and `account_write_lease_repairs` tables are
-**retained** — no schema drop is planned yet.
+email paths), so every lease is a UserMeter-authoritative row. Migration `0141`
+dropped D1 `account_write_leases`; `account_write_lease_repairs` remains the D1
+audit log for all repairs.
 
 First inspect active leases:
 

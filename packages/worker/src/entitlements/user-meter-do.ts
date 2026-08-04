@@ -26,15 +26,12 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 7
+const userMeterSchemaVersion = 8
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
 const deletionStateRowId = 1
-/**
- * Matches D1 `packageServiceStateStaleMs` (24h). Used by the authoritative
- * running-count RPC and its D1 parity comparison.
- */
+/** Staleness window used by the authoritative running-count RPC. */
 export const userMeterPackageServiceStateStaleMs = 24 * 60 * 60 * 1000
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
@@ -50,21 +47,14 @@ const utcDayKeyPattern = /^\d{4}-\d{2}-\d{2}$/
 /** Matches `new Date().toISOString()` — required for lexicographic monotonicity. */
 const packageServiceSourceUpdatedAtPattern =
 	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-const packageServiceShadowStatuses = [
-	'running',
-	'idle',
-	'stopped',
-	'error',
-] as const
+const packageServiceStatuses = ['running', 'idle', 'stopped', 'error'] as const
 export type UserMeterPackageServiceStatus =
-	(typeof packageServiceShadowStatuses)[number]
+	(typeof packageServiceStatuses)[number]
 
 export function isUserMeterPackageServiceStatus(
 	status: string,
 ): status is UserMeterPackageServiceStatus {
-	return (packageServiceShadowStatuses as ReadonlyArray<string>).includes(
-		status,
-	)
+	return (packageServiceStatuses as ReadonlyArray<string>).includes(status)
 }
 
 /**
@@ -196,7 +186,7 @@ export type UserMeterWriteLeaseEntry = {
  * Account-export deletion inventory. Omits raw lease token and holder; retains
  * only deleting tombstone presence, active lease count, and acquired_at.
  */
-export type UserMeterDeletionShadowExport = {
+export type UserMeterDeletionStateExport = {
 	deletingAt: string | null
 	activeWriteLeaseCount: number
 	writeLeases: Array<{ acquiredAt: string }>
@@ -248,24 +238,23 @@ export type UserMeterWriteLeaseCountResult = {
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
 	/**
-	 * Authoritative storage-byte state, retained under the legacy export field
-	 * name. Emitted only on the first export page (`startAfter` absent);
-	 * subsequent pages return `null` so paged consumers never double-count it.
+	 * Authoritative storage-byte state. Emitted only on the first export page
+	 * (`startAfter` absent); subsequent pages return `null` so paged consumers
+	 * never double-count it.
 	 */
-	storageBytesShadow: UserMeterStorageBytesState | null
+	storageBytesState: UserMeterStorageBytesState | null
 	/**
-	 * Authoritative package-service liveness rows, retained under the legacy
-	 * export field name. Emitted only on the first export page (`startAfter`
-	 * absent); subsequent pages return `null`.
+	 * Authoritative package-service liveness rows. Emitted only on the first
+	 * export page (`startAfter` absent); subsequent pages return `null`.
 	 */
-	packageServiceStatesShadow: Array<UserMeterPackageServiceState> | null
+	packageServiceStates: Array<UserMeterPackageServiceState> | null
 	/**
 	 * Sanitized deletion-fence / write-lease inventory. Emitted only on the
 	 * first export page (`startAfter` absent); subsequent pages return `null`
 	 * so paged consumers never double-count. Excludes raw lease token and
-	 * holder (see {@link UserMeterDeletionShadowExport}).
+	 * holder (see {@link UserMeterDeletionStateExport}).
 	 */
-	deletionShadow: UserMeterDeletionShadowExport | null
+	deletionState: UserMeterDeletionStateExport | null
 	nextStartAfter: string | null
 	truncated: boolean
 }
@@ -377,7 +366,7 @@ function assertPackageServiceStatus(
 ): UserMeterPackageServiceStatus {
 	if (!isUserMeterPackageServiceStatus(status)) {
 		throw new Error(
-			`UserMeter package service status must be one of ${packageServiceShadowStatuses.join(', ')}; got ${JSON.stringify(status)}.`,
+			`UserMeter package service status must be one of ${packageServiceStatuses.join(', ')}; got ${JSON.stringify(status)}.`,
 		)
 	}
 	return status
@@ -656,11 +645,36 @@ class UserMeterBase extends DurableObject<Env> {
 				// Column already present on a partially migrated object.
 			}
 		}
-		// Warm v7 objects may retain an ignored physical `authority` column and
-		// its associated index (NOT NULL DEFAULT 'legacy') from the schema that
-		// originally created them. No query references that column; physical
-		// cleanup is deferred to a later schema migration after all production
-		// objects report schema_version >= 7.
+		if (version === 7) {
+			// Some warm v7 objects retain an ignored `authority` column and
+			// index. Rebuild the table so both v7 physical variants converge on
+			// the final four-column lease schema without losing active leases.
+			this.ctx.storage.transactionSync(() => {
+				this.ctx.storage.sql.exec(
+					`DROP INDEX IF EXISTS idx_account_write_leases_authority_acquired_token`,
+				)
+				this.ctx.storage.sql.exec(
+					`CREATE TABLE account_write_leases_v8 (
+						token TEXT PRIMARY KEY NOT NULL,
+						holder TEXT NOT NULL,
+						acquired_at TEXT NOT NULL,
+						pending_repair_id TEXT
+					)`,
+				)
+				this.ctx.storage.sql.exec(
+					`INSERT INTO account_write_leases_v8 (
+						token, holder, acquired_at, pending_repair_id
+					)
+					SELECT token, holder, acquired_at, pending_repair_id
+					FROM account_write_leases`,
+				)
+				this.ctx.storage.sql.exec(`DROP TABLE account_write_leases`)
+				this.ctx.storage.sql.exec(
+					`ALTER TABLE account_write_leases_v8
+					RENAME TO account_write_leases`,
+				)
+			})
+		}
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_account_write_leases_acquired_token
 			ON account_write_leases (acquired_at, token)`,
@@ -1584,7 +1598,7 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	private readDeletionShadowExport(): UserMeterDeletionShadowExport {
+	private readDeletionStateExport(): UserMeterDeletionStateExport {
 		const writeLeases = this.listAllWriteLeaseRows().map((lease) => ({
 			acquiredAt: lease.acquiredAt,
 		}))
@@ -1855,21 +1869,20 @@ class UserMeterBase extends DurableObject<Env> {
 				mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(revision),
 			})
 		}
-		// Shadow inventories sit outside counter keyset paging — emit them once
-		// on the first page only so section totals and multi-page consumers do
-		// not double-count.
-		const includeShadows = cursor == null
-		const storageRow = includeShadows ? this.readStorageRow() : null
-		const packageServiceStatesShadow = includeShadows
+		// Singleton and inventory state sits outside counter keyset paging. Emit
+		// it once on the first page so totals and consumers never double-count.
+		const includeFirstPageState = cursor == null
+		const storageRow = includeFirstPageState ? this.readStorageRow() : null
+		const packageServiceStates = includeFirstPageState
 			? this.listAllPackageServiceRows()
 			: null
-		const deletionShadow = includeShadows
-			? this.readDeletionShadowExport()
+		const deletionState = includeFirstPageState
+			? this.readDeletionStateExport()
 			: null
 		const last = pageRows[pageRows.length - 1]
 		return {
 			counters,
-			storageBytesShadow: storageRow
+			storageBytesState: storageRow
 				? {
 						bytes: storageRow.bytes,
 						revision: storageRow.revision,
@@ -1877,8 +1890,8 @@ class UserMeterBase extends DurableObject<Env> {
 						mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(storageRow.revision),
 					}
 				: null,
-			packageServiceStatesShadow,
-			deletionShadow,
+			packageServiceStates,
+			deletionState,
 			nextStartAfter:
 				truncated && last
 					? encodeExportCursor({

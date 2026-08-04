@@ -4,7 +4,7 @@ import {
 	userMeterMirrorUpdatedAtToken,
 	userMeterPackageServiceStateStaleMs,
 	type DailyEntitlementResource,
-	type UserMeterDeletionShadowExport,
+	type UserMeterDeletionStateExport,
 	type UserMeterPackageServiceState,
 	type UserMeterPackageServiceStatus,
 	type UserMeterStorageBytesState,
@@ -193,7 +193,7 @@ export function createInMemoryUserMeterEnv() {
 			}
 		}
 
-		function readDeletionShadowExport(): UserMeterDeletionShadowExport {
+		function readDeletionStateExport(): UserMeterDeletionStateExport {
 			const writeLeases = listWriteLeasesSorted().map((lease) => ({
 				acquiredAt: lease.acquiredAt,
 			}))
@@ -627,10 +627,12 @@ export function createInMemoryUserMeterEnv() {
 						mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(row.revision),
 					}
 				})
-				const includeShadows =
+				const includeFirstPageState =
 					typeof input.startAfter !== 'string' || input.startAfter.length === 0
-				const storage = includeShadows ? storageByUser.get(userId) : undefined
-				const storageBytesShadow: UserMeterStorageBytesState | null = storage
+				const storage = includeFirstPageState
+					? storageByUser.get(userId)
+					: undefined
+				const storageBytesState: UserMeterStorageBytesState | null = storage
 					? {
 							bytes: storage.bytes,
 							revision: storage.revision,
@@ -638,17 +640,17 @@ export function createInMemoryUserMeterEnv() {
 							mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(storage.revision),
 						}
 					: null
-				const packageServiceStatesShadow = includeShadows
+				const packageServiceStates = includeFirstPageState
 					? listPackageServiceStatesSorted()
 					: null
-				const deletionShadow = includeShadows
-					? readDeletionShadowExport()
+				const deletionState = includeFirstPageState
+					? readDeletionStateExport()
 					: null
 				return {
 					counters,
-					storageBytesShadow,
-					packageServiceStatesShadow,
-					deletionShadow,
+					storageBytesState,
+					packageServiceStates,
+					deletionState,
 					nextStartAfter: null,
 					truncated: false,
 				}

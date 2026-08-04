@@ -6,8 +6,7 @@
  *
  * Every column therefore has a fresh `CREATE TABLE` form and (where SQLite
  * allows it) an additive `ALTER TABLE ... ADD COLUMN` form. Feature-specific
- * tables stay in the feature's own `test-schema.ts`; only `users` and the
- * account write leases that gate every user-scoped write live here.
+ * tables stay in the feature's own `test-schema.ts`.
  */
 
 /**
@@ -143,16 +142,4 @@ export async function ensureUsersTestSchema(input: {
 		// Index already exists, or a partial legacy index remains from an
 		// earlier suite sharing this database.
 	}
-
-	await input.db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS account_write_leases (
-				token TEXT PRIMARY KEY,
-				user_id TEXT NOT NULL,
-				holder TEXT NOT NULL,
-				acquired_at TEXT NOT NULL,
-				released_at TEXT
-			)`,
-		)
-		.run()
 }

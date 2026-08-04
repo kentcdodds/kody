@@ -1664,13 +1664,13 @@ test('account export includes user_meter counters, pages them, and warns on trun
 			mirrorUpdatedAt: 'r/00000000000000000001',
 		},
 	]
-	const storageBytesShadow = {
+	const storageBytesState = {
 		bytes: 4_096,
 		revision: 3,
 		updatedAt: '2026-07-31T03:00:00.000Z',
 		mirrorUpdatedAt: 'r/00000000000000000003',
 	}
-	const packageServiceStatesShadow = [
+	const packageServiceStates = [
 		{
 			packageId: 'pkg-1',
 			serviceName: 'worker',
@@ -1682,7 +1682,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 			mirrorUpdatedAt: 'r/00000000000000000002',
 		},
 	]
-	const deletionShadow = {
+	const deletionState = {
 		deletingAt: '2026-07-31 03:10:00' as string | null,
 		activeWriteLeaseCount: 1,
 		writeLeases: [
@@ -1705,11 +1705,9 @@ test('account export includes user_meter counters, pages them, and warns on trun
 				typeof input.startAfter !== 'string' || input.startAfter.length === 0
 			return {
 				counters: page,
-				storageBytesShadow: isFirstPage ? storageBytesShadow : null,
-				packageServiceStatesShadow: isFirstPage
-					? packageServiceStatesShadow
-					: null,
-				deletionShadow: isFirstPage ? deletionShadow : null,
+				storageBytesState: isFirstPage ? storageBytesState : null,
+				packageServiceStates: isFirstPage ? packageServiceStates : null,
+				deletionState: isFirstPage ? deletionState : null,
 				nextStartAfter: truncated
 					? `${page.at(-1)!.day}:${page.at(-1)!.resource}`
 					: null,
@@ -1732,13 +1730,13 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		mcpUserId: 'user-aaa',
 	})
 	expect(idFromName).toHaveBeenCalledWith('user-aaa')
-	// 3 counters + storageBytesShadow + 1 package-service shadow + deletingAt + 1 lease
+	// 3 counters + storage state + 1 package service + deletingAt + 1 lease
 	expect(accountExport.manifest.sections.user_meter?.count).toBe(7)
 	expect(accountExport.durableObjects.userMeter).toEqual({
 		counters,
-		storageBytesShadow,
-		packageServiceStatesShadow,
-		deletionShadow,
+		storageBytesState,
+		packageServiceStates,
+		deletionState,
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1756,9 +1754,9 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		pageSize: 2,
 	})
 	expect(first.items).toEqual(counters.slice(0, 2))
-	expect(first.storageBytesShadow).toEqual(storageBytesShadow)
-	expect(first.packageServiceStatesShadow).toEqual(packageServiceStatesShadow)
-	expect(first.deletionShadow).toEqual(deletionShadow)
+	expect(first.storageBytesState).toEqual(storageBytesState)
+	expect(first.packageServiceStates).toEqual(packageServiceStates)
+	expect(first.deletionState).toEqual(deletionState)
 	expect(first.truncated).toBe(true)
 	expect(first.nextStartAfter).toBe('2026-07-30:execute_calls_per_day')
 
@@ -1771,9 +1769,9 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		startAfter: first.nextStartAfter ?? undefined,
 	})
 	expect(second.items).toEqual(counters.slice(2))
-	expect(second.storageBytesShadow).toBeNull()
-	expect(second.packageServiceStatesShadow).toBeNull()
-	expect(second.deletionShadow).toBeNull()
+	expect(second.storageBytesState).toBeNull()
+	expect(second.packageServiceStates).toBeNull()
+	expect(second.deletionState).toBeNull()
 	expect(second.truncated).toBe(false)
 	expect(second.nextStartAfter).toBeNull()
 	expect(exportCounters).toHaveBeenCalledWith(
@@ -1785,9 +1783,9 @@ test('account export includes user_meter counters, pages them, and warns on trun
 
 	exportCounters.mockImplementation(async () => ({
 		counters: [counters[0]!],
-		storageBytesShadow: null,
-		packageServiceStatesShadow: null,
-		deletionShadow: null,
+		storageBytesState: null,
+		packageServiceStates: null,
+		deletionState: null,
 		nextStartAfter: 'cursor-more',
 		truncated: true,
 	}))

@@ -215,18 +215,18 @@ export type AccountExportArtifactRepo = {
 type RunRecordsExportPayload = Awaited<ReturnType<typeof exportRunRecords>>
 
 function countUserMeterExportEntries(result: UserMeterExportResult): number {
-	const deletionShadowCount =
-		result.deletionShadow == null
+	const deletionStateCount =
+		result.deletionState == null
 			? 0
-			: (result.deletionShadow.deletingAt == null ? 0 : 1) +
-				result.deletionShadow.activeWriteLeaseCount
+			: (result.deletionState.deletingAt == null ? 0 : 1) +
+				result.deletionState.activeWriteLeaseCount
 	return (
 		result.counters.length +
-		(result.storageBytesShadow == null ? 0 : 1) +
-		(result.packageServiceStatesShadow == null
+		(result.storageBytesState == null ? 0 : 1) +
+		(result.packageServiceStates == null
 			? 0
-			: result.packageServiceStatesShadow.length) +
-		deletionShadowCount
+			: result.packageServiceStates.length) +
+		deletionStateCount
 	)
 }
 
@@ -307,22 +307,21 @@ export type AccountExportSectionResult = {
 	pageSize: number
 	warnings: Array<string>
 	/**
-	 * Non-authoritative UserMeter storage-byte shadow. Present only on the
-	 * first `user_meter` page (`startAfter` absent); later pages omit it.
+	 * Authoritative UserMeter storage-byte state. Present only on the first
+	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
 	 */
-	storageBytesShadow?: UserMeterExportResult['storageBytesShadow']
+	storageBytesState?: UserMeterExportResult['storageBytesState']
 	/**
-	 * Non-authoritative UserMeter package-service shadow rows. Present only on
-	 * the first `user_meter` page (`startAfter` absent); later pages set it to
-	 * `null`.
+	 * Authoritative UserMeter package-service rows. Present only on the first
+	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
 	 */
-	packageServiceStatesShadow?: UserMeterExportResult['packageServiceStatesShadow']
+	packageServiceStates?: UserMeterExportResult['packageServiceStates']
 	/**
 	 * Sanitized UserMeter deletion-fence / write-lease inventory (no raw token
 	 * or holder). Present only on the first `user_meter` page (`startAfter`
 	 * absent); later pages set it to `null`.
 	 */
-	deletionShadow?: UserMeterExportResult['deletionShadow']
+	deletionState?: UserMeterExportResult['deletionState']
 }
 
 function normalizePageSize(pageSize: number | undefined) {
@@ -2014,9 +2013,9 @@ export async function readAccountExportSection(input: {
 		return {
 			section: input.section,
 			items: page.counters,
-			storageBytesShadow: page.storageBytesShadow,
-			packageServiceStatesShadow: page.packageServiceStatesShadow,
-			deletionShadow: page.deletionShadow,
+			storageBytesState: page.storageBytesState,
+			packageServiceStates: page.packageServiceStates,
+			deletionState: page.deletionState,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

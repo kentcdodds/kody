@@ -238,12 +238,12 @@ of replaying.
 Entity rows hold **current state**. Run records hold **history**. Never derive
 live state (is this service running? how many?) by querying run records.
 
-Entitlement concurrency reads `package_service_states` (migration `0095`), an
-authoritative D1 projection upserted and heartbeaten by the service Durable
-Object. History rows can outlive an evicted DO or stay `running` after a crash,
-so they are not a reliable liveness signal. Jobs keep schedule metadata and
-`last_run_at` / `last_run_status` on the D1 `jobs` row for the hourly retention
-sweeper; last-run error, duration, and counters for observability live in RunLog
+Entitlement concurrency reads the per-user UserMeter `package_service_states`,
+the sole liveness authority. D1 `package_service_states` is only an enumeration
+index for discovery, account export/deletion, and disaster recovery; run history
+is never a liveness signal. Jobs keep schedule metadata and `last_run_at` /
+`last_run_status` on the D1 `jobs` row for the hourly retention sweeper;
+last-run error, duration, and counters for observability live in RunLog
 `job_run_observability` and survive run-history pruning. Package activation
 counters and milestones live in the same DO (`package_run_successes`,
 `activation_milestones`).

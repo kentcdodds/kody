@@ -53,6 +53,116 @@ async function waitFor(
 		})
 }
 
+function accountWriteLeaseColumnNames(state: DurableObjectState) {
+	return state.storage.sql
+		.exec<{ name: string }>(`PRAGMA table_info(account_write_leases)`)
+		.toArray()
+		.map((row) => String(row.name))
+}
+
+test('fresh UserMeter schema v8 creates the final write-lease shape', async () => {
+	const user = await seedFreeUser('meter-schema-v8-fresh')
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+	)
+	await runInDurableObject(stub, async (instance: UserMeter, state) => {
+		expect(instance).toBeInstanceOf(UserMeter)
+		const version = state.storage.sql
+			.exec<{ value: number }>(
+				`SELECT value FROM user_meter_meta
+				WHERE key = 'schema_version' LIMIT 1`,
+			)
+			.toArray()[0]
+		expect(Number(version?.value)).toBe(8)
+		expect(accountWriteLeaseColumnNames(state)).toEqual([
+			'token',
+			'holder',
+			'acquired_at',
+			'pending_repair_id',
+		])
+	})
+}, 30_000)
+
+test('warm UserMeter schema v7 drops the authority column and preserves leases', async () => {
+	const user = await seedFreeUser('meter-schema-v7-upgrade')
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+	)
+	await runInDurableObject(stub, async (instance: UserMeter, state) => {
+		await state.storage.deleteAll()
+		state.storage.sql.exec(`
+			CREATE TABLE user_meter_meta (
+				key TEXT PRIMARY KEY NOT NULL,
+				value INTEGER NOT NULL
+			);
+			INSERT INTO user_meter_meta (key, value)
+			VALUES ('schema_version', 7);
+			CREATE TABLE account_write_leases (
+				token TEXT PRIMARY KEY NOT NULL,
+				holder TEXT NOT NULL,
+				acquired_at TEXT NOT NULL,
+				pending_repair_id TEXT,
+				authority TEXT NOT NULL DEFAULT 'legacy'
+			);
+			CREATE INDEX idx_account_write_leases_authority_acquired_token
+			ON account_write_leases (authority, acquired_at, token);
+			INSERT INTO account_write_leases (
+				token, holder, acquired_at, pending_repair_id, authority
+			) VALUES (
+				'warm-v7-token', 'warm-v7-holder',
+				'2026-08-03T00:00:00.000Z', 'repair-v7', 'do'
+			);
+		`)
+
+		const proto = Object.getPrototypeOf(instance) as {
+			initializeSchema: () => void
+		}
+		proto.initializeSchema.call(instance)
+
+		const version = state.storage.sql
+			.exec<{ value: number }>(
+				`SELECT value FROM user_meter_meta
+				WHERE key = 'schema_version' LIMIT 1`,
+			)
+			.toArray()[0]
+		expect(Number(version?.value)).toBe(8)
+		expect(accountWriteLeaseColumnNames(state)).toEqual([
+			'token',
+			'holder',
+			'acquired_at',
+			'pending_repair_id',
+		])
+		expect(
+			state.storage.sql
+				.exec<{
+					token: string
+					holder: string
+					acquired_at: string
+					pending_repair_id: string | null
+				}>(
+					`SELECT token, holder, acquired_at, pending_repair_id
+					FROM account_write_leases`,
+				)
+				.toArray(),
+		).toEqual([
+			{
+				token: 'warm-v7-token',
+				holder: 'warm-v7-holder',
+				acquired_at: '2026-08-03T00:00:00.000Z',
+				pending_repair_id: 'repair-v7',
+			},
+		])
+		const legacyIndex = state.storage.sql
+			.exec<{ name: string }>(
+				`SELECT name FROM sqlite_master
+				WHERE type = 'index'
+					AND name = 'idx_account_write_leases_authority_acquired_token'`,
+			)
+			.toArray()
+		expect(legacyIndex).toEqual([])
+	})
+}, 30_000)
+
 test('cold daily consume initializes at zero without D1 prepare/run and first unit is 1', async () => {
 	const now = new Date('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey(now)
@@ -333,9 +443,9 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	})
 	expect(await meterA.exportCounters({})).toEqual({
 		counters: [],
-		storageBytesShadow: null,
-		packageServiceStatesShadow: [],
-		deletionShadow: {
+		storageBytesState: null,
+		packageServiceStates: [],
+		deletionState: {
 			deletingAt: null,
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
@@ -432,9 +542,9 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	expect(readDuringPurge).toEqual({ outcome: 'needs_bootstrap' })
 	expect(exportDuringPurge).toEqual({
 		counters: [],
-		storageBytesShadow: null,
-		packageServiceStatesShadow: [],
-		deletionShadow: {
+		storageBytesState: null,
+		packageServiceStates: [],
+		deletionState: {
 			deletingAt: null,
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
@@ -555,7 +665,7 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 	})
 }, 30_000)
 
-test('UserMeter storage RPCs, export shadow field, and purge work additively', async () => {
+test('UserMeter storage RPCs, authoritative export state, and purge work additively', async () => {
 	const user = await seedFreeUser('meter-storage-export-purge')
 	const meter = userMeterRpc({ env, userId: user.userId })
 	await meter.initializeStorageBytes({
@@ -591,14 +701,14 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(firstPage.counters).toHaveLength(2)
 	expect(firstPage.truncated).toBe(true)
 	expect(firstPage.nextStartAfter).toEqual(expect.any(String))
-	expect(firstPage.storageBytesShadow).toEqual({
+	expect(firstPage.storageBytesState).toEqual({
 		bytes: 11,
 		revision: 3,
 		updatedAt: '2026-07-31T17:02:00.000Z',
 		mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
 	})
-	expect(firstPage.packageServiceStatesShadow).toEqual([])
-	expect(firstPage.deletionShadow).toEqual({
+	expect(firstPage.packageServiceStates).toEqual([])
+	expect(firstPage.deletionState).toEqual({
 		deletingAt: null,
 		activeWriteLeaseCount: 0,
 		writeLeases: [],
@@ -611,9 +721,9 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(secondPage.counters).toHaveLength(2)
 	expect(secondPage.truncated).toBe(false)
 	expect(secondPage.nextStartAfter).toBeNull()
-	expect(secondPage.storageBytesShadow).toBeNull()
-	expect(secondPage.packageServiceStatesShadow).toBeNull()
-	expect(secondPage.deletionShadow).toBeNull()
+	expect(secondPage.storageBytesState).toBeNull()
+	expect(secondPage.packageServiceStates).toBeNull()
+	expect(secondPage.deletionState).toBeNull()
 
 	await expect(meter.purge()).resolves.toEqual({ ok: true })
 	expect(await meter.readStorageBytes()).toEqual({
@@ -621,9 +731,9 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	})
 	expect(await meter.exportCounters({})).toEqual({
 		counters: [],
-		storageBytesShadow: null,
-		packageServiceStatesShadow: [],
-		deletionShadow: {
+		storageBytesState: null,
+		packageServiceStates: [],
+		deletionState: {
 			deletingAt: null,
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
@@ -633,7 +743,7 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	})
 }, 30_000)
 
-test('UserMeter package-service shadow upserts are monotonic, isolated, exportable, and purgeable', async () => {
+test('UserMeter package-service states are monotonic, isolated, exportable, and purgeable', async () => {
 	const userA = await seedFreeUser('meter-pkg-svc-a')
 	const userB = await seedFreeUser('meter-pkg-svc-b')
 	const meterA = userMeterRpc({ env, userId: userA.userId })
@@ -764,7 +874,7 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 	const firstPage = await meterA.exportCounters({ pageSize: 1 })
 	expect(firstPage.truncated).toBe(true)
 	expect(firstPage.nextStartAfter).toEqual(expect.any(String))
-	expect(firstPage.packageServiceStatesShadow).toEqual(
+	expect(firstPage.packageServiceStates).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				packageId: 'pkg-1',
@@ -788,8 +898,8 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 		pageSize: 1,
 		startAfter: firstPage.nextStartAfter,
 	})
-	expect(secondPage.packageServiceStatesShadow).toBeNull()
-	expect(secondPage.deletionShadow).toBeNull()
+	expect(secondPage.packageServiceStates).toBeNull()
+	expect(secondPage.deletionState).toBeNull()
 
 	await expect(
 		meterA.deletePackageServiceState({
@@ -998,7 +1108,7 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		}),
 	).resolves.toEqual({ finalized: true })
 
-	// Export: deletionShadow emitted on first page only.
+	// Export: deletionState emitted on first page only.
 	const day = '2026-08-01'
 	for (const resource of [
 		'email_receives_per_day',
@@ -1013,7 +1123,7 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	}
 	const firstPage = await meterA.exportCounters({ pageSize: 1 })
 	expect(firstPage.truncated).toBe(true)
-	expect(firstPage.deletionShadow).toEqual({
+	expect(firstPage.deletionState).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
 		activeWriteLeaseCount: 0,
 		writeLeases: [],
@@ -1022,7 +1132,7 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		pageSize: 1,
 		startAfter: firstPage.nextStartAfter,
 	})
-	expect(secondPage.deletionShadow).toBeNull()
+	expect(secondPage.deletionState).toBeNull()
 
 	// Purge resets counters but preserves the deletion tombstone.
 	await expect(meterA.purge()).resolves.toEqual({ ok: true })
@@ -1035,9 +1145,9 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	})
 	expect(await meterA.exportCounters({})).toEqual({
 		counters: [],
-		storageBytesShadow: null,
-		packageServiceStatesShadow: [],
-		deletionShadow: {
+		storageBytesState: null,
+		packageServiceStates: [],
+		deletionState: {
 			deletingAt: '2026-08-01 10:00:00',
 			activeWriteLeaseCount: 0,
 			writeLeases: [],

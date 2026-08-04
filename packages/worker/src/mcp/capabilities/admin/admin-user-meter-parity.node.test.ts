@@ -37,30 +37,8 @@ function createCapabilityTestDb() {
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
 			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
 		);
-		CREATE TABLE package_service_states (
-			user_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			service_name TEXT NOT NULL,
-			status TEXT NOT NULL,
-			started_at TEXT,
-			updated_at TEXT NOT NULL,
-			PRIMARY KEY (user_id, package_id, service_name)
-		);
-		CREATE TABLE account_write_leases (
-			token TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			holder TEXT NOT NULL,
-			acquired_at TEXT NOT NULL,
-			released_at TEXT
-		);
 		INSERT INTO users (stable_user_id, username, email)
 		VALUES ('${stableUserId}', 'parity-cap', 'parity-cap@example.com');
-		INSERT INTO account_write_leases (
-			token, user_id, holder, acquired_at, released_at
-		) VALUES (
-			'lease-token-privacy', '${stableUserId}', 'holder-secret',
-			'2026-08-01T09:00:00.000Z', NULL
-		);
 	`)
 	return createD1FromSqlite(sqlite)
 }
@@ -69,7 +47,7 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 	const db = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
-	// Seed one active DO write lease; D1 account_write_leases row is quiescent.
+	// Seed one active authoritative write lease.
 	await meterStub.acquireWriteLease({
 		token: 'active-lease-xyz789',
 		holder: 'some-holder-value',
