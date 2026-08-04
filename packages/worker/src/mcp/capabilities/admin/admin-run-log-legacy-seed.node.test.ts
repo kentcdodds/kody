@@ -5,6 +5,7 @@ import {
 	adminRunLogLegacySeedActivationMaxMilestones,
 	adminRunLogLegacySeedActivationMaxPackages,
 	adminRunLogLegacySeedDefaultUserLimit,
+	adminRunLogLegacySeedDefaultWorkflowImportPageSize,
 	adminRunLogLegacySeedMaxUserLimit,
 } from '#worker/admin/run-log-legacy-seed.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -202,5 +203,8 @@ test('admin_run_log_legacy_seed description states bounded one-shot activation',
 	)
 	expect(description).toContain(
 		`default ${adminRunLogLegacySeedDefaultUserLimit}`,
+	)
+	expect(description).toContain(
+		String(adminRunLogLegacySeedDefaultWorkflowImportPageSize),
 	)
 })

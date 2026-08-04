@@ -23,7 +23,6 @@ import {
 	seedJobRunObservabilityBatch,
 	verifyLegacyParity,
 	workflowBindingNames,
-	workflowProjectionImportMaxBatch,
 	type ActivationMilestone,
 	type ActivationStateImport,
 	type JobRunObservabilitySeedInput,
@@ -39,6 +38,13 @@ export const adminRunLogLegacySeedMaxUserLimit = 5
 
 /** Default page size — one user so a max-plan activation snapshot stays cheap. */
 export const adminRunLogLegacySeedDefaultUserLimit = 1
+
+/**
+ * Default workflow_runs D1 page size and per-import RPC batch for admin sweeps.
+ * Kept well below the RunLog DO hard cap so large inventories paginate through
+ * multiple import+verify rounds instead of one oversized RPC.
+ */
+export const adminRunLogLegacySeedDefaultWorkflowImportPageSize = 250
 
 /**
  * One-shot activation package-row hard cap: maximum product plan saved-package
@@ -90,7 +96,7 @@ export type AdminRunLogLegacySeedResult =
 	| ({ action: 'seed' } & AdminRunLogLegacySeedPageFields)
 
 export type AdminRunLogLegacySeedBatchSizes = {
-	/** Max workflow projections per D1 page / import RPC (default DO hard cap). */
+	/** Max workflow projections per D1 page / import RPC (default 250). */
 	workflowImport: number
 	/** Max job seeds per D1 page / seed RPC (default 500). */
 	jobSeed: number
@@ -123,7 +129,7 @@ const defaultRpc: AdminRunLogLegacySeedRpc = {
 }
 
 const defaultBatchSizes: AdminRunLogLegacySeedBatchSizes = {
-	workflowImport: workflowProjectionImportMaxBatch,
+	workflowImport: adminRunLogLegacySeedDefaultWorkflowImportPageSize,
 	jobSeed: jobRunObservabilitySeedMaxBatch,
 	verify: legacyParityVerifyMaxBatch,
 	activationMaxPackages: adminRunLogLegacySeedActivationMaxPackages,
