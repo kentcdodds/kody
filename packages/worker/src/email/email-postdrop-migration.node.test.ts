@@ -1,26 +1,20 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
 	applyMigrationLikeD1,
 	applyMigrationsBefore,
-	migrationsDirectory,
 } from '#worker/test-support/system-email-graph-migration.ts'
 
 const postdropMigration = '0140-drop-email-postdrop-residue.sql'
+const retiredTables = [
+	'email_user_graph_drop_approval',
+	'email_inbound_usage_effects',
+] as const
 
 test('0140 drops retired tables and simplifies due-owner ordering', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, postdropMigration)
-	const sql = readFileSync(
-		new URL(postdropMigration, migrationsDirectory),
-		'utf8',
-	)
-	const droppedTables = [...sql.matchAll(/^DROP TABLE (?<table>[a-z_]+);$/gmu)]
-		.map((match) => match.groups?.table)
-		.filter((table): table is string => table !== undefined)
-	expect(droppedTables).toHaveLength(2)
-	for (const table of droppedTables) {
+	for (const table of retiredTables) {
 		expect(
 			db
 				.prepare(
@@ -33,7 +27,7 @@ test('0140 drops retired tables and simplifies due-owner ordering', () => {
 
 	applyMigrationLikeD1(db, postdropMigration)
 
-	for (const table of droppedTables) {
+	for (const table of retiredTables) {
 		expect(
 			db
 				.prepare(
