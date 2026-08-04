@@ -96,9 +96,8 @@ Execute responses include Server-Timing-style phase entries under
 (`meta.execute`): each entry is `{ name, durationMs }`.
 
 - `bundle` — module-graph preparation and bundling.
-- `hydrate` — refreshing nested runtime modules (and resolving literal dynamic
-  `import("kody:@…")` placeholders in bundles published before that pattern was
-  removed).
+- `hydrate` — refreshing nested runtime modules, including compatibility
+  placeholders retained in already-published bundle snapshots.
 - `provider-assembly` — capability registry, runtime helper, and provider wiring
   ahead of sandbox startup.
 - `sandbox` — the dynamic worker evaluation of the module itself.

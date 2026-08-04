@@ -201,7 +201,7 @@ test(
 	},
 )
 
-test('ad hoc execute runtime exposes packages.invoke and throws teaching errors for removed APIs', async () => {
+test('ad hoc execute runtime exposes packages.invoke and rejects unsupported helpers', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const bundle = await buildKodyModuleBundle({
 		env,
@@ -473,7 +473,7 @@ test(
 			targetKodyId: 'lean-target',
 			callerMarkerVisible: false,
 		})
-		// Removed APIs throw teaching errors naming the replacement.
+		// Unsupported helpers throw teaching errors naming the replacement.
 		expect(payload.removedInvokeCheckedError).toContain(
 			'packages.invokeChecked was removed',
 		)

@@ -1450,8 +1450,8 @@ export default async function run() {
 			packageId: 'pkg-1',
 		},
 	])
-	// Literal dynamic kody imports no longer produce placeholder modules or
-	// dynamic-dependency metadata; the call site becomes a teaching error.
+	// Unsupported literal dynamic kody imports produce no placeholder modules
+	// or dynamic-dependency metadata; the call site becomes a teaching error.
 	expect(bundle.dynamicDependencies ?? []).toEqual([])
 	packageVersion = 'current'
 	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({

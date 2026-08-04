@@ -1208,14 +1208,14 @@ test('keyed packages.invoke keeps exactly-once semantics: repeat calls replay th
 	})
 })
 
-test('runtime invoke tools expose only invoke (check/invokeChecked were removed)', () => {
+test('runtime invoke tools expose only the supported invoke helper', () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	const tools = createRuntimeDispatchTools(db) as Record<string, unknown>
 
 	expect(typeof tools.invoke).toBe('function')
-	// The sandbox prelude throws the teaching errors for the removed names;
-	// the host tool set no longer carries them at all.
+	// Sandbox teaching stubs reject unsupported names; the host tool set
+	// exposes only invoke.
 	expect(tools.check).toBeUndefined()
 	expect(tools.invokeChecked).toBeUndefined()
 })
