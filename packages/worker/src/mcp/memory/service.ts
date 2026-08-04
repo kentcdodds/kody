@@ -177,7 +177,6 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
 		env: input.env,
-		waitUntil: input.waitUntil,
 		async write() {
 			const normalized = normalizeMemoryPayload(input)
 			const now = new Date().toISOString()

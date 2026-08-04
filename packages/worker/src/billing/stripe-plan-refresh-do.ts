@@ -61,7 +61,6 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 				stableUserId: userId,
 				holder: 'stripe_plan_refresh_alarm',
 				env: this.env,
-				waitUntil: this.ctx.waitUntil.bind(this.ctx),
 				write: async () => {
 					await refreshStripePlanForUser({
 						env: this.env,
