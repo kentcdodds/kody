@@ -25,6 +25,22 @@ This project uses the following resources:
     user email domain.
   - The API token needs `Workers Queues:Edit`; the domain must already be
     enabled for Cloudflare Email Sending.
+- Cloudflare Queue for Artifacts repository lifecycle events
+  - Queue: `kody-artifacts-repo-events`
+  - Dead-letter queue: `kody-artifacts-repo-events-dlq`
+  - Production CI ensures both queues and reconciles an account-level
+    `artifacts` event subscription for `repo.created` / `repo.deleted`.
+  - Per-repo `artifacts.repo` push subscriptions (`pushed`) are created at
+    runtime when durable `entity_sources` rows are ensured, using
+    `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`. The Worker looks up the
+    destination queue by name. Subscription ids are stored on
+    `entity_sources.artifacts_push_event_subscription_id` and deleted during
+    artifact cleanup.
+  - The production consumer batches at most 10 messages for 5 seconds, retries
+    three times, and routes exhausted messages to the dedicated dead-letter
+    queue. Consumers filter by `ARTIFACTS_NAMESPACE` and ignore session fork
+    repos. Mapped package topics: `repo.pushed`, `repo.created`,
+    `repo.deleted`.
 - Cloudflare Queue for durable platform-feedback subscription dispatch
   - Producer binding: `PLATFORM_FEEDBACK_DISPATCH_QUEUE`
   - Queue: `kody-platform-feedback-dispatch`

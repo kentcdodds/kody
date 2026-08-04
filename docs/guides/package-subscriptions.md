@@ -258,6 +258,68 @@ never emit. Failed `execute` calls do persist and do emit.
 Use this topic for notifier packages that email, write to Sheets, spawn an
 agent, or otherwise react when something in the user's account fails.
 
+## `repo.pushed`
+
+When Cloudflare Artifacts reports commits pushed to a Kody-managed Artifacts
+repo (plain repo, package, or job source), Kody dispatches `repo.pushed` to
+packages saved by that same user that declare the topic. Delivery is durable via
+the `kody-artifacts-repo-events` Queue (with DLQ). Session fork repos never
+emit. Events for other `ARTIFACTS_NAMESPACE` values are ignored.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type RepoPushedEvent = {
+	event: 'repo.pushed'
+	repo: {
+		source_id: string
+		repo_id: string
+		entity_kind: 'repo' | 'package' | 'job'
+		entity_id: string
+		name: string | null
+		kody_id: string | null
+	}
+	push: {
+		ref: string
+		before: string
+		after: string
+		total_commits_count: number
+		commits_truncated: boolean
+		commits: Array<{
+			id: string
+			message: string
+			message_truncated: boolean
+			timestamp: string
+			author: { name: string; email: string }
+			committer: { name: string; email: string }
+			parents: Array<string>
+		}>
+	}
+	artifacts: {
+		namespace: string
+		event_timestamp: string
+		event_subscription_id: string
+	}
+}
+```
+
+`repo_id` is the Artifacts repo name (also stored on `entity_sources.repo_id`).
+`name` is the user-facing plain-repo name or package npm name when known;
+`kody_id` is set for packages. For `entity_kind: 'package' | 'job'`, a push
+updates live HEAD but does not mean the package/job published commit advanced —
+use publish / external-push / reconcile for activation.
+
+Idempotency keys include the after commit, ref, and subscriber package id, so
+Queue redelivery is safe.
+
+## `repo.created` / `repo.deleted`
+
+Account-level Artifacts create/delete events map to `repo.created` and
+`repo.deleted` with the same `repo` entity block plus Artifacts metadata
+(`default_branch`, `description`, Cloudflare `cloudflare_repo_id`). Same-user
+fan-out and Queue delivery match `repo.pushed`. Unmatched deletes (D1 row
+already gone) are acknowledged without retry.
+
 ## `package.codemod.applied`
 
 After a successful package codemod **apply**, Kody dispatches

@@ -58,3 +58,26 @@ runs full publish checks, creates the `saved_packages` row, flips
 
 Repos are the durable home for versioned source; packages add runtime surfaces
 on top of an explicitly activated extension.
+
+## Package subscriptions for repo lifecycle
+
+Kody relays Cloudflare Artifacts repository lifecycle events into package
+subscriptions for the owning user:
+
+| Topic          | Cloudflare event            | When it fires                                      |
+| -------------- | --------------------------- | -------------------------------------------------- |
+| `repo.pushed`  | `cf.artifacts.repo.pushed`  | Commits land on a managed Artifacts repo           |
+| `repo.created` | `cf.artifacts.repo.created` | A managed Artifacts repo is created                |
+| `repo.deleted` | `cf.artifacts.repo.deleted` | A managed Artifacts repo is deleted                |
+
+Declare handlers under `package.json#kody.subscriptions`. Delivery is
+same-user only: packages saved by the entity owner that declare the topic
+receive the event. Session fork Artifacts repos never fan out.
+
+`repo.pushed` is the primary automation hook (for example resyncing a projection
+after a git-lane push to a plain repo). For packages and jobs, a push updates
+HEAD but does **not** by itself advance `published_commit` — publish /
+`package_publish_external_push` / reconcile still own activation.
+
+Payload shapes and idempotency details live in the
+[package subscriptions guide](../guides/package-subscriptions.md).
