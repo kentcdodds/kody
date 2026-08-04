@@ -545,7 +545,9 @@ class UserMeterBase extends DurableObject<Env> {
 	async getRecoveryBookmark(input: {
 		timestampMs: number
 	}): Promise<{ bookmark: string }> {
-		return await getRecoveryBookmark(this.ctx, input)
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
 	}
 
 	async restoreToBookmark(input: {
@@ -553,6 +555,7 @@ class UserMeterBase extends DurableObject<Env> {
 	}): Promise<{ undoBookmark: string }> {
 		return await restoreToBookmark(this.ctx, input, {
 			objectKind: 'user-meter',
+			environment: this.env,
 		})
 	}
 

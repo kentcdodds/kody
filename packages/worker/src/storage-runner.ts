@@ -447,7 +447,9 @@ class StorageRunnerBase extends DurableObject<Env> {
 	async getRecoveryBookmark(input: {
 		timestampMs: number
 	}): Promise<{ bookmark: string }> {
-		return await getRecoveryBookmark(this.ctx, input)
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
 	}
 
 	async restoreToBookmark(input: {
@@ -455,6 +457,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 	}): Promise<{ undoBookmark: string }> {
 		return await restoreToBookmark(this.ctx, input, {
 			objectKind: 'storage-runner',
+			environment: this.env,
 		})
 	}
 

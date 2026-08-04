@@ -1297,13 +1297,18 @@ class RunLogBase extends DurableObject<Env> {
 	async getRecoveryBookmark(input: {
 		timestampMs: number
 	}): Promise<{ bookmark: string }> {
-		return await getRecoveryBookmark(this.ctx, input)
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
 	}
 
 	async restoreToBookmark(input: {
 		bookmark: string
 	}): Promise<{ undoBookmark: string }> {
-		return await restoreToBookmark(this.ctx, input, { objectKind: 'run-log' })
+		return await restoreToBookmark(this.ctx, input, {
+			objectKind: 'run-log',
+			environment: this.env,
+		})
 	}
 
 	async startRun(input: { run: RunLogRowInput }): Promise<{ ok: true }> {

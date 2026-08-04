@@ -19,6 +19,11 @@ type PitrContext = {
 	abort?: (reason?: string) => void
 }
 
+type PitrEnvironment = {
+	SENTRY_ENVIRONMENT?: string
+	WRANGLER_IS_LOCAL_DEV?: string
+}
+
 type PitrLogRecord = {
 	event: 'do-pitr-restore-scheduled'
 	objectKind: string
@@ -65,10 +70,23 @@ function safeLogPitrRestore(
 	logger.log(JSON.stringify(record))
 }
 
+function assertPitrEnvironmentAvailable(
+	environment: PitrEnvironment | undefined,
+): void {
+	if (
+		environment?.WRANGLER_IS_LOCAL_DEV === 'true' ||
+		environment?.SENTRY_ENVIRONMENT === 'test'
+	) {
+		throw new PitrUnavailableError()
+	}
+}
+
 export async function getRecoveryBookmark(
 	ctx: PitrContext,
 	input: { timestampMs: number },
+	options: { environment?: PitrEnvironment } = {},
 ): Promise<{ bookmark: string }> {
+	assertPitrEnvironmentAvailable(options.environment)
 	const getBookmarkForTime = requirePitrMethod(ctx.storage.getBookmarkForTime)
 	const bookmark = await getBookmarkForTime.call(
 		ctx.storage,
@@ -87,10 +105,12 @@ export async function restoreToBookmark(
 	input: { bookmark: string },
 	options: {
 		objectKind: string
+		environment?: PitrEnvironment
 		logger?: Pick<Console, 'log'>
 		scheduleAbort?: (abort: () => void) => void
 	},
 ): Promise<{ undoBookmark: string }> {
+	assertPitrEnvironmentAvailable(options.environment)
 	const onNextSessionRestoreBookmark = requirePitrMethod(
 		ctx.storage.onNextSessionRestoreBookmark,
 	)
