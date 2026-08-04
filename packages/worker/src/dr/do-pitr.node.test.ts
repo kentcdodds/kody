@@ -6,10 +6,14 @@ import {
 } from './do-pitr.ts'
 
 test('Durable Object PITR resolves bookmarks, returns and logs the undo handle, then aborts', async () => {
-	const getBookmarkForTime = vi.fn(async () => 'bookmark-at-time')
-	const onNextSessionRestoreBookmark = vi.fn(async () => 'undo-bookmark')
-	const abort = vi.fn()
-	const logger = { log: vi.fn() }
+	const getBookmarkForTime = vi.fn<
+		(timestamp: number | Date) => Promise<string>
+	>(async () => 'bookmark-at-time')
+	const onNextSessionRestoreBookmark = vi.fn<
+		(bookmark: string) => Promise<string>
+	>(async () => 'undo-bookmark')
+	const abort = vi.fn<(reason?: string) => void>()
+	const logger = { log: vi.fn<(message: string) => void>() }
 	let scheduledAbort: (() => void) | undefined
 	const ctx = {
 		storage: {
@@ -54,7 +58,10 @@ test('Durable Object PITR resolves bookmarks, returns and logs the undo handle, 
 })
 
 test('Durable Object PITR degrades clearly when the runtime API is unavailable', async () => {
-	const unavailableContext = { storage: {}, abort: vi.fn() }
+	const unavailableContext = {
+		storage: {},
+		abort: vi.fn<(reason?: string) => void>(),
+	}
 
 	await expect(
 		getRecoveryBookmark(unavailableContext, { timestampMs: Date.now() }),

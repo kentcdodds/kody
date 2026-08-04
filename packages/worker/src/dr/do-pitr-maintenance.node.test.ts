@@ -3,14 +3,18 @@ import { handleDoPitrRequest } from './do-pitr-maintenance.ts'
 
 function createNamespace() {
 	const rpc = {
-		getRecoveryBookmark: vi.fn(async () => ({ bookmark: 'resolved-bookmark' })),
-		restoreToBookmark: vi.fn(async () => ({ undoBookmark: 'undo-bookmark' })),
+		getRecoveryBookmark: vi.fn<
+			(input: { timestampMs: number }) => Promise<{ bookmark: string }>
+		>(async () => ({ bookmark: 'resolved-bookmark' })),
+		restoreToBookmark: vi.fn<
+			(input: { bookmark: string }) => Promise<{ undoBookmark: string }>
+		>(async () => ({ undoBookmark: 'undo-bookmark' })),
 	}
 	return {
 		rpc,
 		namespace: {
-			idFromName: vi.fn((name: string) => name),
-			get: vi.fn(() => rpc),
+			idFromName: vi.fn<(name: string) => string>((name) => name),
+			get: vi.fn<(id: string) => typeof rpc>(() => rpc),
 		},
 	}
 }
