@@ -1431,9 +1431,11 @@ moved or deleted during this migration.
 `entity_sources` is the durable repo pointer table:
 `(user_id, entity_kind, entity_id) -> source_id`. Child tables store
 `source_id = entity_sources.id`; KV snapshots use that same source id plus the
-published commit. `entity_kind` accepts `job` and `package`. `manifest_path`,
-`source_root`, `published_commit`, `indexed_commit`, and
-`last_external_check_at` are part of the repo-source synchronization contract.
+published commit. `entity_kind` accepts `job`, `package`, and `repo`.
+`manifest_path`, `source_root`, `published_commit`, `indexed_commit`, and
+`last_external_check_at` are part of the repo-source synchronization contract
+for jobs and packages; plain `repo` sources are live-at-HEAD, have no manifest
+requirement, and are skipped by the external-push reconcile lane.
 
 Saved package imports in user code use `kody:@scope/name/export` specifiers:
 

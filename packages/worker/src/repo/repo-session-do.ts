@@ -2273,23 +2273,23 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: sessionBranch,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
+		// Resolve the live head exactly once so the persisted base_commit and
+		// the returned baseCommit cannot diverge when a push lands in between.
+		const rebasedBaseCommit =
+			source.entity_kind === 'repo'
+				? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
+				: (source.published_commit ?? '')
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
-			baseCommit:
-				source.entity_kind === 'repo'
-					? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
-					: (source.published_commit ?? ''),
+			baseCommit: rebasedBaseCommit,
 			lastCheckpointCommit: headCommit,
 			lastCheckpointAt: nowIso(),
 		})
 		return {
 			ok: true,
 			sessionId: sessionRow.id,
-			baseCommit:
-				source.entity_kind === 'repo'
-					? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
-					: (source.published_commit ?? ''),
+			baseCommit: rebasedBaseCommit,
 			headCommit,
 			merged: pullResult.pulled,
 		}
@@ -2298,7 +2298,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async publishPlainRepoSession(input: {
 		sessionRow: RepoSessionRow
 		source: EntitySourceRow
-		sessionAccess: { token: string }
+		sessionAccess: { token: string; remote: string }
 		commitMessage?: string
 	}): Promise<RepoSessionPublishResult> {
 		const sessionBranch = input.sessionRow.session_branch
@@ -2348,6 +2348,20 @@ class RepoSessionBase extends DurableObject<Env> {
 			token: input.sessionAccess.token,
 		})
 		const publishedCommit = sessionHeadCommit ?? input.sessionRow.base_commit
+		await this.attachSourcePublishGitNote({
+			source: input.source,
+			commitOid: publishedCommit,
+			remote: input.sessionAccess.remote,
+			token: input.sessionAccess.token,
+			remoteName: 'origin',
+			publishedBy: 'repo_session',
+			sessionId: input.sessionRow.id,
+			conversationId: input.sessionRow.conversation_id,
+			baseCommit: input.sessionRow.base_commit,
+			previousPublishedCommit: liveHead,
+			checks: null,
+			scope: 'repo.publishPlainRepoSession.publish-git-note',
+		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionRow.id,
 			userId: input.sessionRow.user_id,

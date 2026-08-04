@@ -1,7 +1,9 @@
 # Packages
 
 Repos are Kody's durable home for versioned source; a **package** is a repo with
-runtime surfaces activated (see [Repos](./repos.md)).
+runtime surfaces activated (see [Repos](./repos.md)). Activation is explicit: a
+root `package.json` alone does not make a plain repo a package —
+`repo_promote_to_package` (or creating through the package lanes) does.
 
 A saved package is a repo-backed module rooted at `package.json`. Standard
 package fields describe the package surface, and `package.json#kody` holds the

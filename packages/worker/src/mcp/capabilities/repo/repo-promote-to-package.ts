@@ -189,6 +189,10 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					userId: user.userId,
 					entityKind: 'repo',
 					entityId: userRepo.id,
+					// Restore the exact pre-promotion columns so a failed promote
+					// leaves the entity source byte-identical to its prior state.
+					manifestPath: source.manifest_path,
+					sourceRoot: source.source_root,
 				})
 				await session
 					.discardSession({ sessionId, userId: user.userId })

@@ -39,6 +39,8 @@ export const repoDeleteCapability = defineDomainCapability(
 		outputSchema: z.object({
 			ok: z.literal(true),
 			repo_id: z.string(),
+			artifacts_cleanup: z.enum(['ok', 'failed']),
+			warning: z.string().optional(),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -52,11 +54,14 @@ export const repoDeleteCapability = defineDomainCapability(
 					'This source is no longer a plain repo. It may have been promoted to a package.',
 				)
 			}
-			await cleanupArtifactReposForSource({
+			const cleanup = await cleanupArtifactReposForSource({
 				env: ctx.env,
 				userId: user.userId,
 				sourceId: source.id,
-			}).catch(() => undefined)
+			}).then(
+				() => 'ok' as const,
+				() => 'failed' as const,
+			)
 			await deleteEntitySource(ctx.env.APP_DB, {
 				id: source.id,
 				userId: user.userId,
@@ -68,6 +73,13 @@ export const repoDeleteCapability = defineDomainCapability(
 			return {
 				ok: true as const,
 				repo_id: userRepo.id,
+				artifacts_cleanup: cleanup,
+				...(cleanup === 'failed'
+					? {
+							warning:
+								'The Artifacts repo could not be removed and may still exist; account retention lanes will retry cleanup.',
+						}
+					: {}),
 			}
 		},
 	},

@@ -30,10 +30,12 @@ discovery.
 ## Git lane
 
 `repo_get_git_remote` mints a short-lived Artifacts remote (read or write).
-Individual files are gated at **10 MiB** (10,485,760 stored bytes). Artifacts
-itself rejects pushes above ~32 MiB of decompressed pack content with HTTP 413.
-Plain repos do not run the package publish reconcile cron after push—HEAD is
-live.
+Kody's **10 MiB** per-file gate (10,485,760 stored bytes) binds on session and
+file-level writes and again at `repo_promote_to_package`; a direct `git push` to
+the minted remote has no Kody gate, so the only ceiling on that lane is
+Artifacts itself, which rejects pushes above ~32 MiB of decompressed pack
+content with a raw HTTP 413. Plain repos do not run the package publish
+reconcile cron after push—HEAD is live.
 
 ## Sessions
 

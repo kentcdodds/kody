@@ -81,7 +81,8 @@ Think in terms of:
 - package-owned webhooks
 - package-owned workflows (declared in runtime code, not the manifest)
 
-The top-level saved identity is the package.
+The repo is the top-level persisted source; a saved package is the identity of
+the activated package extension on that repo.
 
 ## Package state model
 

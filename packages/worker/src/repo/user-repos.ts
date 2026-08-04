@@ -60,6 +60,9 @@ export async function insertUserRepo(
 	},
 ) {
 	const now = new Date().toISOString()
+	// Writer contract: names are stored normalized so getUserRepoByName's
+	// normalized lookups always match, regardless of caller.
+	const name = assertValidUserRepoName(row.name)
 	await db
 		.prepare(
 			`INSERT INTO user_repos (
@@ -69,7 +72,7 @@ export async function insertUserRepo(
 		.bind(
 			row.id,
 			row.user_id,
-			row.name,
+			name,
 			row.description,
 			row.created_at ?? now,
 			row.updated_at ?? now,

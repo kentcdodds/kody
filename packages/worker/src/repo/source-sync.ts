@@ -145,17 +145,20 @@ export async function syncArtifactSourceSnapshot(
 					repoId: source.repo_id,
 					files: input.files,
 				})
-				const manifestContent = input.files[source.manifest_path]
-				if (typeof manifestContent !== 'string') {
-					throw new Error(
-						`Manifest "${source.manifest_path}" was not found in the repo source.`,
-					)
+				// Plain repos have no manifest requirement (live-at-HEAD).
+				if (source.entity_kind !== 'repo') {
+					const manifestContent = input.files[source.manifest_path]
+					if (typeof manifestContent !== 'string') {
+						throw new Error(
+							`Manifest "${source.manifest_path}" was not found in the repo source.`,
+						)
+					}
+					validateEntitySourceManifest({
+						entityKind: source.entity_kind,
+						content: manifestContent,
+						manifestPath: source.manifest_path,
+					})
 				}
-				validateEntitySourceManifest({
-					entityKind: source.entity_kind,
-					content: manifestContent,
-					manifestPath: source.manifest_path,
-				})
 				await writePublishedSourceSnapshot({
 					env: input.env,
 					source: {
