@@ -419,11 +419,10 @@ queries return only platform-wide day/outcome counts and weight sampled rows by
 zero-fill while the rest of the page renders. Local development cannot query
 Wrangler's emulated Analytics Engine SQL API: both email quota and
 delivery-outcome aggregates degrade to empty (with an explicit warning) rather
-than reading the frozen shared USER graph.
+than falling back to a shared USER email graph.
 
-Historical Mailbox expand-phase mirror/parity telemetry is retired. No emitters
-or operation registry remain, and no live or scheduled Step 5 path writes those
-migration-only events.
+Mailbox mirror/parity telemetry is retired. No emitters or operation registry
+remain, and no live or scheduled path writes those events.
 
 Two D1 reporting projections deliberately remain:
 
@@ -519,8 +518,8 @@ rows only.
   Mailbox deletes each canonical raw-MIME/external-attachment R2 object before
   deleting authoritative SQLite metadata; a failed blob delete preserves the row
   and schedules retry. No live path mirrors or repairs a shared D1 graph row.
-  The shared D1 graph no longer exists. `system:email` uses only its dedicated
-  D1 graph and retention path.
+  There is no shared D1 email graph. `system:email` uses only its dedicated D1
+  graph and retention path.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -862,7 +861,7 @@ in the frozen graph had a fresh, successful, complete backfill record; its
 singleton authority marker recorded the validated owner count and freeze time.
 
 The temporary USER dual-write, rebuild, soak, and read-flag runtime surfaces
-used during those phases have been removed. Migration 0134 installed the
+from those phases are absent from the worker. Migration 0134 installed the
 canonical approval schema. Migration 0135 consumed every signed provenance field
 for nonempty databases, rechecked exact USER counts and exact legacy/dedicated
 system parity, then removed the shared graph, compatibility trigger, and old
@@ -1493,9 +1492,7 @@ Current retention policies:
   expired rows only after they have not been seen for 90 days. The existing
   request-time memory prune may remove expired rows sooner.
 - Terminal workflow projections age-prune after 90 days inside the per-user
-  `RunLog` DO (`workflow_projections`; see [Run records](./run-records.md)). The
-  retired D1 `workflow_runs` table and its hourly retention lane were removed by
-  migration `0137`.
+  `RunLog` DO (`workflow_projections`; see [Run records](./run-records.md)).
 - `published_bundle_artifacts`: delete D1 rows and their `BUNDLE_ARTIFACTS_KV`
   blobs only when the row is older than 30 days, its `published_commit` is no
   longer current for any matching `entity_sources` row, and there is no active
