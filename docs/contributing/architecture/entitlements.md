@@ -114,9 +114,9 @@ two compute surfaces `usage-metering.md` already observes:
 Both consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped. Daily consumption is
 authoritative in the per-user `UserMeter` Durable Object; see
-[UserMeter (expand phase)](#usermeter-expand-phase).
+[UserMeter](#usermeter).
 
-## UserMeter (expand phase)
+## UserMeter
 
 Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
 `execute_calls_per_day`, `outbound_fetches_per_day`) are **authoritative in the
@@ -147,7 +147,7 @@ point gate. All callers (including email paths) supply `env`; UserMeter is
 authoritative for all lease acquire/held/release/count operations. D1
 `account_write_leases` is quiescent — no new rows are written and the table is
 not queried on any runtime path. See
-[Account-deletion write fencing — UserMeter authority](#account-deletion-write-fencing--usermeter-authority-expand-phase-slice-5-phase-b).
+[Account-deletion write fencing — UserMeter authority](#account-deletion-write-fencing--usermeter-authority-contract-complete-2026-08-03).
 
 StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
 `user_storage_buckets` stay a **separate** quota component. StorageRunner write
@@ -668,7 +668,7 @@ Rules:
      physical cross-surface sum via `calculateUserD1StorageBytes` and applies it
      to UserMeter via a revision-guarded CAS (never clobbers a live
      reservation); no byte values are written back to D1 — see
-     [UserMeter (expand phase)](#usermeter-expand-phase).
+     [UserMeter](#usermeter).
 
   2. **StorageRunner bucket estimates (separate):** each bucket exposes
      `estimatedBytes`; inventory rows persist the latest measurement on

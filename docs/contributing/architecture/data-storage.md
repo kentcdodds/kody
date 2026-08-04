@@ -232,8 +232,7 @@ Durable Object export behavior:
   columns were dropped by migration 0139; authoritative storage bytes live in
   UserMeter. Retention is self-enforced inside the DO (seven UTC days of counter
   and inbound-delivery-claim rows); storage-byte and package-service liveness
-  rows are not time-pruned. See
-  [Entitlements](./entitlements.md#usermeter-expand-phase).
+  rows are not time-pruned. See [Entitlements](./entitlements.md#usermeter).
 - `Mailbox` is the sole authoritative USER email graph export. It exports
   threads, messages, attachments, and delivery events through the account-export
   `mailbox` section (`exportMailbox` RPC; keyset pagination with prefixed
@@ -290,7 +289,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `storage_bytes_state` (schema v4) drives storage-byte enforcement;
   `package_service_states` (schema v5) is the authoritative running-count source
   for `package_services` / `service_start` — see
-  [Entitlements](./entitlements.md#usermeter-expand-phase). Migration 0135
+  [Entitlements](./entitlements.md#usermeter). Migration 0135
   removed every retired Mailbox parity, replay, backfill, and soak column and
   its discovery index. A post-deploy production `pragma_table_xinfo('users')`
   query for `mailbox_parity_%` columns returned zero rows, so no follow-up
@@ -607,7 +606,7 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   retired mirror, dropped by migration 0139; the reconcile lane sweeps by
   `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner
   bucket estimates stay outside this row (see
-  [Entitlements](./entitlements.md#usermeter-expand-phase)).
+  [Entitlements](./entitlements.md#usermeter)).
 - `package_service_states` — per-service liveness rows (`package_id`,
   `service_name`, `status`, `started_at`, `source_updated_at`, monotonic
   `revision`, `updated_at`; primary key `(package_id, service_name)`). Added in
@@ -643,7 +642,7 @@ account export/deletion inventory paths never read or write
 `#1133` / `#1134`, then migration `0126-drop-entitlement-daily-counters.sql`).
 The final live schema has no table or day index; `admin_user_meter_parity`
 reports meter-only daily counts. See
-[Entitlements](./entitlements.md#usermeter-expand-phase).
+[Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
 `needs_bootstrap`. The service calls `initialize({ count: 0 })` with
@@ -975,7 +974,7 @@ via `durableObjectNameFromParts`); domain helpers such as
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
   plus optional schema-v4 D1 storage-byte shadow and schema-v5 package-service
-  liveness shadow. See [Entitlements](./entitlements.md#usermeter-expand-phase).
+  liveness shadow. See [Entitlements](./entitlements.md#usermeter).
 - `StripePlanRefresh` — `stripePlanRefreshDurableObjectName(userId)` →
   `idFromName(userId)`. One ephemeral, one-shot reconciliation alarm per user;
   checkout and subscription webhook activity arm it as a backstop to the
@@ -1049,7 +1048,7 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `RUN_LOG` (Durable Objects; per-user run records — see
   [Run records](./run-records.md))
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
-  [Entitlements](./entitlements.md#usermeter-expand-phase))
+  [Entitlements](./entitlements.md#usermeter))
 - `STRIPE_PLAN_REFRESH` (Durable Objects; per-user, activity-driven Stripe plan
   reconciliation alarms)
 - `MAILBOX` (Durable Objects; sole per-user email graph, inbound-ledger,
@@ -1438,10 +1437,9 @@ post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
 memory, job, and saved package from D1 (200 rows per page) and upserts it into
 the owner's namespace; it also rebuilds builtins in their reserved namespace.
 The deploy is not considered migrated until every phase reports no `error` or
-`failed` vectors. Remove the default-namespace read in a follow-up contract
-deploy only after a production full sweep succeeds and the next deploy confirms
-normal namespaced search. Vectors are derived from D1, so no canonical data is
-moved or deleted during this migration.
+`failed` vectors. Search paths query only per-account namespaces (plus the
+reserved builtin namespace); no default-namespace read remains. Vectors are
+derived from D1, so no canonical data is moved or deleted during reindexing.
 
 ### `entity_sources` and package import contracts
 
