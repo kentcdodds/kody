@@ -198,12 +198,12 @@ export async function sweepStaleInboundDeliveries(input: {
 			const { result, pruned, effectResult } =
 				userId === systemEmailOwnerId
 					? await reconcileUser()
-				: await withAccountWriteLease({
-						db: input.env.APP_DB,
-						stableUserId: userId,
-						env: input.env,
-						write: reconcileUser,
-					})
+					: await withAccountWriteLease({
+							db: input.env.APP_DB,
+							stableUserId: userId,
+							env: input.env,
+							write: reconcileUser,
+						})
 			recovered += result.recovered
 			cleaned += result.cleaned
 			pointersPruned += pruned
