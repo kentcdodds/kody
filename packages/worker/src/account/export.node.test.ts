@@ -14,6 +14,7 @@ import {
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './export.ts'
+import { accountQuiescentDetachedD1ProjectionTables } from './data-targets.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -208,8 +209,14 @@ test('account export D1 coverage includes every live user-owned schema column', 
 		}
 	}
 	const coveredColumns = getAccountExportD1UserColumnCoverage()
+	const quiescentDetachedColumns = new Set(
+		accountQuiescentDetachedD1ProjectionTables.map(
+			(table) => `${table}.user_id`,
+		),
+	)
 	const missing = [...liveUserColumns].filter(
-		(column) => !coveredColumns.has(column),
+		(column) =>
+			!coveredColumns.has(column) && !quiescentDetachedColumns.has(column),
 	)
 	const stale = [...coveredColumns].filter(
 		(column) => !liveUserColumns.has(column),
