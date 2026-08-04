@@ -14,7 +14,7 @@ const baseline = {
 	protected_binding_sets: [
 		{
 			location: 'env.production.durable_objects',
-			classes: ['Mailbox'],
+			bindings: [{ name: 'MAILBOX', class_name: 'Mailbox' }],
 		},
 	],
 } satisfies DurableObjectBaseline['configs'][number]
@@ -108,6 +108,32 @@ test('Durable Object guard protects migration tags and bound classes', () => {
 			'protected Durable Object class "Mailbox" was removed',
 		),
 	])
+
+	const renamedBinding = createConfig(undefined)
+	renamedBinding.env.production.durable_objects.bindings[0] = {
+		name: 'RENAMED_MAILBOX',
+		class_name: 'Mailbox',
+	}
+	expect(
+		checkDurableObjectConfig(configPath, renamedBinding, baseline, allowlist),
+	).toEqual([expect.stringContaining('binding identities')])
+
+	const retargetedBinding = createConfig(undefined)
+	Object.assign(
+		retargetedBinding.env.production.durable_objects.bindings[0] ?? {},
+		{
+			script_name: 'external-worker',
+			environment: 'production',
+		},
+	)
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			retargetedBinding,
+			baseline,
+			allowlist,
+		),
+	).toEqual([expect.stringContaining('binding identities')])
 })
 
 test('workflow guard permits destructive commands only in operator-dispatched jobs', () => {

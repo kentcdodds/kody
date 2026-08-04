@@ -32,9 +32,10 @@ and binding baseline in `tools/ci/durable-object-baseline.json`. Every
 `deleted_classes` migration must exactly match
 `tools/ci/do-deletion-allowlist.json`; changing that allowlist is the explicit
 code-review gate for destructive class deletion. The same check rejects removal
-or renaming of protected `new_sqlite_classes` tags, removal of protected classes
-from Wrangler bindings, and destructive Cloudflare CLI deletion commands in
-GitHub workflows unless the job is operator-triggered with `workflow_dispatch`.
+or renaming of protected `new_sqlite_classes` tags, changes to protected
+Wrangler binding identities (`name`, `class_name`, `script_name`, or
+`environment`), and destructive Cloudflare CLI deletion commands in GitHub
+workflows unless the job is operator-triggered with `workflow_dispatch`.
 
 ## Live evidence log
 

@@ -22,7 +22,7 @@ type ProtectedMigration = {
 
 type ProtectedBindingSet = {
 	location: string
-	classes: Array<string>
+	bindings: Array<DurableObjectBinding>
 }
 
 type DurableObjectBaselineConfig = {
@@ -56,6 +56,13 @@ type WranglerMigration = {
 type WranglerConfig = {
 	migrations?: unknown
 	[key: string]: unknown
+}
+
+type DurableObjectBinding = {
+	name: string
+	class_name: string
+	script_name?: string
+	environment?: string
 }
 
 export type DeployGuardrailCheckResult = {
@@ -94,11 +101,45 @@ function deletionKey(deletion: AllowedDeletion): string {
 	])
 }
 
-function collectDurableObjectBindingClasses(
+function normalizeBinding(value: unknown): DurableObjectBinding | null {
+	if (!value || typeof value !== 'object') return null
+	const candidate = value as Record<string, unknown>
+	if (
+		typeof candidate.name !== 'string' ||
+		typeof candidate.class_name !== 'string' ||
+		(candidate.script_name !== undefined &&
+			typeof candidate.script_name !== 'string') ||
+		(candidate.environment !== undefined &&
+			typeof candidate.environment !== 'string')
+	) {
+		return null
+	}
+	return {
+		name: candidate.name,
+		class_name: candidate.class_name,
+		...(candidate.script_name === undefined
+			? {}
+			: { script_name: candidate.script_name }),
+		...(candidate.environment === undefined
+			? {}
+			: { environment: candidate.environment }),
+	}
+}
+
+function bindingKey(binding: DurableObjectBinding): string {
+	return JSON.stringify([
+		binding.name,
+		binding.class_name,
+		binding.script_name ?? null,
+		binding.environment ?? null,
+	])
+}
+
+function collectDurableObjectBindings(
 	value: unknown,
 	location = '',
-	result = new Map<string, Set<string>>(),
-): Map<string, Set<string>> {
+	result = new Map<string, Array<DurableObjectBinding>>(),
+): Map<string, Array<DurableObjectBinding>> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return result
 	}
@@ -108,20 +149,20 @@ function collectDurableObjectBindingClasses(
 		if (key === 'durable_objects' && child && typeof child === 'object') {
 			const bindings = (child as { bindings?: unknown }).bindings
 			if (Array.isArray(bindings)) {
-				const classes = new Set<string>()
-				for (const binding of bindings) {
-					if (
-						binding &&
-						typeof binding === 'object' &&
-						typeof (binding as { class_name?: unknown }).class_name === 'string'
-					) {
-						classes.add((binding as { class_name: string }).class_name)
-					}
-				}
-				result.set(childLocation, classes)
+				result.set(
+					childLocation,
+					bindings
+						.map((binding) => normalizeBinding(binding))
+						.filter(
+							(binding): binding is DurableObjectBinding => binding !== null,
+						)
+						.toSorted((left, right) =>
+							bindingKey(left).localeCompare(bindingKey(right)),
+						),
+				)
 			}
 		}
-		collectDurableObjectBindingClasses(child, childLocation, result)
+		collectDurableObjectBindings(child, childLocation, result)
 	}
 	return result
 }
@@ -198,13 +239,20 @@ export function checkDurableObjectConfig(
 		}
 	}
 
-	const bindingSets = collectDurableObjectBindingClasses(config)
+	const bindingSets = collectDurableObjectBindings(config)
 	for (const protectedSet of baseline.protected_binding_sets) {
-		const currentClasses = bindingSets.get(protectedSet.location)
-		const expectedClasses = protectedSet.classes.toSorted()
-		const actualClasses = [...(currentClasses ?? [])].sort()
-		const removedClasses = expectedClasses.filter(
-			(className) => !currentClasses?.has(className),
+		const currentBindings = bindingSets.get(protectedSet.location) ?? []
+		const expectedBindings = protectedSet.bindings.toSorted((left, right) =>
+			bindingKey(left).localeCompare(bindingKey(right)),
+		)
+		const currentClasses = new Set(
+			currentBindings.map(({ class_name }) => class_name),
+		)
+		const expectedClasses = new Set(
+			expectedBindings.map(({ class_name }) => class_name),
+		)
+		const removedClasses = [...expectedClasses].filter(
+			(className) => !currentClasses.has(className),
 		)
 		for (const className of removedClasses) {
 			errors.push(
@@ -213,10 +261,13 @@ export function checkDurableObjectConfig(
 		}
 		if (
 			removedClasses.length === 0 &&
-			!sameStrings(actualClasses, expectedClasses)
+			!sameStrings(
+				currentBindings.map((binding) => bindingKey(binding)),
+				expectedBindings.map((binding) => bindingKey(binding)),
+			)
 		) {
 			errors.push(
-				`${configPath}: Durable Object bindings at ${protectedSet.location} do not match ${defaultDurableObjectBaselinePath}. Record added classes in the reviewed baseline so they remain protected after landing.`,
+				`${configPath}: Durable Object binding identities at ${protectedSet.location} do not match ${defaultDurableObjectBaselinePath}. Binding name, class_name, script_name, and environment are protected; update the reviewed baseline only for an intentional change.`,
 			)
 		}
 	}
