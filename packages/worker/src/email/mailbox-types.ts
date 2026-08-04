@@ -5,6 +5,7 @@ import {
 	type EmailDirection,
 	type EmailProcessingStatus,
 } from './types.ts'
+import { type DurableObjectPitrRpc } from '#worker/dr/do-pitr.ts'
 import { type MailboxInboundDeliveryLedgerRpc } from './mailbox-inbound-ledger.ts'
 import { type MailboxInboundEffectLedgerRpc } from './mailbox-inbound-effect-ledger.ts'
 import { type MailboxProviderIndexRepairStatus } from './mailbox-provider-index-repair.ts'
@@ -656,4 +657,6 @@ type MailboxCoreRpc = {
 export type MailboxInboundLedgerRpc = MailboxInboundDeliveryLedgerRpc &
 	MailboxInboundEffectLedgerRpc
 
-export type MailboxRpc = MailboxCoreRpc & MailboxInboundLedgerRpc
+export type MailboxRpc = MailboxCoreRpc &
+	MailboxInboundLedgerRpc &
+	DurableObjectPitrRpc

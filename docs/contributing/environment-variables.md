@@ -266,8 +266,9 @@ See [Disaster recovery](./disaster-recovery.md).
 - `DR_BACKUP_ACCESS_KEY_ID` / `DR_BACKUP_SECRET_ACCESS_KEY` — Worker secrets; R2
   S3 credentials that can write `staging/` and `blobs/` in the DR bucket.
 - `DR_RESTORE_SECRET` — Worker secret; bearer token for
-  `POST /__maintenance/dr-restore`. Must match the control-plane secret of the
-  same name. Fail-closed when unset.
+  `POST /__maintenance/dr-restore` and the operator-only
+  `POST /__maintenance/do-pitr`. Must match the control-plane secret of the same
+  name. Fail-closed when unset.
 
 ## Backup control plane (DR account Worker)
 

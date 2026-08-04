@@ -100,6 +100,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			secret: env.DR_RESTORE_SECRET,
 			notConfiguredMessage: 'DR restore is not configured',
 		},
+		{
+			path: '/__maintenance/do-pitr',
+			secret: env.DR_RESTORE_SECRET,
+			notConfiguredMessage: 'Durable Object PITR is not configured',
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {
