@@ -477,9 +477,8 @@ export function formatConnectOauthCaughtError(
 	if (isBrowserFetchNetworkError(error)) {
 		return 'Network error. Please try again.'
 	}
-	if (error instanceof Error && error.message.trim()) {
-		return error.message
-	}
+	const message = error instanceof Error ? error.message.trim() : ''
+	if (message) return message
 	return fallback
 }
 

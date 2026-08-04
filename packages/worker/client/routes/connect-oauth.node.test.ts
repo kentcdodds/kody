@@ -886,6 +886,9 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 		isBrowserFetchNetworkError(new TypeError('null is not an object')),
 	).toBe(false)
 	expect(isBrowserFetchNetworkError(new Error('Failed to fetch'))).toBe(false)
+	expect(
+		isBrowserFetchNetworkError(new TypeError('TypeError: Failed to fetch')),
+	).toBe(true)
 	expect(formatConnectOauthCaughtError(firefox, 'fallback')).toBe(
 		'Network error. Please try again.',
 	)
