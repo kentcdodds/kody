@@ -1196,8 +1196,15 @@ test('export cursors always make progress across phase handoffs and empty tails'
 	}
 })
 
-test('warm schema v8 initializes job_run_observability without legacy_seeded or ALTER', async () => {
-	const userId = uniqueUserId('schema-v8')
+function jobRunObservabilityColumnNames(state: DurableObjectState) {
+	return state.storage.sql
+		.exec<{ name: string }>(`PRAGMA table_info(job_run_observability)`)
+		.toArray()
+		.map((row) => String(row.name))
+}
+
+test('fresh schema v8 creates job_run_observability with inert legacy_seeded for rollback', async () => {
+	const userId = uniqueUserId('schema-v8-fresh')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
@@ -1208,11 +1215,7 @@ test('warm schema v8 initializes job_run_observability without legacy_seeded or 
 			.toArray()[0]
 		expect(Number(version?.value)).toBe(8)
 
-		const columns = state.storage.sql
-			.exec<{ name: string }>(`PRAGMA table_info(job_run_observability)`)
-			.toArray()
-			.map((row) => String(row.name))
-		expect(columns).toEqual([
+		expect(jobRunObservabilityColumnNames(state)).toEqual([
 			'job_id',
 			'last_run_at',
 			'last_run_status',
@@ -1222,36 +1225,131 @@ test('warm schema v8 initializes job_run_observability without legacy_seeded or 
 			'success_count',
 			'error_count',
 			'updated_at',
+			'legacy_seeded',
 		])
-		expect(columns).not.toContain('legacy_seeded')
 
-		// Warm objects may retain an inert legacy_seeded physical column; code
-		// must still upsert without reading or writing that name.
+		// Simulated v7-style INSERT including legacy_seeded must succeed on
+		// fresh v8 storage so a rollback deploy can still write the column.
 		state.storage.sql.exec(
 			`INSERT INTO job_run_observability (
 				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
-				run_count, success_count, error_count, updated_at
-			) VALUES ('job-inert', NULL, NULL, NULL, NULL, 0, 0, 0, '2026-08-01T00:00:00.000Z')`,
+				run_count, success_count, error_count, updated_at, legacy_seeded
+			) VALUES ('job-v7-insert', '2026-08-01T00:00:00.000Z', 'success', NULL, 10,
+				3, 2, 1, '2026-08-01T00:00:00.000Z', 1)`,
 		)
+		const seeded = state.storage.sql
+			.exec<{ legacy_seeded: number }>(
+				`SELECT legacy_seeded FROM job_run_observability
+				WHERE job_id = 'job-v7-insert' LIMIT 1`,
+			)
+			.toArray()[0]
+		expect(Number(seeded?.legacy_seeded)).toBe(1)
 	})
 
 	const updated = await upsertJobRunObservability({
 		env,
 		userId,
 		outcome: {
-			jobId: 'job-inert',
-			status: 'success',
+			jobId: 'job-v7-insert',
+			status: 'error',
 			ranAt: '2026-08-01T01:00:00.000Z',
-			durationMs: 5,
+			error: 'post-v8',
 		},
 	})
 	expect(updated).toMatchObject({
-		jobId: 'job-inert',
+		jobId: 'job-v7-insert',
+		runCount: 4,
+		successCount: 2,
+		errorCount: 2,
+		lastRunStatus: 'error',
+		lastRunError: 'post-v8',
+	})
+	expect(updated).not.toHaveProperty('legacySeeded')
+})
+
+test('warm schema v7 job_run_observability upgrades to v8 without ALTER', async () => {
+	const userId = uniqueUserId('schema-v7-warm')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		await state.storage.deleteAll()
+
+		state.storage.sql.exec(`
+			CREATE TABLE run_log_meta (
+				key TEXT PRIMARY KEY NOT NULL,
+				value INTEGER NOT NULL
+			)
+		`)
+		state.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES ('schema_version', 7)`,
+		)
+		state.storage.sql.exec(`
+			CREATE TABLE job_run_observability (
+				job_id TEXT PRIMARY KEY NOT NULL,
+				last_run_at TEXT,
+				last_run_status TEXT,
+				last_run_error TEXT,
+				last_duration_ms INTEGER,
+				run_count INTEGER NOT NULL DEFAULT 0,
+				success_count INTEGER NOT NULL DEFAULT 0,
+				error_count INTEGER NOT NULL DEFAULT 0,
+				updated_at TEXT NOT NULL,
+				legacy_seeded INTEGER NOT NULL DEFAULT 0
+			)
+		`)
+		state.storage.sql.exec(
+			`INSERT INTO job_run_observability (
+				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
+				run_count, success_count, error_count, updated_at, legacy_seeded
+			) VALUES ('job-warm-v7', '2026-07-01T00:00:00.000Z', 'success', NULL, 5,
+				1, 1, 0, '2026-07-01T00:00:00.000Z', 1)`,
+		)
+
+		const alterStatements: Array<string> = []
+		const originalExec = state.storage.sql.exec.bind(state.storage.sql)
+		state.storage.sql.exec = (query: string, ...args: Array<unknown>) => {
+			if (/ALTER\s+TABLE/i.test(query)) {
+				alterStatements.push(query)
+			}
+			return originalExec(query, ...args)
+		}
+
+		const proto = Object.getPrototypeOf(instance) as {
+			initializeSchema: () => void
+		}
+		proto.initializeSchema.call(instance)
+
+		expect(alterStatements).toEqual([])
+		const version = state.storage.sql
+			.exec<{ value: number }>(
+				`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
+			)
+			.toArray()[0]
+		expect(Number(version?.value)).toBe(8)
+		expect(jobRunObservabilityColumnNames(state)).toContain('legacy_seeded')
+
+		const preserved = state.storage.sql
+			.exec<{ legacy_seeded: number; run_count: number }>(
+				`SELECT legacy_seeded, run_count FROM job_run_observability
+				WHERE job_id = 'job-warm-v7' LIMIT 1`,
+			)
+			.toArray()[0]
+		expect(Number(preserved?.legacy_seeded)).toBe(1)
+		expect(Number(preserved?.run_count)).toBe(1)
+	})
+
+	const read = await getJobRunObservability({
+		env,
+		userId,
+		jobId: 'job-warm-v7',
+	})
+	expect(read).toMatchObject({
+		jobId: 'job-warm-v7',
 		runCount: 1,
 		successCount: 1,
 		lastRunStatus: 'success',
 	})
-	expect(updated).not.toHaveProperty('legacySeeded')
+	expect(read).not.toHaveProperty('legacySeeded')
 })
 
 test('getAdminInsightsSnapshot returns content-free workflow counts and milestones', async () => {

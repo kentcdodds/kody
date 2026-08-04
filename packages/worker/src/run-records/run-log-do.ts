@@ -613,8 +613,10 @@ class RunLogBase extends DurableObject<Env> {
 			ON workflow_projections(idempotency_key, created_at ASC)`,
 		)
 		// Dedicated unpruned per-job last-run outcome + counters. Not runs.
-		// Fresh CREATE omits retired `legacy_seeded`. Warm objects may still
-		// have that inert physical column; no code reads or writes it.
+		// 2026-08-04 rollback compat: fresh CREATE keeps the inert physical
+		// `legacy_seeded` column so a rollback to schema v7 code can still
+		// INSERT/UPDATE it. v8 never reads, writes, or exposes the field.
+		// Remove only via a future table rebuild after the rollback window.
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS job_run_observability (
 				job_id TEXT PRIMARY KEY NOT NULL,
@@ -625,7 +627,8 @@ class RunLogBase extends DurableObject<Env> {
 				run_count INTEGER NOT NULL DEFAULT 0,
 				success_count INTEGER NOT NULL DEFAULT 0,
 				error_count INTEGER NOT NULL DEFAULT 0,
-				updated_at TEXT NOT NULL
+				updated_at TEXT NOT NULL,
+				legacy_seeded INTEGER NOT NULL DEFAULT 0
 			)
 		`)
 		this.ctx.storage.sql.exec(
