@@ -1,4 +1,7 @@
-import { mailboxInboundProvider } from './mailbox-inbound-ledger.ts'
+import {
+	mailboxInboundDedupeProvider,
+	mailboxInboundProvider,
+} from './mailbox-inbound-ledger.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
 import {
 	type MailboxDeliveryEventInput,
@@ -124,7 +127,11 @@ export function shouldSkipMailboxDeliveryEventWrite(
 	},
 ) {
 	const preClaimAudit = isPreClaimAuditSnapshot(input.event)
-	if (input.event.provider === mailboxInboundProvider && !preClaimAudit) {
+	if (
+		(input.event.provider === mailboxInboundProvider ||
+			input.event.provider === mailboxInboundDedupeProvider) &&
+		!preClaimAudit
+	) {
 		return true
 	}
 	if (!preClaimAudit) return false

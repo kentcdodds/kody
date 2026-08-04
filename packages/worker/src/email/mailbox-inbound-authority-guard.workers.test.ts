@@ -74,6 +74,13 @@ test('generic upserts reject inbound authority state and allow pre-claim audits'
 		state: 'pending',
 		fingerprint: 'generic-authority-fingerprint',
 	})
+	const dedupeEvent = baseDeliveryEvent({
+		id: 'email-inbound-dedupe:generic-authority-guard',
+		eventType: 'receive_started',
+		provider: 'cloudflare-email-routing-dedupe',
+		fingerprint: 'generic-dedupe-fingerprint',
+		dedupeExpiresAt: '2026-08-05T00:00:00.000Z',
+	})
 	const audit = preClaimAuditEvent({
 		inboxId: 'inbox-generic-authority-guard',
 		day: '2026-08-03',
@@ -82,12 +89,17 @@ test('generic upserts reject inbound authority state and allow pre-claim audits'
 	await expect(
 		mailbox.upsertDeliveryEvents({
 			ownerId,
-			events: [authorityEvent, audit],
+			events: [authorityEvent, dedupeEvent, audit],
 		}),
 	).resolves.toEqual({
 		results: [
 			{
 				eventId: authorityEvent.id,
+				inserted: false,
+				accepted: false,
+			},
+			{
+				eventId: dedupeEvent.id,
 				inserted: false,
 				accepted: false,
 			},

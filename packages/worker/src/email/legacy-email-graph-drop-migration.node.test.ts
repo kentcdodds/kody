@@ -80,12 +80,14 @@ test('0135 removes every retired Mailbox parity users column and index', () => {
 	applyMigrationsBefore(db, dropMigration)
 	applyMigrationLikeD1(db, dropMigration)
 
+	// Replay, backfill, and soak fields introduced by 0125 all share this
+	// literal prefix.
 	expect(
 		db
 			.prepare(
 				`SELECT name
 				FROM pragma_table_xinfo('users')
-				WHERE name LIKE 'mailbox_parity_%'
+				WHERE name GLOB 'mailbox_parity_*'
 				ORDER BY name`,
 			)
 			.all(),
