@@ -293,7 +293,10 @@ function runWranglerD1(
 	const result = spawnSync(process.execPath, nodeArguments, {
 		cwd: process.cwd(),
 		encoding: 'utf8',
-		env: process.env,
+		// Wrangler emits --json query results through its logger; ambient
+		// WRANGLER_LOG levels above "log" (for example the vitest workers
+		// config sets "warn") silence the JSON on stdout entirely.
+		env: { ...process.env, WRANGLER_LOG: 'log' },
 		maxBuffer: 16 * 1024 * 1024,
 	})
 	return {
@@ -303,21 +306,22 @@ function runWranglerD1(
 	}
 }
 
-function queryAppliedMigrationNames(options: CliOptions): Array<string> | null {
+function queryRows(
+	options: CliOptions,
+	sql: string,
+): Array<{ name?: unknown }> {
 	const result = runWranglerD1(options, [
 		'execute',
 		options.binding,
 		'--json',
 		'--command',
-		'SELECT name FROM d1_migrations ORDER BY name;',
+		sql,
 	])
 	if (result.status !== 0) {
-		if (/no such table: d1_migrations/i.test(result.stderr + result.stdout)) {
-			return null
-		}
-		process.stderr.write(result.stderr)
+		// Wrangler writes --json query errors to its log file; stdio can be
+		// empty in non-interactive contexts, so surface whatever we have.
 		throw new Error(
-			`Failed to read d1_migrations (exit ${String(result.status)}).`,
+			`wrangler d1 execute failed (exit ${String(result.status)}) for: ${sql}\n${result.stdout}\n${result.stderr}`,
 		)
 	}
 	const parsed: unknown = JSON.parse(result.stdout)
@@ -325,7 +329,25 @@ function queryAppliedMigrationNames(options: CliOptions): Array<string> | null {
 		throw new Error('Unexpected wrangler d1 execute --json output shape.')
 	}
 	const first = parsed[0] as { results?: Array<{ name?: unknown }> }
-	return (first.results ?? []).map((row) => String(row.name))
+	return first.results ?? []
+}
+
+function queryAppliedMigrationNames(options: CliOptions): Array<string> | null {
+	// Probing sqlite_master succeeds on any database (including one that the
+	// probe itself just materialized), unlike selecting from a table that may
+	// not exist yet.
+	const tables = queryRows(
+		options,
+		"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'd1_migrations';",
+	)
+	if (tables.length === 0) {
+		return null
+	}
+	const rows = queryRows(
+		options,
+		'SELECT name FROM d1_migrations ORDER BY name;',
+	)
+	return rows.map((row) => String(row.name))
 }
 
 function resetBookkeeping(options: CliOptions): void {
@@ -338,15 +360,17 @@ function resetBookkeeping(options: CliOptions): void {
 	])
 	if (result.status !== 0) {
 		process.stderr.write(result.stderr)
-		throw new Error(
-			`Bookkeeping reset failed (exit ${String(result.status)}).`,
-		)
+		throw new Error(`Bookkeeping reset failed (exit ${String(result.status)}).`)
 	}
 }
 
 function printTimeTravelAnchor(options: CliOptions): void {
 	if (options.mode !== '--remote') return
-	const result = runWranglerD1(options, ['time-travel', 'info', options.binding])
+	const result = runWranglerD1(options, [
+		'time-travel',
+		'info',
+		options.binding,
+	])
 	if (result.status === 0) {
 		console.log('D1 Time Travel rollback anchor before bookkeeping reset:')
 		console.log(result.stdout.trim())

@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createPlatformFeedbackTestSchema } from './test-schema.ts'
+import { platformFeedbackTestSchemaSql } from './test-schema.ts'
 import {
 	getPlatformFeedbackByIdForAdmin,
 	updatePlatformFeedbackStatusForAdmin,
@@ -15,7 +15,7 @@ import {
 
 function createPlatformFeedbackDb() {
 	const sqlite = new DatabaseSync(':memory:')
-	createPlatformFeedbackTestSchema(sqlite)
+	sqlite.exec(platformFeedbackTestSchemaSql)
 	const queries: Array<string> = []
 	return {
 		sqlite,

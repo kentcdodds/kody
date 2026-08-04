@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
-import { createPlatformFeedbackTestSchema } from '#worker/platform-feedback/test-schema.ts'
+import { platformFeedbackTestSchemaSql } from '#worker/platform-feedback/test-schema.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { loadAdminPlatformFeedbackData } from './admin-platform-feedback-data.ts'
 
@@ -19,7 +19,7 @@ function createAdminPlatformFeedbackFixture() {
 			ON users(stable_user_id)
 			WHERE stable_user_id IS NOT NULL;
 	`)
-	createPlatformFeedbackTestSchema(sqlite)
+	sqlite.exec(platformFeedbackTestSchemaSql)
 	sqlite
 		.prepare(
 			`INSERT INTO users (

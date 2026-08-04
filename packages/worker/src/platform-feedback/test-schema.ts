@@ -1,12 +1,9 @@
-import { type DatabaseSync } from 'node:sqlite'
-
 /**
  * Mirrors the `platform_feedback` schema in
  * `packages/worker/migrations/0001-squashed-init.sql` for `*.node.test.ts`
  * suites that build their sqlite fixture by hand.
  */
-export function createPlatformFeedbackTestSchema(sqlite: DatabaseSync) {
-	sqlite.exec(`
+export const platformFeedbackTestSchemaSql = `
 CREATE TABLE IF NOT EXISTS "platform_feedback" (
 	id TEXT PRIMARY KEY NOT NULL,
 	submitter_user_id TEXT NOT NULL,
@@ -48,5 +45,4 @@ ON platform_feedback(submitter_user_id, created_at);
 CREATE INDEX idx_platform_feedback_terminal_updated_at_id
 ON platform_feedback(updated_at, id)
 WHERE status IN ('resolved', 'dismissed');
-`)
-}
+`
