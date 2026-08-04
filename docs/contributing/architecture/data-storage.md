@@ -148,10 +148,8 @@ Exports are versioned JSON documents:
 - `manifest.generatedAt` — UTC timestamp.
 - `manifest.sections` — per-section counts, warnings, and redacted columns.
 - `manifest.security.secretValuesExported` — always `false`.
-- `d1` — user-scoped D1 rows grouped by table. USER `email_threads`,
-  `email_messages`, `email_attachments`, and `email_delivery_events`
-  compatibility rows are deliberately excluded to avoid duplicating the
-  authoritative Mailbox graph.
+- `d1` — user-scoped D1 rows grouped by table. USER email graph rows are
+  exported only through the authoritative Mailbox section.
 - `durableObjects` — exported user-scoped Durable Object state where it is
   durable and enumerable.
 - `oauthGrants` — OAuth grant metadata only.
@@ -189,10 +187,9 @@ migration-safe chunked interface:
   ownership queries rather than reconstructing inventory. Continuation cursors
   bind the source row, object key, size, and ETag; ownership/key mutations and
   object overwrites are reported instead of mixing generations. Missing objects
-  are represented explicitly. R2 cursors created before the
-  Mailbox-authoritative traversal (version 1) cannot be translated without
-  risking duplicate bytes; callers receive an invalid/unsupported cursor error
-  and must restart the `r2_object` section without `startAfter`.
+  are represented explicitly. R2 cursor version 1 is unsupported by the current
+  Mailbox-authoritative traversal because translation could duplicate bytes;
+  callers must restart the `r2_object` section without `startAfter`.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -286,8 +283,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   (schema v4) drives storage-byte enforcement; UserMeter
   `package_service_states` (schema v5) is the authoritative running-count source
   for `package_services` / `service_start` — see
-  [Entitlements](./entitlements.md#usermeter). The table has no storage-byte or
-  Mailbox parity/backfill columns. Inbound email routing does not
+  [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
   reverse-resolve stable ids — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
   with one indexed point read on `users.stable_user_id` (for example
@@ -669,8 +665,8 @@ marker and fail closed when it is absent. The marker retains `owner_count`,
 inbound reconciliation, ordered by due time and owner with 25 owners processed
 per tick. `email_delivery_alert_events` preserves short-lived bounced/complained
 signals for operator burst alerts. Static import/SQL architecture checks reject
-production D1 references to USER graph table names; only Mailbox SQLite,
-migration history, and tests may use them.
+production D1 references to USER graph table names; those tables exist only in
+owner-scoped Mailbox SQLite.
 
 For operator mail, `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events` are the only live
@@ -740,7 +736,7 @@ idempotently removes any thin provider-index row. The dedicated `system:email`
 maintenance path remains D1-backed.
 
 USER retention returns Mailbox before/after counts (no message ids or email
-content). It has no shared-D1 gate or USER D1 delete/error totals.
+content).
 
 Account deletion uses one owner-bound Mailbox object (no shared-graph D1 id
 scan). Before purge it exhaustively pages `listBlobReferences`, deletes those
@@ -757,18 +753,16 @@ uses `listBlobReferences` for USER email R2 bytes.
   admin access, fixed bounded caps, and separate system-email retention. The
   dedicated `system_email_*` graph is authoritative and stays excluded from
   account deletion and export (`accountOperatorOwnedD1Surfaces`). Operator mail
-  is never migrated into per-user Mailbox objects.
+  always remains outside per-user Mailbox objects.
 - **Low-write email config** — sender identities, inboxes, inbox addresses,
   sender rules, and similar low-churn configuration stay in D1.
 - **Provider-message reverse lookup** — outbound Cloudflare sending webhooks
   resolve owner/message through the operational D1 lookup table
-  `email_outbound_provider_index` (migration
-  `0128-email-outbound-provider-index.sql`, detached by prerequisite migration
-  `0132-email-outbound-provider-index-detach.sql`), keyed by
-  `(provider, provider_message_id)` with `user_id`, `message_id`, `inbox_id`,
-  and created/updated timestamps (indexes on `user_id` and unique `message_id`).
-  Mailbox `email_messages.provider_message_id` is authoritative. The index
-  `message_id` is an opaque owner-scoped key with no graph foreign key. Mailbox
+  `email_outbound_provider_index`, keyed by `(provider, provider_message_id)`
+  with `user_id`, `message_id`, `inbox_id`, and created/updated timestamps
+  (indexes on `user_id` and unique `message_id`). Mailbox
+  `email_messages.provider_message_id` is authoritative. The index `message_id`
+  is an opaque owner-scoped key with no graph foreign key. Mailbox
   explicit/account deletion removes index rows separately and idempotently.
   Outbound send separates provider acceptance, bounded Mailbox terminal
   persistence, and independently retryable index persistence; an index failure
