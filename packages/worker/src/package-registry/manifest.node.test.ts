@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	buildPackageSearchProjection,
+	listPackageEmittedEvents,
 	parseAuthoredPackageJson,
 } from './manifest.ts'
 import {
@@ -180,6 +181,54 @@ test('parseAuthoredPackageJson accepts services, subscriptions, emits, retriever
 			description: 'A Discord message was created.',
 		},
 	})
+	expect(listPackageEmittedEvents(manifest)).toEqual([
+		{
+			topic: '@kentcdodds/discord.message.created',
+			description: 'A Discord message was created.',
+			payloadSchema: null,
+		},
+	])
+
+	const withPayloadSchema = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway package',
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						description: 'A Discord message was created.',
+						payloadSchema: {
+							type: 'object',
+							properties: {
+								messageId: { type: 'string', minLength: 1 },
+							},
+							required: ['messageId'],
+							additionalProperties: false,
+						},
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(listPackageEmittedEvents(withPayloadSchema)).toEqual([
+		{
+			topic: '@kentcdodds/discord.message.created',
+			description: 'A Discord message was created.',
+			payloadSchema: {
+				type: 'object',
+				properties: {
+					messageId: { type: 'string', minLength: 1 },
+				},
+				required: ['messageId'],
+				additionalProperties: false,
+			},
+		},
+	])
 	expect(buildPackageSearchProjection(manifest).retrievers).toEqual([
 		{
 			key: 'notes-search',
@@ -389,6 +438,55 @@ test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest exte
 			manifestPath: 'package.json',
 		}),
 	).toThrow(/must use the package scope "@kentcdodds"/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/discord-gateway',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord gateway package',
+					emits: {
+						'@kentcdodds/discord.message.created': {
+							description: 'A Discord message was created.',
+							payloadSchema: { type: 'string' },
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/payloadSchema must declare "type": "object"/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/discord-gateway',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord gateway package',
+					emits: {
+						'@kentcdodds/discord.message.created': {
+							description: 'A Discord message was created.',
+							payloadSchema: {
+								type: 'object',
+								properties: {
+									messageId: { type: 'string', pattern: '^[0-9]+$' },
+								},
+							},
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/payloadSchema is not a supported JSON Schema subset/)
 
 	expect(() =>
 		parseAuthoredPackageJson({

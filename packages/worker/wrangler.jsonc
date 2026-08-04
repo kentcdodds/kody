@@ -273,6 +273,10 @@
 						"binding": "SCHEDULED_DISPATCH_QUEUE",
 						"queue": "kody-scheduled-dispatch",
 					},
+					{
+						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
+						"queue": "kody-package-events-dispatch",
+					},
 				],
 				"consumers": [
 					{
@@ -310,6 +314,13 @@
 						"max_retries": 3,
 						"max_concurrency": 16,
 						"dead_letter_queue": "kody-scheduled-dispatch-dlq",
+					},
+					{
+						"queue": "kody-package-events-dispatch",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"dead_letter_queue": "kody-package-events-dispatch-dlq",
 					},
 				],
 			},

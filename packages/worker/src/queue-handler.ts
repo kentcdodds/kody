@@ -6,6 +6,8 @@ import { handleCommunityActivityDispatchQueue } from '#worker/community/activity
 import { communityActivityDispatchQueueName } from '#worker/community/activity-dispatch-queue-names.ts'
 import { handlePlatformFeedbackDispatchQueue } from '#worker/platform-feedback/dispatch-queue.ts'
 import { platformFeedbackDispatchQueueName } from '#worker/platform-feedback/dispatch-queue-names.ts'
+import { handlePackageEventsDispatchQueue } from '#worker/package-events/dispatch-queue.ts'
+import { packageEventsDispatchQueueName } from '#worker/package-events/dispatch-queue-names.ts'
 import {
 	artifactsRepoEventsQueueName,
 	handleArtifactsRepoEventsQueue,
@@ -32,6 +34,9 @@ export async function handleQueueBatch(
 			return
 		case communityActivityDispatchQueueName:
 			await handleCommunityActivityDispatchQueue(batch, env, ctx)
+			return
+		case packageEventsDispatchQueueName:
+			await handlePackageEventsDispatchQueue(batch, env, ctx)
 			return
 		case scheduledDispatchQueueName:
 			await handleScheduledDispatchQueue(batch, env, ctx)

@@ -63,6 +63,20 @@ This project uses the following resources:
     reloads the metadata-only activity projection, acknowledges invalid or
     deleted activity, and retries transient lookup, subscription-discovery, or
     package-invocation infrastructure failures.
+- Cloudflare Queue for durable package-emitted event dispatch
+  - Producer binding: `PACKAGE_EVENTS_DISPATCH_QUEUE`
+  - Queue: `kody-package-events-dispatch`
+  - Dead-letter queue: `kody-package-events-dispatch-dlq`
+  - The production consumer uses the same batch, retry, and DLQ settings as
+    platform-feedback dispatch. Production CI ensures both resources.
+  - Queue messages carry the full event (emitting user, source package, topic,
+    idempotency key, payload, and invocation depth). The consumer resolves the
+    emitting user's subscribed packages at delivery time, invokes handlers with
+    exactly-once idempotency, acknowledges terminal handler failures, and
+    retries pre-execution package-invocation infrastructure failures.
+  - Preview and local runtimes without this production-only queue binding
+    deliver inline through the same consumer code path so package events remain
+    testable.
 - Cloudflare Queue for isolated scheduled maintenance
   - Producer binding: `SCHEDULED_DISPATCH_QUEUE`
   - Queue: `kody-scheduled-dispatch`

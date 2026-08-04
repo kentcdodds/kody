@@ -601,6 +601,19 @@ primitives:
       - docs/contributing/architecture/authorization.md
       - docs/guides/package-subscriptions.md
 
+  - id: package-events-dispatch-queue
+    group: storage
+    name: Package events dispatch queue
+    summary:
+      Durable same-user delivery of package-emitted events (kody.emits /
+      events.dispatch) to subscribing packages.
+    code:
+      - packages/worker/src/package-events/
+      - packages/worker/src/package-invocations/subscription-dispatch.ts
+    docs:
+      - docs/contributing/setup-manifest.md
+      - docs/guides/package-subscriptions.md
+
   - id: community-assets-r2
     group: storage
     name: Community asset storage (R2)

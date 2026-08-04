@@ -5,6 +5,7 @@ import {
 	createExecutePackageInvokeTools,
 	createPackageRuntimeInvokeTools,
 	createPackageEventTools,
+	deliverPackageEvent,
 	invokePackageExport,
 	invokePackageSubscription,
 } from './service.ts'
@@ -691,8 +692,18 @@ function createManifest(input: {
 	kodyId: string
 	exportName: string
 	entryPoint: string
-	emits?: Record<string, { description: string }>
-	subscriptions?: Record<string, { handler: string; description?: string }>
+	emits?: Record<
+		string,
+		{ description: string; payloadSchema?: Record<string, unknown> }
+	>
+	subscriptions?: Record<
+		string,
+		{
+			handler: string
+			description?: string
+			filters?: Record<string, unknown>
+		}
+	>
 }) {
 	return {
 		name: input.name,
@@ -932,9 +943,18 @@ function createRuntimeDispatchTools(db: D1Database) {
 	})
 }
 
-function createRuntimeEventTools(db: D1Database) {
+function createRuntimeEventTools(
+	db: D1Database,
+	options: {
+		envOverrides?: Record<string, unknown>
+		packageInvokeDepth?: number
+	} = {},
+) {
 	return createPackageEventTools({
-		env: createEnv(db),
+		env: {
+			...(createEnv(db) as unknown as Record<string, unknown>),
+			...options.envOverrides,
+		} as unknown as Env,
 		baseUrl: 'https://kody.dev',
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://kody.dev',
@@ -957,7 +977,7 @@ function createRuntimeEventTools(db: D1Database) {
 			name: './dispatch-message-created',
 			idempotencyKey: 'message-1',
 		},
-		packageInvokeDepth: 0,
+		packageInvokeDepth: options.packageInvokeDepth ?? 0,
 	})
 }
 
@@ -1220,7 +1240,144 @@ test('runtime invoke tools expose only the supported invoke helper', () => {
 	expect(tools.invokeChecked).toBeUndefined()
 })
 
-test('package runtime dispatches declared events to same-user package subscriptions', async () => {
+test('package runtime dispatch enqueues declared events to the package events queue', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	const send = vi.fn<(message: unknown) => Promise<undefined>>(
+		async () => undefined,
+	)
+	const tools = createRuntimeEventTools(db, {
+		envOverrides: { PACKAGE_EVENTS_DISPATCH_QUEUE: { send } },
+	})
+
+	const result = await tools.dispatch({
+		topic: '@kentcdodds/discord.message.created',
+		idempotencyKey: 'discord:message-create:123',
+		payload: {
+			messageId: '123',
+			channelId: '456',
+		},
+	})
+
+	expect(send).toHaveBeenCalledTimes(1)
+	expect(send).toHaveBeenCalledWith({
+		userId: 'user-123',
+		topic: '@kentcdodds/discord.message.created',
+		idempotencyKey: 'discord:message-create:123',
+		payload: {
+			messageId: '123',
+			channelId: '456',
+		},
+		source: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+		},
+		invokeDepth: 1,
+	})
+	// Queued delivery never invokes subscribers inside the emitting request.
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	expect(result).toEqual({
+		topic: '@kentcdodds/discord.message.created',
+		source: {
+			type: 'package',
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+		},
+		idempotencyKey: 'discord:message-create:123',
+		status: 'enqueued',
+	})
+
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.reaction.created',
+			idempotencyKey: 'discord:reaction-create:123',
+			payload: {
+				reactionId: '123',
+			},
+		}),
+	).rejects.toThrow(
+		/does not declare emitted event "@kentcdodds\/discord.reaction.created"/,
+	)
+	expect(send).toHaveBeenCalledTimes(1)
+
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:huge',
+			payload: { blob: 'x'.repeat(65 * 1024) },
+		}),
+	).rejects.toThrow(/payload is \d+ bytes; the maximum is 65536 bytes/)
+	expect(send).toHaveBeenCalledTimes(1)
+
+	const depthCappedTools = createRuntimeEventTools(db, {
+		envOverrides: { PACKAGE_EVENTS_DISPATCH_QUEUE: { send } },
+		packageInvokeDepth: 8,
+	})
+	await expect(
+		depthCappedTools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:deep',
+			payload: {},
+		}),
+	).rejects.toThrow(/exceeded the maximum nested invocation depth/)
+	expect(send).toHaveBeenCalledTimes(1)
+})
+
+test('package runtime dispatch validates payloads against the declared payloadSchema', async () => {
+	const db = createDatabase()
+	const { manifests } = seedRuntimeDispatchPackages()
+	const gatewayManifest = manifests.get('source-gateway') as {
+		kody: {
+			emits?: Record<
+				string,
+				{ description: string; payloadSchema?: Record<string, unknown> }
+			>
+		}
+	}
+	gatewayManifest.kody.emits = {
+		'@kentcdodds/discord.message.created': {
+			description: 'A Discord message was created.',
+			payloadSchema: {
+				type: 'object',
+				properties: {
+					messageId: { type: 'string', minLength: 1 },
+					channelId: { type: 'string' },
+				},
+				required: ['messageId'],
+				additionalProperties: false,
+			},
+		},
+	}
+	const send = vi.fn<(message: unknown) => Promise<undefined>>(
+		async () => undefined,
+	)
+	const tools = createRuntimeEventTools(db, {
+		envOverrides: { PACKAGE_EVENTS_DISPATCH_QUEUE: { send } },
+	})
+
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:bad',
+			payload: { channelId: '456', extra: true },
+		}),
+	).rejects.toThrow(
+		/payload does not match the declared payloadSchema[\s\S]*missing required property "messageId"[\s\S]*unexpected property "extra"/,
+	)
+	expect(send).not.toHaveBeenCalled()
+
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:ok',
+			payload: { messageId: '123', channelId: '456' },
+		}),
+	).resolves.toMatchObject({ status: 'enqueued' })
+	expect(send).toHaveBeenCalledTimes(1)
+})
+
+test('package events deliver to same-user package subscriptions with idempotent replay', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
@@ -1240,23 +1397,30 @@ test('package runtime dispatches declared events to same-user package subscripti
 			logs: [],
 		}),
 	)
-	const tools = createRuntimeEventTools(db)
+	const message = {
+		userId: 'user-123',
+		topic: '@kentcdodds/discord.message.created',
+		idempotencyKey: 'discord:message-create:123',
+		payload: {
+			messageId: '123',
+			channelId: '456',
+		},
+		source: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+		},
+		invokeDepth: 1,
+	}
 
-	const first = await tools.dispatch({
-		topic: '@kentcdodds/discord.message.created',
-		idempotencyKey: 'discord:message-create:123',
-		payload: {
-			messageId: '123',
-			channelId: '456',
-		},
+	const first = await deliverPackageEvent({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		message,
 	})
-	const second = await tools.dispatch({
-		topic: '@kentcdodds/discord.message.created',
-		idempotencyKey: 'discord:message-create:123',
-		payload: {
-			messageId: '123',
-			channelId: '456',
-		},
+	const second = await deliverPackageEvent({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		message,
 	})
 
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
@@ -1306,25 +1470,6 @@ test('package runtime dispatches declared events to same-user package subscripti
 	})
 
 	const { manifests, sources } = seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { ok: true },
-		logs: [],
-	})
-
-	await expect(
-		tools.dispatch({
-			topic: '@kentcdodds/discord.reaction.created',
-			idempotencyKey: 'discord:reaction-create:123',
-			payload: {
-				reactionId: '123',
-			},
-		}),
-	).rejects.toThrow(
-		/does not declare emitted event "@kentcdodds\/discord.reaction.created"/,
-	)
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-
 	repoMockModule.loadPackageManifestBySourceId.mockImplementation(
 		async (input: { sourceId: string }) => {
 			if (input.sourceId === 'source-subscriber') {
@@ -1336,18 +1481,153 @@ test('package runtime dispatches declared events to same-user package subscripti
 			}
 		},
 	)
-
 	await expect(
-		tools.dispatch({
-			topic: '@kentcdodds/discord.message.created',
-			idempotencyKey: 'discord:message-create:manifest-error',
-			payload: {
-				messageId: '123',
-			},
+		deliverPackageEvent({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			message: { ...message, idempotencyKey: 'discord:manifest-error' },
 		}),
 	).rejects.toThrow(
 		/Failed to load package manifest for package event dispatch/,
 	)
+})
+
+test('package event subscription filters gate delivery on payload values', async () => {
+	const db = createDatabase()
+	const { manifests } = seedRuntimeDispatchPackages()
+	const subscriberManifest = manifests.get('source-subscriber') as {
+		kody: {
+			subscriptions?: Record<
+				string,
+				{ handler: string; filters?: Record<string, unknown> }
+			>
+		}
+	}
+	subscriberManifest.kody.subscriptions = {
+		'@kentcdodds/discord.message.created': {
+			handler: './src/handle-discord-message-created.ts',
+			filters: { channelId: '456' },
+		},
+	}
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { handled: true },
+		logs: [],
+	})
+	const baseMessage = {
+		userId: 'user-123',
+		topic: '@kentcdodds/discord.message.created',
+		payload: {},
+		source: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+		},
+		invokeDepth: 1,
+	}
+
+	const filteredOut = await deliverPackageEvent({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		message: {
+			...baseMessage,
+			idempotencyKey: 'discord:other-channel',
+			payload: { messageId: '1', channelId: '999' },
+		},
+	})
+	expect(filteredOut).toMatchObject({ delivered: 0, failed: 0 })
+	expect(filteredOut.subscribers).toEqual([])
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+
+	const matching = await deliverPackageEvent({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		message: {
+			...baseMessage,
+			idempotencyKey: 'discord:matching-channel',
+			payload: { messageId: '2', channelId: '456' },
+		},
+	})
+	expect(matching).toMatchObject({ delivered: 1, failed: 0 })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('package events fall back to inline delivery without a queue binding', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { handled: true },
+		logs: [],
+	})
+	const tools = createRuntimeEventTools(db)
+
+	const result = await tools.dispatch({
+		topic: '@kentcdodds/discord.message.created',
+		idempotencyKey: 'discord:message-create:inline',
+		payload: { messageId: 'inline-1' },
+	})
+
+	expect(result).toMatchObject({ status: 'enqueued' })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	expect(
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[3],
+	).toMatchObject({
+		event: '@kentcdodds/discord.message.created',
+		payload: { messageId: 'inline-1' },
+	})
+
+	// Inline delivery failures are logged, never surfaced to the emitter.
+	const { manifests, sources } = seedRuntimeDispatchPackages()
+	repoMockModule.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			if (input.sourceId === 'source-subscriber') {
+				throw new Error('manifest unavailable')
+			}
+			return {
+				source: sources.get(input.sourceId),
+				manifest: manifests.get(input.sourceId),
+			}
+		},
+	)
+	consoleError.mockImplementation(() => {})
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:inline-error',
+			payload: { messageId: 'inline-2' },
+		}),
+	).resolves.toMatchObject({ status: 'enqueued' })
+	expect(consoleError).toHaveBeenCalledWith(
+		'package-events-inline-delivery-failed',
+		expect.objectContaining({
+			topic: '@kentcdodds/discord.message.created',
+		}),
+	)
+})
+
+test('deliverPackageEvent surfaces retryable infrastructure failures', async () => {
+	const db = createDatabase({ failClaim: true })
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	consoleError.mockImplementation(() => {})
+
+	await expect(
+		deliverPackageEvent({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			message: {
+				userId: 'user-123',
+				topic: '@kentcdodds/discord.message.created',
+				idempotencyKey: 'discord:message-create:claim-failure',
+				payload: { messageId: '1' },
+				source: {
+					packageId: 'pkg-gateway',
+					kodyId: 'discord-gateway',
+				},
+				invokeDepth: 1,
+			},
+		}),
+	).rejects.toThrow('Package event dispatch was incomplete.')
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
