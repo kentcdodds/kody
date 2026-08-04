@@ -16,7 +16,7 @@
  * - `escrow/...` — sealed secret escrow blobs (see backup-escrow.ts users).
  */
 
-export const backupStagingSchemaVersion = 1 as const
+export const backupStagingSchemaVersion = 2 as const
 
 export const backupBlobPrefix = 'blobs/sha256/'
 export const backupEscrowSecretStoreKeyKey = 'escrow/secret-store-key.v1.json'
@@ -61,6 +61,22 @@ export function stagingStorageIndexKey(day: string): string {
 	return `${stagingPrefix(day)}storage-index.json`
 }
 
+export function stagingMailboxDumpKey(day: string, ownerId: string): string {
+	return `${stagingPrefix(day)}mailbox/${encodeURIComponent(ownerId)}.ndjson`
+}
+
+export function stagingMailboxIndexKey(day: string): string {
+	return `${stagingPrefix(day)}mailbox-index.json`
+}
+
+export function stagingRunLogDumpKey(day: string, ownerId: string): string {
+	return `${stagingPrefix(day)}run-log/${encodeURIComponent(ownerId)}.ndjson`
+}
+
+export function stagingRunLogIndexKey(day: string): string {
+	return `${stagingPrefix(day)}run-log-index.json`
+}
+
 export function stagingR2IndexKey(
 	day: string,
 	bucket: BackupR2BucketLabel,
@@ -102,6 +118,34 @@ export type StorageIndex = {
 	entries: Array<StorageIndexEntry>
 }
 
+export type OwnerIndexEntry = {
+	ownerId: string
+	objectKey: string
+	entryCount: number
+	bytes: number
+	sha256: string
+}
+
+export type MailboxIndexEntry = OwnerIndexEntry
+export type RunLogIndexEntry = OwnerIndexEntry
+
+export type MailboxIndex = {
+	schemaVersion: typeof backupStagingSchemaVersion
+	day: string
+	entries: Array<OwnerIndexEntry>
+}
+
+export type RunLogIndex = {
+	schemaVersion: typeof backupStagingSchemaVersion
+	day: string
+	entries: Array<OwnerIndexEntry>
+}
+
+export type RunLogDumpEntry =
+	| { kind: 'jobRunObservability'; row: unknown }
+	| { kind: 'packageRunSuccess'; row: unknown }
+	| { kind: 'activationMilestone'; row: unknown }
+
 /** One line of a `staging/{day}/r2-index/{bucket}.ndjson` index. */
 export type R2IndexEntry = {
 	key: string
@@ -142,6 +186,8 @@ export type StagingSummary = {
 	startedAt: string
 	completedAt: string
 	buildCommit: string
+	mailboxIndex: StagingFileSummary
+	runLogIndex: StagingFileSummary
 	storageIndex: StagingFileSummary
 	r2Indexes: Partial<Record<BackupR2BucketLabel, StagingFileSummary>>
 	artifactsIndex: StagingFileSummary
@@ -177,6 +223,8 @@ export function parseStagingSummary(value: unknown): StagingSummary {
 		typeof value.completedAt !== 'string' ||
 		!Number.isFinite(Date.parse(value.completedAt)) ||
 		typeof value.buildCommit !== 'string' ||
+		!isFileSummary(value.mailboxIndex) ||
+		!isFileSummary(value.runLogIndex) ||
 		!isFileSummary(value.storageIndex) ||
 		!isRecord(value.r2Indexes) ||
 		!Object.keys(value.r2Indexes).every((key) =>

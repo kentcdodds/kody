@@ -16,6 +16,19 @@ export type ArtifactInventoryEntry = {
 	publishedCommit: string
 }
 
+export async function listPlatformOwnerInventory(
+	db: D1Database,
+): Promise<Array<string>> {
+	const result = await db
+		.prepare(
+			`SELECT stable_user_id AS ownerId
+			FROM users
+			ORDER BY stable_user_id ASC`,
+		)
+		.all<{ ownerId: string }>()
+	return (result.results ?? []).map((row) => row.ownerId)
+}
+
 /**
  * Platform-wide StorageRunner inventory.
  *
