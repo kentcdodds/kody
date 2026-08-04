@@ -3,33 +3,18 @@ import { DurableObject } from 'cloudflare:workers'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
 	type ActivationMilestone,
 	type ActivationMilestoneRecord,
-	type ActivationStateImport,
 	type PackageRunSuccessRecord,
 	countsTowardPackageActivation,
 } from './package-activation-state.ts'
 import {
-	type JobRunObservabilityBatchSeedResult,
 	type JobRunObservabilityRecord,
-	type JobRunObservabilitySeedApplyStatus,
-	type JobRunObservabilitySeedInput,
 	type JobRunObservabilityStatus,
 	type JobRunObservabilityUpsertInput,
-	jobRunObservabilitySeedMaxBatch,
 } from './job-run-observability.ts'
-import {
-	type LegacyParityVerifyInput,
-	type LegacyParityVerifyResult,
-	assertLegacyParityBoundedArray,
-	bucketParityHolds,
-	coerceLegacyParityMinimumSuccessCount,
-	emptyLegacyParityBucketCounts,
-	isActivationMilestoneName,
-	legacyParitySqlInPlaceholders,
-	normalizeLegacyParityWorkflowCheck,
-} from './legacy-parity.ts'
 import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionReserveResult,
@@ -38,7 +23,6 @@ import {
 	creatingWorkflowProjectionStatus,
 	workflowProjectionActiveStatuses,
 	workflowProjectionCreatingTtlMs,
-	workflowProjectionImportMaxBatch,
 	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'
 import {
@@ -75,10 +59,8 @@ const maxStaleCreatingDeletesPerPass = 100
 const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
-/** Set once after a successful D1 → RunLog activation seed (incl. empty). */
-const metaActivationInitializedKey = 'activation_initialized'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 7
+const runLogSchemaVersion = 8
 
 /**
  * Cursor namespaces for `exportRuns` phases after the raw run-id phase.
@@ -431,7 +413,6 @@ function mapJobRunObservabilityRow(
 		successCount: Number(row['success_count'] ?? 0) || 0,
 		errorCount: Number(row['error_count'] ?? 0) || 0,
 		updatedAt: String(row['updated_at']),
-		legacySeeded: Number(row['legacy_seeded'] ?? 0) === 1,
 	}
 }
 
@@ -596,9 +577,9 @@ class RunLogBase extends DurableObject<Env> {
 			`CREATE INDEX IF NOT EXISTS idx_invocation_ledger_status_created
 			ON package_invocation_ledger(status, created_at ASC)`,
 		)
-		// Dedicated unpruned workflow projections (mirrors D1 workflow_runs
-		// minus user_id, plus binding_name). Correctness state for idempotency
-		// and concurrent_workflows — never derived from pruned runs.
+		// Dedicated unpruned workflow projections (binding_name scopes concurrent
+		// occupancy per Cloudflare Workflow binding). Correctness state for
+		// idempotency and concurrent_workflows — never derived from pruned runs.
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS workflow_projections (
 				id TEXT PRIMARY KEY NOT NULL,
@@ -632,6 +613,8 @@ class RunLogBase extends DurableObject<Env> {
 			ON workflow_projections(idempotency_key, created_at ASC)`,
 		)
 		// Dedicated unpruned per-job last-run outcome + counters. Not runs.
+		// Fresh CREATE omits retired `legacy_seeded`. Warm objects may still
+		// have that inert physical column; no code reads or writes it.
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS job_run_observability (
 				job_id TEXT PRIMARY KEY NOT NULL,
@@ -642,8 +625,7 @@ class RunLogBase extends DurableObject<Env> {
 				run_count INTEGER NOT NULL DEFAULT 0,
 				success_count INTEGER NOT NULL DEFAULT 0,
 				error_count INTEGER NOT NULL DEFAULT 0,
-				updated_at TEXT NOT NULL,
-				legacy_seeded INTEGER NOT NULL DEFAULT 0
+				updated_at TEXT NOT NULL
 			)
 		`)
 		this.ctx.storage.sql.exec(
@@ -667,17 +649,6 @@ class RunLogBase extends DurableObject<Env> {
 				package_id TEXT
 			)
 		`)
-		// Warm DOs created at schema v6 lack `legacy_seeded`; ignore if present.
-		if ((installedVersion ?? 0) < 7) {
-			try {
-				this.ctx.storage.sql.exec(
-					`ALTER TABLE job_run_observability
-					ADD COLUMN legacy_seeded INTEGER NOT NULL DEFAULT 0`,
-				)
-			} catch {
-				// Column already exists (fresh CREATE above).
-			}
-		}
 		this.setMeta(metaSchemaVersionKey, runLogSchemaVersion)
 	}
 
@@ -1517,8 +1488,8 @@ class RunLogBase extends DurableObject<Env> {
 		this.ctx.storage.sql.exec(
 			`INSERT INTO job_run_observability (
 				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
-				run_count, success_count, error_count, updated_at, legacy_seeded
-			) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 0)
+				run_count, success_count, error_count, updated_at
+			) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
 			ON CONFLICT(job_id) DO UPDATE SET
 				last_run_at = excluded.last_run_at,
 				last_run_status = excluded.last_run_status,
@@ -1847,7 +1818,8 @@ class RunLogBase extends DurableObject<Env> {
 
 	/**
 	 * Authoritative workflow projection write: monotonic by `updated_at`, plus
-	 * terminal-stickiness (same predicate as the D1 `workflow_runs` mirror).
+	 * terminal-stickiness (terminal statuses are not overwritten by stale
+	 * active/running updates).
 	 */
 	private writeWorkflowProjectionRow(input: WorkflowProjectionUpsertInput) {
 		const now = new Date().toISOString()
@@ -1901,28 +1873,6 @@ class RunLogBase extends DurableObject<Env> {
 		this.retentionIdleConfirmed = false
 		await this.ensureRetentionAlarm()
 		return { ok: true }
-	}
-
-	/**
-	 * Expand-phase D1 → RunLog batch import. Applies the same monotonic +
-	 * terminal-sticky upsert as {@link upsertWorkflowProjection} for each row
-	 * in one DO RPC. Input is hard-capped at
-	 * {@link workflowProjectionImportMaxBatch}.
-	 */
-	async importWorkflowProjections(input: {
-		projections: Array<WorkflowProjectionUpsertInput>
-	}): Promise<{ imported: number }> {
-		const projections = Array.isArray(input.projections)
-			? input.projections.slice(0, workflowProjectionImportMaxBatch)
-			: []
-		for (const projection of projections) {
-			this.writeWorkflowProjectionRow(projection)
-		}
-		if (projections.length > 0) {
-			this.retentionIdleConfirmed = false
-			await this.ensureRetentionAlarm()
-		}
-		return { imported: projections.length }
 	}
 
 	async getWorkflowProjection(input: {
@@ -2179,374 +2129,37 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Apply one job's historical D1 observability exactly once
-	 * (`legacy_seeded`). Absent rows insert; rows created by post-cutover
-	 * finishes before a successful seed add legacy counters and keep the newer
-	 * last-run outcome by timestamp without clobbering a newer current state.
+	 * Content-free admin-insights point-read. Workflow status counts across all
+	 * dedicated projections plus activation milestone timestamps/ids needed for
+	 * funnel counts and latency — never names, errors, logs, or user content.
 	 */
-	async seedJobRunObservabilityIfAbsent(
-		input: JobRunObservabilitySeedInput,
-	): Promise<{ seeded: boolean }> {
-		const result = this.applyJobRunObservabilitySeed(input)
-		return { seeded: result.status === 'seeded' }
-	}
-
-	/**
-	 * Batch expand-phase D1 → RunLog job-observability seed. Reuses the exact
-	 * once-only additive merge of {@link seedJobRunObservabilityIfAbsent}.
-	 * Hard-capped at {@link jobRunObservabilitySeedMaxBatch}; oversized input
-	 * fails rather than silently slicing.
-	 *
-	 * `attempted` is the input length (including blank `jobId` entries). Blank
-	 * ids are neither seeded nor alreadySeeded.
-	 */
-	async seedJobRunObservabilityBatch(input: {
-		seeds: Array<JobRunObservabilitySeedInput>
-	}): Promise<JobRunObservabilityBatchSeedResult> {
-		if (!Array.isArray(input.seeds)) {
-			throw new Error('seedJobRunObservabilityBatch seeds must be an array')
-		}
-		if (input.seeds.length > jobRunObservabilitySeedMaxBatch) {
-			throw new Error(
-				`seedJobRunObservabilityBatch accepts at most ${jobRunObservabilitySeedMaxBatch} seeds (got ${input.seeds.length})`,
+	async getAdminInsightsSnapshot(): Promise<RunLogAdminInsightsSnapshot> {
+		const workflowRows = this.ctx.storage.sql
+			.exec<{ status: string; n: number }>(
+				`SELECT COALESCE(NULLIF(TRIM(status), ''), 'unknown') AS status,
+					COUNT(*) AS n
+				FROM workflow_projections
+				GROUP BY COALESCE(NULLIF(TRIM(status), ''), 'unknown')
+				ORDER BY n DESC, status ASC`,
 			)
-		}
-		let seeded = 0
-		let alreadySeeded = 0
-		for (const seed of input.seeds) {
-			const status = this.applyJobRunObservabilitySeed(seed).status
-			switch (status) {
-				case 'seeded':
-					seeded += 1
-					break
-				case 'already-seeded':
-					alreadySeeded += 1
-					break
-				case 'blank':
-					break
-				default: {
-					const exhaustive: never = status
-					throw new Error(
-						`Unhandled job observability seed status: ${String(exhaustive)}`,
-					)
-				}
-			}
-		}
+			.toArray()
+		const milestones = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM activation_milestones ORDER BY milestone ASC`,
+			)
+			.toArray()
+			.map(mapActivationMilestoneRow)
 		return {
-			attempted: input.seeds.length,
-			seeded,
-			alreadySeeded,
+			workflowStatusCounts: workflowRows.map((row) => ({
+				status: String(row.status),
+				count: Number(row.n) || 0,
+			})),
+			activationMilestones: milestones.map((row) => ({
+				milestone: row.milestone,
+				reachedAt: row.reachedAt,
+				packageId: row.packageId,
+			})),
 		}
-	}
-
-	/**
-	 * Content-free legacy parity check for a bounded expand-phase inventory.
-	 * Returns only matched/missing/under-count buckets, activationInitialized,
-	 * and one parity boolean — never user-authored names, errors, or messages.
-	 * Each input array is hard-capped; oversized input fails closed.
-	 */
-	async verifyLegacyParity(
-		input: LegacyParityVerifyInput,
-	): Promise<LegacyParityVerifyResult> {
-		const workflows = assertLegacyParityBoundedArray(
-			input.workflows,
-			'verifyLegacyParity workflows',
-		)
-		const jobIds = assertLegacyParityBoundedArray(
-			input.jobIds,
-			'verifyLegacyParity jobIds',
-		)
-		const activationPackages = assertLegacyParityBoundedArray(
-			input.activationPackages,
-			'verifyLegacyParity activationPackages',
-		)
-		const activationMilestones = assertLegacyParityBoundedArray(
-			input.activationMilestones,
-			'verifyLegacyParity activationMilestones',
-		)
-
-		const workflowChecks = workflows.map((entry) =>
-			normalizeLegacyParityWorkflowCheck(entry),
-		)
-		const workflowUpdatedAtById = this.loadWorkflowUpdatedAtByIds(
-			workflowChecks
-				.map((check) => check?.id)
-				.filter((id): id is string => id != null),
-		)
-		const workflowCounts = emptyLegacyParityBucketCounts()
-		for (const check of workflowChecks) {
-			if (!check) {
-				workflowCounts.missing += 1
-				continue
-			}
-			const updatedAt = workflowUpdatedAtById.get(check.id)
-			if (updatedAt == null) {
-				workflowCounts.missing += 1
-				continue
-			}
-			const threshold = check.minimumUpdatedAt
-			switch (threshold.status) {
-				case 'absent':
-					workflowCounts.matched += 1
-					break
-				case 'invalid':
-					workflowCounts.underCount += 1
-					break
-				case 'valid': {
-					const storedMs = Date.parse(updatedAt)
-					if (!Number.isFinite(storedMs)) {
-						workflowCounts.underCount += 1
-						break
-					}
-					const storedIso = new Date(storedMs).toISOString()
-					if (storedIso < threshold.iso) {
-						workflowCounts.underCount += 1
-						break
-					}
-					workflowCounts.matched += 1
-					break
-				}
-				default: {
-					const exhaustive: never = threshold
-					throw new Error(
-						`Unhandled workflow minimumUpdatedAt status: ${String(exhaustive)}`,
-					)
-				}
-			}
-		}
-
-		const normalizedJobIds = jobIds.map((rawJobId) => rawJobId?.trim() ?? '')
-		const jobLegacySeededById = this.loadJobLegacySeededByIds(
-			normalizedJobIds.filter((jobId) => jobId.length > 0),
-		)
-		const jobCounts = emptyLegacyParityBucketCounts()
-		for (const jobId of normalizedJobIds) {
-			if (!jobId) {
-				jobCounts.missing += 1
-				continue
-			}
-			const legacySeeded = jobLegacySeededById.get(jobId)
-			if (legacySeeded == null) {
-				jobCounts.missing += 1
-				continue
-			}
-			if (!legacySeeded) {
-				jobCounts.underCount += 1
-				continue
-			}
-			jobCounts.matched += 1
-		}
-
-		const packageChecks = activationPackages.map((check) => {
-			const packageId = check.packageId?.trim() ?? ''
-			const minimumSuccessCount = coerceLegacyParityMinimumSuccessCount(
-				check.minimumSuccessCount,
-			)
-			return { packageId, minimumSuccessCount }
-		})
-		const packageSuccessCountById = this.loadPackageSuccessCountByIds(
-			packageChecks
-				.filter(
-					(check) =>
-						check.packageId.length > 0 && check.minimumSuccessCount != null,
-				)
-				.map((check) => check.packageId),
-		)
-		const packageCounts = emptyLegacyParityBucketCounts()
-		for (const check of packageChecks) {
-			if (!check.packageId) {
-				packageCounts.missing += 1
-				continue
-			}
-			// Non-finite minimums fail closed as underCount (not matched).
-			if (check.minimumSuccessCount == null) {
-				packageCounts.underCount += 1
-				continue
-			}
-			const successCount = packageSuccessCountById.get(check.packageId)
-			if (successCount == null) {
-				packageCounts.missing += 1
-				continue
-			}
-			if (successCount < check.minimumSuccessCount) {
-				packageCounts.underCount += 1
-				continue
-			}
-			packageCounts.matched += 1
-		}
-
-		const milestoneCounts = emptyLegacyParityBucketCounts()
-		for (const rawMilestone of activationMilestones) {
-			const milestone =
-				typeof rawMilestone === 'string' ? rawMilestone.trim() : ''
-			if (!milestone || !isActivationMilestoneName(milestone)) {
-				milestoneCounts.missing += 1
-				continue
-			}
-			if (this.hasActivationMilestone(milestone)) {
-				milestoneCounts.matched += 1
-			} else {
-				milestoneCounts.missing += 1
-			}
-		}
-
-		const activationInitialized =
-			(this.getMeta(metaActivationInitializedKey) ?? 0) === 1
-		const parity =
-			bucketParityHolds(workflowCounts) &&
-			bucketParityHolds(jobCounts) &&
-			bucketParityHolds(packageCounts) &&
-			bucketParityHolds(milestoneCounts)
-
-		return {
-			workflows: workflowCounts,
-			jobs: jobCounts,
-			activationPackages: packageCounts,
-			activationMilestones: milestoneCounts,
-			activationInitialized,
-			parity,
-		}
-	}
-
-	private loadWorkflowUpdatedAtByIds(ids: Array<string>): Map<string, string> {
-		const uniqueIds = [...new Set(ids)]
-		const byId = new Map<string, string>()
-		if (uniqueIds.length === 0) return byId
-		const placeholders = legacyParitySqlInPlaceholders(uniqueIds.length)
-		const rows = this.ctx.storage.sql
-			.exec<{ id: string; updated_at: string }>(
-				`SELECT id, updated_at FROM workflow_projections
-				WHERE id IN (${placeholders})`,
-				...uniqueIds,
-			)
-			.toArray()
-		for (const row of rows) {
-			byId.set(String(row.id), String(row.updated_at))
-		}
-		return byId
-	}
-
-	private loadJobLegacySeededByIds(ids: Array<string>): Map<string, boolean> {
-		const uniqueIds = [...new Set(ids)]
-		const byId = new Map<string, boolean>()
-		if (uniqueIds.length === 0) return byId
-		const placeholders = legacyParitySqlInPlaceholders(uniqueIds.length)
-		const rows = this.ctx.storage.sql
-			.exec<{ job_id: string; legacy_seeded: number }>(
-				`SELECT job_id, legacy_seeded FROM job_run_observability
-				WHERE job_id IN (${placeholders})`,
-				...uniqueIds,
-			)
-			.toArray()
-		for (const row of rows) {
-			byId.set(String(row.job_id), Number(row.legacy_seeded ?? 0) === 1)
-		}
-		return byId
-	}
-
-	private loadPackageSuccessCountByIds(
-		ids: Array<string>,
-	): Map<string, number> {
-		const uniqueIds = [...new Set(ids)]
-		const byId = new Map<string, number>()
-		if (uniqueIds.length === 0) return byId
-		const placeholders = legacyParitySqlInPlaceholders(uniqueIds.length)
-		const rows = this.ctx.storage.sql
-			.exec<{ package_id: string; success_count: number }>(
-				`SELECT package_id, success_count FROM package_run_successes
-				WHERE package_id IN (${placeholders})`,
-				...uniqueIds,
-			)
-			.toArray()
-		for (const row of rows) {
-			byId.set(String(row.package_id), Number(row.success_count) || 0)
-		}
-		return byId
-	}
-
-	private applyJobRunObservabilitySeed(input: JobRunObservabilitySeedInput): {
-		status: JobRunObservabilitySeedApplyStatus
-	} {
-		const jobId = typeof input.jobId === 'string' ? input.jobId.trim() : ''
-		if (!jobId) return { status: 'blank' }
-		const existing = this.getJobRunObservabilitySync(jobId)
-		if (existing?.legacySeeded) {
-			return { status: 'already-seeded' }
-		}
-		const lastRunStatus =
-			input.lastRunStatus === 'success' || input.lastRunStatus === 'error'
-				? input.lastRunStatus
-				: null
-		const legacyRunCount = Math.max(0, Math.trunc(input.runCount))
-		const legacySuccessCount = Math.max(0, Math.trunc(input.successCount))
-		const legacyErrorCount = Math.max(0, Math.trunc(input.errorCount))
-		const legacyUpdatedAt =
-			typeof input.updatedAt === 'string' && input.updatedAt.trim()
-				? input.updatedAt.trim()
-				: new Date().toISOString()
-
-		if (!existing) {
-			this.ctx.storage.sql.exec(
-				`INSERT INTO job_run_observability (
-					job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
-					run_count, success_count, error_count, updated_at, legacy_seeded
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-				jobId,
-				input.lastRunAt,
-				lastRunStatus,
-				input.lastRunError,
-				input.lastDurationMs,
-				legacyRunCount,
-				legacySuccessCount,
-				legacyErrorCount,
-				legacyUpdatedAt,
-			)
-			return { status: 'seeded' }
-		}
-
-		const legacyLastRunAt = input.lastRunAt
-		const currentLastRunAt = existing.lastRunAt
-		const legacyIsNewer =
-			legacyLastRunAt != null &&
-			(currentLastRunAt == null || legacyLastRunAt > currentLastRunAt)
-		const mergedLastRunAt = legacyIsNewer ? legacyLastRunAt : currentLastRunAt
-		const mergedLastRunStatus = legacyIsNewer
-			? lastRunStatus
-			: existing.lastRunStatus
-		const mergedLastRunError = legacyIsNewer
-			? input.lastRunError
-			: existing.lastRunError
-		const mergedLastDurationMs = legacyIsNewer
-			? input.lastDurationMs
-			: existing.lastDurationMs
-		const mergedUpdatedAt =
-			legacyUpdatedAt > existing.updatedAt
-				? legacyUpdatedAt
-				: existing.updatedAt
-
-		this.ctx.storage.sql.exec(
-			`UPDATE job_run_observability SET
-				last_run_at = ?,
-				last_run_status = ?,
-				last_run_error = ?,
-				last_duration_ms = ?,
-				run_count = run_count + ?,
-				success_count = success_count + ?,
-				error_count = error_count + ?,
-				updated_at = ?,
-				legacy_seeded = 1
-			WHERE job_id = ? AND legacy_seeded = 0`,
-			mergedLastRunAt,
-			mergedLastRunStatus,
-			mergedLastRunError,
-			mergedLastDurationMs,
-			legacyRunCount,
-			legacySuccessCount,
-			legacyErrorCount,
-			mergedUpdatedAt,
-			jobId,
-		)
-		return { status: 'seeded' }
 	}
 
 	private getJobRunObservabilitySync(
@@ -2559,99 +2172,6 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			.toArray()[0]
 		return row ? mapJobRunObservabilityRow(row) : null
-	}
-
-	async isActivationInitialized(): Promise<{ initialized: boolean }> {
-		return {
-			initialized: (this.getMeta(metaActivationInitializedKey) ?? 0) === 1,
-		}
-	}
-
-	/**
-	 * One-shot import of D1 activation counters/milestones. Safe to call
-	 * repeatedly: after `activation_initialized` is set this is a no-op. On
-	 * first success, legacy counts add to any post-cutover increments, milestone
-	 * first-writer wins, and the marker is set in the same transaction.
-	 */
-	async importActivationState(
-		input: ActivationStateImport,
-	): Promise<{ initialized: boolean }> {
-		if ((this.getMeta(metaActivationInitializedKey) ?? 0) === 1) {
-			return { initialized: true }
-		}
-		const mergeAt = new Date().toISOString()
-		this.ctx.storage.transactionSync(() => {
-			if ((this.getMeta(metaActivationInitializedKey) ?? 0) === 1) {
-				return
-			}
-			for (const row of input.packageRunSuccesses) {
-				const packageId = row.packageId.trim()
-				if (!packageId) continue
-				const successCount = Math.max(0, Math.trunc(row.successCount))
-				const updatedAt = row.updatedAt.trim() || mergeAt
-				this.ctx.storage.sql.exec(
-					`INSERT INTO package_run_successes (package_id, success_count, updated_at)
-					VALUES (?, ?, ?)
-					ON CONFLICT(package_id) DO UPDATE SET
-						success_count = package_run_successes.success_count + excluded.success_count,
-						updated_at = excluded.updated_at`,
-					packageId,
-					successCount,
-					updatedAt,
-				)
-			}
-			for (const row of input.milestones) {
-				if (
-					row.milestone !== 'package_run_succeeded' &&
-					row.milestone !== 'package_activated'
-				) {
-					continue
-				}
-				this.ctx.storage.sql.exec(
-					`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
-					VALUES (?, ?, ?)`,
-					row.milestone,
-					row.reachedAt,
-					row.packageId,
-				)
-			}
-			// Derive milestones from merged counts when legacy/post-cutover
-			// increments cross thresholds without a matching milestone row.
-			const countRows = this.ctx.storage.sql
-				.exec<{
-					package_id: string
-					success_count: number
-					updated_at: string
-				}>(
-					`SELECT package_id, success_count, updated_at
-					FROM package_run_successes
-					ORDER BY success_count DESC, package_id ASC`,
-				)
-				.toArray()
-			for (const row of countRows) {
-				const packageId = String(row.package_id)
-				const successCount = Number(row.success_count) || 0
-				const reachedAt = String(row.updated_at || mergeAt)
-				if (successCount >= 1) {
-					this.ctx.storage.sql.exec(
-						`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
-						VALUES ('package_run_succeeded', ?, ?)`,
-						reachedAt,
-						packageId,
-					)
-				}
-				if (successCount >= 2) {
-					this.ctx.storage.sql.exec(
-						`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
-						VALUES ('package_activated', ?, ?)`,
-						reachedAt,
-						packageId,
-					)
-				}
-			}
-			this.setMeta(metaActivationInitializedKey, 1)
-		})
-		return { initialized: true }
 	}
 
 	async getJobRunObservability(input: {
@@ -3346,9 +2866,6 @@ export type RunLogRpc = {
 	upsertWorkflowProjection: (
 		input: WorkflowProjectionUpsertInput,
 	) => Promise<{ ok: true }>
-	importWorkflowProjections: (input: {
-		projections: Array<WorkflowProjectionUpsertInput>
-	}) => Promise<{ imported: number }>
 	getWorkflowProjection: (input: {
 		id: string
 	}) => Promise<WorkflowProjectionRecord | null>
@@ -3374,25 +2891,13 @@ export type RunLogRpc = {
 	upsertJobRunObservability: (
 		input: JobRunObservabilityUpsertInput,
 	) => Promise<JobRunObservabilityRecord>
-	seedJobRunObservabilityIfAbsent: (
-		input: JobRunObservabilitySeedInput,
-	) => Promise<{ seeded: boolean }>
-	seedJobRunObservabilityBatch: (input: {
-		seeds: Array<JobRunObservabilitySeedInput>
-	}) => Promise<JobRunObservabilityBatchSeedResult>
-	verifyLegacyParity: (
-		input: LegacyParityVerifyInput,
-	) => Promise<LegacyParityVerifyResult>
 	getJobRunObservability: (input: {
 		jobId: string
 	}) => Promise<JobRunObservabilityRecord | null>
 	getJobRunObservabilityBatch: (input: {
 		jobIds: Array<string>
 	}) => Promise<Array<JobRunObservabilityRecord>>
-	isActivationInitialized: () => Promise<{ initialized: boolean }>
-	importActivationState: (
-		input: ActivationStateImport,
-	) => Promise<{ initialized: boolean }>
+	getAdminInsightsSnapshot: () => Promise<RunLogAdminInsightsSnapshot>
 	listPackageRunSuccesses: () => Promise<Array<PackageRunSuccessRecord>>
 	listActivationMilestones: () => Promise<Array<ActivationMilestoneRecord>>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>

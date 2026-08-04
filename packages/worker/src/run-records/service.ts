@@ -1,25 +1,14 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
-	type ActivationMilestone,
 	type ActivationMilestoneRecord,
-	type ActivationStateImport,
 	type PackageRunSuccessRecord,
-	countsTowardPackageActivation,
 } from './package-activation-state.ts'
 import {
-	type JobRunObservabilityBatchSeedResult,
 	type JobRunObservabilityRecord,
-	type JobRunObservabilitySeedInput,
-	type JobRunObservabilityStatus,
 	type JobRunObservabilityUpsertInput,
-	jobRunObservabilitySeedMaxBatch,
 } from './job-run-observability.ts'
-import {
-	type LegacyParityVerifyInput,
-	type LegacyParityVerifyResult,
-	assertLegacyParityBoundedArray,
-} from './legacy-parity.ts'
 import {
 	type PackageInvocationClaimInput,
 	type PackageInvocationLedgerKey,
@@ -32,7 +21,6 @@ import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionReserveResult,
 	type WorkflowProjectionUpsertInput,
-	workflowProjectionImportMaxBatch,
 } from './workflow-projection.ts'
 import {
 	type RunRecord,
@@ -368,247 +356,9 @@ export async function claimRunRecord(input: {
 }
 
 /**
- * Lazily seed RunLog activation counters/milestones from D1 exactly once per
- * user. Never throws. D1 query failures leave the DO uninitialized so a later
- * successful read can merge; successful empty (including missing APP_DB) still
- * marks initialized.
- */
-export async function ensureActivationStateSeeded(input: {
-	env: Env
-	userId: string
-}): Promise<void> {
-	if (!runLogBinding(input.env)) return
-	try {
-		const rpc = runLogRpc({ env: input.env, userId: input.userId })
-		const { initialized } = await rpc.isActivationInitialized()
-		if (initialized) return
-		const snapshot = await readActivationStateFromD1({
-			env: input.env,
-			userId: input.userId,
-		})
-		if (!snapshot.ok) {
-			console.warn('run-log-activation-seed-failed', snapshot.error)
-			return
-		}
-		await rpc.importActivationState(snapshot.value)
-	} catch (error) {
-		console.warn('run-log-activation-seed-failed', error)
-	}
-}
-
-/**
- * Lazily seed one job's observability from D1 exactly once (`legacy_seeded`).
- * Never throws. D1 query failures skip seeding so a later success can merge
- * into counters created by post-cutover finishes; successful empty marks
- * `legacy_seeded` with zeros.
- */
-export async function ensureJobRunObservabilitySeeded(input: {
-	env: Env
-	userId: string
-	jobId: string
-}): Promise<void> {
-	const jobId = normalizeOptionalString(input.jobId)
-	if (!runLogBinding(input.env) || !jobId) return
-	try {
-		const rpc = runLogRpc({ env: input.env, userId: input.userId })
-		const existing = await rpc.getJobRunObservability({ jobId })
-		if (existing?.legacySeeded) return
-		const read = await readJobRunObservabilityFromD1({
-			env: input.env,
-			userId: input.userId,
-			jobId,
-		})
-		if (!read.ok) {
-			console.warn('run-log-job-observability-seed-failed', read.error)
-			return
-		}
-		const seed =
-			read.value ??
-			({
-				jobId,
-				lastRunAt: null,
-				lastRunStatus: null,
-				lastRunError: null,
-				lastDurationMs: null,
-				runCount: 0,
-				successCount: 0,
-				errorCount: 0,
-				updatedAt: new Date().toISOString(),
-			} satisfies JobRunObservabilitySeedInput)
-		await rpc.seedJobRunObservabilityIfAbsent(seed)
-	} catch (error) {
-		console.warn('run-log-job-observability-seed-failed', error)
-	}
-}
-
-type D1ReadResult<T> = { ok: true; value: T } | { ok: false; error: unknown }
-
-/**
- * Schema-not-ready (missing table or column) is a successful empty legacy
- * snapshot, not a retryable read failure — later contract-phase drops must not
- * leave the DO uninitialized forever.
- */
-export function isMissingD1RelationError(error: unknown): boolean {
-	const message = error instanceof Error ? error.message : String(error)
-	return /no such (table|column)/i.test(message)
-}
-
-async function readActivationStateFromD1(input: {
-	env: Env
-	userId: string
-}): Promise<D1ReadResult<ActivationStateImport>> {
-	const empty: ActivationStateImport = {
-		packageRunSuccesses: [],
-		milestones: [],
-	}
-	const db = input.env.APP_DB
-	if (!db) return { ok: true, value: empty }
-	try {
-		const successRows = await db
-			.prepare(
-				`SELECT package_id, success_count, updated_at
-				FROM user_package_run_successes
-				WHERE user_id = ?
-				ORDER BY package_id ASC`,
-			)
-			.bind(input.userId)
-			.all<{
-				package_id: string
-				success_count: number
-				updated_at: string
-			}>()
-		const milestoneRows = await db
-			.prepare(
-				`SELECT milestone, reached_at, package_id
-				FROM user_activation_milestones
-				WHERE user_id = ?
-				ORDER BY milestone ASC`,
-			)
-			.bind(input.userId)
-			.all<{
-				milestone: string
-				reached_at: string
-				package_id: string | null
-			}>()
-		return {
-			ok: true,
-			value: {
-				packageRunSuccesses: (successRows.results ?? []).map((row) => ({
-					packageId: String(row.package_id),
-					successCount: Number(row.success_count) || 0,
-					updatedAt: String(row.updated_at),
-				})),
-				milestones: (milestoneRows.results ?? [])
-					.filter(
-						(row) =>
-							row.milestone === 'package_run_succeeded' ||
-							row.milestone === 'package_activated',
-					)
-					.map((row) => ({
-						milestone: row.milestone as ActivationMilestone,
-						reachedAt: String(row.reached_at),
-						packageId: row.package_id == null ? null : String(row.package_id),
-					})),
-			},
-		}
-	} catch (error) {
-		if (isMissingD1RelationError(error)) {
-			return { ok: true, value: empty }
-		}
-		// Transient / unexpected D1 failure: do not mark initialized.
-		return { ok: false, error }
-	}
-}
-
-async function readJobRunObservabilityFromD1(input: {
-	env: Env
-	userId: string
-	jobId: string
-}): Promise<D1ReadResult<JobRunObservabilitySeedInput | null>> {
-	const db = input.env.APP_DB
-	if (!db) return { ok: true, value: null }
-	try {
-		const row = await db
-			.prepare(
-				`SELECT id, last_run_at, last_run_status, last_run_error, last_duration_ms,
-					run_count, success_count, error_count, updated_at
-				FROM jobs
-				WHERE id = ? AND user_id = ?
-				LIMIT 1`,
-			)
-			.bind(input.jobId, input.userId)
-			.first<{
-				id: string
-				last_run_at: string | null
-				last_run_status: string | null
-				last_run_error: string | null
-				last_duration_ms: number | null
-				run_count: number
-				success_count: number
-				error_count: number
-				updated_at: string
-			}>()
-		if (!row) return { ok: true, value: null }
-		const lastRunStatus: JobRunObservabilityStatus | null =
-			row.last_run_status === 'success' || row.last_run_status === 'error'
-				? row.last_run_status
-				: null
-		return {
-			ok: true,
-			value: {
-				jobId: String(row.id),
-				lastRunAt: row.last_run_at == null ? null : String(row.last_run_at),
-				lastRunStatus,
-				lastRunError:
-					row.last_run_error == null ? null : String(row.last_run_error),
-				lastDurationMs:
-					row.last_duration_ms == null
-						? null
-						: Number(row.last_duration_ms) || 0,
-				runCount: Number(row.run_count) || 0,
-				successCount: Number(row.success_count) || 0,
-				errorCount: Number(row.error_count) || 0,
-				updatedAt: String(row.updated_at),
-			},
-		}
-	} catch (error) {
-		if (isMissingD1RelationError(error)) {
-			return { ok: true, value: null }
-		}
-		return { ok: false, error }
-	}
-}
-
-async function prepareTerminalRunSideEffectSeeds(input: {
-	env: Env
-	userId: string
-	status: RunTerminalStatus
-	context: RunRecordContext
-}): Promise<void> {
-	const jobId = normalizeOptionalString(input.context.jobId)
-	if (jobId) {
-		await ensureJobRunObservabilitySeeded({
-			env: input.env,
-			userId: input.userId,
-			jobId,
-		})
-	}
-	if (
-		input.status === 'success' &&
-		normalizeOptionalString(input.context.packageId) &&
-		countsTowardPackageActivation(input.context.surface)
-	) {
-		await ensureActivationStateSeeded({
-			env: input.env,
-			userId: input.userId,
-		})
-	}
-}
-
-/**
- * Never throws: a broken record or activation seed must not fail the observed
- * run. Historical D1 activation/job counters are seeded before the DO finish
- * so the terminal increment continues from the pre-cutover baseline.
+ * Never throws: a broken run record must not fail the observed run. Terminal
+ * job counters and activation state update inside the DO finish from zero /
+ * existing dedicated rows — no D1 seed pass.
  */
 export async function finishRunRecord(input: {
 	env: Env
@@ -633,12 +383,6 @@ export async function finishRunRecord(input: {
 		let persistedRun: RunLogRowInput | null = null
 		try {
 			if (runLogBinding(input.env)) {
-				await prepareTerminalRunSideEffectSeeds({
-					env: input.env,
-					userId: handle.userId,
-					status: input.status,
-					context: handle.context,
-				})
 				const finishedAt = new Date().toISOString()
 				const durationMs = Math.max(
 					0,
@@ -649,7 +393,7 @@ export async function finishRunRecord(input: {
 					input.result === undefined
 						? handle.context.metadata
 						: {
-								...(handle.context.metadata ?? {}),
+								...handle.context.metadata,
 								result: snapshotRunRecordResult(input.result),
 							}
 				const run = buildRunRow({
@@ -934,12 +678,6 @@ export async function finishPackageInvocationRecord(input: {
 	const handle = input.handle
 	let run: RunLogRowInput | null = null
 	if (handle) {
-		await prepareTerminalRunSideEffectSeeds({
-			env: input.env,
-			userId: input.userId,
-			status: input.status,
-			context: handle.context,
-		})
 		const finishedAt = new Date().toISOString()
 		const durationMs = Math.max(
 			0,
@@ -950,7 +688,7 @@ export async function finishPackageInvocationRecord(input: {
 			input.result === undefined
 				? handle.context.metadata
 				: {
-						...(handle.context.metadata ?? {}),
+						...handle.context.metadata,
 						result: snapshotRunRecordResult(input.result),
 					}
 		run = buildRunRow({
@@ -1154,27 +892,6 @@ export async function upsertWorkflowProjection(input: {
 	}).upsertWorkflowProjection(input.projection)
 }
 
-/**
- * Batch expand-phase D1 → RunLog import in one DO RPC. Applies the same
- * monotonic + terminal-sticky upsert as {@link upsertWorkflowProjection}.
- * Hard-capped at {@link workflowProjectionImportMaxBatch}.
- */
-export async function importWorkflowProjections(input: {
-	env: Env
-	userId: string
-	projections: Array<WorkflowProjectionUpsertInput>
-}): Promise<{ imported: number }> {
-	const projections = input.projections.slice(
-		0,
-		workflowProjectionImportMaxBatch,
-	)
-	if (projections.length === 0) return { imported: 0 }
-	return await runLogRpc({
-		env: input.env,
-		userId: input.userId,
-	}).importWorkflowProjections({ projections })
-}
-
 export async function getWorkflowProjection(input: {
 	env: Env
 	userId: string
@@ -1317,79 +1034,20 @@ export async function getJobRunObservability(input: {
 }
 
 /**
- * Batch expand-phase job-observability seed. Propagates bound/RPC errors so
- * production sweeps fail closed on oversized batches or a missing RUN_LOG
- * binding. Reuses exact once-only additive merge semantics inside the DO.
+ * Content-free per-user RunLog snapshot for post-D1 admin insights readers.
+ * Propagates binding/RPC errors. Never returns user-authored content.
  */
-export async function seedJobRunObservabilityBatch(input: {
+export async function getAdminInsightsSnapshot(input: {
 	env: Env
 	userId: string
-	seeds: Array<JobRunObservabilitySeedInput>
-}): Promise<JobRunObservabilityBatchSeedResult> {
-	if (!Array.isArray(input.seeds)) {
-		throw new Error('seedJobRunObservabilityBatch seeds must be an array')
-	}
-	if (input.seeds.length > jobRunObservabilitySeedMaxBatch) {
-		throw new Error(
-			`seedJobRunObservabilityBatch accepts at most ${jobRunObservabilitySeedMaxBatch} seeds (got ${input.seeds.length})`,
-		)
-	}
+}): Promise<RunLogAdminInsightsSnapshot> {
 	if (!runLogBinding(input.env)) {
 		throw new Error('RUN_LOG Durable Object binding is not configured.')
 	}
 	return await runLogRpc({
 		env: input.env,
 		userId: input.userId,
-	}).seedJobRunObservabilityBatch({ seeds: input.seeds })
-}
-
-/**
- * Content-free legacy parity verification. Propagates bound/RPC errors so
- * oversized inventory arrays fail closed. Never returns user-authored content.
- */
-export async function verifyLegacyParity(
-	input: {
-		env: Env
-		userId: string
-	} & LegacyParityVerifyInput,
-): Promise<LegacyParityVerifyResult> {
-	if (!runLogBinding(input.env)) {
-		throw new Error('RUN_LOG Durable Object binding is not configured.')
-	}
-	// Fail closed before the DO RPC so oversized batches never cross the stub.
-	assertLegacyParityBoundedArray(
-		input.workflows,
-		'verifyLegacyParity workflows',
-	)
-	assertLegacyParityBoundedArray(input.jobIds, 'verifyLegacyParity jobIds')
-	assertLegacyParityBoundedArray(
-		input.activationPackages,
-		'verifyLegacyParity activationPackages',
-	)
-	assertLegacyParityBoundedArray(
-		input.activationMilestones,
-		'verifyLegacyParity activationMilestones',
-	)
-	const { env, userId, ...checks } = input
-	return await runLogRpc({ env, userId }).verifyLegacyParity(checks)
-}
-
-/**
- * Mark activation initialized with an empty snapshot (unconditional done for
- * users with no legacy activation rows). Safe to call repeatedly.
- */
-export async function importActivationState(input: {
-	env: Env
-	userId: string
-	state: ActivationStateImport
-}): Promise<{ initialized: boolean }> {
-	if (!runLogBinding(input.env)) {
-		throw new Error('RUN_LOG Durable Object binding is not configured.')
-	}
-	return await runLogRpc({
-		env: input.env,
-		userId: input.userId,
-	}).importActivationState(input.state)
+	}).getAdminInsightsSnapshot()
 }
 
 export async function getJobRunObservabilityBatch(input: {
@@ -1453,28 +1111,21 @@ export type {
 	PackageInvocationLedgerStatus,
 } from './run-log-do.ts'
 export type {
+	RunLogAdminInsightsActivationMilestone,
+	RunLogAdminInsightsSnapshot,
+	RunLogAdminInsightsWorkflowStatusCount,
+} from './admin-insights-snapshot.ts'
+export type {
 	ActivationMilestone,
 	ActivationMilestoneRecord,
-	ActivationStateImport,
 	PackageRunSuccessRecord,
 } from './package-activation-state.ts'
 export { countsTowardPackageActivation } from './package-activation-state.ts'
 export type {
-	JobRunObservabilityBatchSeedResult,
 	JobRunObservabilityRecord,
-	JobRunObservabilitySeedInput,
 	JobRunObservabilityStatus,
 	JobRunObservabilityUpsertInput,
 } from './job-run-observability.ts'
-export { jobRunObservabilitySeedMaxBatch } from './job-run-observability.ts'
-export type {
-	LegacyParityActivationPackageCheck,
-	LegacyParityBucketCounts,
-	LegacyParityVerifyInput,
-	LegacyParityVerifyResult,
-	LegacyParityWorkflowCheck,
-} from './legacy-parity.ts'
-export { legacyParityVerifyMaxBatch } from './legacy-parity.ts'
 export type {
 	WorkflowBindingName,
 	WorkflowProjectionRecord,
@@ -1488,6 +1139,5 @@ export {
 	workflowBindingNames,
 	workflowProjectionActiveStatuses,
 	workflowProjectionCreatingTtlMs,
-	workflowProjectionImportMaxBatch,
 	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'

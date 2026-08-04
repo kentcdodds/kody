@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
 	startRun: vi.fn(async () => ({ ok: true })),
 	listPackageRunSuccesses: vi.fn(async () => []),
 	listActivationMilestones: vi.fn(async () => []),
-	isActivationInitialized: vi.fn(async () => ({ initialized: false })),
-	importActivationState: vi.fn(async () => ({ initialized: true })),
+	getAdminInsightsSnapshot: vi.fn(async () => ({
+		workflowStatusCounts: [],
+		activationMilestones: [],
+	})),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -17,13 +19,11 @@ vi.mock('./package-subscriptions.ts', () => ({
 
 const {
 	beginRunRecord,
-	ensureActivationStateSeeded,
 	finishRunRecord,
-	isMissingD1RelationError,
+	getAdminInsightsSnapshot,
 	listActivationMilestones,
 	listPackageRunSuccesses,
 	recordRunRecord,
-	seedJobRunObservabilityBatch,
 } = await import('./service.ts')
 
 function createEnv(overrides: Partial<Env> = {}) {
@@ -35,8 +35,7 @@ function createEnv(overrides: Partial<Env> = {}) {
 				finishRun: mocks.finishRun,
 				listPackageRunSuccesses: mocks.listPackageRunSuccesses,
 				listActivationMilestones: mocks.listActivationMilestones,
-				isActivationInitialized: mocks.isActivationInitialized,
-				importActivationState: mocks.importActivationState,
+				getAdminInsightsSnapshot: mocks.getAdminInsightsSnapshot,
 			}),
 		},
 		APP_DB: {},
@@ -162,49 +161,6 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	)
 })
 
-test('isMissingD1RelationError treats no-such-table and no-such-column as empty', () => {
-	expect(isMissingD1RelationError(new Error('no such table: jobs'))).toBe(true)
-	expect(
-		isMissingD1RelationError(
-			new Error('D1_ERROR: no such column: legacy_seeded: SQLITE_ERROR'),
-		),
-	).toBe(true)
-	expect(isMissingD1RelationError(new Error('D1 unavailable'))).toBe(false)
-})
-
-test('activation seed treats no-such-column as successful empty import', async () => {
-	consoleWarn.mockImplementation(() => {})
-	mocks.isActivationInitialized.mockReset()
-	mocks.importActivationState.mockReset()
-	mocks.isActivationInitialized.mockResolvedValue({ initialized: false })
-	mocks.importActivationState.mockResolvedValue({ initialized: true })
-
-	const env = createEnv({
-		APP_DB: {
-			prepare: () => ({
-				bind: () => ({
-					all: async () => {
-						throw new Error(
-							'D1_ERROR: no such column: success_count: SQLITE_ERROR',
-						)
-					},
-				}),
-			}),
-		} as unknown as D1Database,
-	})
-
-	await ensureActivationStateSeeded({ env, userId: 'user-1' })
-	expect(mocks.importActivationState).toHaveBeenCalledTimes(1)
-	expect(mocks.importActivationState).toHaveBeenCalledWith({
-		packageRunSuccesses: [],
-		milestones: [],
-	})
-	expect(consoleWarn).not.toHaveBeenCalledWith(
-		'run-log-activation-seed-failed',
-		expect.anything(),
-	)
-})
-
 test('activation reads never throw when RunLog is missing or RPC fails', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const envWithoutBinding = {} as Env
@@ -238,24 +194,32 @@ test('activation reads never throw when RunLog is missing or RPC fails', async (
 	)
 })
 
-test('seedJobRunObservabilityBatch throws when RUN_LOG binding is missing', async () => {
+test('getAdminInsightsSnapshot requires RUN_LOG and forwards the RPC', async () => {
 	await expect(
-		seedJobRunObservabilityBatch({
-			env: {} as Env,
-			userId: 'user-1',
-			seeds: [
-				{
-					jobId: 'job-1',
-					lastRunAt: null,
-					lastRunStatus: null,
-					lastRunError: null,
-					lastDurationMs: null,
-					runCount: 0,
-					successCount: 0,
-					errorCount: 0,
-					updatedAt: '2026-07-01T00:00:00.000Z',
-				},
-			],
-		}),
+		getAdminInsightsSnapshot({ env: {} as Env, userId: 'user-1' }),
 	).rejects.toThrow('RUN_LOG Durable Object binding is not configured.')
+
+	mocks.getAdminInsightsSnapshot.mockResolvedValueOnce({
+		workflowStatusCounts: [{ status: 'running', count: 2 }],
+		activationMilestones: [
+			{
+				milestone: 'package_activated',
+				reachedAt: '2026-08-01T00:00:00.000Z',
+				packageId: 'pkg-1',
+			},
+		],
+	})
+	const env = createEnv()
+	await expect(
+		getAdminInsightsSnapshot({ env, userId: 'user-1' }),
+	).resolves.toEqual({
+		workflowStatusCounts: [{ status: 'running', count: 2 }],
+		activationMilestones: [
+			{
+				milestone: 'package_activated',
+				reachedAt: '2026-08-01T00:00:00.000Z',
+				packageId: 'pkg-1',
+			},
+		],
+	})
 })

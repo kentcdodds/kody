@@ -137,7 +137,6 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 			successCount: number
 			errorCount: number
 			updatedAt: string
-			legacySeeded: boolean
 		}
 	>()
 	const packageRunSuccesses = new Map<
@@ -148,7 +147,6 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 		string,
 		{ milestone: string; reachedAt: string; packageId: string | null }
 	>()
-	let activationInitialized = false
 	const clone = <T>(value: T): T => structuredClone(value)
 	const findByKey = (key: {
 		tokenId: string
@@ -341,7 +339,6 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 							errorCount:
 								(existing?.errorCount ?? 0) + (runStatus === 'error' ? 1 : 0),
 							updatedAt: ranAt,
-							legacySeeded: existing?.legacySeeded ?? false,
 						})
 					}
 				}
@@ -380,80 +377,9 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 				record: released || !row ? null : clone(row),
 			}
 		},
-		async isActivationInitialized() {
-			return { initialized: activationInitialized }
-		},
-		async importActivationState(input: {
-			packageRunSuccesses: Array<{
-				packageId: string
-				successCount: number
-				updatedAt: string
-			}>
-			milestones: Array<{
-				milestone: string
-				reachedAt: string
-				packageId: string | null
-			}>
-		}) {
-			if (activationInitialized) {
-				return { initialized: true }
-			}
-			for (const row of input.packageRunSuccesses) {
-				const packageId = row.packageId.trim()
-				if (!packageId) continue
-				const existing = packageRunSuccesses.get(packageId)
-				const add = Math.max(0, Math.trunc(row.successCount))
-				packageRunSuccesses.set(packageId, {
-					packageId,
-					successCount: (existing?.successCount ?? 0) + add,
-					updatedAt: row.updatedAt,
-				})
-			}
-			for (const row of input.milestones) {
-				if (activationMilestones.has(row.milestone)) continue
-				activationMilestones.set(row.milestone, clone(row))
-			}
-			activationInitialized = true
-			return { initialized: true }
-		},
 		async getJobRunObservability(input: { jobId: string }) {
 			const row = jobObservability.get(input.jobId)
 			return row ? clone(row) : null
-		},
-		async seedJobRunObservabilityIfAbsent(input: {
-			jobId: string
-			lastRunAt: string | null
-			lastRunStatus: 'success' | 'error' | null
-			lastRunError: string | null
-			lastDurationMs: number | null
-			runCount: number
-			successCount: number
-			errorCount: number
-			updatedAt: string
-		}) {
-			const jobId = input.jobId.trim()
-			if (!jobId) return { seeded: false }
-			const existing = jobObservability.get(jobId)
-			if (existing?.legacySeeded) {
-				return { seeded: false }
-			}
-			if (!existing) {
-				jobObservability.set(
-					jobId,
-					clone({ ...input, jobId, legacySeeded: true }),
-				)
-				return { seeded: true }
-			}
-			jobObservability.set(jobId, {
-				...existing,
-				runCount: existing.runCount + Math.max(0, Math.trunc(input.runCount)),
-				successCount:
-					existing.successCount + Math.max(0, Math.trunc(input.successCount)),
-				errorCount:
-					existing.errorCount + Math.max(0, Math.trunc(input.errorCount)),
-				legacySeeded: true,
-			})
-			return { seeded: true }
 		},
 	}
 	return {

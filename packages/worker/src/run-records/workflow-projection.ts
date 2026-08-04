@@ -1,9 +1,9 @@
 /**
  * Workflow run projections stored in the per-user RunLog Durable Object.
  *
- * Mirrors D1 `workflow_runs` (minus `user_id` — the DO identity is the user)
- * and adds the Cloudflare Workflow binding name so a user with multiple
- * bindings can be projected correctly. This is correctness state for
+ * Per-user RunLog `workflow_projections` rows (DO identity is the user; no
+ * `user_id` column) plus the Cloudflare Workflow binding name so a user with
+ * multiple bindings can be projected correctly. This is correctness state for
  * idempotency and concurrent-workflow entitlements; it must never be derived
  * from pruned run-history rows.
  */
@@ -88,12 +88,6 @@ export const creatingWorkflowProjectionStatus = 'creating'
  * and by retention alarms. Active/running projections are never TTL-pruned.
  */
 export const workflowProjectionCreatingTtlMs = 10 * 60 * 1000
-
-/**
- * Hard cap for one {@link importWorkflowProjections} RPC. Matches the expand-
- * phase active D1 import bound (`planLimits.max.maxConcurrentWorkflows + 1`).
- */
-export const workflowProjectionImportMaxBatch = 5_001
 
 export const workflowProjectionActiveStatuses: ReadonlyArray<string> =
 	activeWorkflowStatusValues
