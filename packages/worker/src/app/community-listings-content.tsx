@@ -3,23 +3,41 @@
 import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
-import {
-	formatCommunityAdaptationEffort,
-	formatCommunityStars,
-} from '#app/community-display.ts'
+import { formatCommunityAdaptationEffort } from '#app/community-display.ts'
 import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
-import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
-import { cardCss, descriptionCss } from '#client/styles/style-primitives.ts'
+import { routes } from '#app/routes.ts'
+import { colors, transitions } from '#client/styles/tokens.ts'
+import { getSurfaceCardCss, mergeCss } from '#client/styles/style-primitives.ts'
+
+/**
+ * Server-rendered community listings (the `community-listings` frame),
+ * restyled to the redesign prototype's `.pkg-grid` / `.pkg-card` grammar
+ * (`landing/community.html`). This HTML is injected by the frame mechanism —
+ * no client component hydrates here, so the card entrance is a pure CSS
+ * animation (gated on `html.js` + reduced-motion) that replays whenever the
+ * frame loads or reloads, with a per-card stagger set inline by the server.
+ */
 
 export type CommunityListingsContentProps = {
 	listings: Array<PublicCommunityListing>
 	query: string | null
+}
+
+/** "@scope/name" breaks after the scope slash on narrow cards. */
+export function renderCommunityListingName(name: string) {
+	const slashIndex = name.indexOf('/')
+	if (!name.startsWith('@') || slashIndex < 0) return name
+	return (
+		<>
+			{name.slice(0, slashIndex + 1)}
+			<wbr />
+			{name.slice(slashIndex + 1)}
+		</>
+	)
+}
+
+function formatCount(count: number, noun: string) {
+	return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
 export function CommunityListingsContent(
@@ -30,33 +48,29 @@ export function CommunityListingsContent(
 	return () => (
 		<div data-testid="community-listings-frame">
 			{listings.length === 0 ? (
-				<p mix={css(descriptionCss)}>
+				<p mix={css(emptyStateCss)}>
 					{query
 						? 'No community packages matched your search.'
 						: 'No community packages have been published yet.'}
 				</p>
 			) : (
-				<div mix={css(listingGridCss)}>
-					{listings.map((listing) => (
-						<article key={listing.id} mix={css(cardCss)}>
-							<div mix={css(listingHeadingCss)}>
+				<ul  mix={css(listingGridCss)}>
+					{listings.map((listing, index) => (
+						<li
+							key={listing.id}
+							style={{ '--reveal-delay': `${Math.min(index, 5) * 60}ms` }}
+							mix={css(listingCardCss)}
+						>
+							<div mix={css(listingHeadCss)}>
 								<CommunityListingIcon listing={listing} size="card" />
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-									})}
-								>
+								<h2 mix={css(listingNameCss)}>
 									<a
-										href={`/community/${listing.id}`}
-										mix={css({
-											color: colors.primaryText,
-											textDecoration: 'none',
-											overflowWrap: 'anywhere',
+										href={routes.communityDetail.href({
+											listingId: listing.id,
 										})}
+										mix={css(listingLinkCss)}
 									>
-										{listing.name}
+										{renderCommunityListingName(listing.name)}
 									</a>
 								</h2>
 								{listing.trusted ? (
@@ -70,54 +84,50 @@ export function CommunityListingsContent(
 								) : null}
 							</div>
 							<p
-								mix={css(descriptionCss)}
+								mix={css(listingDescriptionCss)}
 								data-testid={`community-listing-description-${listing.id}`}
 							>
 								{listing.description}
 							</p>
 							{listing.tags.length > 0 ? (
-								<ul mix={css(tagListCss)}>
+								<ul aria-label="Tags" mix={css(communityTagListCss)}>
 									{listing.tags.map((tag) => (
-										<li key={tag} mix={css(tagPillCss)}>
+										<li key={tag} mix={css(communityTagPillCss)}>
 											{tag}
 										</li>
 									))}
 								</ul>
 							) : null}
-							<dl mix={css(statsCss)}>
-								<div>
-									<dt>Rating</dt>
-									<dd>
-										{formatCommunityStars(
-											listing.averageStars,
-											listing.ratingCount,
-										)}
-									</dd>
-								</div>
-								<div>
-									<dt>Forks</dt>
-									<dd data-testid={`community-listing-forks-${listing.id}`}>
-										{listing.forkCount}
-									</dd>
-								</div>
-								<div>
-									<dt>Stars</dt>
-									<dd data-testid={`community-listing-stars-${listing.id}`}>
-										{listing.starCount}
-									</dd>
-								</div>
-								<div>
-									<dt>Adaptation effort</dt>
-									<dd>
+							<p mix={css(statsCss)}>
+								{listing.ratingCount > 0 ? (
+									<span mix={css(ratingCss)}>
+										<span mix={css(ratingStarCss)}>★</span>{' '}
+										{listing.averageStars == null
+											? '—'
+											: listing.averageStars.toFixed(1)}{' '}
+										({listing.ratingCount})
+									</span>
+								) : (
+									<span>No ratings yet</span>
+								)}
+								<span data-testid={`community-listing-forks-${listing.id}`}>
+									{formatCount(listing.forkCount, 'fork')}
+								</span>
+								<span data-testid={`community-listing-stars-${listing.id}`}>
+									{formatCount(listing.starCount, 'star')}
+								</span>
+								{listing.averageAdaptationEffort == null ? null : (
+									<span>
+										effort{' '}
 										{formatCommunityAdaptationEffort(
 											listing.averageAdaptationEffort,
 										)}
-									</dd>
-								</div>
-							</dl>
-						</article>
+									</span>
+								)}
+							</p>
+						</li>
 					))}
-				</div>
+				</ul>
 			)}
 		</div>
 	)
@@ -129,62 +139,137 @@ export async function renderCommunityListingsContentHtml(
 	return renderToString(<CommunityListingsContent {...props} />)
 }
 
+/* ---------- styles ---------- */
+
+const emptyStateCss = {
+	margin: 'clamp(2.2rem, 5vw, 3.5rem) 0 0',
+	color: colors.textMuted,
+	fontSize: '0.98rem',
+}
+
 const listingGridCss = {
+	listStyle: 'none',
+	margin: 'clamp(2.2rem, 5vw, 3.5rem) 0 0',
+	padding: 0,
 	display: 'grid',
-	gap: spacing.lg,
-	gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))',
-	[mq.mobile]: {
-		gridTemplateColumns: '1fr',
+	gridTemplateColumns: 'repeat(auto-fill, minmax(min(19rem, 100%), 1fr))',
+	gap: '1rem',
+}
+
+/* Surface card with green hover border + lift; whole card is the target via
+   the stretched name link. Entrance reuses the shared `card-in` keyframes
+   from public/styles.css (declared inside the same reduced-motion media
+   block), staggered by the inline `--reveal-delay`. */
+const listingCardCss = mergeCss(getSurfaceCardCss({ interactive: true }), {
+	position: 'relative' as const,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.8rem',
+	padding: '1.3rem 1.4rem',
+	'@media (prefers-reduced-motion: no-preference)': {
+		':root.js &': {
+			animation: `card-in 600ms ${transitions.easeOut} var(--reveal-delay, 0ms) backwards`,
+		},
+	},
+})
+
+const listingHeadCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.7rem',
+}
+
+const listingNameCss = {
+	margin: 0,
+	fontSize: '1.12rem',
+	fontWeight: 720,
+	letterSpacing: '-0.012em',
+	lineHeight: 1.2,
+	overflowWrap: 'anywhere' as const,
+	minWidth: 0,
+}
+
+/* The whole card is the target; the link just names it. */
+const listingLinkCss = {
+	color: colors.text,
+	textDecoration: 'none',
+	transition: `color 140ms ${transitions.easeOut}`,
+	'&:hover': {
+		color: colors.primaryText,
+	},
+	'&::after': {
+		content: '""',
+		position: 'absolute' as const,
+		inset: 0,
 	},
 }
 
-const listingHeadingCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: spacing.md,
-}
-
-const tagListCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: spacing.xs,
-	margin: 0,
-	padding: 0,
-	listStyle: 'none',
-}
-
-const tagPillCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.primarySoftest,
+/* The prototype's `.badge-trusted` pill; the detail head reuses it without
+   the card's trailing-edge push. */
+export const communityBadgePillCss = {
+	flex: 'none',
+	fontSize: '0.78rem',
+	fontWeight: 650,
 	color: colors.primaryText,
-	fontSize: typography.fontSize.sm,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
+	borderRadius: '999px',
+	padding: '0.15rem 0.6rem',
+	whiteSpace: 'nowrap' as const,
+	cursor: 'help',
 }
 
 const trustedBadgeCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.primarySoft,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.semibold,
-	whiteSpace: 'nowrap' as const,
+	...communityBadgePillCss,
 	marginLeft: 'auto',
 }
 
-const statsCss = {
-	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fit, minmax(8rem, 1fr))',
-	gap: spacing.sm,
+const listingDescriptionCss = {
 	margin: 0,
-	fontSize: typography.fontSize.sm,
-	'& dt': {
-		margin: 0,
-		color: colors.textMuted,
-		fontWeight: typography.fontWeight.medium,
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+	lineHeight: 1.55,
+	textWrap: 'balance' as const,
+}
+
+/* Hairline tag chips (`.pkg-tags`), shared with the detail head. */
+export const communityTagListCss = {
+	listStyle: 'none',
+	margin: 0,
+	padding: 0,
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: '0.35rem',
+}
+
+export const communityTagPillCss = {
+	fontSize: '0.8rem',
+	fontWeight: 550,
+	color: colors.textMuted,
+	border: `1px solid ${colors.border}`,
+	borderRadius: '999px',
+	padding: '0.1rem 0.6rem',
+}
+
+/* Stats sit on the card floor, over a top hairline. */
+const statsCss = {
+	margin: 'auto 0 0',
+	paddingTop: '0.8rem',
+	borderTop: `1px solid ${colors.border}`,
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: '0.3rem 1.1rem',
+	fontSize: '0.88rem',
+	color: colors.textMuted,
+	'& span': {
+		whiteSpace: 'nowrap' as const,
 	},
-	'& dd': {
-		margin: `${spacing.xs} 0 0`,
-		color: colors.text,
-	},
+}
+
+const ratingCss = {
+	color: colors.text,
+	fontWeight: 600,
+}
+
+const ratingStarCss = {
+	color: colors.primaryText,
 }

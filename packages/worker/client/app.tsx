@@ -1,6 +1,8 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from './event-mixin.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
+import { getSlugFromPathname } from './routes/blog-post.tsx'
+import { getListingIdFromPathname } from './routes/community-detail.tsx'
 import {
 	listenToRouterMutations,
 	listenToRouterNavigation,
@@ -21,12 +23,9 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
-import {
-	getSecondaryButtonCss,
-	layoutMaxWidths,
-	primaryLinkCss,
-	visuallyHiddenUntilFocusedCss,
-} from './styles/style-primitives.ts'
+import { visuallyHiddenUntilFocusedCss } from './styles/style-primitives.ts'
+import { SiteFooter } from './site-footer.tsx'
+import { SiteHeader } from './site-header.tsx'
 import { type AppLoaderData } from '#app/loader-data.ts'
 import { userHasRole } from '#worker/identity/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
@@ -133,40 +132,6 @@ export function App(handle: Handle<AppProps>) {
 		})
 	}
 
-	const navHomeLinkCss = {
-		...primaryLinkCss,
-		display: 'flex',
-		alignItems: 'center',
-		lineHeight: 0,
-		'&:hover': {
-			textDecoration: 'none',
-			opacity: 0.85,
-		},
-	}
-
-	const logOutButtonCss = {
-		...getSecondaryButtonCss(),
-		padding: `${spacing.xs} ${spacing.md}`,
-	}
-
-	const compactNavCss = {
-		gap: spacing.sm,
-		marginBottom: spacing.lg,
-	}
-
-	const navGroupCss = {
-		display: 'flex',
-		alignItems: 'center',
-		gap: spacing.md,
-		flexWrap: 'wrap',
-		[mq.tablet]: {
-			gap: spacing.sm,
-		},
-		[mq.mobile]: {
-			gap: spacing.sm,
-		},
-	}
-
 	return () => {
 		currentPathname = readRouterPathname(handle)
 		const sessionEmail = session?.email ?? ''
@@ -182,9 +147,26 @@ export function App(handle: Handle<AppProps>) {
 				? `${currentPathname}${readRouterSearch(handle)}`
 				: null
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
-		const signupHref = buildAuthLink('/signup', oauthRedirectTo)
+		// Redesigned marketing pages own their own layout (gutters, measures)
+		// and the landing page owns its own waitlist close (the "Equip your
+		// agent" section), so the compact strip would double up there.
+		const isRedesignedMarketingPath =
+			currentPathname === '/' ||
+			currentPathname === '/pricing' ||
+			currentPathname === '/blog' ||
+			currentPathname === '/community' ||
+			currentPathname === '/onboarding' ||
+			getListingIdFromPathname(currentPathname) !== null ||
+			getSlugFromPathname(currentPathname) !== null
+		// The redesigned auth screens (login/signup) are a standalone
+		// two-panel canvas with their own brand link, theme toggle, and "back"
+		// corner — the prototype renders them without the site chrome, so the
+		// header/footer stand down entirely there.
+		const isAuthShellPath =
+			currentPathname === '/login' || currentPathname === '/signup'
 		const hideWaitlistBanner =
 			!showAuthLinks ||
+			isRedesignedMarketingPath ||
 			currentPathname === '/signup' ||
 			currentPathname === '/login' ||
 			currentPathname === '/oauth/authorize' ||
@@ -198,6 +180,8 @@ export function App(handle: Handle<AppProps>) {
 					mix={css({
 						width: '100%',
 						minHeight: '100vh',
+						display: 'flex',
+						flexDirection: 'column',
 						fontFamily: typography.fontFamily,
 						boxSizing: 'border-box',
 					})}
@@ -219,144 +203,70 @@ export function App(handle: Handle<AppProps>) {
 						Skip to content
 					</a>
 					{hideWaitlistBanner ? null : <WaitlistBanner />}
-					<div
-						mix={css({
-							width: '100%',
-							padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
-							boxSizing: 'border-box',
-							[mq.tablet]: {
-								padding: `${spacing.sm} ${spacing.sm} 0`,
-							},
-							[mq.mobile]: {
-								padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-							},
-						})}
+					{isAuthShellPath ? null : (
+						<SiteHeader
+							loggedIn={isLoggedIn}
+							displayName={sessionDisplayName}
+							showAdminLink={showAdminLink}
+							showDemoIndicator={isLoggedIn && showDemoIndicator}
+							loginHref={loginHref}
+							currentPathname={currentPathname}
+						/>
+					)}
+					<main
+						id="main"
+						tabIndex={-1}
+						mix={css(
+							isAuthShellPath
+								? {
+										width: '100%',
+										boxSizing: 'border-box',
+										flex: 1,
+										// The auth canvas stretches to fill the shell column.
+										display: 'grid',
+									}
+								: isRedesignedMarketingPath
+									? { width: '100%', boxSizing: 'border-box', flex: 1 }
+									: {
+											width: '100%',
+											boxSizing: 'border-box',
+											flex: 1,
+											padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
+											[mq.tablet]: {
+												padding: `${spacing.sm} ${spacing.sm} 0`,
+											},
+											[mq.mobile]: {
+												padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+											},
+										},
+						)}
 					>
-						<nav
-							mix={css({
-								maxWidth: layoutMaxWidths.wide,
-								width: '100%',
-								margin: `0 auto ${spacing.xl}`,
-								boxSizing: 'border-box',
-								display: 'flex',
-								alignItems: 'center',
-								justifyContent: 'space-between',
-								gap: spacing.md,
-								flexWrap: 'wrap',
-								[mq.tablet]: compactNavCss,
-								[mq.mobile]: compactNavCss,
-							})}
-						>
-							<div mix={css(navGroupCss)}>
-								<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
-									<img
-										src="/logo-64.webp"
-										alt=""
-										width={64}
-										height={64}
+						<Router
+							routes={clientRoutes}
+							loaderData={handle.props.loaderData}
+							notFound={handle.props.notFound}
+							fallback={
+								<section>
+									<h2
 										mix={css({
-											display: 'block',
-											height: '1.35em',
-											width: 'auto',
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+											marginBottom: spacing.sm,
+											color: colors.text,
 										})}
-									/>
-								</a>
-								<a href="/community" mix={css(primaryLinkCss)}>
-									Community
-								</a>
-								<a href="/blog" mix={css(primaryLinkCss)}>
-									Blog
-								</a>
-								<a href="/pricing" mix={css(primaryLinkCss)}>
-									Pricing
-								</a>
-								{isLoggedIn ? (
-									<a href="/timeline" mix={css(primaryLinkCss)}>
-										Timeline
-									</a>
-								) : null}
-							</div>
-							<div mix={css(navGroupCss)}>
-								{showAuthLinks ? (
-									<>
-										<a href={loginHref} mix={css(primaryLinkCss)}>
-											Login
-										</a>
-										<a href={signupHref} mix={css(primaryLinkCss)}>
-											Signup
-										</a>
-									</>
-								) : null}
-								{isLoggedIn ? (
-									<>
-										{showAdminLink ? (
-											<a href="/admin/users" mix={css(primaryLinkCss)}>
-												Admin
-											</a>
-										) : null}
-										<a href="/account" mix={css(primaryLinkCss)}>
-											{sessionDisplayName}
-										</a>
-										{showDemoIndicator ? (
-											<span
-												data-testid="demo-indicator"
-												mix={css({
-													fontSize: typography.fontSize.xs,
-													fontWeight: typography.fontWeight.medium,
-													color: colors.textMuted,
-													border: `1px solid ${colors.border}`,
-													borderRadius: '0.375rem',
-													padding: `0 ${spacing.xs}`,
-													lineHeight: 1.6,
-													letterSpacing: '0.02em',
-													textTransform: 'uppercase',
-												})}
-											>
-												Demo
-											</span>
-										) : null}
-										<form
-											method="post"
-											action="/logout"
-											mix={css({ margin: 0 })}
-										>
-											<button type="submit" mix={css(logOutButtonCss)}>
-												Log out
-											</button>
-										</form>
-									</>
-								) : null}
-							</div>
-						</nav>
-						<main
-							id="main"
-							tabIndex={-1}
-							mix={css({ width: '100%', boxSizing: 'border-box' })}
-						>
-							<Router
-								routes={clientRoutes}
-								loaderData={handle.props.loaderData}
-								notFound={handle.props.notFound}
-								fallback={
-									<section>
-										<h2
-											mix={css({
-												fontSize: typography.fontSize.lg,
-												fontWeight: typography.fontWeight.semibold,
-												marginBottom: spacing.sm,
-												color: colors.text,
-											})}
-										>
-											Not Found
-										</h2>
-										<p mix={css({ color: colors.textMuted })}>
-											We could not find that page.
-										</p>
-									</section>
-								}
-							/>
-						</main>
-					</div>
+									>
+										Not Found
+									</h2>
+									<p mix={css({ color: colors.textMuted })}>
+										We could not find that page.
+									</p>
+								</section>
+							}
+						/>
+					</main>
+					{isAuthShellPath ? null : (
+						<SiteFooter loggedIn={isLoggedIn} loginHref={loginHref} />
+					)}
 				</div>
 			</AppLoaderDataProvider>
 		)

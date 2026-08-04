@@ -1,6 +1,5 @@
 import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
-import checkbox from 'remix/ui/checkbox'
 import { on } from '#client/event-mixin.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 import { normalizeRedirectTo } from '#app/safe-redirect.ts'
@@ -9,6 +8,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
+import { HeroStage } from '#client/hero-stage.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
@@ -30,21 +30,19 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { type SignupMode } from '#app/signup-mode.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { ThemeToggle } from '#client/theme-toggle.tsx'
+import { colors, transitions, typography } from '#client/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import {
-	cardCss,
-	fieldCss,
-	fieldLabelCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
-	mutedLinkCss,
-	pageDescriptionCss,
-	pageHeaderCss,
-	pageTitleCss,
-	primaryLinkCss,
-	stackedPageCss,
+	authFieldCss,
+	authFieldLabelCss,
+	authFieldLabelRowCss,
+	getAuthInputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSwapLabelCss,
+	mergeCss,
+	visuallyHiddenCss,
 } from '#client/styles/style-primitives.ts'
 
 type AuthMode = 'login' | 'signup'
@@ -79,6 +77,13 @@ function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
 	return buildAuthLink(path, redirectTo)
 }
 
+function buildInviteSignupPath(redirectTo: string | null) {
+	const params = new URLSearchParams()
+	if (redirectTo) params.set('redirectTo', redirectTo)
+	params.set('panel', 'invite')
+	return `/signup?${params.toString()}`
+}
+
 function getAuthModeFromPathname(pathname: string): AuthMode {
 	return pathname === '/signup' ? 'signup' : 'login'
 }
@@ -111,6 +116,14 @@ export async function authProvidersRouteLoader(
 	return { authProviders: { ok: true, ...config } }
 }
 
+/**
+ * heykody.dev login/signup, ported from the redesign prototype
+ * (`landing/login.html`): a standalone two-panel canvas. The brand panel
+ * (hidden below 900px) carries the lantern stage over the shirt-pattern
+ * whisper; the form panel holds the auth card, which rises in the page-open
+ * choreography (head → form → divider → oauth → foot). The app shell hides
+ * the site header/footer here (`isAuthShellPath` in `app.tsx`).
+ */
 export function LoginRoute(handle: Handle) {
 	let status: AuthStatus = 'idle'
 	let message: string | null = null
@@ -420,6 +433,52 @@ export function LoginRoute(handle: Handle) {
 		}
 	}
 
+	function renderBrand(
+		extraCss: Parameters<typeof css>[0],
+		options: { decorative?: boolean } = {},
+	) {
+		return (
+			<a
+				href="/"
+				// Inside the aria-hidden visual panel the brand is decorative;
+				// keeping it out of the tab order avoids focusing content that
+				// assistive tech cannot see.
+				tabIndex={options.decorative ? -1 : undefined}
+				mix={css(extraCss)}
+			>
+				<img src="/images/kody-mark.png" alt="" width={34} height={34} />
+				<span>Kody</span>
+			</a>
+		)
+	}
+
+	function renderStatusMessage() {
+		return (
+			<p
+				aria-live="polite"
+				role={status === 'error' ? 'alert' : undefined}
+				data-tone={status === 'error' ? 'error' : 'info'}
+				hidden={message ? undefined : true}
+				mix={css(formMessageCss)}
+			>
+				{message ?? ''}
+			</p>
+		)
+	}
+
+	function renderHoneypot() {
+		return (
+			<input
+				type="text"
+				name={honeypotFieldName}
+				tabIndex={-1}
+				autoComplete="off"
+				aria-hidden="true"
+				mix={css(honeypotCss)}
+			/>
+		)
+	}
+
 	return () => {
 		// Loader-data consumption runs during SSR as well, so the provider
 		// buttons are in the server-rendered HTML rather than popping in.
@@ -481,323 +540,707 @@ export function LoginRoute(handle: Handle) {
 				? showInviteSignup
 					? 'Use your invite code to create an account and start building automations you own.'
 					: 'Create an account and start building automations you own.'
-				: 'Log in to keep building automations you own.'
+				: 'Sign in to pick up where you left off.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
-		const toggleLabel = isSignup
-			? 'Already have an account?'
-			: 'Need an account?'
-		const toggleAction = isSignup ? 'Sign in instead' : 'Join the waitlist'
+		const submitBusyLabel = isSignup ? 'Creating account…' : 'Signing in…'
+		const showSocial = !showWaitingList && authProviders.length > 0
 
 		return (
-			<section mix={css(pageCss)}>
-				<header mix={css(pageHeaderCss)}>
-					<h2 mix={css(pageTitleCss)}>{title}</h2>
-					<p mix={css(pageDescriptionCss)}>{description}</p>
-				</header>
-				{oauthErrorMessage ? (
-					<p
-						aria-live="polite"
-						mix={css({
-							color: colors.error,
-							fontSize: typography.fontSize.sm,
-							margin: 0,
-						})}
-					>
-						{oauthErrorMessage}
-					</p>
-				) : null}
-				{showWaitingList ? (
-					<form
-						key="waiting-list"
-						mix={[css(cardCss), on('submit', handleWaitingListSubmit)]}
-					>
-						<input
-							type="text"
-							name={honeypotFieldName}
-							tabIndex={-1}
-							autoComplete="off"
-							aria-hidden="true"
-							mix={css(honeypotCss)}
-						/>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>First name</span>
-							<input
-								type="text"
-								name="firstName"
-								required
-								autoFocus
-								autoComplete="given-name"
-								maxLength={80}
-								placeholder="Ada"
-								mix={css(inputCss)}
-							/>
-						</label>
-						{turnstileSiteKey ? (
-							<div class={turnstileWidgetClassName}></div>
-						) : null}
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Email</span>
-							<input
-								type="email"
-								name="email"
-								required
-								autoComplete="email"
-								placeholder="you@example.com"
-								mix={css(inputCss)}
-							/>
-						</label>
-						<button
-							type="submit"
-							disabled={isSubmitting || status === 'success'}
-							mix={css(primaryButtonCss)}
-						>
-							{isSubmitting ? 'Joining...' : 'Join waiting list'}
-						</button>
-						<p
-							aria-live="polite"
-							role={status === 'error' ? 'alert' : undefined}
-							mix={css({
-								color: status === 'error' ? colors.error : colors.text,
-								fontSize: typography.fontSize.sm,
-							})}
-						>
-							{message ?? ''}
+			<div mix={css(authLayoutCss)}>
+				{/* ============ brand panel ============ */}
+				<aside data-parallax-scope aria-hidden="true" mix={css(authVisualCss)}>
+					{renderBrand(authBrandCss, { decorative: true })}
+					<div mix={css(authSceneCss)}>
+						<div mix={css(authStageWrapCss)}>
+							<HeroStage size="auth" alt="" />
+						</div>
+						<p mix={css(authGreetingCss)}>Good to see you.</p>
+						<p mix={css(authGreetingSubCss)}>
+							Your packages, jobs, and memory: right where you left them.
 						</p>
-					</form>
-				) : (
-					<form
-						key="authentication"
-						data-public-auth-form
-						mix={[css(cardCss), on('submit', handleSubmit)]}
-					>
-						<input
-							type="text"
-							name={honeypotFieldName}
-							tabIndex={-1}
-							autoComplete="off"
-							aria-hidden="true"
-							mix={css(honeypotCss)}
-						/>
-						{isSignup ? (
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Username</span>
-								<input
-									type="text"
-									name="username"
-									required
-									autoFocus
-									autoComplete="username"
-									pattern={'[A-Za-z0-9][A-Za-z0-9_\\-]{1,30}[A-Za-z0-9]'}
-									title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
-									placeholder="kent"
-									mix={css(inputCss)}
-								/>
-							</label>
-						) : null}
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Email</span>
-							<input
-								type="email"
-								name="email"
-								required
-								autoFocus={!isSignup}
-								autoComplete="email"
-								placeholder="you@example.com"
-								mix={css(inputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Password</span>
-							<input
-								type="password"
-								name="password"
-								required
-								autoComplete={isSignup ? 'new-password' : 'current-password'}
-								placeholder="At least 8 characters"
-								mix={css(inputCss)}
-							/>
-						</label>
-						{showInviteSignup ? (
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Invite code</span>
-								<input
-									type="text"
-									name="inviteCode"
-									defaultValue={prefillInviteCode}
-									autoComplete="one-time-code"
-									placeholder="Enter your invite code"
-									mix={css(inputCss)}
-								/>
-							</label>
-						) : null}
-						{turnstileSiteKey ? (
-							<div class={turnstileWidgetClassName}></div>
-						) : null}
-						{!isSignup ? (
-							<label
-								mix={css({
-									display: 'flex',
-									gap: spacing.sm,
-									alignItems: 'flex-start',
-									color: colors.text,
-								})}
-							>
-								<input
-									type="checkbox"
-									name="rememberMe"
-									mix={[
-										checkbox(),
-										css({
-											marginTop: '0.15rem',
-										}),
-									]}
-								/>
-
-								<span mix={css({ display: 'grid', gap: spacing.xs })}>
-									<span
-										mix={css({
-											fontWeight: typography.fontWeight.medium,
-											fontSize: typography.fontSize.sm,
-										})}
-									>
-										Remember me
-									</span>
-									<span
-										mix={css({
-											color: colors.textMuted,
-											fontSize: typography.fontSize.sm,
-										})}
-									>
-										Stay signed in for 30 days. Active sessions renew after 14
-										days.
-									</span>
-								</span>
-							</label>
-						) : null}
-						<button
-							type="submit"
-							disabled={isSubmitting}
-							mix={css(primaryButtonCss)}
-						>
-							{isSubmitting ? 'Submitting...' : submitLabel}
-						</button>
-						{!isSignup ? (
-							<button
-								type="button"
-								disabled={isSubmitting}
-								mix={[
-									css(secondaryButtonCss),
-									on('click', handlePasskeySignIn),
-								]}
-							>
-								Sign in with a passkey
-							</button>
-						) : null}
-						<p
-							aria-live="polite"
-							role={status === 'error' ? 'alert' : undefined}
-							mix={css({
-								color: status === 'error' ? colors.error : colors.text,
-								fontSize: typography.fontSize.sm,
-							})}
-						>
-							{message ?? ''}
-						</p>
-					</form>
-				)}
-				{isSignup ? (
-					<button
-						type="button"
-						disabled={isSubmitting}
-						mix={[
-							css(secondaryButtonCss),
-							on('click', () =>
-								setSignupPanel(showWaitingList ? 'invite' : 'waiting-list'),
-							),
-						]}
-					>
-						{showWaitingList
-							? 'I have a code'
-							: 'Join the waiting list instead'}
-					</button>
-				) : null}
-				{!showWaitingList && authProviders.length > 0 ? (
-					<div mix={css({ display: 'grid', gap: spacing.sm })}>
-						<p
-							mix={css({
-								color: colors.textMuted,
-								fontSize: typography.fontSize.sm,
-								margin: 0,
-								textAlign: 'center' as const,
-							})}
-						>
-							or
-						</p>
-						{authProviders.map((provider) => (
-							<button
-								key={provider.id}
-								type="button"
-								disabled={isSubmitting}
-								mix={[
-									css(providerButtonCss),
-									on('click', () => handleProviderSignIn(provider.id)),
-								]}
-							>
-								<ProviderIcon providerId={provider.id} />
-								Continue with {provider.label}
-							</button>
-						))}
 					</div>
-				) : null}
-				<div mix={css({ display: 'grid', gap: spacing.sm })}>
-					<a
-						href={buildAuthPath(isSignup ? 'login' : 'signup', redirectTo)}
-						aria-pressed={isSignup}
-						mix={css(actionLinkCss)}
-					>
-						{toggleLabel} {toggleAction}
-					</a>
-					{!isSignup ? (
-						<a href="/reset-password" mix={css(actionLinkCss)}>
-							Forgot password?
-						</a>
-					) : null}
-					<a href="/privacy" mix={css(mutedLinkCss)}>
-						Privacy
-					</a>
-					<a href="/terms" mix={css(mutedLinkCss)}>
-						Terms
-					</a>
-					<a href="/" mix={css(mutedLinkCss)}>
-						Back home
-					</a>
+					<p mix={css(authFactCss)}>
+						Fully isolated per user. Your capabilities are yours alone.
+					</p>
+				</aside>
+
+				{/* ============ form panel ============ */}
+				<div mix={css(authPanelCss)}>
+					{renderBrand(authBrandMobileCss)}
+
+					<div mix={css(authCardCss)}>
+						<header data-rise style={{ '--rise': '0' }} mix={css(authHeadCss)}>
+							<h1>{title}</h1>
+							<p>{description}</p>
+						</header>
+
+						{oauthErrorMessage ? (
+							<p aria-live="polite" data-tone="error" mix={css(formMessageCss)}>
+								{oauthErrorMessage}
+							</p>
+						) : null}
+
+						{showWaitingList ? (
+							<form
+								key="waiting-list"
+								data-rise
+								method="post"
+								style={{ '--rise': '1' }}
+								mix={[css(authFormCss), on('submit', handleWaitingListSubmit)]}
+							>
+								{renderHoneypot()}
+								<div mix={css(authFieldCss)}>
+									<label
+										for={`${handle.id}-first-name`}
+										mix={css(authFieldLabelCss)}
+									>
+										First name
+									</label>
+									<input
+										id={`${handle.id}-first-name`}
+										type="text"
+										name="firstName"
+										required
+										autoFocus
+										autoComplete="given-name"
+										maxLength={80}
+										placeholder="Ada"
+										data-field-ring
+										mix={css(authInputCss)}
+									/>
+								</div>
+								<div mix={css(authFieldCss)}>
+									<label
+										for={`${handle.id}-waitlist-email`}
+										mix={css(authFieldLabelCss)}
+									>
+										Email
+									</label>
+									<input
+										id={`${handle.id}-waitlist-email`}
+										type="email"
+										name="email"
+										required
+										autoComplete="email"
+										placeholder="you@yourdomain.dev"
+										data-field-ring
+										mix={css(authInputCss)}
+									/>
+								</div>
+								{turnstileSiteKey ? (
+									<div class={turnstileWidgetClassName}></div>
+								) : null}
+								{renderStatusMessage()}
+								<button
+									type="submit"
+									disabled={isSubmitting || status === 'success'}
+									mix={css(authSubmitCss)}
+								>
+									<span
+										data-swap-label
+										data-active={isSubmitting ? undefined : true}
+										aria-hidden={isSubmitting ? 'true' : undefined}
+									>
+										Join the waiting list
+									</span>
+									<span
+										data-swap-label
+										data-active={isSubmitting ? true : undefined}
+										aria-hidden={isSubmitting ? undefined : 'true'}
+									>
+										Joining…
+									</span>
+								</button>
+							</form>
+						) : (
+							<form
+								key="authentication"
+								data-public-auth-form
+								data-rise
+								method="post"
+								style={{ '--rise': '1' }}
+								mix={[css(authFormCss), on('submit', handleSubmit)]}
+							>
+								{renderHoneypot()}
+								{isSignup ? (
+									<div mix={css(authFieldCss)}>
+										<label
+											for={`${handle.id}-username`}
+											mix={css(authFieldLabelCss)}
+										>
+											Username
+										</label>
+										<input
+											id={`${handle.id}-username`}
+											type="text"
+											name="username"
+											required
+											autoFocus
+											autoComplete="username"
+											pattern={'[A-Za-z0-9][A-Za-z0-9_\\-]{1,30}[A-Za-z0-9]'}
+											title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
+											placeholder="kent"
+											data-field-ring
+											mix={css(authInputCss)}
+										/>
+									</div>
+								) : null}
+								<div mix={css(authFieldCss)}>
+									<label
+										for={`${handle.id}-email`}
+										mix={css(authFieldLabelCss)}
+									>
+										Email
+									</label>
+									<input
+										id={`${handle.id}-email`}
+										type="email"
+										name="email"
+										required
+										autoFocus={!isSignup}
+										autoComplete="email"
+										placeholder="you@yourdomain.dev"
+										data-field-ring
+										mix={css(authInputCss)}
+									/>
+								</div>
+								<div mix={css(authFieldCss)}>
+									{isSignup ? (
+										<label
+											for={`${handle.id}-password`}
+											mix={css(authFieldLabelCss)}
+										>
+											Password
+										</label>
+									) : (
+										<div mix={css(authFieldLabelRowCss)}>
+											<label
+												for={`${handle.id}-password`}
+												mix={css(authFieldLabelCss)}
+											>
+												Password
+											</label>
+											<a href="/reset-password" mix={css(fieldAsideCss)}>
+												Forgot password?
+											</a>
+										</div>
+									)}
+									<input
+										id={`${handle.id}-password`}
+										type="password"
+										name="password"
+										required
+										autoComplete={
+											isSignup ? 'new-password' : 'current-password'
+										}
+										placeholder={isSignup ? 'At least 8 characters' : undefined}
+										data-field-ring
+										mix={css(authInputCss)}
+									/>
+								</div>
+								{showInviteSignup ? (
+									<div mix={css(authFieldCss)}>
+										<label
+											for={`${handle.id}-invite-code`}
+											mix={css(authFieldLabelCss)}
+										>
+											Invite code
+										</label>
+										<input
+											id={`${handle.id}-invite-code`}
+											type="text"
+											name="inviteCode"
+											defaultValue={prefillInviteCode}
+											autoComplete="one-time-code"
+											placeholder="Enter your invite code"
+											data-field-ring
+											mix={css(authInputCss)}
+										/>
+									</div>
+								) : null}
+								{turnstileSiteKey ? (
+									<div class={turnstileWidgetClassName}></div>
+								) : null}
+								{!isSignup ? (
+									<label mix={css(rememberCss)}>
+										<input
+											type="checkbox"
+											name="rememberMe"
+											defaultChecked
+											mix={css(rememberInputCss)}
+										/>
+										<span>Remember me on this device</span>
+									</label>
+								) : null}
+								{renderStatusMessage()}
+								<button
+									type="submit"
+									disabled={isSubmitting}
+									mix={css(authSubmitCss)}
+								>
+									<span
+										data-swap-label
+										data-active={isSubmitting ? undefined : true}
+										aria-hidden={isSubmitting ? 'true' : undefined}
+									>
+										{submitLabel}
+									</span>
+									<span
+										data-swap-label
+										data-active={isSubmitting ? true : undefined}
+										aria-hidden={isSubmitting ? undefined : 'true'}
+									>
+										{submitBusyLabel}
+									</span>
+								</button>
+								{!isSignup ? (
+									<button
+										type="button"
+										disabled={isSubmitting}
+										mix={[
+											css(ghostButtonCss),
+											on('click', handlePasskeySignIn),
+										]}
+									>
+										<svg
+											viewBox="0 0 24 24"
+											width="17"
+											height="17"
+											aria-hidden="true"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
+											<circle cx="16.5" cy="7.5" r="0.5" fill="currentColor" />
+										</svg>
+										Sign in with a passkey
+									</button>
+								) : null}
+							</form>
+						)}
+
+						{isSignup ? (
+							<button
+								type="button"
+								disabled={isSubmitting}
+								data-rise
+								style={{ '--rise': '2' }}
+								mix={[
+									css(ghostButtonCss),
+									on('click', () =>
+										setSignupPanel(showWaitingList ? 'invite' : 'waiting-list'),
+									),
+								]}
+							>
+								{showWaitingList
+									? 'I have a code'
+									: 'Join the waiting list instead'}
+							</button>
+						) : null}
+
+						{showSocial ? (
+							<>
+								<div
+									data-rise
+									style={{ '--rise': '2' }}
+									role="separator"
+									aria-label="or continue with"
+									mix={css(authDividerCss)}
+								>
+									<span>or continue with</span>
+								</div>
+								<div
+									data-rise
+									style={{ '--rise': '3' }}
+									mix={css(authOauthCss)}
+								>
+									{authProviders.map((provider) => (
+										<button
+											key={provider.id}
+											type="button"
+											disabled={isSubmitting}
+											mix={[
+												css(oauthButtonCss),
+												on('click', () => handleProviderSignIn(provider.id)),
+											]}
+										>
+											<ProviderIcon providerId={provider.id} />
+											<span mix={css(visuallyHiddenCss)}>Continue with </span>
+											{provider.label}
+										</button>
+									))}
+								</div>
+							</>
+						) : null}
+
+						<footer data-rise style={{ '--rise': '4' }} mix={css(authFootCss)}>
+							{isSignup ? (
+								<p>
+									Already have an account?{' '}
+									<a href={buildAuthPath('login', redirectTo)}>Sign in</a>.
+								</p>
+							) : signupMode === 'open' ? (
+								<p>
+									New here?{' '}
+									<a href={buildAuthPath('signup', redirectTo)}>
+										Create an account
+									</a>
+									.
+								</p>
+							) : (
+								<p>
+									New here? Kody is invite-only:{' '}
+									<a href="/#invite">join the waiting list</a> or{' '}
+									<a href={buildInviteSignupPath(redirectTo)}>redeem a code</a>.
+								</p>
+							)}
+							<p mix={css(authLegalCss)}>
+								<a href="/privacy">Privacy</a>
+								<a href="/terms">Terms</a>
+							</p>
+						</footer>
+					</div>
+
+					<div mix={css(authCornerCss)}>
+						<a href="/">&larr; Back to heykody.dev</a>
+						<ThemeToggle />
+					</div>
 				</div>
-			</section>
+			</div>
 		)
 	}
 }
 
-const pageCss = {
-	...stackedPageCss,
-	maxWidth: '28rem',
-	margin: '0 auto',
+/* ---------- styles ---------- */
+
+const motionOk = '@media (prefers-reduced-motion: no-preference)'
+const mobileMq = '@media (max-width: 900px)'
+
+const authLayoutCss = {
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+	width: '100%',
+	[mobileMq]: {
+		gridTemplateColumns: '1fr',
+	},
 }
 
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+/* Brand panel: same flat canvas, shirt fabric across the whole panel, the
+   layered lantern stage doing the welcoming. */
+const authVisualCss = {
+	position: 'relative' as const,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	justifyContent: 'space-between',
+	gap: '2rem',
+	padding: 'clamp(1.5rem, 3vw, 2.5rem)',
+	borderRight: `1px solid ${colors.border}`,
+	backgroundColor: colors.background,
+	overflow: 'hidden',
+	'&::before': {
+		content: '""',
+		position: 'absolute' as const,
+		inset: 0,
+		background: `radial-gradient(ellipse 70% 62% at 50% 52%, oklch(from ${colors.text} l c h / 0.06), transparent 78%)`,
+		maskImage: 'var(--kody-pattern)',
+		maskPosition: 'center',
+		maskSize: '340px',
+		maskRepeat: 'repeat',
+		WebkitMaskImage: 'var(--kody-pattern)',
+		WebkitMaskPosition: 'center',
+		WebkitMaskSize: '340px',
+		WebkitMaskRepeat: 'repeat',
+		pointerEvents: 'none' as const,
+	},
+	[mobileMq]: {
+		display: 'none',
+	},
+}
 
-const secondaryButtonCss = getSecondaryButtonCss({ size: 'lg' })
-
-const providerButtonCss = {
-	...secondaryButtonCss,
+const brandBaseCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
-	justifyContent: 'center',
-	gap: spacing.sm,
+	gap: '0.6rem',
+	font: `700 1.25rem/1 ${typography.fontFamilyDisplay}`,
+	color: colors.text,
+	textDecoration: 'none',
+	letterSpacing: '-0.01em',
+	'& img': { borderRadius: '50%' },
+	'&:hover': { color: colors.text },
 }
 
-const actionLinkCss = {
-	...primaryLinkCss,
+const authBrandCss = {
+	...brandBaseCss,
+	position: 'relative' as const,
+	alignSelf: 'flex-start',
+}
+
+/* The brand only shows inside the form panel once the visual panel is gone. */
+const authBrandMobileCss = {
+	...brandBaseCss,
+	display: 'none',
+	[mobileMq]: {
+		display: 'inline-flex',
+		marginInline: 'auto',
+	},
+}
+
+const authSceneCss = {
+	position: 'relative' as const,
+	textAlign: 'center' as const,
+	marginInline: 'auto',
+	width: '100%',
+}
+
+/* The lantern casts its light here too. */
+const authStageWrapCss = {
+	position: 'relative' as const,
+	width: 'min(100%, 440px)',
+	marginInline: 'auto',
+	/* On short viewports the stage shrinks before anything clips. */
+	'@media (min-width: 901px) and (max-height: 820px)': {
+		width: 'min(100%, 340px)',
+	},
+	'&::after': {
+		content: '""',
+		position: 'absolute' as const,
+		left: '50%',
+		top: '63%',
+		width: 'min(36%, 160px)',
+		aspectRatio: '4 / 3',
+		transform: 'translate(-50%, -50%)',
+		borderRadius: '50%',
+		background:
+			'radial-gradient(closest-side, var(--lantern-glow), transparent 72%)',
+		mixBlendMode: 'screen' as const,
+		pointerEvents: 'none' as const,
+	},
+	'@media (prefers-reduced-motion: no-preference)': {
+		'&::after': {
+			animation: 'lantern-breathe 4.5s ease-in-out infinite alternate',
+		},
+	},
+	'@keyframes lantern-breathe': {
+		from: { opacity: 0.55 },
+		to: { opacity: 1 },
+	},
+}
+
+const authGreetingCss = {
+	margin: '1.6rem auto 0',
+	font: `800 clamp(1.7rem, 2.4vw, 2.1rem)/1.1 ${typography.fontFamilyDisplay}`,
+	letterSpacing: '-0.02em',
+	color: colors.text,
+}
+
+const authGreetingSubCss = {
+	margin: '0.7rem auto 0',
+	color: colors.textMuted,
+	maxWidth: '34ch',
+}
+
+const authFactCss = {
+	position: 'relative' as const,
+	margin: 0,
+	textAlign: 'center' as const,
+	fontSize: '0.92rem',
+	color: colors.textMuted,
+}
+
+/* Form panel */
+const authPanelCss = {
+	display: 'flex',
+	flexDirection: 'column' as const,
+	justifyContent: 'center',
+	gap: '2rem',
+	padding: 'clamp(1.5rem, 4vw, 3rem)',
+	position: 'relative' as const,
+	backgroundColor: colors.surface,
+	[mobileMq]: {
+		justifyContent: 'flex-start',
+		paddingTop: 'clamp(4.5rem, 12vw, 6rem)',
+	},
+}
+
+const authCardCss = {
+	width: 'min(100%, 400px)',
+	marginInline: 'auto',
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '1.7rem',
+}
+
+const authHeadCss = {
+	'& h1': {
+		margin: 0,
+		fontSize: 'clamp(1.9rem, 3vw, 2.3rem)',
+		fontWeight: 760,
+		letterSpacing: '-0.025em',
+		lineHeight: 1.05,
+	},
+	'& p': {
+		margin: '0.5rem 0 0',
+		color: colors.textMuted,
+	},
+}
+
+const authFormCss = {
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '1.1rem',
+}
+
+/* Fields sit on the lighter surface, so they take the canvas tone and read
+   as wells in both themes. */
+const authInputCss = getAuthInputCss({ background: 'canvas' })
+
+const inlineLinkCss = {
+	color: colors.primaryText,
+	textDecorationThickness: '1.5px',
+	textUnderlineOffset: '3px',
+	'&:hover': { color: colors.text },
+}
+
+const fieldAsideCss = {
+	...inlineLinkCss,
+	fontSize: '0.88rem',
+}
+
+const rememberCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.6rem',
+	fontSize: '0.95rem',
+	color: colors.text,
+	cursor: 'pointer',
+	alignSelf: 'flex-start',
+}
+
+const rememberInputCss = {
+	width: '1.1em',
+	height: '1.1em',
+	margin: 0,
+	accentColor: colors.primary,
+	cursor: 'pointer',
+}
+
+/* Status/error line. The `success-in` keyframes live in public/styles.css
+   inside the reduced-motion-gated block, so the entrance simply no-ops when
+   motion is off. */
+const formMessageCss = {
+	margin: 0,
+	fontSize: '0.95rem',
+	lineHeight: 1.5,
 	textAlign: 'left' as const,
+	color: colors.textMuted,
+	'& a': {
+		color: colors.primaryText,
+		textDecorationThickness: '1.5px',
+		textUnderlineOffset: '3px',
+	},
+	'& a:hover': { color: colors.text },
+	'&[data-tone="error"]': {
+		color: colors.error,
+	},
+	[motionOk]: {
+		'&:not([hidden])': {
+			animation: `success-in 250ms ${transitions.easeOut} both`,
+		},
+	},
+}
+
+const authSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
+	marginTop: '0.3rem',
+	'&:disabled': {
+		opacity: 0.7,
+		cursor: 'progress',
+		transform: 'none',
+	},
+})
+
+const ghostButtonCss = getGhostButtonCss()
+
+const authDividerCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.9rem',
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+	'&::before': {
+		content: '""',
+		flex: 1,
+		height: '1px',
+		background: colors.border,
+	},
+	'&::after': {
+		content: '""',
+		flex: 1,
+		height: '1px',
+		background: colors.border,
+	},
+}
+
+const authOauthCss = {
+	display: 'flex',
+	gap: '0.7rem',
+}
+
+const oauthButtonCss = {
+	...getGhostButtonCss(),
+	flex: '1 1 0',
+	minWidth: 0,
+	fontSize: '0.95rem',
+	paddingInline: '0.6rem',
+}
+
+const authFootCss = {
+	borderTop: `1px solid ${colors.border}`,
+	paddingTop: '1.3rem',
+	display: 'grid',
+	gap: '0.6rem',
+	'& p': {
+		margin: 0,
+		fontSize: '0.95rem',
+		color: colors.textMuted,
+		textAlign: 'center' as const,
+		marginInline: 'auto',
+	},
+	'& a': {
+		color: colors.primaryText,
+		textDecorationThickness: '1.5px',
+		textUnderlineOffset: '3px',
+	},
+	'& a:hover': { color: colors.text },
+}
+
+const authLegalCss = {
+	display: 'flex',
+	justifyContent: 'center',
+	gap: '1.1rem',
+	fontSize: '0.85rem',
+	'& a': {
+		color: colors.textMuted,
+		textDecoration: 'none',
+	},
+	'& a:hover': { textDecoration: 'underline', color: colors.text },
+}
+
+const authCornerCss = {
+	position: 'absolute' as const,
+	top: 'clamp(1rem, 2.5vw, 1.8rem)',
+	right: 'clamp(1rem, 2.5vw, 1.8rem)',
+	display: 'flex',
+	alignItems: 'center',
+	gap: '1.1rem',
+	fontSize: '0.92rem',
+	'& > a': {
+		color: colors.textMuted,
+		textDecoration: 'none',
+	},
+	'& > a:hover': { color: colors.text },
 }
 
 const honeypotCss = {

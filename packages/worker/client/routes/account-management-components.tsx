@@ -6,18 +6,120 @@ import {
 	mq,
 	radius,
 	spacing,
+	transitions,
 	typography,
 } from '#client/styles/tokens.ts'
 import {
-	cardCss,
-	cardTitleCss,
-	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getAuthInputCss,
+	getSurfaceCardCss,
+	hoverMq,
 	layoutMaxWidths,
 } from '#client/styles/style-primitives.ts'
+
+/*
+ * Account-area visual language, ported from the redesign prototype
+ * (`landing/account.html` + the `.account-*` blocks in `landing/styles.css`).
+ * Sections are hairline-divided (no card chrome), headings speak in the
+ * display face, ledes are muted and measured, and nav links are quiet pills
+ * that only go green when current.
+ */
+
+/** `.account-section` — hairline-topped section, no card chrome. */
+export const accountSectionCss = {
+	borderTop: `1px solid ${colors.border}`,
+	paddingTop: 'clamp(2rem, 4vw, 2.75rem)',
+	scrollMarginTop: '5.5rem',
+	display: 'grid',
+	gap: spacing.md,
+}
+
+/** `.account-section h2` — display face, quiet weight. */
+export const accountSectionTitleCss = {
+	margin: 0,
+	fontSize: '1.35rem',
+	fontWeight: 720,
+	letterSpacing: '-0.014em',
+	color: colors.text,
+	lineHeight: 1.2,
+}
+
+/** `.account-section > p` — muted lede with a reading measure. */
+export const accountSectionLedeCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.98rem',
+	maxWidth: '60ch',
+	textWrap: 'balance' as const,
+}
+
+/** `.field` */
+export const accountFieldCss = {
+	display: 'grid',
+	gap: '0.45rem',
+	minWidth: 0,
+}
+
+/** `.field label` */
+export const accountFieldLabelCss = {
+	fontSize: '0.92rem',
+	fontWeight: 600,
+	color: colors.text,
+}
+
+/** `.field input` — the shared auth-field treatment (green border + glow on
+ * focus). Inputs must carry `data-field-ring` so the unlayered global
+ * `:focus-visible` outline stands down. */
+export const accountInputCss = {
+	...getAuthInputCss(),
+	maxWidth: '100%',
+}
+
+export const accountTextareaCss = {
+	...accountInputCss,
+	resize: 'vertical' as const,
+	minHeight: '7rem',
+}
+
+/** `.field-note` */
+export const accountFieldNoteCss = {
+	margin: 0,
+	fontSize: '0.92rem',
+	color: colors.textMuted,
+}
+
+/** `.verified` — the little green status pill next to the account email. */
+export const verifiedPillCss = {
+	display: 'inline-block',
+	fontSize: '0.8rem',
+	fontWeight: 600,
+	color: colors.primaryText,
+	backgroundColor: colors.primarySoft,
+	borderRadius: radius.full,
+	padding: '0.1rem 0.55rem',
+	marginLeft: '0.3rem',
+}
+
+/** `.account-actions` — wrapping row of small pill/ghost actions. */
+export const accountActionsCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: '0.7rem',
+}
+
+/** `.account-more` — quiet green disclosure ("Change email"). */
+export const accountDisclosureCss = {
+	'& > summary': {
+		cursor: 'pointer',
+		fontWeight: 600,
+		color: colors.primaryText,
+		width: 'fit-content',
+		transition: `color 140ms ${transitions.easeOut}`,
+	},
+	[hoverMq]: {
+		'& > summary:hover': { color: colors.text },
+	},
+	'&[open] > summary': { marginBottom: '0.4rem' },
+}
 
 type AccountManagementSlot = any
 
@@ -28,9 +130,19 @@ type AccountManagementLinkNavItem = {
 }
 
 type AccountManagementShellProps = {
+	/**
+	 * Optional cap on the content column (not the whole grid). Useful for
+	 * pages whose forms read better on a narrower measure.
+	 */
 	maxWidth?: string
 	children: AccountManagementSlot
 }
+
+/** The sidebar collapses to a wrapping row below this width (prototype 860px). */
+const accountNavMq = '@media (max-width: 860px)'
+
+/** Prototype `.account` section rhythm: margin between blocks in the content column. */
+const accountSectionGap = 'clamp(2rem, 4vw, 2.75rem)'
 
 export function AccountManagementShell(
 	handle: Handle<AccountManagementShellProps>,
@@ -38,10 +150,47 @@ export function AccountManagementShell(
 	return () => (
 		<section
 			mix={css({
-				maxWidth: handle.props.maxWidth ?? layoutMaxWidths.wide,
+				maxWidth: layoutMaxWidths.extended,
 				margin: '0 auto',
 				display: 'grid',
 				gap: spacing.xl,
+				alignItems: 'start',
+				// Prototype `.account` layout: 200px sticky nav rail beside the
+				// content column, 72rem total. The rail is an absolutely
+				// positioned full-height track (so the content keeps its normal
+				// single-column flow and gap) and only exists when the section
+				// nav is present — nav-less shell users (onboarding, pending
+				// verification) keep the plain column. Note: `css()` classes
+				// each live in their own cascade sub-layer, so child spacing
+				// must stay on the shell's `gap`, never on per-child margins a
+				// child's own class would silently beat.
+				'&:has(> [data-account-nav])': {
+					position: 'relative',
+					gap: accountSectionGap,
+					paddingLeft: 'calc(200px + clamp(2rem, 5vw, 4.5rem))',
+					// The absolute rail contributes no height; keep room so a
+					// short page never lets the nav spill over the footer.
+					minHeight: '40rem',
+					...(handle.props.maxWidth
+						? {
+								'& > *:not([data-account-nav])': {
+									maxWidth: handle.props.maxWidth,
+								},
+							}
+						: {}),
+					[accountNavMq]: {
+						paddingLeft: 0,
+						minHeight: 0,
+						gap: spacing.xl,
+					},
+				},
+				...(handle.props.maxWidth
+					? {
+							'&:not(:has(> [data-account-nav]))': {
+								maxWidth: handle.props.maxWidth,
+							},
+						}
+					: {}),
 			})}
 		>
 			{handle.props.children}
@@ -68,11 +217,13 @@ export function AccountManagementHeader(
 				flexWrap: 'wrap',
 			})}
 		>
-			<div mix={css({ display: 'grid', gap: spacing.xs })}>
+			<div mix={css({ display: 'grid', gap: '0.6rem' })}>
 				<h1
 					mix={css({
-						fontSize: typography.fontSize.xl,
-						fontWeight: typography.fontWeight.semibold,
+						fontSize: 'clamp(2rem, 4vw, 2.7rem)',
+						fontWeight: 760,
+						letterSpacing: '-0.026em',
+						lineHeight: 1.08,
 						color: colors.text,
 						margin: 0,
 					})}
@@ -135,35 +286,73 @@ type AccountManagementLinkNavProps = {
 	items: Array<AccountManagementLinkNavItem>
 }
 
+/** `.account-nav a` — quiet link pills; only the current one goes green. */
+const accountNavLinkCss = {
+	padding: '0.5rem 0.9rem',
+	borderRadius: '10px',
+	color: colors.textMuted,
+	fontWeight: 550,
+	fontSize: '0.98rem',
+	textDecoration: 'none',
+	transition: `color 140ms ${transitions.easeOut}, background-color 140ms ${transitions.easeOut}`,
+	[hoverMq]: {
+		'&:hover': { color: colors.text, backgroundColor: colors.surface },
+	},
+	'&[aria-current]': {
+		color: colors.primaryText,
+		backgroundColor: colors.primarySoft,
+	},
+}
+
 export function AccountManagementLinkNav(
 	handle: Handle<AccountManagementLinkNavProps>,
 ) {
-	const secondaryButtonCss = getSecondaryButtonCss()
-
 	return () => (
 		<nav
 			aria-label={handle.props.label}
-			mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+			data-account-nav
+			mix={css({
+				// Prototype `.account-nav`: a 200px rail beside the content.
+				// The nav fills the shell's absolute left track (full height,
+				// so the sticky inner column has the whole page to stick
+				// through); below 860px it returns to flow as a wrapping row.
+				position: 'absolute',
+				left: 0,
+				top: 0,
+				bottom: 0,
+				width: '200px',
+				[accountNavMq]: {
+					position: 'static',
+					width: 'auto',
+				},
+			})}
 		>
-			{handle.props.items.map((item) => (
-				<a
-					key={item.href}
-					href={item.href}
-					aria-current={item.active ? 'page' : undefined}
-					mix={css({
-						...secondaryButtonCss,
-						textDecoration: 'none',
-						...(item.active
-							? {
-									borderColor: colors.primary,
-									backgroundColor: colors.primarySoftest,
-								}
-							: {}),
-					})}
-				>
-					{item.label}
-				</a>
-			))}
+			<div
+				mix={css({
+					position: 'sticky',
+					top: '5rem',
+					display: 'flex',
+					flexDirection: 'column',
+					gap: '0.15rem',
+					[accountNavMq]: {
+						position: 'static',
+						flexDirection: 'row',
+						flexWrap: 'wrap',
+						gap: '0.3rem',
+					},
+				})}
+			>
+				{handle.props.items.map((item) => (
+					<a
+						key={item.href}
+						href={item.href}
+						aria-current={item.active ? 'page' : undefined}
+						mix={css(accountNavLinkCss)}
+					>
+						{item.label}
+					</a>
+				))}
+			</div>
 		</nav>
 	)
 }
@@ -329,7 +518,10 @@ export function AccountManagementSidebar(
 	return () => (
 		<aside
 			mix={css({
-				...cardCss,
+				...getSurfaceCardCss(),
+				padding: spacing.lg,
+				display: 'grid',
+				gap: spacing.md,
 				alignSelf: 'start',
 				// Grid items default to min-width:auto; without this, long
 				// search placeholders / unbreakable tokens expand past the
@@ -339,11 +531,11 @@ export function AccountManagementSidebar(
 				overflow: 'hidden',
 			})}
 		>
-			<div mix={css({ display: 'grid', gap: spacing.xs, minWidth: 0 })}>
-				<h2 mix={css(cardTitleCss)}>{handle.props.title}</h2>
+			<div mix={css({ display: 'grid', gap: '0.6rem', minWidth: 0 })}>
+				<h2 mix={css(accountSectionTitleCss)}>{handle.props.title}</h2>
 				<p
 					mix={css({
-						...descriptionCss,
+						...accountSectionLedeCss,
 						overflowWrap: 'anywhere',
 					})}
 				>
@@ -423,10 +615,11 @@ export function AccountManagementSearchField(
 	handle: Handle<AccountManagementSearchFieldProps>,
 ) {
 	return () => (
-		<label mix={css({ ...fieldCss, minWidth: 0 })}>
-			<span mix={css(fieldLabelCss)}>{handle.props.label}</span>
+		<label mix={css(accountFieldCss)}>
+			<span mix={css(accountFieldLabelCss)}>{handle.props.label}</span>
 			<input
 				type="search"
+				data-field-ring
 				value={handle.props.value}
 				placeholder={handle.props.placeholder}
 				aria-label={handle.props.label}
@@ -437,9 +630,7 @@ export function AccountManagementSearchField(
 						),
 					),
 					css({
-						...inputCss,
-						minWidth: 0,
-						maxWidth: '100%',
+						...accountInputCss,
 						paddingRight: spacing.xl,
 					}),
 				]}
@@ -509,12 +700,12 @@ export function AccountManagementPanel(
 	const content = () => (
 		<>
 			{handle.props.title || handle.props.description ? (
-				<div mix={css({ display: 'grid', gap: spacing.xs })}>
+				<div mix={css({ display: 'grid', gap: '0.6rem' })}>
 					{handle.props.title ? (
-						<h2 mix={css(cardTitleCss)}>{handle.props.title}</h2>
+						<h2 mix={css(accountSectionTitleCss)}>{handle.props.title}</h2>
 					) : null}
 					{handle.props.description ? (
-						<p mix={css(descriptionCss)}>{handle.props.description}</p>
+						<p mix={css(accountSectionLedeCss)}>{handle.props.description}</p>
 					) : null}
 				</div>
 			) : null}
@@ -528,7 +719,7 @@ export function AccountManagementPanel(
 				method="post"
 				noValidate
 				mix={[
-					css(cardCss),
+					css(accountSectionCss),
 					handle.props.onSubmit
 						? on('submit', (event) => handle.props.onSubmit?.(event))
 						: null,
@@ -537,7 +728,7 @@ export function AccountManagementPanel(
 				{content()}
 			</form>
 		) : (
-			<section aria-label={handle.props.ariaLabel} mix={css(cardCss)}>
+			<section aria-label={handle.props.ariaLabel} mix={css(accountSectionCss)}>
 				{content()}
 			</section>
 		)
@@ -566,7 +757,7 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 		>
 			{handle.props.items.map((item) => (
 				<div key={item.label}>
-					<dt mix={css(fieldLabelCss)}>{item.label}</dt>
+					<dt mix={css(accountFieldLabelCss)}>{item.label}</dt>
 					<dd mix={css({ margin: 0, color: colors.text })}>{item.value}</dd>
 				</div>
 			))}
@@ -574,13 +765,18 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 	)
 }
 
+/**
+ * Quiet surface callout, matching the prototype's `.onboard-callout` chrome.
+ * The redesign never uses green as a background wash — emphasis lives in the
+ * callout's copy and action, not its border.
+ */
 export const noticeCardCss = {
 	display: 'grid',
 	gap: spacing.md,
 	padding: spacing.lg,
-	borderRadius: radius.lg,
-	border: `1px solid ${colors.primary}`,
-	backgroundColor: colors.primarySoftest,
+	borderRadius: radius.card,
+	border: `1.5px solid ${colors.border}`,
+	backgroundColor: colors.surface,
 }
 
 export const accountManagementTableCss = {

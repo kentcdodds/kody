@@ -44,7 +44,11 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	// the username and Log out button visible after logging out).
 	await page.getByRole('button', { name: 'Log out' }).click()
 	await expect(page).toHaveURL(/\/login$/)
-	await expect(page.getByRole('link', { name: 'Login' })).toBeVisible()
+	// The redesigned login screen renders without the site header, so the
+	// logged-out state shows the auth card instead of a header "Log in" link.
+	await expect(
+		page.getByRole('heading', { name: 'Welcome back' }),
+	).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Log out' })).not.toBeVisible()
 	await expect(
 		page.getByRole('link', { name: primaryTestUser.username }),
@@ -60,9 +64,18 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 
 	await page.goto('/pricing')
-	await expect(page.getByRole('heading', { name: 'Pricing' })).toBeVisible()
-	await expect(page.getByRole('heading', { name: 'Free' })).toBeVisible()
-	await expect(page.getByRole('heading', { name: 'Pro' })).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Start free. Pay when it earns it.' }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Free', exact: true }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Pro', exact: true }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Every limit is finite' }),
+	).toBeVisible()
 	await expect(
 		page.getByRole('row', { name: 'Saved packages 25 100' }),
 	).toBeVisible()

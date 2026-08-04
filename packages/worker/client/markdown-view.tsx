@@ -27,6 +27,28 @@ import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
 
+export type RenderMarkdownOptions = {
+	/**
+	 * Added to each heading's authored depth before rendering (clamped to
+	 * h2–h6, so page-owned h1 is never emitted). Defaults to 2 — the README
+	 * demotion where `#` renders as h3. First-party surfaces that own their h1
+	 * (the blog post) pass 0 so `##` keeps its authored h2 rhythm.
+	 */
+	headingOffset?: number
+	/**
+	 * `rel` for allowed links. Defaults to the third-party README policy
+	 * (`nofollow ugc`); first-party content passes 'noopener noreferrer'.
+	 */
+	linkRel?: string
+}
+
+type ResolvedRenderOptions = Required<RenderMarkdownOptions>
+
+const defaultRenderOptions: ResolvedRenderOptions = {
+	headingOffset: 2,
+	linkRel: 'noopener noreferrer nofollow ugc',
+}
+
 /**
  * True when the URL's path could reach a user scope (`/@...`, where hosted
  * package apps live). Deliberately over-matches: repeated leading slashes
@@ -107,16 +129,16 @@ function decodeCharacterReferences(value: string): string {
 	)
 }
 
-function renderLink(key: number, href: string, children: RemixNode): RemixNode {
+function renderLink(
+	key: number,
+	href: string,
+	children: RemixNode,
+	options: ResolvedRenderOptions,
+): RemixNode {
 	const safeHref = getSafeMarkdownLinkHref(href)
 	if (!safeHref) return <span key={key}>{children}</span>
 	return (
-		<a
-			key={key}
-			href={safeHref}
-			target="_blank"
-			rel="noopener noreferrer nofollow ugc"
-		>
+		<a key={key} href={safeHref} target="_blank" rel={options.linkRel}>
 			{children}
 		</a>
 	)
@@ -126,6 +148,7 @@ function renderTableCell(
 	cell: Tokens.TableCell,
 	key: number,
 	tag: 'th' | 'td',
+	options: ResolvedRenderOptions,
 ): RemixNode {
 	const Tag = tag
 	return (
@@ -133,26 +156,36 @@ function renderTableCell(
 			key={key}
 			mix={cell.align ? css({ textAlign: cell.align }) : undefined}
 		>
-			{renderTokens(cell.tokens)}
+			{renderTokens(cell.tokens, options)}
 		</Tag>
 	)
 }
 
-function renderToken(token: Token, key: number): RemixNode {
+function renderToken(
+	token: Token,
+	key: number,
+	options: ResolvedRenderOptions,
+): RemixNode {
 	switch (token.type) {
 		case 'space':
 		case 'def':
 			return null
 		case 'heading': {
-			// The listing page owns h1/h2, so README headings start at h3.
-			const headingTags = ['h3', 'h4', 'h5', 'h6'] as const
-			const Tag = headingTags[Math.min(token.depth - 1, 3)] ?? 'h6'
-			return <Tag key={key}>{renderTokens(token.tokens)}</Tag>
+			// Authored depth + offset, clamped so the page always owns h1 (the
+			// README default offset of 2 also keeps listing-owned h2 clear).
+			const level = Math.min(
+				Math.max(token.depth + options.headingOffset, 2),
+				6,
+			)
+			const Tag = `h${level}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+			return <Tag key={key}>{renderTokens(token.tokens, options)}</Tag>
 		}
 		case 'paragraph':
-			return <p key={key}>{renderTokens(token.tokens)}</p>
+			return <p key={key}>{renderTokens(token.tokens, options)}</p>
 		case 'blockquote':
-			return <blockquote key={key}>{renderTokens(token.tokens)}</blockquote>
+			return (
+				<blockquote key={key}>{renderTokens(token.tokens, options)}</blockquote>
+			)
 		case 'hr':
 			return <hr key={key} />
 		case 'code':
@@ -166,7 +199,7 @@ function renderToken(token: Token, key: number): RemixNode {
 			// narrowing alone leaves these fields untyped (same for `table`).
 			const listToken = token as Tokens.List
 			const items = listToken.items.map((item, index) =>
-				renderToken(item, index),
+				renderToken(item, index, options),
 			)
 			if (!listToken.ordered) return <ul key={key}>{items}</ul>
 			const start =
@@ -180,7 +213,7 @@ function renderToken(token: Token, key: number): RemixNode {
 			)
 		}
 		case 'list_item':
-			return <li key={key}>{renderTokens(token.tokens)}</li>
+			return <li key={key}>{renderTokens(token.tokens, options)}</li>
 		case 'checkbox':
 			return (
 				<input key={key} type="checkbox" disabled checked={token.checked} />
@@ -192,7 +225,7 @@ function renderToken(token: Token, key: number): RemixNode {
 					<thead>
 						<tr>
 							{tableToken.header.map((cell, index) =>
-								renderTableCell(cell, index, 'th'),
+								renderTableCell(cell, index, 'th', options),
 							)}
 						</tr>
 					</thead>
@@ -200,7 +233,7 @@ function renderToken(token: Token, key: number): RemixNode {
 						{tableToken.rows.map((row, rowIndex) => (
 							<tr key={rowIndex}>
 								{row.map((cell, cellIndex) =>
-									renderTableCell(cell, cellIndex, 'td'),
+									renderTableCell(cell, cellIndex, 'td', options),
 								)}
 							</tr>
 						))}
@@ -209,11 +242,11 @@ function renderToken(token: Token, key: number): RemixNode {
 			)
 		}
 		case 'strong':
-			return <strong key={key}>{renderTokens(token.tokens)}</strong>
+			return <strong key={key}>{renderTokens(token.tokens, options)}</strong>
 		case 'em':
-			return <em key={key}>{renderTokens(token.tokens)}</em>
+			return <em key={key}>{renderTokens(token.tokens, options)}</em>
 		case 'del':
-			return <del key={key}>{renderTokens(token.tokens)}</del>
+			return <del key={key}>{renderTokens(token.tokens, options)}</del>
 		case 'codespan':
 			return <code key={key}>{token.text}</code>
 		case 'br':
@@ -221,11 +254,16 @@ function renderToken(token: Token, key: number): RemixNode {
 		case 'escape':
 			return token.text
 		case 'link':
-			return renderLink(key, token.href, renderTokens(token.tokens))
+			return renderLink(
+				key,
+				token.href,
+				renderTokens(token.tokens, options),
+				options,
+			)
 		case 'image':
 			// Never emit <img>: auto-loading author-chosen URLs is exactly what
 			// this renderer exists to prevent. Offer the image as a link instead.
-			return renderLink(key, token.href, token.text || token.href)
+			return renderLink(key, token.href, token.text || token.href, options)
 		case 'html':
 			// Escaped literal text, so authors see their markup but it never
 			// becomes part of the document.
@@ -233,7 +271,7 @@ function renderToken(token: Token, key: number): RemixNode {
 		case 'text': {
 			const textToken = token as Tokens.Text
 			if (textToken.tokens?.length) {
-				return <span key={key}>{renderTokens(textToken.tokens)}</span>
+				return <span key={key}>{renderTokens(textToken.tokens, options)}</span>
 			}
 			return decodeCharacterReferences(textToken.text)
 		}
@@ -244,14 +282,20 @@ function renderToken(token: Token, key: number): RemixNode {
 	}
 }
 
-function renderTokens(tokens: Array<Token> | undefined): Array<RemixNode> {
+function renderTokens(
+	tokens: Array<Token> | undefined,
+	options: ResolvedRenderOptions,
+): Array<RemixNode> {
 	if (!tokens) return []
-	return tokens.map((token, index) => renderToken(token, index))
+	return tokens.map((token, index) => renderToken(token, index, options))
 }
 
 /** Parses untrusted markdown and returns safe JSX (see module docs). */
-export function renderMarkdownNodes(markdown: string): Array<RemixNode> {
-	return renderTokens(lexer(markdown))
+export function renderMarkdownNodes(
+	markdown: string,
+	options?: RenderMarkdownOptions,
+): Array<RemixNode> {
+	return renderTokens(lexer(markdown), { ...defaultRenderOptions, ...options })
 }
 
 export type MarkdownViewProps = { markdown: string }

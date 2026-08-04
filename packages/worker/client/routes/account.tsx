@@ -18,16 +18,10 @@ import { routes } from '#app/routes.ts'
 import { UserAvatar } from '#app/user-avatar.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 	mutedLinkCss,
-	primaryLinkCss,
-	textareaCss,
 } from '#client/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import {
@@ -40,6 +34,14 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 	AccountPageHeader,
+	accountActionsCss,
+	accountDisclosureCss,
+	accountFieldCss,
+	accountFieldLabelCss,
+	accountFieldNoteCss,
+	accountInputCss,
+	accountTextareaCss,
+	verifiedPillCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import {
@@ -668,7 +670,7 @@ export function AccountRoute(handle: Handle) {
 						>
 							<form
 								mix={[
-									css({ display: 'grid', gap: spacing.md }),
+									css({ display: 'grid', gap: spacing.md, maxWidth: '34rem' }),
 									on('submit', handleProfileSubmit),
 								]}
 							>
@@ -680,15 +682,16 @@ export function AccountRoute(handle: Handle) {
 										testId="account-avatar-image"
 									/>
 									<div mix={css({ display: 'grid', gap: spacing.sm })}>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Avatar</span>
+										<label mix={css(accountFieldCss)}>
+											<span mix={css(accountFieldLabelCss)}>Avatar</span>
 											<input
 												type="file"
 												name="avatar"
+												data-field-ring
 												accept="image/png,image/jpeg,image/webp"
 												disabled={avatarStatus !== 'idle' || isSaving}
 												mix={[
-													css(inputCss),
+													css(accountInputCss),
 													on('change', (event) => {
 														void handleAvatarSelected(event)
 													}),
@@ -700,7 +703,7 @@ export function AccountRoute(handle: Handle) {
 												type="button"
 												disabled={avatarStatus !== 'idle' || isSaving}
 												mix={[
-													css(secondaryButtonCss),
+													css(compactGhostButtonCss),
 													on('click', () => {
 														void handleRemoveAvatar()
 													}),
@@ -712,33 +715,38 @@ export function AccountRoute(handle: Handle) {
 											</button>
 										) : null}
 										{avatarStatus === 'uploading' ? (
-											<p mix={css(descriptionCss)}>Uploading avatar…</p>
+											<p mix={css(accountFieldNoteCss)}>Uploading avatar…</p>
 										) : null}
 									</div>
 								</div>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Username</span>
+								<label mix={css(accountFieldCss)}>
+									<span mix={css(accountFieldLabelCss)}>Username</span>
 									<input
 										type="text"
 										name="username"
+										data-field-ring
 										required
 										autoComplete="username"
 										pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,30}[A-Za-z0-9]"
 										title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
 										value={draftUsername}
-										mix={[css(inputCss), on('input', updateDraftUsername)]}
+										mix={[
+											css(accountInputCss),
+											on('input', updateDraftUsername),
+										]}
 									/>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Display name</span>
+								<label mix={css(accountFieldCss)}>
+									<span mix={css(accountFieldLabelCss)}>Display name</span>
 									<input
 										type="text"
 										name="displayName"
+										data-field-ring
 										maxLength={50}
 										autoComplete="nickname"
 										value={draftDisplayName}
 										mix={[
-											css(inputCss),
+											css(accountInputCss),
 											on('input', (event) => {
 												draftDisplayName = (
 													event.currentTarget as HTMLInputElement
@@ -748,15 +756,16 @@ export function AccountRoute(handle: Handle) {
 										]}
 									/>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Bio</span>
+								<label mix={css(accountFieldCss)}>
+									<span mix={css(accountFieldLabelCss)}>Bio</span>
 									<textarea
 										name="bio"
+										data-field-ring
 										maxLength={500}
 										rows={3}
 										value={draftBio}
 										mix={[
-											css(textareaCss),
+											css(accountTextareaCss),
 											on('input', (event) => {
 												draftBio = (event.currentTarget as HTMLTextAreaElement)
 													.value
@@ -766,7 +775,9 @@ export function AccountRoute(handle: Handle) {
 									/>
 								</label>
 								<fieldset mix={css({ margin: 0, padding: 0, border: 'none' })}>
-									<legend mix={css(fieldLabelCss)}>Profile visibility</legend>
+									<legend mix={css(accountFieldLabelCss)}>
+										Profile visibility
+									</legend>
 									<label
 										mix={css({
 											display: 'flex',
@@ -809,13 +820,18 @@ export function AccountRoute(handle: Handle) {
 										/>
 										<span>Private</span>
 									</label>
-									<p mix={css(descriptionCss)}>
+									<p mix={css(accountFieldNoteCss)}>
 										Private hides your profile, public package list, and
 										activity from others.
 									</p>
 								</fieldset>
-								<p mix={css({ color: colors.textMuted, margin: 0 })}>
-									Email: {email} ({emailVerified ? 'verified' : 'unverified'})
+								<p mix={css(accountFieldNoteCss)}>
+									Email: {email}
+									{emailVerified ? (
+										<span mix={css(verifiedPillCss)}>verified</span>
+									) : (
+										' (unverified)'
+									)}
 								</p>
 								<p mix={css({ margin: 0 })}>
 									<a
@@ -839,105 +855,106 @@ export function AccountRoute(handle: Handle) {
 									<button
 										type="submit"
 										disabled={isSaving || profileUnchanged}
-										mix={css(primaryButtonCss)}
+										mix={css(compactPillButtonCss)}
 									>
 										{isSaving ? 'Saving...' : 'Save profile'}
 									</button>
 								</div>
 							</form>
-							<form
-								{...passwordManagerIgnoreProps}
-								mix={[
-									css({
-										display: 'grid',
-										gap: spacing.md,
-										marginTop: spacing.lg,
-										paddingTop: spacing.lg,
-										borderTop: `1px solid ${colors.border}`,
-									}),
-									on('submit', handleEmailChangeSubmit),
-								]}
+							<details
+								mix={css({
+									...accountDisclosureCss,
+									marginTop: '0.6rem',
+								})}
 							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h3
-										mix={css({
-											fontSize: typography.fontSize.base,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-											margin: 0,
-										})}
-									>
-										Change email
-									</h3>
-									<p mix={css(descriptionCss)}>
+								<summary>Change email</summary>
+								<form
+									{...passwordManagerIgnoreProps}
+									mix={[
+										css({
+											display: 'grid',
+											gap: spacing.md,
+											maxWidth: '26rem',
+										}),
+										on('submit', handleEmailChangeSubmit),
+									]}
+								>
+									<p mix={css(accountFieldNoteCss)}>
 										Enter your current password. We will send a verification
 										link to the new address before changing your account email.
 									</p>
-								</div>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>New email</span>
-									<input
-										type="email"
-										name="email"
-										required
-										autoComplete="email"
-										value={draftEmail}
-										mix={[css(inputCss), on('input', updateDraftEmail)]}
-									/>
-								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Current password</span>
-									<input
-										type="password"
-										name="password"
-										required
-										{...passwordManagerIgnoreProps}
-										value={emailChangePassword}
-										mix={[
-											css(inputCss),
-											on('input', updateEmailChangePassword),
-										]}
-									/>
-								</label>
-								<div>
-									<button
-										type="submit"
-										disabled={
-											isSendingEmailChange ||
-											normalizedDraftEmail === email.trim().toLowerCase()
-										}
-										mix={css(primaryButtonCss)}
-									>
-										{isSendingEmailChange
-											? 'Sending...'
-											: 'Send verification link'}
-									</button>
-								</div>
-								{emailChangeMessage ? (
-									<p
-										role="status"
-										mix={css({
-											color:
-												emailChangeTone === 'error'
-													? colors.error
-													: colors.text,
-											margin: 0,
-										})}
-									>
-										{emailChangeMessage}
-									</p>
-								) : null}
-							</form>
+									<label mix={css(accountFieldCss)}>
+										<span mix={css(accountFieldLabelCss)}>New email</span>
+										<input
+											type="email"
+											name="email"
+											data-field-ring
+											required
+											autoComplete="email"
+											value={draftEmail}
+											mix={[
+												css(accountInputCss),
+												on('input', updateDraftEmail),
+											]}
+										/>
+									</label>
+									<label mix={css(accountFieldCss)}>
+										<span mix={css(accountFieldLabelCss)}>
+											Current password
+										</span>
+										<input
+											type="password"
+											name="password"
+											data-field-ring
+											required
+											{...passwordManagerIgnoreProps}
+											value={emailChangePassword}
+											mix={[
+												css(accountInputCss),
+												on('input', updateEmailChangePassword),
+											]}
+										/>
+									</label>
+									<div>
+										<button
+											type="submit"
+											disabled={
+												isSendingEmailChange ||
+												normalizedDraftEmail === email.trim().toLowerCase()
+											}
+											mix={css(compactGhostButtonCss)}
+										>
+											{isSendingEmailChange
+												? 'Sending...'
+												: 'Send verification link'}
+										</button>
+									</div>
+									{emailChangeMessage ? (
+										<p
+											role="status"
+											mix={css({
+												color:
+													emailChangeTone === 'error'
+														? colors.error
+														: colors.text,
+												margin: 0,
+											})}
+										>
+											{emailChangeMessage}
+										</p>
+									) : null}
+								</form>
+							</details>
 						</AccountManagementPanel>
 						<AccountManagementPanel
 							title="Security"
 							description="Protect your account with two-factor authentication, or sign in without a password using passkeys."
 						>
-							<div mix={css({ display: 'flex', gap: spacing.md })}>
-								<a href="/account/two-factor" mix={css(primaryLinkCss)}>
+							<div mix={css(accountActionsCss)}>
+								<a href="/account/two-factor" mix={css(compactGhostButtonCss)}>
 									Two-factor authentication
 								</a>
-								<a href="/account/passkeys" mix={css(primaryLinkCss)}>
+								<a href="/account/passkeys" mix={css(compactGhostButtonCss)}>
 									Passkeys
 								</a>
 							</div>
@@ -1046,7 +1063,7 @@ export function AccountRoute(handle: Handle) {
 												type="button"
 												disabled={connectionsBusy}
 												mix={[
-													css(providerConnectButtonCss),
+													css(compactGhostButtonCss),
 													on('click', () => handleConnectProvider(provider.id)),
 												]}
 											>
@@ -1066,7 +1083,7 @@ export function AccountRoute(handle: Handle) {
 								<a
 									href="/account/export.json"
 									download="kody-account-export.json"
-									mix={css(primaryLinkCss)}
+									mix={css(compactGhostButtonCss)}
 								>
 									Download account export
 								</a>
@@ -1089,8 +1106,20 @@ export function AccountRoute(handle: Handle) {
 	}
 }
 
-const primaryButtonCss = getPrimaryButtonCss()
-const secondaryButtonCss = getSecondaryButtonCss()
+/* `.account-form .button` / `.account-actions .button` — the prototype's
+ * compact pill sizing for in-section actions. */
+const compactPillButtonCss = {
+	...getPillButtonCss(),
+	fontSize: '0.95rem',
+	padding: '0.75rem 1.3rem',
+}
+
+const compactGhostButtonCss = {
+	...getGhostButtonCss(),
+	fontSize: '0.95rem',
+	padding: '0.75rem 1.3rem',
+}
+
 const dangerButtonCss = getDangerButtonCss()
 
 const avatarSectionCss = {
@@ -1098,12 +1127,4 @@ const avatarSectionCss = {
 	alignItems: 'flex-start',
 	gap: spacing.md,
 	flexWrap: 'wrap' as const,
-}
-
-const providerConnectButtonCss = {
-	...secondaryButtonCss,
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	gap: spacing.sm,
 }

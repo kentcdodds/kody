@@ -21,18 +21,11 @@ import {
 } from '#client/routes/onboarding-mcp-clients.ts'
 import {
 	colors,
-	mq,
 	radius,
-	spacing,
+	transitions,
 	typography,
 } from '#client/styles/tokens.ts'
-import {
-	descriptionCss,
-	focusRingCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	pageEyebrowCss,
-} from '#client/styles/style-primitives.ts'
+import { getPillButtonCss, hoverMq } from '#client/styles/style-primitives.ts'
 
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
@@ -42,28 +35,29 @@ type CopyCardProps = {
 	label: string
 	value: string
 	copyLabel: string
-	variant?: 'primary' | 'secondary'
+	variant?: 'pill' | 'ghost'
 }
 
 /**
- * Framed code block with a header row showing the file/target label on the
- * left and a matching copy button on the right. On narrow viewports the
- * header stacks and the copy button goes full width.
+ * Config snippet, ported from the prototype's `.snippet`: a labeled well on
+ * the page ground with an uppercase display-face label and its copy button in
+ * the header row. `primary` maps to the redesign's green pill; `secondary`
+ * stays the quiet bordered button for follow-up copies.
  */
 function CopyCard(handle: Handle<CopyCardProps>) {
 	return () => (
-		<div mix={css(copyCardCss)}>
-			<div mix={css(copyCardHeaderCss)}>
-				<span mix={css(copyCardLabelCss)}>{handle.props.label}</span>
-				<div mix={css(copyCardActionCss)}>
+		<div mix={css(snippetCss)}>
+			<div mix={css(snippetHeadCss)}>
+				<span mix={css(snippetLabelCss)}>{handle.props.label}</span>
+				<div mix={css(snippetActionCss)}>
 					<CopyTextButton
 						value={handle.props.value}
 						idleLabel={handle.props.copyLabel}
-						variant={handle.props.variant ?? 'secondary'}
+						variant={handle.props.variant ?? 'ghost'}
 					/>
 				</div>
 			</div>
-			<pre mix={css(codeBlockCss)}>{handle.props.value}</pre>
+			<pre mix={css(snippetPreCss)}>{handle.props.value}</pre>
 		</div>
 	)
 }
@@ -72,9 +66,11 @@ type ClientNoteProps = {
 	children: string
 }
 
+/* Host-fit aside: a footnote, not a warning — the filled green well stays
+   reserved for the one-time-authorization callout. */
 function ClientNote(handle: Handle<ClientNoteProps>) {
 	return () => (
-		<p mix={css(noteCss)} role="note">
+		<p mix={css(clientNoteCss)} role="note">
 			{handle.props.children}
 		</p>
 	)
@@ -84,13 +80,13 @@ function InstallDeepLink(
 	handle: Handle<{ href: string; label: 'Add to Cursor' | 'Add to VS Code' }>,
 ) {
 	return () => (
-		<div mix={css(deepLinkActionCss)}>
+		<div mix={css(deepLinkCss)}>
 			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
 				{handle.props.label}
 			</a>
-			<p mix={css(deepLinkNoteCss)}>
+			<small mix={css(deepLinkNoteCss)}>
 				Your client will still ask you to authorize access afterwards.
-			</p>
+			</small>
 		</div>
 	)
 }
@@ -102,7 +98,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const installUrl = buildCursorInstallUrl(mcpServerUrl)
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Install Kody directly, or open <strong>Customize</strong> and add a
 						remote MCP server with the URL below. You can also merge the JSON
 						into <code>~/.cursor/mcp.json</code> (global) or{' '}
@@ -113,9 +109,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
-						variant="primary"
+						variant="pill"
 					/>
-					<p mix={css(descriptionCss)}>
+					<p>
 						JSON config (merge under your existing <code>mcpServers</code> if
 						you already have one):
 					</p>
@@ -128,7 +124,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						In ChatGPT, turn on <strong>Developer mode</strong> under Settings →
 						Security and login. Developer mode is available on the web for{' '}
 						<a
@@ -152,7 +148,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
-						variant="primary"
+						variant="pill"
 					/>
 					<CopyCard
 						label="App icon (favicon)"
@@ -167,7 +163,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const codexToml = buildCodexMcpToml(mcpServerUrl)
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Codex (ChatGPT desktop, Codex CLI, and the IDE extension) shares{' '}
 						<code>~/.codex/config.toml</code>. Add this streamable HTTP entry,
 						then run <code>codex mcp login kody</code> if OAuth does not start
@@ -177,6 +173,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="config.toml"
 						value={codexToml}
 						copyLabel="Copy TOML"
+						variant="pill"
 					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
@@ -185,7 +182,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 		case 'claude-desktop':
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						In Claude Desktop, open <strong>Settings → Connectors</strong> (or
 						Customize → Connectors), add a custom connector, and paste this MCP
 						URL. Claude Desktop handles remote OAuth through that UI — do not
@@ -195,7 +192,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
-						variant="primary"
+						variant="pill"
 					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
@@ -203,7 +200,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 		case 'grok':
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						In{' '}
 						<a
 							href={grokConnectorsUrl}
@@ -230,7 +227,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
-						variant="primary"
+						variant="pill"
 					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
@@ -240,15 +237,14 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
-						Prefer the CLI (user scope, all projects):
-					</p>
+					<p>Prefer the CLI (user scope, all projects):</p>
 					<CopyCard
 						label="claude CLI"
 						value={claudeCodeCommand}
 						copyLabel="Copy command"
+						variant="pill"
 					/>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Or merge this into a project <code>.mcp.json</code> (or the
 						user-scoped <code>mcpServers</code> block). Claude Code requires{' '}
 						<code>type: &quot;http&quot;</code> for remote servers:
@@ -266,7 +262,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const openCodeJson = buildOpenCodeMcpJson(mcpServerUrl)
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Add this to your OpenCode config (<code>opencode.json</code> in the
 						project, or your global OpenCode config). OpenCode uses{' '}
 						<code>type: &quot;remote&quot;</code> and will start OAuth when
@@ -276,8 +272,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="opencode.json"
 						value={openCodeJson}
 						copyLabel="Copy JSON"
+						variant="pill"
 					/>
-					<p mix={css(descriptionCss)}>
+					<p>
 						You can also run <code>opencode mcp add</code> and paste the URL
 						interactively, then <code>opencode mcp auth kody</code> if prompted.
 					</p>
@@ -290,7 +287,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Install Kody directly, create or edit <code>.vscode/mcp.json</code>{' '}
 						in your workspace, or open user MCP config via the{' '}
 						<strong>MCP: Open User Configuration</strong> command. VS Code uses
@@ -301,8 +298,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label=".vscode/mcp.json"
 						value={vsCodeJson}
 						copyLabel="Copy JSON"
+						variant="pill"
 					/>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Use Agent mode in Copilot Chat so MCP tools are available, then
 						complete OAuth when VS Code opens it.
 					</p>
@@ -313,7 +311,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 		case 'other':
 			return (
 				<>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Any MCP-capable host that supports remote / streamable HTTP servers
 						can connect to Kody. Add a remote MCP server pointed at this URL and
 						complete the OAuth flow when the host opens it:
@@ -322,9 +320,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
-						variant="primary"
+						variant="pill"
 					/>
-					<p mix={css(descriptionCss)}>
+					<p>
 						Config file shapes differ by host. If your client expects a JSON{' '}
 						<code>mcpServers</code> map with a <code>url</code> field, start
 						from the Cursor snippet; if it uses <code>servers</code> with{' '}
@@ -339,35 +337,26 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 	}
 }
 
+/**
+ * Client picker (step 2): host chips in the same grammar as the landing host
+ * cloud, one panel of setup instructions per host. Roving tabindex and arrow
+ * keys come from `remix/ui/tabs`.
+ */
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,
 ) {
-	const secondaryButtonCss = getSecondaryButtonCss()
-
 	return () => (
 		<Tabs defaultActiveTab="cursor" mix={css(tabsRootCss)}>
 			<div mix={css(tabPickerCss)}>
-				<p mix={css(pageEyebrowCss)}>Choose your client</p>
+				<p mix={css(tabKickerCss)} id="onboarding-client-label">
+					Choose your client
+				</p>
 				<TabList
-					aria-label="MCP client setup instructions"
+					aria-labelledby="onboarding-client-label"
 					mix={css(tabListCss)}
 				>
 					{mcpClientTabs.map((tab) => (
-						<Tab
-							key={tab.id}
-							name={tab.id}
-							mix={css({
-								...secondaryButtonCss,
-								...tabPillCss,
-								'&[data-state="active"]': {
-									borderColor: colors.primary,
-									backgroundColor: colors.primarySoftest,
-									color: colors.primaryText,
-									fontWeight: typography.fontWeight.medium,
-								},
-								'&:focus-visible': focusRingCss,
-							})}
-						>
+						<Tab key={tab.id} name={tab.id} mix={css(tabPillCss)}>
 							{tab.label}
 						</Tab>
 					))}
@@ -385,17 +374,27 @@ export function OnboardingMcpClientTabs(
 
 const tabsRootCss = {
 	display: 'grid',
-	gap: spacing.lg,
+	gap: '1.15rem',
 }
 
 const tabPickerCss = {
 	display: 'grid',
-	gap: spacing.sm,
+	gap: '0.6rem',
+}
+
+/* Same voice as the panel kickers (duplicated literal: importing it from
+   `onboarding.tsx` would create a module cycle). */
+const tabKickerCss = {
+	margin: 0,
+	font: `700 0.78rem/1 ${typography.fontFamilyDisplay}`,
+	textTransform: 'uppercase' as const,
+	letterSpacing: '0.09em',
+	color: colors.primaryText,
 }
 
 const tabListCss = {
 	display: 'flex',
-	gap: spacing.sm,
+	gap: '0.5rem',
 	flexWrap: 'wrap' as const,
 	width: '100%',
 	padding: 0,
@@ -408,106 +407,127 @@ const tabPillCss = {
 	width: 'auto',
 	height: 'auto',
 	minHeight: 0,
-	fontFamily: typography.fontFamily,
-	lineHeight: 1.5,
-	[mq.mobile]: {
-		padding: `${spacing.xs} ${spacing.sm}`,
-		fontSize: typography.fontSize.sm,
+	font: `550 0.95rem/1 ${typography.fontFamilyBody}`,
+	color: colors.textMuted,
+	backgroundColor: colors.background,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.full,
+	padding: '0.55rem 1rem',
+	cursor: 'pointer',
+	transition: `border-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}, background-color 160ms ${transitions.easeOut}`,
+	[hoverMq]: {
+		'&:hover': {
+			borderColor: colors.primary,
+			color: colors.text,
+		},
+	},
+	'&[data-state="active"]': {
+		borderColor: colors.primary,
+		backgroundColor: `oklch(from ${colors.primary} l c h / 0.12)`,
+		color: colors.primaryText,
+		fontWeight: 680,
 	},
 }
 
+/* Switching hosts slides the fresh instructions in — enhance-only by
+   construction: the animation replays when the panel's `hidden` display
+   toggles, which only happens through the JS-driven tabs. */
 const tabPanelCss = {
 	display: 'grid',
-	gap: spacing.md,
+	gap: '0.9rem',
 	minWidth: 0,
 	color: colors.text,
-	fontFamily: typography.fontFamily,
-	fontSize: typography.fontSize.base,
-	lineHeight: 1.6,
 	'&[hidden]': {
 		display: 'none',
 	},
+	'& > p': {
+		margin: 0,
+		color: colors.textMuted,
+		maxWidth: '72ch',
+	},
+	'& > p a': {
+		color: colors.primaryText,
+	},
+	'& code': {
+		font: '500 0.88em ui-monospace, "SF Mono", Menlo, monospace',
+		color: colors.text,
+		backgroundColor: colors.background,
+		border: `1px solid ${colors.border}`,
+		borderRadius: '6px',
+		padding: '0.1em 0.4em',
+	},
+	'@keyframes onboarding-tab-enter': {
+		from: { opacity: 0, translate: '0 6px' },
+		to: { opacity: 1, translate: '0 0' },
+	},
+	'@media (prefers-reduced-motion: no-preference)': {
+		animation: `onboarding-tab-enter 240ms ${transitions.easeOut}`,
+	},
 }
 
-const copyCardCss = {
+const deepLinkCss = {
 	display: 'grid',
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
+	gap: '0.45rem',
+	justifyItems: 'start',
+}
+
+const deepLinkButtonCss = getPillButtonCss()
+
+const deepLinkNoteCss = {
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+}
+
+/* Config snippets: labeled wells with their copy button in the header. */
+const snippetCss = {
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
 	backgroundColor: colors.background,
 	overflow: 'hidden' as const,
 	minWidth: 0,
 }
 
-const copyCardHeaderCss = {
+const snippetHeadCss = {
 	display: 'flex',
-	alignItems: 'center',
 	justifyContent: 'space-between',
-	gap: spacing.sm,
-	padding: `${spacing.sm} ${spacing.md}`,
+	alignItems: 'center',
+	gap: '0.6rem',
+	padding: '0.5rem 0.6rem 0.5rem 1.1rem',
 	borderBottom: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	flexWrap: 'wrap' as const,
-	[mq.mobile]: {
-		flexDirection: 'column' as const,
-		alignItems: 'stretch',
+	'@media (max-width: 720px)': {
+		flexWrap: 'wrap' as const,
 	},
 }
 
-const copyCardActionCss = {
-	[mq.mobile]: {
-		display: 'grid',
-		width: '100%',
-		'& > button': {
-			width: '100%',
-		},
-	},
-}
-
-const copyCardLabelCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.semibold,
+const snippetLabelCss = {
+	font: `700 0.75rem/1 ${typography.fontFamilyDisplay}`,
 	textTransform: 'uppercase' as const,
-	letterSpacing: '0.08em',
+	letterSpacing: '0.09em',
+	color: colors.textMuted,
 }
 
-const codeBlockCss = {
+/* Header copy buttons run one size down from the standalone pills. */
+const snippetActionCss = {
+	'& > button': {
+		fontSize: '0.88rem',
+		padding: '0.5rem 1rem',
+	},
+}
+
+const snippetPreCss = {
 	margin: 0,
-	padding: spacing.md,
+	padding: '1rem 1.2rem',
+	font: '500 0.92rem/1.6 ui-monospace, "SF Mono", Menlo, monospace',
+	color: colors.text,
 	whiteSpace: 'pre-wrap' as const,
 	wordBreak: 'break-word' as const,
-	fontFamily:
-		'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.6,
-	color: colors.text,
 }
 
-const noteCss = {
-	...descriptionCss,
-	margin: 0,
-	padding: spacing.md,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	background: colors.primarySoftest,
-}
-
-const deepLinkActionCss = {
-	display: 'grid',
-	justifyItems: 'start',
-	gap: spacing.xs,
-}
-
-const deepLinkButtonCss = {
-	...getPrimaryButtonCss({ weight: 'semibold' }),
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	textDecoration: 'none',
-}
-
-const deepLinkNoteCss = {
-	...descriptionCss,
-	fontSize: typography.fontSize.sm,
+const clientNoteCss = {
+	margin: '0.3rem 0 0',
+	padding: '0.15rem 0 0.15rem 1rem',
+	borderLeft: `3px solid oklch(from ${colors.primary} l c h / 0.55)`,
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+	maxWidth: '62ch',
 }

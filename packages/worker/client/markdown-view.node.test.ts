@@ -4,6 +4,7 @@ import { expect, test } from 'vitest'
 import {
 	MarkdownView,
 	getSafeMarkdownLinkHref,
+	renderMarkdownNodes,
 } from '#client/markdown-view.tsx'
 
 async function renderMarkdown(markdown: string) {
@@ -103,6 +104,42 @@ test('markdown safety escapes raw HTML, never emits images, and drops unsafe lin
 		'<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer nofollow ugc">good</a>',
 	)
 	expect(html).toContain('https://example.com/auto</a>')
+})
+
+test('first-party render options keep authored heading levels and drop the ugc rel', async () => {
+	const markdown = [
+		'# Top',
+		'',
+		'## Section',
+		'',
+		'###### Deep',
+		'',
+		'[docs](https://example.com/docs)',
+	].join('\n')
+
+	const firstParty = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(markdown, {
+				headingOffset: 0,
+				linkRel: 'noopener noreferrer',
+			}),
+		}),
+	)
+	// h1 stays page-owned even at offset 0; deep headings clamp at h6.
+	expect(firstParty).toContain('<h2>Top</h2>')
+	expect(firstParty).toContain('<h2>Section</h2>')
+	expect(firstParty).toContain('<h6>Deep</h6>')
+	expect(firstParty).toContain(
+		'<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">docs</a>',
+	)
+
+	// The default (third-party README) policy is unchanged.
+	const thirdParty = await renderToString(
+		jsx('div', { children: renderMarkdownNodes(markdown) }),
+	)
+	expect(thirdParty).toContain('<h3>Top</h3>')
+	expect(thirdParty).toContain('<h4>Section</h4>')
+	expect(thirdParty).toContain('rel="noopener noreferrer nofollow ugc"')
 })
 
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {

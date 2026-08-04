@@ -1,38 +1,119 @@
+/* Self-hosted fonts (CSP: style-src/font-src 'self') */
+/* latin */
+@font-face {
+	font-family: 'Bricolage Grotesque';
+	font-style: normal;
+	font-weight: 400 800;
+	font-stretch: 100%;
+	font-display: swap;
+	src: url('/fonts/bricolage-grotesque-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+		U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+		U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+	font-family: 'Bricolage Grotesque';
+	font-style: normal;
+	font-weight: 400 800;
+	font-stretch: 100%;
+	font-display: swap;
+	src: url('/fonts/bricolage-grotesque-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+		U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+	font-family: 'Wix Madefor Text';
+	font-style: normal;
+	font-weight: 400 800;
+	font-display: swap;
+	src: url('/fonts/wix-madefor-text-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+		U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+		U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+	font-family: 'Wix Madefor Text';
+	font-style: normal;
+	font-weight: 400 800;
+	font-display: swap;
+	src: url('/fonts/wix-madefor-text-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+		U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+	font-family: 'Wix Madefor Text';
+	font-style: italic;
+	font-weight: 400 800;
+	font-display: swap;
+	src: url('/fonts/wix-madefor-text-italic-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+		U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+		U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+	font-family: 'Wix Madefor Text';
+	font-style: italic;
+	font-weight: 400 800;
+	font-display: swap;
+	src: url('/fonts/wix-madefor-text-italic-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+		U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
 	color-scheme: light dark;
 
-	/* Colors - Light mode (blue and gray) */
-	--color-primary: #2563eb;
-	--color-primary-hover: #1d4ed8;
-	--color-primary-active: #1e40af;
-	--color-on-primary: #ffffff;
-	--color-primary-text: #1e40af;
-	--color-background: #f8fafc;
-	--color-surface: #f1f5f9;
-	--color-text: #0f172a;
-	--color-text-muted: #475569;
-	--color-border: #cbd5e1;
-	--color-danger: #dc2626;
-	--color-danger-hover: #b91c1c;
-	--color-on-danger: #ffffff;
+	/* Colors - Light mode (flat grey canvas, green accent) */
+	--color-primary: oklch(0.54 0.18 145);
+	--color-primary-hover: oklch(0.48 0.17 145);
+	--color-primary-active: oklch(0.48 0.17 145);
+	--color-on-primary: oklch(0.985 0.005 145);
+	--color-primary-text: oklch(0.47 0.17 145);
+	--color-background: oklch(0.93 0.004 250);
+	--color-surface: oklch(0.975 0.002 250);
+	--color-text: oklch(0.22 0.012 260);
+	--color-text-muted: oklch(0.44 0.014 260);
+	--color-border: oklch(0.84 0.008 250);
+	--color-danger: oklch(0.55 0.19 25);
+	--color-danger-hover: oklch(0.5 0.18 25);
+	--color-on-danger: oklch(0.985 0.005 25);
+	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
+	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
+	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
 
-	/* Colors - Dark mode (blue and gray) */
-	--color-primary-dark: #3b82f6;
-	--color-primary-hover-dark: #60a5fa;
-	--color-primary-active-dark: #93c5fd;
-	--color-on-primary-dark: #0f172a;
-	--color-primary-text-dark: #60a5fa;
-	--color-background-dark: #0f172a;
-	--color-surface-dark: #1e293b;
-	--color-text-dark: #f8fafc;
-	--color-text-muted-dark: #94a3b8;
-	--color-border-dark: #334155;
-	--color-danger-dark: #f87171;
-	--color-danger-hover-dark: #ef4444;
-	--color-on-danger-dark: #450a0a;
+	/* Colors - Dark mode (graphite canvas, brighter green) */
+	--color-primary-dark: oklch(0.72 0.205 145);
+	--color-primary-hover-dark: oklch(0.78 0.21 145);
+	--color-primary-active-dark: oklch(0.78 0.21 145);
+	--color-on-primary-dark: oklch(0.2 0.05 148);
+	--color-primary-text-dark: oklch(0.75 0.2 145);
+	--color-background-dark: oklch(0.19 0.008 255);
+	--color-surface-dark: oklch(0.235 0.01 255);
+	--color-text-dark: oklch(0.945 0.005 250);
+	--color-text-muted-dark: oklch(0.72 0.01 255);
+	--color-border-dark: oklch(0.33 0.01 255);
+	--color-danger-dark: oklch(0.75 0.16 25);
+	--color-danger-hover-dark: oklch(0.7 0.17 25);
+	--color-on-danger-dark: oklch(0.2 0.05 25);
 
 	/* Typography */
-	--font-family: system-ui, sans-serif;
+	--font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+	--font-body: 'Wix Madefor Text', system-ui, sans-serif;
+	--font-family: var(--font-body);
 	--font-size-xs: 0.75rem;
 	--font-size-sm: 0.875rem;
 	--font-size-base: 1rem;
@@ -43,6 +124,8 @@
 	--font-weight-medium: 500;
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
+	--line-height-body: 1.62;
+	--line-height-body-dark: 1.7;
 
 	/* Spacing */
 	--spacing-xs: 0.25rem;
@@ -57,6 +140,7 @@
 	--radius-md: 0.5rem;
 	--radius-lg: 0.75rem;
 	--radius-xl: 1rem;
+	--radius-card: 14px;
 	--radius-full: 999px;
 
 	/* Shadows */
@@ -67,9 +151,13 @@
 		0 4px 6px -1px rgb(255 255 255 / 0.08),
 		0 2px 4px -2px rgb(255 255 255 / 0.08);
 
-	/* Transitions */
-	--transition-fast: 0.15s ease;
-	--transition-normal: 0.2s ease;
+	/* Motion */
+	--ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+	--transition-fast: 160ms var(--ease-out);
+	--transition-normal: 200ms var(--ease-out);
+
+	/* Kody shirt pattern, used as a mask for background whispers */
+	--kody-pattern: url('/images/kody-pattern.png');
 
 	/* Responsive spacing - used for page-level padding */
 	--spacing-page: var(--spacing-2xl);
@@ -97,8 +185,13 @@
 	}
 }
 
+/* Explicit light choice must pin UA rendering even under a dark system. */
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+
 :root[data-theme='dark'] {
-	/* Colors - Dark mode (blue and gray) */
+	color-scheme: dark;
 	--color-primary: var(--color-primary-dark);
 	--color-primary-hover: var(--color-primary-hover-dark);
 	--color-primary-active: var(--color-primary-active-dark);
@@ -112,6 +205,8 @@
 	--color-danger: var(--color-danger-dark);
 	--color-danger-hover: var(--color-danger-hover-dark);
 	--color-on-danger: var(--color-on-danger-dark);
+	--lantern-glow: var(--lantern-glow-dark);
+	--line-height-body: var(--line-height-body-dark);
 
 	/* Dark mode shadows - lighter for visibility */
 	--shadow-sm: var(--shadow-sm-dark);
@@ -120,7 +215,7 @@
 
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
-		/* Colors - Dark mode (blue and gray) */
+		color-scheme: dark;
 		--color-primary: var(--color-primary-dark);
 		--color-primary-hover: var(--color-primary-hover-dark);
 		--color-primary-active: var(--color-primary-active-dark);
@@ -134,6 +229,8 @@
 		--color-danger: var(--color-danger-dark);
 		--color-danger-hover: var(--color-danger-hover-dark);
 		--color-on-danger: var(--color-on-danger-dark);
+		--lantern-glow: var(--lantern-glow-dark);
+		--line-height-body: var(--line-height-body-dark);
 
 		/* Dark mode shadows - lighter for visibility */
 		--shadow-sm: var(--shadow-sm-dark);
@@ -152,14 +249,192 @@ body {
 	margin: 0;
 	padding: 0;
 	font-family: var(--font-family);
-	font-size: var(--font-size-base);
-	line-height: 1.5;
+	font-size: 1.0625rem;
+	line-height: var(--line-height-body);
 	color: var(--color-text);
 	background-color: var(--color-background);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	overflow-x: clip;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-display);
+	font-optical-sizing: auto;
+	text-wrap: balance;
+}
+
+:focus-visible {
+	outline: 2.5px solid var(--color-primary);
+	outline-offset: 3px;
+	border-radius: 4px;
+}
+
+/* The router moves focus to <main> after client-side navigation (and the
+   skip link targets it). That focus is managed wayfinding for assistive
+   tech — an outline around the entire page region communicates nothing,
+   and keyboard users still get real indicators on the elements inside. */
+main:focus-visible {
+	outline: none;
+}
+
+/* Connected pill controls (waitlist form, community search): the container
+   shows one focus ring via :focus-within; inner segments must not draw
+   their own. Unlayered on purpose — component styles live in @layer rmx,
+   which the global :focus-visible rule above would otherwise always beat. */
+[data-focus-container] :focus-visible {
+	outline: none;
+}
+
+/* Individually bordered redesign fields (login form): the field draws its own
+   focus ring — green border + soft glow, see getAuthInputCss() — so the
+   global outline above would double-ring it and force its 4px radius onto a
+   12px input. Same unlayered escape hatch as data-focus-container. */
+[data-field-ring]:focus-visible {
+	outline: none;
+	/* Keep the field's own 12px corners (getAuthInputCss) — the global
+	   :focus-visible rule would force its 4px radius onto the input. */
+	border-radius: 12px;
+}
+
+::selection {
+	background: oklch(from var(--color-primary) l c h / 0.3);
+}
+
+input[type='radio'],
+input[type='checkbox'] {
+	accent-color: var(--color-primary);
 }
 
 #root {
 	min-height: 100vh;
+}
+
+/* Smooth scrolling only after the initial #hash jump has settled (set by
+   theme-init.js) so cross-page anchor arrivals land instantly. */
+html.is-settled {
+	scroll-behavior: smooth;
+}
+
+/* Theme toggle icons: the button shows the theme you'd switch to via CSS so
+   the server-rendered markup is correct before hydration. */
+:root[data-theme='light'] .icon-sun,
+:root:not([data-theme]) .icon-sun {
+	display: none;
+}
+
+:root[data-theme='dark'] .icon-moon {
+	display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) .icon-sun {
+		display: inline;
+	}
+
+	:root:not([data-theme]) .icon-moon {
+		display: none;
+	}
+}
+
+/* ---------- motion system (heykody.dev redesign) ----------
+   Enhance-only: content is fully visible without JS; the `html.js` class
+   (set pre-paint by theme-init.js) gates initial-hidden states, and
+   reduced-motion removes everything. One ease everywhere (--ease-out). */
+
+@media (prefers-reduced-motion: no-preference) {
+	/* list rhythm + illustration entrances (classes added by client/reveal.ts) */
+	html.js .reveal {
+		opacity: 0;
+		translate: 0 20px;
+		transition:
+			opacity 600ms var(--ease-out),
+			translate 600ms var(--ease-out);
+		transition-delay: var(--reveal-delay, 0ms);
+	}
+
+	html.js .reveal-pop {
+		opacity: 0;
+		translate: 0 8px;
+		scale: 0.94;
+		transition:
+			opacity 420ms var(--ease-out),
+			translate 420ms var(--ease-out),
+			scale 420ms var(--ease-out);
+		transition-delay: var(--reveal-delay, 0ms);
+	}
+
+	html.js .reveal.in,
+	html.js .reveal-pop.in {
+		opacity: 1;
+		translate: 0 0;
+		scale: 1;
+	}
+
+	/* Card reveal: the same quiet rise as .reveal, but as an animation rather
+	   than a transition, so the card's own hover transitions (border, lift)
+	   keep their easing after the entrance. No scale — text never pops. */
+	html.js .reveal-card {
+		opacity: 0;
+	}
+
+	html.js .reveal-card.in {
+		opacity: 1;
+		animation: card-in 600ms var(--ease-out) var(--reveal-delay, 0ms) backwards;
+	}
+
+	/* Page-open choreography: every page head rises in the same
+	   order-of-importance stagger — 90ms steps after a 60ms lead. */
+	html.js [data-rise] {
+		animation: rise 700ms var(--ease-out) both;
+		animation-delay: calc(60ms + var(--rise, 0) * 90ms);
+	}
+
+	@keyframes rise {
+		from {
+			opacity: 0;
+			translate: 0 26px;
+		}
+
+		to {
+			opacity: 1;
+			translate: 0 0;
+		}
+	}
+
+	@keyframes card-in {
+		from {
+			opacity: 0;
+			translate: 0 20px;
+		}
+
+		to {
+			opacity: 1;
+			translate: 0 0;
+		}
+	}
+
+	@keyframes success-in {
+		from {
+			opacity: 0;
+			translate: 0 6px;
+			scale: 0.97;
+		}
+
+		to {
+			opacity: 1;
+			translate: 0 0;
+			scale: 1;
+		}
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html.is-settled {
+		scroll-behavior: auto;
+	}
 }
 
 .app-shell {

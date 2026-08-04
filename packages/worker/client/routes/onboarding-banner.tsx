@@ -1,37 +1,81 @@
 import { css } from 'remix/ui'
+import { getPillButtonCss } from '#client/styles/style-primitives.ts'
+import { noticeCardCss } from '#client/routes/account-management-components.tsx'
 import { colors } from '#client/styles/tokens.ts'
-import {
-	cardCss,
-	cardTitleCss,
-	descriptionCss,
-	primaryLinkCss,
-} from '#client/styles/style-primitives.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 
 /**
  * Callout shown when the signed-in verified user still needs MCP host setup.
+ * Ported from the prototype's `.onboard-callout`: a quiet horizontal surface
+ * banner — mascot cutout standing on the bottom edge, copy in the middle, the
+ * green pill CTA on the right. Green lives in the CTA, never in the chrome.
  */
 export function renderOnboardingBanner() {
 	return (
 		<section
 			aria-label="Get started with Kody"
 			mix={css({
-				...cardCss,
-				borderColor: colors.primary,
-				backgroundColor: colors.primarySoftest,
+				...noticeCardCss,
+				display: 'flex',
+				alignItems: 'center',
+				flexWrap: 'wrap',
+				gap: '1.2rem',
+				padding: '0.9rem 1.2rem',
 			})}
 		>
-			<h2 mix={css(cardTitleCss)}>Connect your AI agent</h2>
-			<p mix={css(descriptionCss)}>
-				Kody works through MCP. Add this deployment as an MCP server in Cursor,
-				Claude, or any MCP-capable agent, complete the OAuth flow, then ask your
-				agent to help you get set up.
-			</p>
-			<p mix={css({ margin: 0 })}>
-				<a href={onboardingPath} mix={css(primaryLinkCss)}>
-					Open onboarding guide
-				</a>
-			</p>
+			<img
+				src="/images/kody-mcp-plug.webp"
+				alt=""
+				width={88}
+				height={88}
+				mix={css({
+					width: '88px',
+					height: '88px',
+					objectFit: 'contain',
+					objectPosition: 'bottom',
+					flex: 'none',
+					alignSelf: 'flex-end',
+					// The mascot is a cutout: it stands on the banner's bottom
+					// edge rather than floating inside it.
+					marginBottom: '-0.9rem',
+				})}
+			/>
+			<div mix={css({ flex: 1, minWidth: '16rem' })}>
+				<h2
+					mix={css({
+						margin: 0,
+						fontSize: '1.08rem',
+						fontWeight: 700,
+						letterSpacing: '-0.01em',
+						lineHeight: 1.3,
+					})}
+				>
+					Connect your AI agent
+				</h2>
+				<p
+					mix={css({
+						margin: '0.2rem 0 0',
+						color: colors.textMuted,
+						fontSize: '0.95rem',
+						lineHeight: 1.5,
+					})}
+				>
+					Kody works through MCP. Add this deployment as an MCP server in
+					Cursor, Claude, or any MCP-capable agent, then ask your agent to help
+					you get set up.
+				</p>
+			</div>
+			<a
+				href={onboardingPath}
+				mix={css({
+					...getPillButtonCss(),
+					flex: 'none',
+					fontSize: '0.95rem',
+					padding: '0.8rem 1.35rem',
+				})}
+			>
+				Connect your agent
+			</a>
 		</section>
 	)
 }

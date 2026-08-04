@@ -59,6 +59,25 @@ export function listBlogPosts(): ReadonlyArray<BlogPost> {
 	return blogPosts
 }
 
+/** Slug + title pointer for the post foot's "Read next" link. */
+export type BlogPostPointer = {
+	slug: string
+	title: string
+}
+
+/**
+ * The post that follows `slug` in catalog order (newest → oldest, then
+ * `order`). Wraps from the last post back to the first so every post foot has
+ * somewhere to send the reader; null only when the post is unknown or alone.
+ */
+export function getReadNextBlogPost(slug: string): BlogPostPointer | null {
+	const index = blogPosts.findIndex((post) => post.slug === slug)
+	if (index === -1 || blogPosts.length < 2) return null
+	const next = blogPosts[(index + 1) % blogPosts.length]
+	if (!next) return null
+	return { slug: next.slug, title: next.title }
+}
+
 /** Index / API summary shape (no markdown body). */
 export type BlogPostSummary = {
 	slug: string

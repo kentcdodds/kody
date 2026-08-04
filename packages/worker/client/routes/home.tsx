@@ -1,9 +1,10 @@
 import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
+import { HeroStage } from '#client/hero-stage.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
@@ -11,75 +12,69 @@ import {
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
+import { reveal, revealPop } from '#client/reveal.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
-	colors,
-	radius,
-	shadows,
-	spacing,
-	typography,
-	mq,
-} from '#client/styles/tokens.ts'
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
+import { colors, transitions, typography } from '#client/styles/tokens.ts'
 import {
-	getPrimaryButtonCss,
+	getBrandChipCss,
+	getPillButtonCss,
+	getSwapLabelCss,
+	hoverMq,
 	layoutMaxWidths,
+	mergeCss,
+	sectionHeadingCss,
+	visuallyHiddenCss,
 } from '#client/styles/style-primitives.ts'
 
-const workflowSteps = [
+/**
+ * heykody.dev landing page, ported from the redesign prototype
+ * (`landing/landing.html`). Flat neutral canvas, one vibrant green accent,
+ * centered single-column flow, mascot illustrations doing the explanatory
+ * work. Motion is enhance-only (`html.js`) and fully off under
+ * `prefers-reduced-motion`.
+ */
+
+const capabilityItems = [
 	{
-		number: '01',
-		title: 'Search',
-		description:
-			'Discover packages, integrations, jobs, secrets, email, storage, and memories.',
+		src: '/images/kody-slack-catchup.webp',
+		alt: 'Kody carrying a neat stack of Slack messages while a reminder bell rings overhead',
+		prompt: '“Catch me up on Slack”',
+		copy: 'Your agent reads the right channels and hands you the three things that actually need you. Kody supplies the Slack access.',
 	},
 	{
-		number: '02',
-		title: 'Execute',
-		description:
-			'Run sandboxed code and explicit API calls with secrets kept server-side.',
+		src: '/images/kody-plan-week.webp',
+		alt: 'Kody arranging a fan of calendar pages, emails, and a clock into an orderly arc',
+		prompt: '“Plan my week”',
+		copy: 'Calendar, email, and open issues in one pass: your agent drafts the schedule and books the focus time. Kody holds the keys to all three.',
 	},
 	{
-		number: '03',
-		title: 'Build',
-		description:
-			'Save reusable packages and schedule Worker-native jobs that run while your computer is off.',
+		src: '/images/kody-github-triage.webp',
+		alt: 'Kody sorting GitHub issues into labeled trays, holding one card up for review',
+		prompt: '“Triage my GitHub issues”',
+		copy: 'Labels, duplicates, and a morning brief on what changed while you slept. Your agent set it up once; a Kody job runs it every day.',
 	},
 ] as const
 
-/**
- * Deliberately short. Each entry has to survive one question: can you get this
- * somewhere else? Things that read well but fail that test (a template gallery,
- * server-side secret storage, cloud scheduling, cross-host tool access) are
- * left off, because a claim like this invites the reader to go check.
- *
- * Every entry carries a link to the code or docs that proves it. The source
- * being readable is what makes that possible, and almost nothing else in this
- * category can do it.
- */
-const capabilityHighlights = [
-	{
-		title: 'One-off agent work becomes permanent',
-		description:
-			'Your agent explores against your real APIs, and the moment something works it saves as code that runs on a schedule with no model in the loop. Not an agent re-run on a timer—no tokens, no drift, no waiting on a model.',
-		proofLabel: 'How packages and jobs work',
-		proofHref:
-			'https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md',
-	},
-	{
-		title: 'Your agent uses your keys without ever reading them',
-		description:
-			'It writes whatever code the job needs, and still cannot see a credential. There is no capability that returns one. Your code references secrets by name and Kody substitutes them at the network boundary, only for hosts you approved.',
-		proofLabel: 'There is no secret_get—check for yourself',
-		proofHref:
-			'https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets',
-	},
-	{
-		title: 'Every install is a fork you own',
-		description:
-			'Install someone else\u2019s automation in one click and it lands in your account as code you own, on your credentials. Open it, change it, schedule it, publish your version back. Nothing is locked in someone else\u2019s runtime.',
-		proofLabel: 'How community packages work',
-		proofHref:
-			'https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md',
-	},
+const worldBrands = [
+	{ label: 'Spotify', icon: 'spotify' },
+	{ label: 'Stripe', icon: 'stripe' },
+	{ label: 'Resend', icon: 'resend' },
+	{ label: 'Kit', icon: 'kit' },
+	{ label: 'Cal.com', icon: 'caldotcom' },
+	{ label: 'PayPal', icon: 'paypal' },
+	{ label: 'X', icon: 'x' },
+	{ label: 'Bluesky', icon: 'bluesky' },
+	{ label: 'Twitch', icon: 'twitch' },
+	{ label: 'Sentry', icon: 'sentry' },
+	{ label: 'Fly.io', icon: 'flydotio' },
+	{ label: 'Raycast', icon: 'raycast' },
+	{ label: 'GroupMe', icon: 'groupme' },
 ] as const
 
 function isHomePath(href: string) {
@@ -151,434 +146,1000 @@ export function HomeRoute(handle: Handle) {
 			handle.queueTask(loadOnboarding)
 		}
 
+		const isSignedIn = onboardingStatus === 'ready' && loggedIn
+		const needsEmailVerification =
+			isSignedIn && needsOnboarding && !emailVerified
+
 		return (
-			<section mix={css(pageCss)}>
-				{needsOnboarding && emailVerified ? (
-					<div
-						mix={css({
-							width: '100%',
-							maxWidth: layoutMaxWidths.content,
-							textAlign: 'left',
-						})}
-					>
-						{renderOnboardingBanner()}
+			<div>
+				{/* ============ hero ============ */}
+				<section data-parallax-scope mix={css(heroCss)}>
+					<h1 data-rise style={{ '--rise': '0' }} mix={css(heroTitleCss)}>
+						Your AI agent,
+						<br />
+						finally <em>useful</em>.
+					</h1>
+					<p data-rise style={{ '--rise': '1' }} mix={css(heroSubCss)}>
+						Not another agent. Kody equips the one you already use with secure
+						access to your services and jobs that run while your laptop is
+						closed.
+					</p>
+					<div data-rise style={{ '--rise': '2' }} mix={css(heroActionsCss)}>
+						{isSignedIn ? (
+							<>
+								{needsEmailVerification ? (
+									<a href={pendingVerificationPath} mix={css(pillButtonCss)}>
+										Verify your email
+									</a>
+								) : (
+									<a href={onboardingPath} mix={css(pillButtonCss)}>
+										Connect your agent
+									</a>
+								)}
+								<a href="/account" mix={css(codeLinkCss)}>
+									Open your account
+								</a>
+							</>
+						) : (
+							<>
+								<a href="#invite" mix={css(pillButtonCss)}>
+									Join the waiting list
+								</a>
+								<a href="/signup" mix={css(codeLinkCss)}>
+									I have a code
+								</a>
+							</>
+						)}
 					</div>
-				) : null}
-				<section mix={css(heroCardCss)}>
+					<p data-rise style={{ '--rise': '3' }} mix={css(heroHintCss)}>
+						Not sure what you&apos;d use it for?{' '}
+						<a href={`${onboardingPath}#discovery`} mix={css(inlineLinkCss)}>
+							Ask your agent with the discovery prompt
+						</a>{' '}
+						— no account needed.
+					</p>
+					<div data-rise style={{ '--rise': '1.5' }} mix={css(heroArtCss)}>
+						<HeroStage
+							size="landing"
+							alt="Kody the koala holding a warmly glowing lantern, surrounded by floating notes, bookmarks, packages, and tool tokens"
+						/>
+					</div>
+				</section>
+
+				{/* ============ nothing new to learn ============ */}
+				<section aria-labelledby="pitch-title" mix={css(pitchCss)}>
+					<h2 id="pitch-title" mix={css(pitchTitleCss)}>
+						Nothing new <br />
+						to learn
+					</h2>
+					<div>
+						<p mix={css(pitchLeadCss)}>
+							Kody isn&apos;t another assistant to talk to. It plugs into the
+							agent you already use, so the same conversation you&apos;re having
+							today can now reach your real accounts.
+						</p>
+						<p mix={css(pitchBodyCss)}>
+							Because your agent does the thinking, Kody gets better every time
+							the models do.
+						</p>
+						<ul aria-label="Agents Kody plugs into" mix={css(pitchHostsCss)}>
+							<li
+								mix={[
+									css(getHostChipCss('/images/icons/cursor.svg')),
+									revealPop(0),
+								]}
+							>
+								Cursor
+							</li>
+							<li
+								mix={[
+									css(getHostChipCss('/images/icons/claudecode.svg')),
+									revealPop(35),
+								]}
+							>
+								Claude Code
+							</li>
+							<li mix={[css(hostsMoreChipCss), revealPop(70)]}>
+								anything that speaks MCP
+							</li>
+						</ul>
+					</div>
+				</section>
+
+				{/* ============ capabilities ============ */}
+				<section aria-labelledby="ask-title" mix={css(askCss)}>
+					<h2 id="ask-title" mix={css(visuallyHiddenCss)}>
+						What you can ask
+					</h2>
+					<div mix={css(askGridCss)}>
+						{capabilityItems.map((item, index) => (
+							<article
+								key={item.prompt}
+								mix={[css(askItemCss), reveal(index * 90)]}
+							>
+								<img
+									src={item.src}
+									width={627}
+									height={627}
+									loading="lazy"
+									alt={item.alt}
+								/>
+								<h3>{item.prompt}</h3>
+								<p>{item.copy}</p>
+							</article>
+						))}
+					</div>
+				</section>
+
+				{/* ============ reliability ============ */}
+				<section aria-labelledby="reliable-title" mix={css(reliableCss)}>
+					<div>
+						<h2 id="reliable-title" mix={css(sectionHeadingCss)}>
+							Solve it once.
+							<br />
+							Run it forever.
+						</h2>
+						<p mix={css(splitCopyCss)}>
+							Ask a typical agent for a weekly report and it re-does every step
+							from scratch, with more chances to go wrong each time. With Kody,
+							your agent writes the code once, tests it, and saves it as a
+							package. Every run after is the same: fast, cheap, predictable.
+						</p>
+					</div>
 					<img
-						src="/logo-480.webp"
-						srcSet="/logo-240.webp 240w, /logo-336.webp 336w, /logo-480.webp 480w"
-						sizes="(max-width: 640px) 168px, 240px"
+						src="/images/kody-compounding-capabilities.webp"
 						width={480}
 						height={480}
-						fetchPriority="high"
-						alt="kody logo"
-						mix={css(heroLogoCss)}
+						loading="lazy"
+						alt="Kody saving a solved task as a glowing green seed pod on a branch that keeps producing results"
+						mix={[css(reliableArtCss), reveal()]}
 					/>
-					<div mix={css(heroTextCss)}>
-						<h1 mix={css(heroTitleCss)}>
-							Kody{' '}
-							<span mix={css({ color: colors.primaryText })}>augments</span>{' '}
-							your agent
-						</h1>
-						<p mix={css(heroSubtitleCss)}>
-							It does not replace the assistant you already use. Connect Claude,
-							ChatGPT, Cursor, or Codex, and it gains your keys, your saved
-							code, and automations that keep running with your laptop closed.
-						</p>
-					</div>
-					<div mix={css(commandPillRowCss)}>
-						{renderCommandPill('connects')}
-						{renderCommandPill('remembers')}
-						{renderCommandPill('acts')}
-					</div>
-					<p mix={css(heroTaglineCss)}>
-						Kody never calls a model. It is your assistant&apos;s home — the
-						memory, keys, code, and automations it keeps, no matter which agent
-						you talk to.
-					</p>
+				</section>
+
+				{/* ============ byok ============ */}
+				<section aria-labelledby="byok-title" mix={css(byokCss)}>
+					<img
+						src="/images/kody-keys.webp"
+						width={480}
+						height={480}
+						loading="lazy"
+						alt="Kody holding up a set of golden keys"
+						mix={[css(byokArtCss), reveal()]}
+					/>
 					<div>
-						{onboardingStatus === 'ready' &&
-						needsOnboarding &&
-						loggedIn &&
-						!emailVerified ? (
-							<a href={pendingVerificationPath} mix={css(heroCtaCss)}>
-								Verify your email
-							</a>
-						) : (
-							<a href={onboardingPath} mix={css(heroCtaCss)}>
-								Connect your agent
-							</a>
-						)}
+						<h2 id="byok-title" mix={css(sectionHeadingCss)}>
+							Bring your own keys
+						</h2>
+						<p mix={css(splitCopyCss)}>
+							Kody never asks a company for access on your behalf. You create
+							the connection yourself, with your agent walking you through it:
+							your app, your scopes, revocable anytime. No shared app sits
+							between you and your accounts.
+						</p>
+						<p mix={css(splitCopyCss)}>
+							And there&apos;s no fixed list. If the integration doesn&apos;t
+							exist, your agent builds it on the spot and just asks you to sign
+							in.
+						</p>
 					</div>
-					<p mix={css(discoveryHintCss)}>
-						Not sure what you&apos;d use it for?{' '}
-						<a href={`${onboardingPath}#discovery`} mix={css(discoveryLinkCss)}>
-							Ask your agent with the discovery prompt
-						</a>
-						— no account needed. Or see{' '}
-						<a href="#why-kody" mix={css(discoveryLinkCss)}>
-							what you can&apos;t get elsewhere
-						</a>
-						.
+				</section>
+
+				{/* ============ works with ============ */}
+				<section aria-labelledby="world-title" mix={css(worldCss)}>
+					<h2 id="world-title" mix={css(sectionHeadingCss)}>
+						It already speaks your stack
+					</h2>
+					<p mix={css(worldLeadCss)}>
+						Community packages cover the tools you live in. Browse what other
+						people built, fork it with your agent, and make it yours.
+					</p>
+					<ul
+						aria-label="Services covered by community packages"
+						mix={css(worldCloudCss)}
+					>
+						{worldBrands.map((brand, index) => (
+							<li
+								key={brand.label}
+								mix={[
+									css(
+										getBrandChipCss({
+											iconHref: `/images/icons/${brand.icon}.svg`,
+										}),
+									),
+									revealPop(index * 35),
+								]}
+							>
+								{brand.label}
+							</li>
+						))}
+						<li
+							mix={[
+								css(getBrandChipCss({ muted: true })),
+								revealPop(worldBrands.length * 35),
+							]}
+						>
+							…and one thermostat
+						</li>
+					</ul>
+				</section>
+
+				{/* ============ trust ============ */}
+				<section aria-label="Security and source" mix={css(trustCss)}>
+					<p>
+						Code runs in a sandbox. Secrets stay server-side and never enter
+						prompts or your agent&apos;s context. Every user is fully isolated.
+					</p>
+					<p>
+						Kody&apos;s{' '}
+						<a
+							href="https://github.com/kentcdodds/kody"
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(inlineLinkCss)}
+						>
+							source is open
+						</a>{' '}
+						— read it, fork it, self-host it. Every claim above links to the
+						code that proves it.
 					</p>
 				</section>
 
-				<section mix={css(sectionCss)}>
-					<div mix={css(sectionHeaderCss)}>
-						<h2 mix={css(sectionTitleCss)}>How it works</h2>
-						<p mix={css(sectionDescriptionCss)}>
-							Add Kody to the assistant you already use through MCP. Two
-							tools—search and execute—put a vast capability graph behind it.
-						</p>
-					</div>
-					<div mix={css(stepGridCss)}>
-						{workflowSteps.map((step) => renderWorkflowStep(step))}
-					</div>
+				{/* ============ equip / invite ============ */}
+				<section id="invite" aria-labelledby="equip-title" mix={css(equipCss)}>
+					<img
+						src="/images/kody-greeting.webp"
+						width={480}
+						height={480}
+						loading="lazy"
+						alt="Kody waving hello with an open hand"
+						mix={css(equipArtCss)}
+					/>
+					<h2 id="equip-title" mix={css(equipTitleCss)}>
+						Equip your agent
+					</h2>
+					{isSignedIn ? (
+						<div>
+							<p mix={css(equipLeadCss)}>
+								You&apos;re in. Add Kody to the agent you already use and ask
+								for anything.
+							</p>
+							<p mix={css({ margin: '1.8rem auto 0' })}>
+								<a href={onboardingPath} mix={css(pillButtonCss)}>
+									Connect your agent
+								</a>
+							</p>
+						</div>
+					) : (
+						<>
+							<p mix={css(equipLeadCss)}>
+								Invite-only while we grow the eucalyptus. Join the waiting list,
+								or jump the queue with a code.
+							</p>
+							<WaitlistForm />
+							<p mix={css(equipCodeCss)}>
+								<a href="/signup" mix={css(codeLinkFooterCss)}>
+									I have a code
+								</a>
+							</p>
+						</>
+					)}
 				</section>
-
-				<section id="why-kody" mix={css(sectionCss)}>
-					<div mix={css(sectionHeaderCss)}>
-						<h2 mix={css(sectionTitleCss)}>
-							Three things you cannot get elsewhere
-						</h2>
-						<p mix={css(sectionDescriptionCss)}>
-							Kody also keeps your memory, keys, packages, scheduled jobs, a
-							personal inbox, and durable storage. These three are the reasons
-							it exists.
-						</p>
-					</div>
-					<div mix={css(capabilityGridCss)}>
-						{capabilityHighlights.map((capability) =>
-							renderCapabilityCard(capability),
-						)}
-					</div>
-				</section>
-
-				<p mix={css(trustLineCss)}>
-					Code runs in a sandbox. Secrets stay server-side and never enter
-					prompts or your assistant&apos;s context. Every user is fully
-					isolated.
-				</p>
-
-				<p mix={css(fairSourceLineCss)}>
-					Kody&apos;s{' '}
-					<a
-						href="https://github.com/kentcdodds/kody"
-						target="_blank"
-						rel="noreferrer noopener"
-						mix={css(fairSourceLinkCss)}
-					>
-						source is open
-					</a>
-					— read it, fork it, self-host it. Every claim above links to the code
-					that proves it.
-				</p>
-			</section>
+			</div>
 		)
 	}
 }
 
-function renderCommandPill(label: string) {
-	return (
-		<div mix={css(commandPillCss)}>
-			<code>{label}</code>
-		</div>
-	)
+/**
+ * Connected-pill waitlist form (name · divider · email · button) with an
+ * inline success swap. Posts to the real `/waiting-list` endpoint with the
+ * same honeypot + Turnstile protection as the signup page.
+ */
+function WaitlistForm(handle: Handle) {
+	type Status = 'idle' | 'submitting' | 'success' | 'error'
+	let status: Status = 'idle'
+	let message: string | null = null
+	let turnstileSiteKey: string | null | undefined
+
+	async function loadProtectionConfig(signal: AbortSignal) {
+		if (turnstileSiteKey !== undefined) return
+		const config = await fetchPublicAuthConfig(signal)
+		if (signal.aborted) return
+		turnstileSiteKey = config?.turnstileSiteKey ?? null
+		handle.update()
+	}
+
+	function setState(nextStatus: Status, nextMessage: string | null = null) {
+		status = nextStatus
+		message = nextMessage
+		handle.update()
+	}
+
+	async function handleSubmit(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
+
+		const formData = new FormData(form)
+		const firstName = String(formData.get('firstName') ?? '').trim()
+		const email = String(formData.get('email') ?? '').trim()
+		const protection = readPublicFormProtection(formData)
+
+		if (!firstName) {
+			setState('error', 'What should we call you?')
+			form.querySelector<HTMLInputElement>('input[name="firstName"]')?.focus()
+			return
+		}
+		// Stricter than type=email alone: require a TLD so "you@example"
+		// bounces here, not at the server.
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+			setState('error', "That email doesn't look complete. Mind checking it?")
+			form.querySelector<HTMLInputElement>('input[name="email"]')?.focus()
+			return
+		}
+
+		setState('submitting')
+
+		try {
+			const response = await fetch('/waiting-list', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ firstName, email, ...protection }),
+			})
+			const payload = await response.json().catch(() => null)
+
+			if (!response.ok) {
+				const errorMessage =
+					typeof payload?.error === 'string'
+						? payload.error
+						: 'Unable to join the waiting list.'
+				setState('error', errorMessage)
+				return
+			}
+
+			const successMessage =
+				typeof payload?.message === 'string'
+					? payload.message
+					: "You're on the list. We'll be in touch."
+			setState('success', successMessage)
+		} catch {
+			setState('error', 'Network error. Please try again.')
+		}
+	}
+
+	return () => {
+		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
+			handle.queueTask(loadProtectionConfig)
+		}
+		if (typeof document !== 'undefined' && turnstileSiteKey) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
+		}
+		const isSubmitting = status === 'submitting'
+
+		return (
+			<form noValidate mix={[css(waitlistFormCss), on('submit', handleSubmit)]}>
+				{status === 'success' ? (
+					<p role="status" mix={css(formSuccessCss)}>
+						{message}{' '}
+						<button
+							type="button"
+							mix={[
+								css(formResetCss),
+								on('click', () => {
+									setState('idle')
+									handle.queueTask(() => {
+										document.getElementById(`${handle.id}-email`)?.focus()
+									})
+								}),
+							]}
+						>
+							Wrong email?
+						</button>
+					</p>
+				) : (
+					<>
+						<div data-focus-container mix={css(waitlistFieldsCss)}>
+							<input
+								type="text"
+								name={honeypotFieldName}
+								tabIndex={-1}
+								autoComplete="off"
+								aria-hidden="true"
+								mix={css(honeypotCss)}
+							/>
+							<label for={`${handle.id}-name`} mix={css(visuallyHiddenCss)}>
+								First name
+							</label>
+							<input
+								id={`${handle.id}-name`}
+								type="text"
+								name="firstName"
+								required
+								maxLength={80}
+								placeholder="First name"
+								autoComplete="given-name"
+								mix={css(waitlistInputCss)}
+							/>
+							<label for={`${handle.id}-email`} mix={css(visuallyHiddenCss)}>
+								Email address
+							</label>
+							<input
+								id={`${handle.id}-email`}
+								type="email"
+								name="email"
+								required
+								placeholder="you@yourdomain.dev"
+								autoComplete="email"
+								mix={css(waitlistEmailInputCss)}
+							/>
+							<button
+								type="submit"
+								disabled={isSubmitting}
+								mix={css(waitlistSubmitCss)}
+							>
+								<span
+									data-swap-label
+									data-active={isSubmitting ? undefined : 'true'}
+									aria-hidden={isSubmitting ? 'true' : undefined}
+								>
+									Join the waiting list
+								</span>
+								<span
+									data-swap-label
+									data-active={isSubmitting ? 'true' : undefined}
+									aria-hidden={isSubmitting ? undefined : 'true'}
+								>
+									Joining…
+								</span>
+							</button>
+						</div>
+						{turnstileSiteKey ? (
+							<div class={turnstileWidgetClassName}></div>
+						) : null}
+						{status === 'error' && message ? (
+							<p role="alert" mix={css(formErrorCss)}>
+								{message}
+							</p>
+						) : null}
+					</>
+				)}
+			</form>
+		)
+	}
 }
 
-function renderWorkflowStep({
-	number,
-	title,
-	description,
-}: {
-	number: string
-	title: string
-	description: string
-}) {
-	return (
-		<div mix={css(stepCardCss)}>
-			<p mix={css(stepNumberCss)}>{number}</p>
-			<h3 mix={css(stepTitleCss)}>{title}</h3>
-			<p mix={css(stepDescriptionCss)}>{description}</p>
-		</div>
-	)
+/* ---------- styles ---------- */
+
+const sectionGutter = 'clamp(1.25rem, 4vw, 2.5rem)'
+const motionOk = '@media (prefers-reduced-motion: no-preference)'
+
+const inlineLinkCss = {
+	color: colors.primaryText,
+	textDecorationThickness: '1.5px',
+	textUnderlineOffset: '3px',
+	'&:hover': { color: colors.text },
 }
 
-function renderCapabilityCard({
-	title,
-	description,
-	proofLabel,
-	proofHref,
-}: {
-	title: string
-	description: string
-	proofLabel: string
-	proofHref: string
-}) {
-	return (
-		<div mix={css(capabilityCardCss)}>
-			<h3 mix={css(capabilityTitleCss)}>{title}</h3>
-			<p mix={css(capabilityDescriptionCss)}>{description}</p>
-			<a
-				href={proofHref}
-				target="_blank"
-				rel="noreferrer noopener"
-				mix={css(capabilityProofLinkCss)}
-			>
-				{proofLabel}
-			</a>
-		</div>
-	)
+const pillButtonCss = getPillButtonCss()
+
+/* The submit pill keeps both labels grid-stacked in one cell, so swapping to
+   "Joining…" never changes the button's size — the swap is a blur crossfade. */
+const waitlistSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss())
+
+const codeLinkCss = {
+	...inlineLinkCss,
+	fontWeight: 600,
 }
 
-const pageCss = {
-	display: 'grid',
-	gap: `calc(${spacing['2xl']} * 1.75)`,
-	justifyItems: 'center',
-	width: '100%',
-	boxSizing: 'border-box' as const,
-	padding: spacing.lg,
+const codeLinkFooterCss = codeLinkCss
+
+/* ---------- hero ---------- */
+
+const heroCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(3.5rem, 8vw, 6.5rem) ${sectionGutter} 0`,
 	textAlign: 'center' as const,
-	[mq.mobile]: {
-		padding: spacing.sm,
-		gap: `calc(${spacing['2xl']} * 1.1)`,
-	},
-}
-
-const heroCardCss = {
-	display: 'grid',
-	gap: spacing.lg,
-	justifyItems: 'center',
-	width: '100%',
-	maxWidth: layoutMaxWidths.content,
-	padding: `calc(${spacing['2xl']} * 1.5) ${spacing['2xl']}`,
-	borderRadius: radius.xl,
-	border: `1px solid ${colors.border}`,
-	background: `linear-gradient(135deg, ${colors.primarySoftStrong}, ${colors.primarySoftest})`,
-	boxShadow: shadows.md,
-	[mq.mobile]: {
-		padding: spacing.xl,
-		gap: spacing.md,
-	},
-}
-
-const heroLogoCss = {
-	width: '240px',
-	maxWidth: '100%',
-	height: 'auto',
-	[mq.mobile]: {
-		width: '168px',
-	},
-}
-
-const heroTextCss = {
-	display: 'grid',
-	gap: spacing.md,
-	maxWidth: '38rem',
 }
 
 const heroTitleCss = {
 	margin: 0,
-	fontSize: 'clamp(3.25rem, 7vw, 5rem)',
-	lineHeight: 0.95,
-	fontWeight: typography.fontWeight.bold,
-	color: colors.text,
-}
-
-const heroSubtitleCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.xl,
-	lineHeight: 1.6,
-	[mq.mobile]: {
-		fontSize: typography.fontSize.base,
+	fontSize: 'clamp(2.7rem, 6.5vw, 5rem)',
+	fontWeight: 760,
+	lineHeight: 1.02,
+	letterSpacing: '-0.03em',
+	fontVariationSettings: '"opsz" 96',
+	'& em': {
+		fontStyle: 'normal',
+		color: colors.primaryText,
 	},
 }
 
-const commandPillRowCss = {
+const heroSubCss = {
+	margin: '1.5rem auto 0',
+	fontSize: 'clamp(1.05rem, 1.6vw, 1.2rem)',
+	color: colors.textMuted,
+	maxWidth: '44ch',
+	textWrap: 'pretty' as const,
+}
+
+const heroActionsCss = {
+	marginTop: '2.2rem',
+	display: 'flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.8rem 1.6rem',
+}
+
+const heroHintCss = {
+	margin: '1.1rem auto 0',
+	fontSize: '0.95rem',
+	color: colors.textMuted,
+	maxWidth: '52ch',
+	textWrap: 'pretty' as const,
+}
+
+const heroArtCss = {
+	marginTop: 'clamp(2.5rem, 5vw, 4rem)',
+	position: 'relative' as const,
+	/* Kody's shirt fabric, at whisper contrast behind him. The radial gradient
+	   fades it out so it never reads as a tiled wallpaper edge. */
+	'&::before': {
+		content: '""',
+		position: 'absolute' as const,
+		inset: '-6% -18%',
+		background: `radial-gradient(closest-side, oklch(from ${colors.text} l c h / 0.07), transparent 74%)`,
+		maskImage: 'var(--kody-pattern)',
+		maskPosition: 'center',
+		maskSize: '340px',
+		maskRepeat: 'repeat',
+		WebkitMaskImage: 'var(--kody-pattern)',
+		WebkitMaskPosition: 'center',
+		WebkitMaskSize: '340px',
+		WebkitMaskRepeat: 'repeat',
+		pointerEvents: 'none' as const,
+	},
+	/* The lantern Kody holds actually casts light. Screen blend adds warmth
+	   over his paws without a background halo. */
+	'&::after': {
+		content: '""',
+		position: 'absolute' as const,
+		left: '50%',
+		top: '63%',
+		width: 'min(36%, 230px)',
+		aspectRatio: '4 / 3',
+		transform: 'translate(-50%, -50%)',
+		borderRadius: '50%',
+		background:
+			'radial-gradient(closest-side, var(--lantern-glow), transparent 72%)',
+		mixBlendMode: 'screen' as const,
+		pointerEvents: 'none' as const,
+	},
+	[motionOk]: {
+		'&::after': {
+			animation: 'lantern-breathe 4.5s ease-in-out infinite alternate',
+		},
+	},
+	'@keyframes lantern-breathe': {
+		from: { opacity: 0.55 },
+		to: { opacity: 1 },
+	},
+}
+
+/* ---------- pitch ---------- */
+
+const pitchCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(4rem, 9vw, 7.5rem) ${sectionGutter} clamp(2rem, 4vw, 3rem)`,
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
+	gap: 'clamp(2rem, 5vw, 4.5rem)',
+	alignItems: 'start',
+	'@media (max-width: 800px)': {
+		gridTemplateColumns: '1fr',
+		textAlign: 'center' as const,
+		padding: '3.25rem 1.25rem 1.75rem',
+	},
+}
+
+const pitchTitleCss = {
+	margin: 0,
+	fontSize: 'clamp(2rem, 4.2vw, 3.2rem)',
+	fontWeight: 740,
+	letterSpacing: '-0.026em',
+	lineHeight: 1.04,
+	'@media (max-width: 800px)': {
+		fontSize: '2rem',
+		'& br': { display: 'none' },
+	},
+}
+
+const pitchLeadCss = {
+	margin: 0,
+	fontSize: 'clamp(1.15rem, 1.8vw, 1.35rem)',
+	lineHeight: 1.5,
+	color: colors.text,
+	maxWidth: '44ch',
+	textWrap: 'pretty' as const,
+	'@media (max-width: 800px)': {
+		fontSize: '1.125rem',
+		marginInline: 'auto',
+		maxWidth: '40ch',
+	},
+}
+
+const pitchBodyCss = {
+	margin: '1.2rem 0 0',
+	color: colors.textMuted,
+	fontSize: '1.05rem',
+	maxWidth: '48ch',
+	textWrap: 'pretty' as const,
+	'@media (max-width: 800px)': {
+		fontSize: '1rem',
+		marginInline: 'auto',
+		maxWidth: '46ch',
+	},
+}
+
+const pitchHostsCss = {
+	listStyle: 'none',
+	margin: '1.8rem 0 0',
+	padding: 0,
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: '0.6rem',
+	'@media (max-width: 800px)': {
+		justifyContent: 'center',
+	},
+}
+
+function getHostChipCss(iconHref: string) {
+	return {
+		...getBrandChipCss({ iconHref }),
+		fontSize: '0.92rem',
+		padding: '0.4rem 0.95rem',
+	}
+}
+
+const hostsMoreChipCss = {
+	...getBrandChipCss({ muted: true }),
+	fontSize: '0.92rem',
+	padding: '0.4rem 0.95rem',
+}
+
+/* ---------- capabilities ---------- */
+
+const askCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(2rem, 4vw, 3.5rem) ${sectionGutter}`,
+	'@media (max-width: 800px)': {
+		padding: '1.75rem 1.25rem',
+	},
+}
+
+const askGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+	gap: 'clamp(2.5rem, 5vw, 3.5rem) clamp(1.5rem, 3vw, 2.5rem)',
+}
+
+const askItemCss = {
+	textAlign: 'center' as const,
+	'& img': {
+		width: 'min(92%, 340px)',
+		maxWidth: '100%',
+		height: 'auto',
+		display: 'block',
+		marginInline: 'auto',
+		transition: `transform 320ms ${transitions.easeOut}`,
+	},
+	// Gated: touch taps would otherwise leave the mascot stuck mid-lift.
+	[hoverMq]: {
+		'&:hover img': {
+			transform: 'translateY(-6px) rotate(-0.5deg)',
+		},
+	},
+	'& h3': {
+		margin: '1.4rem 0 0',
+		fontSize: '1.45rem',
+		fontWeight: 700,
+		letterSpacing: '-0.015em',
+	},
+	'& p': {
+		margin: '0.8rem auto 0',
+		color: colors.textMuted,
+		fontSize: '0.98rem',
+		maxWidth: '38ch',
+		textWrap: 'pretty' as const,
+	},
+	'@media (prefers-reduced-motion: reduce)': {
+		'& img': { transition: 'none' },
+		'&:hover img': { transform: 'none' },
+	},
+	'@media (max-width: 800px)': {
+		'& p': { fontSize: '1rem', maxWidth: '46ch' },
+	},
+}
+
+/* ---------- reliability + byok splits ---------- */
+
+const reliableCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(3.5rem, 8vw, 6.5rem) ${sectionGutter} clamp(2rem, 5vw, 4rem)`,
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
+	gap: 'clamp(2rem, 5vw, 4.5rem)',
+	alignItems: 'center',
+	'@media (max-width: 800px)': {
+		gridTemplateColumns: '1fr',
+		textAlign: 'center' as const,
+		padding: '3.25rem 1.25rem 1.75rem',
+	},
+}
+
+const reliableArtCss = {
+	width: 'min(100%, 400px)',
+	maxWidth: '100%',
+	height: 'auto',
+	display: 'block',
+	marginInline: 'auto',
+	'@media (max-width: 800px)': {
+		order: -1,
+		width: 'min(60%, 300px)',
+	},
+}
+
+const byokCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter}`,
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
+	gap: 'clamp(2rem, 5vw, 4.5rem)',
+	alignItems: 'center',
+	'@media (max-width: 800px)': {
+		gridTemplateColumns: '1fr',
+		textAlign: 'center' as const,
+		padding: '1.75rem 1.25rem',
+	},
+}
+
+const byokArtCss = {
+	width: 'min(100%, 380px)',
+	maxWidth: '100%',
+	height: 'auto',
+	display: 'block',
+	marginInline: 'auto',
+	'@media (max-width: 800px)': {
+		width: 'min(60%, 300px)',
+	},
+}
+
+const splitCopyCss = {
+	margin: '1.1rem 0 0',
+	color: colors.textMuted,
+	maxWidth: '48ch',
+	textWrap: 'pretty' as const,
+	'@media (max-width: 800px)': {
+		fontSize: '1rem',
+		marginInline: 'auto',
+		maxWidth: '46ch',
+	},
+}
+
+/* ---------- world ---------- */
+
+const worldCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(3rem, 7vw, 5.5rem) ${sectionGutter} clamp(2rem, 4vw, 3rem)`,
+	textAlign: 'center' as const,
+	'@media (max-width: 800px)': {
+		padding: '3.25rem 1.25rem 1.75rem',
+	},
+}
+
+const worldLeadCss = {
+	margin: '1.1rem auto 0',
+	color: colors.textMuted,
+	fontSize: '1.08rem',
+	maxWidth: '46ch',
+	textWrap: 'balance' as const,
+}
+
+const worldCloudCss = {
+	listStyle: 'none',
+	margin: '2.2rem auto 0',
+	padding: 0,
 	display: 'flex',
 	flexWrap: 'wrap' as const,
 	justifyContent: 'center',
-	gap: spacing.md,
+	gap: '0.6rem',
+	maxWidth: '46rem',
 }
 
-const commandPillCss = {
-	padding: `${spacing.xs} ${spacing.md}`,
-	borderRadius: radius.full,
-	border: `1px solid ${colors.primary}`,
-	backgroundColor: colors.surface,
-	color: colors.primaryText,
-	fontFamily:
-		'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-	fontSize: typography.fontSize.lg,
-	boxShadow: shadows.sm,
-}
+/* ---------- trust ---------- */
 
-const heroTaglineCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.base,
-}
-
-const discoveryHintCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-}
-
-const discoveryLinkCss = {
-	color: colors.primaryText,
-}
-
-const heroCtaCss = {
-	...getPrimaryButtonCss({ size: 'lg', weight: 'semibold' }),
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	textDecoration: 'none',
-	minWidth: '14rem',
-}
-
-const sectionCss = {
-	display: 'grid',
-	gap: spacing.xl,
-	width: '100%',
+/* Two quiet receipts before the close: security posture and open source.
+   Muted on purpose — these earn trust by not selling. */
+const trustCss = {
 	maxWidth: layoutMaxWidths.extended,
-}
-
-const sectionHeaderCss = {
+	marginInline: 'auto',
+	padding: `clamp(1.5rem, 4vw, 2.5rem) ${sectionGutter}`,
+	textAlign: 'center' as const,
 	display: 'grid',
-	gap: spacing.sm,
+	gap: '1.1rem',
 	justifyItems: 'center',
-	maxWidth: layoutMaxWidths.narrow,
-	margin: '0 auto',
-}
-
-const sectionTitleCss = {
-	margin: 0,
-	fontSize: typography.fontSize.xl,
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.text,
-}
-
-const sectionDescriptionCss = {
-	margin: 0,
-	color: colors.textMuted,
-	lineHeight: 1.6,
-}
-
-const stepGridCss = {
-	display: 'grid',
-	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-	gap: spacing.xl,
-	width: '100%',
-	[mq.tablet]: {
-		gridTemplateColumns: '1fr',
+	'& p': {
+		margin: 0,
+		color: colors.textMuted,
+		fontSize: '0.98rem',
+		maxWidth: '58ch',
+		textWrap: 'balance' as const,
 	},
 }
 
-const stepCardCss = {
+/* ---------- equip / invite ---------- */
+
+const equipCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter} clamp(4.5rem, 9vw, 7rem)`,
+	textAlign: 'center' as const,
+	position: 'relative' as const,
+	/* Same fabric behind the closing invite: equipping your agent, literally. */
+	'&::before': {
+		content: '""',
+		position: 'absolute' as const,
+		inset: 0,
+		background: `radial-gradient(ellipse 55% 50% at 50% 42%, oklch(from ${colors.text} l c h / 0.055), transparent 72%)`,
+		maskImage: 'var(--kody-pattern)',
+		maskPosition: 'center',
+		maskSize: '340px',
+		maskRepeat: 'repeat',
+		WebkitMaskImage: 'var(--kody-pattern)',
+		WebkitMaskPosition: 'center',
+		WebkitMaskSize: '340px',
+		WebkitMaskRepeat: 'repeat',
+		pointerEvents: 'none' as const,
+	},
+	'@media (max-width: 800px)': {
+		padding: '1.75rem 1.25rem 4.5rem',
+	},
+}
+
+const equipArtCss = {
+	width: 'min(62%, 330px)',
+	maxWidth: '100%',
+	height: 'auto',
+	display: 'block',
+	marginInline: 'auto',
+}
+
+const equipTitleCss = {
+	...sectionHeadingCss,
+	marginTop: '1.6rem',
+	'@media (max-width: 800px)': {
+		fontSize: '2rem',
+	},
+}
+
+const equipLeadCss = {
+	margin: '1.1rem auto 0',
+	color: colors.textMuted,
+	fontSize: '1.08rem',
+	maxWidth: '44ch',
+	textWrap: 'balance' as const,
+	'@media (max-width: 800px)': {
+		fontSize: '1rem',
+		maxWidth: '46ch',
+	},
+}
+
+const equipCodeCss = {
+	margin: '1.4rem auto 0',
+	fontSize: '1rem',
+}
+
+/* ---------- waitlist form ---------- */
+
+const waitlistFormCss = {
+	position: 'relative' as const,
 	display: 'grid',
-	gap: spacing.sm,
-	padding: `${spacing.xl} ${spacing.lg}`,
-	borderRadius: radius.lg,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	boxShadow: shadows.sm,
+	gap: '0.9rem',
+	width: 'min(100%, 640px)',
+	margin: '2rem auto 0',
 	textAlign: 'left' as const,
-	alignContent: 'start',
-	minHeight: '12rem',
-	[mq.mobile]: {
-		padding: spacing.lg,
-		minHeight: 'auto',
-	},
 }
 
-const stepNumberCss = {
-	margin: 0,
-	fontSize: typography.fontSize.sm,
-	fontWeight: typography.fontWeight.semibold,
-	letterSpacing: '0.08em',
-	textTransform: 'uppercase' as const,
-	color: colors.primaryText,
-}
-
-const stepTitleCss = {
-	margin: 0,
-	fontSize: typography.fontSize.lg,
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.text,
-}
-
-const stepDescriptionCss = {
-	margin: 0,
-	color: colors.textMuted,
-	lineHeight: 1.6,
-}
-
-const capabilityGridCss = {
+/* One connected control: name · divider · email · button in a single pill. */
+const waitlistFieldsCss = {
 	display: 'grid',
-	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-	gap: spacing.xl,
-	width: '100%',
-	[mq.tablet]: {
-		gridTemplateColumns: '1fr',
-	},
-}
-
-const capabilityCardCss = {
-	display: 'grid',
-	gap: spacing.md,
-	padding: `${spacing.xl} ${spacing.lg}`,
-	borderRadius: radius.lg,
-	border: `1px solid ${colors.border}`,
+	gridTemplateColumns: 'minmax(0, 0.75fr) minmax(0, 1fr) auto',
+	alignItems: 'stretch',
 	backgroundColor: colors.surface,
-	boxShadow: shadows.sm,
-	textAlign: 'left' as const,
-	alignContent: 'start',
-	minHeight: '13rem',
-	[mq.mobile]: {
-		padding: spacing.lg,
-		minHeight: 'auto',
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: '999px',
+	padding: '0.3rem',
+	transition: `border-color 160ms ${transitions.easeOut}, box-shadow 160ms ${transitions.easeOut}`,
+	'&:focus-within': {
+		borderColor: colors.primary,
+		boxShadow: `0 0 0 3px oklch(from ${colors.primary} l c h / 0.25)`,
+	},
+	'@media (max-width: 640px)': {
+		/* The pill relaxes into a stacked segmented control. */
+		gridTemplateColumns: '1fr',
+		borderRadius: '28px',
+		'& button': { width: '100%', marginTop: '0.3rem' },
 	},
 }
 
-const capabilityTitleCss = {
-	margin: 0,
-	fontSize: typography.fontSize.lg,
-	fontWeight: typography.fontWeight.semibold,
+const waitlistInputCss = {
+	font: `400 1rem/1.2 ${typography.fontFamilyBody}`,
 	color: colors.text,
+	backgroundColor: 'transparent',
+	border: 'none',
+	borderRadius: '999px',
+	padding: '0.7rem 1.1rem',
+	minWidth: 0,
+	'&::placeholder': { color: colors.textMuted, opacity: 1 },
+	'&:focus': { outline: 'none' },
+	'@media (max-width: 640px)': {
+		paddingBlock: '0.85rem',
+	},
 }
 
-const capabilityDescriptionCss = {
+const waitlistEmailInputCss = {
+	...waitlistInputCss,
+	borderLeft: `1px solid ${colors.border}`,
+	borderRadius: 0,
+	'@media (max-width: 640px)': {
+		paddingBlock: '0.85rem',
+		borderLeft: 'none',
+		borderTop: `1px solid ${colors.border}`,
+	},
+}
+
+const formErrorCss = {
 	margin: 0,
-	color: colors.textMuted,
-	lineHeight: 1.7,
+	fontSize: '0.95rem',
+	lineHeight: 1.5,
+	textAlign: 'center' as const,
+	color: colors.error,
+	[motionOk]: {
+		animation: 'success-in 250ms var(--ease-out) both',
+	},
 }
 
-const capabilityProofLinkCss = {
+const formSuccessCss = {
+	margin: 0,
+	fontSize: '0.95rem',
+	lineHeight: 1.5,
+	textAlign: 'center' as const,
+	color: colors.textMuted,
+	'& strong': { color: colors.primaryText },
+	[motionOk]: {
+		animation: 'success-in 400ms var(--ease-out) both',
+	},
+}
+
+const formResetCss = {
+	font: 'inherit',
+	background: 'none',
+	border: 'none',
+	padding: 0,
 	color: colors.primaryText,
-	fontSize: typography.fontSize.sm,
-	textDecoration: 'none',
-	':hover': { textDecoration: 'underline' },
+	textDecoration: 'underline',
+	textUnderlineOffset: '3px',
+	cursor: 'pointer',
+	'&:hover': { color: colors.text },
 }
 
-const trustLineCss = {
-	margin: 0,
-	maxWidth: layoutMaxWidths.narrow,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.base,
-	lineHeight: 1.6,
-}
-
-const fairSourceLineCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.6,
-}
-
-const fairSourceLinkCss = {
-	color: colors.primaryText,
+const honeypotCss = {
+	...visuallyHiddenCss,
+	left: '-10000px',
 }

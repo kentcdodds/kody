@@ -4,9 +4,11 @@ import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	getBlogPost,
+	getReadNextBlogPost,
 	listBlogPosts,
 	toBlogPostSummary,
 } from '#worker/blog/catalog.ts'
+import { type BlogPost } from '#worker/blog/parse-frontmatter.ts'
 import { buildBlogRssXml } from '#worker/blog/rss.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
@@ -39,6 +41,19 @@ export function createBlogApiHandler(_env: Env) {
 	} satisfies Action<typeof routes.blogApi>
 }
 
+/** Loader payload shared by the SSR page and the JSON API. */
+function toBlogPostLoaderData(post: BlogPost) {
+	return {
+		ok: true as const,
+		slug: post.slug,
+		title: post.title,
+		date: post.date,
+		description: post.description,
+		body: post.body,
+		readNext: getReadNextBlogPost(post.slug),
+	}
+}
+
 export function createBlogPostHandler(env: Env) {
 	return {
 		middleware: [],
@@ -58,14 +73,7 @@ export function createBlogPostHandler(env: Env) {
 				request,
 				env,
 				loaderData: {
-					blogPost: {
-						ok: true,
-						slug: post.slug,
-						title: post.title,
-						date: post.date,
-						description: post.description,
-						body: post.body,
-					},
+					blogPost: toBlogPostLoaderData(post),
 				},
 			})
 		},
@@ -81,14 +89,7 @@ export function createBlogPostApiHandler(_env: Env) {
 				return jsonResponse({ ok: false, error: 'Blog post not found.' }, 404)
 			}
 
-			return jsonResponse({
-				ok: true,
-				slug: post.slug,
-				title: post.title,
-				date: post.date,
-				description: post.description,
-				body: post.body,
-			})
+			return jsonResponse(toBlogPostLoaderData(post))
 		},
 	} satisfies Action<typeof routes.blogPostApi>
 }

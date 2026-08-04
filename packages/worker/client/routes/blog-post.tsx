@@ -1,8 +1,8 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/ui'
 import { BLOG_AUTHOR_NAME, formatBlogPostDate } from '#app/blog-display.ts'
 import { type BlogPostLoaderData } from '#app/loader-data.ts'
 import { routes } from '#app/routes.ts'
-import { MarkdownView } from '#client/markdown-view.tsx'
+import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -13,19 +13,23 @@ import {
 } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, transitions, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
-	descriptionCss,
-	layoutMaxWidths,
-	mutedLinkCss,
-	pageDescriptionCss,
-	pageHeaderCss,
-	pageTitleCss,
-	stackedPageCss,
+	getPillButtonCss,
+	pageHeadCss,
+	proseCss,
 } from '#client/styles/style-primitives.ts'
 
-function getSlugFromPathname(pathname: string) {
+/**
+ * Blog post, ported from the redesign prototype (`landing/blog-post.html`).
+ * A 43rem editorial measure: back link → post head (display title + meta,
+ * page-open rise) → `.prose` body rendered from the server's markdown
+ * catalog → quiet foot (read-next pointer + Kody greeting + waitlist
+ * button). Nothing here hardcodes post content — body, dates, and the
+ * read-next pointer all come from the blog API.
+ */
+
+export function getSlugFromPathname(pathname: string) {
 	const prefix = `${routes.blog.href()}/`
 	if (!pathname.startsWith(prefix)) return null
 	const slug = decodeURIComponent(
@@ -76,6 +80,24 @@ export function BlogPostRoute(handle: Handle) {
 	let loadedSlug: string | null = null
 	const loadLatch = createRouteLoadLatch()
 
+	// Re-lexing markdown on every handle.update() would be wasted work; cache
+	// the rendered body per markdown string (same policy as MarkdownView).
+	let renderedForBody: string | null = null
+	let renderedBody: Array<RemixNode> = []
+
+	function renderPostBody(body: string) {
+		if (renderedForBody !== body) {
+			renderedForBody = body
+			// First-party prose: headings keep their authored h2 rhythm and
+			// Kent's outbound links are not tagged as user-generated content.
+			renderedBody = renderMarkdownNodes(body, {
+				headingOffset: 0,
+				linkRel: 'noopener noreferrer',
+			})
+		}
+		return renderedBody
+	}
+
 	async function loadPost(slug: string, signal: AbortSignal) {
 		status = 'loading'
 		handle.update()
@@ -113,7 +135,7 @@ export function BlogPostRoute(handle: Handle) {
 		const currentHref = readCurrentRouterHref(handle)
 		const slug = getSlugFromPathname(readRouterPathname(handle))
 		if (!slug || !isBlogPostPath(currentHref)) {
-			return <section mix={css(pageCss)} />
+			return <article mix={css(postCss)} />
 		}
 
 		const routeData = tryConsumeRouteLoaderData(handle, 'blogPost', currentHref)
@@ -159,65 +181,191 @@ export function BlogPostRoute(handle: Handle) {
 
 		if (showNotFound) {
 			return (
-				<section mix={css(pageCss)}>
-					<header mix={css(pageHeaderCss)}>
-						<h1 mix={css(pageTitleCss)}>Blog post not found</h1>
-						<p mix={css(pageDescriptionCss)}>
+				<article mix={css(postCss)}>
+					<a href={routes.blog.href()} mix={css(postBackCss)}>
+						← All posts
+					</a>
+					<header mix={css(postHeadCss)}>
+						<h1>Post not found</h1>
+						<p mix={css(postMetaCss)}>
 							That post does not exist or may have been removed.
 						</p>
 					</header>
-					<p mix={css({ margin: 0 })}>
-						<a href={routes.blog.href()} mix={css(mutedLinkCss)}>
-							Back to blog
-						</a>
-					</p>
-				</section>
+				</article>
 			)
 		}
 
 		return (
-			<section mix={css(pageCss)}>
-				{showLoading ? <p mix={css(descriptionCss)}>Loading post…</p> : null}
+			<article mix={css(postCss)}>
+				<a
+					data-rise
+					style={{ '--rise': '0' }}
+					href={routes.blog.href()}
+					mix={css(postBackCss)}
+				>
+					← All posts
+				</a>
+
+				{showLoading ? <p mix={css(postStatusCss)}>Loading post…</p> : null}
 				{showError ? (
-					<p mix={css(descriptionCss)}>Unable to load this blog post.</p>
+					<p mix={css(postStatusCss)}>Unable to load this blog post.</p>
 				) : null}
 				{showReady && post ? (
 					<>
-						<header mix={css(pageHeaderCss)}>
-							<h1 mix={css(pageTitleCss)}>{post.title}</h1>
-							<p mix={css(pageDescriptionCss)}>
-								{formatBlogPostDate(post.date)} · {BLOG_AUTHOR_NAME}
+						<header mix={css(postHeadCss)}>
+							<h1 data-rise style={{ '--rise': '1' }}>
+								{post.title}
+							</h1>
+							<p data-rise style={{ '--rise': '2' }} mix={css(postMetaCss)}>
+								{BLOG_AUTHOR_NAME} · {formatBlogPostDate(post.date)}
 							</p>
 						</header>
 
-						<section mix={css(cardCss)}>
-							<div mix={css(bodyCss)}>
-								<MarkdownView markdown={post.body} />
-							</div>
-						</section>
+						<div mix={css(proseCss)}>{renderPostBody(post.body)}</div>
 
-						<p mix={css({ margin: 0 })}>
-							<a href={routes.blog.href()} mix={css(mutedLinkCss)}>
-								Back to blog
-							</a>
-						</p>
+						<footer mix={css(postFootCss)}>
+							{post.readNext ? (
+								<a
+									href={routes.blogPost.href({ slug: post.readNext.slug })}
+									mix={css(readNextCss)}
+								>
+									<span mix={css(postMetaCss)}>Read next</span>
+									<strong>{post.readNext.title}</strong>
+								</a>
+							) : null}
+							<div mix={css(postCtaCss)}>
+								<img
+									src="/images/kody-greeting.webp"
+									width={480}
+									height={480}
+									alt=""
+								/>
+								<p>
+									Give your assistant a home of its own. Invite-only while we
+									grow the eucalyptus.
+								</p>
+								<a
+									href={`${routes.home.href()}#invite`}
+									mix={css(postCtaButtonCss)}
+								>
+									Join the waiting list
+								</a>
+							</div>
+						</footer>
 					</>
 				) : null}
-			</section>
+			</article>
 		)
 	}
 }
 
-const pageCss = {
-	...stackedPageCss,
-	maxWidth: layoutMaxWidths.narrow,
-	margin: '0 auto',
+/* ---------- styles (prototype: `.post` in landing/styles.css) ---------- */
+
+const postCss = {
+	maxWidth: '43rem',
+	marginInline: 'auto',
+	padding:
+		'clamp(2.5rem, 6vw, 4rem) clamp(1.25rem, 4vw, 2.5rem) clamp(4rem, 8vw, 6.5rem)',
 }
 
-const bodyCss = {
-	color: colors.text,
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.7,
-	display: 'grid',
-	gap: spacing.md,
+const postBackCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.4rem',
+	fontSize: '0.95rem',
+	fontWeight: 550,
+	color: colors.primaryText,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
+}
+
+/* The shared shirt-pattern whisper drifts behind the head, pulled toward the
+   reading edge (the post head is left-aligned, unlike the centered page
+   head). */
+const postHeadCss = {
+	position: 'relative' as const,
+	marginTop: '1.8rem',
+	'&::before': {
+		...pageHeadCss['&::before'],
+		inset: '-90% -30% -250%',
+		background: `radial-gradient(ellipse 46% 55% at 70% 30%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
+	},
+	'& h1': {
+		margin: 0,
+		fontSize: 'clamp(2.1rem, 5vw, 3rem)',
+		fontWeight: 760,
+		letterSpacing: '-0.028em',
+		lineHeight: 1.06,
+		textWrap: 'balance' as const,
+	},
+	'& > p': {
+		marginTop: '0.9rem',
+	},
+}
+
+const postMetaCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+}
+
+const postStatusCss = {
+	margin: 'clamp(1.8rem, 4vw, 2.5rem) 0 0',
+	color: colors.textMuted,
+	fontSize: '0.98rem',
+}
+
+/* ---------- post foot: read next + the standing invitation ---------- */
+
+const postFootCss = {
+	marginTop: 'clamp(3rem, 7vw, 4.5rem)',
+	paddingTop: 'clamp(1.8rem, 4vw, 2.5rem)',
+	borderTop: `1px solid ${colors.border}`,
+}
+
+const readNextCss = {
+	display: 'block',
+	textDecoration: 'none',
+	color: 'inherit',
+	'& span': {
+		display: 'block',
+	},
+	'& strong': {
+		display: 'block',
+		marginTop: '0.3rem',
+		font: `720 1.25rem/1.25 ${typography.fontFamilyDisplay}`,
+		letterSpacing: '-0.014em',
+		transition: `color 140ms ${transitions.easeOut}`,
+	},
+	'&:hover strong': {
+		color: colors.primaryText,
+	},
+}
+
+const postCtaCss = {
+	marginTop: 'clamp(2rem, 5vw, 3rem)',
+	display: 'flex',
+	alignItems: 'center',
+	gap: '1.2rem',
+	flexWrap: 'wrap' as const,
+	'& img': {
+		width: '76px',
+		height: '76px',
+		flex: 'none',
+	},
+	'& p': {
+		flex: 1,
+		minWidth: '16rem',
+		margin: 0,
+		color: colors.textMuted,
+		fontSize: '0.98rem',
+	},
+}
+
+const postCtaButtonCss = {
+	...getPillButtonCss(),
+	fontSize: '0.95rem',
+	padding: '0.8rem 1.35rem',
 }

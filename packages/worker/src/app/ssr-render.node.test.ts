@@ -8,10 +8,19 @@ import {
 } from '#app/auth-session.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
+import { createCommunityDetailHandler } from '#app/handlers/community-detail.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { planLimits } from '#worker/entitlements/plans.ts'
+import { formatLimitBytes } from '#client/routes/pricing.tsx'
+import {
+	getReadNextBlogPost,
+	listBlogPosts,
+	toBlogPostSummary,
+} from '#worker/blog/catalog.ts'
+import { formatBlogPostDate } from '#app/blog-display.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -20,6 +29,7 @@ const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const communityMockModule = vi.hoisted(() => ({
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
+	getCommunityListingWithAggregates: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -27,7 +37,8 @@ vi.mock('#worker/community/service.ts', () => ({
 		communityMockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
 		communityMockModule.searchCommunityListings(...args),
-	getCommunityListingWithAggregates: vi.fn(),
+	getCommunityListingWithAggregates: (...args: Array<unknown>) =>
+		communityMockModule.getCommunityListingWithAggregates(...args),
 	reportCommunityListing: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
 }))
@@ -232,7 +243,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(communityResponse.status).toBe(200)
 	expect(communityResponse.headers.get('Content-Type')).toContain('text/html')
 	const communityHtml = await readResponseText(communityResponse)
-	expect(communityHtml).toContain('@kentcdodds/github-triage')
+	// The card name breaks after the scope slash (`@scope/<wbr />name`).
+	expect(communityHtml).toContain('@kentcdodds/<wbr />github-triage')
 	expect(communityHtml).toContain('Triage GitHub issues.')
 	expect(communityHtml).toContain('data-testid="community-listings-frame"')
 	expect(communityHtml).not.toContain('Loading community packages')
@@ -250,7 +262,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(communityFrameResponse.headers.get('Cache-Control')).toBe('no-store')
 	const communityFrameHtml = await readResponseText(communityFrameResponse)
 	expect(communityFrameHtml).toContain('data-testid="community-listings-frame"')
-	expect(communityFrameHtml).toContain('@kentcdodds/github-triage')
+	expect(communityFrameHtml).toContain('@kentcdodds/<wbr />github-triage')
 	expect(communityFrameHtml).not.toContain('<html')
 
 	const accountCookie = await createAuthCookie(
@@ -439,7 +451,7 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	})
 	const withoutAssetsHtml = await readResponseText(withoutAssets)
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
-	expect(withoutAssetsHtml).toContain('rel="stylesheet"')
+	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
 
 	// With ASSETS serving the stylesheet: inline <style>, no stylesheet link.
@@ -457,7 +469,7 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withAssetsHtml).toContain(
 		'<style>:root { --inline-marker: 1; }</style>',
 	)
-	expect(withAssetsHtml).not.toContain('rel="stylesheet"')
+	expect(withAssetsHtml).not.toContain('href="/styles.css')
 
 	// CSS needing HTML escaping must fall back to the <link> (the stream
 	// renderer escapes text children, which would corrupt selectors).
@@ -470,7 +482,7 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 		env: { ...env, ASSETS: unsafeAssets } as Env,
 	})
 	const withUnsafeCssHtml = await readResponseText(withUnsafeCss)
-	expect(withUnsafeCssHtml).toContain('rel="stylesheet"')
+	expect(withUnsafeCssHtml).toContain('href="/styles.css')
 	expect(withUnsafeCssHtml).not.toContain('.card &gt; p')
 })
 
@@ -497,4 +509,208 @@ test('renderAppPage configures session secret before reading cookies', async () 
 	const html = await readResponseText(response)
 	expect(html).toContain('Authorize access')
 	expect(html).not.toContain('OAuth authorization failed')
+})
+
+test('renderAppPage renders the redesigned landing page shell', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const response = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env,
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	// Theme pre-paint script (blocking, CSP-safe external file).
+	expect(html).toContain('src="/theme-init.js"')
+	// Hero
+	expect(html).toContain('finally')
+	expect(html).toContain('Join the waiting list')
+	expect(html).toContain('/images/hero/kody-base.webp')
+	// Shared header/footer
+	expect(html).toContain('aria-label="Main"')
+	expect(html).toContain('aria-label="Footer"')
+	expect(html).toContain('At your agent')
+	expect(html).toContain('aria-label="Dark mode"')
+	// Sections
+	expect(html).toContain('Nothing new')
+	expect(html).toContain('Catch me up on Slack')
+	expect(html).toContain('It already speaks your stack')
+	expect(html).toContain('Equip your agent')
+})
+
+test('renderAppPage renders the redesigned pricing page', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const response = await renderAppPage({
+		request: new Request('https://example.com/pricing'),
+		env,
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	// Page head + plan panels
+	expect(html).toContain('Start free.')
+	expect(html).toContain('earns it')
+	expect(html).toContain('Create a free account')
+	expect(html).toContain('Upgrade in Account settings')
+	// Limits table sources plans.ts, never hardcoded copies
+	expect(html).toContain('Every limit is finite')
+	expect(html).toContain('Packages &amp; jobs')
+	expect(html).toContain(String(planLimits.free.maxSavedPackages))
+	expect(html).toContain(String(planLimits.pro.maxSavedPackages))
+	expect(html).toContain(formatLimitBytes(planLimits.free.maxEmailMessageBytes))
+	expect(html).toContain(formatLimitBytes(planLimits.pro.maxStorageBytes))
+	// Invite/admin note
+	expect(html).toContain('invite-only plan')
+})
+
+test('renderAppPage renders the redesigned blog index', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const posts = listBlogPosts().map(toBlogPostSummary)
+	const response = await renderAppPage({
+		request: new Request('https://example.com/blog'),
+		env,
+		loaderData: { blog: { ok: true, posts } },
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	// Editorial page head + real RSS feed link
+	expect(html).toContain('Notes from the')
+	expect(html).toContain('eucalyptus')
+	expect(html).toContain('Subscribe via RSS')
+	expect(html).toContain('href="/blog/rss.xml"')
+	// Newest post is featured with mascot art
+	expect(html).toContain('/images/kody-agent-briefing.webp')
+	// Every post from the markdown catalog is linked; dates use the
+	// editorial long format
+	expect(posts.length).toBeGreaterThan(0)
+	for (const post of posts) {
+		expect(html).toContain(`href="/blog/${post.slug}"`)
+	}
+	const newest = posts[0]
+	expect(newest).toBeDefined()
+	expect(html).toContain(formatBlogPostDate(newest!.date))
+})
+
+test('community detail SSR renders the redesigned article', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const detailListing = {
+		...sampleListing,
+		id: 'listing-detail-1',
+		trusted: true,
+		trustedCommit: 'abc1234567890',
+		trustedAt: '2026-01-02T00:00:00.000Z',
+		readmeContent:
+			'# @kentcdodds/github-triage\n\n## Intent\n\nTriage GitHub issues for me.\n\n## Exports\n\n- `./triage` — run the triage pass.',
+	} satisfies CommunityListingWithAggregates
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
+		detailListing,
+	)
+
+	const response = await createCommunityDetailHandler(env).handler({
+		request: new Request('https://example.com/community/listing-detail-1'),
+		url: new URL('https://example.com/community/listing-detail-1'),
+		params: { listingId: 'listing-detail-1' },
+	} as never)
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	// Server frame head: back link, icon well, name (scope-slash break),
+	// author, trusted badge, tags, quiet meta row.
+	expect(html).toContain('data-testid="community-detail-frame"')
+	expect(html).toContain('Community packages')
+	expect(html).toContain('data-testid="community-listing-icon-detail"')
+	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
+	expect(html).toContain('@kentcdodds/<wbr />github-triage')
+	expect(html).toContain('by @kentcdodds')
+	expect(html).toContain('data-testid="community-detail-trusted-badge"')
+	expect(html).toContain('License')
+	expect(html).toContain('MIT')
+	expect(html).toContain('abc1234')
+	expect(html).toContain('★ 4.5 (2)')
+	expect(html).toContain('data-testid="community-detail-forks"')
+	// Client shell sections render server-side from the embedded loader data.
+	expect(html).toContain('One-click install')
+	expect(html).toContain('Fork with your agent')
+	expect(html).toContain('Call community_get with that listing id first')
+	// README renders as prose with h3 subheads (## Intent → h3), not a
+	// scroll box, and keeps the third-party link policy.
+	expect(html).toContain('data-testid="community-readme"')
+	expect(html).toContain('<h3>Intent</h3>')
+	expect(html).toContain('Triage GitHub issues for me.')
+	// Report tucked in a details disclosure.
+	expect(html).toContain('<details')
+	expect(html).toContain('Report this listing')
+	// Loader data embeds the shell payload for hydration.
+	const props = readAppRootProps(html)
+	expect(props.loaderData?.communityDetailShell).toMatchObject({
+		ok: true,
+		listingId: 'listing-detail-1',
+		name: '@kentcdodds/github-triage',
+		trusted: true,
+	})
+})
+
+test('renderAppPage renders the redesigned blog post', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	// A real catalog post whose own title and read-next title carry no
+	// apostrophes (JSX escaping would rewrite them in the HTML output).
+	const post = listBlogPosts().find(
+		(candidate) => candidate.slug === 'every-install-is-a-fork-you-own',
+	)
+	expect(post).toBeDefined()
+	const readNext = getReadNextBlogPost(post!.slug)
+	expect(readNext).not.toBeNull()
+
+	const response = await renderAppPage({
+		request: new Request(`https://example.com/blog/${post!.slug}`),
+		env,
+		loaderData: {
+			blogPost: {
+				ok: true,
+				slug: post!.slug,
+				title: post!.title,
+				date: post!.date,
+				description: post!.description,
+				body: post!.body,
+				readNext,
+			},
+		},
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	// Back link + post head (title, author, editorial long date)
+	expect(html).toContain('All posts')
+	expect(html).toContain(`href="/blog"`)
+	expect(html).toContain(post!.title)
+	expect(html).toContain('Kent C. Dodds')
+	expect(html).toContain(formatBlogPostDate(post!.date))
+	// Markdown body renders in the prose voice: authored `##` stays h2 (not
+	// the README demotion to h4) and first-party links skip the ugc rel.
+	expect(html).toMatch(/<h2[^>]*>/)
+	expect(html).not.toMatch(/<h4[^>]*>/)
+	expect(html).not.toContain('nofollow ugc')
+	// Post foot: read-next pointer from server ordering + waitlist close
+	expect(html).toContain(`href="/blog/${readNext!.slug}"`)
+	expect(html).toContain(readNext!.title)
+	expect(html).toContain('Read next')
+	expect(html).toContain('/images/kody-greeting.webp')
+	expect(html).toContain('Join the waiting list')
+	expect(html).toContain('href="/#invite"')
 })

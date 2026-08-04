@@ -1,3 +1,4 @@
+import { type css } from 'remix/ui'
 import {
 	colors,
 	mq,
@@ -7,6 +8,38 @@ import {
 	transitions,
 	typography,
 } from '#client/styles/tokens.ts'
+
+/**
+ * Hover styles that move or lift must be gated on a real hover device —
+ * touch taps otherwise leave elements stuck in their hover state.
+ */
+export const hoverMq = '@media (hover: hover) and (pointer: fine)'
+
+type CssObject = Parameters<typeof css>[0]
+
+function isPlainObject(value: unknown): value is CssObject {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Deep-merges css objects so shared nested blocks (media queries, selectors)
+ * combine instead of the later spread silently clobbering the earlier one.
+ * Later values win on leaf conflicts.
+ */
+export function mergeCss(...objects: Array<CssObject>): CssObject {
+	const result: CssObject = {}
+	for (const object of objects) {
+		for (const [key, value] of Object.entries(object)) {
+			const existing = result[key]
+			if (isPlainObject(existing) && isPlainObject(value)) {
+				result[key] = mergeCss(existing, value)
+			} else {
+				result[key] = value
+			}
+		}
+	}
+	return result
+}
 
 type ButtonCssOptions = {
 	size?: 'md' | 'lg'
@@ -39,20 +72,41 @@ function getBaseButtonCss(options: ButtonCssOptions = {}) {
 	}
 }
 
+/**
+ * Motion kill for buttons. Declared last in each variant literal so it wins
+ * the cascade over both the press scale and the hover lift.
+ */
+const buttonReducedMotionCss = {
+	'@media (prefers-reduced-motion: reduce)': {
+		transition: 'none',
+		'&:not(:disabled):hover': { transform: 'none' },
+		'&:not(:disabled):active': { transform: 'none' },
+	},
+}
+
 export function getPrimaryButtonCss(options?: ButtonCssOptions) {
 	return {
 		...getBaseButtonCss(options),
 		border: 'none',
 		backgroundColor: colors.primary,
 		color: colors.onPrimary,
-		'&:not(:disabled):hover': {
-			backgroundColor: colors.primaryHover,
-			transform: 'translateY(-1px)',
-		},
+		// Press feedback works everywhere, including touch.
 		'&:not(:disabled):active': {
 			backgroundColor: colors.primaryActive,
-			transform: 'translateY(0)',
+			transform: 'scale(0.97)',
 		},
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				backgroundColor: colors.primaryHover,
+				transform: 'translateY(-1px)',
+			},
+			// Re-declared inside the media block so the press scale beats the
+			// hover lift while both apply.
+			'&:not(:disabled):active': {
+				transform: 'scale(0.97)',
+			},
+		},
+		...buttonReducedMotionCss,
 	}
 }
 
@@ -62,15 +116,21 @@ export function getSecondaryButtonCss(options?: ButtonCssOptions) {
 		border: `1px solid ${colors.border}`,
 		backgroundColor: 'transparent',
 		color: colors.text,
-		'&:not(:disabled):hover': {
-			backgroundColor: colors.primarySoftest,
-			borderColor: colors.primary,
-			transform: 'translateY(-1px)',
-		},
 		'&:not(:disabled):active': {
 			backgroundColor: colors.primarySoft,
-			transform: 'translateY(0)',
+			transform: 'scale(0.97)',
 		},
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				backgroundColor: colors.primarySoftest,
+				borderColor: colors.primary,
+				transform: 'translateY(-1px)',
+			},
+			'&:not(:disabled):active': {
+				transform: 'scale(0.97)',
+			},
+		},
+		...buttonReducedMotionCss,
 	}
 }
 
@@ -80,14 +140,347 @@ export function getDangerButtonCss(options?: ButtonCssOptions) {
 		border: 'none',
 		backgroundColor: colors.danger,
 		color: colors.onDanger,
-		'&:not(:disabled):hover': {
-			backgroundColor: colors.dangerHover,
-			transform: 'translateY(-1px)',
-		},
 		'&:not(:disabled):active': {
 			backgroundColor: colors.danger,
-			transform: 'translateY(0)',
+			transform: 'scale(0.97)',
 		},
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				backgroundColor: colors.dangerHover,
+				transform: 'translateY(-1px)',
+			},
+			'&:not(:disabled):active': {
+				transform: 'scale(0.97)',
+			},
+		},
+		...buttonReducedMotionCss,
+	}
+}
+
+type PillButtonCssOptions = {
+	mobileFullWidth?: boolean
+}
+
+function getBasePillButtonCss(options: PillButtonCssOptions = {}) {
+	return {
+		display: 'inline-flex',
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: '0.5rem',
+		font: `650 1rem/1 ${typography.fontFamilyDisplay}`,
+		borderRadius: radius.full,
+		padding: '0.95rem 1.7rem',
+		cursor: 'pointer',
+		textDecoration: 'none',
+		whiteSpace: 'nowrap' as const,
+		transition: `background-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}, transform 160ms ${transitions.easeOut}, box-shadow 160ms ${transitions.easeOut}`,
+		'&:disabled': {
+			cursor: 'not-allowed',
+			opacity: 0.7,
+		},
+		'&:not(:disabled):active': {
+			transform: 'translateY(0) scale(0.97)',
+		},
+		...(options.mobileFullWidth
+			? {
+					[mq.mobile]: {
+						width: '100%',
+					},
+				}
+			: {}),
+	}
+}
+
+export function getPillButtonCss(options?: PillButtonCssOptions) {
+	return {
+		...getBasePillButtonCss(options),
+		border: 'none',
+		backgroundColor: colors.primary,
+		color: colors.onPrimary,
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				backgroundColor: colors.primaryHover,
+				color: colors.onPrimary,
+				transform: 'translateY(-1px)',
+				boxShadow: `0 6px 20px -8px oklch(from ${colors.primary} l c h / 0.6)`,
+			},
+			'&:not(:disabled):active': {
+				transform: 'translateY(0) scale(0.97)',
+			},
+		},
+		...buttonReducedMotionCss,
+	}
+}
+
+export function getGhostButtonCss(options?: PillButtonCssOptions) {
+	return {
+		...getBasePillButtonCss(options),
+		border: 'none',
+		backgroundColor: 'transparent',
+		color: colors.text,
+		boxShadow: `inset 0 0 0 1.5px ${colors.border}`,
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				backgroundColor: colors.surface,
+				color: colors.text,
+				transform: 'translateY(-1px)',
+				boxShadow: `inset 0 0 0 1.5px ${colors.textMuted}`,
+			},
+			'&:not(:disabled):active': {
+				transform: 'translateY(0) scale(0.97)',
+			},
+		},
+		...buttonReducedMotionCss,
+	}
+}
+
+/**
+ * Layout-stable label swap for buttons whose text changes with state
+ * ("Copy" → "Copied", "Join the waiting list" → "Joining…"). Every label
+ * renders grid-stacked in the same cell so the widest one reserves the width
+ * — swapping never shifts layout. The outgoing label exits fast; the incoming
+ * one lands slower and slightly delayed, through a light blur that masks the
+ * two texts overlapping (same blur-crossfade as the prototype's `copy-swap`).
+ *
+ * Markup contract: children are `<span data-swap-label>` with `data-active`
+ * on the current one and `aria-hidden="true"` on the rest. Compose onto a
+ * button getter with `mergeCss` so nested media blocks combine.
+ */
+export function getSwapLabelCss() {
+	return {
+		display: 'inline-grid',
+		justifyItems: 'center',
+		alignItems: 'center',
+		'& > [data-swap-label]': {
+			gridArea: '1 / 1',
+			whiteSpace: 'nowrap' as const,
+			// Exit: fast, so the old label is mostly gone before the new lands.
+			transition: `opacity 90ms ${transitions.easeOut}, filter 90ms ${transitions.easeOut}, scale 90ms ${transitions.easeOut}`,
+		},
+		'& > [data-swap-label]:not([data-active])': {
+			opacity: 0,
+			filter: 'blur(3px)',
+			scale: '0.96',
+		},
+		'& > [data-swap-label][data-active]': {
+			// Entrance: slower and slightly delayed — asymmetric on purpose.
+			transition: `opacity 200ms ${transitions.easeOut} 50ms, filter 200ms ${transitions.easeOut} 50ms, scale 200ms ${transitions.easeOut} 50ms`,
+		},
+		'@media (prefers-reduced-motion: reduce)': {
+			'& > [data-swap-label]': { transition: 'none' },
+			'& > [data-swap-label][data-active]': { transition: 'none' },
+		},
+	}
+}
+
+export const pageHeadCss = {
+	position: 'relative' as const,
+	textAlign: 'center' as const,
+	'&::before': {
+		content: '""',
+		position: 'absolute' as const,
+		inset: '-70% -20% -160%',
+		background: `radial-gradient(ellipse 44% 55% at 50% 38%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
+		maskImage: 'var(--kody-pattern)',
+		maskPosition: 'center',
+		maskSize: '340px',
+		maskRepeat: 'repeat',
+		WebkitMaskImage: 'var(--kody-pattern)',
+		WebkitMaskPosition: 'center',
+		WebkitMaskSize: '340px',
+		WebkitMaskRepeat: 'repeat',
+		pointerEvents: 'none' as const,
+	},
+	'& h1': {
+		margin: 0,
+		fontSize: 'clamp(2.4rem, 5.5vw, 3.8rem)',
+		fontWeight: 760,
+		letterSpacing: '-0.028em',
+		lineHeight: 1.04,
+	},
+	'& h1 em': {
+		fontStyle: 'normal',
+		color: colors.primaryText,
+	},
+	'& > p': {
+		margin: '1rem auto 0',
+		color: colors.textMuted,
+		fontSize: '1.08rem',
+		maxWidth: '46ch',
+		textWrap: 'balance' as const,
+	},
+}
+
+export const proseCss = {
+	marginTop: 'clamp(1.8rem, 4vw, 2.5rem)',
+	// Long literal URLs in link text must never force a horizontal scroll on
+	// narrow screens.
+	overflowWrap: 'break-word' as const,
+	'& a': {
+		color: colors.primaryText,
+		textDecorationThickness: '1.5px',
+		textUnderlineOffset: '3px',
+	},
+	'& p': {
+		margin: '1.15rem 0 0',
+		maxWidth: '62ch',
+		textWrap: 'pretty' as const,
+	},
+	'& > p:first-child': {
+		marginTop: 0,
+	},
+	'& p strong': {
+		color: colors.text,
+	},
+	'& h2': {
+		margin: 'clamp(2.4rem, 5vw, 3.2rem) 0 0',
+		fontSize: 'clamp(1.45rem, 2.6vw, 1.75rem)',
+		fontWeight: 720,
+		letterSpacing: '-0.018em',
+		lineHeight: 1.15,
+	},
+	'& h2 + p': {
+		marginTop: '1rem',
+	},
+	'& ul, & ol': {
+		margin: '1.15rem 0 0',
+		paddingLeft: '1.25rem',
+		display: 'grid',
+		gap: '0.6rem',
+	},
+	'& li': {
+		paddingLeft: '0.25rem',
+		textWrap: 'pretty' as const,
+	},
+	'& li::marker': {
+		color: colors.primaryText,
+	},
+	'& li strong': {
+		color: colors.text,
+	},
+	// Quoted voices stay quiet: a hairline rule and muted ink, no green.
+	'& blockquote': {
+		margin: '1.4rem 0 0',
+		padding: '0 0 0 1.1rem',
+		borderLeft: `2px solid ${colors.border}`,
+		color: colors.textMuted,
+	},
+	'& blockquote p:first-child': {
+		marginTop: 0,
+	},
+	'& code': {
+		font: '500 0.92em/1.2 ui-monospace, "SF Mono", Menlo, monospace',
+		backgroundColor: colors.surface,
+		border: `1px solid ${colors.border}`,
+		borderRadius: '6px',
+		padding: '0.1em 0.4em',
+		whiteSpace: 'nowrap' as const,
+	},
+	'& pre': {
+		margin: '1.4rem 0 0',
+		padding: '1rem 1.15rem',
+		backgroundColor: colors.surface,
+		border: `1px solid ${colors.border}`,
+		borderRadius: '10px',
+		overflowX: 'auto' as const,
+	},
+	'& pre code': {
+		font: '500 0.88em/1.55 ui-monospace, "SF Mono", Menlo, monospace',
+		backgroundColor: 'transparent',
+		border: 'none',
+		borderRadius: 0,
+		padding: 0,
+		whiteSpace: 'pre' as const,
+	},
+}
+
+/** Display-face section heading (the redesign's `section h2` voice). */
+export const sectionHeadingCss = {
+	margin: 0,
+	fontSize: 'clamp(1.9rem, 3.8vw, 2.8rem)',
+	fontWeight: 730,
+	letterSpacing: '-0.025em',
+	lineHeight: 1.08,
+	'@media (max-width: 800px)': {
+		fontSize: '2rem',
+	},
+}
+
+type BrandChipCssOptions = {
+	/**
+	 * `/images/icons/<name>.svg` brand mark, drawn in the chip's own ink via
+	 * a CSS mask so it works in both themes. Omit for a plain text chip.
+	 */
+	iconHref?: string
+	/** Dashed, muted trailing chip ("…and one thermostat"). */
+	muted?: boolean
+}
+
+/**
+ * Pill chip for brand/host clouds (landing pitch hosts, world cloud,
+ * onboarding wayfinding). Icon comes from a real SVG asset referenced with a
+ * plain url() mask — never a data URI.
+ */
+export function getBrandChipCss(options: BrandChipCssOptions = {}) {
+	return {
+		display: 'inline-flex',
+		alignItems: 'center',
+		gap: '0.55em',
+		fontSize: '0.95rem',
+		fontWeight: 550,
+		color: options.muted ? colors.textMuted : colors.text,
+		backgroundColor: options.muted ? 'transparent' : colors.surface,
+		border: `1px ${options.muted ? 'dashed' : 'solid'} ${colors.border}`,
+		borderRadius: radius.full,
+		padding: '0.45rem 1rem',
+		...(options.iconHref
+			? {
+					'&::before': {
+						content: '""',
+						width: '1.05em',
+						height: '1.05em',
+						flex: 'none',
+						background: 'currentColor',
+						maskImage: `url('${options.iconHref}')`,
+						maskPosition: 'center',
+						maskSize: 'contain',
+						maskRepeat: 'no-repeat',
+						WebkitMaskImage: `url('${options.iconHref}')`,
+						WebkitMaskPosition: 'center',
+						WebkitMaskSize: 'contain',
+						WebkitMaskRepeat: 'no-repeat',
+					},
+				}
+			: {}),
+	}
+}
+
+type SurfaceCardCssOptions = {
+	interactive?: boolean
+}
+
+export function getSurfaceCardCss(options: SurfaceCardCssOptions = {}) {
+	return {
+		backgroundColor: colors.surface,
+		border: `1.5px solid ${colors.border}`,
+		borderRadius: radius.card,
+		...(options.interactive
+			? {
+					transition: `border-color 160ms ${transitions.easeOut}, transform 160ms ${transitions.easeOut}`,
+					[hoverMq]: {
+						'&:hover': {
+							borderColor: colors.primary,
+							transform: 'translateY(-2px)',
+						},
+					},
+					'@media (prefers-reduced-motion: reduce)': {
+						transition: 'none',
+						'&:hover': {
+							transform: 'none',
+						},
+					},
+				}
+			: {}),
 	}
 }
 
@@ -189,6 +582,75 @@ export const inputCss = {
 	fontSize: typography.fontSize.base,
 	fontFamily: typography.fontFamily,
 	boxSizing: 'border-box' as const,
+}
+
+/* ---------- redesigned form fields (auth surfaces) ---------- */
+
+/** Label-over-input stack from the redesign's `.field` (login prototype). */
+export const authFieldCss = {
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.45rem',
+}
+
+export const authFieldLabelCss = {
+	fontSize: '0.92rem',
+	fontWeight: 600,
+	color: colors.text,
+}
+
+/** Label row with a trailing quiet link ("Forgot password?"). */
+export const authFieldLabelRowCss = {
+	display: 'flex',
+	alignItems: 'baseline',
+	justifyContent: 'space-between',
+	gap: spacing.md,
+}
+
+type AuthInputCssOptions = {
+	/**
+	 * `canvas` inputs sit on a `surface` panel and read as wells in the page
+	 * ground color (the login panel); `surface` is the default when the input
+	 * sits directly on the canvas.
+	 */
+	background?: 'canvas' | 'surface'
+}
+
+/**
+ * Individually bordered input from the redesign: the focus ring is drawn on
+ * the field itself (green border + soft glow). Markup contract: put
+ * `data-field-ring` on the input so the unlayered global `:focus-visible`
+ * outline in `public/styles.css` stands down — otherwise it double-rings and
+ * forces its 4px radius onto the 12px field.
+ */
+export function getAuthInputCss(options: AuthInputCssOptions = {}) {
+	return {
+		font: `400 1rem/1.2 ${typography.fontFamilyBody}`,
+		color: colors.text,
+		backgroundColor:
+			options.background === 'canvas' ? colors.background : colors.surface,
+		border: `1.5px solid ${colors.border}`,
+		borderRadius: '12px',
+		padding: '0.85rem 1.05rem',
+		minWidth: 0,
+		width: '100%',
+		boxSizing: 'border-box' as const,
+		transition: `border-color 160ms ${transitions.easeOut}`,
+		'&::placeholder': {
+			color: colors.textMuted,
+			opacity: 1,
+		},
+		'&:focus': {
+			borderColor: colors.primary,
+			boxShadow: `0 0 0 3px oklch(from ${colors.primary} l c h / 0.25)`,
+		},
+		'&[aria-invalid="true"]': {
+			borderColor: colors.error,
+		},
+		'@media (prefers-reduced-motion: reduce)': {
+			transition: 'none',
+		},
+	}
 }
 
 export const focusRingCss = {

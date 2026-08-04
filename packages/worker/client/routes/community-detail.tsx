@@ -1,7 +1,6 @@
-import { Frame, type Handle, css } from 'remix/ui'
+import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
 import { routes } from '#app/routes.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#app/community-frame-constants.ts'
-import { writeClipboardText } from '#client/clipboard.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
@@ -12,23 +11,23 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
-import { MarkdownView } from '#client/markdown-view.tsx'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
-	cardTitleCss,
-	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
-	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	insetCardCss,
-	layoutMaxWidths,
-	mutedLinkCss,
-	stackedPageCss,
-	textareaCss,
+	colors,
+	radius,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
+import {
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSurfaceCardCss,
+	hoverMq,
+	mergeCss,
+	pageHeadCss,
+	proseCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type PublicCommunityListing,
@@ -37,6 +36,16 @@ import {
 import { type CommunityStargazersLoaderData } from '#app/loader-data.ts'
 import { formatCommunityPublishedDate } from '#app/community-display.ts'
 import { UserAvatar } from '#app/user-avatar.tsx'
+
+/**
+ * Community detail, ported from the redesign prototype
+ * (`landing/community-detail.html`). A 46rem article mirroring the blog
+ * post: the listing head (back link, icon + name + author + badges, tags,
+ * quiet meta row) stays server-rendered in the `community-detail` frame —
+ * see `src/app/community-detail-content.tsx` — while this shell renders the
+ * interactive sections around it: one-click install, the fork prompt block,
+ * the README as `.prose`, stars, admin tools, and the report disclosure.
+ */
 
 type CommunityDetailApiPayload = {
 	ok: true
@@ -64,7 +73,7 @@ type CommunityInstallOutcome = {
 	failedChecks: Array<{ kind: string; message: string }>
 }
 
-function getListingIdFromPathname(pathname: string) {
+export function getListingIdFromPathname(pathname: string) {
 	const prefix = `${routes.community.href()}/`
 	if (!pathname.startsWith(prefix)) return null
 	const listingId = decodeURIComponent(
@@ -143,17 +152,12 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installState: 'idle' | 'confirming' | 'submitting' | 'error' = 'idle'
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
-	let installPromptCopyState: 'idle' | 'copied' = 'idle'
-	let installPromptCopyTimerId: ReturnType<typeof window.setTimeout> | null =
-		null
 	let readmeContent: string | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
 	let reportReason = ''
 	let reportState: 'idle' | 'submitting' | 'success' | 'error' = 'idle'
 	let reportMessage: string | null = null
-	let copyState: 'idle' | 'copied' = 'idle'
-	let copyResetTimerId: ReturnType<typeof window.setTimeout> | null = null
 	let shellLoadedForListingId: string | null = null
 	let shellRequestedForListingId: string | null = null
 	let starCount = 0
@@ -164,6 +168,23 @@ export function CommunityDetailRoute(handle: Handle) {
 	let stargazersTotal = 0
 	let stargazersStatus: 'idle' | 'loading' | 'ready' | 'error' = 'idle'
 	let stargazersLoadedForListingId: string | null = null
+
+	// Re-lexing markdown on every handle.update() would be wasted work; cache
+	// the rendered README per markdown string (same policy as MarkdownView).
+	let renderedForReadme: string | null = null
+	let renderedReadme: Array<RemixNode> = []
+
+	function renderReadme(markdown: string) {
+		if (renderedForReadme !== markdown) {
+			renderedForReadme = markdown
+			// Third-party README in the page's prose voice: authored `##`
+			// sections land on h3 (DESIGN.md's "h3 subheads"; publishing
+			// requires a `## Intent` section), the page keeps its h1, and the
+			// untrusted-content link policy (`nofollow ugc`) stays the default.
+			renderedReadme = renderMarkdownNodes(markdown, { headingOffset: 1 })
+		}
+		return renderedReadme
+	}
 
 	async function loadDetailShell() {
 		const listingId = getCurrentListingId(handle)
@@ -501,48 +522,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
-	async function copyInstallPrompt() {
-		if (!installOutcome) return
-		try {
-			await writeClipboardText(installOutcome.agentPrompt)
-			if (installPromptCopyTimerId != null) {
-				window.clearTimeout(installPromptCopyTimerId)
-			}
-			installPromptCopyState = 'copied'
-			handle.update()
-			installPromptCopyTimerId = window.setTimeout(() => {
-				installPromptCopyTimerId = null
-				if (handle.signal.aborted) return
-				installPromptCopyState = 'idle'
-				handle.update()
-			}, 2000)
-		} catch {
-			installPromptCopyState = 'idle'
-			handle.update()
-		}
-	}
-
-	async function copyForkPrompt() {
-		if (!forkPrompt) return
-		try {
-			await writeClipboardText(forkPrompt)
-			if (copyResetTimerId != null) {
-				window.clearTimeout(copyResetTimerId)
-			}
-			copyState = 'copied'
-			handle.update()
-			copyResetTimerId = window.setTimeout(() => {
-				copyResetTimerId = null
-				if (handle.signal.aborted) return
-				copyState = 'idle'
-				handle.update()
-			}, 2000)
-		} catch {
-			copyState = 'idle'
-			handle.update()
-		}
-	}
-
 	listenToRouterNavigation(handle, () => {
 		const listingId = getCurrentListingId(handle)
 		if (!listingId) return
@@ -599,27 +578,21 @@ export function CommunityDetailRoute(handle: Handle) {
 		return true
 	}
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
-	const dangerButtonCss = getDangerButtonCss()
-
 	return () => {
 		const listingId = getCurrentListingId(handle)
 		const currentHref = readCurrentRouterHref(handle)
 
 		if (!listingId) {
 			return (
-				<section mix={css(pageCss)}>
-					<h1 mix={css({ margin: 0, fontSize: typography.fontSize['2xl'] })}>
-						Community package not found
-					</h1>
-					<p mix={css(descriptionCss)}>This listing is unavailable.</p>
-					<p mix={css({ margin: 0 })}>
-						<a href={routes.community.href()} mix={css(mutedLinkCss)}>
-							Back to community packages
-						</a>
-					</p>
-				</section>
+				<article mix={css(detailArticleCss)}>
+					<a href={routes.community.href()} mix={css(backLinkCss)}>
+						← Community packages
+					</a>
+					<header mix={css(missingHeadCss)}>
+						<h1>Community package not found</h1>
+						<p>This listing is unavailable.</p>
+					</header>
+				</article>
 			)
 		}
 
@@ -657,46 +630,44 @@ export function CommunityDetailRoute(handle: Handle) {
 		const showShellError = shellStatus === 'error' && shellMatchesListing
 
 		return (
-			<section mix={css(pageCss)}>
+			<article mix={css(detailArticleCss)}>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
 				{!showShellReady && !showShellError ? (
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading community package details…
-					</p>
+					<p mix={css(shellStatusCss)}>Loading community package details…</p>
 				) : null}
 
 				{showShellError ? (
-					<p mix={css({ color: colors.textMuted, margin: 0 })} role="status">
+					<p mix={css(shellStatusCss)} role="status">
 						Unable to load fork and report details for this listing.
 					</p>
 				) : null}
 
 				{showShellReady ? (
 					<>
-						<section mix={css(cardCss)} data-testid="community-install">
-							<h2 mix={css(cardTitleCss)}>One-click install</h2>
+						<section
+							aria-labelledby="install-title"
+							mix={css(detailSectionCss)}
+							data-testid="community-install"
+						>
+							<h2 id="install-title">One-click install</h2>
 							{installOutcome ? (
 								<>
 									{installOutcome.status === 'installed' ? (
 										<>
-											<p
-												mix={css(descriptionCss)}
-												data-testid="community-install-success"
-												role="status"
-											>
+											<p data-testid="community-install-success" role="status">
 												Installed as {installOutcome.targetName}. Any jobs or
 												auto-start services the package declares are now active.
 											</p>
-											<p mix={css({ margin: 0 })}>
+											<p>
 												<a
 													href={routes.accountPackages.href()}
-													mix={css(mutedLinkCss)}
+													mix={css(inlineLinkCss)}
 												>
 													View it in your packages
 												</a>
 											</p>
-											<p mix={css(descriptionCss)}>
+											<p>
 												Give this prompt to your agent to finish any remaining
 												setup (secrets, connections, a first test run):
 											</p>
@@ -704,7 +675,6 @@ export function CommunityDetailRoute(handle: Handle) {
 									) : (
 										<>
 											<p
-												mix={css(descriptionCss)}
 												data-testid="community-install-adaptation"
 												role="status"
 											>
@@ -720,28 +690,25 @@ export function CommunityDetailRoute(handle: Handle) {
 													))}
 												</ul>
 											) : null}
-											<p mix={css(descriptionCss)}>
+											<p>
 												Give this prompt to your agent to adapt and publish it:
 											</p>
 										</>
 									)}
-									<pre mix={css(promptBlockCss)}>
-										{installOutcome.agentPrompt}
-									</pre>
-									<button
-										mix={[
-											on('click', () => void copyInstallPrompt()),
-											css(primaryButtonCss),
-										]}
-									>
-										{installPromptCopyState === 'copied'
-											? 'Copied'
-											: 'Copy prompt'}
-									</button>
+									<div mix={css(promptGroupCss)}>
+										<blockquote mix={css(promptBlockCss)}>
+											{installOutcome.agentPrompt}
+										</blockquote>
+										<CopyTextButton
+											value={installOutcome.agentPrompt}
+											idleLabel="Copy prompt"
+											variant="pill"
+										/>
+									</div>
 								</>
 							) : (
 								<>
-									<p mix={css(descriptionCss)}>
+									<p>
 										Install forks this package into your account and publishes
 										it right away when it passes the standard package checks.
 										{trusted
@@ -766,7 +733,7 @@ export function CommunityDetailRoute(handle: Handle) {
 													<button
 														mix={[
 															on('click', () => void submitInstall()),
-															css(dangerButtonCss),
+															css(dangerPillButtonCss),
 														]}
 													>
 														Install anyway
@@ -777,7 +744,7 @@ export function CommunityDetailRoute(handle: Handle) {
 																installState = 'idle'
 																handle.update()
 															}),
-															css(secondaryButtonCss),
+															css(smallGhostButtonCss),
 														]}
 													>
 														Cancel
@@ -785,39 +752,38 @@ export function CommunityDetailRoute(handle: Handle) {
 												</div>
 											</div>
 										) : (
-											<button
-												disabled={installState === 'submitting'}
-												mix={[
-													on('click', () => {
-														if (trusted) {
-															void submitInstall()
-															return
-														}
-														installState = 'confirming'
-														installMessage = null
-														handle.update()
-													}),
-													css(primaryButtonCss),
-												]}
-											>
-												{installState === 'submitting'
-													? 'Installing…'
-													: 'Install'}
-											</button>
+											<div mix={css(sectionActionCss)}>
+												<button
+													disabled={installState === 'submitting'}
+													mix={[
+														on('click', () => {
+															if (trusted) {
+																void submitInstall()
+																return
+															}
+															installState = 'confirming'
+															installMessage = null
+															handle.update()
+														}),
+														css(pillButtonCss),
+													]}
+												>
+													{installState === 'submitting'
+														? 'Installing…'
+														: 'Install'}
+												</button>
+											</div>
 										)
 									) : (
-										<p mix={css(descriptionCss)}>
-											<a href="/login" mix={css(mutedLinkCss)}>
+										<p>
+											<a href="/login" mix={css(inlineLinkCss)}>
 												Log in
 											</a>{' '}
 											to install this package.
 										</p>
 									)}
 									{installMessage ? (
-										<p
-											mix={css({ margin: 0, color: colors.error })}
-											role="alert"
-										>
+										<p mix={css(errorTextCss)} role="alert">
 											{installMessage}
 										</p>
 									) : null}
@@ -825,50 +791,84 @@ export function CommunityDetailRoute(handle: Handle) {
 							)}
 						</section>
 
-						<section mix={css(cardCss)} data-testid="community-star">
-							<h2 mix={css(cardTitleCss)}>Stars</h2>
-							<p mix={css(descriptionCss)} data-testid="community-star-count">
+						<section aria-labelledby="fork-title" mix={css(detailSectionCss)}>
+							<h2 id="fork-title">Fork with your agent</h2>
+							<p>
+								Copy this prompt into your MCP-capable agent to fork and adapt
+								the package safely. Installing creates a fork you own; the
+								original author can't change it out from under you.
+							</p>
+							<div mix={css(promptGroupCss)}>
+								<blockquote id="fork-prompt" mix={css(promptBlockCss)}>
+									{forkPrompt}
+								</blockquote>
+								<CopyTextButton
+									value={forkPrompt}
+									idleLabel="Copy prompt"
+									variant="pill"
+								/>
+							</div>
+						</section>
+
+						{readmeContent ? (
+							<section
+								aria-labelledby="readme-title"
+								mix={css(readmeSectionCss)}
+							>
+								<h2 id="readme-title">README</h2>
+								<div data-testid="community-readme" mix={css(readmeProseCss)}>
+									{renderReadme(readmeContent)}
+								</div>
+							</section>
+						) : null}
+
+						<section
+							aria-labelledby="stars-title"
+							mix={css(detailSectionCss)}
+							data-testid="community-star"
+						>
+							<h2 id="stars-title">Stars</h2>
+							<p data-testid="community-star-count">
 								{starCount} {starCount === 1 ? 'star' : 'stars'}
 							</p>
 							{loggedIn ? (
-								<button
-									type="button"
-									disabled={starState === 'submitting'}
-									mix={[
-										on('click', () => void submitStar(!starredByViewer)),
-										css(
-											starredByViewer ? secondaryButtonCss : primaryButtonCss,
-										),
-									]}
-								>
-									{starState === 'submitting'
-										? 'Saving…'
-										: starredByViewer
-											? 'Unstar'
-											: 'Star'}
-								</button>
+								<div mix={css(sectionActionCss)}>
+									<button
+										type="button"
+										disabled={starState === 'submitting'}
+										mix={[
+											on('click', () => void submitStar(!starredByViewer)),
+											css(
+												starredByViewer ? smallGhostButtonCss : pillButtonCss,
+											),
+										]}
+									>
+										{starState === 'submitting'
+											? 'Saving…'
+											: starredByViewer
+												? 'Unstar'
+												: 'Star'}
+									</button>
+								</div>
 							) : (
-								<p mix={css(descriptionCss)}>
-									<a href="/login" mix={css(mutedLinkCss)}>
+								<p>
+									<a href="/login" mix={css(inlineLinkCss)}>
 										Log in
 									</a>{' '}
 									to star this package.
 								</p>
 							)}
 							{starMessage ? (
-								<p mix={css({ margin: 0, color: colors.error })} role="alert">
+								<p mix={css(errorTextCss)} role="alert">
 									{starMessage}
 								</p>
 							) : null}
-							<p
-								mix={css(descriptionCss)}
-								data-testid="community-stargazers-total"
-							>
+							<p data-testid="community-stargazers-total">
 								{stargazersTotal}{' '}
 								{stargazersTotal === 1 ? 'stargazer' : 'stargazers'}
 							</p>
 							{stargazersStatus === 'loading' ? (
-								<p mix={css(descriptionCss)}>Loading stargazers…</p>
+								<p>Loading stargazers…</p>
 							) : null}
 							{stargazersStatus === 'ready' && stargazers.length > 0 ? (
 								<ul
@@ -876,7 +876,7 @@ export function CommunityDetailRoute(handle: Handle) {
 									data-testid="community-stargazers"
 								>
 									{stargazers.map((stargazer) => (
-										<li key={stargazer.username} mix={css(stargazerRowCss)}>
+										<li key={stargazer.username}>
 											<UserAvatar
 												displayName={stargazer.displayName}
 												avatarUrl={stargazer.avatarUrl}
@@ -887,7 +887,7 @@ export function CommunityDetailRoute(handle: Handle) {
 													href={routes.profile.href({
 														username: stargazer.username,
 													})}
-													mix={css(mutedLinkCss)}
+													mix={css(stargazerLinkCss)}
 												>
 													{stargazer.displayName}
 												</a>{' '}
@@ -902,46 +902,35 @@ export function CommunityDetailRoute(handle: Handle) {
 							) : null}
 						</section>
 
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Fork with your agent</h2>
-							<p mix={css(descriptionCss)}>
-								Copy this prompt into your MCP-capable agent to fork and adapt
-								the package safely.
-							</p>
-							<pre mix={css(promptBlockCss)}>{forkPrompt}</pre>
-							<button
-								mix={[
-									on('click', () => void copyForkPrompt()),
-									css(primaryButtonCss),
-								]}
-							>
-								{copyState === 'copied' ? 'Copied' : 'Copy prompt'}
-							</button>
-						</section>
-
 						{viewerIsAdmin ? (
-							<section mix={css(cardCss)} data-testid="community-admin-trust">
-								<h2 mix={css(cardTitleCss)}>Admin: trust</h2>
-								<p mix={css(descriptionCss)}>
+							<section
+								aria-labelledby="admin-trust-title"
+								mix={css(detailSectionCss)}
+								data-testid="community-admin-trust"
+							>
+								<h2 id="admin-trust-title">Admin: trust</h2>
+								<p>
 									{trusted
 										? 'This listing is marked trusted at its current version. Revoking removes the badge immediately.'
 										: 'Marking this listing trusted applies to the exact current version only. A republish by the owner drops the mark until it is re-reviewed.'}
 								</p>
-								<button
-									disabled={trustState === 'submitting'}
-									mix={[
-										on('click', () => void submitTrust(!trusted)),
-										css(secondaryButtonCss),
-									]}
-								>
-									{trustState === 'submitting'
-										? 'Saving…'
-										: trusted
-											? 'Revoke trust'
-											: 'Mark as trusted'}
-								</button>
+								<div mix={css(sectionActionCss)}>
+									<button
+										disabled={trustState === 'submitting'}
+										mix={[
+											on('click', () => void submitTrust(!trusted)),
+											css(smallGhostButtonCss),
+										]}
+									>
+										{trustState === 'submitting'
+											? 'Saving…'
+											: trusted
+												? 'Revoke trust'
+												: 'Mark as trusted'}
+									</button>
+								</div>
 								{trustMessage ? (
-									<p mix={css({ margin: 0, color: colors.error })} role="alert">
+									<p mix={css(errorTextCss)} role="alert">
 										{trustMessage}
 									</p>
 								) : null}
@@ -949,62 +938,57 @@ export function CommunityDetailRoute(handle: Handle) {
 						) : null}
 
 						{viewerIsAdmin ? (
-							<section mix={css(cardCss)} data-testid="community-admin-feature">
-								<h2 mix={css(cardTitleCss)}>Admin: onboarding</h2>
-								<p mix={css(descriptionCss)}>
+							<section
+								aria-labelledby="admin-feature-title"
+								mix={css(detailSectionCss)}
+								data-testid="community-admin-feature"
+							>
+								<h2 id="admin-feature-title">Admin: onboarding</h2>
+								<p>
 									{featured
 										? 'This listing is featured as an onboarding starter package. Removing it hides it from onboarding immediately.'
 										: trusted
 											? 'Featuring offers this listing for one-click install during onboarding. A republish by the owner drops it from onboarding until the new version is re-trusted.'
 											: 'Only trusted listings can be featured in onboarding. Mark the listing trusted first.'}
 								</p>
-								<button
-									disabled={
-										featureState === 'submitting' || (!featured && !trusted)
-									}
-									mix={[
-										on('click', () => void submitFeature(!featured)),
-										css(secondaryButtonCss),
-									]}
-								>
-									{featureState === 'submitting'
-										? 'Saving…'
-										: featured
-											? 'Remove from onboarding'
-											: 'Feature in onboarding'}
-								</button>
+								<div mix={css(sectionActionCss)}>
+									<button
+										disabled={
+											featureState === 'submitting' || (!featured && !trusted)
+										}
+										mix={[
+											on('click', () => void submitFeature(!featured)),
+											css(smallGhostButtonCss),
+										]}
+									>
+										{featureState === 'submitting'
+											? 'Saving…'
+											: featured
+												? 'Remove from onboarding'
+												: 'Feature in onboarding'}
+									</button>
+								</div>
 								{featureMessage ? (
-									<p mix={css({ margin: 0, color: colors.error })} role="alert">
+									<p mix={css(errorTextCss)} role="alert">
 										{featureMessage}
 									</p>
 								) : null}
 							</section>
 						) : null}
 
-						{readmeContent ? (
-							<section mix={css(cardCss)}>
-								<h2 mix={css(cardTitleCss)}>README</h2>
-								<div data-testid="community-readme" mix={css(readmeBlockCss)}>
-									<MarkdownView markdown={readmeContent} />
-								</div>
-							</section>
-						) : null}
-
-						<section mix={css(cardCss)}>
-							<h2 id="report" mix={css(cardTitleCss)}>
-								Report this listing
-							</h2>
+						<details id="report" mix={css(reportDisclosureCss)}>
+							<summary>Report this listing</summary>
 							{loggedIn ? (
-								<>
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Reason</span>
+								<div mix={css(reportFormCss)}>
+									<label mix={css(reportFieldCss)}>
+										<span>Reason</span>
 										<textarea
 											value={reportReason}
 											rows={4}
 											maxLength={2000}
 											placeholder="Describe why this listing should be reviewed."
 											mix={[
-												css(textareaCss),
+												css(reportTextareaCss),
 												on('input', (event) => {
 													reportReason = (event.target as HTMLTextAreaElement)
 														.value
@@ -1019,7 +1003,7 @@ export function CommunityDetailRoute(handle: Handle) {
 										}
 										mix={[
 											on('click', () => void submitReport()),
-											css(secondaryButtonCss),
+											css(smallGhostButtonCss),
 										]}
 									>
 										{reportState === 'submitting'
@@ -1028,65 +1012,168 @@ export function CommunityDetailRoute(handle: Handle) {
 									</button>
 									{reportMessage ? (
 										<p
-											mix={css({
-												margin: 0,
-												color:
-													reportState === 'error'
-														? colors.error
-														: colors.textMuted,
-											})}
+											mix={css(
+												reportState === 'error' ? errorTextCss : mutedTextCss,
+											)}
 											role={reportState === 'error' ? 'alert' : 'status'}
 										>
 											{reportMessage}
 										</p>
 									) : null}
-								</>
+								</div>
 							) : (
-								<p mix={css(descriptionCss)}>
-									<a href="/login" mix={css(mutedLinkCss)}>
+								<p mix={css(reportLoginNoteCss)}>
+									<a href="/login" mix={css(inlineLinkCss)}>
 										Log in
 									</a>{' '}
 									to report this listing.
 								</p>
 							)}
-						</section>
+						</details>
 					</>
 				) : null}
-			</section>
+			</article>
 		)
 	}
 }
 
-const pageCss = {
-	...stackedPageCss,
-	maxWidth: layoutMaxWidths.narrow,
-	margin: '0 auto',
+/* ---------- styles (prototype: `.pkg-detail` in landing/styles.css) ---------- */
+
+/* 46rem article measure mirroring the blog post; the route owns its gutters
+   (the app shell leaves redesigned marketing paths unpadded). The shirt-
+   pattern whisper anchors to the article in rem, not to the short icon-row
+   head in percentages, so it renders at the same scale and position as the
+   blog post head's fabric. */
+const detailArticleCss = {
+	position: 'relative' as const,
+	maxWidth: '46rem',
+	marginInline: 'auto',
 	width: '100%',
+	boxSizing: 'border-box' as const,
+	padding:
+		'clamp(2.5rem, 6vw, 4rem) clamp(1.25rem, 4vw, 2.5rem) clamp(4rem, 8vw, 6.5rem)',
+	'&::before': {
+		...pageHeadCss['&::before'],
+		inset: 'auto',
+		top: '-3rem',
+		left: '-30%',
+		right: '-30%',
+		height: '44rem',
+		background: `radial-gradient(ellipse 46% 55% at 70% 22%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
+	},
+}
+
+const backLinkCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.4rem',
+	fontSize: '0.95rem',
+	fontWeight: 550,
+	color: colors.primaryText,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
+}
+
+const missingHeadCss = {
+	marginTop: '1.8rem',
+	'& h1': {
+		margin: 0,
+		fontSize: 'clamp(1.7rem, 4vw, 2.4rem)',
+		fontWeight: 760,
+		letterSpacing: '-0.024em',
+		lineHeight: 1.05,
+	},
+	'& p': {
+		margin: '0.9rem 0 0',
+		color: colors.textMuted,
+	},
+}
+
+const shellStatusCss = {
+	margin: 'clamp(1.8rem, 4vw, 2.5rem) 0 0',
+	color: colors.textMuted,
+	fontSize: '0.98rem',
+}
+
+/* Quiet sections in the `.pkg-fork` voice: display-face h2, muted lede. */
+const detailSectionCss = {
+	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
+	'& h2': {
+		margin: 0,
+		fontSize: 'clamp(1.4rem, 2.4vw, 1.65rem)',
+		fontWeight: 720,
+		letterSpacing: '-0.016em',
+	},
+	'& > p': {
+		margin: '0.6rem 0 0',
+		color: colors.textMuted,
+		fontSize: '0.98rem',
+		maxWidth: '56ch',
+		textWrap: 'balance' as const,
+	},
+	// Error lines must out-rank the muted `& > p` default above.
+	'& > p[role="alert"]': {
+		color: colors.error,
+	},
+}
+
+const sectionActionCss = {
+	marginTop: '1.1rem',
+}
+
+const promptGroupCss = {
+	marginTop: '1.2rem',
+	'& > button': {
+		marginTop: '0.8rem',
+	},
 }
 
 const promptBlockCss = {
-	...insetCardCss,
 	margin: 0,
-	whiteSpace: 'pre-wrap' as const,
-	wordBreak: 'break-word' as const,
-	fontFamily: typography.fontFamily,
-	fontSize: typography.fontSize.sm,
+	fontSize: '0.98rem',
 	lineHeight: 1.6,
+	color: colors.text,
+	backgroundColor: colors.surface,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
+	padding: '1.1rem 1.3rem',
+	whiteSpace: 'pre-wrap' as const,
+	overflowWrap: 'break-word' as const,
 }
 
-const readmeBlockCss = {
-	...insetCardCss,
-	maxHeight: '32rem',
-	overflow: 'auto',
-}
+const pillButtonCss = getPillButtonCss()
 
-const warningCardCss = {
-	...insetCardCss,
-	display: 'flex',
-	flexDirection: 'column' as const,
-	gap: '0.75rem',
+/* The prototype's smaller `.account-form .button` sizing. */
+const smallGhostButtonCss = mergeCss(getGhostButtonCss(), {
+	fontSize: '0.95rem',
+	padding: '0.75rem 1.3rem',
+})
+
+/* The pill grammar in the danger voice for the untrusted-install confirm. */
+const dangerPillButtonCss = mergeCss(getPillButtonCss(), {
+	backgroundColor: colors.danger,
+	color: colors.onDanger,
+	[hoverMq]: {
+		'&:not(:disabled):hover': {
+			backgroundColor: colors.dangerHover,
+			color: colors.onDanger,
+			boxShadow: `0 6px 20px -8px oklch(from ${colors.danger} l c h / 0.6)`,
+		},
+	},
+})
+
+const warningCardCss = mergeCss(getSurfaceCardCss(), {
+	marginTop: '1.2rem',
 	borderColor: colors.danger,
-}
+	padding: '1.1rem 1.3rem',
+	display: 'grid',
+	gap: '0.9rem',
+	'& p': {
+		fontSize: '0.95rem',
+	},
+})
 
 const buttonRowCss = {
 	display: 'flex',
@@ -1094,27 +1181,141 @@ const buttonRowCss = {
 	flexWrap: 'wrap' as const,
 }
 
-const stargazerListCss = {
-	display: 'grid',
-	gap: '0.35rem',
-	margin: 0,
-	padding: 0,
-	listStyle: 'none',
-	fontSize: typography.fontSize.sm,
-}
-
-const stargazerRowCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: '0.5rem',
-}
-
 const checkListCss = {
-	margin: 0,
+	margin: '0.8rem 0 0',
 	paddingLeft: '1.25rem',
 	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-	display: 'flex',
-	flexDirection: 'column' as const,
-	gap: '0.25rem',
+	fontSize: '0.92rem',
+	display: 'grid',
+	gap: '0.35rem',
+}
+
+const inlineLinkCss = {
+	color: colors.primaryText,
+	textDecorationThickness: '1.5px',
+	textUnderlineOffset: '3px',
+}
+
+const errorTextCss = {
+	margin: '0.8rem 0 0',
+	color: colors.error,
+	fontSize: '0.95rem',
+}
+
+const mutedTextCss = {
+	margin: '0.8rem 0 0',
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+}
+
+/* README as real prose (no scroll box), h3 subheads per DESIGN.md. */
+const readmeSectionCss = {
+	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
+	'& > h2': {
+		margin: 0,
+		fontSize: 'clamp(1.4rem, 2.4vw, 1.65rem)',
+		fontWeight: 720,
+		letterSpacing: '-0.016em',
+		paddingBottom: '0.9rem',
+		borderBottom: `1px solid ${colors.border}`,
+	},
+}
+
+const readmeProseCss = mergeCss(proseCss, {
+	marginTop: '1.4rem',
+	'& h3': {
+		margin: '1.8rem 0 0',
+		fontSize: '1.15rem',
+		fontWeight: 720,
+		letterSpacing: '-0.01em',
+	},
+})
+
+const stargazerListCss = {
+	listStyle: 'none',
+	margin: '1.1rem 0 0',
+	padding: 0,
+	display: 'grid',
+	gap: '0.45rem',
+	fontSize: '0.92rem',
+	'& > li': {
+		display: 'flex',
+		alignItems: 'center',
+		gap: '0.5rem',
+	},
+}
+
+const stargazerLinkCss = {
+	color: colors.text,
+	fontWeight: 550,
+	textDecoration: 'none',
+	transition: `color 140ms ${transitions.easeOut}`,
+	'&:hover': {
+		color: colors.primaryText,
+	},
+}
+
+/* "Report this listing" tucked in a details disclosure. */
+const reportDisclosureCss = {
+	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
+	'& summary': {
+		cursor: 'pointer',
+		fontWeight: 600,
+		color: colors.textMuted,
+		width: 'fit-content',
+		transition: `color 140ms ${transitions.easeOut}`,
+	},
+	'& summary:hover': {
+		color: colors.text,
+	},
+	'&[open] summary': {
+		color: colors.text,
+	},
+}
+
+const reportFormCss = {
+	marginTop: '1.3rem',
+	maxWidth: '34rem',
+	display: 'grid',
+	gap: '1rem',
+	justifyItems: 'start',
+}
+
+const reportFieldCss = {
+	width: '100%',
+	display: 'grid',
+	gap: '0.45rem',
+	'& > span': {
+		fontSize: '0.92rem',
+		fontWeight: 600,
+		color: colors.text,
+	},
+}
+
+const reportTextareaCss = {
+	font: `400 1rem/1.5 ${typography.fontFamilyBody}`,
+	color: colors.text,
+	backgroundColor: colors.surface,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: '12px',
+	padding: '0.85rem 1.05rem',
+	width: '100%',
+	minHeight: '6.5rem',
+	resize: 'vertical' as const,
+	boxSizing: 'border-box' as const,
+	'&::placeholder': {
+		color: colors.textMuted,
+		opacity: 1,
+	},
+	'&:focus': {
+		outline: 'none',
+		borderColor: colors.primary,
+		boxShadow: `0 0 0 3px oklch(from ${colors.primary} l c h / 0.25)`,
+	},
+}
+
+const reportLoginNoteCss = {
+	margin: '1.3rem 0 0',
+	color: colors.textMuted,
+	fontSize: '0.98rem',
 }

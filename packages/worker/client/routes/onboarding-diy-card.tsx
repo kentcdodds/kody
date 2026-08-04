@@ -2,17 +2,11 @@ import { type Handle, css } from 'remix/ui'
 import * as popover from 'remix/ui/popover'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
-import {
-	colors,
-	radius,
-	shadows,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
-import { getSecondaryButtonCss } from '#client/styles/style-primitives.ts'
+import { colors, typography } from '#client/styles/tokens.ts'
 import {
 	starterCardCss,
-	starterCardItemCss,
+	starterGhostButtonCss,
+	starterTooltipSurfaceCss,
 } from '#client/routes/onboarding-starter-card.tsx'
 
 type OnboardingDiyCardProps = {
@@ -23,8 +17,9 @@ const copyPromptTooltip =
 	'Copies a prompt you can paste into your agent to explore what Kody can do and build something custom.'
 
 /**
- * Trailing onboarding card: copy the open-ended setup prompt instead of
- * installing a starter package ("choose your own adventure").
+ * Trailing onboarding card, the prototype's `.starter-diy`: breaks the grid
+ * with a dashed border and a soft green tint so "no package" reads as a real
+ * option — copy the open-ended setup prompt instead of installing a starter.
  */
 export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 	let copyState: 'idle' | 'copied' | 'error' = 'idle'
@@ -59,120 +54,89 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 	}
 
 	return () => (
-		<li mix={css(starterCardItemCss)}>
-			<div
-				mix={css({ ...starterCardCss, ...diyCardAccentCss })}
-				data-testid="onboarding-diy-card"
-			>
-				<div mix={css(diyBodyCss)}>
-					<span mix={css(diyEyebrowCss)}>Build it yourself</span>
-					<span mix={css(diyTitleCss)}>Choose your own adventure</span>
-					<span mix={css(diyDescriptionCss)}>
-						Skip the starters and ask your agent what Kody can do — connect an
-						integration, explore, and build something custom.
-					</span>
-				</div>
-				<div mix={css(diyActionsCss)}>
-					<popover.Context>
-						<button
-							type="button"
-							aria-describedby="onboarding-diy-prompt-tip"
-							disabled={!handle.props.setupPrompt}
-							mix={[
-								css(diyButtonCss),
-								popover.anchor({ placement: 'top' }),
-								popover.focusOnHide(),
-								on('click', () => void copyPrompt()),
-								on('pointerenter', openTooltip),
-								on('pointerleave', closeTooltip),
-								on('focus', openTooltip),
-								on('blur', closeTooltip),
-							]}
-							data-testid="onboarding-diy-copy"
-						>
-							{copyState === 'copied'
-								? 'Copied'
-								: copyState === 'error'
-									? 'Copy failed'
-									: 'Copy prompt'}
-						</button>
-						<div
-							id="onboarding-diy-prompt-tip"
-							role="tooltip"
-							mix={[
-								css(tooltipSurfaceCss),
-								popover.surface({
-									open: tooltipOpen,
-									closeOnAnchorClick: false,
-									onHide() {
-										closeTooltip()
-									},
-								}),
-							]}
-						>
-							{copyPromptTooltip}
-						</div>
-					</popover.Context>
-				</div>
+		<li mix={css(diyCardCss)} data-testid="onboarding-diy-card">
+			<div mix={css(diyBodyCss)}>
+				<em mix={css(diyEyebrowCss)}>Build it yourself</em>
+				<strong mix={css(diyTitleCss)}>Choose your own adventure</strong>
+				<span mix={css(diyDescriptionCss)}>
+					Skip the starters and ask your agent what Kody can do — connect an
+					integration, explore, and build something custom.
+				</span>
 			</div>
+			<popover.Context>
+				<button
+					type="button"
+					aria-describedby="onboarding-diy-prompt-tip"
+					disabled={!handle.props.setupPrompt}
+					mix={[
+						css(starterGhostButtonCss),
+						popover.anchor({ placement: 'top' }),
+						popover.focusOnHide(),
+						on('click', () => void copyPrompt()),
+						on('pointerenter', openTooltip),
+						on('pointerleave', closeTooltip),
+						on('focus', openTooltip),
+						on('blur', closeTooltip),
+					]}
+					data-testid="onboarding-diy-copy"
+				>
+					{copyState === 'copied'
+						? 'Copied'
+						: copyState === 'error'
+							? 'Copy failed'
+							: 'Copy prompt'}
+				</button>
+				<div
+					id="onboarding-diy-prompt-tip"
+					role="tooltip"
+					mix={[
+						css(starterTooltipSurfaceCss),
+						popover.surface({
+							open: tooltipOpen,
+							closeOnAnchorClick: false,
+							onHide() {
+								closeTooltip()
+							},
+						}),
+					]}
+				>
+					{copyPromptTooltip}
+				</div>
+			</popover.Context>
 		</li>
 	)
 }
 
-const diyCardAccentCss = {
+const diyCardCss = {
+	...starterCardCss,
 	borderStyle: 'dashed' as const,
-	backgroundColor: colors.primarySoftest,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.07)`,
 }
 
 const diyBodyCss = {
+	flex: 1,
 	display: 'flex',
 	flexDirection: 'column' as const,
 	alignItems: 'center',
-	gap: spacing.xs,
-	flex: 1,
-	textAlign: 'center' as const,
+	gap: '0.45rem',
 }
 
 const diyEyebrowCss = {
-	fontSize: typography.fontSize.xs,
-	fontWeight: typography.fontWeight.medium,
-	color: colors.primary,
+	font: `700 0.72rem/1 ${typography.fontFamilyDisplay}`,
+	fontStyle: 'normal',
 	textTransform: 'uppercase' as const,
-	letterSpacing: '0.04em',
+	letterSpacing: '0.09em',
+	color: colors.primaryText,
 }
 
 const diyTitleCss = {
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.sm,
+	color: colors.text,
+	fontWeight: 650,
+	fontSize: '0.98rem',
 }
 
 const diyDescriptionCss = {
 	color: colors.textMuted,
-	fontSize: typography.fontSize.xs,
-	lineHeight: 1.4,
-}
-
-const diyActionsCss = {
-	marginTop: 'auto',
-	display: 'flex',
-	justifyContent: 'center',
-}
-
-const diyButtonCss = {
-	...getSecondaryButtonCss(),
-	width: '100%',
-	justifyContent: 'center',
-}
-
-const tooltipSurfaceCss = {
-	maxWidth: '16rem',
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.md,
-	backgroundColor: colors.surface,
-	color: colors.text,
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.4,
-	boxShadow: shadows.md,
-	border: `1px solid ${colors.border}`,
+	fontSize: '0.88rem',
+	lineHeight: 1.45,
 }

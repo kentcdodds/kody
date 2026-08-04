@@ -37,6 +37,8 @@ export type BlogPostLoaderData = {
 	date: string
 	description: string
 	body: string
+	/** Next post in catalog order for the post foot; null when alone. */
+	readNext: { slug: string; title: string } | null
 }
 
 export type CommunityIndexLoaderData = {

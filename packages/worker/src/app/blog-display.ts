@@ -11,7 +11,13 @@ export function formatBlogPostDate(date: string) {
 	) {
 		return date
 	}
-	return new Date(year, month - 1, day).toLocaleDateString()
+	// Fixed locale/format ("July 20, 2026" — the redesign's editorial date
+	// voice) so server-rendered HTML and client hydration always agree.
+	return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric',
+	})
 }
 
 export const BLOG_AUTHOR_NAME = 'Kent C. Dodds'

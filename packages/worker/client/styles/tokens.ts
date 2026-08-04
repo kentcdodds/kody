@@ -24,6 +24,8 @@ export const colors = {
 // Typography tokens
 export const typography = {
 	fontFamily: 'var(--font-family)',
+	fontFamilyDisplay: 'var(--font-display)',
+	fontFamilyBody: 'var(--font-body)',
 	fontSize: {
 		xs: 'var(--font-size-xs)',
 		sm: 'var(--font-size-sm)',
@@ -56,6 +58,7 @@ export const radius = {
 	md: 'var(--radius-md)',
 	lg: 'var(--radius-lg)',
 	xl: 'var(--radius-xl)',
+	card: 'var(--radius-card)',
 	full: 'var(--radius-full)',
 } as const
 
@@ -69,6 +72,7 @@ export const shadows = {
 export const transitions = {
 	fast: 'var(--transition-fast)',
 	normal: 'var(--transition-normal)',
+	easeOut: 'var(--ease-out)',
 } as const
 
 // Breakpoints for CSS-in-JS media queries

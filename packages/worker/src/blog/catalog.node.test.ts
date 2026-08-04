@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest'
-import { getBlogPost, listBlogPosts, toBlogPostSummary } from './catalog.ts'
+import {
+	getBlogPost,
+	getReadNextBlogPost,
+	listBlogPosts,
+	toBlogPostSummary,
+} from './catalog.ts'
 import { parseBlogPostMarkdown } from './parse-frontmatter.ts'
 import { buildBlogRssXml } from './rss.ts'
 
@@ -107,6 +112,22 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 			expect(previous.date >= current.date).toBe(true)
 		}
 	}
+})
+
+test('getReadNextBlogPost follows catalog order and wraps to the first post', () => {
+	const posts = listBlogPosts()
+	expect(posts.length).toBeGreaterThan(1)
+
+	for (let index = 0; index < posts.length; index += 1) {
+		const current = posts[index]!
+		const expected = posts[(index + 1) % posts.length]!
+		expect(getReadNextBlogPost(current.slug)).toEqual({
+			slug: expected.slug,
+			title: expected.title,
+		})
+	}
+
+	expect(getReadNextBlogPost('does-not-exist')).toBeNull()
 })
 
 test('buildBlogRssXml escapes markup and includes every catalog post', () => {

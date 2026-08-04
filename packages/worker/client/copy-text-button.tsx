@@ -2,22 +2,52 @@ import { type Handle, css } from 'remix/ui'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import {
+	getGhostButtonCss,
+	getPillButtonCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
+	getSwapLabelCss,
+	mergeCss,
 } from '#client/styles/style-primitives.ts'
 
 type CopyTextButtonProps = {
 	value: string
 	idleLabel?: string
-	variant?: 'primary' | 'secondary'
+	/**
+	 * `pill` is the redesign's display-face pill (prompt-block copy);
+	 * `ghost` its bordered transparent sibling (snippet copy).
+	 */
+	variant?: 'primary' | 'secondary' | 'pill' | 'ghost'
 }
+
+type CopyState = 'idle' | 'copied' | 'error'
+
+// css() is static after hydration, so all variants are prebuilt and the
+// dynamic state flows through data attributes on the labels, never through
+// swapped style objects.
+const primaryCopyButtonCss = mergeCss(getPrimaryButtonCss(), getSwapLabelCss())
+const secondaryCopyButtonCss = mergeCss(
+	getSecondaryButtonCss(),
+	getSwapLabelCss(),
+)
+const pillCopyButtonCss = mergeCss(getPillButtonCss(), getSwapLabelCss())
+const ghostCopyButtonCss = mergeCss(getGhostButtonCss(), getSwapLabelCss())
+
+const copyButtonCssByVariant = {
+	primary: primaryCopyButtonCss,
+	secondary: secondaryCopyButtonCss,
+	pill: pillCopyButtonCss,
+	ghost: ghostCopyButtonCss,
+} as const
 
 /**
  * Button that copies `value` to the clipboard and shows transient
  * "Copied" / "Copy failed" feedback before returning to the idle label.
+ * All three labels stay grid-stacked in the same cell so the button never
+ * changes size when the label swaps — the swap is a blur crossfade instead.
  */
 export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
-	let copyState: 'idle' | 'copied' | 'error' = 'idle'
+	let copyState: CopyState = 'idle'
 	let resetTimerId: ReturnType<typeof setTimeout> | null = null
 
 	async function copyValue() {
@@ -37,23 +67,30 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 		}, 2000)
 	}
 
+	function renderLabel(state: CopyState, text: string) {
+		const active = copyState === state
+		return (
+			<span
+				data-swap-label
+				data-active={active ? 'true' : undefined}
+				aria-hidden={active ? undefined : 'true'}
+			>
+				{text}
+			</span>
+		)
+	}
+
 	return () => (
 		<button
 			type="button"
 			mix={[
-				css(
-					handle.props.variant === 'secondary'
-						? getSecondaryButtonCss()
-						: getPrimaryButtonCss(),
-				),
+				css(copyButtonCssByVariant[handle.props.variant ?? 'primary']),
 				on('click', () => void copyValue()),
 			]}
 		>
-			{copyState === 'copied'
-				? 'Copied'
-				: copyState === 'error'
-					? 'Copy failed'
-					: (handle.props.idleLabel ?? 'Copy')}
+			{renderLabel('idle', handle.props.idleLabel ?? 'Copy')}
+			{renderLabel('copied', 'Copied')}
+			{renderLabel('error', 'Copy failed')}
 		</button>
 	)
 }

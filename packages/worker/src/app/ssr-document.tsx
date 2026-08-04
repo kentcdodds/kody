@@ -172,7 +172,36 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					href="/apple-touch-icon.png"
 				/>
 				<link rel="manifest" href="/site.webmanifest" />
-				<meta name="theme-color" content="#2563eb" />
+				<meta
+					name="theme-color"
+					content="#e6e8ea"
+					media="(prefers-color-scheme: light)"
+				/>
+				<meta
+					name="theme-color"
+					content="#111417"
+					media="(prefers-color-scheme: dark)"
+				/>
+				{/* Blocking on purpose: applies the stored theme and the `js`
+				    class before first paint (no theme flash, enhance-only
+				    motion). CSP disallows inline scripts, hence the file. */}
+				<script src="/theme-init.js"></script>
+				{/* Fonts are self-hosted (CSP allows only 'self' for styles and
+				    fonts); preload the latin faces used on every page. */}
+				<link
+					rel="preload"
+					as="font"
+					type="font/woff2"
+					href="/fonts/bricolage-grotesque-latin.woff2"
+					crossOrigin="anonymous"
+				/>
+				<link
+					rel="preload"
+					as="font"
+					type="font/woff2"
+					href="/fonts/wix-madefor-text-latin.woff2"
+					crossOrigin="anonymous"
+				/>
 				<title>
 					{handle.props.documentHead?.title ?? handle.props.title ?? 'kody'}
 				</title>
