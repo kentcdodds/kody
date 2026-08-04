@@ -56,7 +56,10 @@ const packageServiceShadowStatuses = [
 	'stopped',
 	'error',
 ] as const
-/** Write-lease authority: `do` is UserMeter-authoritative; `legacy` mirrors D1. */
+/** Write-lease authority values stored in the SQLite `authority` column.
+ * All new leases use `'do'`; `'legacy'` rows are quiescent pending a future
+ * destructive schema migration after production objects report
+ * `schema_version >= 7`. */
 export const userMeterWriteLeaseAuthorities = ['do', 'legacy'] as const
 
 export type UserMeterPackageServiceStatus =
@@ -191,6 +194,7 @@ export type UserMeterPackageServiceBootstrapResult = {
 export type UserMeterWriteLeaseAuthority =
 	(typeof userMeterWriteLeaseAuthorities)[number]
 
+/** @deprecated Authority discrimination is retired; all active leases are DO-authority. */
 export function isUserMeterWriteLeaseAuthority(
 	authority: string,
 ): authority is UserMeterWriteLeaseAuthority {
@@ -199,20 +203,11 @@ export function isUserMeterWriteLeaseAuthority(
 	)
 }
 
-export type UserMeterWriteLeaseShadow = {
+/** Paged write-lease entry returned by {@link UserMeterRpc.listWriteLeases}. */
+export type UserMeterWriteLeaseEntry = {
 	token: string
 	holder: string
 	acquiredAt: string
-	authority: UserMeterWriteLeaseAuthority
-}
-
-/**
- * Internal cutover / list shape. Includes token and holder for parity with D1
- * `account_write_leases`; never emit this from account export.
- */
-export type UserMeterDeletionShadow = {
-	deletingAt: string | null
-	writeLeases: Array<UserMeterWriteLeaseShadow>
 }
 
 /**
@@ -225,34 +220,15 @@ export type UserMeterDeletionShadowExport = {
 	writeLeases: Array<{ acquiredAt: string }>
 }
 
-export type UserMeterShadowMarkDeletingResult = {
-	deletingAt: string
-	created: boolean
-}
-
-export type UserMeterShadowReplaceDeletionStateResult = {
-	deletingAt: string
-	created: boolean
-	leaseCount: number
-}
-
 export type UserMeterMarkDeletingResult = {
 	deletingAt: string
 	created: boolean
-	/** Deduped union of preserved DO-authority rows plus D1 legacy snapshot. */
+	/** Count of active write leases (DO-authority rows) at the time of marking. */
 	leaseCount: number
-}
-
-export type UserMeterShadowAcquireWriteLeaseResult = {
-	acquired: boolean
 }
 
 export type UserMeterAcquireWriteLeaseResult = {
 	acquired: boolean
-}
-
-export type UserMeterShadowReleaseWriteLeaseResult = {
-	released: boolean
 }
 
 export type UserMeterReleaseWriteLeaseResult = {
@@ -278,19 +254,13 @@ export type UserMeterFinalizeWriteLeaseRepairResult = {
 }
 
 export type UserMeterWriteLeaseListResult = {
-	leases: Array<UserMeterWriteLeaseShadow>
+	leases: Array<UserMeterWriteLeaseEntry>
 	nextStartAfter: string | null
 	truncated: boolean
 }
 
 export type UserMeterWriteLeaseCountResult = {
 	count: number
-}
-
-export type UserMeterDeletionBootstrapResult = {
-	deletingAtApplied: boolean
-	leasesApplied: number
-	leasesSkipped: number
 }
 
 export type UserMeterExportResult = {
@@ -491,17 +461,6 @@ function assertWriteLeaseHolder(holder: string): string {
 		)
 	}
 	return holder
-}
-
-function assertWriteLeaseAuthority(
-	authority: string,
-): UserMeterWriteLeaseAuthority {
-	if (!isUserMeterWriteLeaseAuthority(authority)) {
-		throw new Error(
-			`UserMeter write lease authority must be one of ${userMeterWriteLeaseAuthorities.join(', ')}; got ${JSON.stringify(authority)}.`,
-		)
-	}
-	return authority
 }
 
 function assertWriteLeaseRepairId(repairId: string): string {
@@ -709,6 +668,10 @@ class UserMeterBase extends DurableObject<Env> {
 		`)
 		if (version != null && version < 7) {
 			try {
+				// TODO: Remove this ALTER after production objects report
+				// schema_version >= 7; the physical `authority` column is kept
+				// for warm-object compatibility but its value is no longer
+				// used to branch code paths.
 				this.ctx.storage.sql.exec(
 					`ALTER TABLE account_write_leases
 					ADD COLUMN authority TEXT NOT NULL DEFAULT 'legacy'`,
@@ -1532,15 +1495,11 @@ class UserMeterBase extends DurableObject<Env> {
 		return deletingAt.length > 0 ? deletingAt : null
 	}
 
-	private writeLeaseFromRow(row: WriteLeaseSqlRow): UserMeterWriteLeaseShadow {
-		const authorityRaw = String(row.authority ?? 'legacy')
+	private writeLeaseFromRow(row: WriteLeaseSqlRow): UserMeterWriteLeaseEntry {
 		return {
 			token: String(row.token),
 			holder: String(row.holder),
 			acquiredAt: String(row.acquired_at),
-			authority: isUserMeterWriteLeaseAuthority(authorityRaw)
-				? authorityRaw
-				: 'legacy',
 		}
 	}
 
@@ -1561,13 +1520,13 @@ class UserMeterBase extends DurableObject<Env> {
 		return row ?? null
 	}
 
-	private readWriteLease(token: string): UserMeterWriteLeaseShadow | null {
+	private readWriteLease(token: string): UserMeterWriteLeaseEntry | null {
 		const row = this.readWriteLeaseRow(token)
 		if (!row) return null
 		return this.writeLeaseFromRow(row)
 	}
 
-	private listAllWriteLeaseRows(): Array<UserMeterWriteLeaseShadow> {
+	private listAllWriteLeaseRows(): Array<UserMeterWriteLeaseEntry> {
 		const rows = this.ctx.storage.sql
 			.exec<WriteLeaseSqlRow>(
 				`SELECT token, holder, acquired_at, authority, pending_repair_id
@@ -1608,109 +1567,24 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	/**
-	 * Replace only legacy/D1-mirror rows with the supplied snapshot; preserve
-	 * DO-authority rows (and any pending repair state on those rows).
-	 */
-	private replaceLegacyWriteLeases(
-		leases: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-		}>,
-	): number {
-		this.ctx.storage.sql.exec(
-			`DELETE FROM account_write_leases WHERE authority = 'legacy'`,
-		)
-		for (const lease of leases) {
-			this.ctx.storage.sql.exec(
-				`INSERT INTO account_write_leases (
-					token, holder, acquired_at, authority, pending_repair_id
-				)
-				VALUES (?, ?, ?, 'legacy', NULL)
-				ON CONFLICT(token) DO UPDATE SET
-					holder = excluded.holder,
-					acquired_at = excluded.acquired_at,
-					authority = 'legacy',
-					pending_repair_id = NULL
-				WHERE account_write_leases.authority = 'legacy'`,
-				lease.token,
-				lease.holder,
-				lease.acquiredAt,
-			)
-		}
-		return this.countWriteLeases()
-	}
-
-	private normalizeLegacyLeaseSnapshot(
-		leases: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-		}>,
-	) {
-		const leasesByToken = new Map<
-			string,
-			{ token: string; holder: string; acquiredAt: string }
-		>()
-		for (const lease of leases) {
-			const token = assertWriteLeaseToken(lease.token)
-			leasesByToken.set(token, {
-				token,
-				holder: assertWriteLeaseHolder(lease.holder),
-				acquiredAt: assertDeletionTimestamp('acquiredAt', lease.acquiredAt),
-			})
-		}
-		return [...leasesByToken.values()]
-	}
-
 	private listWriteLeasesPage(input: {
 		pageSize?: number
 		startAfter?: string | null
-		authority?: UserMeterWriteLeaseAuthority
 	}): UserMeterWriteLeaseListResult {
 		const pageSize = normalizePageSize(input.pageSize)
 		const cursor =
 			typeof input.startAfter === 'string' && input.startAfter.length > 0
 				? decodeWriteLeaseCursor(input.startAfter)
 				: null
-		const authority = input.authority
 		const rows = (
-			authority
-				? cursor
-					? this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
-							`SELECT token, holder, acquired_at, authority, pending_repair_id
-							FROM account_write_leases
-							WHERE authority = ?
-								AND (
-									acquired_at > ?
-									OR (acquired_at = ? AND token > ?)
-								)
-							ORDER BY acquired_at ASC, token ASC
-							LIMIT ?`,
-							authority,
-							cursor.acquiredAt,
-							cursor.acquiredAt,
-							cursor.token,
-							pageSize + 1,
-						)
-					: this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
-							`SELECT token, holder, acquired_at, authority, pending_repair_id
-							FROM account_write_leases
-							WHERE authority = ?
-							ORDER BY acquired_at ASC, token ASC
-							LIMIT ?`,
-							authority,
-							pageSize + 1,
-						)
-				: cursor
-					? this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
-							`SELECT token, holder, acquired_at, authority, pending_repair_id
-							FROM account_write_leases
-							WHERE acquired_at > ?
-								OR (acquired_at = ? AND token > ?)
-							ORDER BY acquired_at ASC, token ASC
-							LIMIT ?`,
+			cursor
+				? this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
+						`SELECT token, holder, acquired_at, authority, pending_repair_id
+						FROM account_write_leases
+						WHERE acquired_at > ?
+							OR (acquired_at = ? AND token > ?)
+						ORDER BY acquired_at ASC, token ASC
+						LIMIT ?`,
 							cursor.acquiredAt,
 							cursor.acquiredAt,
 							cursor.token,
@@ -1752,79 +1626,22 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	/** Legacy/compat mark of D1 `users.deleting_at` (first write wins). */
-	async shadowMarkDeleting(input: {
-		deletingAt: string
-	}): Promise<UserMeterShadowMarkDeletingResult> {
-		const deletingAt = assertDeletionTimestamp('deletingAt', input.deletingAt)
-		return this.insertOrPreserveDeletingAt(deletingAt)
-	}
-
-	/** Legacy/compat replace of legacy rows from a D1 snapshot. */
-	async shadowReplaceDeletionState(input: {
-		deletingAt: string
-		leases?: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-		}>
-	}): Promise<UserMeterShadowReplaceDeletionStateResult> {
-		return this.markDeleting({
-			deletingAt: input.deletingAt,
-			legacyLeases: input.leases,
-		})
-	}
-
 	/**
-	 * Authoritative mark: preserve tombstone + DO-authority rows, replace only
-	 * legacy rows from the D1 snapshot, return deduped union lease count.
+	 * Authoritative mark: preserve tombstone, return active DO write-lease count.
 	 */
 	async markDeleting(input: {
 		deletingAt: string
-		legacyLeases?: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-		}>
 	}): Promise<UserMeterMarkDeletingResult> {
 		const deletingAt = assertDeletionTimestamp('deletingAt', input.deletingAt)
-		const leases = this.normalizeLegacyLeaseSnapshot(input.legacyLeases ?? [])
 		return await this.ctx.blockConcurrencyWhile(async () => {
 			const marked = this.insertOrPreserveDeletingAt(deletingAt)
-			const leaseCount = this.replaceLegacyWriteLeases(leases)
+			const leaseCount = this.countWriteLeases()
 			return {
 				deletingAt: marked.deletingAt,
 				created: marked.created,
 				leaseCount,
 			}
 		})
-	}
-
-	/** Legacy/compat lease acquire (`authority='legacy'`). */
-	async shadowAcquireWriteLease(input: {
-		token: string
-		holder: string
-		acquiredAt: string
-	}): Promise<UserMeterShadowAcquireWriteLeaseResult> {
-		const token = assertWriteLeaseToken(input.token)
-		const holder = assertWriteLeaseHolder(input.holder)
-		const acquiredAt = assertDeletionTimestamp('acquiredAt', input.acquiredAt)
-		const existing = this.readWriteLease(token)
-		if (existing) return { acquired: true }
-		if (this.readDeletingAt() != null) return { acquired: false }
-		const cursor = this.ctx.storage.sql.exec(
-			`INSERT INTO account_write_leases (
-				token, holder, acquired_at, authority, pending_repair_id
-			)
-			VALUES (?, ?, ?, 'legacy', NULL)
-			ON CONFLICT(token) DO NOTHING`,
-			token,
-			holder,
-			acquiredAt,
-		)
-		return {
-			acquired: cursor.rowsWritten > 0 || this.readWriteLease(token) != null,
-		}
 	}
 
 	/** Authoritative lease acquire (`authority='do'`). */
@@ -1838,7 +1655,7 @@ class UserMeterBase extends DurableObject<Env> {
 		const acquiredAt = assertDeletionTimestamp('acquiredAt', input.acquiredAt)
 		const existing = this.readWriteLease(token)
 		if (existing) {
-			return { acquired: existing.authority === 'do' }
+			return { acquired: true }
 		}
 		if (this.readDeletingAt() != null) return { acquired: false }
 		const cursor = this.ctx.storage.sql.exec(
@@ -1853,31 +1670,17 @@ class UserMeterBase extends DurableObject<Env> {
 		)
 		const held = this.readWriteLease(token)
 		return {
-			acquired:
-				(cursor.rowsWritten > 0 || held != null) && held?.authority === 'do',
+			acquired: cursor.rowsWritten > 0 || held != null,
 		}
 	}
 
-	/** Legacy/compat lease release (any authority). */
-	async shadowReleaseWriteLease(input: {
-		token: string
-	}): Promise<UserMeterShadowReleaseWriteLeaseResult> {
-		const token = assertWriteLeaseToken(input.token)
-		const cursor = this.ctx.storage.sql.exec(
-			`DELETE FROM account_write_leases WHERE token = ?`,
-			token,
-		)
-		return { released: cursor.rowsWritten > 0 }
-	}
-
-	/** Authoritative release of a DO-authority lease. */
+	/** Authoritative lease release. */
 	async releaseWriteLease(input: {
 		token: string
 	}): Promise<UserMeterReleaseWriteLeaseResult> {
 		const token = assertWriteLeaseToken(input.token)
 		const cursor = this.ctx.storage.sql.exec(
-			`DELETE FROM account_write_leases
-			WHERE token = ? AND authority = 'do'`,
+			`DELETE FROM account_write_leases WHERE token = ?`,
 			token,
 		)
 		return { released: cursor.rowsWritten > 0 }
@@ -1889,10 +1692,10 @@ class UserMeterBase extends DurableObject<Env> {
 	}): Promise<UserMeterAssertWriteLeaseHeldResult> {
 		const token = assertWriteLeaseToken(input.token)
 		const lease = this.readWriteLease(token)
-		return { held: lease?.authority === 'do' }
+		return { held: lease != null }
 	}
 
-	/** Prepare audit-safe DO repair; retries reuse the pending `repairId`. */
+	/** Prepare audit-safe repair; retries reuse the pending `repairId`. All active rows are treated as authoritative. */
 	async prepareWriteLeaseRepair(input: {
 		token: string
 		expectedAcquiredAt: string
@@ -1906,7 +1709,6 @@ class UserMeterBase extends DurableObject<Env> {
 			const row = this.readWriteLeaseRow(token)
 			if (!row) return { prepared: false as const }
 			const lease = this.writeLeaseFromRow(row)
-			if (lease.authority !== 'do') return { prepared: false as const }
 			if (lease.acquiredAt !== expectedAcquiredAt) {
 				throw new Error(
 					'Active account write lease did not match repair request.',
@@ -1918,7 +1720,7 @@ class UserMeterBase extends DurableObject<Env> {
 				this.ctx.storage.sql.exec(
 					`UPDATE account_write_leases
 					SET pending_repair_id = ?
-					WHERE token = ? AND authority = 'do' AND acquired_at = ?
+					WHERE token = ? AND acquired_at = ?
 						AND (pending_repair_id IS NULL OR pending_repair_id = '')`,
 					repairId,
 					token,
@@ -1928,7 +1730,6 @@ class UserMeterBase extends DurableObject<Env> {
 			const heldRow = this.readWriteLeaseRow(token)
 			if (!heldRow) return { prepared: false as const }
 			const held = this.writeLeaseFromRow(heldRow)
-			if (held.authority !== 'do') return { prepared: false as const }
 			const pending = this.pendingRepairIdFromRow(heldRow)
 			if (!pending) {
 				throw new Error('Account write lease repair could not be prepared.')
@@ -1943,7 +1744,7 @@ class UserMeterBase extends DurableObject<Env> {
 		})
 	}
 
-	/** Finalize exact pending DO repair; idempotent when the lease is already gone. */
+	/** Finalize exact pending repair; idempotent when the lease is already gone. */
 	async finalizeWriteLeaseRepair(input: {
 		token: string
 		repairId: string
@@ -1960,7 +1761,6 @@ class UserMeterBase extends DurableObject<Env> {
 			if (!row) return { finalized: true }
 			const lease = this.writeLeaseFromRow(row)
 			if (
-				lease.authority !== 'do' ||
 				lease.acquiredAt !== expectedAcquiredAt ||
 				this.pendingRepairIdFromRow(row) !== repairId
 			) {
@@ -1971,7 +1771,6 @@ class UserMeterBase extends DurableObject<Env> {
 			const cursor = this.ctx.storage.sql.exec(
 				`DELETE FROM account_write_leases
 				WHERE token = ?
-					AND authority = 'do'
 					AND acquired_at = ?
 					AND pending_repair_id = ?`,
 				token,
@@ -1992,7 +1791,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return { deletingAt: this.readDeletingAt() }
 	}
 
-	/** Paged lease list (legacy + DO authority). */
+	/** Paged lease list. */
 	async listWriteLeases(
 		input: {
 			pageSize?: number
@@ -2002,61 +1801,9 @@ class UserMeterBase extends DurableObject<Env> {
 		return this.listWriteLeasesPage(input)
 	}
 
-	/** Paged DO-authority lease list for admin union inventory. */
-	async listDoAuthorityWriteLeases(
-		input: {
-			pageSize?: number
-			startAfter?: string | null
-		} = {},
-	): Promise<UserMeterWriteLeaseListResult> {
-		return this.listWriteLeasesPage({ ...input, authority: 'do' })
-	}
-
-	/** Active lease count (legacy + DO authority; pending repair still counts). */
+	/** Active lease count (pending repair still counts). */
 	async countActiveWriteLeases(): Promise<UserMeterWriteLeaseCountResult> {
 		return { count: this.countWriteLeases() }
-	}
-
-	/**
-	 * Cold seed. Leases apply first (same guards as
-	 * {@link shadowAcquireWriteLease}), then the deleting tombstone.
-	 */
-	async bootstrapDeletionState(input: {
-		deletingAt?: string | null
-		leases?: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-			authority?: string
-		}>
-	}): Promise<UserMeterDeletionBootstrapResult> {
-		let leasesApplied = 0
-		let leasesSkipped = 0
-		for (const lease of input.leases ?? []) {
-			const token = assertWriteLeaseToken(lease.token)
-			if (this.readWriteLease(token)) {
-				leasesSkipped += 1
-				continue
-			}
-			const authority =
-				typeof lease.authority === 'string'
-					? assertWriteLeaseAuthority(lease.authority)
-					: 'legacy'
-			const result =
-				authority === 'do'
-					? await this.acquireWriteLease(lease)
-					: await this.shadowAcquireWriteLease(lease)
-			if (result.acquired) leasesApplied += 1
-			else leasesSkipped += 1
-		}
-		let deletingAtApplied = false
-		if (typeof input.deletingAt === 'string' && input.deletingAt.length > 0) {
-			const marked = await this.shadowMarkDeleting({
-				deletingAt: input.deletingAt,
-			})
-			deletingAtApplied = marked.created
-		}
-		return { deletingAtApplied, leasesApplied, leasesSkipped }
 	}
 
 	async purge(): Promise<{ ok: true }> {
@@ -2279,50 +2026,16 @@ export type UserMeterRpc = {
 			updatedAt?: string
 		}>
 	}) => Promise<UserMeterPackageServiceBootstrapResult>
-	/** Legacy/compat mark of D1 users.deleting_at (first write wins). */
-	shadowMarkDeleting: (input: {
-		deletingAt: string
-	}) => Promise<UserMeterShadowMarkDeletingResult>
-	/**
-	 * Legacy/compat replace: set/preserve tombstone and replace only legacy
-	 * rows with the supplied D1 set (preserves DO-authority rows).
-	 */
-	shadowReplaceDeletionState: (input: {
-		deletingAt: string
-		leases?: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-		}>
-	}) => Promise<UserMeterShadowReplaceDeletionStateResult>
-	/**
-	 * Authoritative deletion mark with D1 legacy lease snapshot. Preserves
-	 * DO-authority rows and returns the deduped union lease count.
-	 */
+	/** Authoritative deletion mark; preserves tombstone. Returns active write-lease count. */
 	markDeleting: (input: {
 		deletingAt: string
-		legacyLeases?: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-		}>
 	}) => Promise<UserMeterMarkDeletingResult>
-	/** Legacy/compat lease acquire (`authority='legacy'`). */
-	shadowAcquireWriteLease: (input: {
-		token: string
-		holder: string
-		acquiredAt: string
-	}) => Promise<UserMeterShadowAcquireWriteLeaseResult>
 	/** Authoritative lease acquire (`authority='do'`). */
 	acquireWriteLease: (input: {
 		token: string
 		holder: string
 		acquiredAt: string
 	}) => Promise<UserMeterAcquireWriteLeaseResult>
-	/** Legacy/compat lease release (any authority). */
-	shadowReleaseWriteLease: (input: {
-		token: string
-	}) => Promise<UserMeterShadowReleaseWriteLeaseResult>
 	/** Authoritative release of a DO-authority lease. */
 	releaseWriteLease: (input: {
 		token: string
@@ -2344,28 +2057,13 @@ export type UserMeterRpc = {
 	}) => Promise<UserMeterFinalizeWriteLeaseRepairResult>
 	/** Deletion tombstone read (D1 deleting_at remains the permanent gate). */
 	readDeletionState: () => Promise<{ deletingAt: string | null }>
-	/** Paged lease list (legacy + DO authority). */
+	/** Paged lease list. */
 	listWriteLeases: (input: {
 		pageSize?: number
 		startAfter?: string | null
 	}) => Promise<UserMeterWriteLeaseListResult>
-	/** Paged DO-authority lease list for admin union inventory. */
-	listDoAuthorityWriteLeases: (input: {
-		pageSize?: number
-		startAfter?: string | null
-	}) => Promise<UserMeterWriteLeaseListResult>
-	/** Active lease count (legacy + DO authority; pending repair still counts). */
+	/** Active lease count (pending repair still counts). */
 	countActiveWriteLeases: () => Promise<UserMeterWriteLeaseCountResult>
-	/** Cold seed with monotonic mark / acquire guards. */
-	bootstrapDeletionState: (input: {
-		deletingAt?: string | null
-		leases?: ReadonlyArray<{
-			token: string
-			holder: string
-			acquiredAt: string
-			authority?: string
-		}>
-	}) => Promise<UserMeterDeletionBootstrapResult>
 	purge: () => Promise<{ ok: true }>
 	exportCounters: (input: {
 		pageSize?: number

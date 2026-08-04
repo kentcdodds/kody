@@ -1,7 +1,6 @@
 import {
 	isDailyEntitlementResource,
 	isUserMeterPackageServiceStatus,
-	isUserMeterWriteLeaseAuthority,
 	userMeterMirrorUpdatedAtToken,
 	userMeterPackageServiceStateStaleMs,
 	type DailyEntitlementResource,
@@ -9,8 +8,7 @@ import {
 	type UserMeterPackageServiceState,
 	type UserMeterPackageServiceStatus,
 	type UserMeterStorageBytesState,
-	type UserMeterWriteLeaseAuthority,
-	type UserMeterWriteLeaseShadow,
+	type UserMeterWriteLeaseEntry,
 } from '#worker/entitlements/user-meter-do.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
@@ -26,7 +24,6 @@ type PackageServiceRow = {
 type WriteLeaseRow = {
 	holder: string
 	acquiredAt: string
-	authority: UserMeterWriteLeaseAuthority
 	pendingRepairId: string | null
 }
 type DeletionState = {
@@ -135,18 +132,16 @@ export function createInMemoryUserMeterEnv() {
 		function writeLeaseState(
 			token: string,
 			row: WriteLeaseRow,
-		): UserMeterWriteLeaseShadow {
+		): UserMeterWriteLeaseEntry {
 			return {
 				token,
 				holder: row.holder,
 				acquiredAt: row.acquiredAt,
-				authority: row.authority,
 			}
 		}
 
-		function listWriteLeasesSorted(authority?: UserMeterWriteLeaseAuthority) {
+		function listWriteLeasesSorted() {
 			return [...deletion.leases.entries()]
-				.filter(([, row]) => authority == null || row.authority === authority)
 				.map(([token, row]) => writeLeaseState(token, row))
 				.sort((left, right) => {
 					const byAcquired = left.acquiredAt.localeCompare(right.acquiredAt)
@@ -155,51 +150,15 @@ export function createInMemoryUserMeterEnv() {
 				})
 		}
 
-		function replaceLegacyLeases(
-			leases: ReadonlyArray<{
-				token: string
-				holder: string
-				acquiredAt: string
-			}>,
-		) {
-			for (const [token, row] of [...deletion.leases.entries()]) {
-				if (row.authority === 'legacy') deletion.leases.delete(token)
-			}
-			const leasesByToken = new Map<
-				string,
-				{ holder: string; acquiredAt: string }
-			>()
-			for (const lease of leases) {
-				leasesByToken.set(lease.token, {
-					holder: lease.holder,
-					acquiredAt: lease.acquiredAt,
-				})
-			}
-			for (const [token, row] of leasesByToken) {
-				const existing = deletion.leases.get(token)
-				if (existing?.authority === 'do') continue
-				deletion.leases.set(token, {
-					holder: row.holder,
-					acquiredAt: row.acquiredAt,
-					authority: 'legacy',
-					pendingRepairId: null,
-				})
-			}
-			return deletion.leases.size
-		}
-
-		function pageWriteLeases(
-			input: {
-				pageSize?: number
-				startAfter?: string | null
-			},
-			authority?: UserMeterWriteLeaseAuthority,
-		) {
+		function pageWriteLeases(input: {
+			pageSize?: number
+			startAfter?: string | null
+		}) {
 			const pageSize =
 				typeof input.pageSize === 'number' && Number.isFinite(input.pageSize)
 					? Math.min(Math.max(Math.trunc(input.pageSize), 1), 500)
 					: 100
-			const all = listWriteLeasesSorted(authority)
+			const all = listWriteLeasesSorted()
 			let startIndex = 0
 			if (typeof input.startAfter === 'string' && input.startAfter.length > 0) {
 				try {
@@ -554,61 +513,15 @@ export function createInMemoryUserMeterEnv() {
 				}
 				return { applied, skipped }
 			},
-			async shadowMarkDeleting(input: { deletingAt: string }) {
-				if (deletion.deletingAt != null) {
-					return { deletingAt: deletion.deletingAt, created: false }
-				}
-				deletion.deletingAt = input.deletingAt
-				return { deletingAt: input.deletingAt, created: true }
-			},
-			async shadowReplaceDeletionState(input: {
-				deletingAt: string
-				leases?: ReadonlyArray<{
-					token: string
-					holder: string
-					acquiredAt: string
-				}>
-			}) {
+			async markDeleting(input: { deletingAt: string }) {
 				const created = deletion.deletingAt == null
 				if (created) deletion.deletingAt = input.deletingAt
-				const leaseCount = replaceLegacyLeases(input.leases ?? [])
+				const leaseCount = deletion.leases.size
 				return {
 					deletingAt: deletion.deletingAt ?? input.deletingAt,
 					created,
 					leaseCount,
 				}
-			},
-			async markDeleting(input: {
-				deletingAt: string
-				legacyLeases?: ReadonlyArray<{
-					token: string
-					holder: string
-					acquiredAt: string
-				}>
-			}) {
-				const created = deletion.deletingAt == null
-				if (created) deletion.deletingAt = input.deletingAt
-				const leaseCount = replaceLegacyLeases(input.legacyLeases ?? [])
-				return {
-					deletingAt: deletion.deletingAt ?? input.deletingAt,
-					created,
-					leaseCount,
-				}
-			},
-			async shadowAcquireWriteLease(input: {
-				token: string
-				holder: string
-				acquiredAt: string
-			}) {
-				if (deletion.leases.has(input.token)) return { acquired: true }
-				if (deletion.deletingAt != null) return { acquired: false }
-				deletion.leases.set(input.token, {
-					holder: input.holder,
-					acquiredAt: input.acquiredAt,
-					authority: 'legacy',
-					pendingRepairId: null,
-				})
-				return { acquired: true }
 			},
 			async acquireWriteLease(input: {
 				token: string
@@ -616,36 +529,27 @@ export function createInMemoryUserMeterEnv() {
 				acquiredAt: string
 			}) {
 				const existing = deletion.leases.get(input.token)
-				if (existing) return { acquired: existing.authority === 'do' }
-				if (deletion.deletingAt != null) return { acquired: false }
-				deletion.leases.set(input.token, {
-					holder: input.holder,
-					acquiredAt: input.acquiredAt,
-					authority: 'do',
-					pendingRepairId: null,
-				})
+				if (existing) return { acquired: true }
+			if (deletion.deletingAt != null) return { acquired: false }
+			deletion.leases.set(input.token, {
+				holder: input.holder,
+				acquiredAt: input.acquiredAt,
+				pendingRepairId: null,
+			})
 				return { acquired: true }
 			},
-			async shadowReleaseWriteLease(input: { token: string }) {
-				return { released: deletion.leases.delete(input.token) }
-			},
 			async releaseWriteLease(input: { token: string }) {
-				const existing = deletion.leases.get(input.token)
-				if (!existing || existing.authority !== 'do') {
-					return { released: false }
-				}
 				return { released: deletion.leases.delete(input.token) }
 			},
 			async assertWriteLeaseHeld(input: { token: string }) {
-				const existing = deletion.leases.get(input.token)
-				return { held: existing != null && existing.authority === 'do' }
+				return { held: deletion.leases.has(input.token) }
 			},
 			async prepareWriteLeaseRepair(input: {
 				token: string
 				expectedAcquiredAt: string
 			}) {
 				const existing = deletion.leases.get(input.token)
-				if (!existing || existing.authority !== 'do') {
+				if (!existing) {
 					return { prepared: false as const }
 				}
 				if (existing.acquiredAt !== input.expectedAcquiredAt) {
@@ -672,7 +576,6 @@ export function createInMemoryUserMeterEnv() {
 				const existing = deletion.leases.get(input.token)
 				if (!existing) return { finalized: true }
 				if (
-					existing.authority !== 'do' ||
 					existing.acquiredAt !== input.expectedAcquiredAt ||
 					existing.pendingRepairId !== input.repairId
 				) {
@@ -694,56 +597,8 @@ export function createInMemoryUserMeterEnv() {
 			) {
 				return pageWriteLeases(input)
 			},
-			async listDoAuthorityWriteLeases(
-				input: {
-					pageSize?: number
-					startAfter?: string | null
-				} = {},
-			) {
-				return pageWriteLeases(input, 'do')
-			},
 			async countActiveWriteLeases() {
 				return { count: deletion.leases.size }
-			},
-			async bootstrapDeletionState(input: {
-				deletingAt?: string | null
-				leases?: ReadonlyArray<{
-					token: string
-					holder: string
-					acquiredAt: string
-					authority?: string
-				}>
-			}) {
-				let leasesApplied = 0
-				let leasesSkipped = 0
-				for (const lease of input.leases ?? []) {
-					if (deletion.leases.has(lease.token)) {
-						leasesSkipped += 1
-						continue
-					}
-					const authority =
-						typeof lease.authority === 'string' &&
-						isUserMeterWriteLeaseAuthority(lease.authority)
-							? lease.authority
-							: 'legacy'
-					const result =
-						authority === 'do'
-							? await this.acquireWriteLease(lease)
-							: await this.shadowAcquireWriteLease(lease)
-					if (result.acquired) leasesApplied += 1
-					else leasesSkipped += 1
-				}
-				let deletingAtApplied = false
-				if (
-					typeof input.deletingAt === 'string' &&
-					input.deletingAt.length > 0
-				) {
-					const marked = await this.shadowMarkDeleting({
-						deletingAt: input.deletingAt,
-					})
-					deletingAtApplied = marked.created
-				}
-				return { deletingAtApplied, leasesApplied, leasesSkipped }
 			},
 			async purge() {
 				const deletingAt = deletion.deletingAt
@@ -853,7 +708,11 @@ export function createWaitUntilDrain() {
 	}
 }
 
-/** Minimal D1 hooks for DO-authoritative {@link withAccountWriteLease} in node tests. */
+/**
+ * Minimal D1 stub for the `deleting_at` gate used by
+ * {@link withAccountWriteLease} in node tests. The DO handles all lease
+ * storage; the only D1 query on the hot path is the `deleting_at` point gate.
+ */
 export function createPermissiveAccountWriteLeaseDbHooks() {
 	return {
 		supportsDeletingAtQuery(query: string) {
@@ -863,33 +722,6 @@ export function createPermissiveAccountWriteLeaseDbHooks() {
 		},
 		deletingAtFirstResult() {
 			return { deleting_at: null as string | null }
-		},
-		supportsHeldLeaseQuery(query: string) {
-			return query.includes('SELECT 1 AS held FROM account_write_leases')
-		},
-		heldLeaseFirstResult() {
-			return { held: 1 as number }
-		},
-		supportsWriteLeaseRun(query: string) {
-			const normalized = query.replace(/\s+/g, ' ').trim()
-			return (
-				normalized.includes('INSERT INTO account_write_leases') ||
-				normalized.includes('UPDATE account_write_leases') ||
-				normalized.includes('DELETE FROM account_write_leases') ||
-				normalized.startsWith('UPDATE users')
-			)
-		},
-		writeLeaseRunResult() {
-			return { meta: { changes: 1 } }
-		},
-		async runWriteLeaseBatch(
-			statements: Array<{ run: () => Promise<unknown> }>,
-		) {
-			const results = []
-			for (const statement of statements) {
-				results.push(await statement.run())
-			}
-			return results
 		},
 	}
 }
