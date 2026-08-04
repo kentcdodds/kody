@@ -33,7 +33,6 @@ function createCapabilityTestDb() {
 			stable_user_id TEXT UNIQUE NOT NULL,
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
-			d1_storage_bytes INTEGER NOT NULL DEFAULT 0,
 			deleting_at TEXT,
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
 			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
@@ -54,8 +53,8 @@ function createCapabilityTestDb() {
 			acquired_at TEXT NOT NULL,
 			released_at TEXT
 		);
-		INSERT INTO users (stable_user_id, username, email, d1_storage_bytes)
-		VALUES ('${stableUserId}', 'parity-cap', 'parity-cap@example.com', 1);
+		INSERT INTO users (stable_user_id, username, email)
+		VALUES ('${stableUserId}', 'parity-cap', 'parity-cap@example.com');
 		INSERT INTO account_write_leases (
 			token, user_id, holder, acquired_at, released_at
 		) VALUES (

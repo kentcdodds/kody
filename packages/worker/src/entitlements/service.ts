@@ -624,42 +624,60 @@ export async function reconcileUserD1StorageBytes(input: {
 }
 
 /**
- * Oldest-first sweep page for the reconcile lane.
- * `users.d1_storage_bytes_updated_at` acts purely as the rotation cursor
- * (advanced by `markUserD1StorageReconciliationAttempt`); no byte values are
- * mirrored to D1.
+ * Keyset sweep page for the reconcile lane. The platform-owned
+ * `d1_storage_reconcile_cursor` singleton stores the last processed stable
+ * user id; pages walk `users.stable_user_id` ascending and wrap to the start
+ * when the tail is reached. No per-user cursor state exists.
  */
 export async function listUsersForD1StorageReconciliation(input: {
 	db: D1Database
 	limit: number
 }): Promise<Array<{ userId: string }>> {
-	const result = await input.db
+	const cursorRow = await input.db
+		.prepare(
+			`SELECT position FROM d1_storage_reconcile_cursor
+			WHERE singleton = 1`,
+		)
+		.first<{ position: string }>()
+	const lastUserId = cursorRow?.position ?? ''
+	const page = await input.db
 		.prepare(
 			`SELECT stable_user_id AS userId
 			FROM users
-			ORDER BY
-				d1_storage_bytes_updated_at IS NOT NULL,
-				d1_storage_bytes_updated_at ASC,
-				stable_user_id ASC
+			WHERE stable_user_id > ?
+			ORDER BY stable_user_id ASC
+			LIMIT ?`,
+		)
+		.bind(lastUserId, input.limit)
+		.all<{ userId: string }>()
+	const rows = page.results ?? []
+	if (rows.length > 0 || lastUserId === '') return rows
+	// Tail reached: wrap to the start of the keyset for the next full sweep.
+	const wrapped = await input.db
+		.prepare(
+			`SELECT stable_user_id AS userId
+			FROM users
+			ORDER BY stable_user_id ASC
 			LIMIT ?`,
 		)
 		.bind(input.limit)
 		.all<{ userId: string }>()
-	return result.results ?? []
+	return wrapped.results ?? []
 }
 
-export async function markUserD1StorageReconciliationAttempt(input: {
+/** Advance the reconcile-lane keyset cursor past the processed page. */
+export async function advanceD1StorageReconciliationCursor(input: {
 	db: D1Database
-	userId: string
+	lastUserId: string
 	now?: Date
 }) {
 	await input.db
 		.prepare(
-			`UPDATE users
-			SET d1_storage_bytes_updated_at = ?
-			WHERE stable_user_id = ?`,
+			`UPDATE d1_storage_reconcile_cursor
+			SET position = ?, updated_at = ?
+			WHERE singleton = 1`,
 		)
-		.bind((input.now ?? new Date()).toISOString(), input.userId)
+		.bind(input.lastUserId, (input.now ?? new Date()).toISOString())
 		.run()
 }
 

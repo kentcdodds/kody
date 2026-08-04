@@ -31,10 +31,8 @@ function createUsageTestDb(input: {
 	plan: string
 	stripePlan?: string | null
 	packageCount?: number
-	d1StorageBytes?: number
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
-	const d1StorageBytes = input.d1StorageBytes ?? 0
 	return {
 		stableUserId,
 		db: {
@@ -58,8 +56,8 @@ function createUsageTestDb(input: {
 								if (normalized.includes('from saved_packages')) {
 									return { count: input.packageCount ?? 0 } as T
 								}
-								if (normalized.includes('d1_storage_bytes')) {
-									return { bytes: d1StorageBytes } as T
+								if (normalized.includes('select 1 as present from users')) {
+									return { present: 1 } as T
 								}
 								if (
 									normalized.includes('count(*)') ||
@@ -197,11 +195,10 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		email: storageEmail,
 		plan: 'pro',
 		packageCount: 0,
-		d1StorageBytes: 321,
 	})
 	const storageEnv = withUsageEnv({ APP_DB: storageDb })
 	// After the storage authority cutover, readCurrentEntitlementResourceUsage
-	// for storage_bytes reads from UserMeter (cold bootstrap from D1 mirror).
+	// for storage_bytes reads from UserMeter (cold zero-init bootstrap).
 	await storageEnv.meter.seedStorageBytes({
 		userId: storageUserId,
 		bytes: 4_321,

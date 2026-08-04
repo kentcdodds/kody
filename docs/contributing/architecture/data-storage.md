@@ -229,7 +229,7 @@ Durable Object export behavior:
   inventory once when present. UserMeter `package_service_states` is
   **authoritative** for running-count enforcement; D1 `package_service_states`
   remains the enumeration export in the `d1` section. `users.d1_storage_bytes`
-  is retired (cursor-only column pair); authoritative storage bytes live in
+  columns were dropped by migration 0139; authoritative storage bytes live in
   UserMeter. Retention is self-enforced inside the DO (seven UTC days of counter
   and inbound-delivery-claim rows); storage-byte and package-service liveness
   rows are not time-pruned. See
@@ -283,15 +283,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   default `public`) come from migration 0068. `account_type` (`'person'` default
   or `'platform'`, migration 0072) distinguishes normal signups from
   operator-provisioned platform accounts that own official package scopes (see
-  [Platform accounts](./platform-accounts.md)). `d1_storage_bytes` and
-  `d1_storage_bytes_updated_at` (migration 0122) are a **temporary async
-  mirror** of the UserMeter `storage_bytes_state` singleton. Enforcement and
-  usage reads are authoritative in UserMeter; the D1 columns remain for cold
-  bootstrap, parity checks, and the `d1_storage_reconciliation` sweep cursor
-  until they can be safely dropped (a separate schema migration after parity
-  sign-off). UserMeter `storage_bytes_state` (schema v4) drives storage-byte
-  enforcement; `package_service_states` (schema v5) is the authoritative
-  running-count source for `package_services` / `service_start` — see
+  [Platform accounts](./platform-accounts.md)). The `d1_storage_bytes` mirror
+  columns (migration 0122) were dropped by migration 0139; the
+  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
+  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
+  `storage_bytes_state` (schema v4) drives storage-byte enforcement;
+  `package_service_states` (schema v5) is the authoritative running-count source
+  for `package_services` / `service_start` — see
   [Entitlements](./entitlements.md#usermeter-expand-phase). Migration 0135
   removed every retired Mailbox parity, replay, backfill, and soak column and
   its discovery index. A post-deploy production `pragma_table_xinfo('users')`
@@ -574,7 +572,7 @@ Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
 (`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4
 `storage_bytes_state` is the **authoritative** storage-byte counter (D1
-`users.d1_storage_bytes` is retired (cursor-only); evidence in
+`users.d1_storage_bytes` was dropped by migration 0139; evidence in
 [Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
 Schema v5 `package_service_states` is the **authoritative running-count source**
 for `package_services` / `service_start`; D1 remains the enumeration index and
@@ -606,9 +604,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
   `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
   and usage reads via `readStorageBytes`; D1 `users.d1_storage_bytes` is the
-  retired mirror — never written; its `_updated_at` half remains the
-  reconcile-lane sweep cursor until the drop migration. StorageRunner bucket
-  estimates stay outside this row (see
+  retired mirror, dropped by migration 0139; the reconcile lane sweeps by
+  `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner
+  bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter-expand-phase)).
 - `package_service_states` — per-service liveness rows (`package_id`,
   `service_name`, `status`, `started_at`, `source_updated_at`, monotonic

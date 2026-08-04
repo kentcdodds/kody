@@ -128,13 +128,12 @@ storage layout and naming are documented in [Data storage](./data-storage.md).
 UserMeter** (Worker #1136 passes `USER_METER` on all email inbound/outbound
 storage reservations; production evidence 2026-08-01).
 `assertWithinStorageBytesEntitlement` uses atomic DO `reserveStorageBytes` for
-all callers. The `users.d1_storage_bytes` mirror is **retired**: no runtime path
-reads or writes byte values to it. Cold bootstrap zero-initializes the DO
-singleton (matching the daily counter cold path); the bounded
-`d1_storage_reconciliation` lane recomputes physical D1 payload bytes and
-corrects drift via revision-guarded CAS. `users.d1_storage_bytes_updated_at`
-persists only as the lane's oldest-first sweep cursor until a follow-up
-migration drops the column pair.
+all callers. The retired `users.d1_storage_bytes` mirror columns were dropped by
+migration `0139`. Cold bootstrap zero-initializes the DO singleton (matching the
+daily counter cold path); the bounded `d1_storage_reconciliation` lane
+recomputes physical D1 payload bytes and corrects drift via revision-guarded
+CAS, sweeping users by `stable_user_id` keyset from the platform-owned
+`d1_storage_reconcile_cursor` row.
 
 **D1 package service liveness** (`package_service_states`): UserMeter is the
 **authoritative running-count source** for `package_services` enforcement and
@@ -200,12 +199,10 @@ updates / 0 failures; 38-user parity scan showed 0 storage mismatches. Mailbox
 storage reservations pass `USER_METER` as of Worker #1136. Cutover is live.
 
 **Authority:** the UserMeter `storage_bytes_state` singleton is the sole
-enforcement and usage counter. The `users.d1_storage_bytes` mirror is
-**retired** — no runtime path reads or writes byte values to it.
-`users.d1_storage_bytes_updated_at` persists only as the reconcile lane's
-oldest-first sweep cursor (advanced by
-`markUserD1StorageReconciliationAttempt`); a follow-up migration drops the
-column pair and re-keys the sweep.
+enforcement and usage counter. Migration `0139` dropped the retired
+`users.d1_storage_bytes` mirror columns; the reconcile lane walks users by
+`stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
+singleton (advanced once per processed page, wrapping at the tail).
 
 **Reserve path (`assertWithinStorageBytesEntitlement`):**
 
@@ -384,12 +381,10 @@ updates / 0 failures (pre-flip shadow sweep); 38-user parity scan showed 0
 storage mismatches. Worker #1136 passed `USER_METER` on all email mailbox
 inbound/outbound storage reservations.
 
-**Mirror retired (contract):** the dual-write window is closed. No runtime path
-writes byte values to `users.d1_storage_bytes`; physical payload tables are the
-recomputation source for reconcile, and a rollback to D1 authority is no longer
-supported. `users.d1_storage_bytes_updated_at` remains only as the
-reconcile-lane sweep cursor until a follow-up migration drops the column pair
-and re-keys the sweep.
+**Mirror retired (contract complete):** the dual-write window is closed and
+migration `0139` dropped the mirror columns. Physical payload tables are the
+recomputation source for reconcile; a rollback to D1 storage authority is not
+supported.
 
 **Current UserMeter authority:** all write leases (including email), storage
 bytes, and package-service running counts are authoritative in UserMeter. D1
@@ -436,20 +431,19 @@ The admin-only maintenance capability `admin_user_meter_storage_reconcile` is a
 **corrective physical-storage reconciliation** tool under UserMeter authority.
 Each invocation:
 
-1. Scans one oldest-first page (default and max `batch_size` 8) of users ordered
-   by `d1_storage_bytes_updated_at` (the sweep cursor — never read as a byte
-   value).
+1. Scans one keyset page (default and max `batch_size` 8) of users ordered by
+   `stable_user_id`, starting after the platform-owned
+   `d1_storage_reconcile_cursor` position and wrapping at the tail.
 2. For each user: reads the current UserMeter revision **before** computing the
    physical byte count (`capturedRevision`).
 3. Recomputes the absolute byte count from D1 payload tables via
-   `calculateUserD1StorageBytes` (the physical source — never reads
-   `users.d1_storage_bytes`).
+   `calculateUserD1StorageBytes` (the physical source).
 4. Applies the result via a **revision-guarded CAS** (`reconcileStorageBytes`):
    only writes if `capturedRevision` still matches the current DO revision. This
    prevents the sweep from clobbering a live reservation that arrived between
    step 2 and the CAS call.
-5. Rotates every processed row to the back of the queue by advancing the sweep
-   cursor; no byte values are written to D1.
+5. Advances the keyset cursor past the processed page; no byte values are
+   written to D1.
 
 **Result codes:**
 
@@ -459,7 +453,7 @@ Each invocation:
   back of the oldest-first queue for the next sweep. **A deferred row is not a
   failure.** The sweep continues; it will be retried on the next invocation once
   the meter is quiescent.
-- `failed` — unexpected error; row moved to back of queue.
+- `failed` — unexpected error; retried on the next sweep wrap.
 
 **CAS miss behavior:** when a live `reserveStorageBytes` call bumps the revision
 between revision capture and the CAS attempt, `reconcileStorageBytes` returns

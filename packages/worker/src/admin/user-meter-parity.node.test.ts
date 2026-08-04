@@ -44,7 +44,6 @@ function createParityTestDb() {
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			password_hash TEXT,
-			d1_storage_bytes INTEGER NOT NULL DEFAULT 0,
 			deleting_at TEXT,
 			active_write_count INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
@@ -74,21 +73,19 @@ function insertUser(
 	sqlite: DatabaseSync,
 	input: {
 		stableUserId: string
-		d1StorageBytes?: number
 		deletingAt?: string | null
 	},
 ) {
 	sqlite
 		.prepare(
 			`INSERT INTO users (
-				stable_user_id, username, email, d1_storage_bytes, deleting_at
-			) VALUES (?, ?, ?, ?, ?)`,
+				stable_user_id, username, email, deleting_at
+			) VALUES (?, ?, ?, ?)`,
 		)
 		.run(
 			input.stableUserId,
 			'parity-user',
 			'parity@example.com',
-			input.d1StorageBytes ?? 0,
 			input.deletingAt ?? null,
 		)
 }
@@ -153,7 +150,6 @@ function seedD1ParityBaseline(input: {
 }) {
 	insertUser(input.sqlite, {
 		stableUserId: input.stableUserId,
-		d1StorageBytes: input.storageBytes,
 		deletingAt: input.deletingAt ?? null,
 	})
 	for (const service of input.packageServices ?? []) {
@@ -374,7 +370,7 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	mockModule.calculateUserD1StorageBytes.mockResolvedValue(100)
-	insertUser(sqlite, { stableUserId, d1StorageBytes: 100 })
+	insertUser(sqlite, { stableUserId })
 	sqlite
 		.prepare(
 			`INSERT INTO package_service_states (
@@ -489,7 +485,6 @@ test('loadAdminUserMeterParityReport reports deletingAtParity mismatch and corre
 	// D1: user is marked deleting; meter: not yet marked.
 	insertUser(sqlite, {
 		stableUserId,
-		d1StorageBytes: 0,
 		deletingAt: '2026-08-01T08:00:00.000Z',
 	})
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })

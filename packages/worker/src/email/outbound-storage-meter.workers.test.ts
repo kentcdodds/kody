@@ -44,7 +44,7 @@ async function seedVerifiedAccount(email: string) {
 	}
 }
 
-test('sendOutboundEmail reserves storage bytes in UserMeter and never touches the retired D1 mirror', async () => {
+test('sendOutboundEmail reserves storage bytes in UserMeter', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 
@@ -73,12 +73,4 @@ test('sendOutboundEmail reserves storage bytes in UserMeter and never touches th
 		throw new Error('Expected a ready UserMeter storage read after reserve.')
 	}
 	expect(meterAfter.bytes).toBeGreaterThan(initialMeterBytes)
-
-	// The retired legacy mirror column is never written by the send path.
-	const mirrorRow = await env.APP_DB.prepare(
-		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(userId)
-		.first<{ bytes: number }>()
-	expect(mirrorRow?.bytes).toBe(0)
 }, 30_000)

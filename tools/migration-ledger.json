@@ -567,6 +567,10 @@
 		{
 			"filename": "0138-entity-sources-artifacts-push-subscription.sql",
 			"sha256": "e904c43f0913ccc9ef7bddfc639a6e2e6393931ae58c938dfc7106d2f2c43387"
+		},
+		{
+			"filename": "0139-drop-storage-bytes-mirror-columns.sql",
+			"sha256": "c45f0776b84a354669a2c8e4e96bcf4daf3040166ffeb8bce7c12678f2eb3935"
 		}
 	]
 }

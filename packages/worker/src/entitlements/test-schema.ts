@@ -49,5 +49,20 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 )`,
 		)
 		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS d1_storage_reconcile_cursor (
+	singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+	position TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT OR IGNORE INTO d1_storage_reconcile_cursor (singleton, position)
+			VALUES (1, '')`,
+		)
+		.run()
 	await ensureUserStorageBucketsTestSchema(db)
 }

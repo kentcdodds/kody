@@ -450,21 +450,9 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, concurrency, and missing-user semantics', async () => {
 	const storageLimit = planLimits.free.maxStorageBytes
 
-	// === Section 1: Cold zero bootstrap, reserve, denial; D1 never written ===
+	// === Section 1: Cold zero bootstrap, reserve, and denial ===
 	const user = await seedFreeUser('meter-storage-do-authority')
 	const meter = userMeterRpc({ env, userId: user.userId })
-	const staleMirrorBytes = storageLimit - 10
-
-	// A stale legacy mirror value must be ignored: cold bootstrap zero-inits
-	// and the reconcile lane owns physical correction.
-	await env.APP_DB.prepare(
-		`UPDATE users
-		SET d1_storage_bytes = ?,
-			d1_storage_bytes_updated_at = ?
-		WHERE stable_user_id = ?`,
-	)
-		.bind(staleMirrorBytes, '2026-07-31T12:00:00.000Z', user.userId)
-		.run()
 
 	// Cold bootstrap: zero-initializes UserMeter, then reserves 5.
 	await assertWithinStorageBytesEntitlement({
@@ -499,14 +487,6 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 			current: 5,
 		},
 	})
-
-	// The legacy D1 column is never read or written by the reserve path.
-	const mirrorRow = await env.APP_DB.prepare(
-		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(user.userId)
-		.first<{ bytes: number }>()
-	expect(mirrorRow?.bytes).toBe(staleMirrorBytes)
 
 	// === Section 2: Concurrent reservations (UserMeter atomicity) ===
 	const concurrentUser = await seedFreeUser('meter-storage-concurrent-do')
@@ -634,14 +614,6 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(secondPage.storageBytesShadow).toBeNull()
 	expect(secondPage.packageServiceStatesShadow).toBeNull()
 	expect(secondPage.deletionShadow).toBeNull()
-
-	// The legacy D1 column is never written by UserMeter storage RPCs.
-	const mirrorRow = await env.APP_DB.prepare(
-		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(user.userId)
-		.first<{ bytes: number }>()
-	expect(mirrorRow?.bytes).toBe(0)
 
 	await expect(meter.purge()).resolves.toEqual({ ok: true })
 	expect(await meter.readStorageBytes()).toEqual({
