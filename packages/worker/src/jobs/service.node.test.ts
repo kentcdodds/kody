@@ -408,11 +408,7 @@ function createDatabase(
 
 	return {
 		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
-			const results = []
-			for (const statement of statements) {
-				results.push(await statement.run())
-			}
-			return results
+			return await writeLeaseDb.runWriteLeaseBatch(statements)
 		},
 		prepare(query: string) {
 			return {
@@ -421,6 +417,9 @@ function createDatabase(
 						async first<T = Record<string, unknown>>() {
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
+							}
+							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
+								return writeLeaseDb.heldLeaseFirstResult() as T
 							}
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								return selectOne(
@@ -708,6 +707,9 @@ function createDatabase(
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {
+							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
+								return writeLeaseDb.writeLeaseRunResult()
+							}
 							if (query.startsWith('UPDATE users')) {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}

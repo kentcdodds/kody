@@ -11,6 +11,7 @@ import {
 import {
 	dailyEntitlementResources,
 	type UserMeterPackageServiceState,
+	type UserMeterWriteLeaseShadow,
 } from '#worker/entitlements/user-meter-do.ts'
 import { loadAdminUserMeterParityReport } from './user-meter-parity.ts'
 
@@ -97,6 +98,12 @@ async function seedMeterParityBaseline(input: {
 		sourceUpdatedAt: string
 	}>
 	deletingAt?: string | null
+	leases?: Array<{
+		token: string
+		holder: string
+		acquiredAt: string
+		authority: 'do' | 'legacy'
+	}>
 }) {
 	const meter = userMeterRpc({
 		env: input.meter.env,
@@ -124,9 +131,10 @@ async function seedMeterParityBaseline(input: {
 			updatedAt: now.toISOString(),
 		})
 	}
-	if (input.deletingAt != null) {
-		await meter.markDeleting({ deletingAt: input.deletingAt })
-	}
+	await meter.bootstrapDeletionState({
+		deletingAt: input.deletingAt ?? null,
+		leases: input.leases,
+	})
 }
 
 function seedD1ParityBaseline(input: {
@@ -142,6 +150,11 @@ function seedD1ParityBaseline(input: {
 		updatedAt: string
 	}>
 	deletingAt?: string | null
+	leases?: Array<{
+		token: string
+		holder: string
+		acquiredAt: string
+	}>
 }) {
 	insertUser(input.sqlite, {
 		stableUserId: input.stableUserId,
@@ -179,10 +192,20 @@ function seedD1ParityBaseline(input: {
 				service.updatedAt,
 			)
 	}
+	for (const lease of input.leases ?? []) {
+		input.sqlite
+			.prepare(
+				`INSERT INTO account_write_leases (
+					token, user_id, holder, acquired_at, released_at
+				) VALUES (?, ?, ?, ?, NULL)`,
+			)
+			.run(lease.token, input.stableUserId, lease.holder, lease.acquiredAt)
+	}
 }
 
 function assertNoLeaseSecrets(value: unknown) {
 	const serialized = JSON.stringify(value)
+	expect(serialized).not.toMatch(/lease-token|holder-secret|secret-holder/i)
 	expect(serialized).not.toContain('"token"')
 	expect(serialized).not.toContain('"holder"')
 }
@@ -197,6 +220,11 @@ function withMeterListOverrides(
 	overrides: {
 		listPackageServiceStates?: (input: MeterListPageInput) => Promise<{
 			states: Array<UserMeterPackageServiceState>
+			nextStartAfter: string | null
+			truncated: boolean
+		}>
+		listWriteLeases?: (input: MeterListPageInput) => Promise<{
+			leases: Array<UserMeterWriteLeaseShadow>
 			nextStartAfter: string | null
 			truncated: boolean
 		}>
@@ -215,12 +243,19 @@ function withMeterListOverrides(
 						nextStartAfter: string | null
 						truncated: boolean
 					}>
+					listWriteLeases: (input: MeterListPageInput) => Promise<{
+						leases: Array<UserMeterWriteLeaseShadow>
+						nextStartAfter: string | null
+						truncated: boolean
+					}>
 				}
 				return {
 					...stub,
 					listPackageServiceStates:
 						overrides.listPackageServiceStates ??
 						stub.listPackageServiceStates.bind(stub),
+					listWriteLeases:
+						overrides.listWriteLeases ?? stub.listWriteLeases.bind(stub),
 				}
 			},
 		},
@@ -237,6 +272,7 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 		outbound_fetches_per_day: 7,
 	}
 	const serviceUpdatedAt = '2026-08-01T11:00:00.000Z'
+	const leaseToken = 'lease-token-shared'
 	seedD1ParityBaseline({
 		sqlite,
 		stableUserId,
@@ -249,6 +285,13 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 				status: 'running',
 				startedAt: '2026-08-01T10:00:00.000Z',
 				updatedAt: serviceUpdatedAt,
+			},
+		],
+		leases: [
+			{
+				token: leaseToken,
+				holder: 'holder-secret',
+				acquiredAt: '2026-08-01T09:00:00.000Z',
 			},
 		],
 	})
@@ -266,13 +309,14 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 				sourceUpdatedAt: serviceUpdatedAt,
 			},
 		],
-	})
-	// One active DO write lease in the meter; D1 lease table is quiescent.
-	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
-	await meterStub.acquireWriteLease({
-		token: 'active-lease-abc123',
-		holder: 'holder-xyz789',
-		acquiredAt: '2026-08-01T09:00:00.000Z',
+		leases: [
+			{
+				token: leaseToken,
+				holder: 'holder-secret',
+				acquiredAt: '2026-08-01T09:00:00.000Z',
+				authority: 'do',
+			},
+		],
 	})
 
 	const report = await loadAdminUserMeterParityReport({
@@ -318,8 +362,17 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 			d1DeletingAt: null,
 			meterDeletingAt: null,
 			deletingAtParity: true,
-			activeLeaseCount: 1,
+			d1ActiveLeaseCount: 1,
+			doAuthorityLeaseCount: 1,
+			doLegacyLeaseCount: 0,
+			tokenSetMismatches: {
+				d1Only: 0,
+				doOnly: 0,
+				legacyWithoutD1: 0,
+			},
 			truncated: false,
+			temporaryMirrorRetired: true,
+			mirrorLeaseParity: true,
 		},
 	})
 	expect(report?.daily.resources).toHaveLength(4)
@@ -327,7 +380,7 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 	assertNoLeaseSecrets(report)
 })
 
-test('loadAdminUserMeterParityReport D1 lease rows are quiescent; activeLeaseCount is meter-only', async () => {
+test('loadAdminUserMeterParityReport treats D1-only leases as mirrorLeaseParity pass', async () => {
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const dailyCounts = {
@@ -341,15 +394,14 @@ test('loadAdminUserMeterParityReport D1 lease rows are quiescent; activeLeaseCou
 		stableUserId,
 		dailyCounts,
 		storageBytes: 0,
+		leases: [
+			{
+				token: 'lease-token-email-only',
+				holder: 'holder-secret',
+				acquiredAt: '2026-08-01T09:00:00.000Z',
+			},
+		],
 	})
-	// A quiescent D1 lease row: not queried by parity; does not affect activeLeaseCount.
-	sqlite
-		.prepare(
-			`INSERT INTO account_write_leases (
-				token, user_id, holder, acquired_at, released_at
-			) VALUES ('d1-only-row', ?, 'some-holder', '2026-08-01T09:00:00.000Z', NULL)`,
-		)
-		.run(stableUserId)
 	await seedMeterParityBaseline({
 		meter,
 		stableUserId,
@@ -363,13 +415,18 @@ test('loadAdminUserMeterParityReport D1 lease rows are quiescent; activeLeaseCou
 		stableUserId,
 		now,
 	})
-	// D1 lease table is ignored; meter has no active leases.
 	expect(report?.deletion).toMatchObject({
-		d1DeletingAt: null,
-		meterDeletingAt: null,
-		deletingAtParity: true,
-		activeLeaseCount: 0,
+		d1ActiveLeaseCount: 1,
+		doAuthorityLeaseCount: 0,
+		doLegacyLeaseCount: 0,
+		tokenSetMismatches: {
+			d1Only: 1,
+			doOnly: 0,
+			legacyWithoutD1: 0,
+		},
 		truncated: false,
+		temporaryMirrorRetired: true,
+		mirrorLeaseParity: true,
 	})
 	assertNoLeaseSecrets(report)
 })
@@ -392,6 +449,13 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 			) VALUES (?, 'pkg-a', 'web', 'running', ?, ?)`,
 		)
 		.run(stableUserId, '2026-08-01T10:00:00.000Z', '2026-08-01T11:00:00.000Z')
+	sqlite
+		.prepare(
+			`INSERT INTO account_write_leases (
+				token, user_id, holder, acquired_at, released_at
+			) VALUES ('d1-only-token', ?, 'holder-secret', ?, NULL)`,
+		)
+		.run(stableUserId, '2026-08-01T09:00:00.000Z')
 
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
 	await meterStub.initialize({
@@ -406,16 +470,21 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 		status: 'idle',
 		sourceUpdatedAt: '2026-08-01T11:30:00.000Z',
 	})
-	// Seed two active DO write leases in the meter.
-	await meterStub.acquireWriteLease({
-		token: 'meter-lease-aaa',
-		holder: 'holder-one',
-		acquiredAt: '2026-08-01T08:00:00.000Z',
-	})
-	await meterStub.acquireWriteLease({
-		token: 'meter-lease-bbb',
-		holder: 'holder-two',
-		acquiredAt: '2026-08-01T07:00:00.000Z',
+	await meterStub.bootstrapDeletionState({
+		leases: [
+			{
+				token: 'do-only-token',
+				holder: 'secret-holder',
+				acquiredAt: '2026-08-01T08:00:00.000Z',
+				authority: 'do',
+			},
+			{
+				token: 'legacy-only-token',
+				holder: 'secret-holder',
+				acquiredAt: '2026-08-01T07:00:00.000Z',
+				authority: 'legacy',
+			},
+		],
 	})
 
 	const beforeRead = await meterStub.read({
@@ -479,14 +548,18 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 		parity: false,
 	})
 	expect(report?.deletion).toMatchObject({
-		d1DeletingAt: null,
-		meterDeletingAt: null,
-		deletingAtParity: true,
-		activeLeaseCount: 2,
-		truncated: false,
+		d1ActiveLeaseCount: 1,
+		doAuthorityLeaseCount: 1,
+		doLegacyLeaseCount: 1,
+		tokenSetMismatches: {
+			d1Only: 1,
+			doOnly: 1,
+			legacyWithoutD1: 1,
+		},
+		temporaryMirrorRetired: true,
+		mirrorLeaseParity: false,
 	})
 
-	// Confirm the report was read-only (meter bootstrap state is unchanged).
 	const afterRead = await meterStub.read({
 		resource: 'email_receives_per_day',
 		day,
@@ -499,15 +572,10 @@ test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap wi
 	assertNoLeaseSecrets(report)
 })
 
-test('loadAdminUserMeterParityReport reports deletingAtParity mismatch and correct activeLeaseCount', async () => {
+test('loadAdminUserMeterParityReport doOnly passes mirrorLeaseParity after retirement; legacyWithoutD1 still fails', async () => {
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	// D1: user is marked deleting; meter: not yet marked.
-	insertUser(sqlite, {
-		stableUserId,
-		d1StorageBytes: 0,
-		deletingAt: '2026-08-01T08:00:00.000Z',
-	})
+	insertUser(sqlite, { stableUserId, d1StorageBytes: 0 })
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
 	await meterStub.initializeStorageBytes({
 		bytes: 0,
@@ -521,39 +589,70 @@ test('loadAdminUserMeterParityReport reports deletingAtParity mismatch and corre
 			updatedAt: now.toISOString(),
 		})
 	}
+	await meterStub.bootstrapDeletionState({
+		leases: [
+			{
+				token: 'do-only-token',
+				holder: 'secret-holder',
+				acquiredAt: '2026-08-01T08:00:00.000Z',
+				authority: 'do',
+			},
+		],
+	})
 
-	// Mismatch: D1 has deleting_at; meter does not.
-	const mismatchReport = await loadAdminUserMeterParityReport({
+	const doOnlyReport = await loadAdminUserMeterParityReport({
 		db,
 		env: meter.env,
 		stableUserId,
 		now,
 	})
-	expect(mismatchReport?.deletion).toMatchObject({
-		d1DeletingAt: '2026-08-01T08:00:00.000Z',
-		meterDeletingAt: null,
-		deletingAtParity: false,
-		activeLeaseCount: 0,
-		truncated: false,
+	// After mirror retirement, doOnly is expected (DO-authority leases no longer
+	// write D1 rows); mirrorLeaseParity passes when only doOnly is non-zero.
+	expect(doOnlyReport?.deletion).toMatchObject({
+		d1ActiveLeaseCount: 0,
+		doAuthorityLeaseCount: 1,
+		tokenSetMismatches: {
+			d1Only: 0,
+			doOnly: 1,
+			legacyWithoutD1: 0,
+		},
+		temporaryMirrorRetired: true,
+		mirrorLeaseParity: true,
 	})
 
-	// Align meter; parity restores and activeLeaseCount remains 0.
-	await meterStub.markDeleting({ deletingAt: '2026-08-01T08:00:00.000Z' })
-	const parityReport = await loadAdminUserMeterParityReport({
+	await meterStub.releaseWriteLease({ token: 'do-only-token' })
+	await meterStub.bootstrapDeletionState({
+		leases: [
+			{
+				token: 'legacy-only-token',
+				holder: 'secret-holder',
+				acquiredAt: '2026-08-01T07:00:00.000Z',
+				authority: 'legacy',
+			},
+		],
+	})
+	const legacyReport = await loadAdminUserMeterParityReport({
 		db,
 		env: meter.env,
 		stableUserId,
 		now,
 	})
-	expect(parityReport?.deletion).toMatchObject({
-		d1DeletingAt: '2026-08-01T08:00:00.000Z',
-		meterDeletingAt: '2026-08-01T08:00:00.000Z',
-		deletingAtParity: true,
-		activeLeaseCount: 0,
-		truncated: false,
+	// legacyWithoutD1 still fails parity: every legacy-authority meter lease must
+	// have a matching D1 row for the gate to pass.
+	expect(legacyReport?.deletion).toMatchObject({
+		d1ActiveLeaseCount: 0,
+		doAuthorityLeaseCount: 0,
+		doLegacyLeaseCount: 1,
+		tokenSetMismatches: {
+			d1Only: 0,
+			doOnly: 0,
+			legacyWithoutD1: 1,
+		},
+		temporaryMirrorRetired: true,
+		mirrorLeaseParity: false,
 	})
-	assertNoLeaseSecrets(mismatchReport)
-	assertNoLeaseSecrets(parityReport)
+	assertNoLeaseSecrets(doOnlyReport)
+	assertNoLeaseSecrets(legacyReport)
 })
 
 test('loadAdminUserMeterParityReport returns null for missing users', async () => {
@@ -630,12 +729,49 @@ test('loadAdminUserMeterParityReport fails closed on repeated package-service cu
 		truncated: true,
 		parity: false,
 	})
+})
+
+test('loadAdminUserMeterParityReport fails closed on zero-item write-lease cursor', async () => {
+	const { sqlite, db } = createParityTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const dailyCounts = {
+		email_sends_per_day: 0,
+		email_receives_per_day: 0,
+		execute_calls_per_day: 0,
+		outbound_fetches_per_day: 0,
+	}
+	seedD1ParityBaseline({
+		sqlite,
+		stableUserId,
+		dailyCounts,
+		storageBytes: 0,
+	})
+	await seedMeterParityBaseline({
+		meter,
+		stableUserId,
+		dailyCounts,
+		storageBytes: 0,
+	})
+
+	const listWriteLeases = vi.fn(async (_input: MeterListPageInput) => ({
+		leases: [] as Array<UserMeterWriteLeaseShadow>,
+		nextStartAfter: 'stuck-lease-cursor',
+		truncated: true,
+	}))
+	const env = withMeterListOverrides(meter, {
+		listWriteLeases,
+	})
+
+	const report = await loadAdminUserMeterParityReport({
+		db,
+		env,
+		stableUserId,
+		now,
+	})
+	expect(listWriteLeases).toHaveBeenCalledTimes(1)
 	expect(report?.deletion).toMatchObject({
-		d1DeletingAt: null,
-		meterDeletingAt: null,
-		deletingAtParity: true,
-		activeLeaseCount: 0,
-		truncated: false,
+		truncated: true,
+		mirrorLeaseParity: false,
 	})
 })
 
@@ -703,13 +839,6 @@ test('loadAdminUserMeterParityReport reports mirrorRetired when entitlement_dail
 		meterCount: 4,
 		delta: null,
 		parity: true,
-	})
-	expect(report?.deletion).toMatchObject({
-		d1DeletingAt: null,
-		meterDeletingAt: null,
-		deletingAtParity: true,
-		activeLeaseCount: 0,
-		truncated: false,
 	})
 })
 
@@ -795,12 +924,5 @@ test('loadAdminUserMeterParityReport still compares D1 daily counts when mirror 
 		meterCount: 9,
 		delta: -8,
 		parity: false,
-	})
-	expect(report?.deletion).toMatchObject({
-		d1DeletingAt: null,
-		meterDeletingAt: null,
-		deletingAtParity: true,
-		activeLeaseCount: 0,
-		truncated: false,
 	})
 })

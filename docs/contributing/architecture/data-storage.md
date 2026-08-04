@@ -596,23 +596,24 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   [Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
-  / `pending_repair_id`). Schema v7 is authoritative for all leases. All callers
-  supply `USER_METER`; every new lease is inserted as `authority='do'`. The warm
-  `authority` column is kept for schema compatibility — code treats every row as
-  authoritative DO and ignores the column value. The column will be dropped on a
-  later schema bump after production objects report `schema_version >= 7`. D1
-  `account_write_leases` is **quiescent** — no new rows are written and the
-  table is not queried on any runtime path. D1 `users.deleting_at` remains the
-  permanent point gate. `purge()` preserves an existing deleting tombstone
-  across `deleteAll`. Account export emits a sanitized `deletionShadow` without
-  raw token/holder.
+  / `authority` (`do`|`legacy`) / `pending_repair_id`). Schema v7 is authority
+  for DO-path leases. When callers supply `USER_METER`, `authority='do'` rows
+  are authoritative for acquire/held/release and admin union list; no D1 row is
+  written on acquire. `authority='legacy'` rows are the D1 lease snapshot
+  replaced by `markDeleting`. D1 `account_write_leases` may still hold legacy
+  email leases and historical stale pre-retirement rows. D1 `users.deleting_at`
+  remains the permanent point gate; email paths omit `env` and keep exact D1
+  leases. `purge()` preserves an existing deleting tombstone across `deleteAll`.
+  Account export emits a sanitized `deletionShadow` without raw token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
 retries. Shadow storage-byte and package-service liveness rows are not
-time-pruned. Write-lease rows clear on release/repair/purge.
+time-pruned. Deletion-fence legacy lease rows are bounded by the D1 snapshot
+replace on `markDeleting` rather than time retention; DO-authority rows clear on
+release/repair/purge.
 
 **D1 daily mirror retired:** enforcement, point reads, bootstrap, mirror, and
 account export/deletion inventory paths never read or write

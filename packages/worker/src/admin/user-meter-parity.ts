@@ -7,6 +7,7 @@ import {
 	dailyEntitlementResources,
 	type DailyEntitlementResource,
 	type UserMeterPackageServiceState,
+	type UserMeterWriteLeaseShadow,
 } from '#worker/entitlements/user-meter-do.ts'
 import {
 	countRunningPackageServicesFromD1,
@@ -71,17 +72,35 @@ type PackageServicesParity = {
 	parity: boolean
 }
 
+type DeletionLeaseTokenMismatches = {
+	d1Only: number
+	doOnly: number
+	legacyWithoutD1: number
+}
+
 type DeletionParity = {
 	d1DeletingAt: string | null
 	meterDeletingAt: string | null
 	deletingAtParity: boolean
-	/** Active DO write-lease count (meter-only; D1 lease mirror is retired). */
-	activeLeaseCount: number
-	/**
-	 * True when the meter page walk completed without hitting the inventory
-	 * cap. Truncated counts are reported but should not trigger alerts.
-	 */
+	d1ActiveLeaseCount: number
+	doAuthorityLeaseCount: number
+	doLegacyLeaseCount: number
+	tokenSetMismatches: DeletionLeaseTokenMismatches
 	truncated: boolean
+	/**
+	 * Always true: the temporary same-token D1 mirror is retired (2026-08-01).
+	 * DO-authority leases do not insert a D1 row on acquire; `doOnly` is
+	 * expected and does not indicate a problem. `d1Only` reflects legacy email
+	 * leases and historical stale pre-retirement rows pending audit repair.
+	 */
+	temporaryMirrorRetired: true
+	/**
+	 * Lease readiness with the temporary D1 mirror retired: no
+	 * `legacyWithoutD1` (every legacy-authority meter lease has a matching D1
+	 * row) and the meter page walk is complete. `doOnly` is expected and does
+	 * not fail this gate. `d1Only` is reported separately as a diagnostic.
+	 */
+	mirrorLeaseParity: boolean
 }
 
 export type AdminUserMeterParityReport = {
@@ -109,6 +128,10 @@ type D1PackageServiceStateRow = {
 	status: string
 	started_at: string | null
 	updated_at: string
+}
+
+type D1WriteLeaseTokenRow = {
+	token: string
 }
 
 function countDeltaParity(input: {
@@ -341,6 +364,32 @@ async function listAllMeterPackageServiceStates(input: {
 	return { states, truncated }
 }
 
+async function listAllMeterWriteLeases(input: {
+	env: UserMeterEnv
+	stableUserId: string
+	maxRows: number
+}): Promise<{
+	leases: Array<UserMeterWriteLeaseShadow>
+	truncated: boolean
+}> {
+	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
+	const { items: leases, truncated } = await collectBoundedUserMeterPages({
+		maxRows: input.maxRows,
+		fetchPage: async ({ pageSize, startAfter }) => {
+			const page = await meter.listWriteLeases({
+				pageSize,
+				startAfter,
+			})
+			return {
+				items: page.leases,
+				nextStartAfter: page.nextStartAfter,
+				truncated: page.truncated,
+			}
+		},
+	})
+	return { leases, truncated }
+}
+
 function packageServiceKey(packageId: string, serviceName: string) {
 	return `${packageId}\0${serviceName}`
 }
@@ -449,6 +498,34 @@ async function readPackageServicesParity(input: {
 	}
 }
 
+function compareDeletionLeaseTokens(input: {
+	d1Tokens: ReadonlyArray<string>
+	meterLeases: ReadonlyArray<UserMeterWriteLeaseShadow>
+}): DeletionLeaseTokenMismatches {
+	const d1TokenSet = new Set(input.d1Tokens)
+	const doAuthorityTokens = new Set<string>()
+	const legacyTokens = new Set<string>()
+	for (const lease of input.meterLeases) {
+		if (lease.authority === 'do') doAuthorityTokens.add(lease.token)
+		else legacyTokens.add(lease.token)
+	}
+	let d1Only = 0
+	for (const token of d1TokenSet) {
+		if (!doAuthorityTokens.has(token) && !legacyTokens.has(token)) {
+			d1Only += 1
+		}
+	}
+	let doOnly = 0
+	for (const token of doAuthorityTokens) {
+		if (!d1TokenSet.has(token)) doOnly += 1
+	}
+	let legacyWithoutD1 = 0
+	for (const token of legacyTokens) {
+		if (!d1TokenSet.has(token)) legacyWithoutD1 += 1
+	}
+	return { d1Only, doOnly, legacyWithoutD1 }
+}
+
 async function readDeletionParity(input: {
 	db: D1Database
 	env: UserMeterEnv
@@ -459,16 +536,48 @@ async function readDeletionParity(input: {
 		.bind(input.stableUserId)
 		.first<{ deleting_at: string | null }>()
 	const d1DeletingAt = d1DeletingRow?.deleting_at ?? null
+	const d1LeaseRows = await input.db
+		.prepare(
+			`SELECT token
+			FROM account_write_leases
+			WHERE user_id = ? AND released_at IS NULL
+			ORDER BY acquired_at, token`,
+		)
+		.bind(input.stableUserId)
+		.all<D1WriteLeaseTokenRow>()
+	const d1Tokens = (d1LeaseRows.results ?? []).map((row) => row.token)
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
 	const meterDeletion = await meter.readDeletionState()
+	const { leases: meterLeases, truncated } = await listAllMeterWriteLeases({
+		env: input.env,
+		stableUserId: input.stableUserId,
+		maxRows: userMeterParityInventoryMaxRows,
+	})
+	let doAuthorityLeaseCount = 0
+	let doLegacyLeaseCount = 0
+	for (const lease of meterLeases) {
+		if (lease.authority === 'do') doAuthorityLeaseCount += 1
+		else doLegacyLeaseCount += 1
+	}
+	const tokenSetMismatches = compareDeletionLeaseTokens({
+		d1Tokens,
+		meterLeases,
+	})
 	const deletingAtParity = d1DeletingAt === meterDeletion.deletingAt
-	const leaseCount = await meter.countActiveWriteLeases()
+	const d1ActiveLeaseCount = d1Tokens.length
+	const mirrorLeaseParity =
+		tokenSetMismatches.legacyWithoutD1 === 0 && !truncated
 	return {
 		d1DeletingAt,
 		meterDeletingAt: meterDeletion.deletingAt,
 		deletingAtParity,
-		activeLeaseCount: leaseCount.count,
-		truncated: false,
+		d1ActiveLeaseCount,
+		doAuthorityLeaseCount,
+		doLegacyLeaseCount,
+		tokenSetMismatches,
+		truncated,
+		temporaryMirrorRetired: true as const,
+		mirrorLeaseParity,
 	}
 }
 

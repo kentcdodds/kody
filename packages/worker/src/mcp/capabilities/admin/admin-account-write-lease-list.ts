@@ -33,8 +33,9 @@ export const adminAccountWriteLeaseListCapability = defineDomainCapability(
 				'admin_account_write_lease_list',
 				async () => ({
 					leases: await listActiveAccountWriteLeases(
-						ctx.env,
+						ctx.env.APP_DB,
 						args.stable_user_id,
+						ctx.env,
 					),
 				}),
 			)
