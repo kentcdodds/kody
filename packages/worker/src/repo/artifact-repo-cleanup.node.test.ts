@@ -5,6 +5,8 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
 	listEntitySourcesByUser: vi.fn(),
+	updateEntitySource: vi.fn(async () => true),
+	deleteArtifactsRepoPushSubscription: vi.fn(async () => true),
 	listRepoSessionsBySource: vi.fn(async () => []),
 	listRepoSessionsByUser: vi.fn(async () => []),
 	hasArtifactsAccess: vi.fn(),
@@ -18,6 +20,11 @@ vi.mock('./artifacts.ts', () => ({
 		mockModule.hasArtifactsAccess(...args),
 }))
 
+vi.mock('./artifacts-push-subscriptions.ts', () => ({
+	deleteArtifactsRepoPushSubscription: (...args: Array<unknown>) =>
+		mockModule.deleteArtifactsRepoPushSubscription(...args),
+}))
+
 vi.mock('./entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
@@ -25,6 +32,8 @@ vi.mock('./entity-sources.ts', () => ({
 		mockModule.getEntitySourceByIdForUser(...args),
 	listEntitySourcesByUser: (...args: Array<unknown>) =>
 		mockModule.listEntitySourcesByUser(...args),
+	updateEntitySource: (...args: Array<unknown>) =>
+		mockModule.updateEntitySource(...args),
 }))
 
 vi.mock('./repo-sessions.ts', () => ({

@@ -153,6 +153,28 @@ async function listEventSubscriptions(env: Env, accountId: string) {
 	return subscriptions
 }
 
+async function artifactsEventSubscriptionExists(input: {
+	env: Env
+	accountId: string
+	subscriptionId: string
+}) {
+	const client = createCloudflareRestClient(input.env)
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(input.subscriptionId)}`,
+	})
+	if (response.status === 404) return false
+	if (response.status >= 400) {
+		throw new CloudflareApiError(
+			`Failed to read Cloudflare event subscription (${response.status}).`,
+			{ status: response.status },
+		)
+	}
+	return (
+		readCloudflareResult<CloudflareEventSubscription>(response.body) != null
+	)
+}
+
 function sameStringSet(
 	left: ReadonlyArray<string>,
 	right: ReadonlyArray<string>,
@@ -190,14 +212,24 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 		input.env.APP_DB,
 		input.sourceId,
 	)
-	if (
-		existingSource?.artifacts_push_event_subscription_id &&
-		existingSource.user_id === input.userId
-	) {
-		return {
-			subscriptionId: existingSource.artifacts_push_event_subscription_id,
-			skipped: false,
+	const storedSubscriptionId =
+		existingSource?.user_id === input.userId
+			? existingSource.artifacts_push_event_subscription_id
+			: null
+	if (storedSubscriptionId) {
+		const stillExists = await artifactsEventSubscriptionExists({
+			env: input.env,
+			accountId,
+			subscriptionId: storedSubscriptionId,
+		})
+		if (stillExists) {
+			return { subscriptionId: storedSubscriptionId, skipped: false }
 		}
+		await updateEntitySource(input.env.APP_DB, {
+			id: input.sourceId,
+			userId: input.userId,
+			artifactsPushEventSubscriptionId: null,
+		}).catch(() => {})
 	}
 
 	const queueId = await resolveArtifactsRepoEventsQueueId(input.env)
