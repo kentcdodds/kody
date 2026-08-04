@@ -894,8 +894,7 @@ export async function readEntitlementResourceUsage(input: {
 			// Authoritative concurrent-workflow occupancy lives in per-user
 			// RunLog `workflow_projections`. Callers must pass getCurrent from
 			// reserveWorkflowProjectionSlot (create path) or use
-			// readCurrentEntitlementResourceUsage (usage readers). The expand-
-			// phase D1 `workflow_runs` mirror is not authoritative here.
+			// readCurrentEntitlementResourceUsage (usage readers).
 			throw new Error(
 				'concurrent_workflows usage must be read from RunLog (pass getCurrent or use readCurrentEntitlementResourceUsage).',
 			)

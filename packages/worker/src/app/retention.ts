@@ -4,7 +4,6 @@ import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 
 type RetentionPolicy = {
 	table: string
@@ -36,7 +35,6 @@ export const publishedBundleArtifactRetentionBatchSize = 100
 export const retentionRunTimeBudgetMs = 20_000
 
 export const memorySuppressionRetentionDays = 90
-export const workflowRunRetentionDays = 90
 export const platformFeedbackRetentionDays = 365
 export const publishedBundleArtifactRetentionDays = 30
 export const usageRollupRetentionMonths = 24
@@ -45,9 +43,6 @@ export const auditEventRetentionDays = 180
 export const stripeWebhookEventRetentionDays = 30
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
-const terminalWorkflowStatusList = terminalWorkflowStatusValues
-	.map((status) => `'${status}'`)
-	.join(', ')
 
 /**
  * Inventory of D1 growth-table retention policies. Keep this manifest in sync
@@ -67,14 +62,6 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		batchSize: retentionDefaultBatchSize,
 		description:
 			'Conversation suppression rows are kept while active and for up to 90 days since last seen.',
-	},
-	{
-		table: 'workflow_runs',
-		scope: 'per-user',
-		retentionDays: workflowRunRetentionDays,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Workflow run projections keep terminal states for 90 days; non-terminal rows are never pruned.',
 	},
 	{
 		table: 'platform_feedback',
@@ -136,7 +123,6 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 
 export type RetentionPruneResult = {
 	memorySuppressions: number
-	workflowRuns: number
 	platformFeedback: number
 	publishedBundleArtifacts: {
 		deletedRows: number
@@ -308,26 +294,6 @@ export async function pruneMemorySuppressionsForRetention(input: {
 			LIMIT ?`,
 		table: 'mcp_memory_conversation_suppressions',
 		idColumn: 'rowid',
-	})
-}
-
-export async function pruneWorkflowRunsForRetention(input: {
-	db: D1Database
-	now?: Date
-	batchSize?: number
-}) {
-	const cutoff = cutoffIso(input.now ?? new Date(), workflowRunRetentionDays)
-	return selectAndDeleteByIds({
-		db: input.db,
-		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
-		sql: `SELECT id
-			FROM workflow_runs
-			WHERE status IN (${terminalWorkflowStatusList})
-				AND COALESCE(completed_at, updated_at, created_at) < ?
-			ORDER BY COALESCE(completed_at, updated_at, created_at) ASC, id ASC
-			LIMIT ?`,
-		table: 'workflow_runs',
-		idColumn: 'id',
 	})
 }
 
@@ -575,7 +541,6 @@ export async function pruneRetention(input: {
 	const auditDb = input.env.AUDIT_DB
 	const result: RetentionPruneResult = {
 		memorySuppressions: 0,
-		workflowRuns: 0,
 		platformFeedback: 0,
 		publishedBundleArtifacts: {
 			deletedRows: 0,
@@ -615,13 +580,6 @@ export async function pruneRetention(input: {
 			() => pruneMemorySuppressionsForRetention({ db, now }),
 			(count) => {
 				result.memorySuppressions += count
-			},
-		),
-		countTask(
-			'workflow_runs',
-			() => pruneWorkflowRunsForRetention({ db, now }),
-			(count) => {
-				result.workflowRuns += count
 			},
 		),
 		countTask(

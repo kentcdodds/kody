@@ -638,11 +638,12 @@ Rules:
   `countRunningPackageServicesFromD1` is retained for parity only — see
   [Package service liveness — UserMeter authority](#package-service-liveness--usermeter-authority-cutover-2026-08-01)
   and [Run records](./run-records.md) (`state-vs-history`). **Concurrent
-  workflows** are authoritative in per-user RunLog `workflow_projections`:
-  create reserves atomically via `reserveWorkflowProjectionSlot`, and usage
-  readers call `countActiveWorkflowProjections` through
-  `readCurrentEntitlementResourceUsage`. Expand-phase D1 `workflow_runs` is a
-  compatibility mirror only.
+  workflows** are authoritative in per-user RunLog `workflow_projections`
+  (RunLog-only authority; D1 `workflow_runs` retired after production parity
+  2026-08-04): create reserves atomically via `reserveWorkflowProjectionSlot`,
+  and usage readers call `countActiveWorkflowProjections` through
+  `readCurrentEntitlementResourceUsage`. Terminal projections age-prune after 90
+  days inside the DO; active / running rows are never age-pruned.
 - **Rate-style limits** (email sends/receives per day, execute calls per day,
   outbound fetches per day) are **authoritative in the per-user UserMeter
   Durable Object** (UTC day keys). Call `consumeDailyEntitlement` on every

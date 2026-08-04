@@ -67,8 +67,7 @@ type ResourceCount = Partial<
 		| 'package_services'
 		| 'repo_sessions'
 		| 'stored_email_messages'
-		| 'secrets'
-		| 'concurrent_workflows',
+		| 'secrets',
 		number
 	>
 >
@@ -102,9 +101,6 @@ function createAdminUserUsageTestDb(input: {
 		}
 		if (normalizedQuery.includes('from secret_entries')) {
 			return counts.secrets ?? 0
-		}
-		if (normalizedQuery.includes('from workflow_runs')) {
-			return counts.concurrent_workflows ?? 0
 		}
 		return null
 	}

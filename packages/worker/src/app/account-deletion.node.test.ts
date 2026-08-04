@@ -780,7 +780,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				conversation_id: 'conv-1',
 			},
 		],
-		workflow_runs: [{ id: 'wr-1', user_id: userAaa }],
 		mcp_memory_conversation_suppressions: [
 			{ user_id: userAaa, conversation_id: 'c1', memory_id: 'mem-1' },
 		],
