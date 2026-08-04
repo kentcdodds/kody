@@ -137,6 +137,7 @@ export const routes = route({
 	timeline: '/timeline',
 	timelineApi: '/timeline.json',
 	health: '/health',
+	healthComponents: '/health/components',
 	sentryTunnel: post('/sentry-tunnel'),
 	login: '/login',
 	ogPageImage: '/og/:page.png',
