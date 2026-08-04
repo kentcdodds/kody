@@ -515,10 +515,9 @@ primitives:
     name: User meter
     summary:
       Per-user UserMeter DO SQLite for daily entitlement counters, inbound
-      delivery idempotency, expand-phase D1 storage-byte shadow, expand-phase
-      package-service liveness shadow, and expand-phase account-deletion
-      write-fence shadow (D1 remains sole fence/lease authority in slice 5 Phase
-      A).
+      delivery idempotency, D1 storage-byte shadow, package-service liveness
+      shadow, and authoritative account-deletion write leases (all callers
+      supply env; D1 account_write_leases is quiescent).
     code:
       - packages/worker/src/entitlements/user-meter-do.ts
       - packages/worker/src/entitlements/user-meter-client.ts
