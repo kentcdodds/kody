@@ -65,6 +65,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run backup:build
 
+      - name: 📟 Status build
+        if: ${{ !cancelled() }}
+        run: npm run status:build
+
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}
         run: npm run primitives:check

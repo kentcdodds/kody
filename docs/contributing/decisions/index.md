@@ -22,3 +22,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0001 — No user-facing package versioning or import pins](./0001-no-package-versioning.md)
 - [0002 — Data placement: D1, per-user Durable Objects, Analytics Engine](./0002-data-placement.md)
 - [0003 — Repos are the base primitive; packages are an explicit extension](./0003-repos-as-base-primitive.md)
+- [0004 — Status page as a separate worker with its own storage](./0004-status-page-separate-worker.md)

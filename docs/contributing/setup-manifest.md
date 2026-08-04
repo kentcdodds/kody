@@ -235,6 +235,25 @@ verifying public key, trusted restore baseline id/digest, Access
 Offline CLI restore still trusts only the checked-in manifest public-key,
 production-identity, and restore-baseline registries.
 
+### Status page worker
+
+The public status page (`packages/status/`, served at `status.heykody.dev` via a
+wrangler custom domain on the production zone) is an independently deployed
+Worker with a cron trigger and one `StatusStore` Durable Object (SQLite). It
+probes public endpoints on the main worker and `kodyapps.dev` every minute and
+never touches `APP_DB` (see decision record
+[0004](./decisions/0004-status-page-separate-worker.md)).
+
+Code deploys are automated by the production deploy workflow
+(`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push
+changes `packages/status/`, and on every manual `workflow_dispatch` of that
+workflow. The job deploys with the production-account `CLOUDFLARE_API_TOKEN`,
+sets `BUILD_COMMIT` to the deploy SHA, and syncs the same token as the Worker
+secret `CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
+through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
+`ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
+Without that secret, alert sends are skipped and logged.
+
 ## Optional Cloudflare offerings
 
 The default footprint stays intentionally small. If you want to add additional

@@ -34,6 +34,7 @@ jobs:
       should_deploy: ${{ steps.sha_guard.outputs.should_deploy }}
       deploy_backup_control_plane:
         ${{ steps.sha_guard.outputs.deploy_backup_control_plane }}
+      deploy_status_worker: ${{ steps.sha_guard.outputs.deploy_status_worker }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -68,6 +69,7 @@ jobs:
           if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_status_worker=false" >> "$GITHUB_OUTPUT"
             echo "Skipping deploy: target SHA is not current main HEAD."
             echo "target=$DEPLOY_SHA"
             echo "head=$HEAD_SHA"
@@ -75,12 +77,14 @@ jobs:
           fi
           echo "should_deploy=true" >> "$GITHUB_OUTPUT"
 
-          # Always redeploy the DR control plane on manual workflow_dispatch.
-          # On push-driven deploys, only when control-plane (or shared backup
-          # contracts) changed in the commit being deployed.
+          # Always redeploy the DR control plane and status worker on manual
+          # workflow_dispatch. On push-driven deploys, only when their files
+          # changed in the commit being deployed.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
             echo "Backup control plane deploy: forced (workflow_dispatch)."
+            echo "Status worker deploy: forced (workflow_dispatch)."
             exit 0
           fi
 
@@ -91,6 +95,15 @@ jobs:
           else
             echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
             echo "Backup control plane deploy: skipped (no relevant path changes)."
+          fi
+
+          if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
+            '^(\.github/workflows/deploy\.yml|packages/status/)'; then
+            echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
+            echo "Status worker deploy: path filter matched."
+          else
+            echo "deploy_status_worker=false" >> "$GITHUB_OUTPUT"
+            echo "Status worker deploy: skipped (no relevant path changes)."
           fi
 
   deploy:
@@ -362,6 +375,102 @@ jobs:
             echo "Capability reindex failed with HTTP ${status}." >&2
             exit 1
           fi
+
+  deploy-status-worker:
+    runs-on: ubuntu-latest
+    name: 📟 Deploy status worker
+    timeout-minutes: 8
+    needs: sha-guard
+    if: >-
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_status_worker == 'true'
+    environment:
+      name: production
+      url: https://status.heykody.dev
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
+          fetch-depth: 0
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: ☁️ Deploy status worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Status worker deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run status:deploy -- \
+              --var "BUILD_COMMIT:${DEPLOY_COMMIT_SHA}" 2>&1 | tee status-deploy.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Status worker deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+            echo "Retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
+
+      - name: 🔐 Sync status worker alert email secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          # The status worker sends alert email through the Cloudflare Email
+          # REST API using the same account token the deploy uses.
+          printf '%s' "$CLOUDFLARE_API_TOKEN" | npx wrangler secret put \
+            CLOUDFLARE_API_TOKEN --config packages/status/wrangler.jsonc
+
+      - name: 🩺 Healthcheck (status worker)
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          HEALTHCHECK_URL="https://status.heykody.dev/health"
+          echo "Healthcheck URL: $HEALTHCHECK_URL"
+
+          attempts=20
+          delay_seconds=3
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > status-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('status-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true) { console.error('status-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commit !== expected) { console.error('status-healthcheck-unexpected-commit', { expected, actual: json?.commit }); process.exit(1); } console.log('status-healthcheck-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "Status worker healthcheck failed after ${attempts} attempts." >&2
+          if [ -f status-health.json ]; then
+            echo "Last response body:" >&2
+            cat status-health.json >&2
+          fi
+          exit 1
 
   deploy-backup-control-plane:
     runs-on: ubuntu-latest
