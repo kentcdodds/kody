@@ -78,15 +78,11 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 	const db = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
-	await meterStub.bootstrapDeletionState({
-		leases: [
-			{
-				token: 'lease-token-privacy',
-				holder: 'holder-secret',
-				acquiredAt: '2026-08-01T09:00:00.000Z',
-				authority: 'do',
-			},
-		],
+	// Seed one active DO write lease; D1 account_write_leases row is quiescent.
+	await meterStub.acquireWriteLease({
+		token: 'active-lease-xyz789',
+		holder: 'some-holder-value',
+		acquiredAt: '2026-08-01T09:00:00.000Z',
 	})
 	const ctx = {
 		env: { APP_DB: db, ...meter.env } as Env,
@@ -122,7 +118,8 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 	)
 	expect(present.report?.stableUserId).toBe(stableUserId)
 	expect(present.report?.daily.mirrorRetired).toBe(false)
-	expect(present.report?.deletion.mirrorLeaseParity).toBe(true)
+	expect(present.report?.deletion.deletingAtParity).toBe(true)
+	expect(present.report?.deletion.activeLeaseCount).toBe(1)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'admin_user_meter_parity',
@@ -131,8 +128,8 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 		}),
 	)
 	const serialized = JSON.stringify(present)
-	expect(serialized).not.toContain('lease-token-privacy')
-	expect(serialized).not.toContain('holder-secret')
+	expect(serialized).not.toContain('active-lease-xyz789')
+	expect(serialized).not.toContain('some-holder-value')
 	expect(serialized).not.toContain('"token"')
 	expect(serialized).not.toContain('"holder"')
 })
