@@ -33,9 +33,9 @@ This project uses the following resources:
   - Per-repo `artifacts.repo` push subscriptions (`pushed`) are created at
     runtime when durable `entity_sources` rows are ensured, using
     `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`. The Worker looks up the
-    destination queue by name. Subscription ids are stored on
-    `entity_sources.artifacts_push_event_subscription_id` and deleted during
-    artifact cleanup.
+    destination queue by name. Subscription ids are stored in
+    `entity_source_artifacts_push_subscriptions` and deleted during artifact
+    cleanup.
   - The production consumer batches at most 10 messages for 5 seconds, retries
     three times, and routes exhausted messages to the dedicated dead-letter
     queue. Consumers filter by `ARTIFACTS_NAMESPACE` and ignore session fork

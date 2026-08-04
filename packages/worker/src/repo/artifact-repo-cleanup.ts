@@ -6,9 +6,12 @@ import {
 } from './artifacts.ts'
 import { deleteArtifactsRepoPushSubscription } from './artifacts-push-subscriptions.ts'
 import {
+	deleteArtifactsPushSubscriptionBySourceId,
+	getArtifactsPushSubscriptionBySourceId,
+} from './artifacts-push-subscription-store.ts'
+import {
 	getEntitySourceByIdForUser,
 	listEntitySourcesByUser,
-	updateEntitySource,
 } from './entity-sources.ts'
 import {
 	listRepoSessionsBySource,
@@ -86,18 +89,16 @@ async function deletePushSubscriptionForSource(input: {
 	userId: string
 	source: EntitySourceRow
 	warnings?: Array<string>
-	clearStoredId?: boolean
 }) {
-	if (
-		!input.source.artifacts_push_event_subscription_id &&
-		!input.source.repo_id
-	) {
-		return
-	}
+	const stored = await getArtifactsPushSubscriptionBySourceId(
+		input.env.APP_DB,
+		input.source.id,
+	)
+	if (!stored?.subscription_id) return
 	try {
 		await deleteArtifactsRepoPushSubscription({
 			env: input.env,
-			subscriptionId: input.source.artifacts_push_event_subscription_id,
+			subscriptionId: stored.subscription_id,
 			repoName: input.source.repo_id,
 		})
 	} catch (error) {
@@ -110,30 +111,24 @@ async function deletePushSubscriptionForSource(input: {
 				message: 'artifacts push event subscription delete failed',
 				userId: input.userId,
 				repoName: input.source.repo_id,
-				subscriptionId: input.source.artifacts_push_event_subscription_id,
+				subscriptionId: stored.subscription_id,
 				error: message,
 			}),
 		)
 	}
-	if (
-		input.clearStoredId !== false &&
-		input.source.artifacts_push_event_subscription_id
-	) {
-		await updateEntitySource(input.env.APP_DB, {
-			id: input.source.id,
-			userId: input.userId,
-			artifactsPushEventSubscriptionId: null,
-		}).catch((error) => {
-			console.warn(
-				JSON.stringify({
-					message: 'failed to clear artifacts push subscription id',
-					userId: input.userId,
-					sourceId: input.source.id,
-					error: getErrorMessage(error),
-				}),
-			)
-		})
-	}
+	await deleteArtifactsPushSubscriptionBySourceId(input.env.APP_DB, {
+		sourceId: input.source.id,
+		userId: input.userId,
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'failed to clear artifacts push subscription row',
+				userId: input.userId,
+				sourceId: input.source.id,
+				error: getErrorMessage(error),
+			}),
+		)
+	})
 }
 
 async function deleteReposForEntitySource(input: {
@@ -290,9 +285,6 @@ export async function cleanupAllUserArtifactRepos(input: {
 			userId: input.userId,
 			source,
 			warnings: input.warnings,
-			// Account deletion removes entity_sources shortly after; clearing is
-			// still useful if a later step fails mid-flight.
-			clearStoredId: true,
 		})
 	}
 	const repoNames = collectUniqueRepoNames([

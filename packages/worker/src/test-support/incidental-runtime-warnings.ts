@@ -17,6 +17,7 @@ const incidentalRuntimeWarnings = [
 	'run-record-finish-failed',
 	'activation-milestone-failed',
 	'activation-run-record-failed',
+	'artifacts-push-subscription-ensure-failed',
 ]
 
 export function silenceIncidentalRuntimeWarnings(

@@ -5,7 +5,12 @@ import {
 import { getArtifactsNamespace, hasArtifactsAccess } from './artifacts.ts'
 import { artifactsRepoEventsQueueName } from './artifacts-event-queue-names.ts'
 import { isSessionArtifactRepoName } from './artifacts-events.ts'
-import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
+import {
+	deleteArtifactsPushSubscriptionBySourceId,
+	getArtifactsPushSubscriptionBySourceId,
+	upsertArtifactsPushSubscription,
+} from './artifacts-push-subscription-store.ts'
+import { getEntitySourceById } from './entity-sources.ts'
 
 type CloudflareQueueListItem = {
 	queue_id?: string
@@ -26,12 +31,6 @@ type CloudflareEventSubscription = {
 
 const pushEventTypes = ['pushed'] as const
 const subscriptionNameMaxLen = 63
-
-let cachedQueueId: {
-	accountId: string
-	queueName: string
-	queueId: string
-} | null = null
 
 function buildPushSubscriptionName(input: {
 	namespace: string
@@ -60,13 +59,6 @@ async function resolveArtifactsRepoEventsQueueId(
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) return null
-	if (
-		cachedQueueId &&
-		cachedQueueId.accountId === accountId &&
-		cachedQueueId.queueName === artifactsRepoEventsQueueName
-	) {
-		return cachedQueueId.queueId
-	}
 	const client = createCloudflareRestClient(env)
 	let page = 1
 	let totalPages = 1
@@ -89,11 +81,6 @@ async function resolveArtifactsRepoEventsQueueId(
 			(queue) => queue.queue_name === artifactsRepoEventsQueueName,
 		)
 		if (match?.queue_id) {
-			cachedQueueId = {
-				accountId,
-				queueName: artifactsRepoEventsQueueName,
-				queueId: match.queue_id,
-			}
 			return match.queue_id
 		}
 		const info =
@@ -189,10 +176,28 @@ function sameStringSet(
 /**
  * Ensure a repository-level Cloudflare Artifacts push event subscription exists
  * for a durable entity source Artifacts repo. Session forks are skipped.
- * Best-effort: missing Queues credentials or the destination queue returns
- * without throwing so source creation still succeeds.
+ * Best-effort: missing Queues credentials, the destination queue, or Cloudflare
+ * API failures return without throwing so source creation still succeeds.
  */
 export async function ensureArtifactsRepoPushSubscription(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	repoName: string
+}): Promise<{ subscriptionId: string | null; skipped: boolean }> {
+	try {
+		return await ensureArtifactsRepoPushSubscriptionUnsafe(input)
+	} catch (error) {
+		console.warn('artifacts-push-subscription-ensure-failed', {
+			sourceId: input.sourceId,
+			repoName: input.repoName,
+			error,
+		})
+		return { subscriptionId: null, skipped: true }
+	}
+}
+
+async function ensureArtifactsRepoPushSubscriptionUnsafe(input: {
 	env: Env
 	userId: string
 	sourceId: string
@@ -212,32 +217,30 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 		input.env.APP_DB,
 		input.sourceId,
 	)
-	const storedSubscriptionId =
-		existingSource?.user_id === input.userId
-			? existingSource.artifacts_push_event_subscription_id
-			: null
-	if (storedSubscriptionId) {
+	if (!existingSource || existingSource.user_id !== input.userId) {
+		return { subscriptionId: null, skipped: true }
+	}
+	const stored = await getArtifactsPushSubscriptionBySourceId(
+		input.env.APP_DB,
+		input.sourceId,
+	)
+	if (stored?.subscription_id) {
 		const stillExists = await artifactsEventSubscriptionExists({
 			env: input.env,
 			accountId,
-			subscriptionId: storedSubscriptionId,
+			subscriptionId: stored.subscription_id,
 		})
 		if (stillExists) {
-			return { subscriptionId: storedSubscriptionId, skipped: false }
+			return { subscriptionId: stored.subscription_id, skipped: false }
 		}
-		await updateEntitySource(input.env.APP_DB, {
-			id: input.sourceId,
+		await deleteArtifactsPushSubscriptionBySourceId(input.env.APP_DB, {
+			sourceId: input.sourceId,
 			userId: input.userId,
-			artifactsPushEventSubscriptionId: null,
-		}).catch(() => {})
+		})
 	}
 
 	const queueId = await resolveArtifactsRepoEventsQueueId(input.env)
 	if (!queueId) {
-		console.warn('artifacts-push-subscription-queue-missing', {
-			queueName: artifactsRepoEventsQueueName,
-			repoName,
-		})
 		return { subscriptionId: null, skipped: true }
 	}
 
@@ -324,10 +327,14 @@ export async function ensureArtifactsRepoPushSubscription(input: {
 		subscriptionId = result.id
 	}
 
-	await updateEntitySource(input.env.APP_DB, {
-		id: input.sourceId,
-		userId: input.userId,
-		artifactsPushEventSubscriptionId: subscriptionId,
+	const now = new Date().toISOString()
+	await upsertArtifactsPushSubscription(input.env.APP_DB, {
+		source_id: input.sourceId,
+		user_id: input.userId,
+		repo_id: repoName,
+		subscription_id: subscriptionId,
+		created_at: now,
+		updated_at: now,
 	})
 	return { subscriptionId, skipped: false }
 }
@@ -367,9 +374,4 @@ export async function deleteArtifactsRepoPushSubscription(input: {
 		)
 	}
 	return true
-}
-
-/** Test helper: clear the module-level queue id cache. */
-export function clearArtifactsRepoEventsQueueIdCacheForTests() {
-	cachedQueueId = null
 }

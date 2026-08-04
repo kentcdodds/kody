@@ -61,7 +61,6 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			source_root TEXT NOT NULL,
 			last_external_check_at TEXT,
 			external_check_until TEXT,
-			artifacts_push_event_subscription_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,

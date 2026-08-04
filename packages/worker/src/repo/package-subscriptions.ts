@@ -416,12 +416,6 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 			userId: source.user_id,
 			sourceId: source.id,
 			repoName: source.repo_id,
-		}).catch((error) => {
-			console.warn('artifacts-push-subscription-ensure-failed', {
-				sourceId: source.id,
-				repoName: source.repo_id,
-				error,
-			})
 		})
 	}
 

@@ -20,7 +20,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 	{
 		name: 'package_subscriptions_list',
 		description:
-			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed Artifacts lifecycle notifiers, run.error.recorded activity notifiers, admin platform-feedback, or admin community-activity notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented narrow metadata, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
+			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed / repo.created / repo.deleted Artifacts lifecycle notifiers, run.error.recorded activity notifiers, admin platform-feedback, or admin community-activity notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented narrow metadata, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
 		keywords: [
 			'package',
 			'package.json#kody.subscriptions',

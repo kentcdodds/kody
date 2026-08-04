@@ -22,26 +22,25 @@ test('external reconcile selects token-pending packages and the daily backstop c
 			source_root TEXT NOT NULL,
 			last_external_check_at TEXT,
 			external_check_until TEXT,
-			artifacts_push_event_subscription_id TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
 		INSERT INTO entity_sources VALUES
 			(
 				'dormant', 'user-1', 'package', 'package-1', 'repo-1',
-				'commit-1', NULL, 'package.json', '/', NULL, NULL, NULL,
+				'commit-1', NULL, 'package.json', '/', NULL, NULL,
 				'2026-05-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z'
 			),
 			(
 				'pending', 'user-2', 'package', 'package-2', 'repo-2',
 				'commit-2', NULL, 'package.json', '/',
-				'2026-05-04T01:00:00.000Z', '2026-05-04T04:00:00.000Z', NULL,
+				'2026-05-04T01:00:00.000Z', '2026-05-04T04:00:00.000Z',
 				'2026-05-02T00:00:00.000Z', '2026-05-02T00:00:00.000Z'
 			),
 			(
 				'job', 'user-1', 'job', 'job-1', 'repo-3',
 				'commit-3', NULL, 'kody.json', '/', NULL,
-				'2026-05-04T04:00:00.000Z', NULL,
+				'2026-05-04T04:00:00.000Z',
 				'2026-05-03T00:00:00.000Z', '2026-05-03T00:00:00.000Z'
 			);
 	`)

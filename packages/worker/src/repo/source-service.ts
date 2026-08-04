@@ -50,7 +50,6 @@ function buildEntitySourceRow(input: {
 		source_root: input.sourceRoot ?? '/',
 		last_external_check_at: null,
 		external_check_until: null,
-		artifacts_push_event_subscription_id: null,
 		created_at: now,
 		updated_at: now,
 	}
@@ -119,12 +118,6 @@ export async function ensureEntitySource(input: {
 			userId: existing.user_id,
 			sourceId: existing.id,
 			repoName: existing.repo_id,
-		}).catch((error) => {
-			console.warn('artifacts-push-subscription-ensure-failed', {
-				sourceId: existing.id,
-				repoName: existing.repo_id,
-				error,
-			})
 		})
 		return source
 	}
@@ -144,12 +137,6 @@ export async function ensureEntitySource(input: {
 		userId: row.user_id,
 		sourceId: row.id,
 		repoName: row.repo_id,
-	}).catch((error) => {
-		console.warn('artifacts-push-subscription-ensure-failed', {
-			sourceId: row.id,
-			repoName: row.repo_id,
-			error,
-		})
 	})
 	return {
 		...row,

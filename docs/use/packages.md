@@ -472,7 +472,7 @@ metadata-first (run id, surface, identifiers, truncated error fields, and an
 needed. See [Activity](./activity.md) and the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
-Artifacts-backed plain repos and packages also emit `repo.pushed`,
+Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those
 lifecycle events. See [Plain repos](./repos.md) and the
 [package subscriptions guide](../guides/package-subscriptions.md) for payloads
