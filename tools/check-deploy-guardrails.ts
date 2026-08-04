@@ -159,6 +159,20 @@ export function checkDurableObjectConfig(
 			)
 		}
 	}
+	const protectedMigrationTags = new Set(
+		baseline.protected_migrations.map(({ tag }) => tag),
+	)
+	for (const migration of migrations) {
+		if (
+			migration.new_sqlite_classes !== undefined &&
+			typeof migration.tag === 'string' &&
+			!protectedMigrationTags.has(migration.tag)
+		) {
+			errors.push(
+				`${configPath}: new_sqlite_classes migration "${migration.tag}" is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
+			)
+		}
+	}
 
 	const allowedDeletionKeys = new Set(
 		allowlist.deletions.map((deletion) => deletionKey(deletion)),
@@ -187,12 +201,23 @@ export function checkDurableObjectConfig(
 	const bindingSets = collectDurableObjectBindingClasses(config)
 	for (const protectedSet of baseline.protected_binding_sets) {
 		const currentClasses = bindingSets.get(protectedSet.location)
-		for (const className of protectedSet.classes) {
-			if (!currentClasses?.has(className)) {
-				errors.push(
-					`${configPath}: protected Durable Object class "${className}" was removed from bindings at ${protectedSet.location}. Update the reviewed baseline only for an intentional removal.`,
-				)
-			}
+		const expectedClasses = protectedSet.classes.toSorted()
+		const actualClasses = [...(currentClasses ?? [])].sort()
+		const removedClasses = expectedClasses.filter(
+			(className) => !currentClasses?.has(className),
+		)
+		for (const className of removedClasses) {
+			errors.push(
+				`${configPath}: protected Durable Object class "${className}" was removed from bindings at ${protectedSet.location}. Update the reviewed baseline only for an intentional removal.`,
+			)
+		}
+		if (
+			removedClasses.length === 0 &&
+			!sameStrings(actualClasses, expectedClasses)
+		) {
+			errors.push(
+				`${configPath}: Durable Object bindings at ${protectedSet.location} do not match ${defaultDurableObjectBaselinePath}. Record added classes in the reviewed baseline so they remain protected after landing.`,
+			)
 		}
 	}
 
@@ -213,9 +238,19 @@ function isWorkflowDispatchOnly(source: string): boolean {
 }
 
 function jobAllowsOnlyWorkflowDispatch(jobSource: string): boolean {
+	const lines = jobSource.split('\n')
+	const ifIndex = lines.findIndex((line) => /^ {4}if:\s*/.test(line))
+	if (ifIndex === -1) return false
+	const conditionLines = [lines[ifIndex] ?? '']
+	for (const line of lines.slice(ifIndex + 1)) {
+		if (/^ {4}\S/.test(line)) break
+		conditionLines.push(line)
+	}
+	const condition = conditionLines.join(' ')
 	return (
-		/github\.event_name\s*==\s*['"]workflow_dispatch['"]/.test(jobSource) ||
-		/['"]workflow_dispatch['"]\s*==\s*github\.event_name/.test(jobSource)
+		!/\|\||\bor\b/i.test(condition) &&
+		(/github\.event_name\s*==\s*['"]workflow_dispatch['"]/.test(condition) ||
+			/['"]workflow_dispatch['"]\s*==\s*github\.event_name/.test(condition))
 	)
 }
 

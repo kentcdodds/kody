@@ -92,7 +92,12 @@ test('Durable Object guard protects migration tags and bound classes', () => {
 	}
 	expect(
 		checkDurableObjectConfig(configPath, renamedMigration, baseline, allowlist),
-	).toEqual([expect.stringContaining('was removed, renamed, or changed')])
+	).toEqual([
+		expect.stringContaining('was removed, renamed, or changed'),
+		expect.stringContaining(
+			'new_sqlite_classes migration "renamed-v1" is not recorded',
+		),
+	])
 
 	const removedBinding = createConfig(undefined)
 	removedBinding.env.production.durable_objects.bindings = []
@@ -143,6 +148,14 @@ jobs:
 	expect(
 		checkWorkflowSource('mixed.yml', explicitlyGuardedMixedWorkflow),
 	).toEqual([])
+
+	const bypassableMixedWorkflow = explicitlyGuardedMixedWorkflow.replace(
+		"github.event_name == 'workflow_dispatch'",
+		"github.event_name == 'workflow_dispatch' || github.event_name == 'push'",
+	)
+	expect(
+		checkWorkflowSource('bypassable.yml', bypassableMixedWorkflow),
+	).toEqual([expect.stringContaining('outside a job explicitly restricted')])
 })
 
 test('current repository deploy configuration passes the guardrails', async () => {
