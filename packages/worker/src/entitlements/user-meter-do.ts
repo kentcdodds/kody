@@ -1585,18 +1585,18 @@ class UserMeterBase extends DurableObject<Env> {
 							OR (acquired_at = ? AND token > ?)
 						ORDER BY acquired_at ASC, token ASC
 						LIMIT ?`,
-							cursor.acquiredAt,
-							cursor.acquiredAt,
-							cursor.token,
-							pageSize + 1,
-						)
-					: this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
-							`SELECT token, holder, acquired_at, authority, pending_repair_id
+						cursor.acquiredAt,
+						cursor.acquiredAt,
+						cursor.token,
+						pageSize + 1,
+					)
+				: this.ctx.storage.sql.exec<WriteLeaseSqlRow>(
+						`SELECT token, holder, acquired_at, authority, pending_repair_id
 							FROM account_write_leases
 							ORDER BY acquired_at ASC, token ASC
 							LIMIT ?`,
-							pageSize + 1,
-						)
+						pageSize + 1,
+					)
 		).toArray()
 		const truncated = rows.length > pageSize
 		const pageRows = truncated ? rows.slice(0, pageSize) : rows
