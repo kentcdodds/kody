@@ -57,22 +57,23 @@ function testNonRetryableError(error: BackupError): TestNonRetryableError {
 	return new TestNonRetryableError(workflowBackupErrorMessage(error))
 }
 
-test('Workflow step boundary fails fast for non-retryable backup errors', async () => {
-	const engineStep = new RetryingWorkflowStep()
-	const step = withNonRetryableBackupErrors(engineStep, testNonRetryableError)
+test('Workflow step boundary fails fast for non-retryable errors and retries transient ones', async () => {
+	const nonRetryEngine = new RetryingWorkflowStep()
+	const nonRetryStep = withNonRetryableBackupErrors(
+		nonRetryEngine,
+		testNonRetryableError,
+	)
 
 	await assert.rejects(
-		step.do('non-retryable', { retries: { limit: 3 } }, async () => {
+		nonRetryStep.do('non-retryable', { retries: { limit: 3 } }, async () => {
 			throw new BackupError('invalid-workflow-payload', 'invalid payload')
 		}),
 		(error: unknown) =>
 			error instanceof TestNonRetryableError &&
 			errorCode(error) === 'invalid-workflow-payload',
 	)
-	assert.equal(engineStep.attempts, 1)
-})
+	assert.equal(nonRetryEngine.attempts, 1)
 
-test('Workflow step boundary preserves retries for retryable and transient errors', async () => {
 	for (const retryableError of [
 		new BackupError('d1-export-transient', 'try again', true),
 		new Error('temporary network error'),

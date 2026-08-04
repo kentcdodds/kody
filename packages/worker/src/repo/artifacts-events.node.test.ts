@@ -15,7 +15,7 @@ const metadata = {
 	eventTimestamp: '2026-05-18T15:53:48.187Z',
 }
 
-test('parseCloudflareArtifactsRepoEvent accepts pushed, created, and deleted envelopes', () => {
+test('artifacts event helpers parse envelopes, reject unknowns, and detect session forks', () => {
 	const pushed = parseCloudflareArtifactsRepoEvent({
 		type: 'cf.artifacts.repo.pushed',
 		source: {
@@ -80,9 +80,7 @@ test('parseCloudflareArtifactsRepoEvent accepts pushed, created, and deleted env
 		metadata,
 	})
 	expect(topicForArtifactsRepoEvent(deleted!)).toBe(repoDeletedTopic)
-})
 
-test('parseCloudflareArtifactsRepoEvent rejects malformed envelopes', () => {
 	expect(parseCloudflareArtifactsRepoEvent(null)).toBeNull()
 	expect(
 		parseCloudflareArtifactsRepoEvent({
@@ -96,9 +94,7 @@ test('parseCloudflareArtifactsRepoEvent rejects malformed envelopes', () => {
 			metadata,
 		}),
 	).toBeNull()
-})
 
-test('isSessionArtifactRepoName detects session forks', () => {
 	expect(
 		isSessionArtifactRepoName(
 			'package-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-session-11111111-2222-3333-4444-555555555555',

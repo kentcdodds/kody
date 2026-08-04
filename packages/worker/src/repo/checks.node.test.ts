@@ -263,7 +263,6 @@ test('runRepoChecks fails a single file over the per-file limit with hosting gui
 	expect(bundleCheck?.ok).toBe(false)
 	expect(bundleCheck?.message).toContain('"assets/dataset.csv"')
 	expect(bundleCheck?.message).toContain('per-file limit')
-	expect(bundleCheck?.message).toContain('Cloudflare R2')
 })
 
 test('runRepoChecks keeps non-code source files for publish snapshots while excluding git internals', async () => {

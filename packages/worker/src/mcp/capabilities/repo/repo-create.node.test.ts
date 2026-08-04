@@ -103,7 +103,7 @@ function createDatabase(
 const userEmail = 'repo-create@test.invalid'
 const stableUserId = createStableUserIdFromEmail(userEmail)
 
-test('repo_create creates a plain repo when within entitlement', async () => {
+test('repo_create creates within entitlement, rejects duplicates, and gates side effects at the repos ceiling', async () => {
 	mockModule.ensureEntitySource.mockResolvedValue({
 		id: 'source-1',
 		repo_id: 'repo-artifacts-1',
@@ -130,40 +130,14 @@ test('repo_create creates a plain repo when within entitlement', async () => {
 			userId: stableUserId,
 		}),
 	)
-})
 
-test('repo_create rejects duplicate names', async () => {
-	mockModule.ensureEntitySource.mockResolvedValue({
-		id: 'source-1',
-		repo_id: 'repo-artifacts-1',
-	})
-	const db = createDatabase({
-		users: [{ email: userEmail, plan: 'free', stable_user_id: stableUserId }],
-		user_repos: [
-			{
-				id: 'existing',
-				user_id: stableUserId,
-				name: 'notes',
-				description: null,
-			},
-		],
-	})
-	const ctx = {
-		env: { APP_DB: db } as Env,
-		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail },
-			baseUrl: 'https://kody.test',
-		}),
-	}
 	await expect(
 		repoCreateCapability.handler({ name: 'notes' }, ctx),
 	).rejects.toThrow(McpCallerError)
-})
 
-test('repo_create enforces repos entitlement before side effects', async () => {
 	const limit = planLimits.free.maxRepos
 	mockModule.ensureEntitySource.mockClear()
-	const db = createDatabase({
+	const atCeiling = createDatabase({
 		users: [{ email: userEmail, plan: 'free', stable_user_id: stableUserId }],
 		user_repos: Array.from({ length: limit }, (_, index) => ({
 			id: `repo-${index}`,
@@ -172,15 +146,15 @@ test('repo_create enforces repos entitlement before side effects', async () => {
 			description: null,
 		})),
 	})
-	const ctx = {
-		env: { APP_DB: db } as Env,
+	const ceilingCtx = {
+		env: { APP_DB: atCeiling } as Env,
 		callerContext: createMcpCallerContext({
 			user: { userId: stableUserId, email: userEmail },
 			baseUrl: 'https://kody.test',
 		}),
 	}
 	await expect(
-		repoCreateCapability.handler({ name: 'another' }, ctx),
+		repoCreateCapability.handler({ name: 'another' }, ceilingCtx),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(isEntitlementLimitError(error)).toBe(true)
 		if (isEntitlementLimitError(error)) {

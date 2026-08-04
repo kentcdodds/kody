@@ -165,9 +165,14 @@ test('repo.pushed fans out only to the owning user packages', async () => {
 	)
 })
 
-test('processCloudflareArtifactsRepoEvent ignores other namespaces and session repos', async () => {
+test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by entity_sources lookup', async () => {
 	mocks.getArtifactsNamespace.mockReturnValue('production')
-	const env = { APP_DB: {}, ARTIFACTS_NAMESPACE: 'production' } as Env
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+		APP_BASE_URL: 'https://example.com',
+		ARTIFACTS_NAMESPACE: 'production',
+	} as Env
 
 	const wrongNamespace = await processCloudflareArtifactsRepoEvent({
 		env,
@@ -189,10 +194,14 @@ test('processCloudflareArtifactsRepoEvent ignores other namespaces and session r
 		},
 	})
 	expect(session.outcome).toBe('ignored')
-})
 
-test('processCloudflareArtifactsRepoEvent maps repoName to entity_sources and dispatches', async () => {
-	mocks.getArtifactsNamespace.mockReturnValue('production')
+	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(null)
+	const unmatched = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushedEvent,
+	})
+	expect(unmatched.outcome).toBe('unmatched')
+
 	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mocks.getUserRepoById.mockResolvedValueOnce({
@@ -203,30 +212,13 @@ test('processCloudflareArtifactsRepoEvent maps repoName to entity_sources and di
 		createdAt: '2026-05-18T00:00:00.000Z',
 		updatedAt: '2026-05-18T00:00:00.000Z',
 	})
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-		ARTIFACTS_NAMESPACE: 'production',
-	} as Env
-
-	const result = await processCloudflareArtifactsRepoEvent({
+	const dispatched = await processCloudflareArtifactsRepoEvent({
 		env,
 		body: pushedEvent,
 	})
-	expect(result.outcome).toBe('dispatched')
+	expect(dispatched.outcome).toBe('dispatched')
 	expect(mocks.getEntitySourceByRepoId).toHaveBeenCalledWith(
 		env.APP_DB,
 		'repo-user-repo-1',
 	)
-})
-
-test('processCloudflareArtifactsRepoEvent returns unmatched when entity_sources is missing', async () => {
-	mocks.getArtifactsNamespace.mockReturnValue('production')
-	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(null)
-	const result = await processCloudflareArtifactsRepoEvent({
-		env: { APP_DB: {}, ARTIFACTS_NAMESPACE: 'production' } as Env,
-		body: pushedEvent,
-	})
-	expect(result.outcome).toBe('unmatched')
 })

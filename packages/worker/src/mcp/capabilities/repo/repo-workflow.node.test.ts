@@ -201,13 +201,25 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 	resetMocks()
 	const workflowRpc = createRepoRpc()
 	workflowRpc.applyEdits.mockResolvedValueOnce({
-		dryRun: false,
-		totalChanged: 1,
+		dryRun: true,
+		totalChanged: 3,
 		edits: [
 			{
 				path: 'src/index.ts',
 				changed: true,
 				content: 'export const done = true\n',
+				diff: '@@',
+			},
+			{
+				path: 'src/remove.ts',
+				changed: true,
+				content: '',
+				diff: '@@',
+			},
+			{
+				path: 'src/new.ts',
+				changed: true,
+				content: 'moved\n',
 				diff: '@@',
 			},
 		],
@@ -254,7 +266,7 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 	workflowRpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([])
 	mockModule.repoSessionRpc.mockReturnValue(workflowRpc)
 
-	await repoEditFilesCapability.handler(
+	const edited = await repoEditFilesCapability.handler(
 		{
 			session_id: 'session-existing',
 			edits: [
@@ -263,11 +275,15 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 					path: 'src/index.ts',
 					content: 'export const done = true\n',
 				},
+				{ kind: 'delete', path: 'src/remove.ts' },
+				{ kind: 'move', path: 'src/old.ts', to: 'src/new.ts' },
 			],
+			dry_run: true,
+			rollback_on_error: false,
 		},
 		createCapabilityContext(),
 	)
-	await repoCommitCapability.handler(
+	const committed = await repoCommitCapability.handler(
 		{
 			session_id: 'session-existing',
 			message: 'Update index',
@@ -283,20 +299,30 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 		createCapabilityContext(),
 	)
 
-	expect(workflowRpc.applyEdits).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sessionId: 'session-existing',
-			edits: [
-				expect.objectContaining({
-					kind: 'write',
-					path: 'src/index.ts',
-				}),
-			],
-		}),
-	)
+	expect(workflowRpc.applyEdits).toHaveBeenCalledWith({
+		sessionId: 'session-existing',
+		userId: 'user-1',
+		edits: [
+			{
+				kind: 'write',
+				path: 'src/index.ts',
+				content: 'export const done = true\n',
+			},
+			{ kind: 'delete', path: 'src/remove.ts' },
+			{ kind: 'move', path: 'src/old.ts', to: 'src/new.ts' },
+		],
+		dryRun: true,
+		rollbackOnError: false,
+	})
+	expect(edited.total_changed).toBe(3)
+	expect(edited.dry_run).toBe(true)
 	expect(workflowRpc.sessionCommit).toHaveBeenCalledWith({
 		sessionId: 'session-existing',
 		userId: 'user-1',
+		message: 'Update index',
+	})
+	expect(committed).toEqual({
+		oid: 'commit-session-1',
 		message: 'Update index',
 	})
 	expect(checks.ok).toBe(true)

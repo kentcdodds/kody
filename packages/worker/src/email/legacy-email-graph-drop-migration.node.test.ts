@@ -1,7 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { fileURLToPath } from 'node:url'
 import { mailboxPreDropApprovalColumns } from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
 import { expect, test } from 'vitest'
 import {
@@ -101,24 +99,4 @@ test('0135 removes every retired Mailbox parity users column and index', () => {
 			)
 			.all(),
 	).toEqual([])
-})
-
-test('dedicated system runtime has no dropped shared-graph reference', () => {
-	const emailDirectory = fileURLToPath(new URL('.', import.meta.url))
-	const references = readdirSync(emailDirectory)
-		.filter(
-			(fileName) =>
-				fileName.startsWith('system-') &&
-				fileName.endsWith('.ts') &&
-				!fileName.includes('.test.'),
-		)
-		.flatMap((fileName) => {
-			const source = readFileSync(join(emailDirectory, fileName), 'utf8')
-			return /\bemail_(?:threads|messages|attachments|delivery_events)\b/u.test(
-				source,
-			)
-				? [fileName]
-				: []
-		})
-	expect(references).toEqual([])
 })

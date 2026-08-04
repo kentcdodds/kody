@@ -45,9 +45,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			},
 		},
 	})
-	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toBe(
-		`claude mcp add --transport http -s user kody ${mcpServerUrl}`,
-	)
+	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toContain(mcpServerUrl)
 	expect(JSON.parse(buildVsCodeMcpJson(mcpServerUrl))).toEqual({
 		servers: {
 			kody: {

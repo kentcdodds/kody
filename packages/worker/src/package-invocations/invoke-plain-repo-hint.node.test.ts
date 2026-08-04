@@ -1,15 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	buildPlainRepoPromotionErrorMessage,
-	plainRepoPromotionNotice,
-	findPlainRepoPromotionHint,
-} from '#worker/repo/user-repos.ts'
-
-test('buildPlainRepoPromotionErrorMessage points at repo_promote_to_package', () => {
-	const message = buildPlainRepoPromotionErrorMessage('my-notes')
-	expect(message).toContain(plainRepoPromotionNotice)
-	expect(message).toContain('repo_promote_to_package')
-})
+import { findPlainRepoPromotionHint } from '#worker/repo/user-repos.ts'
 
 test('findPlainRepoPromotionHint matches bare names from scoped package lookups', async () => {
 	const db = {

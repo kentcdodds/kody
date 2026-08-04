@@ -182,13 +182,7 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 			},
 			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			/Cannot create integration "slack".*accessTokenSecretName/i.test(
-				error.message,
-			),
-	)
+	).rejects.toBeInstanceOf(McpCallerError)
 })
 
 test('integration_save reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {

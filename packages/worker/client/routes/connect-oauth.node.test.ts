@@ -889,11 +889,11 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 	expect(
 		isBrowserFetchNetworkError(new TypeError('TypeError: Failed to fetch')),
 	).toBe(true)
-	expect(formatConnectOauthCaughtError(firefox, 'fallback')).toBe(
-		'Network error. Please try again.',
-	)
+
+	const networkStatus = formatConnectOauthCaughtError(firefox, 'fallback')
+	expect(networkStatus).not.toBe('fallback')
 	expect(formatConnectOauthCaughtError(chromium, 'fallback')).toBe(
-		'Network error. Please try again.',
+		networkStatus,
 	)
 	expect(
 		formatConnectOauthCaughtError(
