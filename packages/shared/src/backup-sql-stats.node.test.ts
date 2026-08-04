@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import { test } from 'vitest'
 
+import { d1ImportMaxStatementBytes } from './backup-restore-safety.ts'
 import {
 	backupSqlStatsRequired,
 	backupSqlStatsSchemaVersion,
@@ -18,13 +19,30 @@ test('backup SQL stats enforce the rollout cutoff and statement-limit consistenc
 		objectKey: 'daily/d1/database/2026-07-31/backup-bookmark.sql',
 		maxStatementBytes: 50_000,
 		oversizedStatementCount: 0,
-		importStatementLimitBytes: 100_000,
+		importStatementLimitBytes: d1ImportMaxStatementBytes,
 	}
 	assert.deepEqual(parseBackupSqlStats(valid), valid)
 
+	const oversized = {
+		...valid,
+		maxStatementBytes: d1ImportMaxStatementBytes + 1,
+		oversizedStatementCount: 1,
+	}
+	assert.deepEqual(parseBackupSqlStats(oversized), oversized)
+	const differentRecordedLimit = {
+		...valid,
+		importStatementLimitBytes: d1ImportMaxStatementBytes + 1,
+	}
+	assert.deepEqual(
+		parseBackupSqlStats(differentRecordedLimit),
+		differentRecordedLimit,
+	)
+
 	for (const corrupt of [
-		{ ...valid, importStatementLimitBytes: 100_001 },
-		{ ...valid, maxStatementBytes: 100_001 },
+		null,
+		{ ...valid, schemaVersion: backupSqlStatsSchemaVersion + 1 },
+		{ ...valid, importStatementLimitBytes: 0 },
+		{ ...valid, maxStatementBytes: d1ImportMaxStatementBytes + 1 },
 		{ ...valid, maxStatementBytes: 50_000, oversizedStatementCount: 1 },
 	]) {
 		assert.throws(() => parseBackupSqlStats(corrupt))

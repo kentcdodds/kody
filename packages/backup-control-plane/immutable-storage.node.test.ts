@@ -162,6 +162,14 @@ test('sql statement stats measure quote-aware statement lengths during upload', 
 		oversizedStatementCount: 1,
 		limit: 10,
 	})
+
+	const exactLimitScanner = createSqlStatementScanner(10)
+	exactLimitScanner.update(new TextEncoder().encode('SELECT 12;'))
+	assert.deepEqual(exactLimitScanner.finish(), {
+		maxStatementBytes: 10,
+		oversizedStatementCount: 0,
+		limit: 10,
+	})
 })
 
 test('truncated and interrupted downloads fail retryably, then a retry succeeds', async () => {

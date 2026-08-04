@@ -4,6 +4,7 @@ import {
 	parseBackupSqlStats,
 	type BackupSqlStats,
 } from '@kody-internal/shared/backup-sql-stats.ts'
+import { d1ImportMaxStatementBytes } from '@kody-internal/shared/backup-restore-safety.ts'
 
 import { BackupError, safeLog } from './backup-policy.ts'
 
@@ -34,7 +35,8 @@ export async function readSqlRestorability(
 	if (stats.day !== day || stats.objectKey !== objectKey) {
 		return { kind: 'corrupt' }
 	}
-	return stats.oversizedStatementCount > 0
+	return stats.oversizedStatementCount > 0 ||
+		stats.maxStatementBytes > d1ImportMaxStatementBytes
 		? { kind: 'unrestorable', stats }
 		: { kind: 'restorable', stats }
 }

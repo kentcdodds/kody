@@ -198,6 +198,8 @@ test('sealFullBackupDay fails closed on staging sha mismatch', async () => {
 })
 
 test('sealFullBackupDay refuses oversized SQL stats before sealing', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const { env, day, sqlKey } = await seedCompleteDay(bucket, '2026-07-31')
 	await bucket.put(
@@ -214,9 +216,16 @@ test('sealFullBackupDay refuses oversized SQL stats before sealing', async () =>
 		},
 	)
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+	const record = JSON.parse(
+		String(consoleError.mock.calls.at(-1)?.[0]),
+	) as Record<string, unknown>
+	assert.equal(record.event, 'full-backup-seal-skipped')
+	assert.equal(record.errorCode, 'backup-unrestorable-statements')
 })
 
 test('sealFullBackupDay reports an already-sealed unrestorable day as incomplete', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const { env, day, sqlKey } = await seedCompleteDay(bucket, '2026-07-31')
 	await putSqlStatsFixture(bucket, day, sqlKey)
@@ -242,6 +251,8 @@ test('sealFullBackupDay reports an already-sealed unrestorable day as incomplete
 })
 
 test('sealFullBackupDay fails closed when required SQL stats are missing', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const { env, day } = await seedCompleteDay(bucket, '2026-07-31')
 

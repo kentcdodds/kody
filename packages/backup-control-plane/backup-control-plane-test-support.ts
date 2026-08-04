@@ -86,6 +86,7 @@ export class MemoryBucket {
 	readonly puts: Array<{ key: string; options: R2PutOptions }> = []
 	private readonly objects = new Map<string, Uint8Array>()
 	private readonly reportedSizes = new Map<string, number>()
+	private readonly failedGets = new Set<string>()
 	private nextPutRace: { key: string; bytes: Uint8Array } | undefined
 	private lockPolicyEnabled = false
 
@@ -136,6 +137,7 @@ export class MemoryBucket {
 	}
 
 	async get(key: string): Promise<R2ObjectBody | null> {
+		if (this.failedGets.has(key)) throw new Error('simulated R2 get failure')
 		const bytes = this.objects.get(key)
 		if (!bytes) return null
 		const metadata = this.metadata(key)
@@ -158,6 +160,10 @@ export class MemoryBucket {
 
 	setReportedSize(key: string, size: number): void {
 		this.reportedSizes.set(key, size)
+	}
+
+	failGetFor(key: string): void {
+		this.failedGets.add(key)
 	}
 
 	raceOnNextPut(key: string, value: string): void {

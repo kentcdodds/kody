@@ -6,7 +6,7 @@ import {
 } from '@kody-internal/shared/backup-staging.ts'
 
 import { isBackupEnabled, utcDay, backupPayload } from './backup-policy.ts'
-import { type BackupEnvironment } from './backup-types.ts'
+import { type BackupEnvironment, type BackupManifest } from './backup-types.ts'
 import { getD1Database } from './d1-import-api.ts'
 import { verifyBackupFullManifestSignature } from './full-manifest-signing.ts'
 import { readManifest } from './immutable-storage.ts'
@@ -173,53 +173,59 @@ export async function collectDayStatuses(
 		let d1Present = false
 		let d1Verified: boolean | null = null
 		let d1Restorable: boolean | null = null
+		let d1Manifest: BackupManifest | null = null
 		try {
-			const manifest = await readManifest(env.BACKUP_BUCKET, d1Key)
-			d1Present = manifest !== null
-			if (manifest !== null) {
-				d1Verified = await verifyBackupManifestSignature(env, manifest)
+			d1Manifest = await readManifest(env.BACKUP_BUCKET, d1Key)
+			d1Present = d1Manifest !== null
+			if (d1Manifest !== null) {
+				d1Verified = await verifyBackupManifestSignature(env, d1Manifest)
 				if (!d1Verified) warnings.push('D1 manifest signature invalid')
-				else {
-					const restorability = await readSqlRestorability(
-						env.BACKUP_BUCKET,
-						day,
-						manifest.payload.sql.objectKey,
-					)
-					switch (restorability.kind) {
-						case 'restorable':
-							d1Restorable = true
-							break
-						case 'unrestorable':
-							d1Restorable = false
-							warnings.push(
-								'D1 SQL contains oversized statements and cannot be restored',
-							)
-							break
-						case 'legacy-unknown':
-							warnings.push(
-								'D1 restorability unknown: legacy backup has no SQL stats',
-							)
-							break
-						case 'missing':
-							d1Restorable = false
-							warnings.push(
-								'D1 is not restorable: required SQL stats are missing',
-							)
-							break
-						case 'corrupt':
-							d1Restorable = false
-							warnings.push('D1 is not restorable: SQL stats are unreadable')
-							break
-						default: {
-							const exhaustive: never = restorability
-							throw exhaustive
-						}
-					}
-				}
 			}
 		} catch {
 			d1Verified = null
 			warnings.push('D1 manifest unreadable')
+		}
+		if (d1Manifest !== null && d1Verified === true) {
+			try {
+				const restorability = await readSqlRestorability(
+					env.BACKUP_BUCKET,
+					day,
+					d1Manifest.payload.sql.objectKey,
+				)
+				switch (restorability.kind) {
+					case 'restorable':
+						d1Restorable = true
+						break
+					case 'unrestorable':
+						d1Restorable = false
+						warnings.push(
+							'D1 SQL contains oversized statements and cannot be restored',
+						)
+						break
+					case 'legacy-unknown':
+						warnings.push(
+							'D1 restorability unknown: legacy backup has no SQL stats',
+						)
+						break
+					case 'missing':
+						d1Restorable = false
+						warnings.push(
+							'D1 is not restorable: required SQL stats are missing',
+						)
+						break
+					case 'corrupt':
+						d1Restorable = false
+						warnings.push('D1 is not restorable: SQL stats are unreadable')
+						break
+					default: {
+						const exhaustive: never = restorability
+						throw exhaustive
+					}
+				}
+			} catch {
+				d1Restorable = false
+				warnings.push('D1 is not restorable: SQL stats lookup failed')
+			}
 		}
 
 		const stagingPresent =

@@ -9,6 +9,7 @@ import {
 	environment,
 	identityEnvelope,
 	manifest,
+	putSqlStatsFixture,
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
 import { backupPayload, objectKeyForBookmark } from './backup-policy.ts'
@@ -72,5 +73,20 @@ test('dashboard renders oversized D1 SQL as not restorable with a warning', asyn
 	assert.match(
 		missingStatsHtml,
 		/D1 is not restorable: required SQL stats are missing/,
+	)
+
+	await putSqlStatsFixture(bucket, day, sqlObjectKey)
+	bucket.failGetFor(`${sqlObjectKey}.stats.json`)
+	const [statsReadFailure] = await collectDayStatuses(env, now)
+	assert.equal(statsReadFailure?.d1Verified, true)
+	assert.equal(statsReadFailure?.d1Restorable, false)
+	assert.ok(
+		statsReadFailure?.warnings.includes(
+			'D1 is not restorable: SQL stats lookup failed',
+		),
+	)
+	assert.equal(
+		statsReadFailure?.warnings.includes('D1 manifest unreadable'),
+		false,
 	)
 })

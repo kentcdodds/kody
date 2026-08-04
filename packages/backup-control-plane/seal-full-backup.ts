@@ -343,6 +343,16 @@ export type SealDayResult =
 	| { kind: 'sealed'; day: string; manifestKey: string; alreadySealed: boolean }
 	| { kind: 'incomplete'; day: string; reason: string }
 
+function incompleteForSqlStats(day: string, reason: string): SealDayResult {
+	safeLog({
+		event: 'full-backup-seal-skipped',
+		status: 'failure',
+		day,
+		errorCode: reason,
+	})
+	return { kind: 'incomplete', day, reason }
+}
+
 export async function sealFullBackupDay(
 	env: BackupEnvironment,
 	day: string,
@@ -383,15 +393,11 @@ export async function sealFullBackupDay(
 			})
 			break
 		case 'unrestorable':
-			return {
-				kind: 'incomplete',
-				day,
-				reason: 'backup-unrestorable-statements',
-			}
+			return incompleteForSqlStats(day, 'backup-unrestorable-statements')
 		case 'missing':
-			return { kind: 'incomplete', day, reason: 'backup-sql-stats-missing' }
+			return incompleteForSqlStats(day, 'backup-sql-stats-missing')
 		case 'corrupt':
-			return { kind: 'incomplete', day, reason: 'backup-sql-stats-corrupt' }
+			return incompleteForSqlStats(day, 'backup-sql-stats-corrupt')
 		default: {
 			const exhaustive: never = restorability
 			throw exhaustive
