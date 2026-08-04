@@ -83,17 +83,74 @@ export function assertLegacyParityBoundedArray<T>(
 	return value
 }
 
+export type CoercedLegacyParityMinimumUpdatedAt =
+	| { status: 'absent' }
+	| { status: 'valid'; iso: string }
+	| { status: 'invalid' }
+
+export type NormalizedLegacyParityWorkflowCheck = {
+	id: string
+	minimumUpdatedAt: CoercedLegacyParityMinimumUpdatedAt
+}
+
+/**
+ * Normalize a workflow inventory check. Blank/absent `minimumUpdatedAt` stays
+ * existence-only; nonempty values are coerced to a canonical UTC ISO timestamp
+ * or marked invalid so the DO can fail closed as `underCount`.
+ */
 export function normalizeLegacyParityWorkflowCheck(
 	entry: string | LegacyParityWorkflowCheck,
-): LegacyParityWorkflowCheck | null {
+): NormalizedLegacyParityWorkflowCheck | null {
 	if (typeof entry === 'string') {
 		const id = entry.trim()
-		return id ? { id } : null
+		return id ? { id, minimumUpdatedAt: { status: 'absent' } } : null
 	}
 	const id = entry.id?.trim() ?? ''
 	if (!id) return null
-	const minimumUpdatedAt = entry.minimumUpdatedAt?.trim() || null
-	return { id, minimumUpdatedAt }
+	return {
+		id,
+		minimumUpdatedAt: coerceLegacyParityMinimumUpdatedAt(
+			entry.minimumUpdatedAt,
+		),
+	}
+}
+
+/**
+ * Coerce a workflow `minimumUpdatedAt` threshold.
+ *
+ * - `null` / `undefined` / blank-or-whitespace string → absent (existence-only)
+ * - nonempty parseable UTC ISO with a real calendar date → canonical `.toISOString()`
+ * - everything else (including `'0'`, junk, impossible dates, non-strings) → invalid
+ */
+export function coerceLegacyParityMinimumUpdatedAt(
+	value: unknown,
+): CoercedLegacyParityMinimumUpdatedAt {
+	if (value == null) return { status: 'absent' }
+	if (typeof value !== 'string') return { status: 'invalid' }
+	const trimmed = value.trim()
+	if (!trimmed) return { status: 'absent' }
+	// Require an explicit UTC offset marker so values like `"0"` cannot parse.
+	if (!/(?:Z|[+-]00:00)$/i.test(trimmed)) {
+		return { status: 'invalid' }
+	}
+	const calendarMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T/)
+	if (!calendarMatch?.[1] || !calendarMatch[2] || !calendarMatch[3]) {
+		return { status: 'invalid' }
+	}
+	const year = Number.parseInt(calendarMatch[1], 10)
+	const month = Number.parseInt(calendarMatch[2], 10)
+	const day = Number.parseInt(calendarMatch[3], 10)
+	const reconstructed = new Date(Date.UTC(year, month - 1, day))
+	if (
+		reconstructed.getUTCFullYear() !== year ||
+		reconstructed.getUTCMonth() !== month - 1 ||
+		reconstructed.getUTCDate() !== day
+	) {
+		return { status: 'invalid' }
+	}
+	const ms = Date.parse(trimmed)
+	if (!Number.isFinite(ms)) return { status: 'invalid' }
+	return { status: 'valid', iso: new Date(ms).toISOString() }
 }
 
 export function isActivationMilestoneName(
@@ -123,13 +180,13 @@ export function legacyParitySqlInPlaceholders(
 }
 
 /**
- * Coerce an activation package minimum. Non-finite values fail closed so the
- * caller can count `underCount` instead of treating the check as matched.
+ * Coerce an activation package minimum. Accepts finite `number` runtime values
+ * only — `null`, blank/whitespace strings, `false`, objects, `NaN`, and
+ * infinities fail closed so the caller can count `underCount`.
  */
 export function coerceLegacyParityMinimumSuccessCount(
 	value: unknown,
 ): number | null {
-	const raw = typeof value === 'number' ? value : Number(value)
-	if (!Number.isFinite(raw)) return null
-	return Math.max(0, Math.trunc(raw))
+	if (typeof value !== 'number' || !Number.isFinite(value)) return null
+	return Math.max(0, Math.trunc(value))
 }

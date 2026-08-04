@@ -19,7 +19,6 @@ import { activationMilestoneValues } from '#worker/run-records/package-activatio
 import {
 	importActivationState,
 	importWorkflowProjections,
-	isMissingD1RelationError,
 	jobRunObservabilitySeedMaxBatch,
 	seedJobRunObservabilityBatch,
 	verifyLegacyParity,
@@ -64,6 +63,11 @@ export type AdminRunLogLegacySeedEnv = {
 
 export type AdminRunLogLegacySeedUserResult = {
 	stableUserId: string
+	/**
+	 * True when this user's sweep threw (D1/RPC/cap). Failed users are not
+	 * production evidence and must be rerun; bucket counts are zeroed.
+	 */
+	failed: boolean
 	parity: boolean
 	activationInitialized: boolean
 	workflows: LegacyParityBucketCounts
@@ -214,11 +218,12 @@ function resolveBatchSizes(
 	}
 }
 
-function emptyUserResult(
+function failedUserResult(
 	stableUserId: string,
 ): AdminRunLogLegacySeedUserResult {
 	return {
 		stableUserId,
+		failed: true,
 		parity: false,
 		activationInitialized: false,
 		workflows: emptyLegacyParityBucketCounts(),
@@ -512,58 +517,51 @@ async function processWorkflowPages(input: {
 	let counts = emptyLegacyParityBucketCounts()
 	let activationInitialized = false
 	let startAfterId: string | null = null
-	try {
-		for (;;) {
-			const rows = await fetchWorkflowPage({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				pageSize: input.batchSizes.workflowImport,
-				startAfterId,
-			})
-			if (rows.length === 0) break
+	for (;;) {
+		const rows = await fetchWorkflowPage({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			pageSize: input.batchSizes.workflowImport,
+			startAfterId,
+		})
+		if (rows.length === 0) break
 
-			switch (input.action) {
-				case 'status':
-					break
-				case 'seed': {
-					await input.rpc.importWorkflowProjections({
-						env: input.env as Env,
-						userId: input.userId,
-						projections: rows.map(mapWorkflowProjection),
-					})
-					break
-				}
-				default: {
-					const exhaustive: never = input.action
-					throw new Error(
-						`Unhandled admin run-log legacy-seed action: ${JSON.stringify(exhaustive)}`,
-					)
-				}
+		switch (input.action) {
+			case 'status':
+				break
+			case 'seed': {
+				await input.rpc.importWorkflowProjections({
+					env: input.env as Env,
+					userId: input.userId,
+					projections: rows.map(mapWorkflowProjection),
+				})
+				break
 			}
-
-			const verified = await verifyWorkflowChecks({
-				env: input.env,
-				userId: input.userId,
-				checks: rows.map(mapWorkflowParityCheck),
-				verifyBatchSize: input.batchSizes.verify,
-				rpc: input.rpc,
-			})
-			counts = addBucketCounts(counts, verified.counts)
-			activationInitialized =
-				activationInitialized || verified.activationInitialized
-
-			const lastId = rows.at(-1)?.id
-			if (!lastId || rows.length < input.batchSizes.workflowImport) break
-			if (lastId === startAfterId) {
-				throw new Error('workflow_runs keyset cursor did not advance')
+			default: {
+				const exhaustive: never = input.action
+				throw new Error(
+					`Unhandled admin run-log legacy-seed action: ${JSON.stringify(exhaustive)}`,
+				)
 			}
-			startAfterId = lastId
 		}
-	} catch (error) {
-		if (isMissingD1RelationError(error)) {
-			return { counts, activationInitialized }
+
+		const verified = await verifyWorkflowChecks({
+			env: input.env,
+			userId: input.userId,
+			checks: rows.map(mapWorkflowParityCheck),
+			verifyBatchSize: input.batchSizes.verify,
+			rpc: input.rpc,
+		})
+		counts = addBucketCounts(counts, verified.counts)
+		activationInitialized =
+			activationInitialized || verified.activationInitialized
+
+		const lastId = rows.at(-1)?.id
+		if (!lastId || rows.length < input.batchSizes.workflowImport) break
+		if (lastId === startAfterId) {
+			throw new Error('workflow_runs keyset cursor did not advance')
 		}
-		throw error
+		startAfterId = lastId
 	}
 	return { counts, activationInitialized }
 }
@@ -586,58 +584,51 @@ async function processJobPages(input: {
 	let counts = emptyLegacyParityBucketCounts()
 	let activationInitialized = false
 	let startAfterId: string | null = null
-	try {
-		for (;;) {
-			const rows = await fetchJobPage({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				pageSize: input.batchSizes.jobSeed,
-				startAfterId,
-			})
-			if (rows.length === 0) break
+	for (;;) {
+		const rows = await fetchJobPage({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			pageSize: input.batchSizes.jobSeed,
+			startAfterId,
+		})
+		if (rows.length === 0) break
 
-			switch (input.action) {
-				case 'status':
-					break
-				case 'seed': {
-					await input.rpc.seedJobRunObservabilityBatch({
-						env: input.env as Env,
-						userId: input.userId,
-						seeds: rows.map(mapJobSeed),
-					})
-					break
-				}
-				default: {
-					const exhaustive: never = input.action
-					throw new Error(
-						`Unhandled admin run-log legacy-seed action: ${JSON.stringify(exhaustive)}`,
-					)
-				}
+		switch (input.action) {
+			case 'status':
+				break
+			case 'seed': {
+				await input.rpc.seedJobRunObservabilityBatch({
+					env: input.env as Env,
+					userId: input.userId,
+					seeds: rows.map(mapJobSeed),
+				})
+				break
 			}
-
-			const verified = await verifyJobIds({
-				env: input.env,
-				userId: input.userId,
-				jobIds: rows.map((row) => String(row.id)),
-				verifyBatchSize: input.batchSizes.verify,
-				rpc: input.rpc,
-			})
-			counts = addBucketCounts(counts, verified.counts)
-			activationInitialized =
-				activationInitialized || verified.activationInitialized
-
-			const lastId = rows.at(-1)?.id
-			if (!lastId || rows.length < input.batchSizes.jobSeed) break
-			if (lastId === startAfterId) {
-				throw new Error('jobs keyset cursor did not advance')
+			default: {
+				const exhaustive: never = input.action
+				throw new Error(
+					`Unhandled admin run-log legacy-seed action: ${JSON.stringify(exhaustive)}`,
+				)
 			}
-			startAfterId = lastId
 		}
-	} catch (error) {
-		if (isMissingD1RelationError(error)) {
-			return { counts, activationInitialized }
+
+		const verified = await verifyJobIds({
+			env: input.env,
+			userId: input.userId,
+			jobIds: rows.map((row) => String(row.id)),
+			verifyBatchSize: input.batchSizes.verify,
+			rpc: input.rpc,
+		})
+		counts = addBucketCounts(counts, verified.counts)
+		activationInitialized =
+			activationInitialized || verified.activationInitialized
+
+		const lastId = rows.at(-1)?.id
+		if (!lastId || rows.length < input.batchSizes.jobSeed) break
+		if (lastId === startAfterId) {
+			throw new Error('jobs keyset cursor did not advance')
 		}
-		throw error
+		startAfterId = lastId
 	}
 	return { counts, activationInitialized }
 }
@@ -653,54 +644,45 @@ async function readActivationInventory(input: {
 	maxPackages: number
 	maxMilestones: number
 }): Promise<ActivationStateImport> {
-	const empty: ActivationStateImport = {
-		packageRunSuccesses: [],
-		milestones: [],
+	// Pre-drop evidence: any missing table/column must fail closed for the
+	// user. Never treat a failed source query as an empty successful snapshot.
+	const successRows = await input.db
+		.prepare(
+			`SELECT package_id, success_count, updated_at
+			FROM user_package_run_successes
+			WHERE user_id = ?
+			ORDER BY package_id ASC
+			LIMIT ?`,
+		)
+		.bind(input.userId, input.maxPackages + 1)
+		.all<D1ActivationPackageRow>()
+	const packages = successRows.results ?? []
+	if (packages.length > input.maxPackages) {
+		throw new Error('activation package inventory exceeds defensive hard cap')
 	}
-	try {
-		const successRows = await input.db
-			.prepare(
-				`SELECT package_id, success_count, updated_at
-				FROM user_package_run_successes
-				WHERE user_id = ?
-				ORDER BY package_id ASC
-				LIMIT ?`,
-			)
-			.bind(input.userId, input.maxPackages + 1)
-			.all<D1ActivationPackageRow>()
-		const packages = successRows.results ?? []
-		if (packages.length > input.maxPackages) {
-			throw new Error('activation package inventory exceeds defensive hard cap')
-		}
 
-		// Only known milestone names count toward the intrinsic cap so
-		// unknown/retired rows cannot exhaust the one-shot snapshot budget.
-		const milestonePlaceholders = activationMilestoneValues
-			.map(() => '?')
-			.join(', ')
-		const milestoneRows = await input.db
-			.prepare(
-				`SELECT milestone, reached_at, package_id
-				FROM user_activation_milestones
-				WHERE user_id = ?
-					AND milestone IN (${milestonePlaceholders})
-				ORDER BY milestone ASC
-				LIMIT ?`,
-			)
-			.bind(input.userId, ...activationMilestoneValues, input.maxMilestones + 1)
-			.all<D1ActivationMilestoneRow>()
-		const milestones = milestoneRows.results ?? []
-		if (milestones.length > input.maxMilestones) {
-			throw new Error(
-				'activation milestone inventory exceeds defensive hard cap',
-			)
-		}
-
-		return mapActivationState({ packages, milestones })
-	} catch (error) {
-		if (isMissingD1RelationError(error)) return empty
-		throw error
+	// Only known milestone names count toward the intrinsic cap so
+	// unknown/retired rows cannot exhaust the one-shot snapshot budget.
+	const milestonePlaceholders = activationMilestoneValues
+		.map(() => '?')
+		.join(', ')
+	const milestoneRows = await input.db
+		.prepare(
+			`SELECT milestone, reached_at, package_id
+			FROM user_activation_milestones
+			WHERE user_id = ?
+				AND milestone IN (${milestonePlaceholders})
+			ORDER BY milestone ASC
+			LIMIT ?`,
+		)
+		.bind(input.userId, ...activationMilestoneValues, input.maxMilestones + 1)
+		.all<D1ActivationMilestoneRow>()
+	const milestones = milestoneRows.results ?? []
+	if (milestones.length > input.maxMilestones) {
+		throw new Error('activation milestone inventory exceeds defensive hard cap')
 	}
+
+	return mapActivationState({ packages, milestones })
 }
 
 async function processActivation(input: {
@@ -791,6 +773,7 @@ function toUserResult(
 		bucketParityHolds(aggregated.activationMilestones)
 	return {
 		stableUserId,
+		failed: false,
 		parity,
 		activationInitialized: aggregated.activationInitialized,
 		workflows: aggregated.workflows,
@@ -843,11 +826,13 @@ async function processUser(input: {
 		return toUserResult(input.userId, aggregated)
 	} catch (error) {
 		// Fail closed for this user; never surface error text in the result.
+		// Missing D1 relations/columns are failures in this pre-drop evidence
+		// sweep — not successful empty inventory.
 		console.warn('admin-run-log-legacy-seed-user-failed', {
 			stableUserId: input.userId,
 			error,
 		})
-		return emptyUserResult(input.userId)
+		return failedUserResult(input.userId)
 	}
 }
 

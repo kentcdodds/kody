@@ -45,6 +45,7 @@ const sampleResult = {
 	users: [
 		{
 			stableUserId: targetUserId,
+			failed: false,
 			parity: true,
 			activationInitialized: true,
 			workflows: emptyLegacyParityBucketCounts(),

@@ -2284,12 +2284,35 @@ class RunLogBase extends DurableObject<Env> {
 				workflowCounts.missing += 1
 				continue
 			}
-			const minimumUpdatedAt = check.minimumUpdatedAt?.trim() || null
-			if (minimumUpdatedAt && updatedAt < minimumUpdatedAt) {
-				workflowCounts.underCount += 1
-				continue
+			const threshold = check.minimumUpdatedAt
+			switch (threshold.status) {
+				case 'absent':
+					workflowCounts.matched += 1
+					break
+				case 'invalid':
+					workflowCounts.underCount += 1
+					break
+				case 'valid': {
+					const storedMs = Date.parse(updatedAt)
+					if (!Number.isFinite(storedMs)) {
+						workflowCounts.underCount += 1
+						break
+					}
+					const storedIso = new Date(storedMs).toISOString()
+					if (storedIso < threshold.iso) {
+						workflowCounts.underCount += 1
+						break
+					}
+					workflowCounts.matched += 1
+					break
+				}
+				default: {
+					const exhaustive: never = threshold
+					throw new Error(
+						`Unhandled workflow minimumUpdatedAt status: ${String(exhaustive)}`,
+					)
+				}
 			}
-			workflowCounts.matched += 1
 		}
 
 		const normalizedJobIds = jobIds.map((rawJobId) => rawJobId?.trim() ?? '')

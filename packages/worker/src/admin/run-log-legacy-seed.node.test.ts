@@ -538,6 +538,7 @@ test('seed marks empty-user activation unconditional-done and reaches parity', a
 	expect(statusBefore.users).toEqual([
 		expect.objectContaining({
 			stableUserId: userA,
+			failed: false,
 			parity: false,
 			activationInitialized: false,
 		}),
@@ -552,6 +553,7 @@ test('seed marks empty-user activation unconditional-done and reaches parity', a
 	expect(seeded.users).toEqual([
 		{
 			stableUserId: userA,
+			failed: false,
 			parity: true,
 			activationInitialized: true,
 			workflows: emptyLegacyParityBucketCounts(),
@@ -673,6 +675,7 @@ test('newer D1 workflow updatedAt surfaces underCount on status after stale seed
 	})
 	expect(status.users[0]).toMatchObject({
 		stableUserId: userA,
+		failed: false,
 		parity: false,
 		workflows: { matched: 0, missing: 0, underCount: 1 },
 	})
@@ -736,6 +739,7 @@ test('activation package inventory respects injectable max with +1 fail-closed',
 	expect(overflow.users).toEqual([
 		expect.objectContaining({
 			stableUserId: userA,
+			failed: true,
 			parity: false,
 			activationInitialized: false,
 		}),
@@ -888,10 +892,11 @@ test('partial failure continues other users and fails closed for the failing use
 	const failed = result.users.find((user) => user.stableUserId === ordered[0])
 	const ok = result.users.find((user) => user.stableUserId === ordered[1])
 	expect(failed).toMatchObject({
+		failed: true,
 		parity: false,
 		activationInitialized: false,
 	})
-	expect(ok?.parity).toBe(true)
+	expect(ok).toMatchObject({ failed: false, parity: true })
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-run-log-legacy-seed-user-failed',
 		expect.objectContaining({ stableUserId: ordered[0] }),
@@ -962,10 +967,134 @@ test('seed continues to import empty activation for users with only jobs/workflo
 		limit: 1,
 		rpc,
 	})
-	expect(result.users[0]?.parity).toBe(true)
+	expect(result.users[0]).toMatchObject({
+		failed: false,
+		parity: true,
+	})
 	expect(calls.importActivationState).toEqual([
 		{ userId: userA, packageCount: 0, milestoneCount: 0 },
 	])
 	expect(calls.seedJobRunObservabilityBatch[0]?.ids).toEqual(['job-zero-ok'])
+	assertContentFree(result)
+})
+
+test('missing workflow_runs relation fails user closed without empty activation seed', async () => {
+	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	sqlite.exec('DROP TABLE workflow_runs')
+	const { rpc, calls } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+	expect(result.users).toEqual([
+		{
+			stableUserId: userA,
+			failed: true,
+			parity: false,
+			activationInitialized: false,
+			workflows: emptyLegacyParityBucketCounts(),
+			jobs: emptyLegacyParityBucketCounts(),
+			activationPackages: emptyLegacyParityBucketCounts(),
+			activationMilestones: emptyLegacyParityBucketCounts(),
+		},
+	])
+	expect(calls.importActivationState).toEqual([])
+	expect(calls.importWorkflowProjections).toEqual([])
+	assertContentFree(result)
+})
+
+test('missing jobs relation fails user closed without empty activation seed', async () => {
+	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	sqlite.exec('DROP TABLE jobs')
+	const { rpc, calls } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+	expect(result.users[0]).toMatchObject({
+		stableUserId: userA,
+		failed: true,
+		parity: false,
+		activationInitialized: false,
+	})
+	expect(calls.importActivationState).toEqual([])
+	expect(calls.seedJobRunObservabilityBatch).toEqual([])
+	assertContentFree(result)
+})
+
+test('missing activation package table fails user closed without marking initialized', async () => {
+	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	sqlite.exec('DROP TABLE user_package_run_successes')
+	const { rpc, calls } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+	expect(result.users[0]).toMatchObject({
+		stableUserId: userA,
+		failed: true,
+		parity: false,
+		activationInitialized: false,
+	})
+	expect(calls.importActivationState).toEqual([])
+	assertContentFree(result)
+})
+
+test('missing activation milestones table fails user closed without marking initialized', async () => {
+	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	sqlite.exec('DROP TABLE user_activation_milestones')
+	const { rpc, calls } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+	expect(result.users[0]).toMatchObject({
+		stableUserId: userA,
+		failed: true,
+		parity: false,
+		activationInitialized: false,
+	})
+	expect(calls.importActivationState).toEqual([])
+	assertContentFree(result)
+})
+
+test('partial activation query failure after package rows load fails closed', async () => {
+	silenceExpectedConsoleWarns(['admin-run-log-legacy-seed-user-failed'])
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	insertActivation(sqlite, { userId: userA, packageId: secretPackageId })
+	// Packages load successfully; milestone source then disappears mid-snapshot.
+	sqlite.exec('DROP TABLE user_activation_milestones')
+	const { rpc, calls } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+	expect(result.users[0]).toMatchObject({
+		stableUserId: userA,
+		failed: true,
+		parity: false,
+		activationInitialized: false,
+	})
+	// Must not import a partial activation snapshot as unconditional-done.
+	expect(calls.importActivationState).toEqual([])
 	assertContentFree(result)
 })

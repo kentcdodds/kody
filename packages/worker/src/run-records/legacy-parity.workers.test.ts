@@ -457,16 +457,83 @@ test('verifyLegacyParity fails closed on malformed activation package minimums',
 				// Runtime-malformed inventory payload (typed as number).
 				minimumSuccessCount: undefined as unknown as number,
 			},
+			{
+				packageId,
+				minimumSuccessCount: null as unknown as number,
+			},
+			{
+				packageId,
+				minimumSuccessCount: '' as unknown as number,
+			},
+			{
+				packageId,
+				minimumSuccessCount: '   ' as unknown as number,
+			},
+			{
+				packageId,
+				minimumSuccessCount: false as unknown as number,
+			},
+			{
+				packageId,
+				minimumSuccessCount: {} as unknown as number,
+			},
+			{
+				packageId,
+				minimumSuccessCount: '2' as unknown as number,
+			},
 			{ packageId: '', minimumSuccessCount: 1 },
 		],
 	})
 	expect(report.activationPackages).toEqual({
 		matched: 1,
 		missing: 1,
-		underCount: 3,
+		underCount: 9,
 	})
 	expect(report.parity).toBe(false)
 	expect(JSON.stringify(report)).not.toContain(packageId)
+})
+
+test('verifyLegacyParity fails closed on malformed workflow minimumUpdatedAt thresholds', async () => {
+	const userId = uniqueUserId('wf-threshold')
+	const workflowId = `wf-threshold-${crypto.randomUUID()}`
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: workflowId,
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'threshold',
+			idempotencyKey: 'threshold-key',
+			runAt: '2026-07-31T20:00:00.000Z',
+			status: 'complete',
+			createdAt: '2026-07-31T20:00:00.000Z',
+			updatedAt: '2026-07-31T20:00:05.000Z',
+			completedAt: '2026-07-31T20:00:05.000Z',
+		},
+	})
+
+	const report = await verifyLegacyParity({
+		env,
+		userId,
+		workflows: [
+			workflowId,
+			{ id: workflowId, minimumUpdatedAt: null },
+			{ id: workflowId, minimumUpdatedAt: '2026-07-31T20:00:05.000Z' },
+			// Non-canonical but parseable UTC form still matches after canonicalize.
+			{ id: workflowId, minimumUpdatedAt: '2026-07-31T20:00:05Z' },
+			{ id: workflowId, minimumUpdatedAt: '2026-07-31T20:00:06.000Z' },
+			{ id: workflowId, minimumUpdatedAt: '0' },
+			{ id: workflowId, minimumUpdatedAt: 'junk' },
+			{ id: workflowId, minimumUpdatedAt: '2026-02-30T00:00:00.000Z' },
+		],
+	})
+	expect(report.workflows).toEqual({
+		matched: 4,
+		missing: 0,
+		underCount: 4,
+	})
+	expect(report.parity).toBe(false)
 })
 
 test('upsertWorkflowProjection rows remain visible to importWorkflowProjections batch seeding', async () => {
