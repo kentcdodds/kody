@@ -5,13 +5,13 @@ import {
 	applyMigrationsBefore,
 } from '#worker/test-support/system-email-graph-migration.ts'
 
-const postdropMigration = '0140-drop-email-postdrop-residue.sql'
+const postdropMigration = '0143-drop-email-postdrop-residue.sql'
 const retiredTables = [
 	'email_user_graph_drop_approval',
 	'email_inbound_usage_effects',
 ] as const
 
-test('0140 drops retired tables and simplifies due-owner ordering', () => {
+test('0143 drops retired tables and simplifies due-owner ordering', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, postdropMigration)
 	for (const table of retiredTables) {

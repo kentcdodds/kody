@@ -48,7 +48,7 @@
 		// deployment commit; recompute when adding a migration (recipe in
 		// docs/contributing/disaster-recovery.md).
 		"TRUSTED_RESTORE_BASELINE_ID": "kody-migration-set-2026-07",
-		"TRUSTED_RESTORE_BASELINE_SHA256": "a07000288c99fae4ab76a02f73e8dd765acc54de3052eff39168a04c95bbf264",
+		"TRUSTED_RESTORE_BASELINE_SHA256": "63d10bfc5a672b33a610287ebd3ee5036ee5e719ee8271c1a32f4a44a524a2d7",
 		"BACKUP_MAX_AGE_HOURS": "26",
 		// D1 GET file_size must remain strictly below this single-object ceiling.
 		"BACKUP_MAX_SOURCE_BYTES": "4500000000",

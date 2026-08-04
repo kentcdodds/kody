@@ -573,12 +573,12 @@
 			"sha256": "c45f0776b84a354669a2c8e4e96bcf4daf3040166ffeb8bce7c12678f2eb3935"
 		},
 		{
-			"filename": "0140-drop-email-postdrop-residue.sql",
-			"sha256": "6d4c96f564349594041ea6b8beeb22c7c2e58140aac63519b859f98772a981c7"
-		},
-		{
 			"filename": "0141-drop-account-write-leases-and-stale-flags.sql",
 			"sha256": "eca135651ff1e7b30c3b611771b69051f8cff46868eb98ce59fc91e0e71a807e"
+		},
+		{
+			"filename": "0143-drop-email-postdrop-residue.sql",
+			"sha256": "6d4c96f564349594041ea6b8beeb22c7c2e58140aac63519b859f98772a981c7"
 		}
 	]
 }
