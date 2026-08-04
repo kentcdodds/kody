@@ -480,6 +480,11 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus RunLog 
 	})
 	// user-a: verified 2026-07-01, activated 2026-07-02T12:00 → 36 hours
 	expect(data.activation.medianHoursToActivation).toBe(36)
+	expect(data.runLogCompleteness).toEqual({
+		usersAttempted: 2,
+		usersLoaded: 2,
+		complete: true,
+	})
 	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(2)
 	expect(runLogMocks.maxInFlight).toBeLessThanOrEqual(
 		adminInsightsRunLogConcurrency,
@@ -545,6 +550,9 @@ test('multi-user RunLog aggregation sums workflow statuses and milestone users',
 	expect(folded.packageRunSucceededUsers).toBe(2)
 	expect(folded.packageActivatedUsers).toBe(1)
 	expect(folded.medianHoursToActivation).toBe(12)
+	expect(folded.usersAttempted).toBe(3)
+	expect(folded.usersLoaded).toBe(2)
+	expect(folded.complete).toBe(false)
 })
 
 test('loadAdminInsightsData enumerates only non-deleting users for RunLog reads', async () => {
@@ -699,6 +707,11 @@ test('degraded RunLog snapshots warn and zero run-derived charts without failing
 		human: 2,
 		agent: 1,
 		unknown: 4,
+	})
+	expect(data.runLogCompleteness).toEqual({
+		usersAttempted: 2,
+		usersLoaded: 0,
+		complete: false,
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-insights-run-log-unavailable',
@@ -865,4 +878,79 @@ test('medianOf averages the middle pair and ignores non-finite values', () => {
 	expect(medianOf([1, 3])).toBe(2)
 	expect(medianOf([1, 2, 3])).toBe(2)
 	expect(medianOf([1, Number.NaN, 3])).toBe(2)
+})
+
+test('foldRunLogSnapshots reports complete fanout when every snapshot loads', () => {
+	const folded = foldRunLogSnapshots([
+		{
+			user: {
+				stable_user_id: 'u1',
+				email_verified_at: '2026-07-01T00:00:00.000Z',
+			},
+			snapshot: emptySnapshot(),
+		},
+		{
+			user: {
+				stable_user_id: 'u2',
+				email_verified_at: '2026-07-02T00:00:00.000Z',
+			},
+			snapshot: emptySnapshot(),
+		},
+	])
+
+	expect(folded).toMatchObject({
+		usersAttempted: 2,
+		usersLoaded: 2,
+		complete: true,
+	})
+})
+
+test('loadAdminInsightsData treats a zero-user fleet as complete run-log fanout', async () => {
+	consoleWarn.mockImplementation(() => {})
+	stubSnapshotsByUser({})
+	const db = createInsightsTestDb({ insightsUsers: [] })
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: db,
+			AUDIT_DB: db,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+
+	expect(data.runLogCompleteness).toEqual({
+		usersAttempted: 0,
+		usersLoaded: 0,
+		complete: true,
+	})
+	expect(runLogMocks.getAdminInsightsSnapshot).not.toHaveBeenCalled()
+})
+
+test('loadAdminInsightsData JSON exposes runLogCompleteness without user content', async () => {
+	consoleWarn.mockImplementation(() => {})
+	stubSnapshotsByUser({
+		'user-a': emptySnapshot(),
+		'user-b': new Error('rpc failed'),
+	})
+	const db = createInsightsTestDb()
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: db,
+			AUDIT_DB: db,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+
+	const parsed = JSON.parse(JSON.stringify(data)) as typeof data
+	expect(parsed.runLogCompleteness).toEqual({
+		usersAttempted: 2,
+		usersLoaded: 1,
+		complete: false,
+	})
+	expect(Object.keys(parsed.runLogCompleteness).sort()).toEqual([
+		'complete',
+		'usersAttempted',
+		'usersLoaded',
+	])
 })

@@ -445,6 +445,13 @@ export type AdminInsightsActivation = {
 	medianHoursToActivation: number | null
 }
 
+/** Content-free fanout status for per-user RunLog snapshot reads. */
+export type AdminInsightsRunLogCompleteness = {
+	usersAttempted: number
+	usersLoaded: number
+	complete: boolean
+}
+
 export type AdminInsightsLoaderData = {
 	ok: true
 	generatedAt: string
@@ -460,6 +467,7 @@ export type AdminInsightsLoaderData = {
 	workflowStatuses: Array<AdminInsightsWorkflowStatus>
 	jobHealth: AdminInsightsJobHealth
 	activation: AdminInsightsActivation
+	runLogCompleteness: AdminInsightsRunLogCompleteness
 }
 
 export type AdminSystemEmailListItem = {

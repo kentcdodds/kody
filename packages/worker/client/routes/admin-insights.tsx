@@ -31,6 +31,7 @@ import {
 	type AdminInsightsActivation,
 	type AdminInsightsActivationStep,
 	type AdminInsightsLoaderData,
+	type AdminInsightsRunLogCompleteness,
 } from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
@@ -81,6 +82,14 @@ function formatDayLabel(dayKey: string) {
 
 function formatPlanLabel(plan: string) {
 	return plan === 'none' ? 'No plan' : plan
+}
+
+/** Null when run-derived totals are complete; otherwise a user-facing warning. */
+export function formatRunLogCompletenessWarning(
+	completeness: AdminInsightsRunLogCompleteness,
+): string | null {
+	if (completeness.complete) return null
+	return `Workflow and activation totals are partial — loaded RunLog snapshots for ${completeness.usersLoaded} of ${completeness.usersAttempted} users.`
 }
 
 export async function adminInsightsRouteLoader(
@@ -372,9 +381,15 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 	)
 	const verifiedShare =
 		data.totals.users > 0 ? data.totals.verifiedUsers / data.totals.users : 0
+	const runLogWarning = formatRunLogCompletenessWarning(data.runLogCompleteness)
 
 	return (
 		<>
+			{runLogWarning ? (
+				<AccountManagementMessage tone="info">
+					{runLogWarning}
+				</AccountManagementMessage>
+			) : null}
 			<div
 				mix={css({
 					display: 'grid',

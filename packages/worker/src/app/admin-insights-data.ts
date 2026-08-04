@@ -16,6 +16,7 @@ import {
 	type AdminInsightsJobHealth,
 	type AdminInsightsLoaderData,
 	type AdminInsightsPlanSlice,
+	type AdminInsightsRunLogCompleteness,
 	type AdminInsightsSignupWeek,
 	type AdminInsightsTotals,
 	type AdminInsightsUsageMonth,
@@ -75,12 +76,18 @@ type InsightsUserRow = {
 	email_verified_at: string | null
 }
 
-type AggregatedRunLogInsights = {
+type AggregatedRunLogInsights = AdminInsightsRunLogCompleteness & {
 	workflowStatuses: Array<AdminInsightsWorkflowStatus>
 	workflowRuns: number
 	packageRunSucceededUsers: number
 	packageActivatedUsers: number
 	medianHoursToActivation: number | null
+}
+
+const completeRunLogInsights: AdminInsightsRunLogCompleteness = {
+	usersAttempted: 0,
+	usersLoaded: 0,
+	complete: true,
 }
 
 export async function loadAdminInsightsData(
@@ -94,7 +101,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v4',
+		key: 'admin-insights:v5',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -272,6 +279,11 @@ async function queryAdminInsights(
 		workflowStatuses: runLogInsights.workflowStatuses,
 		jobHealth,
 		activation: mergeActivation(activationBase, runLogInsights),
+		runLogCompleteness: {
+			usersAttempted: runLogInsights.usersAttempted,
+			usersLoaded: runLogInsights.usersLoaded,
+			complete: runLogInsights.complete,
+		},
 	}
 }
 
@@ -479,6 +491,7 @@ async function aggregateRunLogInsights(input: {
 	users: ReadonlyArray<InsightsUserRow>
 }): Promise<AggregatedRunLogInsights> {
 	const empty: AggregatedRunLogInsights = {
+		...completeRunLogInsights,
 		workflowStatuses: [],
 		workflowRuns: 0,
 		packageRunSucceededUsers: 0,
@@ -518,6 +531,8 @@ export function foldRunLogSnapshots(
 		snapshot: RunLogAdminInsightsSnapshot | null
 	}>,
 ): AggregatedRunLogInsights {
+	const usersAttempted = entries.length
+	let usersLoaded = 0
 	const statusCounts = new Map<string, number>()
 	let workflowRuns = 0
 	let packageRunSucceededUsers = 0
@@ -526,6 +541,7 @@ export function foldRunLogSnapshots(
 
 	for (const { user, snapshot } of entries) {
 		if (!snapshot) continue
+		usersLoaded += 1
 		for (const row of snapshot.workflowStatusCounts) {
 			const count = Number(row.count) || 0
 			if (count <= 0) continue
@@ -556,6 +572,9 @@ export function foldRunLogSnapshots(
 	activationHours.sort((left, right) => left - right)
 
 	return {
+		usersAttempted,
+		usersLoaded,
+		complete: usersLoaded === usersAttempted,
 		workflowStatuses: Array.from(statusCounts.entries())
 			.map(([status, count]) => ({ status, count }))
 			.sort(
