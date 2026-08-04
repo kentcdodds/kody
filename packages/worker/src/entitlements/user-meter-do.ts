@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { DurableObject } from 'cloudflare:workers'
+import {
+	type DurableObjectPitrRpc,
+	getRecoveryBookmark,
+	restoreToBookmark,
+} from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { type EntitlementResource } from './plans.ts'
 
@@ -534,6 +539,23 @@ class UserMeterBase extends DurableObject<Env> {
 		super(ctx, env)
 		this.ctx.blockConcurrencyWhile(async () => {
 			this.initializeSchema()
+		})
+	}
+
+	async getRecoveryBookmark(input: {
+		timestampMs: number
+	}): Promise<{ bookmark: string }> {
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
+	}
+
+	async restoreToBookmark(input: {
+		bookmark: string
+	}): Promise<{ undoBookmark: string }> {
+		return await restoreToBookmark(this.ctx, input, {
+			objectKind: 'user-meter',
+			environment: this.env,
 		})
 	}
 
@@ -1908,7 +1930,7 @@ export const UserMeter = Sentry.instrumentDurableObjectWithSentry(
 	UserMeterBase,
 )
 
-export type UserMeterRpc = {
+export type UserMeterRpc = DurableObjectPitrRpc & {
 	initialize: (input: {
 		resource: string
 		day: string

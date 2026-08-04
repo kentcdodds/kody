@@ -1,4 +1,11 @@
 import {
+	backupSqlStatsKey,
+	backupSqlStatsRequired,
+	backupSqlStatsSchemaVersion,
+	parseBackupSqlStats,
+} from '@kody-internal/shared/backup-sql-stats.ts'
+
+import {
 	refreshCompletedD1Export,
 	verifySourceDatabaseIdentity,
 	type ApiOptions,
@@ -30,9 +37,8 @@ import { signBackupManifest } from './manifest-signing.ts'
 /**
  * Persist per-object statement-length statistics next to the SQL object and
  * log them. An oversized statement means the object cannot be re-imported
- * through the D1 import API (SQLITE_TOOBIG); the backup completes, but
- * the condition is logged with failure status so observability and health
- * checks can alert on an un-restorable day.
+ * through the D1 import API (SQLITE_TOOBIG), so the Workflow fails before it
+ * can publish a canonical day manifest.
  */
 async function recordSqlStatementStats(input: {
 	env: BackupEnvironment
@@ -43,7 +49,71 @@ async function recordSqlStatementStats(input: {
 }): Promise<void> {
 	const { stats } = input
 	// Step replays from pre-stats deployments have no measurements to record.
-	if (!stats) return
+	if (!stats) {
+		if (backupSqlStatsRequired(input.day)) {
+			throw new BackupError(
+				'backup-sql-stats-missing',
+				`D1 SQL statement measurements are missing for ${input.day}`,
+				true,
+			)
+		}
+		safeLog({
+			event: 'backup-stats-legacy-missing',
+			status: 'stale-success',
+			day: input.day,
+			instanceId: input.instanceId,
+			objectKey: input.objectKey,
+		})
+		return
+	}
+	const persistedStats = {
+		schemaVersion: backupSqlStatsSchemaVersion,
+		day: input.day,
+		objectKey: input.objectKey,
+		maxStatementBytes: stats.maxStatementBytes,
+		oversizedStatementCount: stats.oversizedStatementCount,
+		importStatementLimitBytes: stats.limit,
+	}
+	const body = JSON.stringify(persistedStats)
+	// An existing object from a replayed step wins and is left alone (the prefix
+	// is under the bucket's immutable lock, which rejects puts on existing keys
+	// with error 10069 before the conditional is evaluated).
+	const statsKey = backupSqlStatsKey(input.objectKey)
+	const putResult = await input.env.BACKUP_BUCKET.put(statsKey, body, {
+		onlyIf: { etagDoesNotMatch: '*' },
+		httpMetadata: { contentType: 'application/json' },
+	}).catch((error: unknown) => {
+		if (isBucketLockPolicyPutError(error)) return null
+		throw error
+	})
+	if (putResult === null) {
+		const existing = await input.env.BACKUP_BUCKET.get(statsKey)
+		let existingStats
+		try {
+			existingStats =
+				existing === null
+					? null
+					: parseBackupSqlStats(await existing.json<unknown>())
+		} catch {
+			existingStats = null
+		}
+		if (
+			existingStats === null ||
+			existingStats.schemaVersion !== persistedStats.schemaVersion ||
+			existingStats.day !== persistedStats.day ||
+			existingStats.objectKey !== persistedStats.objectKey ||
+			existingStats.maxStatementBytes !== persistedStats.maxStatementBytes ||
+			existingStats.oversizedStatementCount !==
+				persistedStats.oversizedStatementCount ||
+			existingStats.importStatementLimitBytes !==
+				persistedStats.importStatementLimitBytes
+		) {
+			throw new BackupError(
+				'backup-sql-stats-conflict',
+				'Existing immutable SQL stats differ from the streamed export',
+			)
+		}
+	}
 	safeLog({
 		event: 'backup-sql-stats',
 		status: stats.oversizedStatementCount > 0 ? 'failure' : 'success',
@@ -63,26 +133,12 @@ async function recordSqlStatementStats(input: {
 			maxStatementBytes: stats.maxStatementBytes,
 			oversizedStatementCount: stats.oversizedStatementCount,
 		})
+		throw new BackupError(
+			'backup-unrestorable-statements',
+			`D1 export contains ${String(stats.oversizedStatementCount)} statement(s) above the import limit`,
+			true,
+		)
 	}
-	const body = JSON.stringify({
-		schemaVersion: 1,
-		day: input.day,
-		objectKey: input.objectKey,
-		maxStatementBytes: stats.maxStatementBytes,
-		oversizedStatementCount: stats.oversizedStatementCount,
-		importStatementLimitBytes: stats.limit,
-	})
-	// The stats object is advisory; an existing object from a replayed step
-	// wins and is left alone (the prefix is under the bucket's immutable
-	// lock, which rejects puts on existing keys with error 10069 before the
-	// conditional is evaluated).
-	await input.env.BACKUP_BUCKET.put(`${input.objectKey}.stats.json`, body, {
-		onlyIf: { etagDoesNotMatch: '*' },
-		httpMetadata: { contentType: 'application/json' },
-	}).catch((error: unknown) => {
-		if (isBucketLockPolicyPutError(error)) return null
-		throw error
-	})
 }
 
 interface BackupRuntimeEvent {
@@ -290,6 +346,18 @@ export async function runBackupRuntime(
 		const completedAt = await step.do('record-completion-time', async () =>
 			new Date().toISOString(),
 		)
+		await step.do(
+			'record-statement-stats',
+			{ retries: { limit: 2, delay: '10 seconds' }, timeout: '2 minutes' },
+			async () =>
+				recordSqlStatementStats({
+					env,
+					day: checkedPayload.day,
+					instanceId: event.instanceId,
+					objectKey: stored.objectKey,
+					stats: stored.sqlStatementStats,
+				}),
+		)
 		const unsignedManifest = {
 			source: {
 				accountId: env.SOURCE_ACCOUNT_ID,
@@ -338,18 +406,6 @@ export async function runBackupRuntime(
 				)
 				return signedManifest
 			},
-		)
-		await step.do(
-			'record-statement-stats',
-			{ retries: { limit: 2, delay: '10 seconds' }, timeout: '2 minutes' },
-			async () =>
-				recordSqlStatementStats({
-					env,
-					day: checkedPayload.day,
-					instanceId: event.instanceId,
-					objectKey: stored.objectKey,
-					stats: stored.sqlStatementStats,
-				}),
 		)
 		safeLog({
 			event: 'backup-success',

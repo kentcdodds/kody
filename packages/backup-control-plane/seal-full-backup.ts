@@ -35,6 +35,7 @@ import {
 	readManifest,
 } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
+import { readSqlRestorability } from './sql-statement-stats.ts'
 
 const sha256Pattern = /^[0-9a-f]{64}$/
 
@@ -342,6 +343,16 @@ export type SealDayResult =
 	| { kind: 'sealed'; day: string; manifestKey: string; alreadySealed: boolean }
 	| { kind: 'incomplete'; day: string; reason: string }
 
+function incompleteForSqlStats(day: string, reason: string): SealDayResult {
+	safeLog({
+		event: 'full-backup-seal-skipped',
+		status: 'failure',
+		day,
+		errorCode: reason,
+	})
+	return { kind: 'incomplete', day, reason }
+}
+
 export async function sealFullBackupDay(
 	env: BackupEnvironment,
 	day: string,
@@ -350,6 +361,48 @@ export async function sealFullBackupDay(
 	assertBackupDay(day)
 	const manifestKey = sealedFullManifestKey(day)
 	const existing = await readFullManifest(env.BACKUP_BUCKET, manifestKey)
+
+	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
+	const d1Manifest = await readManifest(
+		env.BACKUP_BUCKET,
+		d1Payload.manifestKey,
+	)
+	if (d1Manifest === null) {
+		return { kind: 'incomplete', day, reason: 'd1-manifest-missing' }
+	}
+	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
+		throw new BackupError(
+			'd1-manifest-signature-invalid',
+			`D1 manifest signature invalid for ${day}`,
+		)
+	}
+	const restorability = await readSqlRestorability(
+		env.BACKUP_BUCKET,
+		day,
+		d1Manifest.payload.sql.objectKey,
+	)
+	switch (restorability.kind) {
+		case 'restorable':
+			break
+		case 'legacy-unknown':
+			safeLog({
+				event: 'backup-stats-legacy-missing',
+				status: 'stale-success',
+				day,
+				objectKey: d1Manifest.payload.sql.objectKey,
+			})
+			break
+		case 'unrestorable':
+			return incompleteForSqlStats(day, 'backup-unrestorable-statements')
+		case 'missing':
+			return incompleteForSqlStats(day, 'backup-sql-stats-missing')
+		case 'corrupt':
+			return incompleteForSqlStats(day, 'backup-sql-stats-corrupt')
+		default: {
+			const exhaustive: never = restorability
+			throw exhaustive
+		}
+	}
 	if (existing !== null) {
 		if (!(await verifyBackupFullManifestSignature(env, existing))) {
 			throw new BackupError(
@@ -370,21 +423,6 @@ export async function sealFullBackupDay(
 			manifestKey,
 		})
 		return { kind: 'sealed', day, manifestKey, alreadySealed: true }
-	}
-
-	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
-	const d1Manifest = await readManifest(
-		env.BACKUP_BUCKET,
-		d1Payload.manifestKey,
-	)
-	if (d1Manifest === null) {
-		return { kind: 'incomplete', day, reason: 'd1-manifest-missing' }
-	}
-	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
-		throw new BackupError(
-			'd1-manifest-signature-invalid',
-			`D1 manifest signature invalid for ${day}`,
-		)
 	}
 	const d1ManifestObject = await env.BACKUP_BUCKET.get(d1Payload.manifestKey)
 	if (d1ManifestObject === null) {

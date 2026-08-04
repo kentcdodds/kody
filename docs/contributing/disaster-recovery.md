@@ -23,6 +23,20 @@ Primary operator surface:
 
 Do not use `tools/export-d1-remote-to-sqlite.sh` as a backup or restore tool.
 
+## Prevention
+
+### Deploy guardrails
+
+`npm run deploy-guardrails:check` protects the reviewed Durable Object migration
+and binding baseline in `tools/ci/durable-object-baseline.json`. Every
+`deleted_classes` migration must exactly match
+`tools/ci/do-deletion-allowlist.json`; changing that allowlist is the explicit
+code-review gate for destructive class deletion. The same check rejects removal
+or renaming of protected `new_sqlite_classes` tags, changes to protected
+Wrangler binding identities (`name`, `class_name`, `script_name`, or
+`environment`), and destructive Cloudflare CLI deletion commands in GitHub
+workflows unless the job is operator-triggered with `workflow_dispatch`.
+
 ## Live evidence log
 
 First-proven dates for each lane (newest first). Re-prove and update after
@@ -359,6 +373,82 @@ Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
 config, and expect users to reauthorize OAuth and remote connectors.
 
+### Durable Object point-in-time recovery
+
+Use Durable Object (DO) PITR for an application bug or corruption inside one
+**surviving** SQLite-backed object. It restores that object's complete SQLite
+database, including SQL tables and key-value storage, to an approximate point
+within Cloudflare's rolling 30-day history. It is not a replacement for sealed
+backups: if an object or its class was deleted, use backup media where that
+class is covered. Deleting a Durable Object class destroys its PITR history and
+makes this procedure impossible.
+
+The operator endpoint is production-only infrastructure, is not registered on
+user, MCP, or package surfaces, and reuses `DR_RESTORE_SECRET`. Disable ingress
+or otherwise stop writes to the affected user before recovery. Supply the user's
+exact `stable_user_id`, not username, email, or a D1 numeric id. Valid `kind`
+values are `mailbox`, `run-log`, `user-meter`, and `storage-runner`;
+`storage-runner` also requires its exact storage id.
+
+1. Resolve a bookmark for the incident timestamp. Cloudflare returns the
+   bookmark nearest that time:
+
+   ```sh
+   USER_ID='EXACT_STABLE_USER_ID'
+   INCIDENT_AT='YYYY-MM-DDTHH:MM:SSZ'
+   INCIDENT_TIMESTAMP_MS="$(
+     node -e 'const ms=Date.parse(process.argv[1]);if(!Number.isFinite(ms))process.exit(1);console.log(ms)' \
+       "$INCIDENT_AT"
+   )"
+   curl --fail-with-body \
+     --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/do-pitr" \
+     --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+     --header "Content-Type: application/json" \
+     --data @- <<JSON
+     {
+       "operation": "get-recovery-bookmark",
+       "kind": "mailbox",
+       "userId": "$USER_ID",
+       "timestampMs": $INCIDENT_TIMESTAMP_MS
+     }
+   JSON
+   ```
+
+   For StorageRunner, add `"storageId": "EXACT_STORAGE_ID"`. Keep the returned
+   `bookmark` in the incident record and inspect it before the destructive step.
+
+2. Schedule the restore. The object logs the undo bookmark as a structured
+   `do-pitr-restore-scheduled` event, returns it as `undoBookmark`, and resets
+   immediately so the next object session applies the restore:
+
+   ```sh
+   BOOKMARK='BOOKMARK_FROM_STEP_1'
+   curl --fail-with-body \
+     --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/do-pitr" \
+     --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+     --header "Content-Type: application/json" \
+     --data @- <<JSON
+     {
+       "operation": "restore-to-bookmark",
+       "kind": "mailbox",
+       "userId": "$USER_ID",
+       "bookmark": "$BOOKMARK"
+     }
+   JSON
+   ```
+
+   Copy `undoBookmark` immediately and verify the affected object's state before
+   restoring ingress. The operator log (`event=do-pitr-operator-restore`)
+   includes the operation id, exact object identity, target bookmark, and undo
+   bookmark. PITR is unavailable in local development and Workers unit-test
+   emulation; the endpoint reports `pitr-unavailable` there.
+
+3. To undo the recovery, repeat step 2 against the same exact object identity,
+   using the saved `undoBookmark` as `bookmark`. The undo itself returns a new
+   undo bookmark; retain that handle too. Do not assume logs from the restored
+   object's own historical storage contain the handle—the structured platform
+   log and the operator response are the recovery record.
+
 ## Schedules and freshness
 
 | When (UTC)               | Who               | What                                                                                               |
@@ -370,8 +460,15 @@ config, and expect users to reauthorize OAuth and remote connectors.
 | Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days |
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
-`freshness-stale`, size-ceiling hits, missing manifests, seal failures,
-`backup-unrestorable-statements`, or unexpected disablement of the enable gates.
+`freshness-unrestorable` (the SQL contains statements D1 cannot import),
+`freshness-stale`, size-ceiling hits, missing manifests or required SQL stats,
+seal failures, `backup-unrestorable-statements`, or unexpected disablement of
+the enable gates. Post-cutover unrestorable exports never receive a canonical
+day manifest; catch-up retries can re-export the day after the oversized row or
+write path is bounded. Historical bad days may already have canonical and full
+manifests; immutable media is intentionally left unchanged, so freshness,
+dashboard, drill, and production-restore gates remain essential until it ages
+out.
 
 ## Offline CLI fallback
 

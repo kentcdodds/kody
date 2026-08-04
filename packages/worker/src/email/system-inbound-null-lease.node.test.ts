@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { type InboundDelivery } from './inbound-delivery.ts'
 import {
@@ -13,22 +13,7 @@ const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 function createDatabase() {
 	const sqlite = new DatabaseSync(':memory:')
-	for (const fileName of readdirSync(migrationsDirectory)
-		.filter(
-			(file) =>
-				file.endsWith('.sql') &&
-				file <= '0131-system-email-graph-authority.sql',
-		)
-		.sort()) {
-		sqlite.exec('BEGIN')
-		try {
-			sqlite.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-			sqlite.exec('COMMIT')
-		} catch (error) {
-			sqlite.exec('ROLLBACK')
-			throw error
-		}
-	}
+	applyAllMigrations(sqlite, migrationsDirectory)
 	return sqlite
 }
 
@@ -83,17 +68,6 @@ test('NULL system lease timestamps remain due and reclaimable', async () => {
 		) VALUES (?, ?, 'cloudflare-email-routing', ?, ?, ?, ?, ?, ?, ?, NULL,
 			?, ?, NULL, ?, NULL, ?)`,
 	)
-	const insertLegacy = sqlite.prepare(
-		`INSERT INTO email_delivery_events (
-			id, user_id, event_type, provider, detail_json, created_at,
-			needs_effect_reconcile, state, fingerprint,
-			usage_effect_recorded_at, usage_effect_lease, usage_effect_lease_at,
-			subscription_effect_state, subscription_effect_lease,
-			subscription_effect_lease_at, storage_lease, storage_lease_at,
-			updated_at
-		) VALUES (?, 'system:email', ?, 'cloudflare-email-routing', ?, ?, ?, ?, ?,
-			?, ?, NULL, ?, ?, NULL, ?, NULL, ?)`,
-	)
 	for (const row of [
 		{
 			detail: usage,
@@ -142,7 +116,6 @@ test('NULL system lease timestamps remain due and reclaimable', async () => {
 			createdAt,
 		] as const
 		insertDedicated.run(...bindings)
-		insertLegacy.run(...bindings)
 	}
 	const db = createD1FromSqlite(sqlite)
 

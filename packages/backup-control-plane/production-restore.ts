@@ -12,6 +12,7 @@ import { verifyBackupFullManifestSignature } from './full-manifest-signing.ts'
 import { readManifest } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
 import { readFullManifest } from './seal-full-backup.ts'
+import { assertSqlRestorable } from './sql-statement-stats.ts'
 
 export type DrRestoreChunkResponse = {
 	done: boolean
@@ -181,6 +182,11 @@ export async function validateSealedDayForRestore(
 			`D1 manifest signature invalid for ${day}`,
 		)
 	}
+	await assertSqlRestorable(
+		env.BACKUP_BUCKET,
+		day,
+		d1Manifest.payload.sql.objectKey,
+	)
 	return {
 		fullManifestKey,
 		d1ManifestKey: fullManifest.payload.d1ManifestKey,

@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
+import { getRecoveryBookmark, restoreToBookmark } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	assertWithinStorageBytesEntitlement,
@@ -443,6 +444,23 @@ function cursorToSqlResult(
 }
 
 class StorageRunnerBase extends DurableObject<Env> {
+	async getRecoveryBookmark(input: {
+		timestampMs: number
+	}): Promise<{ bookmark: string }> {
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
+	}
+
+	async restoreToBookmark(input: {
+		bookmark: string
+	}): Promise<{ undoBookmark: string }> {
+		return await restoreToBookmark(this.ctx, input, {
+			objectKind: 'storage-runner',
+			environment: this.env,
+		})
+	}
+
 	async getValue(input: { key: string }) {
 		const key = normalizeStorageKey(input.key)
 		return {

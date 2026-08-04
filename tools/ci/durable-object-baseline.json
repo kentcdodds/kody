@@ -1,0 +1,147 @@
+{
+	"version": 1,
+	"configs": [
+		{
+			"path": "packages/worker/wrangler.jsonc",
+			"protected_migrations": [
+				{ "tag": "v1", "new_sqlite_classes": ["MCP"] },
+				{ "tag": "v2", "new_sqlite_classes": ["ChatAgent"] },
+				{
+					"tag": "v3",
+					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"]
+				},
+				{ "tag": "v4", "new_sqlite_classes": ["SchedulerDO"] },
+				{
+					"tag": "v6",
+					"new_sqlite_classes": ["JobManager", "JobRunner"]
+				},
+				{ "tag": "v8", "new_sqlite_classes": ["StorageRunner"] },
+				{ "tag": "v10", "new_sqlite_classes": ["AgentTurnRunner"] },
+				{ "tag": "v11", "new_sqlite_classes": ["RepoSession"] },
+				{
+					"tag": "v13",
+					"new_sqlite_classes": ["PackageRealtimeSession"]
+				},
+				{
+					"tag": "v14",
+					"new_sqlite_classes": ["PackageServiceInstance"]
+				},
+				{ "tag": "v18", "new_sqlite_classes": ["McpClientHub"] },
+				{
+					"tag": "v19",
+					"new_sqlite_classes": ["OAuthPurgeCoordinator"]
+				},
+				{ "tag": "v20", "new_sqlite_classes": ["RunLog"] },
+				{ "tag": "v21", "new_sqlite_classes": ["UserMeter"] },
+				{ "tag": "v22", "new_sqlite_classes": ["Mailbox"] },
+				{ "tag": "v23", "new_sqlite_classes": ["StripePlanRefresh"] }
+			],
+			"protected_binding_sets": [
+				{
+					"location": "env.production.durable_objects",
+					"bindings": [
+						{ "name": "MCP_OBJECT", "class_name": "MCP" },
+						{
+							"name": "REMOTE_CONNECTOR_SESSION",
+							"class_name": "RemoteConnectorSession"
+						},
+						{ "name": "MCP_CLIENT_HUB", "class_name": "McpClientHub" },
+						{
+							"name": "OAUTH_PURGE_COORDINATOR",
+							"class_name": "OAuthPurgeCoordinator"
+						},
+						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
+						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
+						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{ "name": "USER_METER", "class_name": "UserMeter" },
+						{ "name": "MAILBOX", "class_name": "Mailbox" },
+						{
+							"name": "STRIPE_PLAN_REFRESH",
+							"class_name": "StripePlanRefresh"
+						},
+						{ "name": "REPO_SESSION", "class_name": "RepoSession" },
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession"
+						},
+						{
+							"name": "PACKAGE_SERVICE_INSTANCE",
+							"class_name": "PackageServiceInstance"
+						}
+					]
+				},
+				{
+					"location": "env.preview.durable_objects",
+					"bindings": [
+						{ "name": "MCP_OBJECT", "class_name": "MCP" },
+						{
+							"name": "REMOTE_CONNECTOR_SESSION",
+							"class_name": "RemoteConnectorSession"
+						},
+						{ "name": "MCP_CLIENT_HUB", "class_name": "McpClientHub" },
+						{
+							"name": "OAUTH_PURGE_COORDINATOR",
+							"class_name": "OAuthPurgeCoordinator"
+						},
+						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
+						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
+						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{ "name": "USER_METER", "class_name": "UserMeter" },
+						{ "name": "MAILBOX", "class_name": "Mailbox" },
+						{
+							"name": "STRIPE_PLAN_REFRESH",
+							"class_name": "StripePlanRefresh"
+						},
+						{ "name": "REPO_SESSION", "class_name": "RepoSession" },
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession"
+						},
+						{
+							"name": "PACKAGE_SERVICE_INSTANCE",
+							"class_name": "PackageServiceInstance"
+						}
+					]
+				},
+				{
+					"location": "env.test.durable_objects",
+					"bindings": [
+						{ "name": "MCP_OBJECT", "class_name": "MCP" },
+						{
+							"name": "REMOTE_CONNECTOR_SESSION",
+							"class_name": "RemoteConnectorSession"
+						},
+						{ "name": "MCP_CLIENT_HUB", "class_name": "McpClientHub" },
+						{
+							"name": "OAUTH_PURGE_COORDINATOR",
+							"class_name": "OAuthPurgeCoordinator"
+						},
+						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
+						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
+						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{ "name": "USER_METER", "class_name": "UserMeter" },
+						{ "name": "MAILBOX", "class_name": "Mailbox" },
+						{
+							"name": "STRIPE_PLAN_REFRESH",
+							"class_name": "StripePlanRefresh"
+						},
+						{ "name": "REPO_SESSION", "class_name": "RepoSession" },
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession"
+						},
+						{
+							"name": "PACKAGE_SERVICE_INSTANCE",
+							"class_name": "PackageServiceInstance"
+						}
+					]
+				}
+			]
+		},
+		{
+			"path": "packages/backup-control-plane/wrangler.jsonc",
+			"protected_migrations": [],
+			"protected_binding_sets": []
+		}
+	]
+}

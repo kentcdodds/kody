@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
 	buildPermissionString,
 	listAdminRolePermissionStrings,
@@ -29,31 +28,42 @@ test('parsePermissionString splits action, entity, and access', () => {
 })
 
 test('permission registry and migration seed rows stay aligned', () => {
-	const migrationPath = join(
-		dirname(fileURLToPath(import.meta.url)),
-		'../../migrations/0043-rbac.sql',
-	)
-	const migrationSql = readFileSync(migrationPath, 'utf8').toLowerCase()
-	const seededPermissions = new Set<PermissionString>()
+	using db = new DatabaseSync(':memory:')
+	applyAllMigrations(db, new URL('../../migrations/', import.meta.url))
 
-	for (const match of migrationSql.matchAll(
-		/insert or ignore into permissions \(action, entity, access\) values \('([^']+)', '([^']+)', '([^']+)'\)/g,
-	)) {
-		seededPermissions.add(
-			buildPermissionString({
-				action: match[1] as PermissionAction,
-				entity: match[2] as PermissionEntity,
-				access: match[3] as PermissionAccess,
-			}),
-		)
+	type PermissionRow = {
+		action: PermissionAction
+		entity: PermissionEntity
+		access: PermissionAccess
 	}
-
-	expect(Array.from(seededPermissions).sort()).toEqual(
+	const seededPermissions = (
+		db
+			.prepare(`SELECT action, entity, access FROM permissions`)
+			.all() as Array<PermissionRow>
+	).map((row) => buildPermissionString(row))
+	expect(seededPermissions.sort()).toEqual(
 		listRegistryPermissionStrings().sort(),
 	)
 
-	expect(migrationSql).toContain("where r.name = 'user'")
-	expect(migrationSql).toContain("p.access = 'own'")
+	function listSeededRolePermissionStrings(
+		roleName: string,
+	): Array<PermissionString> {
+		return (
+			db
+				.prepare(
+					`SELECT p.action, p.entity, p.access
+					FROM role_permissions rp
+					INNER JOIN roles r ON r.id = rp.role_id
+					INNER JOIN permissions p ON p.id = rp.permission_id
+					WHERE r.name = ?`,
+				)
+				.all(roleName) as Array<PermissionRow>
+		).map((row) => buildPermissionString(row))
+	}
+
+	expect(listSeededRolePermissionStrings('user').sort()).toEqual(
+		listUserRolePermissionStrings().sort(),
+	)
 	expect(listUserRolePermissionStrings().sort()).toEqual(
 		listRegistryPermissionStrings()
 			.filter(
@@ -62,14 +72,15 @@ test('permission registry and migration seed rows stay aligned', () => {
 			.sort(),
 	)
 
-	expect(migrationSql).toContain("where r.name = 'admin'")
+	expect(listSeededRolePermissionStrings('admin').sort()).toEqual(
+		listAdminRolePermissionStrings().sort(),
+	)
 	expect(listAdminRolePermissionStrings().sort()).toEqual(
 		listRegistryPermissionStrings().sort(),
 	)
 
-	for (const roleName of roleNames) {
-		expect(migrationSql).toContain(
-			`insert or ignore into roles (name, description) values ('${roleName}'`,
-		)
-	}
+	const seededRoleNames = (
+		db.prepare(`SELECT name FROM roles`).all() as Array<{ name: string }>
+	).map((row) => row.name)
+	expect(seededRoleNames.sort()).toEqual([...roleNames].sort())
 })

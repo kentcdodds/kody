@@ -21,6 +21,14 @@ function localPersistenceArguments(arguments_: ReadonlyArray<string>) {
 }
 
 const passthroughArguments = localPersistenceArguments(process.argv.slice(2))
+// Pre-squash local databases carry full migration history in d1_migrations;
+// the guard rewrites that bookkeeping to the squashed baseline (and refuses
+// anything unexpected) before the regular apply runs.
+const bookkeepingArguments = [
+	'tools/ci/reset-migration-bookkeeping.ts',
+	'--local',
+	...passthroughArguments,
+]
 const migrationArguments = [
 	'--env-file=packages/worker/.env',
 	'./wrangler-env.ts',
@@ -39,6 +47,13 @@ function runWrangler(arguments_: ReadonlyArray<string>) {
 		env: process.env,
 		maxBuffer: 16 * 1024 * 1024,
 	})
+}
+
+const bookkeeping = runWrangler(bookkeepingArguments)
+process.stdout.write(bookkeeping.stdout)
+process.stderr.write(bookkeeping.stderr)
+if (bookkeeping.status !== 0) {
+	process.exit(bookkeeping.status ?? 1)
 }
 
 const apply = runWrangler(migrationArguments)

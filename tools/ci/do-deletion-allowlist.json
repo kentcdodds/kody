@@ -1,0 +1,25 @@
+{
+	"version": 1,
+	"deletions": [
+		{
+			"config": "packages/worker/wrangler.jsonc",
+			"tag": "v7",
+			"classes": ["SchedulerDO"]
+		},
+		{
+			"config": "packages/worker/wrangler.jsonc",
+			"tag": "v9",
+			"classes": ["JobRunner"]
+		},
+		{
+			"config": "packages/worker/wrangler.jsonc",
+			"tag": "v16",
+			"classes": ["HomeMCP"]
+		},
+		{
+			"config": "packages/worker/wrangler.jsonc",
+			"tag": "v17",
+			"classes": ["AgentTurnRunner", "ChatAgent"]
+		}
+	]
+}

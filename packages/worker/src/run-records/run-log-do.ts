@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import {
+	type DurableObjectPitrRpc,
+	getRecoveryBookmark,
+	restoreToBookmark,
+} from '#worker/dr/do-pitr.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
@@ -1287,6 +1292,23 @@ class RunLogBase extends DurableObject<Env> {
 		await this.ctx.storage.setAlarm(Math.max(next, Date.now() + 1_000))
 		this.retentionAlarmArmed = true
 		this.retentionIdleConfirmed = false
+	}
+
+	async getRecoveryBookmark(input: {
+		timestampMs: number
+	}): Promise<{ bookmark: string }> {
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
+	}
+
+	async restoreToBookmark(input: {
+		bookmark: string
+	}): Promise<{ undoBookmark: string }> {
+		return await restoreToBookmark(this.ctx, input, {
+			objectKind: 'run-log',
+			environment: this.env,
+		})
 	}
 
 	async startRun(input: { run: RunLogRowInput }): Promise<{ ok: true }> {
@@ -2859,7 +2881,7 @@ export const RunLog = Sentry.instrumentDurableObjectWithSentry(
 	RunLogBase,
 )
 
-export type RunLogRpc = {
+export type RunLogRpc = DurableObjectPitrRpc & {
 	startRun: (input: { run: RunLogRowInput }) => Promise<{ ok: true }>
 	claimRun: (input: { run: RunLogRowInput }) => Promise<{
 		claimed: boolean

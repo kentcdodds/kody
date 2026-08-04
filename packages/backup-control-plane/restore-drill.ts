@@ -9,6 +9,7 @@ import {
 import { type ApiOptions } from './d1-export-api.ts'
 import { readManifest } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
+import { assertSqlRestorable } from './sql-statement-stats.ts'
 
 export type DrillReport = {
 	day: string
@@ -92,6 +93,7 @@ export async function runRestoreDrill(
 		)
 	}
 	const sqlObjectKey = manifest.payload.sql.objectKey
+	await assertSqlRestorable(env.BACKUP_BUCKET, day, sqlObjectKey)
 	const sqlHead = await env.BACKUP_BUCKET.head(sqlObjectKey)
 	if (sqlHead === null) {
 		throw new BackupError('drill-sql-missing', `SQL object missing for ${day}`)

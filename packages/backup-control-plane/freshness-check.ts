@@ -15,6 +15,7 @@ import {
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
+import { readSqlRestorability } from './sql-statement-stats.ts'
 
 function latestExpectedDate(scheduledAt: Date): Date {
 	const expected = new Date(scheduledAt)
@@ -59,6 +60,10 @@ export async function checkFreshness(
 		throw error
 	}
 	let ageHours: number | undefined
+	let statsErrorCode: string | undefined
+	let unrestorableStats:
+		| { maxStatementBytes: number; oversizedStatementCount: number }
+		| undefined
 	const signatureValid =
 		manifest !== null && (await verifyBackupManifestSignature(env, manifest))
 	let stale = manifest === null || !signatureValid
@@ -70,6 +75,38 @@ export async function checkFreshness(
 		const object = validObjectKey
 			? await env.BACKUP_BUCKET.head(manifest.payload.sql.objectKey)
 			: null
+		if (validObjectKey) {
+			const restorability = await readSqlRestorability(
+				env.BACKUP_BUCKET,
+				payload.day,
+				manifest.payload.sql.objectKey,
+			)
+			switch (restorability.kind) {
+				case 'restorable':
+					break
+				case 'legacy-unknown':
+					safeLog({
+						event: 'backup-stats-legacy-missing',
+						status: 'stale-success',
+						day: payload.day,
+						objectKey: manifest.payload.sql.objectKey,
+					})
+					break
+				case 'unrestorable':
+					unrestorableStats = restorability.stats
+					break
+				case 'missing':
+					statsErrorCode = 'backup-sql-stats-missing'
+					break
+				case 'corrupt':
+					statsErrorCode = 'backup-sql-stats-corrupt'
+					break
+				default: {
+					const exhaustive: never = restorability
+					throw exhaustive
+				}
+			}
+		}
 		ageHours =
 			(scheduledAt.valueOf() -
 				new Date(manifest.payload.export.completedAt).valueOf()) /
@@ -84,6 +121,8 @@ export async function checkFreshness(
 				env.SOURCE_DATABASE_ID.toLowerCase() ||
 			manifest.payload.source.databaseName !== env.SOURCE_DATABASE_NAME ||
 			!validObjectKey ||
+			unrestorableStats !== undefined ||
+			statsErrorCode !== undefined ||
 			manifest.payload.sql.bytes <= 0 ||
 			!/^[0-9a-f]{64}$/.test(manifest.payload.sql.sha256) ||
 			!manifest.payload.sql.r2Etag ||
@@ -94,12 +133,20 @@ export async function checkFreshness(
 					object.etag !== manifest.payload.sql.r2Etag))
 	}
 	safeLog({
-		event: stale ? 'freshness-stale' : 'freshness-success',
+		event:
+			unrestorableStats !== undefined
+				? 'freshness-unrestorable'
+				: stale
+					? 'freshness-stale'
+					: 'freshness-success',
 		status: stale ? 'stale-success' : 'success',
 		day: payload.day,
 		objectKey: manifest?.payload.sql.objectKey,
 		manifestKey: payload.manifestKey,
 		ageHours,
+		errorCode: statsErrorCode,
+		maxStatementBytes: unrestorableStats?.maxStatementBytes,
+		oversizedStatementCount: unrestorableStats?.oversizedStatementCount,
 	})
 	return !stale
 }

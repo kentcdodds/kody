@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
@@ -11,21 +11,7 @@ import {
 
 function createTestDb() {
 	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(
-		readFileSync(
-			new URL('../../migrations/0027-saved-packages.sql', import.meta.url),
-			'utf8',
-		),
-	)
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0073-agent-package-conversation-uses.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 

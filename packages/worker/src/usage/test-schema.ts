@@ -1,5 +1,6 @@
 /**
- * Mirrors `packages/worker/migrations/0047-usage-rollups.sql` for
+ * Mirrors the `usage_rollups` schema in
+ * `packages/worker/migrations/0001-squashed-init.sql` for
  * `*.workers.test.ts` suites, which run against a local D1 database without
  * applying migrations.
  */
