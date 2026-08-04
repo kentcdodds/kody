@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -164,7 +165,26 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 			},
 			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
-	).rejects.toThrow(/missing or invalid required fields/i)
+	).rejects.toThrow(McpCallerError)
+
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: 'slack',
+				tokenUrl: 'https://slack.com/api/oauth.v2.access',
+				flow: 'confidential',
+				clientId: 'slack-client-id',
+				// accessTokenSecretName omitted — create requires it
+			},
+			{ env: createEnv().env, callerContext: caller('user-123') },
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			/Cannot create integration "slack".*accessTokenSecretName/i.test(
+				error.message,
+			),
+	)
 })
 
 test('integration_save reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {

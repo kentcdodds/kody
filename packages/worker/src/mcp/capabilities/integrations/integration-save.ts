@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	getIntegration,
 	upsertIntegration,
@@ -90,7 +91,9 @@ function createNewIntegrationConfig(
 				return `${field}: ${issue.message}`
 			})
 			.join(', ')
-		throw new Error(
+		// Create-time field gaps are caller-fixable (agents omit required
+		// secrets names); keep them off Sentry via McpCallerError.
+		throw new McpCallerError(
 			`Cannot create integration "${args.name}": missing or invalid required fields — ${details}`,
 		)
 	}
