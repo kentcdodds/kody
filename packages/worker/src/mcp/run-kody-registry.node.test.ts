@@ -321,14 +321,10 @@ test('package workflow tools create instances from package context and honor cal
 									return null
 								},
 								async all() {
-									// Expand-phase D1 dual-read (active/recent workflow_runs).
-									if (query.includes('FROM workflow_runs')) {
-										return { results: [] }
-									}
 									throw new Error(`Unsupported all query: ${query}`)
 								},
 								async run() {
-									return { success: true }
+									throw new Error(`Unsupported run query: ${query}`)
 								},
 							}
 						},
@@ -473,14 +469,10 @@ test('runModuleWithRegistry queues inline workflows.create calls without runAt o
 								return null
 							},
 							async all() {
-								// Expand-phase D1 dual-read (active/recent workflow_runs).
-								if (query.includes('FROM workflow_runs')) {
-									return { results: [] }
-								}
 								throw new Error(`Unsupported all query: ${query}`)
 							},
 							async run() {
-								return { success: true }
+								throw new Error(`Unsupported run query: ${query}`)
 							},
 						}
 					},
@@ -1836,14 +1828,10 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 								return null
 							},
 							async all() {
-								// Expand-phase D1 dual-read (active/recent workflow_runs).
-								if (query.includes('FROM workflow_runs')) {
-									return { results: [] }
-								}
 								throw new Error(`Unsupported all query: ${query}`)
 							},
 							async run() {
-								return { success: true }
+								throw new Error(`Unsupported run query: ${query}`)
 							},
 						}
 					},

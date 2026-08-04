@@ -189,7 +189,8 @@ const publishParts = [
 
 function envStub() {
 	return {
-		// Falsy so dual-read skips D1 prepare on the stub env.
+		// Create still types APP_DB for entitlement/plan lookup; unused here
+		// because createDynamicCallableWorkflow is mocked.
 		APP_DB: undefined as unknown as D1Database,
 		DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		RUN_LOG: {} as DurableObjectNamespace,

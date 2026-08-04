@@ -26,7 +26,6 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { planLimits } from '#worker/entitlements/plans.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
@@ -37,7 +36,6 @@ import {
 	getWorkflowProjection,
 	listWorkflowProjections,
 	reserveWorkflowProjectionSlot,
-	importWorkflowProjections,
 	upsertWorkflowProjection,
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
@@ -46,7 +44,6 @@ import {
 	creatingWorkflowProjectionStatus,
 	isWorkflowBindingName,
 	type WorkflowBindingName,
-	workflowProjectionActiveStatuses,
 } from '#worker/run-records/workflow-projection.ts'
 import { UserCodeError } from '#worker/user-code-error.ts'
 import {
@@ -209,13 +206,6 @@ type DynamicCallableWorkflowStep = {
 const packageWorkflowTokenId = 'internal:package-workflows'
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
 const workflowStatusRefreshTtlMs = 30_000
-/**
- * Defensive LIMIT for expand-phase active D1 → RunLog import. One above the
- * highest concurrent_workflows entitlement so an overflow page still forces
- * entitlement denial (countBeforeReservation + 1 > every plan limit).
- */
-export const activeD1WorkflowImportBound =
-	planLimits.max.maxConcurrentWorkflows + 1
 const knownWorkflowStatusValues = [
 	...activeWorkflowStatusValues,
 	...terminalWorkflowStatusValues,
@@ -223,9 +213,6 @@ const knownWorkflowStatusValues = [
 const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
 const terminalWorkflowStatuses = new Set<string>(terminalWorkflowStatusValues)
 const knownWorkflowStatuses = new Set<string>(knownWorkflowStatusValues)
-const terminalWorkflowStatusSqlList = terminalWorkflowStatusValues
-	.map((status) => `'${status}'`)
-	.join(', ')
 
 function getWorkflowInvocationErrorMessage(response: {
 	status: number
@@ -647,173 +634,11 @@ function mapWorkflowProjectionToInspection(
 	}
 }
 
-function mapD1WorkflowRunRow(
-	row: Record<string, unknown>,
-): WorkflowRunInspection {
-	const rawSourceType = row['source_type']
-	if (rawSourceType !== 'inline' && rawSourceType !== 'package') {
-		throw new Error(`Unknown workflow source_type "${String(rawSourceType)}".`)
-	}
-	const rawStatus = row['status']
-	const status =
-		typeof rawStatus === 'string' && knownWorkflowStatuses.has(rawStatus)
-			? (rawStatus as WorkflowRunStatus)
-			: null
-	return {
-		id: String(row['id']),
-		userId: String(row['user_id']),
-		bindingName: dynamicCallableWorkflowsBindingName,
-		sourceType: rawSourceType,
-		packageId: typeof row['package_id'] === 'string' ? row['package_id'] : null,
-		kodyId: typeof row['kody_id'] === 'string' ? row['kody_id'] : null,
-		sourceId: typeof row['source_id'] === 'string' ? row['source_id'] : null,
-		workflowName: String(row['workflow_name']),
-		exportName:
-			typeof row['export_name'] === 'string' ? row['export_name'] : null,
-		idempotencyKey: String(row['idempotency_key']),
-		runAt: String(row['run_at']),
-		planDate: typeof row['plan_date'] === 'string' ? row['plan_date'] : null,
-		status,
-		createdAt: String(row['created_at']),
-		updatedAt: String(row['updated_at']),
-		completedAt:
-			typeof row['completed_at'] === 'string' ? row['completed_at'] : null,
-		lastError: typeof row['last_error'] === 'string' ? row['last_error'] : null,
-	}
-}
-
-function projectionUpsertFromInspection(
-	row: WorkflowRunInspection,
-): WorkflowProjectionUpsertInput {
-	return {
-		id: row.id,
-		bindingName: row.bindingName,
-		sourceType: row.sourceType,
-		packageId: row.packageId,
-		kodyId: row.kodyId,
-		sourceId: row.sourceId,
-		workflowName: row.workflowName,
-		exportName: row.exportName,
-		idempotencyKey: row.idempotencyKey,
-		runAt: row.runAt,
-		planDate: row.planDate,
-		status: row.status,
-		createdAt: row.createdAt,
-		updatedAt: row.updatedAt,
-		completedAt: row.completedAt,
-		lastError: row.lastError,
-	}
-}
-
-/** Single-row expand-phase D1 → RunLog import (idempotency / get-by-id paths). */
-async function importWorkflowInspectionIntoRunLog(input: {
-	env: Env
-	row: WorkflowRunInspection
-}) {
-	await upsertWorkflowProjection({
-		env: input.env,
-		userId: input.row.userId,
-		projection: projectionUpsertFromInspection(input.row),
-	})
-}
-
 /**
- * Bounded expand-phase D1 → RunLog import in one RunLog RPC. Callers must
- * already scope rows to `userId` and apply a D1 LIMIT; this filters any
- * cross-user stragglers and hard-caps the batch.
- */
-async function importWorkflowInspectionsIntoRunLog(input: {
-	env: Env
-	userId: string
-	rows: Array<WorkflowRunInspection>
-}) {
-	const projections = input.rows
-		.filter((row) => row.userId === input.userId)
-		.map(projectionUpsertFromInspection)
-	if (projections.length === 0) return
-	await importWorkflowProjections({
-		env: input.env,
-		userId: input.userId,
-		projections,
-	})
-}
-
-async function readD1WorkflowRunById(input: {
-	db: D1Database
-	userId: string
-	id: string
-}): Promise<WorkflowRunInspection | null> {
-	const result = await input.db
-		.prepare(`SELECT * FROM workflow_runs WHERE id = ? AND user_id = ? LIMIT 1`)
-		.bind(input.id, input.userId)
-		.first<Record<string, unknown>>()
-	return result ? mapD1WorkflowRunRow(result) : null
-}
-
-async function readD1WorkflowRunByIdempotencyKey(input: {
-	db: D1Database
-	userId: string
-	idempotencyKey: string
-}): Promise<WorkflowRunInspection | null> {
-	const result = await input.db
-		.prepare(
-			`SELECT *
-			FROM workflow_runs
-			WHERE user_id = ? AND idempotency_key = ?
-				AND COALESCE(status, '') != ?
-			ORDER BY created_at ASC
-			LIMIT 1`,
-		)
-		.bind(input.userId, input.idempotencyKey, creatingWorkflowProjectionStatus)
-		.first<Record<string, unknown>>()
-	return result ? mapD1WorkflowRunRow(result) : null
-}
-
-async function readD1ActiveWorkflowRuns(input: {
-	db: D1Database
-	userId: string
-	limit: number
-}): Promise<Array<WorkflowRunInspection>> {
-	const placeholders = workflowProjectionActiveStatuses
-		.map(() => '?')
-		.join(', ')
-	const result = await input.db
-		.prepare(
-			`SELECT *
-			FROM workflow_runs
-			WHERE user_id = ? AND status IN (${placeholders})
-			ORDER BY created_at DESC
-			LIMIT ?`,
-		)
-		.bind(input.userId, ...workflowProjectionActiveStatuses, input.limit)
-		.all<Record<string, unknown>>()
-	return (result.results ?? []).map(mapD1WorkflowRunRow)
-}
-
-async function readD1RecentWorkflowRuns(input: {
-	db: D1Database
-	userId: string
-	limit: number
-}): Promise<Array<WorkflowRunInspection>> {
-	const result = await input.db
-		.prepare(
-			`SELECT *
-			FROM workflow_runs
-			WHERE user_id = ?
-			ORDER BY created_at DESC
-			LIMIT ?`,
-		)
-		.bind(input.userId, input.limit)
-		.all<Record<string, unknown>>()
-	return (result.results ?? []).map(mapD1WorkflowRunRow)
-}
-
-/**
- * Dual-read idempotency lookup: RunLog first, then the matching D1 row
- * imported into RunLog when missing (expand-phase legacy visibility).
+ * RunLog-only idempotency lookup (binding-scoped; excludes `creating`).
  */
 export async function findWorkflowRunByIdempotencyKey(input: {
-	env: Env
+	env: Pick<Env, 'RUN_LOG'>
 	userId: string
 	idempotencyKey: string
 	bindingName?: WorkflowBindingName
@@ -822,94 +647,29 @@ export async function findWorkflowRunByIdempotencyKey(input: {
 	if (!trimmedKey) return null
 	const bindingName = input.bindingName ?? dynamicCallableWorkflowsBindingName
 	const projection = await findWorkflowProjectionByIdempotencyKey({
-		env: input.env,
+		env: input.env as Env,
 		userId: input.userId,
 		idempotencyKey: trimmedKey,
 		bindingName,
 	})
-	if (projection) {
-		return mapWorkflowProjectionToInspection(projection, input.userId)
-	}
-	if (!input.env.APP_DB) return null
-	const legacy = await readD1WorkflowRunByIdempotencyKey({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		idempotencyKey: trimmedKey,
-	})
-	if (!legacy) return null
-	await importWorkflowInspectionIntoRunLog({ env: input.env, row: legacy })
-	const imported = await findWorkflowProjectionByIdempotencyKey({
-		env: input.env,
-		userId: input.userId,
-		idempotencyKey: trimmedKey,
-		bindingName,
-	})
-	return imported
-		? mapWorkflowProjectionToInspection(imported, input.userId)
-		: legacy
+	return projection
+		? mapWorkflowProjectionToInspection(projection, input.userId)
+		: null
 }
 
 async function getWorkflowRunForUser(input: {
-	env: Env
+	env: Pick<Env, 'RUN_LOG'>
 	userId: string
 	id: string
 }): Promise<WorkflowRunInspection | null> {
 	const projection = await getWorkflowProjection({
-		env: input.env,
+		env: input.env as Env,
 		userId: input.userId,
 		id: input.id,
 	})
-	if (projection) {
-		return mapWorkflowProjectionToInspection(projection, input.userId)
-	}
-	if (!input.env.APP_DB) return null
-	const legacy = await readD1WorkflowRunById({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		id: input.id,
-	})
-	if (!legacy) return null
-	await importWorkflowInspectionIntoRunLog({ env: input.env, row: legacy })
-	const imported = await getWorkflowProjection({
-		env: input.env,
-		userId: input.userId,
-		id: input.id,
-	})
-	return imported
-		? mapWorkflowProjectionToInspection(imported, input.userId)
-		: legacy
-}
-
-async function importActiveD1WorkflowRuns(input: { env: Env; userId: string }) {
-	if (!input.env.APP_DB) return
-	const active = await readD1ActiveWorkflowRuns({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		limit: activeD1WorkflowImportBound,
-	})
-	await importWorkflowInspectionsIntoRunLog({
-		env: input.env,
-		userId: input.userId,
-		rows: active,
-	})
-}
-
-async function importRecentD1WorkflowRuns(input: {
-	env: Env
-	userId: string
-	limit: number
-}) {
-	if (!input.env.APP_DB) return
-	const recent = await readD1RecentWorkflowRuns({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		limit: input.limit,
-	})
-	await importWorkflowInspectionsIntoRunLog({
-		env: input.env,
-		userId: input.userId,
-		rows: recent,
-	})
+	return projection
+		? mapWorkflowProjectionToInspection(projection, input.userId)
+		: null
 }
 
 function buildWorkflowProjectionUpsert(input: {
@@ -977,20 +737,6 @@ function payloadFromWorkflowInspection(
 	}
 }
 
-function scheduleD1WorkflowRunMirror(
-	waitUntil: ((promise: Promise<unknown>) => void) | undefined,
-	work: () => Promise<void>,
-) {
-	const promise = work().catch((error) => {
-		console.warn('workflow-runs-d1-mirror-failed', error)
-	})
-	if (waitUntil) {
-		waitUntil(promise)
-		return
-	}
-	void promise
-}
-
 async function createInlineWorkflowInstanceId(input: {
 	userId: string
 	workflowName: string
@@ -1031,75 +777,8 @@ function isTerminalWorkflowStatus(status: string | null | undefined): boolean {
 	return status != null && terminalWorkflowStatuses.has(status)
 }
 
-/**
- * Expand-phase compatibility mirror for out-of-scope D1 readers.
- * Monotonic by updated_at; terminal rows refuse active/creating regression.
- */
-async function mirrorWorkflowRunToD1(input: {
-	db: D1Database
-	id: string
-	payload: DynamicCallableWorkflowPayload
-	status: string | null
-	now?: string
-	lastError?: string | null
-	completedAt?: string | null
-}) {
-	const now = input.now ?? new Date().toISOString()
-	await input.db
-		.prepare(
-			`INSERT INTO workflow_runs (
-				id,
-				user_id,
-				source_type,
-				package_id,
-				kody_id,
-				source_id,
-				workflow_name,
-				export_name,
-				idempotency_key,
-				run_at,
-				plan_date,
-				status,
-				created_at,
-				updated_at,
-				completed_at,
-				last_error
-			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				status = excluded.status,
-				updated_at = excluded.updated_at,
-				completed_at = COALESCE(excluded.completed_at, workflow_runs.completed_at),
-				last_error = COALESCE(excluded.last_error, workflow_runs.last_error)
-			WHERE excluded.updated_at >= workflow_runs.updated_at
-				AND (
-					COALESCE(workflow_runs.status, '') NOT IN (${terminalWorkflowStatusSqlList})
-					OR COALESCE(excluded.status, '') IN (${terminalWorkflowStatusSqlList})
-				)`,
-		)
-		.bind(
-			input.id,
-			input.payload.userId,
-			input.payload.sourceType,
-			input.payload.sourceType === 'package' ? input.payload.packageId : null,
-			input.payload.sourceType === 'package' ? input.payload.kodyId : null,
-			input.payload.sourceType === 'package' ? input.payload.sourceId : null,
-			input.payload.workflowName,
-			input.payload.sourceType === 'package' ? input.payload.exportName : null,
-			input.payload.idempotencyKey,
-			input.payload.runAt,
-			input.payload.planDate,
-			input.status,
-			now,
-			now,
-			input.completedAt ?? null,
-			input.lastError ?? null,
-		)
-		.run()
-}
-
 async function projectWorkflowRun(input: {
-	env: Env
+	env: Pick<Env, 'RUN_LOG'>
 	userId: string
 	id: string
 	payload: DynamicCallableWorkflowPayload
@@ -1108,10 +787,10 @@ async function projectWorkflowRun(input: {
 	lastError?: string | null
 	completedAt?: string | null
 	createdAt?: string | null
-	waitUntil?: (promise: Promise<unknown>) => void
 }) {
+	const env = input.env as Env
 	const existing = await getWorkflowProjection({
-		env: input.env,
+		env,
 		userId: input.userId,
 		id: input.id,
 	})
@@ -1134,32 +813,19 @@ async function projectWorkflowRun(input: {
 		createdAt: input.createdAt ?? existing?.createdAt ?? null,
 	})
 	await upsertWorkflowProjection({
-		env: input.env,
+		env,
 		userId: input.userId,
 		projection,
-	})
-	if (!input.env.APP_DB) return
-	scheduleD1WorkflowRunMirror(input.waitUntil, async () => {
-		await mirrorWorkflowRunToD1({
-			db: input.env.APP_DB,
-			id: input.id,
-			payload: input.payload,
-			status: input.status,
-			now: projection.updatedAt ?? undefined,
-			lastError: input.lastError,
-			completedAt: input.completedAt,
-		})
 	})
 }
 
 async function updateWorkflowRunStatus(input: {
-	env: Env
+	env: Pick<Env, 'RUN_LOG'>
 	id: string
 	payload: DynamicCallableWorkflowPayload
 	status: string
 	lastError?: string | null
 	completedAt?: string | null
-	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	await projectWorkflowRun({
 		env: input.env,
@@ -1169,7 +835,6 @@ async function updateWorkflowRunStatus(input: {
 		status: input.status,
 		lastError: input.lastError,
 		completedAt: input.completedAt,
-		waitUntil: input.waitUntil,
 	})
 }
 
@@ -1261,7 +926,6 @@ export async function createDynamicCallableWorkflow(input: {
 		sourceId?: string | null
 	} | null
 	body: PackageWorkflowCreateInput
-	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageWorkflowCreateResult> {
 	const env = input.env as Env
 	const workflowBinding = resolveWorkflowEngineBinding(
@@ -1298,7 +962,6 @@ export async function createDynamicCallableWorkflow(input: {
 			id,
 			payload,
 			status: existing.status ?? null,
-			waitUntil: input.waitUntil,
 		})
 		if (idempotencyKeyInput) {
 			const projectedRun = await findWorkflowRunByIdempotencyKey({
@@ -1311,9 +974,6 @@ export async function createDynamicCallableWorkflow(input: {
 		}
 		return createWorkflowCreateResult({ summary: existing, payload })
 	}
-
-	// Expand-phase: import active D1 rows before the atomic reservation count.
-	await importActiveD1WorkflowRuns({ env, userId: payload.userId })
 
 	const reservationProjection = buildWorkflowProjectionUpsert({
 		id,
@@ -1331,18 +991,6 @@ export async function createDynamicCallableWorkflow(input: {
 			mapWorkflowProjectionToInspection(reservation.projection, input.userId),
 		)
 	}
-	// Mirror the creating reservation asynchronously for legacy D1 readers.
-	if (input.env.APP_DB) {
-		scheduleD1WorkflowRunMirror(input.waitUntil, async () => {
-			await mirrorWorkflowRunToD1({
-				db: input.env.APP_DB,
-				id,
-				payload,
-				status: creatingWorkflowProjectionStatus,
-				now: reservation.projection.updatedAt,
-			})
-		})
-	}
 
 	const releaseCreatingReservation = async () => {
 		await deleteWorkflowProjectionIfCreating({
@@ -1350,31 +998,20 @@ export async function createDynamicCallableWorkflow(input: {
 			userId: input.userId,
 			id,
 		})
-		if (input.env.APP_DB) {
-			scheduleD1WorkflowRunMirror(input.waitUntil, async () => {
-				await input.env.APP_DB.prepare(
-					`DELETE FROM workflow_runs
-					WHERE id = ? AND user_id = ? AND COALESCE(status, '') = ?`,
-				)
-					.bind(id, input.userId, creatingWorkflowProjectionStatus)
-					.run()
-			})
-		}
 	}
 
-	if (input.env.APP_DB) {
-		try {
-			await assertWithinEntitlement({
-				db: input.env.APP_DB,
-				userId: payload.userId,
-				email: input.userEmail,
-				resource: 'concurrent_workflows',
-				getCurrent: async () => reservation.countBeforeReservation,
-			})
-		} catch (error) {
-			await releaseCreatingReservation()
-			throw error
-		}
+	// APP_DB remains for entitlement plan lookup only (not workflow projection).
+	try {
+		await assertWithinEntitlement({
+			db: input.env.APP_DB,
+			userId: payload.userId,
+			email: input.userEmail,
+			resource: 'concurrent_workflows',
+			getCurrent: async () => reservation.countBeforeReservation,
+		})
+	} catch (error) {
+		await releaseCreatingReservation()
+		throw error
 	}
 
 	let instance: WorkflowInstance
@@ -1397,7 +1034,6 @@ export async function createDynamicCallableWorkflow(input: {
 					id,
 					payload,
 					status: concurrent.status ?? null,
-					waitUntil: input.waitUntil,
 				})
 				if (idempotencyKeyInput) {
 					const projectedRun = await findWorkflowRunByIdempotencyKey({
@@ -1426,7 +1062,6 @@ export async function createDynamicCallableWorkflow(input: {
 		payload,
 		status: 'queued',
 		createdAt: reservation.projection.createdAt,
-		waitUntil: input.waitUntil,
 	})
 	const summary = await readWorkflowInstanceSummary(instance)
 	if (summary.status) {
@@ -1437,7 +1072,6 @@ export async function createDynamicCallableWorkflow(input: {
 			payload,
 			status: summary.status,
 			createdAt: reservation.projection.createdAt,
-			waitUntil: input.waitUntil,
 		})
 	}
 	if (idempotencyKeyInput) {
@@ -1458,10 +1092,9 @@ export type CancelWorkflowRunResult =
 	| { outcome: 'cancelled'; run: WorkflowRunInspection }
 
 export async function cancelWorkflowRunForUser(input: {
-	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
+	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
 	userId: string
 	workflowRunId: string
-	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<CancelWorkflowRunResult> {
 	const env = input.env as Env
 	const workflowRunId = normalizeNonEmptyString(
@@ -1469,8 +1102,7 @@ export async function cancelWorkflowRunForUser(input: {
 		'workflowRunId',
 	)
 	// USER-ISOLATION BOUNDARY: never touch the workflow binding before this
-	// ownership check passes. RunLog is keyed by userId; D1 fallback is also
-	// scoped by user_id before import.
+	// ownership check passes. RunLog is keyed by userId.
 	const owned = await getWorkflowRunForUser({
 		env,
 		userId: input.userId,
@@ -1521,7 +1153,6 @@ export async function cancelWorkflowRunForUser(input: {
 					now,
 					completedAt: row.completedAt ?? now,
 					createdAt: row.createdAt,
-					waitUntil: input.waitUntil,
 				})
 				return {
 					outcome: 'already_terminal',
@@ -1608,7 +1239,6 @@ export async function cancelWorkflowRunForUser(input: {
 		now,
 		completedAt: beforeCancelRun.completedAt ?? now,
 		createdAt: beforeCancelRun.createdAt,
-		waitUntil: input.waitUntil,
 	})
 	const projected = await getWorkflowProjection({
 		env,
@@ -1643,19 +1273,12 @@ export async function cancelWorkflowRunForUser(input: {
 }
 
 export async function listWorkflowRunsForUser(input: {
-	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
+	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
 	userId: string
 	limit?: number
-	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<WorkflowRunInspection>> {
 	const env = input.env as Env
 	const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
-	// Expand-phase: import the bounded recent D1 page before listing RunLog.
-	await importRecentD1WorkflowRuns({
-		env,
-		userId: input.userId,
-		limit,
-	})
 	const listed = await listWorkflowProjections({
 		env,
 		userId: input.userId,
@@ -1702,7 +1325,6 @@ export async function listWorkflowRunsForUser(input: {
 				now: row.updatedAt,
 				completedAt: row.completedAt,
 				createdAt: row.createdAt,
-				waitUntil: input.waitUntil,
 			})
 		}),
 	)
@@ -1737,12 +1359,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				async () => Date.now(),
 			),
 		)
-		const waitUntil =
-			typeof this.ctx.waitUntil === 'function'
-				? (promise: Promise<unknown>) => {
-						this.ctx.waitUntil(promise)
-					}
-				: undefined
 		await typedStep.do(
 			'mark workflow running',
 			workflowStepDoConfig,
@@ -1752,7 +1368,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					id: event.instanceId,
 					payload,
 					status: 'running',
-					waitUntil,
 				})
 				return { ok: true }
 			},
@@ -1782,7 +1397,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				status: 'errored',
 				lastError: getErrorMessage(error),
 				completedAt: new Date().toISOString(),
-				waitUntil,
 			})
 			await this.recordWorkflowRunUsage({
 				typedStep,
@@ -1801,7 +1415,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			payload,
 			status: 'complete',
 			completedAt: new Date().toISOString(),
-			waitUntil,
 		})
 		await this.recordWorkflowRunUsage({
 			typedStep,

@@ -1,6 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
@@ -117,19 +115,6 @@ const runRecordMocks = vi.hoisted(() => {
 		},
 	)
 
-	const importWorkflowProjections = vi.fn(
-		async (input: {
-			env: Env
-			userId: string
-			projections: Array<WorkflowProjectionUpsertInput>
-		}) => {
-			for (const projection of input.projections) {
-				applyProjectionUpsert(input.userId, projection)
-			}
-			return { imported: input.projections.length }
-		},
-	)
-
 	return {
 		projectionsByUser,
 		resetProjections() {
@@ -147,7 +132,6 @@ const runRecordMocks = vi.hoisted(() => {
 		})),
 		finishRunRecord: vi.fn(async () => {}),
 		upsertWorkflowProjection,
-		importWorkflowProjections,
 		getWorkflowProjection: vi.fn(
 			async (input: { env: Env; userId: string; id: string }) =>
 				userStore(input.userId).get(input.id) ?? null,
@@ -286,16 +270,6 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 					},
 				]),
 			),
-		importWorkflowProjections: (...args: Array<unknown>) =>
-			runRecordMocks.importWorkflowProjections(
-				...(args as [
-					{
-						env: Env
-						userId: string
-						projections: Array<WorkflowProjectionUpsertInput>
-					},
-				]),
-			),
 		getWorkflowProjection: (...args: Array<unknown>) =>
 			runRecordMocks.getWorkflowProjection(
 				...(args as [{ env: Env; userId: string; id: string }]),
@@ -344,48 +318,9 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 	}
 })
 
-function createWaitUntilFlusher() {
-	const pending: Array<Promise<unknown>> = []
-	return {
-		waitUntil(promise: Promise<unknown>) {
-			pending.push(promise)
-		},
-		async flush() {
-			await Promise.all(pending.splice(0, pending.length))
-		},
-	}
-}
-
 beforeEach(() => {
 	runRecordMocks.resetProjections()
 })
-
-const workflowRunsDdl = `
-CREATE TABLE IF NOT EXISTS workflow_runs (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL,
-	source_type TEXT NOT NULL CHECK (source_type IN ('package', 'inline')),
-	package_id TEXT,
-	kody_id TEXT,
-	source_id TEXT,
-	workflow_name TEXT NOT NULL,
-	export_name TEXT,
-	idempotency_key TEXT NOT NULL,
-	run_at TEXT NOT NULL,
-	plan_date TEXT,
-	status TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
-	completed_at TEXT,
-	last_error TEXT
-);
-
-CREATE INDEX IF NOT EXISTS workflow_runs_user_created_idx
-ON workflow_runs(user_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS workflow_runs_user_active_idx
-ON workflow_runs(user_id, status);
-`
 
 type FakeInstanceOptions = {
 	status?: string
@@ -447,36 +382,38 @@ function createCancelTestBinding(options?: {
 	}
 }
 
-function createWorkflowRunsDb() {
-	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(workflowRunsDdl)
-	return { sqlite, db: createD1FromSqlite(sqlite) }
-}
-
-function readWorkflowRunRow(sqlite: DatabaseSync, id: string) {
-	return sqlite
-		.prepare(
-			`SELECT id, user_id, status, completed_at, updated_at, idempotency_key
-			FROM workflow_runs WHERE id = ?`,
-		)
-		.get(id) as
-		| {
-				id: string
-				user_id: string
-				status: string | null
-				completed_at: string | null
-				updated_at: string
-				idempotency_key: string
-		  }
-		| undefined
+function createAppDbStub() {
+	return {
+		prepare(query: string) {
+			if (query.includes('workflow_runs')) {
+				throw new Error(
+					`Unexpected workflow_runs SQL after RunLog-only retirement: ${query}`,
+				)
+			}
+			return {
+				bind(..._params: Array<unknown>) {
+					return {
+						async first() {
+							if (query.includes('COUNT(*) AS count')) return { count: 0 }
+							return null
+						},
+						async all() {
+							return { results: [] }
+						},
+						async run() {
+							return { success: true }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
 }
 
 test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async () => {
 	const binding = createCancelTestBinding()
-	const { sqlite, db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const env = {
-		APP_DB: db,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -485,7 +422,6 @@ test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async ()
 		env,
 		userId: 'user-1',
 		packageContext: null,
-		waitUntil: flusher.waitUntil,
 		body: {
 			code: 'export default async function main() { return { ok: true } }',
 			idempotencyKey: 'cancel-idempotent-key',
@@ -499,7 +435,6 @@ test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async ()
 		env,
 		userId: 'user-1',
 		workflowRunId: created.id,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(cancelled).toMatchObject({
 		outcome: 'cancelled',
@@ -517,18 +452,11 @@ test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async ()
 		completedAt: expect.any(String),
 		bindingName: dynamicCallableWorkflowsBindingName,
 	})
-	await flusher.flush()
-	const row = readWorkflowRunRow(sqlite, created.id)
-	expect(row).toMatchObject({
-		status: 'cancelled',
-		completed_at: expect.any(String),
-	})
 
 	const listed = await listWorkflowRunsForUser({
 		env,
 		userId: 'user-1',
 		limit: 10,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(listed).toEqual([
 		expect.objectContaining({
@@ -541,7 +469,6 @@ test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async ()
 		env,
 		userId: 'user-1',
 		workflowRunId: created.id,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(again).toMatchObject({
 		outcome: 'already_terminal',
@@ -552,10 +479,8 @@ test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async ()
 
 test('cancelWorkflowRunForUser enforces user isolation', async () => {
 	const binding = createCancelTestBinding()
-	const { sqlite, db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const env = {
-		APP_DB: db,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -564,15 +489,12 @@ test('cancelWorkflowRunForUser enforces user isolation', async () => {
 		env,
 		userId: 'user-1',
 		packageContext: null,
-		waitUntil: flusher.waitUntil,
 		body: {
 			code: 'export default async function main() { return { ok: true } }',
 			idempotencyKey: 'isolation-key',
 			runAt: '2026-05-03T12:34:56.000Z',
 		},
 	})
-	await flusher.flush()
-	const before = readWorkflowRunRow(sqlite, created.id)
 	const beforeProjection = runRecordMocks
 		.listForUser('user-1')
 		.find((row) => row.id === created.id)
@@ -583,24 +505,20 @@ test('cancelWorkflowRunForUser enforces user isolation', async () => {
 		env,
 		userId: 'user-2',
 		workflowRunId: created.id,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(result).toEqual({ outcome: 'not_found' })
 	expect(binding.terminateCalls).toEqual([])
 	expect(binding.get).not.toHaveBeenCalled()
-	expect(readWorkflowRunRow(sqlite, created.id)).toEqual(before)
 	expect(
 		runRecordMocks.listForUser('user-1').find((row) => row.id === created.id),
 	).toEqual(beforeProjection)
-	expect(before?.status).toBe('queued')
 	expect(beforeProjection?.status).toBe('queued')
 })
 
 test('a cancelled run keeps single-flighting its idempotency key', async () => {
 	const binding = createCancelTestBinding()
-	const { db } = createWorkflowRunsDb()
 	const env = {
-		APP_DB: db,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -652,11 +570,9 @@ test('a cancelled run keeps single-flighting its idempotency key', async () => {
 })
 
 test('cancel races with a run that finishes first', async () => {
-	const { sqlite, db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const completeRaceBinding = createCancelTestBinding()
 	const completeEnv = {
-		APP_DB: db,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: completeRaceBinding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -664,7 +580,6 @@ test('cancel races with a run that finishes first', async () => {
 		env: completeEnv,
 		userId: 'user-1',
 		packageContext: null,
-		waitUntil: flusher.waitUntil,
 		body: {
 			code: 'export default async function main() { return { ok: true } }',
 			idempotencyKey: 'race-complete-key',
@@ -682,7 +597,6 @@ test('cancel races with a run that finishes first', async () => {
 		env: completeEnv,
 		userId: 'user-1',
 		workflowRunId: completeCreated.id,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(completeResult).toMatchObject({
 		outcome: 'already_terminal',
@@ -700,20 +614,11 @@ test('cancel races with a run that finishes first', async () => {
 		status: 'complete',
 		completedAt: expect.any(String),
 	})
-	await flusher.flush()
-	expect(readWorkflowRunRow(sqlite, completeCreated.id)).toMatchObject({
-		status: 'complete',
-		completed_at: expect.any(String),
-	})
 
 	runRecordMocks.resetProjections()
-	const runningRaceSqlite = new DatabaseSync(':memory:')
-	runningRaceSqlite.exec(workflowRunsDdl)
-	const runningDb = createD1FromSqlite(runningRaceSqlite)
-	const runningFlusher = createWaitUntilFlusher()
 	const runningRaceBinding = createCancelTestBinding()
 	const runningEnv = {
-		APP_DB: runningDb,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: runningRaceBinding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -721,14 +626,12 @@ test('cancel races with a run that finishes first', async () => {
 		env: runningEnv,
 		userId: 'user-1',
 		packageContext: null,
-		waitUntil: runningFlusher.waitUntil,
 		body: {
 			code: 'export default async function main() { return { ok: true } }',
 			idempotencyKey: 'race-running-key',
 			runAt: '2026-05-03T12:34:56.000Z',
 		},
 	})
-	await runningFlusher.flush()
 	const terminateError = new Error(
 		'Instance is in a state that cannot be terminated',
 	)
@@ -742,7 +645,6 @@ test('cancel races with a run that finishes first', async () => {
 			env: runningEnv,
 			userId: 'user-1',
 			workflowRunId: runningCreated.id,
-			waitUntil: runningFlusher.waitUntil,
 		}),
 	).rejects.toThrow('Instance is in a state that cannot be terminated')
 	expect(
@@ -753,20 +655,12 @@ test('cancel races with a run that finishes first', async () => {
 		status: 'queued',
 		completedAt: null,
 	})
-	expect(
-		readWorkflowRunRow(runningRaceSqlite, runningCreated.id),
-	).toMatchObject({
-		status: 'queued',
-		completed_at: null,
-	})
 })
 
 test('cancel projection loses to a concurrent complete write', async () => {
-	const { sqlite, db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const binding = createCancelTestBinding()
 	const env = {
-		APP_DB: db,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -774,7 +668,6 @@ test('cancel projection loses to a concurrent complete write', async () => {
 		env,
 		userId: 'user-1',
 		packageContext: null,
-		waitUntil: flusher.waitUntil,
 		body: {
 			code: 'export default async function main() { return { ok: true } }',
 			idempotencyKey: 'guarded-projection-key',
@@ -808,7 +701,6 @@ test('cancel projection loses to a concurrent complete write', async () => {
 		env,
 		userId: 'user-1',
 		workflowRunId: created.id,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(result).toMatchObject({
 		outcome: 'already_terminal',
@@ -824,24 +716,19 @@ test('cancel projection loses to a concurrent complete write', async () => {
 		status: 'complete',
 		completedAt: expect.any(String),
 	})
-	await flusher.flush()
-	// D1 mirror may still show queued from create if cancel skipped the
-	// cancelled upsert after observing the concurrent complete projection.
-	expect(readWorkflowRunRow(sqlite, created.id)?.status).toBeDefined()
 })
 
 test('cancelling a run whose engine instance is missing still projects cancelled', async () => {
-	const { sqlite, db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const binding = createCancelTestBinding()
 	const now = '2026-05-03T12:34:56.000Z'
 	const runId = 'dynwf-missing-instance'
+	const env = {
+		APP_DB: createAppDbStub(),
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
 	await runRecordMocks.upsertWorkflowProjection({
-		env: {
-			APP_DB: db,
-			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-			RUN_LOG: {} as DurableObjectNamespace,
-		} as Env,
+		env,
 		userId: 'user-1',
 		projection: {
 			id: runId,
@@ -859,14 +746,9 @@ test('cancelling a run whose engine instance is missing still projects cancelled
 	binding.missingIds.add(runId)
 
 	const result = await cancelWorkflowRunForUser({
-		env: {
-			APP_DB: db,
-			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-			RUN_LOG: {} as DurableObjectNamespace,
-		} as Env,
+		env,
 		userId: 'user-1',
 		workflowRunId: runId,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(result).toMatchObject({
 		outcome: 'cancelled',
@@ -880,25 +762,19 @@ test('cancelling a run whose engine instance is missing still projects cancelled
 		completedAt: expect.any(String),
 		bindingName: dynamicCallableWorkflowsBindingName,
 	})
-	await flusher.flush()
-	expect(readWorkflowRunRow(sqlite, runId)).toMatchObject({
-		status: 'cancelled',
-		completed_at: expect.any(String),
-	})
 })
 
 test('cancel of a creating projection without an engine instance is retryable', async () => {
-	const { db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const binding = createCancelTestBinding()
 	const now = '2026-05-03T12:34:56.000Z'
 	const runId = 'dynwf-creating-race'
+	const env = {
+		APP_DB: createAppDbStub(),
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
 	await runRecordMocks.upsertWorkflowProjection({
-		env: {
-			APP_DB: db,
-			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-			RUN_LOG: {} as DurableObjectNamespace,
-		} as Env,
+		env,
 		userId: 'user-1',
 		projection: {
 			id: runId,
@@ -917,14 +793,9 @@ test('cancel of a creating projection without an engine instance is retryable', 
 
 	await expect(
 		cancelWorkflowRunForUser({
-			env: {
-				APP_DB: db,
-				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-				RUN_LOG: {} as DurableObjectNamespace,
-			} as Env,
+			env,
 			userId: 'user-1',
 			workflowRunId: runId,
-			waitUntil: flusher.waitUntil,
 		}),
 	).rejects.toThrow(/still being created; retry cancellation shortly/)
 	expect(binding.terminateCalls).toEqual([])
@@ -938,10 +809,8 @@ test('cancel of a creating projection without an engine instance is retryable', 
 
 test('terminal projection stickiness blocks later queued regression after cancel', async () => {
 	const binding = createCancelTestBinding()
-	const { db } = createWorkflowRunsDb()
-	const flusher = createWaitUntilFlusher()
 	const env = {
-		APP_DB: db,
+		APP_DB: createAppDbStub(),
 		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -949,7 +818,6 @@ test('terminal projection stickiness blocks later queued regression after cancel
 		env,
 		userId: 'user-1',
 		packageContext: null,
-		waitUntil: flusher.waitUntil,
 		body: {
 			code: 'export default async function main() { return { ok: true } }',
 			idempotencyKey: 'terminal-sticky-key',
@@ -960,7 +828,6 @@ test('terminal projection stickiness blocks later queued regression after cancel
 		env,
 		userId: 'user-1',
 		workflowRunId: created.id,
-		waitUntil: flusher.waitUntil,
 	})
 	expect(
 		runRecordMocks.listForUser('user-1').find((row) => row.id === created.id)

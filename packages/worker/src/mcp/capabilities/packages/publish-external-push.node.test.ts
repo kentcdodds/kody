@@ -125,7 +125,6 @@ function createContext(
 						bind() {
 							return {
 								first: async () => {
-									if (query.includes('FROM workflow_runs')) return null
 									return { username: 'user' }
 								},
 							}
@@ -471,7 +470,8 @@ test('ineligible publishes return structured results without durable escalation 
 		userId: string
 		idempotencyParts: ReadonlyArray<string>
 	}
-	// workflow_runs rows are scoped by acting userId; parts keep full semantic input.
+	// RunLog workflow projections are scoped by acting userId; parts keep full
+	// semantic input.
 	expect(escalationInput.userId).toBe('user-1')
 	expect(escalationInput.idempotencyParts).toEqual(
 		buildExternalPublishIdempotencyParts({

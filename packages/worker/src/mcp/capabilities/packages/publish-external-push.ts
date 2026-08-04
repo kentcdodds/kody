@@ -357,10 +357,11 @@ export type ExternalPublishSemanticInput = {
 export function buildExternalPublishIdempotencyParts(
 	input: ExternalPublishSemanticInput,
 ) {
-	// Caller identity is applied by runWithDurableEscalation (workflow_runs are
-	// user-scoped). Distinct delegates may each dispatch for the same publish;
-	// that is safe because re-invoking publish when published_commit already
-	// matches HEAD returns already_published without checks or D1 writes.
+	// Caller identity is applied by runWithDurableEscalation (RunLog workflow
+	// projections are user-scoped). Distinct delegates may each dispatch for
+	// the same publish; that is safe because re-invoking publish when
+	// published_commit already matches HEAD returns already_published without
+	// checks or D1 writes.
 	return [
 		'package_publish_external_push',
 		canonicalJsonStringify(input),
