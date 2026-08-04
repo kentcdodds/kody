@@ -107,30 +107,59 @@ test('Mailbox search treats LIKE wildcards in the query literally', async () => 
 	).toEqual([literalUnderscore])
 }, 30_000)
 
-test('Mailbox search accepts queries longer than DO SQLite LIKE 50-byte limit', async () => {
-	const userId = uniqueUserId('search-long')
+test('Mailbox search handles the former SQLite pattern boundary and long queries exactly', async () => {
+	const userId = uniqueUserId('search-pattern-limit')
 	// DO SQLite caps LIKE/GLOB patterns at 50 bytes; `%…%` wrapping used to
-	// fail once the wrapped pattern exceeds 50 bytes (KODY-CLOUDFLARE-3J).
-	const longNeedle = 'quarterly-invoice-reconciliation-status-update-2026-08'
-	expect(longNeedle.length).toBeGreaterThan(48)
-	const matchId = await insertMessage({
+	// fail once the wrapped pattern exceeded 50 bytes (KODY-CLOUDFLARE-3J).
+	const queryAt48Characters = 'x'.repeat(48)
+	const queryAt49Characters = 'x'.repeat(49)
+	const longQuery = `${'long-search-segment-'.repeat(256)}final`
+	const at49MessageId = await insertMessage({
 		userId,
 		sequence: 1,
-		subject: `Please review ${longNeedle} before Friday`,
-		fromAddress: 'billing@acme.example',
+		subject: queryAt49Characters,
+		fromAddress: 'boundary@example.net',
 	})
-	await insertMessage({
+	const longMessageId = await insertMessage({
 		userId,
 		sequence: 2,
-		subject: 'Unrelated short note',
-		fromAddress: 'friend@example.net',
+		subject: longQuery,
+		fromAddress: 'long@example.net',
 	})
+	const mailbox = rpcFor(userId)
 
-	const results = await rpcFor(userId).searchMessages({
-		query: longNeedle,
-		limit: 25,
+	expect(
+		(
+			await mailbox.searchMessages({
+				query: queryAt48Characters,
+				limit: 25,
+			})
+		).messages.map((message) => message.id),
+	).toEqual([at49MessageId])
+	expect(
+		(
+			await mailbox.searchMessages({
+				query: queryAt49Characters,
+				limit: 25,
+			})
+		).messages.map((message) => message.id),
+	).toEqual([at49MessageId])
+	expect(
+		(
+			await mailbox.searchMessages({ query: longQuery, limit: 25 })
+		).messages.map((message) => message.id),
+	).toEqual([longMessageId])
+	expect(
+		(
+			await mailbox.searchMessages({
+				query: `${longQuery.slice(0, -1)}x`,
+				limit: 25,
+			})
+		).messages,
+	).toHaveLength(0)
+	expect(await mailbox.countMessages({ query: longQuery })).toEqual({
+		total: 1,
 	})
-	expect(results.messages.map((message) => message.id)).toEqual([matchId])
 }, 30_000)
 
 test('Mailbox search applies filters and result limits', async () => {
