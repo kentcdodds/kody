@@ -48,8 +48,7 @@ function createEntitlementsTestDb(
 				| 'saved_packages'
 				| 'entity_sources'
 				| 'email_messages'
-				| 'email_attachments'
-				| 'workflow_runs',
+				| 'email_attachments',
 				number
 			>
 		>
@@ -77,7 +76,6 @@ function createEntitlementsTestDb(
 			'jobs',
 			'repo_sessions',
 			'published_bundle_artifacts',
-			'workflow_runs',
 		] as const
 		for (const table of tableNames) {
 			if (query.includes(`FROM ${table}`)) {

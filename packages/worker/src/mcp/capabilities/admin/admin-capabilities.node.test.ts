@@ -164,7 +164,6 @@ function createAdminCapabilityTestDb(input: {
 			'jobs',
 			'repo_sessions',
 			'secret_entries',
-			'workflow_runs',
 		] as const
 		for (const table of tableNames) {
 			if (normalizedQuery.includes(`from ${table}`)) return 0

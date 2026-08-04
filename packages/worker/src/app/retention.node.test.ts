@@ -15,11 +15,9 @@ import {
 	pruneRetention,
 	pruneStripeWebhookEventsForRetention,
 	pruneUsageRollupsForRetention,
-	pruneWorkflowRunsForRetention,
 	publishedBundleArtifactRetentionDays,
 	shouldRunRetentionCron,
 	stripeWebhookEventRetentionDays,
-	workflowRunRetentionDays,
 } from './retention.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 
@@ -85,24 +83,6 @@ function createRetentionDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec('PRAGMA foreign_keys = ON')
 	sqlite.exec(`
-		CREATE TABLE workflow_runs (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			source_type TEXT NOT NULL,
-			package_id TEXT,
-			kody_id TEXT,
-			source_id TEXT,
-			workflow_name TEXT NOT NULL,
-			export_name TEXT,
-			idempotency_key TEXT NOT NULL,
-			run_at TEXT NOT NULL,
-			plan_date TEXT,
-			status TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			completed_at TEXT,
-			last_error TEXT
-		);
 		CREATE TABLE repo_sessions (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -201,24 +181,33 @@ function daysAgo(days: number) {
 	return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString()
 }
 
-function insertWorkflowRun(
+function insertPlatformFeedback(
 	db: DatabaseSync,
-	input: { id: string; status?: string | null; completedAt: string },
+	input: { id: string; updatedAt: string },
 ) {
 	db.prepare(
-		`INSERT INTO workflow_runs (
-			id, user_id, source_type, workflow_name, idempotency_key, run_at,
-			status, created_at, updated_at, completed_at
-		) VALUES (?, 'user-1', 'inline', 'wf', ?, ?, ?, ?, ?, ?)`,
-	).run(
-		input.id,
-		`key-${input.id}`,
-		input.completedAt,
-		input.status === undefined ? 'complete' : input.status,
-		input.completedAt,
-		input.completedAt,
-		input.completedAt,
-	)
+		`INSERT INTO platform_feedback (
+			id, submitter_user_id, status, updated_at
+		) VALUES (?, 'user-1', 'resolved', ?)`,
+	).run(input.id, input.updatedAt)
+}
+
+function insertAuditEvent(db: DatabaseSync, input: { timestamp: string }) {
+	db.prepare(
+		`INSERT INTO audit_events (
+			category, action, result, timestamp
+		) VALUES ('auth', 'login', 'success', ?)`,
+	).run(input.timestamp)
+}
+
+function idsForAuditEvents(db: DatabaseSync) {
+	return (
+		db
+			.prepare(`SELECT timestamp FROM audit_events ORDER BY timestamp ASC`)
+			.all() as Array<{
+			timestamp: string
+		}>
+	).map((row) => row.timestamp)
 }
 
 function idsForTable(db: DatabaseSync, table: string) {
@@ -236,34 +225,6 @@ test('retention cron runs only on the hourly gate', () => {
 	expect(shouldRunRetentionCron(new Date('2026-07-07T03:05:00.000Z'))).toBe(
 		false,
 	)
-})
-
-test('workflow retention keeps boundary and non-terminal rows', async () => {
-	const { sqlite, db } = createRetentionDb()
-	for (const [id, status, completedAt] of [
-		[
-			'workflow-old-complete',
-			'complete',
-			daysAgo(workflowRunRetentionDays + 1),
-		],
-		['workflow-old-errored', 'errored', daysAgo(workflowRunRetentionDays + 1)],
-		['workflow-boundary', 'complete', daysAgo(workflowRunRetentionDays)],
-		['workflow-running', 'running', daysAgo(workflowRunRetentionDays + 1)],
-		['workflow-unknown', null, daysAgo(workflowRunRetentionDays + 1)],
-	] as const) {
-		insertWorkflowRun(sqlite, { id, status, completedAt })
-	}
-
-	expect(await pruneWorkflowRunsForRetention({ db, now })).toEqual({
-		selected: 2,
-		deleted: 2,
-	})
-
-	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([
-		'workflow-boundary',
-		'workflow-running',
-		'workflow-unknown',
-	])
 })
 
 test('platform feedback retention prunes terminal rows in bounded batches and runs round-robin', async () => {
@@ -429,14 +390,16 @@ test('retention prune reports selected separately from deleted when rows vanish 
 	const dbWithVanishingRow = {
 		prepare(query: string) {
 			const prepared = baseDb.prepare(query)
-			if (!query.includes('DELETE FROM workflow_runs')) return prepared
+			if (!query.includes('DELETE FROM platform_feedback')) return prepared
 			return {
 				bind(...params: Array<unknown>) {
 					const bound = prepared.bind(...params)
 					return {
 						async run() {
 							sqlite
-								.prepare(`DELETE FROM workflow_runs WHERE id = 'wf-0'`)
+								.prepare(
+									`DELETE FROM platform_feedback WHERE id = 'feedback-0'`,
+								)
 								.run()
 							return bound.run()
 						},
@@ -448,14 +411,14 @@ test('retention prune reports selected separately from deleted when rows vanish 
 		},
 	} as unknown as D1Database
 	for (let index = 0; index < 2; index += 1) {
-		insertWorkflowRun(sqlite, {
-			id: `wf-${index}`,
-			completedAt: daysAgo(120),
+		insertPlatformFeedback(sqlite, {
+			id: `feedback-${index}`,
+			updatedAt: daysAgo(platformFeedbackRetentionDays + 1),
 		})
 	}
 
 	expect(
-		await pruneWorkflowRunsForRetention({
+		await prunePlatformFeedbackForRetention({
 			db: dbWithVanishingRow,
 			now,
 			batchSize: 2,
@@ -706,55 +669,49 @@ test('published bundle artifact retention rechecks staleness before deleting sel
 test('retention pruning deletes only one configured batch per table invocation', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (let index = 0; index < 3; index += 1) {
-		insertWorkflowRun(sqlite, {
-			id: `wf-${index}`,
-			completedAt: daysAgo(120),
+		insertAuditEvent(sqlite, {
+			timestamp: daysAgo(auditEventRetentionDays + 1 + index),
 		})
 	}
 
-	expect(
-		await pruneWorkflowRunsForRetention({ db, now, batchSize: 2 }),
-	).toEqual({ selected: 2, deleted: 2 })
-	expect(idsForTable(sqlite, 'workflow_runs')).toEqual(['wf-2'])
-	expect(
-		await pruneWorkflowRunsForRetention({ db, now, batchSize: 2 }),
-	).toEqual({ selected: 1, deleted: 1 })
-	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
+	expect(await pruneAuditEventsForRetention({ db, now, batchSize: 2 })).toEqual(
+		{ selected: 2, deleted: 2 },
+	)
+	expect(idsForAuditEvents(sqlite)).toHaveLength(1)
+	expect(await pruneAuditEventsForRetention({ db, now, batchSize: 2 })).toEqual(
+		{ selected: 1, deleted: 1 },
+	)
+	expect(idsForAuditEvents(sqlite)).toEqual([])
 })
 
 test('retention row deletes chunk ids to stay within the D1 binding limit', async () => {
 	const { sqlite } = createRetentionDb()
 	const db = createD1FromSqlite(sqlite, { maxBindings: 100 })
 	for (let index = 0; index < 101; index += 1) {
-		insertWorkflowRun(sqlite, {
-			id: `wf-${String(index).padStart(3, '0')}`,
-			completedAt: daysAgo(120),
+		insertAuditEvent(sqlite, {
+			timestamp: daysAgo(auditEventRetentionDays + 1),
 		})
 	}
 
 	expect(
-		await pruneWorkflowRunsForRetention({ db, now, batchSize: 101 }),
+		await pruneAuditEventsForRetention({ db, now, batchSize: 101 }),
 	).toEqual({ selected: 101, deleted: 101 })
-	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
+	expect(idsForAuditEvents(sqlite)).toEqual([])
 })
 
 test('retention run loops batches per table until backlogs are drained', async () => {
 	const { sqlite, db } = createRetentionDb()
 	const { sqlite: auditSqlite, db: auditDb } = createRetentionDb()
 	for (let index = 0; index < 501; index += 1) {
-		insertWorkflowRun(sqlite, {
-			id: `wf-${String(index).padStart(3, '0')}`,
-			completedAt: daysAgo(120),
+		insertPlatformFeedback(sqlite, {
+			id: `feedback-${String(index).padStart(3, '0')}`,
+			updatedAt: daysAgo(platformFeedbackRetentionDays + 1),
 		})
 	}
 	for (let index = 0; index < 300; index += 1) {
-		auditSqlite
-			.prepare(
-				`INSERT INTO audit_events (
-				category, action, result, timestamp
-			) VALUES ('auth', 'login', 'success', ?)`,
-			)
-			.run(daysAgo(auditEventRetentionDays + 1))
+		insertAuditEvent(auditSqlite, {
+			timestamp: daysAgo(auditEventRetentionDays + 1),
+		})
 	}
 	const env = {
 		APP_DB: db,
@@ -768,12 +725,12 @@ test('retention run loops batches per table until backlogs are drained', async (
 
 	const result = await pruneRetention({ env, now })
 
-	expect(result.workflowRuns).toBe(501)
+	expect(result.platformFeedback).toBe(501)
 	expect(result.auditEvents).toBe(300)
-	expect(result.batchesPerTable['workflow_runs']).toBe(3)
+	expect(result.batchesPerTable['platform_feedback']).toBe(3)
 	expect(result.batchesPerTable['audit_events']).toBe(2)
 	expect(result.timeBudgetExhausted).toBe(false)
-	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
+	expect(idsForTable(sqlite, 'platform_feedback')).toEqual([])
 	expect(
 		auditSqlite.prepare(`SELECT COUNT(*) AS count FROM audit_events`).get(),
 	).toEqual({ count: 0 })
@@ -782,18 +739,14 @@ test('retention run loops batches per table until backlogs are drained', async (
 test('retention run gives every table one batch and stops when the budget is exhausted', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (let index = 0; index < 300; index += 1) {
-		insertWorkflowRun(sqlite, {
-			id: `wf-${String(index).padStart(3, '0')}`,
-			completedAt: daysAgo(120),
+		insertPlatformFeedback(sqlite, {
+			id: `feedback-${String(index).padStart(3, '0')}`,
+			updatedAt: daysAgo(platformFeedbackRetentionDays + 1),
 		})
 	}
-	sqlite
-		.prepare(
-			`INSERT INTO audit_events (
-			category, action, result, timestamp
-		) VALUES ('auth', 'login', 'success', ?)`,
-		)
-		.run(daysAgo(auditEventRetentionDays + 1))
+	insertAuditEvent(sqlite, {
+		timestamp: daysAgo(auditEventRetentionDays + 1),
+	})
 	const env = {
 		APP_DB: db,
 		AUDIT_DB: db,
@@ -808,11 +761,11 @@ test('retention run gives every table one batch and stops when the budget is exh
 
 	// The first round-robin pass always completes so a hot table cannot starve
 	// the others, then the exhausted budget stops further passes.
-	expect(result.workflowRuns).toBe(250)
+	expect(result.platformFeedback).toBe(250)
 	expect(result.auditEvents).toBe(1)
-	expect(result.batchesPerTable['workflow_runs']).toBe(1)
+	expect(result.batchesPerTable['platform_feedback']).toBe(1)
 	expect(result.timeBudgetExhausted).toBe(true)
-	expect(idsForTable(sqlite, 'workflow_runs')).toHaveLength(50)
+	expect(idsForTable(sqlite, 'platform_feedback')).toHaveLength(50)
 })
 
 test('retention coverage includes every live growth-pattern table or documented exemption', () => {

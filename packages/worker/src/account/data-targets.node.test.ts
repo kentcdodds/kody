@@ -310,3 +310,85 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 	expect(missing).toEqual([])
 	expect(stale).toEqual([])
 })
+
+test('final schema drops legacy RunLog D1 projections without stale inventory coverage', () => {
+	const retiredTables = [
+		'workflow_runs',
+		'user_package_run_successes',
+		'user_activation_milestones',
+	] as const
+	for (const table of retiredTables) {
+		expect(
+			accountUserDataTargets.some(
+				(target) => 'table' in target && target.table === table,
+			),
+		).toBe(false)
+	}
+
+	const deletionStatements = accountUserDataTargets.map((target) => {
+		const match = matchFor(target)
+		return buildUserScopedDeleteOrUpdateSql(match).sql
+	})
+	const exportStatements = accountUserDataTargets
+		.filter((target) => !isExcludedFromAccountExport(target))
+		.map((target) => {
+			const match = matchFor(target)
+			return `SELECT * FROM ${match.table} WHERE ${match.qualifiedWhereSql}`
+		})
+	const inventorySql = [
+		deletionStatements.join('\n'),
+		exportStatements.join('\n'),
+	].join('\n')
+	for (const table of retiredTables) {
+		expect(inventorySql).not.toMatch(new RegExp(`\\b${table}\\b`, 'u'))
+	}
+
+	const db = new DatabaseSync(':memory:')
+	applyMigrations(db)
+	for (const table of retiredTables) {
+		const tableExists = db
+			.prepare(
+				`SELECT 1 AS present
+				FROM sqlite_schema
+				WHERE type = 'table' AND name = ?`,
+			)
+			.get(table) as { present: number } | undefined
+		expect(
+			tableExists,
+			`${table} should be absent after migration 0137`,
+		).toBeUndefined()
+	}
+
+	const liveUserColumns = new Set<string>()
+	const tables = db
+		.prepare(
+			`SELECT name
+			FROM sqlite_schema
+			WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+			ORDER BY name`,
+		)
+		.all() as Array<{ name: string }>
+	for (const table of tables) {
+		const columns = db
+			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table.name)})`)
+			.all() as Array<{ name: string }>
+		for (const column of columns) {
+			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
+				liveUserColumns.add(`${table.name}.${column.name}`)
+			}
+		}
+	}
+	const coveredColumns = getAccountD1UserColumnCoverage()
+	for (const table of retiredTables) {
+		expect(coveredColumns.has(`${table}.user_id`)).toBe(false)
+		expect(liveUserColumns.has(`${table}.user_id`)).toBe(false)
+	}
+	const missing = [...liveUserColumns].filter(
+		(column) => !coveredColumns.has(column),
+	)
+	const stale = [...coveredColumns].filter(
+		(column) => !liveUserColumns.has(column),
+	)
+	expect(missing).toEqual([])
+	expect(stale).toEqual([])
+})

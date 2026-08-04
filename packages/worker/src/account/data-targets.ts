@@ -160,7 +160,6 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  */
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
-	{ kind: 'user_id', table: 'workflow_runs' },
 	{ kind: 'user_id', table: 'package_service_states' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{
@@ -173,8 +172,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
-	{ kind: 'user_id', table: 'user_activation_milestones' },
-	{ kind: 'user_id', table: 'user_package_run_successes' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
 	// Per-package codemod outcomes belong to the package owner. Delete before
 	// anonymizing run attribution so orphaned items do not outlive the user.
