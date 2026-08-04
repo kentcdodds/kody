@@ -351,27 +351,6 @@ export async function sealFullBackupDay(
 	assertBackupDay(day)
 	const manifestKey = sealedFullManifestKey(day)
 	const existing = await readFullManifest(env.BACKUP_BUCKET, manifestKey)
-	if (existing !== null) {
-		if (!(await verifyBackupFullManifestSignature(env, existing))) {
-			throw new BackupError(
-				'full-manifest-signature-invalid',
-				`existing full manifest signature is invalid for ${day}`,
-			)
-		}
-		if (existing.payload.day !== day) {
-			throw new BackupError(
-				'full-manifest-day-mismatch',
-				`existing full manifest day mismatch for ${day}`,
-			)
-		}
-		safeLog({
-			event: 'full-backup-already-sealed',
-			status: 'success',
-			day,
-			manifestKey,
-		})
-		return { kind: 'sealed', day, manifestKey, alreadySealed: true }
-	}
 
 	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
 	const d1Manifest = await readManifest(
@@ -417,6 +396,27 @@ export async function sealFullBackupDay(
 			const exhaustive: never = restorability
 			throw exhaustive
 		}
+	}
+	if (existing !== null) {
+		if (!(await verifyBackupFullManifestSignature(env, existing))) {
+			throw new BackupError(
+				'full-manifest-signature-invalid',
+				`existing full manifest signature is invalid for ${day}`,
+			)
+		}
+		if (existing.payload.day !== day) {
+			throw new BackupError(
+				'full-manifest-day-mismatch',
+				`existing full manifest day mismatch for ${day}`,
+			)
+		}
+		safeLog({
+			event: 'full-backup-already-sealed',
+			status: 'success',
+			day,
+			manifestKey,
+		})
+		return { kind: 'sealed', day, manifestKey, alreadySealed: true }
 	}
 	const d1ManifestObject = await env.BACKUP_BUCKET.get(d1Payload.manifestKey)
 	if (d1ManifestObject === null) {
