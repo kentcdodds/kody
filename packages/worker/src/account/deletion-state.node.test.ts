@@ -5,10 +5,7 @@ import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
-import {
-	createInMemoryUserMeterEnv,
-	createWaitUntilDrain,
-} from '#worker/test-support/user-meter.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
@@ -17,84 +14,6 @@ import {
 	repairAccountWriteLease,
 	withAccountWriteLease,
 } from './deletion-state.ts'
-
-test('non-expiring lease blocks deletion until audited repair fences callback', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(`
-		CREATE TABLE users (
-			id INTEGER PRIMARY KEY,
-			stable_user_id TEXT UNIQUE,
-			deleting_at TEXT,
-			active_write_count INTEGER NOT NULL DEFAULT 0,
-			updated_at TEXT
-		);
-		CREATE TABLE account_write_leases (
-			token TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			holder TEXT NOT NULL,
-			acquired_at TEXT NOT NULL,
-			released_at TEXT
-		);
-		CREATE TABLE account_write_lease_repairs (
-			id TEXT PRIMARY KEY,
-			target_user_id TEXT NOT NULL,
-			lease_token TEXT NOT NULL,
-			lease_holder TEXT NOT NULL,
-			lease_acquired_at TEXT NOT NULL,
-			repaired_by_user_id TEXT NOT NULL,
-			reason TEXT NOT NULL,
-			created_at TEXT NOT NULL
-		);
-		INSERT INTO users (id, stable_user_id) VALUES (1, 'user-a');
-	`)
-	const db = createD1FromSqlite(sqlite)
-	let startWrite: () => void = () => undefined
-	let finishWrite: () => void = () => undefined
-	const started = new Promise<void>((resolve) => {
-		startWrite = resolve
-	})
-	const finish = new Promise<void>((resolve) => {
-		finishWrite = resolve
-	})
-	const operation = withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:crashed-writer',
-		async write() {
-			startWrite()
-			await finish
-			return 'terminal-commit'
-		},
-	})
-	await started
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-		}),
-	).resolves.toBe(1)
-	const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
-	expect(lease).toEqual(
-		expect.objectContaining({ holder: 'test:crashed-writer' }),
-	)
-	await repairAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		token: lease!.token,
-		expectedAcquiredAt: lease!.acquired_at,
-		repairedByUserId: 'admin-user',
-		reason: 'Inspected worker crash and confirmed process termination.',
-	})
-	finishWrite()
-	await expect(operation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
-	await expect(markAccountDeleting({ db, dbUserId: 1 })).resolves.toBe(0)
-	expect(
-		sqlite.prepare(`SELECT reason FROM account_write_lease_repairs`).get(),
-	).toEqual({
-		reason: 'Inspected worker crash and confirmed process termination.',
-	})
-})
 
 function createLeaseTestDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -134,176 +53,12 @@ function addLeaseRepairsTable(sqlite: DatabaseSync) {
 	`)
 }
 
-function countLeaseRows(sqlite: DatabaseSync) {
+function countD1LeaseRows(sqlite: DatabaseSync) {
 	const row = sqlite
 		.prepare(`SELECT COUNT(*) AS count FROM account_write_leases`)
 		.get() as { count: number }
 	return Number(row.count)
 }
-
-test('nested same-user lease reuses the outer lease instead of re-acquiring', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const result = await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer',
-		async write() {
-			expect(countLeaseRows(sqlite)).toBe(1)
-			return await withAccountWriteLease({
-				db,
-				stableUserId: 'user-a',
-				holder: 'test:nested',
-				async write() {
-					// Still only the outer lease: the nested call must not pay
-					// another acquire/release round trip.
-					expect(countLeaseRows(sqlite)).toBe(1)
-					const active = await listActiveAccountWriteLeases(db, 'user-a')
-					expect(active).toHaveLength(1)
-					expect(active[0]).toEqual(
-						expect.objectContaining({ holder: 'test:outer' }),
-					)
-					return 'nested-result'
-				},
-			})
-		},
-	})
-	expect(result).toBe('nested-result')
-	// The outer release is the only release.
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
-})
-
-test('nested lease for a different user still acquires its own lease', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer',
-		async write() {
-			await withAccountWriteLease({
-				db,
-				stableUserId: 'user-b',
-				holder: 'test:other-user',
-				async write() {
-					expect(countLeaseRows(sqlite)).toBe(2)
-					expect(await listActiveAccountWriteLeases(db, 'user-b')).toHaveLength(
-						1,
-					)
-				},
-			})
-		},
-	})
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
-	expect(await listActiveAccountWriteLeases(db, 'user-b')).toHaveLength(0)
-})
-
-test('detached work spawned inside write re-acquires after the outer lease releases', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	let detached: Promise<void> = Promise.resolve()
-	let releaseOuter: () => void = () => undefined
-	const outerReleased = new Promise<void>((resolve) => {
-		releaseOuter = resolve
-	})
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer',
-		async write() {
-			// Simulates a waitUntil callback: created inside the lease scope
-			// (inheriting the AsyncLocalStorage context) but running only
-			// after the outer lease has been released.
-			detached = (async () => {
-				await outerReleased
-				await withAccountWriteLease({
-					db,
-					stableUserId: 'user-a',
-					holder: 'test:detached',
-					async write() {
-						const active = await listActiveAccountWriteLeases(db, 'user-a')
-						expect(active).toHaveLength(1)
-						expect(active[0]).toEqual(
-							expect.objectContaining({ holder: 'test:detached' }),
-						)
-					},
-				})
-			})()
-		},
-	})
-	releaseOuter()
-	await detached
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
-})
-
-test('sequential sibling leases each acquire after the previous released', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		async write() {
-			expect(countLeaseRows(sqlite)).toBe(1)
-		},
-	})
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		async write() {
-			expect(countLeaseRows(sqlite)).toBe(1)
-			expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
-		},
-	})
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
-	expect(countLeaseRows(sqlite)).toBe(0)
-})
-
-test('waitUntil moves lease release off the response path', async () => {
-	let finishRelease: () => void = () => undefined
-	const releaseGate = new Promise<void>((resolve) => {
-		finishRelease = resolve
-	})
-	let updateCount = 0
-	const db = {
-		prepare() {
-			return {
-				bind() {
-					return {
-						async run() {
-							updateCount++
-							if (updateCount === 1) {
-								return { meta: { changes: 1 } }
-							}
-							await releaseGate
-							return { meta: { changes: 1 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-	let releasePromise: Promise<unknown> | undefined
-
-	const result = await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		waitUntil(promise) {
-			releasePromise = promise
-		},
-		async write() {
-			return 'response'
-		},
-	})
-
-	expect(result).toBe('response')
-	expect(updateCount).toBe(2)
-	expect(releasePromise).toBeDefined()
-	finishRelease()
-	await releasePromise
-})
 
 function createDeferred() {
 	let resolve: () => void = () => undefined
@@ -392,7 +147,6 @@ function holdDoWriteLease(input: {
 	env: UserMeterEnv
 	holder: string
 	stableUserId?: string
-	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const stableUserId = input.stableUserId ?? 'user-a'
 	const finish = createDeferred()
@@ -404,12 +158,10 @@ function holdDoWriteLease(input: {
 		stableUserId,
 		holder: input.holder,
 		env: input.env,
-		waitUntil: input.waitUntil,
 		async write() {
 			const [lease] = await listActiveAccountWriteLeases(
-				input.db,
-				stableUserId,
 				input.env,
+				stableUserId,
 			)
 			token = lease!.token
 			acquiredAt = lease!.acquired_at
@@ -431,11 +183,10 @@ function holdDoWriteLease(input: {
 	}
 }
 
-test('env makes UserMeter authoritative for acquire/held/release with D1 deleting_at gate', async () => {
+test('env is required: UserMeter authoritative for acquire/held/release with D1 deleting_at gate', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)
 	const meter = createInMemoryUserMeterEnv()
-	const drain = createWaitUntilDrain()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
 	const meterB = userMeterRpc({ env: meter.env, userId: 'user-b' })
 
@@ -444,30 +195,26 @@ test('env makes UserMeter authoritative for acquire/held/release with D1 deletin
 		stableUserId: 'user-a',
 		holder: 'test:do-authority',
 		env: meter.env,
-		waitUntil: drain.waitUntil,
 		async write() {
-			// Mirror retired: DO-authority leases no longer write D1 rows.
-			expect(countLeaseRows(sqlite)).toBe(0)
+			// D1 account_write_leases table is not touched by the DO path.
+			expect(countD1LeaseRows(sqlite)).toBe(0)
 			expect(
-				await listActiveAccountWriteLeases(db, 'user-a', meter.env),
+				await listActiveAccountWriteLeases(meter.env, 'user-a'),
 			).toHaveLength(1)
-			expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
 			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 			return 'ok'
 		},
 	})
-	await drain.drain()
-	expect(
-		await listActiveAccountWriteLeases(db, 'user-a', meter.env),
-	).toHaveLength(0)
-	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
+		0,
+	)
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 
 	const held = holdDoWriteLease({
 		db,
 		env: meter.env,
 		holder: 'test:do-repair',
-		waitUntil: drain.waitUntil,
 	})
 	await held.started
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
@@ -519,176 +266,159 @@ test('env makes UserMeter authoritative for acquire/held/release with D1 deletin
 		stableUserId: 'user-b',
 		holder: 'test:other-user',
 		env: meter.env,
-		waitUntil: drain.waitUntil,
 		async write() {
 			return 'ok'
 		},
 	})
-	await drain.drain()
 	expect(await meterB.readDeletionState()).toEqual({ deletingAt: null })
 })
 
-test('email-style omitted env keeps exact D1 lease path', async () => {
-	const { sqlite, db } = createLeaseTestDb()
+test('nested same-user lease reuses the outer lease instead of re-acquiring', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	const result = await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:outer',
+		env: meter.env,
+		async write() {
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+			return await withAccountWriteLease({
+				db,
+				stableUserId: 'user-a',
+				holder: 'test:nested',
+				env: meter.env,
+				async write() {
+					// Still only the outer lease: the nested call must not pay
+					// another acquire/release round trip.
+					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+					const active = await listActiveAccountWriteLeases(meter.env, 'user-a')
+					expect(active).toHaveLength(1)
+					expect(active[0]).toEqual(
+						expect.objectContaining({ holder: 'test:outer' }),
+					)
+					return 'nested-result'
+				},
+			})
+		},
+	})
+	expect(result).toBe('nested-result')
+	// The outer release is the only release.
+	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
+		0,
+	)
+})
+
+test('nested lease for a different user still acquires its own lease', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const meterB = userMeterRpc({ env: meter.env, userId: 'user-b' })
+
+	await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:outer',
+		env: meter.env,
+		async write() {
+			await withAccountWriteLease({
+				db,
+				stableUserId: 'user-b',
+				holder: 'test:other-user',
+				env: meter.env,
+				async write() {
+					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+					expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
+					expect(
+						await listActiveAccountWriteLeases(meter.env, 'user-b'),
+					).toHaveLength(1)
+				},
+			})
+		},
+	})
+	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
+		0,
+	)
+	expect(await listActiveAccountWriteLeases(meter.env, 'user-b')).toHaveLength(
+		0,
+	)
+})
+
+test('detached work spawned inside write re-acquires after the outer lease releases', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	let detached: Promise<void> = Promise.resolve()
+	let releaseOuter: () => void = () => undefined
+	const outerReleased = new Promise<void>((resolve) => {
+		releaseOuter = resolve
+	})
+	await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:outer',
+		env: meter.env,
+		async write() {
+			// Created inside the lease scope (inheriting the AsyncLocalStorage
+			// context) but running only after the outer lease has been released.
+			detached = (async () => {
+				await outerReleased
+				await withAccountWriteLease({
+					db,
+					stableUserId: 'user-a',
+					holder: 'test:detached',
+					env: meter.env,
+					async write() {
+						const active = await listActiveAccountWriteLeases(
+							meter.env,
+							'user-a',
+						)
+						expect(active).toHaveLength(1)
+						expect(active[0]).toEqual(
+							expect.objectContaining({ holder: 'test:detached' }),
+						)
+					},
+				})
+			})()
+		},
+	})
+	releaseOuter()
+	await detached
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+})
+
+test('sequential sibling leases each acquire after the previous released', async () => {
+	const { db } = createLeaseTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
 
 	await withAccountWriteLease({
 		db,
 		stableUserId: 'user-a',
-		holder: 'test:email-d1',
+		env: meter.env,
 		async write() {
-			expect(countLeaseRows(sqlite)).toBe(1)
-			expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
-			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-			return 'ok'
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 		},
 	})
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		env: meter.env,
+		async write() {
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+			expect(
+				await listActiveAccountWriteLeases(meter.env, 'user-a'),
+			).toHaveLength(1)
+		},
+	})
+	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
+		0,
+	)
 })
 
-test('mixed D1 + DO leases drain/count/dedupe and admin union list', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const drain = createWaitUntilDrain()
-
-	let d1Token = ''
-	let d1AcquiredAt = ''
-	let startD1: () => void = () => undefined
-	let finishD1: () => void = () => undefined
-	const d1Started = new Promise<void>((resolve) => {
-		startD1 = resolve
-	})
-	const d1Finish = new Promise<void>((resolve) => {
-		finishD1 = resolve
-	})
-	const d1Operation = withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:email-d1',
-		waitUntil: drain.waitUntil,
-		async write() {
-			const [lease] = await listActiveAccountWriteLeases(db, 'user-a')
-			d1Token = lease!.token
-			d1AcquiredAt = lease!.acquired_at
-			startD1()
-			await d1Finish
-			return 'd1'
-		},
-	})
-	await d1Started
-
-	let doToken = ''
-	let doAcquiredAt = ''
-	let startDo: () => void = () => undefined
-	let finishDo: () => void = () => undefined
-	const doStarted = new Promise<void>((resolve) => {
-		startDo = resolve
-	})
-	const doFinish = new Promise<void>((resolve) => {
-		finishDo = resolve
-	})
-	const doOperation = withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:do-authority',
-		env: meter.env,
-		waitUntil: drain.waitUntil,
-		async write() {
-			const [lease] = (
-				await listActiveAccountWriteLeases(db, 'user-a', meter.env)
-			).filter((row) => row.holder === 'test:do-authority')
-			doToken = lease!.token
-			doAcquiredAt = lease!.acquired_at
-			startDo()
-			await doFinish
-			return 'do'
-		},
-	})
-	await doStarted
-
-	const union = await listActiveAccountWriteLeases(db, 'user-a', meter.env)
-	expect(union).toHaveLength(2)
-	expect(union.map((lease) => lease.holder).sort()).toEqual([
-		'test:do-authority',
-		'test:email-d1',
-	])
-	// D1-only list has only the email lease; DO lease has no D1 row after mirror retirement.
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toEqual([
-		expect.objectContaining({ token: d1Token, holder: 'test:email-d1' }),
-	])
-	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-			env: meter.env,
-		}),
-	).resolves.toBe(2)
-	expect(await meterA.listWriteLeases({})).toEqual({
-		leases: expect.arrayContaining([
-			expect.objectContaining({
-				token: d1Token,
-				holder: 'test:email-d1',
-				authority: 'legacy',
-			}),
-			expect.objectContaining({
-				token: doToken,
-				holder: 'test:do-authority',
-				authority: 'do',
-			}),
-		]),
-		nextStartAfter: null,
-		truncated: false,
-	})
-
-	await repairAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		token: d1Token,
-		expectedAcquiredAt: d1AcquiredAt,
-		repairedByUserId: 'admin-user',
-		reason: 'Inspected email writer crash and confirmed process termination.',
-		env: meter.env,
-	})
-	finishD1()
-	await expect(d1Operation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			env: meter.env,
-		}),
-	).resolves.toBe(1)
-
-	await repairAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		token: doToken,
-		expectedAcquiredAt: doAcquiredAt,
-		repairedByUserId: 'admin-user',
-		reason: 'Inspected DO writer crash and confirmed process termination.',
-		env: meter.env,
-	})
-	finishDo()
-	await expect(doOperation).rejects.toBeInstanceOf(AccountWriteLeaseLostError)
-	await drain.drain()
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			env: meter.env,
-		}),
-	).resolves.toBe(0)
-})
-
-test('nested/detached/waitUntil parity for DO-authority leases', async () => {
+test('nested/detached parity for DO-authority leases', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
@@ -707,11 +437,7 @@ test('nested/detached/waitUntil parity for DO-authority leases', async () => {
 				env: meter.env,
 				async write() {
 					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-					const active = await listActiveAccountWriteLeases(
-						db,
-						'user-a',
-						meter.env,
-					)
+					const active = await listActiveAccountWriteLeases(meter.env, 'user-a')
 					expect(active).toHaveLength(1)
 					expect(active[0]).toEqual(
 						expect.objectContaining({ holder: 'test:outer-do' }),
@@ -744,9 +470,8 @@ test('nested/detached/waitUntil parity for DO-authority leases', async () => {
 					env: meter.env,
 					async write() {
 						const active = await listActiveAccountWriteLeases(
-							db,
-							'user-a',
 							meter.env,
+							'user-a',
 						)
 						expect(active).toHaveLength(1)
 						expect(active[0]).toEqual(
@@ -760,12 +485,13 @@ test('nested/detached/waitUntil parity for DO-authority leases', async () => {
 	releaseOuter()
 	await detached
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-	expect(countLeaseRows(sqlite)).toBe(0)
+	// D1 lease table stays clean throughout.
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 
+	// Release is awaited: withAccountWriteLease does not settle until DO release completes.
 	const release = createDeferred()
 	const gated = createGatedDoEnv({ releaseGate: release.promise })
 	const gatedMeter = gated.meterFor('user-a')
-	const drain = createWaitUntilDrain()
 
 	let settled = false
 	const awaitedRelease = withAccountWriteLease({
@@ -790,31 +516,6 @@ test('nested/detached/waitUntil parity for DO-authority leases', async () => {
 	release.resolve()
 	await expect(awaitedRelease).resolves.toBe('ok')
 	expect(await gatedMeter.countActiveWriteLeases()).toEqual({ count: 0 })
-
-	const release2 = createDeferred()
-	const gated2 = createGatedDoEnv({ releaseGate: release2.promise })
-	const gatedMeter2 = gated2.meterFor('user-a')
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			holder: 'test:detach-do-release',
-			env: gated2.env,
-			waitUntil: drain.waitUntil,
-			async write() {
-				return 'ok'
-			},
-		}),
-	).resolves.toBe('ok')
-	await waitFor(
-		async () =>
-			gated2.gates.releaseEntered &&
-			(await gatedMeter2.countActiveWriteLeases()).count === 1,
-		'detached DO release still held',
-	)
-	release2.resolve()
-	await drain.drain()
-	expect(await gatedMeter2.countActiveWriteLeases()).toEqual({ count: 0 })
 })
 
 test('D1 deleting_at gate fails closed after purge tombstone', async () => {
@@ -895,10 +596,8 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: false,
 	})
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
+	// D1 lease table stays clean: DO-authority leases never touch D1.
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(
 		sqlite
 			.prepare(
@@ -911,6 +610,7 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 		lease_acquired_at: held.acquiredAt,
 	})
 
+	// Idempotent retry returns the same repairId without creating a second audit row.
 	await expect(
 		repairAccountWriteLease({
 			db,
@@ -927,9 +627,6 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
 			.get(),
 	).toEqual({ count: 1 })
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
@@ -937,7 +634,7 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 	)
 })
 
-test('USER_METER failures fail closed when env is supplied', async () => {
+test('USER_METER failures fail closed (missing binding throws)', async () => {
 	const { db } = createLeaseTestDb()
 	const failingEnv = {
 		USER_METER: {
@@ -984,81 +681,10 @@ test('USER_METER failures fail closed when env is supplied', async () => {
 	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
 })
 
-test('markAccountDeleting clears stale legacy rows and preserves DO-authority leases', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	await meterA.shadowAcquireWriteLease({
-		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-		holder: 'test:stale-legacy',
-		acquiredAt: '2026-01-01 00:00:00',
-	})
-	await meterA.acquireWriteLease({
-		token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-		holder: 'test:do-held',
-		acquiredAt: '2026-01-01 00:01:00',
-	})
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 2 })
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-			env: meter.env,
-		}),
-	).resolves.toBe(1)
-	expect(await meterA.listWriteLeases({})).toEqual({
-		leases: [
-			{
-				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-				holder: 'test:do-held',
-				acquiredAt: '2026-01-01 00:01:00',
-				authority: 'do',
-			},
-		],
-		nextStartAfter: null,
-		truncated: false,
-	})
-
-	await meterA.shadowReplaceDeletionState({
-		deletingAt: '2099-01-01 00:00:00',
-		leases: [
-			{
-				token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-				holder: 'test:post-drain-stale',
-				acquiredAt: '2099-01-01 00:01:00',
-			},
-		],
-	})
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 2 })
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			env: meter.env,
-		}),
-	).resolves.toBe(1)
-	expect(await meterA.listWriteLeases({})).toEqual({
-		leases: [
-			{
-				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-				holder: 'test:do-held',
-				acquiredAt: '2026-01-01 00:01:00',
-				authority: 'do',
-			},
-		],
-		nextStartAfter: null,
-		truncated: false,
-	})
-})
-
-test('env path never executes D1 mirror INSERT or active_write_count operations', async () => {
+test('env path never executes D1 lease INSERT or active_write_count operations', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const drain = createWaitUntilDrain()
 
 	// Verify D1 batch is not called on the env/DO path after mirror retirement.
 	const originalBatch = db.batch.bind(db)
@@ -1092,7 +718,6 @@ test('env path never executes D1 mirror INSERT or active_write_count operations'
 		stableUserId: 'user-a',
 		holder: 'test:do-no-mirror',
 		env: meter.env,
-		waitUntil: drain.waitUntil,
 		async write() {
 			startWrite()
 			await finish
@@ -1100,25 +725,13 @@ test('env path never executes D1 mirror INSERT or active_write_count operations'
 		},
 	})
 	await started
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
+	// DO-authority leases do not touch D1 account_write_leases.
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-
-	// Old D1-only mark sees no D1 rows (mirror retired), returns 0 active.
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-		}),
-	).resolves.toBe(0)
 
 	finishWrite()
 	await expect(operation).resolves.toBe('held')
-	await drain.drain()
-	expect(countLeaseRows(sqlite)).toBe(0)
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 	// No INSERT or active_write_count calls from the env path.
 	expect(mirrorCalls).toHaveLength(0)
@@ -1127,7 +740,7 @@ test('env path never executes D1 mirror INSERT or active_write_count operations'
 	db.prepare = originalPrepare
 })
 
-test('DO repair stays audit-first, handles absent D1 mirror, and retries after finalize without double count', async () => {
+test('DO repair is audit-first: prepare + audit row before finalize, absent D1 mirror', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)
 	const meter = createInMemoryUserMeterEnv()
@@ -1139,10 +752,7 @@ test('DO repair stays audit-first, handles absent D1 mirror, and retries after f
 	})
 	await held.started
 	// Mirror retired: DO-authority lease does not create a D1 row.
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 
 	const prepared = await meterA.prepareWriteLeaseRepair({
 		token: held.token,
@@ -1152,6 +762,7 @@ test('DO repair stays audit-first, handles absent D1 mirror, and retries after f
 	const repairId =
 		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
 
+	// Manually insert the audit row (simulating the audit-first write from repairAccountWriteLease).
 	sqlite
 		.prepare(
 			`INSERT INTO account_write_lease_repairs (
@@ -1172,8 +783,8 @@ test('DO repair stays audit-first, handles absent D1 mirror, and retries after f
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: true,
 	})
-	// No D1 row was created by acquire; releaseD1WriteLeaseMirror in repair is a no-op.
-	expect(countLeaseRows(sqlite)).toBe(0)
+	// No D1 lease row (mirror retired).
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 
 	await expect(
 		repairAccountWriteLease({
@@ -1189,16 +800,14 @@ test('DO repair stays audit-first, handles absent D1 mirror, and retries after f
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: false,
 	})
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(
 		sqlite
 			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
 			.get(),
 	).toEqual({ count: 1 })
 
+	// Idempotent retry returns the same repairId.
 	await expect(
 		repairAccountWriteLease({
 			db,
@@ -1215,9 +824,6 @@ test('DO repair stays audit-first, handles absent D1 mirror, and retries after f
 			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
 			.get(),
 	).toEqual({ count: 1 })
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
@@ -1225,117 +831,7 @@ test('DO repair stays audit-first, handles absent D1 mirror, and retries after f
 	)
 })
 
-test('env path waitUntil releases DO lease and leaves D1 table clean after mirror retirement', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const release = createDeferred()
-	const gated = createGatedDoEnv({ releaseGate: release.promise })
-	const gatedMeter = gated.meterFor('user-a')
-	const drain = createWaitUntilDrain()
-
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			holder: 'test:release-no-mirror',
-			env: gated.env,
-			waitUntil: drain.waitUntil,
-			async write() {
-				// Mirror retired: no D1 row created on acquire.
-				expect(countLeaseRows(sqlite)).toBe(0)
-				return 'ok'
-			},
-		}),
-	).resolves.toBe('ok')
-	await waitFor(
-		async () =>
-			gated.gates.releaseEntered &&
-			(await gatedMeter.countActiveWriteLeases()).count === 1,
-		'DO release gated after write',
-	)
-
-	release.resolve()
-	await drain.drain()
-	expect(await gatedMeter.countActiveWriteLeases()).toEqual({ count: 0 })
-	// D1 was clean throughout (no mirror); stays clean after release.
-	expect(countLeaseRows(sqlite)).toBe(0)
-})
-
-test('repair clears stale pre-retirement D1 row after DO finalize with finalize gate', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const finalize = createDeferred()
-	const gated = createGatedDoEnv({ finalizeGate: finalize.promise })
-	const gatedMeter = gated.meterFor('user-a')
-	const held = holdDoWriteLease({
-		db,
-		env: gated.env,
-		holder: 'test:repair-finalize-stale',
-	})
-	await held.started
-
-	// Simulate a pre-retirement stale D1 mirror row for this DO lease.
-	sqlite
-		.prepare(
-			`INSERT INTO account_write_leases (token, user_id, holder, acquired_at, released_at)
-			VALUES (?, ?, ?, ?, NULL)`,
-		)
-		.run(held.token, 'user-a', 'test:repair-finalize-stale', held.acquiredAt)
-	sqlite
-		.prepare(
-			`UPDATE users SET active_write_count = active_write_count + 1 WHERE id = 1`,
-		)
-		.run()
-	expect(countLeaseRows(sqlite)).toBe(1)
-
-	let repairSettled = false
-	const repairPromise = repairAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		token: held.token,
-		expectedAcquiredAt: held.acquiredAt,
-		repairedByUserId: 'admin-user',
-		reason: 'Inspected worker crash and confirmed process termination.',
-		env: gated.env,
-	}).then((result) => {
-		repairSettled = true
-		return result
-	})
-	await waitFor(
-		async () =>
-			gated.gates.finalizeEntered &&
-			(await gatedMeter.assertWriteLeaseHeld({ token: held.token })).held &&
-			countLeaseRows(sqlite) === 1 &&
-			!repairSettled,
-		'finalize gated with DO held and stale D1 row still present',
-	)
-
-	// Stale D1 row present during finalize gate; D1-only mark counts 1.
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-		}),
-	).resolves.toBe(1)
-
-	finalize.resolve()
-	await expect(repairPromise).resolves.toEqual(
-		expect.objectContaining({ repaired: true }),
-	)
-	expect(await gatedMeter.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: false,
-	})
-	// Stale D1 row cleared after DO finalize.
-	expect(countLeaseRows(sqlite)).toBe(0)
-	await expect(markAccountDeleting({ db, dbUserId: 1 })).resolves.toBe(0)
-
-	held.finish()
-	await expect(held.operation).rejects.toBeInstanceOf(
-		AccountWriteLeaseLostError,
-	)
-})
-
-test('lost finalize response retries clear stale D1 mirror and return stable repairId', async () => {
+test('lost-finalize retry returns stable repairId and leaves DO released', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)
 	const meter = createInMemoryUserMeterEnv()
@@ -1343,29 +839,9 @@ test('lost finalize response retries clear stale D1 mirror and return stable rep
 	const held = holdDoWriteLease({
 		db,
 		env: meter.env,
-		holder: 'test:stale-mirror-after-finalize',
+		holder: 'test:stale-after-finalize',
 	})
 	await held.started
-
-	// Mirror retired: holdDoWriteLease no longer creates a D1 row.
-	// Manually insert a stale pre-retirement D1 mirror row to simulate historical data
-	// where the mirror was acquired before retirement but the D1 cleanup was never completed.
-	sqlite
-		.prepare(
-			`INSERT INTO account_write_leases (token, user_id, holder, acquired_at, released_at)
-			VALUES (?, ?, ?, ?, NULL)`,
-		)
-		.run(
-			held.token,
-			'user-a',
-			'test:stale-mirror-after-finalize',
-			held.acquiredAt,
-		)
-	sqlite
-		.prepare(
-			`UPDATE users SET active_write_count = active_write_count + 1 WHERE id = 1`,
-		)
-		.run()
 
 	const prepared = await meterA.prepareWriteLeaseRepair({
 		token: held.token,
@@ -1384,12 +860,13 @@ test('lost finalize response retries clear stale D1 mirror and return stable rep
 			repairId,
 			'user-a',
 			held.token,
-			'test:stale-mirror-after-finalize',
+			'test:stale-after-finalize',
 			held.acquiredAt,
 			'admin-user',
 			'Inspected worker crash and confirmed process termination.',
 			'2099-01-01 00:00:00',
 		)
+	// Simulate: finalize completed but the repairAccountWriteLease response was lost.
 	await meterA.finalizeWriteLeaseRepair({
 		token: held.token,
 		repairId,
@@ -1398,13 +875,8 @@ test('lost finalize response retries clear stale D1 mirror and return stable rep
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: false,
 	})
-	// Stale pre-retirement D1 row persists: finalize released DO; the D1 cleanup
-	// step inside repairAccountWriteLease was lost with the response.
-	expect(countLeaseRows(sqlite)).toBe(1)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 1 })
 
+	// Retry with the same reason returns the stable repairId.
 	await expect(
 		repairAccountWriteLease({
 			db,
@@ -1416,10 +888,6 @@ test('lost finalize response retries clear stale D1 mirror and return stable rep
 			env: meter.env,
 		}),
 	).resolves.toEqual({ repaired: true, repairId })
-	expect(countLeaseRows(sqlite)).toBe(0)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 0 })
 	expect(
 		sqlite
 			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
@@ -1432,7 +900,7 @@ test('lost finalize response retries clear stale D1 mirror and return stable rep
 	)
 })
 
-test('finalize failure leaves DO held; stale pre-retirement D1 row stays for retry', async () => {
+test('finalize failure leaves DO held and retry succeeds', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	addLeaseRepairsTable(sqlite)
 	const gated = createGatedDoEnv({
@@ -1445,21 +913,6 @@ test('finalize failure leaves DO held; stale pre-retirement D1 row stays for ret
 		holder: 'test:finalize-fail-closed',
 	})
 	await held.started
-
-	// Mirror retired: holdDoWriteLease no longer creates a D1 row.
-	// Manually insert a stale pre-retirement D1 mirror row so the repair path
-	// can verify it stays held when finalize fails and is cleared on retry.
-	sqlite
-		.prepare(
-			`INSERT INTO account_write_leases (token, user_id, holder, acquired_at, released_at)
-			VALUES (?, ?, ?, ?, NULL)`,
-		)
-		.run(held.token, 'user-a', 'test:finalize-fail-closed', held.acquiredAt)
-	sqlite
-		.prepare(
-			`UPDATE users SET active_write_count = active_write_count + 1 WHERE id = 1`,
-		)
-		.run()
 
 	await expect(
 		repairAccountWriteLease({
@@ -1475,12 +928,10 @@ test('finalize failure leaves DO held; stale pre-retirement D1 row stays for ret
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: true,
 	})
-	// Stale D1 row still present: failed finalize leaves both DO and D1 held.
-	expect(countLeaseRows(sqlite)).toBe(1)
-	expect(
-		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
-	).toEqual({ active_write_count: 1 })
+	// D1 table stays clean (DO-authority leases never touch D1).
+	expect(countD1LeaseRows(sqlite)).toBe(0)
 
+	// Retry succeeds on second finalize attempt.
 	await expect(
 		repairAccountWriteLease({
 			db,
@@ -1495,11 +946,104 @@ test('finalize failure leaves DO held; stale pre-retirement D1 row stays for ret
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: false,
 	})
-	expect(countLeaseRows(sqlite)).toBe(0)
 	expect(gated.finalizeAttempts).toBe(2)
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
 		AccountWriteLeaseLostError,
 	)
+})
+
+test('D1 deleting_at race: gate queries D1 before DO acquire', async () => {
+	// The D1 deleting_at query happens first; a concurrent deletion that sets D1
+	// deleting_at before the DO acquire will block new leases cleanly.
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	// Pre-mark D1 deleting_at (simulates another worker racing to delete).
+	sqlite
+		.prepare(
+			`UPDATE users SET deleting_at = '2099-01-01 00:00:00' WHERE id = 1`,
+		)
+		.run()
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'should not run'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	// DO was never asked to acquire.
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+})
+
+test('export: deletion shadow includes active lease count and acquiredAt list', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	const held = holdDoWriteLease({
+		db,
+		env: meter.env,
+		holder: 'test:export',
+	})
+	await held.started
+
+	const exported = await meterA.exportCounters({ pageSize: 1 })
+	expect(exported.deletionShadow).toEqual({
+		deletingAt: null,
+		activeWriteLeaseCount: 1,
+		writeLeases: [{ acquiredAt: expect.any(String) }],
+	})
+
+	held.finish()
+	await held.operation.catch(() => {})
+})
+
+test('purge resets lease state but preserves deletingAt tombstone', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	// Hold a lease while the account is still writable (before marking for deletion).
+	const held = holdDoWriteLease({
+		db,
+		env: meter.env,
+		holder: 'test:pre-purge',
+		stableUserId: 'user-a',
+	})
+	await held.started
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+
+	// Now mark for deletion; DO tombstone is set, purge will clear leases.
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+
+	await meterA.purge()
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	// D1 gate still blocks (deleting_at is permanent).
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'blocked'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	held.finish()
+	await held.operation.catch(() => {})
 })

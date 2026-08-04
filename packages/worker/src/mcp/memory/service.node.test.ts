@@ -53,16 +53,6 @@ function createMemoryTestDb() {
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
-							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
-								return writeLeaseDb.heldLeaseFirstResult() as T
-							}
-							if (
-								normalizedQuery.startsWith(
-									'select 1 as held from account_write_leases',
-								)
-							) {
-								return { held: 1 } as T
-							}
 							if (
 								normalizedQuery.includes('from mcp_memories') &&
 								normalizedQuery.includes('where user_id = ? and id = ?')
@@ -133,9 +123,6 @@ function createMemoryTestDb() {
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async run() {
-							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
-								return writeLeaseDb.writeLeaseRunResult()
-							}
 							if (normalizedQuery.startsWith('insert into mcp_memories')) {
 								const [
 									id,
