@@ -63,6 +63,19 @@ primitives:
     docs:
       - docs/contributing/architecture/remote-connectors.md
 
+  - id: status-page
+    group: surfaces
+    name: Public status page
+    summary:
+      Independently deployed status worker (status.heykody.dev) probing public
+      endpoints every minute, storing history in its own Durable Object, and
+      emailing operator alerts under a capped policy.
+    code:
+      - packages/status/
+    docs:
+      - docs/contributing/setup-manifest.md
+      - docs/contributing/decisions/0004-status-page-separate-worker.md
+
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
