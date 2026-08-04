@@ -135,9 +135,9 @@ CAS, sweeping users by `stable_user_id` keyset from the platform-owned
 `d1_storage_reconcile_cursor` row.
 
 **Package service liveness:** UserMeter is the **sole running-count source** for
-`package_services` enforcement and `service_start`. D1
-`package_service_states` is only an enumeration index for discovery, account
-export, and deletion; no D1 liveness count exists. See
+`package_services` enforcement and `service_start`. D1 `package_service_states`
+is only an enumeration index for discovery, account export, and deletion; no D1
+liveness count exists. See
 [Package service liveness](#package-service-liveness).
 
 **Account-deletion write fencing:** D1 `users.deleting_at` remains the permanent
@@ -265,8 +265,8 @@ authoritative for lease acquire / held / release / count via `acquireWriteLease`
 / `assertWriteLeaseHeld` / `releaseWriteLease` / `countActiveWriteLeases`.
 Missing `USER_METER` binding **fails closed**. D1 `account_write_leases` was
 dropped by migration `0141`; D1 `account_write_lease_repairs` remains the audit
-log for repairs. ALS nested-lease reuse propagates per
-`stableUserId` across the async call chain.
+log for repairs. ALS nested-lease reuse propagates per `stableUserId` across the
+async call chain.
 
 **`markAccountDeleting`:** `COALESCE`s D1 `deleting_at` (idempotent), then calls
 `markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO
@@ -299,22 +299,22 @@ daily counts; Analytics Engine remains the reporting store.
 ### Admin UserMeter parity gates (`admin_user_meter_parity`)
 
 Production verification uses the admin-only read-only capability
-`admin_user_meter_parity` (input: `stable_user_id`). It compares
-physical D1 payload bytes and the permanent D1 deletion tombstone with direct
-UserMeter RPCs. It never reads D1 package-service liveness, bootstraps state, or
-writes parity state. The daily section is meter-only. Opening a cold UserMeter
-stub may still run Durable Object constructor schema maintenance and
-opportunistic stale daily-counter pruning. Cold meter rows surface as
-`needsBootstrap` with `meterCount`/`meterBytes` null.
+`admin_user_meter_parity` (input: `stable_user_id`). It compares physical D1
+payload bytes and the permanent D1 deletion tombstone with direct UserMeter
+RPCs. It never reads D1 package-service liveness, bootstraps state, or writes
+parity state. The daily section is meter-only. Opening a cold UserMeter stub may
+still run Durable Object constructor schema maintenance and opportunistic stale
+daily-counter pruning. Cold meter rows surface as `needsBootstrap` with
+`meterCount`/`meterBytes` null.
 
 Interpret the structured report as independent gates:
 
-| Gate                     | Pass condition                                                                                                                                                                      |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Daily counters (UTC day) | Meter-only reads: each daily resource reports `meterCount` (null with `needsBootstrap: true` on cold accounts).                                                                      |
-| Storage bytes            | `storage.parity` — physical D1 payload recompute (`calculateUserD1StorageBytes`) equals UserMeter `readStorageBytes` and the meter does not need bootstrap.                           |
-| Deletion tombstone       | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                    |
-| Active lease count       | `deletion.activeLeaseCount` — count of authoritative UserMeter write leases. Alert on unexplained non-zero counts after known writer processes have been verified terminated.       |
+| Gate                     | Pass condition                                                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daily counters (UTC day) | Meter-only reads: each daily resource reports `meterCount` (null with `needsBootstrap: true` on cold accounts).                                                               |
+| Storage bytes            | `storage.parity` — physical D1 payload recompute (`calculateUserD1StorageBytes`) equals UserMeter `readStorageBytes` and the meter does not need bootstrap.                   |
+| Deletion tombstone       | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                             |
+| Active lease count       | `deletion.activeLeaseCount` — count of authoritative UserMeter write leases. Alert on unexplained non-zero counts after known writer processes have been verified terminated. |
 
 Treat unexplained storage or deletion mismatches as failures. Expected cold
 accounts may report `needsBootstrap` until live traffic seeds the DO; that is a
@@ -510,11 +510,11 @@ Rules:
   `countRunningPackageServices` counts `status = 'running'` rows with the 24h
   staleness window from DO `source_updated_at`. D1 `package_service_states`
   remains only the enumeration index (discovery, export, deletion) — see
-  [Package service liveness](#package-service-liveness)
-  and [Run records](./run-records.md) (`state-vs-history`). **Concurrent
-  workflows** are authoritative in per-user RunLog `workflow_projections`:
-  create reserves atomically via `reserveWorkflowProjectionSlot`, and usage
-  readers call `countActiveWorkflowProjections` through
+  [Package service liveness](#package-service-liveness) and
+  [Run records](./run-records.md) (`state-vs-history`). **Concurrent workflows**
+  are authoritative in per-user RunLog `workflow_projections`: create reserves
+  atomically via `reserveWorkflowProjectionSlot`, and usage readers call
+  `countActiveWorkflowProjections` through
   `readCurrentEntitlementResourceUsage`. Legacy D1 `workflow_runs` was retired
   by migration `0137`. See
   [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing).
@@ -663,7 +663,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                                                                                                                       |
 | `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
-| `package_services`            | `service_start` capability path (`getCurrent` with authoritative `countRunningPackageServices(env)`; no D1 liveness read)                                                                                                            |
+| `package_services`            | `service_start` capability path (`getCurrent` with authoritative `countRunningPackageServices(env)`; no D1 liveness read)                                                                                                             |
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                                                                                                                            |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                                                                                                                                                                     |
 | `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |

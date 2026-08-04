@@ -3,8 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const cleanupMigration =
-	'0141-drop-account-write-leases-and-stale-flags.sql'
+const cleanupMigration = '0141-drop-account-write-leases-and-stale-flags.sql'
 
 function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
 	for (const fileName of readdirSync(migrationsDirectory)
@@ -44,7 +43,10 @@ test('0141 drops the D1 lease table and removes only retired flags', () => {
 		WHERE username = 'migration-user';
 	`)
 
-	const sql = readFileSync(new URL(cleanupMigration, migrationsDirectory), 'utf8')
+	const sql = readFileSync(
+		new URL(cleanupMigration, migrationsDirectory),
+		'utf8',
+	)
 	db.exec(sql)
 	db.exec(sql)
 
@@ -56,9 +58,9 @@ test('0141 drops the D1 lease table and removes only retired flags', () => {
 			)
 			.all(),
 	).toEqual([])
-	expect(db.prepare(`SELECT key FROM feature_flags ORDER BY key`).all()).toEqual([
-		{ key: 'demo-indicator' },
-	])
+	expect(
+		db.prepare(`SELECT key FROM feature_flags ORDER BY key`).all(),
+	).toEqual([{ key: 'demo-indicator' }])
 	expect(
 		db.prepare(`SELECT flag_key FROM feature_flag_user_overrides`).all(),
 	).toEqual([])

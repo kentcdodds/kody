@@ -47,12 +47,7 @@ const utcDayKeyPattern = /^\d{4}-\d{2}-\d{2}$/
 /** Matches `new Date().toISOString()` — required for lexicographic monotonicity. */
 const packageServiceSourceUpdatedAtPattern =
 	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-const packageServiceStatuses = [
-	'running',
-	'idle',
-	'stopped',
-	'error',
-] as const
+const packageServiceStatuses = ['running', 'idle', 'stopped', 'error'] as const
 export type UserMeterPackageServiceStatus =
 	(typeof packageServiceStatuses)[number]
 
@@ -371,7 +366,7 @@ function assertPackageServiceStatus(
 ): UserMeterPackageServiceStatus {
 	if (!isUserMeterPackageServiceStatus(status)) {
 		throw new Error(
-			`UserMeter package service status must be one of ${packageServiceShadowStatuses.join(', ')}; got ${JSON.stringify(status)}.`,
+			`UserMeter package service status must be one of ${packageServiceStatuses.join(', ')}; got ${JSON.stringify(status)}.`,
 		)
 	}
 	return status

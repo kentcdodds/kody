@@ -182,17 +182,17 @@ migration-safe chunked interface:
   storage export capability. User meter counters use `section: "user_meter"` and
   the `UserMeter.exportCounters` RPC (daily counters plus authoritative
   `storageBytesState`, `packageServiceStates`, and sanitized `deletionState` on
-  the first page only when present). Mailbox metadata
-  uses `section: "mailbox"` and the `Mailbox.exportMailbox` RPC. R2 raw MIME,
-  attachment, avatar, and icon objects use `section: "r2_object"`; each response
-  contains at most one 256 KiB base64 chunk and an opaque cursor. Each request
-  uses bounded `LIMIT 1` ownership queries rather than reconstructing inventory.
-  Continuation cursors bind the source row, object key, size, and ETag;
-  ownership/key mutations and object overwrites are reported instead of mixing
-  generations. Missing objects are represented explicitly. R2 cursors created
-  before the Mailbox-authoritative traversal (version 1) cannot be translated
-  without risking duplicate bytes; callers receive an invalid/unsupported cursor
-  error and must restart the `r2_object` section without `startAfter`.
+  the first page only when present). Mailbox metadata uses `section: "mailbox"`
+  and the `Mailbox.exportMailbox` RPC. R2 raw MIME, attachment, avatar, and icon
+  objects use `section: "r2_object"`; each response contains at most one 256 KiB
+  base64 chunk and an opaque cursor. Each request uses bounded `LIMIT 1`
+  ownership queries rather than reconstructing inventory. Continuation cursors
+  bind the source row, object key, size, and ETag; ownership/key mutations and
+  object overwrites are reported instead of mixing generations. Missing objects
+  are represented explicitly. R2 cursors created before the
+  Mailbox-authoritative traversal (version 1) cannot be translated without
+  risking duplicate bytes; callers receive an invalid/unsupported cursor error
+  and must restart the `r2_object` section without `startAfter`.
 
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
@@ -285,9 +285,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   columns (migration 0122) were dropped by migration 0139; the
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
-  `storage_bytes_state` (schema v4) drives storage-byte enforcement;
-  UserMeter `package_service_states` (schema v5) is the authoritative
-  running-count source for `package_services` / `service_start` — see
+  `storage_bytes_state` (schema v4) drives storage-byte enforcement; UserMeter
+  `package_service_states` (schema v5) is the authoritative running-count source
+  for `package_services` / `service_start` — see
   [Entitlements](./entitlements.md#usermeter). Migration 0135 removed every
   retired Mailbox parity, replay, backfill, and soak column and its discovery
   index. A post-deploy production `pragma_table_xinfo('users')` query for
@@ -334,8 +334,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   heartbeaten (1h) by the `PackageServiceInstance` Durable Object. Running-count
   enforcement and `service_start` read the per-user `UserMeter` copy (schema v5;
   24h staleness on DO `source_updated_at`). D1 remains only the enumeration
-  index — see
-  [Entitlements](./entitlements.md#package-service-liveness).
+  index — see [Entitlements](./entitlements.md#package-service-liveness).
 - `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
   or `repo`) to Artifacts repos and their latest published commit (packages
   only; plain repos are live-at-HEAD without a publish pointer)
@@ -573,9 +572,9 @@ live in a per-user `UserMeter` Durable Object with SQLite
 [Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
 Schema v5 `package_service_states` is the **authoritative running-count source**
 for `package_services` / `service_start`; D1 remains only the enumeration index
-([Entitlements](./entitlements.md#package-service-liveness)).
-The Worker binding is `USER_METER` (class `UserMeter`; Wrangler SQLite migration
-tag `v21` via `new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
+([Entitlements](./entitlements.md#package-service-liveness)). The Worker binding
+is `USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
+`new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
 
 Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 `userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
@@ -647,9 +646,9 @@ Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
 `deleteAll` clears counters, claims, storage bytes, package-service state, and
 write leases while preserving an existing deleting tombstone). Account export
 pages `UserMeter.exportCounters` through the `user_meter` manifest section /
-`account_export_section` (daily counters plus authoritative
-`storageBytesState`, `packageServiceStates`, and sanitized `deletionState` on
-the first page only when present).
+`account_export_section` (daily counters plus authoritative `storageBytesState`,
+`packageServiceStates`, and sanitized `deletionState` on the first page only
+when present).
 
 ## Durable Objects (`Mailbox`)
 
@@ -941,10 +940,9 @@ Package and plain-repo state maps onto storage homes as follows:
   `packageStorage()`. Shared durable data for every package surface.
 - **Package coordination** — `PackageServiceInstance` DO holds lifecycle and
   alarms only; durable data stays in package storage. Each lifecycle projection
-  writes D1 `package_service_states` (enumeration) and UserMeter
-  (authoritative running counts). App facets and package-internal DO namespaces
-  are extra StorageRunner buckets under the package id, not a general actor
-  model.
+  writes D1 `package_service_states` (enumeration) and UserMeter (authoritative
+  running counts). App facets and package-internal DO namespaces are extra
+  StorageRunner buckets under the package id, not a general actor model.
 - **Package jobs** — schedule metadata in D1 `jobs`; run-local scratch in
   `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
   data in package storage.
