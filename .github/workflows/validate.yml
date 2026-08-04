@@ -79,6 +79,10 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
+      - name: 🛡️ Deploy guardrails
+        if: ${{ !cancelled() }}
+        run: npm run deploy-guardrails:check
+
   node:
     runs-on: ubuntu-latest
     name: 🧪 Node

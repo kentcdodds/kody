@@ -23,6 +23,19 @@ Primary operator surface:
 
 Do not use `tools/export-d1-remote-to-sqlite.sh` as a backup or restore tool.
 
+## Prevention
+
+### Deploy guardrails
+
+`npm run deploy-guardrails:check` protects the reviewed Durable Object migration
+and binding baseline in `tools/ci/durable-object-baseline.json`. Every
+`deleted_classes` migration must exactly match
+`tools/ci/do-deletion-allowlist.json`; changing that allowlist is the explicit
+code-review gate for destructive class deletion. The same check rejects removal
+or renaming of protected `new_sqlite_classes` tags, removal of protected classes
+from Wrangler bindings, and destructive Cloudflare CLI deletion commands in
+GitHub workflows unless the job is operator-triggered with `workflow_dispatch`.
+
 ## Live evidence log
 
 First-proven dates for each lane (newest first). Re-prove and update after

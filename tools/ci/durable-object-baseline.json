@@ -1,0 +1,102 @@
+{
+	"version": 1,
+	"configs": [
+		{
+			"path": "packages/worker/wrangler.jsonc",
+			"protected_migrations": [
+				{ "tag": "v1", "new_sqlite_classes": ["MCP"] },
+				{ "tag": "v2", "new_sqlite_classes": ["ChatAgent"] },
+				{
+					"tag": "v3",
+					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"]
+				},
+				{ "tag": "v4", "new_sqlite_classes": ["SchedulerDO"] },
+				{
+					"tag": "v6",
+					"new_sqlite_classes": ["JobManager", "JobRunner"]
+				},
+				{ "tag": "v8", "new_sqlite_classes": ["StorageRunner"] },
+				{ "tag": "v10", "new_sqlite_classes": ["AgentTurnRunner"] },
+				{ "tag": "v11", "new_sqlite_classes": ["RepoSession"] },
+				{
+					"tag": "v13",
+					"new_sqlite_classes": ["PackageRealtimeSession"]
+				},
+				{
+					"tag": "v14",
+					"new_sqlite_classes": ["PackageServiceInstance"]
+				},
+				{ "tag": "v18", "new_sqlite_classes": ["McpClientHub"] },
+				{
+					"tag": "v19",
+					"new_sqlite_classes": ["OAuthPurgeCoordinator"]
+				},
+				{ "tag": "v20", "new_sqlite_classes": ["RunLog"] },
+				{ "tag": "v21", "new_sqlite_classes": ["UserMeter"] },
+				{ "tag": "v22", "new_sqlite_classes": ["Mailbox"] },
+				{ "tag": "v23", "new_sqlite_classes": ["StripePlanRefresh"] }
+			],
+			"protected_binding_sets": [
+				{
+					"location": "env.production.durable_objects",
+					"classes": [
+						"JobManager",
+						"MCP",
+						"Mailbox",
+						"McpClientHub",
+						"OAuthPurgeCoordinator",
+						"PackageRealtimeSession",
+						"PackageServiceInstance",
+						"RemoteConnectorSession",
+						"RepoSession",
+						"RunLog",
+						"StorageRunner",
+						"StripePlanRefresh",
+						"UserMeter"
+					]
+				},
+				{
+					"location": "env.preview.durable_objects",
+					"classes": [
+						"JobManager",
+						"MCP",
+						"Mailbox",
+						"McpClientHub",
+						"OAuthPurgeCoordinator",
+						"PackageRealtimeSession",
+						"PackageServiceInstance",
+						"RemoteConnectorSession",
+						"RepoSession",
+						"RunLog",
+						"StorageRunner",
+						"StripePlanRefresh",
+						"UserMeter"
+					]
+				},
+				{
+					"location": "env.test.durable_objects",
+					"classes": [
+						"JobManager",
+						"MCP",
+						"Mailbox",
+						"McpClientHub",
+						"OAuthPurgeCoordinator",
+						"PackageRealtimeSession",
+						"PackageServiceInstance",
+						"RemoteConnectorSession",
+						"RepoSession",
+						"RunLog",
+						"StorageRunner",
+						"StripePlanRefresh",
+						"UserMeter"
+					]
+				}
+			]
+		},
+		{
+			"path": "packages/backup-control-plane/wrangler.jsonc",
+			"protected_migrations": [],
+			"protected_binding_sets": []
+		}
+	]
+}
