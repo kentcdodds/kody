@@ -8,6 +8,7 @@ import {
 	assertBackupDay,
 	backupBlobKey,
 	backupR2BucketLabels,
+	backupStagingSchemaVersion,
 	parseStagingSummary,
 	sealedFullManifestKey,
 	sealedFullPrefix,
@@ -15,6 +16,8 @@ import {
 	stagingSummaryKey,
 	type StagingFileSummary,
 	type StagingSummary,
+	type MailboxIndex,
+	type RunLogIndex,
 	type StorageIndex,
 } from '@kody-internal/shared/backup-staging.ts'
 
@@ -57,7 +60,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseStorageIndex(value: unknown, day: string): StorageIndex {
 	if (
 		!isRecord(value) ||
-		value.schemaVersion !== 1 ||
+		value.schemaVersion !== backupStagingSchemaVersion ||
 		value.day !== day ||
 		!Array.isArray(value.entries)
 	) {
@@ -83,6 +86,44 @@ function parseStorageIndex(value: unknown, day: string): StorageIndex {
 		}
 	}
 	return value as StorageIndex
+}
+
+function parseOwnerIndex(
+	value: unknown,
+	day: string,
+	kind: 'mailbox' | 'run-log',
+): MailboxIndex | RunLogIndex {
+	if (
+		!isRecord(value) ||
+		value.schemaVersion !== backupStagingSchemaVersion ||
+		value.day !== day ||
+		!Array.isArray(value.entries)
+	) {
+		throw new BackupError(
+			`${kind}-index-corrupt`,
+			`${kind} index JSON is corrupt`,
+		)
+	}
+	for (const entry of value.entries) {
+		if (
+			!isRecord(entry) ||
+			typeof entry.ownerId !== 'string' ||
+			entry.ownerId.length === 0 ||
+			typeof entry.objectKey !== 'string' ||
+			!Number.isSafeInteger(entry.entryCount) ||
+			Number(entry.entryCount) < 0 ||
+			!Number.isSafeInteger(entry.bytes) ||
+			Number(entry.bytes) < 0 ||
+			typeof entry.sha256 !== 'string' ||
+			!sha256Pattern.test(entry.sha256)
+		) {
+			throw new BackupError(
+				`${kind}-index-corrupt`,
+				`${kind} index entry is corrupt`,
+			)
+		}
+	}
+	return value as MailboxIndex | RunLogIndex
 }
 
 function sealedKeyForStagingObject(day: string, stagingKey: string): string {
@@ -137,6 +178,41 @@ async function verifyStagingFile(
 		)
 	}
 	return bytes
+}
+
+async function sealOwnerDumps(input: {
+	bucket: R2Bucket
+	day: string
+	summary: StagingFileSummary
+	kind: 'mailbox' | 'run-log'
+}): Promise<BackupFullFileRef> {
+	const indexBytes = await verifyStagingFile(input.bucket, input.summary)
+	const index = parseOwnerIndex(
+		JSON.parse(new TextDecoder().decode(indexBytes)),
+		input.day,
+		input.kind,
+	)
+	for (const entry of index.entries) {
+		const dumpBytes = await verifyStagingFile(input.bucket, {
+			objectKey: entry.objectKey,
+			bytes: entry.bytes,
+			sha256: entry.sha256,
+		})
+		await putImmutableBytes(
+			input.bucket,
+			sealedKeyForStagingObject(input.day, entry.objectKey),
+			dumpBytes,
+			'application/x-ndjson',
+		)
+	}
+	const sealedIndex = toSealedRef(input.day, input.summary)
+	await putImmutableBytes(
+		input.bucket,
+		sealedIndex.objectKey,
+		indexBytes,
+		'application/json',
+	)
+	return sealedIndex
 }
 
 async function putImmutableBytes(
@@ -473,6 +549,19 @@ export async function sealFullBackupDay(
 		'application/json',
 	)
 
+	const sealedMailboxIndex = await sealOwnerDumps({
+		bucket: env.BACKUP_BUCKET,
+		day,
+		summary: summary.mailboxIndex,
+		kind: 'mailbox',
+	})
+	const sealedRunLogIndex = await sealOwnerDumps({
+		bucket: env.BACKUP_BUCKET,
+		day,
+		summary: summary.runLogIndex,
+		kind: 'run-log',
+	})
+
 	const sealedR2Indexes: BackupFullManifest['payload']['r2Indexes'] = {}
 	const r2IndexBodies: Array<string> = []
 	for (const label of backupR2BucketLabels) {
@@ -540,6 +629,8 @@ export async function sealFullBackupDay(
 		day,
 		d1ManifestKey: d1Payload.manifestKey,
 		d1ManifestSha256,
+		mailboxIndex: sealedMailboxIndex,
+		runLogIndex: sealedRunLogIndex,
 		storageIndex: toSealedRef(day, summary.storageIndex),
 		r2Indexes: sealedR2Indexes,
 		artifactsIndex: sealedArtifacts,

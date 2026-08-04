@@ -54,6 +54,16 @@ async function seedSealedRestoreDay(bucket: MemoryBucket, day = '2026-07-22') {
 		day,
 		d1ManifestKey: d1Payload.manifestKey,
 		d1ManifestSha256: sha256Text(storedText),
+		mailboxIndex: {
+			objectKey: `daily/full/${day}/mailbox-index.json`,
+			bytes: 2,
+			sha256: 'd'.repeat(64),
+		},
+		runLogIndex: {
+			objectKey: `daily/full/${day}/run-log-index.json`,
+			bytes: 2,
+			sha256: 'e'.repeat(64),
+		},
 		storageIndex: {
 			objectKey: `daily/full/${day}/storage-index.json`,
 			bytes: 2,

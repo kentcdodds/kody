@@ -3,9 +3,14 @@ import { createHash } from 'node:crypto'
 
 import {
 	backupBlobKey,
+	backupStagingSchemaVersion,
 	sealedFullManifestKey,
 	stagingArtifactsIndexKey,
+	stagingMailboxDumpKey,
+	stagingMailboxIndexKey,
 	stagingR2IndexKey,
+	stagingRunLogDumpKey,
+	stagingRunLogIndexKey,
 	stagingStorageDumpKey,
 	stagingStorageIndexKey,
 	stagingSummaryKey,
@@ -72,33 +77,81 @@ async function seedCompleteDay(
 		sha256: sha256Text(dumpBody),
 	}
 	const storageIndexBody = JSON.stringify({
-		schemaVersion: 1,
+		schemaVersion: backupStagingSchemaVersion,
 		day,
 		entries: options.duplicateIndexEntry
 			? [indexEntry, indexEntry]
 			: [indexEntry],
 	})
+	const ownerId = 'user-owner-1'
+	const mailboxDumpKey = stagingMailboxDumpKey(day, ownerId)
+	const mailboxDumpBody = '{"kind":"thread","row":{"id":"thread-1"}}\n'
+	const mailboxIndexBody = JSON.stringify({
+		schemaVersion: backupStagingSchemaVersion,
+		day,
+		entries: [
+			{
+				ownerId,
+				objectKey: mailboxDumpKey,
+				entryCount: 1,
+				bytes: mailboxDumpBody.length,
+				sha256: sha256Text(mailboxDumpBody),
+			},
+		],
+	})
+	const runLogDumpKey = stagingRunLogDumpKey(day, ownerId)
+	const runLogDumpBody =
+		'{"kind":"activationMilestone","row":{"milestone":"package_activated"}}\n'
+	const runLogIndexBody = JSON.stringify({
+		schemaVersion: backupStagingSchemaVersion,
+		day,
+		entries: [
+			{
+				ownerId,
+				objectKey: runLogDumpKey,
+				entryCount: 1,
+				bytes: runLogDumpBody.length,
+				sha256: sha256Text(runLogDumpBody),
+			},
+		],
+	})
 	const blobHash = 'e'.repeat(64)
 	const r2IndexBody = `{"key":"blob","size":1,"sha256":"${blobHash}"}\n`
 	const artifactsBody = JSON.stringify({
-		schemaVersion: 1,
+		schemaVersion: backupStagingSchemaVersion,
 		day,
 		entries: [],
 	})
 	const storageIndexKey = stagingStorageIndexKey(day)
 	const r2IndexKey = stagingR2IndexKey(day, 'email-blobs')
 	const artifactsKey = stagingArtifactsIndexKey(day)
+	const mailboxIndexKey = stagingMailboxIndexKey(day)
+	const runLogIndexKey = stagingRunLogIndexKey(day)
 	await bucket.put(dumpKey, dumpBody)
+	await bucket.put(mailboxDumpKey, mailboxDumpBody)
+	await bucket.put(mailboxIndexKey, mailboxIndexBody)
+	await bucket.put(runLogDumpKey, runLogDumpBody)
+	await bucket.put(runLogIndexKey, runLogIndexBody)
 	await bucket.put(storageIndexKey, storageIndexBody)
 	await bucket.put(r2IndexKey, r2IndexBody)
 	await bucket.put(artifactsKey, artifactsBody)
 	await bucket.put(backupBlobKey(blobHash), 'x')
 	const summary = {
-		schemaVersion: 1,
+		schemaVersion: backupStagingSchemaVersion,
 		day,
 		startedAt: `${day}T03:00:00.000Z`,
 		completedAt: `${day}T03:05:00.000Z`,
 		buildCommit: 'abc123',
+		mailboxIndex: {
+			objectKey: mailboxIndexKey,
+			bytes: mailboxIndexBody.length,
+			sha256: sha256Text(mailboxIndexBody),
+		},
+		runLogIndex: {
+			objectKey: runLogIndexKey,
+			bytes: runLogIndexBody.length,
+			sha256: sha256Text(runLogIndexBody),
+		},
 		storageIndex: {
 			objectKey: storageIndexKey,
 			bytes: storageIndexBody.length,
@@ -141,6 +194,17 @@ test('sealFullBackupDay seals a complete day and is idempotent', async () => {
 	)
 	assert.ok(sealed)
 	assert.equal(sealed?.payload.day, day)
+	assert.equal(
+		sealed?.payload.schemaVersion === 2
+			? sealed.payload.mailboxIndex.objectKey
+			: null,
+		`daily/full/${day}/mailbox-index.json`,
+	)
+	assert.ok(
+		await bucket.head(
+			`daily/full/${day}/mailbox/${encodeURIComponent('user-owner-1')}.ndjson`,
+		),
+	)
 
 	const second = await sealFullBackupDay(
 		env,
@@ -263,6 +327,26 @@ test('sealFullBackupDay fails closed when required SQL stats are missing', async
 			day,
 			reason: 'backup-sql-stats-missing',
 		},
+	)
+	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+	const record = JSON.parse(
+		String(consoleError.mock.calls.at(-1)?.[0]),
+	) as Record<string, unknown>
+	assert.equal(record.event, 'full-backup-seal-skipped')
+	assert.equal(record.errorCode, 'backup-sql-stats-missing')
+})
+
+test('sealFullBackupDay fails closed on a mailbox dump sha mismatch', async () => {
+	const bucket = new MemoryBucket()
+	const { env, day } = await seedCompleteDay(bucket)
+	await bucket.put(
+		stagingMailboxDumpKey(day, 'user-owner-1'),
+		'{"tampered":true}\n',
+	)
+	await assert.rejects(
+		sealFullBackupDay(env, day, new Date(`${day}T04:00:00.000Z`)),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'staging-sha-mismatch',
 	)
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
 })
