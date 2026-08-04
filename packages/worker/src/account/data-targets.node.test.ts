@@ -7,7 +7,6 @@ import {
 	accountExportRedactedColumnsByTable,
 	accountExportRedactedForeignUserId,
 	accountOperatorOwnedD1Surfaces,
-	accountQuiescentDetachedD1ProjectionTables,
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
@@ -302,14 +301,8 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 	const coveredColumns = getAccountD1UserColumnCoverage()
 	expect(coveredColumns.has('entitlement_daily_counters.user_id')).toBe(false)
 	expect(liveUserColumns.has('entitlement_daily_counters.user_id')).toBe(false)
-	const quiescentDetachedColumns = new Set(
-		accountQuiescentDetachedD1ProjectionTables.map(
-			(table) => `${table}.user_id`,
-		),
-	)
 	const missing = [...liveUserColumns].filter(
-		(column) =>
-			!coveredColumns.has(column) && !quiescentDetachedColumns.has(column),
+		(column) => !coveredColumns.has(column),
 	)
 	const stale = [...coveredColumns].filter(
 		(column) => !liveUserColumns.has(column),
@@ -318,9 +311,13 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 	expect(stale).toEqual([])
 })
 
-test('final schema keeps quiescent legacy RunLog D1 projections without stale inventory coverage', () => {
-	const quiescentTables = accountQuiescentDetachedD1ProjectionTables
-	for (const table of quiescentTables) {
+test('final schema drops legacy RunLog D1 projections without stale inventory coverage', () => {
+	const retiredTables = [
+		'workflow_runs',
+		'user_package_run_successes',
+		'user_activation_milestones',
+	] as const
+	for (const table of retiredTables) {
 		expect(
 			accountUserDataTargets.some(
 				(target) => 'table' in target && target.table === table,
@@ -342,13 +339,13 @@ test('final schema keeps quiescent legacy RunLog D1 projections without stale in
 		deletionStatements.join('\n'),
 		exportStatements.join('\n'),
 	].join('\n')
-	for (const table of quiescentTables) {
+	for (const table of retiredTables) {
 		expect(inventorySql).not.toMatch(new RegExp(`\\b${table}\\b`, 'u'))
 	}
 
 	const db = new DatabaseSync(':memory:')
 	applyMigrations(db)
-	for (const table of quiescentTables) {
+	for (const table of retiredTables) {
 		const tableExists = db
 			.prepare(
 				`SELECT 1 AS present
@@ -358,8 +355,8 @@ test('final schema keeps quiescent legacy RunLog D1 projections without stale in
 			.get(table) as { present: number } | undefined
 		expect(
 			tableExists,
-			`${table} should remain as a quiescent rollback copy before migration 0137`,
-		).toBeDefined()
+			`${table} should be absent after migration 0137`,
+		).toBeUndefined()
 	}
 
 	const liveUserColumns = new Set<string>()
@@ -382,16 +379,12 @@ test('final schema keeps quiescent legacy RunLog D1 projections without stale in
 		}
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()
-	const quiescentDetachedColumns = new Set(
-		quiescentTables.map((table) => `${table}.user_id`),
-	)
-	for (const table of quiescentTables) {
+	for (const table of retiredTables) {
 		expect(coveredColumns.has(`${table}.user_id`)).toBe(false)
-		expect(liveUserColumns.has(`${table}.user_id`)).toBe(true)
+		expect(liveUserColumns.has(`${table}.user_id`)).toBe(false)
 	}
 	const missing = [...liveUserColumns].filter(
-		(column) =>
-			!coveredColumns.has(column) && !quiescentDetachedColumns.has(column),
+		(column) => !coveredColumns.has(column),
 	)
 	const stale = [...coveredColumns].filter(
 		(column) => !liveUserColumns.has(column),

@@ -641,8 +641,8 @@ Rules:
   workflows** are authoritative in per-user RunLog `workflow_projections`:
   create reserves atomically via `reserveWorkflowProjectionSlot`, and usage
   readers call `countActiveWorkflowProjections` through
-  `readCurrentEntitlementResourceUsage`. Legacy D1 `workflow_runs` is a
-  quiescent rollback copy outside runtime and retention inventory. See
+  `readCurrentEntitlementResourceUsage`. Legacy D1 `workflow_runs` was retired
+  by migration `0137`. See
   [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing).
 - **Rate-style limits** (email sends/receives per day, execute calls per day,
   outbound fetches per day) are **authoritative in the per-user UserMeter

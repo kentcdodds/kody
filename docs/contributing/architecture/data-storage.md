@@ -215,10 +215,9 @@ Durable Object export behavior:
   runs; ledger terminal rows 90 days). Terminal workflow projections age-prune
   after 90 days inside the DO; job/activation dedicated tables are never pruned
   by retention. Legacy D1 projection tables (`workflow_runs`,
-  `user_package_run_successes`, `user_activation_milestones`) are quiescent
-  rollback copies outside account deletion/export inventory; migration-only
-  `0137` drops the physical tables. Pre-drop D1 Time Travel bookmark for
-  database `8c1014d1-6b41-4695-a0a2-159071f0f919`:
+  `user_package_run_successes`, `user_activation_milestones`) were retired by
+  migration `0137`. Pre-drop D1 Time Travel bookmark for database
+  `8c1014d1-6b41-4695-a0a2-159071f0f919`:
   `0000116d-000000d2-000050bd-c7ecd5892a189df7cda145af746bc9c9`. See
   [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
@@ -328,12 +327,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are quiescent — runtime finalization does not write them. Execution history
   rows live in the same DO.
 - Legacy D1 projection tables `workflow_runs`, `user_package_run_successes`, and
-  `user_activation_milestones` are **quiescent rollback copies** outside account
-  deletion/export inventory and the hourly D1 `workflow_runs` retention lane. No
-  runtime path reads or writes them; authoritative workflow, activation, and
-  package-success state lives in RunLog dedicated tables (see
+  `user_activation_milestones` were **retired by migration `0137`**. No runtime
+  path reads or writes them after the RunLog authority application deploy.
+  Authoritative workflow, activation, and package-success state lives in RunLog
+  dedicated tables (see
   [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing)).
-  Migration-only `0137` drops the physical tables.
 - `package_service_states` (`0095-package-service-states.sql`): per-service
   liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
   account export/deletion inventory, and parity. Upserted and heartbeaten (1h)
@@ -1498,10 +1496,9 @@ Current retention policies:
   expired rows only after they have not been seen for 90 days. The existing
   request-time memory prune may remove expired rows sooner.
 - Terminal workflow projections age-prune after 90 days inside the per-user
-  `RunLog` DO (`workflow_projections`; see [Run records](./run-records.md)).
-  Legacy D1 `workflow_runs` is a quiescent rollback copy outside account
-  retention inventory; migration-only `0137` drops the physical table and its
-  indexes.
+  `RunLog` DO (`workflow_projections`; see [Run records](./run-records.md)). The
+  retired D1 `workflow_runs` table and its hourly retention lane were removed by
+  migration `0137`.
 - `published_bundle_artifacts`: delete D1 rows and their `BUNDLE_ARTIFACTS_KV`
   blobs only when the row is older than 30 days, its `published_commit` is no
   longer current for any matching `entity_sources` row, and there is no active

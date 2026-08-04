@@ -559,6 +559,10 @@
 		{
 			"filename": "0136-user-repos.sql",
 			"sha256": "89321951281dab27f56d2fbcd64b5b761cbd66d4fffb183062bbfe9878eaf634"
+		},
+		{
+			"filename": "0137-drop-legacy-runlog-d1-projections.sql",
+			"sha256": "8d8bbe00581a581c32f497a6a578759aaa47573f690a43e6e217b02704fd314f"
 		}
 	]
 }

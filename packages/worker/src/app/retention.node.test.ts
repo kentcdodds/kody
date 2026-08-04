@@ -20,7 +20,6 @@ import {
 	stripeWebhookEventRetentionDays,
 } from './retention.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
-import { accountQuiescentDetachedD1ProjectionTables } from '#worker/account/data-targets.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -809,13 +808,7 @@ test('retention coverage includes every live growth-pattern table or documented 
 		}
 	}
 	const covered = getRetentionPolicyCoverage()
-	const missing = [...candidateTables].filter(
-		(table) =>
-			!covered.has(table) &&
-			!(
-				accountQuiescentDetachedD1ProjectionTables as readonly string[]
-			).includes(table),
-	)
+	const missing = [...candidateTables].filter((table) => !covered.has(table))
 	const stale = [...covered].filter(
 		(table) =>
 			!candidateTables.has(table) && !tables.some((row) => row.name === table),

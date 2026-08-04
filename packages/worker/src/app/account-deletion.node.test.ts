@@ -8,10 +8,7 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import {
-	accountQuiescentDetachedD1ProjectionTables,
-	accountUserDataExcludedOwnerIds,
-} from '#worker/account/data-targets.ts'
+import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import {
 	AccountDeletionInProgressError,
@@ -589,13 +586,6 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 		.all() as Array<{ name: string }>
 	const liveUserColumns = new Set<string>()
 	for (const table of tables) {
-		if (
-			accountQuiescentDetachedD1ProjectionTables.some(
-				(candidate) => candidate === table.name,
-			)
-		) {
-			continue
-		}
 		const columns = db
 			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table.name)})`)
 			.all() as Array<{ name: string }>

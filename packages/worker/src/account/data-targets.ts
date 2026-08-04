@@ -72,18 +72,6 @@ export const accountUserDataExcludedOwnerIds = [
 ] as const
 
 /**
- * Legacy RunLog D1 projection tables kept as quiescent rollback copies after
- * the RunLog authority application deploy. Deploy 2 detaches account
- * deletion/export inventory and the hourly D1 workflow_runs retention lane;
- * migration-only `0137` drops the physical tables.
- */
-export const accountQuiescentDetachedD1ProjectionTables = [
-	'workflow_runs',
-	'user_package_run_successes',
-	'user_activation_milestones',
-] as const
-
-/**
  * D1 tables that are operator/platform owned by construction and have no
  * user-id ownership column. They are permanently outside account deletion and
  * export; listing them here keeps that disposition explicit in export manifests.
