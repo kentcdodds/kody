@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	classifyMigrationBookkeeping,
 	parseArgs,
+	preSquashGhostMigrationNames,
 	preSquashMigrationNames,
 	squashedInitMigrationName,
 } from './reset-migration-bookkeeping.ts'
@@ -33,6 +34,28 @@ test('exactly the frozen pre-squash set classifies as pre-squash', () => {
 	expect(classifyMigrationBookkeeping(shuffled)).toEqual({
 		state: 'pre-squash',
 	})
+})
+
+test('pre-ledger ghost rows are accepted alongside the frozen set', () => {
+	expect(
+		classifyMigrationBookkeeping([
+			...preSquashMigrationNames,
+			...preSquashGhostMigrationNames,
+		]),
+	).toEqual({ state: 'pre-squash' })
+	expect(
+		classifyMigrationBookkeeping([
+			...preSquashMigrationNames,
+			'0006-drop-mock-request-tables.sql',
+		]),
+	).toEqual({ state: 'pre-squash' })
+	// Ghosts alone do not excuse missing history.
+	const withoutFinal = preSquashMigrationNames.slice(0, -1)
+	const result = classifyMigrationBookkeeping([
+		...withoutFinal,
+		...preSquashGhostMigrationNames,
+	])
+	expect(result.state).toBe('unexpected')
 })
 
 test('a missing pre-squash migration is refused with a set diff', () => {

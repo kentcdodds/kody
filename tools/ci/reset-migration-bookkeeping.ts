@@ -186,6 +186,26 @@ export const preSquashMigrationNames: ReadonlyArray<string> = [
 	'0144-drop-jobs-observability-columns.sql',
 ]
 
+/**
+ * Pre-ledger bookkeeping ghosts: rows that exist in long-lived databases
+ * (production) because a migration file was applied and then renamed or
+ * deleted before the migration ledger froze history. Wrangler keys applied
+ * migrations by filename, so the old name's row survives. Provenance:
+ *
+ * - `0006-drop-mock-request-tables.sql` — applied, then renamed to
+ *   `0007-drop-mock-request-tables.sql` when `0006-ui-artifacts.sql` took
+ *   the prefix (PR #29); production holds rows for both names.
+ * - `0039-source-rescue-events.sql` — applied, then deleted by the source
+ *   rescue revert (PR #531); `0040-drop-source-rescue-events.sql` removed
+ *   its tables and the 0039 row remained.
+ *
+ * Databases may hold any subset of these in addition to the frozen set.
+ */
+export const preSquashGhostMigrationNames: ReadonlyArray<string> = [
+	'0006-drop-mock-request-tables.sql',
+	'0039-source-rescue-events.sql',
+]
+
 export type BookkeepingClassification =
 	| { state: 'fresh' }
 	| { state: 'squashed' }
@@ -206,8 +226,11 @@ export function classifyMigrationBookkeeping(
 	}
 	const applied = new Set(appliedNames)
 	const expected = new Set(preSquashMigrationNames)
+	const ghosts = new Set(preSquashGhostMigrationNames)
 	const missing = [...expected].filter((name) => !applied.has(name)).sort()
-	const extra = [...applied].filter((name) => !expected.has(name)).sort()
+	const extra = [...applied]
+		.filter((name) => !expected.has(name) && !ghosts.has(name))
+		.sort()
 	if (missing.length === 0 && extra.length === 0) {
 		return { state: 'pre-squash' }
 	}
