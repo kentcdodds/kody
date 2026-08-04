@@ -725,8 +725,8 @@ operators retry deployment. The same migration adds two non-payload coordination
 surfaces: `email_inbound_due_owners` provides bounded owner discovery for
 scheduled inbound reconciliation, ordered by due time and owner with 25 owners
 processed per tick (the seeded one-shot `cutover-audit` backlog drained during
-cutover). `email_delivery_alert_events` preserves short-lived
-bounced/complained signals for operator burst alerts.
+cutover). `email_delivery_alert_events` preserves short-lived bounced/complained
+signals for operator burst alerts.
 
 Migration `0135-drop-legacy-email-graph.sql` removed the shared D1
 `email_threads`, `email_messages`, `email_attachments`, and

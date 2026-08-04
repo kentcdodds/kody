@@ -303,9 +303,7 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 		['execute_calls_per_day', 11],
 		['outbound_fetches_per_day', 7],
 	])
-	expect(report?.daily.resources.every((row) => !row.needsBootstrap)).toBe(
-		true,
-	)
+	expect(report?.daily.resources.every((row) => !row.needsBootstrap)).toBe(true)
 	assertNoLeaseSecrets(report)
 })
 

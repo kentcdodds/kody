@@ -413,19 +413,19 @@ storage, package-service, and write-fencing sections above.
 **Daily-counter mirror (retired):** live schema has no
 `entitlement_daily_counters` table (Workers `#1133` / `#1134`, then migration
 `0126-drop-entitlement-daily-counters.sql`). Admin parity reports meter-only
-daily counts. Production scans across 38 users showed zero daily mismatches
-with Analytics Engine reporting active before the drop.
+daily counts. Production scans across 38 users showed zero daily mismatches with
+Analytics Engine reporting active before the drop.
 
 ### Admin UserMeter parity gates (`admin_user_meter_parity`)
 
 Production verification uses the admin-only read-only capability
 `admin_user_meter_parity` (input: `stable_user_id`). It compares
 production-shaped D1 rows for one account against direct UserMeter RPCs and
-never bootstraps or writes parity state. The daily section is meter-only (the
-D1 mirror is dropped, so no comparison fields exist). Opening a cold UserMeter
-stub may still run Durable Object constructor schema maintenance and
-opportunistic stale daily-counter pruning. Cold meter rows surface as
-`needsBootstrap` with `meterCount`/`meterBytes` null.
+never bootstraps or writes parity state. The daily section is meter-only (the D1
+mirror is dropped, so no comparison fields exist). Opening a cold UserMeter stub
+may still run Durable Object constructor schema maintenance and opportunistic
+stale daily-counter pruning. Cold meter rows surface as `needsBootstrap` with
+`meterCount`/`meterBytes` null.
 
 Interpret the structured report as independent gates:
 
