@@ -229,7 +229,7 @@ Durable Object export behavior:
   inventory once when present. UserMeter `package_service_states` is
   **authoritative** for running-count enforcement; D1 `package_service_states`
   remains the enumeration export in the `d1` section. `users.d1_storage_bytes`
-  is a **temporary async mirror**; authoritative storage bytes live in
+  is retired (cursor-only column pair); authoritative storage bytes live in
   UserMeter. Retention is self-enforced inside the DO (seven UTC days of counter
   and inbound-delivery-claim rows); storage-byte and package-service liveness
   rows are not time-pruned. See
@@ -574,7 +574,7 @@ Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
 (`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4
 `storage_bytes_state` is the **authoritative** storage-byte counter (D1
-`users.d1_storage_bytes` is the temporary async mirror; evidence in
+`users.d1_storage_bytes` is retired (cursor-only); evidence in
 [Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
 Schema v5 `package_service_states` is the **authoritative running-count source**
 for `package_services` / `service_start`; D1 remains the enumeration index and
@@ -603,11 +603,12 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 - `storage_bytes_state` — **authoritative** D1 payload byte counter (`id = 1`
   CHECK constraint, `bytes`, monotonic `revision`, `updated_at`). Written by
   `reserveStorageBytes` (atomic increment with limit check),
-  `initializeStorageBytes` (INSERT OR IGNORE cold bootstrap from D1 mirror), and
+  `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
   `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
   and usage reads via `readStorageBytes`; D1 `users.d1_storage_bytes` is the
-  temporary async mirror (MAX on reserve; direct set on reconcile).
-  StorageRunner bucket estimates stay outside this row (see
+  retired mirror — never written; its `_updated_at` half remains the
+  reconcile-lane sweep cursor until the drop migration. StorageRunner bucket
+  estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter-expand-phase)).
 - `package_service_states` — per-service liveness rows (`package_id`,
   `service_name`, `status`, `started_at`, `source_updated_at`, monotonic

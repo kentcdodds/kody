@@ -18,7 +18,13 @@ const dailyResourceReadSchema = z.object({
 })
 
 const storageParitySchema = z.object({
-	d1Bytes: z.number().int().nonnegative(),
+	d1Bytes: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Physical recompute from D1 payload tables (the reconcile-lane source), not a stored mirror.',
+		),
 	meterBytes: z.number().int().nonnegative().nullable(),
 	needsBootstrap: z.boolean(),
 	delta: z.number().int().nullable(),

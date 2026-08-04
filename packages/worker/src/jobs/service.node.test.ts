@@ -567,12 +567,9 @@ function createDatabase(
 							if (query.includes('COALESCE(SUM(')) {
 								return { count: 0 } as T
 							}
-							// Cold bootstrap reads d1_storage_bytes from users; no storage
-							// seeded here so null triggers synthetic-context free-plan allow.
-							if (
-								query.includes('d1_storage_bytes') &&
-								query.includes('FROM users')
-							) {
+							// Cold bootstrap probes for a users row; none seeded here so
+							// null triggers synthetic-context free-plan allow.
+							if (query.includes('SELECT 1 AS present FROM users')) {
 								return null
 							}
 							throw new Error(`Unsupported first query: ${query}`)

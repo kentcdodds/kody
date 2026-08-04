@@ -12,6 +12,7 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
@@ -37,7 +38,6 @@ import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
-import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import {
 	emailAttachmentBlobKey,
 	ensurePlatformSenderIdentity,
@@ -635,7 +635,7 @@ export async function sendOutboundEmail(
 			inReplyTo: input.inReplyToHeader ?? null,
 			references: input.references ?? [],
 		})
-		await reserveEmailStorageBytes({
+		await assertWithinStorageBytesEntitlement({
 			db: input.env.APP_DB,
 			env: input.env,
 			userId: input.userId,

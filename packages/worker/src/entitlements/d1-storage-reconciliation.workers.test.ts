@@ -4,7 +4,6 @@ import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	calculateUserD1StorageBytes,
-	readUserD1StorageBytes,
 	reconcileUserD1StorageBytes,
 } from './service.ts'
 import { reconcileD1StorageBytes } from './d1-storage-reconciliation.ts'
@@ -32,6 +31,15 @@ async function insertReconciliationUser(input: {
 		.run()
 }
 
+async function readRetiredMirrorColumn(userId: string) {
+	const row = await env.APP_DB.prepare(
+		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ bytes: number }>()
+	return row?.bytes ?? null
+}
+
 async function insertTrackedD1Payload(userId: string, size: number) {
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS mcp_memories (
@@ -54,7 +62,7 @@ async function insertTrackedD1Payload(userId: string, size: number) {
 		.run()
 }
 
-test('D1 storage reconciliation is UserMeter-authoritative: sets DO absolute first, then mirrors to D1', async () => {
+test('D1 storage reconciliation is UserMeter-authoritative and never writes the retired mirror column', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(
 		`UPDATE users
@@ -98,21 +106,17 @@ test('D1 storage reconciliation is UserMeter-authoritative: sets DO absolute fir
 		}),
 	).resolves.toEqual({ scanned: 1, updated: 1, failed: 0, deferred: 0 })
 
-	// D1 mirror reflects the physical recomputation.
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: firstUserId }),
-	).resolves.toBe(expectedFirstBytes)
+	// The retired mirror column is never written; only the cursor advances.
+	await expect(readRetiredMirrorColumn(firstUserId)).resolves.toBe(1)
 
-	// UserMeter is now authoritative with the same physical value.
+	// UserMeter is now authoritative with the physical value.
 	expect(await firstMeter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
 		bytes: expectedFirstBytes,
 	})
 
-	// Second user (no tracked payload): reconcile zeros both.
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: secondUserId }),
-	).resolves.toBe(99)
+	// Second user (no tracked payload): meter reconciles to zero; the stale
+	// retired column value stays untouched.
 	await expect(
 		reconcileD1StorageBytes({
 			db: env.APP_DB,
@@ -121,9 +125,7 @@ test('D1 storage reconciliation is UserMeter-authoritative: sets DO absolute fir
 			batchSize: 1,
 		}),
 	).resolves.toEqual({ scanned: 1, updated: 1, failed: 0, deferred: 0 })
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: secondUserId }),
-	).resolves.toBe(0)
+	await expect(readRetiredMirrorColumn(secondUserId)).resolves.toBe(99)
 	const secondMeter = userMeterRpc({ env, userId: secondUserId })
 	expect(await secondMeter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
@@ -169,11 +171,9 @@ test('reconciliation sets UserMeter to physical-payload absolute, not stale D1 u
 		}),
 	).resolves.toMatchObject({ failed: 0 })
 
-	// UserMeter should now equal the physical payload recomputation, NOT the stale DO
-	// value or stale D1 counter (both 500_000 / 999_999 must have been corrected).
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(expectedBytes)
+	// UserMeter should now equal the physical payload recomputation, NOT the
+	// stale DO value. The retired D1 column is never rewritten.
+	await expect(readRetiredMirrorColumn(userId)).resolves.toBe(999_999)
 	expect(await meter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
 		bytes: expectedBytes,
@@ -324,10 +324,8 @@ test('reconcile defers and preserves reserve when CAS misses a concurrent reserv
 	// Real DO still has 150 bytes (initial 100 + reserve 50).
 	expect(await meter.readStorageBytes()).toMatchObject({ bytes: 150 })
 
-	// D1 mirror NOT updated — reconcile never reached the mirror step.
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(0)
+	// The retired mirror column is never written.
+	await expect(readRetiredMirrorColumn(userId)).resolves.toBe(0)
 
 	await env.APP_DB.prepare(
 		`UPDATE users
@@ -335,7 +333,7 @@ test('reconcile defers and preserves reserve when CAS misses a concurrent reserv
 	).run()
 })
 
-test('reconcile applies successful downward correction and mirrors D1', async () => {
+test('reconcile applies a successful downward correction to UserMeter', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(
 		`UPDATE users
@@ -373,16 +371,14 @@ test('reconcile applies successful downward correction and mirrors D1', async ()
 		now: new Date('2026-08-01T01:00:00.000Z'),
 	})
 
-	// CAS applied; DO corrected to physical bytes; D1 mirrored.
+	// CAS applied; DO corrected to physical bytes; retired column untouched.
 	expect(result).toEqual({
 		bytes: physicalBytes,
 		updated: true,
 		deferred: false,
 	})
 	expect(await meter.readStorageBytes()).toMatchObject({ bytes: physicalBytes })
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(physicalBytes)
+	await expect(readRetiredMirrorColumn(userId)).resolves.toBe(0)
 
 	await env.APP_DB.prepare(
 		`UPDATE users
@@ -458,10 +454,8 @@ test('reconcile defers without overwriting when cold init race: another caller c
 	})
 	expect(initCallCount).toBe(1)
 
-	// D1 mirror NOT updated — only mirrors after successful init or CAS.
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(0)
+	// The retired mirror column is never written.
+	await expect(readRetiredMirrorColumn(userId)).resolves.toBe(0)
 
 	await env.APP_DB.prepare(
 		`UPDATE users

@@ -9,6 +9,7 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -61,7 +62,6 @@ import {
 	RetryableInboundStorageError,
 	storeIdempotentInboundEmail,
 } from './service.ts'
-import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import { handleSystemInboundEmail } from './system-inbound-email.ts'
 import { isSystemEmailLocal } from './system-email.ts'
 
@@ -436,7 +436,7 @@ export async function handleInboundEmail(
 					// before their durable quota claim. A retry with an existing
 					// ledger bypasses both so already-charged mail can still repair
 					// after unrelated writes fill the mailbox.
-					await reserveEmailStorageBytes({
+					await assertWithinStorageBytesEntitlement({
 						db: env.APP_DB,
 						env,
 						userId,
@@ -445,9 +445,6 @@ export async function handleInboundEmail(
 							message,
 							recipient,
 						}),
-						waitUntil: ctx
-							? (promise: Promise<unknown>) => ctx.waitUntil(promise)
-							: undefined,
 					})
 					await assertWithinEntitlement({
 						db: env.APP_DB,

@@ -253,7 +253,6 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 							}
 						: null,
 				}),
-				waitUntil: input.waitUntil,
 			})
 
 			if (existing) {

@@ -9,6 +9,7 @@ import {
 	type UserMeterPackageServiceState,
 } from '#worker/entitlements/user-meter-do.ts'
 import {
+	calculateUserD1StorageBytes,
 	countRunningPackageServicesFromD1,
 	packageServiceStateStaleMs,
 } from '#worker/entitlements/service.ts'
@@ -138,15 +139,16 @@ async function readStorageParity(input: {
 	env: UserMeterEnv
 	stableUserId: string
 }): Promise<StorageParity> {
-	const d1Row = await input.db
-		.prepare(
-			`SELECT d1_storage_bytes AS bytes
-			FROM users
-			WHERE stable_user_id = ?`,
-		)
-		.bind(input.stableUserId)
-		.first<{ bytes: number }>()
-	const d1Bytes = Math.max(0, Number(d1Row?.bytes ?? 0))
+	// Physical recompute from D1 payload tables — the same source the
+	// reconcile lane applies to UserMeter. The retired users.d1_storage_bytes
+	// mirror is never read.
+	const d1Bytes = Math.max(
+		0,
+		await calculateUserD1StorageBytes({
+			db: input.db,
+			userId: input.stableUserId,
+		}),
+	)
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
 	const meterRead = await meter.readStorageBytes()
 	const needsBootstrap = meterRead.outcome === 'needs_bootstrap'

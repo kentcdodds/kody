@@ -12,7 +12,24 @@ import {
 	dailyEntitlementResources,
 	type UserMeterPackageServiceState,
 } from '#worker/entitlements/user-meter-do.ts'
-import { loadAdminUserMeterParityReport } from './user-meter-parity.ts'
+import type * as EntitlementsService from '#worker/entitlements/service.ts'
+
+const mockModule = vi.hoisted(() => ({
+	/** Physical D1 payload recompute; the minimal test DB has no payload tables. */
+	calculateUserD1StorageBytes: vi.fn(async () => 0),
+}))
+
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof EntitlementsService>()
+	return {
+		...actual,
+		calculateUserD1StorageBytes: (...args: Array<unknown>) =>
+			mockModule.calculateUserD1StorageBytes(...args),
+	}
+})
+
+const { loadAdminUserMeterParityReport } =
+	await import('./user-meter-parity.ts')
 
 const stableUserId = testStableUserIdFromEmail('parity@example.com')
 const now = new Date('2026-08-01T12:00:00.000Z')
@@ -213,6 +230,7 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 		outbound_fetches_per_day: 7,
 	}
 	const serviceUpdatedAt = '2026-08-01T11:00:00.000Z'
+	mockModule.calculateUserD1StorageBytes.mockResolvedValue(4096)
 	seedD1ParityBaseline({
 		sqlite,
 		stableUserId,
@@ -355,6 +373,7 @@ test('loadAdminUserMeterParityReport D1 lease rows are quiescent; activeLeaseCou
 test('loadAdminUserMeterParityReport classifies mismatches and needsBootstrap without writing parity state', async () => {
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
+	mockModule.calculateUserD1StorageBytes.mockResolvedValue(100)
 	insertUser(sqlite, { stableUserId, d1StorageBytes: 100 })
 	sqlite
 		.prepare(

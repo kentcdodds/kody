@@ -157,7 +157,6 @@ export async function saveSecret(
 					}
 				: null,
 		}),
-		waitUntil: input.waitUntil,
 	})
 	const now = new Date().toISOString()
 	await upsertSecretEntry({
@@ -387,7 +386,6 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		userId: input.userId,
 		email: input.userEmail,
 		requested: requestedStorageBytes,
-		waitUntil: input.waitUntil,
 	})
 
 	try {
@@ -521,7 +519,6 @@ async function saveSecretsAtomically(input: {
 		userId: input.userId,
 		email: input.userEmail,
 		requested: requestedStorageBytes,
-		waitUntil: input.waitUntil,
 	})
 
 	await upsertSecretEntriesAtomically({

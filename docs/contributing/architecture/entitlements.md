@@ -128,9 +128,13 @@ storage layout and naming are documented in [Data storage](./data-storage.md).
 UserMeter** (Worker #1136 passes `USER_METER` on all email inbound/outbound
 storage reservations; production evidence 2026-08-01).
 `assertWithinStorageBytesEntitlement` uses atomic DO `reserveStorageBytes` for
-all callers. `users.d1_storage_bytes` is a **temporary async mirror** — it is
-never read for enforcement or usage; only parity checks, reconcile tooling, and
-cold bootstrap read it.
+all callers. The `users.d1_storage_bytes` mirror is **retired**: no runtime path
+reads or writes byte values to it. Cold bootstrap zero-initializes the DO
+singleton (matching the daily counter cold path); the bounded
+`d1_storage_reconciliation` lane recomputes physical D1 payload bytes and
+corrects drift via revision-guarded CAS. `users.d1_storage_bytes_updated_at`
+persists only as the lane's oldest-first sweep cursor until a follow-up
+migration drops the column pair.
 
 **D1 package service liveness** (`package_service_states`): UserMeter is the
 **authoritative running-count source** for `package_services` enforcement and
@@ -195,50 +199,37 @@ Cross-UTC-day retries use the original claim's resource/day.
 updates / 0 failures; 38-user parity scan showed 0 storage mismatches. Mailbox
 storage reservations pass `USER_METER` as of Worker #1136. Cutover is live.
 
-**Authority:** `users.d1_storage_bytes` is a **temporary async mirror** of the
-UserMeter `storage_bytes_state` singleton. It is **not** read for enforcement or
-usage reads; it serves only:
-
-- **Cold bootstrap**: when UserMeter returns `needs_bootstrap`,
-  `assertWithinStorageBytesEntitlement` reads `users.d1_storage_bytes` and calls
-  `UserMeter.initializeStorageBytes` (INSERT OR IGNORE, concurrent-safe), then
-  retries the DO reserve.
-- **Parity and tooling**: `readUserD1StorageBytes`, `admin_user_meter_parity`,
-  and migration backfills compare/read the D1 mirror directly.
-- **Reconcile recomputation cursor**: `listUsersForD1StorageReconciliation` uses
-  `d1_storage_bytes_updated_at` as its oldest-first ordering key; the column is
-  kept as the sweep cursor even though D1 is not authoritative.
-
-**Do not drop `users.d1_storage_bytes` or `users.d1_storage_bytes_updated_at`
-yet.** Both columns remain in place during the async-mirror dual-write window. A
-separate schema migration (with its own parity sign-off) will retire them after
-the reconcile lane and parity checks confirm the columns are unused.
+**Authority:** the UserMeter `storage_bytes_state` singleton is the sole
+enforcement and usage counter. The `users.d1_storage_bytes` mirror is
+**retired** — no runtime path reads or writes byte values to it.
+`users.d1_storage_bytes_updated_at` persists only as the reconcile lane's
+oldest-first sweep cursor (advanced by
+`markUserD1StorageReconciliationAttempt`); a follow-up migration drops the
+column pair and re-keys the sweep.
 
 **Reserve path (`assertWithinStorageBytesEntitlement`):**
 
 1. Resolve plan limit from `getCachedUserPlan` (60s TTL OK — only limit
    resolution is cached; DO counter is always fresh).
 2. Call `UserMeter.reserveStorageBytes({ requested, limit })`.
-3. If `needs_bootstrap`: read `users.d1_storage_bytes`. If the row is missing
+3. If `needs_bootstrap`: probe for a `users` row. If the row is missing
    (synthetic context / non-account id), apply free-plan allow/deny without
    touching the DO — missing users never create a DO singleton. If the row
-   exists, call `initializeStorageBytes` and retry (max 2 attempts).
-4. On success: schedule best-effort non-awaited D1 mirror via `waitUntil` when
-   available — `UPDATE users SET d1_storage_bytes = MAX(d1_storage_bytes, ?)`.
-   The MAX guard prevents a delayed mirror from regressing D1 below a newer DO
-   value. Mirror failures log `entitlement-storage-bytes-d1-mirror-failed` and
-   never affect the reserve outcome.
-5. On `!reserved`: throw `EntitlementLimitError`.
-6. `env.USER_METER` is required on the DO-reserve path; throws immediately if
+   exists, zero-initialize via `initializeStorageBytes` (INSERT OR IGNORE,
+   concurrent-safe, matching the daily counter cold path) and retry (max 2
+   attempts). The reconcile lane corrects the counter from physical payload
+   bytes.
+4. On `!reserved`: throw `EntitlementLimitError`.
+5. `env.USER_METER` is required on the DO-reserve path; throws immediately if
    absent (fail closed). Only the legacy `getCurrent` check-only path (used by
    StorageRunner bucket totals) omits `env` safely.
 
 **Usage reads (`readCurrentEntitlementResourceUsage(storage_bytes)`):** Reads
-from UserMeter with the same cold bootstrap path. On `needs_bootstrap`, reads
-`users.d1_storage_bytes`, seeds the DO, then re-reads. The generic D1
+from UserMeter with the same zero-init cold bootstrap path. The generic D1
 `readEntitlementResourceUsage` for `storage_bytes` throws with guidance —
 callers must use `readCurrentEntitlementResourceUsage` or
-`assertWithinStorageBytesEntitlement`.
+`assertWithinStorageBytesEntitlement`. StorageRunner's composed baseline also
+reads UserMeter via `readStorageBytesFromUserMeter`.
 
 **Account export and purge:** `UserMeter.exportCounters` may return additive
 non-authoritative shadow fields on the first page only (`startAfter` absent):
@@ -393,17 +384,12 @@ updates / 0 failures (pre-flip shadow sweep); 38-user parity scan showed 0
 storage mismatches. Worker #1136 passed `USER_METER` on all email mailbox
 inbound/outbound storage reservations.
 
-**Rollback window / dual-write:** `users.d1_storage_bytes` continues to receive
-best-effort MAX mirror writes after every successful DO reservation. Physical
-payload tables (not `users.d1_storage_bytes`) remain the recomputation source
-for reconcile. A rollback to D1 authority is possible while the D1 mirror is
-still tracking the DO counter — confirm via `admin_user_meter_parity` before
-rolling back. The dual-write window closes when `users.d1_storage_bytes` and
-`users.d1_storage_bytes_updated_at` are dropped (separate schema migration after
-parity sign-off).
-
-**Do not drop the D1 columns yet.** They serve as the async mirror, cold
-bootstrap source, and reconcile cursor during the dual-write window.
+**Mirror retired (contract):** the dual-write window is closed. No runtime path
+writes byte values to `users.d1_storage_bytes`; physical payload tables are the
+recomputation source for reconcile, and a rollback to D1 authority is no longer
+supported. `users.d1_storage_bytes_updated_at` remains only as the
+reconcile-lane sweep cursor until a follow-up migration drops the column pair
+and re-keys the sweep.
 
 **Current UserMeter authority:** all write leases (including email), storage
 bytes, and package-service running counts are authoritative in UserMeter. D1
@@ -432,7 +418,7 @@ Interpret the structured report as independent gates:
 | Gate                     | Pass condition                                                                                                                                                                                                                                                                      |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Daily counters (UTC day) | Meter-only reads: each of the four daily resources reports `meterCount` (null with `needsBootstrap: true` on cold accounts). No D1 comparison exists.                                                                                                                               |
-| Storage bytes            | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                          |
+| Storage bytes            | `storage.parity` — physical recompute from D1 payload tables (`calculateUserD1StorageBytes`, the reconcile-lane source) equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                 |
 | Package services         | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`. |
 | Deletion tombstone       | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                   |
 | Active lease count       | `deletion.activeLeaseCount` — count of active DO write leases in UserMeter. D1 `account_write_leases` is not queried. Alert on unexplained non-zero counts after all known writer processes have been verified terminated.                                                          |
@@ -451,7 +437,8 @@ The admin-only maintenance capability `admin_user_meter_storage_reconcile` is a
 Each invocation:
 
 1. Scans one oldest-first page (default and max `batch_size` 8) of users ordered
-   by `d1_storage_bytes_updated_at`.
+   by `d1_storage_bytes_updated_at` (the sweep cursor — never read as a byte
+   value).
 2. For each user: reads the current UserMeter revision **before** computing the
    physical byte count (`capturedRevision`).
 3. Recomputes the absolute byte count from D1 payload tables via
@@ -461,12 +448,12 @@ Each invocation:
    only writes if `capturedRevision` still matches the current DO revision. This
    prevents the sweep from clobbering a live reservation that arrived between
    step 2 and the CAS call.
-5. Mirrors the same absolute to `users.d1_storage_bytes` **only** after a
-   successful CAS or cold init.
+5. Rotates every processed row to the back of the queue by advancing the sweep
+   cursor; no byte values are written to D1.
 
 **Result codes:**
 
-- `updated` — CAS applied (or cold init succeeded); UserMeter and D1 updated.
+- `updated` — CAS applied (or cold init succeeded); UserMeter updated.
 - `deferred` — CAS miss (a concurrent reserve bumped the revision) or cold-init
   race (another caller created the singleton first). The row is rotated to the
   back of the oldest-first queue for the next sweep. **A deferred row is not a
@@ -476,8 +463,8 @@ Each invocation:
 
 **CAS miss behavior:** when a live `reserveStorageBytes` call bumps the revision
 between revision capture and the CAS attempt, `reconcileStorageBytes` returns
-`applied: false`. The reconcile function immediately defers — it does not retry
-and does not mirror to D1. The reservation byte count is fully preserved.
+`applied: false`. The reconcile function immediately defers — it does not retry.
+The reservation byte count is fully preserved.
 
 **Cold init race:** when the DO singleton is absent at read time
 (`needs_bootstrap`), the reconcile computes the physical sum and calls
@@ -495,8 +482,8 @@ when the binding is missing. Storage-byte helpers
 (`assertWithinStorageBytesEntitlement`, `reconcileUserD1StorageBytes`,
 `readCurrentEntitlementResourceUsage` for `storage_bytes`) require `USER_METER`;
 missing binding fails closed for reserve and read paths.
-`readUserD1StorageBytes` is the D1 mirror reader for parity, bootstrap, and
-tooling only.
+`calculateUserD1StorageBytes` is the physical payload recompute used by the
+reconcile lane, cold-drift correction, and the parity report.
 
 ## Schema history
 
@@ -681,25 +668,23 @@ Rules:
      they are observability history, not user content. Write chokepoints
      atomically reserve positive byte deltas via
      `assertWithinStorageBytesEntitlement` against the UserMeter DO (every
-     caller, including email, after Worker #1136). Cold DO singletons bootstrap
-     from `users.d1_storage_bytes` (INSERT OR IGNORE, concurrent-safe) before
-     retrying the reserve. After a successful DO reserve, a best-effort MAX
-     mirror is scheduled to `users.d1_storage_bytes` via `waitUntil`. The
-     bounded `d1_storage_reconciliation` lane recomputes the physical
-     cross-surface sum via `calculateUserD1StorageBytes`, applies it to
-     UserMeter via a revision-guarded CAS (never clobbers a live reservation),
-     then mirrors to D1 only after a successful CAS or cold init — see
+     caller, including email, after Worker #1136). Cold DO singletons
+     zero-initialize (INSERT OR IGNORE, concurrent-safe) before retrying the
+     reserve. The bounded `d1_storage_reconciliation` lane recomputes the
+     physical cross-surface sum via `calculateUserD1StorageBytes` and applies it
+     to UserMeter via a revision-guarded CAS (never clobbers a live
+     reservation); no byte values are written back to D1 — see
      [UserMeter (expand phase)](#usermeter-expand-phase).
 
   2. **StorageRunner bucket estimates (separate):** each bucket exposes
      `estimatedBytes`; inventory rows persist the latest measurement on
      `user_storage_buckets.estimated_bytes` (migration 0118). Write chokepoints
      that pass `getCurrent` compose
-     `D1 payload (readUserD1StorageBytes) + sum of per-bucket estimates` for a
-     **check-only** entitlement comparison — `getCurrent` never reserves in D1
-     or UserMeter. Only the bucket that triggers the baseline read (plus any
-     inventoried bucket with no stored estimate yet) is probed live; every other
-     bucket contributes its stored D1 estimate, so mutating writes do not fan
+     `UserMeter payload bytes (readStorageBytesFromUserMeter) + sum of per-bucket estimates`
+     for a **check-only** entitlement comparison — `getCurrent` never reserves.
+     Only the bucket that triggers the baseline read (plus any inventoried
+     bucket with no stored estimate yet) is probed live; every other bucket
+     contributes its stored D1 estimate, so mutating writes do not fan
      `getEstimatedBytes` RPCs across the whole inventory. Live probe results are
      persisted fire-and-forget with **UPDATE-only** statements (they can never
      recreate an inventory row removed by account, package, or job deletion),
@@ -786,20 +771,20 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                                                                                                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                                                                                                                            |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                                 |
-| `package_services`            | `service_start` capability path (`getCurrent` with `countRunningPackageServices(env)`; UserMeter authority since 2026-08-01; D1-only fresh-running rows are parity blockers rather than runtime bootstrap input)                           |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                                                                                                                                 |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                                                                                                                                                                          |
-| `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                        |
-| `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                          |
-| `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                          |
-| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`)                                                                                                                                             |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                           |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                    |
-| `storage_bytes`               | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold bootstrap from D1 mirror; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
+| Resource                      | Enforcement point                                                                                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                                                                                                                       |
+| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
+| `package_services`            | `service_start` capability path (`getCurrent` with `countRunningPackageServices(env)`; UserMeter authority since 2026-08-01; D1-only fresh-running rows are parity blockers rather than runtime bootstrap input)                      |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                                                                                                                            |
+| `repo_sessions`               | `repo_open_session` before creating a new session                                                                                                                                                                                     |
+| `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
+| `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                     |
+| `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                     |
+| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`)                                                                                                                                        |
+| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                      |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                               |
+| `storage_bytes`               | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
 
 ## Billing
 

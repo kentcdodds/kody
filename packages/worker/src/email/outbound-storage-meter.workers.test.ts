@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { readUserD1StorageBytes } from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -16,14 +15,14 @@ function createBindingSendEnv() {
 		APP_BASE_URL: platformBaseUrl,
 		EMAIL: {
 			async send() {
-				return { messageId: 'provider-storage-shadow' }
+				return { messageId: 'provider-storage-meter' }
 			},
 		},
 	}
 }
 
 async function seedVerifiedAccount(email: string) {
-	const username = `shadow-${crypto.randomUUID().slice(0, 8)}`
+	const username = `meter-${crypto.randomUUID().slice(0, 8)}`
 	const stableUserId = await createStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
@@ -45,29 +44,15 @@ async function seedVerifiedAccount(email: string) {
 	}
 }
 
-async function seedAuthoritativeD1StorageBytes(userId: string, bytes: number) {
-	const updatedAt = new Date().toISOString()
-	await env.APP_DB.prepare(
-		`UPDATE users
-		SET d1_storage_bytes = ?,
-			d1_storage_bytes_updated_at = ?
-		WHERE stable_user_id = ?`,
-	)
-		.bind(bytes, updatedAt, userId)
-		.run()
-}
-
-test('sendOutboundEmail reserves D1 storage bytes and best-effort shadows them into USER_METER', async () => {
+test('sendOutboundEmail reserves storage bytes in UserMeter and never touches the retired D1 mirror', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 
-	const accountEmail = `storage-shadow-${crypto.randomUUID()}@example.com`
+	const accountEmail = `storage-meter-${crypto.randomUUID()}@example.com`
 	const { userId } = await seedVerifiedAccount(accountEmail)
-	const initialD1Bytes = 42
-	const staleShadowBytes = 7
-	await seedAuthoritativeD1StorageBytes(userId, initialD1Bytes)
+	const initialMeterBytes = 42
 	await userMeterRpc({ env, userId }).setStorageBytes({
-		bytes: staleShadowBytes,
+		bytes: initialMeterBytes,
 		updatedAt: '2026-07-31T11:00:00.000Z',
 	})
 
@@ -76,28 +61,24 @@ test('sendOutboundEmail reserves D1 storage bytes and best-effort shadows them i
 		userId,
 		accountEmail,
 		recipientPolicy: 'self',
-		subject: 'Storage shadow handoff',
+		subject: 'Storage meter reserve',
 		text: 'Outbound body for storage reservation.',
 	})
 
 	expect(result.status).toBe('sent')
-	expect(result.providerMessageId).toBe('provider-storage-shadow')
+	expect(result.providerMessageId).toBe('provider-storage-meter')
 
-	const authoritativeAfter = await readUserD1StorageBytes({
-		db: env.APP_DB,
-		userId,
-	})
-	expect(authoritativeAfter).toBeGreaterThan(initialD1Bytes)
+	const meterAfter = await userMeterRpc({ env, userId }).readStorageBytes()
+	if (meterAfter.outcome !== 'ready') {
+		throw new Error('Expected a ready UserMeter storage read after reserve.')
+	}
+	expect(meterAfter.bytes).toBeGreaterThan(initialMeterBytes)
 
-	const authoritative = await readUserD1StorageBytes({
-		db: env.APP_DB,
-		userId,
-	})
-	const shadow = await userMeterRpc({ env, userId }).readStorageBytes()
-	expect(shadow).toMatchObject({
-		outcome: 'ready',
-		bytes: authoritativeAfter,
-	})
-	expect(authoritative).toBe(authoritativeAfter)
-	expect(authoritative).not.toBe(staleShadowBytes)
+	// The retired legacy mirror column is never written by the send path.
+	const mirrorRow = await env.APP_DB.prepare(
+		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ bytes: number }>()
+	expect(mirrorRow?.bytes).toBe(0)
 }, 30_000)

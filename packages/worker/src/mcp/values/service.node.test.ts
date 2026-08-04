@@ -679,22 +679,14 @@ test('saveValue permits underscore-prefixed ordinary value names', async () => {
 	})
 })
 
-test('saveValue awaits UserMeter atomic reserve; D1 mirror is deferred and non-blocking', async () => {
+test('saveValue awaits the UserMeter atomic reserve and never writes the retired D1 mirror', async () => {
 	const testDb = createValueTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	const drain = createWaitUntilDrain()
 	const userId = 'a'.repeat(64)
 	const email = 'value-storage@example.com'
-	let d1MirrorBytes = 7
-	let failMirrorWrite = false
 	await meter.seedStorageBytes({ userId, bytes: 7 })
 
-	let releaseMirrorWrite!: () => void
-	const mirrorWriteGate = new Promise<void>((resolve) => {
-		releaseMirrorWrite = resolve
-	})
-	let mirrorWriteStarted = false
-	let doReserveCompleted = false
+	const d1StorageWrites: Array<string> = []
 
 	using _patch = withPatchedDbPrepare(testDb.db, (originalPrepare) => {
 		return ((query: string) => {
@@ -712,29 +704,16 @@ test('saveValue awaits UserMeter atomic reserve; D1 mirror is deferred and non-b
 							) {
 								return { plan: 'pro', stripe_plan: null } as T
 							}
-							// d1_storage_bytes bootstrap read returns current mirror value.
-							if (
-								normalized.includes('select d1_storage_bytes as bytes') &&
-								normalized.includes('from users')
-							) {
-								return { bytes: d1MirrorBytes } as T
+							if (normalized.includes('select 1 as present from users')) {
+								return { present: 1 } as T
 							}
 							return await bound.first<T>()
 						},
 						all: bound.all.bind(bound),
 						raw: bound.raw?.bind(bound),
 						run: async () => {
-							// D1 MAX mirror write after successful DO reserve.
-							if (normalized.includes('set d1_storage_bytes = max(')) {
-								if (failMirrorWrite) {
-									throw new Error('forced D1 mirror write failure')
-								}
-								mirrorWriteStarted = true
-								await mirrorWriteGate
-								const newBytes = Number(params[0])
-								d1MirrorBytes = Math.max(d1MirrorBytes, newBytes)
-								doReserveCompleted = true
-								return { meta: { changes: 1 } }
+							if (normalized.includes('d1_storage_bytes')) {
+								d1StorageWrites.push(query)
 							}
 							return await bound.run()
 						},
@@ -752,10 +731,9 @@ test('saveValue awaits UserMeter atomic reserve; D1 mirror is deferred and non-b
 		scope: 'user',
 		name: 'metered-value',
 		value: 'hello-storage',
-		waitUntil: drain.waitUntil,
 	})
 	expect(saved).toMatchObject({ name: 'metered-value' })
-	// DO reserve completed synchronously; D1 mirror is deferred.
+	// DO reserve completed synchronously.
 	const meterBytesAfterReserve = await userMeterRpc({
 		env,
 		userId,
@@ -764,41 +742,6 @@ test('saveValue awaits UserMeter atomic reserve; D1 mirror is deferred and non-b
 	if (meterBytesAfterReserve.outcome !== 'ready')
 		throw new Error('Expected ready')
 	expect(meterBytesAfterReserve.bytes).toBeGreaterThan(7)
-	// D1 mirror write not yet completed (gate still held).
-	expect(doReserveCompleted).toBe(false)
-
-	releaseMirrorWrite()
-	await drain.drain()
-	expect(mirrorWriteStarted).toBe(true)
-	// D1 mirror updated with MAX(existing, DO bytes).
-	expect(d1MirrorBytes).toBe(meterBytesAfterReserve.bytes)
-
-	failMirrorWrite = true
-	consoleWarn.mockImplementation(() => {})
-	const failingDrain = createWaitUntilDrain()
-	const bytesBeforeFailingSave = meterBytesAfterReserve.bytes
-	await expect(
-		saveValue({
-			env,
-			userId,
-			userEmail: email,
-			scope: 'user',
-			name: 'metered-value-2',
-			value: 'still-ok',
-			waitUntil: failingDrain.waitUntil,
-		}),
-	).resolves.toMatchObject({ name: 'metered-value-2' })
-	const meterBytesAfterSecond = await userMeterRpc({
-		env,
-		userId,
-	}).readStorageBytes()
-	expect(meterBytesAfterSecond).toMatchObject({ outcome: 'ready' })
-	if (meterBytesAfterSecond.outcome !== 'ready')
-		throw new Error('Expected ready')
-	expect(meterBytesAfterSecond.bytes).toBeGreaterThan(bytesBeforeFailingSave)
-	await failingDrain.drain()
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'entitlement-storage-bytes-d1-mirror-failed',
-		expect.any(Error),
-	)
+	// The retired D1 mirror column is never written.
+	expect(d1StorageWrites).toEqual([])
 })

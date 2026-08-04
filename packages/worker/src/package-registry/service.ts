@@ -279,7 +279,6 @@ export async function refreshSavedPackageProjection(input: {
 							}
 						: null,
 				}),
-				waitUntil: input.waitUntil,
 			})
 			if (existing) {
 				await updateSavedPackage(input.env.APP_DB, {

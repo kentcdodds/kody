@@ -12,7 +12,7 @@ const maxEstimateReadAttempts = storageEstimateReadRetryDelaysMs.length + 1
 
 const mockModule = vi.hoisted(() => ({
 	listUserStorageBucketEstimates: vi.fn(),
-	readUserD1StorageBytes: vi.fn(async () => 0),
+	readStorageBytesFromUserMeter: vi.fn(async () => 0),
 	registerStorageBucket: vi.fn(),
 	recordStorageBucketEstimate: vi.fn(),
 	maybeRefreshStorageBucketEstimate: vi.fn(),
@@ -43,8 +43,8 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementsService>()
 	return {
 		...actual,
-		readUserD1StorageBytes: (...args: Array<unknown>) =>
-			mockModule.readUserD1StorageBytes(...args),
+		readStorageBytesFromUserMeter: (...args: Array<unknown>) =>
+			mockModule.readStorageBytesFromUserMeter(...args),
 	}
 })
 
@@ -233,7 +233,7 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 
 	const userId = 'user-1'
 	const limit = planLimits.free.maxStorageBytes
-	mockModule.readUserD1StorageBytes.mockImplementation(
+	mockModule.readStorageBytesFromUserMeter.mockImplementation(
 		async (input: { userId: string }) => {
 			expect(input.userId).toBe(userId)
 			return limit - 100
@@ -268,7 +268,7 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 		},
 	})
 	expect(probedStorageIds).toEqual(['package:target'])
-	expect(mockModule.readUserD1StorageBytes).toHaveBeenCalledWith(
+	expect(mockModule.readStorageBytesFromUserMeter).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId,
 			db: expect.anything(),

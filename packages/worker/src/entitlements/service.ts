@@ -536,76 +536,18 @@ export async function calculateUserD1StorageBytes(input: {
 }
 
 /**
- * Best-effort D1 mirror of an absolute DO storage-byte value. Uses MAX so a
- * delayed mirror from an earlier reserve cannot regress D1 to a lower value.
+ * Whether a real account row exists for this stable user id. Synthetic
+ * contexts (no `users` row) must never materialize durable UserMeter state.
  */
-async function mirrorStorageBytesToD1(input: {
+async function userAccountRowExists(input: {
 	db: D1Database
 	userId: string
-	bytes: number
-}) {
-	await input.db
-		.prepare(
-			`UPDATE users
-			SET d1_storage_bytes = MAX(d1_storage_bytes, ?),
-				d1_storage_bytes_updated_at = ?
-			WHERE stable_user_id = ?`,
-		)
-		.bind(input.bytes, new Date().toISOString(), input.userId)
-		.run()
-}
-
-/**
- * Schedule a non-awaited best-effort D1 mirror after a successful DO reserve.
- * Failures are logged and never affect the caller.
- */
-function scheduleD1StorageBytesMirror(input: {
-	db: D1Database
-	userId: string
-	bytes: number
-	waitUntil?: (promise: Promise<unknown>) => void
-}) {
-	const tracked = mirrorStorageBytesToD1({
-		db: input.db,
-		userId: input.userId,
-		bytes: input.bytes,
-	}).catch((error: unknown) => {
-		console.warn('entitlement-storage-bytes-d1-mirror-failed', error)
-	})
-	if (input.waitUntil) {
-		input.waitUntil(tracked)
-		return
-	}
-	void tracked
-}
-
-async function readUserD1StorageBytesRow(input: {
-	db: D1Database
-	userId: string
-}): Promise<{ bytes: number } | null> {
+}): Promise<boolean> {
 	const row = await input.db
-		.prepare(
-			`SELECT d1_storage_bytes AS bytes
-			FROM users
-			WHERE stable_user_id = ?`,
-		)
+		.prepare(`SELECT 1 AS present FROM users WHERE stable_user_id = ?`)
 		.bind(input.userId)
-		.first<{ bytes: number }>()
-	if (row == null) return null
-	return { bytes: Math.max(0, Number(row.bytes ?? 0)) }
-}
-
-/**
- * Read D1 `users.d1_storage_bytes` — the temporary async mirror of UserMeter.
- * Use only for parity checks, reconcile bootstrap, and migration tooling;
- * enforcement and usage reads must go through UserMeter helpers.
- */
-export async function readUserD1StorageBytes(input: {
-	db: D1Database
-	userId: string
-}): Promise<number> {
-	const row = await readUserD1StorageBytesRow(input)
-	return row?.bytes ?? 0
+		.first<{ present: number }>()
+	return row != null
 }
 
 /**
@@ -615,12 +557,11 @@ export async function readUserD1StorageBytes(input: {
  * Flow:
  * 1. Read current UserMeter revision BEFORE computing the physical sum.
  * 2. Compute the physical sum from D1 payload tables.
- * 3a. If the meter was missing (`needs_bootstrap`): initialize it and mirror
- *    to D1. If another caller already created the singleton, defer to the
- *    next sweep (their state is correct; do not overwrite).
+ * 3a. If the meter was missing (`needs_bootstrap`): initialize it. If another
+ *    caller already created the singleton, defer to the next sweep (their
+ *    state is correct; do not overwrite).
  * 3b. If the meter was present: CAS with the captured revision. A concurrent
  *    reserve that bumped the revision causes a CAS miss → defer to next sweep.
- *    A successful CAS mirrors the absolute to D1.
  *
  * Returns `{ bytes, updated, deferred }`. `deferred` is true when a CAS miss
  * or init race prevented the write; the row should be rotated for retry.
@@ -651,13 +592,6 @@ export async function reconcileUserD1StorageBytes(input: {
 			// initializeStorageBytes; do not overwrite their state. Defer.
 			return { bytes, updated: false, deferred: true }
 		}
-		// Successful cold init: mirror the physical absolute to D1.
-		await reconcileD1StorageMirror({
-			db: input.db,
-			userId: input.userId,
-			bytes,
-			updatedAt: nowIso,
-		})
 		return { bytes, updated: true, deferred: false }
 	}
 
@@ -686,33 +620,15 @@ export async function reconcileUserD1StorageBytes(input: {
 		return { bytes, updated: false, deferred: true }
 	}
 
-	// CAS applied: mirror the physical absolute to D1.
-	await reconcileD1StorageMirror({
-		db: input.db,
-		userId: input.userId,
-		bytes,
-		updatedAt: nowIso,
-	})
 	return { bytes, updated: true, deferred: false }
 }
 
-async function reconcileD1StorageMirror(input: {
-	db: D1Database
-	userId: string
-	bytes: number
-	updatedAt: string
-}): Promise<void> {
-	await input.db
-		.prepare(
-			`UPDATE users
-			SET d1_storage_bytes = ?,
-				d1_storage_bytes_updated_at = ?
-			WHERE stable_user_id = ?`,
-		)
-		.bind(input.bytes, input.updatedAt, input.userId)
-		.run()
-}
-
+/**
+ * Oldest-first sweep page for the reconcile lane.
+ * `users.d1_storage_bytes_updated_at` acts purely as the rotation cursor
+ * (advanced by `markUserD1StorageReconciliationAttempt`); no byte values are
+ * mirrored to D1.
+ */
 export async function listUsersForD1StorageReconciliation(input: {
 	db: D1Database
 	limit: number
@@ -899,11 +815,11 @@ export async function readEntitlementResourceUsage(input: {
 				'concurrent_workflows usage must be read from RunLog (pass getCurrent or use readCurrentEntitlementResourceUsage).',
 			)
 		case 'storage_bytes':
-			// Authoritative storage bytes live in UserMeter after the cutover.
-			// Callers must use readCurrentEntitlementResourceUsage (which reads
-			// UserMeter with cold bootstrap) or assertWithinStorageBytesEntitlement
-			// (DO reserve). readUserD1StorageBytes is the D1 mirror reader and is
-			// reserved for parity checks, reconcile, and bootstrap tooling only.
+			// Authoritative storage bytes live in UserMeter. Callers must use
+			// readCurrentEntitlementResourceUsage (which reads UserMeter with
+			// cold bootstrap) or assertWithinStorageBytesEntitlement (DO
+			// reserve); calculateUserD1StorageBytes is the physical recompute
+			// used by cold bootstrap and the reconcile lane.
 			throw new Error(
 				'storage_bytes usage must be read from UserMeter (use readCurrentEntitlementResourceUsage).',
 			)
@@ -922,11 +838,12 @@ export async function readEntitlementResourceUsage(input: {
 
 /**
  * Read current storage bytes from UserMeter with cold bootstrap. On
- * `needs_bootstrap`, seeds the singleton from the D1 mirror (valid at flip —
- * parity verified before cutover) and retries. Always returns the authoritative
- * DO byte count.
+ * `needs_bootstrap`, zero-initializes the singleton (matching the daily
+ * counter cold path) and retries. The bounded reconcile lane recomputes
+ * physical D1 payload bytes and corrects any drift via CAS. Always returns
+ * the authoritative DO byte count.
  */
-async function readStorageBytesFromUserMeter(input: {
+export async function readStorageBytesFromUserMeter(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
 	userId: string
@@ -935,15 +852,11 @@ async function readStorageBytesFromUserMeter(input: {
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
 	let result = await meter.readStorageBytes()
 	if (result.outcome === 'needs_bootstrap') {
-		const d1Row = await readUserD1StorageBytesRow({
-			db: input.db,
-			userId: input.userId,
-		})
 		// Synthetic/unknown contexts have no account row. Preserve their zero
 		// usage semantics without materializing durable state for a non-user.
-		if (d1Row == null) return 0
+		if (!(await userAccountRowExists(input))) return 0
 		await meter.initializeStorageBytes({
-			bytes: d1Row.bytes,
+			bytes: 0,
 			updatedAt: input.now.toISOString(),
 		})
 		result = await meter.readStorageBytes()
@@ -1017,14 +930,12 @@ const storageBytesBootstrapMaxAttempts = 2
 
 /**
  * Atomically reserve storage bytes in the per-user UserMeter Durable Object.
- * On `needs_bootstrap`, reads the current D1 mirror value and seeds the DO
- * singleton via `initializeStorageBytes` (INSERT OR IGNORE — concurrent-safe),
- * then retries once. Missing-user synthetic contexts (no `users` row) preserve
- * current free-plan allow/deny semantics without touching the DO.
- *
- * On success, schedules a best-effort non-awaited D1 mirror using MAX so a
- * delayed mirror cannot regress D1 below the DO value. Mirror failures are
- * logged and never affect the reserve outcome.
+ * On `needs_bootstrap`, zero-initializes the DO singleton via
+ * `initializeStorageBytes` (INSERT OR IGNORE — concurrent-safe, matching the
+ * daily counter cold path), then retries once. The bounded reconcile lane
+ * recomputes physical D1 payload bytes and corrects drift via CAS.
+ * Missing-user synthetic contexts (no `users` row) preserve current free-plan
+ * allow/deny semantics without touching the DO.
  *
  * `getCurrent` is a check-only path for StorageRunner bucket totals and does
  * not reserve in UserMeter; `env` is not required on that path.
@@ -1043,8 +954,6 @@ export async function assertWithinStorageBytesEntitlement(input: {
 	 * Throws immediately if absent; omit only when passing getCurrent.
 	 */
 	env?: UserMeterEnv
-	/** Prefer `ctx.waitUntil` for the D1 mirror; never awaited here. */
-	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	if (input.getCurrent) {
 		await assertWithinEntitlement({
@@ -1085,12 +994,9 @@ export async function assertWithinStorageBytesEntitlement(input: {
 		})
 
 		if (result.outcome === 'needs_bootstrap') {
-			// Cold bootstrap: seed from D1 mirror (valid at cutover — parity verified).
-			const row = await readUserD1StorageBytesRow({
-				db: input.db,
-				userId: input.userId,
-			})
-			if (row == null) {
+			if (
+				!(await userAccountRowExists({ db: input.db, userId: input.userId }))
+			) {
 				// Synthetic context: no users row — cannot create a DO entry for a
 				// non-existent account. Apply free-plan allow/deny without DO.
 				const current = 0
@@ -1103,9 +1009,10 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
 				})
 			}
-			// Real user with no DO row: initialize from D1 mirror, then retry.
+			// Real user with no DO row: zero-initialize, then retry. The
+			// reconcile lane corrects the counter from physical payload bytes.
 			await meter.initializeStorageBytes({
-				bytes: row.bytes,
+				bytes: 0,
 				updatedAt,
 			})
 			continue
@@ -1121,13 +1028,6 @@ export async function assertWithinStorageBytesEntitlement(input: {
 			})
 		}
 
-		// Reserve succeeded: mirror absolute DO bytes to D1 (best-effort, MAX).
-		scheduleD1StorageBytesMirror({
-			db: input.db,
-			userId: input.userId,
-			bytes: result.bytes,
-			waitUntil: input.waitUntil,
-		})
 		return
 	}
 

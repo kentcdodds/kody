@@ -12,7 +12,7 @@ const mockModule = vi.hoisted(() => ({
 			{ storageId: 'bucket-b', estimatedBytes: null },
 		],
 	),
-	readUserD1StorageBytes: vi.fn(async () => 0),
+	readStorageBytesFromUserMeter: vi.fn(async () => 0),
 	registerStorageBucket: vi.fn(),
 	recordStorageBucketEstimate: vi.fn(),
 	maybeRefreshStorageBucketEstimate: vi.fn(),
@@ -41,8 +41,8 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementsService>()
 	return {
 		...actual,
-		readUserD1StorageBytes: (...args: Array<unknown>) =>
-			mockModule.readUserD1StorageBytes(...args),
+		readStorageBytesFromUserMeter: (...args: Array<unknown>) =>
+			mockModule.readStorageBytesFromUserMeter(...args),
 	}
 })
 

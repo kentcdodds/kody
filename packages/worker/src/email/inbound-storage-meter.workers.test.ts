@@ -1,10 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { planLimits } from '#worker/entitlements/plans.ts'
-import {
-	estimateEntitlementStorageEntryBytes,
-	readUserD1StorageBytes,
-} from '#worker/entitlements/service.ts'
+import { estimateEntitlementStorageEntryBytes } from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
@@ -62,16 +59,14 @@ function estimateInboundEmailStorageBytes(input: {
 async function seedAccountWithPlan(input: {
 	email: string
 	plan: 'free' | 'max'
-	d1StorageBytes?: number
 }) {
 	const username = `storage-meter-${crypto.randomUUID().slice(0, 8)}`
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	const now = new Date().toISOString()
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, plan, stable_user_id,
-			d1_storage_bytes, d1_storage_bytes_updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, plan, stable_user_id
+		) VALUES (?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			username,
@@ -80,8 +75,6 @@ async function seedAccountWithPlan(input: {
 			now,
 			input.plan,
 			stableUserId,
-			input.d1StorageBytes ?? 0,
-			now,
 		)
 		.run()
 	return { username, address: `${username}@${platformDomain}`, stableUserId }
@@ -102,21 +95,24 @@ function createFailingEmailBlobs() {
 }
 
 test(
-	'inbound storage reservation is UserMeter-authoritative with D1 mirror via waitUntil',
+	'inbound storage reservation is UserMeter-authoritative',
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		await ensureEmailTestSchema(env.APP_DB)
 		await ensureUsageRollupsTestSchema(env.APP_DB)
 
-		// Part 1: UserMeter is authoritative; D1 is mirrored with MAX absolute bytes.
-		// UserMeter starts empty — cold bootstrap reads D1, initializes, then reserves.
+		// Part 1: UserMeter is authoritative. It starts empty; the reserve path
+		// zero-initializes on cold bootstrap, then seed it to a known baseline.
 		const initialBytes = 512
 		const email = `storage-meter-${crypto.randomUUID()}@example.com`
 		const userId = await createStableUserIdFromEmail(email)
 		const { address } = await seedAccountWithPlan({
 			email,
 			plan: 'free',
-			d1StorageBytes: initialBytes,
+		})
+		await userMeterRpc({ env, userId }).initializeStorageBytes({
+			bytes: initialBytes,
+			updatedAt: '2026-07-31T00:00:00.000Z',
 		})
 
 		const raw = [
@@ -147,15 +143,11 @@ test(
 		})
 
 		const meter = userMeterRpc({ env, userId })
-		// UserMeter is authoritative: cold bootstrap read D1 = initialBytes, reserved.
+		// UserMeter is authoritative and reflects the reservation immediately.
 		expect(await meter.readStorageBytes()).toMatchObject({
 			outcome: 'ready',
 			bytes: initialBytes + reservedBytes,
 		})
-		// D1 mirror: MAX(initialBytes, initialBytes + reservedBytes).
-		expect(await readUserD1StorageBytes({ db: env.APP_DB, userId })).toBe(
-			initialBytes + reservedBytes,
-		)
 
 		// Part 2: at-cap uses UserMeter; D1 value is irrelevant for the limit.
 		const storageLimit = planLimits.free.maxStorageBytes
@@ -165,7 +157,6 @@ test(
 		const { address: atCapAddress } = await seedAccountWithPlan({
 			email: atCapEmail,
 			plan: 'free',
-			d1StorageBytes: storageLimit,
 		})
 		const atCapMeter = userMeterRpc({ env, userId: atCapUserId })
 		// Seed UserMeter to the storage limit (authoritative).
@@ -193,10 +184,6 @@ test(
 		expect(overQuotaMessage.rejectedReason).toBe(
 			'Recipient mailbox is over quota.',
 		)
-		// Denied reservation: D1 mirror unchanged.
-		expect(
-			await readUserD1StorageBytes({ db: env.APP_DB, userId: atCapUserId }),
-		).toBe(storageLimit)
 		await overQuotaDrain.drain()
 		// UserMeter stays at storageLimit after a denied reservation.
 		expect(await atCapMeter.readStorageBytes()).toMatchObject({
@@ -210,9 +197,12 @@ test(
 		const { address: retryAddress } = await seedAccountWithPlan({
 			email: retryEmail,
 			plan: 'max',
-			d1StorageBytes: 64,
 		})
 		const retryMeter = userMeterRpc({ env, userId: retryUserId })
+		await retryMeter.initializeStorageBytes({
+			bytes: 64,
+			updatedAt: '2026-07-31T00:00:00.000Z',
+		})
 		const retryRaw = [
 			'From: Sender <sender@example.net>',
 			`To: ${retryAddress}`,
@@ -243,11 +233,8 @@ test(
 			handleInboundEmail(firstAttempt, failingEnv, failCtx.ctx),
 		).rejects.toBeInstanceOf(RetryableInboundStorageError)
 		await drainWaitUntil(failCtx.waitUntilPromises)
-		// UserMeter and D1 mirror both reflect the reserved bytes.
+		// UserMeter reflects the reserved bytes.
 		const bytesAfterFailedAttempt = 64 + retryReservedBytes
-		expect(
-			await readUserD1StorageBytes({ db: env.APP_DB, userId: retryUserId }),
-		).toBe(bytesAfterFailedAttempt)
 		expect(await retryMeter.readStorageBytes()).toMatchObject({
 			outcome: 'ready',
 			bytes: bytesAfterFailedAttempt,
@@ -262,10 +249,7 @@ test(
 		await handleInboundEmail(retryAttempt, createInboundEnv(), retryCtx.ctx)
 		await drainWaitUntil(retryCtx.waitUntilPromises)
 		expect(retryAttempt.rejectedReason).toBeNull()
-		// No double-count: UserMeter and D1 unchanged after retry.
-		expect(
-			await readUserD1StorageBytes({ db: env.APP_DB, userId: retryUserId }),
-		).toBe(bytesAfterFailedAttempt)
+		// No double-count: UserMeter unchanged after retry.
 		expect(await retryMeter.readStorageBytes()).toMatchObject({
 			outcome: 'ready',
 			bytes: bytesAfterFailedAttempt,

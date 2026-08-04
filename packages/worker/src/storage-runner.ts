@@ -5,7 +5,7 @@ import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageSqlWriteBytes,
-	readUserD1StorageBytes,
+	readStorageBytesFromUserMeter,
 } from '#worker/entitlements/service.ts'
 import {
 	listUserStorageBucketEstimates,
@@ -795,9 +795,11 @@ async function readStorageBytesEntitlementBaseline(input: {
 	storageId: string
 }) {
 	const [d1Bytes, bucketEstimates] = await Promise.all([
-		readUserD1StorageBytes({
+		readStorageBytesFromUserMeter({
 			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
+			now: new Date(),
 		}),
 		listUserStorageBucketEstimates({
 			env: input.env,

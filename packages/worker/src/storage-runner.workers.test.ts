@@ -3,8 +3,8 @@ import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
-import { readUserD1StorageBytes } from '#worker/entitlements/service.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
 	flushStorageBucketRegistrationsForTests,
@@ -27,51 +27,16 @@ async function ensureStorageRunnerTestSchema() {
 	clearStorageBucketRegistrationDedupeForTests()
 }
 
-async function ensureStorageBytesEmailTestSchema() {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	await env.APP_DB.prepare(
-		`CREATE TABLE IF NOT EXISTS email_messages (
-	id TEXT PRIMARY KEY,
-	direction TEXT NOT NULL,
-	user_id TEXT NOT NULL,
-	from_address TEXT NOT NULL DEFAULT '',
-	envelope_from TEXT,
-	to_addresses_json TEXT NOT NULL DEFAULT '[]',
-	cc_addresses_json TEXT NOT NULL DEFAULT '[]',
-	bcc_addresses_json TEXT NOT NULL DEFAULT '[]',
-	reply_to_addresses_json TEXT NOT NULL DEFAULT '[]',
-	subject TEXT NOT NULL DEFAULT '',
-	message_id_header TEXT,
-	in_reply_to_header TEXT,
-	references_json TEXT NOT NULL DEFAULT '[]',
-	headers_json TEXT NOT NULL DEFAULT '{}',
-	auth_results TEXT,
-	text_body TEXT,
-	html_body TEXT,
-	raw_mime_key TEXT,
-	raw_size INTEGER NOT NULL DEFAULT 0,
-	processing_status TEXT NOT NULL DEFAULT 'stored',
-	provider_message_id TEXT,
-	error TEXT,
-	received_at TEXT,
-	sent_at TEXT,
-	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-)`,
-	).run()
-}
-
 async function seedPlannedStorageUser(input: {
 	email: string
 	plan: 'pro' | 'max'
-	rawSize: number
+	meterBytes: number
 }) {
 	const userId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, plan,
-			stable_user_id, d1_storage_bytes, d1_storage_bytes_updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, plan, stable_user_id
+		) VALUES (?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			`storage-${crypto.randomUUID().slice(0, 8)}`,
@@ -80,24 +45,13 @@ async function seedPlannedStorageUser(input: {
 			new Date().toISOString(),
 			input.plan,
 			userId,
-			input.rawSize,
-			new Date().toISOString(),
 		)
 		.run()
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, raw_size, processing_status,
-			created_at, updated_at
-		) VALUES (?, 'inbound', ?, 'sender@example.com', ?, 'stored', ?, ?)`,
-	)
-		.bind(
-			`storage-quota-${crypto.randomUUID()}`,
-			userId,
-			input.rawSize,
-			new Date().toISOString(),
-			new Date().toISOString(),
-		)
-		.run()
+	// UserMeter is the storage-bytes authority; seed it directly.
+	await userMeterRpc({ env, userId }).initializeStorageBytes({
+		bytes: input.meterBytes,
+		updatedAt: new Date().toISOString(),
+	})
 	return userId
 }
 
@@ -179,7 +133,7 @@ test('storage runner preserves isolated state per storage id', async () => {
 })
 
 test('storage runner write tools enforce storage byte entitlements for planned users', async () => {
-	await ensureStorageBytesEmailTestSchema()
+	await ensureEntitlementTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 	const limit = planLimits.pro.maxStorageBytes
 	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
@@ -187,7 +141,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 	const plannedUserId = await seedPlannedStorageUser({
 		email: plannedEmail,
 		plan: 'pro',
-		rawSize: limit,
+		meterBytes: limit,
 	})
 	const plannedStorageId = createExecuteStorageId()
 	const plannedTools = createStorageKodyTools({
@@ -228,7 +182,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 	const maxUserId = await seedPlannedStorageUser({
 		email: maxEmail,
 		plan: 'max',
-		rawSize: limit,
+		meterBytes: limit,
 	})
 	const maxStorageId = createExecuteStorageId()
 	const maxTools = createStorageKodyTools({
@@ -247,14 +201,14 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 })
 
 test('storage runner storage byte entitlement aggregates only inventoried user buckets', async () => {
-	await ensureStorageBytesEmailTestSchema()
+	await ensureEntitlementTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 	const limit = planLimits.pro.maxStorageBytes
 	const email = `storage-aggregate-${crypto.randomUUID()}@example.com`
 	const userId = await seedPlannedStorageUser({
 		email,
 		plan: 'pro',
-		rawSize: 0,
+		meterBytes: 0,
 	})
 	const storageIdA = createExecuteStorageId()
 	const storageIdB = createExecuteStorageId()
@@ -271,24 +225,17 @@ test('storage runner storage byte entitlement aggregates only inventoried user b
 	const estimateB = (await runnerB.getEstimatedBytes()).estimatedBytes
 	expect(estimateA).toBeGreaterThan(0)
 	expect(estimateB).toBeGreaterThan(0)
-	const initialD1Bytes = await readUserD1StorageBytes({
-		db: env.APP_DB,
-		userId,
-	})
+	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
+	const meter = userMeterRpc({ env, userId })
+	const initialMeterRead = await meter.readStorageBytes()
+	expect(initialMeterRead).toMatchObject({ outcome: 'ready', bytes: 0 })
 	const targetD1Bytes = limit - estimateB - 1
-	await env.APP_DB.prepare(
-		`UPDATE users
-		SET d1_storage_bytes = ?,
-			d1_storage_bytes_updated_at = ?
-		WHERE stable_user_id = ?`,
-	)
-		.bind(targetD1Bytes, new Date().toISOString(), userId)
-		.run()
-	expect(initialD1Bytes).toBe(0)
-	// D1 remains the sole payload authority for composed getCurrent.
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId }),
-	).resolves.toBe(targetD1Bytes)
+	// UserMeter holds the D1-payload byte counter composed with bucket
+	// estimates by the baseline read.
+	await meter.setStorageBytes({
+		bytes: targetD1Bytes,
+		updatedAt: new Date().toISOString(),
+	})
 
 	const aggregateDenied = await assertStorageRunnerWriteWithinEntitlement({
 		env,

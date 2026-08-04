@@ -107,7 +107,6 @@ export async function saveValue(input: SaveValueInput): Promise<ValueMetadata> {
 					}
 				: null,
 		}),
-		waitUntil: input.waitUntil,
 	})
 	const now = new Date().toISOString()
 	await upsertValueEntry({

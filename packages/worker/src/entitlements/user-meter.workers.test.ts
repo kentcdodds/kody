@@ -12,7 +12,6 @@ import {
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 	readDailyEntitlementResourceUsage,
-	readUserD1StorageBytes,
 	refundDailyEntitlement,
 } from './service.ts'
 import { ensureEntitlementTestSchema } from './test-schema.ts'
@@ -448,53 +447,45 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	})
 }, 30_000)
 
-test('storage bytes are UserMeter-authoritative: cold bootstrap, D1 mirror, mirror failure, concurrency, delayed mirror, and missing-user semantics', async () => {
+test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, concurrency, and missing-user semantics', async () => {
 	const storageLimit = planLimits.free.maxStorageBytes
 
-	// === Section 1: Cold bootstrap from D1, reserve, D1 mirror, and denial ===
+	// === Section 1: Cold zero bootstrap, reserve, denial; D1 never written ===
 	const user = await seedFreeUser('meter-storage-do-authority')
-	const drain = createWaitUntilDrain()
 	const meter = userMeterRpc({ env, userId: user.userId })
-	const startBytes = storageLimit - 10
+	const staleMirrorBytes = storageLimit - 10
 
-	// Seed D1; UserMeter starts empty (needs_bootstrap).
+	// A stale legacy mirror value must be ignored: cold bootstrap zero-inits
+	// and the reconcile lane owns physical correction.
 	await env.APP_DB.prepare(
 		`UPDATE users
 		SET d1_storage_bytes = ?,
 			d1_storage_bytes_updated_at = ?
 		WHERE stable_user_id = ?`,
 	)
-		.bind(startBytes, '2026-07-31T12:00:00.000Z', user.userId)
+		.bind(staleMirrorBytes, '2026-07-31T12:00:00.000Z', user.userId)
 		.run()
 
-	// Cold bootstrap: reads D1 = startBytes, initializes UserMeter, then reserves 5.
+	// Cold bootstrap: zero-initializes UserMeter, then reserves 5.
 	await assertWithinStorageBytesEntitlement({
 		db: env.APP_DB,
 		env,
 		userId: user.userId,
 		email: user.email,
 		requested: 5,
-		waitUntil: drain.waitUntil,
 	})
-	// UserMeter immediately reflects startBytes + 5.
 	expect(await meter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
-		bytes: startBytes + 5,
+		bytes: 5,
 	})
-	// D1 mirror: MAX(startBytes, startBytes + 5).
-	await drain.drain()
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(startBytes + 5)
 
-	// Deny 6 more: startBytes + 5 + 6 = storageLimit + 1 > storageLimit.
+	// Deny an over-limit request: 5 + (limit - 4) = limit + 1 > limit.
 	const denied = await assertWithinStorageBytesEntitlement({
 		db: env.APP_DB,
 		env,
 		userId: user.userId,
 		email: user.email,
-		requested: 6,
-		waitUntil: drain.waitUntil,
+		requested: storageLimit - 4,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -505,80 +496,20 @@ test('storage bytes are UserMeter-authoritative: cold bootstrap, D1 mirror, mirr
 			resource: 'storage_bytes',
 			plan: 'free',
 			limit: storageLimit,
-			current: startBytes + 5,
+			current: 5,
 		},
 	})
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(startBytes + 5)
 
-	await drain.drain()
-	expect(await meter.readStorageBytes()).toMatchObject({
-		outcome: 'ready',
-		bytes: startBytes + 5,
-	})
+	// The legacy D1 column is never read or written by the reserve path.
+	const mirrorRow = await env.APP_DB.prepare(
+		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(user.userId)
+		.first<{ bytes: number }>()
+	expect(mirrorRow?.bytes).toBe(staleMirrorBytes)
 
-	// === Section 2: D1 mirror failure is silent; UserMeter stays correct ===
-	const d1FailUser = await seedFreeUser('meter-storage-d1-mirror-fail')
-	const d1FailDrain = createWaitUntilDrain()
-	const d1FailMeter = userMeterRpc({ env, userId: d1FailUser.userId })
-	await d1FailMeter.initializeStorageBytes({
-		bytes: storageLimit - 20,
-		updatedAt: '2026-07-31T12:00:00.000Z',
-	})
-
-	consoleWarn.mockImplementation(() => {})
-	{
-		using _failDb = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-			return ((query: string) => {
-				const statement = originalPrepare(query)
-				const isD1Mirror = query
-					.replace(/\s+/g, ' ')
-					.trim()
-					.includes('d1_storage_bytes = MAX(')
-				const originalBind = statement.bind.bind(statement)
-				return {
-					bind(...params: Array<unknown>) {
-						const bound = originalBind(...params)
-						return {
-							first: bound.first.bind(bound),
-							all: bound.all.bind(bound),
-							raw: bound.raw?.bind(bound),
-							run: async () => {
-								if (isD1Mirror) throw new Error('D1 mirror write failed')
-								return await bound.run()
-							},
-						}
-					},
-				}
-			}) as D1Database['prepare']
-		})
-
-		await expect(
-			assertWithinStorageBytesEntitlement({
-				db: env.APP_DB,
-				env,
-				userId: d1FailUser.userId,
-				email: d1FailUser.email,
-				requested: 5,
-				waitUntil: d1FailDrain.waitUntil,
-			}),
-		).resolves.toBeUndefined()
-		// UserMeter updated despite D1 mirror failure.
-		expect(await d1FailMeter.readStorageBytes()).toMatchObject({
-			outcome: 'ready',
-			bytes: storageLimit - 15,
-		})
-		await d1FailDrain.drain()
-		expect(consoleWarn).toHaveBeenCalledWith(
-			'entitlement-storage-bytes-d1-mirror-failed',
-			expect.any(Error),
-		)
-	}
-
-	// === Section 3: Concurrent reservations (UserMeter atomicity) ===
+	// === Section 2: Concurrent reservations (UserMeter atomicity) ===
 	const concurrentUser = await seedFreeUser('meter-storage-concurrent-do')
-	const concurrentDrain = createWaitUntilDrain()
 	const concurrentMeter = userMeterRpc({ env, userId: concurrentUser.userId })
 	await concurrentMeter.initializeStorageBytes({
 		bytes: storageLimit - 10,
@@ -593,7 +524,6 @@ test('storage bytes are UserMeter-authoritative: cold bootstrap, D1 mirror, mirr
 				userId: concurrentUser.userId,
 				email: concurrentUser.email,
 				requested: 5,
-				waitUntil: concurrentDrain.waitUntil,
 			}).then(
 				() => 'reserved' as const,
 				(error: unknown) => error,
@@ -610,86 +540,8 @@ test('storage bytes are UserMeter-authoritative: cold bootstrap, D1 mirror, mirr
 		outcome: 'ready',
 		bytes: storageLimit,
 	})
-	await concurrentDrain.drain()
-	await expect(
-		readUserD1StorageBytes({
-			db: env.APP_DB,
-			userId: concurrentUser.userId,
-		}),
-	).resolves.toBe(storageLimit)
 
-	// === Section 4: Delayed D1 mirror does not regress value (MAX) ===
-	const delayedUser = await seedFreeUser('meter-storage-mirror-latest')
-	const delayedDrain = createWaitUntilDrain()
-	const delayedMeter = userMeterRpc({ env, userId: delayedUser.userId })
-	await delayedMeter.initializeStorageBytes({
-		bytes: 10,
-		updatedAt: '2026-07-31T16:00:00.000Z',
-	})
-
-	{
-		let releaseMirror!: () => void
-		const mirrorGate = new Promise<void>((resolve) => {
-			releaseMirror = resolve
-		})
-		let mirrorWrites = 0
-		using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-			return ((query: string) => {
-				const statement = originalPrepare(query)
-				const isD1Mirror = query
-					.replace(/\s+/g, ' ')
-					.trim()
-					.includes('d1_storage_bytes = MAX(')
-				const originalBind = statement.bind.bind(statement)
-				return {
-					bind(...params: Array<unknown>) {
-						const bound = originalBind(...params)
-						return {
-							first: bound.first.bind(bound),
-							all: bound.all.bind(bound),
-							raw: bound.raw?.bind(bound),
-							run: async () => {
-								if (isD1Mirror) {
-									mirrorWrites += 1
-									await mirrorGate
-								}
-								return await bound.run()
-							},
-						}
-					},
-				}
-			}) as D1Database['prepare']
-		})
-
-		await assertWithinStorageBytesEntitlement({
-			db: env.APP_DB,
-			env,
-			userId: delayedUser.userId,
-			email: delayedUser.email,
-			requested: 5,
-			waitUntil: delayedDrain.waitUntil,
-		})
-		await assertWithinStorageBytesEntitlement({
-			db: env.APP_DB,
-			env,
-			userId: delayedUser.userId,
-			email: delayedUser.email,
-			requested: 7,
-			waitUntil: delayedDrain.waitUntil,
-		})
-		releaseMirror()
-		await delayedDrain.drain()
-		expect(mirrorWrites).toBeGreaterThanOrEqual(1)
-		await expect(
-			readUserD1StorageBytes({ db: env.APP_DB, userId: delayedUser.userId }),
-		).resolves.toBe(22)
-		expect(await delayedMeter.readStorageBytes()).toMatchObject({
-			outcome: 'ready',
-			bytes: 22,
-		})
-	}
-
-	// === Section 5: Missing user (synthetic context, free-plan semantics) ===
+	// === Section 3: Missing user (synthetic context, free-plan semantics) ===
 	await ensureEntitlementTestSchema(env.APP_DB)
 	const missingUserId = 'a'.repeat(64)
 	await expect(
@@ -783,9 +635,13 @@ test('UserMeter storage RPCs, export shadow field, and purge work additively', a
 	expect(secondPage.packageServiceStatesShadow).toBeNull()
 	expect(secondPage.deletionShadow).toBeNull()
 
-	await expect(
-		readUserD1StorageBytes({ db: env.APP_DB, userId: user.userId }),
-	).resolves.toBe(0)
+	// The legacy D1 column is never written by UserMeter storage RPCs.
+	const mirrorRow = await env.APP_DB.prepare(
+		`SELECT d1_storage_bytes AS bytes FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(user.userId)
+		.first<{ bytes: number }>()
+	expect(mirrorRow?.bytes).toBe(0)
 
 	await expect(meter.purge()).resolves.toEqual({ ok: true })
 	expect(await meter.readStorageBytes()).toEqual({

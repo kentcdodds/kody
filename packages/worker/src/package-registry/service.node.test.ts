@@ -1113,7 +1113,9 @@ function createEntitlementsDatabase(input: {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
-							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
+							// Synthetic-context probe: no users row in this mock, so the
+							// storage reserve path applies free-plan semantics without a DO.
+							if (query.includes('SELECT 1 AS present FROM users')) {
 								return null
 							}
 							if (
