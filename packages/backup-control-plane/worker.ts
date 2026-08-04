@@ -19,7 +19,6 @@ import {
 } from './workflow-trigger.ts'
 
 export { ProductionD1BackupWorkflow } from './backup-workflow.ts'
-export { MailboxLegacyGraphPreDropBackupWorkflow } from './mailbox-pre-drop-workflow.ts'
 export { ProductionDrRestoreWorkflow } from './restore-workflow.ts'
 
 export const BACKUP_CRON = '15 2 * * *'

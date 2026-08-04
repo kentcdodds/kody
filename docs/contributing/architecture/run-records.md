@@ -398,8 +398,9 @@ application deploy.
 **Destructive follow-up deploy (separate PR, migration `0137`):** drops the
 retired D1 projection tables `workflow_runs`, `user_package_run_successes`, and
 `user_activation_milestones`; removes them from account deletion/export
-inventory and retires the hourly D1 `workflow_runs` retention lane. Pre-drop D1
-Time Travel bookmark for database `8c1014d1-6b41-4695-a0a2-159071f0f919`:
+inventory and retires the hourly D1 `workflow_runs` retention lane.
+Pre-migration D1 Time Travel bookmark for database
+`8c1014d1-6b41-4695-a0a2-159071f0f919`:
 `0000116d-000000d2-000050bd-c7ecd5892a189df7cda145af746bc9c9`. Restore from that
 bookmark (or a fresher snapshot taken immediately before apply) if the
 destructive migration must be rolled back — do not reintroduce dual-write paths.

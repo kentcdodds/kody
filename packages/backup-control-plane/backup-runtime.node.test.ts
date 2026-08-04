@@ -194,18 +194,11 @@ test('legacy scheduled compatibility rejects invalid dates, extra keys, and unus
 	assert.equal(consoleError.mock.calls.length, 11)
 })
 
-test('scheduled discriminants are exact and cannot enter the pre-drop lane', async () => {
+test('scheduled discriminants require exact payload fields', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const env = environment()
 	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const legacyPayload = {
-		scheduledAt: current.scheduledAt,
-		day: current.day,
-		objectPrefix: current.objectPrefix,
-		manifestKey: current.manifestKey,
-		retentionTier: current.retentionTier,
-	}
 	for (const invalidPayload of [
 		{ ...current, extra: true },
 		Object.assign(Object.create({ inherited: true }), current),
@@ -225,22 +218,7 @@ test('scheduled discriminants are exact and cannot enter the pre-drop lane', asy
 				error.code === 'invalid-workflow-payload',
 		)
 	}
-	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, current.day),
-				payload: legacyPayload,
-				timestamp: new Date('2026-07-22T02:15:01Z'),
-			},
-			new CachedUploadStep(() => undefined),
-			{ payloadKind: 'mailbox-legacy-graph-pre-drop' },
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'invalid-workflow-payload-kind',
-	)
-	assert.equal(consoleError.mock.calls.length, 3)
+	assert.equal(consoleError.mock.calls.length, 2)
 })
 
 test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {

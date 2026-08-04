@@ -217,8 +217,7 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 				WHERE type = 'index'
 					AND name IN (
 						'idx_email_delivery_events_user_state_created',
-						'idx_email_delivery_events_user_dedupe_expires',
-						'idx_email_inbound_usage_effects_delivery'
+						'idx_email_delivery_events_user_dedupe_expires'
 					)
 				ORDER BY name`,
 			)
@@ -226,7 +225,6 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 	).toEqual([
 		{ name: 'idx_email_delivery_events_user_dedupe_expires' },
 		{ name: 'idx_email_delivery_events_user_state_created' },
-		{ name: 'idx_email_inbound_usage_effects_delivery' },
 	])
 	expect(
 		db
@@ -263,28 +261,4 @@ test('0129 promotes legacy inbound authority and cascades usage idempotency', ()
 		{ id: 'subscription-null-lease-at' },
 		{ id: 'usage-null-lease-at' },
 	])
-
-	expect(
-		db.prepare(`PRAGMA foreign_key_list(email_inbound_usage_effects)`).all(),
-	).toContainEqual(
-		expect.objectContaining({
-			table: 'email_delivery_events',
-			from: 'delivery_id',
-			to: 'id',
-			on_delete: 'CASCADE',
-		}),
-	)
-	db.prepare(
-		`INSERT INTO email_inbound_usage_effects (
-			user_id, delivery_id, finalization_token, created_at
-		) VALUES (?, ?, ?, ?)`,
-	).run('user-backfill', 'delivery-backfill', 'finalization-token', createdAt)
-	db.prepare(
-		`DELETE FROM email_delivery_events WHERE id = 'delivery-backfill'`,
-	).run()
-	expect(
-		db
-			.prepare(`SELECT COUNT(*) AS count FROM email_inbound_usage_effects`)
-			.get(),
-	).toEqual({ count: 0 })
 })

@@ -30,7 +30,7 @@ export async function reconcileBackupResources(input: {
 	const adminToken = input.env.DR_BACKUP_ADMIN_TOKEN?.trim()
 	if (!adminToken) {
 		log(
-			'DR backup policy reconciliation skipped: DR_BACKUP_ADMIN_TOKEN is unavailable. The mailbox pre-drop Workflow remains fail-closed on its mandatory live R2 policy probe before export.',
+			'DR backup policy reconciliation skipped: DR_BACKUP_ADMIN_TOKEN is unavailable. Existing bucket policies remain unchanged.',
 		)
 		return {
 			status: 'skipped',

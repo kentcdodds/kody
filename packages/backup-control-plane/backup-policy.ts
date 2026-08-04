@@ -149,16 +149,7 @@ export function objectKeyForPayload(
 	payload: BackupPayload,
 	bookmark: string,
 ): string {
-	switch (payload.kind) {
-		case 'scheduled':
-			return objectKeyForBookmark(payload.objectPrefix, bookmark)
-		case 'mailbox-legacy-graph-pre-drop':
-			return `${payload.objectPrefix}/backup-request.sql`
-		default: {
-			const exhaustive: never = payload
-			throw exhaustive
-		}
-	}
+	return objectKeyForBookmark(payload.objectPrefix, bookmark)
 }
 
 export function isBookmarkObjectKey(

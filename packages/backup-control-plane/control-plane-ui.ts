@@ -299,9 +299,6 @@ ${options.flashHtml ?? ''}
 		<form method="post" action="/actions/run-backup">
 			<button type="submit">Run today's D1 backup</button>
 		</form>
-		<form method="post" action="/actions/mailbox-pre-drop-backup">
-			<button type="submit">Create mailbox pre-drop backup approval</button>
-		</form>
 		<form method="post" action="/actions/seal-day" class="actions">
 			<label>Day
 				<input type="text" name="day" placeholder="YYYY-MM-DD" required pattern="\\d{4}-\\d{2}-\\d{2}"/>
@@ -465,32 +462,6 @@ export function renderRestoreStatusPage(input: {
 	<meta http-equiv="refresh" content="5;url=/restore-status?id=${encodeURIComponent(input.instanceId)}"/>
 </section>`
 	return layout('Production restore status', body, { danger: true })
-}
-
-export function renderMailboxPreDropStatusPage(input: {
-	instanceId: string
-	status: string
-	receipt?: unknown
-}): string {
-	const details =
-		input.receipt === undefined
-			? 'No approval receipt yet.'
-			: JSON.stringify(input.receipt, null, 2)
-	const body = `
-<header>
-	<h1>Mailbox pre-drop backup approval</h1>
-	<p>Workflow instance <code>${escapeHtml(input.instanceId)}</code></p>
-</header>
-<section class="panel">
-	<div class="kv"><span>Status</span><strong>${escapeHtml(input.status)}</strong></div>
-	<pre>${escapeHtml(details)}</pre>
-	<p>
-		<a class="button" href="/mailbox-pre-drop-status?id=${encodeURIComponent(input.instanceId)}">Refresh</a>
-		<a class="button" href="/">Dashboard</a>
-	</p>
-	<meta http-equiv="refresh" content="5;url=/mailbox-pre-drop-status?id=${encodeURIComponent(input.instanceId)}"/>
-</section>`
-	return layout('Mailbox pre-drop backup approval', body)
 }
 
 export function htmlResponse(html: string, status = 200): Response {

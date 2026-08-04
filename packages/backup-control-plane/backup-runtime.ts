@@ -18,7 +18,6 @@ import {
 	objectKeyForPayload,
 	safeLog,
 } from './backup-policy.ts'
-import { mailboxPreDropRuntimePayload } from './mailbox-pre-drop-policy.ts'
 import {
 	type BackupEnvironment,
 	type BackupManifest,
@@ -100,7 +99,6 @@ export interface BackupRuntimeStep extends DurableExportStep {
 interface BackupRuntimeOptions {
 	api?: ApiOptions
 	downloadFetcher?: typeof fetch
-	payloadKind?: BackupPayload['kind']
 }
 
 const legacyScheduledPayloadKeys = [
@@ -111,17 +109,6 @@ const legacyScheduledPayloadKeys = [
 	'retentionTier',
 ] as const
 const scheduledPayloadKeys = ['kind', ...legacyScheduledPayloadKeys] as const
-const mailboxPreDropPayloadKeys = [
-	'kind',
-	'requestId',
-	'nonce',
-	'requestedAt',
-	'scheduledAt',
-	'day',
-	'objectPrefix',
-	'manifestKey',
-	'retentionTier',
-] as const
 
 function isPlainDataRecord(value: unknown): value is Record<string, unknown> {
 	return (
@@ -178,7 +165,6 @@ function matchesExpectedPayload(
 function validatePayload(
 	env: BackupEnvironment,
 	payload: unknown,
-	allowedKind: BackupPayload['kind'],
 ): BackupPayload {
 	if (!isPlainDataRecord(payload)) {
 		throw new BackupError(
@@ -187,12 +173,6 @@ function validatePayload(
 		)
 	}
 	if (!Object.hasOwn(payload, 'kind')) {
-		if (allowedKind !== 'scheduled') {
-			throw new BackupError(
-				'invalid-workflow-payload-kind',
-				'workflow payload kind is not approved for this Workflow',
-			)
-		}
 		if (!hasExactDataKeys(payload, legacyScheduledPayloadKeys)) {
 			throw new BackupError(
 				'invalid-workflow-payload',
@@ -221,50 +201,22 @@ function validatePayload(
 		}
 		return expected
 	}
-	if (payload.kind !== allowedKind) {
+	if (payload.kind !== 'scheduled') {
 		throw new BackupError(
 			'invalid-workflow-payload-kind',
 			'workflow payload kind is not approved for this Workflow',
 		)
 	}
-	let expected: BackupPayload
-	switch (payload.kind) {
-		case 'scheduled': {
-			if (!hasExactDataKeys(payload, scheduledPayloadKeys)) {
-				throw new BackupError(
-					'invalid-workflow-payload',
-					'scheduled workflow payload did not have exact fields',
-				)
-			}
-			expected = backupPayload(env, canonicalScheduledDate(payload.scheduledAt))
-			break
-		}
-		case 'mailbox-legacy-graph-pre-drop': {
-			if (
-				!hasExactDataKeys(payload, mailboxPreDropPayloadKeys) ||
-				typeof payload.requestId !== 'string' ||
-				typeof payload.nonce !== 'string' ||
-				typeof payload.requestedAt !== 'string'
-			) {
-				throw new BackupError(
-					'invalid-workflow-payload',
-					'mailbox pre-drop workflow payload did not have exact fields',
-				)
-			}
-			canonicalScheduledDate(payload.requestedAt)
-			expected = mailboxPreDropRuntimePayload(env, {
-				requestId: payload.requestId,
-				nonce: payload.nonce,
-				requestedAt: payload.requestedAt,
-			})
-			break
-		}
-		default:
-			throw new BackupError(
-				'invalid-workflow-payload-kind',
-				'workflow payload kind is not approved for this Workflow',
-			)
+	if (!hasExactDataKeys(payload, scheduledPayloadKeys)) {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'scheduled workflow payload did not have exact fields',
+		)
 	}
+	const expected = backupPayload(
+		env,
+		canonicalScheduledDate(payload.scheduledAt),
+	)
 	if (!matchesExpectedPayload(payload, expected)) {
 		throw new BackupError(
 			'invalid-workflow-payload',
@@ -293,11 +245,7 @@ export async function runBackupRuntime(
 				'backup workflow is explicitly disabled',
 			)
 		}
-		const checkedPayload = validatePayload(
-			env,
-			event.payload,
-			options.payloadKind ?? 'scheduled',
-		)
+		const checkedPayload = validatePayload(env, event.payload)
 		payload = checkedPayload
 		await step.do(
 			'verify-source-identity',

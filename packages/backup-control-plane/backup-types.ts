@@ -1,5 +1,3 @@
-import { type MailboxPreDropApprovalEvidence } from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
-
 export { type BackupManifest } from '@kody-internal/shared/backup-manifest.ts'
 
 export type RetentionTier = 'daily' | 'weekly'
@@ -7,7 +5,6 @@ export type RetentionTier = 'daily' | 'weekly'
 export interface BackupEnvironment {
 	BACKUP_BUCKET: R2Bucket
 	BACKUP_WORKFLOW: Workflow
-	MAILBOX_PRE_DROP_BACKUP_WORKFLOW: Workflow
 	RESTORE_WORKFLOW: Workflow
 	CLOUDFLARE_API_TOKEN: string
 	SOURCE_ACCOUNT_ID: string
@@ -50,41 +47,9 @@ export type ScheduledBackupWorkflowPayload =
 	| ScheduledBackupPayload
 	| LegacyScheduledBackupPayload
 
-export interface MailboxPreDropBackupRequest {
-	requestId: string
-	nonce: string
-	requestedAt: string
-}
-
-export interface MailboxPreDropRuntimePayload extends MailboxPreDropBackupRequest {
-	kind: 'mailbox-legacy-graph-pre-drop'
-	scheduledAt: string
-	day: string
-	objectPrefix: string
-	manifestKey: string
-	retentionTier: 'daily'
-}
-
-export type BackupPayload =
-	| ScheduledBackupPayload
-	| MailboxPreDropRuntimePayload
+export type BackupPayload = ScheduledBackupPayload
 
 export type BackupRuntimePayload = BackupPayload | LegacyScheduledBackupPayload
-
-export type MailboxLegacyGraphCounts = {
-	ownerCount: number
-	threadCount: number
-	messageCount: number
-	attachmentCount: number
-	eventCount: number
-}
-
-export type MailboxPreDropSnapshot = MailboxLegacyGraphCounts & {
-	authorityFrozenAt: string
-	authorityOwnerCount: number
-}
-
-export type MailboxPreDropApprovalReceipt = MailboxPreDropApprovalEvidence
 
 export interface ExportReady {
 	kind: 'complete'
@@ -147,9 +112,6 @@ export interface LogRecord {
 		| 'full-backup-already-sealed'
 		| 'full-backup-seal-skipped'
 		| 'full-backup-seal-failure'
-		| 'mailbox-pre-drop-backup-approved'
-		| 'mailbox-pre-drop-backup-failure'
-		| 'ui-mailbox-pre-drop-backup'
 		| 'restore-drill-started'
 		| 'restore-drill-success'
 		| 'restore-drill-failure'

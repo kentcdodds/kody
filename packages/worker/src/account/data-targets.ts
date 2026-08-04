@@ -162,14 +162,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'package_service_states' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
-	{
-		kind: 'user_id',
-		table: 'email_inbound_usage_effects',
-		includeInExport: false,
-		surface: 'email_inbound_usage_effects',
-		reason:
-			'Retained cross-store effect idempotency ledger with no user-exportable content; account deletion removes owner rows.',
-	},
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },

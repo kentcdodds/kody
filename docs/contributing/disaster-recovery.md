@@ -85,8 +85,7 @@ the kody-named resources below — they are intentional cross-account leftovers.
 **DR / backup stack (this runbook):**
 
 - Worker `kody-production-d1-backups` (hourly + nightly crons)
-- Workflows `kody-production-d1-backup`,
-  `kody-mailbox-legacy-graph-pre-drop-backup`, and `kody-production-dr-restore`
+- Workflows `kody-production-d1-backup` and `kody-production-dr-restore`
 - Locked R2 bucket `kody-production-backups`
 - Custom domain `kody-dr.kentcdodds.com`
 
@@ -116,7 +115,6 @@ Contract: `packages/shared/src/backup-staging.ts`.
 | Prefix                          | Mutability       | Contents                                                                                                  |
 | ------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
 | `daily/d1/...`, `weekly/d1/...` | Immutable        | Signed D1 SQL + schema-v2 D1 manifests                                                                    |
-| `adhoc/mailbox-drop/d1/...`     | Immutable        | Request-unique pre-drop D1 SQL + signed schema-v2 manifest; 35-day lock/lifecycle                         |
 | `staging/{day}/...`             | Mutable          | Production exporter cursor progress, chunked phase output, indexes, NDJSON dumps, `exporter/summary.json` |
 | `daily/full/{day}/...`          | Immutable        | Sealed copy of staged indexes/dumps + Ed25519 full-backup manifest                                        |
 | `blobs/sha256/{hash}`           | Immutable        | Deduplicated email MIME, community assets, published source snapshots                                     |
@@ -321,17 +319,15 @@ backup SQL. See [Secret rotation](./secret-rotation.md).
 
 Routes (all require Access JWT):
 
-| Method | Path                               | Action                                                                                                                             |
-| ------ | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/`                                | Dashboard: enable gates, source identity, live D1 size, escrow presence, 14-day D1/staging/seal status with signature verification |
-| `POST` | `/actions/run-backup`              | Enqueue today's D1 backup Workflow (respects enable gates)                                                                         |
-| `POST` | `/actions/mailbox-pre-drop-backup` | Generate a fresh request and enqueue the cryptographically verified mailbox legacy-graph pre-drop Workflow                         |
-| `POST` | `/actions/seal-day`                | Verify staging + D1 manifest and seal `daily/full/{day}/...`                                                                       |
-| `POST` | `/actions/run-drill`               | Isolated restore drill (fresh D1 in `DRILL_ACCOUNT_ID`, never production)                                                          |
-| `POST` | `/actions/restore/prepare`         | Validate sealed day; issue 10-minute HMAC confirm token                                                                            |
-| `POST` | `/actions/restore/execute`         | Require typed exact `SOURCE_DATABASE_NAME` + valid token; start restore Workflow                                                   |
-| `GET`  | `/restore-status?id=...`           | Poll restore Workflow status                                                                                                       |
-| `GET`  | `/mailbox-pre-drop-status?id=...`  | Poll the pre-drop Workflow receipt without exposing a signed URL or secret                                                         |
+| Method | Path                       | Action                                                                                                                             |
+| ------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/`                        | Dashboard: enable gates, source identity, live D1 size, escrow presence, 14-day D1/staging/seal status with signature verification |
+| `POST` | `/actions/run-backup`      | Enqueue today's D1 backup Workflow (respects enable gates)                                                                         |
+| `POST` | `/actions/seal-day`        | Verify staging + D1 manifest and seal `daily/full/{day}/...`                                                                       |
+| `POST` | `/actions/run-drill`       | Isolated restore drill (fresh D1 in `DRILL_ACCOUNT_ID`, never production)                                                          |
+| `POST` | `/actions/restore/prepare` | Validate sealed day; issue 10-minute HMAC confirm token                                                                            |
+| `POST` | `/actions/restore/execute` | Require typed exact `SOURCE_DATABASE_NAME` + valid token; start restore Workflow                                                   |
+| `GET`  | `/restore-status?id=...`   | Poll restore Workflow status                                                                                                       |
 
 ### Isolated restore drill
 
@@ -362,82 +358,6 @@ import init/ingest etag. Without that prelude, drills fail with errors like
 Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
 config, and expect users to reauthorize OAuth and remote connectors.
-
-### Mailbox authority and the pre-drop D1 backup
-
-Migration 0134 installs the canonical approval schema; migration 0135
-permanently drops the shared USER/system rollback graph. Production retains the
-complete immutable receipt in `email_user_graph_drop_approval`; a newly created,
-provably empty preview database may bootstrap without creating one. To inspect
-or recover deleted historical rows, download the production receipt's exact SQL
-object, verify the signed manifest plus bytes/SHA-256/ETag before import,
-restore it into an isolated D1 database, and verify the approved
-owner/thread/message/attachment/event manifest plus `PRAGMA foreign_key_check`.
-Do not point a live Worker at that isolated pre-0135 schema.
-
-The pre-drop D1 object is forensic/disaster-recovery evidence, not a USER
-serving source. A production recovery must quiesce ingress and scheduled/effect
-consumers, restore the authoritative Mailbox and `EMAIL_BLOBS` snapshots, and
-verify owner inventories and effect/finalization state. A full D1 restore to
-0133 state also requires the reviewed migration/conductor procedure to deploy
-0134, issue a new approval, and deliberately reapply 0135; the old D1-to-Mailbox
-parity/rebuild path must not be reintroduced.
-
-### Mailbox legacy graph destructive prerequisite
-
-Never self-attest the pre-drop prerequisite with direct SQL. Before a separate
-reviewed migration may drop the frozen USER `email_*` graph, use the dedicated
-backup-control-plane Workflow documented in
-[`packages/backup-control-plane/readme.md`](../../packages/backup-control-plane/readme.md#mailbox-legacy-graph-pre-drop-approval).
-It creates a request-unique immutable `adhoc/mailbox-drop/d1/...` export,
-verifies the standard v2 Ed25519 manifest and a full R2 SQL re-read, proves the
-frozen authority marker and exact USER owner/thread/message/attachment/event
-counts did not drift, and atomically writes an approval expiring within two
-hours. The caller supplies only `requestId`, `nonce`, and `requestedAt`; source
-identity, counts, object keys, hashes, and approval values come from the
-allowlisted control plane.
-
-0135 accepts a newer receipt without pinning a particular request, nonce, object
-key, SQL SHA-256, ETag, or signature digest. It does pin the deployed trust
-configuration: production source account/database/name, signing-key id, Ed25519,
-daily retention, restore-baseline id/SHA-256, control-plane issuer, and build
-commit. Its monotonic timestamps, canonical manifest/SQL relation, current
-marker, and exact counts must also validate at execution time. The receipt
-prepared on 2026-08-03 expires at `21:10:38.879Z`; run the same deployed
-Workflow again if deployment occurs later.
-
-The only receipt-free case is a universal-chain bootstrap before seeding. The
-authority marker and all shared, dedicated, provider-index, repair, due-owner,
-and inbound-effect surfaces must be empty. Any legacy row or nonzero marker
-requires the ordinary signed approval path.
-
-The production `adhoc/` policy was manually applied and read back on 2026-08-03:
-both lock and lifecycle are 35 days. When `DR_BACKUP_ADMIN_TOKEN` is available,
-the backup-control-plane deploy job reconciles the managed policy and requires
-an `adhocPolicyProof.readBackVerified: true` API result. If that optional secret
-is unavailable, the job clearly logs the skipped reconciliation and continues
-the ordinary backup Worker deployment.
-
-The canonical trigger gate is the Workflow's mandatory
-`verifyMailboxPreDropR2Policy` step. It creates a request-local object and
-attempts an unconditional destructive overwrite before any export; R2 must
-reject the overwrite as bucket-policy locked. Missing or ineffective live
-protection therefore prevents both export and approval, independently of
-deploy-time credentials. Poll the Cloudflare Workflow API until complete and
-retain the non-secret output receipt plus any available reconciliation proof.
-
-Exact pre/post counts bind the backup to the destructive snapshot because the
-frozen USER graph has no writer: the static D1 boundary blocks live legacy
-access, runtime authority gates reject legacy mutations, and
-`frozen-privacy-cleanup` permits only reads/deletes. Any retention deletion
-changes an exact count and aborts approval, and the atomic approval statement
-rechecks the marker, health gates, and counts. The destructive consumer must
-nevertheless run its own immediate full-row parity checks before dropping data.
-Migration 0134 and this control plane do not drop data.
-
-If a replay reports an immutable object/source mismatch, do not change params or
-reuse that request id. Generate a fresh request id, nonce, timestamp, and
-Workflow instance.
 
 ## Schedules and freshness
 
@@ -502,11 +422,6 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
       a Worker secret.
 - [ ] Checked-in CLI trust registries populated via code review when you want
       offline drills/readiness (optional if UI-only, recommended).
-- [ ] The 2026-08-03 manual 35-day `adhoc/` lock/lifecycle proof remains valid;
-      when admin credentials are available, backup-control-plane deploy also
-      emitted `adhocPolicyProof.readBackVerified: true`.
-- [ ] The pre-drop receipt proves its mandatory live destructive policy probe
-      completed before export.
 
 ### 2. Manifest keys and Access
 
@@ -527,9 +442,8 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - [ ] `DR_DEPLOY_TOKEN` is set; optional R2-admin `DR_BACKUP_ADMIN_TOKEN`
       reconciles policy when accessible and logs a non-blocking skip otherwise;
       the control plane deploys to the DR account; `BACKUP_BUCKET` bound;
-      Workflows `kody-production-d1-backup`,
-      `kody-mailbox-legacy-graph-pre-drop-backup`, and
-      `kody-production-dr-restore` present; public bucket access off.
+      Workflows `kody-production-d1-backup` and `kody-production-dr-restore`
+      present; public bucket access off.
 - [ ] UI loads only through Access; unauthenticated and wrong-email JWTs
       get 403.
 

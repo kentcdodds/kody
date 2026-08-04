@@ -139,7 +139,8 @@ export function setMailboxMessageClassification(
 
 /**
  * Delete message + attachment metadata. Nulls delivery-event `message_id`
- * first (D1 parity). Never deletes R2 or empty threads.
+ * first so retained events cannot reference deleted metadata. Never deletes R2
+ * or empty threads.
  */
 export function deleteMailboxMessageMetadata(
 	sql: SqlStorage,

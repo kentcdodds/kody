@@ -85,7 +85,7 @@ jobs:
           fi
 
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
-            '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-|packages/shared/src/mailbox-pre-drop-approval\.ts)'; then
+            '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-)'; then
             echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
             echo "Backup control plane deploy: path filter matched."
           else

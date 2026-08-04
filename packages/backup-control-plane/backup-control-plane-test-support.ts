@@ -183,7 +183,6 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 	return {
 		BACKUP_BUCKET: bucket as unknown as R2Bucket,
 		BACKUP_WORKFLOW: {} as Workflow,
-		MAILBOX_PRE_DROP_BACKUP_WORKFLOW: {} as Workflow,
 		RESTORE_WORKFLOW: {} as Workflow,
 		CLOUDFLARE_API_TOKEN: 'not-logged-secret',
 		SOURCE_ACCOUNT_ID: ACCOUNT_ID,

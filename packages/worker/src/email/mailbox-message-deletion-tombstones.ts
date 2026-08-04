@@ -8,8 +8,8 @@ import {
 } from './mailbox-types.ts'
 
 /**
- * Fence against delayed pre-cutover snapshots resurrecting deleted messages.
- * Tombstones remain until the destructive frozen-graph follow-up.
+ * Permanent fence against delayed writers resurrecting deleted messages.
+ * Retain tombstones for the lifetime of the Mailbox.
  */
 export function isMailboxMessageTombstoned(
 	sql: SqlStorage,

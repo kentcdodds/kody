@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { mailboxPreDropApprovalColumns } from '@kody-internal/shared/mailbox-pre-drop-approval.ts'
 import { expect, test } from 'vitest'
 import {
 	applyMigrationLikeD1,
@@ -52,7 +51,7 @@ function maximumFunctionArguments(sql: string): number {
 	return maximum
 }
 
-test('0135 SQL stays within D1 expression limits and consumes the canonical approval', () => {
+test('0135 SQL stays within D1 expression limits', () => {
 	const sql = readFileSync(new URL(dropMigration, migrationsDirectory), 'utf8')
 	expect(sql).not.toMatch(/\bjson_array\s*\(/iu)
 	expect(maximumFunctionArguments(sql)).toBeLessThanOrEqual(32)
@@ -66,11 +65,6 @@ test('0135 SQL stays within D1 expression limits and consumes the canonical appr
 			),
 	)
 	expect(maximumCompoundTerms).toBeLessThanOrEqual(10)
-	for (const column of mailboxPreDropApprovalColumns) {
-		expect(sql, `approval column ${column} is not consumed`).toMatch(
-			new RegExp(`\\bapproval\\.${column}\\b`, 'u'),
-		)
-	}
 })
 
 test('0135 removes every retired Mailbox parity users column and index', () => {

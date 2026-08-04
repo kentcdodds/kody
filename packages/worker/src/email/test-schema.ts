@@ -17,7 +17,6 @@ export async function ensureEmailTestSchema(db: D1Database) {
 		`DROP TABLE IF EXISTS system_email_threads;`,
 		`DROP TABLE IF EXISTS email_sender_policies;`,
 		`DROP TABLE IF EXISTS email_sender_rules;`,
-		`DROP TABLE IF EXISTS email_inbound_usage_effects;`,
 		`DROP TABLE IF EXISTS email_delivery_events;`,
 		`DROP TABLE IF EXISTS email_attachments;`,
 		`DROP TABLE IF EXISTS email_outbound_provider_index;`,
@@ -249,7 +248,6 @@ ON email_outbound_provider_index(message_id);`,
 );`,
 		`CREATE INDEX IF NOT EXISTS idx_email_inbound_due_owners_priority_due_at
 ON email_inbound_due_owners(
-	CASE WHEN reason = 'cutover-audit' THEN 1 ELSE 0 END,
 	due_at,
 	user_id
 );`,

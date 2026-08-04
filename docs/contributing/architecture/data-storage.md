@@ -216,7 +216,7 @@ Durable Object export behavior:
   after 90 days inside the DO; job/activation dedicated tables are never pruned
   by retention. Legacy D1 projection tables (`workflow_runs`,
   `user_package_run_successes`, `user_activation_milestones`) were retired by
-  migration `0137`. Pre-drop D1 Time Travel bookmark for database
+  migration `0137`. Pre-migration D1 Time Travel bookmark for database
   `8c1014d1-6b41-4695-a0a2-159071f0f919`:
   `0000116d-000000d2-000050bd-c7ecd5892a189df7cda145af746bc9c9`. See
   [Run records](./run-records.md).
@@ -797,8 +797,8 @@ the legacy graph. A code rollback to a pre-0135 Worker is therefore unsupported.
 **USER rollback boundary:** Mailbox/R2 is the only USER graph authority. A
 code-only rollback to a D1-authoritative Worker is impossible because the shared
 graph has been dropped. Recovery must quiesce email writers and restore the
-authoritative Mailbox and `EMAIL_BLOBS` backups; the verified pre-drop D1 backup
-is disaster-recovery evidence, not a serving-source switch.
+authoritative Mailbox and `EMAIL_BLOBS` backups; the verified historical D1
+backup is disaster-recovery evidence, not a serving-source switch.
 
 **Mailbox graph contract:** all live USER RPCs are owner-bound. Complete graph
 writes validate canonical owner-scoped R2 keys. Inbound graph commits
@@ -868,9 +868,7 @@ system parity, then removed the shared graph, compatibility trigger, and old
 `users` columns atomically. Fresh databases may use the approval-free path only
 before any shared, dedicated, provider, coordination, or idempotency row exists.
 The stable authority marker retains `owner_count`, `frozen_at`, and
-`dropped_at`; approved drops retain the complete canonical receipt in
-`email_user_graph_drop_approval`. See
-[Mailbox legacy graph drop](../mailbox-legacy-graph-drop.md).
+`dropped_at`; migration history preserves the completed graph-drop contract.
 
 ### What stays in D1
 

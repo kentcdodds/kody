@@ -33,7 +33,7 @@ export function setMailboxMeta(
  * Schema bootstrap + warm migrations.
  * - v1: base tables/indexes (deployed).
  * - v2: additive inbound ledger query indexes (state/reconcile/retry/dedupe).
- * - v3: durable message deletion tombstones for delayed-writer fencing.
+ * - v3: permanent message deletion tombstones fence delayed-writer resurrection.
  * - v4: durable per-message retention retry eligibility and diagnostics.
  * - v5: durable outbound provider-index repair ledger.
  * Warm objects re-run CREATE IF NOT EXISTS then apply any version-gated

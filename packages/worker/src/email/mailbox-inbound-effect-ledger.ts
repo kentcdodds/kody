@@ -67,7 +67,7 @@ export type MailboxInboundEffectLedgerRpc = {
 		ownerId: string
 		deliveryId: string
 		usageEffectLease: string
-		/** Must match the delivery's current finalization token (D1 parity). */
+		/** Must match the delivery's current finalization token. */
 		expectedFinalizationToken: string
 		mode: 'recorded' | 'suppressed'
 		usageMonth: string
@@ -85,7 +85,7 @@ export type MailboxInboundEffectLedgerRpc = {
 		ownerId: string
 		deliveryId: string
 		subscriptionEffectLease: string
-		/** Must match the delivery's current finalization token (D1 parity). */
+		/** Must match the delivery's current finalization token. */
 		expectedFinalizationToken: string
 		mode: 'complete' | 'suppressed'
 		suppressionReason?: string | null
@@ -95,7 +95,7 @@ export type MailboxInboundEffectLedgerRpc = {
 		ownerId: string
 		deliveryId: string
 		subscriptionEffectLease: string
-		/** Must match the delivery's current finalization token (D1 parity). */
+		/** Must match the delivery's current finalization token. */
 		expectedFinalizationToken: string
 		error: string
 		now?: string
