@@ -124,7 +124,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'runLogs',
 			export: 'include',
 			notes:
-				'Per-user RunLog DO (RUN_LOG binding; idFromName(userId)). Sole authority for pruned run history (runs + run_logs), the keyed package-invocation idempotency ledger, workflow_projections (90-day terminal retention; active/running not age-pruned), job_run_observability, package_run_successes, and activation_milestones. D1 workflow_runs, user_package_run_successes, and user_activation_milestones retired after production parity (41/41 non-deleting users, 9 pages, 2026-08-04 02:45–02:46 UTC). Run history self-prunes (~30 days / 2,000 runs); ledger terminal rows 90 days. Account deletion clearAll deletes every DO table and reinitializes schema. Account export pages all tables through run_records (runs, ledger, then dedicated phases). Admin insights uses content-free per-user getAdminInsightsSnapshot point reads.',
+				'Per-user RunLog DO (RUN_LOG binding; idFromName(userId)). Stores pruned run history (runs + run_logs), the keyed package-invocation idempotency ledger, and dedicated unpruned state: workflow_projections (binding_name, typically DYNAMIC_CALLABLE_WORKFLOWS; mirrors expand-phase D1 workflow_runs), job_run_observability (terminal outcomes/counters; D1 jobs keeps schedule + last_run_at for retention only), package_run_successes, and activation_milestones. Run rows self-prune inside the DO; dedicated tables do not. Account deletion clearAll deletes every table and reinitializes schema. Account export pages all tables through the run_records section (runs first, then ledger, then dedicated phases).',
 		},
 		{
 			id: 'user_meter',

@@ -559,10 +559,6 @@
 		{
 			"filename": "0136-user-repos.sql",
 			"sha256": "89321951281dab27f56d2fbcd64b5b761cbd66d4fffb183062bbfe9878eaf634"
-		},
-		{
-			"filename": "0137-drop-run-projection-tables.sql",
-			"sha256": "be6747afd18aeaa0ded53c1e3a9065a7c8f77bba634a9d50ead3c7384bdcc35c"
 		}
 	]
 }

@@ -227,10 +227,10 @@ of replaying.
   `0112-drop-package-invocations.sql`). Only keys claimed in this DO ledger can
   replay; a redelivery for an unknown key executes fresh.
 - Account export pages ledger rows through the same `run_records` section cursor
-  (runs first, then ledger rows, then dedicated RunLog state); account deletion
-  purges them with `clearAll` (every DO table, then schema reinitialization).
-  Disaster recovery deliberately does not stage the DO — losing it risks
-  duplicate execution of replayed webhooks (see
+  (runs first, then ledger rows, then dedicated unpruned state); account
+  deletion purges them with `clearAll` (every DO table, then schema
+  reinitialization). Disaster recovery deliberately does not stage the DO —
+  losing it risks duplicate execution of replayed webhooks (see
   [disaster recovery](../disaster-recovery.md)).
 
 ## Invariant: state vs history
@@ -367,36 +367,28 @@ read `RunLog`.
 Run records are **excluded from the `storage_bytes` entitlement**. They are
 observability history, not user content.
 
-## Dedicated RunLog state
+## Dedicated unpruned RunLog state
 
-The same per-user `RunLog` DO is the **sole authority** for workflow
-idempotency, concurrent-workflow entitlements, job terminal outcomes/counters,
-and package activation counters/milestones. D1 `workflow_runs`,
-`user_package_run_successes`, and `user_activation_milestones` retired only
-after production parity proof: **41/41 non-deleting users across 9 pages on
-2026-08-04 02:45–02:46 UTC**, zero failures, missing rows, or undercounts. Job
-observability legacy seed from D1 `jobs` terminal columns retired with the same
-cutover; D1 `jobs` keeps schedule fields and `last_run_at` / `last_run_status`
-as retention anchors only.
+The same per-user `RunLog` DO also stores **correctness and observability state
+that must survive run-history pruning**. These tables are never pruned by the
+run retention passes; only account deletion `clearAll` removes them.
 
-| Table                   | Role                                                                                                                                                                                                                                          | Retention inside the DO                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workflow_projections`  | Workflow idempotency + concurrent-workflow entitlements. Includes `binding_name` (typically `DYNAMIC_CALLABLE_WORKFLOWS`) so multiple bindings project correctly.                                                                             | Terminal rows (`complete`, `errored`, `terminated`) age-prune after 90 days (`workflowProjectionRetentionDays`). Active / running rows and stale-`creating` TTL cleanup only. |
-| `job_run_observability` | Per-job terminal outcomes and counters for Activity, MCP reads, and admin insights. Not a substitute for D1 schedule metadata.                                                                                                                | Not pruned by run-history retention; only account deletion `clearAll` removes rows.                                                                                           |
-| `package_run_successes` | Per-package success counters toward activation.                                                                                                                                                                                               | Same as `job_run_observability`.                                                                                                                                              |
-| `activation_milestones` | One row each for `package_run_succeeded` and `package_activated` (`package_id` on the second). High-frequency HTTP surfaces (`webhook`, `app_fetch`) do not count; activation means two unattended capability successes for the same package. | Same as `job_run_observability`.                                                                                                                                              |
+| Table                   | Role                                                                                                                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow_projections`  | Workflow idempotency + concurrent-workflow entitlements. Mirrors expand-phase D1 `workflow_runs` (minus `user_id`) and adds `binding_name` (typically `DYNAMIC_CALLABLE_WORKFLOWS`) so multiple bindings project correctly.                   |
+| `job_run_observability` | Per-job terminal outcomes and counters for Activity and MCP reads. Not a substitute for D1 schedule metadata; D1 `jobs.last_run_at` remains for the hourly job-retention sweeper only.                                                        |
+| `package_run_successes` | Per-package success counters toward activation.                                                                                                                                                                                               |
+| `activation_milestones` | One row each for `package_run_succeeded` and `package_activated` (`package_id` on the second). High-frequency HTTP surfaces (`webhook`, `app_fetch`) do not count; activation means two unattended capability successes for the same package. |
 
-Account export pages all dedicated tables through section `run_records` after
-runs and ledger rows (`exportRuns` phases: raw run-id cursor, then
+During the expand phase, workflow writes also project into D1 `workflow_runs`
+while the authoritative correctness copy lives in `workflow_projections`. The D1
+table is pruned by the hourly retention job; RunLog projections are not.
+
+Account export pages all of the above through section `run_records` after runs
+and ledger rows (`exportRuns` phases: raw run-id cursor, then
 `invocation-ledger:`, `workflow-projections:`, `job-run-observability:`,
 `package-run-successes:`, `activation-milestones:`). Legacy run-id and ledger
-cursors remain valid. Account deletion `clearAll` deletes every DO table (runs,
-logs, ledger, and dedicated state) and reinitializes schema.
-
-Role-gated admin insights aggregates workflow status counts and activation
-milestones through **content-free per-user point reads**
-(`getAdminInsightsSnapshot` RPC per stable user id; bounded concurrency). No D1
-`workflow_runs` / activation tables and no fleet-wide RunLog scans.
+cursors remain valid.
 
 ## Related
 

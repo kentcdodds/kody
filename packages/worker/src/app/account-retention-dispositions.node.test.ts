@@ -86,6 +86,13 @@ test('retention dispositions stay aligned with scheduled policies and documented
 	expect(
 		nonScheduled.some(
 			(disposition) =>
+				disposition.table === 'user_package_run_successes' &&
+				disposition.kind === 'durable_forever',
+		),
+	).toBe(true)
+	expect(
+		nonScheduled.some(
+			(disposition) =>
 				disposition.table === 'user_storage_buckets' &&
 				disposition.kind === 'durable_forever',
 		),

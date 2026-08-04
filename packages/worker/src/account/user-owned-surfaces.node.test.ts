@@ -72,18 +72,6 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	})
 	expect(
 		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'run_log',
-		),
-	).toMatchObject({
-		binding: 'RUN_LOG',
-		deletionResultKey: 'runLogs',
-		export: 'include',
-		notes: expect.stringMatching(
-			/Sole authority.*90-day terminal retention.*getAdminInsightsSnapshot/s,
-		),
-	})
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
 			(surface) => surface.id === 'mailbox',
 		),
 	).toMatchObject({

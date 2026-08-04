@@ -207,15 +207,13 @@ Durable Object export behavior:
   migration surface for Durable Object storage.
 - `JobManager` exposes scheduler alarm/debug state through an export RPC.
 - `RunLog` exports per-user execution history (runs + log lines), the keyed
-  package-invocation idempotency ledger, and dedicated RunLog state (workflow
-  projections, job-run observability, package run successes, activation
-  milestones) through the account-export `run_records` section (`exportRuns`
-  RPC; one cursor pages runs first, then ledger rows, then each dedicated phase
-  via prefixed cursors). Run history self-prunes inside the DO (~30 days / 2,000
-  runs; ledger terminal rows 90 days). Terminal workflow projections age-prune
-  after 90 days; job observability and activation tables survive run-history
-  pruning until account deletion `clearAll`. See
-  [Run records](./run-records.md).
+  package-invocation idempotency ledger, and dedicated unpruned RunLog state
+  (workflow projections, job-run observability, package run successes,
+  activation milestones) through the account-export `run_records` section
+  (`exportRuns` RPC; one cursor pages runs first, then ledger rows, then each
+  dedicated phase via prefixed cursors). Run history self-prunes inside the DO
+  (~30 days / 2,000 runs; ledger terminal rows 90 days); dedicated tables are
+  never pruned by retention. See [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
   The same RPC may return additive shadow fields on the first page only
@@ -411,14 +409,6 @@ shared USER graph.
 Historical Mailbox expand-phase mirror/parity telemetry is retired. No emitters
 or operation registry remain, and no live or scheduled Step 5 path writes those
 migration-only events.
-
-Workflow status counts and activation milestones on the role-gated admin
-insights page come from **content-free per-user RunLog point reads**
-(`getAdminInsightsSnapshot` per stable user id, aggregated with bounded
-concurrency). D1 `workflow_runs`, `user_package_run_successes`, and
-`user_activation_milestones` retired with RunLog-only authority after production
-parity proof (41/41 non-deleting users across 9 pages on 2026-08-04 02:45–02:46
-UTC; zero failures, missing rows, or undercounts).
 
 Two D1 reporting projections deliberately remain:
 
@@ -962,10 +952,8 @@ via `durableObjectNameFromParts`); domain helpers such as
 - `RunLog` — `runLogDurableObjectName(userId)` → `idFromName(userId)`. One
   execution-history DO per user; there is no `user_id` column inside it because
   the DO identity is the user. Hosts pruned run history, the invocation ledger,
-  and dedicated RunLog state (workflow projections with 90-day terminal
-  retention, job-run observability, package activation counters/milestones).
-  RunLog is the sole authority; retired D1 mirrors are documented in
-  [Run records](./run-records.md).
+  and dedicated unpruned state (workflow projections, job-run observability,
+  package activation counters/milestones). See [Run records](./run-records.md).
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
   plus optional schema-v4 D1 storage-byte shadow and schema-v5 package-service
@@ -1488,11 +1476,9 @@ Current retention policies:
 - `mcp_memory_conversation_suppressions`: keep active suppressions and prune
   expired rows only after they have not been seen for 90 days. The existing
   request-time memory prune may remove expired rows sooner.
-- **RunLog `workflow_projections` (retired D1 `workflow_runs`):** terminal
-  projections (`complete`, `errored`, `terminated`) age-prune after 90 days
-  inside the per-user RunLog DO (`workflowProjectionRetentionDays`). Active /
-  running rows are never age-pruned. D1 `workflow_runs` and its hourly retention
-  lane retired with RunLog-only authority (production parity 2026-08-04).
+- `workflow_runs`: keep terminal projections (`complete`, `errored`,
+  `terminated`) for 90 days based on `completed_at` / `updated_at` /
+  `created_at`. Non-terminal workflow rows are never pruned by retention.
 - `published_bundle_artifacts`: delete D1 rows and their `BUNDLE_ARTIFACTS_KV`
   blobs only when the row is older than 30 days, its `published_commit` is no
   longer current for any matching `entity_sources` row, and there is no active
