@@ -165,8 +165,10 @@ two-rule contract enforced at publish time (see
   reference unsupported forms, and verifies post-rewrite that no detectable
   `packages.invokeChecked` member expressions remain.
 - Detection reuses the publish-check collector
-  (`package-runtime/deprecated-invocation-usage.ts`), so `detect` findings and
-  failing publish lint results stay in lockstep.
+  (`package-runtime/deprecated-invocation-usage.ts`), so parsed `detect`
+  findings and failing publish lint results stay in lockstep. Unparseable files
+  produce codemod-only `needsManual` findings because publish lint cannot
+  classify them.
 
 ## Engine
 
