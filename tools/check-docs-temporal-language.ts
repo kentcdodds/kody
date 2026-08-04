@@ -19,8 +19,6 @@ type TemporalLanguagePattern = {
 export const exemptRelativePaths = new Set([
 	'docs/contributing/documentation.md',
 	'docs/contributing/secret-rotation.md',
-	// Point-in-time migration audit; temporal phrasing is expected.
-	'docs/contributing/architecture/capability-and-primitive-audit-2026-07.md',
 ])
 
 /** Directories whose pages are intentionally point-in-time records. */

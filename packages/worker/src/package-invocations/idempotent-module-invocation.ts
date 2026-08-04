@@ -61,10 +61,8 @@ type ClaimedInvocation = {
  * `runSavedPackageModuleEphemeral` in module-execution.ts instead — the
  * execution itself is shared via `runSavedPackageModuleOnce`.
  *
- * The legacy D1 `package_invocations` table is retired: this path performs
- * no D1 ledger reads or writes at all. Keys claimed before the DO migration
- * no longer replay — a redelivery for such a key simply executes fresh
- * (accepted when the dual-read window was waived).
+ * This path performs no D1 ledger reads or writes. Only keys present in the
+ * RunLog ledger replay; a redelivery for any absent key executes fresh.
  *
  * This path deliberately takes no `withAccountWriteLease`: the lease guards
  * D1 writes against concurrent account deletion, and no D1 writes remain

@@ -162,14 +162,11 @@ then initializes that key at zero via `UserMeter.initialize()`
 (`INSERT OR IGNORE`, concurrent-safe) before retrying. Warm enforcement awaits
 only the DO RPC and never touches D1 daily counter state.
 
-**D1 daily mirror retired:** consume, refund, inbound charge/read, point-read
-surfaces, retention, and account export/deletion never read or write
-`entitlement_daily_counters`. The three-deploy retirement is complete: Worker
-`#1133` stopped mirror writes, `#1134` detached runtime inventory, and migration
-`0126-drop-entitlement-daily-counters.sql` dropped the table and day index.
-`admin_user_meter_parity` reports meter-only daily counts (no D1 comparison
-fields exist). Analytics Engine remains the production reporting path for email
-send/receive aggregates.
+**Daily counter authority:** consume, refund, inbound charge/read, point-read
+surfaces, retention, and account export/deletion use `UserMeter`; D1 has no
+daily entitlement counter table or day index. `admin_user_meter_parity` reports
+meter-only daily counts (no D1 comparison fields exist). Analytics Engine
+remains the production reporting path for email send/receive aggregates.
 
 **Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
 the same cold zero-init path):
@@ -531,8 +528,8 @@ Rules:
   `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the
   consume. Concurrent cold callers cannot double-apply a non-zero baseline.
 
-  **D1 mirror retired:** consume/refund/inbound charge/read paths never touch
-  `entitlement_daily_counters`; migration `0126` dropped the table.
+  **Daily counter authority:** consume/refund/inbound charge/read paths use
+  `UserMeter`; D1 has no daily entitlement counter table.
 
   A delivery claim remains charged when later storage fails. Cloudflare Email
   Routing retries replay that same `delivery_id` through

@@ -676,9 +676,8 @@ const ${input.helperName} = async (specifier) => {
 export function createRemovedDynamicKodyImportHelperSource(input: {
 	helperName: string
 }) {
-	// Literal dynamic kody:@ imports were removed with the static-first model.
-	// The bundler rewrites each call site to this helper so the failure is an
-	// actionable teaching error naming the replacement, not a resolution error.
+	// This permanent guard rewrites each unsupported literal dynamic kody:@
+	// import to an actionable teaching error rather than a resolution error.
 	return `
 const ${input.helperName} = (specifier) => {
 	throw new Error(

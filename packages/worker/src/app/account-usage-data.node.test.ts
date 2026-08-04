@@ -197,8 +197,7 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		packageCount: 0,
 	})
 	const storageEnv = withUsageEnv({ APP_DB: storageDb })
-	// After the storage authority cutover, readCurrentEntitlementResourceUsage
-	// for storage_bytes reads from UserMeter (cold zero-init bootstrap).
+	// storage_bytes reads from authoritative UserMeter state.
 	await storageEnv.meter.seedStorageBytes({
 		userId: storageUserId,
 		bytes: 4_321,

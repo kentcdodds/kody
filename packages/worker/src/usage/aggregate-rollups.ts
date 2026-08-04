@@ -9,7 +9,7 @@
  * cron can run any number of times without drift. The recompute is
  * authoritative for the current month: rows whose (user, metric) pair is
  * absent from the Analytics Engine result are deleted, so stragglers from
- * direct D1 upserts (pre-cutover writes, local-dev rows) cannot linger.
+ * direct local-development or recovery D1 upserts cannot linger.
  * Analytics Engine retention (~90 days) always covers a full month, so a
  * month-to-date recompute is complete; rows for prior months already in D1
  * stay untouched.
@@ -286,9 +286,9 @@ function previousMonth(month: string) {
 /**
  * Delete current-month rollup rows whose (user_id, metric) pair is absent
  * from the Analytics Engine result, making the recompute authoritative for
- * the month (stragglers from direct D1 upserts — a pre-cutover write, a row
- * whose Analytics Engine data point was lost — would otherwise linger
- * forever). A NOT IN over the full pair set cannot be chunked without
+ * the month (a direct recovery upsert or a row whose Analytics Engine data
+ * point was lost would otherwise linger forever). A NOT IN over the full pair
+ * set cannot be chunked without
  * deleting everything, so stale pairs are computed in memory from one SELECT
  * and deleted in parameter-capped chunks. Rows for other months are never
  * touched.

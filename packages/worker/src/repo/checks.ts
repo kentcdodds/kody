@@ -969,9 +969,9 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
 	ok: boolean
 	message: string
 } {
-	// Narrow phase: the legacy dynamic invocation surface was removed, so new
-	// publishes fail with the replacement named (the runtime also throws
-	// teaching errors for these APIs).
+	// Permanent authoring guard: unsupported invocation forms fail every
+	// publish with the replacement named. Runtime teaching errors provide the
+	// same guidance when these forms reach execution.
 	const removedUsageFailure = formatRemovedInvocationUsageFailure(
 		collectDeprecatedInvocationUsage(sourceFiles),
 	)

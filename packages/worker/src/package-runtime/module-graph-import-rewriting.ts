@@ -402,9 +402,8 @@ async function rewriteKodyImports(input: {
 	let removedDynamicImportHelperName: string | null = null
 	for (const node of dynamicImportNodes) {
 		if (node.literalSpecifier?.startsWith(packageSpecifierPrefix)) {
-			// Literal dynamic kody:@ imports were removed with the static-first
-			// model: the call site becomes a teaching error naming the
-			// replacement (publish checks fail on them too).
+			// Permanent guard: the call site becomes a teaching error naming the
+			// replacement, matching the publish-time rejection.
 			removedDynamicImportHelperName ??= createUniqueHelperName(
 				input.source,
 				'__kodyRemovedDynamicKodyImport',

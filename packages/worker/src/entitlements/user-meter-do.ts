@@ -58,8 +58,8 @@ export function isUserMeterPackageServiceStatus(
 }
 
 /**
- * Legacy D1 mirror `updated_at` token. Lexicographic order matches revision
- * order; `r/` sorts after pre-cutover ISO timestamps.
+ * D1 enumeration-inventory `updated_at` token. Lexicographic order matches
+ * revision order, and `r/` sorts after ISO timestamps.
  */
 export function userMeterMirrorUpdatedAtToken(revision: number): string {
 	const safeRevision =
@@ -1097,9 +1097,8 @@ class UserMeterBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Absolute shadow-set from D1. Materializes the singleton and bumps
-	 * revision. Callers should re-read latest D1 before invoking so delayed
-	 * shadows cannot leave the DO behind D1.
+	 * Absolute maintenance set for authoritative storage usage. Materializes
+	 * the singleton and bumps its revision.
 	 */
 	async setStorageBytes(input: {
 		bytes: number
@@ -1298,7 +1297,7 @@ class UserMeterBase extends DurableObject<Env> {
 			const row = this.readPackageServiceRow(packageId, serviceName)
 			if (!row) {
 				throw new Error(
-					'UserMeter upsertPackageServiceState failed to materialize shadow row.',
+					'UserMeter upsertPackageServiceState failed to materialize liveness row.',
 				)
 			}
 			return { applied: true, created: true, state: row }
@@ -1325,7 +1324,7 @@ class UserMeterBase extends DurableObject<Env> {
 		const row = this.readPackageServiceRow(packageId, serviceName)
 		if (!row) {
 			throw new Error(
-				'UserMeter upsertPackageServiceState lost the shadow row.',
+				'UserMeter upsertPackageServiceState lost the liveness row.',
 			)
 		}
 		return { applied: true, created: false, state: row }
@@ -1967,7 +1966,7 @@ export type UserMeterRpc = {
 		expectedRevision: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesReconcileResult>
-	/** Dual-write shadow upsert (D1 writes first); monotonic sourceUpdatedAt guard. */
+	/** Authoritative liveness upsert; monotonic sourceUpdatedAt guard. */
 	upsertPackageServiceState: (input: {
 		packageId: string
 		serviceName: string
@@ -1976,7 +1975,7 @@ export type UserMeterRpc = {
 		sourceUpdatedAt: string
 		updatedAt?: string
 	}) => Promise<UserMeterPackageServiceUpsertResult>
-	/** Shadow delete on service stop/purge. D1 delete runs first. */
+	/** Authoritative liveness delete on service stop or purge. */
 	deletePackageServiceState: (input: {
 		packageId: string
 		serviceName: string
@@ -1993,9 +1992,9 @@ export type UserMeterRpc = {
 		now?: string
 	}) => Promise<UserMeterPackageServiceCountResult>
 	/**
-	 * Explicit migration/repair primitive: bulk-seed from D1
+	 * Explicit repair primitive: bulk-seed from the D1 enumeration inventory
 	 * `package_service_states` (all statuses). Uses monotonic `sourceUpdatedAt`
-	 * guard so live dual-write shadow rows are never clobbered. Not on the
+	 * guard so live authoritative rows are never clobbered. Not on the
 	 * enforcement path — `countRunningPackageServices` reads the DO directly.
 	 */
 	bootstrapPackageServiceStates: (input: {

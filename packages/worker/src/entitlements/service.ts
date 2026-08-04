@@ -570,7 +570,7 @@ export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
 	now?: Date
-	/** Required: UserMeter is authoritative after the cutover. */
+	/** Required because UserMeter is the storage-usage authority. */
 	env: UserMeterEnv
 }): Promise<{ bytes: number; updated: boolean; deferred: boolean }> {
 	const nowIso = (input.now ?? new Date()).toISOString()
@@ -691,10 +691,9 @@ export const packageServiceStateStaleMs = 24 * 60 * 60 * 1000
 
 /**
  * UserMeter-authoritative running count for a user's package services.
- * Reads directly from the DO; no D1 access. Lifecycle dual-writes
- * (`upsertPackageServiceState`) populate the meter so enforcement is
- * immediately consistent. The `excludeService` and 24h staleness semantics
- * are preserved exactly.
+ * Reads directly from the DO; no D1 access. Lifecycle updates populate both
+ * this authoritative liveness state and the D1 enumeration inventory. The
+ * `excludeService` and 24h staleness semantics are preserved exactly.
  *
  * Requires `env.USER_METER`. Throws immediately when the binding is absent
  * (fail-closed for enforcement).

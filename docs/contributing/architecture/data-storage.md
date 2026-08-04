@@ -16,14 +16,14 @@ path.
 
 The deliberate storage exception is **operator-owned system email** for reserved
 platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
-`admin`). Migration `0130-system-email-graph-expand.sql` adds permanent D1
-tables `system_email_threads`, `system_email_messages`,
-`system_email_attachments`, and `system_email_delivery_events`. They omit
-`user_id` because the operator owner is implicit. They are the sole live
-`system:email` graph authority. The reserved id is not a login account and must
-not be conflated with the `kody@example.com` fixture or Kent's personal account.
-Account deletion and export treat these tables as platform/operator content in
-`accountOperatorOwnedD1Surfaces`, with guardrail tests.
+`admin`). The permanent D1 tables are `system_email_threads`,
+`system_email_messages`, `system_email_attachments`, and
+`system_email_delivery_events`. They omit `user_id` because the operator owner
+is implicit. They are the sole live `system:email` graph authority. The reserved
+id is not a login account and must not be conflated with the `kody@example.com`
+fixture or Kent's personal account. Account deletion and export treat these
+tables as platform/operator content in `accountOperatorOwnedD1Surfaces`, with
+guardrail tests.
 
 Platform feedback remains user-owned and user-scoped in storage, but has a
 narrow cross-user read and triage path. Only feedback the submitting user
@@ -132,9 +132,9 @@ lookup is scoped to that id.
 Dedicated `system_email_*` rows are intentionally absent from account exports
 for the same reason they are absent from deletion: they belong to the operator
 inbox surface, not to the exporting user. The export manifest lists the
-omissions under `excludedD1Surfaces` so they are explicit. The retired
-`entitlement_daily_counters` D1 mirror is absent from the final schema
-(migration `0126`) and therefore from export inventory and `excludedD1Surfaces`.
+omissions under `excludedD1Surfaces` so they are explicit. Daily entitlement
+counters live only in `UserMeter`, so they do not appear in the D1 inventory or
+`excludedD1Surfaces`.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
@@ -214,10 +214,9 @@ Durable Object export behavior:
   via prefixed cursors). Run history self-prunes inside the DO (~30 days / 2,000
   runs; ledger terminal rows 90 days). Terminal workflow projections age-prune
   after 90 days inside the DO; job/activation dedicated tables are never pruned
-  by retention. Legacy D1 projection tables (`workflow_runs`,
-  `user_package_run_successes`, `user_activation_milestones`) were retired by
-  migration `0137`. Pre-migration D1 Time Travel bookmark for database
-  `8c1014d1-6b41-4695-a0a2-159071f0f919`:
+  by retention. D1 has no workflow, package-success, or activation projection
+  tables. The restore bookmark for the D1 schema that predates their removal,
+  database `8c1014d1-6b41-4695-a0a2-159071f0f919`:
   `0000116d-000000d2-000050bd-c7ecd5892a189df7cda145af746bc9c9`. See
   [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
@@ -227,20 +226,20 @@ Durable Object export behavior:
   (`startAfter` absent; `null` on later pages). Section totals count each state
   inventory once when present. UserMeter `package_service_states` is
   **authoritative** for running-count enforcement; D1 `package_service_states`
-  remains the enumeration export in the `d1` section. `users.d1_storage_bytes`
-  columns were dropped by migration 0139; authoritative storage bytes live in
-  UserMeter. Retention is self-enforced inside the DO (seven UTC days of counter
-  and inbound-delivery-claim rows); storage-byte and package-service liveness
-  rows are not time-pruned. See [Entitlements](./entitlements.md#usermeter).
+  remains the enumeration export in the `d1` section. The storage-byte counter
+  lives only in UserMeter. Retention is self-enforced inside the DO (seven UTC
+  days of counter and inbound-delivery-claim rows); storage-byte and
+  package-service liveness rows are not time-pruned. See
+  [Entitlements](./entitlements.md#usermeter).
 - `Mailbox` is the sole authoritative USER email graph export. It exports
   threads, messages, attachments, and delivery events through the account-export
   `mailbox` section (`exportMailbox` RPC; keyset pagination with prefixed
-  cursors); manifest counts use `countMailbox`. The shared D1 graph has been
-  dropped and is not duplicated in the D1 export. USER R2 export enumerates raw
-  MIME and attachment keys with `Mailbox.listBlobReferences`. Internal
-  `email_message_retention_retries` rows defer failed R2 deletion attempts
-  without blocking other expired messages; they are likewise excluded from
-  export/counts and removed with message or mailbox purge. See
+  cursors); manifest counts use `countMailbox`. No shared USER D1 graph exists,
+  so the D1 export contains no duplicate email metadata. USER R2 export
+  enumerates raw MIME and attachment keys with `Mailbox.listBlobReferences`.
+  Internal `email_message_retention_retries` rows defer failed R2 deletion
+  attempts without blocking other expired messages; they are likewise excluded
+  from export/counts and removed with message or mailbox purge. See
   [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
@@ -281,19 +280,15 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   default `public`) come from migration 0068. `account_type` (`'person'` default
   or `'platform'`, migration 0072) distinguishes normal signups from
   operator-provisioned platform accounts that own official package scopes (see
-  [Platform accounts](./platform-accounts.md)). The `d1_storage_bytes` mirror
-  columns (migration 0122) were dropped by migration 0139; the
-  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
-  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
-  `storage_bytes_state` (schema v4) drives storage-byte enforcement; UserMeter
+  [Platform accounts](./platform-accounts.md)). The `d1_storage_reconciliation`
+  lane sweeps users by `stable_user_id` keyset from the platform-owned
+  `d1_storage_reconcile_cursor` singleton. UserMeter `storage_bytes_state`
+  (schema v4) drives storage-byte enforcement; UserMeter
   `package_service_states` (schema v5) is the authoritative running-count source
   for `package_services` / `service_start` — see
-  [Entitlements](./entitlements.md#usermeter). Migration 0135 removed every
-  retired Mailbox parity, replay, backfill, and soak column and its discovery
-  index. A post-deploy production `pragma_table_xinfo('users')` query for
-  `mailbox_parity_%` columns returned zero rows, so no follow-up `DROP COLUMN`
-  migration is required. Inbound email routing does not reverse-resolve stable
-  ids at all — it uses the indexed username lookup
+  [Entitlements](./entitlements.md#usermeter). The table has no storage-byte or
+  Mailbox parity/backfill columns. Inbound email routing does not
+  reverse-resolve stable ids — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
   with one indexed point read on `users.stable_user_id` (for example
   `findUserAccountByStableUserId`).
@@ -319,15 +314,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   (`next_run_at`, `schedule_json`, …) and `last_run_at` / `last_run_status` as
   retention anchors only; terminal run error, duration, and counters for
   observability live in the per-user `RunLog` `job_run_observability` table (see
-  [Run records](./run-records.md)). Legacy observability columns on the D1 row
-  are quiescent — runtime finalization does not write them. Execution history
-  rows live in the same DO.
-- Legacy D1 projection tables `workflow_runs`, `user_package_run_successes`, and
-  `user_activation_milestones` were **retired by migration `0137`**. No runtime
-  path reads or writes them after the RunLog authority application deploy.
-  Authoritative workflow, activation, and package-success state lives in RunLog
-  dedicated tables (see
-  [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing)).
+  [Run records](./run-records.md)). Execution history rows live in the same DO.
+- Workflow, activation, and package-success state lives in dedicated RunLog
+  tables; D1 has no corresponding projection tables (see
+  [Run records](./run-records.md)).
 - `package_service_states` (`0095-package-service-states.sql`): per-service
   liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
   account export/deletion inventory, and disaster recovery. Upserted and
@@ -419,8 +409,7 @@ Wrangler's emulated Analytics Engine SQL API: both email quota and
 delivery-outcome aggregates degrade to empty (with an explicit warning) rather
 than falling back to a shared USER email graph.
 
-Mailbox mirror/parity telemetry is retired. No emitters or operation registry
-remain, and no live or scheduled path writes those events.
+Mailbox has no mirror/parity telemetry, emitters, or operation registry.
 
 Two D1 reporting projections deliberately remain:
 
@@ -472,40 +461,16 @@ validated derived output or a generated fallback.
 
 Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket. Mailbox
 `email_messages` stores the object key in `raw_mime_key`
-(`email-raw:v1:{userId}/{messageId}`). R2 is required for inbound MIME —
-`insertEmailMessage` puts the payload to `EMAIL_BLOBS` before the Mailbox graph
-commit and writes only `raw_mime_key`. On R2 put failure the insert throws
-`EmailRawMimeStorageError` (a `RetryableInboundStorageError`; no Mailbox row).
-The inbound Worker rethrows typed pre-commit failures so Cloudflare Email
-Routing retries; UserMeter delivery-id idempotency prevents a second charge. The
-message-graph commit boundary is message + attachment rows: thread prework, R2
-put, and D1 message/attachment storage precede Mailbox `received` finalization.
-If attachment insert fails but message cleanup cannot remove the row — or the
-residual-row probe itself fails (ambiguous commit state) — the handler
-acknowledges the already-created message (logged, non-retry) rather than risking
-a duplicate. Outbound messages pass `rawMime: null` and are unaffected. If D1
-insert fails after a successful put, the blob is best-effort deleted.
+(`email-raw:v1:{userId}/{messageId}`). R2 is required for inbound MIME — the
+inbound path stores it before `commitInboundMessageGraph`, which writes the
+thread, message, and attachments in one owner-Mailbox SQLite transaction and
+stores only `raw_mime_key`. R2 or Mailbox commit failures remain retryable;
+UserMeter delivery-id idempotency prevents a second charge, and the Mailbox
+delivery ledger stabilizes retries. Outbound messages pass `rawMime: null`.
 
-**Expand/contract Stage 4b1 (code-only):** the worker does not read or write
-transitional `email_messages.raw_mime` / `raw_mime_offload_blocked`, does not
-run the offload maintenance endpoint or deploy sweep, and does not use the
-delete-time claim protocol.
-
-**Expand/contract Stage 4b2 (migration-only):** after production verified
-`remainingInline=0`, `remainingBlockedInline=0`, and `remainingBlobCleanup=0`,
-migration `0077-drop-email-raw-mime-inline.sql` drops the legacy `raw_mime`
-column, `raw_mime_offload_blocked`, the unblocked inline partial index, and
-`email_raw_mime_cleanup_queue`. Runtime code from Stage 4b1 is already
-compatible with the final schema.
-
-**Expand/contract Stage 5 (migration + types):** migration
-`0078-email-sender-identities-verified-only.sql` normalizes every
-`email_sender_identities.status` to `verified`, then rebuilds the table with a
-verified-only CHECK. Because D1 keeps foreign keys on inside the migration
-transaction, the rebuild snapshots and restores
-`email_messages.sender_identity_id` (ON DELETE SET NULL) so message linkage is
-not lost. Runtime types and `ensurePlatformSenderIdentity` provision verified
-rows only.
+The schema has no inline raw-MIME columns, offload queue, or delete-time claim
+protocol. Sender identities accept only `verified` rows, and
+`ensurePlatformSenderIdentity` provisions that status.
 
 - Canonical key builders are `emailRawMimeKey` / `emailAttachmentBlobKey` in
   `packages/worker/src/email/blob-keys.ts`.
@@ -567,11 +532,10 @@ Storage split:
 Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
 (`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4
-`storage_bytes_state` is the **authoritative** storage-byte counter (D1
-`users.d1_storage_bytes` was dropped by migration 0139; evidence in
-[Entitlements](./entitlements.md#storage-authority-flip-complete-2026-08-01)).
-Schema v5 `package_service_states` is the **authoritative running-count source**
-for `package_services` / `service_start`; D1 remains only the enumeration index
+`storage_bytes_state` is the **authoritative** storage-byte counter (see
+[Entitlements](./entitlements.md#usermeter)). Schema v5 `package_service_states`
+is the **authoritative running-count source** for `package_services` /
+`service_start`; D1 remains only the enumeration index
 ([Entitlements](./entitlements.md#package-service-liveness)). The Worker binding
 is `USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
 `new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
@@ -598,43 +562,37 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `reserveStorageBytes` (atomic increment with limit check),
   `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
   `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
-  and usage reads via `readStorageBytes`; D1 `users.d1_storage_bytes` is the
-  retired mirror, dropped by migration 0139; the reconcile lane sweeps by
+  and usage reads via `readStorageBytes`; the reconcile lane sweeps by
   `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner
   bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
 - `package_service_states` — per-service liveness rows (`package_id`,
   `service_name`, `status`, `started_at`, `source_updated_at`, monotonic
-  `revision`, `updated_at`; primary key `(package_id, service_name)`). Added in
-  schema v5. Populated by dual-writes from `PackageServiceInstance` on every D1
-  projection/delete; monotonic on `source_updated_at`. Authoritative for
-  running-count enforcement and `service_start` via
+  `revision`, `updated_at`; primary key `(package_id, service_name)`). Written
+  by `PackageServiceInstance` alongside the D1 enumeration inventory on every
+  lifecycle projection/delete; monotonic on `source_updated_at`. Authoritative
+  for running-count enforcement and `service_start` via
   `countRunningPackageServices`. D1 remains the enumeration index (discovery,
   export, deletion) only — see
   [Entitlements](./entitlements.md#package-service-liveness).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
-  / `pending_repair_id`). Schema v8 is authoritative for all leases and rebuilds
-  warm v7 tables without the unreferenced `authority` column. All callers supply
-  `USER_METER`. D1 `account_write_leases` was dropped by migration 0141; D1
-  `account_write_lease_repairs` remains the repair audit log and
-  `users.deleting_at` remains the permanent point gate. `purge()` preserves an
-  existing deleting tombstone across `deleteAll`. Account export emits a
+  / `pending_repair_id`). Schema v8 is authoritative for all leases. All callers
+  supply `USER_METER`. D1 `account_write_lease_repairs` is the repair audit log
+  and `users.deleting_at` remains the permanent point gate. `purge()` preserves
+  an existing deleting tombstone across `deleteAll`. Account export emits a
   sanitized `deletionState` without raw token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
-retries. Shadow storage-byte and package-service liveness rows are not
-time-pruned. Write-lease rows clear on release/repair/purge.
+retries. Storage-byte and package-service liveness rows are not time-pruned.
+Write-lease rows clear on release/repair/purge.
 
-**D1 daily mirror retired:** enforcement, point reads, bootstrap, mirror, and
-account export/deletion inventory paths never read or write
-`entitlement_daily_counters`. The three-deploy retirement is complete (Workers
-`#1133` / `#1134`, then migration `0126-drop-entitlement-daily-counters.sql`).
-The final live schema has no table or day index; `admin_user_meter_parity`
-reports meter-only daily counts. See
+**Daily counter authority:** enforcement, point reads, bootstrap, and account
+export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
+or day index. `admin_user_meter_parity` reports meter-only daily counts. See
 [Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -686,8 +644,8 @@ owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
   state, and message-deletion tombstones; cold objects install the full DDL and
   warm objects apply guarded additive schema updates.
 
-**Step 5 USER authority:** live, scheduled, admin, and account USER paths read
-and write the owner Mailbox only. Inbound raw MIME is written to R2 first, then
+**USER authority:** live, scheduled, admin, and account USER paths read and
+write the owner Mailbox only. Inbound raw MIME is written to R2 first, then
 `commitInboundMessageGraph` validates the active `storageLease` and writes the
 thread, message, and attachments in one DO SQLite transaction. Only after that
 commit does the delivery transition to `received`. Preclaim bounded rejections,
@@ -704,64 +662,17 @@ tables. The terminal Mailbox transaction also records a pending provider-index
 repair. Immediate D1 synchronization clears it on success; the Mailbox alarm
 retries failures with bounded backoff and publishes aggregate repair health.
 
-Migration `0133-email-user-graph-authority.sql` installs the production cutover
-marker after verifying every frozen USER owner has a fresh successful complete
-backfill. USER write entry points fail closed when the marker is absent;
-`system:email` is unaffected. A frozen owner with `users.deleting_at` set
-intentionally blocks the migration; account-deletion cleanup must finish before
-operators retry deployment. The same migration adds two non-payload coordination
-surfaces: `email_inbound_due_owners` provides bounded owner discovery for
-scheduled inbound reconciliation, ordered by due time and owner with 25 owners
-processed per tick (the seeded one-shot `cutover-audit` backlog drained during
-cutover). `email_delivery_alert_events` preserves short-lived bounced/complained
-signals for operator burst alerts.
+USER write entry points require the permanent `email_user_graph_authority`
+marker and fail closed when it is absent. The marker retains `owner_count`,
+`frozen_at`, and `dropped_at` as the graph-drop contract. D1
+`email_inbound_due_owners` provides bounded owner discovery for scheduled
+inbound reconciliation, ordered by due time and owner with 25 owners processed
+per tick. `email_delivery_alert_events` preserves short-lived bounced/complained
+signals for operator burst alerts. Static import/SQL architecture checks reject
+production D1 references to USER graph table names; only Mailbox SQLite,
+migration history, and tests may use them.
 
-Migration `0135-drop-legacy-email-graph.sql` removed the shared D1
-`email_threads`, `email_messages`, `email_attachments`, and
-`email_delivery_events` tables, the provider-index compatibility trigger, and
-all Mailbox migration columns on `users`. The `email_inbound_usage_effects`
-idempotency ledger remains with its rows preserved and obsolete delivery-event
-foreign key detached because the signed 0134 approval did not include its count.
-Static import/SQL architecture checks reject production D1 references to the
-dropped graph tables; only Mailbox Durable Object SQLite, migration history, and
-tests may use those table names. `system:email` remains on its dedicated D1
-graph and retention path.
-
-**Operator system-email graph split:** migration
-`0130-system-email-graph-expand.sql` was the step 4a non-destructive expand/copy
-boundary. Migration `0131-system-email-graph-authority.sql` is also additive:
-before changing either graph, a CHECK sentinel rejects provider links and
-cross-owner inbox/sender/thread/message references. It then reconciles changes
-made after the 0130 snapshot by deleting dedicated drift child-first and
-full-column UPSERTing valid legacy authority rows parent-first. It then replaces
-every promoted transition/effect column in both the dedicated graph and rollback
-mirror for Cloudflare inbound and dedupe rows with the canonical `detail_json`
-projection, including clearing stale non-null values when a JSON property is
-absent. `needs_effect_reconcile` remains column-authoritative because legacy
-receive and effect transitions update it in the same statement as JSON.
-Non-inbound providers retain their promoted columns. To stay below D1's
-five-term compound-SELECT limit, the migration records each ownership, provider,
-and per-table parity concern with a separate bounded zero-only CHECK row. The
-four post-copy table checks cover exact counts and full-column values,
-missing/extra IDs, and invalid cross-owner inbox/sender references. Any nonzero
-row aborts the whole reconciliation before the singleton
-`system_email_graph_authority` insert persists the validated
-`graph_mismatch_count = 0` and `provider_link_count = 0` totals. The migration
-never deletes shared rows. The 4b Worker requires that marker on every dedicated
-authority entry point and refuses startup/work when it is missing or invalid.
-The pre-4b rollback Worker does not know about the marker and ignores it.
-
-Wrangler submits each migration file together with its `d1_migrations` ledger
-insert as one D1 multi-statement transaction (local execution uses `D1.batch`;
-remote execution uses D1's transactional multi-statement query). Therefore a
-preflight or post-copy CHECK failure rolls back the authority table, the counter
-correlation-token column, and every graph mutation. The migration tests execute
-the file through Wrangler's local D1 path and prove an early preflight failure
-rolls back DDL, graph changes, and the migration ledger; Node SQLite coverage
-also proves a late post-copy parity failure leaves the pre-0131 graph unchanged
-and no marker behind.
-
-After 4b, `system_email_threads`, `system_email_messages`,
+For operator mail, `system_email_threads`, `system_email_messages`,
 `system_email_attachments`, and `system_email_delivery_events` are the only live
 metadata and inbound-ledger authority for `system:email`. Reads never fall back
 to shared `email_*` rows, and the reserved owner never gets a Mailbox Durable
@@ -778,20 +689,17 @@ dedicated graph.
 
 The admin mailbox maintenance `status` action reports content-free dedicated
 counts, authority marker state, invalid-reference count, and provider-link
-count. There is no legacy parity report or reconcile action.
+count. It has no graph parity or reconcile action.
 
 The detached `email_outbound_provider_index` does not accept `system:email`.
 System outbound sends and provider-linked dedicated messages remain unsupported.
 Runtime marker checks repeat the provider gate so any provider-linked system row
-stops dedicated work. Migration 0135 verified exact full-row parity between the
-last legacy system snapshot and dedicated authority immediately before deleting
-the legacy graph. A code rollback to a pre-0135 Worker is therefore unsupported.
+stops dedicated work.
 
-**USER rollback boundary:** Mailbox/R2 is the only USER graph authority. A
-code-only rollback to a D1-authoritative Worker is impossible because the shared
-graph has been dropped. Recovery must quiesce email writers and restore the
-authoritative Mailbox and `EMAIL_BLOBS` backups; the verified historical D1
-backup is disaster-recovery evidence, not a serving-source switch.
+**USER restore boundary:** Mailbox/R2 is the only USER graph authority. Recovery
+must quiesce email writers and restore the authoritative Mailbox and
+`EMAIL_BLOBS` backups; the verified historical D1 bookmark is disaster-recovery
+evidence, not a serving-source switch.
 
 **Mailbox graph contract:** all live USER RPCs are owner-bound. Complete graph
 writes validate canonical owner-scoped R2 keys. Inbound graph commits
@@ -842,26 +750,6 @@ key `mailboxes`). Purge clears DO SQLite/alarm state and reinitializes schema;
 it does **not** delete R2 objects. Account export pages the sole authoritative
 USER graph through the `mailbox` section (`exportMailbox` / `countMailbox`) and
 uses `listBlobReferences` for USER email R2 bytes.
-
-### Historical expand/contract phases
-
-Migrations 0125–0129 scaffolded Mailbox migration state and the provider reverse
-index. Migration `0132-email-outbound-provider-index-detach.sql` removed the
-cross-store-invalid foreign key from the operational provider index while
-temporarily retaining its legacy-delete compatibility trigger. Migration
-`0133-email-user-graph-authority.sql` then failed closed unless every USER owner
-in the frozen graph had a fresh, successful, complete backfill record; its
-singleton authority marker recorded the validated owner count and freeze time.
-
-The temporary USER dual-write, rebuild, soak, and read-flag runtime surfaces
-from those phases are absent from the worker. Migration 0134 installed the
-canonical approval schema. Migration 0135 consumed every signed provenance field
-for nonempty databases, rechecked exact USER counts and exact legacy/dedicated
-system parity, then removed the shared graph, compatibility trigger, and old
-`users` columns atomically. Fresh databases may use the approval-free path only
-before any shared, dedicated, provider, coordination, or idempotency row exists.
-The stable authority marker retains `owner_count`, `frozen_at`, and
-`dropped_at`; migration history preserves the completed graph-drop contract.
 
 ### What stays in D1
 
@@ -1017,9 +905,9 @@ strip the runtime source before persistence. Execution loaders hydrate those
 paths with the deployed host runtime source for every package surface (exports,
 subscriptions, jobs, services, package apps, workflows, and ad hoc execute).
 Static `kody:@...` package imports remain pinned snapshots, while literal
-dynamic `import("kody:@...")` imports (deprecated in agent guidance in favor of
-`packages.invoke`) are hydrated at execution time from the current published
-package export under the caller's `userId`.
+dynamic `import("kody:@...")` is permanently unsupported. Publish checks reject
+the pattern, and runtime rewriting returns a teaching error that names static
+imports and `packages.invoke` as the supported alternatives.
 
 ## Configuration reference
 
@@ -1244,13 +1132,6 @@ on write unless a migration backfills existing rows.
   store invocation-token scope projections. Keyed invocation replay lives in the
   RunLog Durable Object ledger (see [Run records](./run-records.md)); there is
   no D1 `package_invocations` table (`0112-drop-package-invocations.sql`).
-- `email_messages.*_addresses_json`, `email_messages.references_json`,
-  `email_messages.headers_json`, and `email_delivery_events.detail_json`
-  (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`,
-  `0061-email-delivery-lifecycle.sql`) store parsed email metadata and provider
-  delivery details. Provider event ids are unique for idempotent Queue
-  ingestion; `email_messages.delivery_status` is the latest provider state,
-  separate from send-request `processing_status`.
 - `webhook_endpoints` (`0090-webhook-endpoints.sql`) stores per-user minted URL
   state for `package.json#kody.webhooks`, keyed by
   `(user_id, package_id, webhook_name)`. URL secrets are SHA-256 hashed;
@@ -1418,17 +1299,10 @@ deterministic so upserts and deletes target the same vector.
 - Builtin capabilities: id is the capability name in namespace
   `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
-The namespace migration uses expand/contract reads. Each query searches both the
-intended namespace and the legacy default namespace with the same metadata
-filter, then deduplicates, ranks, and limits the combined matches. This keeps
-partially reindexed accounts complete without weakening user isolation. The
-post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
-memory, job, and saved package from D1 (200 rows per page) and upserts it into
-the owner's namespace; it also rebuilds builtins in their reserved namespace.
-The deploy is not considered migrated until every phase reports no `error` or
-`failed` vectors. Search paths query only per-account namespaces (plus the
-reserved builtin namespace); no default-namespace read remains. Vectors are
-derived from D1, so no canonical data is moved or deleted during reindexing.
+Search paths query only per-account namespaces plus the reserved builtin
+namespace. Vector rows are derived from D1 and can be rebuilt with the bounded
+`POST /__maintenance/reindex-capabilities` sweep, which keyset-pages memory,
+job, and saved-package rows and rebuilds builtins in their reserved namespace.
 
 ### `entity_sources` and package import contracts
 
@@ -1451,9 +1325,8 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.
 4. Static imports are pinned into bundle dependencies at publish time. Literal
-   dynamic `import("kody:@...")` calls (deprecated in agent guidance in favor of
-   `packages.invoke`) resolve at runtime to the caller's current published
-   package export.
+   dynamic `import("kody:@...")` calls are permanently rejected by publish
+   checks and rewritten to an actionable teaching error at runtime.
 
 Do not change this grammar or static/dynamic distinction without a user-code
 migration plan.
@@ -1506,12 +1379,9 @@ Current retention policies:
   threads. Derived provider-index cleanup is separately idempotent.
   `system:email` stays on the dedicated D1 retention job and has no
   provider-index rows.
-- `entitlement_daily_counters`: **retired** — dropped by migration
-  `0126-drop-entitlement-daily-counters.sql` after stages 1/2 stopped mirror
-  writes and detached runtime inventory. No scheduled retention disposition or
-  pending-drop coverage remains. Daily counter retention lives in the per-user
-  `UserMeter` DO (`userMeterDailyCounterRetentionDays`);
-  `admin_user_meter_parity` reports meter-only daily counts.
+- UserMeter daily counter rows keep seven UTC days
+  (`userMeterDailyCounterRetentionDays`); `admin_user_meter_parity` reports
+  meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90

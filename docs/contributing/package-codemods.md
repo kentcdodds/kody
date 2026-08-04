@@ -128,8 +128,8 @@ transformed map.
 
 ### `0001-ambient-storage-to-package-storage`
 
-The first shipped codemod migrates deprecated ambient `storage` imports from
-`kody:runtime` to `packageStorage()` **at call sites**:
+This permanent repair codemod converts ambient `storage` imports rejected by
+package publish checks to `packageStorage()` **at call sites**:
 
 - Rewrites member uses (`storage.get(...)` → `packageStorage().get(...)`) via
   AST range replacement; it does **not** insert a module-scope
@@ -149,8 +149,8 @@ The first shipped codemod migrates deprecated ambient `storage` imports from
 
 ### `0002-static-first-invocation`
 
-Migrates the deprecated dynamic invocation surface to the static-first two-rule
-model (see
+This permanent repair codemod brings package source into the static-first
+two-rule contract enforced at publish time (see
 [`architecture/invocation-overhead-guardrails.md`](./architecture/invocation-overhead-guardrails.md)):
 
 - Rewrites `packages.invokeChecked(...)` member calls (including
@@ -166,7 +166,7 @@ model (see
   `packages.invokeChecked` member expressions remain.
 - Detection reuses the publish-check collector
   (`package-runtime/deprecated-invocation-usage.ts`), so `detect` findings and
-  the non-fatal publish lint warnings stay in lockstep.
+  failing publish lint results stay in lockstep.
 
 ## Engine
 

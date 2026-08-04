@@ -28,7 +28,7 @@ export async function reconcileD1StorageBytes(input: {
 	db: D1Database
 	now?: Date
 	batchSize?: number
-	/** Required: UserMeter is authoritative after the cutover. */
+	/** Required because UserMeter is the storage-usage authority. */
 	env: UserMeterEnv
 }): Promise<{
 	scanned: number
