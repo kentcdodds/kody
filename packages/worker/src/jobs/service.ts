@@ -1169,7 +1169,6 @@ export async function executeJobOnce(input: {
 		db: input.env.APP_DB,
 		stableUserId: input.job.userId,
 		env: input.env,
-		waitUntil: input.waitUntil,
 		async write() {
 			const started = new Date()
 			let execution: JobExecutionResult
@@ -1345,7 +1344,6 @@ export async function runJobNow(input: {
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
 		env: input.env,
-		waitUntil: input.waitUntil,
 		async write() {
 			const row = await getJobRowById(
 				input.env.APP_DB,
@@ -1490,7 +1488,6 @@ export async function runDueJobsForUser(input: {
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
 		env: input.env,
-		waitUntil: input.waitUntil,
 		async write() {
 			const now = input.now ?? new Date()
 			const nowIso = now.toISOString()

@@ -223,7 +223,6 @@ export async function refreshSavedPackageProjection(input: {
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
 		env: input.env,
-		waitUntil: input.waitUntil,
 		async write() {
 			const shouldRebuildArtifacts = input.rebuildArtifacts ?? true
 			const loaded = shouldRebuildArtifacts
