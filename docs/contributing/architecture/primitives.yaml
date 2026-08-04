@@ -232,7 +232,6 @@ primitives:
     code:
       - packages/worker/src/community/social-repo.ts
       - packages/worker/src/community/social-service.ts
-      - packages/worker/migrations/0068-community-social.sql
     docs:
       - docs/use/community-profiles.md
       - docs/contributing/community-packages.md

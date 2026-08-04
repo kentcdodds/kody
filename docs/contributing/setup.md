@@ -132,18 +132,14 @@ Quick notes for getting a local kody environment running.
   commit is available, validation fails safely once migrations exist beyond the
   frozen bootstrap baseline. Migration SQL is hashed with canonical LF line
   endings, and `.gitattributes` enforces LF checkouts.
-- Seven historical duplicate prefixes are permanently accepted only for their
-  exact existing filename pairs — applied migrations cannot be renamed, and
-  Wrangler orders lexicographically. Do not rename these files or add a third
-  file to any of these prefixes:
-  - `0009-secret-allowed-hosts.sql` / `0009-ui-artifact-parameters.sql`
-  - `0010-secret-allowed-capabilities.sql` / `0010-value-buckets.sql`
-  - `0018-jobs.sql` / `0018-mcp-memory-source-uris.sql`
-  - `0023-entity-sources.sql` / `0023-secret-allowed-packages.sql`
-  - `0037-drop-chat-threads.sql` / `0037-package-runtime-debug.sql`
-  - `0053-mcp-server-settings.sql` / `0053-two-factor-passkeys.sql`
-  - `0073-agent-package-conversation-uses.sql` /
-    `0073-community-forks-forked-package-index.sql`
+- Duplicate prefixes are always rejected. The 2026-08-04 migration-history
+  squash collapsed the pre-launch history into `0001-squashed-init.sql` (full
+  schema plus migration-seeded platform rows); the pre-squash files remain in
+  Git history only. `tools/ci/reset-migration-bookkeeping.ts` is the
+  deterministic guard that rewrote `d1_migrations` bookkeeping in existing
+  databases (production, preview, and local state dirs) — it verifies the
+  applied set matches the frozen pre-squash list exactly before touching
+  anything, and no-ops on fresh or already-squashed databases.
 
 ## Documentation maintenance
 
