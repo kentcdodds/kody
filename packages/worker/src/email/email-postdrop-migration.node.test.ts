@@ -37,6 +37,7 @@ test('0143 drops retired tables and simplifies due-owner ordering', () => {
 				.get(table),
 		).toBeUndefined()
 	}
+	expect(() => applyMigrationLikeD1(db, postdropMigration)).not.toThrow()
 	const dueOwnerIndex = db
 		.prepare(
 			`SELECT sql FROM sqlite_schema
