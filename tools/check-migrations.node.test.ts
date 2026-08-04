@@ -9,6 +9,7 @@ import {
 	checkMigrationFilenames,
 	checkMigrationLedger,
 	checkMigrationsDirectory,
+	expectedMigrationBaselineSha256,
 	formatMigrationPrefix,
 	getMaxMigrationPrefix,
 	getNextMigrationPrefix,
@@ -98,30 +99,9 @@ test(
 			maxPrefix: 77,
 		})
 
-		const withHistoricalPairs = checkMigrationFilenames([
-			...uniqueMigrations,
-			...allowedHistoricalDuplicateMigrationFilenames,
-		])
-		expect(withHistoricalPairs.ok).toBe(true)
-		expect(withHistoricalPairs.errors).toEqual([])
-
-		// Exact allowlist pin: applied D1 migrations cannot be renamed.
-		expect([...allowedHistoricalDuplicateMigrationFilenames]).toEqual([
-			'0009-secret-allowed-hosts.sql',
-			'0009-ui-artifact-parameters.sql',
-			'0010-secret-allowed-capabilities.sql',
-			'0010-value-buckets.sql',
-			'0018-jobs.sql',
-			'0018-mcp-memory-source-uris.sql',
-			'0023-entity-sources.sql',
-			'0023-secret-allowed-packages.sql',
-			'0037-drop-chat-threads.sql',
-			'0037-package-runtime-debug.sql',
-			'0053-mcp-server-settings.sql',
-			'0053-two-factor-passkeys.sql',
-			'0073-agent-package-conversation-uses.sql',
-			'0073-community-forks-forked-package-index.sql',
-		])
+		// Exact allowlist pin: the 2026-08-04 migration squash retired every
+		// grandfathered duplicate-prefix pair, so the allowlist stays empty.
+		expect([...allowedHistoricalDuplicateMigrationFilenames]).toEqual([])
 
 		const live = await checkMigrationsDirectory()
 		expect(live.ok).toBe(true)
@@ -138,6 +118,7 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 		ref: 'trusted-base',
 		files: baselineFiles,
 		ledgerEntries: baselineFiles,
+		ledgerBaselineSha256: expectedMigrationBaselineSha256,
 	}
 
 	const baseline = checkMigrationLedger(baselineFiles, ledger, trustedHistory)
@@ -147,45 +128,45 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	)
 
 	const modifiedFiles = baselineFiles.map((entry) =>
-		entry.filename === '0001-init.sql'
+		entry.filename === '0001-squashed-init.sql'
 			? { ...entry, sha256: '0'.repeat(64) }
 			: entry,
 	)
 	const modified = checkMigrationLedger(modifiedFiles, ledger, trustedHistory)
 	expect(modified.ok).toBe(false)
-	expectErrorsMention(modified.errors, ['0001-init.sql', 'modified'])
+	expectErrorsMention(modified.errors, ['0001-squashed-init.sql', 'modified'])
 
-	const withoutHistoricalPairMember = baselineFiles.filter(
-		(entry) => entry.filename !== historicalPair0009[0],
+	const withoutBaselineMember = baselineFiles.filter(
+		(entry) => entry.filename !== '0001-squashed-init.sql',
 	)
 	const deleted = checkMigrationLedger(
-		withoutHistoricalPairMember,
+		withoutBaselineMember,
 		ledger,
 		trustedHistory,
 	)
 	expect(deleted.ok).toBe(false)
 	expectErrorsMention(deleted.errors, [
-		historicalPair0009[0],
+		'0001-squashed-init.sql',
 		'missing',
 		'cannot be deleted or renamed',
 	])
 
 	const renamedFiles = baselineFiles.map((entry) =>
-		entry.filename === historicalPair0009[1]
-			? { ...entry, filename: '0009-renamed.sql' }
+		entry.filename === '0001-squashed-init.sql'
+			? { ...entry, filename: '0001-renamed.sql' }
 			: entry,
 	)
 	const renamed = checkMigrationLedger(renamedFiles, ledger, trustedHistory)
 	expect(renamed.ok).toBe(false)
 	expectErrorsMention(renamed.errors, [
-		historicalPair0009[1],
+		'0001-squashed-init.sql',
 		'missing',
-		'0009-renamed.sql',
+		'0001-renamed.sql',
 		'not in tools/migration-ledger.json',
 	])
 
 	const lowerAddition: MigrationLedgerEntry = {
-		filename: '0039-too-low.sql',
+		filename: '0001-too-low.sql',
 		sha256: '1'.repeat(64),
 	}
 	const ledgerWithLowerAddition = structuredClone(ledger)
@@ -197,8 +178,8 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	)
 	expect(lower.ok).toBe(false)
 	expectErrorsMention(lower.errors, [
-		'0039-too-low.sql',
-		'at or below frozen baseline maximum 0083',
+		'0001-too-low.sql',
+		'at or below frozen baseline maximum 0001',
 	])
 
 	const monotonicAddition: MigrationLedgerEntry = {
@@ -232,6 +213,7 @@ test('trusted history rejects a migration and ledger digest co-edit', async () =
 		ref: 'trusted-base-with-0095',
 		files: [...bootstrapFiles, historicalEntry],
 		ledgerEntries: [...bootstrapFiles, historicalEntry],
+		ledgerBaselineSha256: expectedMigrationBaselineSha256,
 	}
 	const editedEntry = {
 		...historicalEntry,
@@ -459,39 +441,20 @@ test('checkMigrationFilenames rejects malformed names, ordinary duplicates, and 
 	])
 	expect(ordinaryDuplicate.errors[0]).not.toMatch(/grandfathered/i)
 
-	const exactPair = checkMigrationFilenames([
+	// The 2026-08-04 migration squash retired the grandfathered pairs, so a
+	// formerly allowlisted pair is rejected like any other duplicate prefix.
+	const retiredHistoricalPair = checkMigrationFilenames([
 		'0001-init.sql',
 		...historicalPair0009,
 		'0075-stable-user-id-not-null.sql',
 	])
-	expect(exactPair.ok).toBe(true)
-	expect(exactPair.errors).toEqual([])
-
-	const thirdReuse = checkMigrationFilenames([
-		'0001-init.sql',
-		...historicalPair0009,
-		'0009-another-change.sql',
-		'0075-stable-user-id-not-null.sql',
-	])
-	expect(thirdReuse.ok).toBe(false)
-	expect(thirdReuse.nextPrefix).toBe('0076')
-	expect(thirdReuse.errors).toHaveLength(1)
-	expectErrorsMention(thirdReuse.errors, [
+	expect(retiredHistoricalPair.ok).toBe(false)
+	expect(retiredHistoricalPair.nextPrefix).toBe('0076')
+	expect(retiredHistoricalPair.errors).toHaveLength(1)
+	expectErrorsMention(retiredHistoricalPair.errors, [
 		'0009',
-		'0009-another-change.sql',
 		'0009-secret-allowed-hosts.sql',
 		'0009-ui-artifact-parameters.sql',
 	])
-
-	const nonAllowlistedPairMember = checkMigrationFilenames([
-		'0001-init.sql',
-		'0009-secret-allowed-hosts.sql',
-		'0009-renamed-not-allowlisted.sql',
-		'0075-stable-user-id-not-null.sql',
-	])
-	expect(nonAllowlistedPairMember.ok).toBe(false)
-	expect(nonAllowlistedPairMember.errors).toHaveLength(1)
-	expectErrorsMention(nonAllowlistedPairMember.errors, [
-		'0009-renamed-not-allowlisted.sql',
-	])
+	expect(retiredHistoricalPair.errors[0]).not.toMatch(/grandfathered/i)
 })
