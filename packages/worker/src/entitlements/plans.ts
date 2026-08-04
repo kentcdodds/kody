@@ -124,13 +124,13 @@ export type PlanLimits = {
 	maxEmailSendsPerDay: number
 	/** Maximum stored inbound email receipts per UTC day. */
 	maxEmailReceivesPerDay: number
-	/** Maximum stored email messages (rows in email_messages). */
+	/** Maximum stored email messages (Mailbox DO email_messages rows). */
 	maxStoredEmailMessages: number
 	/**
 	 * Maximum raw MIME bytes for a single stored email message. Hard
 	 * platform bound: raw MIME lives in EMAIL_BLOBS, but extracted text/html
-	 * bodies are still stored on the email_messages row (worst case ~2x
-	 * raw), and D1 caps rows at 2 MB — so keep this well under ~1 MB
+	 * bodies are still stored on the Mailbox email_messages row (worst case
+	 * ~2x raw), and SQLite rows cap at 2 MB — so keep this well under ~1 MB
 	 * regardless of plan.
 	 */
 	maxEmailMessageBytes: number

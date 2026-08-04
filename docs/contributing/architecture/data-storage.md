@@ -645,7 +645,7 @@ account export/deletion inventory paths never read or write
 `entitlement_daily_counters`. The three-deploy retirement is complete (Workers
 `#1133` / `#1134`, then migration `0126-drop-entitlement-daily-counters.sql`).
 The final live schema has no table or day index; `admin_user_meter_parity`
-reports `daily.mirrorRetired: true` (meter counts only). See
+reports meter-only daily counts. See
 [Entitlements](./entitlements.md#usermeter-expand-phase).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -723,10 +723,10 @@ backfill. USER write entry points fail closed when the marker is absent;
 intentionally blocks the migration; account-deletion cleanup must finish before
 operators retry deployment. The same migration adds two non-payload coordination
 surfaces: `email_inbound_due_owners` provides bounded owner discovery for
-scheduled inbound reconciliation. Due live-work reasons sort before the seeded
-`cutover-audit` backlog, then by due time and owner, with 25 owners processed
-per tick. `email_delivery_alert_events` preserves short-lived bounced/complained
-signals for operator burst alerts.
+scheduled inbound reconciliation, ordered by due time and owner with 25 owners
+processed per tick (the seeded one-shot `cutover-audit` backlog drained during
+cutover). `email_delivery_alert_events` preserves short-lived
+bounced/complained signals for operator burst alerts.
 
 Migration `0135-drop-legacy-email-graph.sql` removed the shared D1
 `email_threads`, `email_messages`, `email_attachments`, and
@@ -1530,7 +1530,7 @@ Current retention policies:
   writes and detached runtime inventory. No scheduled retention disposition or
   pending-drop coverage remains. Daily counter retention lives in the per-user
   `UserMeter` DO (`userMeterDailyCounterRetentionDays`);
-  `admin_user_meter_parity` reports `daily.mirrorRetired: true`.
+  `admin_user_meter_parity` reports meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90

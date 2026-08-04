@@ -35,12 +35,6 @@ export async function hintInboundDueOwner(input: {
 			ON CONFLICT(user_id) DO UPDATE SET
 				due_at = MIN(email_inbound_due_owners.due_at, excluded.due_at),
 				reason = CASE
-					WHEN email_inbound_due_owners.reason != 'cutover-audit'
-						AND excluded.reason = 'cutover-audit'
-					THEN email_inbound_due_owners.reason
-					WHEN email_inbound_due_owners.reason = 'cutover-audit'
-						AND excluded.reason != 'cutover-audit'
-					THEN excluded.reason
 					WHEN excluded.due_at <= email_inbound_due_owners.due_at
 					THEN excluded.reason
 					ELSE email_inbound_due_owners.reason
@@ -93,10 +87,7 @@ export async function listDueInboundOwners(input: {
 			`SELECT user_id, due_at, reason, attempt_count
 			FROM email_inbound_due_owners
 			WHERE due_at <= ?
-			ORDER BY
-				CASE WHEN reason = 'cutover-audit' THEN 1 ELSE 0 END ASC,
-				due_at ASC,
-				user_id ASC
+			ORDER BY due_at ASC, user_id ASC
 			LIMIT ?`,
 		)
 		.bind(

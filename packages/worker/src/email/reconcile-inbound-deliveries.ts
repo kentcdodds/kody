@@ -148,12 +148,10 @@ export async function sweepStaleInboundDeliveries(input: {
 		...userRows.map((row) => ({
 			user_id: row.userId,
 			due_at: row.dueAt,
-			priority: row.reason === 'cutover-audit' ? 1 : 0,
 		})),
-		...(systemDue ? [{ ...systemDue, priority: 0 }] : []),
+		...(systemDue ? [systemDue] : []),
 	].sort(
 		(left, right) =>
-			left.priority - right.priority ||
 			left.due_at.localeCompare(right.due_at) ||
 			left.user_id.localeCompare(right.user_id),
 	)

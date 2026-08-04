@@ -104,21 +104,21 @@ test('due-owner discovery is bounded and ordered without a users scan', async ()
 	])
 })
 
-test('live due work precedes and cannot starve behind a bounded cutover audit backlog', async () => {
+test('due-owner drain is bounded and ordered by due time', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-08-03T12:00:00.000Z')
-	const auditDueAt = '2026-08-03T11:00:00.000Z'
-	const liveDueAt = '2026-08-03T11:59:00.000Z'
-	const liveUserId = `live-${crypto.randomUUID()}`
+	const backlogDueAt = '2026-08-03T11:00:00.000Z'
+	const latestDueAt = '2026-08-03T11:59:00.000Z'
+	const latestUserId = `latest-${crypto.randomUUID()}`
 	await env.APP_DB.batch([
 		...Array.from({ length: 100 }, (_, index) =>
 			env.APP_DB.prepare(
 				`INSERT INTO email_inbound_due_owners (
 						user_id, due_at, reason, attempt_count, last_error, updated_at
-					) VALUES (?, ?, 'cutover-audit', 0, NULL, ?)`,
+					) VALUES (?, ?, 'scheduled-refresh', 0, NULL, ?)`,
 			).bind(
-				`audit-${String(index).padStart(3, '0')}-${crypto.randomUUID()}`,
-				auditDueAt,
+				`backlog-${String(index).padStart(3, '0')}-${crypto.randomUUID()}`,
+				backlogDueAt,
 				now.toISOString(),
 			),
 		),
@@ -126,15 +126,8 @@ test('live due work precedes and cannot starve behind a bounded cutover audit ba
 			`INSERT INTO email_inbound_due_owners (
 					user_id, due_at, reason, attempt_count, last_error, updated_at
 				) VALUES (?, ?, 'mailbox-due-work', 0, NULL, ?)`,
-		).bind(liveUserId, liveDueAt, now.toISOString()),
+		).bind(latestUserId, latestDueAt, now.toISOString()),
 	])
-	await hintInboundDueOwner({
-		db: env.APP_DB,
-		userId: liveUserId,
-		dueAt: auditDueAt,
-		reason: 'cutover-audit',
-		now,
-	})
 
 	const batchSizes: Array<number> = []
 	const drainedUserIds: Array<string> = []
@@ -152,47 +145,86 @@ test('live due work precedes and cannot starve behind a bounded cutover audit ba
 		)
 	}
 
-	expect(drainedUserIds[0]).toBe(liveUserId)
+	expect(drainedUserIds.at(-1)).toBe(latestUserId)
 	expect(batchSizes).toEqual([25, 25, 25, 25, 1])
 	expect(drainedUserIds).toHaveLength(101)
 })
 
-test('sweep time budget processes live work before an older cutover audit', async () => {
+test('hint upsert keeps the earliest due time and its reason', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-08-03T12:00:00.000Z')
-	const auditEmail = `budget-audit-${crypto.randomUUID()}@example.test`
-	const liveEmail = `budget-live-${crypto.randomUUID()}@example.test`
-	const auditUserId = await createStableUserIdFromEmail(auditEmail)
-	const liveUserId = await createStableUserIdFromEmail(liveEmail)
+	const userId = `hint-merge-${crypto.randomUUID()}`
+	await hintInboundDueOwner({
+		db: env.APP_DB,
+		userId,
+		dueAt: '2026-08-03T11:30:00.000Z',
+		reason: 'mailbox-due-work',
+		now,
+	})
+	// A later hint never moves the due time forward or replaces the reason.
+	await hintInboundDueOwner({
+		db: env.APP_DB,
+		userId,
+		dueAt: '2026-08-03T11:45:00.000Z',
+		reason: 'scheduled-refresh',
+		now,
+	})
+	// An earlier hint wins both the due time and the reason.
+	await hintInboundDueOwner({
+		db: env.APP_DB,
+		userId,
+		dueAt: '2026-08-03T11:15:00.000Z',
+		reason: 'scheduled-refresh',
+		now,
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT due_at, reason FROM email_inbound_due_owners WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.first(),
+	).toEqual({
+		due_at: '2026-08-03T11:15:00.000Z',
+		reason: 'scheduled-refresh',
+	})
+})
+
+test('sweep time budget defers later owners to the next pass', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-08-03T12:00:00.000Z')
+	const earlierEmail = `budget-earlier-${crypto.randomUUID()}@example.test`
+	const laterEmail = `budget-later-${crypto.randomUUID()}@example.test`
+	const earlierUserId = await createStableUserIdFromEmail(earlierEmail)
+	const laterUserId = await createStableUserIdFromEmail(laterEmail)
 	await env.APP_DB.batch([
 		env.APP_DB.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id
 			) VALUES (?, ?, 'hash', ?)`,
-		).bind(`audit-${crypto.randomUUID()}`, auditEmail, auditUserId),
+		).bind(`earlier-${crypto.randomUUID()}`, earlierEmail, earlierUserId),
 		env.APP_DB.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id
 			) VALUES (?, ?, 'hash', ?)`,
-		).bind(`live-${crypto.randomUUID()}`, liveEmail, liveUserId),
+		).bind(`later-${crypto.randomUUID()}`, laterEmail, laterUserId),
 	])
 	await replaceInboundDueOwnerHint({
 		db: env.APP_DB,
-		userId: auditUserId,
+		userId: earlierUserId,
 		dueAt: '2026-08-03T10:00:00.000Z',
-		reason: 'cutover-audit',
+		reason: 'scheduled-refresh',
 		now,
 	})
 	await replaceInboundDueOwnerHint({
 		db: env.APP_DB,
-		userId: liveUserId,
+		userId: laterUserId,
 		dueAt: '2026-08-03T11:00:00.000Z',
 		reason: 'mailbox-due-work',
 		now,
 	})
 	await Promise.all([
-		rpcFor(auditUserId).getInboundDueWorkHint({ ownerId: auditUserId }),
-		rpcFor(liveUserId).getInboundDueWorkHint({ ownerId: liveUserId }),
+		rpcFor(earlierUserId).getInboundDueWorkHint({ ownerId: earlierUserId }),
+		rpcFor(laterUserId).getInboundDueWorkHint({ ownerId: laterUserId }),
 	])
 	const clockValues = [0, 0, 10_001, 10_001]
 
@@ -213,14 +245,14 @@ test('sweep time budget processes live work before an older cutover audit', asyn
 		WHERE user_id IN (?, ?)
 		ORDER BY user_id`,
 	)
-		.bind(auditUserId, liveUserId)
+		.bind(earlierUserId, laterUserId)
 		.all<{ user_id: string; reason: string }>()
 	expect(rows.results).toEqual([
-		{ user_id: auditUserId, reason: 'cutover-audit' },
+		{ user_id: laterUserId, reason: 'mailbox-due-work' },
 	])
 })
 
-test('cutover audit sweep clears a healthy Mailbox and retains its next due work', async () => {
+test('sweep clears a healthy Mailbox hint and retains pending due work', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-08-03T12:00:00.000Z')
 	const dueAt = now.toISOString()
@@ -245,7 +277,7 @@ test('cutover audit sweep clears a healthy Mailbox and retains its next due work
 			db: env.APP_DB,
 			userId,
 			dueAt,
-			reason: 'cutover-audit',
+			reason: 'scheduled-refresh',
 			now,
 		})
 		await rpcFor(userId).getInboundDueWorkHint({ ownerId: userId })

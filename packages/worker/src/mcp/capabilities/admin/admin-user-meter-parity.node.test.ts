@@ -38,14 +38,6 @@ function createCapabilityTestDb() {
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
 			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
 		);
-		CREATE TABLE entitlement_daily_counters (
-			user_id TEXT NOT NULL,
-			resource TEXT NOT NULL,
-			day TEXT NOT NULL,
-			count INTEGER NOT NULL DEFAULT 0,
-			updated_at TEXT NOT NULL,
-			PRIMARY KEY (user_id, resource, day)
-		);
 		CREATE TABLE package_service_states (
 			user_id TEXT NOT NULL,
 			package_id TEXT NOT NULL,
@@ -117,7 +109,9 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 		ctx,
 	)
 	expect(present.report?.stableUserId).toBe(stableUserId)
-	expect(present.report?.daily.mirrorRetired).toBe(false)
+	expect(
+		present.report?.daily.resources.every((row) => row.needsBootstrap),
+	).toBe(true)
 	expect(present.report?.deletion.deletingAtParity).toBe(true)
 	expect(present.report?.deletion.activeLeaseCount).toBe(1)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(

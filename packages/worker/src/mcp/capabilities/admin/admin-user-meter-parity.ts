@@ -11,13 +11,10 @@ import {
 
 const dailyResourceSchema = z.enum(dailyEntitlementResources)
 
-const dailyResourceParitySchema = z.object({
+const dailyResourceReadSchema = z.object({
 	resource: dailyResourceSchema,
-	d1Count: z.number().int().nonnegative().nullable(),
 	meterCount: z.number().int().nonnegative().nullable(),
 	needsBootstrap: z.boolean(),
-	delta: z.number().int().nullable(),
-	parity: z.boolean(),
 })
 
 const storageParitySchema = z.object({
@@ -69,16 +66,14 @@ const deletionParitySchema = z.object({
 const reportSchema = z.object({
 	generatedAt: z.string(),
 	stableUserId: stableUserIdSchema,
-	daily: z.object({
-		day: z.string(),
-		mirrorRetired: z
-			.boolean()
-			.describe(
-				'True when D1 entitlement_daily_counters is absent. Daily gate then reports meter counts only; d1Count/delta are null and parity stays true (no D1 comparison).',
-			),
-		resources: z.array(dailyResourceParitySchema),
-		mismatchCount: z.number().int().nonnegative(),
-	}),
+	daily: z
+		.object({
+			day: z.string(),
+			resources: z.array(dailyResourceReadSchema),
+		})
+		.describe(
+			'UserMeter-only daily counter reads. The D1 entitlement_daily_counters mirror was dropped by migration 0126; no D1 comparison exists.',
+		),
 	storage: storageParitySchema,
 	packageServices: packageServicesParitySchema,
 	deletion: deletionParitySchema,
@@ -98,20 +93,17 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_meter_parity',
 		description:
-			'Read-only production verification report for one user: UserMeter daily counters plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion state. Daily rows report meter counts only when `mirrorRetired: true`. Deletion parity reports `deletingAtParity` (D1 vs meter tombstone) and `activeLeaseCount` (active DO write leases in UserMeter; D1 account_write_leases is quiescent and not queried). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
+			'Read-only production verification report for one user: UserMeter daily counter reads (meter-only; the D1 mirror is dropped) plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion state. Deletion parity reports `deletingAtParity` (D1 vs meter tombstone) and `activeLeaseCount` (active DO write leases in UserMeter; D1 account_write_leases is quiescent and not queried). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
 		keywords: [
 			'admin',
 			'user meter',
 			'parity',
-			'cutover',
 			'daily counters',
 			'storage bytes',
 			'package services',
 			'write leases',
 			'deletion',
-			'mirror',
 			'bootstrap',
-			'retired',
 		],
 		inputSchema,
 		outputSchema,

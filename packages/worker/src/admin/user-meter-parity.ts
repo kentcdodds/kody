@@ -21,25 +21,10 @@ export const userMeterParityInventoryMaxRows = planLimits.max.maxPackageServices
 /** Page size for UserMeter list RPCs (matches DO max export/list page). */
 export const userMeterParityPageSize = 500
 
-type DailyResourceParity = {
+type DailyResourceRead = {
 	resource: DailyEntitlementResource
-	/**
-	 * D1 mirror count for the current UTC day. `null` when
-	 * `daily.mirrorRetired` is true (table dropped / comparison retired).
-	 */
-	d1Count: number | null
 	meterCount: number | null
 	needsBootstrap: boolean
-	/**
-	 * `d1Count - meterCount` when both sides are present; `null` when the
-	 * mirror is retired or the meter still needs bootstrap.
-	 */
-	delta: number | null
-	/**
-	 * When the mirror is active: true iff counts match. When
-	 * `mirrorRetired`, always true (no D1 comparison is claimed).
-	 */
-	parity: boolean
 }
 
 type StorageParity = {
@@ -82,16 +67,14 @@ type DeletionParity = {
 export type AdminUserMeterParityReport = {
 	generatedAt: string
 	stableUserId: string
+	/**
+	 * Daily counters are UserMeter-only. The D1
+	 * `entitlement_daily_counters` mirror was dropped by migration 0126, so
+	 * this section reports meter counts without any D1 comparison.
+	 */
 	daily: {
 		day: string
-		/**
-		 * True when D1 `entitlement_daily_counters` is absent (retired). The
-		 * daily gate then reports meter counts only and does not claim a D1
-		 * comparison (`d1Count`/`delta` are null; `parity` stays true).
-		 */
-		mirrorRetired: boolean
-		resources: Array<DailyResourceParity>
-		mismatchCount: number
+		resources: Array<DailyResourceRead>
 	}
 	storage: StorageParity
 	packageServices: PackageServicesParity
@@ -126,66 +109,14 @@ async function userExists(db: D1Database, stableUserId: string) {
 	return row != null
 }
 
-/**
- * Detect retirement without querying the missing table. Uses sqlite_master
- * only (safe when the table has already been dropped).
- */
-async function isEntitlementDailyCountersMirrorRetired(
-	db: D1Database,
-): Promise<boolean> {
-	const row = await db
-		.prepare(
-			`SELECT 1 AS present
-			FROM sqlite_master
-			WHERE type = 'table' AND name = 'entitlement_daily_counters'`,
-		)
-		.first<{ present: number }>()
-	return row == null
-}
-
-async function readD1DailyCounts(input: {
-	db: D1Database
-	stableUserId: string
-	day: string
-}): Promise<Map<DailyEntitlementResource, number>> {
-	const rows = await input.db
-		.prepare(
-			`SELECT resource, count
-			FROM entitlement_daily_counters
-			WHERE user_id = ? AND day = ?`,
-		)
-		.bind(input.stableUserId, input.day)
-		.all<{ resource: string; count: number }>()
-	const counts = new Map<DailyEntitlementResource, number>()
-	for (const resource of dailyEntitlementResources) {
-		counts.set(resource, 0)
-	}
-	for (const row of rows.results ?? []) {
-		if (
-			(dailyEntitlementResources as ReadonlyArray<string>).includes(
-				row.resource,
-			)
-		) {
-			counts.set(
-				row.resource as DailyEntitlementResource,
-				Math.max(0, Number(row.count ?? 0)),
-			)
-		}
-	}
-	return counts
-}
-
-async function readDailyParity(input: {
-	db: D1Database
+async function readDailyMeterCounts(input: {
 	env: UserMeterEnv
 	stableUserId: string
 	day: string
 	generatedAt: string
 }): Promise<AdminUserMeterParityReport['daily']> {
-	const mirrorRetired = await isEntitlementDailyCountersMirrorRetired(input.db)
-	const d1Counts = mirrorRetired ? null : await readD1DailyCounts(input)
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
-	const resources: Array<DailyResourceParity> = []
+	const resources: Array<DailyResourceRead> = []
 	for (const resource of dailyEntitlementResources) {
 		const meterRead = await meter.read({
 			resource,
@@ -193,42 +124,13 @@ async function readDailyParity(input: {
 			now: input.generatedAt,
 		})
 		const needsBootstrap = meterRead.outcome === 'needs_bootstrap'
-		const meterCount = needsBootstrap ? null : meterRead.count
-		if (mirrorRetired) {
-			resources.push({
-				resource,
-				d1Count: null,
-				meterCount,
-				needsBootstrap,
-				delta: null,
-				// Mirror comparison is retired; do not claim a D1 mismatch.
-				parity: true,
-			})
-			continue
-		}
-		const d1Count = d1Counts?.get(resource) ?? 0
-		const { delta, parity } = countDeltaParity({
-			d1Value: d1Count,
-			meterValue: meterCount,
-			needsBootstrap,
-		})
 		resources.push({
 			resource,
-			d1Count,
-			meterCount,
+			meterCount: needsBootstrap ? null : meterRead.count,
 			needsBootstrap,
-			delta,
-			parity,
 		})
 	}
-	return {
-		day: input.day,
-		mirrorRetired,
-		resources,
-		mismatchCount: mirrorRetired
-			? 0
-			: resources.filter((row) => !row.parity).length,
-	}
+	return { day: input.day, resources }
 }
 
 async function readStorageParity(input: {
@@ -487,8 +389,7 @@ export async function loadAdminUserMeterParityReport(input: {
 	const day = utcDayKey(now)
 
 	const [daily, storage, packageServices, deletion] = await Promise.all([
-		readDailyParity({
-			db: input.db,
+		readDailyMeterCounts({
 			env: input.env,
 			stableUserId,
 			day,
