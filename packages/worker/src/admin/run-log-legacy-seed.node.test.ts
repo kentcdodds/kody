@@ -11,6 +11,7 @@ import {
 	adminRunLogLegacySeedActivationMaxMilestones,
 	adminRunLogLegacySeedActivationMaxPackages,
 	adminRunLogLegacySeedDefaultUserLimit,
+	adminRunLogLegacySeedDefaultWorkflowImportPageSize,
 	adminRunLogLegacySeedMaxUserLimit,
 	runAdminRunLogLegacySeed,
 	type AdminRunLogLegacySeedRpc,
@@ -21,6 +22,7 @@ import {
 	type LegacyParityVerifyResult,
 	type LegacyParityWorkflowCheck,
 } from '#worker/run-records/legacy-parity.ts'
+import { workflowProjectionImportMaxBatch } from '#worker/run-records/workflow-projection.ts'
 
 const userA = testStableUserIdFromEmail('runlog-a@example.com')
 const userB = testStableUserIdFromEmail('runlog-b@example.com')
@@ -639,6 +641,63 @@ test('multi-batch workflows/jobs process pages incrementally without all-row acc
 			),
 		).toBe(true)
 	}
+	assertContentFree(result)
+})
+
+test('default workflow import page size paginates large inventories without all-row accumulation', async () => {
+	expect(adminRunLogLegacySeedDefaultWorkflowImportPageSize).toBe(250)
+	expect(adminRunLogLegacySeedDefaultWorkflowImportPageSize).toBeLessThan(
+		workflowProjectionImportMaxBatch,
+	)
+
+	const workflowCount = 501
+	const pageSize = adminRunLogLegacySeedDefaultWorkflowImportPageSize
+	const { sqlite, db } = createSweepDb()
+	insertUser(sqlite, { stableUserId: userA })
+	for (let index = 0; index < workflowCount; index += 1) {
+		insertWorkflow(sqlite, {
+			userId: userA,
+			id: `wf-${String(index).padStart(4, '0')}`,
+		})
+	}
+
+	const { rpc, calls, callOrder } = createTrackingRpc()
+	const result = await runAdminRunLogLegacySeed({
+		env: createEnv(db),
+		action: 'seed',
+		limit: 1,
+		rpc,
+	})
+
+	expect(result.users[0]?.parity).toBe(true)
+	expect(result.users[0]?.workflows.matched).toBe(workflowCount)
+	expect(calls.importWorkflowProjections.length).toBeGreaterThan(1)
+	expect(calls.importWorkflowProjections.map((call) => call.count)).toEqual([
+		pageSize,
+		pageSize,
+		workflowCount - pageSize * 2,
+	])
+	expect(
+		calls.importWorkflowProjections.every((call) => call.count <= pageSize),
+	).toBe(true)
+	const workflowPhase = callOrder.slice(
+		0,
+		callOrder.indexOf('importActivationState'),
+	)
+	expect(workflowPhase.length).toBe(calls.importWorkflowProjections.length * 2)
+	for (
+		let index = 0;
+		index < calls.importWorkflowProjections.length;
+		index += 1
+	) {
+		expect(workflowPhase[index * 2]).toBe('importWorkflowProjections')
+		expect(workflowPhase[index * 2 + 1]).toBe('verifyLegacyParity')
+	}
+	expect(
+		calls.verifyLegacyParity
+			.filter((call) => call.workflowCount > 0)
+			.every((call) => call.workflowCount <= pageSize),
+	).toBe(true)
 	assertContentFree(result)
 })
 

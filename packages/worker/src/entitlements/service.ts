@@ -831,6 +831,12 @@ export async function readEntitlementResourceUsage(input: {
 }): Promise<number> {
 	const { db, userId, resource, now } = input
 	switch (resource) {
+		case 'repos':
+			return await countRows(
+				db,
+				`SELECT COUNT(*) AS count FROM user_repos WHERE user_id = ?`,
+				[userId],
+			)
 		case 'saved_packages':
 			return await countRows(
 				db,

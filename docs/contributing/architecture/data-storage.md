@@ -326,8 +326,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   on DO `source_updated_at`). D1 remains the enumeration index and parity mirror
   — see
   [Entitlements](./entitlements.md#package-service-liveness--usermeter-authority-cutover-2026-08-01).
-- `entity_sources`: durable mapping from user-facing entities to Artifacts repos
-  and their latest published commit
+- `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
+  or `repo`) to Artifacts repos and their latest published commit (packages
+  only; plain repos are live-at-HEAD without a publish pointer)
+- `user_repos`: plain-repo discovery metadata (`name`, optional `description`);
+  one row per user-owned plain repo, keyed by `entity_sources.entity_id` when
+  `entity_kind = 'repo'`
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
@@ -909,10 +913,14 @@ If R2 succeeds but the fenced graph transaction or finalization fails, Email
 Routing retries the stable delivery id. The graph transaction is idempotent and
 the active lease prevents a stale worker from overwriting the winner.
 
-### Package state model
+### Package and repo state model
 
-Saved packages are the only top-level persisted primitive. Their state maps onto
-storage homes as follows:
+Repos are the durable home for versioned Artifacts source; saved packages are an
+explicit extension that adds publish semantics and runtime surfaces. Plain repos
+live in `user_repos` with `entity_sources.entity_kind = 'repo'`. Packages add
+`saved_packages` plus `entity_sources.entity_kind = 'package'`.
+
+Package and plain-repo state maps onto storage homes as follows:
 
 - **Package source** — Cloudflare Artifacts repos + D1 `entity_sources`
   projections; `package.json` is authoritative.
@@ -1422,9 +1430,11 @@ moved or deleted during this migration.
 `entity_sources` is the durable repo pointer table:
 `(user_id, entity_kind, entity_id) -> source_id`. Child tables store
 `source_id = entity_sources.id`; KV snapshots use that same source id plus the
-published commit. `entity_kind` accepts `job` and `package`. `manifest_path`,
-`source_root`, `published_commit`, `indexed_commit`, and
-`last_external_check_at` are part of the repo-source synchronization contract.
+published commit. `entity_kind` accepts `job`, `package`, and `repo`.
+`manifest_path`, `source_root`, `published_commit`, `indexed_commit`, and
+`last_external_check_at` are part of the repo-source synchronization contract
+for jobs and packages; plain `repo` sources are live-at-HEAD, have no manifest
+requirement, and are skipped by the external-push reconcile lane.
 
 Saved package imports in user code use `kody:@scope/name/export` specifiers:
 

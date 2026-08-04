@@ -132,6 +132,8 @@ export async function updateEntitySource(
 		sourceRoot?: string
 		lastExternalCheckAt?: string | null
 		externalCheckUntil?: string | null
+		entityKind?: EntityKind
+		entityId?: string
 	},
 ): Promise<boolean> {
 	const assignments: Array<string> = []
@@ -141,6 +143,8 @@ export async function updateEntitySource(
 		values.push(value)
 	}
 	if (input.repoId !== undefined) add('repo_id', input.repoId)
+	if (input.entityKind !== undefined) add('entity_kind', input.entityKind)
+	if (input.entityId !== undefined) add('entity_id', input.entityId)
 	if (input.publishedCommit !== undefined) {
 		add('published_commit', input.publishedCommit)
 	}

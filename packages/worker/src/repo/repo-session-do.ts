@@ -21,6 +21,7 @@ import {
 	type ArtifactRepoInfo,
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
+	resolveArtifactSourceHead,
 	resolveExistingArtifactSourceRepo,
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
@@ -50,6 +51,7 @@ import {
 import {
 	runPackageTypecheckLanguageService,
 	runRepoChecks,
+	runRepoSourceWalkChecks,
 	validatePackageBundles,
 } from './checks.ts'
 import {
@@ -177,6 +179,19 @@ function buildSessionBranchName(sessionId: string) {
 
 function buildPublishedSessionExpiresAt(now: Date = new Date()) {
 	return new Date(now.valueOf() + publishedSessionRetentionMs).toISOString()
+}
+
+function buildPendingExternalReconcile(
+	db: D1Database,
+	source: EntitySourceRow,
+) {
+	if (source.entity_kind !== 'package') return undefined
+	return { db, source }
+}
+
+async function resolveLiveSourceHeadCommit(env: Env, source: EntitySourceRow) {
+	const head = await resolveArtifactSourceHead(env, source.repo_id)
+	return head.commit
 }
 
 async function ensureArtifactRepoRemote(input: {
@@ -338,7 +353,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const access = await ensureArtifactRepoRemote({
 			repo: sourceRepo,
 			scope: 'write',
-			pendingReconcile: { db: this.env.APP_DB, source },
+			pendingReconcile: buildPendingExternalReconcile(this.env.APP_DB, source),
 		})
 		await this.initialize({
 			sessionId: sessionRow.id,
@@ -1027,25 +1042,36 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Source "${input.sourceId}" was not found for this user.`,
 				)
 			}
-			const baseCommit = source.published_commit
+			const baseCommit =
+				source.entity_kind === 'repo'
+					? await resolveLiveSourceHeadCommit(this.env, source)
+					: source.published_commit
 			if (!baseCommit) {
 				throw new Error(
-					`Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
+					source.entity_kind === 'repo'
+						? `Plain repo "${source.repo_id}" has no commits yet. Push an initial commit through the git lane before opening a session.`
+						: `Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
 				)
 			}
-			const sourceHead = await assertPublishedPackageSourceRepoHead({
-				env: this.env,
-				source,
-				operation: 'repo_open_session',
-				requirePublishedCommitHead: true,
-			})
+			const sourceHead =
+				source.entity_kind === 'package'
+					? await assertPublishedPackageSourceRepoHead({
+							env: this.env,
+							source,
+							operation: 'repo_open_session',
+							requirePublishedCommitHead: true,
+						})
+					: null
 			const sourceRepo =
 				sourceHead?.repo ??
 				(await resolveArtifactSourceRepo(this.env, source.repo_id))
 			const sourceAccess = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
-				pendingReconcile: { db: this.env.APP_DB, source },
+				pendingReconcile: buildPendingExternalReconcile(
+					this.env.APP_DB,
+					source,
+				),
 			})
 			const sourceBranch =
 				sourceHead?.defaultBranch ??
@@ -1145,7 +1171,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			const access = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
-				pendingReconcile: { db: this.env.APP_DB, source },
+				pendingReconcile: buildPendingExternalReconcile(
+					this.env.APP_DB,
+					source,
+				),
 			})
 			await this.initialize({
 				sessionId: sessionRow.id,
@@ -1216,7 +1245,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			sourceAccess = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
-				pendingReconcile: { db: this.env.APP_DB, source },
+				pendingReconcile: buildPendingExternalReconcile(
+					this.env.APP_DB,
+					source,
+				),
 			})
 		}
 		const targetBranch =
@@ -1456,7 +1488,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const access = await ensureArtifactRepoRemote({
 			repo: sourceRepo,
 			scope: 'write',
-			pendingReconcile: { db: this.env.APP_DB, source },
+			pendingReconcile: buildPendingExternalReconcile(this.env.APP_DB, source),
 		})
 		await this.initialize({
 			sessionId: input.sessionRow.id,
@@ -2241,19 +2273,109 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: sessionBranch,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
+		// Resolve the live head exactly once so the persisted base_commit and
+		// the returned baseCommit cannot diverge when a push lands in between.
+		const rebasedBaseCommit =
+			source.entity_kind === 'repo'
+				? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
+				: (source.published_commit ?? '')
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
-			baseCommit: source.published_commit ?? '',
+			baseCommit: rebasedBaseCommit,
 			lastCheckpointCommit: headCommit,
 			lastCheckpointAt: nowIso(),
 		})
 		return {
 			ok: true,
 			sessionId: sessionRow.id,
-			baseCommit: source.published_commit ?? '',
+			baseCommit: rebasedBaseCommit,
 			headCommit,
 			merged: pullResult.pulled,
+		}
+	}
+
+	private async publishPlainRepoSession(input: {
+		sessionRow: RepoSessionRow
+		source: EntitySourceRow
+		sessionAccess: { token: string; remote: string }
+		commitMessage?: string
+	}): Promise<RepoSessionPublishResult> {
+		const sessionBranch = input.sessionRow.session_branch
+		const sourceRoot = resolveRepoWorkspacePath(
+			input.sessionRow.source_root || repoSessionWorkspacePrefix,
+			repoSessionWorkspacePrefix,
+		)
+		const walk = await runRepoSourceWalkChecks({
+			workspace: this.workspace,
+			sourceRoot,
+		})
+		if (!walk.ok) {
+			return {
+				status: 'checks_outdated',
+				sessionId: input.sessionRow.id,
+				publishedCommit: null,
+				message: walk.message,
+			}
+		}
+		const liveHead = await resolveLiveSourceHeadCommit(this.env, input.source)
+		if ((liveHead ?? '') !== input.sessionRow.base_commit) {
+			return {
+				status: 'base_moved',
+				sessionId: input.sessionRow.id,
+				publishedCommit: null,
+				sessionBaseCommit: input.sessionRow.base_commit,
+				currentPublishedCommit: liveHead,
+				repairHint: 'repo_rebase_session',
+				message:
+					'The source repo has moved since this session opened. Rebase the session before publishing.',
+			}
+		}
+		const sessionHeadCommit =
+			(await this.commitIfDirty(
+				input.commitMessage?.trim() ||
+					`Publish repo session ${input.sessionRow.id}`,
+			)) ?? (await this.getHeadCommit())
+		await this.git.push({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'origin',
+			ref: sessionBranch,
+			...buildArtifactsGitAuth({ token: input.sessionAccess.token }),
+		})
+		await this.pushBranchToRemoteRef({
+			branch: sessionBranch,
+			remoteRef: input.sessionRow.source_branch,
+			token: input.sessionAccess.token,
+		})
+		const publishedCommit = sessionHeadCommit ?? input.sessionRow.base_commit
+		await this.attachSourcePublishGitNote({
+			source: input.source,
+			commitOid: publishedCommit,
+			remote: input.sessionAccess.remote,
+			token: input.sessionAccess.token,
+			remoteName: 'origin',
+			publishedBy: 'repo_session',
+			sessionId: input.sessionRow.id,
+			conversationId: input.sessionRow.conversation_id,
+			baseCommit: input.sessionRow.base_commit,
+			previousPublishedCommit: liveHead,
+			checks: null,
+			scope: 'repo.publishPlainRepoSession.publish-git-note',
+		})
+		await updateRepoSession(this.env.APP_DB, {
+			id: input.sessionRow.id,
+			userId: input.sessionRow.user_id,
+			status: 'published',
+			baseCommit: publishedCommit,
+			lastCheckpointCommit: publishedCommit,
+			lastCheckpointAt: nowIso(),
+			expiresAt: buildPublishedSessionExpiresAt(),
+		})
+		return {
+			status: 'ok',
+			sessionId: input.sessionRow.id,
+			publishedCommit,
+			message: `Published plain repo session ${input.sessionRow.id} to ${input.source.repo_id}.`,
 		}
 	}
 
@@ -2271,6 +2393,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		if (source.entity_kind === 'repo') {
+			return await this.publishPlainRepoSession({
+				sessionRow,
+				source,
+				sessionAccess,
+				commitMessage: input.commitMessage,
+			})
+		}
 		const sessionBranch = sessionRow.session_branch
 		const checkStatus = await this.readCheckStatus()
 		const currentTreeHash = await this.computeTreeHash()
@@ -2488,7 +2618,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				const sourceWriteAccess = await ensureArtifactRepoRemote({
 					repo: sourceRepo,
 					scope: 'write',
-					pendingReconcile: { db: this.env.APP_DB, source },
+					pendingReconcile: buildPendingExternalReconcile(
+						this.env.APP_DB,
+						source,
+					),
 				})
 				await this.attachSourcePublishGitNote({
 					source,

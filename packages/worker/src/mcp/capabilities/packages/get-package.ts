@@ -12,6 +12,10 @@ import {
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import {
+	buildPlainRepoPromotionErrorMessage,
+	findPlainRepoPromotionHint,
+} from '#worker/repo/user-repos.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { packageDetailSchema } from './shared.ts'
 
@@ -55,6 +59,15 @@ export const getPackageCapability = defineDomainCapability(
 				packageId: args.package_id,
 			})
 			if (!saved) {
+				const plainRepo = await findPlainRepoPromotionHint(ctx.env.APP_DB, {
+					userId: owner.ownerUserId,
+					packageIdOrKodyId: args.package_id,
+				})
+				if (plainRepo) {
+					throw new McpCallerError(
+						buildPlainRepoPromotionErrorMessage(args.package_id),
+					)
+				}
 				throw new McpCallerError('Saved package not found for this user.')
 			}
 			const username = await resolvePublicUsername({

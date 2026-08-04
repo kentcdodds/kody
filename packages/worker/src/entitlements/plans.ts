@@ -105,6 +105,8 @@ export function resolveEffectivePlan(
 }
 
 export type PlanLimits = {
+	/** Maximum plain repos (rows in user_repos). */
+	maxRepos: number
 	/** Maximum saved packages (rows in saved_packages). */
 	maxSavedPackages: number
 	/** Maximum scheduled jobs (rows in jobs). */
@@ -150,6 +152,7 @@ export type PlanLimits = {
 }
 
 export const entitlementResources = [
+	'repos',
 	'saved_packages',
 	'scheduled_jobs',
 	'package_services',
@@ -170,6 +173,7 @@ export type EntitlementResource = (typeof entitlementResources)[number]
 
 /** Human-readable resource labels used in the shared error message. */
 export const entitlementResourceLabels: Record<EntitlementResource, string> = {
+	repos: 'repos',
 	saved_packages: 'saved packages',
 	scheduled_jobs: 'scheduled jobs',
 	package_services: 'running package services',
@@ -232,6 +236,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 	// and a half integrations on a product whose whole point is holding
 	// credentials safely.
 	free: {
+		maxRepos: 20,
 		maxSavedPackages: 25,
 		maxScheduledJobs: 10,
 		// Long-lived compute. Unchanged, and persistent services stay off.
@@ -254,6 +259,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 2_000,
 	},
 	pro: {
+		maxRepos: 200,
 		maxSavedPackages: 100,
 		maxScheduledJobs: 50,
 		maxPackageServices: 10,
@@ -270,6 +276,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 20_000,
 	},
 	partner: {
+		maxRepos: 400,
 		maxSavedPackages: 200,
 		maxScheduledJobs: 100,
 		maxPackageServices: 20,
@@ -286,6 +293,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 40_000,
 	},
 	max: {
+		// 100× pro (200) → 20_000; product placeholder uses 10_000 per spec.
+		maxRepos: 10_000,
 		// 100× pro (100) → 10_000.
 		maxSavedPackages: 10_000,
 		// 100× pro (50) → 5_000.
@@ -343,6 +352,8 @@ export function resolvePlanLimit(
 ): number {
 	const limits = planLimits[plan]
 	switch (resource) {
+		case 'repos':
+			return limits.maxRepos
 		case 'saved_packages':
 			return limits.maxSavedPackages
 		case 'scheduled_jobs':

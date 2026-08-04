@@ -45,11 +45,10 @@ Two supporting policies:
   the file-level session API (`repo_edit_files`, `repo_apply_patch`,
   `repo_commit`, `repo_status`, `repo_diff`, `repo_log`, `repo_restore`).
   Breaking pre-launch, no compatibility shim.
-- "Saved packages are the only top-level persisted primitive" stops being true
-  once plain repos ship; docs and MCP guidance then change to "repos are the
-  durable home, packages add runtime."
-- Entitlements will gain a base `repos` count when plain repos ship;
-  `saved_packages` remains the cap on the extension.
+- "Saved packages are the only top-level persisted primitive" is no longer true;
+  docs and MCP guidance use "repos are the durable home; packages add runtime."
+- Entitlements include a base `repos` count; `saved_packages` remains the cap on
+  the package extension.
 - Reconcile and retention lanes must stay kind-aware so publish-pointer logic
   never runs for plain repos.
 - Revisit if Artifacts ships LFS or per-file limits change (the 10 MiB gate is a

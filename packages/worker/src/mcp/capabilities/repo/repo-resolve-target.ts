@@ -4,8 +4,12 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
-import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
+import {
+	getEntitySourceByEntity,
+	getEntitySourceByIdForUser,
+} from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { getUserRepoById, getUserRepoByName } from '#worker/repo/user-repos.ts'
 import {
 	type repoOpenSessionInputSchema,
 	type repoResolvedTargetSchema,
@@ -79,6 +83,45 @@ async function requirePackageTarget(input: {
 	}
 }
 
+async function requirePlainRepoTarget(input: {
+	db: D1Database
+	userId: string
+	target: Extract<RepoTarget, { kind: 'repo' }>
+}): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
+	const userRepo =
+		'repo_id' in input.target
+			? await getUserRepoById(input.db, {
+					userId: input.userId,
+					repoId: input.target.repo_id,
+				})
+			: await getUserRepoByName(input.db, {
+					userId: input.userId,
+					name: input.target.name,
+				})
+	if (!userRepo) {
+		const missingId =
+			'repo_id' in input.target ? input.target.repo_id : input.target.name
+		throw new McpCallerError(`Plain repo "${missingId}" was not found.`)
+	}
+	const source = await getEntitySourceByEntity(input.db, {
+		userId: input.userId,
+		entityKind: 'repo',
+		entityId: userRepo.id,
+	})
+	if (!source) {
+		throw new McpCallerError('Repo source was not found for this user.')
+	}
+	return {
+		source,
+		resolvedTarget: {
+			kind: 'repo',
+			source_id: source.id,
+			repo_id: userRepo.id,
+			name: userRepo.name,
+		},
+	}
+}
+
 export async function resolveRepoSourceReference(input: {
 	db: D1Database
 	userId: string
@@ -92,17 +135,36 @@ export async function resolveRepoSourceReference(input: {
 		})
 		return {
 			source,
-			resolvedTarget: toResolvedSourceTarget(source),
+			resolvedTarget: await resolveRepoTargetFromSource({
+				db: input.db,
+				userId: input.userId,
+				sourceId: source.id,
+			}),
 		}
 	}
 	if (!input.args.target) {
 		throw new McpCallerError('Repo source identity is required.')
 	}
-	return requirePackageTarget({
-		db: input.db,
-		userId: input.userId,
-		target: input.args.target,
-	})
+	switch (input.args.target.kind) {
+		case 'package':
+			return requirePackageTarget({
+				db: input.db,
+				userId: input.userId,
+				target: input.args.target,
+			})
+		case 'repo':
+			return requirePlainRepoTarget({
+				db: input.db,
+				userId: input.userId,
+				target: input.args.target,
+			})
+		default: {
+			const target: never = input.args.target
+			throw new McpCallerError(
+				`Unsupported repo target kind: ${String(target)}`,
+			)
+		}
+	}
 }
 
 export async function resolveRepoTargetFromSource(input: {
@@ -132,6 +194,28 @@ export async function resolveRepoTargetFromSource(input: {
 				name: savedPackage.name,
 			}
 		}
+		case 'repo': {
+			const userRepo = await getUserRepoById(input.db, {
+				userId: input.userId,
+				repoId: source.entity_id,
+			})
+			if (!userRepo) {
+				return toResolvedSourceTarget(source)
+			}
+			return {
+				kind: 'repo',
+				source_id: source.id,
+				repo_id: userRepo.id,
+				name: userRepo.name,
+			}
+		}
+		case 'job':
+			return toResolvedSourceTarget(source)
+		default: {
+			const entityKind: never = source.entity_kind
+			throw new McpCallerError(
+				`Unsupported entity source kind: ${String(entityKind)}`,
+			)
+		}
 	}
-	return toResolvedSourceTarget(source)
 }

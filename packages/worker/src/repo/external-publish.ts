@@ -160,6 +160,11 @@ export async function publishFromExternalRef(input: {
 	if (!source || source.user_id !== input.userId) {
 		throw new Error('Repo source was not found for this user.')
 	}
+	if (source.entity_kind === 'repo') {
+		throw new Error(
+			'Plain repos are live-at-HEAD and do not use external publish reconciliation.',
+		)
+	}
 	if (source.published_commit === input.newCommit) {
 		return {
 			status: 'already_published',

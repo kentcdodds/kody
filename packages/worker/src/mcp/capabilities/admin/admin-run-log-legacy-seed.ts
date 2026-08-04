@@ -3,6 +3,7 @@ import {
 	adminRunLogLegacySeedActivationMaxMilestones,
 	adminRunLogLegacySeedActivationMaxPackages,
 	adminRunLogLegacySeedDefaultUserLimit,
+	adminRunLogLegacySeedDefaultWorkflowImportPageSize,
 	adminRunLogLegacySeedMaxUserLimit,
 	runAdminRunLogLegacySeed,
 } from '#worker/admin/run-log-legacy-seed.ts'
@@ -107,7 +108,7 @@ export const adminRunLogLegacySeedCapability = defineDomainCapability(
 	{
 		...adminMutationCapabilityAccess,
 		name: 'admin_run_log_legacy_seed',
-		description: `Admin-only non-destructive RunLog legacy expand sweep. Keyset-pages all non-deleting users (not only legacy-inventory candidates) with exact limit+1 truncation (default ${adminRunLogLegacySeedDefaultUserLimit}, max ${adminRunLogLegacySeedMaxUserLimit} users/call). \`status\` is read-only content-free parity; \`seed\` idempotently imports each D1 workflow/job page immediately (workflows checked with minimumUpdatedAt; every job including zero legacy state), then imports activation as one bounded one-shot snapshot (packages capped at max plan saved-packages ${adminRunLogLegacySeedActivationMaxPackages}; milestones filtered to ${adminRunLogLegacySeedActivationMaxMilestones} known names with unknown/retired rows ignored; empty activation still marks initialized) and returns the same parity shape. Missing D1 relations/columns and other per-user D1/RPC failures set failed=true (parity false; not production evidence — rerun) and continue other users. Output is stable user ids, counts, booleans (including failed), cursors, and generatedAt only — never emails, names, workflow names, package ids, job ids, or user-authored content. Audited.`,
+		description: `Admin-only non-destructive RunLog legacy expand sweep. Keyset-pages all non-deleting users (not only legacy-inventory candidates) with exact limit+1 truncation (default ${adminRunLogLegacySeedDefaultUserLimit}, max ${adminRunLogLegacySeedMaxUserLimit} users/call). \`status\` is read-only content-free parity; \`seed\` idempotently imports each D1 workflow/job page immediately (${adminRunLogLegacySeedDefaultWorkflowImportPageSize} workflow rows per D1 page/import RPC; workflows checked with minimumUpdatedAt; every job including zero legacy state), then imports activation as one bounded one-shot snapshot (packages capped at max plan saved-packages ${adminRunLogLegacySeedActivationMaxPackages}; milestones filtered to ${adminRunLogLegacySeedActivationMaxMilestones} known names with unknown/retired rows ignored; empty activation still marks initialized) and returns the same parity shape. Missing D1 relations/columns and other per-user D1/RPC failures set failed=true (parity false; not production evidence — rerun) and continue other users. Output is stable user ids, counts, booleans (including failed), cursors, and generatedAt only — never emails, names, workflow names, package ids, job ids, or user-authored content. Audited.`,
 		keywords: [
 			'admin',
 			'run log',

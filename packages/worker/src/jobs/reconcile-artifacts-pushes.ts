@@ -129,6 +129,9 @@ async function reconcileSource(input: {
 	result: ReconcileArtifactsPushesResult
 }) {
 	const { env, source, now, result } = input
+	if (source.entity_kind === 'repo') {
+		return
+	}
 	result.checked += 1
 	try {
 		const head = await resolveArtifactSourceHead(env, source.repo_id)

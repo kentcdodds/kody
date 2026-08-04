@@ -1,6 +1,12 @@
 import { repoDomain } from './domain.ts'
 
 export { repoDomain } from './domain.ts'
+export { repoCreateCapability } from './repo-create.ts'
+export { repoListCapability } from './repo-list.ts'
+export { repoGetCapability } from './repo-get.ts'
+export { repoDeleteCapability } from './repo-delete.ts'
+export { repoGetGitRemoteCapability } from './repo-get-git-remote.ts'
+export { repoPromoteToPackageCapability } from './repo-promote-to-package.ts'
 export { repoApplyPatchCapability } from './repo-apply-patch.ts'
 export { repoCommitCapability } from './repo-commit.ts'
 export { repoDiffCapability } from './repo-diff.ts'
