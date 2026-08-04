@@ -107,11 +107,11 @@ async function probeMcp(
 			detail: result.error,
 		}
 	}
-	// An unauthenticated GET must produce the OAuth challenge; anything else
-	// (especially a 5xx) means the MCP surface is broken.
-	const ok =
-		result.response.status === 401 &&
-		result.response.headers.has('WWW-Authenticate')
+	// An unauthenticated GET must produce the OAuth bearer challenge; anything
+	// else (a 5xx, or a 401 with the wrong scheme) means the MCP surface is
+	// broken.
+	const challenge = result.response.headers.get('WWW-Authenticate') ?? ''
+	const ok = result.response.status === 401 && challenge.startsWith('Bearer')
 	return {
 		component: 'mcp',
 		ok,
@@ -133,7 +133,7 @@ async function probePackageApps(
 			detail: result.error,
 		}
 	}
-	const ok = result.response.status < 500
+	const ok = result.response.status >= 200 && result.response.status < 400
 	return {
 		component: 'package_apps',
 		ok,

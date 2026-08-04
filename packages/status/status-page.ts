@@ -133,7 +133,9 @@ function renderComponent(component: ComponentSnapshot): string {
 			? 'no data yet'
 			: `${component.uptimePct.toFixed(2)}% uptime (90 days)`
 	const latency =
-		component.latencyMs === null ? '' : ` · ${component.latencyMs}ms`
+		component.status === 'operational' && component.latencyMs !== null
+			? ` · ${component.latencyMs}ms`
+			: ''
 	const firstDay = component.days.at(0)?.day ?? ''
 	const lastDay = component.days.at(-1)?.day ?? ''
 	return `<div class="card component">

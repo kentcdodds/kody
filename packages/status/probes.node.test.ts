@@ -77,6 +77,21 @@ test('an mcp response without the oauth challenge fails the mcp probe only', asy
 	expect(app?.ok).toBe(true)
 })
 
+test('a 401 with a non-bearer challenge fails the mcp probe', async () => {
+	const routes = healthyRoutes()
+	routes[`${primaryOrigin}/mcp`] = {
+		status: 401,
+		headers: { 'WWW-Authenticate': 'Basic realm="nope"' },
+	}
+	const outcomes = await runAllProbes({
+		primaryOrigin,
+		packageAppOrigin,
+		fetcher: fakeFetcher(routes),
+	})
+	const mcp = outcomes.find((outcome) => outcome.component === 'mcp')
+	expect(mcp).toMatchObject({ ok: false, detail: 'HTTP 401' })
+})
+
 test('a failing component in the components endpoint maps through', async () => {
 	const routes = healthyRoutes()
 	routes[`${primaryOrigin}/health/components`] = {
@@ -131,4 +146,18 @@ test('a package apps 5xx fails the package_apps probe', async () => {
 		(outcome) => outcome.component === 'package_apps',
 	)
 	expect(packageApps).toMatchObject({ ok: false, detail: 'HTTP 521' })
+})
+
+test('a package apps 404 fails the package_apps probe', async () => {
+	const routes = healthyRoutes()
+	routes[`${packageAppOrigin}/`] = { status: 404 }
+	const outcomes = await runAllProbes({
+		primaryOrigin,
+		packageAppOrigin,
+		fetcher: fakeFetcher(routes),
+	})
+	const packageApps = outcomes.find(
+		(outcome) => outcome.component === 'package_apps',
+	)
+	expect(packageApps).toMatchObject({ ok: false, detail: 'HTTP 404' })
 })

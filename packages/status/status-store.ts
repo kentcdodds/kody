@@ -303,10 +303,11 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				html: content.html,
 			},
 		)
-		// Transient send errors stay unrecorded so the next tick retries;
-		// delivered and unconfigured-skip sends are recorded so the policy
-		// (pause + cap) advances.
-		if (!result.delivered && !result.skipped) return
+		// Every attempt is recorded so the daily cap bounds API calls even when
+		// sends fail permanently (for example an invalid token would otherwise
+		// retry every minute forever). `last_notified_state` only advances on a
+		// delivered or unconfigured-skip send, so failed attempts retry on the
+		// next tick until the cap stops them for the day.
 		this.ctx.storage.sql.exec(
 			`INSERT INTO notifications (kind, sent_at, day, subject, delivered)
 			VALUES (?, ?, ?, ?, ?)`,
@@ -316,6 +317,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			content.subject,
 			result.delivered ? 1 : 0,
 		)
+		if (!result.delivered && !result.skipped) return
 		this.setMeta(
 			'last_notified_state',
 			openIncidents.length > 0 ? 'incident' : 'ok',

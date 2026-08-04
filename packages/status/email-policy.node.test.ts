@@ -72,7 +72,7 @@ test('all clear sends once every incident is resolved', () => {
 	expect(decision).toEqual({ kind: 'all_clear' })
 })
 
-test('no email when everything is healthy and already announced', () => {
+test('no email when everything is healthy and no incident was announced', () => {
 	expect(decideStatusEmail(input())).toBeNull()
 })
 

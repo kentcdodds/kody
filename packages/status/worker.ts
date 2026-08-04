@@ -19,19 +19,45 @@ export default {
 				{ headers: { 'Cache-Control': 'no-store' } },
 			)
 		}
-		if (url.pathname === '/') {
-			const snapshot = await getStore(env).getSnapshot()
+		if (url.pathname === '/' || url.pathname === '/status.json') {
+			// The page must degrade gracefully even when its own Durable Object
+			// is unavailable; a controlled 503 beats an uncaught error page.
+			let snapshot
+			try {
+				snapshot = await getStore(env).getSnapshot()
+			} catch (error) {
+				console.warn(
+					'status-snapshot-failed',
+					error instanceof Error ? error.message : String(error),
+				)
+				const body = { error: 'Status data is temporarily unavailable.' }
+				if (url.pathname === '/status.json') {
+					return Response.json(body, {
+						status: 503,
+						headers: { 'Cache-Control': 'no-store' },
+					})
+				}
+				return new Response(
+					`<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta http-equiv="refresh" content="30" /><title>kody status</title></head><body><main><h1>kody status</h1><p>${body.error} This page retries automatically.</p></main></body></html>`,
+					{
+						status: 503,
+						headers: {
+							'Content-Type': 'text/html; charset=utf-8',
+							'Cache-Control': 'no-store',
+						},
+					},
+				)
+			}
+			if (url.pathname === '/status.json') {
+				return Response.json(snapshot, {
+					headers: { 'Cache-Control': 'public, max-age=30' },
+				})
+			}
 			return new Response(renderStatusPage(snapshot), {
 				headers: {
 					'Content-Type': 'text/html; charset=utf-8',
 					'Cache-Control': 'public, max-age=30',
 				},
-			})
-		}
-		if (url.pathname === '/status.json') {
-			const snapshot = await getStore(env).getSnapshot()
-			return Response.json(snapshot, {
-				headers: { 'Cache-Control': 'public, max-age=30' },
 			})
 		}
 		return new Response('Not found', { status: 404 })

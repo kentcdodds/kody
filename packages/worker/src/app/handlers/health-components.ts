@@ -119,18 +119,36 @@ export async function collectHealthComponents(
 }
 
 export function createHealthComponentsHandler(appEnv: HealthComponentsEnv) {
+	// Concurrent requests share one in-flight collection so public traffic at
+	// cache expiry cannot fan out into parallel probes of the same bindings.
 	let cached: { report: HealthComponentsReport; expiresAt: number } | null =
 		null
+	let inFlight: Promise<HealthComponentsReport> | null = null
 	return {
 		middleware: [],
 		async handler() {
 			const now = Date.now()
-			if (!cached || cached.expiresAt <= now) {
-				const report = await collectHealthComponents(appEnv)
-				cached = { report, expiresAt: now + resultCacheTtlMs }
+			let report: HealthComponentsReport
+			if (cached && cached.expiresAt > now) {
+				report = cached.report
+			} else {
+				if (!inFlight) {
+					inFlight = collectHealthComponents(appEnv)
+						.then((collected) => {
+							cached = {
+								report: collected,
+								expiresAt: Date.now() + resultCacheTtlMs,
+							}
+							return collected
+						})
+						.finally(() => {
+							inFlight = null
+						})
+				}
+				report = await inFlight
 			}
-			return Response.json(cached.report, {
-				status: cached.report.ok ? 200 : 503,
+			return Response.json(report, {
+				status: report.ok ? 200 : 503,
 				headers: { 'Cache-Control': 'no-store' },
 			})
 		},

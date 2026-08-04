@@ -107,6 +107,36 @@ test('handler returns 200 when healthy and memoizes results within the cache win
 	expect(body.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 })
 
+test('concurrent requests at cache expiry share one in-flight collection', async () => {
+	let prepareCalls = 0
+	let releaseFirst: (() => void) | undefined
+	const gate = new Promise<void>((resolve) => {
+		releaseFirst = resolve
+	})
+	const bindings = createHealthyBindings()
+	bindings.APP_DB = {
+		prepare: () => {
+			prepareCalls += 1
+			return {
+				first: async () => {
+					await gate
+					return { 1: 1 }
+				},
+			}
+		},
+	} as unknown as D1Database
+	const handler = createHealthComponentsHandler(bindings)
+
+	const first = handler.handler(createRequestContext())
+	const second = handler.handler(createRequestContext())
+	releaseFirst?.()
+	const [firstResponse, secondResponse] = await Promise.all([first, second])
+
+	expect(firstResponse.status).toBe(200)
+	expect(secondResponse.status).toBe(200)
+	expect(prepareCalls).toBe(1)
+})
+
 test('handler returns 503 when any component fails', async () => {
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	try {

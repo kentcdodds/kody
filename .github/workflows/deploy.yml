@@ -381,7 +381,12 @@ jobs:
     runs-on: ubuntu-latest
     name: 📟 Deploy status worker
     timeout-minutes: 8
-    needs: sha-guard
+    # Deploys after the main worker so the status prober never probes a
+    # production worker that predates the endpoints it expects (for example
+    # /health/components), which would open spurious incidents.
+    needs:
+      - sha-guard
+      - deploy
     if: >-
       needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_status_worker == 'true'
