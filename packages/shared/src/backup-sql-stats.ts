@@ -1,3 +1,5 @@
+import { d1ImportMaxStatementBytes } from './backup-restore-safety.ts'
+
 export const backupSqlStatsSchemaVersion = 1
 
 /**
@@ -40,8 +42,9 @@ export function parseBackupSqlStats(value: unknown): BackupSqlStats {
 		typeof value.objectKey !== 'string' ||
 		!isNonNegativeSafeInteger(value.maxStatementBytes) ||
 		!isNonNegativeSafeInteger(value.oversizedStatementCount) ||
-		!Number.isSafeInteger(value.importStatementLimitBytes) ||
-		Number(value.importStatementLimitBytes) <= 0
+		value.importStatementLimitBytes !== d1ImportMaxStatementBytes ||
+		(value.oversizedStatementCount === 0) !==
+			Number(value.maxStatementBytes) <= d1ImportMaxStatementBytes
 	) {
 		throw new Error('backup SQL stats are corrupt')
 	}

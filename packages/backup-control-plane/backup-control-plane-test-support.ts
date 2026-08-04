@@ -131,6 +131,10 @@ export class MemoryBucket {
 		return this.objects.has(key) ? this.metadata(key) : null
 	}
 
+	async delete(key: string): Promise<void> {
+		this.objects.delete(key)
+	}
+
 	async get(key: string): Promise<R2ObjectBody | null> {
 		const bytes = this.objects.get(key)
 		if (!bytes) return null
@@ -342,11 +346,11 @@ export class RetryAfterCommitStep implements BackupRuntimeStep {
 
 export class CachedUploadStep implements BackupRuntimeStep {
 	private readonly cache = new Map<string, unknown>()
-	private readonly afterUpload: () => void
+	private readonly afterUpload: () => void | Promise<void>
 	private readonly afterFinalization?: () => Promise<void>
 
 	constructor(
-		afterUpload: () => void,
+		afterUpload: () => void | Promise<void>,
 		afterFinalization?: () => Promise<void>,
 	) {
 		this.afterUpload = afterUpload
@@ -371,7 +375,7 @@ export class CachedUploadStep implements BackupRuntimeStep {
 				: callback!
 		const value = await execute()
 		this.cache.set(name, value)
-		if (name === 'stream-export-to-immutable-r2') this.afterUpload()
+		if (name === 'stream-export-to-immutable-r2') await this.afterUpload()
 		if (
 			name === 'verify-stored-object-and-write-immutable-manifest' &&
 			this.afterFinalization
@@ -379,6 +383,43 @@ export class CachedUploadStep implements BackupRuntimeStep {
 			await this.afterFinalization()
 		}
 		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
+export class PreStatsUploadStep implements BackupRuntimeStep {
+	private readonly cache = new Map<string, unknown>()
+
+	async do<T>(
+		name: string,
+		config: unknown,
+		callback: () => Promise<T>,
+	): Promise<T>
+	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		if (this.cache.has(name)) return this.cache.get(name) as T
+		const execute =
+			typeof configOrCallback === 'function'
+				? (configOrCallback as () => Promise<T>)
+				: callback!
+		const value = await execute()
+		const persisted =
+			name === 'stream-export-to-immutable-r2' &&
+			value !== null &&
+			typeof value === 'object'
+				? Object.fromEntries(
+						Object.entries(value).filter(
+							([key]) => key !== 'sqlStatementStats',
+						),
+					)
+				: value
+		this.cache.set(name, persisted)
+		return persisted as T
 	}
 
 	async sleep(): Promise<void> {}

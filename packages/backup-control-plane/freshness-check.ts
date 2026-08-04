@@ -83,7 +83,14 @@ export async function checkFreshness(
 			)
 			switch (restorability.kind) {
 				case 'restorable':
+					break
 				case 'legacy-unknown':
+					safeLog({
+						event: 'backup-stats-legacy-missing',
+						status: 'stale-success',
+						day: payload.day,
+						objectKey: manifest.payload.sql.objectKey,
+					})
 					break
 				case 'unrestorable':
 					unrestorableStats = restorability.stats

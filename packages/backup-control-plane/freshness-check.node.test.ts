@@ -23,6 +23,8 @@ import {
 } from './backup-control-plane-test-support.ts'
 
 test('freshness accepts matching metadata and flags size/ETag drift or missing objects', async () => {
+	const consoleLog = vi.spyOn(console, 'log')
+	consoleLog.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const key = objectKeyForBookmark(
@@ -43,6 +45,12 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 	assert.equal(
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		true,
+	)
+	const initialEvents = consoleLog.mock.calls.map(([record]) =>
+		JSON.parse(String(record)),
+	) as Array<{ event: string }>
+	assert.ok(
+		initialEvents.some(({ event }) => event === 'backup-stats-legacy-missing'),
 	)
 	bucket.setReportedSize(key, MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES)
 	assert.equal(

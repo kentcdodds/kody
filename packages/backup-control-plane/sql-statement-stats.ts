@@ -5,7 +5,7 @@ import {
 	type BackupSqlStats,
 } from '@kody-internal/shared/backup-sql-stats.ts'
 
-import { BackupError } from './backup-policy.ts'
+import { BackupError, safeLog } from './backup-policy.ts'
 
 export type SqlRestorability =
 	| { kind: 'restorable'; stats: BackupSqlStats }
@@ -47,7 +47,14 @@ export async function assertSqlRestorable(
 	const result = await readSqlRestorability(bucket, day, objectKey)
 	switch (result.kind) {
 		case 'restorable':
+			return
 		case 'legacy-unknown':
+			safeLog({
+				event: 'backup-stats-legacy-missing',
+				status: 'stale-success',
+				day,
+				objectKey,
+			})
 			return
 		case 'unrestorable':
 			throw new BackupError(

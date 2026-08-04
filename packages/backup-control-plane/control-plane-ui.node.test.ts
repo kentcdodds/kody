@@ -63,4 +63,14 @@ test('dashboard renders oversized D1 SQL as not restorable with a warning', asyn
 		html,
 		/D1 SQL contains oversized statements and cannot be restored/,
 	)
+
+	await bucket.delete(`${sqlObjectKey}.stats.json`)
+	const [missingStatsStatus] = await collectDayStatuses(env, now)
+	assert.equal(missingStatsStatus?.d1Restorable, false)
+	const missingStatsHtml = await renderDashboard(env, { now })
+	assert.match(missingStatsHtml, /<td class="bad">no<\/td>/)
+	assert.match(
+		missingStatsHtml,
+		/D1 is not restorable: required SQL stats are missing/,
+	)
 })

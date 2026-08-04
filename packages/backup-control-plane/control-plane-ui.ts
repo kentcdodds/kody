@@ -201,14 +201,14 @@ export async function collectDayStatuses(
 							)
 							break
 						case 'missing':
+							d1Restorable = false
 							warnings.push(
-								'D1 restorability unknown: required SQL stats are missing',
+								'D1 is not restorable: required SQL stats are missing',
 							)
 							break
 						case 'corrupt':
-							warnings.push(
-								'D1 restorability unknown: SQL stats are unreadable',
-							)
+							d1Restorable = false
+							warnings.push('D1 is not restorable: SQL stats are unreadable')
 							break
 						default: {
 							const exhaustive: never = restorability
