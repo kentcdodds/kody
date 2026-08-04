@@ -112,7 +112,6 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	expect(adminRegistry.capabilityMap.admin_user_list).toBeTruthy()
 	expect(adminRegistry.capabilityMap.admin_user_meter_parity).toBeTruthy()
 	expect(adminRegistry.capabilityMap.admin_mailbox_maintenance).toBeTruthy()
-	expect(adminRegistry.capabilityMap.admin_run_log_legacy_seed).toBeTruthy()
 	expect(
 		adminRegistry.capabilityMap.admin_user_meter_storage_reconcile,
 	).toBeTruthy()
@@ -129,9 +128,6 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	).toBeUndefined()
 	expect(
 		regularRegistry.capabilityMap.admin_mailbox_maintenance,
-	).toBeUndefined()
-	expect(
-		regularRegistry.capabilityMap.admin_run_log_legacy_seed,
 	).toBeUndefined()
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
