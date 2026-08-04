@@ -1002,7 +1002,7 @@ test('export: deletion shadow includes active lease count and acquiredAt list', 
 	})
 
 	held.finish()
-	await held.operation.catch(() => {})
+	await expect(held.operation).resolves.toBe('lost')
 })
 
 test('purge resets lease state but preserves deletingAt tombstone', async () => {
@@ -1045,5 +1045,7 @@ test('purge resets lease state but preserves deletingAt tombstone', async () => 
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 	held.finish()
-	await held.operation.catch(() => {})
+	await expect(held.operation).rejects.toBeInstanceOf(
+		AccountWriteLeaseLostError,
+	)
 })

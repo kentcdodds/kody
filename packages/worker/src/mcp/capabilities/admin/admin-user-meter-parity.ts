@@ -98,7 +98,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_meter_parity',
 		description:
-			'Read-only production verification report for one user: UserMeter daily counters plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion write leases. Daily rows report meter counts only when `mirrorRetired: true`. Deletion parity reports `deletingAtParity` (D1 vs meter tombstone) and `activeLeaseCount` (active DO write leases in UserMeter; D1 account_write_leases is quiescent and not queried). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
+			'Read-only production verification report for one user: UserMeter daily counters plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion state. Daily rows report meter counts only when `mirrorRetired: true`. Deletion parity reports `deletingAtParity` (D1 vs meter tombstone) and `activeLeaseCount` (active DO write leases in UserMeter; D1 account_write_leases is quiescent and not queried). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
 		keywords: [
 			'admin',
 			'user meter',
