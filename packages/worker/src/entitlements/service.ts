@@ -684,52 +684,11 @@ export async function advanceD1StorageReconciliationCursor(input: {
 /**
  * Staleness threshold for counting a `package_service_states` row as running.
  *
- * This is not the old history-table hack relocated. `package_service_states`
- * is an authoritative state projection that Durable Objects upsert on
- * lifecycle transitions and actively heartbeat (refreshing `updated_at`)
- * while a service is alive. A hard DO eviction that never restores should
- * clear the row on restore; the threshold is defense-in-depth for the case
- * where the DO never comes back and the best-effort D1 write did not land.
- * Heartbeats keep live services well inside this window.
+ * UserMeter is the sole liveness authority. Package service Durable Objects
+ * upsert and heartbeat the meter's per-service state while a service is alive;
+ * this threshold is defense-in-depth for a hard eviction that never restores.
  */
 export const packageServiceStateStaleMs = 24 * 60 * 60 * 1000
-
-/**
- * Count currently-running package services for a user directly from D1
- * `package_service_states`. Reserved for parity comparisons only — enforcement
- * uses the UserMeter-authoritative `countRunningPackageServices`.
- */
-export async function countRunningPackageServicesFromD1(input: {
-	db: D1Database
-	userId: string
-	excludeService?: { packageId: string; serviceName: string }
-	now?: Date
-}): Promise<number> {
-	const now = input.now ?? new Date()
-	const freshAfter = new Date(
-		now.valueOf() - packageServiceStateStaleMs,
-	).toISOString()
-	const exclusion = input.excludeService
-		? `AND NOT (package_id = ? AND service_name = ?)`
-		: ''
-	const params: Array<unknown> = [input.userId, freshAfter]
-	if (input.excludeService) {
-		params.push(
-			input.excludeService.packageId,
-			input.excludeService.serviceName,
-		)
-	}
-	return await countRows(
-		input.db,
-		`SELECT COUNT(*) AS count
-		FROM package_service_states
-		WHERE user_id = ?
-			AND status = 'running'
-			AND updated_at >= ?
-			${exclusion}`,
-		params,
-	)
-}
 
 /**
  * UserMeter-authoritative running count for a user's package services.

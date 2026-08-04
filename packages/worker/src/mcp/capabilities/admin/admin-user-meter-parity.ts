@@ -31,27 +31,6 @@ const storageParitySchema = z.object({
 	parity: z.boolean(),
 })
 
-const packageServiceMismatchCategoriesSchema = z.object({
-	d1Only: z.number().int().nonnegative(),
-	meterOnly: z.number().int().nonnegative(),
-	statusMismatch: z.number().int().nonnegative(),
-	startedAtMismatch: z.number().int().nonnegative(),
-	sourceUpdatedAtMismatch: z.number().int().nonnegative(),
-})
-
-const packageServicesParitySchema = z.object({
-	d1Count: z.number().int().nonnegative(),
-	meterCount: z.number().int().nonnegative(),
-	truncated: z.boolean(),
-	mismatchCategories: packageServiceMismatchCategoriesSchema,
-	running: z.object({
-		d1FreshRunningCount: z.number().int().nonnegative(),
-		meterRunningCount: z.number().int().nonnegative(),
-		parity: z.boolean(),
-	}),
-	parity: z.boolean(),
-})
-
 const deletionParitySchema = z.object({
 	d1DeletingAt: z.string().nullable(),
 	meterDeletingAt: z.string().nullable(),
@@ -65,7 +44,7 @@ const deletionParitySchema = z.object({
 		.int()
 		.nonnegative()
 		.describe(
-			'Count of active DO write leases in UserMeter. D1 account_write_leases is quiescent and not queried.',
+			'Count of active write leases in the authoritative UserMeter Durable Object.',
 		),
 })
 
@@ -81,7 +60,6 @@ const reportSchema = z.object({
 			'UserMeter-only daily counter reads. The D1 entitlement_daily_counters mirror was dropped by migration 0126; no D1 comparison exists.',
 		),
 	storage: storageParitySchema,
-	packageServices: packageServicesParitySchema,
 	deletion: deletionParitySchema,
 })
 
@@ -99,14 +77,13 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_meter_parity',
 		description:
-			'Read-only production verification report for one user: UserMeter daily counter reads (meter-only; the D1 mirror is dropped) plus D1↔UserMeter parity for storage bytes, package-service liveness, and deletion state. Deletion parity reports `deletingAtParity` (D1 vs meter tombstone) and `activeLeaseCount` (active DO write leases in UserMeter; D1 account_write_leases is quiescent and not queried). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
+			'Read-only production verification report for one user: UserMeter daily counter reads (meter-only; the D1 mirror is dropped), physical D1 payload recompute versus authoritative UserMeter storage bytes, and deletion-fence verification. Deletion reports `deletingAtParity` (D1 permanent tombstone versus meter fence) and `activeLeaseCount` (active authoritative UserMeter write leases). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
 		keywords: [
 			'admin',
 			'user meter',
 			'parity',
 			'daily counters',
 			'storage bytes',
-			'package services',
 			'write leases',
 			'deletion',
 			'bootstrap',

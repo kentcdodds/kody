@@ -571,6 +571,10 @@
 		{
 			"filename": "0139-drop-storage-bytes-mirror-columns.sql",
 			"sha256": "c45f0776b84a354669a2c8e4e96bcf4daf3040166ffeb8bce7c12678f2eb3935"
+		},
+		{
+			"filename": "0141-drop-account-write-leases-and-stale-flags.sql",
+			"sha256": "eca135651ff1e7b30c3b611771b69051f8cff46868eb98ce59fc91e0e71a807e"
 		}
 	]
 }

@@ -207,7 +207,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'mcp_memories' },
 	{ kind: 'user_id', table: 'mcp_user_server_instructions' },
 	{ kind: 'user_id', table: 'mcp_agent_sessions' },
-	{ kind: 'user_id', table: 'account_write_leases' },
 	{
 		kind: 'replace_user_column',
 		table: 'account_write_lease_repairs',

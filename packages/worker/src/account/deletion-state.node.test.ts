@@ -25,13 +25,6 @@ function createLeaseTestDb() {
 			active_write_count INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT
 		);
-		CREATE TABLE account_write_leases (
-			token TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			holder TEXT NOT NULL,
-			acquired_at TEXT NOT NULL,
-			released_at TEXT
-		);
 		INSERT INTO users (id, stable_user_id) VALUES (1, 'user-a');
 		INSERT INTO users (id, stable_user_id) VALUES (2, 'user-b');
 	`)
@@ -51,13 +44,6 @@ function addLeaseRepairsTable(sqlite: DatabaseSync) {
 			created_at TEXT NOT NULL
 		);
 	`)
-}
-
-function countD1LeaseRows(sqlite: DatabaseSync) {
-	const row = sqlite
-		.prepare(`SELECT COUNT(*) AS count FROM account_write_leases`)
-		.get() as { count: number }
-	return Number(row.count)
 }
 
 function createDeferred() {
@@ -196,8 +182,6 @@ test('env is required: UserMeter authoritative for acquire/held/release with D1 
 		holder: 'test:do-authority',
 		env: meter.env,
 		async write() {
-			// D1 account_write_leases table is not touched by the DO path.
-			expect(countD1LeaseRows(sqlite)).toBe(0)
 			expect(
 				await listActiveAccountWriteLeases(meter.env, 'user-a'),
 			).toHaveLength(1)
@@ -208,7 +192,6 @@ test('env is required: UserMeter authoritative for acquire/held/release with D1 
 	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
 		0,
 	)
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 
 	const held = holdDoWriteLease({
@@ -485,8 +468,6 @@ test('nested/detached parity for DO-authority leases', async () => {
 	releaseOuter()
 	await detached
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-	// D1 lease table stays clean throughout.
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 
 	// Release is awaited: withAccountWriteLease does not settle until DO release completes.
 	const release = createDeferred()
@@ -596,8 +577,6 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: false,
 	})
-	// D1 lease table stays clean: DO-authority leases never touch D1.
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(
 		sqlite
 			.prepare(
@@ -681,8 +660,8 @@ test('USER_METER failures fail closed (missing binding throws)', async () => {
 	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
 })
 
-test('env path never executes D1 lease INSERT or active_write_count operations', async () => {
-	const { sqlite, db } = createLeaseTestDb()
+test('env path uses UserMeter leases without D1 mirror operations', async () => {
+	const { db } = createLeaseTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
 
@@ -696,10 +675,7 @@ test('env path never executes D1 lease INSERT or active_write_count operations',
 	const mirrorCalls: Array<string> = []
 	const originalPrepare = db.prepare.bind(db)
 	db.prepare = ((query: string) => {
-		if (
-			query.includes('INSERT INTO account_write_leases') ||
-			query.includes('active_write_count')
-		) {
+		if (query.includes('active_write_count')) {
 			mirrorCalls.push(query)
 		}
 		return originalPrepare(query)
@@ -725,15 +701,12 @@ test('env path never executes D1 lease INSERT or active_write_count operations',
 		},
 	})
 	await started
-	// DO-authority leases do not touch D1 account_write_leases.
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 
 	finishWrite()
 	await expect(operation).resolves.toBe('held')
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-	// No INSERT or active_write_count calls from the env path.
+	// No legacy counter calls from the env path.
 	expect(mirrorCalls).toHaveLength(0)
 
 	db.batch = originalBatch
@@ -751,8 +724,6 @@ test('DO repair is audit-first: prepare + audit row before finalize, absent D1 m
 		holder: 'test:do-repair-mirror',
 	})
 	await held.started
-	// Mirror retired: DO-authority lease does not create a D1 row.
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 
 	const prepared = await meterA.prepareWriteLeaseRepair({
 		token: held.token,
@@ -783,8 +754,6 @@ test('DO repair is audit-first: prepare + audit row before finalize, absent D1 m
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: true,
 	})
-	// No D1 lease row (mirror retired).
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 
 	await expect(
 		repairAccountWriteLease({
@@ -800,7 +769,6 @@ test('DO repair is audit-first: prepare + audit row before finalize, absent D1 m
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: false,
 	})
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 	expect(
 		sqlite
 			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
@@ -928,8 +896,6 @@ test('finalize failure leaves DO held and retry succeeds', async () => {
 	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
 		held: true,
 	})
-	// D1 table stays clean (DO-authority leases never touch D1).
-	expect(countD1LeaseRows(sqlite)).toBe(0)
 
 	// Retry succeeds on second finalize attempt.
 	await expect(
@@ -982,7 +948,7 @@ test('D1 deleting_at race: gate queries D1 before DO acquire', async () => {
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 })
 
-test('export: deletion shadow includes active lease count and acquiredAt list', async () => {
+test('export: deletion state includes active lease count and acquiredAt list', async () => {
 	const { db } = createLeaseTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
@@ -995,7 +961,7 @@ test('export: deletion shadow includes active lease count and acquiredAt list', 
 	await held.started
 
 	const exported = await meterA.exportCounters({ pageSize: 1 })
-	expect(exported.deletionShadow).toEqual({
+	expect(exported.deletionState).toEqual({
 		deletingAt: null,
 		activeWriteLeaseCount: 1,
 		writeLeases: [{ acquiredAt: expect.any(String) }],
