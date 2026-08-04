@@ -532,8 +532,8 @@ primitives:
     summary:
       Per-user UserMeter DO SQLite — authoritative for daily entitlement
       counters, storage bytes, inbound delivery idempotency, package-service
-      running counts, and account-deletion write leases (all callers supply env;
-      migration 0141 dropped the retired D1 lease table).
+      running counts, and account-deletion write leases; D1 keeps the deleting
+      point gate and lease-repair audit log.
     code:
       - packages/worker/src/entitlements/user-meter-do.ts
       - packages/worker/src/entitlements/user-meter-client.ts

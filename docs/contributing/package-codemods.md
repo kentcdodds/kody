@@ -162,7 +162,7 @@ two-rule contract enforced at publish time (see
   `import("kody:@...")` (namespace semantics and `kody.dependencies` manifest
   changes need a human), naming the replacement in each finding.
 - Emits `needsManual` for parse failures on scannable module files that
-  reference the deprecated surface, and verifies post-rewrite that no detectable
+  reference unsupported forms, and verifies post-rewrite that no detectable
   `packages.invokeChecked` member expressions remain.
 - Detection reuses the publish-check collector
   (`package-runtime/deprecated-invocation-usage.ts`), so `detect` findings and
