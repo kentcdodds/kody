@@ -21,6 +21,7 @@ import {
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
+import { listPlatformOwnerInventory } from '#worker/dr/exporter-inventory.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 import {
 	DrBackupPreconditionFailedError,
@@ -1114,6 +1115,23 @@ test('DR inventory includes registry buckets and package_service_states services
 		'service:pkg-1:worker',
 	])
 	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
+})
+
+test('DR owner inventory excludes accounts undergoing deletion', async () => {
+	const prepare = vi.fn((sql: string) => ({
+		all: async () => ({
+			results: [{ ownerId: 'active-owner' }],
+		}),
+		sql,
+	}))
+	const owners = await listPlatformOwnerInventory({
+		prepare,
+	} as unknown as D1Database)
+
+	expect(owners).toEqual(['active-owner'])
+	expect(prepare).toHaveBeenCalledWith(
+		expect.stringMatching(/FROM users\s+WHERE deleting_at IS NULL/),
+	)
 })
 
 test('watchdog passes on a written summary and fails loudly on an incomplete night', async () => {

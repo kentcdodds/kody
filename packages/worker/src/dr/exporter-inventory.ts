@@ -23,6 +23,7 @@ export async function listPlatformOwnerInventory(
 		.prepare(
 			`SELECT stable_user_id AS ownerId
 			FROM users
+			WHERE deleting_at IS NULL
 			ORDER BY stable_user_id ASC`,
 		)
 		.all<{ ownerId: string }>()
