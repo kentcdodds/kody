@@ -19,6 +19,7 @@ import {
 import { activationMilestoneValues } from '#worker/run-records/package-activation-state.ts'
 import {
 	emptyLegacyParityBucketCounts,
+	legacyParityVerifyMaxBatch,
 	type LegacyParityVerifyResult,
 	type LegacyParityWorkflowCheck,
 } from '#worker/run-records/legacy-parity.ts'
@@ -706,19 +707,22 @@ test('default workflow import page size paginates large inventories without all-
 		0,
 		callOrder.indexOf('importActivationState'),
 	)
-	expect(workflowPhase.length).toBe(calls.importWorkflowProjections.length * 2)
-	for (
-		let index = 0;
-		index < calls.importWorkflowProjections.length;
-		index += 1
-	) {
-		expect(workflowPhase[index * 2]).toBe('importWorkflowProjections')
-		expect(workflowPhase[index * 2 + 1]).toBe('verifyLegacyParity')
+	let importSteps = 0
+	let verifySteps = 0
+	for (const step of workflowPhase) {
+		if (step === 'importWorkflowProjections') {
+			importSteps += 1
+		} else {
+			expect(step).toBe('verifyLegacyParity')
+			verifySteps += 1
+		}
 	}
+	expect(importSteps).toBe(calls.importWorkflowProjections.length)
+	expect(verifySteps).toBeGreaterThan(importSteps)
 	expect(
 		calls.verifyLegacyParity
 			.filter((call) => call.workflowCount > 0)
-			.every((call) => call.workflowCount <= pageSize),
+			.every((call) => call.workflowCount <= legacyParityVerifyMaxBatch),
 	).toBe(true)
 	assertContentFree(result)
 })

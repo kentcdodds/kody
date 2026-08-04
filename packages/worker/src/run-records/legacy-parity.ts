@@ -14,9 +14,10 @@ import {
 
 /**
  * Hard cap for each input array on {@link verifyLegacyParity}. Oversized
- * batches fail closed rather than silently slicing.
+ * batches fail closed rather than silently slicing. Kept at 100 for the RunLog
+ * DO SQL binding budget (each bucket may emit an IN (?, …) query).
  */
-export const legacyParityVerifyMaxBatch = 500
+export const legacyParityVerifyMaxBatch = 100
 
 export type LegacyParityWorkflowCheck = {
 	id: string

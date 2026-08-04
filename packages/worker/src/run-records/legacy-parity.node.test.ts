@@ -95,8 +95,10 @@ test('legacyParitySqlInPlaceholders stays within the hard batch bound', () => {
 	expect(
 		legacyParitySqlInPlaceholders(legacyParityVerifyMaxBatch).split(', '),
 	).toHaveLength(legacyParityVerifyMaxBatch)
-	expect(() => legacyParitySqlInPlaceholders(0)).toThrow(/1\.\.500/)
+	expect(() => legacyParitySqlInPlaceholders(0)).toThrow(
+		new RegExp(`1\\.\\.${legacyParityVerifyMaxBatch}`),
+	)
 	expect(() =>
 		legacyParitySqlInPlaceholders(legacyParityVerifyMaxBatch + 1),
-	).toThrow(/1\.\.500/)
+	).toThrow(new RegExp(`1\\.\\.${legacyParityVerifyMaxBatch}`))
 })

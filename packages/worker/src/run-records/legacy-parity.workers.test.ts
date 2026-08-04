@@ -240,7 +240,7 @@ test(
 				userId,
 				seeds: oversizedSeeds,
 			}),
-		).rejects.toThrow(/at most 500/)
+		).rejects.toThrow(new RegExp(`at most ${jobRunObservabilitySeedMaxBatch}`))
 
 		const oversizedJobIds = Array.from(
 			{ length: legacyParityVerifyMaxBatch + 1 },
@@ -252,7 +252,7 @@ test(
 				userId,
 				jobIds: oversizedJobIds,
 			}),
-		).rejects.toThrow(/at most 500/)
+		).rejects.toThrow(new RegExp(`at most ${legacyParityVerifyMaxBatch}`))
 
 		const denyListTargets = [
 			secretWorkflowName,
@@ -534,6 +534,56 @@ test('verifyLegacyParity fails closed on malformed workflow minimumUpdatedAt thr
 		underCount: 4,
 	})
 	expect(report.parity).toBe(false)
+})
+
+test('verifyLegacyParity verifies a full workflow batch and rejects one over the cap', async () => {
+	const userId = uniqueUserId('wf-max-batch')
+	const workflowIds = Array.from(
+		{ length: legacyParityVerifyMaxBatch },
+		(_, index) => `wf-max-${String(index).padStart(3, '0')}`,
+	)
+
+	await importWorkflowProjections({
+		env,
+		userId,
+		projections: workflowIds.map((id, index) => ({
+			id,
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'batch',
+			idempotencyKey: `key-${index}`,
+			runAt: '2026-07-31T20:00:00.000Z',
+			status: 'complete',
+			createdAt: '2026-07-31T20:00:00.000Z',
+			updatedAt: '2026-07-31T20:00:05.000Z',
+			completedAt: '2026-07-31T20:00:05.000Z',
+			lastError: null,
+		})),
+	})
+
+	const parity = await verifyLegacyParity({
+		env,
+		userId,
+		workflows: workflowIds,
+	})
+	expect(parity.workflows).toEqual({
+		matched: legacyParityVerifyMaxBatch,
+		missing: 0,
+		underCount: 0,
+	})
+	expect(parity.parity).toBe(true)
+
+	const oversizedWorkflowIds = Array.from(
+		{ length: legacyParityVerifyMaxBatch + 1 },
+		(_, index) => `wf-over-${index}`,
+	)
+	await expect(
+		verifyLegacyParity({
+			env,
+			userId,
+			workflows: oversizedWorkflowIds,
+		}),
+	).rejects.toThrow(new RegExp(`at most ${legacyParityVerifyMaxBatch}`))
 })
 
 test('upsertWorkflowProjection rows remain visible to importWorkflowProjections batch seeding', async () => {

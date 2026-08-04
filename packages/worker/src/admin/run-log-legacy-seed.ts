@@ -42,7 +42,9 @@ export const adminRunLogLegacySeedDefaultUserLimit = 1
 /**
  * Default workflow_runs D1 page size and per-import RPC batch for admin sweeps.
  * Kept well below the RunLog DO hard cap so large inventories paginate through
- * multiple import+verify rounds instead of one oversized RPC.
+ * multiple import+verify rounds instead of one oversized RPC. Verify chunks
+ * separately at {@link legacyParityVerifyMaxBatch} because parity SQL IN lists
+ * share the DO binding budget.
  */
 export const adminRunLogLegacySeedDefaultWorkflowImportPageSize = 250
 
@@ -111,7 +113,7 @@ export type AdminRunLogLegacySeedBatchSizes = {
 	workflowImport: number
 	/** Max job seeds per D1 page / seed RPC (default 500). */
 	jobSeed: number
-	/** Max entries per verifyLegacyParity array (default 500). */
+	/** Max entries per verifyLegacyParity array (default 100). */
 	verify: number
 	/**
 	 * Max activation package rows in the one-shot snapshot (default
