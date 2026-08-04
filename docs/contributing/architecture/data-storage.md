@@ -207,13 +207,17 @@ Durable Object export behavior:
   migration surface for Durable Object storage.
 - `JobManager` exposes scheduler alarm/debug state through an export RPC.
 - `RunLog` exports per-user execution history (runs + log lines), the keyed
-  package-invocation idempotency ledger, and dedicated unpruned RunLog state
-  (workflow projections, job-run observability, package run successes,
-  activation milestones) through the account-export `run_records` section
-  (`exportRuns` RPC; one cursor pages runs first, then ledger rows, then each
-  dedicated phase via prefixed cursors). Run history self-prunes inside the DO
-  (~30 days / 2,000 runs; ledger terminal rows 90 days); dedicated tables are
-  never pruned by retention. See [Run records](./run-records.md).
+  package-invocation idempotency ledger, and dedicated RunLog state (workflow
+  projections, job-run observability, package run successes, activation
+  milestones) through the account-export `run_records` section (`exportRuns`
+  RPC; one cursor pages runs first, then ledger rows, then each dedicated phase
+  via prefixed cursors). Run history self-prunes inside the DO (~30 days / 2,000
+  runs; ledger terminal rows 90 days). Terminal workflow projections age-prune
+  after 90 days inside the DO; job/activation dedicated tables are never pruned
+  by retention. Quiescent D1 projection tables (`workflow_runs`,
+  `user_package_run_successes`, `user_activation_milestones`) remain in the D1
+  export/deletion inventory until migration `0137`. See
+  [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
   The same RPC may return additive shadow fields on the first page only
@@ -314,10 +318,21 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   jobs are cleaned by the hourly `job_retention` sweeper; package-owned and
   preserved jobs are not. `expires_at` stops scheduling only — it does not
   delete rows and is independent of `preserved`. D1 keeps schedule fields
-  (`next_run_at`, `schedule_json`, …) and `last_run_at` for the retention
-  sweeper only; terminal run outcomes and counters for observability live in the
-  per-user `RunLog` `job_run_observability` table (see
-  [Run records](./run-records.md)). Execution history rows live in the same DO.
+  (`next_run_at`, `schedule_json`, …) and `last_run_at` / `last_run_status` as
+  retention anchors only; terminal run error, duration, and counters for
+  observability live in the per-user `RunLog` `job_run_observability` table (see
+  [Run records](./run-records.md)). Legacy observability columns on the D1 row
+  are quiescent — runtime finalization does not write them. Execution history
+  rows live in the same DO.
+- `workflow_runs`, `user_package_run_successes`, and
+  `user_activation_milestones`: **quiescent D1 projection tables** retained in
+  schema until migration `0137` (destructive follow-up deploy). No runtime path
+  reads or writes them after the RunLog authority application deploy; account
+  deletion, export, and the hourly D1 retention lane for `workflow_runs` still
+  cover their rows until that migration drops the tables. Authoritative
+  workflow, activation, and package-success state lives in RunLog dedicated
+  tables (see
+  [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing)).
 - `package_service_states` (`0095-package-service-states.sql`): per-service
   liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
   account export/deletion inventory, and parity. Upserted and heartbeaten (1h)
@@ -395,16 +410,20 @@ App access pattern:
 
 The role-gated admin insights page reads its 28-day email volume and outbound
 delivery-outcome charts from the `EMAIL_EVENTS` Analytics Engine dataset.
-Charged sends and receives write one event after entitlement consumption;
-persisted `cloudflare-email` provider outcomes write one delivery event. The
-layout is `index1 = userId`, `blob1 = event type`, `blob2 = delivery outcome`,
-`blob3 = source timestamp`, and `double1 = 1`. Admin queries return only
-platform-wide day/outcome counts and weight sampled rows by `_sample_interval`.
-When Analytics Engine SQL is unreachable, these two charts zero-fill while the
-rest of the page renders. Local development cannot query Wrangler's emulated
-Analytics Engine SQL API: both email quota and delivery-outcome aggregates
-degrade to empty (with an explicit warning) rather than reading the frozen
-shared USER graph.
+Workflow status totals and activation funnel/latency on the same page come from
+**bounded, content-free per-user RunLog point reads** (see
+[Run records — Admin insights RunLog reads](./run-records.md#admin-insights-runlog-reads)),
+not from D1 projection tables. The loader exposes `runLogCompleteness` when that
+fanout is partial. Charged sends and receives write one event after entitlement
+consumption; persisted `cloudflare-email` provider outcomes write one delivery
+event. The layout is `index1 = userId`, `blob1 = event type`,
+`blob2 = delivery outcome`, `blob3 = source timestamp`, and `double1 = 1`. Admin
+queries return only platform-wide day/outcome counts and weight sampled rows by
+`_sample_interval`. When Analytics Engine SQL is unreachable, these two charts
+zero-fill while the rest of the page renders. Local development cannot query
+Wrangler's emulated Analytics Engine SQL API: both email quota and
+delivery-outcome aggregates degrade to empty (with an explicit warning) rather
+than reading the frozen shared USER graph.
 
 Historical Mailbox expand-phase mirror/parity telemetry is retired. No emitters
 or operation registry remain, and no live or scheduled Step 5 path writes those
@@ -952,8 +971,9 @@ via `durableObjectNameFromParts`); domain helpers such as
 - `RunLog` — `runLogDurableObjectName(userId)` → `idFromName(userId)`. One
   execution-history DO per user; there is no `user_id` column inside it because
   the DO identity is the user. Hosts pruned run history, the invocation ledger,
-  and dedicated unpruned state (workflow projections, job-run observability,
-  package activation counters/milestones). See [Run records](./run-records.md).
+  and dedicated state (workflow projections with 90-day terminal retention,
+  job-run observability, package activation counters/milestones). See
+  [Run records](./run-records.md).
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
   plus optional schema-v4 D1 storage-byte shadow and schema-v5 package-service
@@ -1476,9 +1496,13 @@ Current retention policies:
 - `mcp_memory_conversation_suppressions`: keep active suppressions and prune
   expired rows only after they have not been seen for 90 days. The existing
   request-time memory prune may remove expired rows sooner.
-- `workflow_runs`: keep terminal projections (`complete`, `errored`,
-  `terminated`) for 90 days based on `completed_at` / `updated_at` /
-  `created_at`. Non-terminal workflow rows are never pruned by retention.
+- `workflow_runs` (D1, quiescent pending migration `0137`): the hourly retention
+  lane still prunes terminal rows (`complete`, `errored`, `terminated`) after 90
+  days based on `completed_at` / `updated_at` / `created_at` until the
+  destructive follow-up deploy drops the table. Non-terminal rows are never
+  pruned. **Authoritative** terminal workflow history and entitlement slots live
+  in RunLog `workflow_projections`, which applies the same 90-day terminal
+  retention inside the DO (see [Run records](./run-records.md)).
 - `published_bundle_artifacts`: delete D1 rows and their `BUNDLE_ARTIFACTS_KV`
   blobs only when the row is older than 30 days, its `published_commit` is no
   longer current for any matching `entity_sources` row, and there is no active
