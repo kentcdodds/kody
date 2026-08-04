@@ -1013,7 +1013,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return readyState(row.count, row.revision)
 	}
 
-	/** Cold seed from the retained D1 mirror when authoritative state is absent. */
+	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	async initializeStorageBytes(input: {
 		bytes: number
 		updatedAt: string
@@ -1938,7 +1938,7 @@ export type UserMeterRpc = {
 		day: string
 		updatedAt: string
 	}) => Promise<UserMeterRefundResult>
-	/** Cold seed from the retained D1 mirror when authoritative state is absent. */
+	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	initializeStorageBytes: (input: {
 		bytes: number
 		updatedAt: string

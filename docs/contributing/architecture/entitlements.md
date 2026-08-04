@@ -124,15 +124,12 @@ per-user `UserMeter` Durable Object** (`USER_METER` binding). Code lives in
 storage layout and naming are documented in [Data storage](./data-storage.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
-UserMeter** (Worker #1136 passes `USER_METER` on all email inbound/outbound
-storage reservations; production evidence 2026-08-01).
-`assertWithinStorageBytesEntitlement` uses atomic DO `reserveStorageBytes` for
-all callers. The retired `users.d1_storage_bytes` mirror columns were dropped by
-migration `0139`. Cold bootstrap zero-initializes the DO singleton (matching the
-daily counter cold path); the bounded `d1_storage_reconciliation` lane
-recomputes physical D1 payload bytes and corrects drift via revision-guarded
-CAS, sweeping users by `stable_user_id` keyset from the platform-owned
-`d1_storage_reconcile_cursor` row.
+UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
+`reserveStorageBytes` for all callers. Cold bootstrap zero-initializes the DO
+singleton (matching the daily counter cold path); the bounded
+`d1_storage_reconciliation` lane recomputes physical D1 payload bytes and
+corrects drift via revision-guarded CAS, sweeping users by `stable_user_id`
+keyset from the platform-owned `d1_storage_reconcile_cursor` row.
 
 **Package service liveness:** UserMeter is the **sole running-count source** for
 `package_services` enforcement and `service_start`. D1 `package_service_states`
@@ -143,8 +140,7 @@ liveness count exists. See
 **Account-deletion write fencing:** D1 `users.deleting_at` remains the permanent
 point gate. All callers (including email paths) supply `env`; UserMeter is
 authoritative for all lease acquire/held/release/count operations. D1
-`account_write_leases` was dropped by migration `0141`;
-`account_write_lease_repairs` remains the repair audit log. See
+`account_write_lease_repairs` is the repair audit log. See
 [Account-deletion write fencing](#account-deletion-write-fencing).
 
 StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
@@ -190,8 +186,7 @@ Cross-UTC-day retries use the original claim's resource/day.
 ### D1 payload storage bytes — UserMeter authority
 
 **Authority:** the UserMeter `storage_bytes_state` singleton is the sole
-enforcement and usage counter. Migration `0139` dropped the retired
-`users.d1_storage_bytes` mirror columns; the reconcile lane walks users by
+enforcement and usage counter. The reconcile lane walks users by
 `stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
 singleton (advanced once per processed page, wrapping at the tail).
 
@@ -253,17 +248,15 @@ object state.
 ### Account-deletion write fencing
 
 UserMeter schema **v8** stores `account_write_leases` with `token`, `holder`,
-`acquired_at`, and `pending_repair_id`. The v8 upgrade rebuilds warm v7 tables
-without the unreferenced `authority` column and preserves active leases.
+`acquired_at`, and `pending_repair_id`.
 
 **Authority:** D1 `users.deleting_at` remains the **permanent point gate** (auth
 projection / purge failures fail closed). All callers supply `env`; UserMeter is
 authoritative for lease acquire / held / release / count via `acquireWriteLease`
 / `assertWriteLeaseHeld` / `releaseWriteLease` / `countActiveWriteLeases`.
-Missing `USER_METER` binding **fails closed**. D1 `account_write_leases` was
-dropped by migration `0141`; D1 `account_write_lease_repairs` remains the audit
-log for repairs. ALS nested-lease reuse propagates per `stableUserId` across the
-async call chain.
+Missing `USER_METER` binding **fails closed**. D1 `account_write_lease_repairs`
+is the audit log for repairs. ALS nested-lease reuse propagates per
+`stableUserId` across the async call chain.
 
 **`markAccountDeleting`:** `COALESCE`s D1 `deleting_at` (idempotent), then calls
 `markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO
@@ -288,10 +281,9 @@ then surface `AccountWriteLeaseLostError`.
 bytes, and package-service running counts are authoritative in UserMeter. See
 the storage, package-service, and write-fencing sections above.
 
-**Daily-counter mirror (retired):** live schema has no
-`entitlement_daily_counters` table (Workers `#1133` / `#1134`, then migration
-`0126-drop-entitlement-daily-counters.sql`). Admin parity reports meter-only
-daily counts; Analytics Engine remains the reporting store.
+**Daily-counter authority:** UserMeter is the only daily-counter store. Admin
+parity reports meter-only daily counts; Analytics Engine remains the reporting
+store.
 
 ### Admin UserMeter parity gates (`admin_user_meter_parity`)
 
@@ -512,9 +504,8 @@ Rules:
   are authoritative in per-user RunLog `workflow_projections`: create reserves
   atomically via `reserveWorkflowProjectionSlot`, and usage readers call
   `countActiveWorkflowProjections` through
-  `readCurrentEntitlementResourceUsage`. Legacy D1 `workflow_runs` was retired
-  by migration `0137`. See
-  [Run records — RunLog authority and deploy sequencing](./run-records.md#runlog-authority-and-deploy-sequencing).
+  `readCurrentEntitlementResourceUsage`. D1 has no `workflow_runs` table. See
+  [Run records](./run-records.md).
 - **Rate-style limits** (email sends/receives per day, execute calls per day,
   outbound fetches per day) are **authoritative in the per-user UserMeter
   Durable Object** (UTC day keys). Call `consumeDailyEntitlement` on every
@@ -544,21 +535,20 @@ Rules:
   passes the candidate size via `getCurrent` with `requested: 0`. There is no
   built-in counter for these.
 - **Storage-byte limits** (`storage_bytes`) split into two quota components:
-  1. **D1 payload bytes (authoritative in UserMeter after flip):** user-owned D1
-     rows with durable payloads (`email_messages.raw_size` plus extracted
-     message bodies/metadata, externally stored attachments, values, encrypted
-     secrets, memories, saved-package projections, jobs, repo/session metadata,
-     package invocation results, and published artifact metadata). Run records
-     in the per-user `RunLog` Durable Object are intentionally **excluded** —
-     they are observability history, not user content. Write chokepoints
-     atomically reserve positive byte deltas via
-     `assertWithinStorageBytesEntitlement` against the UserMeter DO (every
-     caller, including email, after Worker #1136). Cold DO singletons
-     zero-initialize (INSERT OR IGNORE, concurrent-safe) before retrying the
-     reserve. The bounded `d1_storage_reconciliation` lane recomputes the
-     physical cross-surface sum via `calculateUserD1StorageBytes` and applies it
-     to UserMeter via a revision-guarded CAS (never clobbers a live
-     reservation); no byte values are written back to D1 — see
+  1. **D1 payload bytes (authoritative in UserMeter):** user-owned D1 rows with
+     durable payloads (`email_messages.raw_size` plus extracted message
+     bodies/metadata, externally stored attachments, values, encrypted secrets,
+     memories, saved-package projections, jobs, repo/session metadata, package
+     invocation results, and published artifact metadata). Run records in the
+     per-user `RunLog` Durable Object are intentionally **excluded** — they are
+     observability history, not user content. Write chokepoints atomically
+     reserve positive byte deltas via `assertWithinStorageBytesEntitlement`
+     against the UserMeter DO (every caller, including email). Cold DO
+     singletons zero-initialize (INSERT OR IGNORE, concurrent-safe) before
+     retrying the reserve. The bounded `d1_storage_reconciliation` lane
+     recomputes the physical cross-surface sum via `calculateUserD1StorageBytes`
+     and applies it to UserMeter via a revision-guarded CAS (never clobbers a
+     live reservation); no byte values are written back to D1 — see
      [UserMeter](#usermeter).
 
   2. **StorageRunner bucket estimates (separate):** each bucket exposes
@@ -716,18 +706,18 @@ inserting so Stripe can retry. Rows older than 30 days are pruned by retention.
 
 ### Activity-driven backup
 
-The global hourly customer scan is retired. Checkout completion and
-subscription/invoice webhooks refresh immediately and also arm the owning user's
-one-shot `StripePlanRefresh` Durable Object alarm for one hour later. That
-independent retry closes over transient Stripe failures without repeatedly
-enumerating inactive users. `/account/billing` arms the same backstop and still
-refreshes on every view so non-persisted `cancel_at` / `subscriptionStatus` stay
-current. If checkout cannot arm its backstop, a failed immediate refresh remains
-an error so the caller or Stripe webhook retries instead of acknowledging an
-unrecoverable stale projection. Migration `0066-stripe-billing.sql` adds
-`stripe_customer_id` (unique partial index), `stripe_plan`, and
-`stripe_plan_refreshed_at`; Wrangler migration `v23` adds the alarm DO class
-without moving canonical billing data out of D1.
+Billing refresh is activity-driven; there is no global hourly customer scan.
+Checkout completion and subscription/invoice webhooks refresh immediately and
+also arm the owning user's one-shot `StripePlanRefresh` Durable Object alarm for
+one hour later. That independent retry closes over transient Stripe failures
+without repeatedly enumerating inactive users. `/account/billing` arms the same
+backstop and still refreshes on every view so non-persisted `cancel_at` /
+`subscriptionStatus` stay current. If checkout cannot arm its backstop, a failed
+immediate refresh remains an error so the caller or Stripe webhook retries
+instead of acknowledging an unrecoverable stale projection. Migration
+`0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
+`stripe_plan`, and `stripe_plan_refreshed_at`; Wrangler migration `v23` adds the
+alarm DO class without moving canonical billing data out of D1.
 
 Published prices: Free $0, Pro $5/mo. Env vars and deploy wiring are documented
 in [`../environment-variables.md`](../environment-variables.md).
@@ -747,11 +737,3 @@ in [`../environment-variables.md`](../environment-variables.md).
   `0066-stripe-billing.sql`; owned by `packages/worker/src/billing/`, read by
   `getUserPlan` via `resolveEffectivePlan`. `stripe_plan` stays nullable because
   it is Stripe-derived; `max` is manual-only.
-- `entitlement_daily_counters` — **retired**. Created by migration
-  `0048-user-plans-and-entitlement-counters.sql`, indexed by
-  `0055-retention-indexes.sql`, and dropped by
-  `0126-drop-entitlement-daily-counters.sql` after stages 1/2 stopped mirror
-  writes and detached runtime inventory. Final live schema has no table or day
-  index; `admin_user_meter_parity` reports meter-only daily counts. Daily
-  counters are authoritative in the per-user `UserMeter` DO; account export uses
-  UserMeter RPCs.

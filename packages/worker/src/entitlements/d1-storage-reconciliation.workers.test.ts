@@ -98,7 +98,7 @@ test('D1 storage reconciliation is UserMeter-authoritative and advances the keys
 		outcome: 'needs_bootstrap',
 	})
 
-	// Reconcile first user: UserMeter should be set authoritative, D1 mirrored.
+	// Reconcile first user into authoritative UserMeter state.
 	await expect(
 		reconcileD1StorageBytes({
 			db: env.APP_DB,
