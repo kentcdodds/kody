@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import {
+	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
 	ensureR2Bucket,
@@ -37,6 +38,8 @@ type ResolvedProductionBindings = {
 	emailBlobsBucketName: string
 	emailDeliveryQueueName: string
 	emailDeliveryDeadLetterQueueName: string
+	artifactsRepoEventsQueueName: string
+	artifactsRepoEventsDeadLetterQueueName: string
 	platformFeedbackDispatchQueueName: string
 	platformFeedbackDispatchDeadLetterQueueName: string
 	communityActivityDispatchQueueName: string
@@ -440,7 +443,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -493,6 +496,18 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.emailDeliveryDeadLetterQueueName,
 		dryRun: options.dryRun,
 	})
+	const artifactsRepoEventsQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.artifactsRepoEventsQueueName,
+		dryRun: options.dryRun,
+	})
+	const artifactsRepoEventsDeadLetterQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.artifactsRepoEventsDeadLetterQueueName,
+		dryRun: options.dryRun,
+	})
 	const platformFeedbackDispatchQueue = await ensureCloudflareQueue({
 		accountId: accountId ?? 'dry-run-account',
 		apiToken: apiToken ?? 'dry-run-token',
@@ -539,6 +554,19 @@ async function ensureProductionResources(options: CliOptions) {
 		zoneId: zoneId ?? 'dry-run-zone',
 		dryRun: options.dryRun,
 	})
+	const artifactsEventSubscription = await ensureArtifactsAccountEventSubscription(
+		{
+			accountId: accountId ?? 'dry-run-account',
+			apiToken: apiToken ?? 'dry-run-token',
+			name: truncateWithSuffix(
+				bindings.workerName,
+				'-artifacts-lifecycle-events',
+				63,
+			),
+			queueId: artifactsRepoEventsQueue.id,
+			dryRun: options.dryRun,
+		},
+	)
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
@@ -577,6 +605,12 @@ async function ensureProductionResources(options: CliOptions) {
 		`email_delivery_dead_letter_queue_name=${emailDeliveryDeadLetterQueue.name}`,
 	)
 	console.log(
+		`artifacts_repo_events_queue_name=${artifactsRepoEventsQueue.name}`,
+	)
+	console.log(
+		`artifacts_repo_events_dead_letter_queue_name=${artifactsRepoEventsDeadLetterQueue.name}`,
+	)
+	console.log(
 		`platform_feedback_dispatch_queue_name=${platformFeedbackDispatchQueue.name}`,
 	)
 	console.log(
@@ -593,6 +627,9 @@ async function ensureProductionResources(options: CliOptions) {
 		`scheduled_dispatch_dead_letter_queue_name=${scheduledDispatchDeadLetterQueue.name}`,
 	)
 	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
+	console.log(
+		`artifacts_event_subscription_id=${artifactsEventSubscription.id}`,
+	)
 }
 
 async function main() {

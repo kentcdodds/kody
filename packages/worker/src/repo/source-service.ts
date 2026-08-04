@@ -4,6 +4,7 @@ import {
 	ensureArtifactRepoReady,
 	type ArtifactBootstrapAccess,
 } from './artifacts.ts'
+import { ensureArtifactsRepoPushSubscription } from './artifacts-push-subscriptions.ts'
 import {
 	getEntitySourceByEntity,
 	insertEntitySource,
@@ -49,6 +50,7 @@ function buildEntitySourceRow(input: {
 		source_root: input.sourceRoot ?? '/',
 		last_external_check_at: null,
 		external_check_until: null,
+		artifacts_push_event_subscription_id: null,
 		created_at: now,
 		updated_at: now,
 	}
@@ -96,19 +98,35 @@ export async function ensureEntitySource(input: {
 	})
 	if (existing) {
 		const repoReady = await ensureArtifactRepoReady(input.env, existing.repo_id)
-		if (!repoReady.recreated) return existing
-		await updateEntitySource(input.db, {
-			id: existing.id,
-			userId: existing.user_id,
-			publishedCommit: null,
-			indexedCommit: null,
-		})
-		return {
-			...existing,
-			published_commit: null,
-			indexed_commit: null,
-			bootstrapAccess: repoReady.bootstrapAccess,
+		const source = repoReady.recreated
+			? {
+					...existing,
+					published_commit: null,
+					indexed_commit: null,
+					bootstrapAccess: repoReady.bootstrapAccess,
+				}
+			: existing
+		if (repoReady.recreated) {
+			await updateEntitySource(input.db, {
+				id: existing.id,
+				userId: existing.user_id,
+				publishedCommit: null,
+				indexedCommit: null,
+			})
 		}
+		await ensureArtifactsRepoPushSubscription({
+			env: input.env,
+			userId: existing.user_id,
+			sourceId: existing.id,
+			repoName: existing.repo_id,
+		}).catch((error) => {
+			console.warn('artifacts-push-subscription-ensure-failed', {
+				sourceId: existing.id,
+				repoName: existing.repo_id,
+				error,
+			})
+		})
+		return source
 	}
 	const row = buildEntitySourceRow({
 		id: input.id,
@@ -121,6 +139,18 @@ export async function ensureEntitySource(input: {
 	})
 	const repoReady = await ensureArtifactRepoReady(input.env, row.repo_id)
 	await insertEntitySource(input.db, row)
+	await ensureArtifactsRepoPushSubscription({
+		env: input.env,
+		userId: row.user_id,
+		sourceId: row.id,
+		repoName: row.repo_id,
+	}).catch((error) => {
+		console.warn('artifacts-push-subscription-ensure-failed', {
+			sourceId: row.id,
+			repoName: row.repo_id,
+			error,
+		})
+	})
 	return {
 		...row,
 		bootstrapAccess: repoReady.recreated ? repoReady.bootstrapAccess : null,

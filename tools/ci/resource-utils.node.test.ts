@@ -7,6 +7,7 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 
 import {
 	emailSendingEventTypes,
+	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
 	isWranglerNotFoundOutput,
@@ -409,6 +410,57 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		},
 		events: [...emailSendingEventTypes],
 	})
+})
+
+test('ensureArtifactsAccountEventSubscription creates account-level lifecycle subscription', async () => {
+	consoleError.mockImplementation(() => {})
+	const subscriptionFetch = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: {
+					id: 'artifacts-subscription-1',
+					name: 'kody-artifacts-lifecycle-events',
+				},
+			}),
+		)
+	const subscription = await ensureArtifactsAccountEventSubscription({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-artifacts-lifecycle-events',
+		queueId: 'queue-artifacts',
+		dryRun: false,
+		fetcher: subscriptionFetch,
+	})
+	expect(subscription).toEqual({
+		id: 'artifacts-subscription-1',
+		name: 'kody-artifacts-lifecycle-events',
+	})
+	expect(subscriptionFetch).toHaveBeenNthCalledWith(
+		2,
+		'https://api.cloudflare.com/client/v4/accounts/account-1/event_subscriptions/subscriptions',
+		expect.objectContaining({
+			method: 'POST',
+			body: JSON.stringify({
+				name: 'kody-artifacts-lifecycle-events',
+				enabled: true,
+				source: { type: 'artifacts' },
+				destination: {
+					type: 'queues.queue',
+					queue_id: 'queue-artifacts',
+				},
+				events: ['repo.created', 'repo.deleted'],
+			}),
+		}),
+	)
 })
 
 test('writeGeneratedWranglerConfig rejects invalid environment asset config', async () => {

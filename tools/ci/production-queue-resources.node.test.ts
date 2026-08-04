@@ -29,6 +29,13 @@ function createProductionEnv() {
 					dead_letter_queue: 'kody-email-delivery-dlq',
 				},
 				{
+					queue: 'kody-artifacts-repo-events',
+					max_batch_size: 10,
+					max_batch_timeout: 5,
+					max_retries: 3,
+					dead_letter_queue: 'kody-artifacts-repo-events-dlq',
+				},
+				{
 					queue: 'kody-platform-feedback-dispatch',
 					max_batch_size: 10,
 					max_batch_timeout: 5,
@@ -72,6 +79,8 @@ test('production queue config requires all consumers and consistent producers', 
 	).toEqual({
 		emailDeliveryQueueName: 'kody-email-delivery',
 		emailDeliveryDeadLetterQueueName: 'kody-email-delivery-dlq',
+		artifactsRepoEventsQueueName: 'kody-artifacts-repo-events',
+		artifactsRepoEventsDeadLetterQueueName: 'kody-artifacts-repo-events-dlq',
 		platformFeedbackDispatchQueueName: 'kody-platform-feedback-dispatch',
 		platformFeedbackDispatchDeadLetterQueueName:
 			'kody-platform-feedback-dispatch-dlq',
@@ -89,7 +98,7 @@ test('production queue config requires all consumers and consistent producers', 
 			productionEnv: missingFeedbackConsumer,
 			configPath: 'wrangler.jsonc',
 		}),
-	).toThrow('exactly four production Queue consumers')
+	).toThrow('exactly 5 production Queue consumers')
 
 	const mismatchedProducer = createProductionEnv()
 	mismatchedProducer.queues.producers[0] = {

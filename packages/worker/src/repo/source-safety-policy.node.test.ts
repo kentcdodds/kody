@@ -24,6 +24,7 @@ function packageSource(
 		source_root: '/',
 		last_external_check_at: null,
 		external_check_until: null,
+		artifacts_push_event_subscription_id: null,
 		created_at: '2026-06-06T00:00:00.000Z',
 		updated_at: '2026-06-06T00:00:00.000Z',
 		...overrides,

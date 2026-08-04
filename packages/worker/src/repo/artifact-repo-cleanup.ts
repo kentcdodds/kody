@@ -4,6 +4,7 @@ import {
 	hasArtifactsAccess,
 	type ArtifactDeleteRepoResult,
 } from './artifacts.ts'
+import { deleteArtifactsRepoPushSubscription } from './artifacts-push-subscriptions.ts'
 import {
 	getEntitySourceByIdForUser,
 	listEntitySourcesByUser,
@@ -90,6 +91,29 @@ async function deleteReposForEntitySource(input: {
 			`Skipped artifact repo cleanup for source ${input.source.id}: user scope mismatch.`,
 		)
 		return 0
+	}
+	if (input.source.artifacts_push_event_subscription_id) {
+		try {
+			await deleteArtifactsRepoPushSubscription({
+				env: input.env,
+				subscriptionId: input.source.artifacts_push_event_subscription_id,
+				repoName: input.source.repo_id,
+			})
+		} catch (error) {
+			const message = getErrorMessage(error)
+			input.warnings?.push(
+				`Artifacts push event subscription delete failed for ${input.source.repo_id}: ${message}`,
+			)
+			console.warn(
+				JSON.stringify({
+					message: 'artifacts push event subscription delete failed',
+					userId: input.userId,
+					repoName: input.source.repo_id,
+					subscriptionId: input.source.artifacts_push_event_subscription_id,
+					error: message,
+				}),
+			)
+		}
 	}
 	const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
 		userId: input.userId,

@@ -9,6 +9,10 @@ import {
 	platformFeedbackDispatchQueueName,
 } from '../../packages/worker/src/platform-feedback/dispatch-queue-names.ts'
 import {
+	artifactsRepoEventsDeadLetterQueueName,
+	artifactsRepoEventsQueueName,
+} from '../../packages/worker/src/repo/artifacts-event-queue-names.ts'
+import {
 	scheduledDispatchDeadLetterQueueName,
 	scheduledDispatchQueueBinding,
 	scheduledDispatchQueueName,
@@ -19,6 +23,7 @@ const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
 const expectedMaxBatchSize = 10
 const expectedMaxBatchTimeout = 5
 const expectedMaxRetries = 3
+const expectedConsumerCount = 5
 
 function readQueueConsumer(input: {
 	consumers: Array<unknown>
@@ -94,15 +99,21 @@ export function parseProductionQueueResources(input: {
 	}
 	const queueConfig = queues as Record<string, unknown>
 	const consumers = queueConfig.consumers
-	if (!Array.isArray(consumers) || consumers.length !== 4) {
+	if (!Array.isArray(consumers) || consumers.length !== expectedConsumerCount) {
 		throw new Error(
-			`wrangler config "${input.configPath}" must define exactly four production Queue consumers.`,
+			`wrangler config "${input.configPath}" must define exactly ${expectedConsumerCount} production Queue consumers.`,
 		)
 	}
 	const emailDelivery = readQueueConsumer({
 		consumers,
 		queueName: emailDeliveryQueueName,
 		deadLetterQueueName: emailDeliveryDeadLetterQueueName,
+		configPath: input.configPath,
+	})
+	const artifactsRepoEvents = readQueueConsumer({
+		consumers,
+		queueName: artifactsRepoEventsQueueName,
+		deadLetterQueueName: artifactsRepoEventsDeadLetterQueueName,
 		configPath: input.configPath,
 	})
 	const platformFeedbackDispatch = readQueueConsumer({
@@ -153,6 +164,8 @@ export function parseProductionQueueResources(input: {
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,
+		artifactsRepoEventsQueueName: artifactsRepoEvents.queue,
+		artifactsRepoEventsDeadLetterQueueName: artifactsRepoEvents.deadLetterQueue,
 		platformFeedbackDispatchQueueName: platformFeedbackDispatch.queue,
 		platformFeedbackDispatchDeadLetterQueueName:
 			platformFeedbackDispatch.deadLetterQueue,

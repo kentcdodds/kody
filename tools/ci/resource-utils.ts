@@ -58,6 +58,11 @@ export const emailSendingEventTypes = [
 	'message.complained',
 ] as const
 
+export const artifactsAccountEventTypes = [
+	'repo.created',
+	'repo.deleted',
+] as const
+
 export function fail(message: string): never {
 	console.error(message)
 	process.exit(1)
@@ -503,6 +508,95 @@ export async function ensureEmailSendingEventSubscription(input: {
 		)
 	}
 	console.error(`Created Email event subscription: ${payload.result.name}`)
+	return { id: payload.result.id, name: payload.result.name }
+}
+
+export async function ensureArtifactsAccountEventSubscription(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	queueId: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	if (input.dryRun) {
+		console.error(
+			`[dry-run] ensure Artifacts account event subscription: ${input.name}`,
+		)
+		return { id: `dry-run-${input.name}`, name: input.name }
+	}
+	const subscriptions = await listCloudflareEventSubscriptions(input)
+	const existing = subscriptions.find(
+		(subscription) => subscription.name === input.name,
+	)
+	const events = [...artifactsAccountEventTypes]
+	const sourceIsCurrent = existing?.source['type'] === 'artifacts'
+	const isCurrent =
+		existing?.enabled === true &&
+		existing.destination.type === 'queues.queue' &&
+		existing.destination.queue_id === input.queueId &&
+		sourceIsCurrent &&
+		sameStringSet(existing.events, events)
+	if (existing && isCurrent) {
+		console.error(`Artifacts event subscription exists: ${existing.name}`)
+		return { id: existing.id, name: existing.name }
+	}
+	if (existing) {
+		const pathname = `/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`
+		if (sourceIsCurrent) {
+			const payload = await cloudflareApiRequest<CloudflareEventSubscription>({
+				...input,
+				pathname,
+				method: 'PATCH',
+				body: {
+					name: input.name,
+					enabled: true,
+					destination: {
+						type: 'queues.queue',
+						queue_id: input.queueId,
+					},
+					events,
+				},
+			})
+			console.error(`Updated Artifacts event subscription: ${existing.name}`)
+			return {
+				id: payload.result?.id ?? existing.id,
+				name: payload.result?.name ?? existing.name,
+			}
+		}
+		await cloudflareApiRequest<CloudflareEventSubscription>({
+			...input,
+			pathname,
+			method: 'DELETE',
+		})
+		console.error(
+			`Deleted Artifacts event subscription with stale source: ${existing.name}`,
+		)
+	}
+	const payload = await cloudflareApiRequest<CloudflareEventSubscription>({
+		...input,
+		pathname: '/event_subscriptions/subscriptions',
+		method: 'POST',
+		body: {
+			name: input.name,
+			enabled: true,
+			source: {
+				type: 'artifacts',
+			},
+			destination: {
+				type: 'queues.queue',
+				queue_id: input.queueId,
+			},
+			events,
+		},
+	})
+	if (!payload.result?.id || !payload.result.name) {
+		throw new Error(
+			`Cloudflare created Artifacts event subscription without an id: ${input.name}`,
+		)
+	}
+	console.error(`Created Artifacts event subscription: ${payload.result.name}`)
 	return { id: payload.result.id, name: payload.result.name }
 }
 

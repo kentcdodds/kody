@@ -26,6 +26,10 @@ function mapEntitySourceRow(row: Record<string, unknown>): EntitySourceRow {
 			row['external_check_until'] == null
 				? null
 				: String(row['external_check_until']),
+		artifacts_push_event_subscription_id:
+			row['artifacts_push_event_subscription_id'] == null
+				? null
+				: String(row['artifacts_push_event_subscription_id']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	})
@@ -40,8 +44,8 @@ export async function insertEntitySource(
 			`INSERT INTO entity_sources (
 				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit,
 				manifest_path, source_root, last_external_check_at, external_check_until,
-				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				artifacts_push_event_subscription_id, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -55,6 +59,7 @@ export async function insertEntitySource(
 			row.source_root,
 			row.last_external_check_at,
 			row.external_check_until,
+			row.artifacts_push_event_subscription_id,
 			row.created_at,
 			row.updated_at,
 		)
@@ -105,6 +110,17 @@ export async function getEntitySourceByEntity(
 	return result ? mapEntitySourceRow(result) : null
 }
 
+export async function getEntitySourceByRepoId(
+	db: D1Database,
+	repoId: string,
+): Promise<EntitySourceRow | null> {
+	const result = await db
+		.prepare(`SELECT * FROM entity_sources WHERE repo_id = ? LIMIT 1`)
+		.bind(repoId)
+		.first<Record<string, unknown>>()
+	return result ? mapEntitySourceRow(result) : null
+}
+
 export async function listEntitySourcesByUser(
 	db: D1Database,
 	userId: string,
@@ -132,6 +148,7 @@ export async function updateEntitySource(
 		sourceRoot?: string
 		lastExternalCheckAt?: string | null
 		externalCheckUntil?: string | null
+		artifactsPushEventSubscriptionId?: string | null
 		entityKind?: EntityKind
 		entityId?: string
 	},
@@ -157,6 +174,12 @@ export async function updateEntitySource(
 	}
 	if (input.externalCheckUntil !== undefined) {
 		add('external_check_until', input.externalCheckUntil)
+	}
+	if (input.artifactsPushEventSubscriptionId !== undefined) {
+		add(
+			'artifacts_push_event_subscription_id',
+			input.artifactsPushEventSubscriptionId,
+		)
 	}
 	add('updated_at', new Date().toISOString())
 	const result = await runD1WithRetry(() =>

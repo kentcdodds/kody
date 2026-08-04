@@ -5,6 +5,7 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 const mocks = vi.hoisted(() => ({
 	handleCommunityActivityDispatchQueue: vi.fn(),
 	handleEmailDeliveryQueue: vi.fn(),
+	handleArtifactsRepoEventsQueue: vi.fn(),
 	handlePlatformFeedbackDispatchQueue: vi.fn(),
 	handleScheduledDispatchQueue: vi.fn(),
 }))
@@ -21,6 +22,11 @@ vi.mock('#worker/community/activity-dispatch-queue-names.ts', () => ({
 vi.mock('#worker/email/delivery-queue.ts', () => ({
 	emailDeliveryQueueName: 'kody-email-delivery',
 	handleEmailDeliveryQueue: mocks.handleEmailDeliveryQueue,
+}))
+
+vi.mock('#worker/repo/artifacts-event-queue.ts', () => ({
+	artifactsRepoEventsQueueName: 'kody-artifacts-repo-events',
+	handleArtifactsRepoEventsQueue: mocks.handleArtifactsRepoEventsQueue,
 }))
 
 vi.mock('#worker/platform-feedback/dispatch-queue.ts', () => ({
@@ -48,12 +54,14 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	const env = {} as Env
 	const ctx = {} as ExecutionContext
 	const emailBatch = createBatch('kody-email-delivery')
+	const artifactsBatch = createBatch('kody-artifacts-repo-events')
 	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
 	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
 	const scheduledBatch = createBatch(scheduledDispatchQueueName)
 	const unknownBatch = createBatch('unexpected-queue')
 
 	await handleQueueBatch(emailBatch, env, ctx)
+	await handleQueueBatch(artifactsBatch, env, ctx)
 	await handleQueueBatch(feedbackBatch, env, ctx)
 	await handleQueueBatch(communityActivityBatch, env, ctx)
 	await handleQueueBatch(scheduledBatch, env, ctx)
@@ -62,6 +70,11 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledTimes(1)
 	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledWith(
 		emailBatch,
+		env,
+		ctx,
+	)
+	expect(mocks.handleArtifactsRepoEventsQueue).toHaveBeenCalledWith(
+		artifactsBatch,
 		env,
 		ctx,
 	)
