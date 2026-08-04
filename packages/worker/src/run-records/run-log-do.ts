@@ -60,7 +60,7 @@ const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 8
+const runLogSchemaVersion = 9
 
 /**
  * Cursor namespaces for `exportRuns` phases after the raw run-id phase.
@@ -613,10 +613,6 @@ class RunLogBase extends DurableObject<Env> {
 			ON workflow_projections(idempotency_key, created_at ASC)`,
 		)
 		// Dedicated unpruned per-job last-run outcome + counters. Not runs.
-		// 2026-08-04 rollback compat: fresh CREATE keeps the inert physical
-		// `legacy_seeded` column so a rollback to schema v7 code can still
-		// INSERT/UPDATE it. v8 never reads, writes, or exposes the field.
-		// Remove only via a future table rebuild after the rollback window.
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS job_run_observability (
 				job_id TEXT PRIMARY KEY NOT NULL,
@@ -627,10 +623,12 @@ class RunLogBase extends DurableObject<Env> {
 				run_count INTEGER NOT NULL DEFAULT 0,
 				success_count INTEGER NOT NULL DEFAULT 0,
 				error_count INTEGER NOT NULL DEFAULT 0,
-				updated_at TEXT NOT NULL,
-				legacy_seeded INTEGER NOT NULL DEFAULT 0
+				updated_at TEXT NOT NULL
 			)
 		`)
+		if (installedVersion != null && installedVersion < 9) {
+			this.rebuildJobRunObservabilityForV9()
+		}
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_workflow_projections_binding_idempotency
 			ON workflow_projections(binding_name, idempotency_key, created_at ASC)`,
@@ -653,6 +651,38 @@ class RunLogBase extends DurableObject<Env> {
 			)
 		`)
 		this.setMeta(metaSchemaVersionKey, runLogSchemaVersion)
+	}
+
+	private rebuildJobRunObservabilityForV9() {
+		this.ctx.storage.transactionSync(() => {
+			this.ctx.storage.sql.exec(
+				`CREATE TABLE job_run_observability_v9 (
+					job_id TEXT PRIMARY KEY NOT NULL,
+					last_run_at TEXT,
+					last_run_status TEXT,
+					last_run_error TEXT,
+					last_duration_ms INTEGER,
+					run_count INTEGER NOT NULL DEFAULT 0,
+					success_count INTEGER NOT NULL DEFAULT 0,
+					error_count INTEGER NOT NULL DEFAULT 0,
+					updated_at TEXT NOT NULL
+				)`,
+			)
+			this.ctx.storage.sql.exec(
+				`INSERT INTO job_run_observability_v9 (
+					job_id, last_run_at, last_run_status, last_run_error,
+					last_duration_ms, run_count, success_count, error_count, updated_at
+				)
+				SELECT
+					job_id, last_run_at, last_run_status, last_run_error,
+					last_duration_ms, run_count, success_count, error_count, updated_at
+				FROM job_run_observability`,
+			)
+			this.ctx.storage.sql.exec(`DROP TABLE job_run_observability`)
+			this.ctx.storage.sql.exec(
+				`ALTER TABLE job_run_observability_v9 RENAME TO job_run_observability`,
+			)
+		})
 	}
 
 	private getMeta(key: string): number | null {
@@ -1783,10 +1813,9 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Release a claim whose execution never started (transient artifact
-	 * failure, dual-read fallback hit) so retries are not poisoned. Deletes
-	 * the still-`in_progress` ledger row (fenced on `claimUpdatedAt`) and the
-	 * attempt's still-`running` run row.
+	 * Release a claim whose execution never started so retries are not
+	 * poisoned. Deletes the still-`in_progress` ledger row (fenced on
+	 * `claimUpdatedAt`) and the attempt's still-`running` run row.
 	 */
 	async releasePackageInvocation(input: {
 		invocationId: string
@@ -2132,9 +2161,9 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Content-free admin-insights point-read. Workflow status counts across all
-	 * dedicated projections plus activation milestone timestamps/ids needed for
-	 * funnel counts and latency — never names, errors, logs, or user content.
+	 * Content-free admin-insights point-read. Workflow statuses, job outcome
+	 * counts, and activation milestone timestamps/ids needed for aggregate
+	 * reporting — never names, errors, logs, or user content.
 	 */
 	async getAdminInsightsSnapshot(): Promise<RunLogAdminInsightsSnapshot> {
 		const workflowRows = this.ctx.storage.sql
@@ -2152,6 +2181,14 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			.toArray()
 			.map(mapActivationMilestoneRow)
+		const jobRunCounts = this.ctx.storage.sql
+			.exec<{ error: number; success: number }>(
+				`SELECT
+					COALESCE(SUM(success_count), 0) AS success,
+					COALESCE(SUM(error_count), 0) AS error
+				FROM job_run_observability`,
+			)
+			.one()
 		return {
 			workflowStatusCounts: workflowRows.map((row) => ({
 				status: String(row.status),
@@ -2162,6 +2199,10 @@ class RunLogBase extends DurableObject<Env> {
 				reachedAt: row.reachedAt,
 				packageId: row.packageId,
 			})),
+			jobRunCounts: {
+				success: Number(jobRunCounts.success) || 0,
+				error: Number(jobRunCounts.error) || 0,
+			},
 		}
 	}
 

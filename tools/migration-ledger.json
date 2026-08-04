@@ -577,6 +577,10 @@
 			"sha256": "eca135651ff1e7b30c3b611771b69051f8cff46868eb98ce59fc91e0e71a807e"
 		},
 		{
+			"filename": "0142-drop-jobs-observability-columns.sql",
+			"sha256": "abb01c15071ad39c97a4c9c22ee0d7bcb68be62839593ea0e682c4f153540258"
+		},
+		{
 			"filename": "0143-drop-email-postdrop-residue.sql",
 			"sha256": "126f57c6fcab61f8db28113026b2d2b60d9e80671876cad89600df1bba92f508"
 		}

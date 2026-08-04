@@ -367,7 +367,7 @@ read `RunLog`.
 Run records are **excluded from the `storage_bytes` entitlement**. They are
 observability history, not user content.
 
-## RunLog authority and deploy sequencing
+## RunLog authority
 
 The per-user `RunLog` DO is the **sole runtime authority** for:
 
@@ -378,34 +378,16 @@ The per-user `RunLog` DO is the **sole runtime authority** for:
   `activation_milestones`).
 
 Runtime paths read and write those tables only inside `RunLog`. Workflow
-lifecycle code does not touch D1 `workflow_runs`. Job finalization and
-activation increments do not lazy-seed dedicated RunLog rows from D1 on read or
-finish. The completed admin seed/parity MCP capability is absent from the admin
-domain.
+lifecycle code does not use D1 workflow projections. Job finalization and
+activation increments do not seed dedicated RunLog rows from D1. D1 `jobs`
+retains schedule metadata and retention anchors, but job outcome aggregates come
+from `job_run_observability`.
 
-**Application deploy (code-only, PR #1205):** ships RunLog-only workflow,
-job-observability, and activation behavior; bounded content-free RunLog point
-reads for admin workflow/activation insights; and schema-v8
-`job_run_observability.legacy_seeded` kept inert for rollback compatibility.
-
-**Production parity gate (2026-08-04 02:45–02:46 UTC):** 41/41 non-deleting
-users matched across nine keyset pages with zero failed, missing, or undercount
-rows before the application deploy.
-
-**Post-cutover production smoke:** `workflow_run_list` succeeded after the
-application deploy.
-
-**Destructive follow-up deploy (separate PR, migration `0137`):** drops the
-retired D1 projection tables `workflow_runs`, `user_package_run_successes`, and
-`user_activation_milestones`; removes them from account deletion/export
-inventory and retires the hourly D1 `workflow_runs` retention lane.
-Pre-migration D1 Time Travel bookmark for database
-`8c1014d1-6b41-4695-a0a2-159071f0f919`:
+The pre-drop D1 Time Travel bookmark for database
+`8c1014d1-6b41-4695-a0a2-159071f0f919` is:
 `0000116d-000000d2-000050bd-c7ecd5892a189df7cda145af746bc9c9`. Restore from that
 bookmark (or a fresher snapshot taken immediately before apply) if the
 destructive migration must be rolled back — do not reintroduce dual-write paths.
-Application cutover evidence:
-https://github.com/kentcdodds/kody/actions/runs/30876391371
 
 ## Dedicated RunLog state (outside run-history caps)
 
@@ -429,17 +411,16 @@ cursors remain valid.
 
 ### Admin insights RunLog reads
 
-The role-gated `/admin/insights` dashboard loads workflow status totals and
-activation funnel/latency from **bounded, content-free per-user RunLog point
-reads** (`getAdminInsightsSnapshot`; concurrency capped by
-`adminInsightsRunLogConcurrency`). Each snapshot returns aggregate workflow
-status counts and activation milestone timestamps/ids only — never workflow
-names, errors, logs, or other user-authored content. The page exposes
-`runLogCompleteness` (`usersAttempted`, `usersLoaded`, `complete`) so partial
-fanout degrades run-derived charts with an explicit warning instead of failing
-the whole dashboard. Legacy D1 `workflow_runs`, `user_activation_milestones`,
-and `user_package_run_successes` were retired by migration `0137` and are not
-queried on that path.
+The role-gated `/admin/insights` dashboard loads workflow status totals and job
+success/error totals, plus activation funnel/latency, from **bounded,
+content-free per-user RunLog point reads** (`getAdminInsightsSnapshot`;
+concurrency capped by `adminInsightsRunLogConcurrency`). Each snapshot returns
+aggregate workflow statuses, job outcome counts, and activation milestone
+timestamps/ids only — never workflow or job names, errors, logs, or other
+user-authored content. The page exposes `runLogCompleteness` (`usersAttempted`,
+`usersLoaded`, `complete`) so partial fanout degrades run-derived charts with an
+explicit warning instead of failing the whole dashboard. D1 supplies only job
+schedule totals (`totalJobs` and `enabledJobs`) on that path.
 
 ## Related
 

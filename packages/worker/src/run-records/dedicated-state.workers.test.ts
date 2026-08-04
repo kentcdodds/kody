@@ -1203,8 +1203,8 @@ function jobRunObservabilityColumnNames(state: DurableObjectState) {
 		.map((row) => String(row.name))
 }
 
-test('fresh schema v8 creates job_run_observability with inert legacy_seeded for rollback', async () => {
-	const userId = uniqueUserId('schema-v8-fresh')
+test('fresh schema v9 creates the final job_run_observability contract', async () => {
+	const userId = uniqueUserId('schema-v9-fresh')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
@@ -1213,7 +1213,7 @@ test('fresh schema v8 creates job_run_observability with inert legacy_seeded for
 				`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(8)
+		expect(Number(version?.value)).toBe(9)
 
 		expect(jobRunObservabilityColumnNames(state)).toEqual([
 			'job_id',
@@ -1225,134 +1225,139 @@ test('fresh schema v8 creates job_run_observability with inert legacy_seeded for
 			'success_count',
 			'error_count',
 			'updated_at',
-			'legacy_seeded',
 		])
-
-		// Simulated v7-style INSERT including legacy_seeded must succeed on
-		// fresh v8 storage so a rollback deploy can still write the column.
-		state.storage.sql.exec(
-			`INSERT INTO job_run_observability (
-				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
-				run_count, success_count, error_count, updated_at, legacy_seeded
-			) VALUES ('job-v7-insert', '2026-08-01T00:00:00.000Z', 'success', NULL, 10,
-				3, 2, 1, '2026-08-01T00:00:00.000Z', 1)`,
-		)
-		const seeded = state.storage.sql
-			.exec<{ legacy_seeded: number }>(
-				`SELECT legacy_seeded FROM job_run_observability
-				WHERE job_id = 'job-v7-insert' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(seeded?.legacy_seeded)).toBe(1)
 	})
 
 	const updated = await upsertJobRunObservability({
 		env,
 		userId,
 		outcome: {
-			jobId: 'job-v7-insert',
+			jobId: 'job-v9',
 			status: 'error',
 			ranAt: '2026-08-01T01:00:00.000Z',
-			error: 'post-v8',
+			error: 'fresh-v9',
 		},
 	})
 	expect(updated).toMatchObject({
-		jobId: 'job-v7-insert',
-		runCount: 4,
-		successCount: 2,
-		errorCount: 2,
-		lastRunStatus: 'error',
-		lastRunError: 'post-v8',
-	})
-	expect(updated).not.toHaveProperty('legacySeeded')
-})
-
-test('warm schema v7 job_run_observability upgrades to v8 without ALTER', async () => {
-	const userId = uniqueUserId('schema-v7-warm')
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		expect(instance).toBeInstanceOf(RunLog)
-		await state.storage.deleteAll()
-
-		state.storage.sql.exec(`
-			CREATE TABLE run_log_meta (
-				key TEXT PRIMARY KEY NOT NULL,
-				value INTEGER NOT NULL
-			)
-		`)
-		state.storage.sql.exec(
-			`INSERT INTO run_log_meta (key, value) VALUES ('schema_version', 7)`,
-		)
-		state.storage.sql.exec(`
-			CREATE TABLE job_run_observability (
-				job_id TEXT PRIMARY KEY NOT NULL,
-				last_run_at TEXT,
-				last_run_status TEXT,
-				last_run_error TEXT,
-				last_duration_ms INTEGER,
-				run_count INTEGER NOT NULL DEFAULT 0,
-				success_count INTEGER NOT NULL DEFAULT 0,
-				error_count INTEGER NOT NULL DEFAULT 0,
-				updated_at TEXT NOT NULL,
-				legacy_seeded INTEGER NOT NULL DEFAULT 0
-			)
-		`)
-		state.storage.sql.exec(
-			`INSERT INTO job_run_observability (
-				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
-				run_count, success_count, error_count, updated_at, legacy_seeded
-			) VALUES ('job-warm-v7', '2026-07-01T00:00:00.000Z', 'success', NULL, 5,
-				1, 1, 0, '2026-07-01T00:00:00.000Z', 1)`,
-		)
-
-		const alterStatements: Array<string> = []
-		const originalExec = state.storage.sql.exec.bind(state.storage.sql)
-		state.storage.sql.exec = (query: string, ...args: Array<unknown>) => {
-			if (/ALTER\s+TABLE/i.test(query)) {
-				alterStatements.push(query)
-			}
-			return originalExec(query, ...args)
-		}
-
-		const proto = Object.getPrototypeOf(instance) as {
-			initializeSchema: () => void
-		}
-		proto.initializeSchema.call(instance)
-
-		expect(alterStatements).toEqual([])
-		const version = state.storage.sql
-			.exec<{ value: number }>(
-				`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(version?.value)).toBe(8)
-		expect(jobRunObservabilityColumnNames(state)).toContain('legacy_seeded')
-
-		const preserved = state.storage.sql
-			.exec<{ legacy_seeded: number; run_count: number }>(
-				`SELECT legacy_seeded, run_count FROM job_run_observability
-				WHERE job_id = 'job-warm-v7' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(preserved?.legacy_seeded)).toBe(1)
-		expect(Number(preserved?.run_count)).toBe(1)
-	})
-
-	const read = await getJobRunObservability({
-		env,
-		userId,
-		jobId: 'job-warm-v7',
-	})
-	expect(read).toMatchObject({
-		jobId: 'job-warm-v7',
+		jobId: 'job-v9',
 		runCount: 1,
-		successCount: 1,
-		lastRunStatus: 'success',
+		successCount: 0,
+		errorCount: 1,
+		lastRunStatus: 'error',
+		lastRunError: 'fresh-v9',
 	})
-	expect(read).not.toHaveProperty('legacySeeded')
 })
 
-test('getAdminInsightsSnapshot returns content-free workflow counts and milestones', async () => {
+test('warm schema v7 and v8 objects upgrade to v9 without losing job data', async () => {
+	const retiredColumn = ['legacy', 'seeded'].join('_')
+	for (const installedVersion of [7, 8]) {
+		const userId = uniqueUserId(`schema-v${installedVersion}-warm`)
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			await state.storage.deleteAll()
+
+			state.storage.sql.exec(`
+				CREATE TABLE run_log_meta (
+					key TEXT PRIMARY KEY NOT NULL,
+					value INTEGER NOT NULL
+				)
+			`)
+			state.storage.sql.exec(
+				`INSERT INTO run_log_meta (key, value) VALUES ('schema_version', ?)`,
+				installedVersion,
+			)
+			state.storage.sql.exec(`
+				CREATE TABLE job_run_observability (
+					job_id TEXT PRIMARY KEY NOT NULL,
+					last_run_at TEXT,
+					last_run_status TEXT,
+					last_run_error TEXT,
+					last_duration_ms INTEGER,
+					run_count INTEGER NOT NULL DEFAULT 0,
+					success_count INTEGER NOT NULL DEFAULT 0,
+					error_count INTEGER NOT NULL DEFAULT 0,
+					updated_at TEXT NOT NULL,
+					${retiredColumn} INTEGER NOT NULL DEFAULT 0
+				)
+			`)
+			state.storage.sql.exec(
+				`INSERT INTO job_run_observability (
+					job_id, last_run_at, last_run_status, last_run_error,
+					last_duration_ms, run_count, success_count, error_count,
+					updated_at, ${retiredColumn}
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+				`job-warm-v${installedVersion}`,
+				'2026-07-01T00:00:00.000Z',
+				'error',
+				'preserved error',
+				57,
+				9,
+				6,
+				3,
+				'2026-07-01T00:00:01.000Z',
+			)
+
+			const proto = Object.getPrototypeOf(instance) as {
+				initializeSchema: () => void
+			}
+			proto.initializeSchema.call(instance)
+
+			const version = state.storage.sql
+				.exec<{ value: number }>(
+					`SELECT value FROM run_log_meta WHERE key = 'schema_version' LIMIT 1`,
+				)
+				.toArray()[0]
+			expect(Number(version?.value)).toBe(9)
+			expect(jobRunObservabilityColumnNames(state)).toEqual([
+				'job_id',
+				'last_run_at',
+				'last_run_status',
+				'last_run_error',
+				'last_duration_ms',
+				'run_count',
+				'success_count',
+				'error_count',
+				'updated_at',
+			])
+			expect(
+				state.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT * FROM job_run_observability WHERE job_id = ?`,
+						`job-warm-v${installedVersion}`,
+					)
+					.one(),
+			).toEqual({
+				job_id: `job-warm-v${installedVersion}`,
+				last_run_at: '2026-07-01T00:00:00.000Z',
+				last_run_status: 'error',
+				last_run_error: 'preserved error',
+				last_duration_ms: 57,
+				run_count: 9,
+				success_count: 6,
+				error_count: 3,
+				updated_at: '2026-07-01T00:00:01.000Z',
+			})
+		})
+
+		await expect(
+			getJobRunObservability({
+				env,
+				userId,
+				jobId: `job-warm-v${installedVersion}`,
+			}),
+		).resolves.toMatchObject({
+			jobId: `job-warm-v${installedVersion}`,
+			runCount: 9,
+			successCount: 6,
+			errorCount: 3,
+			lastRunStatus: 'error',
+			lastRunError: 'preserved error',
+		})
+	}
+})
+
+test('getAdminInsightsSnapshot returns content-free workflow, job, and activation aggregates', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('admin-insights')
 	const reachedAt = '2026-08-01T12:00:00.000Z'
@@ -1432,6 +1437,16 @@ test('getAdminInsightsSnapshot returns content-free workflow counts and mileston
 		}),
 		status: 'success',
 	})
+	await upsertJobRunObservability({
+		env,
+		userId,
+		outcome: {
+			jobId: 'secret-job-must-not-leak',
+			status: 'error',
+			ranAt: reachedAt,
+			error: 'secret-job-error-must-not-leak',
+		},
+	})
 
 	const snapshot = await getAdminInsightsSnapshot({ env, userId })
 	expect(snapshot.workflowStatusCounts).toEqual([
@@ -1450,16 +1465,23 @@ test('getAdminInsightsSnapshot returns content-free workflow counts and mileston
 			reachedAt: expect.any(String),
 		}),
 	])
+	expect(snapshot.jobRunCounts).toEqual({ success: 1, error: 1 })
 
 	const serialized = JSON.stringify(snapshot)
 	expect(serialized).not.toMatch(/secret-name-must-not-leak/)
 	expect(serialized).not.toMatch(/secret-error-must-not-leak/)
+	expect(serialized).not.toMatch(/secret-job-must-not-leak/)
+	expect(serialized).not.toMatch(/secret-job-error-must-not-leak/)
 	expect(serialized).not.toMatch(/job-admin/)
 	expect(serialized).not.toMatch(/"name"/)
 	expect(serialized).not.toMatch(/lastError|errorMessage|workflowName|"logs"/)
 
 	for (const key of Object.keys(snapshot)) {
-		expect(['workflowStatusCounts', 'activationMilestones']).toContain(key)
+		expect([
+			'workflowStatusCounts',
+			'activationMilestones',
+			'jobRunCounts',
+		]).toContain(key)
 	}
 	for (const row of snapshot.workflowStatusCounts) {
 		expect(Object.keys(row).sort()).toEqual(['count', 'status'])

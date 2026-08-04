@@ -67,7 +67,30 @@ test('job view hydrate overlays RunLog outcomes for point and batch reads', asyn
 		successCount: 3,
 		errorCount: 1,
 	})
-	expect(applyJobRunObservabilityToJobView(job, null)).toBe(job)
+	expect(
+		applyJobRunObservabilityToJobView(
+			createJobView({
+				lastRunAt: '2026-04-20T09:00:00.000Z',
+				lastRunStatus: 'success',
+				lastRunError: 'stale D1 error',
+				lastDurationMs: 999,
+				runCount: 9,
+				successCount: 8,
+				errorCount: 1,
+			}),
+			null,
+		),
+	).toEqual(
+		expect.objectContaining({
+			lastRunAt: '2026-04-20T09:00:00.000Z',
+			lastRunStatus: 'success',
+			lastRunError: undefined,
+			lastDurationMs: undefined,
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+		}),
+	)
 
 	const env = {} as Env
 	getJobRunObservability.mockResolvedValue({
@@ -116,7 +139,14 @@ test('job view hydrate overlays RunLog outcomes for point and batch reads', asyn
 		userId: 'user-1',
 		jobs: [
 			createJobView({ id: 'job-a' }),
-			createJobView({ id: 'job-b', runCount: 0 }),
+			createJobView({
+				id: 'job-b',
+				lastRunError: 'stale D1 error',
+				lastDurationMs: 999,
+				runCount: 9,
+				successCount: 8,
+				errorCount: 1,
+			}),
 		],
 	})
 	expect(getJobRunObservabilityBatch).toHaveBeenCalledWith({
@@ -133,5 +163,9 @@ test('job view hydrate overlays RunLog outcomes for point and batch reads', asyn
 	expect(batch[1]).toMatchObject({
 		id: 'job-b',
 		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		lastRunError: undefined,
+		lastDurationMs: undefined,
 	})
 })

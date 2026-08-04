@@ -144,15 +144,8 @@ export function applyExecutionOutcome(
 		// Retention ages from execution time and classifies once jobs by status.
 		lastRunAt: outcome.finishedAt,
 		lastRunStatus: status,
-		// RunLog owns last_run_error, last_duration_ms, and counters. Leave the
-		// D1 copies untouched so finalization does not copy them back.
-		lastRunError: job.lastRunError,
-		lastDurationMs: job.lastDurationMs,
 		nextRunAt: overrides.nextRunAt ?? job.nextRunAt,
 		enabled: overrides.enabled ?? job.enabled,
 		killSwitchEnabled: overrides.killSwitchEnabled ?? job.killSwitchEnabled,
-		runCount: job.runCount,
-		successCount: job.successCount,
-		errorCount: job.errorCount,
 	}
 }

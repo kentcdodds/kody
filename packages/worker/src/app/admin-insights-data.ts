@@ -67,8 +67,6 @@ type HeatmapRow = { day: string; hour: string; n: number }
 type JobStatsRow = {
 	total: number
 	enabled: number | null
-	success_runs: number | null
-	error_runs: number | null
 }
 type ForkActorRow = { actor: string | null; n: number }
 type InsightsUserRow = {
@@ -79,6 +77,8 @@ type InsightsUserRow = {
 type AggregatedRunLogInsights = AdminInsightsRunLogCompleteness & {
 	workflowStatuses: Array<AdminInsightsWorkflowStatus>
 	workflowRuns: number
+	jobSuccessRuns: number
+	jobErrorRuns: number
 	packageRunSucceededUsers: number
 	packageActivatedUsers: number
 	medianHoursToActivation: number | null
@@ -101,7 +101,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v5',
+		key: 'admin-insights:v6',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -146,11 +146,7 @@ async function queryAdminInsights(
 	] = await Promise.all([
 		queryTotals(db),
 		db
-			.prepare(
-				`SELECT COUNT(*) AS total, SUM(enabled) AS enabled,
-					SUM(success_count) AS success_runs, SUM(error_count) AS error_runs
-				 FROM jobs`,
-			)
+			.prepare(`SELECT COUNT(*) AS total, SUM(enabled) AS enabled FROM jobs`)
 			.first<JobStatsRow>(),
 		db
 			.prepare(
@@ -226,8 +222,8 @@ async function queryAdminInsights(
 	const jobHealth: AdminInsightsJobHealth = {
 		totalJobs: Number(jobStats?.total ?? 0),
 		enabledJobs: Number(jobStats?.enabled ?? 0),
-		successRuns: Number(jobStats?.success_runs ?? 0),
-		errorRuns: Number(jobStats?.error_runs ?? 0),
+		successRuns: runLogInsights.jobSuccessRuns,
+		errorRuns: runLogInsights.jobErrorRuns,
 	}
 
 	return {
@@ -494,6 +490,8 @@ async function aggregateRunLogInsights(input: {
 		...completeRunLogInsights,
 		workflowStatuses: [],
 		workflowRuns: 0,
+		jobSuccessRuns: 0,
+		jobErrorRuns: 0,
 		packageRunSucceededUsers: 0,
 		packageActivatedUsers: 0,
 		medianHoursToActivation: null,
@@ -535,6 +533,8 @@ export function foldRunLogSnapshots(
 	let usersLoaded = 0
 	const statusCounts = new Map<string, number>()
 	let workflowRuns = 0
+	let jobSuccessRuns = 0
+	let jobErrorRuns = 0
 	let packageRunSucceededUsers = 0
 	let packageActivatedUsers = 0
 	const activationHours: Array<number> = []
@@ -549,6 +549,8 @@ export function foldRunLogSnapshots(
 			statusCounts.set(status, (statusCounts.get(status) ?? 0) + count)
 			workflowRuns += count
 		}
+		jobSuccessRuns += Math.max(0, Number(snapshot.jobRunCounts.success) || 0)
+		jobErrorRuns += Math.max(0, Number(snapshot.jobRunCounts.error) || 0)
 		let hasRunSucceeded = false
 		let activatedReachedAt: string | null = null
 		for (const milestone of snapshot.activationMilestones) {
@@ -582,6 +584,8 @@ export function foldRunLogSnapshots(
 					right.count - left.count || left.status.localeCompare(right.status),
 			),
 		workflowRuns,
+		jobSuccessRuns,
+		jobErrorRuns,
 		packageRunSucceededUsers,
 		packageActivatedUsers,
 		medianHoursToActivation: medianOf(activationHours),

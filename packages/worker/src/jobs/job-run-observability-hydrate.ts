@@ -14,16 +14,15 @@ export function applyJobRunObservabilityToJobView(
 	job: JobView,
 	observability: JobRunObservabilityRecord | null | undefined,
 ): JobView {
-	if (!observability) return job
 	return {
 		...job,
-		lastRunAt: observability.lastRunAt ?? job.lastRunAt,
-		lastRunStatus: observability.lastRunStatus ?? job.lastRunStatus,
-		lastRunError: observability.lastRunError ?? undefined,
-		lastDurationMs: observability.lastDurationMs ?? undefined,
-		runCount: observability.runCount,
-		successCount: observability.successCount,
-		errorCount: observability.errorCount,
+		lastRunAt: observability?.lastRunAt ?? job.lastRunAt,
+		lastRunStatus: observability?.lastRunStatus ?? job.lastRunStatus,
+		lastRunError: observability?.lastRunError ?? undefined,
+		lastDurationMs: observability?.lastDurationMs ?? undefined,
+		runCount: observability?.runCount ?? 0,
+		successCount: observability?.successCount ?? 0,
+		errorCount: observability?.errorCount ?? 0,
 	}
 }
 
