@@ -380,16 +380,24 @@ values are `mailbox`, `run-log`, `user-meter`, and `storage-runner`;
    bookmark nearest that time:
 
    ```sh
+   USER_ID='EXACT_STABLE_USER_ID'
+   INCIDENT_AT='YYYY-MM-DDTHH:MM:SSZ'
+   INCIDENT_TIMESTAMP_MS="$(
+     node -e 'const ms=Date.parse(process.argv[1]);if(!Number.isFinite(ms))process.exit(1);console.log(ms)' \
+       "$INCIDENT_AT"
+   )"
    curl --fail-with-body \
      --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/do-pitr" \
      --header "Authorization: Bearer $DR_RESTORE_SECRET" \
      --header "Content-Type: application/json" \
-     --data '{
+     --data @- <<JSON
+     {
        "operation": "get-recovery-bookmark",
        "kind": "mailbox",
-       "userId": "EXACT_STABLE_USER_ID",
-       "timestampMs": 1786000000000
-     }'
+       "userId": "$USER_ID",
+       "timestampMs": $INCIDENT_TIMESTAMP_MS
+     }
+   JSON
    ```
 
    For StorageRunner, add `"storageId": "EXACT_STORAGE_ID"`. Keep the returned
@@ -400,21 +408,26 @@ values are `mailbox`, `run-log`, `user-meter`, and `storage-runner`;
    immediately so the next object session applies the restore:
 
    ```sh
+   BOOKMARK='BOOKMARK_FROM_STEP_1'
    curl --fail-with-body \
      --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/do-pitr" \
      --header "Authorization: Bearer $DR_RESTORE_SECRET" \
      --header "Content-Type: application/json" \
-     --data '{
+     --data @- <<JSON
+     {
        "operation": "restore-to-bookmark",
        "kind": "mailbox",
-       "userId": "EXACT_STABLE_USER_ID",
-       "bookmark": "BOOKMARK_FROM_STEP_1"
-     }'
+       "userId": "$USER_ID",
+       "bookmark": "$BOOKMARK"
+     }
+   JSON
    ```
 
    Copy `undoBookmark` immediately and verify the affected object's state before
-   restoring ingress. PITR is unavailable in local development and Workers
-   unit-test emulation; the endpoint reports `pitr-unavailable` there.
+   restoring ingress. The operator log (`event=do-pitr-operator-restore`)
+   includes the operation id, exact object identity, target bookmark, and undo
+   bookmark. PITR is unavailable in local development and Workers unit-test
+   emulation; the endpoint reports `pitr-unavailable` there.
 
 3. To undo the recovery, repeat step 2 against the same exact object identity,
    using the saved `undoBookmark` as `bookmark`. The undo itself returns a new

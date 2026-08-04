@@ -20,6 +20,7 @@ const doPitrKinds = [
 	'user-meter',
 	'storage-runner',
 ] as const
+const pitrWindowMs = 30 * 24 * 60 * 60 * 1000
 
 type DoPitrKind = (typeof doPitrKinds)[number]
 
@@ -100,7 +101,11 @@ function pitrRpcForTarget(
 	}
 }
 
-async function runDoPitrOperation(request: Request, env: Env) {
+async function runDoPitrOperation(
+	request: Request,
+	env: Env,
+	logger: Pick<Console, 'log'>,
+) {
 	let body: Record<string, unknown>
 	try {
 		const parsed = (await request.json()) as unknown
@@ -127,6 +132,12 @@ async function runDoPitrOperation(request: Request, env: Env) {
 				) {
 					throw new Error('timestampMs must be a safe integer.')
 				}
+				const now = Date.now()
+				if (timestampMs > now || timestampMs < now - pitrWindowMs) {
+					throw new Error(
+						'timestampMs must be within the previous 30 days and not in the future.',
+					)
+				}
 				const result = await rpc.getRecoveryBookmark({ timestampMs })
 				return { operation, ...target, ...result }
 			}
@@ -136,7 +147,17 @@ async function runDoPitrOperation(request: Request, env: Env) {
 					'bookmark',
 				)
 				const result = await rpc.restoreToBookmark({ bookmark })
-				return { operation, ...target, ...result }
+				const operationId = crypto.randomUUID()
+				logger.log(
+					JSON.stringify({
+						event: 'do-pitr-operator-restore',
+						operationId,
+						...target,
+						targetBookmark: bookmark,
+						undoBookmark: result.undoBookmark,
+					}),
+				)
+				return { operation, operationId, ...target, ...result }
 			}
 			default:
 				throw new Error(
@@ -157,11 +178,15 @@ async function runDoPitrOperation(request: Request, env: Env) {
 export async function handleDoPitrRequest(
 	request: Request,
 	env: Env,
+	logger: Pick<Console, 'log'> = console,
 ): Promise<Response> {
+	if (request.method === 'POST' && env.SENTRY_ENVIRONMENT !== 'production') {
+		return new Response('Forbidden', { status: 403 })
+	}
 	return await handleSecretMaintenanceRequest({
 		request,
 		secret: env.DR_RESTORE_SECRET,
 		notConfiguredMessage: 'Durable Object PITR is not configured',
-		run: async () => await runDoPitrOperation(request, env),
+		run: async () => await runDoPitrOperation(request, env, logger),
 	})
 }

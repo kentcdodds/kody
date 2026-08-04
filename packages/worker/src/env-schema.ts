@@ -253,7 +253,8 @@ export const EnvSchema = object({
 	DR_BACKUP_BUCKET_NAME: optionalNonEmptyStringSchema,
 	DR_BACKUP_ACCESS_KEY_ID: optionalNonEmptyStringSchema,
 	DR_BACKUP_SECRET_ACCESS_KEY: optionalNonEmptyStringSchema,
-	// Bearer secret for POST /__maintenance/dr-restore. Fail-closed when unset.
+	// Bearer secret for production DR restore and DO PITR maintenance routes.
+	// Both fail closed when unset.
 	DR_RESTORE_SECRET: optionalNonEmptyStringSchema,
 })
 

@@ -34,14 +34,32 @@ function createRequest(
 }
 
 test('DO PITR maintenance route fails closed without its shared recovery secret', async () => {
+	const nonProduction = await handleDoPitrRequest(
+		createRequest(
+			{
+				operation: 'get-recovery-bookmark',
+				kind: 'mailbox',
+				userId: 'stable-user-id',
+				timestampMs: Date.now() - 60_000,
+			},
+			'Bearer correct',
+		),
+		{
+			SENTRY_ENVIRONMENT: 'preview',
+			DR_RESTORE_SECRET: 'correct',
+		} as Env,
+	)
+	expect(nonProduction.status).toBe(403)
+	await expect(nonProduction.text()).resolves.toBe('Forbidden')
+
 	const missingSecret = await handleDoPitrRequest(
 		createRequest({
 			operation: 'get-recovery-bookmark',
 			kind: 'mailbox',
 			userId: 'stable-user-id',
-			timestampMs: 1_786_000_000_000,
+			timestampMs: Date.now() - 60_000,
 		}),
-		{} as Env,
+		{ SENTRY_ENVIRONMENT: 'production' } as Env,
 	)
 	expect(missingSecret.status).toBe(503)
 
@@ -50,9 +68,12 @@ test('DO PITR maintenance route fails closed without its shared recovery secret'
 			operation: 'get-recovery-bookmark',
 			kind: 'mailbox',
 			userId: 'stable-user-id',
-			timestampMs: 1_786_000_000_000,
+			timestampMs: Date.now() - 60_000,
 		}),
-		{ DR_RESTORE_SECRET: 'correct' } as Env,
+		{
+			SENTRY_ENVIRONMENT: 'production',
+			DR_RESTORE_SECRET: 'correct',
+		} as Env,
 	)
 	expect(missingBearer.status).toBe(401)
 
@@ -66,7 +87,10 @@ test('DO PITR maintenance route fails closed without its shared recovery secret'
 			},
 			'Bearer wrong',
 		),
-		{ DR_RESTORE_SECRET: 'correct' } as Env,
+		{
+			SENTRY_ENVIRONMENT: 'production',
+			DR_RESTORE_SECRET: 'correct',
+		} as Env,
 	)
 	expect(wrongBearer.status).toBe(401)
 })
@@ -76,7 +100,10 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 	const runLog = createNamespace()
 	const userMeter = createNamespace()
 	const storageRunner = createNamespace()
+	const timestampMs = Date.now() - 60_000
+	const logger = { log: vi.fn<(message: string) => void>() }
 	const env = {
+		SENTRY_ENVIRONMENT: 'production',
 		DR_RESTORE_SECRET: 'correct',
 		MAILBOX: mailbox.namespace,
 		RUN_LOG: runLog.namespace,
@@ -106,7 +133,7 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 				{
 					operation: 'get-recovery-bookmark',
 					...common,
-					timestampMs: 1_786_000_000_000,
+					timestampMs,
 				},
 				'Bearer correct',
 			),
@@ -123,7 +150,7 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 			target.expectedName,
 		)
 		expect(target.binding.rpc.getRecoveryBookmark).toHaveBeenCalledWith({
-			timestampMs: 1_786_000_000_000,
+			timestampMs,
 		})
 
 		const restoreResponse = await handleDoPitrRequest(
@@ -136,16 +163,67 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 				'Bearer correct',
 			),
 			env,
+			logger,
 		)
 		expect(restoreResponse.status).toBe(200)
 		await expect(restoreResponse.json()).resolves.toMatchObject({
 			ok: true,
 			operation: 'restore-to-bookmark',
 			...common,
+			operationId: expect.any(String),
 			undoBookmark: 'undo-bookmark',
 		})
 		expect(target.binding.rpc.restoreToBookmark).toHaveBeenCalledWith({
 			bookmark: 'resolved-bookmark',
 		})
 	}
+	expect(logger.log).toHaveBeenCalledTimes(targets.length)
+	expect(logger.log.mock.calls.map(([message]) => JSON.parse(message))).toEqual(
+		targets.map((target) =>
+			expect.objectContaining({
+				event: 'do-pitr-operator-restore',
+				operationId: expect.any(String),
+				kind: target.kind,
+				userId: 'stable-user-id',
+				...('storageId' in target ? { storageId: target.storageId } : {}),
+				targetBookmark: 'resolved-bookmark',
+				undoBookmark: 'undo-bookmark',
+			}),
+		),
+	)
+})
+
+test('DO PITR maintenance route rejects timestamps outside the provider window', async () => {
+	const mailbox = createNamespace()
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		DR_RESTORE_SECRET: 'correct',
+		MAILBOX: mailbox.namespace,
+	} as unknown as Env
+	const invalidTimestamps = [
+		Date.now() + 60_000,
+		Date.now() - 31 * 24 * 60 * 60 * 1000,
+	]
+
+	for (const timestampMs of invalidTimestamps) {
+		const response = await handleDoPitrRequest(
+			createRequest(
+				{
+					operation: 'get-recovery-bookmark',
+					kind: 'mailbox',
+					userId: 'stable-user-id',
+					timestampMs,
+				},
+				'Bearer correct',
+			),
+			env,
+		)
+		expect(response.status).toBe(500)
+		await expect(response.json()).resolves.toMatchObject({
+			ok: false,
+			code: 'invalid-request',
+			error: expect.stringContaining('previous 30 days'),
+		})
+	}
+	expect(mailbox.rpc.getRecoveryBookmark).not.toHaveBeenCalled()
 })
