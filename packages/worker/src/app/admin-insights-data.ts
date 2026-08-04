@@ -2,6 +2,8 @@ import { cachified } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
+import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
+import { getAdminInsightsSnapshot } from '#worker/run-records/service.ts'
 import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
 import {
 	type AdminInsightsActivation,
@@ -26,6 +28,12 @@ export const adminInsightsUsageMonths = 12
 export const adminInsightsActivityDays = 28
 
 /**
+ * Per-user RunLog point-reads for workflow/activation aggregates. Bound so a
+ * large user table cannot open unbounded DO RPCs on one admin page load.
+ */
+export const adminInsightsRunLogConcurrency = 8
+
+/**
  * The dashboard is a platform-wide read model over many tables, so a short
  * KV cache keeps repeated admin page loads off D1 (same policy as the admin
  * usage rollup reads).
@@ -33,6 +41,7 @@ export const adminInsightsActivityDays = 28
 const insightsCacheTtlMs = 5 * 60 * 1000
 
 const dayMs = 24 * 60 * 60 * 1000
+const hourMs = 60 * 60 * 1000
 
 type CountRow = { n: number }
 type DayCountRow = { day: string; n: number }
@@ -54,7 +63,6 @@ type PlanRow = { plan: string; n: number }
 type AuthDayRow = { day: string; result: string; n: number }
 type AuthCategoryRow = { category: string; n: number }
 type HeatmapRow = { day: string; hour: string; n: number }
-type WorkflowStatusRow = { status: string | null; n: number }
 type JobStatsRow = {
 	total: number
 	enabled: number | null
@@ -62,8 +70,18 @@ type JobStatsRow = {
 	error_runs: number | null
 }
 type ForkActorRow = { actor: string | null; n: number }
-type MilestoneUserRow = { milestone: string; n: number }
-type ActivationLatencyRow = { hours: number }
+type InsightsUserRow = {
+	stable_user_id: string
+	email_verified_at: string | null
+}
+
+type AggregatedRunLogInsights = {
+	workflowStatuses: Array<AdminInsightsWorkflowStatus>
+	workflowRuns: number
+	packageRunSucceededUsers: number
+	packageActivatedUsers: number
+	medianHoursToActivation: number | null
+}
 
 export async function loadAdminInsightsData(
 	env: Env,
@@ -76,7 +94,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v3',
+		key: 'admin-insights:v4',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -116,8 +134,8 @@ async function queryAdminInsights(
 		authDayRows,
 		authCategoryRows,
 		heatmapRows,
-		workflowRows,
-		activation,
+		activationBase,
+		insightsUsers,
 	] = await Promise.all([
 		queryTotals(db),
 		db
@@ -189,16 +207,14 @@ async function queryAdminInsights(
 			)
 			.bind(dayCutoff)
 			.all<HeatmapRow>(),
-		db
-			.prepare(
-				`SELECT COALESCE(status, 'unknown') AS status, COUNT(*) AS n
-				 FROM workflow_runs
-				 GROUP BY COALESCE(status, 'unknown')
-				 ORDER BY n DESC`,
-			)
-			.all<WorkflowStatusRow>(),
-		queryActivation(db),
+		queryActivationBase(db),
+		listNonDeletingInsightsUsers(db),
 	])
+
+	const runLogInsights = await aggregateRunLogInsights({
+		env,
+		users: insightsUsers,
+	})
 
 	const jobHealth: AdminInsightsJobHealth = {
 		totalJobs: Number(jobStats?.total ?? 0),
@@ -212,6 +228,7 @@ async function queryAdminInsights(
 		generatedAt: now.toISOString(),
 		totals: {
 			...totals,
+			workflowRuns: runLogInsights.workflowRuns,
 			scheduledJobs: jobHealth.totalJobs,
 			enabledJobs: jobHealth.enabledJobs,
 		},
@@ -252,14 +269,9 @@ async function queryAdminInsights(
 			}),
 		),
 		authHeatmap: buildHeatmapCells(heatmapRows.results ?? []),
-		workflowStatuses: (workflowRows.results ?? []).map(
-			(row): AdminInsightsWorkflowStatus => ({
-				status: row.status ?? 'unknown',
-				count: Number(row.n),
-			}),
-		),
+		workflowStatuses: runLogInsights.workflowStatuses,
 		jobHealth,
-		activation,
+		activation: mergeActivation(activationBase, runLogInsights),
 	}
 }
 
@@ -366,25 +378,23 @@ FORMAT JSON
 }
 
 /**
- * The activation funnel.
+ * D1-backed activation funnel steps that are not run-derived.
  *
- * Signup, verification, agent connection, and forking are all derivable from
- * durable tables, so they are read where they already live rather than
- * duplicated. Only the run-derived steps come from
- * `user_activation_milestones`, because run history is retention-pruned. See
- * `packages/worker/src/usage/activation.ts`.
+ * Signup, verification, agent connection, and forking live in durable tables.
+ * Run-derived steps (`package_run_succeeded` / `package_activated`) and
+ * activation latency come from per-user RunLog snapshots — see
+ * `aggregateRunLogInsights` and `packages/worker/src/usage/activation.ts`.
  */
-async function queryActivation(
-	db: D1Database,
-): Promise<AdminInsightsActivation> {
+async function queryActivationBase(db: D1Database): Promise<{
+	steps: Array<AdminInsightsActivationStep>
+	forksByActor: AdminInsightsActivation['forksByActor']
+}> {
 	const [
 		signedUp,
 		emailVerified,
 		agentConnected,
 		packageForked,
-		milestoneRows,
 		forkActorRows,
-		latencyRows,
 	] = await Promise.all([
 		countQuery(db, `SELECT COUNT(*) AS n FROM users`),
 		countQuery(
@@ -401,39 +411,12 @@ async function queryActivation(
 		),
 		db
 			.prepare(
-				`SELECT milestone, COUNT(DISTINCT user_id) AS n
-				 FROM user_activation_milestones
-				 GROUP BY milestone`,
-			)
-			.all<MilestoneUserRow>(),
-		db
-			.prepare(
 				`SELECT COALESCE(actor, 'unknown') AS actor, COUNT(*) AS n
 				 FROM community_forks
 				 GROUP BY COALESCE(actor, 'unknown')`,
 			)
 			.all<ForkActorRow>(),
-		db
-			.prepare(
-				// julianday() differences are in days; ×24 gives hours. Users
-				// who activated before verifying (not expected, but possible
-				// for seeded or admin-created accounts) would skew the median
-				// negative, so they are excluded rather than clamped.
-				`SELECT (julianday(m.reached_at) - julianday(u.email_verified_at)) * 24 AS hours
-				 FROM user_activation_milestones AS m
-				 JOIN users AS u ON u.id = m.user_id
-				 WHERE m.milestone = 'package_activated'
-				   AND u.email_verified_at IS NOT NULL
-				   AND julianday(m.reached_at) >= julianday(u.email_verified_at)
-				 ORDER BY hours ASC`,
-			)
-			.all<ActivationLatencyRow>(),
 	])
-
-	const milestoneUsers = new Map<string, number>()
-	for (const row of milestoneRows.results ?? []) {
-		milestoneUsers.set(row.milestone, Number(row.n))
-	}
 
 	const forksByActor = { human: 0, agent: 0, unknown: 0 }
 	for (const row of forkActorRows.results ?? []) {
@@ -442,28 +425,189 @@ async function queryActivation(
 		else forksByActor.unknown += Number(row.n)
 	}
 
-	const steps: Array<AdminInsightsActivationStep> = [
-		{ step: 'signed_up', users: signedUp },
-		{ step: 'email_verified', users: emailVerified },
-		{ step: 'agent_connected', users: agentConnected },
-		{ step: 'package_forked', users: packageForked },
-		{
-			step: 'package_run_succeeded',
-			users: milestoneUsers.get('package_run_succeeded') ?? 0,
+	return {
+		steps: [
+			{ step: 'signed_up', users: signedUp },
+			{ step: 'email_verified', users: emailVerified },
+			{ step: 'agent_connected', users: agentConnected },
+			{ step: 'package_forked', users: packageForked },
+		],
+		forksByActor,
+	}
+}
+
+function mergeActivation(
+	base: Awaited<ReturnType<typeof queryActivationBase>>,
+	runLog: AggregatedRunLogInsights,
+): AdminInsightsActivation {
+	return {
+		steps: [
+			...base.steps,
+			{
+				step: 'package_run_succeeded',
+				users: runLog.packageRunSucceededUsers,
+			},
+			{
+				step: 'package_activated',
+				users: runLog.packageActivatedUsers,
+			},
+		],
+		forksByActor: base.forksByActor,
+		medianHoursToActivation: runLog.medianHoursToActivation,
+	}
+}
+
+async function listNonDeletingInsightsUsers(
+	db: D1Database,
+): Promise<Array<InsightsUserRow>> {
+	const rows = await db
+		.prepare(
+			`SELECT stable_user_id, email_verified_at
+			 FROM users
+			 WHERE deleting_at IS NULL
+			   AND stable_user_id IS NOT NULL`,
+		)
+		.all<InsightsUserRow>()
+	return (rows.results ?? []).filter(
+		(row) =>
+			typeof row.stable_user_id === 'string' && row.stable_user_id !== '',
+	)
+}
+
+async function aggregateRunLogInsights(input: {
+	env: Env
+	users: ReadonlyArray<InsightsUserRow>
+}): Promise<AggregatedRunLogInsights> {
+	const empty: AggregatedRunLogInsights = {
+		workflowStatuses: [],
+		workflowRuns: 0,
+		packageRunSucceededUsers: 0,
+		packageActivatedUsers: 0,
+		medianHoursToActivation: null,
+	}
+	if (input.users.length === 0) return empty
+
+	const snapshots = await mapWithConcurrency(
+		input.users,
+		adminInsightsRunLogConcurrency,
+		async (user) => {
+			try {
+				const snapshot = await getAdminInsightsSnapshot({
+					env: input.env,
+					userId: user.stable_user_id,
+				})
+				return { user, snapshot }
+			} catch (error) {
+				// Missing RUN_LOG or a single-user RPC failure must not take down
+				// the admin page — degrade run-derived charts for that user only.
+				console.warn('admin-insights-run-log-unavailable', {
+					userId: user.stable_user_id,
+					error,
+				})
+				return { user, snapshot: null }
+			}
 		},
-		{
-			step: 'package_activated',
-			users: milestoneUsers.get('package_activated') ?? 0,
-		},
-	]
+	)
+
+	return foldRunLogSnapshots(snapshots)
+}
+
+export function foldRunLogSnapshots(
+	entries: ReadonlyArray<{
+		user: InsightsUserRow
+		snapshot: RunLogAdminInsightsSnapshot | null
+	}>,
+): AggregatedRunLogInsights {
+	const statusCounts = new Map<string, number>()
+	let workflowRuns = 0
+	let packageRunSucceededUsers = 0
+	let packageActivatedUsers = 0
+	const activationHours: Array<number> = []
+
+	for (const { user, snapshot } of entries) {
+		if (!snapshot) continue
+		for (const row of snapshot.workflowStatusCounts) {
+			const count = Number(row.count) || 0
+			if (count <= 0) continue
+			const status = row.status.trim() || 'unknown'
+			statusCounts.set(status, (statusCounts.get(status) ?? 0) + count)
+			workflowRuns += count
+		}
+		let hasRunSucceeded = false
+		let activatedReachedAt: string | null = null
+		for (const milestone of snapshot.activationMilestones) {
+			if (milestone.milestone === 'package_run_succeeded') {
+				hasRunSucceeded = true
+			} else if (milestone.milestone === 'package_activated') {
+				activatedReachedAt = milestone.reachedAt
+			}
+		}
+		if (hasRunSucceeded) packageRunSucceededUsers += 1
+		if (activatedReachedAt != null) {
+			packageActivatedUsers += 1
+			const hours = hoursFromVerifiedToActivation(
+				user.email_verified_at,
+				activatedReachedAt,
+			)
+			if (hours != null) activationHours.push(hours)
+		}
+	}
+
+	activationHours.sort((left, right) => left - right)
 
 	return {
-		steps,
-		forksByActor,
-		medianHoursToActivation: medianOf(
-			(latencyRows.results ?? []).map((row) => Number(row.hours)),
-		),
+		workflowStatuses: Array.from(statusCounts.entries())
+			.map(([status, count]) => ({ status, count }))
+			.sort(
+				(left, right) =>
+					right.count - left.count || left.status.localeCompare(right.status),
+			),
+		workflowRuns,
+		packageRunSucceededUsers,
+		packageActivatedUsers,
+		medianHoursToActivation: medianOf(activationHours),
 	}
+}
+
+/**
+ * Hours from email verification to package activation. Users who activated
+ * before verifying (seeded / admin-created) would skew the median negative, so
+ * they are excluded rather than clamped — same rule as the retired D1 join.
+ */
+export function hoursFromVerifiedToActivation(
+	emailVerifiedAt: string | null | undefined,
+	activatedReachedAt: string,
+): number | null {
+	if (emailVerifiedAt == null || emailVerifiedAt === '') return null
+	const verifiedMs = Date.parse(emailVerifiedAt)
+	const activatedMs = Date.parse(activatedReachedAt)
+	if (!Number.isFinite(verifiedMs) || !Number.isFinite(activatedMs)) return null
+	const hours = (activatedMs - verifiedMs) / hourMs
+	if (!Number.isFinite(hours) || hours < 0) return null
+	return hours
+}
+
+async function mapWithConcurrency<T, R>(
+	items: ReadonlyArray<T>,
+	concurrency: number,
+	mapper: (item: T) => Promise<R>,
+): Promise<Array<R>> {
+	if (items.length === 0) return []
+	const limit = Math.max(1, Math.min(concurrency, items.length))
+	const results: Array<R | undefined> = Array.from({ length: items.length })
+	let nextIndex = 0
+	await Promise.all(
+		Array.from({ length: limit }, async () => {
+			while (nextIndex < items.length) {
+				const index = nextIndex
+				nextIndex += 1
+				const item = items[index]
+				if (item === undefined) return
+				results[index] = await mapper(item)
+			}
+		}),
+	)
+	return results as Array<R>
 }
 
 /** Median of an ascending list. Even-length lists average the middle pair. */
@@ -480,12 +624,13 @@ export function medianOf(sortedValues: Array<number>): number | null {
 
 async function queryTotals(
 	db: D1Database,
-): Promise<Omit<AdminInsightsTotals, 'scheduledJobs' | 'enabledJobs'>> {
+): Promise<
+	Omit<AdminInsightsTotals, 'scheduledJobs' | 'enabledJobs' | 'workflowRuns'>
+> {
 	const [
 		users,
 		verifiedUsers,
 		savedPackages,
-		workflowRuns,
 		activeMemories,
 		secrets,
 		activeCommunityListings,
@@ -498,7 +643,6 @@ async function queryTotals(
 			`SELECT COUNT(*) AS n FROM users WHERE email_verified_at IS NOT NULL`,
 		),
 		countQuery(db, `SELECT COUNT(*) AS n FROM saved_packages`),
-		countQuery(db, `SELECT COUNT(*) AS n FROM workflow_runs`),
 		countQuery(
 			db,
 			`SELECT COUNT(*) AS n FROM mcp_memories WHERE status = 'active'`,
@@ -515,7 +659,6 @@ async function queryTotals(
 		users,
 		verifiedUsers,
 		savedPackages,
-		workflowRuns,
 		activeMemories,
 		storedEmailMessages: null,
 		secrets,

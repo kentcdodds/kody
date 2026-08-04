@@ -1,12 +1,17 @@
+import { readFileSync } from 'node:fs'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
 import {
+	adminInsightsRunLogConcurrency,
 	buildAuthDays,
 	buildEmailDays,
 	buildEmailDeliveryDays,
 	buildHeatmapCells,
 	buildSignupWeeks,
 	buildUsageMonths,
+	foldRunLogSnapshots,
+	hoursFromVerifiedToActivation,
 	listUtcDayKeys,
 	listUtcMonthKeys,
 	listUtcWeekStarts,
@@ -16,6 +21,23 @@ import {
 } from './admin-insights-data.ts'
 
 const now = new Date('2026-07-08T12:00:00.000Z')
+
+const runLogMocks = vi.hoisted(() => ({
+	getAdminInsightsSnapshot:
+		vi.fn<
+			(input: {
+				env: Env
+				userId: string
+			}) => Promise<RunLogAdminInsightsSnapshot>
+		>(),
+	inFlight: 0,
+	maxInFlight: 0,
+}))
+
+vi.mock('#worker/run-records/service.ts', () => ({
+	getAdminInsightsSnapshot: (input: { env: Env; userId: string }) =>
+		runLogMocks.getAdminInsightsSnapshot(input),
+}))
 
 test('admin insights date helpers bucket, zero-fill, and fold correctly', () => {
 	// 2026-07-08 is a Wednesday; 2026-07-06 is the Monday before.
@@ -147,11 +169,33 @@ function normalizeQuery(query: string) {
 	return query.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+const defaultInsightsUsers = [
+	{
+		stable_user_id: 'user-a',
+		email_verified_at: '2026-07-01T00:00:00.000Z',
+	},
+	{
+		stable_user_id: 'user-b',
+		email_verified_at: '2026-07-02T00:00:00.000Z',
+	},
+]
+
+function emptySnapshot(): RunLogAdminInsightsSnapshot {
+	return { workflowStatusCounts: [], activationMilestones: [] }
+}
+
 function createInsightsTestDb(
-	overrides: { activationLatencyRows?: Array<{ hours: number }> } = {},
+	overrides: {
+		insightsUsers?: Array<{
+			stable_user_id: string
+			email_verified_at: string | null
+		}>
+	} = {},
 ) {
+	const seenQueries: Array<string> = []
 	const db = {
 		prepare(query: string) {
+			seenQueries.push(query)
 			const normalizedQuery = normalizeQuery(query)
 			const createStatement = (params: Array<unknown>) => ({
 				async first<T>() {
@@ -178,9 +222,6 @@ function createInsightsTestDb(
 					}
 					if (normalizedQuery.includes('from saved_packages')) {
 						return { n: 11 } as T
-					}
-					if (normalizedQuery.includes('count(*) as n from workflow_runs')) {
-						return { n: 9 } as T
 					}
 					if (normalizedQuery.includes('from mcp_memories')) {
 						return { n: 13 } as T
@@ -210,26 +251,21 @@ function createInsightsTestDb(
 				},
 				async all<T>() {
 					if (
+						normalizedQuery.includes(
+							'select stable_user_id, email_verified_at',
+						) &&
+						normalizedQuery.includes('deleting_at is null')
+					) {
+						return {
+							results: (overrides.insightsUsers ??
+								defaultInsightsUsers) as Array<T>,
+						}
+					}
+					if (
 						normalizedQuery.includes('from users') &&
 						normalizedQuery.includes('group by day')
 					) {
 						return { results: [{ day: '2026-07-07', n: 2 }] as Array<T> }
-					}
-					if (normalizedQuery.includes('from user_activation_milestones')) {
-						if (normalizedQuery.includes('group by milestone')) {
-							return {
-								results: [
-									{ milestone: 'package_run_succeeded', n: 2 },
-									{ milestone: 'package_activated', n: 1 },
-								] as Array<T>,
-							}
-						}
-						// Latency query: one activated user, 36 hours after verifying.
-						return {
-							results: (overrides.activationLatencyRows ?? [
-								{ hours: 36 },
-							]) as Array<T>,
-						}
 					}
 					if (normalizedQuery.includes('from community_forks')) {
 						return {
@@ -285,14 +321,6 @@ function createInsightsTestDb(
 							results: [{ day: '2026-07-08', hour: '09', n: 4 }] as Array<T>,
 						}
 					}
-					if (normalizedQuery.includes('from workflow_runs')) {
-						return {
-							results: [
-								{ status: 'complete', n: 8 },
-								{ status: 'errored', n: 1 },
-							] as Array<T>,
-						}
-					}
 					throw new Error(`Unsupported all query: ${query}`)
 				},
 				async run() {
@@ -306,13 +334,66 @@ function createInsightsTestDb(
 				},
 			}
 		},
-	} as unknown as D1Database
+		seenQueries,
+	} as unknown as D1Database & { seenQueries: Array<string> }
 	return db
 }
 
-test('loadAdminInsightsData assembles the dashboard payload', async () => {
+function stubSnapshotsByUser(
+	byUser: Record<string, RunLogAdminInsightsSnapshot | Error>,
+) {
+	runLogMocks.inFlight = 0
+	runLogMocks.maxInFlight = 0
+	runLogMocks.getAdminInsightsSnapshot.mockImplementation(
+		async (input: { userId: string }) => {
+			runLogMocks.inFlight += 1
+			runLogMocks.maxInFlight = Math.max(
+				runLogMocks.maxInFlight,
+				runLogMocks.inFlight,
+			)
+			await Promise.resolve()
+			runLogMocks.inFlight -= 1
+			const result = byUser[input.userId]
+			if (result instanceof Error) throw result
+			if (!result) throw new Error(`Unexpected snapshot user ${input.userId}`)
+			return result
+		},
+	)
+}
+
+test('loadAdminInsightsData assembles the dashboard payload from D1 plus RunLog snapshots', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleWarn.mockClear()
+	stubSnapshotsByUser({
+		'user-a': {
+			workflowStatusCounts: [
+				{ status: 'complete', count: 5 },
+				{ status: 'errored', count: 1 },
+			],
+			activationMilestones: [
+				{
+					milestone: 'package_run_succeeded',
+					reachedAt: '2026-07-02T12:00:00.000Z',
+					packageId: 'pkg-a',
+				},
+				{
+					milestone: 'package_activated',
+					reachedAt: '2026-07-02T12:00:00.000Z',
+					packageId: 'pkg-a',
+				},
+			],
+		},
+		'user-b': {
+			workflowStatusCounts: [{ status: 'complete', count: 3 }],
+			activationMilestones: [
+				{
+					milestone: 'package_run_succeeded',
+					reachedAt: '2026-07-03T00:00:00.000Z',
+					packageId: 'pkg-b',
+				},
+			],
+		},
+	})
 	const db = createInsightsTestDb()
 	const data = await loadAdminInsightsData(
 		{
@@ -397,12 +478,302 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 		agent: 1,
 		unknown: 4,
 	})
+	// user-a: verified 2026-07-01, activated 2026-07-02T12:00 → 36 hours
 	expect(data.activation.medianHoursToActivation).toBe(36)
+	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(2)
+	expect(runLogMocks.maxInFlight).toBeLessThanOrEqual(
+		adminInsightsRunLogConcurrency,
+	)
+})
+
+test('multi-user RunLog aggregation sums workflow statuses and milestone users', () => {
+	const folded = foldRunLogSnapshots([
+		{
+			user: {
+				stable_user_id: 'u1',
+				email_verified_at: '2026-07-01T00:00:00.000Z',
+			},
+			snapshot: {
+				workflowStatusCounts: [
+					{ status: 'running', count: 2 },
+					{ status: 'complete', count: 1 },
+				],
+				activationMilestones: [
+					{
+						milestone: 'package_run_succeeded',
+						reachedAt: '2026-07-01T06:00:00.000Z',
+						packageId: 'p1',
+					},
+					{
+						milestone: 'package_activated',
+						reachedAt: '2026-07-01T12:00:00.000Z',
+						packageId: 'p1',
+					},
+				],
+			},
+		},
+		{
+			user: {
+				stable_user_id: 'u2',
+				email_verified_at: '2026-07-01T00:00:00.000Z',
+			},
+			snapshot: {
+				workflowStatusCounts: [{ status: 'complete', count: 4 }],
+				activationMilestones: [
+					{
+						milestone: 'package_run_succeeded',
+						reachedAt: '2026-07-02T00:00:00.000Z',
+						packageId: 'p2',
+					},
+				],
+			},
+		},
+		{
+			user: {
+				stable_user_id: 'u3',
+				email_verified_at: null,
+			},
+			snapshot: null,
+		},
+	])
+
+	expect(folded.workflowRuns).toBe(7)
+	expect(folded.workflowStatuses).toEqual([
+		{ status: 'complete', count: 5 },
+		{ status: 'running', count: 2 },
+	])
+	expect(folded.packageRunSucceededUsers).toBe(2)
+	expect(folded.packageActivatedUsers).toBe(1)
+	expect(folded.medianHoursToActivation).toBe(12)
+})
+
+test('loadAdminInsightsData enumerates only non-deleting users for RunLog reads', async () => {
+	consoleWarn.mockImplementation(() => {})
+	stubSnapshotsByUser({
+		'user-live': emptySnapshot(),
+	})
+	const db = createInsightsTestDb({
+		insightsUsers: [
+			{
+				stable_user_id: 'user-live',
+				email_verified_at: '2026-07-01T00:00:00.000Z',
+			},
+		],
+	})
+	await loadAdminInsightsData(
+		{
+			APP_DB: db,
+			AUDIT_DB: db,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+
+	const userListQuery = db.seenQueries.find((query) =>
+		normalizeQuery(query).includes('deleting_at is null'),
+	)
+	expect(userListQuery).toBeTruthy()
+	expect(normalizeQuery(userListQuery ?? '')).toContain('deleting_at is null')
+	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(1)
+	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'user-live' }),
+	)
+	expect(runLogMocks.getAdminInsightsSnapshot).not.toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'user-deleting' }),
+	)
+})
+
+test('activation latency uses package_activated reachedAt against D1 email_verified_at', async () => {
+	consoleWarn.mockImplementation(() => {})
+	stubSnapshotsByUser({
+		'user-a': {
+			workflowStatusCounts: [],
+			activationMilestones: [
+				{
+					milestone: 'package_activated',
+					reachedAt: '2026-07-03T00:00:00.000Z',
+					packageId: 'pkg-a',
+				},
+			],
+		},
+		'user-b': {
+			workflowStatusCounts: [],
+			activationMilestones: [
+				{
+					milestone: 'package_activated',
+					// Before verification — excluded from latency, still counts as activated.
+					reachedAt: '2026-07-01T00:00:00.000Z',
+					packageId: 'pkg-b',
+				},
+			],
+		},
+		'user-c': {
+			workflowStatusCounts: [],
+			activationMilestones: [
+				{
+					milestone: 'package_activated',
+					reachedAt: '2026-07-05T00:00:00.000Z',
+					packageId: 'pkg-c',
+				},
+			],
+		},
+	})
+	const db = createInsightsTestDb({
+		insightsUsers: [
+			{
+				stable_user_id: 'user-a',
+				email_verified_at: '2026-07-01T00:00:00.000Z',
+			},
+			{
+				stable_user_id: 'user-b',
+				email_verified_at: '2026-07-02T00:00:00.000Z',
+			},
+			{
+				stable_user_id: 'user-c',
+				email_verified_at: null,
+			},
+		],
+	})
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: db,
+			AUDIT_DB: db,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+
+	expect(data.activation.steps.at(-1)).toEqual({
+		step: 'package_activated',
+		users: 3,
+	})
+	// Only user-a contributes: 48 hours. user-b negative; user-c unverified.
+	expect(data.activation.medianHoursToActivation).toBe(48)
+	expect(
+		hoursFromVerifiedToActivation(
+			'2026-07-01T00:00:00.000Z',
+			'2026-07-03T00:00:00.000Z',
+		),
+	).toBe(48)
+	expect(
+		hoursFromVerifiedToActivation(
+			'2026-07-02T00:00:00.000Z',
+			'2026-07-01T00:00:00.000Z',
+		),
+	).toBeNull()
+	expect(
+		hoursFromVerifiedToActivation(null, '2026-07-05T00:00:00.000Z'),
+	).toBeNull()
+})
+
+test('degraded RunLog snapshots warn and zero run-derived charts without failing the page', async () => {
+	consoleWarn.mockImplementation(() => {})
+	consoleWarn.mockClear()
+	stubSnapshotsByUser({
+		'user-a': new Error('RUN_LOG Durable Object binding is not configured.'),
+		'user-b': new Error('rpc failed'),
+	})
+	const db = createInsightsTestDb()
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: db,
+			AUDIT_DB: db,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+
+	expect(data.ok).toBe(true)
+	expect(data.totals.workflowRuns).toBe(0)
+	expect(data.workflowStatuses).toEqual([])
+	expect(data.activation.steps).toEqual([
+		{ step: 'signed_up', users: 8 },
+		{ step: 'email_verified', users: 5 },
+		{ step: 'agent_connected', users: 4 },
+		{ step: 'package_forked', users: 3 },
+		{ step: 'package_run_succeeded', users: 0 },
+		{ step: 'package_activated', users: 0 },
+	])
+	expect(data.activation.medianHoursToActivation).toBeNull()
+	expect(data.activation.forksByActor).toEqual({
+		human: 2,
+		agent: 1,
+		unknown: 4,
+	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-insights-run-log-unavailable',
+		expect.objectContaining({
+			userId: 'user-a',
+			error: expect.any(Error),
+		}),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-insights-run-log-unavailable',
+		expect.objectContaining({
+			userId: 'user-b',
+			error: expect.any(Error),
+		}),
+	)
+})
+
+test('admin insights uses content-free getAdminInsightsSnapshot point reads only', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const snapshot: RunLogAdminInsightsSnapshot = {
+		workflowStatusCounts: [{ status: 'complete', count: 1 }],
+		activationMilestones: [
+			{
+				milestone: 'package_run_succeeded',
+				reachedAt: '2026-07-02T00:00:00.000Z',
+				packageId: 'opaque-pkg',
+			},
+		],
+	}
+	stubSnapshotsByUser({
+		'user-a': snapshot,
+		'user-b': emptySnapshot(),
+	})
+	const db = createInsightsTestDb()
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: db,
+			AUDIT_DB: db,
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+
+	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(2)
+	for (const call of runLogMocks.getAdminInsightsSnapshot.mock.calls) {
+		expect(Object.keys(call[0] ?? {})).toEqual(
+			expect.arrayContaining(['env', 'userId']),
+		)
+		expect(call[0]).not.toHaveProperty('includeContent')
+		expect(call[0]).not.toHaveProperty('includeLogs')
+	}
+	const serialized = JSON.stringify(data)
+	expect(serialized).not.toContain('opaque-pkg')
+	expect(serialized).not.toMatch(/workflowName|lastError|errorMessage/)
+	expect(data.workflowStatuses).toEqual([{ status: 'complete', count: 1 }])
+})
+
+test('admin insights source has no legacy D1 run-table SQL', () => {
+	const source = readFileSync(
+		new URL('./admin-insights-data.ts', import.meta.url),
+		'utf8',
+	)
+	expect(source).not.toMatch(/\bworkflow_runs\b/)
+	expect(source).not.toMatch(/\buser_activation_milestones\b/)
+	expect(source).not.toMatch(/\buser_package_run_successes\b/)
+	expect(source).toMatch(/\bgetAdminInsightsSnapshot\b/)
 })
 
 test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async () => {
 	consoleWarn.mockImplementation(() => {})
 	consoleWarn.mockClear()
+	stubSnapshotsByUser({
+		'user-a': emptySnapshot(),
+		'user-b': emptySnapshot(),
+	})
 	const db = createInsightsTestDb()
 	const data = await loadAdminInsightsData(
 		{ APP_DB: db, AUDIT_DB: db } as Env,
@@ -420,26 +791,11 @@ test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async (
 	)
 })
 
-test('activation latency excludes users who have no usable verification date', async () => {
-	consoleWarn.mockImplementation(() => {})
-	const db = createInsightsTestDb({ activationLatencyRows: [] })
-	const data = await loadAdminInsightsData(
-		{
-			APP_DB: db,
-			AUDIT_DB: db,
-			WRANGLER_IS_LOCAL_DEV: 'true',
-		} as Env,
-		now,
-	)
-	// Two users reached the milestone, but neither has timing we can measure.
-	expect(data.activation.steps.at(-1)).toEqual({
-		step: 'package_activated',
-		users: 1,
-	})
-	expect(data.activation.medianHoursToActivation).toBeNull()
-})
-
 test('admin insights reads email reporting from Analytics Engine and degrades when it is unavailable', async () => {
+	stubSnapshotsByUser({
+		'user-a': emptySnapshot(),
+		'user-b': emptySnapshot(),
+	})
 	const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 		Response.json({
 			data: [
