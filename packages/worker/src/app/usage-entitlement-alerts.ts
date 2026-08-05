@@ -14,7 +14,8 @@ import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
  */
 
 export const usageEntitlementAlertCooldownMinutes = 6 * 60
-export const usageEntitlementAlertKvKey = 'ops-alert:usage-entitlement-pressure:v1'
+export const usageEntitlementAlertKvKey =
+	'ops-alert:usage-entitlement-pressure:v1'
 
 type UsageEntitlementAlertEnv = {
 	APP_DB: D1Database
@@ -119,7 +120,9 @@ async function notifyAdminsOfUsageEntitlementPressure(input: {
 	const runtimeHours = Math.round(
 		fleetRuntimeDurationAlertThresholdMs / (60 * 60 * 1000),
 	)
-	const lines = input.issues.map((issue) => formatIssueLine(issue, runtimeHours))
+	const lines = input.issues.map((issue) =>
+		formatIssueLine(issue, runtimeHours),
+	)
 	const text = [
 		`Kody detected ${input.issues.length} fleet usage pressure signal(s) while sweeping the top ${adminFleetEntitlementSweepUserLimit} active accounts this UTC month.`,
 		lines.join('\n'),

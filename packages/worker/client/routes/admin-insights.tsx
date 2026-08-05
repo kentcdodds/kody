@@ -118,7 +118,12 @@ const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 
 function renderConsumerTable(input: {
 	ariaLabel: string
-	rows: Array<{ key: string; username: string; stableUserId: string; value: string }>
+	rows: Array<{
+		key: string
+		username: string
+		stableUserId: string
+		value: string
+	}>
 	emptyText: string
 	valueHeader: string
 }) {
@@ -300,7 +305,12 @@ function renderEntitlementPressure(
 						>
 							{entry.username}
 						</a>
-						<span mix={css({ color: colors.textMuted, fontSize: typography.fontSize.sm })}>
+						<span
+							mix={css({
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
 							{formatPlanLabel(entry.plan)} plan
 						</span>
 					</div>

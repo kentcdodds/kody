@@ -5,7 +5,8 @@ const entitlementMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
-	readAdminEntitlementConsumption: entitlementMocks.readAdminEntitlementConsumption,
+	readAdminEntitlementConsumption:
+		entitlementMocks.readAdminEntitlementConsumption,
 	entitlementWarningThreshold: 0.8,
 }))
 
@@ -192,21 +193,23 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 })
 
 test('detectFleetUsagePressure flags entitlement and runtime duration thresholds', async () => {
-	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(async (input) => {
-		if (input.usageUserId === 'user-a') {
-			return [
-				{
-					resource: 'secrets',
-					label: 'secrets',
-					current: 9,
-					limit: 10,
-					percentOfLimit: 0.9,
-					overEightyPercent: true,
-				},
-			]
-		}
-		return []
-	})
+	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(
+		async (input) => {
+			if (input.usageUserId === 'user-a') {
+				return [
+					{
+						resource: 'secrets',
+						label: 'secrets',
+						current: 9,
+						limit: 10,
+						percentOfLimit: 0.9,
+						overEightyPercent: true,
+					},
+				]
+			}
+			return []
+		},
+	)
 	const db = createFleetDb({
 		activeUsers: [
 			{

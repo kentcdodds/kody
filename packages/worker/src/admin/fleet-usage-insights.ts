@@ -5,9 +5,7 @@ import {
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
-import {
-	readAdminEntitlementConsumption,
-} from '#worker/admin/entitlement-consumption.ts'
+import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
 	type AdminInsightsDurationConsumer,
 	type AdminInsightsEntitlementPressureUser,
@@ -154,8 +152,7 @@ export async function detectFleetUsagePressure(input: {
 					percentOfLimit: item.percentOfLimit,
 				})
 			}
-			const totalDurationMs =
-				durationByUser.get(user.stable_user_id) ?? 0
+			const totalDurationMs = durationByUser.get(user.stable_user_id) ?? 0
 			if (totalDurationMs > runtimeDurationThresholdMs) {
 				issues.push({
 					kind: 'runtime_duration',
@@ -195,8 +192,16 @@ async function queryTopRuntimeDurationConsumers(
 			 WHERE u.deleting_at IS NULL
 			 ORDER BY ranked.total_duration_ms DESC`,
 		)
-		.bind(currentMonth, ...adminFleetRuntimeDurationMetrics, adminFleetTopConsumersLimit)
-		.all<{ stable_user_id: string; username: string; total_duration_ms: number }>()
+		.bind(
+			currentMonth,
+			...adminFleetRuntimeDurationMetrics,
+			adminFleetTopConsumersLimit,
+		)
+		.all<{
+			stable_user_id: string
+			username: string
+			total_duration_ms: number
+		}>()
 	return (rows.results ?? []).map((row) => ({
 		stableUserId: row.stable_user_id,
 		username: row.username,
@@ -265,7 +270,10 @@ async function queryTopDurationConsumersByMetric(
 		)
 		.all<MetricDurationRow & { username: string }>()
 
-	const byMetric = new Map<AdminUsageMetric, Array<AdminInsightsDurationConsumer>>()
+	const byMetric = new Map<
+		AdminUsageMetric,
+		Array<AdminInsightsDurationConsumer>
+	>()
 	for (const metric of adminFleetRuntimeDurationMetrics) {
 		byMetric.set(metric, [])
 	}
@@ -303,10 +311,7 @@ async function buildEntitlementPressurePanel(input: {
 		entitlementSweepConcurrency,
 		async (user) => {
 			const plan = toAdminPlanName(
-				resolveEffectivePlan(
-					parseStoredPlanName(user.plan),
-					user.stripe_plan,
-				),
+				resolveEffectivePlan(parseStoredPlanName(user.plan), user.stripe_plan),
 			)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,

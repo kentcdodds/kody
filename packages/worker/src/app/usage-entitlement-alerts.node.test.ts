@@ -2,11 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const detectFleetUsagePressure = vi.fn<
-	(input: {
-		db: D1Database
-		env: Env
-		now: Date
-	}) => Promise<
+	(input: { db: D1Database; env: Env; now: Date }) => Promise<
 		Array<
 			| {
 					kind: 'entitlement'
@@ -27,11 +23,8 @@ const detectFleetUsagePressure = vi.fn<
 >()
 
 vi.mock('#worker/admin/fleet-usage-insights.ts', () => ({
-	detectFleetUsagePressure: (input: {
-		db: D1Database
-		env: Env
-		now: Date
-	}) => detectFleetUsagePressure(input),
+	detectFleetUsagePressure: (input: { db: D1Database; env: Env; now: Date }) =>
+		detectFleetUsagePressure(input),
 	adminFleetEntitlementSweepUserLimit: 15,
 	fleetRuntimeDurationAlertThresholdMs: 24 * 60 * 60 * 1000,
 }))
