@@ -1240,9 +1240,9 @@ test('runtime invoke tools expose only the supported invoke helper', () => {
 	expect(tools.invokeChecked).toBeUndefined()
 })
 
-test('package runtime dispatch enqueues declared events to the package events queue', async () => {
+test('package runtime dispatch enqueues declared events and validates payloadSchema', async () => {
 	const db = createDatabase()
-	seedRuntimeDispatchPackages()
+	const { manifests, sourceFiles } = seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	const send = vi.fn<(message: unknown) => Promise<undefined>>(
 		async () => undefined,
@@ -1322,11 +1322,7 @@ test('package runtime dispatch enqueues declared events to the package events qu
 		}),
 	).rejects.toThrow(/exceeded the maximum nested invocation depth/)
 	expect(send).toHaveBeenCalledTimes(1)
-})
 
-test('package runtime dispatch validates payloads against the declared payloadSchema', async () => {
-	const db = createDatabase()
-	const { manifests, sourceFiles } = seedRuntimeDispatchPackages()
 	const gatewayManifest = manifests.get('source-gateway') as {
 		kody: {
 			emits?: Record<
@@ -1349,21 +1345,16 @@ test('package runtime dispatch validates payloads against the declared payloadSc
 			},
 		},
 	}
-	// Keep the serialized source snapshot in sync with the mutated manifest
-	// so every manifest loader observes the same emits declaration.
 	const gatewayFiles = sourceFiles.get('source-gateway')
 	if (gatewayFiles) {
 		gatewayFiles['package.json'] = JSON.stringify(gatewayManifest)
 	}
-	const send = vi.fn<(message: unknown) => Promise<undefined>>(
-		async () => undefined,
-	)
-	const tools = createRuntimeEventTools(db, {
+	send.mockClear()
+	const schemaTools = createRuntimeEventTools(db, {
 		envOverrides: { PACKAGE_EVENTS_DISPATCH_QUEUE: { send } },
 	})
-
 	await expect(
-		tools.dispatch({
+		schemaTools.dispatch({
 			topic: '@kentcdodds/discord.message.created',
 			idempotencyKey: 'discord:message-create:bad',
 			payload: { channelId: '456', extra: true },
@@ -1372,9 +1363,8 @@ test('package runtime dispatch validates payloads against the declared payloadSc
 		/payload does not match the declared payloadSchema[\s\S]*missing required property "messageId"[\s\S]*unexpected property "extra"/,
 	)
 	expect(send).not.toHaveBeenCalled()
-
 	await expect(
-		tools.dispatch({
+		schemaTools.dispatch({
 			topic: '@kentcdodds/discord.message.created',
 			idempotencyKey: 'discord:message-create:ok',
 			payload: { messageId: '123', channelId: '456' },
@@ -1383,9 +1373,9 @@ test('package runtime dispatch validates payloads against the declared payloadSc
 	expect(send).toHaveBeenCalledTimes(1)
 })
 
-test('package events deliver to same-user package subscriptions with idempotent replay', async () => {
+test('package events deliver with filters, idempotent replay, and retryable failures', async () => {
 	const db = createDatabase()
-	seedRuntimeDispatchPackages()
+	const { manifests, sources } = seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	repoMockModule.runBundledModuleWithRegistry.mockImplementation(
 		async (
@@ -1475,7 +1465,6 @@ test('package events deliver to same-user package subscriptions with idempotent 
 		],
 	})
 
-	const { manifests, sources } = seedRuntimeDispatchPackages()
 	repoMockModule.loadPackageManifestBySourceId.mockImplementation(
 		async (input: { sourceId: string }) => {
 			if (input.sourceId === 'source-subscriber') {
@@ -1496,12 +1485,11 @@ test('package events deliver to same-user package subscriptions with idempotent 
 	).rejects.toThrow(
 		/Failed to load package manifest for package event dispatch/,
 	)
-})
 
-test('package event subscription filters gate delivery on payload values', async () => {
-	const db = createDatabase()
-	const { manifests, sourceFiles } = seedRuntimeDispatchPackages()
-	const subscriberManifest = manifests.get('source-subscriber') as {
+	const filteredSeed = seedRuntimeDispatchPackages()
+	const subscriberManifest = filteredSeed.manifests.get(
+		'source-subscriber',
+	) as {
 		kody: {
 			subscriptions?: Record<
 				string,
@@ -1515,7 +1503,7 @@ test('package event subscription filters gate delivery on payload values', async
 			filters: { channelId: '456' },
 		},
 	}
-	const subscriberFiles = sourceFiles.get('source-subscriber')
+	const subscriberFiles = filteredSeed.sourceFiles.get('source-subscriber')
 	if (subscriberFiles) {
 		subscriberFiles['package.json'] = JSON.stringify(subscriberManifest)
 	}
@@ -1534,7 +1522,6 @@ test('package event subscription filters gate delivery on payload values', async
 		},
 		invokeDepth: 1,
 	}
-
 	const filteredOut = await deliverPackageEvent({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
@@ -1547,7 +1534,6 @@ test('package event subscription filters gate delivery on payload values', async
 	expect(filteredOut).toMatchObject({ delivered: 0, failed: 0 })
 	expect(filteredOut.subscribers).toEqual([])
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-
 	const matching = await deliverPackageEvent({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
@@ -1559,6 +1545,23 @@ test('package event subscription filters gate delivery on payload values', async
 	})
 	expect(matching).toMatchObject({ delivered: 1, failed: 0 })
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+
+	const claimDb = createDatabase({ failClaim: true })
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	consoleError.mockImplementation(() => {})
+	await expect(
+		deliverPackageEvent({
+			env: createEnv(claimDb),
+			baseUrl: 'https://kody.dev',
+			message: {
+				...baseMessage,
+				idempotencyKey: 'discord:message-create:claim-failure',
+				payload: { messageId: '1' },
+			},
+		}),
+	).rejects.toThrow('Package event dispatch was incomplete.')
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
 test('package events fall back to inline delivery without a queue binding', async () => {
@@ -1613,32 +1616,6 @@ test('package events fall back to inline delivery without a queue binding', asyn
 			topic: '@kentcdodds/discord.message.created',
 		}),
 	)
-})
-
-test('deliverPackageEvent surfaces retryable infrastructure failures', async () => {
-	const db = createDatabase({ failClaim: true })
-	seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	consoleError.mockImplementation(() => {})
-
-	await expect(
-		deliverPackageEvent({
-			env: createEnv(db),
-			baseUrl: 'https://kody.dev',
-			message: {
-				userId: 'user-123',
-				topic: '@kentcdodds/discord.message.created',
-				idempotencyKey: 'discord:message-create:claim-failure',
-				payload: { messageId: '1' },
-				source: {
-					packageId: 'pkg-gateway',
-					kodyId: 'discord-gateway',
-				},
-				invokeDepth: 1,
-			},
-		}),
-	).rejects.toThrow('Package event dispatch was incomplete.')
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
 test('package runtime invoke contract-checks once and executes the target', async () => {

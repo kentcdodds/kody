@@ -1101,7 +1101,7 @@ test('R2 export reuses unchanged objects from the latest sealed index', async ()
 	])
 })
 
-test('DR inventory includes registry buckets and package_service_states services', async () => {
+test('DR inventory includes registry storage and excludes deleting owners', async () => {
 	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValueOnce([
 		{ userId: 'user-a', storageId: 'exec:adhoc-only' },
 	])
@@ -1121,9 +1121,7 @@ test('DR inventory includes registry buckets and package_service_states services
 		'service:pkg-1:worker',
 	])
 	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
-})
 
-test('DR owner inventory excludes accounts undergoing deletion', async () => {
 	const prepare = vi.fn((sql: string) => ({
 		all: async () => ({
 			results: [{ ownerId: 'active-owner' }],
@@ -1133,7 +1131,6 @@ test('DR owner inventory excludes accounts undergoing deletion', async () => {
 	const owners = await listPlatformOwnerInventory({
 		prepare,
 	} as unknown as D1Database)
-
 	expect(owners).toEqual(['active-owner'])
 	expect(prepare).toHaveBeenCalledWith(
 		expect.stringMatching(/FROM users\s+WHERE deleting_at IS NULL/),

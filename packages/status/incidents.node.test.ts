@@ -21,44 +21,8 @@ function run(
 	return { state: current, transitions }
 }
 
-test('a single failure does not open an incident', () => {
-	const { state, transitions } = run(initialComponentProbeState, [false, true])
-	expect(transitions).toEqual([null, null])
-	expect(state.status).toBe('operational')
-})
-
-test('consecutive failures at the threshold open exactly one incident', () => {
-	const failures = Array.from({ length: failureThreshold + 2 }, () => false)
-	const { state, transitions } = run(initialComponentProbeState, failures)
-	expect(
-		transitions.filter((transition) => transition === 'opened'),
-	).toHaveLength(1)
-	expect(transitions[failureThreshold - 1]).toBe('opened')
-	expect(state.status).toBe('down')
-})
-
-test('a single success while down does not resolve the incident', () => {
-	const { state: downState } = run(initialComponentProbeState, [false, false])
-	expect(downState.status).toBe('down')
-	const { state, transitions } = run(downState, [true])
-	if (recoveryThreshold > 1) {
-		expect(transitions).toEqual([null])
-		expect(state.status).toBe('down')
-	}
-})
-
-test('consecutive successes at the threshold resolve the incident once', () => {
-	const { state: downState } = run(initialComponentProbeState, [false, false])
-	const successes = Array.from({ length: recoveryThreshold + 2 }, () => true)
-	const { state, transitions } = run(downState, successes)
-	expect(
-		transitions.filter((transition) => transition === 'resolved'),
-	).toHaveLength(1)
-	expect(state.status).toBe('operational')
-})
-
-test('flapping between success and failure never crosses either threshold', () => {
-	const { state, transitions } = run(initialComponentProbeState, [
+test('probe hysteresis opens and resolves once at threshold and ignores flaps', () => {
+	const flap = run(initialComponentProbeState, [
 		false,
 		true,
 		false,
@@ -66,6 +30,31 @@ test('flapping between success and failure never crosses either threshold', () =
 		false,
 		true,
 	])
-	expect(transitions.every((transition) => transition === null)).toBe(true)
-	expect(state.status).toBe('operational')
+	expect(flap.transitions.every((transition) => transition === null)).toBe(true)
+	expect(flap.state.status).toBe('operational')
+
+	const singleFailure = run(initialComponentProbeState, [false, true])
+	expect(singleFailure.transitions).toEqual([null, null])
+	expect(singleFailure.state.status).toBe('operational')
+
+	const failures = Array.from({ length: failureThreshold + 2 }, () => false)
+	const opened = run(initialComponentProbeState, failures)
+	expect(
+		opened.transitions.filter((transition) => transition === 'opened'),
+	).toHaveLength(1)
+	expect(opened.transitions[failureThreshold - 1]).toBe('opened')
+	expect(opened.state.status).toBe('down')
+
+	const partialRecovery = run(opened.state, [true])
+	if (recoveryThreshold > 1) {
+		expect(partialRecovery.transitions).toEqual([null])
+		expect(partialRecovery.state.status).toBe('down')
+	}
+
+	const successes = Array.from({ length: recoveryThreshold + 2 }, () => true)
+	const resolved = run(opened.state, successes)
+	expect(
+		resolved.transitions.filter((transition) => transition === 'resolved'),
+	).toHaveLength(1)
+	expect(resolved.state.status).toBe('operational')
 })

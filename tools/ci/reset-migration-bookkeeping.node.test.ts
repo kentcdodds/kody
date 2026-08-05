@@ -7,7 +7,7 @@ import {
 	squashedInitMigrationName,
 } from './reset-migration-bookkeeping.ts'
 
-test('frozen pre-squash list matches the applied production history shape', () => {
+test('migration bookkeeping classifies fresh, squashed, pre-squash, and unexpected sets', () => {
 	expect(preSquashMigrationNames).toHaveLength(145)
 	expect(preSquashMigrationNames[0]).toBe('0001-init.sql')
 	expect(preSquashMigrationNames.at(-1)).toBe(
@@ -17,26 +17,14 @@ test('frozen pre-squash list matches the applied production history shape', () =
 	expect(new Set(preSquashMigrationNames).size).toBe(
 		preSquashMigrationNames.length,
 	)
-})
 
-test('empty bookkeeping classifies as fresh', () => {
 	expect(classifyMigrationBookkeeping([])).toEqual({ state: 'fresh' })
-})
-
-test('exactly the squashed baseline row classifies as squashed', () => {
 	expect(classifyMigrationBookkeeping([squashedInitMigrationName])).toEqual({
 		state: 'squashed',
 	})
-})
-
-test('exactly the frozen pre-squash set classifies as pre-squash', () => {
-	const shuffled = [...preSquashMigrationNames].reverse()
-	expect(classifyMigrationBookkeeping(shuffled)).toEqual({
-		state: 'pre-squash',
-	})
-})
-
-test('pre-ledger ghost rows are accepted alongside the frozen set', () => {
+	expect(
+		classifyMigrationBookkeeping([...preSquashMigrationNames].reverse()),
+	).toEqual({ state: 'pre-squash' })
 	expect(
 		classifyMigrationBookkeeping([
 			...preSquashMigrationNames,
@@ -49,46 +37,45 @@ test('pre-ledger ghost rows are accepted alongside the frozen set', () => {
 			'0006-drop-mock-request-tables.sql',
 		]),
 	).toEqual({ state: 'pre-squash' })
-	// Ghosts alone do not excuse missing history.
-	const withoutFinal = preSquashMigrationNames.slice(0, -1)
-	const result = classifyMigrationBookkeeping([
-		...withoutFinal,
-		...preSquashGhostMigrationNames,
-	])
-	expect(result.state).toBe('unexpected')
-})
 
-test('a missing pre-squash migration is refused with a set diff', () => {
-	const applied = preSquashMigrationNames.filter(
-		(name) => name !== '0090-webhook-endpoints.sql',
-	)
-	expect(classifyMigrationBookkeeping(applied)).toEqual({
+	const withoutFinal = preSquashMigrationNames.slice(0, -1)
+	expect(
+		classifyMigrationBookkeeping([
+			...withoutFinal,
+			...preSquashGhostMigrationNames,
+		]).state,
+	).toBe('unexpected')
+	expect(
+		classifyMigrationBookkeeping(
+			preSquashMigrationNames.filter(
+				(name) => name !== '0090-webhook-endpoints.sql',
+			),
+		),
+	).toEqual({
 		state: 'unexpected',
 		missing: ['0090-webhook-endpoints.sql'],
 		extra: [],
 	})
-})
-
-test('an extra unknown migration is refused with a set diff', () => {
-	const applied = [...preSquashMigrationNames, '0145-rogue.sql']
-	expect(classifyMigrationBookkeeping(applied)).toEqual({
+	expect(
+		classifyMigrationBookkeeping([
+			...preSquashMigrationNames,
+			'0145-rogue.sql',
+		]),
+	).toEqual({
 		state: 'unexpected',
 		missing: [],
 		extra: ['0145-rogue.sql'],
 	})
+	expect(
+		classifyMigrationBookkeeping([
+			squashedInitMigrationName,
+			...preSquashMigrationNames,
+		]).state,
+	).toBe('unexpected')
 })
 
-test('squashed row mixed with history is refused', () => {
-	const applied = [squashedInitMigrationName, ...preSquashMigrationNames]
-	const result = classifyMigrationBookkeeping(applied)
-	expect(result.state).toBe('unexpected')
-})
-
-test('parseArgs requires an explicit mode', () => {
+test('parseArgs requires an explicit mode and accepts config, binding, and persist-to forms', () => {
 	expect(() => parseArgs([])).toThrow(/--remote.*--local/)
-})
-
-test('parseArgs parses mode, config, binding, and both persist-to forms', () => {
 	expect(parseArgs(['--remote', '--config', 'w.json'])).toEqual({
 		mode: '--remote',
 		config: 'w.json',
@@ -104,9 +91,6 @@ test('parseArgs parses mode, config, binding, and both persist-to forms', () => 
 		persistTo: '.wrangler/state/y',
 		binding: 'APP_DB',
 	})
-})
-
-test('parseArgs rejects unknown arguments', () => {
 	expect(() => parseArgs(['--local', '--frobnicate'])).toThrow(
 		/Unsupported argument/,
 	)

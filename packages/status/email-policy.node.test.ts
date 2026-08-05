@@ -33,50 +33,40 @@ function input(overrides: Partial<EmailPolicyInput> = {}): EmailPolicyInput {
 	}
 }
 
-test('first incident of an episode sends the incident email', () => {
-	const decision = decideStatusEmail(input({ openIncidents: [openIncident()] }))
-	expect(decision).toEqual({ kind: 'incident_opened' })
-})
-
-test('further incidents while one is already announced stay paused', () => {
-	const decision = decideStatusEmail(
-		input({
-			openIncidents: [openIncident(), openIncident({ component: 'kv' })],
-			lastNotifiedState: 'incident',
-			lastEmailSentAt: baseNow - 60 * 60 * 1000,
-			emailsSentToday: 1,
-		}),
-	)
-	expect(decision).toBeNull()
-})
-
-test('a reminder goes out once 24 hours pass without an email', () => {
-	const decision = decideStatusEmail(
-		input({
-			openIncidents: [openIncident()],
-			lastNotifiedState: 'incident',
-			lastEmailSentAt: baseNow - reminderIntervalMs,
-		}),
-	)
-	expect(decision).toEqual({ kind: 'daily_reminder' })
-})
-
-test('all clear sends once every incident is resolved', () => {
-	const decision = decideStatusEmail(
-		input({
-			lastNotifiedState: 'incident',
-			lastEmailSentAt: baseNow - 30 * 60 * 1000,
-			emailsSentToday: 1,
-		}),
-	)
-	expect(decision).toEqual({ kind: 'all_clear' })
-})
-
-test('no email when everything is healthy and no incident was announced', () => {
+test('status email policy covers open, pause, reminder, all-clear, and the daily cap', () => {
 	expect(decideStatusEmail(input())).toBeNull()
-})
+	expect(decideStatusEmail(input({ openIncidents: [openIncident()] }))).toEqual(
+		{ kind: 'incident_opened' },
+	)
+	expect(
+		decideStatusEmail(
+			input({
+				openIncidents: [openIncident(), openIncident({ component: 'kv' })],
+				lastNotifiedState: 'incident',
+				lastEmailSentAt: baseNow - 60 * 60 * 1000,
+				emailsSentToday: 1,
+			}),
+		),
+	).toBeNull()
+	expect(
+		decideStatusEmail(
+			input({
+				openIncidents: [openIncident()],
+				lastNotifiedState: 'incident',
+				lastEmailSentAt: baseNow - reminderIntervalMs,
+			}),
+		),
+	).toEqual({ kind: 'daily_reminder' })
+	expect(
+		decideStatusEmail(
+			input({
+				lastNotifiedState: 'incident',
+				lastEmailSentAt: baseNow - 30 * 60 * 1000,
+				emailsSentToday: 1,
+			}),
+		),
+	).toEqual({ kind: 'all_clear' })
 
-test('the daily cap suppresses every kind of email', () => {
 	const capped = { emailsSentToday: defaultDailyEmailLimit }
 	expect(
 		decideStatusEmail(input({ ...capped, openIncidents: [openIncident()] })),
@@ -84,19 +74,17 @@ test('the daily cap suppresses every kind of email', () => {
 	expect(
 		decideStatusEmail(input({ ...capped, lastNotifiedState: 'incident' })),
 	).toBeNull()
-})
-
-test('a capped all-clear is sent on the first uncapped tick', () => {
 	// While capped, lastNotifiedState stays 'incident'. Next day the counter
 	// resets and the pending all-clear goes out.
-	const decision = decideStatusEmail(
-		input({
-			lastNotifiedState: 'incident',
-			lastEmailSentAt: baseNow - 6 * 60 * 60 * 1000,
-			emailsSentToday: 0,
-		}),
-	)
-	expect(decision).toEqual({ kind: 'all_clear' })
+	expect(
+		decideStatusEmail(
+			input({
+				lastNotifiedState: 'incident',
+				lastEmailSentAt: baseNow - 6 * 60 * 60 * 1000,
+				emailsSentToday: 0,
+			}),
+		),
+	).toEqual({ kind: 'all_clear' })
 })
 
 test('composed emails carry component names, status page link, and escape html', () => {

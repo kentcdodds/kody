@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
 	collectHealthComponents,
@@ -6,6 +6,7 @@ import {
 	healthComponentIds,
 	type HealthComponentsReport,
 } from '#app/handlers/health-components.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function createHealthyBindings() {
 	return {
@@ -27,63 +28,54 @@ function createRequestContext() {
 	)
 }
 
-test('collectHealthComponents reports every component healthy with latency', async () => {
-	const report = await collectHealthComponents(createHealthyBindings())
-
-	expect(report.ok).toBe(true)
-	expect(report.commitSha).toBe('abc123')
-	expect(report.components.map((component) => component.id)).toEqual([
+test('collectHealthComponents reports healthy, failed, and unavailable bindings', async () => {
+	const healthy = await collectHealthComponents(createHealthyBindings())
+	expect(healthy.ok).toBe(true)
+	expect(healthy.commitSha).toBe('abc123')
+	expect(healthy.components.map((component) => component.id)).toEqual([
 		...healthComponentIds,
 	])
-	for (const component of report.components) {
+	for (const component of healthy.components) {
 		expect(component.ok).toBe(true)
 		expect(component.latencyMs).toBeGreaterThanOrEqual(0)
 		expect(component.error).toBeUndefined()
 	}
-})
 
-test('collectHealthComponents marks a throwing binding as failed without failing the rest', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	try {
-		const bindings = createHealthyBindings()
-		bindings.APP_DB = {
-			prepare: () => ({
-				first: async () => {
-					throw new Error('database is unavailable')
-				},
-			}),
-		} as unknown as D1Database
-		const report = await collectHealthComponents(bindings)
-
-		expect(report.ok).toBe(false)
-		const appDb = report.components.find(
-			(component) => component.id === 'app_db',
-		)
-		expect(appDb).toMatchObject({ ok: false, error: 'error' })
-		const others = report.components.filter(
-			(component) => component.id !== 'app_db',
-		)
-		for (const component of others) {
-			expect(component.ok).toBe(true)
-		}
-	} finally {
-		warnSpy.mockRestore()
+	consoleWarn.mockImplementation(() => {})
+	const bindings = createHealthyBindings()
+	bindings.APP_DB = {
+		prepare: () => ({
+			first: async () => {
+				throw new Error('database is unavailable')
+			},
+		}),
+	} as unknown as D1Database
+	const failed = await collectHealthComponents(bindings)
+	expect(failed.ok).toBe(false)
+	expect(
+		failed.components.find((component) => component.id === 'app_db'),
+	).toMatchObject({ ok: false, error: 'error' })
+	for (const component of failed.components.filter(
+		(entry) => entry.id !== 'app_db',
+	)) {
+		expect(component.ok).toBe(true)
 	}
-})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'health-component-failed',
+		expect.any(String),
+	)
 
-test('collectHealthComponents marks missing bindings as unavailable', async () => {
-	const report = await collectHealthComponents({
+	const missing = await collectHealthComponents({
 		APP_COMMIT_SHA: undefined,
 	})
-
-	expect(report.ok).toBe(false)
-	expect(report.commitSha).toBeNull()
-	for (const component of report.components) {
+	expect(missing.ok).toBe(false)
+	expect(missing.commitSha).toBeNull()
+	for (const component of missing.components) {
 		expect(component).toMatchObject({ ok: false, error: 'unavailable' })
 	}
 })
 
-test('handler returns 200 when healthy and memoizes results within the cache window', async () => {
+test('health components handler memoizes, coalesces in-flight work, and returns 503 on failure', async () => {
 	let prepareCalls = 0
 	const bindings = createHealthyBindings()
 	bindings.APP_DB = {
@@ -96,25 +88,21 @@ test('handler returns 200 when healthy and memoizes results within the cache win
 
 	const first = await handler.handler(createRequestContext())
 	const second = await handler.handler(createRequestContext())
-
 	expect(first.status).toBe(200)
 	expect(first.headers.get('Cache-Control')).toBe('no-store')
 	expect(second.status).toBe(200)
 	expect(prepareCalls).toBe(1)
-
 	const body = (await first.json()) as HealthComponentsReport
 	expect(body.ok).toBe(true)
 	expect(body.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-})
 
-test('concurrent requests at cache expiry share one in-flight collection', async () => {
-	let prepareCalls = 0
 	let releaseFirst: (() => void) | undefined
 	const gate = new Promise<void>((resolve) => {
 		releaseFirst = resolve
 	})
-	const bindings = createHealthyBindings()
-	bindings.APP_DB = {
+	prepareCalls = 0
+	const concurrentBindings = createHealthyBindings()
+	concurrentBindings.APP_DB = {
 		prepare: () => {
 			prepareCalls += 1
 			return {
@@ -125,37 +113,35 @@ test('concurrent requests at cache expiry share one in-flight collection', async
 			}
 		},
 	} as unknown as D1Database
-	const handler = createHealthComponentsHandler(bindings)
-
-	const first = handler.handler(createRequestContext())
-	const second = handler.handler(createRequestContext())
+	const concurrentHandler = createHealthComponentsHandler(concurrentBindings)
+	const firstInFlight = concurrentHandler.handler(createRequestContext())
+	const secondInFlight = concurrentHandler.handler(createRequestContext())
 	releaseFirst?.()
-	const [firstResponse, secondResponse] = await Promise.all([first, second])
-
+	const [firstResponse, secondResponse] = await Promise.all([
+		firstInFlight,
+		secondInFlight,
+	])
 	expect(firstResponse.status).toBe(200)
 	expect(secondResponse.status).toBe(200)
 	expect(prepareCalls).toBe(1)
-})
 
-test('handler returns 503 when any component fails', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	try {
-		const bindings = createHealthyBindings()
-		bindings.OAUTH_KV = {
-			get: async () => {
-				throw new Error('kv is down')
-			},
-		} as unknown as KVNamespace
-		const handler = createHealthComponentsHandler(bindings)
-
-		const response = await handler.handler(createRequestContext())
-
-		expect(response.status).toBe(503)
-		const body = (await response.json()) as HealthComponentsReport
-		expect(body.ok).toBe(false)
-		const kv = body.components.find((component) => component.id === 'kv')
-		expect(kv).toMatchObject({ ok: false, error: 'error' })
-	} finally {
-		warnSpy.mockRestore()
-	}
+	consoleWarn.mockImplementation(() => {})
+	const failingBindings = createHealthyBindings()
+	failingBindings.OAUTH_KV = {
+		get: async () => {
+			throw new Error('kv is down')
+		},
+	} as unknown as KVNamespace
+	const failingHandler = createHealthComponentsHandler(failingBindings)
+	const response = await failingHandler.handler(createRequestContext())
+	expect(response.status).toBe(503)
+	const failedBody = (await response.json()) as HealthComponentsReport
+	expect(failedBody.ok).toBe(false)
+	expect(
+		failedBody.components.find((component) => component.id === 'kv'),
+	).toMatchObject({ ok: false, error: 'error' })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'health-component-failed',
+		expect.any(String),
+	)
 })
