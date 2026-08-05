@@ -40,6 +40,7 @@ import {
 } from './memory-tool-context.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
+import { buildKodyToolIcons } from './tool-icons.ts'
 import {
 	applyRawFetchHostCounts,
 	codeUsesIntegrationAuthHelpers,
@@ -79,12 +80,94 @@ const executeTool = {
 	} satisfies ToolAnnotations,
 } as const
 
+/**
+ * Advertised MCP output schema for the execute tool's `structuredContent`
+ * envelope. Deliberately loose: every field is optional and compound values
+ * are `z.unknown()`, so server-side output validation (which runs on every
+ * successful call once a schema is advertised) can never reject a real
+ * response. The module's own return value is arbitrary caller JSON and stays
+ * `unknown` by construction.
+ */
+export const executeToolOutputSchema = {
+	conversationId: z
+		.string()
+		.optional()
+		.describe(
+			'Tool conversation id; pass it back on subsequent search/execute calls.',
+		),
+	timing: z
+		.unknown()
+		.optional()
+		.describe(
+			'Server-side timing: startedAt, endedAt, durationMs, optional serverTiming phases.',
+		),
+	storage: z
+		.unknown()
+		.optional()
+		.describe('Bound durable storage descriptor ({ id }) when active.'),
+	runId: z
+		.string()
+		.optional()
+		.describe('Run record id for keyed or persisted runs; poll via run_get.'),
+	inProgress: z
+		.boolean()
+		.optional()
+		.describe(
+			'True when a keyed retry found the original run still executing.',
+		),
+	status: z
+		.string()
+		.optional()
+		.describe('Run status accompanying inProgress lookups.'),
+	replayed: z
+		.boolean()
+		.optional()
+		.describe('True when a keyed retry returned a retained earlier result.'),
+	returnedBytes: z
+		.number()
+		.optional()
+		.describe('Serialized size of the returned value.'),
+	truncated: z
+		.boolean()
+		.optional()
+		.describe('True when the result was truncated to fit responseLimit.'),
+	note: z.string().optional().describe('Truncation note when truncated.'),
+	result: z
+		.unknown()
+		.optional()
+		.describe("The module default export's return value (arbitrary JSON)."),
+	error: z
+		.string()
+		.optional()
+		.describe('Error summary when execution failed (isError is set).'),
+	errorName: z.string().optional().describe('Error name for replayed errors.'),
+	errorDetails: z
+		.unknown()
+		.optional()
+		.describe('Structured details for sandbox errors.'),
+	logs: z
+		.array(z.unknown())
+		.optional()
+		.describe('Console output captured from the sandboxed module.'),
+	warnings: z
+		.array(z.string())
+		.optional()
+		.describe('Server guidance, e.g. raw-fetch host nudges.'),
+	memories: z
+		.unknown()
+		.optional()
+		.describe('Relevant stored memories surfaced for this call.'),
+}
+
 export async function registerExecuteTool(agent: McpRegistrationAgent) {
+	const icons = buildKodyToolIcons(agent.getCallerContext().baseUrl)
 	agent.server.registerTool(
 		executeTool.name,
 		{
 			title: executeTool.title,
 			description: executeTool.description,
+			outputSchema: executeToolOutputSchema,
+			...(icons ? { icons } : {}),
 			inputSchema: {
 				code: z
 					.string()

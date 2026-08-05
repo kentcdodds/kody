@@ -11,6 +11,11 @@ import {
 } from './mcp/auth-audit.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
+import {
+	classifyMcpProtocolRequest,
+	recordMcpProtocolEvent,
+} from './mcp/protocol-metrics.ts'
+import { handleStatelessMcpRequest } from './mcp/stateless-lane.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 
 export const mcpResourcePath = '/mcp'
@@ -250,16 +255,41 @@ export async function handleMcpRequest({
 	})
 	context.props = props
 
+	// Lane classification: 2025-era ("legacy") requests keep the sessionful
+	// Durable Object McpAgent lane; 2026-07-28 envelope requests are served
+	// by the stateless SDK v2 lane. Every authenticated request records a
+	// lane data point so legacy-lane retirement is a metrics decision — see
+	// ./mcp/protocol-metrics.ts for the readout query.
+	const classification = await classifyMcpProtocolRequest(request)
+	recordMcpProtocolEvent(env, {
+		lane: classification.lane,
+		method: classification.method,
+		protocolVersion: classification.protocolVersion,
+		clientName: classification.clientName,
+		clientVersion: classification.clientVersion,
+		userId: mcpUser.userId,
+	})
+
 	return await withAccountWriteLease({
 		db: env.APP_DB,
 		stableUserId: mcpUser.userId,
 		holder: `mcp:${request.method} ${url.pathname}`,
 		env,
 		write: async () =>
-			await fetchMcp(
-				request,
-				env,
-				context as ExecutionContext<OAuthContextProps>,
-			),
+			classification.lane === 'legacy'
+				? await fetchMcp(
+						request,
+						env,
+						context as ExecutionContext<OAuthContextProps>,
+					)
+				: await handleStatelessMcpRequest({
+						request,
+						env,
+						ctx,
+						callerContext: props,
+						...(classification.parsedBody === undefined
+							? {}
+							: { parsedBody: classification.parsedBody }),
+					}),
 	})
 }

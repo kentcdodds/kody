@@ -365,6 +365,10 @@
 					"binding": "EMAIL_EVENTS",
 					"dataset": "kody_email_events",
 				},
+				{
+					"binding": "MCP_PROTOCOL_EVENTS",
+					"dataset": "kody_mcp_protocol_events",
+				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -564,6 +568,10 @@
 				{
 					"binding": "EMAIL_EVENTS",
 					"dataset": "kody_email_events_preview",
+				},
+				{
+					"binding": "MCP_PROTOCOL_EVENTS",
+					"dataset": "kody_mcp_protocol_events_preview",
 				},
 			],
 			"ai": {

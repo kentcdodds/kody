@@ -939,6 +939,10 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
   [Usage metering](./usage-metering.md))
 - `EMAIL_EVENTS` (Analytics Engine dataset, production/preview only; indexed by
   stable user id and read only through role-gated platform aggregates)
+- `MCP_PROTOCOL_EVENTS` (Analytics Engine dataset, production/preview only; one
+  point per authenticated `/mcp` request recording which protocol lane served it
+  — legacy sessionful vs stateless 2026-07-28 — for legacy-lane retirement; see
+  `packages/worker/src/mcp/protocol-metrics.ts`)
 
 `packages/worker/wrangler.jsonc` also configures the `EMAIL` send binding,
 dispatch queues, worker loaders (`LOADER` / `APP_LOADER`), the `AI` binding, and

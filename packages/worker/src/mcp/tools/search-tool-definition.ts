@@ -116,6 +116,39 @@ export const searchToolInputSchema = {
 		),
 }
 
+/**
+ * Advertised MCP output schema for the search tool's `structuredContent`
+ * envelope. Deliberately loose: every field is optional and compound values
+ * are `z.unknown()`, so server-side output validation (which runs on every
+ * successful call once a schema is advertised) can never reject a real
+ * response. The schema documents the envelope for clients; mode-specific
+ * payload shapes stay in the tool description and docs.
+ */
+export const searchToolOutputSchema = {
+	conversationId: z
+		.string()
+		.optional()
+		.describe(
+			'Tool conversation id; pass it back on subsequent search/execute calls.',
+		),
+	timing: z
+		.unknown()
+		.optional()
+		.describe(
+			'Server-side timing: startedAt, endedAt, durationMs, optional serverTiming phases.',
+		),
+	result: z
+		.unknown()
+		.optional()
+		.describe(
+			'Mode-specific structured payload: ranked matches with telemetry, domain browse listing, entity detail, or entity-batch results.',
+		),
+	error: z
+		.string()
+		.optional()
+		.describe('Error summary when the search failed (isError is set).'),
+}
+
 export type SearchToolArgs = {
 	query?: string
 	entity?: string | Array<string>
