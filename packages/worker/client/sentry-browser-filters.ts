@@ -253,6 +253,56 @@ export function filterFathomRemoveChildNullSentryEvent<
 	return event
 }
 
+/**
+ * Chrome extension messaging noise: when an extension calls a Chrome API
+ * (e.g. `tabs.update`) against an object id that no longer exists, Chromium
+ * rejects with this exact IPC wording. The rejected promise is often
+ * unhandled, so Sentry's `onunhandledrejection` handler captures it as a
+ * non-Error rejection on the host page — with no app stack frames.
+ *
+ * Signature from production issue 7655189301 / KODY-CLOUDFLARE-3S (breadcrumb
+ * showed an antifingerprint extension injecting into heykody.dev). Match is
+ * intentionally narrow: only this Chrome "Object Not Found Matching Id…,
+ * MethodName…, ParamCount…" form (optionally wrapped by Sentry's Non-Error
+ * rejection preface). Never blanket-drop UnhandledRejection.
+ */
+const chromeExtensionObjectNotFoundMessage =
+	/(?:^|\b)Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+\b/
+
+export function isChromeExtensionObjectNotFoundMessage(message: string) {
+	return chromeExtensionObjectNotFoundMessage.test(message.trim())
+}
+
+export function isChromeExtensionObjectNotFoundError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionObjectNotFoundMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionObjectNotFoundMessage(error.message)
+}
+
+export function isChromeExtensionObjectNotFoundSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isChromeExtensionObjectNotFoundError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isChromeExtensionObjectNotFoundMessage(message),
+	)
+}
+
+export function filterChromeExtensionObjectNotFoundSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isChromeExtensionObjectNotFoundSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -274,6 +324,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (filterFathomRemoveChildNullSentryEvent(event) === null) {
+		return null
+	}
+	if (
+		filterChromeExtensionObjectNotFoundSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
 		return null
 	}
 	return event

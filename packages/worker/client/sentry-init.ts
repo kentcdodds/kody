@@ -30,10 +30,12 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		replaysOnErrorSampleRate: 1.0,
 		// Drop expected browser noise (AbortError aborts, Firefox DOM
 		// permission-denied from Replay/hydration on restricted nodes,
-		// injected wallet/`__firefox__` globals, and Fathom beacon
-		// removeChild-on-null) — see filterBrowserSentryEvent /
-		// KODY-CLOUDFLARE-23 / KODY-CLOUDFLARE-3Q / issues 7639685398,
-		// 7648833360, 7648833403, 7653117289.
+		// injected wallet/`__firefox__` globals, Fathom beacon
+		// removeChild-on-null, and Chrome extension IPC "Object Not Found
+		// Matching Id…") — see filterBrowserSentryEvent /
+		// KODY-CLOUDFLARE-23 / KODY-CLOUDFLARE-3Q / KODY-CLOUDFLARE-3S /
+		// issues 7639685398, 7648833360, 7648833403, 7653117289,
+		// 7655189301.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},
