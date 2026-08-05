@@ -65,15 +65,15 @@ export const entitlementResourceVisibility: Record<
 	persistent_package_services: {
 		group: 'counts',
 		kind: 'boolean_allowance',
-		whatCounts: 'Whether your plan allows persistent (long-lived) package services.',
+		whatCounts:
+			'Whether your plan allows persistent (long-lived) package services.',
 		howToReduce:
 			'Stop persistent services when you do not need them, or upgrade for allowance.',
 	},
 	repo_sessions: {
 		group: 'counts',
 		kind: 'counter',
-		whatCounts:
-			'Active editing sessions opened by agents against your repos.',
+		whatCounts: 'Active editing sessions opened by agents against your repos.',
 		howToReduce:
 			'Discard finished sessions with repo_discard_session; idle sessions are cleaned up automatically after 7 days.',
 	},
@@ -99,7 +99,8 @@ export const entitlementResourceVisibility: Record<
 	email_message_bytes: {
 		group: 'limits',
 		kind: 'per_unit_max',
-		whatCounts: 'Maximum raw MIME size allowed for a single stored email message.',
+		whatCounts:
+			'Maximum raw MIME size allowed for a single stored email message.',
 		howToReduce:
 			'Keep attachments and bodies smaller, or upgrade for a higher per-message cap.',
 	},
@@ -120,7 +121,8 @@ export const entitlementResourceVisibility: Record<
 		group: 'counts',
 		kind: 'counter',
 		whatCounts: 'Workflow runs currently active on your account.',
-		howToReduce: 'Wait for workflows to finish or cancel runs you no longer need.',
+		howToReduce:
+			'Wait for workflows to finish or cancel runs you no longer need.',
 	},
 	execute_calls_per_day: {
 		group: 'daily',

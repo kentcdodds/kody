@@ -92,8 +92,9 @@ test('readEntitlementUsageSnapshot marks rows above 80% as warnings', async () =
 		(row) => row.resource === 'email_sends_per_day',
 	)
 	expect(sends?.overEightyPercent).toBe(true)
-	expect(snapshot.warnings.some((row) => row.resource === 'email_sends_per_day'))
-		.toBe(true)
+	expect(
+		snapshot.warnings.some((row) => row.resource === 'email_sends_per_day'),
+	).toBe(true)
 	const packages = snapshot.resources.find(
 		(row) => row.resource === 'saved_packages',
 	)

@@ -37,8 +37,9 @@ const usageApiPath = '/account/usage.json'
 const usagePath = '/account/usage'
 const billingPath = '/account/billing'
 
-const entitlementGroupOrder: Array<AccountUsageEntitlementConsumption['group']> =
-	['daily', 'counts', 'storage', 'limits']
+const entitlementGroupOrder: Array<
+	AccountUsageEntitlementConsumption['group']
+> = ['daily', 'counts', 'storage', 'limits']
 
 const entitlementGroupLabels: Record<
 	AccountUsageEntitlementConsumption['group'],
@@ -105,9 +106,7 @@ function isUsagePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === usagePath
 }
 
-function groupEntitlementRows(
-	rows: Array<AccountUsageEntitlementConsumption>,
-) {
+function groupEntitlementRows(rows: Array<AccountUsageEntitlementConsumption>) {
 	const grouped = new Map<
 		AccountUsageEntitlementConsumption['group'],
 		Array<AccountUsageEntitlementConsumption>
@@ -126,7 +125,7 @@ function groupEntitlementRows(
 		.filter((entry) => entry.rows.length > 0)
 }
 
-function UsageProgressBar(item: AccountUsageEntitlementConsumption) {
+function renderUsageProgressBar(item: AccountUsageEntitlementConsumption) {
 	const percent = usageProgressPercent(item)
 	if (percent === null) return null
 	const barColor = item.overEightyPercent ? chartColor.amber : chartColor.blue
@@ -294,8 +293,8 @@ export function AccountUsageRoute(handle: Handle) {
 								>
 									{usage.warnings.map((item) => (
 										<li key={item.resource}>
-											<strong>{item.label}</strong>:{' '}
-											{formatCurrentValue(item)} / {formatLimitValue(item)} (
+											<strong>{item.label}</strong>: {formatCurrentValue(item)}{' '}
+											/ {formatLimitValue(item)} (
 											{formatUsagePercent(item.percentOfLimit)}).{' '}
 											{item.howToReduce}{' '}
 											<a href={billingPath} mix={css(primaryLinkCss)}>
@@ -377,8 +376,7 @@ export function AccountUsageRoute(handle: Handle) {
 															...(item.overEightyPercent
 																? {
 																		color: chartColor.amber,
-																		fontWeight:
-																			typography.fontWeight.semibold,
+																		fontWeight: typography.fontWeight.semibold,
 																	}
 																: {}),
 														})}
@@ -386,7 +384,7 @@ export function AccountUsageRoute(handle: Handle) {
 														{formatUsagePercent(item.percentOfLimit)}
 													</td>
 													<td mix={css(accountManagementTableCellCss)}>
-														<UsageProgressBar {...item} />
+														{renderUsageProgressBar(item)}
 													</td>
 												</tr>
 											))}

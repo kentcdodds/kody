@@ -6,9 +6,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { usageGetCapability } from './usage-get.ts'
 
-function withUsageEnv(
-	env: { APP_DB: D1Database } & Record<string, unknown>,
-) {
+function withUsageEnv(env: { APP_DB: D1Database } & Record<string, unknown>) {
 	const meter = createInMemoryUserMeterEnv()
 	const runLog = createInMemoryRunLogUsageEnv()
 	return {
@@ -105,7 +103,9 @@ test('usage_get returns self-scoped entitlement snapshot', async () => {
 	const result = await usageGetCapability.handler({}, { env, callerContext })
 	expect(result.plan).toBe('pro')
 	expect(result.resources.length).toBe(accountUsageEntitlementResources.length)
-	const saved = result.resources.find((row) => row.resource === 'saved_packages')
+	const saved = result.resources.find(
+		(row) => row.resource === 'saved_packages',
+	)
 	expect(saved?.current).toBe(1)
 	expect(saved?.limit).toBeGreaterThan(0)
 	expect(saved?.percent).toBe(saved!.current / saved!.limit)
