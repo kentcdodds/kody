@@ -38,6 +38,7 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	hoverMq,
+	inlineSpinnerCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 
@@ -62,7 +63,6 @@ const onboardingSteps = [
 	label: string
 	hash: string
 }>
-
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
@@ -487,7 +487,7 @@ export function OnboardingRoute(handle: Handle) {
 										</>
 									) : (
 										<>
-											<span mix={css(connectSpinnerCss)} aria-hidden="true" />
+											<span mix={css(inlineSpinnerCss)} aria-hidden="true" />
 											<strong>Waiting for your agent to connect…</strong>
 										</>
 									)}
@@ -534,7 +534,7 @@ export function OnboardingRoute(handle: Handle) {
 										? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
 										: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
 								</p>
-								<ul mix={css(starterGridCss)} >
+								<ul mix={css(starterGridCss)}>
 									{featuredListings.map((listing) => (
 										<OnboardingStarterCard
 											key={listing.id}
@@ -930,21 +930,6 @@ const connectStatusCss = {
 	padding: '0.65rem 1.2rem',
 	'&[data-connected]': {
 		borderStyle: 'solid',
-	},
-}
-
-const connectSpinnerCss = {
-	flex: 'none',
-	width: '1rem',
-	height: '1rem',
-	border: `2px solid ${colors.border}`,
-	borderTopColor: colors.primary,
-	borderRadius: '50%',
-	'@keyframes onboarding-spin': {
-		to: { transform: 'rotate(360deg)' },
-	},
-	'@media (prefers-reduced-motion: no-preference)': {
-		animation: 'onboarding-spin 0.8s linear infinite',
 	},
 }
 

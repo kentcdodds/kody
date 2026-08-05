@@ -30,6 +30,8 @@
 		"./src/app/user-avatar.tsx",
 		"./src/app/community-public-types.ts",
 		"./src/app/community-activity-display.ts",
+		"./src/app/community-listing-name.tsx",
+		"./src/app/timeline-display.ts",
 		"./src/app/community-display.ts",
 		"./src/app/blog-display.ts",
 		"./src/app/document-head.ts",

@@ -760,6 +760,27 @@ export function getSelectCss(options: AuthInputCssOptions = {}) {
 	}
 }
 
+/**
+ * The inline "working on it" spinner that sits beside a line of status text
+ * (connecting an agent, loading the timeline). Decorative — the sentence next
+ * to it carries the meaning — so it simply stops under reduced motion.
+ */
+export const inlineSpinnerCss = {
+	flex: 'none',
+	width: '1rem',
+	height: '1rem',
+	boxSizing: 'border-box' as const,
+	border: `2px solid ${colors.border}`,
+	borderTopColor: colors.primary,
+	borderRadius: radius.full,
+	'@keyframes inline-spinner-spin': {
+		to: { transform: 'rotate(360deg)' },
+	},
+	'@media (prefers-reduced-motion: no-preference)': {
+		animation: 'inline-spinner-spin 0.8s linear infinite',
+	},
+}
+
 export const focusRingCss = {
 	outline: `2px solid ${colors.primary}`,
 	outlineOffset: '2px',

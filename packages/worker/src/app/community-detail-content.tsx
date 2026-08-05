@@ -10,11 +10,11 @@ import {
 	shortCommunityCommit,
 } from '#app/community-display.ts'
 import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
+import { renderCommunityListingName } from '#app/community-listing-name.tsx'
 import {
 	communityBadgePillCss,
 	communityTagListCss,
 	communityTagPillCss,
-	renderCommunityListingName,
 } from '#app/community-listings-content.tsx'
 import { routes } from '#app/routes.ts'
 import { colors } from '#client/styles/tokens.ts'

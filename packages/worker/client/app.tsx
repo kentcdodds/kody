@@ -147,14 +147,16 @@ export function App(handle: Handle<AppProps>) {
 				? `${currentPathname}${readRouterSearch(handle)}`
 				: null
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
-		// Redesigned marketing pages own their own layout (gutters, measures)
-		// and the landing page owns its own waitlist close (the "Equip your
-		// agent" section), so the compact strip would double up there.
+		// Redesigned pages own their own layout (gutters, measures, max-width
+		// container), so `<main>` must not add its generic padding on top. The
+		// landing page also owns its own waitlist close (the "Equip your agent"
+		// section), so the compact strip would double up there.
 		const isRedesignedMarketingPath =
 			currentPathname === '/' ||
 			currentPathname === '/pricing' ||
 			currentPathname === '/blog' ||
 			currentPathname === '/community' ||
+			currentPathname === '/timeline' ||
 			currentPathname === '/onboarding' ||
 			getListingIdFromPathname(currentPathname) !== null ||
 			getSlugFromPathname(currentPathname) !== null

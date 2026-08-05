@@ -299,6 +299,14 @@ main:focus-visible {
 	border-radius: 12px;
 }
 
+/* Rows whose whole box is the link (timeline events) keep their own corners:
+   the outline stays, but the global 4px radius above would square off a ring
+   drawn around a 10px row. Unlayered for the same reason as the rules above —
+   a rule inside `@layer rmx.*` cannot win against them. */
+[data-rounded-focus]:focus-visible {
+	border-radius: 10px;
+}
+
 ::selection {
 	background: oklch(from var(--color-primary) l c h / 0.3);
 }

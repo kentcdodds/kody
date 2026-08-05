@@ -5,6 +5,7 @@ import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import { formatCommunityAdaptationEffort } from '#app/community-display.ts'
 import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
+import { renderCommunityListingName } from '#app/community-listing-name.tsx'
 import { routes } from '#app/routes.ts'
 import { colors, transitions } from '#client/styles/tokens.ts'
 import { getSurfaceCardCss, mergeCss } from '#client/styles/style-primitives.ts'
@@ -21,19 +22,6 @@ import { getSurfaceCardCss, mergeCss } from '#client/styles/style-primitives.ts'
 export type CommunityListingsContentProps = {
 	listings: Array<PublicCommunityListing>
 	query: string | null
-}
-
-/** "@scope/name" breaks after the scope slash on narrow cards. */
-export function renderCommunityListingName(name: string) {
-	const slashIndex = name.indexOf('/')
-	if (!name.startsWith('@') || slashIndex < 0) return name
-	return (
-		<>
-			{name.slice(0, slashIndex + 1)}
-			<wbr />
-			{name.slice(slashIndex + 1)}
-		</>
-	)
 }
 
 function formatCount(count: number, noun: string) {
@@ -54,7 +42,7 @@ export function CommunityListingsContent(
 						: 'No community packages have been published yet.'}
 				</p>
 			) : (
-				<ul  mix={css(listingGridCss)}>
+				<ul mix={css(listingGridCss)}>
 					{listings.map((listing, index) => (
 						<li
 							key={listing.id}
