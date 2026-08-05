@@ -82,7 +82,10 @@ export class MailboxMaintenanceCommands {
 	}
 
 	private nextAlarmDueAtMs(nowMs: number = Date.now()) {
-		const inboundDueAt = getMailboxInboundDueAt(this.ctx.storage.sql)
+		const inboundDueAt = getMailboxInboundDueAt(
+			this.ctx.storage.sql,
+			new Date(nowMs),
+		)
 		const inboundDueAtMs =
 			inboundDueAt == null ? null : Date.parse(inboundDueAt)
 		const dueTimes = [

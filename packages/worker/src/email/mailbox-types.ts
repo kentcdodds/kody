@@ -650,6 +650,8 @@ type MailboxCoreRpc = {
 	}) => Promise<MailboxRunRetentionNowResult>
 	getInboundDueWorkHint: (input: {
 		ownerId: string
+		/** Optional clock for due-at clamping; defaults to wall clock. */
+		now?: string
 	}) => Promise<{ dueAt: string | null }>
 	purge: () => Promise<{ ok: true }>
 }

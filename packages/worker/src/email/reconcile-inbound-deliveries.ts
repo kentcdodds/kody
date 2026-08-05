@@ -212,7 +212,10 @@ export async function sweepStaleInboundDeliveries(input: {
 				const hint = await mailboxRpc({
 					env: input.env,
 					userId,
-				}).getInboundDueWorkHint({ ownerId: userId })
+				}).getInboundDueWorkHint({
+					ownerId: userId,
+					now: now.toISOString(),
+				})
 				await replaceInboundDueOwnerHint({
 					db: input.env.APP_DB,
 					userId,

@@ -820,6 +820,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 
 	async getInboundDueWorkHint(input: {
 		ownerId: string
+		now?: string
 	}): Promise<{ dueAt: string | null }> {
 		return this.inbound.getInboundDueWorkHint(input)
 	}
