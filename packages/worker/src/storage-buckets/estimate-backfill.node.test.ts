@@ -4,6 +4,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 const mockModule = vi.hoisted(() => ({
 	readInventoriedStorageBucketEstimatedBytes: vi.fn(),
 	listStorageBucketsMissingEstimates: vi.fn(),
+	registerMissingRepoSessionStorageBuckets: vi.fn(async () => 0),
 	updateStorageBucketEstimate: vi.fn(async () => true),
 }))
 
@@ -15,6 +16,8 @@ vi.mock('#worker/storage-runner.ts', () => ({
 vi.mock('./service.ts', () => ({
 	listStorageBucketsMissingEstimates: (...args: Array<unknown>) =>
 		mockModule.listStorageBucketsMissingEstimates(...args),
+	registerMissingRepoSessionStorageBuckets: (...args: Array<unknown>) =>
+		mockModule.registerMissingRepoSessionStorageBuckets(...args),
 	updateStorageBucketEstimate: (...args: Array<unknown>) =>
 		mockModule.updateStorageBucketEstimate(...args),
 }))
