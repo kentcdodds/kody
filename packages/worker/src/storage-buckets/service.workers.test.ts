@@ -9,9 +9,31 @@ import {
 	listUserStorageBucketIds,
 	maybeRefreshStorageBucketEstimate,
 	recordStorageBucketEstimate,
+	registerMissingRepoSessionStorageBuckets,
 	registerStorageBucket,
 } from './service.ts'
-import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
+import {
+	ensureRepoSessionsTestSchema,
+	ensureUserStorageBucketsTestSchema,
+} from './test-schema.ts'
+
+async function seedRepoSessionRow(input: {
+	db: D1Database
+	sessionId: string
+	userId: string
+	status: 'active' | 'published' | 'discarded'
+}) {
+	const now = new Date().toISOString()
+	await input.db
+		.prepare(
+			`INSERT INTO repo_sessions (
+				id, user_id, source_id, source_repo_id, session_branch,
+				source_branch, base_commit, status, created_at, updated_at
+			) VALUES (?, ?, 'source-1', 'repo-1', 'sessions/x', 'main', 'abc', ?, ?, ?)`,
+		)
+		.bind(input.sessionId, input.userId, input.status, now, now)
+		.run()
+}
 
 test('registerStorageBucket upserts and list helpers scope correctly on real D1', async () => {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
@@ -79,6 +101,67 @@ test('registerStorageBucket upserts and list helpers scope correctly on real D1'
 		userId: userA,
 		storageId: sessionBucket,
 	})
+})
+
+test('missing repo-session inventory reconciliation registers only active sessions', async () => {
+	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await ensureRepoSessionsTestSchema(env.APP_DB)
+	const userId = `usb-reconcile-${crypto.randomUUID()}`
+	const activeSession = `rs-active-${crypto.randomUUID()}`
+	const discardedSession = `rs-discarded-${crypto.randomUUID()}`
+	const registeredSession = `rs-registered-${crypto.randomUUID()}`
+	await seedRepoSessionRow({
+		db: env.APP_DB,
+		sessionId: activeSession,
+		userId,
+		status: 'active',
+	})
+	await seedRepoSessionRow({
+		db: env.APP_DB,
+		sessionId: discardedSession,
+		userId,
+		status: 'discarded',
+	})
+	await seedRepoSessionRow({
+		db: env.APP_DB,
+		sessionId: registeredSession,
+		userId,
+		status: 'active',
+	})
+	// Pre-existing inventory row: reconciliation must not duplicate or touch it.
+	await env.APP_DB.prepare(
+		`INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at, estimated_bytes
+		) VALUES (?, ?, 'repo_session', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 42)`,
+	)
+		.bind(userId, `repo-session:${registeredSession}`)
+		.run()
+
+	const inserted = await registerMissingRepoSessionStorageBuckets({
+		db: env.APP_DB,
+	})
+	expect(inserted).toBeGreaterThanOrEqual(1)
+
+	const estimates = await listUserStorageBucketEstimates({ env, userId })
+	const ids = estimates.map((row) => row.storageId)
+	expect(ids).toContain(`repo-session:${activeSession}`)
+	expect(ids).not.toContain(`repo-session:${discardedSession}`)
+	// The active session recovered by reconciliation starts unmeasured so the
+	// estimate backfill sweep picks it up; the pre-existing row is untouched.
+	expect(
+		estimates.find((row) => row.storageId === `repo-session:${activeSession}`)
+			?.estimatedBytes,
+	).toBeNull()
+	expect(
+		estimates.find(
+			(row) => row.storageId === `repo-session:${registeredSession}`,
+		)?.estimatedBytes,
+	).toBe(42)
+
+	// Second run is idempotent for this user's sessions.
+	await registerMissingRepoSessionStorageBuckets({ db: env.APP_DB })
+	const after = await listUserStorageBucketEstimates({ env, userId })
+	expect(after.length).toBe(estimates.length)
 })
 
 test('estimate persistence is UPDATE-only, listable, and throttled per isolate', async () => {

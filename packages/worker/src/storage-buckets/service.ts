@@ -171,6 +171,44 @@ export function repoSessionIdFromStorageBucketId(storageId: string): string {
 }
 
 /**
+ * Bounded reconciliation for repo-session inventory rows whose awaited
+ * registration on session open failed (registration swallows transient D1
+ * errors so metering never blocks the session). Estimate persistence is
+ * UPDATE-only and the estimate backfill scans only existing rows, so a
+ * missed registration would otherwise stay invisible for the session's
+ * lifetime. The single INSERT..SELECT statement filters on
+ * `repo_sessions.status = 'active'` inside the same statement, so a session
+ * discarded or cleaned up concurrently can never get its inventory row
+ * recreated after lifecycle cleanup deleted it.
+ */
+export async function registerMissingRepoSessionStorageBuckets(input: {
+	db: D1Database
+	limit?: number
+	now?: Date
+}): Promise<number> {
+	const limit = input.limit ?? 24
+	const seenAt = (input.now ?? new Date()).toISOString()
+	const result = await input.db
+		.prepare(
+			`INSERT INTO user_storage_buckets (
+				user_id, storage_id, kind, created_at, last_seen_at
+			)
+			SELECT rs.user_id, ?1 || rs.id, 'repo_session', ?2, ?2
+			FROM repo_sessions rs
+			WHERE rs.status = 'active'
+				AND NOT EXISTS (
+					SELECT 1 FROM user_storage_buckets b
+					WHERE b.user_id = rs.user_id
+						AND b.storage_id = ?1 || rs.id
+				)
+			LIMIT ?3`,
+		)
+		.bind(repoSessionStorageBucketPrefix, seenAt, limit)
+		.run()
+	return result.meta?.changes ?? 0
+}
+
+/**
  * Awaited, owner-scoped inventory removal for explicit bucket lifecycle
  * cleanup. Unlike estimate persistence, this intentionally deletes the row.
  */

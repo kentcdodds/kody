@@ -1,5 +1,6 @@
 import {
 	listStorageBucketsMissingEstimates,
+	registerMissingRepoSessionStorageBuckets,
 	updateStorageBucketEstimate,
 } from './service.ts'
 import { readInventoriedStorageBucketEstimatedBytes } from '#worker/storage-runner.ts'
@@ -28,6 +29,17 @@ export async function backfillStorageBucketEstimates(input: {
 	batchSize?: number
 }): Promise<{ scanned: number; updated: number; failed: number }> {
 	const batchSize = input.batchSize ?? storageBucketEstimateBackfillBatchSize
+	// Recover active repo sessions whose awaited open-time registration lost
+	// its D1 write (registration is deliberately non-blocking for the
+	// session). Race-safe: the statement filters on active status, so it can
+	// never recreate a row lifecycle cleanup removed. Newly inserted rows have
+	// NULL estimates and are picked up by this same sweep.
+	await registerMissingRepoSessionStorageBuckets({
+		db: input.env.APP_DB,
+		limit: batchSize,
+	}).catch((error: unknown) => {
+		console.warn('repo-session-bucket-reconcile-failed', error)
+	})
 	const rows = await listStorageBucketsMissingEstimates({
 		db: input.env.APP_DB,
 		limit: batchSize,
