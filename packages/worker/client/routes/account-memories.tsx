@@ -39,7 +39,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 } from '#client/styles/style-primitives.ts'
 
@@ -161,7 +161,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerButtonCss()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)

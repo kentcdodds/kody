@@ -18,7 +18,7 @@ import { routes } from '#app/routes.ts'
 import { UserAvatar } from '#app/user-avatar.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	mutedLinkCss,
@@ -1112,7 +1112,7 @@ const compactPillButtonCss = getPillButtonCss({ size: 'sm' })
 
 const compactGhostButtonCss = getGhostButtonCss({ size: 'sm' })
 
-const dangerButtonCss = getDangerButtonCss()
+const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 const avatarSectionCss = {
 	display: 'flex',

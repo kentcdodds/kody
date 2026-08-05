@@ -21,7 +21,7 @@ import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	mutedLinkCss,
 } from '#client/styles/style-primitives.ts'
 
@@ -124,7 +124,7 @@ export function AccountStarsRoute(handle: Handle) {
 		}
 	}
 
-	const dangerButtonCss = getDangerButtonCss()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)

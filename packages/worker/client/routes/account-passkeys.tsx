@@ -28,7 +28,7 @@ import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	layoutMaxWidths,
@@ -572,4 +572,4 @@ export function AccountPasskeysRoute(handle: Handle) {
 
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-const dangerButtonCss = getDangerButtonCss()
+const dangerButtonCss = getDangerPillCss({ size: 'sm' })

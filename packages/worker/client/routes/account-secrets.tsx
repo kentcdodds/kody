@@ -47,7 +47,7 @@ import {
 	cardCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	getSelectCss,
@@ -1777,4 +1777,4 @@ const packageIdentityCss = {
 
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-const dangerButtonCss = getDangerButtonCss()
+const dangerButtonCss = getDangerPillCss({ size: 'sm' })

@@ -41,7 +41,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
@@ -354,7 +354,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let editMode = false
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerButtonCss()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function redirectToLogin() {

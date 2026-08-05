@@ -244,6 +244,34 @@ export function getGhostButtonCss(options?: PillButtonCssOptions) {
 }
 
 /**
+ * Destructive action in the redesign's pill vocabulary — the ghost button's
+ * quiet shape carrying the danger color. Deliberately not a solid red fill:
+ * these sit inline in account and admin lists next to ordinary actions, and a
+ * filled pill would shout for attention the action has not earned yet. The
+ * ring and the color say "destructive"; hover commits to it.
+ */
+export function getDangerPillCss(options?: PillButtonCssOptions) {
+	return {
+		...getBasePillButtonCss(options),
+		border: 'none',
+		backgroundColor: 'transparent',
+		color: colors.danger,
+		boxShadow: `inset 0 0 0 1.5px oklch(from ${colors.danger} l c h / 0.45)`,
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				backgroundColor: `oklch(from ${colors.danger} l c h / 0.12)`,
+				transform: 'translateY(-1px)',
+				boxShadow: `inset 0 0 0 1.5px ${colors.danger}`,
+			},
+			'&:not(:disabled):active': {
+				transform: 'translateY(0) scale(0.97)',
+			},
+		},
+		...buttonReducedMotionCss,
+	}
+}
+
+/**
  * Layout-stable label swap for buttons whose text changes with state
  * ("Copy" → "Copied", "Join the waiting list" → "Joining…"). Every label
  * renders grid-stacked in the same cell so the widest one reserves the width

@@ -11,7 +11,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	getSelectCss,
@@ -287,7 +287,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerButtonCss()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)

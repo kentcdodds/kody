@@ -26,7 +26,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	layoutMaxWidths,
@@ -485,4 +485,4 @@ export function AccountTwoFactorRoute(handle: Handle) {
 
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-const dangerButtonCss = getDangerButtonCss()
+const dangerButtonCss = getDangerPillCss({ size: 'sm' })

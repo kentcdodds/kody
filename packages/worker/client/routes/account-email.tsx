@@ -29,7 +29,7 @@ import {
 	cardCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 	getSelectCss,
 } from '#client/styles/style-primitives.ts'
@@ -182,7 +182,7 @@ export function AccountEmailRoute(handle: Handle) {
 	let lastFailedDataKey: string | null = null
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerButtonCss()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)

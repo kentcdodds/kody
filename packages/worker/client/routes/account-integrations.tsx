@@ -65,7 +65,7 @@ import {
 	detailValueCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getPillButtonCss,
 	hoverMq,
 	insetCardCss,
@@ -120,6 +120,8 @@ function filterOauthApps(
 		]),
 	)
 }
+
+const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 const providerCatalogGridCss = {
 	display: 'grid',
@@ -947,7 +949,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											<button
 												type="submit"
 												disabled={rotateStatus === 'saving' || !rotateConfirmed}
-												mix={css(getDangerButtonCss())}
+												mix={css(dangerButtonCss)}
 											>
 												{rotateStatus === 'saving'
 													? 'Rotating...'

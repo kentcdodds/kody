@@ -12,7 +12,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerButtonCss,
+	getDangerPillCss,
 	getGhostButtonCss,
 } from '#client/styles/style-primitives.ts'
 import {
@@ -245,7 +245,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 	}
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerButtonCss()
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	let lastSeenHref = ''
 
