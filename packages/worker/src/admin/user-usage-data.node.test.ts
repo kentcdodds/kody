@@ -189,7 +189,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 				id: 1,
 				username: 'empty',
 				email,
-				plan: 'pro',
+				plan: 'standard',
 				stable_user_id: usageUserId,
 			},
 		],

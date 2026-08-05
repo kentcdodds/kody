@@ -961,9 +961,9 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 test('requested units and getCurrent overrides are honored', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
+		users: [{ email: plannedEmail, plan: 'standard', stable_user_id: userId }],
 	})
-	const maxBytes = planLimits.pro.maxEmailMessageBytes
+	const maxBytes = planLimits.standard.maxEmailMessageBytes
 	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
 
 	const oversized = await assertWithinEntitlement({

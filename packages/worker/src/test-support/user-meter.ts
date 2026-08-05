@@ -6,6 +6,7 @@ import {
 	type DailyEntitlementResource,
 	type UserMeterDeletionStateExport,
 	type UserMeterPackageServiceState,
+	type UserMeterPackageServiceMode,
 	type UserMeterPackageServiceStatus,
 	type UserMeterStorageBytesState,
 	type UserMeterWriteLeaseEntry,
@@ -16,6 +17,7 @@ type MeterRow = { count: number; revision: number }
 type StorageRow = { bytes: number; revision: number; updatedAt: string }
 type PackageServiceRow = {
 	status: UserMeterPackageServiceStatus
+	mode: UserMeterPackageServiceMode
 	startedAt: string | null
 	sourceUpdatedAt: string
 	revision: number
@@ -108,6 +110,7 @@ export function createInMemoryUserMeterEnv() {
 				packageId,
 				serviceName,
 				status: row.status,
+				mode: row.mode,
 				startedAt: row.status === 'running' ? row.startedAt : null,
 				sourceUpdatedAt: row.sourceUpdatedAt,
 				revision: row.revision,
@@ -357,6 +360,7 @@ export function createInMemoryUserMeterEnv() {
 				packageId: string
 				serviceName: string
 				status: string
+				mode?: string
 				startedAt?: string | null
 				sourceUpdatedAt: string
 				updatedAt?: string
@@ -367,6 +371,8 @@ export function createInMemoryUserMeterEnv() {
 					)
 				}
 				const status = input.status
+				const mode: UserMeterPackageServiceMode =
+					input.mode === 'bounded' ? 'bounded' : 'persistent'
 				const key = packageServiceKey(input.packageId, input.serviceName)
 				const existing = packageServices.get(key)
 				if (existing && existing.sourceUpdatedAt > input.sourceUpdatedAt) {
@@ -392,6 +398,7 @@ export function createInMemoryUserMeterEnv() {
 						: input.sourceUpdatedAt
 				const row: PackageServiceRow = {
 					status,
+					mode,
 					startedAt,
 					sourceUpdatedAt: input.sourceUpdatedAt,
 					revision: existing ? existing.revision + 1 : 1,
@@ -466,6 +473,7 @@ export function createInMemoryUserMeterEnv() {
 				input: {
 					staleAfterMs?: number
 					excludeService?: { packageId: string; serviceName: string }
+					mode?: string
 					now?: string
 				} = {},
 			) {
@@ -480,6 +488,7 @@ export function createInMemoryUserMeterEnv() {
 				let count = 0
 				for (const [entryKey, row] of packageServices) {
 					if (row.status !== 'running') continue
+					if (input.mode && row.mode !== input.mode) continue
 					if (row.sourceUpdatedAt < freshAfter) continue
 					if (input.excludeService) {
 						const [packageId, serviceName] = entryKey.split('\0')
@@ -499,6 +508,7 @@ export function createInMemoryUserMeterEnv() {
 					packageId: string
 					serviceName: string
 					status: string
+					mode?: string
 					startedAt?: string | null
 					sourceUpdatedAt: string
 					updatedAt?: string
