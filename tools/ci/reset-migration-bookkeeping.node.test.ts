@@ -4,6 +4,7 @@ import {
 	parseArgs,
 	preSquashGhostMigrationNames,
 	preSquashMigrationNames,
+	squashEpochMigrationNames,
 	squashedInitMigrationName,
 } from './reset-migration-bookkeeping.ts'
 
@@ -21,6 +22,16 @@ test('migration bookkeeping classifies fresh, squashed, pre-squash, and unexpect
 	expect(classifyMigrationBookkeeping([])).toEqual({ state: 'fresh' })
 	expect(classifyMigrationBookkeeping([squashedInitMigrationName])).toEqual({
 		state: 'squashed',
+	})
+	expect(classifyMigrationBookkeeping(squashEpochMigrationNames)).toEqual({
+		state: 'squashed',
+	})
+	expect(
+		classifyMigrationBookkeeping([squashEpochMigrationNames[1] ?? '']),
+	).toEqual({
+		state: 'unexpected',
+		missing: preSquashMigrationNames,
+		extra: ['0002-repo-session-storage-buckets.sql'],
 	})
 	expect(
 		classifyMigrationBookkeeping([...preSquashMigrationNames].reverse()),
@@ -70,6 +81,12 @@ test('migration bookkeeping classifies fresh, squashed, pre-squash, and unexpect
 		classifyMigrationBookkeeping([
 			squashedInitMigrationName,
 			...preSquashMigrationNames,
+		]).state,
+	).toBe('unexpected')
+	expect(
+		classifyMigrationBookkeeping([
+			...squashEpochMigrationNames,
+			'0003-rogue.sql',
 		]).state,
 	).toBe('unexpected')
 })

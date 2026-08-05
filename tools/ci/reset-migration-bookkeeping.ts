@@ -13,8 +13,8 @@
  *
  * 1. fresh — no `d1_migrations` table or zero rows: nothing to do; the
  *    regular apply bootstraps the squashed baseline.
- * 2. squashed — bookkeeping already holds exactly the squashed baseline row:
- *    nothing to do.
+ * 2. squashed — bookkeeping holds a valid applied prefix of the current
+ *    post-squash migration epoch: nothing to do.
  * 3. pre-squash — bookkeeping holds exactly the full frozen pre-squash
  *    migration name set: reset to the single squashed baseline row.
  *
@@ -32,6 +32,16 @@ import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
 
 export const squashedInitMigrationName = '0001-squashed-init.sql'
+
+/**
+ * Ordered migration names in the current post-squash epoch. The reset runs
+ * before regular migration apply, so every prefix beginning with the squashed
+ * baseline is valid (for example, a database that has not applied 0002 yet).
+ */
+export const squashEpochMigrationNames: ReadonlyArray<string> = [
+	squashedInitMigrationName,
+	'0002-repo-session-storage-buckets.sql',
+]
 
 /**
  * Frozen: the exact migration names recorded in tools/migration-ledger.json
@@ -218,13 +228,18 @@ export function classifyMigrationBookkeeping(
 	if (appliedNames.length === 0) {
 		return { state: 'fresh' }
 	}
+	const applied = new Set(appliedNames)
+	const expectedSquashEpochPrefix = squashEpochMigrationNames.slice(
+		0,
+		applied.size,
+	)
 	if (
-		appliedNames.length === 1 &&
-		appliedNames[0] === squashedInitMigrationName
+		applied.size === appliedNames.length &&
+		expectedSquashEpochPrefix.length === applied.size &&
+		expectedSquashEpochPrefix.every((name) => applied.has(name))
 	) {
 		return { state: 'squashed' }
 	}
-	const applied = new Set(appliedNames)
 	const expected = new Set(preSquashMigrationNames)
 	const ghosts = new Set(preSquashGhostMigrationNames)
 	const missing = [...expected].filter((name) => !applied.has(name)).sort()
