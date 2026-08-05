@@ -115,8 +115,13 @@ function swapDom(onSwapped?: () => void) {
 	// actually swapped before the transition captures the new state.
 	return new Promise<void>((resolve) =>
 		queueMicrotask(() => {
-			onSwapped?.()
+			// Resolve before notifying: `onSwapped` dispatches to arbitrary
+			// subscribers, and a throwing one would otherwise leave this promise
+			// forever pending — freezing the view transition on its old snapshot.
+			// The reaction still runs after this microtask, so the transition
+			// captures the swapped DOM either way.
 			resolve()
+			onSwapped?.()
 		}),
 	)
 }

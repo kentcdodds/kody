@@ -635,7 +635,11 @@ function renderByokDetails() {
 	return (
 		<details mix={css(byokDetailsCss)}>
 			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
-			<div mix={css(byokBodyCss)} aria-labelledby="byok-note-title">
+			{/*
+			 * A `section` rather than a `div`: a generic element has no role, so
+			 * the accessible name from `aria-labelledby` would be dropped.
+			 */}
+			<section mix={css(byokBodyCss)} aria-labelledby="byok-note-title">
 				<img
 					src="/images/kody-keys.webp"
 					width={627}
@@ -685,7 +689,7 @@ function renderByokDetails() {
 						</li>
 					</ul>
 				</div>
-			</div>
+			</section>
 		</details>
 	)
 }
@@ -702,9 +706,12 @@ const onboardCss = {
 /* The shirt fabric welcomes you in, same whisper as the landing close. */
 const onboardHeadCss = {
 	position: 'relative' as const,
+	/* See `pageHeadCss`: the fabric is a backdrop, so it paints under the head. */
+	isolation: 'isolate' as const,
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,
+		zIndex: -1,
 		inset: '-60% -12% -140%',
 		background: `radial-gradient(ellipse 42% 58% at 68% 40%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
 		maskImage: 'var(--kody-pattern)',

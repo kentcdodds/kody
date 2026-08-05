@@ -41,8 +41,8 @@ type CopyCardProps = {
 /**
  * Config snippet, ported from the prototype's `.snippet`: a labeled well on
  * the page ground with an uppercase display-face label and its copy button in
- * the header row. `primary` maps to the redesign's green pill; `secondary`
- * stays the quiet bordered button for follow-up copies.
+ * the header row. `pill` maps to the redesign's green pill; `ghost` is the
+ * default and stays the quiet bordered button for follow-up copies.
  */
 function CopyCard(handle: Handle<CopyCardProps>) {
 	return () => (

@@ -158,9 +158,12 @@ const communityHeadCss = {
 	gap: 'clamp(1.5rem, 4vw, 3.5rem)',
 	alignItems: 'center',
 	position: 'relative' as const,
+	// See `pageHeadCss`: the fabric is a backdrop, so it paints under the head.
+	isolation: 'isolate' as const,
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,
+		zIndex: -1,
 		inset: '-55% -14% -35%',
 		background: `radial-gradient(ellipse 40% 65% at 82% 45%, oklch(from ${colors.text} l c h / 0.055), transparent 72%)`,
 		maskImage: 'var(--kody-pattern)',

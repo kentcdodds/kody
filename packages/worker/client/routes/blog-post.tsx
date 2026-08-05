@@ -32,9 +32,15 @@ import {
 export function getSlugFromPathname(pathname: string) {
 	const prefix = `${routes.blog.href()}/`
 	if (!pathname.startsWith(prefix)) return null
-	const slug = decodeURIComponent(
-		pathname.slice(prefix.length).replace(/\/$/, ''),
-	)
+	let slug: string
+	try {
+		slug = decodeURIComponent(pathname.slice(prefix.length).replace(/\/$/, ''))
+	} catch {
+		// Malformed percent-encoding (`/blog/%`) throws. The shell calls this to
+		// classify every pathname, so a throw here would take the whole page
+		// down instead of just missing a post.
+		return null
+	}
 	// Dots mark non-post paths under /blog (rss.xml, .json APIs); real post
 	// slugs are kebab-case and never contain one.
 	if (!slug || slug.includes('/') || slug.includes('.')) return null
@@ -206,9 +212,15 @@ export function BlogPostRoute(handle: Handle) {
 					← All posts
 				</a>
 
-				{showLoading ? <p mix={css(postStatusCss)}>Loading post…</p> : null}
+				{showLoading ? (
+					<p mix={css(postStatusCss)} role="status">
+						Loading post…
+					</p>
+				) : null}
 				{showError ? (
-					<p mix={css(postStatusCss)}>Unable to load this blog post.</p>
+					<p mix={css(postStatusCss)} role="status">
+						Unable to load this blog post.
+					</p>
 				) : null}
 				{showReady && post ? (
 					<>

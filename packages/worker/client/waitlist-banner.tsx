@@ -17,6 +17,7 @@ import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 
@@ -79,6 +80,9 @@ export function WaitlistBanner(handle: Handle) {
 					typeof payload?.error === 'string'
 						? payload.error
 						: 'Unable to join the waiting list.'
+				// Turnstile tokens are single-use and the form stays mounted
+				// for another try, so it needs a fresh one.
+				resetTurnstileWidgets()
 				setState('error', errorMessage)
 				return
 			}
@@ -90,6 +94,7 @@ export function WaitlistBanner(handle: Handle) {
 			form.reset()
 			setState('success', successMessage)
 		} catch {
+			resetTurnstileWidgets()
 			setState('error', 'Network error. Please try again.')
 		}
 	}

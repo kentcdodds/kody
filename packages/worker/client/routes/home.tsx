@@ -18,6 +18,7 @@ import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { colors, transitions, typography } from '#client/styles/tokens.ts'
@@ -494,6 +495,9 @@ function WaitlistForm(handle: Handle) {
 					typeof payload?.error === 'string'
 						? payload.error
 						: 'Unable to join the waiting list.'
+				// The form stays mounted for another try, and the token it
+				// carries has already been spent server-side.
+				resetTurnstileWidgets()
 				setState('error', errorMessage)
 				return
 			}
@@ -503,7 +507,14 @@ function WaitlistForm(handle: Handle) {
 					? payload.message
 					: "You're on the list. We'll be in touch."
 			setState('success', successMessage)
+			// Success replaces the fields — including the submit button that
+			// currently holds focus — so focus has to be placed deliberately
+			// or it falls back to the top of the document.
+			handle.queueTask(() => {
+				form.querySelector<HTMLElement>('[data-waitlist-success]')?.focus()
+			})
 		} catch {
+			resetTurnstileWidgets()
 			setState('error', 'Network error. Please try again.')
 		}
 	}
@@ -519,8 +530,18 @@ function WaitlistForm(handle: Handle) {
 
 		return (
 			<form noValidate mix={[css(waitlistFormCss), on('submit', handleSubmit)]}>
+				{/*
+				 * A live region only announces text that changes while the
+				 * region is already in the accessibility tree, so the announcer
+				 * stays mounted for the life of the form. Success is left out:
+				 * that state unmounts the submit button, so focus moves to the
+				 * confirmation instead, which announces it once.
+				 */}
+				<p role="status" mix={css(visuallyHiddenCss)}>
+					{status === 'success' ? '' : (message ?? '')}
+				</p>
 				{status === 'success' ? (
-					<p role="status" mix={css(formSuccessCss)}>
+					<p tabindex={-1} data-waitlist-success mix={css(formSuccessCss)}>
 						{message}{' '}
 						<button
 							type="button"
@@ -598,7 +619,8 @@ function WaitlistForm(handle: Handle) {
 							<div class={turnstileWidgetClassName}></div>
 						) : null}
 						{status === 'error' && message ? (
-							<p role="alert" mix={css(formErrorCss)}>
+							// Announced by the mounted live region above.
+							<p aria-hidden="true" mix={css(formErrorCss)}>
 								{message}
 							</p>
 						) : null}
@@ -684,11 +706,14 @@ const heroHintCss = {
 const heroArtCss = {
 	marginTop: 'clamp(2.5rem, 5vw, 4rem)',
 	position: 'relative' as const,
+	/* See `pageHeadCss`: the fabric is a backdrop, so it paints under the art. */
+	isolation: 'isolate' as const,
 	/* Kody's shirt fabric, at whisper contrast behind him. The radial gradient
 	   fades it out so it never reads as a tiled wallpaper edge. */
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,
+		zIndex: -1,
 		inset: '-6% -18%',
 		background: `radial-gradient(closest-side, oklch(from ${colors.text} l c h / 0.07), transparent 74%)`,
 		maskImage: 'var(--kody-pattern)',
@@ -968,10 +993,13 @@ const equipCss = {
 	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter} clamp(4.5rem, 9vw, 7rem)`,
 	textAlign: 'center' as const,
 	position: 'relative' as const,
+	/* See `pageHeadCss`: the fabric is a backdrop, so it paints under the copy. */
+	isolation: 'isolate' as const,
 	/* Same fabric behind the closing invite: equipping your agent, literally. */
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,
+		zIndex: -1,
 		inset: 0,
 		background: `radial-gradient(ellipse 55% 50% at 50% 42%, oklch(from ${colors.text} l c h / 0.055), transparent 72%)`,
 		maskImage: 'var(--kody-pattern)',

@@ -7,6 +7,7 @@ type TurnstileApi = {
 		container: HTMLElement,
 		options: { sitekey: string; 'response-field-name': string },
 	): string
+	reset?(container: HTMLElement): void
 }
 
 let turnstileScriptPromise: Promise<TurnstileApi> | null = null
@@ -59,6 +60,23 @@ export async function renderTurnstileWidgets(siteKey: string | null) {
 			sitekey: siteKey,
 			'response-field-name': turnstileResponseFieldName,
 		})
+	}
+}
+
+/**
+ * Issue a fresh challenge token. Turnstile tokens are single-use: the server
+ * consumes one on every verify, so a form that stays mounted after a failed
+ * submit would resubmit a spent token and be rejected for the wrong reason.
+ * Call this on any path that leaves the form up for another try.
+ */
+export function resetTurnstileWidgets() {
+	if (typeof document === 'undefined') return
+	const api = getTurnstileApi()
+	if (!api?.reset) return
+	for (const container of document.querySelectorAll<HTMLElement>(
+		`.${turnstileWidgetClassName}[data-turnstile-rendered]`,
+	)) {
+		api.reset(container)
 	}
 }
 

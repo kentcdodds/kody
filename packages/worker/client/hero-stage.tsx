@@ -179,8 +179,7 @@ function stageParallax() {
 				el.style.transform = `translate3d(${(current.x * depth * 22).toFixed(2)}px, ${(current.y * depth * 14).toFixed(2)}px, 0)`
 			}
 			const settled =
-				Math.abs(target.x - current.x) + Math.abs(target.y - current.y) <=
-				0.001
+				Math.abs(target.x - current.x) + Math.abs(target.y - current.y) <= 0.001
 			if (settled) {
 				current.x = target.x
 				current.y = target.y

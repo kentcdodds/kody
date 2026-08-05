@@ -36,11 +36,13 @@ type LimitGroup = {
 }
 
 const count = new Intl.NumberFormat('en-US')
+const size = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
 
 const limitGroups: ReadonlyArray<LimitGroup> = [
 	{
 		title: 'Packages & jobs',
 		rows: [
+			{ label: 'Connected repos', key: 'maxRepos' },
 			{ label: 'Saved packages', key: 'maxSavedPackages' },
 			{ label: 'Scheduled jobs', key: 'maxScheduledJobs' },
 			{ label: 'Active repo sessions', key: 'maxRepoSessions' },
@@ -215,9 +217,12 @@ export function formatLimitBytes(value: number): string {
 	const kibibyte = 1024
 	const mebibyte = 1024 * kibibyte
 	const gibibyte = 1024 * mebibyte
-	if (value >= gibibyte) return `${count.format(value / gibibyte)}\u00A0GiB`
-	if (value >= mebibyte) return `${count.format(value / mebibyte)}\u00A0MiB`
-	return `${count.format(value / kibibyte)}\u00A0KiB`
+	// Bounded fraction digits: a limit that is not a clean power of two would
+	// otherwise render with `Intl`'s default three decimals (750000 bytes as
+	// "732.422 KiB"), which reads like precision the table does not mean.
+	if (value >= gibibyte) return `${size.format(value / gibibyte)}\u00A0GiB`
+	if (value >= mebibyte) return `${size.format(value / mebibyte)}\u00A0MiB`
+	return `${size.format(value / kibibyte)}\u00A0KiB`
 }
 
 /* ---------- styles ---------- */

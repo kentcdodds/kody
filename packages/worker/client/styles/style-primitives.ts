@@ -319,9 +319,15 @@ export function getSwapLabelCss() {
 export const pageHeadCss = {
 	position: 'relative' as const,
 	textAlign: 'center' as const,
+	// The glow is a backdrop, so it has to paint under the heading. A
+	// positioned pseudo otherwise paints after its static in-flow siblings.
+	// `isolate` scopes the negative z-index to this element, so the glow
+	// still sits above whatever background this container itself carries.
+	isolation: 'isolate' as const,
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,
+		zIndex: -1,
 		inset: '-70% -20% -160%',
 		background: `radial-gradient(ellipse 44% 55% at 50% 38%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
 		maskImage: 'var(--kody-pattern)',
@@ -451,7 +457,11 @@ export const proseCss = {
 		border: `1px solid ${colors.border}`,
 		borderRadius: '6px',
 		padding: '0.1em 0.4em',
-		whiteSpace: 'nowrap' as const,
+		// Inline code has to wrap. `nowrap` here would defeat the container's
+		// `overflow-wrap` guard above: one long package name or id would push
+		// the measure wider than a phone screen. `& pre code` keeps `nowrap`
+		// because the `pre` scrolls itself.
+		overflowWrap: 'break-word' as const,
 	},
 	'& pre': {
 		margin: '1.4rem 0 0',
@@ -738,8 +748,9 @@ export function getAuthInputCss(options: AuthInputCssOptions = {}) {
  * dropdown in the app reads identically instead of inheriting whatever the OS
  * draws. The chevron is a background image inset by the field's own padding —
  * the text gets matching room on the right so a long option never runs under
- * it. Its gray sits between the two themes' muted text (a background image
- * cannot read `currentColor`), which is why it is a literal here.
+ * it. A background image cannot read `currentColor`, so the chevron's stroke
+ * is baked into a themed `--select-chevron` token (see `public/styles.css`)
+ * rather than picked as one compromise gray for both themes.
  *
  * Markup contract: same as `getAuthInputCss` — put `data-field-ring` on the
  * element so the global `:focus-visible` outline stands down for the field's
@@ -753,7 +764,7 @@ export function getSelectCss(options: AuthInputCssOptions = {}) {
 		WebkitAppearance: 'none' as const,
 		cursor: 'pointer',
 		paddingRight: `calc(${chevronInset} * 2 + 16px)`,
-		backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+		backgroundImage: 'var(--select-chevron)',
 		backgroundRepeat: 'no-repeat',
 		backgroundPosition: `right ${chevronInset} center`,
 		backgroundSize: '16px 16px',

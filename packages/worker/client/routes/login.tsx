@@ -27,6 +27,7 @@ import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { type SignupMode } from '#app/signup-mode.ts'
@@ -151,6 +152,18 @@ export function LoginRoute(handle: Handle) {
 		handle.update()
 	}
 
+	/**
+	 * Report a failure that came back from the server. The challenge token the
+	 * request carried is spent (Turnstile tokens are single-use), and the form
+	 * stays mounted for another try, so it needs a fresh one. Plain `setState`
+	 * still covers client-side validation, where nothing was sent and the
+	 * token the user already solved is still good.
+	 */
+	function setSubmitError(nextMessage: string) {
+		resetTurnstileWidgets()
+		setState('error', nextMessage)
+	}
+
 	function resetAuthState() {
 		status = 'idle'
 		message = null
@@ -240,7 +253,7 @@ export function LoginRoute(handle: Handle) {
 					typeof payload?.error === 'string'
 						? payload.error
 						: 'Unable to join the waiting list.'
-				setState('error', errorMessage)
+				setSubmitError(errorMessage)
 				return
 			}
 
@@ -251,7 +264,7 @@ export function LoginRoute(handle: Handle) {
 			form.reset()
 			setState('success', successMessage)
 		} catch {
-			setState('error', 'Network error. Please try again.')
+			setSubmitError('Network error. Please try again.')
 		}
 	}
 
@@ -308,7 +321,7 @@ export function LoginRoute(handle: Handle) {
 					typeof payload?.error === 'string'
 						? payload.error
 						: 'Unable to authenticate.'
-				setState('error', errorMessage)
+				setSubmitError(errorMessage)
 				return
 			}
 
@@ -324,7 +337,7 @@ export function LoginRoute(handle: Handle) {
 				)
 			}
 		} catch {
-			setState('error', 'Network error. Please try again.')
+			setSubmitError('Network error. Please try again.')
 		}
 	}
 
@@ -353,12 +366,12 @@ export function LoginRoute(handle: Handle) {
 				protection,
 			)
 			if (errorMessage) {
-				setState('error', errorMessage)
+				setSubmitError(errorMessage)
 			}
 			// On success the browser is navigating to the provider; leave the
 			// submitting state in place.
 		} catch {
-			setState('error', 'Network error. Please try again.')
+			setSubmitError('Network error. Please try again.')
 		}
 	}
 
@@ -418,7 +431,7 @@ export function LoginRoute(handle: Handle) {
 					typeof verificationPayload?.error === 'string'
 						? verificationPayload.error
 						: 'Passkey sign-in failed.'
-				setState('error', errorMessage)
+				setSubmitError(errorMessage)
 				return
 			}
 
@@ -430,7 +443,7 @@ export function LoginRoute(handle: Handle) {
 				}),
 			)
 		} catch {
-			setState('error', 'Network error. Please try again.')
+			setSubmitError('Network error. Please try again.')
 		}
 	}
 
@@ -455,15 +468,30 @@ export function LoginRoute(handle: Handle) {
 
 	function renderStatusMessage() {
 		return (
-			<p
-				aria-live="polite"
-				role={status === 'error' ? 'alert' : undefined}
-				data-tone={status === 'error' ? 'error' : 'info'}
-				hidden={message ? undefined : true}
-				mix={css(formMessageCss)}
-			>
-				{message ?? ''}
-			</p>
+			<>
+				{/*
+				 * A live region only announces text that changes while the
+				 * region is already in the accessibility tree, so the announcer
+				 * stays mounted for the life of the form and keeps one fixed
+				 * role. It is out of flow, so it costs no flex gap while empty.
+				 */}
+				<p role="status" mix={css(visuallyHiddenCss)}>
+					{message ?? ''}
+				</p>
+				{/*
+				 * The visible copy is hidden from assistive tech so the same
+				 * sentence is not announced twice, and stays conditional so an
+				 * empty message adds no gap to the form.
+				 */}
+				<p
+					aria-hidden="true"
+					data-tone={status === 'error' ? 'error' : 'info'}
+					hidden={message ? undefined : true}
+					mix={css(formMessageCss)}
+				>
+					{message ?? ''}
+				</p>
+			</>
 		)
 	}
 
@@ -941,9 +969,13 @@ const authVisualCss = {
 	borderRight: `1px solid ${colors.border}`,
 	backgroundColor: colors.background,
 	overflow: 'hidden',
+	// See `pageHeadCss`: `isolate` keeps the fabric behind the panel content
+	// without dropping it behind this panel's own background.
+	isolation: 'isolate' as const,
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,
+		zIndex: -1,
 		inset: 0,
 		background: `radial-gradient(ellipse 70% 62% at 50% 52%, oklch(from ${colors.text} l c h / 0.06), transparent 78%)`,
 		maskImage: 'var(--kody-pattern)',

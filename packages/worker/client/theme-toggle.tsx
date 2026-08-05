@@ -20,14 +20,28 @@ function readTheme(): 'light' | 'dark' {
 export function ThemeToggle(handle: Handle) {
 	let pressed = readTheme() === 'dark'
 
+	function syncPressed() {
+		const next = readTheme() === 'dark'
+		if (next === pressed) return
+		pressed = next
+		handle.update()
+	}
+
 	if (typeof document !== 'undefined') {
 		// Sync aria-pressed after hydration in case SSR guessed wrong.
-		handle.queueTask(() => {
-			const next = readTheme() === 'dark'
-			if (next === pressed) return
-			pressed = next
-			handle.update()
+		handle.queueTask(syncPressed)
+
+		// `data-theme` has writers other than this button: `theme-init.js`
+		// follows the system scheme whenever no explicit choice is stored, so a
+		// mounted toggle would otherwise keep announcing a stale state. Watching
+		// the attribute covers every writer without a signalling protocol
+		// between them.
+		const observer = new MutationObserver(syncPressed)
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['data-theme'],
 		})
+		handle.signal.addEventListener('abort', () => observer.disconnect())
 	}
 
 	function toggleTheme() {

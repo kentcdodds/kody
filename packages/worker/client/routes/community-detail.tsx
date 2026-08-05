@@ -76,9 +76,17 @@ type CommunityInstallOutcome = {
 export function getListingIdFromPathname(pathname: string) {
 	const prefix = `${routes.community.href()}/`
 	if (!pathname.startsWith(prefix)) return null
-	const listingId = decodeURIComponent(
-		pathname.slice(prefix.length).replace(/\/$/, ''),
-	)
+	let listingId: string
+	try {
+		listingId = decodeURIComponent(
+			pathname.slice(prefix.length).replace(/\/$/, ''),
+		)
+	} catch {
+		// Malformed percent-encoding (`/community/%`) throws. The shell calls
+		// this to classify every pathname, so a throw here would take the whole
+		// page down instead of just missing a listing.
+		return null
+	}
 	return listingId || null
 }
 
@@ -634,7 +642,9 @@ export function CommunityDetailRoute(handle: Handle) {
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
 				{!showShellReady && !showShellError ? (
-					<p mix={css(shellStatusCss)}>Loading community package details…</p>
+					<p mix={css(shellStatusCss)} role="status">
+						Loading community package details…
+					</p>
 				) : null}
 
 				{showShellError ? (
