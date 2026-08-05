@@ -414,7 +414,7 @@ const tabPillCss = {
 	borderRadius: radius.full,
 	padding: '0.55rem 1rem',
 	cursor: 'pointer',
-	transition: `border-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}, background-color 160ms ${transitions.easeOut}`,
+	transition: `border-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}, background-color 160ms ${transitions.easeOut}, scale 160ms ${transitions.easeOut}`,
 	[hoverMq]: {
 		'&:hover': {
 			borderColor: colors.primary,
@@ -426,6 +426,10 @@ const tabPillCss = {
 		backgroundColor: `oklch(from ${colors.primary} l c h / 0.12)`,
 		color: colors.primaryText,
 		fontWeight: 680,
+	},
+	'&:active': { scale: '0.97' },
+	'@media (prefers-reduced-motion: reduce)': {
+		'&:active': { scale: 'none' },
 	},
 }
 

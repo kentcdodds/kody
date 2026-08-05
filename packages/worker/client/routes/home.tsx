@@ -811,7 +811,7 @@ const askItemCss = {
 		height: 'auto',
 		display: 'block',
 		marginInline: 'auto',
-		transition: `transform 320ms ${transitions.easeOut}`,
+		transition: `transform 200ms ${transitions.easeOut}`,
 	},
 	// Gated: touch taps would otherwise leave the mascot stuck mid-lift.
 	[hoverMq]: {
@@ -1100,7 +1100,7 @@ const formSuccessCss = {
 	color: colors.textMuted,
 	'& strong': { color: colors.primaryText },
 	[motionOk]: {
-		animation: 'success-in 400ms var(--ease-out) both',
+		animation: 'success-in 250ms var(--ease-out) both',
 	},
 }
 

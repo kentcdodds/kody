@@ -771,7 +771,7 @@ const stepButtonCss = {
 	borderRadius: radius.card,
 	padding: '0.8rem 1rem',
 	cursor: 'pointer',
-	transition: `border-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}`,
+	transition: `border-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}, scale 160ms ${transitions.easeOut}`,
 	[hoverMq]: {
 		'&:hover': {
 			borderColor: colors.primary,
@@ -786,6 +786,10 @@ const stepButtonCss = {
 		backgroundColor: `oklch(from ${colors.primary} l c h / 0.12)`,
 		color: colors.primaryText,
 		fontWeight: 680,
+	},
+	'&:active': { scale: '0.97' },
+	'@media (prefers-reduced-motion: reduce)': {
+		'&:active': { scale: 'none' },
 	},
 }
 
@@ -804,12 +808,8 @@ const stepNumberCss = {
 
 /* Feedback (checks appearing) borrows the waitlist's success-in pop. */
 const wizardPopCss = {
-	'@keyframes onboarding-pop': {
-		from: { opacity: 0, scale: '0.5' },
-		to: { opacity: 1, scale: '1' },
-	},
 	'@media (prefers-reduced-motion: no-preference)': {
-		animation: `onboarding-pop 400ms ${transitions.easeOut} both`,
+		animation: `success-in 200ms ${transitions.easeOut} both`,
 	},
 }
 

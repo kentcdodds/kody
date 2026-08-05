@@ -262,11 +262,14 @@ export const starterCardCss = {
 			color: colors.primaryText,
 		},
 	},
+	'&:active': { transform: 'translateY(0)' },
 	'@media (prefers-reduced-motion: reduce)': {
-		transition: 'none',
+		// Keep the border-color fade — reduced motion drops movement only.
+		transition: `border-color 160ms ${transitions.easeOut}`,
 		'&:hover': {
 			transform: 'none',
 		},
+		'&:active': { transform: 'none' },
 	},
 	'& [data-testid="community-listing-icon-starter"]': {
 		marginBottom: '0.2rem',
@@ -324,12 +327,8 @@ const starterStatusCss = {
 	fontSize: '0.85rem',
 	color: colors.primaryText,
 	textWrap: 'balance' as const,
-	'@keyframes onboarding-starter-pop': {
-		from: { opacity: 0, scale: '0.5' },
-		to: { opacity: 1, scale: '1' },
-	},
 	'@media (prefers-reduced-motion: no-preference)': {
-		animation: `onboarding-starter-pop 400ms ${transitions.easeOut} both`,
+		animation: `success-in 200ms ${transitions.easeOut} both`,
 	},
 }
 

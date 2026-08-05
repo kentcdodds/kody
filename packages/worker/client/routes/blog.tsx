@@ -332,7 +332,7 @@ const featuredTitleCss = {
 const featuredArtCss = {
 	width: '100%',
 	height: 'auto',
-	transition: `transform 320ms ${transitions.easeOut}`,
+	transition: `transform 200ms ${transitions.easeOut}`,
 	'@media (max-width: 560px)': {
 		width: 'min(52%, 200px)',
 		marginInline: 'auto',
