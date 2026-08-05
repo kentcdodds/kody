@@ -29,13 +29,16 @@ legacy-lane requests from real clients), not on a calendar date.
 
 ## Consequences
 
-Modern clients get stateless serving with no Durable Object on the request path,
-while every existing client keeps byte-identical behavior. Tool definitions
-cannot drift between lanes, but the two SDK generations meet at a typed seam
-(`asMcpToolServer` in `packages/worker/src/mcp/mcp-registration-agent.ts`) that
-a future SDK bump must revisit. Retiring the legacy lane later also deletes the
-`mcp_agent_sessions` registry, the `MCP_OBJECT` Durable Object, and the session
-purge path. Tasks (the `io.modelcontextprotocol/tasks` extension) are
-deliberately not implemented yet: the SDK v2 ships the vocabulary without a
-runtime, no major client supports it, and execute's idempotency-key + `run_get`
-flow already covers the need; revisit when a major host ships task support.
+Modern clients get stateless serving with no MCP session Durable Object on the
+request path (the account write lease taken at the auth boundary is unchanged
+and applies to both lanes — it is the deletion-safety guard every kody surface
+takes, not MCP session state), while every existing client keeps byte-identical
+behavior. Tool definitions cannot drift between lanes, but the two SDK
+generations meet at a typed seam (`asMcpToolServer` in
+`packages/worker/src/mcp/mcp-registration-agent.ts`) that a future SDK bump must
+revisit. Retiring the legacy lane later also deletes the `mcp_agent_sessions`
+registry, the `MCP_OBJECT` Durable Object, and the session purge path. Tasks
+(the `io.modelcontextprotocol/tasks` extension) are deliberately not implemented
+yet: the SDK v2 ships the vocabulary without a runtime, no major client supports
+it, and execute's idempotency-key + `run_get` flow already covers the need;
+revisit when a major host ships task support.

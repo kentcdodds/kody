@@ -428,10 +428,13 @@ const oauthProvider = new OAuthProvider({
 	// Client ID Metadata Documents (MCP 2025-11-25 SEP-991): clients may use
 	// an HTTPS URL as their client_id instead of registering via DCR. The
 	// 2026-07-28 revision deprecates RFC 7591 DCR in favor of CIMD, so both
-	// stay enabled: CIMD-capable clients skip registration, everyone else
-	// falls back to /oauth/register. Requires the global_fetch_strictly_public
-	// compatibility flag (set in wrangler.jsonc) so metadata fetches are
-	// SSRF-safe; the provider only advertises CIMD support when both are on.
+	// stay enabled: CIMD clients present their URL client_id with no
+	// registration step, and clients that do not use CIMD register via
+	// /oauth/register. A failed CIMD metadata fetch returns invalid_client;
+	// whether a client then registers via DCR is the client's own recovery.
+	// Requires the global_fetch_strictly_public compatibility flag (set in
+	// wrangler.jsonc) so metadata fetches are SSRF-safe; the provider only
+	// advertises CIMD support when both are on.
 	clientIdMetadataDocumentEnabled: true,
 	// Provider default onError logs every structured OAuth error via console.warn.
 	// Keep those responses on the wire without duplicating them into worker logs /
