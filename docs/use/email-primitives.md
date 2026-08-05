@@ -91,8 +91,8 @@ Inbound storage is quota-gated per user:
   blocked by quota.
 - Plan users get their plan's limits. New accounts start on the `free` plan
   unless an invite assigns another tier. The operator-only `max` plan uses
-  finite email caps (100 sends/day, 200 receives/day, 2,000 stored messages, 512
-  KiB per message); it is not a public or paid tier.
+  finite email caps (10,000 sends/day, 20,000 receives/day, 100,000 stored
+  messages, 768 KiB per message); it is not a public or paid tier.
 - Quota, size, and unverified-account rejections store at most five detailed
   `rejected` delivery events per inbox per UTC day; further rejections increment
   a single daily aggregate event (with a total count and the last reason) so
@@ -120,8 +120,8 @@ Inbound storage is quota-gated per user:
   platform-assigned address, and `email_send` only delivers to the signed-in
   user's own account email. `email_reply` is the only way to address external
   recipients, and only recipients taken from stored inbound mail.
-- Outbound sends consume a per-day entitlement. The `max` plan allows 100 send
-  attempts per UTC day.
+- Outbound sends consume a per-day entitlement. The `max` plan allows 10,000
+  send attempts per UTC day.
 - A successful send request has `processing_status: "sent"`. Cloudflare delivery
   events independently populate `delivery_status` with `delivered`, `deferred`,
   `bounced`, `failed`, `rejected`, or `complained`; use

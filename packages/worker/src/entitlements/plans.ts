@@ -191,19 +191,22 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
- * Inherited abuse caps for the first-class `max` plan. Email is
- * abuse-sensitive in both directions — inbound volume is
- * attacker-controlled (anyone can send to a `{username}@<platform domain>`
- * address) and outbound sending is an outreach-abuse surface — so `max` is
- * not uncapped for mail. These are intentional abuse backstops (not the
- * ordinary 100×-pro derivation used for other max ceilings) and sit between
- * the `free` and `pro` plan email limits.
+ * Email caps for the first-class `max` plan. Email is abuse-sensitive in
+ * both directions — inbound volume is attacker-controlled (anyone can send
+ * to a `{username}@<platform domain>` address) and outbound sending is an
+ * outreach-abuse surface — so `max` is not uncapped for mail. These are
+ * intentional abuse backstops (not the ordinary 100×-pro derivation used
+ * for other max ceilings), but they dominate every other plan's email
+ * limits so granting `max` never reduces a user's email capacity.
+ * `email_message_bytes` is pinned to pro/partner parity because the
+ * per-message ceiling is a platform bound (see the PlanLimits field doc),
+ * not a scalable quota.
  */
 export const maxPlanEmailLimits = {
-	email_sends_per_day: 100,
-	email_receives_per_day: 200,
-	stored_email_messages: 2_000,
-	email_message_bytes: 512 * 1024,
+	email_sends_per_day: 10_000,
+	email_receives_per_day: 20_000,
+	stored_email_messages: 100_000,
+	email_message_bytes: 768 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
 
 export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
