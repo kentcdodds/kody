@@ -42,10 +42,8 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
-	textareaCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementLayout,
@@ -57,6 +55,8 @@ import {
 	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	accountInputCss,
+	accountTextareaCss,
 } from './account-management-components.tsx'
 
 type PackageOption =
@@ -353,9 +353,9 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	const deleteTokenCheck = createDoubleCheck(handle)
 	let editMode = false
 
-	const primaryButtonCss = getPrimaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function redirectToLogin() {
 		saveState = 'idle'
@@ -1168,6 +1168,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Name</span>
 										<input
+											data-field-ring
 											name="name"
 											type="text"
 											value={editorState.name}
@@ -1179,7 +1180,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													setEditorField('name', event.currentTarget.value)
 													handle.update()
 												}),
-												css(inputCss),
+												css(accountInputCss),
 											]}
 										/>
 									</label>
@@ -1197,6 +1198,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											})}
 										>
 											<input
+												data-field-ring
 												name="rawToken"
 												type="password"
 												value={editorState.rawToken}
@@ -1212,7 +1214,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														)
 														handle.update()
 													}),
-													css(inputCss),
+													css(accountInputCss),
 												]}
 											/>
 											<button
@@ -1256,6 +1258,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
 											<textarea
+												data-field-ring
 												name="packageKodyIds"
 												value={editorState.packageKodyIdsText}
 												placeholder={'discord-gateway\n*'}
@@ -1268,13 +1271,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														)
 														handle.update()
 													}),
-													css(textareaCss),
+													css(accountTextareaCss),
 												]}
 											/>
 										</label>
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Package IDs</span>
 											<textarea
+												data-field-ring
 												name="packageIds"
 												value={editorState.packageIdsText}
 												placeholder="pkg_..."
@@ -1287,7 +1291,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														)
 														handle.update()
 													}),
-													css(textareaCss),
+													css(accountTextareaCss),
 												]}
 											/>
 										</label>
@@ -1296,6 +1300,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Export names</span>
 										<textarea
+											data-field-ring
 											name="exportNames"
 											value={editorState.exportNamesText}
 											placeholder={'dispatch-message-created\n*'}
@@ -1309,7 +1314,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													)
 													handle.update()
 												}),
-												css(textareaCss),
+												css(accountTextareaCss),
 											]}
 										/>
 									</label>
@@ -1317,6 +1322,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Allowed sources</span>
 										<textarea
+											data-field-ring
 											name="sources"
 											value={editorState.sourcesText}
 											placeholder="personal-client"
@@ -1329,7 +1335,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													)
 													handle.update()
 												}),
-												css(textareaCss),
+												css(accountTextareaCss),
 											]}
 										/>
 										<span mix={css(descriptionCss)}>
@@ -1407,6 +1413,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Name</span>
 										<input
+											data-field-ring
 											name="name"
 											type="text"
 											value={editorState.name}
@@ -1418,7 +1425,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													setEditorField('name', event.currentTarget.value)
 													handle.update()
 												}),
-												css(inputCss),
+												css(accountInputCss),
 											]}
 										/>
 									</label>
@@ -1454,6 +1461,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												})}
 											>
 												<input
+													data-field-ring
 													name="rawToken"
 													type="password"
 													value={editorState.rawToken}
@@ -1468,7 +1476,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 															)
 															handle.update()
 														}),
-														css(inputCss),
+														css(accountInputCss),
 													]}
 												/>
 												<button
@@ -1513,6 +1521,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
 											<textarea
+												data-field-ring
 												name="packageKodyIds"
 												value={editorState.packageKodyIdsText}
 												placeholder={'discord-gateway\n*'}
@@ -1525,13 +1534,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														)
 														handle.update()
 													}),
-													css(textareaCss),
+													css(accountTextareaCss),
 												]}
 											/>
 										</label>
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Package IDs</span>
 											<textarea
+												data-field-ring
 												name="packageIds"
 												value={editorState.packageIdsText}
 												placeholder="pkg_..."
@@ -1544,7 +1554,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														)
 														handle.update()
 													}),
-													css(textareaCss),
+													css(accountTextareaCss),
 												]}
 											/>
 										</label>
@@ -1553,6 +1563,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Export names</span>
 										<textarea
+											data-field-ring
 											name="exportNames"
 											value={editorState.exportNamesText}
 											placeholder={'dispatch-message-created\n*'}
@@ -1566,7 +1577,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													)
 													handle.update()
 												}),
-												css(textareaCss),
+												css(accountTextareaCss),
 											]}
 										/>
 									</label>
@@ -1574,6 +1585,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Allowed sources</span>
 										<textarea
+											data-field-ring
 											name="sources"
 											value={editorState.sourcesText}
 											placeholder="personal-client"
@@ -1586,7 +1598,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													)
 													handle.update()
 												}),
-												css(textareaCss),
+												css(accountTextareaCss),
 											]}
 										/>
 										<span mix={css(descriptionCss)}>

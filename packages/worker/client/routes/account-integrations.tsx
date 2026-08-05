@@ -33,6 +33,7 @@ import {
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AccountPageHeader,
+	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
@@ -59,8 +60,7 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	inputCss,
+	getPillButtonCss,
 	insetCardCss,
 	primaryLinkCss,
 	sectionTitleCss,
@@ -859,6 +859,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											</span>
 											<input
 												type="text"
+												data-field-ring
 												name="oauthAppClientId"
 												value={rotateClientId}
 												{...passwordManagerIgnoreProps}
@@ -867,7 +868,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														rotateClientId = event.currentTarget.value
 														handle.update()
 													}),
-													css(inputCss),
+													css(accountInputCss),
 												]}
 											/>
 										</label>
@@ -875,6 +876,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											<span mix={css(fieldLabelCss)}>New client secret</span>
 											<input
 												type="password"
+												data-field-ring
 												name="oauthAppClientSecret"
 												value={rotateClientSecret}
 												{...passwordManagerIgnoreProps}
@@ -883,7 +885,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														rotateClientSecret = event.currentTarget.value
 														handle.update()
 													}),
-													css(inputCss),
+													css(accountInputCss),
 												]}
 											/>
 										</label>
@@ -1048,7 +1050,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										<a
 											href={connectHref}
 											mix={css({
-												...getPrimaryButtonCss(),
+												...getPillButtonCss({ size: 'sm' }),
 												display: 'inline-flex',
 												textDecoration: 'none',
 											})}

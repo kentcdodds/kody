@@ -1108,17 +1108,9 @@ export function AccountRoute(handle: Handle) {
 
 /* `.account-form .button` / `.account-actions .button` — the prototype's
  * compact pill sizing for in-section actions. */
-const compactPillButtonCss = {
-	...getPillButtonCss(),
-	fontSize: '0.95rem',
-	padding: '0.75rem 1.3rem',
-}
+const compactPillButtonCss = getPillButtonCss({ size: 'sm' })
 
-const compactGhostButtonCss = {
-	...getGhostButtonCss(),
-	fontSize: '0.95rem',
-	padding: '0.75rem 1.3rem',
-}
+const compactGhostButtonCss = getGhostButtonCss({ size: 'sm' })
 
 const dangerButtonCss = getDangerButtonCss()
 

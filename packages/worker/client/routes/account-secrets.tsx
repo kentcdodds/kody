@@ -48,9 +48,9 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
@@ -68,7 +68,10 @@ import {
 	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	accountInputCss,
 } from './account-management-components.tsx'
+
+const selectCss = getSelectCss()
 
 type SecretScope = AccountSecretListItem['scope']
 
@@ -1302,6 +1305,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Scope</span>
 									<select
+										data-field-ring
 										value={filters.scope}
 										aria-label="Filter secrets by scope"
 										mix={[
@@ -1321,7 +1325,7 @@ export function AccountSecretsRoute(handle: Handle) {
 												},
 											),
 
-											css(inputCss),
+											css(selectCss),
 										]}
 									>
 										<option value="all">All scopes</option>
@@ -1481,6 +1485,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Name</span>
 										<input
+											data-field-ring
 											type="text"
 											required
 											value={editorState.name}
@@ -1498,7 +1503,7 @@ export function AccountSecretsRoute(handle: Handle) {
 													},
 												),
 
-												css(inputCss),
+												css(accountInputCss),
 											]}
 										/>
 									</label>
@@ -1506,6 +1511,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Scope</span>
 										<select
+											data-field-ring
 											value={editorState.scope}
 											mix={[
 												on(
@@ -1528,7 +1534,7 @@ export function AccountSecretsRoute(handle: Handle) {
 													},
 												),
 
-												css(inputCss),
+												css(selectCss),
 											]}
 										>
 											<option value="user">User</option>
@@ -1769,6 +1775,6 @@ const packageIdentityCss = {
 	},
 }
 
-const primaryButtonCss = getPrimaryButtonCss()
-const secondaryButtonCss = getSecondaryButtonCss()
+const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 const dangerButtonCss = getDangerButtonCss()

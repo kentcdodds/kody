@@ -17,6 +17,7 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
+	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -26,9 +27,8 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 	layoutMaxWidths,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
@@ -349,6 +349,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Verification code</span>
 								<input
+									data-field-ring
 									type="text"
 									name="code"
 									required
@@ -357,7 +358,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 									pattern="[0-9]{6}"
 									placeholder="123456"
 									value={disableCode}
-									mix={[css(inputCss), on('input', updateDisableCode)]}
+									mix={[css(accountInputCss), on('input', updateDisableCode)]}
 								/>
 							</label>
 							<div>
@@ -437,6 +438,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Verification code</span>
 								<input
+									data-field-ring
 									type="text"
 									name="code"
 									required
@@ -445,7 +447,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 									pattern="[0-9]{6}"
 									placeholder="123456"
 									value={confirmCode}
-									mix={[css(inputCss), on('input', updateConfirmCode)]}
+									mix={[css(accountInputCss), on('input', updateConfirmCode)]}
 								/>
 							</label>
 							<div mix={css({ display: 'flex', gap: spacing.sm })}>
@@ -481,6 +483,6 @@ export function AccountTwoFactorRoute(handle: Handle) {
 	}
 }
 
-const primaryButtonCss = getPrimaryButtonCss()
-const secondaryButtonCss = getSecondaryButtonCss()
+const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 const dangerButtonCss = getDangerButtonCss()

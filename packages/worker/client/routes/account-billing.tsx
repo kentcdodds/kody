@@ -31,8 +31,8 @@ import {
 } from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 	layoutMaxWidths,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
@@ -611,5 +611,5 @@ export function AccountBillingRoute(handle: Handle) {
 	}
 }
 
-const primaryButtonCss = getPrimaryButtonCss()
-const secondaryButtonCss = getSecondaryButtonCss()
+const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })

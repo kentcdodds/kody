@@ -27,6 +27,7 @@ import {
 	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -36,9 +37,8 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 
 type McpServerListItem = {
@@ -184,8 +184,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 	const deleteServerCheck = createDoubleCheck(handle)
 	let oauthResultConsumed = false
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
 
 	function getCurrentHref() {
@@ -522,6 +522,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Server name</span>
 									<input
+										data-field-ring
 										name="name"
 										type="text"
 										value={addName}
@@ -533,7 +534,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 												addName = event.currentTarget.value
 												handle.update()
 											}),
-											css(inputCss),
+											css(accountInputCss),
 										]}
 									/>
 									<span mix={css(descriptionCss)}>
@@ -545,6 +546,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Server URL</span>
 									<input
+										data-field-ring
 										name="url"
 										type="url"
 										value={addUrl}
@@ -556,7 +558,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 												addUrl = event.currentTarget.value
 												handle.update()
 											}),
-											css(inputCss),
+											css(accountInputCss),
 										]}
 									/>
 								</label>

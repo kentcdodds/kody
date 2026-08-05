@@ -27,6 +27,8 @@ import {
 	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	accountInputCss,
+	accountTextareaCss,
 } from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -36,10 +38,8 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
-	textareaCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type AccountValueDetail,
@@ -158,8 +158,8 @@ export function AccountValuesRoute(handle: Handle) {
 	const deleteValueCheck = createDoubleCheck(handle)
 	let syncedSelectionKey: string | null = null
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
 
 	function getCurrentHref() {
@@ -479,7 +479,7 @@ export function AccountValuesRoute(handle: Handle) {
 			: (detail?.name ?? selection.selectedId ?? 'Value')
 
 		const monospaceValueCss = {
-			...textareaCss,
+			...accountTextareaCss,
 			fontFamily: 'monospace',
 			fontSize: typography.fontSize.sm,
 			minHeight: '10rem',
@@ -601,6 +601,7 @@ export function AccountValuesRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Name</span>
 									<input
+										data-field-ring
 										name="name"
 										type="text"
 										value={editorState.name}
@@ -618,7 +619,7 @@ export function AccountValuesRoute(handle: Handle) {
 												handle.update()
 											}),
 											css({
-												...inputCss,
+												...accountInputCss,
 												...(isEditing
 													? {
 															color: colors.textMuted,
@@ -645,6 +646,7 @@ export function AccountValuesRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Description</span>
 									<input
+										data-field-ring
 										name="description"
 										type="text"
 										value={editorState.description}
@@ -658,7 +660,7 @@ export function AccountValuesRoute(handle: Handle) {
 												}
 												handle.update()
 											}),
-											css(inputCss),
+											css(accountInputCss),
 										]}
 									/>
 								</label>
@@ -666,6 +668,7 @@ export function AccountValuesRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Value</span>
 									<textarea
+										data-field-ring
 										name="value"
 										value={editorState.value}
 										placeholder="Readable configuration text"

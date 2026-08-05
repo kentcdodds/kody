@@ -27,6 +27,7 @@ import {
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AccountPageHeader,
+	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import {
 	colors,
@@ -44,9 +45,8 @@ import {
 	fieldLabelCss,
 	focusRingCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
@@ -285,7 +285,7 @@ function CopyToClipboard(handle: Handle<{ url: string }>) {
 						}, 2000)
 					}),
 					css({
-						...getSecondaryButtonCss(),
+						...getGhostButtonCss({ size: 'sm' }),
 						display: 'inline-flex',
 						alignItems: 'center',
 						gap: spacing.xs,
@@ -398,8 +398,8 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let showSharedSecret = false
 	let syncedSelectionKey: string | null = null
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
 
 	function getCurrentHref() {
@@ -878,6 +878,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Connector name</span>
 									<input
+										data-field-ring
 										name="instanceId"
 										type="text"
 										value={editorState.instanceId}
@@ -892,7 +893,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												}
 												handle.update()
 											}),
-											css(inputCss),
+											css(accountInputCss),
 										]}
 									/>
 								</label>
@@ -958,6 +959,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 										>
 											{showSharedSecret ? (
 												<input
+													data-field-ring
 													name="sharedSecret"
 													aria-label="Shared secret"
 													type="text"
@@ -971,13 +973,14 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 															handle.update()
 														}),
 														css({
-															...inputCss,
+															...accountInputCss,
 															paddingRight: '3rem',
 														}),
 													]}
 												/>
 											) : (
 												<input
+													data-field-ring
 													name="sharedSecret"
 													aria-label="Shared secret"
 													type="password"
@@ -991,7 +994,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 															handle.update()
 														}),
 														css({
-															...inputCss,
+															...accountInputCss,
 															paddingRight: '3rem',
 														}),
 													]}

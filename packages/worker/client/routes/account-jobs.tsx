@@ -34,6 +34,7 @@ import {
 	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import {
 	type AccountJobDetail,
@@ -49,11 +50,13 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSelectCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
+
+const selectCss = getSelectCss()
 
 type MessageTone = 'info' | 'error'
 
@@ -244,8 +247,8 @@ export function AccountJobsRoute(handle: Handle) {
 	let editState: EditState | null = null
 	let editing = false
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
 
 	function getCurrentHref() {
@@ -513,6 +516,7 @@ export function AccountJobsRoute(handle: Handle) {
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Successful one-off (days)</span>
 								<input
+									data-field-ring
 									type="number"
 									min={1}
 									max={365}
@@ -528,7 +532,7 @@ export function AccountJobsRoute(handle: Handle) {
 											}
 											handle.update()
 										}),
-										css(inputCss),
+										css(accountInputCss),
 									]}
 								/>
 							</label>
@@ -537,6 +541,7 @@ export function AccountJobsRoute(handle: Handle) {
 									Failed / never-ran one-off (days)
 								</span>
 								<input
+									data-field-ring
 									type="number"
 									min={1}
 									max={365}
@@ -552,13 +557,14 @@ export function AccountJobsRoute(handle: Handle) {
 											}
 											handle.update()
 										}),
-										css(inputCss),
+										css(accountInputCss),
 									]}
 								/>
 							</label>
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Disabled recurring (days)</span>
 								<input
+									data-field-ring
 									type="number"
 									min={1}
 									max={365}
@@ -574,7 +580,7 @@ export function AccountJobsRoute(handle: Handle) {
 											}
 											handle.update()
 										}),
-										css(inputCss),
+										css(accountInputCss),
 									]}
 								/>
 							</label>
@@ -624,6 +630,7 @@ export function AccountJobsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>View</span>
 										<select
+											data-field-ring
 											aria-label="Jobs view filter"
 											value={view}
 											mix={[
@@ -640,7 +647,7 @@ export function AccountJobsRoute(handle: Handle) {
 														buildHrefWithUpdatedFilters({ view: value }),
 													)
 												}),
-												css(inputCss),
+												css(selectCss),
 											]}
 										>
 											{viewFilterOptions.map((option) => (
@@ -653,6 +660,7 @@ export function AccountJobsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Ownership</span>
 										<select
+											data-field-ring
 											aria-label="Jobs ownership filter"
 											value={ownership}
 											mix={[
@@ -671,7 +679,7 @@ export function AccountJobsRoute(handle: Handle) {
 														}),
 													)
 												}),
-												css(inputCss),
+												css(selectCss),
 											]}
 										>
 											{ownershipFilterOptions.map((option) => (
@@ -927,6 +935,7 @@ export function AccountJobsRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Name</span>
 											<input
+												data-field-ring
 												type="text"
 												value={editState.name}
 												disabled={isMutating}
@@ -939,13 +948,14 @@ export function AccountJobsRoute(handle: Handle) {
 														}
 														handle.update()
 													}),
-													css(inputCss),
+													css(accountInputCss),
 												]}
 											/>
 										</label>
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Timezone</span>
 											<input
+												data-field-ring
 												type="text"
 												value={editState.timezone}
 												disabled={isMutating}
@@ -959,13 +969,14 @@ export function AccountJobsRoute(handle: Handle) {
 														}
 														handle.update()
 													}),
-													css(inputCss),
+													css(accountInputCss),
 												]}
 											/>
 										</label>
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Schedule type</span>
 											<select
+												data-field-ring
 												value={editState.scheduleType}
 												disabled={isMutating}
 												mix={[
@@ -985,7 +996,7 @@ export function AccountJobsRoute(handle: Handle) {
 														}
 														handle.update()
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												<option value="once">Once</option>
@@ -997,6 +1008,7 @@ export function AccountJobsRoute(handle: Handle) {
 											<label mix={css(fieldCss)}>
 												<span mix={css(fieldLabelCss)}>Run at (UTC)</span>
 												<input
+													data-field-ring
 													type="text"
 													value={editState.runAt}
 													disabled={isMutating}
@@ -1010,7 +1022,7 @@ export function AccountJobsRoute(handle: Handle) {
 															}
 															handle.update()
 														}),
-														css(inputCss),
+														css(accountInputCss),
 													]}
 												/>
 											</label>
@@ -1019,6 +1031,7 @@ export function AccountJobsRoute(handle: Handle) {
 											<label mix={css(fieldCss)}>
 												<span mix={css(fieldLabelCss)}>Every</span>
 												<input
+													data-field-ring
 													type="text"
 													value={editState.every}
 													disabled={isMutating}
@@ -1032,7 +1045,7 @@ export function AccountJobsRoute(handle: Handle) {
 															}
 															handle.update()
 														}),
-														css(inputCss),
+														css(accountInputCss),
 													]}
 												/>
 											</label>
@@ -1041,6 +1054,7 @@ export function AccountJobsRoute(handle: Handle) {
 											<label mix={css(fieldCss)}>
 												<span mix={css(fieldLabelCss)}>Cron expression</span>
 												<input
+													data-field-ring
 													type="text"
 													value={editState.expression}
 													disabled={isMutating}
@@ -1054,7 +1068,7 @@ export function AccountJobsRoute(handle: Handle) {
 															}
 															handle.update()
 														}),
-														css(inputCss),
+														css(accountInputCss),
 													]}
 												/>
 											</label>

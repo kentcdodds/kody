@@ -17,8 +17,8 @@ import {
 	cardCss,
 	fieldCss,
 	fieldLabelCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementLayout,
@@ -42,6 +42,8 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+const selectCss = getSelectCss()
 
 type PageStatus = 'loading' | 'ready' | 'error'
 
@@ -295,7 +297,7 @@ export function AccountPackagesRoute(handle: Handle) {
 		return true
 	}
 
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	let lastSeenDataKey = ''
 
 	return () => {
@@ -377,6 +379,7 @@ export function AccountPackagesRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>App</span>
 									<select
+										data-field-ring
 										value={filters.app}
 										aria-label="Filter packages by app"
 										mix={[
@@ -387,7 +390,7 @@ export function AccountPackagesRoute(handle: Handle) {
 													buildHrefWithUpdatedFilters({ app: nextApp }),
 												)
 											}),
-											css(inputCss),
+											css(selectCss),
 										]}
 									>
 										<option value="all">All packages</option>
@@ -398,6 +401,7 @@ export function AccountPackagesRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Sort</span>
 									<select
+										data-field-ring
 										value={filters.sort}
 										aria-label="Sort packages"
 										mix={[
@@ -408,7 +412,7 @@ export function AccountPackagesRoute(handle: Handle) {
 													buildHrefWithUpdatedFilters({ sort: nextSort }),
 												)
 											}),
-											css(inputCss),
+											css(selectCss),
 										]}
 									>
 										<option value="updated">Recently updated</option>

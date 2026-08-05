@@ -40,9 +40,11 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
+
+const selectCss = getSelectCss()
 
 const accountActivityApiPath = '/account/activity.json'
 const activityRoute = createListDetailRoute('/account/activity')
@@ -226,7 +228,7 @@ export function AccountActivityRoute(handle: Handle) {
 	let message: string | null = null
 	let loadingMore = false
 	const loadLatch = createRouteLoadLatch()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -488,6 +490,7 @@ export function AccountActivityRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Status</span>
 											<select
+												data-field-ring
 												aria-label="Status filter"
 												value={statusFilter}
 												mix={[
@@ -502,7 +505,7 @@ export function AccountActivityRoute(handle: Handle) {
 														}
 														updateFilters({ status: value })
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												{statusFilterOptions.map((option) => (
@@ -515,6 +518,7 @@ export function AccountActivityRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Surface</span>
 											<select
+												data-field-ring
 												aria-label="Surface filter"
 												value={surfaceFilter}
 												mix={[
@@ -530,7 +534,7 @@ export function AccountActivityRoute(handle: Handle) {
 														}
 														updateFilters({ surface: value })
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												{surfaceFilterOptions.map((option) => (
