@@ -1271,6 +1271,15 @@ const reportDisclosureCss = {
 	'&[open] summary': {
 		color: colors.text,
 	},
+	'& > :not(summary)': {
+		'@media (prefers-reduced-motion: no-preference)': {
+			transition: `opacity 200ms ${transitions.easeOut}, translate 200ms ${transitions.easeOut}`,
+		},
+		'@starting-style': {
+			opacity: 0,
+			translate: '0 4px',
+		},
+	},
 }
 
 const reportFormCss = {

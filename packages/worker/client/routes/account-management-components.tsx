@@ -119,6 +119,15 @@ export const accountDisclosureCss = {
 		'& > summary:hover': { color: colors.text },
 	},
 	'&[open] > summary': { marginBottom: '0.4rem' },
+	'& > :not(summary)': {
+		'@media (prefers-reduced-motion: no-preference)': {
+			transition: `opacity 200ms ${transitions.easeOut}, translate 200ms ${transitions.easeOut}`,
+		},
+		'@starting-style': {
+			opacity: 0,
+			translate: '0 4px',
+		},
+	},
 }
 
 type AccountManagementSlot = any

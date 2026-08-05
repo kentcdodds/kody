@@ -1018,13 +1018,13 @@ const byokDetailsCss = {
 	marginTop: 'clamp(2.5rem, 6vw, 4rem)',
 	paddingTop: '1.4rem',
 	borderTop: `1px solid ${colors.border}`,
-	'@keyframes onboarding-panel-enter': {
-		from: { opacity: 0, translate: '0 12px' },
-		to: { opacity: 1, translate: '0 0' },
-	},
-	'@media (prefers-reduced-motion: no-preference)': {
-		'&[open] > div': {
-			animation: `onboarding-panel-enter 360ms ${transitions.easeOut}`,
+	'& > div': {
+		'@media (prefers-reduced-motion: no-preference)': {
+			transition: `opacity 240ms ${transitions.easeOut}, translate 240ms ${transitions.easeOut}`,
+		},
+		'@starting-style': {
+			opacity: 0,
+			translate: '0 6px',
 		},
 	},
 }

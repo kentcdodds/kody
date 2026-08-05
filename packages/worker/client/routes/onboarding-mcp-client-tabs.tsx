@@ -434,7 +434,7 @@ const tabPillCss = {
 }
 
 /* Switching hosts slides the fresh instructions in — enhance-only by
-   construction: the animation replays when the panel's `hidden` display
+   construction: @starting-style re-arms when the panel's `hidden` display
    toggles, which only happens through the JS-driven tabs. */
 const tabPanelCss = {
 	display: 'grid',
@@ -460,12 +460,14 @@ const tabPanelCss = {
 		borderRadius: '6px',
 		padding: '0.1em 0.4em',
 	},
-	'@keyframes onboarding-tab-enter': {
-		from: { opacity: 0, translate: '0 6px' },
-		to: { opacity: 1, translate: '0 0' },
-	},
+	// Enters via @starting-style so a fast host-switch retargets the
+	// in-flight transition instead of restarting keyframes from zero.
 	'@media (prefers-reduced-motion: no-preference)': {
-		animation: `onboarding-tab-enter 240ms ${transitions.easeOut}`,
+		transition: `opacity 240ms ${transitions.easeOut}, translate 240ms ${transitions.easeOut}`,
+	},
+	'@starting-style': {
+		opacity: 0,
+		translate: '0 6px',
 	},
 }
 
