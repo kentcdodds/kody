@@ -34,6 +34,19 @@ const runLogMocks = vi.hoisted(() => ({
 	maxInFlight: 0,
 }))
 
+const fleetUsageMocks = vi.hoisted(() => ({
+	loadFleetUsageInsights: vi.fn(async () => ({
+		topRuntimeDurationConsumers: [],
+		topEventCountConsumers: [],
+		topDurationConsumersByMetric: [],
+		entitlementPressure: [],
+	})),
+}))
+
+vi.mock('#worker/admin/fleet-usage-insights.ts', () => ({
+	loadFleetUsageInsights: fleetUsageMocks.loadFleetUsageInsights,
+}))
+
 vi.mock('#worker/run-records/service.ts', () => ({
 	getAdminInsightsSnapshot: (input: { env: Env; userId: string }) =>
 		runLogMocks.getAdminInsightsSnapshot(input),

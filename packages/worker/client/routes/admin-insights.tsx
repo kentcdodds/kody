@@ -30,8 +30,13 @@ import {
 import {
 	type AdminInsightsActivation,
 	type AdminInsightsActivationStep,
+	type AdminInsightsDurationConsumer,
+	type AdminInsightsEntitlementPressureUser,
+	type AdminInsightsEventCountConsumer,
 	type AdminInsightsLoaderData,
+	type AdminInsightsMetricDurationConsumers,
 	type AdminInsightsRunLogCompleteness,
+	type AdminUsageMetric,
 } from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
@@ -82,6 +87,253 @@ function formatDayLabel(dayKey: string) {
 
 function formatPlanLabel(plan: string) {
 	return plan === 'none' ? 'No plan' : plan
+}
+
+function formatDurationHours(durationMs: number) {
+	if (durationMs < 60_000) return `${Math.round(durationMs / 1000)}s`
+	const hours = durationMs / (60 * 60 * 1000)
+	if (hours < 10) return `${hours.toFixed(1)}h`
+	return `${Math.round(hours)}h`
+}
+
+function formatPressurePercent(value: number) {
+	return `${Math.round(value * 100)}%`
+}
+
+function adminUserDetailHref(stableUserId: string) {
+	return `/admin/users/${encodeURIComponent(stableUserId)}`
+}
+
+const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
+	execute: 'Executes',
+	package_export: 'Package runs',
+	package_static_call: 'Static package calls',
+	job_run: 'Job runs',
+	workflow_run: 'Workflow runs',
+	service_runtime: 'Service runtime',
+	outbound_fetch: 'Fetches',
+	email_send: 'Email sends',
+	email_received: 'Email receives',
+}
+
+function renderConsumerTable(input: {
+	ariaLabel: string
+	rows: Array<{
+		key: string
+		username: string
+		stableUserId: string
+		value: string
+	}>
+	emptyText: string
+	valueHeader: string
+}) {
+	if (input.rows.length === 0) {
+		return (
+			<p mix={css({ margin: 0, color: colors.textMuted })}>{input.emptyText}</p>
+		)
+	}
+	return (
+		<table
+			aria-label={input.ariaLabel}
+			mix={css({
+				width: '100%',
+				borderCollapse: 'collapse',
+				fontSize: typography.fontSize.sm,
+			})}
+		>
+			<thead>
+				<tr>
+					<th
+						scope="col"
+						mix={css({
+							textAlign: 'left',
+							padding: `${spacing.xs} ${spacing.sm}`,
+							color: colors.textMuted,
+							fontWeight: typography.fontWeight.medium,
+						})}
+					>
+						User
+					</th>
+					<th
+						scope="col"
+						mix={css({
+							textAlign: 'right',
+							padding: `${spacing.xs} ${spacing.sm}`,
+							color: colors.textMuted,
+							fontWeight: typography.fontWeight.medium,
+						})}
+					>
+						{input.valueHeader}
+					</th>
+				</tr>
+			</thead>
+			<tbody>
+				{input.rows.map((row) => (
+					<tr key={row.key}>
+						<td mix={css({ padding: `${spacing.xs} ${spacing.sm}` })}>
+							<a
+								href={adminUserDetailHref(row.stableUserId)}
+								mix={css({ color: colors.text, textDecoration: 'none' })}
+							>
+								{row.username}
+							</a>
+						</td>
+						<td
+							mix={css({
+								padding: `${spacing.xs} ${spacing.sm}`,
+								textAlign: 'right',
+								color: colors.textMuted,
+								fontVariantNumeric: 'tabular-nums',
+							})}
+						>
+							{row.value}
+						</td>
+					</tr>
+				))}
+			</tbody>
+		</table>
+	)
+}
+
+function renderDurationConsumers(
+	consumers: Array<AdminInsightsDurationConsumer>,
+	ariaLabel: string,
+) {
+	return renderConsumerTable({
+		ariaLabel,
+		emptyText: 'No runtime duration recorded this month yet.',
+		valueHeader: 'Runtime',
+		rows: consumers.map((consumer) => ({
+			key: consumer.stableUserId,
+			username: consumer.username,
+			stableUserId: consumer.stableUserId,
+			value: formatDurationHours(consumer.totalDurationMs),
+		})),
+	})
+}
+
+function renderEventCountConsumers(
+	consumers: Array<AdminInsightsEventCountConsumer>,
+) {
+	return renderConsumerTable({
+		ariaLabel: 'Top event count consumers this month',
+		emptyText: 'No metered events recorded this month yet.',
+		valueHeader: 'Events',
+		rows: consumers.map((consumer) => ({
+			key: consumer.stableUserId,
+			username: consumer.username,
+			stableUserId: consumer.stableUserId,
+			value: formatIntegerNumber(consumer.eventCount),
+		})),
+	})
+}
+
+function renderDurationByMetric(
+	entries: Array<AdminInsightsMetricDurationConsumers>,
+) {
+	const hasData = entries.some((entry) => entry.consumers.length > 0)
+	if (!hasData) {
+		return (
+			<p mix={css({ margin: 0, color: colors.textMuted })}>
+				No per-metric runtime leaders this month yet.
+			</p>
+		)
+	}
+	return (
+		<div mix={css({ display: 'grid', gap: spacing.md })}>
+			{entries.map((entry) => (
+				<div key={entry.metric} mix={css({ display: 'grid', gap: spacing.xs })}>
+					<h3
+						mix={css({
+							margin: 0,
+							fontSize: typography.fontSize.sm,
+							fontWeight: typography.fontWeight.semibold,
+							color: colors.text,
+						})}
+					>
+						{runtimeDurationMetricLabels[entry.metric]}
+					</h3>
+					{renderDurationConsumers(
+						entry.consumers,
+						`Top ${runtimeDurationMetricLabels[entry.metric]} duration consumers`,
+					)}
+				</div>
+			))}
+		</div>
+	)
+}
+
+function renderEntitlementPressure(
+	entries: Array<AdminInsightsEntitlementPressureUser>,
+) {
+	if (entries.length === 0) {
+		return (
+			<p mix={css({ margin: 0, color: colors.textMuted })}>
+				No accounts above 80% of a plan limit among the most active users this
+				month.
+			</p>
+		)
+	}
+	return (
+		<div mix={css({ display: 'grid', gap: spacing.md })}>
+			{entries.map((entry) => (
+				<div
+					key={entry.stableUserId}
+					mix={css({
+						display: 'grid',
+						gap: spacing.xs,
+						padding: spacing.sm,
+						borderRadius: '8px',
+						border: `1px solid ${colors.border}`,
+					})}
+				>
+					<div
+						mix={css({
+							display: 'flex',
+							justifyContent: 'space-between',
+							gap: spacing.sm,
+							flexWrap: 'wrap',
+						})}
+					>
+						<a
+							href={adminUserDetailHref(entry.stableUserId)}
+							mix={css({
+								color: colors.text,
+								fontWeight: typography.fontWeight.semibold,
+								textDecoration: 'none',
+							})}
+						>
+							{entry.username}
+						</a>
+						<span
+							mix={css({
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
+							{formatPlanLabel(entry.plan)} plan
+						</span>
+					</div>
+					<ul
+						mix={css({
+							margin: 0,
+							paddingLeft: spacing.lg,
+							color: colors.textMuted,
+							fontSize: typography.fontSize.sm,
+						})}
+					>
+						{entry.pressuredResources.map((resource) => (
+							<li key={resource.resource}>
+								{resource.label}: {formatIntegerNumber(resource.current)} /{' '}
+								{formatIntegerNumber(resource.limit)} (
+								{formatPressurePercent(resource.percentOfLimit)})
+							</li>
+						))}
+					</ul>
+				</div>
+			))}
+		</div>
+	)
 }
 
 /** Null when run-derived totals are complete; otherwise a user-facing warning. */
@@ -570,6 +822,39 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 						xLabels={monthLabels}
 						xTickEvery={1}
 					/>
+				</ChartCard>
+
+				<ChartCard
+					title="Top runtime consumers"
+					sub="Combined execute, job, workflow, and service runtime duration for the current UTC month."
+					span={6}
+				>
+					{renderDurationConsumers(
+						data.topRuntimeDurationConsumers,
+						'Top combined runtime duration consumers this month',
+					)}
+				</ChartCard>
+				<ChartCard
+					title="Top event consumers"
+					sub="Total metered events across all metrics for the current UTC month."
+					span={6}
+				>
+					{renderEventCountConsumers(data.topEventCountConsumers)}
+				</ChartCard>
+
+				<ChartCard
+					title="Runtime leaders by metric"
+					sub="Per-metric duration leaders for execute, jobs, workflows, and services."
+					span={6}
+				>
+					{renderDurationByMetric(data.topDurationConsumersByMetric)}
+				</ChartCard>
+				<ChartCard
+					title="Entitlement pressure"
+					sub="Accounts above 80% of a plan limit among the ~15 most active users this month."
+					span={6}
+				>
+					{renderEntitlementPressure(data.entitlementPressure)}
 				</ChartCard>
 
 				<ChartCard

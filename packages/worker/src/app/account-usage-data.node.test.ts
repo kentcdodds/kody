@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { accountUsageEntitlementResources } from '#worker/entitlements/resource-visibility.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -84,7 +85,6 @@ function currentFor(
 	resource: string,
 ) {
 	return data?.entitlementConsumption.find((row) => row.resource === resource)
-		?.current
 }
 
 test('loadAccountUsageData returns plan rows and authoritative UserMeter daily counts', async () => {
@@ -106,9 +106,12 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(baseline?.ok).toBe(true)
 	expect(baseline?.plan).toBe('free')
 	expect(baseline?.today).toBe('2026-07-25')
-	expect(currentFor(baseline, 'saved_packages')).toBe(2)
-	expect(currentFor(baseline, 'concurrent_workflows')).toBe(0)
-	expect(baseline?.entitlementConsumption.length).toBeGreaterThan(5)
+	expect(currentFor(baseline, 'saved_packages')?.current).toBe(2)
+	expect(currentFor(baseline, 'concurrent_workflows')?.current).toBe(0)
+	expect(baseline?.entitlementConsumption.length).toBe(
+		accountUsageEntitlementResources.length,
+	)
+	expect(currentFor(baseline, 'repos')?.whatCounts).toMatch(/plain repos/i)
 
 	const bootstrapEmail = 'usage-bootstrap@example.com'
 	const bootstrapUserId = testStableUserIdFromEmail(bootstrapEmail)
@@ -136,9 +139,9 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		userId: 8,
 		now,
 	})
-	expect(currentFor(bootstrapped, 'email_sends_per_day')).toBe(17)
-	expect(currentFor(bootstrapped, 'execute_calls_per_day')).toBe(91)
-	expect(currentFor(bootstrapped, 'saved_packages')).toBe(1)
+	expect(currentFor(bootstrapped, 'email_sends_per_day')?.current).toBe(17)
+	expect(currentFor(bootstrapped, 'execute_calls_per_day')?.current).toBe(91)
+	expect(currentFor(bootstrapped, 'saved_packages')?.current).toBe(1)
 
 	const meterEmail = 'usage-meter@example.com'
 	const meterUserId = testStableUserIdFromEmail(meterEmail)
@@ -180,13 +183,15 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		userId: 9,
 		now,
 	})
-	expect(currentFor(authoritative, 'email_sends_per_day')).toBe(101)
-	expect(currentFor(authoritative, 'email_receives_per_day')).toBe(202)
-	expect(currentFor(authoritative, 'execute_calls_per_day')).toBe(303)
-	expect(currentFor(authoritative, 'outbound_fetches_per_day')).toBe(404)
-	expect(currentFor(authoritative, 'concurrent_workflows')).toBe(3)
-	expect(currentFor(authoritative, 'stored_email_messages')).toBe(7)
-	expect(currentFor(authoritative, 'saved_packages')).toBe(4)
+	expect(currentFor(authoritative, 'email_sends_per_day')?.current).toBe(101)
+	expect(currentFor(authoritative, 'email_receives_per_day')?.current).toBe(202)
+	expect(currentFor(authoritative, 'execute_calls_per_day')?.current).toBe(303)
+	expect(currentFor(authoritative, 'outbound_fetches_per_day')?.current).toBe(
+		404,
+	)
+	expect(currentFor(authoritative, 'concurrent_workflows')?.current).toBe(3)
+	expect(currentFor(authoritative, 'stored_email_messages')?.current).toBe(7)
+	expect(currentFor(authoritative, 'saved_packages')?.current).toBe(4)
 
 	const storageEmail = 'usage-storage@example.com'
 	const storageUserId = testStableUserIdFromEmail(storageEmail)
@@ -197,7 +202,6 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		packageCount: 0,
 	})
 	const storageEnv = withUsageEnv({ APP_DB: storageDb })
-	// storage_bytes reads from authoritative UserMeter state.
 	await storageEnv.meter.seedStorageBytes({
 		userId: storageUserId,
 		bytes: 4_321,
@@ -207,5 +211,5 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		userId: 11,
 		now,
 	})
-	expect(currentFor(storageData, 'storage_bytes')).toBe(4_321)
+	expect(currentFor(storageData, 'storage_bytes')?.current).toBe(4_321)
 })

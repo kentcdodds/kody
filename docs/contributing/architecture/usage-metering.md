@@ -318,3 +318,16 @@ Guarantees and rules:
   `derived-cache:v1:`), keyed by user id + current month, falling through to
   direct D1 queries when KV is unavailable. Usage is loaded for one selected
   account at a time, so admin reads stay O(1) per view as the user base grows.
+- **Fleet visibility** (`/admin/insights`, loader in
+  `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
+  `usage_rollups` for the current UTC month — top-10 combined runtime duration
+  (execute + job_run + workflow_run + service_runtime), top-10 event counts,
+  per-metric duration leaders, and an entitlement-pressure panel that reuses
+  `readAdminEntitlementConsumption` for the top ~15 users by event count.
+  Queries are `LIMIT`-bounded; entitlement reads run with modest concurrency.
+- **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
+  `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
+  same ~15-user bound. Emails admin-role users when any swept account crosses
+  > 80% of a plan-limit resource or when combined runtime duration for the month
+  > exceeds `fleetRuntimeDurationAlertThresholdMs` (24h). KV cooldown key
+  > `ops-alert:usage-entitlement-pressure:v1` suppresses repeat pages.

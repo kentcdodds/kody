@@ -178,7 +178,13 @@ the same cold zero-init path):
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
 - `email_usage_get` MCP capability
 - Admin per-user usage drill-down —
-  `packages/worker/src/admin/user-usage-data.ts`
+  `packages/worker/src/admin/user-usage-data.ts` (via
+  `readAdminEntitlementConsumption` in
+  `packages/worker/src/admin/entitlement-consumption.ts`, including
+  `storage_bytes` from UserMeter)
+- Admin fleet entitlement-pressure panel and `usage_entitlement_alert` lane —
+  same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
+  ~15 active users by current-month event count
 
 Non-daily resources still use `readEntitlementResourceUsage` against D1.
 `readEntitlementResourceUsage` for daily resources and `storage_bytes` throws
