@@ -230,7 +230,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				id: 2,
 				username: 'member',
 				email,
-				plan: 'pro',
+				plan: 'standard',
 				stable_user_id: usageUserId,
 			},
 		],
