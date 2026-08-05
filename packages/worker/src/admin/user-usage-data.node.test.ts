@@ -119,6 +119,16 @@ function createAdminUserUsageTestDb(input: {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
 					}
+					if (
+						normalizedQuery.includes(
+							'select 1 as present from users where stable_user_id = ?',
+						)
+					) {
+						const exists = users.some(
+							(user) => user.stable_user_id === params[0],
+						)
+						return (exists ? { present: 1 } : null) as T | null
+					}
 					const count = countForQuery(normalizedQuery, String(params[0]))
 					if (count !== null) return { count } as T
 					throw new Error(`Unsupported first query: ${query}`)
@@ -189,7 +199,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 				id: 1,
 				username: 'empty',
 				email,
-				plan: 'pro',
+				plan: 'standard',
 				stable_user_id: usageUserId,
 			},
 		],
@@ -230,7 +240,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				id: 2,
 				username: 'member',
 				email,
-				plan: 'pro',
+				plan: 'standard',
 				stable_user_id: usageUserId,
 			},
 		],

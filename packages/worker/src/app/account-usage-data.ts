@@ -1,36 +1,13 @@
-import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
-	entitlementResourceLabels,
 	parseStoredPlanName,
 	resolveEffectivePlan,
-	resolvePlanLimit,
-	type EntitlementResource,
-	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
+import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
 } from './loader-data.ts'
-
-const accountUsageEntitlementResources = [
-	'saved_packages',
-	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
-	'repo_sessions',
-	'email_sends_per_day',
-	'email_receives_per_day',
-	'stored_email_messages',
-	'secrets',
-	'concurrent_workflows',
-	'execute_calls_per_day',
-	'outbound_fetches_per_day',
-	'storage_bytes',
-] as const satisfies ReadonlyArray<EntitlementResource>
-
-const warningThreshold = 0.8
 
 type UsageUserRow = {
 	id: number
@@ -61,7 +38,8 @@ export async function loadAccountUsageData(input: {
 		row.stripe_plan,
 	)
 	const usageUserId = resolveUserStableId(row)
-	const entitlementConsumption = await readEntitlementConsumption({
+	const snapshot = await readEntitlementUsageSnapshot({
+		db: input.env.APP_DB,
 		env: input.env,
 		usageUserId,
 		plan,
@@ -70,39 +48,28 @@ export async function loadAccountUsageData(input: {
 
 	return {
 		ok: true,
-		plan,
-		today: utcDayKey(now),
-		entitlementConsumption,
-		warnings: entitlementConsumption.filter((item) => item.overEightyPercent),
+		plan: snapshot.plan,
+		today: snapshot.today,
+		entitlementConsumption: snapshot.resources.map(toAccountUsageRow),
+		warnings: snapshot.warnings.map(toAccountUsageRow),
 	}
 }
 
-async function readEntitlementConsumption(input: {
-	env: Env
-	usageUserId: string
-	plan: PlanName
-	now: Date
-}): Promise<Array<AccountUsageEntitlementConsumption>> {
-	return await Promise.all(
-		accountUsageEntitlementResources.map(async (resource) => {
-			const current = await readCurrentEntitlementResourceUsage({
-				db: input.env.APP_DB,
-				env: input.env,
-				userId: input.usageUserId,
-				resource,
-				now: input.now,
-			})
-			const limit = resolvePlanLimit(input.plan, resource)
-			const percentOfLimit = limit === 0 ? null : current / limit
-			return {
-				resource,
-				label: entitlementResourceLabels[resource],
-				current,
-				limit,
-				percentOfLimit,
-				overEightyPercent:
-					percentOfLimit !== null && percentOfLimit > warningThreshold,
-			}
-		}),
-	)
+function toAccountUsageRow(
+	row: Awaited<
+		ReturnType<typeof readEntitlementUsageSnapshot>
+	>['resources'][number],
+): AccountUsageEntitlementConsumption {
+	return {
+		resource: row.resource,
+		label: row.label,
+		group: row.group,
+		kind: row.kind,
+		whatCounts: row.whatCounts,
+		howToReduce: row.howToReduce,
+		current: row.current,
+		limit: row.limit,
+		percentOfLimit: row.percentOfLimit,
+		overEightyPercent: row.overEightyPercent,
+	}
 }

@@ -4,7 +4,6 @@ import {
 	parseArgs,
 	preSquashGhostMigrationNames,
 	preSquashMigrationNames,
-	squashEpochMigrationNames,
 	squashedInitMigrationName,
 } from './reset-migration-bookkeeping.ts'
 
@@ -23,16 +22,27 @@ test('migration bookkeeping classifies fresh, squashed, pre-squash, and unexpect
 	expect(classifyMigrationBookkeeping([squashedInitMigrationName])).toEqual({
 		state: 'squashed',
 	})
-	expect(classifyMigrationBookkeeping(squashEpochMigrationNames)).toEqual({
-		state: 'squashed',
-	})
+	// Post-squash steady state: baseline plus ordinary later migrations.
 	expect(
-		classifyMigrationBookkeeping([squashEpochMigrationNames[1] ?? '']),
-	).toEqual({
-		state: 'unexpected',
-		missing: preSquashMigrationNames,
-		extra: ['0002-repo-session-storage-buckets.sql'],
-	})
+		classifyMigrationBookkeeping([
+			squashedInitMigrationName,
+			'0002-restructure-plan-tiers.sql',
+		]),
+	).toEqual({ state: 'squashed' })
+	expect(
+		classifyMigrationBookkeeping([
+			'0003-later.sql',
+			squashedInitMigrationName,
+			'0002-restructure-plan-tiers.sql',
+		]),
+	).toEqual({ state: 'squashed' })
+	// Baseline mixed with frozen pre-squash names still fails.
+	expect(
+		classifyMigrationBookkeeping([
+			squashedInitMigrationName,
+			'0090-webhook-endpoints.sql',
+		]).state,
+	).toBe('unexpected')
 	expect(
 		classifyMigrationBookkeeping([...preSquashMigrationNames].reverse()),
 	).toEqual({ state: 'pre-squash' })
@@ -81,12 +91,6 @@ test('migration bookkeeping classifies fresh, squashed, pre-squash, and unexpect
 		classifyMigrationBookkeeping([
 			squashedInitMigrationName,
 			...preSquashMigrationNames,
-		]).state,
-	).toBe('unexpected')
-	expect(
-		classifyMigrationBookkeeping([
-			...squashEpochMigrationNames,
-			'0003-rogue.sql',
 		]).state,
 	).toBe('unexpected')
 })

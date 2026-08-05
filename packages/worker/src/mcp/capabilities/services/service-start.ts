@@ -66,6 +66,16 @@ export const serviceStartCapability = defineDomainCapability(
 						userId: serviceContext.user.userId,
 						email: serviceContext.user.email,
 						resource: 'persistent_package_services',
+						getCurrent: async () =>
+							await countRunningPackageServices({
+								env: ctx.env,
+								userId: serviceContext.user.userId,
+								mode: 'persistent',
+								excludeService: {
+									packageId: serviceContext.savedPackage.id,
+									serviceName: args.service_name,
+								},
+							}),
 					})
 				}
 				await assertWithinEntitlement({

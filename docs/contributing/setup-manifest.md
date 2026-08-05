@@ -359,9 +359,12 @@ automatically:
   for `POST /webhooks/stripe`. When unset, the webhook endpoint returns 503.)
 - `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
   Override for tests/mocks.)
-- `STRIPE_PRO_PRICE_ID` (optional Worker var; Stripe Price id mapped to the
-  `pro` plan and used for authenticated Checkout Sessions. Production value is
-  set in `packages/worker/wrangler.jsonc`.)
+- `STRIPE_STANDARD_PRICE_ID` (optional public Wrangler var committed in
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $5/month
+  `standard` plan and used for authenticated Checkout Sessions.)
+- `STRIPE_PRO_PRICE_ID` (optional public Wrangler var, added to the production
+  env block once the $20/month `pro` price exists in Stripe.) Each price id is
+  independent; an unset value only disables checkout for that tier.
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.
@@ -429,9 +432,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
 - `STRIPE_SECRET_KEY` (optional GitHub / Worker secret; Stripe secret API key
-  for account billing. Production deploy syncs it when set. The Pro price id is
-  a Worker var committed in `packages/worker/wrangler.jsonc`, not a GitHub
-  secret.)
+  for account billing. Production deploy syncs it when set. The Standard and Pro
+  price ids are public Wrangler vars committed in
+  `packages/worker/wrangler.jsonc`, not GitHub secrets.)
 - `STRIPE_WEBHOOK_SECRET` (optional GitHub / Worker secret; Stripe endpoint
   signing secret (`whsec_...`) for platform billing webhooks at
   `POST /webhooks/stripe`. Production deploy syncs it when set.)

@@ -93,6 +93,9 @@ Inbound storage is quota-gated per user:
   unless an invite assigns another tier. The operator-only `max` plan uses
   finite email caps (10,000 sends/day, 20,000 receives/day, 100,000 stored
   messages, 768 KiB per message); it is not a public or paid tier.
+- Paid email caps are Standard: 200 sends/day, 1,000 receives/day, 10,000 stored
+  messages; Pro: 500 sends/day, 2,000 receives/day, 25,000 stored messages. Both
+  allow up to 768 KiB per message.
 - Quota, size, and unverified-account rejections store at most five detailed
   `rejected` delivery events per inbox per UTC day; further rejections increment
   a single daily aggregate event (with a total count and the last reason) so

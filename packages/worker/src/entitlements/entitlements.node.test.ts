@@ -6,7 +6,13 @@ import {
 	buildEntitlementUpgradeHint,
 	parseEntitlementLimitMessage,
 } from './errors.ts'
-import { planLimits, resolvePlanLimit } from './plans.ts'
+import {
+	getPlanRank,
+	parseStripePlanName,
+	planLimits,
+	planNames,
+	resolvePlanLimit,
+} from './plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -592,10 +598,95 @@ test('assertWithinEntitlement enforces concurrent workflow limits without email 
 	})
 })
 
-test('persistent package services are gated as a 0/1 limit', async () => {
+test('plan registry, ranks, and limits match the published tier contract', () => {
+	expect(planNames).toEqual(['free', 'standard', 'pro', 'max'])
+	expect(planNames.map(getPlanRank)).toEqual([0, 1, 2, 3])
+	expect(planLimits).toEqual({
+		free: {
+			maxRepos: 20,
+			maxSavedPackages: 25,
+			maxScheduledJobs: 10,
+			maxPackageServices: 1,
+			maxPersistentPackageServices: 0,
+			maxRepoSessions: 50,
+			maxEmailSendsPerDay: 10,
+			maxEmailReceivesPerDay: 50,
+			maxStoredEmailMessages: 500,
+			maxEmailMessageBytes: 256 * 1024,
+			maxSecrets: 25,
+			maxStorageBytes: 64 * 1024 * 1024,
+			maxConcurrentWorkflows: 3,
+			maxExecuteCallsPerDay: 500,
+			maxOutboundFetchesPerDay: 2_000,
+		},
+		standard: {
+			maxRepos: 200,
+			maxSavedPackages: 100,
+			maxScheduledJobs: 50,
+			maxPackageServices: 10,
+			maxPersistentPackageServices: 1,
+			maxRepoSessions: 200,
+			maxEmailSendsPerDay: 200,
+			maxEmailReceivesPerDay: 1_000,
+			maxStoredEmailMessages: 10_000,
+			maxEmailMessageBytes: 768 * 1024,
+			maxSecrets: 100,
+			maxStorageBytes: 1024 * 1024 * 1024,
+			maxConcurrentWorkflows: 50,
+			maxExecuteCallsPerDay: 5_000,
+			maxOutboundFetchesPerDay: 20_000,
+		},
+		pro: {
+			maxRepos: 400,
+			maxSavedPackages: 200,
+			maxScheduledJobs: 150,
+			maxPackageServices: 20,
+			maxPersistentPackageServices: 3,
+			maxRepoSessions: 400,
+			maxEmailSendsPerDay: 500,
+			maxEmailReceivesPerDay: 2_000,
+			maxStoredEmailMessages: 25_000,
+			maxEmailMessageBytes: 768 * 1024,
+			maxSecrets: 200,
+			maxStorageBytes: 5 * 1024 * 1024 * 1024,
+			maxConcurrentWorkflows: 100,
+			maxExecuteCallsPerDay: 10_000,
+			maxOutboundFetchesPerDay: 40_000,
+		},
+		max: {
+			maxRepos: 10_000,
+			maxSavedPackages: 10_000,
+			maxScheduledJobs: 5_000,
+			maxPackageServices: 1_000,
+			maxPersistentPackageServices: 10,
+			maxRepoSessions: 20_000,
+			maxEmailSendsPerDay: 10_000,
+			maxEmailReceivesPerDay: 20_000,
+			maxStoredEmailMessages: 100_000,
+			maxEmailMessageBytes: 768 * 1024,
+			maxSecrets: 10_000,
+			maxStorageBytes: 100 * 1024 * 1024 * 1024,
+			maxConcurrentWorkflows: 5_000,
+			maxExecuteCallsPerDay: 500_000,
+			maxOutboundFetchesPerDay: 2_000_000,
+		},
+	})
+})
+
+test('Stripe plan parsing separates current stored values from legacy metadata', () => {
+	expect(parseStripePlanName('standard')).toBe('standard')
+	expect(parseStripePlanName('pro')).toBe('pro')
+	expect(parseStripePlanName('partner')).toBeNull()
+	expect(parseStripePlanName('max')).toBeNull()
+	expect(parseStripePlanName('partner', { legacyMetadata: true })).toBe('pro')
+	expect(parseStripePlanName('pro', { legacyMetadata: true })).toBe('standard')
+})
+
+test('persistent package services use finite concurrent counts', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
-	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(1)
+	expect(resolvePlanLimit('standard', 'persistent_package_services')).toBe(1)
+	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(3)
 
 	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
@@ -605,6 +696,7 @@ test('persistent package services are gated as a 0/1 limit', async () => {
 		userId,
 		email: plannedEmail,
 		resource: 'persistent_package_services',
+		getCurrent: async () => 0,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -617,14 +709,15 @@ test('persistent package services are gated as a 0/1 limit', async () => {
 		limit: 0,
 	})
 
-	const proDb = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
+	const standardDb = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'standard', stable_user_id: userId }],
 	})
 	await assertWithinEntitlement({
-		db: proDb.db,
+		db: standardDb.db,
 		userId,
 		email: plannedEmail,
 		resource: 'persistent_package_services',
+		getCurrent: async () => 0,
 	})
 })
 
@@ -868,9 +961,9 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 test('requested units and getCurrent overrides are honored', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
+		users: [{ email: plannedEmail, plan: 'standard', stable_user_id: userId }],
 	})
-	const maxBytes = planLimits.pro.maxEmailMessageBytes
+	const maxBytes = planLimits.standard.maxEmailMessageBytes
 	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
 
 	const oversized = await assertWithinEntitlement({
@@ -1256,28 +1349,30 @@ test('entitlement enforcement stops when a stored plan violates the schema contr
 })
 
 test('getUserPlan resolves effective plan from manual plan and stripe_plan', async () => {
-	const freePlusProEmail = 'manual-free-stripe-pro@example.com'
-	const proPlusPartnerEmail = 'manual-pro-stripe-partner@example.com'
+	const freePlusStandardEmail = 'manual-free-stripe-standard@example.com'
+	const standardPlusProEmail = 'manual-standard-stripe-pro@example.com'
 	const unlimitedPlusProEmail = 'manual-unlimited-stripe-pro@example.com'
-	const freePlusProUserId = await createStableUserIdFromEmail(freePlusProEmail)
-	const proPlusPartnerUserId =
-		await createStableUserIdFromEmail(proPlusPartnerEmail)
+	const freePlusStandardUserId = await createStableUserIdFromEmail(
+		freePlusStandardEmail,
+	)
+	const standardPlusProUserId =
+		await createStableUserIdFromEmail(standardPlusProEmail)
 	const unlimitedPlusProUserId = await createStableUserIdFromEmail(
 		unlimitedPlusProEmail,
 	)
 	const { db } = createEntitlementsTestDb({
 		users: [
 			{
-				email: freePlusProEmail,
+				email: freePlusStandardEmail,
 				plan: 'free',
-				stripe_plan: 'pro',
-				stable_user_id: freePlusProUserId,
+				stripe_plan: 'standard',
+				stable_user_id: freePlusStandardUserId,
 			},
 			{
-				email: proPlusPartnerEmail,
-				plan: 'pro',
-				stripe_plan: 'partner',
-				stable_user_id: proPlusPartnerUserId,
+				email: standardPlusProEmail,
+				plan: 'standard',
+				stripe_plan: 'pro',
+				stable_user_id: standardPlusProUserId,
 			},
 			{
 				email: unlimitedPlusProEmail,
@@ -1290,16 +1385,16 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 
 	expect(
 		await getUserPlan(db, {
-			userId: freePlusProUserId,
-			email: freePlusProEmail,
+			userId: freePlusStandardUserId,
+			email: freePlusStandardEmail,
 		}),
-	).toBe('pro')
+	).toBe('standard')
 	expect(
 		await getUserPlan(db, {
-			userId: proPlusPartnerUserId,
-			email: proPlusPartnerEmail,
+			userId: standardPlusProUserId,
+			email: standardPlusProEmail,
 		}),
-	).toBe('partner')
+	).toBe('pro')
 	expect(
 		await getUserPlan(db, {
 			userId: unlimitedPlusProUserId,

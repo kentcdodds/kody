@@ -62,9 +62,11 @@ export const publicOgPages = {
 	},
 	pricing: {
 		imageTitle: 'Simple Kody pricing',
-		imageSubtitle: 'Start free. Pro is $5 per month when you need more room.',
+		imageSubtitle:
+			'Start free. Standard is $5/month; Pro is $20/month for heavier use.',
 		ogTitle: 'Pricing — Kody',
-		ogDescription: 'Compare the Free and Pro plans and their finite limits.',
+		ogDescription:
+			'Compare the Free, Standard, and Pro plans and their finite limits.',
 		path: '/pricing',
 	},
 	privacy: {

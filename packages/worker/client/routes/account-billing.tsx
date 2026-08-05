@@ -42,7 +42,7 @@ const billingCheckoutApiPath = '/account/billing/checkout.json'
 const billingPath = '/account/billing'
 const billingPortalPath = '/account/billing/portal'
 
-type PaidTier = 'pro'
+type PaidTier = 'standard' | 'pro'
 type PlanTier = 'free' | PaidTier
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
 
@@ -60,21 +60,28 @@ const planTiers: Array<{
 			'Room to build real automations. Capped on daily volume, not on how much you build.',
 	},
 	{
-		id: 'pro',
-		name: 'Pro',
+		id: 'standard',
+		name: 'Standard',
 		price: '$5/month',
 		description: 'Higher daily volume, more services, and persistent ones.',
 	},
+	{
+		id: 'pro',
+		name: 'Pro',
+		price: '$20/month',
+		description:
+			'For heavy daily automation — roughly double Standard on every axis.',
+	},
 ]
 
-/** Mirrors server rank: free < pro < partner < max. */
+/** Mirrors server rank: free < standard < pro < max. */
 function getPlanRank(plan: AdminPlanName): number {
 	switch (plan) {
 		case 'free':
 			return 0
-		case 'pro':
+		case 'standard':
 			return 1
-		case 'partner':
+		case 'pro':
 			return 2
 		case 'max':
 			return 3
@@ -131,7 +138,7 @@ function describeSubscriptionStatus(status: string): {
 			return {
 				label: 'Past due',
 				detail:
-					'Payment is past due, so paid plan limits are not active. Update your payment method in Manage subscription to restore Pro.',
+					'Payment is past due, so paid plan limits are not active. Update your payment method in Manage subscription to restore your paid plan.',
 				tone: 'action',
 			}
 		case 'unpaid':
@@ -226,7 +233,7 @@ export function AccountBillingRoute(handle: Handle) {
 	let data: AccountBillingLoaderData | null = null
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let checkoutPending = false
+	let checkoutPendingPlan: PaidTier | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: AccountBillingLoaderData) {
@@ -236,9 +243,10 @@ export function AccountBillingRoute(handle: Handle) {
 		messageTone = payload.error ? 'error' : 'info'
 	}
 
-	async function startCheckout() {
-		if (checkoutPending) return
-		checkoutPending = true
+	async function startCheckout(plan: PlanTier) {
+		if (plan === 'free') return
+		if (checkoutPendingPlan) return
+		checkoutPendingPlan = plan
 		message = null
 		handle.update()
 		try {
@@ -249,7 +257,7 @@ export function AccountBillingRoute(handle: Handle) {
 					'Content-Type': 'application/json',
 				},
 				credentials: 'include',
-				body: JSON.stringify({}),
+				body: JSON.stringify({ plan }),
 			})
 			const payload = await readJson<{
 				ok?: boolean
@@ -265,7 +273,7 @@ export function AccountBillingRoute(handle: Handle) {
 					? payload.error
 					: 'Unable to start checkout. Try again shortly.'
 			messageTone = 'error'
-			checkoutPending = false
+			checkoutPendingPlan = null
 			handle.update()
 		} catch (error) {
 			message =
@@ -273,7 +281,7 @@ export function AccountBillingRoute(handle: Handle) {
 					? error.message
 					: 'Unable to start checkout. Try again shortly.'
 			messageTone = 'error'
-			checkoutPending = false
+			checkoutPendingPlan = null
 			handle.update()
 		}
 	}
@@ -340,12 +348,6 @@ export function AccountBillingRoute(handle: Handle) {
 			: null
 		const paymentActionNeeded =
 			subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid'
-		const showSubscribeCta = Boolean(
-			billing?.checkoutAvailable &&
-			billing &&
-			!planCoversTier(billing.effectivePlan, 'pro') &&
-			!paymentActionNeeded,
-		)
 		const showManageCta = Boolean(
 			billing?.configured && billing.hasStripeCustomer,
 		)
@@ -367,7 +369,7 @@ export function AccountBillingRoute(handle: Handle) {
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
 				<AccountPageHeader
 					title="Billing"
-					description="View your plan, subscribe to Pro, and manage your Stripe subscription."
+					description="View your plan, subscribe to Standard or Pro, and manage your Stripe subscription."
 					currentHref={currentHref}
 				/>
 
@@ -392,8 +394,9 @@ export function AccountBillingRoute(handle: Handle) {
 						) : null}
 						{billing.configured && !billing.hasStripeCustomer ? (
 							<AccountManagementMessage tone="info">
-								No Stripe customer is linked yet. Subscribe to Pro to create one
-								and manage billing in Stripe.
+								{billing.purchasablePlans.length > 0
+									? 'No Stripe customer is linked yet. Subscribe to a paid plan to create one and manage billing in Stripe.'
+									: 'No paid tier is configured for checkout on this deployment.'}
 							</AccountManagementMessage>
 						) : null}
 						{billing.configured && billing.hasStripeCustomer ? (
@@ -457,7 +460,7 @@ export function AccountBillingRoute(handle: Handle) {
 
 						<AccountManagementPanel
 							title="Actions"
-							description="Subscribe, open the Stripe portal, or check entitlement use."
+							description="Open the Stripe portal or check entitlement use."
 						>
 							<div
 								mix={css({
@@ -467,18 +470,6 @@ export function AccountBillingRoute(handle: Handle) {
 									alignItems: 'center',
 								})}
 							>
-								{showSubscribeCta ? (
-									<button
-										type="button"
-										disabled={checkoutPending}
-										mix={[
-											on('click', () => void startCheckout()),
-											css(primaryButtonCss),
-										]}
-									>
-										{checkoutPending ? 'Starting checkout…' : 'Subscribe'}
-									</button>
-								) : null}
 								{showManageCta ? (
 									<a
 										href={billingPortalPath}
@@ -515,7 +506,7 @@ export function AccountBillingRoute(handle: Handle) {
 							<div
 								mix={css({
 									display: 'grid',
-									gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+									gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 									gap: spacing.md,
 									[mq.mobile]: {
 										gridTemplateColumns: '1fr',
@@ -530,7 +521,7 @@ export function AccountBillingRoute(handle: Handle) {
 										tier.id !== 'free' &&
 										!isCurrent &&
 										!isIncluded &&
-										billing.checkoutAvailable &&
+										billing.purchasablePlans.includes(tier.id) &&
 										!paymentActionNeeded
 
 									return (
@@ -565,6 +556,11 @@ export function AccountBillingRoute(handle: Handle) {
 												{tier.price}
 											</span>
 											<p mix={css(descriptionCss)}>{tier.description}</p>
+											<p mix={css({ margin: 0 })}>
+												<a href="/account/usage" mix={css(primaryLinkCss)}>
+													See your current usage
+												</a>
+											</p>
 											{isCurrent || isIncluded ? (
 												<div>
 													<button
@@ -581,13 +577,13 @@ export function AccountBillingRoute(handle: Handle) {
 												<div>
 													<button
 														type="button"
-														disabled={checkoutPending}
+														disabled={checkoutPendingPlan !== null}
 														mix={[
-															on('click', () => void startCheckout()),
+															on('click', () => void startCheckout(tier.id)),
 															css(primaryButtonCss),
 														]}
 													>
-														{checkoutPending
+														{checkoutPendingPlan === tier.id
 															? 'Starting checkout…'
 															: 'Subscribe'}
 													</button>

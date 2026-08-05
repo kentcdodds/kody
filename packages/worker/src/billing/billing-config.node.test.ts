@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	createBillingLinkReference,
+	getPurchasablePlans,
 	resolveSubscriptionPlan,
 } from './billing-config.ts'
 import { type StripeSubscription } from './stripe-client.ts'
@@ -41,6 +42,7 @@ test('createBillingLinkReference is stable per user and not the raw stable id', 
 
 test('resolveSubscriptionPlan maps active price and metadata plans with soonest cancel_at', () => {
 	const env = {
+		STRIPE_STANDARD_PRICE_ID: 'price_standard',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	}
 
@@ -62,6 +64,22 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		stripePlan: null,
 		cancelAt: null,
 		subscriptionStatus: 'incomplete',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_standard'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: 'standard',
+		cancelAt: null,
+		subscriptionStatus: 'active',
 	})
 
 	expect(
@@ -108,7 +126,41 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			env,
 		),
 	).toEqual({
+		stripePlan: 'standard',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_other'],
+					metadata: { kody_plan: 'partner' },
+				}),
+			],
+			env,
+		),
+	).toEqual({
 		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_standard'],
+					metadata: { kody_plan: 'partner' },
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: 'standard',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -211,4 +263,16 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		cancelAt: null,
 		subscriptionStatus: 'past_due',
 	})
+})
+
+test('price ids independently control purchasable tiers', () => {
+	expect(
+		getPurchasablePlans({
+			STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		}),
+	).toEqual(['standard'])
+	expect(getPurchasablePlans({ STRIPE_PRO_PRICE_ID: 'price_pro' })).toEqual([
+		'pro',
+	])
+	expect(getPurchasablePlans({})).toEqual([])
 })

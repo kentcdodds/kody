@@ -60,8 +60,8 @@ function accountWriteLeaseColumnNames(state: DurableObjectState) {
 		.map((row) => String(row.name))
 }
 
-test('fresh UserMeter schema v8 creates the final write-lease shape', async () => {
-	const user = await seedFreeUser('meter-schema-v8-fresh')
+test('fresh UserMeter schema v9 creates the final write-lease shape', async () => {
+	const user = await seedFreeUser('meter-schema-v9-fresh')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
 	)
@@ -73,7 +73,7 @@ test('fresh UserMeter schema v8 creates the final write-lease shape', async () =
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(8)
+		expect(Number(version?.value)).toBe(9)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
@@ -83,7 +83,7 @@ test('fresh UserMeter schema v8 creates the final write-lease shape', async () =
 	})
 }, 30_000)
 
-test('warm UserMeter schema v7 drops the authority column and preserves leases', async () => {
+test('warm UserMeter schema v7 upgrades to v9 and preserves leases', async () => {
 	const user = await seedFreeUser('meter-schema-v7-upgrade')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
@@ -125,7 +125,7 @@ test('warm UserMeter schema v7 drops the authority column and preserves leases',
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(8)
+		expect(Number(version?.value)).toBe(9)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
@@ -753,6 +753,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 		packageId: 'pkg-1',
 		serviceName: 'worker',
 		status: 'running',
+		mode: 'bounded',
 		startedAt: '2026-08-01T10:00:00.000Z',
 		sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
 	})
@@ -763,6 +764,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 			packageId: 'pkg-1',
 			serviceName: 'worker',
 			status: 'running',
+			mode: 'bounded',
 			startedAt: '2026-08-01T10:00:00.000Z',
 			sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
 			revision: 1,
@@ -773,6 +775,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 		packageId: 'pkg-1',
 		serviceName: 'worker',
 		status: 'running',
+		mode: 'bounded',
 		startedAt: '2026-08-01T10:00:00.000Z',
 		sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
 	})
@@ -822,6 +825,12 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 			now: '2026-08-01T11:30:00.000Z',
 		}),
 	).toEqual({ count: 1 })
+	expect(
+		await meterA.countRunningPackageServices({
+			now: '2026-08-01T11:30:00.000Z',
+			mode: 'persistent',
+		}),
+	).toEqual({ count: 0 })
 	expect(
 		await meterA.countRunningPackageServices({
 			now: '2026-08-01T11:30:00.000Z',

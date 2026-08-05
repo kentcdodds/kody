@@ -14,7 +14,7 @@ import {
 } from '#worker/billing/stripe-client.ts'
 import {
 	createBillingLinkReference,
-	getProPriceId,
+	getPriceIdForPlan,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
 import {
@@ -90,12 +90,23 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
-			const priceId = getProPriceId(env)
+			const body = (await request.json().catch(() => null)) as {
+				plan?: unknown
+			} | null
+			const plan =
+				body?.plan === 'standard' || body?.plan === 'pro' ? body.plan : null
+			if (!plan) {
+				return jsonResponse(
+					{ ok: false, error: 'Choose Standard or Pro.' },
+					400,
+				)
+			}
+			const priceId = getPriceIdForPlan(env, plan)
 			if (!isBillingConfigured(env) || !priceId) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: 'Billing is not configured on this deployment.',
+						error: `${plan === 'standard' ? 'Standard' : 'Pro'} checkout is not configured on this deployment.`,
 					},
 					409,
 				)

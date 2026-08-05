@@ -53,8 +53,8 @@ Calling `create` again with the same explicit `idempotencyKey` and matching
 workflow identity for the same user returns the existing workflow instead of
 starting a duplicate. Choose keys that include the logical job identity, for
 example `storage-sweep:2026-05-08`. Kody enforces a finite per-user concurrent
-workflow limit from the account plan (free 3, pro 50, partner 100, max 5000); if
-the cap is reached, `workflows.create` returns a clear quota error.
+workflow limit from the account plan (free 3, standard 50, pro 100, max 5000);
+if the cap is reached, `workflows.create` returns a clear quota error.
 
 Use `workflow_run_list` to inspect recent workflow runs and statuses, and
 `workflow_run_cancel` to stop a run by id.

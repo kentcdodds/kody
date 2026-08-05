@@ -13,8 +13,9 @@
  *
  * 1. fresh — no `d1_migrations` table or zero rows: nothing to do; the
  *    regular apply bootstraps the squashed baseline.
- * 2. squashed — bookkeeping holds a valid applied prefix of the current
- *    post-squash migration epoch: nothing to do.
+ * 2. squashed — bookkeeping holds the squashed baseline row plus only
+ *    post-squash migrations (0002+ applied by the ordinary apply step after
+ *    the squash): nothing to do.
  * 3. pre-squash — bookkeeping holds exactly the full frozen pre-squash
  *    migration name set: reset to the single squashed baseline row.
  *
@@ -32,16 +33,6 @@ import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
 
 export const squashedInitMigrationName = '0001-squashed-init.sql'
-
-/**
- * Ordered migration names in the current post-squash epoch. The reset runs
- * before regular migration apply, so every prefix beginning with the squashed
- * baseline is valid (for example, a database that has not applied 0002 yet).
- */
-export const squashEpochMigrationNames: ReadonlyArray<string> = [
-	squashedInitMigrationName,
-	'0002-repo-session-storage-buckets.sql',
-]
 
 /**
  * Frozen: the exact migration names recorded in tools/migration-ledger.json
@@ -228,18 +219,23 @@ export function classifyMigrationBookkeeping(
 	if (appliedNames.length === 0) {
 		return { state: 'fresh' }
 	}
-	const applied = new Set(appliedNames)
-	const expectedSquashEpochPrefix = squashEpochMigrationNames.slice(
-		0,
-		applied.size,
-	)
-	if (
-		applied.size === appliedNames.length &&
-		expectedSquashEpochPrefix.length === applied.size &&
-		expectedSquashEpochPrefix.every((name) => applied.has(name))
-	) {
-		return { state: 'squashed' }
+	// Post-squash steady state: the squashed baseline plus only migrations
+	// that are not part of the frozen pre-squash history (ordinary 0002+
+	// migrations applied after the squash). Any mixture of the baseline with
+	// frozen pre-squash names still fails below.
+	if (appliedNames.includes(squashedInitMigrationName)) {
+		const preSquash = new Set([
+			...preSquashMigrationNames,
+			...preSquashGhostMigrationNames,
+		])
+		const onlyPostSquashExtras = appliedNames.every(
+			(name) => name === squashedInitMigrationName || !preSquash.has(name),
+		)
+		if (onlyPostSquashExtras) {
+			return { state: 'squashed' }
+		}
 	}
+	const applied = new Set(appliedNames)
 	const expected = new Set(preSquashMigrationNames)
 	const ghosts = new Set(preSquashGhostMigrationNames)
 	const missing = [...expected].filter((name) => !applied.has(name)).sort()

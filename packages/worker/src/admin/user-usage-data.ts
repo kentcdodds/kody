@@ -1,18 +1,13 @@
 import { cachified, type Cache } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
-	entitlementResourceLabels,
 	parseStoredPlanName,
 	resolveEffectivePlan,
-	resolvePlanLimit,
-	type EntitlementResource,
-	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
+import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
-	type AdminUsageEntitlementConsumption,
 	type AdminUsageMetric,
 	type AdminUsageMonthRollup,
 	type AdminUsageRollup,
@@ -31,22 +26,6 @@ export const adminUsageMetrics = [
 	'email_received',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
-const adminUserUsageEntitlementResources = [
-	'saved_packages',
-	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
-	'repo_sessions',
-	'email_sends_per_day',
-	'email_receives_per_day',
-	'stored_email_messages',
-	'secrets',
-	'concurrent_workflows',
-	'execute_calls_per_day',
-	'outbound_fetches_per_day',
-] as const satisfies ReadonlyArray<EntitlementResource>
-
-const warningThreshold = 0.8
 /**
  * Rollup rows are derived hourly from Analytics Engine in production, so a
  * short KV cache on the per-user read model adds no meaningful staleness
@@ -112,7 +91,7 @@ export async function loadAdminUserUsageData(
 			userId: usageUserId,
 			currentMonth,
 		}),
-		readEntitlementConsumption({
+		readAdminEntitlementConsumption({
 			env,
 			usageUserId,
 			plan,
@@ -137,36 +116,6 @@ export async function loadAdminUserUsageData(
 		entitlementConsumption,
 		warnings: entitlementConsumption.filter((item) => item.overEightyPercent),
 	}
-}
-
-async function readEntitlementConsumption(input: {
-	env: Env
-	usageUserId: string
-	plan: PlanName
-	now: Date
-}): Promise<Array<AdminUsageEntitlementConsumption>> {
-	return await Promise.all(
-		adminUserUsageEntitlementResources.map(async (resource) => {
-			const current = await readCurrentEntitlementResourceUsage({
-				db: input.env.APP_DB,
-				env: input.env,
-				userId: input.usageUserId,
-				resource,
-				now: input.now,
-			})
-			const limit = resolvePlanLimit(input.plan, resource)
-			const percentOfLimit = limit === 0 ? null : current / limit
-			return {
-				resource,
-				label: entitlementResourceLabels[resource],
-				current,
-				limit,
-				percentOfLimit,
-				overEightyPercent:
-					percentOfLimit !== null && percentOfLimit > warningThreshold,
-			}
-		}),
-	)
 }
 
 async function loadUserMonthRollups(input: {

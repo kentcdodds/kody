@@ -471,6 +471,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const shadowInput = {
 			binding,
 			status,
+			mode: this.stateSnapshot.mode,
 			startedAt,
 			sourceUpdatedAt: updatedAt,
 		}
@@ -490,6 +491,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private schedulePackageServiceStateShadow(input: {
 		binding: PackageServiceBindingState
 		status: PackageServiceProjectedStatus
+		mode: PackageServiceState['mode']
 		startedAt: string | null
 		sourceUpdatedAt: string
 	}) {
@@ -507,6 +509,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async requirePackageServiceStateInUserMeter(input: {
 		binding: PackageServiceBindingState
 		status: PackageServiceProjectedStatus
+		mode: PackageServiceState['mode']
 		startedAt: string | null
 		sourceUpdatedAt: string
 	}) {
@@ -542,6 +545,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async shadowPackageServiceStateToUserMeter(input: {
 		binding: PackageServiceBindingState
 		status: PackageServiceProjectedStatus
+		mode: PackageServiceState['mode']
 		startedAt: string | null
 		sourceUpdatedAt: string
 	}) {
@@ -555,6 +559,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async upsertPackageServiceStateInUserMeter(input: {
 		binding: PackageServiceBindingState
 		status: PackageServiceProjectedStatus
+		mode: PackageServiceState['mode']
 		startedAt: string | null
 		sourceUpdatedAt: string
 	}) {
@@ -566,6 +571,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			packageId: input.binding.packageId,
 			serviceName: input.binding.serviceName,
 			status: input.status,
+			mode: input.mode,
 			startedAt: input.startedAt,
 			sourceUpdatedAt: input.sourceUpdatedAt,
 		})

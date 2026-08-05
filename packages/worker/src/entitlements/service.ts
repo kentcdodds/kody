@@ -702,6 +702,7 @@ export async function countRunningPackageServices(input: {
 	env: UserMeterEnv
 	userId: string
 	excludeService?: { packageId: string; serviceName: string }
+	mode?: 'bounded' | 'persistent'
 	now?: Date
 }): Promise<number> {
 	const now = input.now ?? new Date()
@@ -709,6 +710,7 @@ export async function countRunningPackageServices(input: {
 	const { count } = await meter.countRunningPackageServices({
 		staleAfterMs: packageServiceStateStaleMs,
 		excludeService: input.excludeService,
+		mode: input.mode,
 		now: now.toISOString(),
 	})
 	return count
@@ -748,9 +750,9 @@ export async function readEntitlementResourceUsage(input: {
 				'package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
 			)
 		case 'persistent_package_services':
-			// Finite 0/1 gate: the limit is 0 (not allowed) or 1 (allowed),
-			// so the current count never changes the outcome.
-			return 0
+			throw new Error(
+				'persistent_package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
+			)
 		case 'repo_sessions':
 			return await countRows(
 				db,
@@ -883,6 +885,14 @@ export async function readCurrentEntitlementResourceUsage(input: {
 		return await countRunningPackageServices({
 			env: input.env,
 			userId: input.userId,
+			now: input.now,
+		})
+	}
+	if (input.resource === 'persistent_package_services') {
+		return await countRunningPackageServices({
+			env: input.env,
+			userId: input.userId,
+			mode: 'persistent',
 			now: input.now,
 		})
 	}
