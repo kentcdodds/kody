@@ -47,6 +47,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 
 const footerCss = {
 	borderTop: `1px solid ${colors.border}`,
+	viewTransitionName: 'site-footer',
 }
 
 const footerInnerCss = {

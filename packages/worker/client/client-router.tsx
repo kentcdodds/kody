@@ -76,9 +76,47 @@ function getCurrentDocumentPath() {
 	return `${window.location.pathname}${window.location.search}`
 }
 
-function notify() {
+let activeViewTransition: { skipTransition(): void } | null = null
+
+function swapDom(onSwapped?: () => void) {
 	lastNotifiedDocumentPath = getCurrentDocumentPath()
+	// First SPA swap onward: suppresses the [data-rise] page-open
+	// choreography (public/styles.css) — the view transition is the
+	// entrance for SPA navigations.
+	document.documentElement.setAttribute('data-spa-nav', '')
 	routerEvents.dispatchEvent(new Event('navigate'))
+	// Subscribers only enqueue handle.update(); the remix/ui scheduler
+	// flushes in a microtask. Resolve one microtask later so the DOM has
+	// actually swapped before the transition captures the new state.
+	return new Promise<void>((resolve) =>
+		queueMicrotask(() => {
+			onSwapped?.()
+			resolve()
+		}),
+	)
+}
+
+function notify(onSwapped?: () => void) {
+	const startViewTransition =
+		'startViewTransition' in document
+			? (
+					document as Document & {
+						startViewTransition: (
+							callback: () => Promise<void>,
+						) => { skipTransition(): void }
+					}
+				).startViewTransition.bind(document)
+			: null
+	if (
+		!startViewTransition ||
+		matchMedia('(prefers-reduced-motion: reduce)').matches
+	) {
+		void swapDom(onSwapped)
+		return
+	}
+	// A superseding navigation must not stack transitions.
+	activeViewTransition?.skipTransition()
+	activeViewTransition = startViewTransition(() => swapDom(onSwapped))
 }
 
 function createNavigationEventDetail(
@@ -423,13 +461,13 @@ function getCurrentPathWithSearchAndHash() {
 	return `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
 
-function commitNavigation(nextPath: string) {
+function commitNavigation(nextPath: string, onSwapped?: () => void) {
 	window.history.pushState(
 		createScrollRestorationHistoryState(window.history.state),
 		'',
 		nextPath,
 	)
-	notify()
+	notify(onSwapped)
 }
 
 function commitImmediateNavigation(
@@ -546,12 +584,12 @@ async function runNavigationWithLoader(
 		// wiring.
 		applyDocumentHead(destination.pathname, loadedData)
 
+		const finish = () => dispatchNavigationEnd(navigationEndDetail)
 		if (options?.skipPushState) {
-			notify()
+			notify(finish)
 		} else {
-			commitNavigation(nextPath)
+			commitNavigation(nextPath, finish)
 		}
-		dispatchNavigationEnd(navigationEndDetail)
 	} catch {
 		if (signal.aborted) return
 		if (chunkLoadFailed) {
@@ -570,12 +608,12 @@ async function runNavigationWithLoader(
 		// refetch, so mark the destination stale for routes to consume.
 		markNavigationDataStale(nextPath)
 		applyDocumentHead(destination.pathname)
+		const finish = () => dispatchNavigationEnd(navigationEndDetail)
 		if (options?.skipPushState) {
-			notify()
+			notify(finish)
 		} else {
-			commitNavigation(nextPath)
+			commitNavigation(nextPath, finish)
 		}
-		dispatchNavigationEnd(navigationEndDetail)
 	} finally {
 		// A superseding navigation owns the marker now; only clear our own.
 		if (navigationAbortController === abortController) {

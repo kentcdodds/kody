@@ -139,6 +139,7 @@ const headerCss = {
 	position: 'sticky' as const,
 	top: 0,
 	zIndex: 10,
+	viewTransitionName: 'site-header',
 	background: `oklch(from ${colors.background} l c h / 0.85)`,
 	borderBottom: '1px solid transparent',
 	transition: `border-color 200ms ${transitions.easeOut}`,

@@ -114,7 +114,11 @@ function applyWindowScroll(
 ): boolean {
 	switch (target.type) {
 		case 'position': {
-			window.scrollTo(target.position.x, target.position.y)
+			window.scrollTo({
+				left: target.position.x,
+				top: target.position.y,
+				behavior: 'instant',
+			})
 			const max = maxWindowScrollPosition()
 			// Report failure while the document is still too short to reach the
 			// saved position so the caller retries once more content rendered.
@@ -123,20 +127,20 @@ function applyWindowScroll(
 		case 'hash': {
 			const element = getHashTarget(target.id)
 			if (element) {
-				element.scrollIntoView()
+				element.scrollIntoView({ behavior: 'instant' })
 				return true
 			}
 			// The hash target may render asynchronously; retry until the deadline
 			// before falling back.
 			if (!isFinalAttempt) return false
 			if (detail.preventScrollReset) return true
-			window.scrollTo(0, 0)
+			window.scrollTo({ left: 0, top: 0, behavior: 'instant' })
 			return true
 		}
 		case 'preserve':
 			return true
 		case 'top':
-			window.scrollTo(0, 0)
+			window.scrollTo({ left: 0, top: 0, behavior: 'instant' })
 			return true
 		default: {
 			const exhaustive: never = target
@@ -197,7 +201,7 @@ function restoreWindowScroll(
 		}
 		schedule(attempt)
 	}
-	schedule(attempt)
+	attempt()
 }
 
 function handleNavigationStart(event: Event) {

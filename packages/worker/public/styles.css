@@ -385,11 +385,47 @@ html.is-settled {
 		animation: card-in 600ms var(--ease-out) var(--reveal-delay, 0ms) backwards;
 	}
 
-	/* Page-open choreography: every page head rises in the same
-	   order-of-importance stagger — 90ms steps after a 60ms lead. */
-	html.js [data-rise] {
+	/* Page-open choreography: full document loads only — SPA navigations
+	   set html[data-spa-nav] (client-router) and get the view transition
+	   as their entrance instead. */
+	html.js:not([data-spa-nav]) [data-rise] {
 		animation: rise 700ms var(--ease-out) both;
 		animation-delay: calc(60ms + var(--rise, 0) * 90ms);
+	}
+
+	/* SPA route transitions (View Transitions API). The router wraps the
+	   DOM swap in startViewTransition (client/client-router.tsx); chrome
+	   that persists across routes is lifted out of the root snapshot by
+	   view-transition-name and pinned static here. Browsers without the
+	   API never match these pseudos — the swap is simply instant. */
+	::view-transition-old(root) {
+		animation: vt-page-out 120ms var(--ease-out) both;
+	}
+
+	::view-transition-new(root) {
+		animation: vt-page-in 220ms var(--ease-out) both;
+	}
+
+	::view-transition-old(site-header),
+	::view-transition-new(site-header),
+	::view-transition-old(site-footer),
+	::view-transition-new(site-footer),
+	::view-transition-old(nav-progress),
+	::view-transition-new(nav-progress) {
+		animation: none;
+	}
+
+	@keyframes vt-page-out {
+		to {
+			opacity: 0;
+		}
+	}
+
+	@keyframes vt-page-in {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
 	}
 
 	@keyframes rise {

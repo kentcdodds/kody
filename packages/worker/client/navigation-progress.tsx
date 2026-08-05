@@ -1,6 +1,6 @@
 import { addEventListeners, type Handle, css } from 'remix/ui'
 import { routerEvents } from './client-router.tsx'
-import { colors } from './styles/tokens.ts'
+import { colors, transitions } from './styles/tokens.ts'
 
 // Spin-delay semantics (https://npm.im/spin-delay): the bar only appears if a
 // navigation is still pending after `showDelayMs`, and once shown it stays
@@ -162,15 +162,18 @@ export function NavigationProgress(handle: Handle) {
 					zIndex: 9999,
 					pointerEvents: 'none',
 					backgroundColor: 'transparent',
+					viewTransitionName: 'nav-progress',
 				})}
 			>
 				<div
 					mix={css({
 						height: '100%',
-						width: `${progress}%`,
+						width: '100%',
+						transform: `scaleX(${progress / 100})`,
+						transformOrigin: 'left',
 						backgroundColor: colors.primary,
 						opacity,
-						transition: `width 200ms ease-out, opacity ${fadeDurationMs}ms ease-out`,
+						transition: `transform 200ms ${transitions.easeOut}, opacity ${fadeDurationMs}ms ${transitions.easeOut}`,
 					})}
 				/>
 			</div>
