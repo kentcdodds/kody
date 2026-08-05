@@ -45,7 +45,7 @@ const adminInsightsApiPath = '/admin/insights.json'
 const planColors: Record<string, string> = {
 	pro: chartColor.violet,
 	free: chartColor.blue,
-	partner: chartColor.emerald,
+	standard: chartColor.emerald,
 	none: chartColor.cyan,
 }
 

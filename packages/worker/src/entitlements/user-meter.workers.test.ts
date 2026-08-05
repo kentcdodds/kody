@@ -753,6 +753,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 		packageId: 'pkg-1',
 		serviceName: 'worker',
 		status: 'running',
+		mode: 'bounded',
 		startedAt: '2026-08-01T10:00:00.000Z',
 		sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
 	})
@@ -763,6 +764,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 			packageId: 'pkg-1',
 			serviceName: 'worker',
 			status: 'running',
+			mode: 'bounded',
 			startedAt: '2026-08-01T10:00:00.000Z',
 			sourceUpdatedAt: '2026-08-01T10:00:00.000Z',
 			revision: 1,
@@ -773,6 +775,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 		packageId: 'pkg-1',
 		serviceName: 'worker',
 		status: 'running',
+		mode: 'bounded',
 		startedAt: '2026-08-01T10:00:00.000Z',
 		sourceUpdatedAt: '2026-08-01T11:00:00.000Z',
 	})
@@ -822,6 +825,12 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 			now: '2026-08-01T11:30:00.000Z',
 		}),
 	).toEqual({ count: 1 })
+	expect(
+		await meterA.countRunningPackageServices({
+			now: '2026-08-01T11:30:00.000Z',
+			mode: 'persistent',
+		}),
+	).toEqual({ count: 0 })
 	expect(
 		await meterA.countRunningPackageServices({
 			now: '2026-08-01T11:30:00.000Z',

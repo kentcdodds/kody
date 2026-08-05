@@ -155,13 +155,18 @@ function buildRunningServices(count: number) {
 	return Array.from({ length: count }, (_, index) => ({
 		packageId: `other-package-${index}`,
 		serviceName: `service-${index}`,
+		mode: 'bounded' as const,
 	}))
 }
 
 async function seedRunningServicesInMeter(
 	meterEnv: { USER_METER?: DurableObjectNamespace },
 	userId: string,
-	services: ReadonlyArray<{ packageId: string; serviceName: string }>,
+	services: ReadonlyArray<{
+		packageId: string
+		serviceName: string
+		mode?: 'bounded' | 'persistent'
+	}>,
 ) {
 	const freshAt = new Date().toISOString()
 	const meter = meterEnv.USER_METER!.get(
@@ -172,6 +177,7 @@ async function seedRunningServicesInMeter(
 			packageId: service.packageId,
 			serviceName: service.serviceName,
 			status: 'running',
+			mode: service.mode ?? 'bounded',
 			startedAt: freshAt,
 			sourceUpdatedAt: freshAt,
 		})
@@ -237,6 +243,7 @@ test('service_start entitlement gating covers plan limits, running skips, and st
 	)
 	mockDeclaredServices('persistent')
 	mockServiceRpc({ status: 'stopped' })
+	const { env: freeMeterEnv } = createInMemoryUserMeterEnv()
 	const freeError = await serviceStartCapability
 		.handler(
 			{ service_name: 'realtime-supervisor' },
@@ -245,6 +252,7 @@ test('service_start entitlement gating covers plan limits, running skips, and st
 					APP_DB: createEntitlementsTestDb({
 						users: [{ email, plan: 'free' }],
 					}),
+					...freeMeterEnv,
 				} as Env,
 				callerContext,
 			},
@@ -262,6 +270,47 @@ test('service_start entitlement gating covers plan limits, running skips, and st
 		plan: 'free',
 		limit: 0,
 		current: 0,
+	})
+
+	const standardPersistentLimit =
+		planLimits.standard.maxPersistentPackageServices
+	const { env: persistentMeterEnv } = createInMemoryUserMeterEnv()
+	await seedRunningServicesInMeter(
+		persistentMeterEnv,
+		userId,
+		buildRunningServices(standardPersistentLimit).map((service) => ({
+			...service,
+			mode: 'persistent',
+		})),
+	)
+	const persistentError = await serviceStartCapability
+		.handler(
+			{ service_name: 'realtime-supervisor' },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'standard' }],
+					}),
+					...persistentMeterEnv,
+				} as Env,
+				callerContext,
+			},
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	if (!isEntitlementLimitError(persistentError)) {
+		throw new Error(
+			'Expected an EntitlementLimitError at the persistent service ceiling.',
+		)
+	}
+	expect(persistentError.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'persistent_package_services',
+		plan: 'standard',
+		limit: standardPersistentLimit,
+		current: standardPersistentLimit,
 	})
 
 	const { env: boundedMeterEnv } = createInMemoryUserMeterEnv()

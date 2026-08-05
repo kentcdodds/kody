@@ -26,8 +26,7 @@ const limitRows: ReadonlyArray<LimitRow> = [
 	{ label: 'Running package services', key: 'maxPackageServices' },
 	{
 		label: 'Persistent package services',
-		key: 'packageServicePersistentAllowed',
-		format: (value) => (value === 1 ? 'Allowed' : 'Not included'),
+		key: 'maxPersistentPackageServices',
 	},
 	{ label: 'Active repo sessions', key: 'maxRepoSessions' },
 	{ label: 'Email sends per day', key: 'maxEmailSendsPerDay' },
@@ -55,7 +54,8 @@ export function PricingRoute(_handle: Handle) {
 			<header mix={css(pageHeaderCss)}>
 				<h1 mix={css(pageTitleCss)}>Pricing</h1>
 				<p mix={css(pageDescriptionCss)}>
-					Start free. Pro is $5 per month when you need more room to run.
+					Start free. Standard is $5 per month; Pro is $20 per month for heavy
+					daily automation.
 				</p>
 			</header>
 
@@ -74,14 +74,27 @@ export function PricingRoute(_handle: Handle) {
 					</a>
 				</section>
 
-				<section mix={css(proPlanCardCss)}>
+				<section mix={css(paidPlanCardCss)}>
 					<div>
-						<h2 mix={css(planTitleCss)}>Pro</h2>
+						<h2 mix={css(planTitleCss)}>Standard</h2>
 						<p mix={css(priceCss)}>$5/month</p>
 					</div>
 					<p mix={css(descriptionCss)}>
 						Higher daily volume, more running services, and persistent package
 						services.
+					</p>
+					<a href="/account/billing" mix={css(primaryLinkCss)}>
+						Upgrade in Account settings
+					</a>
+				</section>
+
+				<section mix={css(paidPlanCardCss)}>
+					<div>
+						<h2 mix={css(planTitleCss)}>Pro</h2>
+						<p mix={css(priceCss)}>$20/month</p>
+					</div>
+					<p mix={css(descriptionCss)}>
+						For heavy daily automation — roughly double Standard on every axis.
 					</p>
 					<a href="/account/billing" mix={css(primaryLinkCss)}>
 						Upgrade in Account settings
@@ -108,6 +121,9 @@ export function PricingRoute(_handle: Handle) {
 									Free
 								</th>
 								<th scope="col" mix={css(numericHeaderCellCss)}>
+									Standard
+								</th>
+								<th scope="col" mix={css(numericHeaderCellCss)}>
 									Pro
 								</th>
 							</tr>
@@ -122,6 +138,9 @@ export function PricingRoute(_handle: Handle) {
 										{formatLimit(row, planLimits.free)}
 									</td>
 									<td mix={css(numericCellCss)}>
+										{formatLimit(row, planLimits.standard)}
+									</td>
+									<td mix={css(numericCellCss)}>
 										{formatLimit(row, planLimits.pro)}
 									</td>
 								</tr>
@@ -132,11 +151,10 @@ export function PricingRoute(_handle: Handle) {
 			</section>
 
 			<section mix={css(cardCss)}>
-				<h2 mix={css(planTitleCss)}>Invite and admin plans</h2>
+				<h2 mix={css(planTitleCss)}>Operator plan</h2>
 				<p mix={css(descriptionCss)}>
 					Max is a finite, invite-only plan assigned by a Kody administrator; it
-					is not available for self-serve purchase. Some partners may also
-					receive an admin-assigned Partner plan.
+					is not available for self-serve purchase.
 				</p>
 			</section>
 
@@ -186,7 +204,7 @@ const planCardCss = {
 	alignContent: 'space-between',
 }
 
-const proPlanCardCss = {
+const paidPlanCardCss = {
 	...planCardCss,
 	borderColor: colors.primary,
 	backgroundColor: colors.primarySoftest,

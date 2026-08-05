@@ -7,6 +7,10 @@
 		{
 			"filename": "0001-squashed-init.sql",
 			"sha256": "5e1c8b352b5cd61f9cdc80f0512891b3bee92ee316929b5417471c0319d2d423"
+		},
+		{
+			"filename": "0002-restructure-plan-tiers.sql",
+			"sha256": "f39eba4f5e3be38bb5122251961a0cf18a53e7bf1a74f4a8cc210ea0c9d2ff5a"
 		}
 	]
 }

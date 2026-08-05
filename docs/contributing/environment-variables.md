@@ -167,10 +167,18 @@ safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
   production deploy when set.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id used to map active/trialing
-  subscriptions to the `pro` plan and to create authenticated Checkout Sessions.
-  Production value is committed as a Wrangler `var` in
-  `packages/worker/wrangler.jsonc`.
+- `STRIPE_STANDARD_PRICE_ID` — Stripe Price id for the $5/month `standard` plan.
+  This must receive the price id that `STRIPE_PRO_PRICE_ID` used before the tier
+  rename.
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the $20/month `pro` plan.
+
+Each price id independently enables authenticated Checkout and subscription
+matching for its tier; leaving either unset makes only that tier unavailable for
+purchase. Store both as production Worker secrets. For the tier-rename deploy,
+create the
+$20/month Pro recurring price in Stripe, set
+`STRIPE_PRO_PRICE_ID` to that new id, and move the existing $5/month
+price id to `STRIPE_STANDARD_PRICE_ID` before deploying.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

@@ -8,7 +8,7 @@ in `planLimits` remain independently configured placeholders.
 
 Module: `packages/worker/src/entitlements/`
 
-- `plans.ts` — plan names (`free`, `pro`, `partner`, `max`), the `PlanLimits`
+- `plans.ts` — plan names (`free`, `standard`, `pro`, `max`), the `PlanLimits`
   config per plan, `max` email caps (`maxPlanEmailLimits`), the
   `EntitlementResource` registry, `resolvePlanLimit(plan, resource)`,
   `resolveEmailResourceLimit(plan, resource)`, `getPlanRank`, `parsePlanName`
@@ -26,7 +26,7 @@ Module: `packages/worker/src/entitlements/`
 
 ## Plan model
 
-The plan registry in `plans.ts` includes `free`, `pro`, `partner`, and `max`.
+The plan registry in `plans.ts` includes `free`, `standard`, `pro`, and `max`.
 Every plan has finite numeric limits for every resource; there are no uncapped
 tiers and no env-var backstops.
 
@@ -56,6 +56,10 @@ without including the raw value or user data. Untrusted admin/API input uses
 `parsePlanName` so typos, unknown strings, and residual `'unlimited'` are
 rejected as validation failures.
 
+Migration `0002-restructure-plan-tiers.sql` maps the former `pro` tier to
+`standard`, the former `partner` tier to `pro`, and rebuilds both CHECK
+constraints for the current registry.
+
 `users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
 manual-only — admin-visible, not paid or public — and never written from Stripe
 (`parseStripePlanName` rejects it, as well as residual `'unlimited'`).
@@ -73,25 +77,25 @@ deliberately. It is not a public or Stripe-purchasable plan. Email resources use
 sending is an outreach-abuse surface — use `resolveEmailResourceLimit` to read
 those caps. The caps stay finite but dominate every other plan's email limits,
 so granting `max` never reduces email capacity (`email_message_bytes` stays at
-pro/partner parity because the per-message ceiling is a platform bound, not a
+standard/pro parity because the per-message ceiling is a platform bound, not a
 scalable quota). All other resources use the ordinary `planLimits.max` numbers.
 
-| Resource                      | Limit       |
-| ----------------------------- | ----------- |
-| `email_sends_per_day`         | 10,000      |
-| `email_receives_per_day`      | 20,000      |
-| `stored_email_messages`       | 100,000     |
-| `email_message_bytes`         | 768 KiB     |
-| `concurrent_workflows`        | 5,000       |
-| `scheduled_jobs`              | 5,000       |
-| `saved_packages`              | 10,000      |
-| `package_services`            | 1,000       |
-| `persistent_package_services` | 1 (allowed) |
-| `repo_sessions`               | 20,000      |
-| `secrets`                     | 10,000      |
-| `storage_bytes`               | 100 GiB     |
-| `execute_calls_per_day`       | 500,000     |
-| `outbound_fetches_per_day`    | 2,000,000   |
+| Resource                      | Limit     |
+| ----------------------------- | --------- |
+| `email_sends_per_day`         | 10,000    |
+| `email_receives_per_day`      | 20,000    |
+| `stored_email_messages`       | 100,000   |
+| `email_message_bytes`         | 768 KiB   |
+| `concurrent_workflows`        | 5,000     |
+| `scheduled_jobs`              | 5,000     |
+| `saved_packages`              | 10,000    |
+| `package_services`            | 1,000     |
+| `persistent_package_services` | 10        |
+| `repo_sessions`               | 20,000    |
+| `secrets`                     | 10,000    |
+| `storage_bytes`               | 100 GiB   |
+| `execute_calls_per_day`       | 500,000   |
+| `outbound_fetches_per_day`    | 2,000,000 |
 
 ## Compute rate limits
 
@@ -379,7 +383,9 @@ to `'max'` on `users.plan` and `invites.plan` only; it does not touch
 to `'max'`, fails closed if any remain, and rebuilds `users` and `invites` with
 NOT NULL DEFAULT `'free'`. Migration `0113-plan-check-constraints.sql` verifies
 that every stored plan is registered, then rebuilds both tables with CHECK
-constraints for `free`, `partner`, `pro`, and `max`.
+constraints for the plan registry at that point. Migration
+`0002-restructure-plan-tiers.sql` renames stored tier values and replaces those
+constraints with `free`, `standard`, `pro`, and `max`.
 
 ## Assigning plans
 
@@ -654,7 +660,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                                                                                                                       |
 | `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
 | `package_services`            | `service_start` capability path (`getCurrent` with authoritative `countRunningPackageServices(env)`; no D1 liveness read)                                                                                                             |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                                                                                                                            |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'` (`getCurrent` counts only persistent running rows in the authoritative per-user UserMeter)                                                                                 |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                                                                                                                                                                     |
 | `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
 | `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                     |
@@ -669,17 +675,19 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 Optional Stripe subscription billing lives in `packages/worker/src/billing/`
 (raw `fetch` client — no Stripe SDK; `STRIPE_API_BASE_URL` overrides the API
 host for tests/mocks). Without `STRIPE_SECRET_KEY`, billing surfaces degrade to
-manual plans only.
+manual plans only. `STRIPE_STANDARD_PRICE_ID` and `STRIPE_PRO_PRICE_ID`
+independently enable checkout for their corresponding tier; an unset price id
+only disables purchase of that tier.
 
 Checkout sessions are created server-side for authenticated users via
-`POST /account/billing/checkout.json` (Stripe Checkout Session,
-`mode=subscription`, with a signed `client_reference_id` and
-`metadata.kody_stable_user_id`). There is no public Payment Link path — checkout
-requires a signed-in session so unauthenticated card-testing is not possible.
-`GET /account/billing/success` verifies `client_reference_id` before linking
-`users.stripe_customer_id`, then refreshes `users.stripe_plan`.
-`GET /account/billing/portal` opens the Stripe customer portal for linked
-customers.
+`POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body
+`{ plan: "standard" | "pro" }`, `mode=subscription`, with a signed
+`client_reference_id` and `metadata.kody_stable_user_id`). There is no public
+Payment Link path — checkout requires a signed-in session so unauthenticated
+card-testing is not possible. `GET /account/billing/success` verifies
+`client_reference_id` before linking `users.stripe_customer_id`, then refreshes
+`users.stripe_plan`. `GET /account/billing/portal` opens the Stripe customer
+portal for linked customers.
 
 ### Webhooks (primary sync)
 
@@ -722,8 +730,9 @@ instead of acknowledging an unrecoverable stale projection. Migration
 `stripe_plan`, and `stripe_plan_refreshed_at`; Wrangler migration `v23` adds the
 alarm DO class without moving canonical billing data out of D1.
 
-Published prices: Free $0, Pro $5/mo. Env vars and deploy wiring are documented
-in [`../environment-variables.md`](../environment-variables.md).
+Published prices: Free $0, Standard $5/mo, Pro $20/mo. Env vars and deploy
+wiring are documented in
+[`../environment-variables.md`](../environment-variables.md).
 
 ## Related tables and coordination
 

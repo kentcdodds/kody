@@ -8,6 +8,7 @@ import { type StripeSubscription } from './stripe-client.ts'
 
 type BillingEnv = {
 	STRIPE_SECRET_KEY?: string
+	STRIPE_STANDARD_PRICE_ID?: string
 	STRIPE_PRO_PRICE_ID?: string
 }
 
@@ -33,8 +34,37 @@ export function isBillingConfigured(env: BillingEnv) {
 	return Boolean(env.STRIPE_SECRET_KEY?.trim())
 }
 
+export function getStandardPriceId(env: BillingEnv) {
+	return env.STRIPE_STANDARD_PRICE_ID?.trim() || null
+}
+
 export function getProPriceId(env: BillingEnv) {
 	return env.STRIPE_PRO_PRICE_ID?.trim() || null
+}
+
+export function getPurchasablePlans(
+	env: BillingEnv,
+): Array<'standard' | 'pro'> {
+	return [
+		...(getStandardPriceId(env) ? (['standard'] as const) : []),
+		...(getProPriceId(env) ? (['pro'] as const) : []),
+	]
+}
+
+export function getPriceIdForPlan(
+	env: BillingEnv,
+	plan: 'standard' | 'pro',
+): string | null {
+	switch (plan) {
+		case 'standard':
+			return getStandardPriceId(env)
+		case 'pro':
+			return getProPriceId(env)
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown purchasable plan: ${String(exhaustive)}`)
+		}
+	}
 }
 
 /**
@@ -75,17 +105,23 @@ function pickHigherPlan(
 
 function planFromSubscription(
 	subscription: StripeSubscription,
+	standardPriceId: string | null,
 	proPriceId: string | null,
 ): PlanName | null {
-	if (proPriceId) {
-		for (const item of subscription.items.data) {
-			if (item.price.id === proPriceId) {
-				return 'pro'
-			}
+	let matchedStandardPrice = false
+	for (const item of subscription.items.data) {
+		if (proPriceId && item.price.id === proPriceId) return 'pro'
+		if (standardPriceId && item.price.id === standardPriceId) {
+			matchedStandardPrice = true
 		}
 	}
+	if (matchedStandardPrice) return 'standard'
+
+	// Price ids are the current, unambiguous source of truth. `kody_plan`
+	// metadata was written before the tier rename, so old partner means new
+	// pro and old pro means standard.
 	const metadataPlan = subscription.metadata?.['kody_plan']
-	return parseStripePlanName(metadataPlan)
+	return parseStripePlanName(metadataPlan, { legacyMetadata: true })
 }
 
 function pickSubscriptionStatus(
@@ -130,6 +166,7 @@ export function resolveSubscriptionPlan(
 	subscriptions: ReadonlyArray<StripeSubscription>,
 	env: BillingEnv,
 ): ResolvedSubscriptionPlan {
+	const standardPriceId = getStandardPriceId(env)
 	const proPriceId = getProPriceId(env)
 	let stripePlan: PlanName | null = null
 	let soonestCancelAt: number | null = null
@@ -138,7 +175,7 @@ export function resolveSubscriptionPlan(
 		if (!activeSubscriptionStatuses.has(subscription.status)) continue
 		stripePlan = pickHigherPlan(
 			stripePlan,
-			planFromSubscription(subscription, proPriceId),
+			planFromSubscription(subscription, standardPriceId, proPriceId),
 		)
 		if (
 			typeof subscription.cancel_at === 'number' &&

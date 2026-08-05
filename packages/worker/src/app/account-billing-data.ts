@@ -1,6 +1,6 @@
 import { type AccountBillingLoaderData } from '#app/loader-data.ts'
 import {
-	getProPriceId,
+	getPurchasablePlans,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
 import { scheduleStripePlanRefreshBackstop } from '#worker/billing/stripe-plan-refresh-client.ts'
@@ -105,7 +105,7 @@ export async function loadAccountBillingData(input: {
 		}
 	}
 
-	const checkoutAvailable = configured && Boolean(getProPriceId(input.env))
+	const purchasablePlans = configured ? getPurchasablePlans(input.env) : []
 
 	return {
 		ok: true,
@@ -116,7 +116,7 @@ export async function loadAccountBillingData(input: {
 		hasStripeCustomer,
 		cancelAt,
 		subscriptionStatus,
-		checkoutAvailable,
+		purchasablePlans,
 		usageHref: '/account/usage',
 		...(error ? { error } : {}),
 	}
