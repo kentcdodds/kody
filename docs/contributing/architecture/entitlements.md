@@ -84,7 +84,7 @@ those caps. All other resources use the ordinary `planLimits.max` numbers.
 | `saved_packages`              | 10,000      |
 | `package_services`            | 1,000       |
 | `persistent_package_services` | 1 (allowed) |
-| `repo_sessions`               | 2,000       |
+| `repo_sessions`               | 20,000      |
 | `secrets`                     | 10,000      |
 | `storage_bytes`               | 100 GiB     |
 | `execute_calls_per_day`       | 500,000     |

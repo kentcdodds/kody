@@ -3,7 +3,14 @@ import { listRepoSessionsForBranchCleanup } from './repo-sessions.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 const defaultCleanupBatchSize = 50
-const abandonedSessionRetentionMs = 120 * 24 * 60 * 60 * 1000
+/**
+ * Active sessions untouched for this long are considered abandoned and hard
+ * deleted (branch + D1 row + DO workspace). Every session operation bumps
+ * `updated_at`, so this is idle time, not age — but unpublished work in a
+ * swept session is unrecoverable, so the window stays generous relative to
+ * a working session's natural cadence.
+ */
+const abandonedSessionRetentionMs = 7 * 24 * 60 * 60 * 1000
 
 export type RepoSessionBranchCleanupResult = {
 	checked: number

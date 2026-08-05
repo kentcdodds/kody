@@ -242,7 +242,11 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Long-lived compute. Unchanged, and persistent services stay off.
 		maxPackageServices: 1,
 		packageServicePersistentAllowed: 0,
-		maxRepoSessions: 5,
+		// Sessions are cheap (D1 row + dormant DO workspace + Artifacts
+		// branch) and the 7-day abandoned-session sweep keeps idle ones from
+		// accumulating, so the caps are sized for agent workflows that open
+		// a session per conversation rather than for genuine concurrency.
+		maxRepoSessions: 50,
 		// notify-self and reply-to-stored only, so the outreach-abuse surface
 		// is small; a daily digest plus a few alerts should not hit the wall.
 		maxEmailSendsPerDay: 10,
@@ -264,7 +268,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxScheduledJobs: 50,
 		maxPackageServices: 10,
 		packageServicePersistentAllowed: 1,
-		maxRepoSessions: 20,
+		maxRepoSessions: 200,
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1000,
 		maxStoredEmailMessages: 10_000,
@@ -281,7 +285,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxScheduledJobs: 100,
 		maxPackageServices: 20,
 		packageServicePersistentAllowed: 1,
-		maxRepoSessions: 40,
+		maxRepoSessions: 400,
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2000,
 		maxStoredEmailMessages: 25_000,
@@ -303,8 +307,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxPackageServices: 1_000,
 		// Same finite 0/1 gate as pro (1 = persistent services allowed).
 		packageServicePersistentAllowed: 1,
-		// 100× pro (20) → 2_000.
-		maxRepoSessions: 2_000,
+		// 100× pro (200) → 20_000.
+		maxRepoSessions: 20_000,
 		// Inherited abuse caps (not 100× pro); see maxPlanEmailLimits.
 		maxEmailSendsPerDay: maxPlanEmailLimits.email_sends_per_day,
 		maxEmailReceivesPerDay: maxPlanEmailLimits.email_receives_per_day,

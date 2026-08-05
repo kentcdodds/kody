@@ -35,7 +35,7 @@ test('repo session branch cleanup deletes expired and abandoned session branches
 		expect.anything(),
 		{
 			now: '2026-06-24T20:00:00.000Z',
-			abandonedBefore: '2026-02-24T20:00:00.000Z',
+			abandonedBefore: '2026-06-17T20:00:00.000Z',
 			limit: 10,
 		},
 	)
