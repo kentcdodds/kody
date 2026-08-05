@@ -133,6 +133,9 @@ const mockModule = vi.hoisted(() => {
 		})),
 		isPublishedPackageArtifactBuiltForCommit: vi.fn(async () => false),
 		persistPublishedPackageArtifactTarget: vi.fn(async () => 'kv:artifact'),
+		registerStorageBucketAndWait: vi.fn(async () => undefined),
+		maybeRefreshStorageBucketEstimate: vi.fn(),
+		deleteStorageBucketInventory: vi.fn(async () => true),
 		getSavedPackageById: vi.fn(async () => ({
 			id: 'package-1',
 			kodyId: 'demo',
@@ -210,6 +213,9 @@ function restoreRepoSessionMockBaseline() {
 	mockModule.persistPublishedPackageArtifactTarget.mockResolvedValue(
 		'kv:artifact',
 	)
+	mockModule.registerStorageBucketAndWait.mockClear()
+	mockModule.maybeRefreshStorageBucketEstimate.mockClear()
+	mockModule.deleteStorageBucketInventory.mockClear()
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		kodyId: 'demo',
@@ -259,7 +265,9 @@ function restoreRepoSessionMockBaseline() {
 		branches: [gitState.currentBranch],
 		current: gitState.currentBranch,
 	}))
-	git.checkout.mockImplementation(async () => ({ ref: gitState.currentBranch }))
+	git.checkout.mockImplementation(async () => ({
+		ref: gitState.currentBranch,
+	}))
 	git.fetch.mockImplementation(async () => ({
 		fetchHead: gitState.headCommit,
 		fetchHeadDescription: 'main',
@@ -439,6 +447,17 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 }))
 
+vi.mock('#worker/storage-buckets/service.ts', () => ({
+	deleteStorageBucketInventory: (...args: Array<unknown>) =>
+		mockModule.deleteStorageBucketInventory(...args),
+	maybeRefreshStorageBucketEstimate: (...args: Array<unknown>) =>
+		mockModule.maybeRefreshStorageBucketEstimate(...args),
+	registerStorageBucketAndWait: (...args: Array<unknown>) =>
+		mockModule.registerStorageBucketAndWait(...args),
+	repoSessionStorageBucketId: (sessionId: string) =>
+		`repo-session:${sessionId}`,
+}))
+
 const { RepoSession } = await import('./repo-session-do.ts')
 const { deleteRepoSession, insertRepoSession } =
 	await import('./repo-sessions.ts')
@@ -449,12 +468,16 @@ function createDurableObjectState() {
 	return {
 		id: { toString: () => 'do-session-1' },
 		storage: {
-			sql: {},
+			sql: { databaseSize: 16_384 },
 			get: vi.fn(async (key: string) => storageState.get(key)),
 			put: vi.fn(async (key: string, value: unknown) => {
 				storageState.set(key, value)
 			}),
+			deleteAll: vi.fn(async () => {
+				storageState.clear()
+			}),
 		},
+		waitUntil: vi.fn(),
 	} as unknown as DurableObjectState
 }
 
@@ -580,6 +603,73 @@ function setCommonSessionFixtures() {
 	mockModule.updateEntitySource.mockClear()
 }
 
+test('repo sessions inventory workspace bytes through open, mutation, and cleanup', async () => {
+	setCommonSessionFixtures()
+	const state = createDurableObjectState()
+	const env = createEnv()
+	const repoSession = new RepoSession(state, env)
+
+	await expect(repoSession.getEstimatedBytes()).resolves.toEqual({
+		estimatedBytes: 16_384,
+	})
+	await repoSession.openSession({
+		sessionId: 'session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+	})
+	expect(mockModule.registerStorageBucketAndWait).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		storageId: 'repo-session:session-1',
+		kind: 'repo_session',
+	})
+	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledWith(
+		expect.objectContaining({
+			env,
+			userId: 'user-1',
+			storageId: 'repo-session:session-1',
+			readEstimatedBytes: expect.any(Function),
+			waitUntil: expect.any(Function),
+		}),
+	)
+
+	mockModule.maybeRefreshStorageBucketEstimate.mockClear()
+	await repoSession.writeFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'src/index.ts',
+		content: 'export const ready = true\n',
+	})
+	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			storageId: 'repo-session:session-1',
+		}),
+	)
+
+	await repoSession.discardSession({
+		sessionId: 'session-1',
+		userId: 'user-1',
+	})
+	expect(mockModule.deleteStorageBucketInventory).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'user-1',
+		storageId: 'repo-session:session-1',
+	})
+
+	mockModule.deleteStorageBucketInventory.mockClear()
+	await repoSession.purgeSession({
+		sessionId: 'session-1',
+		userId: 'user-1',
+	})
+	expect(mockModule.deleteStorageBucketInventory).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'user-1',
+		storageId: 'repo-session:session-1',
+	})
+})
+
 test('rebaseSession and publishSession use Artifacts username/password auth without token override', async () => {
 	// Best-effort publish git-note attachment fails in this mocked git
 	// environment and logs a warning that is incidental to auth behavior;
@@ -697,6 +787,11 @@ test('cleanupSessionBranch removes the D1 session row when remote branch delete 
 		branchDeleted: false,
 	})
 	expect(deleteRepoSession).toHaveBeenCalledWith(expect.anything(), 'session-1')
+	expect(mockModule.deleteStorageBucketInventory).toHaveBeenCalledWith({
+		db: expect.anything(),
+		userId: 'user-1',
+		storageId: 'repo-session:session-1',
+	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('repo session remote branch delete failed'),
 	)

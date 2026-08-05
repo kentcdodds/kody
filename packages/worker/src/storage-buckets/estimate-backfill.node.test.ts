@@ -2,14 +2,14 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readStorageBucketEstimatedBytes: vi.fn(),
+	readInventoriedStorageBucketEstimatedBytes: vi.fn(),
 	listStorageBucketsMissingEstimates: vi.fn(),
 	updateStorageBucketEstimate: vi.fn(async () => true),
 }))
 
 vi.mock('#worker/storage-runner.ts', () => ({
-	readStorageBucketEstimatedBytes: (...args: Array<unknown>) =>
-		mockModule.readStorageBucketEstimatedBytes(...args),
+	readInventoriedStorageBucketEstimatedBytes: (...args: Array<unknown>) =>
+		mockModule.readInventoriedStorageBucketEstimatedBytes(...args),
 }))
 
 vi.mock('./service.ts', () => ({
@@ -25,13 +25,17 @@ const { backfillStorageBucketEstimates } =
 test('backfill tolerates per-bucket probe failures and keeps sweeping peers', async () => {
 	consoleWarn.mockImplementation(() => {})
 	mockModule.listStorageBucketsMissingEstimates.mockResolvedValue([
-		{ userId: 'user-1', storageId: 'package:healthy-a' },
-		{ userId: 'user-1', storageId: 'package:unreachable' },
-		{ userId: 'user-2', storageId: 'exec:healthy-b' },
+		{ userId: 'user-1', storageId: 'package:healthy-a', kind: 'package' },
+		{
+			userId: 'user-1',
+			storageId: 'repo-session:unreachable',
+			kind: 'repo_session',
+		},
+		{ userId: 'user-2', storageId: 'exec:healthy-b', kind: 'execute' },
 	])
-	mockModule.readStorageBucketEstimatedBytes.mockImplementation(
+	mockModule.readInventoriedStorageBucketEstimatedBytes.mockImplementation(
 		async (input: { storageId: string }) => {
-			if (input.storageId === 'package:unreachable') {
+			if (input.storageId === 'repo-session:unreachable') {
 				throw new Error('estimate read failed after every attempt')
 			}
 			return 2048
@@ -46,7 +50,7 @@ test('backfill tolerates per-bucket probe failures and keeps sweeping peers', as
 	// healthy buckets are persisted.
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'storage-bucket-estimate-backfill-row-failed',
-		'package:unreachable',
+		'repo-session:unreachable',
 		expect.any(Error),
 	)
 	expect(mockModule.updateStorageBucketEstimate).toHaveBeenCalledTimes(2)

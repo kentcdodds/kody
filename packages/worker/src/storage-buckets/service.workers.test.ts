@@ -20,6 +20,7 @@ test('registerStorageBucket upserts and list helpers scope correctly on real D1'
 	const userB = `usb-b-${crypto.randomUUID()}`
 	const bucketA = `exec:${crypto.randomUUID()}`
 	const bucketB = `job:${crypto.randomUUID()}`
+	const sessionBucket = `repo-session:${crypto.randomUUID()}`
 	const pending: Array<Promise<unknown>> = []
 	const waitUntil = (promise: Promise<unknown>) => {
 		pending.push(promise)
@@ -39,11 +40,30 @@ test('registerStorageBucket upserts and list helpers scope correctly on real D1'
 		kind: 'job',
 		waitUntil,
 	})
+	registerStorageBucket({
+		env,
+		userId: userA,
+		storageId: sessionBucket,
+		kind: 'repo_session',
+		waitUntil,
+	})
 	await Promise.all(pending)
 
 	await expect(
 		listUserStorageBucketIds({ env, userId: userA }),
 	).resolves.toEqual([bucketA])
+	await expect(
+		listUserStorageBucketEstimates({ env, userId: userA }),
+	).resolves.toEqual(
+		[
+			{ storageId: bucketA, kind: 'execute', estimatedBytes: null },
+			{
+				storageId: sessionBucket,
+				kind: 'repo_session',
+				estimatedBytes: null,
+			},
+		].sort((left, right) => left.storageId.localeCompare(right.storageId)),
+	)
 	await expect(
 		listUserStorageBucketIds({ env, userId: userB }),
 	).resolves.toEqual([bucketB])
@@ -55,6 +75,10 @@ test('registerStorageBucket upserts and list helpers scope correctly on real D1'
 			{ userId: userB, storageId: bucketB },
 		]),
 	)
+	expect(platform).not.toContainEqual({
+		userId: userA,
+		storageId: sessionBucket,
+	})
 })
 
 test('estimate persistence is UPDATE-only, listable, and throttled per isolate', async () => {
@@ -78,7 +102,9 @@ test('estimate persistence is UPDATE-only, listable, and throttled per isolate',
 	await Promise.all(pending)
 	await expect(
 		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([{ storageId: registered, estimatedBytes: null }])
+	).resolves.toEqual([
+		{ storageId: registered, kind: 'execute', estimatedBytes: null },
+	])
 
 	recordStorageBucketEstimate({
 		env,
@@ -100,7 +126,9 @@ test('estimate persistence is UPDATE-only, listable, and throttled per isolate',
 	await Promise.all(pending)
 	await expect(
 		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([{ storageId: registered, estimatedBytes: 4096 }])
+	).resolves.toEqual([
+		{ storageId: registered, kind: 'execute', estimatedBytes: 4096 },
+	])
 
 	let reads = 0
 	const readEstimatedBytes = async () => {
@@ -181,7 +209,7 @@ test('a failed estimate refresh warns and clears the throttle for a retry', asyn
 	expect(attempts).toBe(2)
 	await expect(
 		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([{ storageId, estimatedBytes: 2048 }])
+	).resolves.toEqual([{ storageId, kind: 'execute', estimatedBytes: 2048 }])
 })
 
 test('registerStorageBucket never throws when the table is missing', async () => {

@@ -2,10 +2,66 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	deleteEntitySource,
 	externalReconcileGraceMs,
 	listEntitySourcesForExternalReconcile,
 	markEntitySourcePendingExternalReconcile,
 } from './entity-sources.ts'
+
+test('source deletion removes only its repo-session storage inventory', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE entity_sources (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL
+		);
+		CREATE TABLE repo_sessions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			source_id TEXT NOT NULL
+		);
+		CREATE TABLE user_storage_buckets (
+			user_id TEXT NOT NULL,
+			storage_id TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			PRIMARY KEY (user_id, storage_id)
+		);
+		INSERT INTO entity_sources VALUES
+			('source-a', 'user-a'),
+			('source-b', 'user-b');
+		INSERT INTO repo_sessions VALUES
+			('session-a', 'user-a', 'source-a'),
+			('session-b', 'user-b', 'source-b');
+		INSERT INTO user_storage_buckets VALUES
+			('user-a', 'repo-session:session-a', 'repo_session'),
+			('user-a', 'exec:keep', 'execute'),
+			('user-b', 'repo-session:session-b', 'repo_session');
+	`)
+	const db = createD1FromSqlite(sqlite)
+
+	await expect(
+		deleteEntitySource(db, { id: 'source-a', userId: 'user-a' }),
+	).resolves.toBe(true)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT user_id, storage_id, kind
+				FROM user_storage_buckets
+				ORDER BY user_id, storage_id`,
+			)
+			.all(),
+	).toEqual([
+		{ user_id: 'user-a', storage_id: 'exec:keep', kind: 'execute' },
+		{
+			user_id: 'user-b',
+			storage_id: 'repo-session:session-b',
+			kind: 'repo_session',
+		},
+	])
+	expect(
+		sqlite.prepare(`SELECT id FROM repo_sessions ORDER BY id`).all(),
+	).toEqual([{ id: 'session-a' }, { id: 'session-b' }])
+})
 
 test('external reconcile selects token-pending packages and the daily backstop covers the fleet', async () => {
 	const sqlite = new DatabaseSync(':memory:')

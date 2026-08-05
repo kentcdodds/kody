@@ -6,10 +6,14 @@ import type * as EntitlementsService from '#worker/entitlements/service.ts'
 const mockModule = vi.hoisted(() => ({
 	listUserStorageBucketEstimates: vi.fn(
 		async (): Promise<
-			Array<{ storageId: string; estimatedBytes: number | null }>
+			Array<{
+				storageId: string
+				kind: 'unknown'
+				estimatedBytes: number | null
+			}>
 		> => [
-			{ storageId: 'bucket-a', estimatedBytes: null },
-			{ storageId: 'bucket-b', estimatedBytes: null },
+			{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
+			{ storageId: 'bucket-b', kind: 'unknown', estimatedBytes: null },
 		],
 	),
 	readStorageBytesFromUserMeter: vi.fn(async () => 0),
@@ -28,6 +32,8 @@ vi.mock('#worker/storage-buckets/service.ts', () => ({
 		mockModule.recordStorageBucketEstimate(...args),
 	maybeRefreshStorageBucketEstimate: (...args: Array<unknown>) =>
 		mockModule.maybeRefreshStorageBucketEstimate(...args),
+	repoSessionIdFromStorageBucketId: (storageId: string) =>
+		storageId.replace(/^repo-session:/, ''),
 	storageBucketKindFromStorageId: (storageId: string) => {
 		if (storageId.startsWith('package:')) return 'package'
 		return 'unknown'
@@ -153,9 +159,9 @@ test('writable storage_sql skips read-only fan-out and enforces mutating entitle
 	mockModule.listUserStorageBucketEstimates.mockClear()
 	mockModule.recordStorageBucketEstimate.mockClear()
 	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
-		{ storageId: 'bucket-a', estimatedBytes: 100 },
-		{ storageId: 'bucket-b', estimatedBytes: 200 },
-		{ storageId: 'package:skills', estimatedBytes: 999 },
+		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: 100 },
+		{ storageId: 'bucket-b', kind: 'unknown', estimatedBytes: 200 },
+		{ storageId: 'package:skills', kind: 'unknown', estimatedBytes: 999 },
 	])
 	await expect(
 		assertStorageRunnerWriteWithinEntitlement({
@@ -179,7 +185,11 @@ test('writable storage_sql skips read-only fan-out and enforces mutating entitle
 	mockModule.listUserStorageBucketEstimates.mockClear()
 	const freeStorageBytes = planLimits.free.maxStorageBytes
 	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
-		{ storageId: 'bucket-a', estimatedBytes: freeStorageBytes },
+		{
+			storageId: 'bucket-a',
+			kind: 'unknown',
+			estimatedBytes: freeStorageBytes,
+		},
 	])
 	const denied = await assertStorageRunnerWriteWithinEntitlement({
 		env: createEstimateEnv(),
@@ -240,7 +250,7 @@ test('entitlement run cache pays the fan-out once across mutating writes', async
 
 test('entitlement run cache drops a rejected baseline so later writes retry', async () => {
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
-		{ storageId: 'bucket-a', estimatedBytes: null },
+		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
 	])
 	mockModule.getEstimatedBytes.mockClear()
 	// Exhaust the whole retry policy so the baseline read fails closed.

@@ -27,6 +27,7 @@ import {
 } from './types.ts'
 
 export type RepoSessionRpc = {
+	getEstimatedBytes: () => Promise<{ estimatedBytes: number }>
 	openSession: (payload: {
 		sessionId: string
 		sourceId: string

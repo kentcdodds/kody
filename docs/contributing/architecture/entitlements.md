@@ -143,11 +143,12 @@ authoritative for all lease acquire/held/release/count operations. D1
 `account_write_lease_repairs` is the repair audit log. See
 [Account-deletion write fencing](#account-deletion-write-fencing).
 
-StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
-`user_storage_buckets` stay a **separate** quota component. StorageRunner write
-chokepoints pass `getCurrent` as a check-only composed total (DO bytes from
-`readCurrentEntitlementResourceUsage(storage_bytes)` plus bucket estimates);
-that path does **not** reserve bytes in UserMeter.
+StorageRunner and RepoSession `estimatedBytes` values and their per-bucket
+inventory in `user_storage_buckets` stay a **separate** quota component.
+StorageRunner write chokepoints pass `getCurrent` as a check-only composed total
+(DO bytes from `readCurrentEntitlementResourceUsage(storage_bytes)` plus all
+inventoried bucket estimates); that path does **not** reserve bytes in
+UserMeter.
 
 **Strong enforcement:** `consumeDailyEntitlement` and inbound
 `consumeInboundDelivery` RPCs check the plan limit and increment inside the DO.
@@ -551,10 +552,13 @@ Rules:
      live reservation); no byte values are written back to D1 — see
      [UserMeter](#usermeter).
 
-  2. **StorageRunner bucket estimates (separate):** each bucket exposes
-     `estimatedBytes`; inventory rows persist the latest measurement on
-     `user_storage_buckets.estimated_bytes` (migration 0118). Write chokepoints
-     that pass `getCurrent` compose
+  2. **Durable Object bucket estimates (separate):** StorageRunner buckets and
+     RepoSession workspaces expose `estimatedBytes`; inventory rows distinguish
+     them by `kind` and persist the latest measurement on
+     `user_storage_buckets.estimated_bytes`. Repo sessions register on open,
+     refresh after workspace mutations, and remove their rows on
+     discard/purge/session or source cleanup. Write chokepoints that pass
+     `getCurrent` compose
      `UserMeter payload bytes (readStorageBytesFromUserMeter) + sum of per-bucket estimates`
      for a **check-only** entitlement comparison — `getCurrent` never reserves.
      Only the bucket that triggers the baseline read (plus any inventoried
@@ -563,12 +567,12 @@ Rules:
      `getEstimatedBytes` RPCs across the whole inventory. Live probe results are
      persisted fire-and-forget with **UPDATE-only** statements (they can never
      recreate an inventory row removed by account, package, or job deletion),
-     and mutating StorageRunner RPCs opportunistically refresh their own
-     bucket's stored estimate after the write, throttled per bucket per isolate
-     (`storageBucketEstimateRefreshMinIntervalMs`). Stored estimates are
-     freshness hints with bounded lag — acceptable for an order-of-magnitude cap
-     because the bucket paying the baseline read is measured live and the run
-     cache accounts for the run's own accepted writes. `requested` is the
+     and mutating StorageRunner and RepoSession RPCs opportunistically refresh
+     their own bucket's stored estimate after the write, throttled per bucket
+     per isolate (`storageBucketEstimateRefreshMinIntervalMs`). Stored estimates
+     are freshness hints with bounded lag — acceptable for an order-of-magnitude
+     cap because the bucket paying the baseline read is measured live and the
+     run cache accounts for the run's own accepted writes. `requested` is the
      candidate payload size when known. Pure read-only `storage.sql` /
      `packageStorage().sql` statements (`SELECT` / `EXPLAIN` / schema `PRAGMA`)
      skip the baseline read entirely even when the helper marks the call

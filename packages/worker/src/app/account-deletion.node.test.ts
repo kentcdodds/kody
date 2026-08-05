@@ -209,7 +209,12 @@ function createTestDb(
 								)
 							) {
 								results = (rows.user_storage_buckets ?? [])
-									.filter((row) => row['user_id'] === userId)
+									.filter(
+										(row) =>
+											row['user_id'] === userId &&
+											(!lower.includes("kind <> 'repo_session'") ||
+												row['kind'] !== 'repo_session'),
+									)
 									.map((row) => ({ storageId: row['storage_id'] }))
 									.sort((left, right) =>
 										String(left.storageId).localeCompare(
@@ -703,6 +708,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				user_id: userAaa,
 				storage_id: 'exec:run-2',
 				kind: 'execute',
+			},
+			{
+				user_id: userAaa,
+				storage_id: 'repo-session:rs-1',
+				kind: 'repo_session',
 			},
 			{
 				user_id: userBbb,
@@ -1392,7 +1402,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.jobs).toBe(3)
 	expect(result.deletedRowCounts.users).toBe(1)
 	expect(result.deletedRowCounts.package_service_states).toBe(3)
-	expect(result.deletedRowCounts.user_storage_buckets).toBe(1)
+	expect(result.deletedRowCounts.user_storage_buckets).toBe(2)
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
 	expect(result.deletedRowCounts.community_ratings).toBe(2)

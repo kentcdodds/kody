@@ -4,6 +4,7 @@ import {
 	emptyStorageRunnerEstimatedBytes,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { backfillStorageBucketEstimates } from './estimate-backfill.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
@@ -26,6 +27,8 @@ test(
 		const userId = `usb-backfill-${crypto.randomUUID()}`
 		const bucketA = `exec:${crypto.randomUUID()}`
 		const bucketB = `package:${crypto.randomUUID()}`
+		const sessionId = crypto.randomUUID()
+		const sessionBucket = `repo-session:${sessionId}`
 		// Warm the Durable Object namespace with an unbounded RPC so the
 		// backfill's 2s-bounded estimate reads measure steady-state behavior.
 		await storageRunnerRpc({
@@ -33,6 +36,9 @@ test(
 			userId,
 			storageId: bucketA,
 		}).getEstimatedBytes()
+		const sessionEstimate = (
+			await repoSessionRpc(env, sessionId).getEstimatedBytes()
+		).estimatedBytes
 		const pending: Array<Promise<unknown>> = []
 		const waitUntil = (promise: Promise<unknown>) => {
 			pending.push(promise)
@@ -42,6 +48,13 @@ test(
 			userId,
 			storageId: bucketA,
 			kind: 'execute',
+			waitUntil,
+		})
+		registerStorageBucket({
+			env,
+			userId,
+			storageId: sessionBucket,
+			kind: 'repo_session',
 			waitUntil,
 		})
 		registerStorageBucket({
@@ -57,9 +70,19 @@ test(
 		await expect(
 			listUserStorageBucketEstimates({ env, userId }),
 		).resolves.toEqual(
-			[bucketA, bucketB]
+			[bucketA, bucketB, sessionBucket]
 				.sort()
-				.map((storageId) => ({ storageId, estimatedBytes: null })),
+				.map((storageId) => ({
+					storageId,
+					kind: storageId === sessionBucket ? 'repo_session' : undefined,
+					estimatedBytes: null,
+				}))
+				.map((row) => ({
+					...row,
+					kind:
+						row.kind ??
+						(row.storageId.startsWith('exec:') ? 'execute' : 'package'),
+				})),
 		)
 
 		// The bound is respected: batchSize 1 measures exactly one bucket.
@@ -70,16 +93,25 @@ test(
 		// The next sweep finishes the rest; both buckets end up measured at
 		// the never-written DO baseline.
 		await expect(backfillStorageBucketEstimates({ env })).resolves.toEqual({
-			scanned: 1,
-			updated: 1,
+			scanned: 2,
+			updated: 2,
 			failed: 0,
 		})
 		await expect(
 			listUserStorageBucketEstimates({ env, userId }),
 		).resolves.toEqual(
-			[bucketA, bucketB].sort().map((storageId) => ({
+			[bucketA, bucketB, sessionBucket].sort().map((storageId) => ({
 				storageId,
-				estimatedBytes: emptyStorageRunnerEstimatedBytes,
+				kind:
+					storageId === sessionBucket
+						? 'repo_session'
+						: storageId.startsWith('exec:')
+							? 'execute'
+							: 'package',
+				estimatedBytes:
+					storageId === sessionBucket
+						? sessionEstimate
+						: emptyStorageRunnerEstimatedBytes,
 			})),
 		)
 

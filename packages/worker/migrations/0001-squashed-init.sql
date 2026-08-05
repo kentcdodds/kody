@@ -712,7 +712,7 @@ CREATE TABLE IF NOT EXISTS "user_storage_buckets" (
 	user_id TEXT NOT NULL,
 	storage_id TEXT NOT NULL,
 	kind TEXT NOT NULL CHECK (
-		kind IN ('job', 'package', 'service', 'execute', 'unknown')
+		kind IN ('job', 'package', 'service', 'execute', 'repo_session', 'unknown')
 	),
 	created_at TEXT NOT NULL,
 	last_seen_at TEXT NOT NULL,

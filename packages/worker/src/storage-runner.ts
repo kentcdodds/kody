@@ -12,11 +12,14 @@ import {
 	listUserStorageBucketEstimates,
 	maybeRefreshStorageBucketEstimate,
 	recordStorageBucketEstimate,
+	repoSessionIdFromStorageBucketId,
 	registerStorageBucket,
+	type StorageBucketKind,
 	storageBucketKindFromStorageId,
 } from '#worker/storage-buckets/service.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
@@ -716,34 +719,55 @@ export function storageRunnerRpc(input: {
 async function readStorageEstimateChunkWithRetry(input: {
 	env: Env
 	userId: string
-	storageIds: Array<string>
+	buckets: Array<{ storageId: string; kind: StorageBucketKind }>
 	/** Backoff pauses between attempts; attempts = length + 1. */
 	retryDelaysMs?: ReadonlyArray<number>
 }): Promise<Array<StorageEstimateResult>> {
 	const retryDelaysMs = input.retryDelaysMs ?? storageEstimateReadRetryDelaysMs
 	const maxAttempts = retryDelaysMs.length + 1
-	const readOne = (storageId: string) =>
-		withStorageEstimateReadTimeout(
-			() =>
-				storageRunnerRpc({
-					env: input.env,
-					userId: input.userId,
-					storageId,
-				}).getEstimatedBytes(),
-			storageId,
-		)
+	const readOne = (bucket: { storageId: string; kind: StorageBucketKind }) =>
+		withStorageEstimateReadTimeout(() => {
+			switch (bucket.kind) {
+				case 'repo_session':
+					return repoSessionRpc(
+						input.env,
+						repoSessionIdFromStorageBucketId(bucket.storageId),
+					).getEstimatedBytes()
+				case 'job':
+				case 'package':
+				case 'service':
+				case 'execute':
+				case 'unknown':
+					return storageRunnerRpc({
+						env: input.env,
+						userId: input.userId,
+						storageId: bucket.storageId,
+					}).getEstimatedBytes()
+				default: {
+					const exhaustive: never = bucket.kind
+					throw new Error(
+						`Unsupported storage bucket kind: ${String(exhaustive)}`,
+					)
+				}
+			}
+		}, bucket.storageId)
 
 	const values: Array<StorageEstimateResult | undefined> = Array.from({
-		length: input.storageIds.length,
+		length: input.buckets.length,
 	})
-	let pendingIndexes = input.storageIds.map((_storageId, index) => index)
+	let pendingIndexes = input.buckets.map((_bucket, index) => index)
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
 		// Wait for every attempt's reads to settle before retrying so a fast
 		// rejection cannot overlap still-pending peers and exceed the fan-out
 		// cap.
 		const results = await Promise.allSettled(
 			pendingIndexes.map((index) =>
-				readOne(input.storageIds[index] ?? 'unknown'),
+				readOne(
+					input.buckets[index] ?? {
+						storageId: 'unknown',
+						kind: 'unknown',
+					},
+				),
 			),
 		)
 		const failedIndexes: Array<number> = []
@@ -764,7 +788,8 @@ async function readStorageEstimateChunkWithRetry(input: {
 		if (attempt === maxAttempts) {
 			// An unreadable bucket cannot safely be treated as zero usage.
 			throw createStorageEstimateReadError({
-				storageId: input.storageIds[failedIndexes[0] ?? -1] ?? 'unknown',
+				storageId:
+					input.buckets[failedIndexes[0] ?? -1]?.storageId ?? 'unknown',
 				attempts: maxAttempts,
 				cause: firstFailureReason,
 			})
@@ -777,7 +802,7 @@ async function readStorageEstimateChunkWithRetry(input: {
 	return values.map((value, index) => {
 		if (value === undefined) {
 			throw createStorageEstimateReadError({
-				storageId: input.storageIds[index] ?? 'unknown',
+				storageId: input.buckets[index]?.storageId ?? 'unknown',
 				attempts: maxAttempts,
 				cause: new Error('Storage estimate retry completed without a value.'),
 			})
@@ -801,7 +826,28 @@ export async function readStorageBucketEstimatedBytes(input: {
 	const estimates = await readStorageEstimateChunkWithRetry({
 		env: input.env,
 		userId: input.userId,
-		storageIds: [input.storageId],
+		buckets: [
+			{
+				storageId: input.storageId,
+				kind: storageBucketKindFromStorageId(input.storageId),
+			},
+		],
+		retryDelaysMs: input.retryDelaysMs,
+	})
+	return estimates[0]?.estimatedBytes ?? 0
+}
+
+export async function readInventoriedStorageBucketEstimatedBytes(input: {
+	env: Env
+	userId: string
+	storageId: string
+	kind: StorageBucketKind
+	retryDelaysMs?: ReadonlyArray<number>
+}): Promise<number> {
+	const estimates = await readStorageEstimateChunkWithRetry({
+		env: input.env,
+		userId: input.userId,
+		buckets: [{ storageId: input.storageId, kind: input.kind }],
 		retryDelaysMs: input.retryDelaysMs,
 	})
 	return estimates[0]?.estimatedBytes ?? 0
@@ -827,11 +873,20 @@ async function readStorageBytesEntitlementBaseline(input: {
 	// Registration is asynchronous, so include the bucket being written even
 	// when its inventory row has not landed yet. The Map avoids double-counting
 	// once it is registered.
-	const estimatesByStorageId = new Map<string, number | null>(
-		bucketEstimates.map((bucket) => [bucket.storageId, bucket.estimatedBytes]),
+	const estimatesByStorageId = new Map<
+		string,
+		{ kind: StorageBucketKind; estimatedBytes: number | null }
+	>(
+		bucketEstimates.map((bucket) => [
+			bucket.storageId,
+			{ kind: bucket.kind, estimatedBytes: bucket.estimatedBytes },
+		]),
 	)
 	if (!estimatesByStorageId.has(input.storageId)) {
-		estimatesByStorageId.set(input.storageId, null)
+		estimatesByStorageId.set(input.storageId, {
+			kind: storageBucketKindFromStorageId(input.storageId),
+			estimatedBytes: null,
+		})
 	}
 	// Live getEstimatedBytes RPCs are limited to the bucket that triggered
 	// this baseline read (fresh measurement for the bucket about to grow)
@@ -844,27 +899,30 @@ async function readStorageBytesEntitlementBaseline(input: {
 	// stored estimate rather than probing it live — bounded staleness the
 	// run cache offsets by accumulating the run's own reserved bytes.
 	let durableObjectBytes = 0
-	const storageIdsToProbe: Array<string> = []
-	for (const [storageId, estimatedBytes] of estimatesByStorageId) {
-		if (storageId === input.storageId || estimatedBytes === null) {
-			storageIdsToProbe.push(storageId)
+	const bucketsToProbe: Array<{
+		storageId: string
+		kind: StorageBucketKind
+	}> = []
+	for (const [storageId, bucket] of estimatesByStorageId) {
+		if (storageId === input.storageId || bucket.estimatedBytes === null) {
+			bucketsToProbe.push({ storageId, kind: bucket.kind })
 			continue
 		}
-		durableObjectBytes += estimatedBytes
+		durableObjectBytes += bucket.estimatedBytes
 	}
 	for (
 		let offset = 0;
-		offset < storageIdsToProbe.length;
+		offset < bucketsToProbe.length;
 		offset += maxConcurrentStorageEstimateReads
 	) {
-		const chunkIds = storageIdsToProbe.slice(
+		const chunk = bucketsToProbe.slice(
 			offset,
 			offset + maxConcurrentStorageEstimateReads,
 		)
 		const estimates = await readStorageEstimateChunkWithRetry({
 			env: input.env,
 			userId: input.userId,
-			storageIds: chunkIds,
+			buckets: chunk,
 		})
 		for (const [index, estimate] of estimates.entries()) {
 			durableObjectBytes += estimate.estimatedBytes
@@ -873,7 +931,7 @@ async function readStorageBytesEntitlementBaseline(input: {
 			recordStorageBucketEstimate({
 				env: input.env,
 				userId: input.userId,
-				storageId: chunkIds[index],
+				storageId: chunk[index]?.storageId,
 				estimatedBytes: estimate.estimatedBytes,
 			})
 		}

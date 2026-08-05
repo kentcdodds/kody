@@ -242,9 +242,10 @@ Durable Object export behavior:
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
   state summary.
-- `MCP`, `RepoSession`, `PackageRealtimeSession`, and `McpClientHub` are
-  documented exclusions: MCP objects are SDK session-keyed and not globally
-  enumerable; RepoSession is an ephemeral editing workspace;
+- `MCP`, `RepoSession`, `PackageRealtimeSession`, and `McpClientHub` remain
+  account-export exclusions: MCP objects are SDK session-keyed and not globally
+  enumerable; RepoSession is an ephemeral editing workspace (although its SQLite
+  bytes are inventoried for the `storage_bytes` entitlement);
   PackageRealtimeSession is live websocket state; McpClientHub can hold OAuth
   tokens and SDK registrations that are non-portable. Canonical repo-backed
   source and durable package app state are covered by Artifacts pointers and
@@ -523,6 +524,16 @@ Storage split:
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`
 
+`user_storage_buckets` inventories both StorageRunner buckets and RepoSession
+workspaces for the check-only `storage_bytes` baseline. Rows use `kind` to
+dispatch `getEstimatedBytes` to the correct Durable Object, cache the latest
+`databaseSize` in `estimated_bytes`, and feed the same bounded
+`storage_bucket_estimate_backfill` lane. Repo sessions register on open,
+opportunistically refresh after workspace mutations, and remove the inventory
+row on discard, purge, scheduled cleanup, source deletion, or account deletion.
+This estimate component is composed with the authoritative UserMeter D1 payload
+bytes; it is not reserved into UserMeter.
+
 ## Durable Objects (`UserMeter`)
 
 Daily rate-style entitlement counters and inbound email delivery-id idempotency
@@ -559,8 +570,8 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
   `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
   and usage reads via `readStorageBytes`; the reconcile lane sweeps by
-  `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner
-  bucket estimates stay outside this row (see
+  `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner and
+  RepoSession bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
 - `package_service_states` — per-service liveness rows (`package_id`,
   `service_name`, `status`, `started_at`, `source_updated_at`, monotonic
