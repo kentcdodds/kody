@@ -8,7 +8,6 @@ import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consu
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
-	type AdminUsageEntitlementConsumption,
 	type AdminUsageMetric,
 	type AdminUsageMonthRollup,
 	type AdminUsageRollup,

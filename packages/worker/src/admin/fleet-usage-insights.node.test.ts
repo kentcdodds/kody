@@ -1,39 +1,21 @@
 import { expect, test, vi } from 'vitest'
-import {
+
+const entitlementMocks = vi.hoisted(() => ({
+	readAdminEntitlementConsumption: vi.fn(),
+}))
+
+vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
+	readAdminEntitlementConsumption: entitlementMocks.readAdminEntitlementConsumption,
+	entitlementWarningThreshold: 0.8,
+}))
+
+const {
 	adminFleetEntitlementSweepUserLimit,
 	adminFleetTopConsumersLimit,
 	detectFleetUsagePressure,
 	fleetRuntimeDurationAlertThresholdMs,
 	loadFleetUsageInsights,
-} from '#worker/admin/fleet-usage-insights.ts'
-
-const readAdminEntitlementConsumption = vi.fn<
-	(input: {
-		env: Env
-		usageUserId: string
-		plan: string
-		now: Date
-	}) => Promise<
-		Array<{
-			resource: string
-			label: string
-			current: number
-			limit: number
-			percentOfLimit: number | null
-			overEightyPercent: boolean
-		}>
-	>
->()
-
-vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
-	readAdminEntitlementConsumption: (input: {
-		env: Env
-		usageUserId: string
-		plan: string
-		now: Date
-	}) => readAdminEntitlementConsumption(input),
-	entitlementWarningThreshold: 0.8,
-}))
+} = await import('#worker/admin/fleet-usage-insights.ts')
 
 function createFleetDb(input: {
 	runtimeLeaders?: Array<{
@@ -80,6 +62,14 @@ function createFleetDb(input: {
 						}
 					}
 					if (
+						normalized.includes('u.plan') &&
+						normalized.includes('ranked.event_count')
+					) {
+						return {
+							results: (input.activeUsers ?? []) as Array<T>,
+						}
+					}
+					if (
 						normalized.includes('sum(event_count)') &&
 						normalized.includes('group by user_id') &&
 						normalized.includes('limit ?')
@@ -91,14 +81,6 @@ function createFleetDb(input: {
 					if (normalized.includes('row_number() over')) {
 						return {
 							results: (input.metricLeaders ?? []) as Array<T>,
-						}
-					}
-					if (
-						normalized.includes('ranked.event_count') &&
-						normalized.includes('limit ?')
-					) {
-						return {
-							results: (input.activeUsers ?? []) as Array<T>,
 						}
 					}
 					if (
@@ -121,7 +103,7 @@ function createFleetDb(input: {
 }
 
 test('loadFleetUsageInsights returns bounded consumer rankings and pressure panel', async () => {
-	readAdminEntitlementConsumption.mockResolvedValue([
+	entitlementMocks.readAdminEntitlementConsumption.mockResolvedValue([
 		{
 			resource: 'saved_packages',
 			label: 'saved packages',
@@ -210,7 +192,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 })
 
 test('detectFleetUsagePressure flags entitlement and runtime duration thresholds', async () => {
-	readAdminEntitlementConsumption.mockImplementation(async (input) => {
+	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(async (input) => {
 		if (input.usageUserId === 'user-a') {
 			return [
 				{

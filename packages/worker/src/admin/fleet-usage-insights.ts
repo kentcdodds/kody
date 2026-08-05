@@ -7,7 +7,6 @@ import {
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import {
 	readAdminEntitlementConsumption,
-	entitlementWarningThreshold,
 } from '#worker/admin/entitlement-consumption.ts'
 import {
 	type AdminInsightsDurationConsumer,
