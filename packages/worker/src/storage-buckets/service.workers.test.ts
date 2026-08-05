@@ -153,7 +153,9 @@ test('estimate persistence is UPDATE-only, listable, and throttled per isolate',
 	expect(reads).toBe(1)
 	await expect(
 		listUserStorageBucketEstimates({ env, userId }),
-	).resolves.toEqual([{ storageId: registered, estimatedBytes: 8192 }])
+	).resolves.toEqual([
+		{ storageId: registered, kind: 'execute', estimatedBytes: 8192 },
+	])
 })
 
 test('a failed estimate refresh warns and clears the throttle for a retry', async () => {
