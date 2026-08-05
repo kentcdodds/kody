@@ -78,6 +78,31 @@ function getCurrentDocumentPath() {
 
 let activeViewTransition: { skipTransition(): void } | null = null
 
+/**
+ * Areas whose pages sit inside a persistent shell (a sticky rail beside the
+ * content). Moving between them is tab switching, not page-to-page
+ * navigation: it is frequent, the chrome around the content does not change,
+ * and the rail is a full-height element whose box tracks the page — so a
+ * transition would scale its snapshot between two different heights and the
+ * rail would visibly squash. These navigations swap instantly.
+ */
+const shellAreas = ['/account', '/admin']
+
+function isWithinArea(pathname: string, area: string) {
+	return pathname === area || pathname.startsWith(`${area}/`)
+}
+
+/** Both paths may carry a search string; only the pathname decides the area. */
+export function isSameShellAreaNavigation(from: string | null, to: string) {
+	if (!from) return false
+	const fromPathname = from.split('?')[0] ?? ''
+	const toPathname = to.split('?')[0] ?? ''
+	return shellAreas.some(
+		(area) =>
+			isWithinArea(fromPathname, area) && isWithinArea(toPathname, area),
+	)
+}
+
 function swapDom(onSwapped?: () => void) {
 	lastNotifiedDocumentPath = getCurrentDocumentPath()
 	// First SPA swap onward: suppresses the [data-rise] page-open
@@ -101,15 +126,19 @@ function notify(onSwapped?: () => void) {
 		'startViewTransition' in document
 			? (
 					document as Document & {
-						startViewTransition: (
-							callback: () => Promise<void>,
-						) => { skipTransition(): void }
+						startViewTransition: (callback: () => Promise<void>) => {
+							skipTransition(): void
+						}
 					}
 				).startViewTransition.bind(document)
 			: null
 	if (
 		!startViewTransition ||
-		matchMedia('(prefers-reduced-motion: reduce)').matches
+		matchMedia('(prefers-reduced-motion: reduce)').matches ||
+		isSameShellAreaNavigation(
+			lastNotifiedDocumentPath,
+			getCurrentDocumentPath(),
+		)
 	) {
 		void swapDom(onSwapped)
 		return

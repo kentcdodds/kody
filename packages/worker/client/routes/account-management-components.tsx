@@ -304,15 +304,6 @@ const adminNavItems = [
 type AccountManagementLinkNavProps = {
 	label: string
 	items: Array<AccountManagementLinkNavItem>
-	/**
-	 * Marks this nav as the section rail that persists across the area's
-	 * routes, so the view transition can hold it still instead of crossfading
-	 * it with the page. Exactly one nav per page may set it — a duplicate
-	 * `view-transition-name` makes the browser skip the transition outright,
-	 * and pages like `/admin/community-reports` render a second, page-local
-	 * nav that must stay unnamed.
-	 */
-	persistent?: boolean
 }
 
 /** `.account-nav a` — quiet link pills; only the current one goes green. */
@@ -350,13 +341,6 @@ export function AccountManagementLinkNav(
 				top: 0,
 				bottom: 0,
 				width: '200px',
-				// Switching sections is a route change, so the whole page —
-				// including this unchanged rail — would otherwise crossfade and
-				// rise inside the view transition's root snapshot. Naming it
-				// lifts it out; public/styles.css pins it still.
-				...(handle.props.persistent
-					? { viewTransitionName: 'account-nav' }
-					: {}),
 				[accountNavMq]: {
 					position: 'static',
 					width: 'auto',
@@ -442,7 +426,6 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 				/>
 				<AccountManagementLinkNav
 					label="Account sections"
-					persistent
 					items={accountNavItems.map((item) => ({
 						href: item.href,
 						label: item.label,
@@ -473,7 +456,6 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 				/>
 				<AccountManagementLinkNav
 					label="Admin sections"
-					persistent
 					items={adminNavItems.map((item) => ({
 						href: item.href,
 						label: item.label,

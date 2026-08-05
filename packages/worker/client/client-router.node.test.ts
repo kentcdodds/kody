@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	isSameShellAreaNavigation,
 	matchRoute,
 	matchRouteLoader,
 	type RouteLoader,
@@ -71,4 +72,26 @@ test('client route and loader matching prefer specific static routes over dynami
 	expect(matchRouteLoader('/account/secrets/secret-1', secretLoaders)).toBe(
 		genericSecretLoader,
 	)
+})
+
+test('view transitions are skipped only when a navigation stays inside one shell area', () => {
+	// Tab switching inside the account/admin shell: the rail is unchanged and
+	// full-height, so a snapshot transition would squash it between two page
+	// heights. These swap instantly.
+	expect(isSameShellAreaNavigation('/account', '/account/secrets')).toBe(true)
+	expect(
+		isSameShellAreaNavigation('/account/jobs?view=failed', '/account/values'),
+	).toBe(true)
+	expect(
+		isSameShellAreaNavigation('/admin/users', '/admin/feature-flags'),
+	).toBe(true)
+
+	// Entering, leaving, or crossing between shells is a real page change.
+	expect(isSameShellAreaNavigation('/pricing', '/account')).toBe(false)
+	expect(isSameShellAreaNavigation('/account', '/pricing')).toBe(false)
+	expect(isSameShellAreaNavigation('/account', '/admin/users')).toBe(false)
+	expect(isSameShellAreaNavigation(null, '/account')).toBe(false)
+
+	// A path that merely starts with the area's characters is a different area.
+	expect(isSameShellAreaNavigation('/account', '/accounts-payable')).toBe(false)
 })

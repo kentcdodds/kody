@@ -432,15 +432,6 @@ html.is-settled {
 		animation: none;
 	}
 
-	/* The account/admin rail persists across its sections, and navigating
-	   between them resets scroll — so pin the group too, or the rail would
-	   morph from its old position while the content column fades in. */
-	::view-transition-group(account-nav),
-	::view-transition-old(account-nav),
-	::view-transition-new(account-nav) {
-		animation: none;
-	}
-
 	@keyframes vt-page-out {
 		to {
 			opacity: 0;
