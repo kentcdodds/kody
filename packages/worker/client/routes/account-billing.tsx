@@ -233,7 +233,7 @@ export function AccountBillingRoute(handle: Handle) {
 	let data: AccountBillingLoaderData | null = null
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let checkoutPending = false
+	let checkoutPendingPlan: PaidTier | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: AccountBillingLoaderData) {
@@ -245,8 +245,8 @@ export function AccountBillingRoute(handle: Handle) {
 
 	async function startCheckout(plan: PlanTier) {
 		if (plan === 'free') return
-		if (checkoutPending) return
-		checkoutPending = true
+		if (checkoutPendingPlan) return
+		checkoutPendingPlan = plan
 		message = null
 		handle.update()
 		try {
@@ -273,7 +273,7 @@ export function AccountBillingRoute(handle: Handle) {
 					? payload.error
 					: 'Unable to start checkout. Try again shortly.'
 			messageTone = 'error'
-			checkoutPending = false
+			checkoutPendingPlan = null
 			handle.update()
 		} catch (error) {
 			message =
@@ -281,7 +281,7 @@ export function AccountBillingRoute(handle: Handle) {
 					? error.message
 					: 'Unable to start checkout. Try again shortly.'
 			messageTone = 'error'
-			checkoutPending = false
+			checkoutPendingPlan = null
 			handle.update()
 		}
 	}
@@ -577,13 +577,13 @@ export function AccountBillingRoute(handle: Handle) {
 												<div>
 													<button
 														type="button"
-														disabled={checkoutPending}
+														disabled={checkoutPendingPlan !== null}
 														mix={[
 															on('click', () => void startCheckout(tier.id)),
 															css(primaryButtonCss),
 														]}
 													>
-														{checkoutPending
+														{checkoutPendingPlan === tier.id
 															? 'Starting checkout…'
 															: 'Subscribe'}
 													</button>
