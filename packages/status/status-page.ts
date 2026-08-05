@@ -64,8 +64,10 @@ h1 { font-size: 1.5rem; margin: 0; }
 	border-radius: 0.75rem;
 	padding: 1rem 1.25rem;
 	margin-bottom: 1rem;
+	overflow: hidden;
+	min-width: 0;
 }
-.component { display: flex; flex-direction: column; gap: 0.5rem; }
+.component { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 .component-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .component-name { font-weight: 600; }
 .component-meta { color: var(--muted); font-size: 0.85rem; }
@@ -73,12 +75,34 @@ h1 { font-size: 1.5rem; margin: 0; }
 .dot.operational { background: var(--ok); }
 .dot.down { background: var(--down); }
 .dot.unknown { background: var(--unknown); }
-.bars { display: flex; gap: 2px; height: 2rem; align-items: stretch; }
-.bar { flex: 1 1 0; border-radius: 1px; background: var(--ok); min-width: 2px; }
+/* 90 day bars: allow shrink below 2px so the row fits phone content widths
+ * (iPhone ~321px after padding; min-width:2px + gaps overflowed). */
+.bars {
+	display: flex;
+	gap: 2px;
+	height: 2rem;
+	align-items: stretch;
+	min-width: 0;
+	overflow: hidden;
+}
+.bar {
+	flex: 1 1 0;
+	border-radius: 1px;
+	background: var(--ok);
+	min-width: 0;
+}
 .bar.empty { background: var(--border); }
 .bar.partial { background: var(--partial); }
 .bar.bad { background: var(--down); }
-.bars-legend { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.75rem; }
+.bars-legend {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.5rem;
+	color: var(--muted);
+	font-size: 0.75rem;
+	min-width: 0;
+}
+.bars-legend span { min-width: 0; overflow-wrap: anywhere; }
 .incident { border-left: 3px solid var(--down); padding-left: 0.75rem; margin: 0.75rem 0; }
 .incident.resolved { border-left-color: var(--ok); }
 .incident-title { font-weight: 600; }
