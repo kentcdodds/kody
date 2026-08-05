@@ -158,9 +158,9 @@ export async function loadInboundDueOwnersHealth(input: {
 
 export function getMailboxInboundDueAt(
 	sql: SqlStorage,
-	now: Date = new Date(),
+	now?: Date,
 ): string | null {
-	const nowMs = now.getTime()
+	const nowMs = (now ?? new Date()).getTime()
 	const candidates: Array<string> = []
 	const stale = sql
 		.exec<{
