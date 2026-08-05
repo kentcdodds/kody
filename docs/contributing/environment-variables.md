@@ -176,10 +176,11 @@ Each price id independently enables authenticated Checkout and subscription
 matching for its tier; leaving either unset makes only that tier unavailable for
 purchase. Price ids are public (non-secret) values committed as production
 Wrangler vars in `packages/worker/wrangler.jsonc`, not Worker secrets. The
-existing $5/month price id already ships as `STRIPE_STANDARD_PRICE_ID`; to
-activate Pro checkout, create the $20/month Pro recurring price in Stripe and
-add `STRIPE_PRO_PRICE_ID` with that id to the production env block in the same
-change.
+existing
+$5/month price id already ships as `STRIPE_STANDARD_PRICE_ID`; to
+activate Pro checkout, create the $20/month
+Pro recurring price in Stripe and add `STRIPE_PRO_PRICE_ID` with that id to the
+production env block in the same change.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

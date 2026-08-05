@@ -432,8 +432,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
 - `STRIPE_SECRET_KEY` (optional GitHub / Worker secret; Stripe secret API key
-  for account billing. Production deploy syncs it when set. The Standard and
-  Pro price ids are public Wrangler vars committed in
+  for account billing. Production deploy syncs it when set. The Standard and Pro
+  price ids are public Wrangler vars committed in
   `packages/worker/wrangler.jsonc`, not GitHub secrets.)
 - `STRIPE_WEBHOOK_SECRET` (optional GitHub / Worker secret; Stripe endpoint
   signing secret (`whsec_...`) for platform billing webhooks at
