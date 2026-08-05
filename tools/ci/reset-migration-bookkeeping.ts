@@ -13,8 +13,9 @@
  *
  * 1. fresh — no `d1_migrations` table or zero rows: nothing to do; the
  *    regular apply bootstraps the squashed baseline.
- * 2. squashed — bookkeeping already holds exactly the squashed baseline row:
- *    nothing to do.
+ * 2. squashed — bookkeeping holds the squashed baseline row plus only
+ *    post-squash migrations (0002+ applied by the ordinary apply step after
+ *    the squash): nothing to do.
  * 3. pre-squash — bookkeeping holds exactly the full frozen pre-squash
  *    migration name set: reset to the single squashed baseline row.
  *
@@ -218,11 +219,21 @@ export function classifyMigrationBookkeeping(
 	if (appliedNames.length === 0) {
 		return { state: 'fresh' }
 	}
-	if (
-		appliedNames.length === 1 &&
-		appliedNames[0] === squashedInitMigrationName
-	) {
-		return { state: 'squashed' }
+	// Post-squash steady state: the squashed baseline plus only migrations
+	// that are not part of the frozen pre-squash history (ordinary 0002+
+	// migrations applied after the squash). Any mixture of the baseline with
+	// frozen pre-squash names still fails below.
+	if (appliedNames.includes(squashedInitMigrationName)) {
+		const preSquash = new Set([
+			...preSquashMigrationNames,
+			...preSquashGhostMigrationNames,
+		])
+		const onlyPostSquashExtras = appliedNames.every(
+			(name) => name === squashedInitMigrationName || !preSquash.has(name),
+		)
+		if (onlyPostSquashExtras) {
+			return { state: 'squashed' }
+		}
 	}
 	const applied = new Set(appliedNames)
 	const expected = new Set(preSquashMigrationNames)

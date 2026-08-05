@@ -22,6 +22,27 @@ test('migration bookkeeping classifies fresh, squashed, pre-squash, and unexpect
 	expect(classifyMigrationBookkeeping([squashedInitMigrationName])).toEqual({
 		state: 'squashed',
 	})
+	// Post-squash steady state: baseline plus ordinary later migrations.
+	expect(
+		classifyMigrationBookkeeping([
+			squashedInitMigrationName,
+			'0002-restructure-plan-tiers.sql',
+		]),
+	).toEqual({ state: 'squashed' })
+	expect(
+		classifyMigrationBookkeeping([
+			'0003-later.sql',
+			squashedInitMigrationName,
+			'0002-restructure-plan-tiers.sql',
+		]),
+	).toEqual({ state: 'squashed' })
+	// Baseline mixed with frozen pre-squash names still fails.
+	expect(
+		classifyMigrationBookkeeping([
+			squashedInitMigrationName,
+			'0090-webhook-endpoints.sql',
+		]).state,
+	).toBe('unexpected')
 	expect(
 		classifyMigrationBookkeeping([...preSquashMigrationNames].reverse()),
 	).toEqual({ state: 'pre-squash' })
