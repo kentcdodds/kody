@@ -2,6 +2,7 @@ import { cachified } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
+import { loadFleetUsageInsights } from '#worker/admin/fleet-usage-insights.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
 import { getAdminInsightsSnapshot } from '#worker/run-records/service.ts'
 import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
@@ -101,7 +102,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v6',
+		key: 'admin-insights:v7',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -219,6 +220,8 @@ async function queryAdminInsights(
 		users: insightsUsers,
 	})
 
+	const fleetUsage = await loadFleetUsageInsights({ db, env, now })
+
 	const jobHealth: AdminInsightsJobHealth = {
 		totalJobs: Number(jobStats?.total ?? 0),
 		enabledJobs: Number(jobStats?.enabled ?? 0),
@@ -280,6 +283,10 @@ async function queryAdminInsights(
 			usersLoaded: runLogInsights.usersLoaded,
 			complete: runLogInsights.complete,
 		},
+		topRuntimeDurationConsumers: fleetUsage.topRuntimeDurationConsumers,
+		topEventCountConsumers: fleetUsage.topEventCountConsumers,
+		topDurationConsumersByMetric: fleetUsage.topDurationConsumersByMetric,
+		entitlementPressure: fleetUsage.entitlementPressure,
 	}
 }
 

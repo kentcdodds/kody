@@ -452,6 +452,38 @@ export type AdminInsightsRunLogCompleteness = {
 	complete: boolean
 }
 
+export type AdminInsightsDurationConsumer = {
+	stableUserId: string
+	username: string
+	totalDurationMs: number
+}
+
+export type AdminInsightsEventCountConsumer = {
+	stableUserId: string
+	username: string
+	eventCount: number
+}
+
+export type AdminInsightsMetricDurationConsumers = {
+	metric: AdminUsageMetric
+	consumers: Array<AdminInsightsDurationConsumer>
+}
+
+export type AdminInsightsEntitlementPressureResource = {
+	resource: AdminUsageEntitlementResource
+	label: string
+	current: number
+	limit: number
+	percentOfLimit: number
+}
+
+export type AdminInsightsEntitlementPressureUser = {
+	stableUserId: string
+	username: string
+	plan: AdminPlanName
+	pressuredResources: Array<AdminInsightsEntitlementPressureResource>
+}
+
 export type AdminInsightsLoaderData = {
 	ok: true
 	generatedAt: string
@@ -468,6 +500,10 @@ export type AdminInsightsLoaderData = {
 	jobHealth: AdminInsightsJobHealth
 	activation: AdminInsightsActivation
 	runLogCompleteness: AdminInsightsRunLogCompleteness
+	topRuntimeDurationConsumers: Array<AdminInsightsDurationConsumer>
+	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>
+	topDurationConsumersByMetric: Array<AdminInsightsMetricDurationConsumers>
+	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
 }
 
 export type AdminSystemEmailListItem = {
