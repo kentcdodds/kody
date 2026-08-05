@@ -337,7 +337,7 @@ const readNextCss = {
 		marginTop: '0.3rem',
 		font: `720 1.25rem/1.25 ${typography.fontFamilyDisplay}`,
 		letterSpacing: '-0.014em',
-		transition: `color 140ms ${transitions.easeOut}`,
+		transition: `color ${transitions.fast}`,
 	},
 	'&:hover strong': {
 		color: colors.primaryText,

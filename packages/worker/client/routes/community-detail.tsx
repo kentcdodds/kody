@@ -1249,7 +1249,7 @@ const stargazerLinkCss = {
 	color: colors.text,
 	fontWeight: 550,
 	textDecoration: 'none',
-	transition: `color 140ms ${transitions.easeOut}`,
+	transition: `color ${transitions.fast}`,
 	'&:hover': {
 		color: colors.primaryText,
 	},
@@ -1263,7 +1263,7 @@ const reportDisclosureCss = {
 		fontWeight: 600,
 		color: colors.textMuted,
 		width: 'fit-content',
-		transition: `color 140ms ${transitions.easeOut}`,
+		transition: `color ${transitions.fast}`,
 	},
 	'& summary:hover': {
 		color: colors.text,

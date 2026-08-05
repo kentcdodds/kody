@@ -73,6 +73,9 @@ export const transitions = {
 	fast: 'var(--transition-fast)',
 	normal: 'var(--transition-normal)',
 	easeOut: 'var(--ease-out)',
+	// Literal twin of --ease-out (public/styles.css) for WAAPI call sites,
+	// which cannot resolve CSS custom properties in easing strings.
+	easeOutValue: 'cubic-bezier(0.22, 1, 0.36, 1)',
 } as const
 
 // Breakpoints for CSS-in-JS media queries

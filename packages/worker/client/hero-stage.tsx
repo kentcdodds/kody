@@ -178,15 +178,15 @@ function stageParallax() {
 			for (const { el, depth } of layers) {
 				el.style.transform = `translate3d(${(current.x * depth * 22).toFixed(2)}px, ${(current.y * depth * 14).toFixed(2)}px, 0)`
 			}
-			if (
-				Math.abs(target.x - current.x) + Math.abs(target.y - current.y) >
-					0.001 ||
-				target.x !== 0 ||
-				target.y !== 0
-			) {
-				raf = requestAnimationFrame(tick)
-			} else {
+			const settled =
+				Math.abs(target.x - current.x) + Math.abs(target.y - current.y) <=
+				0.001
+			if (settled) {
+				current.x = target.x
+				current.y = target.y
 				raf = null
+			} else {
+				raf = requestAnimationFrame(tick)
 			}
 		}
 		const wake = () => {

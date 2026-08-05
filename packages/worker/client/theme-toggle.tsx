@@ -103,7 +103,7 @@ const toggleCss = {
 	cursor: 'pointer',
 	// Independent `rotate`/`scale` properties (not `transform`) so the hover
 	// tilt and the press squish compose instead of overwriting each other.
-	transition: `color 140ms ${transitions.easeOut}, border-color 140ms ${transitions.easeOut}, rotate 200ms ${transitions.easeOut}, scale 140ms ${transitions.easeOut}`,
+	transition: `color ${transitions.fast}, border-color ${transitions.fast}, rotate ${transitions.normal}, scale ${transitions.fast}`,
 	'&:active': {
 		scale: '0.92',
 	},
@@ -115,7 +115,7 @@ const toggleCss = {
 		},
 	},
 	'@media (prefers-reduced-motion: reduce)': {
-		transition: 'none',
+		transition: `color ${transitions.fast}, border-color ${transitions.fast}`,
 		'&:hover': { rotate: 'none' },
 		'&:active': { scale: 'none' },
 	},

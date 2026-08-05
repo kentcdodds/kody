@@ -100,8 +100,8 @@ const footerNavCss = {
 	'& a': {
 		color: colors.textMuted,
 		textDecoration: 'none',
-		// Same 140ms color ease as the header nav — one voice for nav links.
-		transition: `color 140ms ${transitions.easeOut}`,
+		// Same fast color ease as the header nav — one voice for nav links.
+		transition: `color ${transitions.fast}`,
 	},
 	'& a:hover': { color: colors.text },
 }

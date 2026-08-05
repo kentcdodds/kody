@@ -113,7 +113,7 @@ export const accountDisclosureCss = {
 		fontWeight: 600,
 		color: colors.primaryText,
 		width: 'fit-content',
-		transition: `color 140ms ${transitions.easeOut}`,
+		transition: `color ${transitions.fast}`,
 	},
 	[hoverMq]: {
 		'& > summary:hover': { color: colors.text },
@@ -294,7 +294,7 @@ const accountNavLinkCss = {
 	fontWeight: 550,
 	fontSize: '0.98rem',
 	textDecoration: 'none',
-	transition: `color 140ms ${transitions.easeOut}, background-color 140ms ${transitions.easeOut}`,
+	transition: `color ${transitions.fast}, background-color ${transitions.fast}`,
 	[hoverMq]: {
 		'&:hover': { color: colors.text, backgroundColor: colors.surface },
 	},

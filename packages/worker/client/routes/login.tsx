@@ -39,6 +39,7 @@ import {
 	authFieldLabelRowCss,
 	getAuthInputCss,
 	getGhostButtonCss,
+	getLanternGlowCss,
 	getPillButtonCss,
 	getSwapLabelCss,
 	mergeCss,
@@ -1004,29 +1005,7 @@ const authStageWrapCss = {
 	'@media (min-width: 901px) and (max-height: 820px)': {
 		width: 'min(100%, 340px)',
 	},
-	'&::after': {
-		content: '""',
-		position: 'absolute' as const,
-		left: '50%',
-		top: '63%',
-		width: 'min(36%, 160px)',
-		aspectRatio: '4 / 3',
-		transform: 'translate(-50%, -50%)',
-		borderRadius: '50%',
-		background:
-			'radial-gradient(closest-side, var(--lantern-glow), transparent 72%)',
-		mixBlendMode: 'screen' as const,
-		pointerEvents: 'none' as const,
-	},
-	'@media (prefers-reduced-motion: no-preference)': {
-		'&::after': {
-			animation: 'lantern-breathe 4.5s ease-in-out infinite alternate',
-		},
-	},
-	'@keyframes lantern-breathe': {
-		from: { opacity: 0.55 },
-		to: { opacity: 1 },
-	},
+	...getLanternGlowCss({ maxWidth: '160px' }),
 }
 
 const authGreetingCss = {

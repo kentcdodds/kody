@@ -273,7 +273,7 @@ const postTitleCss = {
 	letterSpacing: '-0.016em',
 	lineHeight: 1.2,
 	textWrap: 'balance' as const,
-	transition: `color 140ms ${transitions.easeOut}`,
+	transition: `color ${transitions.fast}`,
 }
 
 const postDescriptionCss = {

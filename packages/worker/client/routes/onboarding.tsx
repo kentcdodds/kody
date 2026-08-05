@@ -63,8 +63,6 @@ const onboardingSteps = [
 	hash: string
 }>
 
-/** Same curve as `--ease-out`; WAAPI needs the literal value. */
-const wizardEase = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
@@ -182,7 +180,7 @@ export function OnboardingRoute(handle: Handle) {
 					{ opacity: 0, translate: '0 12px' },
 					{ opacity: 1, translate: '0 0' },
 				],
-				{ duration: 360, easing: wizardEase },
+				{ duration: 360, easing: transitions.easeOutValue },
 			)
 			const art = node.querySelector('[data-panel-art]')
 			if (art instanceof HTMLElement) {
@@ -192,7 +190,7 @@ export function OnboardingRoute(handle: Handle) {
 						{ opacity: 0, rotate: '0deg', scale: '0.92' },
 						{ opacity: 1, rotate: tilt, scale: '1' },
 					],
-					{ duration: 560, easing: wizardEase },
+					{ duration: 560, easing: transitions.easeOutValue },
 				)
 			}
 		})
@@ -1037,7 +1035,7 @@ const byokSummaryCss = {
 	padding: '0.3rem 0',
 	font: `700 1.05rem/1.3 ${typography.fontFamilyDisplay}`,
 	color: colors.text,
-	transition: `color 140ms ${transitions.easeOut}`,
+	transition: `color ${transitions.fast}`,
 	[hoverMq]: {
 		'&:hover': {
 			color: colors.primaryText,

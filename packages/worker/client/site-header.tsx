@@ -183,7 +183,7 @@ const navLinksCss = {
 		textDecoration: 'none',
 		fontWeight: 500,
 		fontSize: '0.98rem',
-		transition: `color 140ms ${transitions.easeOut}`,
+		transition: `color ${transitions.fast}`,
 	},
 	'& a:hover': { color: colors.text },
 }

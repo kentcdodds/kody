@@ -78,7 +78,9 @@ function getBaseButtonCss(options: ButtonCssOptions = {}) {
  */
 const buttonReducedMotionCss = {
 	'@media (prefers-reduced-motion: reduce)': {
-		transition: 'none',
+		// Keep the color/opacity fades — reduced motion drops movement,
+		// not feedback.
+		transition: `background-color ${transitions.normal}, border-color ${transitions.normal}, color ${transitions.normal}, opacity ${transitions.normal}, box-shadow ${transitions.normal}`,
 		'&:not(:disabled):hover': { transform: 'none' },
 		'&:not(:disabled):active': { transform: 'none' },
 	},
@@ -267,8 +269,14 @@ export function getSwapLabelCss() {
 			transition: `opacity 200ms ${transitions.easeOut} 50ms, filter 200ms ${transitions.easeOut} 50ms, scale 200ms ${transitions.easeOut} 50ms`,
 		},
 		'@media (prefers-reduced-motion: reduce)': {
-			'& > [data-swap-label]': { transition: 'none' },
-			'& > [data-swap-label][data-active]': { transition: 'none' },
+			'& > [data-swap-label]': {
+				transition: `opacity 90ms ${transitions.easeOut}`,
+				filter: 'none',
+				scale: 'none',
+			},
+			'& > [data-swap-label][data-active]': {
+				transition: `opacity 200ms ${transitions.easeOut} 50ms`,
+			},
 		},
 	}
 }
@@ -309,6 +317,40 @@ export const pageHeadCss = {
 		maxWidth: '46ch',
 		textWrap: 'balance' as const,
 	},
+}
+
+/**
+ * The lantern Kody holds actually casts light. Screen blend adds warmth over
+ * his paws without a background halo. Spread into the css object of the
+ * positioned wrapper around the mascot illustration; `maxWidth` caps the glow
+ * for the wrapper's rendered size.
+ */
+export function getLanternGlowCss(options: { maxWidth: string }) {
+	return {
+		'&::after': {
+			content: '""',
+			position: 'absolute' as const,
+			left: '50%',
+			top: '63%',
+			width: `min(36%, ${options.maxWidth})`,
+			aspectRatio: '4 / 3',
+			transform: 'translate(-50%, -50%)',
+			borderRadius: '50%',
+			background:
+				'radial-gradient(closest-side, var(--lantern-glow), transparent 72%)',
+			mixBlendMode: 'screen' as const,
+			pointerEvents: 'none' as const,
+		},
+		'@media (prefers-reduced-motion: no-preference)': {
+			'&::after': {
+				animation: 'lantern-breathe 4.5s ease-in-out infinite alternate',
+			},
+		},
+		'@keyframes lantern-breathe': {
+			from: { opacity: 0.55 },
+			to: { opacity: 1 },
+		},
+	}
 }
 
 export const proseCss = {
@@ -474,10 +516,8 @@ export function getSurfaceCardCss(options: SurfaceCardCssOptions = {}) {
 						},
 					},
 					'@media (prefers-reduced-motion: reduce)': {
-						transition: 'none',
-						'&:hover': {
-							transform: 'none',
-						},
+						transition: `border-color 160ms ${transitions.easeOut}`,
+						'&:hover': { transform: 'none' },
 					},
 				}
 			: {}),
@@ -646,9 +686,6 @@ export function getAuthInputCss(options: AuthInputCssOptions = {}) {
 		},
 		'&[aria-invalid="true"]': {
 			borderColor: colors.error,
-		},
-		'@media (prefers-reduced-motion: reduce)': {
-			transition: 'none',
 		},
 	}
 }
