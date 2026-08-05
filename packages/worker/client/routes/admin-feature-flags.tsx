@@ -12,9 +12,9 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
@@ -22,6 +22,7 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 	MetadataGrid,
+	accountInputCss,
 } from './account-management-components.tsx'
 import {
 	type AdminFeatureFlag,
@@ -36,6 +37,8 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+const selectCss = getSelectCss()
 
 type PageStatus = 'loading' | 'ready' | 'error'
 type ActionState =
@@ -282,8 +285,8 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 		})
 	}
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
 
 	return () => {
@@ -518,6 +521,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Rollout %</span>
 										<input
+											data-field-ring
 											name="rolloutPercent"
 											type="number"
 											min="0"
@@ -530,18 +534,19 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 													: String(flag.global.rolloutPercent)
 											}
 											disabled={isMutating}
-											mix={css(inputCss)}
+											mix={css(accountInputCss)}
 										/>
 									</label>
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Note</span>
 										<input
+											data-field-ring
 											name="note"
 											type="text"
 											placeholder="Optional operator note"
 											defaultValue={flag.global?.note ?? ''}
 											disabled={isMutating}
-											mix={css(inputCss)}
+											mix={css(accountInputCss)}
 										/>
 									</label>
 									<button
@@ -668,21 +673,23 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Username</span>
 										<input
+											data-field-ring
 											name="username"
 											type="text"
 											required
 											placeholder="username"
 											disabled={isMutating}
-											mix={css(inputCss)}
+											mix={css(accountInputCss)}
 										/>
 									</label>
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>State</span>
 										<select
+											data-field-ring
 											name="enabled"
 											defaultValue="true"
 											disabled={isMutating}
-											mix={css(inputCss)}
+											mix={css(selectCss)}
 										>
 											<option value="true">On</option>
 											<option value="false">Off</option>

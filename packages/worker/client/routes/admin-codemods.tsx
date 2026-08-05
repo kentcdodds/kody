@@ -11,15 +11,16 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
+	accountInputCss,
 	accountManagementTableCellCss,
 	accountManagementTableCss,
 } from './account-management-components.tsx'
@@ -34,6 +35,8 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+const selectCss = getSelectCss()
 
 type PageStatus = 'loading' | 'ready' | 'error'
 type RunMode = 'scan' | 'dry-run' | 'apply' | 'revert'
@@ -493,8 +496,8 @@ export function AdminCodemodsRoute(handle: Handle) {
 		})
 	}
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerButtonCss()
 	const tableCss = accountManagementTableCss
 	const cellCss = accountManagementTableCellCss
@@ -610,11 +613,12 @@ export function AdminCodemodsRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Codemod</span>
 									<select
+										data-field-ring
 										name="codemodId"
 										value={selectedCodemodId}
 										disabled={!canMutate}
 										mix={[
-											css(inputCss),
+											css(selectCss),
 											on('change', (event) => {
 												if (!(event.currentTarget instanceof HTMLSelectElement))
 													return
@@ -633,11 +637,12 @@ export function AdminCodemodsRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Mode</span>
 									<select
+										data-field-ring
 										name="mode"
 										value={selectedMode}
 										disabled={!canMutate}
 										mix={[
-											css(inputCss),
+											css(selectCss),
 											on('change', (event) => {
 												if (!(event.currentTarget instanceof HTMLSelectElement))
 													return
@@ -662,13 +667,14 @@ export function AdminCodemodsRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>User IDs filter</span>
 									<input
+										data-field-ring
 										name="userIds"
 										type="text"
 										placeholder="comma-separated stable user ids"
 										value={userIdsFilter}
 										disabled={!canMutate}
 										mix={[
-											css(inputCss),
+											css(accountInputCss),
 											on('input', (event) => {
 												if (!(event.currentTarget instanceof HTMLInputElement))
 													return
@@ -681,13 +687,14 @@ export function AdminCodemodsRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Package IDs filter</span>
 									<input
+										data-field-ring
 										name="packageIds"
 										type="text"
 										placeholder="comma-separated package ids"
 										value={packageIdsFilter}
 										disabled={!canMutate}
 										mix={[
-											css(inputCss),
+											css(accountInputCss),
 											on('input', (event) => {
 												if (!(event.currentTarget instanceof HTMLInputElement))
 													return
@@ -701,6 +708,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Revert of run ID</span>
 										<input
+											data-field-ring
 											name="revertOfRunId"
 											type="text"
 											required
@@ -708,7 +716,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 											value={revertOfRunId}
 											disabled={!canMutate}
 											mix={[
-												css(inputCss),
+												css(accountInputCss),
 												on('input', (event) => {
 													if (
 														!(event.currentTarget instanceof HTMLInputElement)

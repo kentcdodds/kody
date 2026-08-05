@@ -17,9 +17,9 @@ import {
 	cardCss,
 	fieldCss,
 	fieldLabelCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementLayout,
@@ -56,6 +56,8 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+const selectCss = getSelectCss()
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 type UsageStatus = 'loading' | 'ready' | 'error'
@@ -617,8 +619,8 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function applyRouteLoaderData(href: string) {
 		if (!isAdminUsersPath(href)) return false
@@ -736,6 +738,7 @@ export function AdminUsersRoute(handle: Handle) {
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Role</span>
 									<select
+										data-field-ring
 										value={filters.role}
 										aria-label="Filter users by role"
 										mix={[
@@ -746,7 +749,7 @@ export function AdminUsersRoute(handle: Handle) {
 													}),
 												)
 											}),
-											css(inputCss),
+											css(selectCss),
 										]}
 									>
 										<option value="">All roles</option>
@@ -925,6 +928,7 @@ export function AdminUsersRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Role</span>
 											<select
+												data-field-ring
 												value={selectedRoleToAssign}
 												disabled={isMutating}
 												aria-label="Role"
@@ -934,7 +938,7 @@ export function AdminUsersRoute(handle: Handle) {
 															.value as RoleName
 														handle.update()
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												{availableRoles.map((role) => (
@@ -982,6 +986,7 @@ export function AdminUsersRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Plan</span>
 											<select
+												data-field-ring
 												disabled={isMutating}
 												aria-label="Plan"
 												mix={[
@@ -990,7 +995,7 @@ export function AdminUsersRoute(handle: Handle) {
 															.value as AdminPlanName
 														handle.update()
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												{availablePlans.map((plan) => (

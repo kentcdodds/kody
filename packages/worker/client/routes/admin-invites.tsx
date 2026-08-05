@@ -11,9 +11,9 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
@@ -21,6 +21,7 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 	MetadataGrid,
+	accountInputCss,
 	noticeCardCss,
 } from './account-management-components.tsx'
 import {
@@ -32,6 +33,8 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+const selectCss = getSelectCss()
 
 type AdminInviteListItem = AdminInvitesLoaderData['invites'][number]
 type PageStatus = 'loading' | 'ready' | 'error'
@@ -221,8 +224,8 @@ export function AdminInvitesRoute(handle: Handle) {
 		})
 	}
 
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -290,22 +293,24 @@ export function AdminInvitesRoute(handle: Handle) {
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>User email</span>
 							<input
+								data-field-ring
 								name="email"
 								type="email"
 								required
 								placeholder="person@example.com"
 								disabled={isMutating}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 						</label>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Username (optional)</span>
 							<input
+								data-field-ring
 								name="username"
 								type="text"
 								placeholder="Auto-generated from email"
 								disabled={isMutating}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 						</label>
 						<button
@@ -322,10 +327,11 @@ export function AdminInvitesRoute(handle: Handle) {
 								Setup link for <strong>{createdUser.email}</strong>:
 							</p>
 							<input
+								data-field-ring
 								readOnly
 								aria-label="Password setup link"
 								value={createdUser.setupLink}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 							<a
 								href={createdUser.setupLink}
@@ -367,41 +373,45 @@ export function AdminInvitesRoute(handle: Handle) {
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Code</span>
 							<input
+								data-field-ring
 								name="code"
 								type="text"
 								placeholder="Optional"
 								disabled={inviteFormDisabled}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 						</label>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Note</span>
 							<input
+								data-field-ring
 								name="note"
 								type="text"
 								placeholder="Cohort or recipient"
 								disabled={inviteFormDisabled}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 						</label>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Max uses</span>
 							<input
+								data-field-ring
 								name="maxUses"
 								type="number"
 								min="1"
 								defaultValue="1"
 								disabled={inviteFormDisabled}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 						</label>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Plan</span>
 							<select
+								data-field-ring
 								name="plan"
 								disabled={inviteFormDisabled}
 								defaultValue="free"
-								mix={css(inputCss)}
+								mix={css(selectCss)}
 							>
 								{availablePlans.map((plan) => (
 									<option key={plan} value={plan}>
@@ -413,10 +423,11 @@ export function AdminInvitesRoute(handle: Handle) {
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Expires</span>
 							<input
+								data-field-ring
 								name="expiresAt"
 								type="datetime-local"
 								disabled={inviteFormDisabled}
-								mix={css(inputCss)}
+								mix={css(accountInputCss)}
 							/>
 						</label>
 						<button

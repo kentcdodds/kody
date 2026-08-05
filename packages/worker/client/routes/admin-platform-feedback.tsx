@@ -18,8 +18,8 @@ import {
 	cardCss,
 	fieldCss,
 	fieldLabelCss,
-	getSecondaryButtonCss,
-	inputCss,
+	getGhostButtonCss,
+	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type AdminPlatformFeedbackLoaderData,
@@ -37,6 +37,8 @@ import {
 	AdminPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
+
+const selectCss = getSelectCss()
 
 type PageStatus = 'loading' | 'ready' | 'error'
 
@@ -164,7 +166,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
 
-	const secondaryButtonCss = getSecondaryButtonCss()
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function applyData(payload: AdminPlatformFeedbackLoaderData, href: string) {
 		data = payload
@@ -309,6 +311,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Status</span>
 											<select
+												data-field-ring
 												value={filters.status}
 												aria-label="Filter feedback by status"
 												mix={[
@@ -319,7 +322,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 															}),
 														)
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												{statusOptions.map((option) => (
@@ -332,6 +335,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Category</span>
 											<select
+												data-field-ring
 												value={filters.category}
 												aria-label="Filter feedback by category"
 												mix={[
@@ -342,7 +346,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 															}),
 														)
 													}),
-													css(inputCss),
+													css(selectCss),
 												]}
 											>
 												{categoryOptions.map((option) => (
