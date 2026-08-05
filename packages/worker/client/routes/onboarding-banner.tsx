@@ -24,7 +24,7 @@ export function renderOnboardingBanner() {
 			})}
 		>
 			<img
-				src="/images/kody-mcp-plug.webp"
+				src="/images/kody-connect-callout.webp"
 				alt=""
 				width={88}
 				height={88}

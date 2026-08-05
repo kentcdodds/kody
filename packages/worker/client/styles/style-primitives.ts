@@ -161,17 +161,24 @@ export function getDangerButtonCss(options?: ButtonCssOptions) {
 
 type PillButtonCssOptions = {
 	mobileFullWidth?: boolean
+	/**
+	 * `sm` is the prototype's `.account-actions .button` — the size the
+	 * in-page actions of the account and admin areas use, so their rows stay
+	 * proportionate to body copy. `md` (default) is the marketing CTA size.
+	 */
+	size?: 'md' | 'sm'
 }
 
 function getBasePillButtonCss(options: PillButtonCssOptions = {}) {
+	const small = options.size === 'sm'
 	return {
 		display: 'inline-flex',
 		alignItems: 'center',
 		justifyContent: 'center',
 		gap: '0.5rem',
-		font: `650 1rem/1 ${typography.fontFamilyDisplay}`,
+		font: `650 ${small ? '0.95rem' : '1rem'}/1 ${typography.fontFamilyDisplay}`,
 		borderRadius: radius.full,
-		padding: '0.95rem 1.7rem',
+		padding: small ? '0.75rem 1.3rem' : '0.95rem 1.7rem',
 		cursor: 'pointer',
 		textDecoration: 'none',
 		whiteSpace: 'nowrap' as const,
@@ -694,6 +701,34 @@ export function getAuthInputCss(options: AuthInputCssOptions = {}) {
 		'&[aria-invalid="true"]': {
 			borderColor: colors.error,
 		},
+	}
+}
+
+/**
+ * `<select>` in the redesign's field vocabulary: the same box as
+ * `getAuthInputCss` with the platform chevron replaced by our own, so every
+ * dropdown in the app reads identically instead of inheriting whatever the OS
+ * draws. The chevron is a background image inset by the field's own padding —
+ * the text gets matching room on the right so a long option never runs under
+ * it. Its gray sits between the two themes' muted text (a background image
+ * cannot read `currentColor`), which is why it is a literal here.
+ *
+ * Markup contract: same as `getAuthInputCss` — put `data-field-ring` on the
+ * element so the global `:focus-visible` outline stands down for the field's
+ * own green ring.
+ */
+export function getSelectCss(options: AuthInputCssOptions = {}) {
+	const chevronInset = '1.05rem'
+	return {
+		...getAuthInputCss(options),
+		appearance: 'none' as const,
+		WebkitAppearance: 'none' as const,
+		cursor: 'pointer',
+		paddingRight: `calc(${chevronInset} * 2 + 16px)`,
+		backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+		backgroundRepeat: 'no-repeat',
+		backgroundPosition: `right ${chevronInset} center`,
+		backgroundSize: '16px 16px',
 	}
 }
 

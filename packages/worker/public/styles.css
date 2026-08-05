@@ -321,6 +321,14 @@ main:has([data-account-shell]) {
 	padding: 0;
 }
 
+/* Always reserve the classic scrollbar's track, so a short page and a long one
+   have the same content width. Without it, every navigation between the two
+   shifts the layout sideways — which the route view transition then animates.
+   No-op where scrollbars overlay the content (macOS default, touch). */
+html {
+	scrollbar-gutter: stable;
+}
+
 /* Smooth scrolling only after the initial #hash jump has settled (set by
    theme-init.js) so cross-page anchor arrivals land instantly. */
 html.is-settled {
