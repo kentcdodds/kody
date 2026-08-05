@@ -312,12 +312,13 @@ input[type='checkbox'] {
 	min-height: 100vh;
 }
 
-/* The account/admin shell carries the page gutter itself so its content lines
-   up with the header's 72rem content box; `<main>`'s generic inset for
-   non-redesigned routes would stack on top of it. Unlayered on purpose — it
-   has to beat the css() class that sets that padding. */
+/* The account/admin shell owns its whole box (the prototype's `.account`
+   padding: the shared page gutter inline, so its content lines up with the
+   header's 72rem content box, plus the vertical rhythm). `<main>`'s generic
+   padding for non-redesigned routes would stack on top of it. Unlayered on
+   purpose — it has to beat the css() class that sets that padding. */
 main:has([data-account-shell]) {
-	padding-inline: 0;
+	padding: 0;
 }
 
 /* Smooth scrolling only after the initial #hash jump has settled (set by

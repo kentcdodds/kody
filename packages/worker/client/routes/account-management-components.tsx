@@ -163,11 +163,13 @@ export function AccountManagementShell(
 			mix={css({
 				maxWidth: layoutMaxWidths.extended,
 				margin: '0 auto',
-				// The gutter every other page container carries, so the content
-				// column lines up with the header's 72rem content box instead of
-				// running wider than the nav above it. `<main>`'s generic inset is
-				// zeroed for this shell in public/styles.css so the two don't stack.
-				paddingInline: pageGutter,
+				// Prototype `.account` padding. The inline gutter is the one every
+				// other page container carries, so the content column lines up
+				// with the header's 72rem content box instead of running wider
+				// than the nav above it; the bottom clamp keeps the last section
+				// off the footer hairline. `<main>`'s generic padding is zeroed
+				// for this shell in public/styles.css so the two don't stack.
+				padding: `clamp(2rem, 5vw, 3.5rem) ${pageGutter} clamp(3rem, 7vw, 5rem)`,
 				boxSizing: 'border-box' as const,
 				display: 'grid',
 				gap: spacing.xl,
