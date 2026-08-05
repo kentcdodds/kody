@@ -109,7 +109,7 @@ test('readEntitlementUsageSnapshot includes all registered usage resources', asy
 		db,
 		env: env as Env,
 		usageUserId: stableUserId,
-		plan: 'partner',
+		plan: 'pro',
 	})
 	expect(snapshot.resources.map((row) => row.resource)).toEqual(
 		accountUsageEntitlementResources,
