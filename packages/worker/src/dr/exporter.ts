@@ -2,6 +2,8 @@ import {
 	backupBlobKey,
 	backupR2BucketLabels,
 	backupStagingSchemaVersion,
+	parseLegacyStagingSummary,
+	parseStagingSummary,
 	stagingArtifactsIndexKey,
 	stagingMailboxDumpKey,
 	stagingMailboxIndexKey,
@@ -113,6 +115,8 @@ export type DrExporterProgress = {
 	revision: number
 	leaseId: string | null
 	leaseExpiresAt: string | null
+	/** Set while conditionally replacing a schema-v1 completion marker. */
+	legacySummaryEtag?: string | null
 	mailbox: OwnerLaneProgress
 	runLog: OwnerLaneProgress
 	/**
@@ -220,6 +224,7 @@ function createInitialProgress(day: string, now: Date): DrExporterProgress {
 		revision: 0,
 		leaseId: null,
 		leaseExpiresAt: null,
+		legacySummaryEtag: null,
 		mailbox: createInitialOwnerLaneProgress(),
 		runLog: createInitialOwnerLaneProgress(),
 		storageIndex: 0,
@@ -273,7 +278,42 @@ function parseProgress(value: unknown): DrExporterProgress | null {
 		typeof record.revision === 'number' && Number.isSafeInteger(record.revision)
 			? record.revision
 			: 0
+	if (
+		!isOwnerLaneProgress(record.mailbox) ||
+		!isOwnerLaneProgress(record.runLog)
+	) {
+		return null
+	}
 	return { ...(value as DrExporterProgress), revision }
+}
+
+function isNonNegativeInteger(candidate: unknown): candidate is number {
+	return (
+		typeof candidate === 'number' &&
+		Number.isSafeInteger(candidate) &&
+		candidate >= 0
+	)
+}
+
+function isNullableString(candidate: unknown): candidate is string | null {
+	return candidate === null || typeof candidate === 'string'
+}
+
+function isOwnerLaneProgress(value: unknown): value is OwnerLaneProgress {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+	const lane = value as Record<string, unknown>
+	return (
+		isNonNegativeInteger(lane.ownerIndex) &&
+		isNullableString(lane.pageStartAfter) &&
+		isNullableString(lane.partialOwnerId) &&
+		isNonNegativeInteger(lane.dumpChunkCount) &&
+		isNullableString(lane.dumpChunkHead) &&
+		isNonNegativeInteger(lane.partialEntryCount) &&
+		isNonNegativeInteger(lane.partialBytes) &&
+		isNonNegativeInteger(lane.entryChunkCount) &&
+		isNullableString(lane.entryChunkHead) &&
+		Array.isArray(lane.pendingEntries)
+	)
 }
 
 async function fileSummary(
@@ -1034,6 +1074,27 @@ async function exportArtifactsPhase(input: {
 	return false
 }
 
+async function putCompletionSummary(input: {
+	s3: DrBackupS3Client
+	key: string
+	body: string
+	legacyEtag: string | null | undefined
+}) {
+	if (input.legacyEtag) {
+		await input.s3.put(input.key, input.body, {
+			contentType: 'application/json',
+			ifMatch: input.legacyEtag,
+		})
+		return
+	}
+	await putImmutableOutput({
+		s3: input.s3,
+		key: input.key,
+		body: input.body,
+		contentType: 'application/json',
+	})
+}
+
 async function finalizeExport(input: {
 	env: Env
 	s3: DrBackupS3Client
@@ -1140,11 +1201,11 @@ async function finalizeExport(input: {
 		blobsReused: progress.blobsReused,
 		warnings: progress.warnings,
 	}
-	await putImmutableOutput({
+	await putCompletionSummary({
 		s3,
 		key: stagingSummaryKey(progress.day),
 		body: JSON.stringify(summary),
-		contentType: 'application/json',
+		legacyEtag: progress.legacySummaryEtag,
 	})
 	progress.phase = 'done'
 	await persistProgress(s3, session)
@@ -1187,14 +1248,32 @@ export async function runDrExportTick(input: {
 	const s3 = input.s3 ?? createDrBackupS3Client(config)
 
 	const existingSummary = await s3.getText(stagingSummaryKey(day))
+	let legacySummaryEtag: string | null = null
 	if (existingSummary) {
-		return empty('already-complete')
+		let parsed: unknown
+		try {
+			parsed = JSON.parse(existingSummary.text) as unknown
+			const summary = parseStagingSummary(parsed)
+			if (summary.day === day) return empty('already-complete')
+			return empty('already-complete')
+		} catch {
+			try {
+				const summary = parseLegacyStagingSummary(parsed)
+				if (summary.day !== day || !existingSummary.etag) {
+					return empty('already-complete')
+				}
+				legacySummaryEtag = existingSummary.etag
+			} catch {
+				return empty('already-complete')
+			}
+		}
 	}
 
 	const timeBudgetMs = input.timeBudgetMs ?? drExportRunTimeBudgetMs
 	const startedAtMs = Date.now()
 	const session = await loadOrCreateProgress({ s3, day, now })
 	const { progress } = session
+	progress.legacySummaryEtag = legacySummaryEtag
 	const counts = {
 		mailboxDumpsCompleted: 0,
 		runLogDumpsCompleted: 0,

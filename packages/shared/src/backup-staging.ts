@@ -17,6 +17,7 @@
  */
 
 export const backupStagingSchemaVersion = 2 as const
+export const backupStagingLegacySchemaVersion = 1 as const
 
 export const backupBlobPrefix = 'blobs/sha256/'
 export const backupEscrowSecretStoreKeyKey = 'escrow/secret-store-key.v1.json'
@@ -196,6 +197,13 @@ export type StagingSummary = {
 	warnings: Array<string>
 }
 
+export type LegacyStagingSummary = Omit<
+	StagingSummary,
+	'schemaVersion' | 'mailboxIndex' | 'runLogIndex'
+> & {
+	schemaVersion: typeof backupStagingLegacySchemaVersion
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -212,34 +220,56 @@ function isFileSummary(value: unknown): value is StagingFileSummary {
 	)
 }
 
+function hasValidStagingSummaryBase(value: Record<string, unknown>): boolean {
+	if (typeof value.day !== 'string' || !dayPattern.test(value.day)) {
+		return false
+	}
+	return (
+		typeof value.startedAt === 'string' &&
+		Number.isFinite(Date.parse(value.startedAt)) &&
+		typeof value.completedAt === 'string' &&
+		Number.isFinite(Date.parse(value.completedAt)) &&
+		typeof value.buildCommit === 'string' &&
+		isFileSummary(value.storageIndex) &&
+		isRecord(value.r2Indexes) &&
+		Object.keys(value.r2Indexes).every((key) =>
+			(backupR2BucketLabels as ReadonlyArray<string>).includes(key),
+		) &&
+		Object.values(value.r2Indexes).every(isFileSummary) &&
+		isFileSummary(value.artifactsIndex) &&
+		Number.isSafeInteger(value.blobsWritten) &&
+		Number.isSafeInteger(value.blobsReused) &&
+		Array.isArray(value.warnings) &&
+		value.warnings.every((warning) => typeof warning === 'string')
+	)
+}
+
 export function parseStagingSummary(value: unknown): StagingSummary {
 	if (
 		!isRecord(value) ||
 		value.schemaVersion !== backupStagingSchemaVersion ||
-		typeof value.day !== 'string' ||
-		!dayPattern.test(value.day) ||
-		typeof value.startedAt !== 'string' ||
-		!Number.isFinite(Date.parse(value.startedAt)) ||
-		typeof value.completedAt !== 'string' ||
-		!Number.isFinite(Date.parse(value.completedAt)) ||
-		typeof value.buildCommit !== 'string' ||
+		!hasValidStagingSummaryBase(value) ||
 		!isFileSummary(value.mailboxIndex) ||
-		!isFileSummary(value.runLogIndex) ||
-		!isFileSummary(value.storageIndex) ||
-		!isRecord(value.r2Indexes) ||
-		!Object.keys(value.r2Indexes).every((key) =>
-			(backupR2BucketLabels as ReadonlyArray<string>).includes(key),
-		) ||
-		!Object.values(value.r2Indexes).every(isFileSummary) ||
-		!isFileSummary(value.artifactsIndex) ||
-		!Number.isSafeInteger(value.blobsWritten) ||
-		!Number.isSafeInteger(value.blobsReused) ||
-		!Array.isArray(value.warnings) ||
-		!value.warnings.every((warning) => typeof warning === 'string')
+		!isFileSummary(value.runLogIndex)
 	) {
 		throw new Error('staging summary has an invalid versioned shape')
 	}
 	return value as StagingSummary
+}
+
+export function parseLegacyStagingSummary(
+	value: unknown,
+): LegacyStagingSummary {
+	if (
+		!isRecord(value) ||
+		value.schemaVersion !== backupStagingLegacySchemaVersion ||
+		!hasValidStagingSummaryBase(value) ||
+		'mailboxIndex' in value ||
+		'runLogIndex' in value
+	) {
+		throw new Error('legacy staging summary has an invalid versioned shape')
+	}
+	return value as LegacyStagingSummary
 }
 
 /**

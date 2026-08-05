@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
+	backupStagingLegacySchemaVersion,
+	backupStagingSchemaVersion,
 	backupBlobKey,
 	sealedFullManifestKey,
 	sealedFullPrefix,
@@ -15,6 +17,8 @@ import {
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
 	drExportMaxStorageDumpBufferBytes,
+	__testOnlyCreateInitialProgress,
+	__testOnlyParseProgress,
 	listPlatformStorageInventory,
 	runDrExportTick,
 	runDrExportWatchdogTick,
@@ -1131,6 +1135,85 @@ test('DR owner inventory excludes accounts undergoing deletion', async () => {
 	expect(owners).toEqual(['active-owner'])
 	expect(prepare).toHaveBeenCalledWith(
 		expect.stringMatching(/FROM users\s+WHERE deleting_at IS NULL/),
+	)
+})
+
+test('progress parsing rejects missing or malformed owner lanes', () => {
+	const progress = __testOnlyCreateInitialProgress(
+		'2026-07-23',
+		new Date('2026-07-23T00:30:00.000Z'),
+	)
+	expect(__testOnlyParseProgress(progress)).toMatchObject({
+		phase: 'mailbox',
+	})
+	expect(
+		__testOnlyParseProgress({ ...progress, mailbox: undefined }),
+	).toBeNull()
+	expect(
+		__testOnlyParseProgress({
+			...progress,
+			runLog: { ...progress.runLog, dumpChunkCount: -1 },
+		}),
+	).toBeNull()
+})
+
+test('a schema-v1 completion marker is conditionally upgraded after owner lanes finish', async () => {
+	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValue([])
+	const { client } = createMemoryS3()
+	const day = '2026-07-23'
+	const file = (objectKey: string, sha: string) => ({
+		objectKey,
+		bytes: 0,
+		sha256: sha.repeat(64),
+	})
+	await client.put(
+		stagingSummaryKey(day),
+		JSON.stringify({
+			schemaVersion: backupStagingLegacySchemaVersion,
+			day,
+			startedAt: `${day}T00:30:00.000Z`,
+			completedAt: `${day}T00:35:00.000Z`,
+			buildCommit: 'legacy-build',
+			storageIndex: file(stagingStorageIndexKey(day), 'a'),
+			r2Indexes: {},
+			artifactsIndex: file(`staging/${day}/artifacts-index.json`, 'b'),
+			blobsWritten: 0,
+			blobsReused: 0,
+			warnings: [],
+		}),
+	)
+	const legacy = await client.getText(stagingSummaryKey(day))
+	const putSpy = vi.spyOn(client, 'put')
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	const result = await runDrExportTick({
+		env,
+		now: new Date(`${day}T01:00:00.000Z`),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result.summaryWritten).toBe(true)
+	const upgraded = JSON.parse(
+		(await client.getText(stagingSummaryKey(day)))!.text,
+	) as Record<string, unknown>
+	expect(upgraded.schemaVersion).toBe(backupStagingSchemaVersion)
+	expect(upgraded).toHaveProperty('mailboxIndex')
+	expect(upgraded).toHaveProperty('runLogIndex')
+	expect(putSpy).toHaveBeenCalledWith(
+		stagingSummaryKey(day),
+		expect.any(String),
+		expect.objectContaining({ ifMatch: legacy!.etag }),
 	)
 })
 
