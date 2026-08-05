@@ -1,7 +1,8 @@
 /**
  * Non-destructive schema for `user_storage_buckets` in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
- * needs. Mirrors migrations 0097 + 0108 + 0118 + 0121.
+ * needs. Mirrors the squashed baseline plus
+ * `0002-repo-session-storage-buckets.sql`.
  */
 export async function ensureUserStorageBucketsTestSchema(db: D1Database) {
 	await db
