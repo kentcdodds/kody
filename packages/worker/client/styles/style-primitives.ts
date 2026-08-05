@@ -536,6 +536,13 @@ export const layoutMaxWidths = {
 	wide: '96rem',
 } as const
 
+/**
+ * Horizontal inset every page container carries inside its max-width box.
+ * The site header, the footer, and the redesigned sections all use it, so a
+ * container that skips it renders wider than the nav above it.
+ */
+export const pageGutter = 'clamp(1.25rem, 4vw, 2.5rem)'
+
 export const pageHeaderCss = {
 	display: 'grid',
 	gap: spacing.xs,

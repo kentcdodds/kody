@@ -312,6 +312,14 @@ input[type='checkbox'] {
 	min-height: 100vh;
 }
 
+/* The account/admin shell carries the page gutter itself so its content lines
+   up with the header's 72rem content box; `<main>`'s generic inset for
+   non-redesigned routes would stack on top of it. Unlayered on purpose — it
+   has to beat the css() class that sets that padding. */
+main:has([data-account-shell]) {
+	padding-inline: 0;
+}
+
 /* Smooth scrolling only after the initial #hash jump has settled (set by
    theme-init.js) so cross-page anchor arrivals land instantly. */
 html.is-settled {
@@ -412,6 +420,15 @@ html.is-settled {
 	::view-transition-new(site-footer),
 	::view-transition-old(nav-progress),
 	::view-transition-new(nav-progress) {
+		animation: none;
+	}
+
+	/* The account/admin rail persists across its sections, and navigating
+	   between them resets scroll — so pin the group too, or the rail would
+	   morph from its old position while the content column fades in. */
+	::view-transition-group(account-nav),
+	::view-transition-old(account-nav),
+	::view-transition-new(account-nav) {
 		animation: none;
 	}
 

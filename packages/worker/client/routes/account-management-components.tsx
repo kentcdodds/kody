@@ -14,6 +14,7 @@ import {
 	getSurfaceCardCss,
 	hoverMq,
 	layoutMaxWidths,
+	pageGutter,
 } from '#client/styles/style-primitives.ts'
 
 /*
@@ -158,9 +159,16 @@ export function AccountManagementShell(
 ) {
 	return () => (
 		<section
+			data-account-shell
 			mix={css({
 				maxWidth: layoutMaxWidths.extended,
 				margin: '0 auto',
+				// The gutter every other page container carries, so the content
+				// column lines up with the header's 72rem content box instead of
+				// running wider than the nav above it. `<main>`'s generic inset is
+				// zeroed for this shell in public/styles.css so the two don't stack.
+				paddingInline: pageGutter,
+				boxSizing: 'border-box' as const,
 				display: 'grid',
 				gap: spacing.xl,
 				alignItems: 'start',
@@ -169,14 +177,15 @@ export function AccountManagementShell(
 				// positioned full-height track (so the content keeps its normal
 				// single-column flow and gap) and only exists when the section
 				// nav is present — nav-less shell users (onboarding, pending
-				// verification) keep the plain column. Note: `css()` classes
+				// verification) keep the plain column. The rail starts at the
+				// gutter so it lines up with the header's brand. Note: `css()` classes
 				// each live in their own cascade sub-layer, so child spacing
 				// must stay on the shell's `gap`, never on per-child margins a
 				// child's own class would silently beat.
 				'&:has(> [data-account-nav])': {
 					position: 'relative',
 					gap: accountSectionGap,
-					paddingLeft: 'calc(200px + clamp(2rem, 5vw, 4.5rem))',
+					paddingLeft: `calc(${pageGutter} + 200px + clamp(2rem, 5vw, 4.5rem))`,
 					// The absolute rail contributes no height; keep room so a
 					// short page never lets the nav spill over the footer.
 					minHeight: '40rem',
@@ -188,7 +197,7 @@ export function AccountManagementShell(
 							}
 						: {}),
 					[accountNavMq]: {
-						paddingLeft: 0,
+						paddingLeft: pageGutter,
 						minHeight: 0,
 						gap: spacing.xl,
 					},
@@ -293,6 +302,15 @@ const adminNavItems = [
 type AccountManagementLinkNavProps = {
 	label: string
 	items: Array<AccountManagementLinkNavItem>
+	/**
+	 * Marks this nav as the section rail that persists across the area's
+	 * routes, so the view transition can hold it still instead of crossfading
+	 * it with the page. Exactly one nav per page may set it — a duplicate
+	 * `view-transition-name` makes the browser skip the transition outright,
+	 * and pages like `/admin/community-reports` render a second, page-local
+	 * nav that must stay unnamed.
+	 */
+	persistent?: boolean
 }
 
 /** `.account-nav a` — quiet link pills; only the current one goes green. */
@@ -326,10 +344,17 @@ export function AccountManagementLinkNav(
 				// so the sticky inner column has the whole page to stick
 				// through); below 860px it returns to flow as a wrapping row.
 				position: 'absolute',
-				left: 0,
+				left: pageGutter,
 				top: 0,
 				bottom: 0,
 				width: '200px',
+				// Switching sections is a route change, so the whole page —
+				// including this unchanged rail — would otherwise crossfade and
+				// rise inside the view transition's root snapshot. Naming it
+				// lifts it out; public/styles.css pins it still.
+				...(handle.props.persistent
+					? { viewTransitionName: 'account-nav' }
+					: {}),
 				[accountNavMq]: {
 					position: 'static',
 					width: 'auto',
@@ -415,6 +440,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 				/>
 				<AccountManagementLinkNav
 					label="Account sections"
+					persistent
 					items={accountNavItems.map((item) => ({
 						href: item.href,
 						label: item.label,
@@ -445,6 +471,7 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 				/>
 				<AccountManagementLinkNav
 					label="Admin sections"
+					persistent
 					items={adminNavItems.map((item) => ({
 						href: item.href,
 						label: item.label,

@@ -8,6 +8,7 @@ import {
 import {
 	getSecondaryButtonCss,
 	layoutMaxWidths,
+	pageGutter,
 } from '#client/styles/style-primitives.ts'
 
 export type SiteHeaderProps = {
@@ -156,7 +157,7 @@ const headerCss = {
 const navCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
-	padding: '0.8rem clamp(1.25rem, 4vw, 2.5rem)',
+	padding: `0.8rem ${pageGutter}`,
 	display: 'flex',
 	alignItems: 'center',
 	gap: '1.8rem',
