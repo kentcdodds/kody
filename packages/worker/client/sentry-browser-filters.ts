@@ -327,10 +327,8 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (
-		filterChromeExtensionObjectNotFoundSentryEvent(
-			event,
-			originalException,
-		) === null
+		filterChromeExtensionObjectNotFoundSentryEvent(event, originalException) ===
+		null
 	) {
 		return null
 	}
