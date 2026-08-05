@@ -4,7 +4,7 @@ import {
 	listJsonSchemaSubsetValueErrors,
 } from './json-schema-subset.ts'
 
-test('listJsonSchemaSubsetProblems accepts the supported subset', () => {
+test('listJsonSchemaSubsetProblems accepts the supported subset and rejects unsupported shapes', () => {
 	expect(
 		listJsonSchemaSubsetProblems({
 			type: 'object',
@@ -24,9 +24,7 @@ test('listJsonSchemaSubsetProblems accepts the supported subset', () => {
 			additionalProperties: false,
 		}),
 	).toEqual([])
-})
 
-test('listJsonSchemaSubsetProblems rejects unsupported keywords and shapes', () => {
 	expect(listJsonSchemaSubsetProblems('nope')).toEqual([
 		'# must be a JSON object schema.',
 	])
@@ -53,7 +51,7 @@ test('listJsonSchemaSubsetProblems rejects unsupported keywords and shapes', () 
 	])
 })
 
-test('listJsonSchemaSubsetValueErrors validates values against the subset', () => {
+test('listJsonSchemaSubsetValueErrors validates values, const, and union types', () => {
 	const schema = {
 		type: 'object',
 		properties: {
@@ -107,9 +105,7 @@ test('listJsonSchemaSubsetValueErrors validates values against the subset', () =
 			{ anything: 1 },
 		),
 	).toEqual(['payload has unexpected property "anything".'])
-})
 
-test('listJsonSchemaSubsetValueErrors handles const and union types', () => {
 	expect(
 		listJsonSchemaSubsetValueErrors(
 			{ const: { a: 1, b: [2] } },
