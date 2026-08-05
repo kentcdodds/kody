@@ -84,16 +84,10 @@ function formatUsageValue(resource: string, value: number) {
 
 function formatCurrentValue(item: AccountUsageEntitlementConsumption) {
 	if (item.kind === 'per_unit_max') return '—'
-	if (item.kind === 'boolean_allowance') {
-		return item.limit > 0 ? 'Allowed' : 'Not on plan'
-	}
 	return formatUsageValue(item.resource, item.current)
 }
 
 function formatLimitValue(item: AccountUsageEntitlementConsumption) {
-	if (item.kind === 'boolean_allowance') {
-		return item.limit > 0 ? 'Yes' : 'No'
-	}
 	return formatUsageValue(item.resource, item.limit)
 }
 

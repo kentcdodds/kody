@@ -57,13 +57,11 @@ export async function readEntitlementUsageSnapshot(input: {
 							now,
 						})
 			const limit = resolvePlanLimit(input.plan, resource)
-			// per_unit_max compares one candidate value (no accumulating usage)
-			// and boolean_allowance limits are 0/1 allowance flags, so a
+			// per_unit_max compares one candidate value (no accumulating
+			// usage) and a zero limit means the plan has no allowance, so a
 			// current/limit ratio is meaningless for both.
 			const percentOfLimit =
-				visibility.kind === 'per_unit_max' ||
-				visibility.kind === 'boolean_allowance' ||
-				limit === 0
+				visibility.kind === 'per_unit_max' || limit === 0
 					? null
 					: current / limit
 			return {

@@ -11,7 +11,7 @@ const usageResourceSchema = z.object({
 	resource: z.string(),
 	label: z.string(),
 	group: z.enum(['daily', 'counts', 'storage', 'limits']),
-	kind: z.enum(['counter', 'boolean_allowance', 'per_unit_max']),
+	kind: z.enum(['counter', 'per_unit_max']),
 	whatCounts: z.string(),
 	howToReduce: z.string(),
 	current: z.number().int().nonnegative(),

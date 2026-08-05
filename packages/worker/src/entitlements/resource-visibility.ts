@@ -2,10 +2,7 @@ import type { EntitlementResource } from './plans.ts'
 
 export type EntitlementResourceGroup = 'daily' | 'counts' | 'storage' | 'limits'
 
-export type EntitlementResourceVisibilityKind =
-	| 'counter'
-	| 'boolean_allowance'
-	| 'per_unit_max'
+export type EntitlementResourceVisibilityKind = 'counter' | 'per_unit_max'
 
 export const entitlementResourceGroupLabels: Record<
 	EntitlementResourceGroup,
@@ -64,11 +61,10 @@ export const entitlementResourceVisibility: Record<
 	},
 	persistent_package_services: {
 		group: 'counts',
-		kind: 'boolean_allowance',
-		whatCounts:
-			'Whether your plan allows persistent (long-lived) package services.',
+		kind: 'counter',
+		whatCounts: 'Persistent (long-lived) package services currently running.',
 		howToReduce:
-			'Stop persistent services when you do not need them, or upgrade for allowance.',
+			'Stop persistent services you do not need, or upgrade for more concurrent slots.',
 	},
 	repo_sessions: {
 		group: 'counts',
