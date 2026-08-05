@@ -218,14 +218,21 @@ export function filterBrowserInjectedGlobalNoiseSentryEvent<
 const fathomRemoveChildNullMessage =
 	/^(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)$/
 
-const fathomScriptUrlPattern = /cdn\.usefathom\.com\//i
+const fathomAnalyticsHostname = 'cdn.usefathom.com'
 
 export function isFathomRemoveChildNullMessage(message: string) {
 	return fathomRemoveChildNullMessage.test(message.trim())
 }
 
 export function isFathomAnalyticsStackFrameUrl(url: string) {
-	return fathomScriptUrlPattern.test(url)
+	try {
+		return (
+			new URL(url, 'https://sentry.invalid').hostname ===
+			fathomAnalyticsHostname
+		)
+	} catch {
+		return false
+	}
 }
 
 export function isFathomRemoveChildNullSentryEvent(

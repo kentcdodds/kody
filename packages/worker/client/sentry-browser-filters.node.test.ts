@@ -310,6 +310,26 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).not.toBeNull()
+	// Pathname/substring lookalike on a non-Fathom host must stay.
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://heykody.dev/cdn.usefathom.com/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
 	// Fathom frame with a different error must stay.
 	expect(
 		filterFathomRemoveChildNullSentryEvent({

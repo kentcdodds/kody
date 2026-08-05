@@ -32,8 +32,8 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// permission-denied from Replay/hydration on restricted nodes,
 		// injected wallet/`__firefox__` globals, and Fathom beacon
 		// removeChild-on-null) — see filterBrowserSentryEvent /
-		// KODY-CLOUDFLARE-23 / issues 7639685398, 7648833360, 7648833403,
-		// 7653117289.
+		// KODY-CLOUDFLARE-23 / KODY-CLOUDFLARE-3Q / issues 7639685398,
+		// 7648833360, 7648833403, 7653117289.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},
