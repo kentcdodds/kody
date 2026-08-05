@@ -9,7 +9,6 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import {
-	getSecondaryButtonCss,
 	hoverMq,
 	layoutMaxWidths,
 	pageGutter,
@@ -484,9 +483,21 @@ const navUserCss = {
 	'&:hover': { color: colors.text },
 }
 
+/**
+ * Logging out has to be a form POST, but the prototype's session corner is
+ * two quiet text links (`.nav-user` then `.nav-login`) — a bordered pill here
+ * reads as the page's main action, which logging out is not. So: the nav-link
+ * treatment, with the button chrome stripped off.
+ */
 const logOutButtonCss = {
-	...getSecondaryButtonCss(),
-	padding: `${spacing.xs} ${spacing.md}`,
+	...navLoginCss,
+	appearance: 'none' as const,
+	border: 'none',
+	background: 'transparent',
+	cursor: 'pointer',
+	// A button does not inherit the page font.
+	font: `550 0.98rem/1 ${typography.fontFamilyBody}`,
+	transition: `color ${transitions.fast}`,
 }
 
 const demoIndicatorCss = {
