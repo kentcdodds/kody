@@ -71,20 +71,23 @@ The `max` plan is the operator/manual ceiling: a high finite tier admins assign
 deliberately. It is not a public or Stripe-purchasable plan. Email resources use
 `maxPlanEmailLimits` because inbound volume is attacker-controlled and outbound
 sending is an outreach-abuse surface — use `resolveEmailResourceLimit` to read
-those caps. All other resources use the ordinary `planLimits.max` numbers.
+those caps. The caps stay finite but dominate every other plan's email limits,
+so granting `max` never reduces email capacity (`email_message_bytes` stays at
+pro/partner parity because the per-message ceiling is a platform bound, not a
+scalable quota). All other resources use the ordinary `planLimits.max` numbers.
 
 | Resource                      | Limit       |
 | ----------------------------- | ----------- |
-| `email_sends_per_day`         | 100         |
-| `email_receives_per_day`      | 200         |
-| `stored_email_messages`       | 2,000       |
-| `email_message_bytes`         | 512 KiB     |
+| `email_sends_per_day`         | 10,000      |
+| `email_receives_per_day`      | 20,000      |
+| `stored_email_messages`       | 100,000     |
+| `email_message_bytes`         | 768 KiB     |
 | `concurrent_workflows`        | 5,000       |
 | `scheduled_jobs`              | 5,000       |
 | `saved_packages`              | 10,000      |
 | `package_services`            | 1,000       |
 | `persistent_package_services` | 1 (allowed) |
-| `repo_sessions`               | 2,000       |
+| `repo_sessions`               | 20,000      |
 | `secrets`                     | 10,000      |
 | `storage_bytes`               | 100 GiB     |
 | `execute_calls_per_day`       | 500,000     |

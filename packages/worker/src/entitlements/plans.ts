@@ -191,19 +191,22 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
- * Inherited abuse caps for the first-class `max` plan. Email is
- * abuse-sensitive in both directions — inbound volume is
- * attacker-controlled (anyone can send to a `{username}@<platform domain>`
- * address) and outbound sending is an outreach-abuse surface — so `max` is
- * not uncapped for mail. These are intentional abuse backstops (not the
- * ordinary 100×-pro derivation used for other max ceilings) and sit between
- * the `free` and `pro` plan email limits.
+ * Email caps for the first-class `max` plan. Email is abuse-sensitive in
+ * both directions — inbound volume is attacker-controlled (anyone can send
+ * to a `{username}@<platform domain>` address) and outbound sending is an
+ * outreach-abuse surface — so `max` is not uncapped for mail. These are
+ * intentional abuse backstops (not the ordinary 100×-pro derivation used
+ * for other max ceilings), but they dominate every other plan's email
+ * limits so granting `max` never reduces a user's email capacity.
+ * `email_message_bytes` is pinned to pro/partner parity because the
+ * per-message ceiling is a platform bound (see the PlanLimits field doc),
+ * not a scalable quota.
  */
 export const maxPlanEmailLimits = {
-	email_sends_per_day: 100,
-	email_receives_per_day: 200,
-	stored_email_messages: 2_000,
-	email_message_bytes: 512 * 1024,
+	email_sends_per_day: 10_000,
+	email_receives_per_day: 20_000,
+	stored_email_messages: 100_000,
+	email_message_bytes: 768 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
 
 export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
@@ -242,7 +245,11 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Long-lived compute. Unchanged, and persistent services stay off.
 		maxPackageServices: 1,
 		packageServicePersistentAllowed: 0,
-		maxRepoSessions: 5,
+		// Sessions are cheap (D1 row + dormant DO workspace + Artifacts
+		// branch) and the 7-day abandoned-session sweep keeps idle ones from
+		// accumulating, so the caps are sized for agent workflows that open
+		// a session per conversation rather than for genuine concurrency.
+		maxRepoSessions: 50,
 		// notify-self and reply-to-stored only, so the outreach-abuse surface
 		// is small; a daily digest plus a few alerts should not hit the wall.
 		maxEmailSendsPerDay: 10,
@@ -264,7 +271,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxScheduledJobs: 50,
 		maxPackageServices: 10,
 		packageServicePersistentAllowed: 1,
-		maxRepoSessions: 20,
+		maxRepoSessions: 200,
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1000,
 		maxStoredEmailMessages: 10_000,
@@ -281,7 +288,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxScheduledJobs: 100,
 		maxPackageServices: 20,
 		packageServicePersistentAllowed: 1,
-		maxRepoSessions: 40,
+		maxRepoSessions: 400,
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2000,
 		maxStoredEmailMessages: 25_000,
@@ -303,8 +310,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxPackageServices: 1_000,
 		// Same finite 0/1 gate as pro (1 = persistent services allowed).
 		packageServicePersistentAllowed: 1,
-		// 100× pro (20) → 2_000.
-		maxRepoSessions: 2_000,
+		// 100× pro (200) → 20_000.
+		maxRepoSessions: 20_000,
 		// Inherited abuse caps (not 100× pro); see maxPlanEmailLimits.
 		maxEmailSendsPerDay: maxPlanEmailLimits.email_sends_per_day,
 		maxEmailReceivesPerDay: maxPlanEmailLimits.email_receives_per_day,
