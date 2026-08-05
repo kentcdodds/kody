@@ -127,7 +127,7 @@ export async function deleteRepoSessionsBySourceForUser(
 		sourceId: string
 	},
 ): Promise<number> {
-	const [, result] = await db.batch([
+	const results = await db.batch([
 		db
 			.prepare(
 				`DELETE FROM user_storage_buckets
@@ -149,6 +149,10 @@ export async function deleteRepoSessionsBySourceForUser(
 			.prepare(`DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?`)
 			.bind(input.userId, input.sourceId),
 	])
+	const result = results[1]
+	if (!result) {
+		throw new Error('Repo session deletion returned no D1 result.')
+	}
 	return result.meta.changes ?? 0
 }
 

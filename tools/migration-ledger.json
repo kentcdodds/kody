@@ -7,6 +7,10 @@
 		{
 			"filename": "0001-squashed-init.sql",
 			"sha256": "5e1c8b352b5cd61f9cdc80f0512891b3bee92ee316929b5417471c0319d2d423"
+		},
+		{
+			"filename": "0002-repo-session-storage-buckets.sql",
+			"sha256": "063e3f053785e41a7edbd4272311e8f2198cb1905b93089fd0dfa3054f97b925"
 		}
 	]
 }

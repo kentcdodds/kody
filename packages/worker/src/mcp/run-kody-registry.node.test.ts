@@ -588,6 +588,7 @@ function createJobMutationDatabase(input: {
 		['jobs', structuredClone(input.jobs)],
 		['entity_sources', structuredClone(input.entitySources)],
 		['repo_sessions', structuredClone(input.repoSessions ?? [])],
+		['user_storage_buckets', []],
 		[
 			'published_bundle_artifacts',
 			structuredClone(input.publishedBundleArtifacts ?? []),

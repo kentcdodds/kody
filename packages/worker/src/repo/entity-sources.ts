@@ -305,7 +305,7 @@ export async function deleteEntitySource(
 		userId: string
 	},
 ): Promise<boolean> {
-	const [result] = await db.batch([
+	const results = await db.batch([
 		db
 			.prepare(`DELETE FROM entity_sources WHERE id = ? AND user_id = ?`)
 			.bind(input.id, input.userId),
@@ -327,5 +327,9 @@ export async function deleteEntitySource(
 				input.id,
 			),
 	])
+	const result = results[0]
+	if (!result) {
+		throw new Error('Entity source deletion returned no D1 result.')
+	}
 	return (result.meta.changes ?? 0) > 0
 }
