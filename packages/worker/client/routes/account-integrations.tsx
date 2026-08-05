@@ -48,7 +48,13 @@ import {
 	oauthAppDisplayName,
 } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -61,6 +67,7 @@ import {
 	fieldLabelCss,
 	getDangerButtonCss,
 	getPillButtonCss,
+	hoverMq,
 	insetCardCss,
 	primaryLinkCss,
 	sectionTitleCss,
@@ -527,8 +534,18 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																	color: colors.text,
 																	textAlign: 'left',
 																	cursor: 'pointer',
-																	'&:hover': {
-																		backgroundColor: colors.primarySoftest,
+																	transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
+																	// Selecting a connection swaps the panel
+																	// beside this list, which is easy to miss —
+																	// the press itself has to register.
+																	'&:active': { scale: '0.98' },
+																	[hoverMq]: {
+																		'&:hover': {
+																			backgroundColor: colors.primarySoftest,
+																		},
+																	},
+																	'@media (prefers-reduced-motion: reduce)': {
+																		'&:active': { scale: 'none' },
 																	},
 																}),
 															]}
@@ -648,8 +665,18 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															color: colors.text,
 															textAlign: 'left',
 															cursor: 'pointer',
-															'&:hover': {
-																backgroundColor: colors.primarySoftest,
+															transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
+															// Selecting an app swaps the panel beside this
+															// list, which is easy to miss — the press itself
+															// has to register.
+															'&:active': { scale: '0.98' },
+															[hoverMq]: {
+																'&:hover': {
+																	backgroundColor: colors.primarySoftest,
+																},
+															},
+															'@media (prefers-reduced-motion: reduce)': {
+																'&:active': { scale: 'none' },
 															},
 														}),
 													]}
@@ -1151,7 +1178,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 												<CopyTextButton
 													value={buildIntegrationSetupPrompt(provider)}
 													idleLabel="Copy setup prompt"
-													variant="secondary"
+													variant="ghost"
+													size="sm"
 												/>
 											</div>
 										</div>
@@ -1180,7 +1208,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											<CopyTextButton
 												value={buildCustomIntegrationSetupPrompt()}
 												idleLabel="Copy setup prompt"
-												variant="secondary"
+												variant="ghost"
+												size="sm"
 											/>
 										</div>
 									</div>

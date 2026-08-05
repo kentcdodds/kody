@@ -18,6 +18,11 @@ type CopyTextButtonProps = {
 	 * `ghost` its bordered transparent sibling (snippet copy).
 	 */
 	variant?: 'primary' | 'secondary' | 'pill' | 'ghost'
+	/**
+	 * `sm` is the in-page action size the account and admin areas use.
+	 * Applies to the `pill` and `ghost` variants.
+	 */
+	size?: 'md' | 'sm'
 }
 
 type CopyState = 'idle' | 'copied' | 'error'
@@ -33,12 +38,36 @@ const secondaryCopyButtonCss = mergeCss(
 const pillCopyButtonCss = mergeCss(getPillButtonCss(), getSwapLabelCss())
 const ghostCopyButtonCss = mergeCss(getGhostButtonCss(), getSwapLabelCss())
 
+const smallPillCopyButtonCss = mergeCss(
+	getPillButtonCss({ size: 'sm' }),
+	getSwapLabelCss(),
+)
+const smallGhostCopyButtonCss = mergeCss(
+	getGhostButtonCss({ size: 'sm' }),
+	getSwapLabelCss(),
+)
+
 const copyButtonCssByVariant = {
 	primary: primaryCopyButtonCss,
 	secondary: secondaryCopyButtonCss,
 	pill: pillCopyButtonCss,
 	ghost: ghostCopyButtonCss,
 } as const
+
+const smallCopyButtonCssByVariant = {
+	pill: smallPillCopyButtonCss,
+	ghost: smallGhostCopyButtonCss,
+} as const
+
+function getCopyButtonCss(
+	variant: NonNullable<CopyTextButtonProps['variant']>,
+	size: CopyTextButtonProps['size'],
+) {
+	if (size === 'sm' && (variant === 'pill' || variant === 'ghost')) {
+		return smallCopyButtonCssByVariant[variant]
+	}
+	return copyButtonCssByVariant[variant]
+}
 
 /**
  * Button that copies `value` to the clipboard and shows transient
@@ -84,7 +113,12 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 		<button
 			type="button"
 			mix={[
-				css(copyButtonCssByVariant[handle.props.variant ?? 'primary']),
+				css(
+					getCopyButtonCss(
+						handle.props.variant ?? 'primary',
+						handle.props.size,
+					),
+				),
 				on('click', () => void copyValue()),
 			]}
 		>
