@@ -1270,6 +1270,10 @@ export type AccountBillingLoaderData = {
 export type AccountUsageEntitlementConsumption = {
 	resource: string
 	label: string
+	group: 'daily' | 'counts' | 'storage' | 'limits'
+	kind: 'counter' | 'boolean_allowance' | 'per_unit_max'
+	whatCounts: string
+	howToReduce: string
 	current: number
 	limit: number
 	percentOfLimit: number | null

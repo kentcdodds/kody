@@ -565,6 +565,11 @@ export function AccountBillingRoute(handle: Handle) {
 												{tier.price}
 											</span>
 											<p mix={css(descriptionCss)}>{tier.description}</p>
+											<p mix={css({ margin: 0 })}>
+												<a href="/account/usage" mix={css(primaryLinkCss)}>
+													See your current usage
+												</a>
+											</p>
 											{isCurrent || isIncluded ? (
 												<div>
 													<button
