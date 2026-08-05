@@ -126,11 +126,12 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			env,
 		),
 	).toEqual({
-		stripePlan: 'standard',
+		stripePlan: 'pro',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
 
+	// Retired plan names in metadata contribute nothing.
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -143,7 +144,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			env,
 		),
 	).toEqual({
-		stripePlan: 'pro',
+		stripePlan: null,
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})

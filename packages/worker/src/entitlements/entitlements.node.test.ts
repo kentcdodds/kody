@@ -673,13 +673,12 @@ test('plan registry, ranks, and limits match the published tier contract', () =>
 	})
 })
 
-test('Stripe plan parsing separates current stored values from legacy metadata', () => {
+test('Stripe plan parsing accepts registered purchasable names only', () => {
 	expect(parseStripePlanName('standard')).toBe('standard')
 	expect(parseStripePlanName('pro')).toBe('pro')
 	expect(parseStripePlanName('partner')).toBeNull()
+	expect(parseStripePlanName('unlimited')).toBeNull()
 	expect(parseStripePlanName('max')).toBeNull()
-	expect(parseStripePlanName('partner', { legacyMetadata: true })).toBe('pro')
-	expect(parseStripePlanName('pro', { legacyMetadata: true })).toBe('standard')
 })
 
 test('persistent package services use finite concurrent counts', async () => {

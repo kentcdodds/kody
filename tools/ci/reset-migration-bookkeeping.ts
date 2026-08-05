@@ -7,9 +7,12 @@
  * `d1_migrations` bookkeeping table must be rewritten so Wrangler treats the
  * squashed baseline as already applied.
  *
- * Run BEFORE `wrangler d1 migrations apply APP_DB` (preview and production
- * deploy workflows, and local applies via tools/apply-local-app-migrations).
- * Exactly three database states are accepted:
+ * Runs BEFORE `wrangler d1 migrations apply APP_DB` for local applies via
+ * tools/apply-local-app-migrations, so developer state dirs created before
+ * the squash still get their bookkeeping rewritten. The production and
+ * preview databases settled post-squash on 2026-08-05 and their deploy
+ * workflow invocations have been removed. Exactly three database states are
+ * accepted:
  *
  * 1. fresh — no `d1_migrations` table or zero rows: nothing to do; the
  *    regular apply bootstraps the squashed baseline.
@@ -23,8 +26,8 @@
  * is the deterministic "do we still have exactly the migrations we should"
  * check that gates the destructive bookkeeping rewrite.
  *
- * Once production and preview have both settled post-squash, the workflow
- * invocations of this script can be removed.
+ * Once pre-squash local developer state dirs have died out, the local
+ * invocation and this script can be deleted entirely.
  */
 
 import { spawnSync } from 'node:child_process'

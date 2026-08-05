@@ -142,9 +142,11 @@ Quick notes for getting a local kody environment running.
   schema plus migration-seeded platform rows); the pre-squash files remain in
   Git history only. `tools/ci/reset-migration-bookkeeping.ts` is the
   deterministic guard that rewrote `d1_migrations` bookkeeping in existing
-  databases (production, preview, and local state dirs) — it verifies the
-  applied set matches the frozen pre-squash list exactly before touching
-  anything, and no-ops on fresh or already-squashed databases.
+  databases — it verifies the applied set matches the frozen pre-squash list
+  exactly before touching anything, and no-ops on fresh or already-squashed
+  databases. Production and preview settled post-squash on 2026-08-05, so the
+  guard now runs only for local applies (pre-squash developer state dirs);
+  delete it once those have died out.
 
 ## Documentation maintenance
 

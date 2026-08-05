@@ -65,7 +65,7 @@ vi.mock('#worker/entitlements/plans.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementPlans>()
 	return {
 		...actual,
-		resolveEmailResourceLimit: vi.fn(() => 100),
+		resolvePlanLimit: vi.fn(() => 100),
 	}
 })
 

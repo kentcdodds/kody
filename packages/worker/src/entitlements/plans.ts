@@ -7,11 +7,10 @@
  * indicate schema corruption and throw instead of granting a plan. Untrusted
  * admin/API input uses {@link parsePlanName} so invalid input can be rejected
  * without throwing. Stripe metadata uses {@link parseStripePlanName}, which
- * rejects `max` (manual-only) and residual `'unlimited'`.
+ * rejects `max` (manual-only).
  *
- * Follow-up: emergency admin-only `unlimited` is intentionally deferred until
- * a follow-up deployment after 0083's residual sweep. Until then the live
- * registry is finite `max` only.
+ * There is deliberately no uncapped plan: the live registry is finite `max`
+ * only.
  */
 
 export const planNames = ['free', 'standard', 'pro', 'max'] as const
@@ -20,7 +19,7 @@ export type PlanName = (typeof planNames)[number]
 
 /**
  * Strict plan-name parser for untrusted admin/API input validation.
- * Unknown strings, typos, residual `'unlimited'`, nullish values, and
+ * Unknown strings, typos, retired plan names, nullish values, and
  * non-strings return null so callers can reject them.
  */
 export function parsePlanName(value: unknown): PlanName | null {
@@ -44,24 +43,12 @@ export function parseStoredPlanName(value: unknown): PlanName {
 }
 
 /**
- * Parse a current Stripe plan name or legacy `kody_plan` subscription
- * metadata. `max` is manual-only (never purchasable or Stripe-sourced).
- * Legacy metadata predates the tier rename, so old `partner` maps to new
- * `pro` and old `pro` maps to `standard`. Current `users.stripe_plan` values
- * are parsed without that compatibility mapping.
+ * Parse a plan name that may come from Stripe subscription metadata
+ * (`kody_plan`) or `users.stripe_plan`. `max` is manual-only (never
+ * purchasable or Stripe-sourced); unknown values contribute nothing.
  */
-export function parseStripePlanName(
-	value: unknown,
-	options: { legacyMetadata?: boolean } = {},
-): PlanName | null {
-	const normalizedValue = options.legacyMetadata
-		? value === 'partner'
-			? 'pro'
-			: value === 'pro'
-				? 'standard'
-				: value
-		: value
-	const plan = parsePlanName(normalizedValue)
+export function parseStripePlanName(value: unknown): PlanName | null {
+	const plan = parsePlanName(value)
 	return plan === 'max' ? null : plan
 }
 
@@ -102,7 +89,7 @@ export function getPlanRank(plan: PlanName): number {
  * - Manual arg is a non-null {@link PlanName} (callers resolve stored values
  *   with {@link parseStoredPlanName} first).
  * - Higher-ranked of manual and stripe plans wins (`max` ranks highest).
- * - Unknown/NULL/`max`/residual `'unlimited'` stripe_plan contributes nothing.
+ * - Unknown, NULL, `max`, or retired stripe_plan values contribute nothing.
  */
 export function resolveEffectivePlan(
 	manualPlan: PlanName,
@@ -216,8 +203,6 @@ export const maxPlanEmailLimits = {
 	stored_email_messages: 100_000,
 	email_message_bytes: 768 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
-
-export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
 
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
@@ -336,24 +321,6 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// 50× pro (40_000) → 2_000_000.
 		maxOutboundFetchesPerDay: 2_000_000,
 	},
-}
-
-export function isMaxPlanEmailResource(
-	resource: EntitlementResource,
-): resource is MaxPlanEmailResource {
-	return resource in maxPlanEmailLimits
-}
-
-/**
- * Resolve the effective limit for an email resource under a plan. The
- * `max` plan uses {@link maxPlanEmailLimits} as its email caps; other plans
- * use their ordinary plan limits.
- */
-export function resolveEmailResourceLimit(
-	plan: PlanName,
-	resource: MaxPlanEmailResource,
-): number {
-	return resolvePlanLimit(plan, resource)
 }
 
 /**

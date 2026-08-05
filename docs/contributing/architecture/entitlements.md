@@ -11,8 +11,8 @@ Module: `packages/worker/src/entitlements/`
 - `plans.ts` — plan names (`free`, `standard`, `pro`, `max`), the `PlanLimits`
   config per plan, `max` email caps (`maxPlanEmailLimits`), the
   `EntitlementResource` registry, `resolvePlanLimit(plan, resource)`,
-  `resolveEmailResourceLimit(plan, resource)`, `getPlanRank`, `parsePlanName`
-  (strict, untrusted input), `parseStoredPlanName` (stored-column reads), and
+  `getPlanRank`, `parsePlanName` (strict, untrusted input),
+  `parseStoredPlanName` (stored-column reads), and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
@@ -30,19 +30,14 @@ The plan registry in `plans.ts` includes `free`, `standard`, `pro`, and `max`.
 Every plan has finite numeric limits for every resource; there are no uncapped
 tiers and no env-var backstops.
 
-Follow-up: emergency admin-only `unlimited` is intentionally deferred until a
-follow-up deployment after `0083-plan-default-free.sql` completes its residual
-sweep. Until then the live registry stays finite `max` only.
+There is deliberately no uncapped plan; the live registry stays finite `max`
+only.
 
-`users.plan` and `invites.plan` are NOT NULL TEXT columns. Historical migrations
-(`0046-invites-email-verification.sql`, `0065-invite-plans.sql`, and
-`0081-plan-not-null.sql`) left the DDL default as `'unlimited'` through
-`0082-rename-unlimited-plan-to-max.sql`, which renames stored `'unlimited'` rows
-to `'max'` but does not change the column default. Migration
-`0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
-to `'max'`, fails closed if any remain, and rebuilds both columns as NOT NULL
-DEFAULT `'free'`. **Live DDL defaults and writers always persist a known plan
-name (never NULL); normal creation and reset paths default to `free`.**
+`users.plan` and `invites.plan` are NOT NULL TEXT columns with DDL default
+`'free'` and CHECK constraints for the registered names (squashed baseline plus
+`0002-restructure-plan-tiers.sql`). **Live DDL defaults and writers always
+persist a known plan name (never NULL); normal creation and reset paths default
+to `free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
 `free`, which is the default for new accounts, invites without an explicit plan,
@@ -53,8 +48,8 @@ resets. Explicit `max` remains a valid deliberate assignment.
 registered names. Reads use strict `parseStoredPlanName`: known names pass
 through unchanged, while a value that violates the storage contract throws
 without including the raw value or user data. Untrusted admin/API input uses
-`parsePlanName` so typos, unknown strings, and residual `'unlimited'` are
-rejected as validation failures.
+`parsePlanName` so typos, unknown strings, and retired plan names are rejected
+as validation failures.
 
 Migration `0002-restructure-plan-tiers.sql` maps the former `pro` tier to
 `standard`, the former `partner` tier to `pro`, and rebuilds both CHECK
@@ -62,7 +57,7 @@ constraints for the current registry.
 
 `users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
 manual-only — admin-visible, not paid or public — and never written from Stripe
-(`parseStripePlanName` rejects it, as well as residual `'unlimited'`).
+(`parseStripePlanName` rejects it, along with any retired or unknown name).
 
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
 `parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
@@ -74,11 +69,12 @@ Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
 The `max` plan is the operator/manual ceiling: a high finite tier admins assign
 deliberately. It is not a public or Stripe-purchasable plan. Email resources use
 `maxPlanEmailLimits` because inbound volume is attacker-controlled and outbound
-sending is an outreach-abuse surface — use `resolveEmailResourceLimit` to read
-those caps. The caps stay finite but dominate every other plan's email limits,
-so granting `max` never reduces email capacity (`email_message_bytes` stays at
-standard/pro parity because the per-message ceiling is a platform bound, not a
-scalable quota). All other resources use the ordinary `planLimits.max` numbers.
+sending is an outreach-abuse surface — `resolvePlanLimit` resolves those caps
+like any other limit. The caps stay finite but dominate every other plan's email
+limits, so granting `max` never reduces email capacity (`email_message_bytes`
+stays at standard/pro parity because the per-message ceiling is a platform
+bound, not a scalable quota). All other resources use the ordinary
+`planLimits.max` numbers.
 
 | Resource                      | Limit     |
 | ----------------------------- | --------- |
@@ -379,26 +375,18 @@ reconcile lane, cold-drift correction, and the parity report.
 
 ## Schema history
 
-Migration `0080-backfill-unlimited-plan.sql` backfilled pre-existing NULL
-`users.plan` / `invites.plan` rows to `'unlimited'` (the former top-tier
-sentinel). Migration `0081-plan-not-null.sql` reconciles any residual NULLs and
-rebuilds both columns as NOT NULL DEFAULT `'unlimited'`. Migration
-`0082-rename-unlimited-plan-to-max.sql` renames stored `'unlimited'` plan values
-to `'max'` on `users.plan` and `invites.plan` only; it does not touch
-`users.stripe_plan`, unknown plan strings, or the DDL default. Migration
-`0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
-to `'max'`, fails closed if any remain, and rebuilds `users` and `invites` with
-NOT NULL DEFAULT `'free'`. Migration `0113-plan-check-constraints.sql` verifies
-that every stored plan is registered, then rebuilds both tables with CHECK
-constraints for the plan registry at that point. Migration
-`0002-restructure-plan-tiers.sql` renames stored tier values and replaces those
-constraints with `free`, `standard`, `pro`, and `max`.
+The pre-squash plan-column evolution (NULL rows → `'unlimited'` backfill → NOT
+NULL → `'unlimited'` renamed to `'max'` → DEFAULT `'free'` → CHECK constraints)
+is collapsed into the squashed baseline; the individual migration files live in
+Git history only. Post-squash, `0002-restructure-plan-tiers.sql` renames stored
+`pro` to `standard` and `partner` to `pro` (on `users.plan`,
+`users.stripe_plan`, and `invites.plan`) and rebuilds both CHECK constraints for
+`free`, `standard`, `pro`, and `max`.
 
 ## Assigning plans
 
 New accounts start with `users.plan = 'free'` unless the consumed invite carries
-another plan. Migration `0065-invite-plans.sql` adds `invites.plan` (NOT NULL
-DEFAULT `'free'` after `0083-plan-default-free.sql`; writers and admin UI
+another plan via `invites.plan` (NOT NULL DEFAULT `'free'`; writers and admin UI
 default to `free`). Password and social signup read the consumed invite's stored
 plan with `parseStoredPlanName` and copy it onto `users.plan`; missing or
 omitted invite plans are written as `free` via `resolvePlanWrite`. Admin-created
@@ -675,7 +663,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
 | `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                     |
 | `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                     |
-| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`)                                                                                                                                        |
+| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                 |
 | `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                      |
 | `concurrent_workflows`        | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                               |
 | `storage_bytes`               | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
@@ -735,10 +723,10 @@ without repeatedly enumerating inactive users. `/account/billing` arms the same
 backstop and still refreshes on every view so non-persisted `cancel_at` /
 `subscriptionStatus` stay current. If checkout cannot arm its backstop, a failed
 immediate refresh remains an error so the caller or Stripe webhook retries
-instead of acknowledging an unrecoverable stale projection. Migration
-`0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
-`stripe_plan`, and `stripe_plan_refreshed_at`; Wrangler migration `v23` adds the
-alarm DO class without moving canonical billing data out of D1.
+instead of acknowledging an unrecoverable stale projection. The
+`stripe_customer_id` (unique partial index), `stripe_plan`, and
+`stripe_plan_refreshed_at` columns ship in the squashed baseline; the alarm DO
+class exists without moving canonical billing data out of D1.
 
 Published prices: Free $0, Standard $5/mo, Pro $20/mo. Env vars and deploy
 wiring are documented in
@@ -746,16 +734,14 @@ wiring are documented in
 
 ## Related tables and coordination
 
-- `users.plan` — added by the invite-signup migration
-  (`0046-invites-email-verification.sql`); NOT NULL DEFAULT `'free'` after
-  `0083-plan-default-free.sql` (writers default to `free`). The entitlements
-  module is the consumer of that column (manual / invite / admin grant).
-- `invites.plan` — signup plan from migration `0065-invite-plans.sql`; NOT NULL
-  DEFAULT `'free'` after `0083-plan-default-free.sql` (writers and admin UI
+- `users.plan` — NOT NULL DEFAULT `'free'` (squashed baseline plus the 0002 tier
+  rename). The entitlements module is the consumer of that column (manual /
+  invite / admin grant).
+- `invites.plan` — signup plan; NOT NULL DEFAULT `'free'` (writers and admin UI
   default to `free`). Applied to `users.plan` when the invite is consumed at
   signup via `parseStoredPlanName` and `resolvePlanWrite`.
 - `users.stripe_customer_id`, `users.stripe_plan`,
-  `users.stripe_plan_refreshed_at` — Stripe billing columns from migration
-  `0066-stripe-billing.sql`; owned by `packages/worker/src/billing/`, read by
-  `getUserPlan` via `resolveEffectivePlan`. `stripe_plan` stays nullable because
-  it is Stripe-derived; `max` is manual-only.
+  `users.stripe_plan_refreshed_at` — Stripe billing columns owned by
+  `packages/worker/src/billing/`, read by `getUserPlan` via
+  `resolveEffectivePlan`. `stripe_plan` stays nullable because it is
+  Stripe-derived; `max` is manual-only.

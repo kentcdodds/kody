@@ -117,11 +117,10 @@ function planFromSubscription(
 	}
 	if (matchedStandardPrice) return 'standard'
 
-	// Price ids are the current, unambiguous source of truth. `kody_plan`
-	// metadata was written before the tier rename, so old partner means new
-	// pro and old pro means standard.
+	// Price ids are the primary, unambiguous source of truth; `kody_plan`
+	// metadata is the fallback for subscriptions whose price id rotated.
 	const metadataPlan = subscription.metadata?.['kody_plan']
-	return parseStripePlanName(metadataPlan, { legacyMetadata: true })
+	return parseStripePlanName(metadataPlan)
 }
 
 function pickSubscriptionStatus(
