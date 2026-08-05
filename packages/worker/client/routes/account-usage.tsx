@@ -360,7 +360,7 @@ export function AccountUsageRoute(handle: Handle) {
 																	lineHeight: 1.4,
 																})}
 															>
-																{item.whatCounts}. {item.howToReduce}
+																{item.whatCounts} {item.howToReduce}
 															</span>
 														</div>
 													</td>
