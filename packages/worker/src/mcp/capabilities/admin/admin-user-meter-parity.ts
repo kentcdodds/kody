@@ -57,7 +57,7 @@ const reportSchema = z.object({
 			resources: z.array(dailyResourceReadSchema),
 		})
 		.describe(
-			'UserMeter-only daily counter reads. The D1 entitlement_daily_counters mirror was dropped by migration 0126; no D1 comparison exists.',
+			'UserMeter-only daily counter reads. There is no D1 entitlement_daily_counters mirror, so no D1 comparison exists.',
 		),
 	storage: storageParitySchema,
 	deletion: deletionParitySchema,

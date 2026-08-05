@@ -131,6 +131,16 @@ test.each([
 	['Use the same restore-safe byte ceiling as before.', 'as before'],
 	['Literal dynamic imports were removed.', 'were removed'],
 	['Literal dynamic imports were **removed**.', 'were removed'],
+	[
+		'Legacy D1 workflow_runs was retired by migration 0137.',
+		'was/were retired',
+	],
+	['The D1 mirror was dropped by migration 0126.', 'dropped by migration'],
+	['Migration 0141 dropped the D1 leases table.', 'migration N dropped'],
+	[
+		'Post-cutover unrestorable exports never receive a manifest.',
+		'post-cutover',
+	],
 ])('flags rollout prose %j', (content, pattern) => {
 	expect(
 		findTemporalLanguageMatches({
