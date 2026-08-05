@@ -3,6 +3,7 @@ import {
 	filterBrowserAbortSentryEvent,
 	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
+	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 } from './sentry-browser-filters.ts'
 
@@ -239,6 +240,110 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 						type: 'TypeError',
 						value:
 							"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	// Fathom beacon removeChild-on-null only when a usefathom.com frame is present
+	// (issue 7653117289 / KODY-CLOUDFLARE-3Q).
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									filename: '/script.js',
+									abs_path: 'https://cdn.usefathom.com/script.js',
+									function: 'HTMLImageElement.<anonymous>',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"TypeError: Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									filename: 'https://cdn.usefathom.com/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	// Same message without a Fathom frame must stay (could be app code).
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									filename: '/assets/app-chunk.js',
+									abs_path: 'https://heykody.dev/assets/app-chunk.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	// Fathom frame with a different error must stay.
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'foo')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://cdn.usefathom.com/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://cdn.usefathom.com/script.js',
+								},
+							],
+						},
 					},
 				],
 			},

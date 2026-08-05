@@ -3,9 +3,18 @@
  * tests can exercise the predicates with plain event shapes.
  */
 
+type SentryStackFrame = {
+	filename?: string
+	abs_path?: string
+	absPath?: string
+}
+
 type SentryExceptionValue = {
 	type?: string
 	value?: string
+	stacktrace?: {
+		frames?: Array<SentryStackFrame>
+	}
 }
 
 export type SentryErrorEventLike = {
@@ -20,6 +29,20 @@ function sentryEventMessages(event: SentryErrorEventLike) {
 		event.message,
 		...(event.exception?.values?.map((value) => value.value) ?? []),
 	]
+}
+
+function sentryEventStackFrameUrls(event: SentryErrorEventLike) {
+	const urls: Array<string> = []
+	for (const value of event.exception?.values ?? []) {
+		for (const frame of value.stacktrace?.frames ?? []) {
+			for (const candidate of [frame.abs_path, frame.absPath, frame.filename]) {
+				if (typeof candidate === 'string' && candidate.length > 0) {
+					urls.push(candidate)
+				}
+			}
+		}
+	}
+	return urls
 }
 
 /**
@@ -181,6 +204,48 @@ export function filterBrowserInjectedGlobalNoiseSentryEvent<
 	return event
 }
 
+/**
+ * Fathom Analytics (`cdn.usefathom.com/script.js`) tracks pageviews with a
+ * temporary `<img>` beacon and removes it from `load`/`error` handlers via
+ * `img.parentNode.removeChild(img)`. When the beacon was already detached
+ * (SPA navigation / soft reload), `parentNode` is null and Chromium throws.
+ * Signature from production issue 7653117289 / KODY-CLOUDFLARE-3Q.
+ *
+ * Match is intentionally narrow: removeChild-on-null TypeError text AND a
+ * stack frame from the Fathom CDN. Never blanket-drop removeChild errors from
+ * app code.
+ */
+const fathomRemoveChildNullMessage =
+	/^(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)$/
+
+const fathomScriptUrlPattern = /cdn\.usefathom\.com\//i
+
+export function isFathomRemoveChildNullMessage(message: string) {
+	return fathomRemoveChildNullMessage.test(message.trim())
+}
+
+export function isFathomAnalyticsStackFrameUrl(url: string) {
+	return fathomScriptUrlPattern.test(url)
+}
+
+export function isFathomRemoveChildNullSentryEvent(
+	event: SentryErrorEventLike,
+) {
+	const hasRemoveChildNull = sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isFathomRemoveChildNullMessage(message),
+	)
+	if (!hasRemoveChildNull) return false
+	return sentryEventStackFrameUrls(event).some(isFathomAnalyticsStackFrameUrl)
+}
+
+export function filterFathomRemoveChildNullSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T): T | null {
+	if (isFathomRemoveChildNullSentryEvent(event)) return null
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -199,6 +264,9 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		filterBrowserInjectedGlobalNoiseSentryEvent(event, originalException) ===
 		null
 	) {
+		return null
+	}
+	if (filterFathomRemoveChildNullSentryEvent(event) === null) {
 		return null
 	}
 	return event
