@@ -28,7 +28,10 @@ export type StorageBucketKind =
 	| 'package'
 	| 'service'
 	| 'execute'
+	| 'repo_session'
 	| 'unknown'
+
+const repoSessionStorageBucketPrefix = 'repo-session:'
 
 const registerUpsertStatement = `
 INSERT INTO user_storage_buckets (
@@ -127,6 +130,103 @@ export function registerStorageBucket(input: {
 	}
 }
 
+/**
+ * Awaited registration for lifecycle-owned buckets. Repo sessions use this on
+ * open so a subsequent discard/purge cannot race a still-pending inventory
+ * insert and recreate the row after cleanup.
+ */
+export async function registerStorageBucketAndWait(input: {
+	env: Env
+	userId: string
+	storageId: string
+	kind: StorageBucketKind
+}): Promise<void> {
+	const userId = input.userId.trim()
+	const storageId = input.storageId.trim()
+	if (!userId || !storageId || !input.env.APP_DB) return
+	const seenAt = new Date().toISOString()
+	try {
+		await input.env.APP_DB.prepare(registerUpsertStatement)
+			.bind(userId, storageId, input.kind, seenAt)
+			.run()
+		rememberRegistrationKey(registrationDedupeKey(userId, storageId))
+	} catch (error) {
+		console.warn('storage-bucket-register-failed', error)
+	}
+}
+
+export function repoSessionStorageBucketId(sessionId: string): string {
+	return `${repoSessionStorageBucketPrefix}${sessionId}`
+}
+
+export function repoSessionIdFromStorageBucketId(storageId: string): string {
+	if (!storageId.startsWith(repoSessionStorageBucketPrefix)) {
+		throw new Error(`Invalid repo session storage bucket id: ${storageId}`)
+	}
+	const sessionId = storageId.slice(repoSessionStorageBucketPrefix.length)
+	if (!sessionId) {
+		throw new Error('Repo session storage bucket id is missing a session id.')
+	}
+	return sessionId
+}
+
+/**
+ * Bounded reconciliation for repo-session inventory rows whose awaited
+ * registration on session open failed (registration swallows transient D1
+ * errors so metering never blocks the session). Estimate persistence is
+ * UPDATE-only and the estimate backfill scans only existing rows, so a
+ * missed registration would otherwise stay invisible for the session's
+ * lifetime. The single INSERT..SELECT statement filters on
+ * `repo_sessions.status = 'active'` inside the same statement, so a session
+ * discarded or cleaned up concurrently can never get its inventory row
+ * recreated after lifecycle cleanup deleted it.
+ */
+export async function registerMissingRepoSessionStorageBuckets(input: {
+	db: D1Database
+	limit?: number
+	now?: Date
+}): Promise<number> {
+	const limit = input.limit ?? 24
+	const seenAt = (input.now ?? new Date()).toISOString()
+	const result = await input.db
+		.prepare(
+			`INSERT INTO user_storage_buckets (
+				user_id, storage_id, kind, created_at, last_seen_at
+			)
+			SELECT rs.user_id, ?1 || rs.id, 'repo_session', ?2, ?2
+			FROM repo_sessions rs
+			WHERE rs.status = 'active'
+				AND NOT EXISTS (
+					SELECT 1 FROM user_storage_buckets b
+					WHERE b.user_id = rs.user_id
+						AND b.storage_id = ?1 || rs.id
+				)
+			LIMIT ?3`,
+		)
+		.bind(repoSessionStorageBucketPrefix, seenAt, limit)
+		.run()
+	return result.meta?.changes ?? 0
+}
+
+/**
+ * Awaited, owner-scoped inventory removal for explicit bucket lifecycle
+ * cleanup. Unlike estimate persistence, this intentionally deletes the row.
+ */
+export async function deleteStorageBucketInventory(input: {
+	db: D1Database
+	userId: string
+	storageId: string
+}): Promise<boolean> {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM user_storage_buckets
+			WHERE user_id = ? AND storage_id = ?`,
+		)
+		.bind(input.userId, input.storageId)
+		.run()
+	return (result.meta?.changes ?? 0) > 0
+}
+
 function normalizeEstimatedBytes(estimatedBytes: number) {
 	if (!Number.isFinite(estimatedBytes)) return null
 	return Math.max(0, Math.round(estimatedBytes))
@@ -169,17 +269,27 @@ export async function updateStorageBucketEstimate(input: {
 export async function listStorageBucketsMissingEstimates(input: {
 	db: D1Database
 	limit: number
-}): Promise<Array<{ userId: string; storageId: string }>> {
+}): Promise<
+	Array<{
+		userId: string
+		storageId: string
+		kind: StorageBucketKind
+	}>
+> {
 	const result = await input.db
 		.prepare(
-			`SELECT user_id AS userId, storage_id AS storageId
+			`SELECT user_id AS userId, storage_id AS storageId, kind
 			FROM user_storage_buckets
 			WHERE estimated_bytes IS NULL
 			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC
 			LIMIT ?`,
 		)
 		.bind(input.limit)
-		.all<{ userId: string; storageId: string }>()
+		.all<{
+			userId: string
+			storageId: string
+			kind: StorageBucketKind
+		}>()
 	return result.results ?? []
 }
 
@@ -287,7 +397,7 @@ export async function listUserStorageBucketIds(input: {
 	const result = await input.env.APP_DB.prepare(
 		`SELECT storage_id AS storageId
 		FROM user_storage_buckets
-		WHERE user_id = ?
+		WHERE user_id = ? AND kind <> 'repo_session'
 		ORDER BY storage_id ASC`,
 	)
 		.bind(input.userId)
@@ -303,17 +413,28 @@ export async function listUserStorageBucketIds(input: {
 export async function listUserStorageBucketEstimates(input: {
 	env: Env
 	userId: string
-}): Promise<Array<{ storageId: string; estimatedBytes: number | null }>> {
+}): Promise<
+	Array<{
+		storageId: string
+		kind: StorageBucketKind
+		estimatedBytes: number | null
+	}>
+> {
 	const result = await input.env.APP_DB.prepare(
-		`SELECT storage_id AS storageId, estimated_bytes AS estimatedBytes
+		`SELECT storage_id AS storageId, kind, estimated_bytes AS estimatedBytes
 		FROM user_storage_buckets
 		WHERE user_id = ?
 		ORDER BY storage_id ASC`,
 	)
 		.bind(input.userId)
-		.all<{ storageId: string; estimatedBytes: number | null }>()
+		.all<{
+			storageId: string
+			kind: StorageBucketKind
+			estimatedBytes: number | null
+		}>()
 	return (result.results ?? []).map((row) => ({
 		storageId: row.storageId,
+		kind: row.kind,
 		estimatedBytes:
 			typeof row.estimatedBytes === 'number' && row.estimatedBytes >= 0
 				? row.estimatedBytes
@@ -328,6 +449,7 @@ export async function listPlatformStorageBuckets(input: {
 		.prepare(
 			`SELECT user_id AS userId, storage_id AS storageId
 			FROM user_storage_buckets
+			WHERE kind <> 'repo_session'
 			ORDER BY user_id ASC, storage_id ASC`,
 		)
 		.all<{ userId: string; storageId: string }>()

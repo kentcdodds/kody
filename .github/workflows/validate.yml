@@ -65,6 +65,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run backup:build
 
+      - name: 📟 Status build
+        if: ${{ !cancelled() }}
+        run: npm run status:build
+
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}
         run: npm run primitives:check
@@ -78,6 +82,10 @@ jobs:
           MIGRATION_VALIDATION_BASE: >-
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
+
+      - name: 🛡️ Deploy guardrails
+        if: ${{ !cancelled() }}
+        run: npm run deploy-guardrails:check
 
   node:
     runs-on: ubuntu-latest

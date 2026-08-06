@@ -4,11 +4,12 @@ import { packageSpecifierPrefix } from './package-import-resolution.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 
 /**
- * Detection for the removed legacy dynamic invocation surface:
+ * Permanent publish-time guard for unsupported invocation forms:
  * `packages.check`, `packages.invokeChecked`, and literal dynamic
  * `import("kody:@...")`. Publish checks fail on these (the runtime throws
- * teaching errors), and the `0002-static-first-invocation` package codemod
- * reuses the same collector so codemod findings stay in lockstep.
+ * teaching errors), and the repair codemod reuses this collector so parsed
+ * findings stay in lockstep with the publish contract. Unparseable files are
+ * handled separately as codemod-only manual findings.
  */
 export type DeprecatedInvocationUsageKind =
 	| 'packages.check'

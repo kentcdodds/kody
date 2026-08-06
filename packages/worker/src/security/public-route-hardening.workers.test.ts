@@ -100,6 +100,12 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			secret: env.DR_RESTORE_SECRET,
 			notConfiguredMessage: 'DR restore is not configured',
 		},
+		{
+			path: '/__maintenance/do-pitr',
+			secret: env.DR_RESTORE_SECRET,
+			notConfiguredMessage: 'Durable Object PITR is not configured',
+			nonProductionForbidden: true,
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {
@@ -110,7 +116,10 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 		const unauthorizedResponse = await workerFetch(
 			createRequest(route.path, { method: 'POST' }),
 		)
-		if (route.secret?.trim()) {
+		if ('nonProductionForbidden' in route && route.nonProductionForbidden) {
+			expect(unauthorizedResponse.status).toBe(403)
+			await expect(unauthorizedResponse.text()).resolves.toBe('Forbidden')
+		} else if (route.secret?.trim()) {
 			expect(unauthorizedResponse.status).toBe(401)
 			await expect(unauthorizedResponse.text()).resolves.toBe('Unauthorized')
 		} else {

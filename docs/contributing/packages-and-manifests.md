@@ -123,12 +123,8 @@ A saved package is a repo with the package extension activated. Five concepts:
   package does not rewrite already-published dependent bundles.
 - Literal dynamic imports such as `await import("kody:@scope/pkg/export")` are
   unsupported (use static imports when the name is known at write time and
-  `packages.invoke` otherwise). New bundles rewrite the call site to a teaching
-  error and publish checks fail on the pattern. Older published bundles may
-  still embed a host-resolved placeholder plus review metadata; just before
-  execution, Kody resolves the target package under the caller's `userId` and
-  hydrates the current published `importable-module` artifact into the dynamic
-  worker module graph.
+  `packages.invoke` otherwise). Publish checks reject the pattern permanently,
+  and the runtime rewrites the call site to a teaching error.
 - Direct static `kody:@...` imports are a breaking manifest contract: they must
   be listed in `package.json#kody.dependencies` by package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Repo checks
@@ -160,14 +156,14 @@ A saved package is a repo with the package extension activated. Five concepts:
 - The stamp routes identity but is not the security boundary. At execution,
   `packageStorage()` bucket access is granted only from host-controlled
   provenance metadata: the run's own package context, the `packageId` entries
-  recorded in the bundle's static dependency metadata, and published artifacts
-  the host installs for literal dynamic package imports during hydration.
-  Sandbox-supplied strings never extend the grant set, so hand-written source
-  claiming an arbitrary package id is rejected (`packageId` on
-  `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
-  `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
-  `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
-  because storage runner names are keyed by the calling user's id.
+  recorded in the bundle's static dependency metadata, and published static
+  dependency artifacts installed during hydration. Sandbox-supplied strings
+  never extend the grant set, so hand-written source claiming an arbitrary
+  package id is rejected (`packageId` on `BundleArtifactDependency`,
+  `collectPackageStorageGrantIds` in `#mcp/run-kody-registry.ts`, and
+  `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
+  access stays structurally impossible because storage runner names are keyed by
+  the calling user's id.
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
@@ -270,9 +266,7 @@ helpers because checking is not optional or separate. The sandbox prelude throws
 teaching errors for `check` / `invokeChecked`, the bundler rewrites literal
 dynamic kody imports to a teaching error, and publish checks fail on all three
 with the replacement named (`deprecated-invocation-usage.ts`, shared with the
-`0002-static-first-invocation` package codemod). Hydration resolves placeholder
-modules inside older published bundles so pinned snapshots continue until
-dependents republish. See
+permanent `0002-static-first-invocation` repair codemod). See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 

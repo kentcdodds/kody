@@ -1,5 +1,7 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-schema-subset.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
 import {
 	type PackageEventDispatchInput,
@@ -13,10 +15,12 @@ import {
 	listPackageEmittedEvents,
 	listPackageSubscriptions,
 } from '#worker/package-registry/manifest.ts'
+import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
 import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
 } from '#worker/package-runtime/subscription-artifacts.ts'
+import { readPreExecutionPackageInvocationInfrastructureCode } from './infrastructure-codes.ts'
 import {
 	internalEmailSubscriptionTokenId,
 	internalPackageEventSubscriptionTokenId,
@@ -29,6 +33,12 @@ import {
 } from './common.ts'
 import { invokeSavedPackageModule } from './idempotent-module-invocation.ts'
 import { buildJsonErrorResponse } from './responses.ts'
+
+/**
+ * Package event payloads ride inside a Queue message (128 KiB limit), so
+ * the payload itself is capped well below that to leave envelope headroom.
+ */
+export const maxPackageEventPayloadBytes = 64 * 1024
 
 function parsePackageEventDispatchInput(rawInput: PackageEventDispatchInput) {
 	const input =
@@ -91,11 +101,30 @@ function readInvocationError(response: PackageInvocationResponse) {
 	}
 }
 
+/**
+ * Filter semantics for package-emitted topics: every declared filter key
+ * must be present in the event payload with a canonically-equal JSON value.
+ * Subscriptions without filters receive every event on the topic.
+ */
+export function packageEventFiltersMatchPayload(input: {
+	filters: Record<string, unknown> | null
+	payload: Record<string, unknown>
+}) {
+	if (!input.filters) return true
+	return Object.entries(input.filters).every(
+		([key, expected]) =>
+			key in input.payload &&
+			canonicalJsonStringify(input.payload[key]) ===
+				canonicalJsonStringify(expected),
+	)
+}
+
 async function loadMatchingPackageEventSubscriptions(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	topic: string
+	payload: Record<string, unknown>
 }) {
 	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
 		userId: input.userId,
@@ -114,7 +143,12 @@ async function loadMatchingPackageEventSubscriptions(input: {
 				)
 			})
 			const subscription = listPackageSubscriptions(loaded.manifest).find(
-				(candidate) => candidate.topic === input.topic,
+				(candidate) =>
+					candidate.topic === input.topic &&
+					packageEventFiltersMatchPayload({
+						filters: candidate.filters,
+						payload: input.payload,
+					}),
 			)
 			if (!subscription) return null
 			return {
@@ -126,6 +160,128 @@ async function loadMatchingPackageEventSubscriptions(input: {
 	return settled.filter(
 		(entry): entry is LoadedPackageEventSubscription => entry !== null,
 	)
+}
+
+export type PackageEventDeliveryResult = {
+	topic: string
+	source: { type: 'package'; packageId: string; kodyId: string }
+	idempotencyKey: string
+	subscribers: Array<{
+		packageId: string
+		kodyId: string
+		handler: string
+		status: 'completed' | 'replayed' | 'failed'
+		error?: { code: string; message: string }
+	}>
+	delivered: number
+	failed: number
+}
+
+/**
+ * Queue-consumer side of package event dispatch: resolve the emitting
+ * user's matching subscriptions and invoke each handler with exactly-once
+ * idempotency. Throws when subscriber discovery fails or an invocation
+ * fails before user code ran (both retryable via Queue redelivery); user
+ * handler failures are terminal and reported in the returned summary (the
+ * idempotency ledger would replay a stored failure on retry anyway).
+ */
+export async function deliverPackageEventWithToolFactories(input: {
+	env: Env
+	baseUrl: string
+	message: PackageEventsDispatchQueueMessage
+	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<PackageEventDeliveryResult> {
+	const message = input.message
+	const subscriptions = await loadMatchingPackageEventSubscriptions({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: message.userId,
+		topic: message.topic,
+		payload: message.payload,
+	})
+	const envelope = {
+		event: message.topic,
+		source: {
+			type: 'package',
+			package_id: message.source.packageId,
+			kody_id: message.source.kodyId,
+		},
+		idempotency_key: message.idempotencyKey,
+		payload: message.payload,
+	}
+	const subscribers: PackageEventDeliveryResult['subscribers'] = []
+	const retryableInfrastructureErrors: Array<Error> = []
+	await runWithDynamicWorkerEvaluationBudget(async () => {
+		for (const { savedPackage, subscription } of subscriptions) {
+			const response = await invokePackageSubscriptionWithToolFactories({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				savedPackage,
+				topic: message.topic,
+				params: envelope,
+				idempotencyKey: await buildPackageEventSubscriptionIdempotencyKey({
+					sourcePackageId: message.source.packageId,
+					subscriberPackageId: savedPackage.id,
+					topic: message.topic,
+					idempotencyKey: message.idempotencyKey,
+				}),
+				source: `package:${message.source.kodyId}`,
+				actorTokenId: `${internalPackageEventSubscriptionTokenId}:${message.source.packageId}`,
+				actorDisplayName: `package:${message.source.kodyId}`,
+				runtimeInvokeDepth: message.invokeDepth,
+				toolFactories: input.toolFactories,
+				waitUntil: input.waitUntil,
+			})
+			const retryableCode =
+				readPreExecutionPackageInvocationInfrastructureCode(response)
+			if (retryableCode) {
+				retryableInfrastructureErrors.push(
+					new Error(
+						`Retryable package invocation infrastructure response: ${retryableCode}.`,
+					),
+				)
+			}
+			const replayed =
+				(response.body['idempotency'] as { replayed?: unknown } | undefined)
+					?.replayed === true
+			const status =
+				response.status >= 200 && response.status < 400
+					? replayed
+						? 'replayed'
+						: 'completed'
+					: 'failed'
+			subscribers.push({
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				handler: subscription.handler,
+				status,
+				...(status === 'failed'
+					? { error: readInvocationError(response) }
+					: {}),
+			})
+		}
+	})
+	if (retryableInfrastructureErrors.length > 0) {
+		throw new Error('Package event dispatch was incomplete.', {
+			cause: retryableInfrastructureErrors[0],
+		})
+	}
+	const failed = subscribers.filter(
+		(subscriber) => subscriber.status === 'failed',
+	).length
+	return {
+		topic: message.topic,
+		source: {
+			type: 'package',
+			packageId: message.source.packageId,
+			kodyId: message.source.kodyId,
+		},
+		idempotencyKey: message.idempotencyKey,
+		subscribers,
+		delivered: subscribers.length - failed,
+		failed,
+	}
 }
 
 export function createPackageEventToolsWithToolFactories(input: {
@@ -173,65 +329,74 @@ export function createPackageEventToolsWithToolFactories(input: {
 					`Package "${packageContext.kodyId}" does not declare emitted event "${request.topic}" in package.json#kody.emits.`,
 				)
 			}
-			const subscriptions = await loadMatchingPackageEventSubscriptions({
-				env: input.env,
-				baseUrl: input.baseUrl,
+			if (declaredEvent.payloadSchema) {
+				const errors = listJsonSchemaSubsetValueErrors(
+					declaredEvent.payloadSchema,
+					request.payload,
+				)
+				if (errors.length > 0) {
+					throw new Error(
+						`events.dispatch payload does not match the declared payloadSchema for "${request.topic}":\n${errors.join('\n')}`,
+					)
+				}
+			}
+			const payloadBytes = new TextEncoder().encode(
+				canonicalJsonStringify(request.payload),
+			).byteLength
+			if (payloadBytes > maxPackageEventPayloadBytes) {
+				throw new Error(
+					`events.dispatch payload is ${payloadBytes} bytes; the maximum is ${maxPackageEventPayloadBytes} bytes. Store large data in packageStorage() and emit a reference instead.`,
+				)
+			}
+			const message: PackageEventsDispatchQueueMessage = {
 				userId: user.userId,
 				topic: request.topic,
-			})
-			const envelope = {
-				event: request.topic,
-				source: {
-					type: 'package',
-					package_id: packageContext.packageId,
-					kody_id: packageContext.kodyId,
-				},
-				idempotency_key: request.idempotencyKey,
+				idempotencyKey: request.idempotencyKey,
 				payload: request.payload,
+				source: {
+					packageId: packageContext.packageId,
+					kodyId: packageContext.kodyId,
+				},
+				invokeDepth: packageInvokeDepth + 1,
 			}
-			const subscribers = []
-			for (const { savedPackage, subscription } of subscriptions) {
-				const response = await invokePackageSubscriptionWithToolFactories({
+			const queue = (input.env as Partial<Env>).PACKAGE_EVENTS_DISPATCH_QUEUE
+			let enqueued = false
+			if (queue) {
+				try {
+					await queue.send(message)
+					enqueued = true
+				} catch (error) {
+					console.error('package-events-dispatch-enqueue-failed', {
+						topic: message.topic,
+						sourcePackageId: message.source.packageId,
+						error,
+					})
+				}
+			}
+			if (!enqueued) {
+				// No Queue binding (local dev / preview) or enqueue failure:
+				// deliver inline with the same consumer code path so events
+				// still reach subscribers. Delivery failures are logged, never
+				// surfaced to the emitter — matching queued semantics.
+				const inlineDelivery = deliverPackageEventWithToolFactories({
 					env: input.env,
 					baseUrl: input.baseUrl,
-					savedPackage,
-					topic: request.topic,
-					params: envelope,
-					idempotencyKey: await buildPackageEventSubscriptionIdempotencyKey({
-						sourcePackageId: packageContext.packageId,
-						subscriberPackageId: savedPackage.id,
-						topic: request.topic,
-						idempotencyKey: request.idempotencyKey,
-					}),
-					source: `package:${packageContext.kodyId}`,
-					actorTokenId: `${internalPackageEventSubscriptionTokenId}:${packageContext.packageId}`,
-					actorDisplayName: `package:${packageContext.kodyId}`,
-					runtimeInvokeDepth: packageInvokeDepth + 1,
+					message,
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
+				}).catch((error) => {
+					console.error('package-events-inline-delivery-failed', {
+						topic: message.topic,
+						sourcePackageId: message.source.packageId,
+						error,
+					})
 				})
-				const replayed =
-					(response.body['idempotency'] as { replayed?: unknown } | undefined)
-						?.replayed === true
-				const status =
-					response.status >= 200 && response.status < 400
-						? replayed
-							? 'replayed'
-							: 'completed'
-						: 'failed'
-				subscribers.push({
-					packageId: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					handler: subscription.handler,
-					status,
-					...(status === 'failed'
-						? { error: readInvocationError(response) }
-						: {}),
-				})
+				if (input.waitUntil) {
+					input.waitUntil(inlineDelivery)
+				} else {
+					await inlineDelivery
+				}
 			}
-			const failed = subscribers.filter(
-				(subscriber) => subscriber.status === 'failed',
-			).length
 			return {
 				topic: request.topic,
 				source: {
@@ -240,9 +405,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 					kodyId: packageContext.kodyId,
 				},
 				idempotencyKey: request.idempotencyKey,
-				subscribers,
-				delivered: subscribers.length - failed,
-				failed,
+				status: enqueued ? 'enqueued' : 'delivered_inline',
 			}
 		},
 	}

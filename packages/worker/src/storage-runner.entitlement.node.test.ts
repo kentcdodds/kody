@@ -27,6 +27,8 @@ vi.mock('#worker/storage-buckets/service.ts', () => ({
 		mockModule.recordStorageBucketEstimate(...args),
 	maybeRefreshStorageBucketEstimate: (...args: Array<unknown>) =>
 		mockModule.maybeRefreshStorageBucketEstimate(...args),
+	repoSessionIdFromStorageBucketId: (storageId: string) =>
+		storageId.replace(/^repo-session:/, ''),
 	storageBucketKindFromStorageId: (storageId: string) => {
 		if (storageId.startsWith('job:')) return 'job'
 		if (storageId.startsWith('exec:')) return 'execute'
@@ -75,7 +77,7 @@ function createEstimateEnv(
 
 test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with backoff, fails closed, and waits for peers', async () => {
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
-		{ storageId: 'bucket-a', estimatedBytes: null },
+		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
 	])
 	const retryOnce = vi
 		.fn()
@@ -125,7 +127,11 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 
 	const chunkStorageIds = ['fast-fail', 'slow-ok'] as const
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue(
-		chunkStorageIds.map((storageId) => ({ storageId, estimatedBytes: null })),
+		chunkStorageIds.map((storageId) => ({
+			storageId,
+			kind: 'unknown',
+			estimatedBytes: null,
+		})),
 	)
 
 	let inFlight = 0
@@ -206,8 +212,12 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 		(_value, index) => `package:peer-${String(index)}`,
 	)
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
-		...peerStorageIds.map((storageId) => ({ storageId, estimatedBytes: 64 })),
-		{ storageId: 'package:target', estimatedBytes: 128 },
+		...peerStorageIds.map((storageId) => ({
+			storageId,
+			kind: 'package',
+			estimatedBytes: 64,
+		})),
+		{ storageId: 'package:target', kind: 'package', estimatedBytes: 128 },
 	])
 	const probedStorageIds: Array<string> = []
 	const getEstimatedBytes = async (storageId: string) => {
@@ -240,8 +250,8 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 		},
 	)
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
-		{ storageId: 'package:peer', estimatedBytes: 50 },
-		{ storageId: 'package:target', estimatedBytes: 200 },
+		{ storageId: 'package:peer', kind: 'package', estimatedBytes: 50 },
+		{ storageId: 'package:target', kind: 'package', estimatedBytes: 200 },
 	])
 	probedStorageIds.length = 0
 	const composeEstimate = async (storageId: string) => {

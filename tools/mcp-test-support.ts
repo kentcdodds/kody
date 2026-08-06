@@ -8,6 +8,10 @@ import { stripVTControlCharacters } from 'node:util'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
+import {
+	Client as ModernClient,
+	StreamableHTTPClientTransport as ModernStreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client'
 import getPort from 'get-port'
 import {
 	captureOutput,
@@ -509,6 +513,57 @@ export async function createMcpClient(
 		client,
 		async [Symbol.asyncDispose]() {
 			await closeMcpConnection(defaultConnection)
+		},
+	}
+}
+
+/**
+ * Modern-era MCP client (protocol revision 2026-07-28) from the SDK v2
+ * client package, pinned so the connection fails loudly unless the server
+ * serves the stateless lane. Reuses the same signup + OAuth plumbing as
+ * `createMcpClient`.
+ */
+export async function createModernMcpClient(
+	origin: string,
+	user: TestUser,
+	options: {
+		persistDir: string
+	},
+) {
+	const cookieHeader = await loginToApp(origin, user)
+	await markEmailVerifiedInMcpTestDatabase({
+		persistDir: options.persistDir,
+		email: user.email,
+	})
+	const clientRegistration = await registerOAuthClient(origin)
+	const code = await authorizeOAuthClient(
+		origin,
+		clientRegistration,
+		cookieHeader,
+	)
+	const accessToken = await exchangeAuthorizationCode(
+		origin,
+		clientRegistration,
+		code,
+	)
+	const client = new ModernClient(
+		{ name: 'kody-mcp-e2e-modern-client', version: '1.0.0' },
+		{ versionNegotiation: { mode: { pin: '2026-07-28' } } },
+	)
+	const transport = new ModernStreamableHTTPClientTransport(
+		new URL('/mcp', origin),
+		{
+			requestInit: {
+				headers: { Authorization: `Bearer ${accessToken}` },
+			},
+		},
+	)
+	await client.connect(transport)
+	return {
+		client,
+		async [Symbol.asyncDispose]() {
+			await client.close().catch(() => undefined)
+			await transport.close().catch(() => undefined)
 		},
 	}
 }

@@ -319,9 +319,8 @@ function createWorkflowsProxy(runtimeBridge) {
 }
 
 function createPackagesProxy(runtimeBridge) {
-	// check/invokeChecked were removed with the static-first model; they throw
-	// teaching errors locally so app code learns the replacement from the
-	// error text without a bridge round trip.
+	// Permanent teaching stubs reject unsupported helpers locally and name the
+	// replacement without a bridge round trip.
 	return {
 		check: () => {
 			throw new Error(

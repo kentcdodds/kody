@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	getAdminInsightsSnapshot: vi.fn(async () => ({
 		workflowStatusCounts: [],
 		activationMilestones: [],
+		jobRunCounts: { success: 0, error: 0 },
 	})),
 }))
 
@@ -201,6 +202,7 @@ test('getAdminInsightsSnapshot requires RUN_LOG and forwards the RPC', async () 
 
 	mocks.getAdminInsightsSnapshot.mockResolvedValueOnce({
 		workflowStatusCounts: [{ status: 'running', count: 2 }],
+		jobRunCounts: { success: 8, error: 3 },
 		activationMilestones: [
 			{
 				milestone: 'package_activated',
@@ -214,6 +216,7 @@ test('getAdminInsightsSnapshot requires RUN_LOG and forwards the RPC', async () 
 		getAdminInsightsSnapshot({ env, userId: 'user-1' }),
 	).resolves.toEqual({
 		workflowStatusCounts: [{ status: 'running', count: 2 }],
+		jobRunCounts: { success: 8, error: 3 },
 		activationMilestones: [
 			{
 				milestone: 'package_activated',

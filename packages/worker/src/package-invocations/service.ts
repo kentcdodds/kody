@@ -19,8 +19,10 @@ import {
 	createExecutePackageInvokeToolsWithToolFactories,
 	createPackageRuntimeInvokeToolsWithToolFactories,
 } from './runtime-tool-factories.ts'
+import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
 import {
 	createPackageEventToolsWithToolFactories,
+	deliverPackageEventWithToolFactories,
 	invokePackageSubscriptionWithToolFactories,
 } from './subscription-dispatch.ts'
 
@@ -110,6 +112,18 @@ export async function invokePackageExport(input: {
 	executorTimeoutMs?: number | null
 }): Promise<PackageInvocationResponse> {
 	return await invokePackageExportWithToolFactories({
+		...input,
+		toolFactories: packageRuntimeToolFactories,
+	})
+}
+
+export async function deliverPackageEvent(input: {
+	env: Env
+	baseUrl: string
+	message: PackageEventsDispatchQueueMessage
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	return await deliverPackageEventWithToolFactories({
 		...input,
 		toolFactories: packageRuntimeToolFactories,
 	})

@@ -63,6 +63,7 @@ import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { dispatchScheduledLanes } from '#worker/scheduled/scheduled-dispatch-queue.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
+import { handleDoPitrRequest } from '#worker/dr/do-pitr-maintenance.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 
@@ -290,6 +291,10 @@ const appHandler = withCors({
 			return handleDrRestoreRequest(request, env)
 		}
 
+		if (url.pathname === '/__maintenance/do-pitr') {
+			return handleDoPitrRequest(request, env)
+		}
+
 		if (url.pathname.startsWith('/__maintenance/')) {
 			return Response.json(
 				{ error: 'Unknown maintenance endpoint.' },
@@ -420,6 +425,17 @@ const oauthProvider = new OAuthProvider({
 	tokenEndpoint: oauthPaths.token,
 	clientRegistrationEndpoint: oauthPaths.register,
 	scopesSupported: oauthScopes,
+	// Client ID Metadata Documents (MCP 2025-11-25 SEP-991): clients may use
+	// an HTTPS URL as their client_id instead of registering via DCR. The
+	// 2026-07-28 revision deprecates RFC 7591 DCR in favor of CIMD, so both
+	// stay enabled: CIMD clients present their URL client_id with no
+	// registration step, and clients that do not use CIMD register via
+	// /oauth/register. A failed CIMD metadata fetch returns invalid_client;
+	// whether a client then registers via DCR is the client's own recovery.
+	// Requires the global_fetch_strictly_public compatibility flag (set in
+	// wrangler.jsonc) so metadata fetches are SSRF-safe; the provider only
+	// advertises CIMD support when both are on.
+	clientIdMetadataDocumentEnabled: true,
 	// Provider default onError logs every structured OAuth error via console.warn.
 	// Keep those responses on the wire without duplicating them into worker logs /
 	// test console guards; unexpected throws still reach our fetch catch + Sentry.

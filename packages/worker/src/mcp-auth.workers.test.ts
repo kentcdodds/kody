@@ -620,6 +620,145 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	)
 }, 15_000)
 
+test('mcp requests route by protocol era and record lane metrics', async () => {
+	const origin = 'https://example.com'
+	const validToken: TokenSummary = {
+		id: 'token',
+		grantId: 'grant',
+		userId: 'user',
+		createdAt: 0,
+		expiresAt: 999999,
+		audience: `${origin}${mcpResourcePath}`,
+		grant: {
+			clientId: 'client',
+			scope: oauthScopes,
+			props: { userId: 'user', email: 'user@example.com' },
+		},
+	}
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	const env = createEnv(
+		createHelpers({ unwrapToken: async () => validToken }),
+		{
+			MCP_PROTOCOL_EVENTS: {
+				writeDataPoint: (point: AnalyticsEngineDataPoint) => {
+					dataPoints.push(point)
+				},
+			} as AnalyticsEngineDataset,
+		},
+		{ emailVerifiedAt: new Date(0).toISOString() },
+	)
+	let legacyLaneCalls = 0
+	const fetchMcp = () => {
+		legacyLaneCalls += 1
+		return new Response('legacy-lane')
+	}
+
+	// 2025-era handshake stays on the sessionful Durable Object lane.
+	const legacyResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer token',
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/event-stream',
+			},
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: 1,
+				method: 'initialize',
+				params: {
+					protocolVersion: '2025-06-18',
+					capabilities: {},
+					clientInfo: { name: 'legacy-client', version: '1.0.0' },
+				},
+			}),
+		}),
+		env,
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(await legacyResponse.text()).toBe('legacy-lane')
+	expect(legacyLaneCalls).toBe(1)
+	expect(dataPoints).toHaveLength(1)
+	expect(dataPoints[0]).toEqual({
+		indexes: ['legacy'],
+		blobs: [
+			'legacy',
+			'initialize',
+			'2025-06-18',
+			'legacy-client',
+			'1.0.0',
+			'user',
+		],
+		doubles: [1],
+	})
+
+	// 2026-07-28 envelope requests are served by the stateless lane and
+	// never reach the Durable Object; the advertised tools carry the shared
+	// definitions including output schemas and icons.
+	const modernResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer token',
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/event-stream',
+				'MCP-Protocol-Version': '2026-07-28',
+				'Mcp-Method': 'tools/list',
+			},
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'tools/list',
+				params: {
+					_meta: {
+						'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+						'io.modelcontextprotocol/clientCapabilities': {},
+						'io.modelcontextprotocol/clientInfo': {
+							name: 'modern-client',
+							version: '2.0.0',
+						},
+					},
+				},
+			}),
+		}),
+		env,
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(legacyLaneCalls).toBe(1)
+	expect(modernResponse.status).toBe(200)
+	const modernBody = (await modernResponse.json()) as {
+		result: {
+			resultType?: string
+			tools: Array<{
+				name: string
+				outputSchema?: Record<string, unknown>
+				icons?: Array<{ src: string }>
+			}>
+		}
+	}
+	const toolNames = modernBody.result.tools.map((tool) => tool.name).sort()
+	expect(toolNames).toEqual(['execute', 'search'])
+	for (const tool of modernBody.result.tools) {
+		expect(tool.outputSchema).toMatchObject({ type: 'object' })
+		expect(tool.icons?.[0]?.src).toBe(`${origin}/android-chrome-192x192.png`)
+	}
+	expect(dataPoints).toHaveLength(2)
+	expect(dataPoints[1]).toEqual({
+		indexes: ['modern'],
+		blobs: [
+			'modern',
+			'tools/list',
+			'2026-07-28',
+			'modern-client',
+			'2.0.0',
+			'user',
+		],
+		doubles: [1],
+	})
+})
+
 test('mcp request rejects unverified and unidentifiable accounts fail-closed', async () => {
 	const request = new Request(`https://example.com${mcpResourcePath}`, {
 		headers: { Authorization: 'Bearer token' },

@@ -18,9 +18,17 @@ export type IncrementalR2IndexEntry = R2IndexEntry & {
 
 export function stagingChunkKey(
 	day: string,
-	kind: 'storage-index' | 'artifacts-index',
+	kind: 'mailbox-index' | 'run-log-index' | 'storage-index' | 'artifacts-index',
 ) {
 	return `${stagingPrefix(day)}exporter/chunks/${kind}/`
+}
+
+export function stagingOwnerDumpChunkKey(
+	day: string,
+	lane: 'mailbox' | 'run-log',
+	ownerId: string,
+) {
+	return `${stagingPrefix(day)}exporter/chunks/${lane}-dump/${encodeURIComponent(ownerId)}/`
 }
 
 export function stagingStorageDumpChunkKey(day: string, identity: string) {

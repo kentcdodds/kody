@@ -563,7 +563,7 @@ const exportStorageIdBaseSql = `SELECT id FROM (
 	UNION SELECT storage_id FROM archived_job_artifacts
 		WHERE user_id = ? AND storage_id IS NOT NULL
 	UNION SELECT storage_id FROM user_storage_buckets
-		WHERE user_id = ?
+		WHERE user_id = ? AND kind <> 'repo_session'
 )`
 
 function exportStorageIdBaseParams(userId: string) {

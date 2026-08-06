@@ -1,4 +1,5 @@
 import { repoSessionRowSchema, type RepoSessionRow } from './types.ts'
+import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 
 function mapRepoSessionRow(row: Record<string, unknown>): RepoSessionRow {
 	return repoSessionRowSchema.parse({
@@ -126,10 +127,32 @@ export async function deleteRepoSessionsBySourceForUser(
 		sourceId: string
 	},
 ): Promise<number> {
-	const result = await db
-		.prepare(`DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?`)
-		.bind(input.userId, input.sourceId)
-		.run()
+	const results = await db.batch([
+		db
+			.prepare(
+				`DELETE FROM user_storage_buckets
+				WHERE user_id = ?
+					AND kind = 'repo_session'
+					AND storage_id IN (
+						SELECT ? || id
+						FROM repo_sessions
+						WHERE user_id = ? AND source_id = ?
+					)`,
+			)
+			.bind(
+				input.userId,
+				repoSessionStorageBucketId(''),
+				input.userId,
+				input.sourceId,
+			),
+		db
+			.prepare(`DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?`)
+			.bind(input.userId, input.sourceId),
+	])
+	const result = results[1]
+	if (!result) {
+		throw new Error('Repo session deletion returned no D1 result.')
+	}
 	return result.meta.changes ?? 0
 }
 

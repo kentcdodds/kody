@@ -5,7 +5,7 @@ import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	parseStoredPlanName,
 	resolveEffectivePlan,
-	resolveEmailResourceLimit,
+	resolvePlanLimit,
 } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
@@ -457,7 +457,7 @@ export async function handleInboundEmail(
 								ownerId: userId,
 							}),
 					})
-					const receiveLimit = resolveEmailResourceLimit(
+					const receiveLimit = resolvePlanLimit(
 						account.plan,
 						'email_receives_per_day',
 					)
@@ -511,10 +511,7 @@ export async function handleInboundEmail(
 					const chargeResult = await authority.charge({
 						delivery: chargeCandidate,
 						plan: account.plan,
-						limit: resolveEmailResourceLimit(
-							account.plan,
-							'email_receives_per_day',
-						),
+						limit: resolvePlanLimit(account.plan, 'email_receives_per_day'),
 						now: quotaNow,
 					})
 					claimedDelivery = chargeResult.delivery

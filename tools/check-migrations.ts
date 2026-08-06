@@ -17,29 +17,14 @@ export const defaultMigrationLedgerPath = path.join(
 	'migration-ledger.json',
 )
 export const expectedMigrationBaselineSha256 =
-	'33a6aadea996e639d158229a1322f00164a157e2ef8aa43c9abcd5bf22c59c3a'
+	'aee006f0719e4d967b7485fb3199f8e2eb0660258b7720661b7fc48ce67fc199'
 
 /**
- * Exact grandfathered duplicate-prefix pairs. Applied D1 migrations cannot be
- * renamed, so these 14 filenames are permanently allowed to share prefixes.
- * Anything else on these prefixes (or a third file) is rejected.
+ * Exact grandfathered duplicate-prefix pairs. The 2026-08-04 migration
+ * squash (0001-squashed-init.sql) retired every historical duplicate, so
+ * this list is empty; new duplicates are always rejected.
  */
-export const allowedHistoricalDuplicateMigrationFilenames = [
-	'0009-secret-allowed-hosts.sql',
-	'0009-ui-artifact-parameters.sql',
-	'0010-secret-allowed-capabilities.sql',
-	'0010-value-buckets.sql',
-	'0018-jobs.sql',
-	'0018-mcp-memory-source-uris.sql',
-	'0023-entity-sources.sql',
-	'0023-secret-allowed-packages.sql',
-	'0037-drop-chat-threads.sql',
-	'0037-package-runtime-debug.sql',
-	'0053-mcp-server-settings.sql',
-	'0053-two-factor-passkeys.sql',
-	'0073-agent-package-conversation-uses.sql',
-	'0073-community-forks-forked-package-index.sql',
-] as const
+export const allowedHistoricalDuplicateMigrationFilenames = [] as const
 
 const allowedHistoricalDuplicateMigrationFilenameSet = new Set<string>(
 	allowedHistoricalDuplicateMigrationFilenames,
@@ -77,6 +62,16 @@ export type TrustedMigrationHistory = {
 	ref: string
 	files: Array<MigrationLedgerEntry>
 	ledgerEntries: Array<MigrationLedgerEntry>
+	/**
+	 * The trusted ref's own frozen baseline digest, or null when the ref has
+	 * no ledger. When this differs from the current
+	 * `expectedMigrationBaselineSha256`, the trusted ref sits on the other
+	 * side of a migration squash and its per-file history is incomparable;
+	 * cross-history checks are skipped for exactly that one transition while
+	 * the frozen baseline and ledger integrity checks keep protecting the
+	 * current epoch.
+	 */
+	ledgerBaselineSha256: string | null
 }
 
 type GitOutput = (
@@ -299,9 +294,17 @@ export function checkMigrationLedger(
 		}
 	}
 
+	const isCrossEpochTrustedHistory =
+		trustedHistory !== null &&
+		trustedHistory.ledgerBaselineSha256 !== null &&
+		trustedHistory.ledgerBaselineSha256 !== expectedMigrationBaselineSha256
+	const comparableTrustedHistory = isCrossEpochTrustedHistory
+		? null
+		: trustedHistory
 	const fallbackEntries = ledger.migrations.slice(0, ledger.baselineCount)
-	const trustedFiles = trustedHistory?.files ?? fallbackEntries
-	const trustedLedgerEntries = trustedHistory?.ledgerEntries ?? fallbackEntries
+	const trustedFiles = comparableTrustedHistory?.files ?? fallbackEntries
+	const trustedLedgerEntries =
+		comparableTrustedHistory?.ledgerEntries ?? fallbackEntries
 	const trustedMaximumPrefix = getMaxMigrationPrefix(
 		trustedFiles.map(({ filename }) => filename),
 	)
@@ -324,7 +327,7 @@ export function checkMigrationLedger(
 			currentEntry.sha256 !== trustedEntry.sha256
 		) {
 			errors.push(
-				`Migration ledger history from ${trustedHistory?.ref ?? 'the frozen bootstrap baseline'} changed at "${trustedEntry.filename}". Historical ledger entries cannot be edited, reordered, or deleted.`,
+				`Migration ledger history from ${comparableTrustedHistory?.ref ?? 'the frozen bootstrap baseline'} changed at "${trustedEntry.filename}". Historical ledger entries cannot be edited, reordered, or deleted.`,
 			)
 		}
 	}
@@ -360,11 +363,11 @@ export function checkMigrationLedger(
 		const currentFile = filesByName.get(trustedFile.filename)
 		if (!currentFile) {
 			errors.push(
-				`Migration "${trustedFile.filename}" exists in trusted history ${trustedHistory?.ref ?? 'the frozen bootstrap baseline'} but is missing from the checkout.`,
+				`Migration "${trustedFile.filename}" exists in trusted history ${comparableTrustedHistory?.ref ?? 'the frozen bootstrap baseline'} but is missing from the checkout.`,
 			)
 		} else if (currentFile.sha256 !== trustedFile.sha256) {
 			errors.push(
-				`Migration "${trustedFile.filename}" differs from trusted history ${trustedHistory?.ref ?? 'the frozen bootstrap baseline'}. Migration and ledger digests cannot be changed together.`,
+				`Migration "${trustedFile.filename}" differs from trusted history ${comparableTrustedHistory?.ref ?? 'the frozen bootstrap baseline'}. Migration and ledger digests cannot be changed together.`,
 			)
 		}
 	}
@@ -375,7 +378,7 @@ export function checkMigrationLedger(
 		const parsed = parseMigrationFilename(file.filename)
 		if (parsed && Number(parsed.prefix) <= trustedMaximumPrefix) {
 			errors.push(
-				`Migration "${file.filename}" is new relative to ${trustedHistory?.ref ?? 'the frozen bootstrap baseline'} but does not use a prefix above ${formatMigrationPrefix(trustedMaximumPrefix)}.`,
+				`Migration "${file.filename}" is new relative to ${comparableTrustedHistory?.ref ?? 'the frozen bootstrap baseline'} but does not use a prefix above ${formatMigrationPrefix(trustedMaximumPrefix)}.`,
 			)
 		}
 	}
@@ -483,6 +486,7 @@ export async function readTrustedMigrationHistory(
 		{ trim: false },
 	)
 	let ledgerEntries = files
+	let ledgerBaselineSha256: string | null = null
 	if (ledgerJson !== null) {
 		const parsed: unknown = JSON.parse(ledgerJson)
 		if (!isMigrationLedger(parsed)) {
@@ -491,8 +495,9 @@ export async function readTrustedMigrationHistory(
 			)
 		}
 		ledgerEntries = parsed.migrations
+		ledgerBaselineSha256 = parsed.baselineSha256
 	}
-	return { ref, files, ledgerEntries }
+	return { ref, files, ledgerEntries, ledgerBaselineSha256 }
 }
 
 export async function checkMigrationsDirectory(

@@ -22,12 +22,7 @@ type JobRowRecord = {
 	updated_at: string
 	last_run_at: string | null
 	last_run_status: JobRecord['lastRunStatus'] | null
-	last_run_error: string | null
-	last_duration_ms: number | null
 	next_run_at: string
-	run_count: number
-	success_count: number
-	error_count: number
 	claim_token: string | null
 	running_since: string | null
 	lease_expires_at: string | null
@@ -65,12 +60,7 @@ function serializeJob(job: JobRecord) {
 		updated_at: job.updatedAt,
 		last_run_at: job.lastRunAt ?? null,
 		last_run_status: job.lastRunStatus ?? null,
-		last_run_error: job.lastRunError ?? null,
-		last_duration_ms: job.lastDurationMs ?? null,
 		next_run_at: job.nextRunAt,
-		run_count: job.runCount,
-		success_count: job.successCount,
-		error_count: job.errorCount,
 	}
 }
 
@@ -120,16 +110,12 @@ function mapRow(row: Record<string, unknown>): JobRow {
 			row['last_run_status'] == null
 				? undefined
 				: (String(row['last_run_status']) as JobRecord['lastRunStatus']),
-		lastRunError:
-			row['last_run_error'] == null ? undefined : String(row['last_run_error']),
-		lastDurationMs:
-			row['last_duration_ms'] == null
-				? undefined
-				: Number(row['last_duration_ms']),
+		lastRunError: undefined,
+		lastDurationMs: undefined,
 		nextRunAt: String(row['next_run_at']),
-		runCount: Number(row['run_count']) || 0,
-		successCount: Number(row['success_count']) || 0,
-		errorCount: Number(row['error_count']) || 0,
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
 	}
 	return {
 		id: record.id,
@@ -154,12 +140,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		updated_at: record.updatedAt,
 		last_run_at: record.lastRunAt ?? null,
 		last_run_status: record.lastRunStatus ?? null,
-		last_run_error: record.lastRunError ?? null,
-		last_duration_ms: record.lastDurationMs ?? null,
 		next_run_at: record.nextRunAt,
-		run_count: record.runCount,
-		success_count: record.successCount,
-		error_count: record.errorCount,
 		claim_token: row['claim_token'] == null ? null : String(row['claim_token']),
 		running_since:
 			row['running_since'] == null ? null : String(row['running_since']),
@@ -205,9 +186,8 @@ export async function insertJobRow(input: {
 			`INSERT INTO jobs (
 				id, user_id, name, source_id, published_commit, repo_check_policy_json, storage_id, params_json, schedule_json, timezone, enabled,
 				kill_switch_enabled, preserved, expires_at, caller_context_json, created_at, updated_at,
-				last_run_at, last_run_status, last_run_error, last_duration_ms,
-				next_run_at, run_count, success_count, error_count
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				last_run_at, last_run_status, next_run_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			serialized.id,
@@ -229,12 +209,7 @@ export async function insertJobRow(input: {
 			serialized.updated_at,
 			serialized.last_run_at,
 			serialized.last_run_status,
-			serialized.last_run_error,
-			serialized.last_duration_ms,
 			serialized.next_run_at,
-			serialized.run_count,
-			serialized.success_count,
-			serialized.error_count,
 		)
 		.run()
 }
@@ -252,8 +227,6 @@ export async function updateJobRow(input: {
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?,
-				last_run_error = CASE WHEN last_run_at IS ? THEN last_run_error ELSE NULL END,
-				last_duration_ms = CASE WHEN last_run_at IS ? THEN last_duration_ms ELSE NULL END,
 				next_run_at = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
 				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
@@ -277,9 +250,6 @@ export async function updateJobRow(input: {
 			serialized.updated_at,
 			serialized.last_run_at,
 			serialized.last_run_status,
-			// NULL-safe: clear legacy fallback only when last_run_at advances.
-			serialized.last_run_at,
-			serialized.last_run_at,
 			serialized.next_run_at,
 			serialized.id,
 			input.userId,
@@ -584,8 +554,6 @@ export async function finalizeClaimedJobRow(input: {
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?,
-				last_run_error = CASE WHEN last_run_at IS ? THEN last_run_error ELSE NULL END,
-				last_duration_ms = CASE WHEN last_run_at IS ? THEN last_duration_ms ELSE NULL END,
 				next_run_at = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
 				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
@@ -609,9 +577,6 @@ export async function finalizeClaimedJobRow(input: {
 			serialized.updated_at,
 			serialized.last_run_at,
 			serialized.last_run_status,
-			// NULL-safe: clear legacy fallback only when last_run_at advances.
-			serialized.last_run_at,
-			serialized.last_run_at,
 			serialized.next_run_at,
 			input.scheduledFor,
 			serialized.id,

@@ -19,6 +19,10 @@ function createProductionEnv() {
 					binding: 'SCHEDULED_DISPATCH_QUEUE',
 					queue: 'kody-scheduled-dispatch',
 				},
+				{
+					binding: 'PACKAGE_EVENTS_DISPATCH_QUEUE',
+					queue: 'kody-package-events-dispatch',
+				},
 			],
 			consumers: [
 				{
@@ -57,6 +61,14 @@ function createProductionEnv() {
 					max_concurrency: 16,
 					dead_letter_queue: 'kody-scheduled-dispatch-dlq',
 				},
+				{
+					queue: 'kody-package-events-dispatch',
+					max_batch_size: 10,
+					max_batch_timeout: 5,
+					max_retries: 3,
+					max_concurrency: 16,
+					dead_letter_queue: 'kody-package-events-dispatch-dlq',
+				},
 			],
 		},
 	}
@@ -89,6 +101,9 @@ test('production queue config requires all consumers and consistent producers', 
 			'kody-community-activity-dispatch-dlq',
 		scheduledDispatchQueueName: 'kody-scheduled-dispatch',
 		scheduledDispatchDeadLetterQueueName: 'kody-scheduled-dispatch-dlq',
+		packageEventsDispatchQueueName: 'kody-package-events-dispatch',
+		packageEventsDispatchDeadLetterQueueName:
+			'kody-package-events-dispatch-dlq',
 	})
 
 	const missingFeedbackConsumer = createProductionEnv()
@@ -98,7 +113,7 @@ test('production queue config requires all consumers and consistent producers', 
 			productionEnv: missingFeedbackConsumer,
 			configPath: 'wrangler.jsonc',
 		}),
-	).toThrow('exactly 5 production Queue consumers')
+	).toThrow('exactly 6 production Queue consumers')
 
 	const mismatchedProducer = createProductionEnv()
 	mismatchedProducer.queues.producers[0] = {
@@ -139,6 +154,20 @@ test('production queue config requires all consumers and consistent producers', 
 			configPath: 'wrangler.jsonc',
 		}),
 	).toThrow('must bind "SCHEDULED_DISPATCH_QUEUE" to "kody-scheduled-dispatch"')
+
+	const missingPackageEventsProducer = createProductionEnv()
+	missingPackageEventsProducer.queues.producers =
+		missingPackageEventsProducer.queues.producers.filter(
+			(producer) => producer.binding !== 'PACKAGE_EVENTS_DISPATCH_QUEUE',
+		)
+	expect(() =>
+		parseProductionQueueResources({
+			productionEnv: missingPackageEventsProducer,
+			configPath: 'wrangler.jsonc',
+		}),
+	).toThrow(
+		'must bind "PACKAGE_EVENTS_DISPATCH_QUEUE" to "kody-package-events-dispatch"',
+	)
 
 	for (const invalidSettings of [
 		{ max_batch_size: 2 },

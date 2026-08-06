@@ -82,10 +82,15 @@ Quick notes for getting a local kody environment running.
 - `npm run validate` is the single authoritative local gate. It is read-only and
   executes `format:check`, `lint`, `typecheck`, unit tests, Playwright E2E, MCP
   E2E, `backup:build`, `primitives:check`, and `migrations:check` in parallel,
-  reporting every failure (sibling checks are not aborted on the first failure).
-  CI runs the same checks as parallel GitHub Actions jobs (🧹 Static, 🧪 Node,
-  ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate`
-  passes locally, CI will pass.
+  plus `deploy-guardrails:check` and `docs:check-temporal`, reporting every
+  failure (sibling checks are not aborted on the first failure). CI runs the
+  same checks as parallel GitHub Actions jobs (🧹 Static, 🧪 Node, ☁️ Workers,
+  🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes
+  locally, CI will pass.
+- `npm run deploy-guardrails:check` protects reviewed Durable Object migration
+  history and bindings in both Wrangler configs, requires exact allowlisting for
+  class deletion, and rejects destructive Cloudflare CLI operations in
+  automatically triggered GitHub Actions jobs.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.
@@ -132,18 +137,16 @@ Quick notes for getting a local kody environment running.
   commit is available, validation fails safely once migrations exist beyond the
   frozen bootstrap baseline. Migration SQL is hashed with canonical LF line
   endings, and `.gitattributes` enforces LF checkouts.
-- Seven historical duplicate prefixes are permanently accepted only for their
-  exact existing filename pairs — applied migrations cannot be renamed, and
-  Wrangler orders lexicographically. Do not rename these files or add a third
-  file to any of these prefixes:
-  - `0009-secret-allowed-hosts.sql` / `0009-ui-artifact-parameters.sql`
-  - `0010-secret-allowed-capabilities.sql` / `0010-value-buckets.sql`
-  - `0018-jobs.sql` / `0018-mcp-memory-source-uris.sql`
-  - `0023-entity-sources.sql` / `0023-secret-allowed-packages.sql`
-  - `0037-drop-chat-threads.sql` / `0037-package-runtime-debug.sql`
-  - `0053-mcp-server-settings.sql` / `0053-two-factor-passkeys.sql`
-  - `0073-agent-package-conversation-uses.sql` /
-    `0073-community-forks-forked-package-index.sql`
+- Duplicate prefixes are always rejected. The 2026-08-04 migration-history
+  squash collapsed the pre-launch history into `0001-squashed-init.sql` (full
+  schema plus migration-seeded platform rows); the pre-squash files remain in
+  Git history only. `tools/ci/reset-migration-bookkeeping.ts` is the
+  deterministic guard that rewrote `d1_migrations` bookkeeping in existing
+  databases — it verifies the applied set matches the frozen pre-squash list
+  exactly before touching anything, and no-ops on fresh or already-squashed
+  databases. Production and preview settled post-squash on 2026-08-05, so the
+  guard now runs only for local applies (pre-squash developer state dirs);
+  delete it once those have died out.
 
 ## Documentation maintenance
 

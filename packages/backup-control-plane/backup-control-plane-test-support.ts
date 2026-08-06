@@ -6,6 +6,11 @@ import {
 	canonicalBackupManifestPayload,
 	type BackupManifestPayload,
 } from '@kody-internal/shared/backup-manifest.ts'
+import {
+	backupSqlStatsKey,
+	backupSqlStatsSchemaVersion,
+	type BackupSqlStats,
+} from '@kody-internal/shared/backup-sql-stats.ts'
 import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { type DurableExportStep } from './durable-export.ts'
 import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
@@ -81,6 +86,7 @@ export class MemoryBucket {
 	readonly puts: Array<{ key: string; options: R2PutOptions }> = []
 	private readonly objects = new Map<string, Uint8Array>()
 	private readonly reportedSizes = new Map<string, number>()
+	private readonly failedGets = new Set<string>()
 	private nextPutRace: { key: string; bytes: Uint8Array } | undefined
 	private lockPolicyEnabled = false
 
@@ -126,7 +132,12 @@ export class MemoryBucket {
 		return this.objects.has(key) ? this.metadata(key) : null
 	}
 
+	async delete(key: string): Promise<void> {
+		this.objects.delete(key)
+	}
+
 	async get(key: string): Promise<R2ObjectBody | null> {
+		if (this.failedGets.has(key)) throw new Error('simulated R2 get failure')
 		const bytes = this.objects.get(key)
 		if (!bytes) return null
 		const metadata = this.metadata(key)
@@ -149,6 +160,10 @@ export class MemoryBucket {
 
 	setReportedSize(key: string, size: number): void {
 		this.reportedSizes.set(key, size)
+	}
+
+	failGetFor(key: string): void {
+		this.failedGets.add(key)
 	}
 
 	raceOnNextPut(key: string, value: string): void {
@@ -178,6 +193,36 @@ export const DATABASE_ID = '22222222-2222-4222-8222-222222222222'
 export const DRILL_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333'
 export const BASELINE_SHA256 = 'b'.repeat(64)
 const manifestSigningKeys = generateKeyPairSync('ed25519')
+
+export function badSqlStatsFixture(
+	day: string,
+	objectKey: string,
+): BackupSqlStats {
+	return {
+		schemaVersion: backupSqlStatsSchemaVersion,
+		day,
+		objectKey,
+		maxStatementBytes: 1_495_663,
+		oversizedStatementCount: 1,
+		importStatementLimitBytes: 100_000,
+	}
+}
+
+export async function putSqlStatsFixture(
+	bucket: MemoryBucket,
+	day: string,
+	objectKey: string,
+	options: { oversized?: boolean } = {},
+): Promise<void> {
+	const stats = options.oversized
+		? badSqlStatsFixture(day, objectKey)
+		: {
+				...badSqlStatsFixture(day, objectKey),
+				maxStatementBytes: 50_000,
+				oversizedStatementCount: 0,
+			}
+	await bucket.put(backupSqlStatsKey(objectKey), JSON.stringify(stats))
+}
 
 export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 	return {
@@ -307,11 +352,11 @@ export class RetryAfterCommitStep implements BackupRuntimeStep {
 
 export class CachedUploadStep implements BackupRuntimeStep {
 	private readonly cache = new Map<string, unknown>()
-	private readonly afterUpload: () => void
+	private readonly afterUpload: () => void | Promise<void>
 	private readonly afterFinalization?: () => Promise<void>
 
 	constructor(
-		afterUpload: () => void,
+		afterUpload: () => void | Promise<void>,
 		afterFinalization?: () => Promise<void>,
 	) {
 		this.afterUpload = afterUpload
@@ -336,7 +381,7 @@ export class CachedUploadStep implements BackupRuntimeStep {
 				: callback!
 		const value = await execute()
 		this.cache.set(name, value)
-		if (name === 'stream-export-to-immutable-r2') this.afterUpload()
+		if (name === 'stream-export-to-immutable-r2') await this.afterUpload()
 		if (
 			name === 'verify-stored-object-and-write-immutable-manifest' &&
 			this.afterFinalization
@@ -344,6 +389,43 @@ export class CachedUploadStep implements BackupRuntimeStep {
 			await this.afterFinalization()
 		}
 		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
+export class PreStatsUploadStep implements BackupRuntimeStep {
+	private readonly cache = new Map<string, unknown>()
+
+	async do<T>(
+		name: string,
+		config: unknown,
+		callback: () => Promise<T>,
+	): Promise<T>
+	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		if (this.cache.has(name)) return this.cache.get(name) as T
+		const execute =
+			typeof configOrCallback === 'function'
+				? (configOrCallback as () => Promise<T>)
+				: callback!
+		const value = await execute()
+		const persisted =
+			name === 'stream-export-to-immutable-r2' &&
+			value !== null &&
+			typeof value === 'object'
+				? Object.fromEntries(
+						Object.entries(value).filter(
+							([key]) => key !== 'sqlStatementStats',
+						),
+					)
+				: value
+		this.cache.set(name, persisted)
+		return persisted as T
 	}
 
 	async sleep(): Promise<void> {}

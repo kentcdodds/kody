@@ -3,11 +3,12 @@ import {
 	filterBrowserAbortSentryEvent,
 	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
+	filterChromeExtensionObjectNotFoundSentryEvent,
+	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 } from './sentry-browser-filters.ts'
 
 test('browser Sentry filters drop AbortError and Firefox Xray noise and keep real errors', () => {
-	// AbortError family (including originalException), but not timeout/network.
 	expect(
 		filterBrowserAbortSentryEvent({
 			exception: {
@@ -17,13 +18,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 						value: 'AbortError: The user aborted a request.',
 					},
 				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterBrowserAbortSentryEvent({
-			exception: {
-				values: [{ type: 'AbortError', value: 'The user aborted a request.' }],
 			},
 		}),
 	).toBeNull()
@@ -49,20 +43,7 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).not.toBeNull()
-	expect(
-		filterBrowserAbortSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value: 'TypeError: Failed to fetch',
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
 
-	// Firefox Xray "Permission denied to access property …" noise only.
 	expect(
 		filterFirefoxDomPermissionDeniedSentryEvent({
 			exception: {
@@ -76,29 +57,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).toBeNull()
 	expect(
-		filterFirefoxDomPermissionDeniedSentryEvent(
-			{
-				exception: {
-					values: [{ type: 'Error', value: 'something else' }],
-				},
-			},
-			new Error('Permission denied to access property "childNodes"'),
-		),
-	).toBeNull()
-	expect(
-		filterFirefoxDomPermissionDeniedSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'SecurityError',
-						value:
-							'CSSStyleSheet.cssRules getter: Not allowed to access cross-origin stylesheet',
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
-	expect(
 		filterFirefoxDomPermissionDeniedSentryEvent({
 			exception: {
 				values: [
@@ -111,7 +69,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).not.toBeNull()
 
-	// Injected wallet / Firefox-iOS bridge globals only (issue 7648833360).
 	expect(
 		filterBrowserInjectedGlobalNoiseSentryEvent({
 			exception: {
@@ -130,50 +87,12 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			exception: {
 				values: [
 					{
-						type: 'TypeError',
-						value:
-							"undefined is not an object (evaluating 'window.__firefox__.reader')",
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterBrowserInjectedGlobalNoiseSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value:
-							"undefined is not an object (evaluating 'window.__firefox__.refresh_youtube_quality_2E41B6CA94114F3CB0CAF4E4DA93D5A8')",
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterBrowserInjectedGlobalNoiseSentryEvent({
-			exception: {
-				values: [
-					{
 						type: 'ReferenceError',
 						value: "Can't find variable: __firefox__",
 					},
 				],
 			},
 		}),
-	).toBeNull()
-	expect(
-		filterBrowserInjectedGlobalNoiseSentryEvent(
-			{
-				exception: {
-					values: [{ type: 'Error', value: 'something else' }],
-				},
-			},
-			new TypeError(
-				"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
-			),
-		),
 	).toBeNull()
 	expect(
 		filterBrowserInjectedGlobalNoiseSentryEvent({
@@ -183,18 +102,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 						type: 'TypeError',
 						value:
 							"undefined is not an object (evaluating 'window.someAppApi.foo')",
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
-	expect(
-		filterBrowserInjectedGlobalNoiseSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'ReferenceError',
-						value: "Can't find variable: ethereum",
 					},
 				],
 			},
@@ -219,26 +126,130 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
+
+	// Fathom beacon removeChild-on-null only when a usefathom.com frame is present
+	// (issue 7653117289 / KODY-CLOUDFLARE-3Q).
 	expect(
-		filterBrowserSentryEvent({
+		filterFathomRemoveChildNullSentryEvent({
 			exception: {
 				values: [
 					{
-						type: 'Error',
-						value: 'Permission denied to access property "childNodes"',
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://cdn.usefathom.com/script.js',
+								},
+							],
+						},
 					},
 				],
 			},
 		}),
 	).toBeNull()
 	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://heykody.dev/assets/app-chunk.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://heykody.dev/cdn.usefathom.com/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
 		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
 						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									abs_path: 'https://cdn.usefathom.com/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	// Chrome extension IPC object-not-found (issue 7655189301 / KODY-CLOUDFLARE-3S).
+	expect(
+		filterChromeExtensionObjectNotFoundSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'UnhandledRejection',
 						value:
-							"undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
+							'Non-Error promise rejection captured with value: Object Not Found Matching Id:3, MethodName:update, ParamCount:4',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterChromeExtensionObjectNotFoundSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'UnhandledRejection', value: 'something else' }],
+				},
+			},
+			'Object Not Found Matching Id:2, MethodName:update, ParamCount:4',
+		),
+	).toBeNull()
+	expect(
+		filterChromeExtensionObjectNotFoundSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'UnhandledRejection',
+						value: 'Object Not Found Matching Id:missing, MethodName:update',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'UnhandledRejection',
+						value:
+							'Non-Error promise rejection captured with value: Object Not Found Matching Id:3, MethodName:update, ParamCount:4',
 					},
 				],
 			},

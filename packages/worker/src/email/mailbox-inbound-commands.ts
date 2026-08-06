@@ -306,6 +306,13 @@ export class MailboxInboundCommands {
 		input: Parameters<MailboxRpc['getInboundDueWorkHint']>[0],
 	) {
 		this.store.assertOwner(input.ownerId)
-		return { dueAt: getMailboxInboundDueAt(this.ctx.storage.sql) }
+		let now: Date | undefined
+		if (input.now != null) {
+			const parsed = Date.parse(input.now)
+			if (Number.isFinite(parsed)) now = new Date(parsed)
+		}
+		return {
+			dueAt: getMailboxInboundDueAt(this.ctx.storage.sql, now),
+		}
 	}
 }

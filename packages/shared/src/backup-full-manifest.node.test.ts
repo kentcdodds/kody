@@ -3,6 +3,7 @@ import { generateKeyPairSync, sign as signBytes } from 'node:crypto'
 import { expect, test } from 'vitest'
 
 import {
+	backupFullManifestLegacySchemaVersion,
 	backupFullManifestSchemaVersion,
 	backupFullManifestSignatureAlgorithm,
 	canonicalBackupFullManifestPayload,
@@ -22,6 +23,16 @@ function samplePayload(): BackupFullManifestPayload {
 			objectKey: 'daily/full/2026-07-22/storage-index.json',
 			bytes: 12,
 			sha256: 'b'.repeat(64),
+		},
+		mailboxIndex: {
+			objectKey: 'daily/full/2026-07-22/mailbox-index.json',
+			bytes: 10,
+			sha256: 'e'.repeat(64),
+		},
+		runLogIndex: {
+			objectKey: 'daily/full/2026-07-22/run-log-index.json',
+			bytes: 11,
+			sha256: 'f'.repeat(64),
 		},
 		r2Indexes: {
 			'email-blobs': {
@@ -91,6 +102,22 @@ test('parseBackupFullManifest accepts a signed envelope and rejects shape drift'
 			},
 		}),
 	).toThrow(/invalid signed values/)
+
+	const {
+		mailboxIndex: _mailboxIndex,
+		runLogIndex: _runLogIndex,
+		...legacy
+	} = manifest.payload
+	expect(
+		parseBackupFullManifest({
+			...manifest,
+			schemaVersion: backupFullManifestLegacySchemaVersion,
+			payload: {
+				...legacy,
+				schemaVersion: backupFullManifestLegacySchemaVersion,
+			},
+		}).payload.schemaVersion,
+	).toBe(backupFullManifestLegacySchemaVersion)
 })
 
 test('full-manifest parse/sign/verify round-trip with Ed25519', async () => {

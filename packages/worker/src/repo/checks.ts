@@ -960,18 +960,16 @@ export function collectAmbientStorageImportFiles(
  * imported into another context. This only runs where repo checks run — new
  * session check runs, session/external publishes, and community fork installs
  * — so already-published artifacts are never re-validated retroactively.
- * Final guard from the ambient-storage removal: #817 shipped the advisory,
- * then this check began failing new publishes. The package runtime no longer
- * binds ambient storage, so this keeps package code portable across every
+ * This permanent publish guard keeps package code portable across every
  * package surface and points authors at the canonical package bucket.
  */
 function buildLintCheck(sourceFiles: Record<string, string>): {
 	ok: boolean
 	message: string
 } {
-	// Narrow phase: the legacy dynamic invocation surface was removed, so new
-	// publishes fail with the replacement named (the runtime also throws
-	// teaching errors for these APIs).
+	// Permanent authoring guard: unsupported invocation forms fail every
+	// publish with the replacement named. Runtime teaching errors provide the
+	// same guidance when these forms reach execution.
 	const removedUsageFailure = formatRemovedInvocationUsageFailure(
 		collectDeprecatedInvocationUsage(sourceFiles),
 	)

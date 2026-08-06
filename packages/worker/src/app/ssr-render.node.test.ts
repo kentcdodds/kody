@@ -561,7 +561,10 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	// Limits table sources plans.ts, never hardcoded copies
 	expect(html).toContain('Every limit is finite')
 	expect(html).toContain('Packages &amp; jobs')
+	// All three self-serve tiers get a column; Max is invite-only and stays out.
+	expect(html).toContain('Standard')
 	expect(html).toContain(String(planLimits.free.maxSavedPackages))
+	expect(html).toContain(String(planLimits.standard.maxSavedPackages))
 	expect(html).toContain(String(planLimits.pro.maxSavedPackages))
 	expect(html).toContain(formatLimitBytes(planLimits.free.maxEmailMessageBytes))
 	expect(html).toContain(formatLimitBytes(planLimits.pro.maxStorageBytes))

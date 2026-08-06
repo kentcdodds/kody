@@ -8,6 +8,7 @@ import {
 	assertBackupDay,
 	backupBlobKey,
 	backupR2BucketLabels,
+	backupStagingSchemaVersion,
 	parseStagingSummary,
 	sealedFullManifestKey,
 	sealedFullPrefix,
@@ -15,6 +16,8 @@ import {
 	stagingSummaryKey,
 	type StagingFileSummary,
 	type StagingSummary,
+	type MailboxIndex,
+	type RunLogIndex,
 	type StorageIndex,
 } from '@kody-internal/shared/backup-staging.ts'
 
@@ -35,6 +38,7 @@ import {
 	readManifest,
 } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
+import { readSqlRestorability } from './sql-statement-stats.ts'
 
 const sha256Pattern = /^[0-9a-f]{64}$/
 
@@ -56,7 +60,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseStorageIndex(value: unknown, day: string): StorageIndex {
 	if (
 		!isRecord(value) ||
-		value.schemaVersion !== 1 ||
+		value.schemaVersion !== backupStagingSchemaVersion ||
 		value.day !== day ||
 		!Array.isArray(value.entries)
 	) {
@@ -82,6 +86,44 @@ function parseStorageIndex(value: unknown, day: string): StorageIndex {
 		}
 	}
 	return value as StorageIndex
+}
+
+function parseOwnerIndex(
+	value: unknown,
+	day: string,
+	kind: 'mailbox' | 'run-log',
+): MailboxIndex | RunLogIndex {
+	if (
+		!isRecord(value) ||
+		value.schemaVersion !== backupStagingSchemaVersion ||
+		value.day !== day ||
+		!Array.isArray(value.entries)
+	) {
+		throw new BackupError(
+			`${kind}-index-corrupt`,
+			`${kind} index JSON is corrupt`,
+		)
+	}
+	for (const entry of value.entries) {
+		if (
+			!isRecord(entry) ||
+			typeof entry.ownerId !== 'string' ||
+			entry.ownerId.length === 0 ||
+			typeof entry.objectKey !== 'string' ||
+			!Number.isSafeInteger(entry.entryCount) ||
+			Number(entry.entryCount) < 0 ||
+			!Number.isSafeInteger(entry.bytes) ||
+			Number(entry.bytes) < 0 ||
+			typeof entry.sha256 !== 'string' ||
+			!sha256Pattern.test(entry.sha256)
+		) {
+			throw new BackupError(
+				`${kind}-index-corrupt`,
+				`${kind} index entry is corrupt`,
+			)
+		}
+	}
+	return value as MailboxIndex | RunLogIndex
 }
 
 function sealedKeyForStagingObject(day: string, stagingKey: string): string {
@@ -136,6 +178,41 @@ async function verifyStagingFile(
 		)
 	}
 	return bytes
+}
+
+async function sealOwnerDumps(input: {
+	bucket: R2Bucket
+	day: string
+	summary: StagingFileSummary
+	kind: 'mailbox' | 'run-log'
+}): Promise<BackupFullFileRef> {
+	const indexBytes = await verifyStagingFile(input.bucket, input.summary)
+	const index = parseOwnerIndex(
+		JSON.parse(new TextDecoder().decode(indexBytes)),
+		input.day,
+		input.kind,
+	)
+	for (const entry of index.entries) {
+		const dumpBytes = await verifyStagingFile(input.bucket, {
+			objectKey: entry.objectKey,
+			bytes: entry.bytes,
+			sha256: entry.sha256,
+		})
+		await putImmutableBytes(
+			input.bucket,
+			sealedKeyForStagingObject(input.day, entry.objectKey),
+			dumpBytes,
+			'application/x-ndjson',
+		)
+	}
+	const sealedIndex = toSealedRef(input.day, input.summary)
+	await putImmutableBytes(
+		input.bucket,
+		sealedIndex.objectKey,
+		indexBytes,
+		'application/json',
+	)
+	return sealedIndex
 }
 
 async function putImmutableBytes(
@@ -342,6 +419,16 @@ export type SealDayResult =
 	| { kind: 'sealed'; day: string; manifestKey: string; alreadySealed: boolean }
 	| { kind: 'incomplete'; day: string; reason: string }
 
+function incompleteForSqlStats(day: string, reason: string): SealDayResult {
+	safeLog({
+		event: 'full-backup-seal-skipped',
+		status: 'failure',
+		day,
+		errorCode: reason,
+	})
+	return { kind: 'incomplete', day, reason }
+}
+
 export async function sealFullBackupDay(
 	env: BackupEnvironment,
 	day: string,
@@ -350,6 +437,48 @@ export async function sealFullBackupDay(
 	assertBackupDay(day)
 	const manifestKey = sealedFullManifestKey(day)
 	const existing = await readFullManifest(env.BACKUP_BUCKET, manifestKey)
+
+	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
+	const d1Manifest = await readManifest(
+		env.BACKUP_BUCKET,
+		d1Payload.manifestKey,
+	)
+	if (d1Manifest === null) {
+		return { kind: 'incomplete', day, reason: 'd1-manifest-missing' }
+	}
+	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
+		throw new BackupError(
+			'd1-manifest-signature-invalid',
+			`D1 manifest signature invalid for ${day}`,
+		)
+	}
+	const restorability = await readSqlRestorability(
+		env.BACKUP_BUCKET,
+		day,
+		d1Manifest.payload.sql.objectKey,
+	)
+	switch (restorability.kind) {
+		case 'restorable':
+			break
+		case 'legacy-unknown':
+			safeLog({
+				event: 'backup-stats-legacy-missing',
+				status: 'stale-success',
+				day,
+				objectKey: d1Manifest.payload.sql.objectKey,
+			})
+			break
+		case 'unrestorable':
+			return incompleteForSqlStats(day, 'backup-unrestorable-statements')
+		case 'missing':
+			return incompleteForSqlStats(day, 'backup-sql-stats-missing')
+		case 'corrupt':
+			return incompleteForSqlStats(day, 'backup-sql-stats-corrupt')
+		default: {
+			const exhaustive: never = restorability
+			throw exhaustive
+		}
+	}
 	if (existing !== null) {
 		if (!(await verifyBackupFullManifestSignature(env, existing))) {
 			throw new BackupError(
@@ -370,21 +499,6 @@ export async function sealFullBackupDay(
 			manifestKey,
 		})
 		return { kind: 'sealed', day, manifestKey, alreadySealed: true }
-	}
-
-	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
-	const d1Manifest = await readManifest(
-		env.BACKUP_BUCKET,
-		d1Payload.manifestKey,
-	)
-	if (d1Manifest === null) {
-		return { kind: 'incomplete', day, reason: 'd1-manifest-missing' }
-	}
-	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
-		throw new BackupError(
-			'd1-manifest-signature-invalid',
-			`D1 manifest signature invalid for ${day}`,
-		)
 	}
 	const d1ManifestObject = await env.BACKUP_BUCKET.get(d1Payload.manifestKey)
 	if (d1ManifestObject === null) {
@@ -434,6 +548,19 @@ export async function sealFullBackupDay(
 		storageIndexBytes,
 		'application/json',
 	)
+
+	const sealedMailboxIndex = await sealOwnerDumps({
+		bucket: env.BACKUP_BUCKET,
+		day,
+		summary: summary.mailboxIndex,
+		kind: 'mailbox',
+	})
+	const sealedRunLogIndex = await sealOwnerDumps({
+		bucket: env.BACKUP_BUCKET,
+		day,
+		summary: summary.runLogIndex,
+		kind: 'run-log',
+	})
 
 	const sealedR2Indexes: BackupFullManifest['payload']['r2Indexes'] = {}
 	const r2IndexBodies: Array<string> = []
@@ -502,6 +629,8 @@ export async function sealFullBackupDay(
 		day,
 		d1ManifestKey: d1Payload.manifestKey,
 		d1ManifestSha256,
+		mailboxIndex: sealedMailboxIndex,
+		runLogIndex: sealedRunLogIndex,
 		storageIndex: toSealedRef(day, summary.storageIndex),
 		r2Indexes: sealedR2Indexes,
 		artifactsIndex: sealedArtifacts,

@@ -107,6 +107,12 @@ import {
 	maxRepoSourceFileBytes,
 	measureRepoSourceFileBytes,
 } from './large-file-policy.ts'
+import {
+	deleteStorageBucketInventory,
+	maybeRefreshStorageBucketEstimate,
+	registerStorageBucketAndWait,
+	repoSessionStorageBucketId,
+} from '#worker/storage-buckets/service.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -263,6 +269,31 @@ class RepoSessionBase extends DurableObject<Env> {
 		string,
 		CachedRepoSessionState
 	>()
+
+	async getEstimatedBytes(): Promise<{ estimatedBytes: number }> {
+		return { estimatedBytes: this.ctx.storage.sql.databaseSize }
+	}
+
+	private refreshStoredEstimate(sessionId: string, userId: string): void {
+		maybeRefreshStorageBucketEstimate({
+			env: this.env,
+			userId,
+			storageId: repoSessionStorageBucketId(sessionId),
+			readEstimatedBytes: async () => this.ctx.storage.sql.databaseSize,
+			waitUntil: (promise) => this.ctx.waitUntil(promise),
+		})
+	}
+
+	private async deleteStorageInventory(
+		sessionId: string,
+		userId: string,
+	): Promise<void> {
+		await deleteStorageBucketInventory({
+			db: this.env.APP_DB,
+			userId,
+			storageId: repoSessionStorageBucketId(sessionId),
+		})
+	}
 
 	private async readCachedSessionState(
 		sessionId: string,
@@ -1191,6 +1222,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
 		await this.writeCachedSessionState({ sessionRow, source })
+		await registerStorageBucketAndWait({
+			env: this.env,
+			userId: sessionRow.user_id,
+			storageId: repoSessionStorageBucketId(sessionRow.id),
+			kind: 'repo_session',
+		})
+		this.refreshStoredEstimate(sessionRow.id, sessionRow.user_id)
 		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
@@ -1337,6 +1375,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!sessionRow) {
 			await this.clearCachedSessionState(input.sessionId)
 			await this.resetWorkspace()
+			await this.deleteStorageInventory(input.sessionId, input.userId)
 			return {
 				ok: true,
 				sessionId: input.sessionId,
@@ -1357,6 +1396,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace()
+		await this.deleteStorageInventory(input.sessionId, sessionRow.user_id)
 		return {
 			ok: true,
 			sessionId: input.sessionId,
@@ -1382,6 +1422,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		this.inMemorySessionState.delete(input.sessionId)
 		this.initializedSessionId = null
 		await this.ctx.storage.deleteAll()
+		await this.deleteStorageInventory(input.sessionId, input.userId)
 		return {
 			ok: true as const,
 			sessionId: input.sessionId,
@@ -1398,6 +1439,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 		)
 		if (!sessionRow) {
+			await this.deleteStorageInventory(input.sessionId, input.userId)
 			return {
 				ok: true as const,
 				sessionId: input.sessionId,
@@ -1432,6 +1474,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		await this.deleteStorageInventory(input.sessionId, sessionRow.user_id)
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace().catch(() => {
 			// Session row is already gone; workspace wipe is best-effort.
@@ -1546,6 +1589,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
+		this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
 		return { ok: true, path: input.path }
 	}
 
@@ -1718,6 +1762,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				userId: sessionRow.user_id,
 				lastCheckpointAt: nowIso(),
 			})
+			this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
 		}
 		return result
 	}
@@ -1771,6 +1816,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointAt: nowIso(),
 			lastCheckpointCommit: commit.oid,
 		})
+		this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
 		return {
 			oid: commit.oid,
 			message: input.message,
@@ -1833,6 +1879,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
+		this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
 		return {
 			commit,
 			restored: plannedRestores.map((restore) => restore.path),
@@ -1883,6 +1930,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				userId: sessionRow.user_id,
 				lastCheckpointAt: nowIso(),
 			})
+			this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
 		}
 		return result
 	}
@@ -1938,6 +1986,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				message: entry.message,
 			})),
 		})
+		this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
 		return {
 			...publicResult,
 			runId,
@@ -2286,6 +2335,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointCommit: headCommit,
 			lastCheckpointAt: nowIso(),
 		})
+		this.refreshStoredEstimate(sessionRow.id, sessionRow.user_id)
 		return {
 			ok: true,
 			sessionId: sessionRow.id,
@@ -2371,6 +2421,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointAt: nowIso(),
 			expiresAt: buildPublishedSessionExpiresAt(),
 		})
+		this.refreshStoredEstimate(input.sessionRow.id, input.sessionRow.user_id)
 		return {
 			status: 'ok',
 			sessionId: input.sessionRow.id,
@@ -2511,6 +2562,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointAt: nowIso(),
 			expiresAt: buildPublishedSessionExpiresAt(),
 		})
+		this.refreshStoredEstimate(sessionRow.id, sessionRow.user_id)
 		return {
 			status: 'ok',
 			sessionId: sessionRow.id,

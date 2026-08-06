@@ -1,7 +1,8 @@
 import { type BackupR2BucketLabel } from './backup-staging.ts'
 import { canonicalJsonStringify } from './canonical-json.ts'
 
-export const backupFullManifestSchemaVersion = 1 as const
+export const backupFullManifestSchemaVersion = 2 as const
+export const backupFullManifestLegacySchemaVersion = 1 as const
 export const backupFullManifestSignatureAlgorithm = 'Ed25519' as const
 
 export type BackupFullFileRef = {
@@ -10,8 +11,7 @@ export type BackupFullFileRef = {
 	sha256: string
 }
 
-export type BackupFullManifestPayload = {
-	schemaVersion: typeof backupFullManifestSchemaVersion
+type BackupFullManifestPayloadBase = {
 	day: string
 	d1ManifestKey: string
 	d1ManifestSha256: string
@@ -26,15 +26,31 @@ export type BackupFullManifestPayload = {
 	}
 }
 
-export type BackupFullManifest = {
+export type BackupFullManifestPayloadV1 = BackupFullManifestPayloadBase & {
+	schemaVersion: typeof backupFullManifestLegacySchemaVersion
+}
+
+export type BackupFullManifestPayload = BackupFullManifestPayloadBase & {
 	schemaVersion: typeof backupFullManifestSchemaVersion
-	payload: BackupFullManifestPayload
+	mailboxIndex: BackupFullFileRef
+	runLogIndex: BackupFullFileRef
+}
+
+type BackupFullManifestEnvelope<
+	TPayload extends BackupFullManifestPayloadBase & { schemaVersion: 1 | 2 },
+> = {
+	schemaVersion: TPayload['schemaVersion']
+	payload: TPayload
 	signature: {
 		algorithm: typeof backupFullManifestSignatureAlgorithm
 		keyId: string
 		value: string
 	}
 }
+
+export type BackupFullManifest =
+	| BackupFullManifestEnvelope<BackupFullManifestPayloadV1>
+	| BackupFullManifestEnvelope<BackupFullManifestPayload>
 
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/
 const sha256Pattern = /^[0-9a-f]{64}$/
@@ -84,24 +100,43 @@ function isR2Indexes(
 }
 
 export function parseBackupFullManifest(value: unknown): BackupFullManifest {
+	const schemaVersion = isRecord(value) ? value.schemaVersion : null
+	const payloadKeys =
+		schemaVersion === backupFullManifestLegacySchemaVersion
+			? [
+					'artifactsIndex',
+					'buildCommit',
+					'd1ManifestKey',
+					'd1ManifestSha256',
+					'day',
+					'r2Indexes',
+					'schemaVersion',
+					'sealedAt',
+					'signing',
+					'storageIndex',
+				]
+			: [
+					'artifactsIndex',
+					'buildCommit',
+					'd1ManifestKey',
+					'd1ManifestSha256',
+					'day',
+					'mailboxIndex',
+					'r2Indexes',
+					'runLogIndex',
+					'schemaVersion',
+					'sealedAt',
+					'signing',
+					'storageIndex',
+				]
 	if (
 		!isRecord(value) ||
 		!hasExactKeys(value, ['payload', 'schemaVersion', 'signature']) ||
-		value.schemaVersion !== backupFullManifestSchemaVersion ||
+		(value.schemaVersion !== backupFullManifestLegacySchemaVersion &&
+			value.schemaVersion !== backupFullManifestSchemaVersion) ||
 		!isRecord(value.payload) ||
-		!hasExactKeys(value.payload, [
-			'artifactsIndex',
-			'buildCommit',
-			'd1ManifestKey',
-			'd1ManifestSha256',
-			'day',
-			'r2Indexes',
-			'schemaVersion',
-			'sealedAt',
-			'signing',
-			'storageIndex',
-		]) ||
-		value.payload.schemaVersion !== backupFullManifestSchemaVersion ||
+		!hasExactKeys(value.payload, payloadKeys) ||
+		value.payload.schemaVersion !== value.schemaVersion ||
 		!isRecord(value.payload.signing) ||
 		!hasExactKeys(value.payload.signing, ['algorithm', 'keyId']) ||
 		!isRecord(value.signature) ||
@@ -118,6 +153,9 @@ export function parseBackupFullManifest(value: unknown): BackupFullManifest {
 		!isFileRef(value.payload.storageIndex) ||
 		!isR2Indexes(value.payload.r2Indexes) ||
 		!isFileRef(value.payload.artifactsIndex) ||
+		(value.schemaVersion === backupFullManifestSchemaVersion &&
+			(!isFileRef(value.payload.mailboxIndex) ||
+				!isFileRef(value.payload.runLogIndex))) ||
 		typeof value.payload.sealedAt !== 'string' ||
 		!Number.isFinite(Date.parse(value.payload.sealedAt)) ||
 		!isNonemptyString(value.payload.buildCommit) ||
@@ -135,7 +173,7 @@ export function parseBackupFullManifest(value: unknown): BackupFullManifest {
 }
 
 export function canonicalBackupFullManifestPayload(
-	payload: BackupFullManifestPayload,
+	payload: BackupFullManifestPayload | BackupFullManifestPayloadV1,
 ): string {
 	return canonicalJsonStringify(payload)
 }

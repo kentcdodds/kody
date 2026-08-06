@@ -470,7 +470,17 @@ routed from `packages/worker/src/index.ts`.
 
 - Authorization endpoint: `/oauth/authorize`
 - Token endpoint: `/oauth/token` (via provider)
-- Client registration: `/oauth/register` (via provider)
+- Client registration: `/oauth/register` (via provider), plus Client ID Metadata
+  Documents (`clientIdMetadataDocumentEnabled` in
+  `packages/worker/src/index.ts`): a client may present an HTTPS URL as its
+  `client_id` with no registration step. MCP `2026-07-28` deprecates RFC 7591
+  dynamic registration in favor of CIMD, so both stay enabled: clients that do
+  not use CIMD register via `/oauth/register`, and a failed CIMD metadata fetch
+  returns `invalid_client` (any DCR retry after that is the client's own
+  recovery, not a server-side fallback). CIMD metadata fetches rely on the
+  `global_fetch_strictly_public` compatibility flag in
+  `packages/worker/wrangler.jsonc` for SSRF safety; the provider only advertises
+  `client_id_metadata_document_supported` when both are set.
 - Supported scopes: `profile`, `email`
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so

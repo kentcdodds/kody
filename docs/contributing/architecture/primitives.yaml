@@ -63,6 +63,19 @@ primitives:
     docs:
       - docs/contributing/architecture/remote-connectors.md
 
+  - id: status-page
+    group: surfaces
+    name: Public status page
+    summary:
+      Independently deployed status worker (status.heykody.dev) probing public
+      endpoints every minute, storing history in its own Durable Object, and
+      emailing operator alerts under a capped policy.
+    code:
+      - packages/status/
+    docs:
+      - docs/contributing/setup-manifest.md
+      - docs/contributing/decisions/0004-status-page-separate-worker.md
+
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
@@ -232,7 +245,6 @@ primitives:
     code:
       - packages/worker/src/community/social-repo.ts
       - packages/worker/src/community/social-service.ts
-      - packages/worker/migrations/0068-community-social.sql
     docs:
       - docs/use/community-profiles.md
       - docs/contributing/community-packages.md
@@ -532,8 +544,8 @@ primitives:
     summary:
       Per-user UserMeter DO SQLite — authoritative for daily entitlement
       counters, storage bytes, inbound delivery idempotency, package-service
-      running counts, and account-deletion write leases (all callers supply env;
-      migration 0141 dropped the retired D1 lease table).
+      running counts, and account-deletion write leases; D1 keeps the deleting
+      point gate and lease-repair audit log.
     code:
       - packages/worker/src/entitlements/user-meter-do.ts
       - packages/worker/src/entitlements/user-meter-client.ts
@@ -600,6 +612,19 @@ primitives:
     docs:
       - docs/contributing/setup-manifest.md
       - docs/contributing/architecture/authorization.md
+      - docs/guides/package-subscriptions.md
+
+  - id: package-events-dispatch-queue
+    group: storage
+    name: Package events dispatch queue
+    summary:
+      Durable same-user delivery of package-emitted events (kody.emits /
+      events.dispatch) to subscribing packages.
+    code:
+      - packages/worker/src/package-events/
+      - packages/worker/src/package-invocations/subscription-dispatch.ts
+    docs:
+      - docs/contributing/setup-manifest.md
       - docs/guides/package-subscriptions.md
 
   - id: community-assets-r2

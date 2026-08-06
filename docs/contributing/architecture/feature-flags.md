@@ -69,10 +69,8 @@ The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised
 end-to-end (`e2e/admin-feature-flags.spec.ts`).
 
-The retired `mailbox-read-cutover` migration flag is intentionally absent from
-the registry. USER email reads are unconditionally owner-Mailbox reads; there is
-no D1 fallback or parity-soak gate. Migration 0135 removed the physical shared
-D1 graph.
+`mailbox-read-cutover` is a tombstoned key: it is absent from both the registry
+and persisted flag state.
 
 ## Success metrics
 

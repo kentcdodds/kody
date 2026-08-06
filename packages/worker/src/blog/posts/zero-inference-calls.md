@@ -69,10 +69,10 @@ to keep alive. A frontier model loop does not.
 
 That's why the pricing looks the way it does: a free
 $0 tier with tight limits,
-and a Pro tier at $5/month with higher limits. Kody
-doesn't need to charge like a model company because it doesn't spend like one.
-When your costs are Workers primitives instead of GPU time, you can price like a
-utility instead of an oracle.
+Standard at $5/month, and Pro at $20/month for heavier
+daily automation. Kody doesn't need to charge like a model company because it
+doesn't spend like one. When your costs are Workers primitives instead of GPU
+time, you can price like a utility instead of an oracle.
 
 ## The free upgrades nobody had to build
 

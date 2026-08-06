@@ -36,9 +36,9 @@ export type AdminUserMeterParityReport = {
 	generatedAt: string
 	stableUserId: string
 	/**
-	 * Daily counters are UserMeter-only. The D1
-	 * `entitlement_daily_counters` mirror was dropped by migration 0126, so
-	 * this section reports meter counts without any D1 comparison.
+	 * Daily counters are UserMeter-only. There is no D1
+	 * `entitlement_daily_counters` mirror, so this section reports meter counts
+	 * without any D1 comparison.
 	 */
 	daily: {
 		day: string

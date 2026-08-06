@@ -53,12 +53,15 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 		rows: [
 			{ label: 'Running package services', key: 'maxPackageServices' },
 			{
+				// A count since `maxPersistentPackageServices` replaced the old
+				// boolean allowance. Zero reads as words rather than a bare "0",
+				// so the free column says what it means.
 				label: 'Persistent package services',
-				key: 'packageServicePersistentAllowed',
+				key: 'maxPersistentPackageServices',
 				format: (value) =>
-					value === 1
-						? { text: 'Included' }
-						: { text: 'Not included', muted: true },
+					value === 0
+						? { text: 'Not included', muted: true }
+						: { text: count.format(value) },
 			},
 			{ label: 'Concurrent workflows', key: 'maxConcurrentWorkflows' },
 			{ label: 'Execute calls per day', key: 'maxExecuteCallsPerDay' },
@@ -101,8 +104,9 @@ export function PricingRoute(_handle: Handle) {
 					Pay when it <em>earns it</em>.
 				</h1>
 				<p data-rise style={{ '--rise': '1' }}>
-					Pro is $5 per month when you need more room to run. No metered
-					surprises — every limit is finite and published below.
+					Standard is $5 a month when you need more room to run; Pro is $20 for
+					heavy daily automation. No metered surprises — every limit is finite
+					and published below.
 				</p>
 			</header>
 
@@ -124,19 +128,43 @@ export function PricingRoute(_handle: Handle) {
 					</a>
 				</section>
 
+				{/*
+				 * Standard carries the accent. The prototype accented the one
+				 * paid plan at $5, and Standard is that plan — Pro is the newer
+				 * tier above it. Accenting both would make the border stop
+				 * meaning anything.
+				 */}
 				<section
-					aria-labelledby="plan-pro"
-					mix={[css(proPlanPanelCss), reveal(90)]}
+					aria-labelledby="plan-standard"
+					mix={[css(featuredPlanPanelCss), reveal(90)]}
 				>
-					<h2 id="plan-pro" mix={css(planTitleCss)}>
-						Pro
+					<h2 id="plan-standard" mix={css(planTitleCss)}>
+						Standard
 					</h2>
-					<p mix={css(proPlanPriceCss)}>
+					<p mix={css(featuredPlanPriceCss)}>
 						$5<small mix={css(planPriceUnitCss)}>/month</small>
 					</p>
 					<p mix={css(planCopyCss)}>
 						Higher daily volume, more running services, and persistent package
 						services.
+					</p>
+					<a href="/account/billing" mix={css(planGhostButtonCss)}>
+						Upgrade in Account settings
+					</a>
+				</section>
+
+				<section
+					aria-labelledby="plan-pro"
+					mix={[css(planPanelCss), reveal(180)]}
+				>
+					<h2 id="plan-pro" mix={css(planTitleCss)}>
+						Pro
+					</h2>
+					<p mix={css(planPriceCss)}>
+						$20<small mix={css(planPriceUnitCss)}>/month</small>
+					</p>
+					<p mix={css(planCopyCss)}>
+						For heavy daily automation — roughly double Standard on every axis.
 					</p>
 					<a href="/account/billing" mix={css(planGhostButtonCss)}>
 						Upgrade in Account settings
@@ -164,20 +192,25 @@ export function PricingRoute(_handle: Handle) {
 									<span data-limits-price>$0</span>
 								</th>
 								<th scope="col">
-									<span data-limits-plan>Pro</span>
+									<span data-limits-plan>Standard</span>
 									<span data-limits-price>$5/mo</span>
+								</th>
+								<th scope="col">
+									<span data-limits-plan>Pro</span>
+									<span data-limits-price>$20/mo</span>
 								</th>
 							</tr>
 						</thead>
 						<tbody>
 							{limitGroups.flatMap((group) => [
 								<tr key={group.title} data-group>
-									<th colspan={3}>{group.title}</th>
+									<th colspan={4}>{group.title}</th>
 								</tr>,
 								...group.rows.map((row) => (
 									<tr key={row.key}>
 										<th scope="row">{row.label}</th>
 										{renderLimitCell(row, planLimits.free)}
+										{renderLimitCell(row, planLimits.standard)}
 										{renderLimitCell(row, planLimits.pro)}
 									</tr>
 								)),
@@ -190,8 +223,7 @@ export function PricingRoute(_handle: Handle) {
 			<section aria-label="Invite and admin plans" mix={css(planNoteCss)}>
 				<p>
 					Max is a finite, invite-only plan assigned by a Kody administrator; it
-					is not available for self-serve purchase. Some partners may also
-					receive an admin-assigned Partner plan.
+					is not available for self-serve purchase.
 				</p>
 			</section>
 		</section>
@@ -236,13 +268,19 @@ const pricingCss = {
 
 /* ---------- plan panels ---------- */
 
+/*
+ * Three tiers on the prototype's two-up measure would squeeze each card under
+ * the ~17rem its price and copy need, so the measure widens with the extra
+ * column and drops straight to one column rather than leaving an orphan.
+ */
 const plansCss = {
-	width: 'min(100%, 44rem)',
+	width: 'min(100%, 62rem)',
 	margin: 'clamp(2.5rem, 6vw, 4rem) auto 0',
 	display: 'grid',
-	gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 	gap: '1.2rem',
-	'@media (max-width: 680px)': {
+	'@media (max-width: 860px)': {
+		width: 'min(100%, 44rem)',
 		gridTemplateColumns: '1fr',
 	},
 }
@@ -263,8 +301,11 @@ const planPanelCss = {
 	},
 }
 
-/* Pro carries the accent; the border is the only loud thing on the page. */
-const proPlanPanelCss = {
+/*
+ * The featured plan carries the accent; the border is the only loud thing on
+ * the page.
+ */
+const featuredPlanPanelCss = {
 	...planPanelCss,
 	borderColor: `oklch(from ${colors.primary} l c h / 0.6)`,
 }
@@ -285,7 +326,7 @@ const planPriceCss = {
 	letterSpacing: '-0.025em',
 }
 
-const proPlanPriceCss = {
+const featuredPlanPriceCss = {
 	...planPriceCss,
 	color: colors.primaryText,
 }
@@ -366,8 +407,8 @@ const limitsTableCss = {
 		padding: '0.7rem 0.9rem',
 		borderBottom: `1px solid ${colors.border}`,
 	},
-	/* Labels and values sit flush with the hairline edges; the two plan
-	   columns are twins so Free/Pro compare down a steady axis. */
+	/* Labels and values sit flush with the hairline edges; the three plan
+	   columns are triplets so the tiers compare down a steady axis. */
 	'& th:first-child, & td:first-child': {
 		paddingLeft: '0.2rem',
 	},
@@ -391,7 +432,12 @@ const limitsTableCss = {
 		display: 'block',
 		color: colors.text,
 	},
-	'& thead th:last-child [data-limits-plan]': {
+	/*
+	 * Third column is Standard, the featured plan — the accent has to follow
+	 * the panel above it rather than sit on whichever column happens to be
+	 * last, which is now Pro.
+	 */
+	'& thead th:nth-child(3) [data-limits-plan]': {
 		color: colors.primaryText,
 	},
 	'& [data-limits-price]': {

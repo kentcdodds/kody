@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { platformFeedbackTestSchemaSql } from './test-schema.ts'
 import {
 	getPlatformFeedbackByIdForAdmin,
 	updatePlatformFeedbackStatusForAdmin,
@@ -15,21 +15,7 @@ import {
 
 function createPlatformFeedbackDb() {
 	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(
-		readFileSync(
-			new URL('../../migrations/0062-platform-feedback.sql', import.meta.url),
-			'utf8',
-		),
-	)
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0063-platform-feedback-submitter-snapshot.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
+	sqlite.exec(platformFeedbackTestSchemaSql)
 	const queries: Array<string> = []
 	return {
 		sqlite,
@@ -363,8 +349,10 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 		).toISOString()
 		const insertFeedback = sqlite.prepare(
 			`INSERT INTO platform_feedback (
-				id, submitter_user_id, category, summary, details, created_at, updated_at
-			) VALUES (?, 'rate-limited-user', 'friction', ?, ?, ?, ?)`,
+				id, submitter_user_id, submitter_username, submitter_email,
+				category, summary, details, created_at, updated_at
+			) VALUES (?, 'rate-limited-user', 'rate-limited-user',
+				'rate-limited-user@example.com', 'friction', ?, ?, ?, ?)`,
 		)
 		for (let index = 0; index < 10; index += 1) {
 			insertFeedback.run(
@@ -396,9 +384,10 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 	const queueLimited = createPlatformFeedbackDb()
 	const insertQueued = queueLimited.sqlite.prepare(
 		`INSERT INTO platform_feedback (
-			id, submitter_user_id, category, summary, details, status,
-			created_at, updated_at
-		) VALUES (?, 'queue-limited-user', 'friction', ?, ?, ?, ?, ?)`,
+			id, submitter_user_id, submitter_username, submitter_email,
+			category, summary, details, status, created_at, updated_at
+		) VALUES (?, 'queue-limited-user', 'queue-limited-user',
+			'queue-limited-user@example.com', 'friction', ?, ?, ?, ?, ?)`,
 	)
 	const createdAt = new Date(Date.now() - 48 * 60 * 60 * 1_000).toISOString()
 	for (let index = 0; index < 99; index += 1) {

@@ -14,6 +14,7 @@ import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
 import {
 	DATABASE_ID,
 	MemoryBucket,
+	badSqlStatsFixture,
 	environment,
 	identityApi,
 	identityEnvelope,
@@ -22,6 +23,8 @@ import {
 } from './backup-control-plane-test-support.ts'
 
 test('freshness accepts matching metadata and flags size/ETag drift or missing objects', async () => {
+	const consoleLog = vi.spyOn(console, 'log')
+	consoleLog.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const key = objectKeyForBookmark(
@@ -42,6 +45,12 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 	assert.equal(
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		true,
+	)
+	const initialEvents = consoleLog.mock.calls.map(([record]) =>
+		JSON.parse(String(record)),
+	) as Array<{ event: string }>
+	assert.ok(
+		initialEvents.some(({ event }) => event === 'backup-stats-legacy-missing'),
 	)
 	bucket.setReportedSize(key, MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES)
 	assert.equal(
@@ -120,6 +129,53 @@ test('freshness reports malformed manifest schema as stale', async () => {
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		false,
 	)
+})
+
+test('freshness reports oversized SQL with a distinct unrestorable event', async () => {
+	const consoleLog = vi.spyOn(console, 'log')
+	consoleLog.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const day = '2026-07-31'
+	const key = objectKeyForBookmark(
+		`daily/d1/${DATABASE_ID}/${day}`,
+		'bookmark-1',
+	)
+	const stored = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		key,
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	const template = manifest(stored)
+	await putImmutableManifest(
+		bucket as unknown as R2Bucket,
+		`daily/d1/${DATABASE_ID}/${day}/manifest.json`,
+		signedManifest({
+			...template.payload,
+			export: {
+				...template.payload.export,
+				scheduledAt: `${day}T02:15:00.000Z`,
+				startedAt: `${day}T02:15:01.000Z`,
+				completedAt: `${day}T02:16:00.000Z`,
+			},
+			sql: { ...template.payload.sql, objectKey: key },
+		}),
+	)
+	await bucket.put(
+		`${key}.stats.json`,
+		JSON.stringify(badSqlStatsFixture(day, key)),
+	)
+
+	assert.equal(
+		await checkFreshness(env, new Date(`${day}T03:45:00Z`), identityApi()),
+		false,
+	)
+	const record = JSON.parse(
+		String(consoleLog.mock.calls.at(-1)?.[0]),
+	) as Record<string, unknown>
+	assert.equal(record.event, 'freshness-unrestorable')
+	assert.equal(record.oversizedStatementCount, 1)
 })
 
 test('freshness requires a valid Ed25519 signature from the configured key', async () => {

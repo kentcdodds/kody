@@ -612,7 +612,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		})
 		expect(successResponse.status).toBe(200)
 		expect(fetchStub).toHaveBeenCalledTimes(1)
-		// waitUntil: usage metering only (daily D1 mirror retired)
+		// waitUntil: usage metering only
 		expect(waitUntil).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
@@ -737,7 +737,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 				waitUntil,
 			}),
 		).rejects.toThrow('network failed with waitUntil')
-		// waitUntil: usage metering only (daily D1 mirror retired)
+		// waitUntil: usage metering only
 		expect(waitUntil).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({

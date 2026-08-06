@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
+import { platformFeedbackTestSchemaSql } from '#worker/platform-feedback/test-schema.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { loadAdminPlatformFeedbackData } from './admin-platform-feedback-data.ts'
 
@@ -19,21 +19,7 @@ function createAdminPlatformFeedbackFixture() {
 			ON users(stable_user_id)
 			WHERE stable_user_id IS NOT NULL;
 	`)
-	sqlite.exec(
-		readFileSync(
-			new URL('../../migrations/0062-platform-feedback.sql', import.meta.url),
-			'utf8',
-		),
-	)
-	sqlite.exec(
-		readFileSync(
-			new URL(
-				'../../migrations/0063-platform-feedback-submitter-snapshot.sql',
-				import.meta.url,
-			),
-			'utf8',
-		),
-	)
+	sqlite.exec(platformFeedbackTestSchemaSql)
 	sqlite
 		.prepare(
 			`INSERT INTO users (

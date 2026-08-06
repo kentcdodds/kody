@@ -256,9 +256,8 @@ const staticCallMeterRuntimeBridgeProviderName =
 	'__kodyStaticCallMeterRuntimeBridge'
 
 function createPackagesHelperPrelude() {
-	// `check` and `invokeChecked` were removed with the static-first model.
-	// They throw teaching errors naming the exact replacement because agents
-	// learn the current contract from error text.
+	// Permanent teaching stubs keep unsupported helpers fail-closed and name
+	// the exact replacement for package authors.
 	return `
 const packages = {
   check: () => {

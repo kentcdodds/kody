@@ -63,7 +63,7 @@ const mockModule = vi.hoisted(() => ({
 	isAccountEmailVerified: vi.fn(async () => true),
 	getUserPlan: vi.fn(async () => 'free' as const),
 	readEntitlementResourceUsage: vi.fn(async () => 2),
-	resolveEmailResourceLimit: vi.fn((_plan: string, resource: string) => {
+	resolvePlanLimit: vi.fn((_plan: string, resource: string) => {
 		switch (resource) {
 			case 'stored_email_messages':
 				return 100
@@ -185,8 +185,8 @@ vi.mock('#worker/entitlements/plans.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementPlans>()
 	return {
 		...actual,
-		resolveEmailResourceLimit: (...args: Array<unknown>) =>
-			mockModule.resolveEmailResourceLimit(...(args as [string, string])),
+		resolvePlanLimit: (...args: Array<unknown>) =>
+			mockModule.resolvePlanLimit(...(args as [string, string])),
 	}
 })
 

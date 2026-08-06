@@ -5,7 +5,16 @@ import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	readPreExecutionPackageInvocationInfrastructureCode,
+	readRetryablePackageInvocationInfrastructureCode,
+} from './infrastructure-codes.ts'
 import { invokePackageSubscription } from './service.ts'
+
+export {
+	readPreExecutionPackageInvocationInfrastructureCode,
+	readRetryablePackageInvocationInfrastructureCode,
+}
 
 type LoadedAdminPackageSubscription = {
 	savedPackage: SavedPackageRecord
@@ -13,55 +22,6 @@ type LoadedAdminPackageSubscription = {
 }
 
 const adminPackageSubscriptionConcurrency = 5
-const retryablePackageInvocationInfrastructureCodes = new Set([
-	'idempotency_lookup_failed',
-	'idempotency_persistence_failed',
-	'idempotency_conflict_unresolved',
-	'invocation_in_progress',
-	'invocation_failed',
-	'idempotency_response_unavailable',
-])
-const preExecutionPackageInvocationInfrastructureCodes = new Set([
-	'idempotency_lookup_failed',
-	'idempotency_persistence_failed',
-	'idempotency_conflict_unresolved',
-	'invocation_in_progress',
-	'artifact_preparation_failed',
-])
-
-function readPackageInvocationInfrastructureCode(input: {
-	response: {
-		status: number
-		body: Record<string, unknown>
-	}
-	codes: ReadonlySet<string>
-}) {
-	if (input.response.status >= 200 && input.response.status < 300) return null
-	const error = input.response.body['error']
-	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
-	const code = (error as Record<string, unknown>)['code']
-	return typeof code === 'string' && input.codes.has(code) ? code : null
-}
-
-export function readRetryablePackageInvocationInfrastructureCode(response: {
-	status: number
-	body: Record<string, unknown>
-}) {
-	return readPackageInvocationInfrastructureCode({
-		response,
-		codes: retryablePackageInvocationInfrastructureCodes,
-	})
-}
-
-export function readPreExecutionPackageInvocationInfrastructureCode(response: {
-	status: number
-	body: Record<string, unknown>
-}) {
-	return readPackageInvocationInfrastructureCode({
-		response,
-		codes: preExecutionPackageInvocationInfrastructureCodes,
-	})
-}
 
 async function mapSettledInChunks<T, TResult>(
 	items: ReadonlyArray<T>,

@@ -63,6 +63,20 @@ This project uses the following resources:
     reloads the metadata-only activity projection, acknowledges invalid or
     deleted activity, and retries transient lookup, subscription-discovery, or
     package-invocation infrastructure failures.
+- Cloudflare Queue for durable package-emitted event dispatch
+  - Producer binding: `PACKAGE_EVENTS_DISPATCH_QUEUE`
+  - Queue: `kody-package-events-dispatch`
+  - Dead-letter queue: `kody-package-events-dispatch-dlq`
+  - The production consumer uses the same batch, retry, and DLQ settings as
+    platform-feedback dispatch. Production CI ensures both resources.
+  - Queue messages carry the full event (emitting user, source package, topic,
+    idempotency key, payload, and invocation depth). The consumer resolves the
+    emitting user's subscribed packages at delivery time, invokes handlers with
+    exactly-once idempotency, acknowledges terminal handler failures, and
+    retries pre-execution package-invocation infrastructure failures.
+  - Preview and local runtimes without this production-only queue binding
+    deliver inline through the same consumer code path so package events remain
+    testable.
 - Cloudflare Queue for isolated scheduled maintenance
   - Producer binding: `SCHEDULED_DISPATCH_QUEUE`
   - Queue: `kody-scheduled-dispatch`
@@ -235,6 +249,25 @@ verifying public key, trusted restore baseline id/digest, Access
 Offline CLI restore still trusts only the checked-in manifest public-key,
 production-identity, and restore-baseline registries.
 
+### Status page worker
+
+The public status page (`packages/status/`, served at `status.heykody.dev` via a
+wrangler custom domain on the production zone) is an independently deployed
+Worker with a cron trigger and one `StatusStore` Durable Object (SQLite). It
+probes public endpoints on the main worker and `kodyapps.dev` every minute and
+never touches `APP_DB` (see decision record
+[0004](./decisions/0004-status-page-separate-worker.md)).
+
+Code deploys are automated by the production deploy workflow
+(`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push
+changes `packages/status/`, and on every manual `workflow_dispatch` of that
+workflow. The job deploys with the production-account `CLOUDFLARE_API_TOKEN`,
+sets `BUILD_COMMIT` to the deploy SHA, and syncs the same token as the Worker
+secret `CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
+through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
+`ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
+Without that secret, alert sends are skipped and logged.
+
 ## Optional Cloudflare offerings
 
 The default footprint stays intentionally small. If you want to add additional
@@ -326,9 +359,12 @@ automatically:
   for `POST /webhooks/stripe`. When unset, the webhook endpoint returns 503.)
 - `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
   Override for tests/mocks.)
-- `STRIPE_PRO_PRICE_ID` (optional Worker var; Stripe Price id mapped to the
-  `pro` plan and used for authenticated Checkout Sessions. Production value is
-  set in `packages/worker/wrangler.jsonc`.)
+- `STRIPE_STANDARD_PRICE_ID` (optional public Wrangler var committed in
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $5/month
+  `standard` plan and used for authenticated Checkout Sessions.)
+- `STRIPE_PRO_PRICE_ID` (optional public Wrangler var, added to the production
+  env block once the $20/month `pro` price exists in Stripe.) Each price id is
+  independent; an unset value only disables checkout for that tier.
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.
@@ -396,9 +432,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
 - `STRIPE_SECRET_KEY` (optional GitHub / Worker secret; Stripe secret API key
-  for account billing. Production deploy syncs it when set. The Pro price id is
-  a Worker var committed in `packages/worker/wrangler.jsonc`, not a GitHub
-  secret.)
+  for account billing. Production deploy syncs it when set. The Standard and Pro
+  price ids are public Wrangler vars committed in
+  `packages/worker/wrangler.jsonc`, not GitHub secrets.)
 - `STRIPE_WEBHOOK_SECRET` (optional GitHub / Worker secret; Stripe endpoint
   signing secret (`whsec_...`) for platform billing webhooks at
   `POST /webhooks/stripe`. Production deploy syncs it when set.)

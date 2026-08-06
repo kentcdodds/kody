@@ -73,9 +73,8 @@ export type ExportState = ExportReady | ExportPending | ExportLost
  * Statement-length statistics for one exported SQL object, measured while
  * streaming during upload. `oversizedStatementCount > 0` means the object is
  * not restorable through the D1 import API (statement too long:
- * SQLITE_TOOBIG); the backup completes, but the condition is logged as a
- * failure-status event and persisted next to the object as
- * `<objectKey>.stats.json` so dashboards and health checks can alert on it.
+ * SQLITE_TOOBIG); the condition is persisted next to the object before the
+ * Workflow fails without writing a day manifest.
  */
 export interface SqlStatementStats {
 	maxStatementBytes: number
@@ -104,8 +103,10 @@ export interface LogRecord {
 		| 'backup-failure'
 		| 'backup-sql-stats'
 		| 'backup-unrestorable-statements'
+		| 'backup-stats-legacy-missing'
 		| 'freshness-success'
 		| 'freshness-stale'
+		| 'freshness-unrestorable'
 		| 'source-size-success'
 		| 'source-size-failure'
 		| 'full-backup-sealed'

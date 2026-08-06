@@ -20,7 +20,7 @@ to become.
   package scopes.
 - [Authorization](./authorization.md): role-based access control (RBAC), admin
   routes, and the `any`-access exception to per-user isolation.
-- [Entitlements](./entitlements.md): per-user plans (`free`, `pro`, `partner`,
+- [Entitlements](./entitlements.md): per-user plans (`free`, `standard`, `pro`,
   `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
   finite ceiling), finite per-plan resource limits, and the shared
   `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;

@@ -7,20 +7,19 @@
  * indicate schema corruption and throw instead of granting a plan. Untrusted
  * admin/API input uses {@link parsePlanName} so invalid input can be rejected
  * without throwing. Stripe metadata uses {@link parseStripePlanName}, which
- * rejects `max` (manual-only) and residual `'unlimited'`.
+ * rejects `max` (manual-only).
  *
- * Follow-up: emergency admin-only `unlimited` is intentionally deferred until
- * a follow-up deployment after 0083's residual sweep. Until then the live
- * registry is finite `max` only.
+ * There is deliberately no uncapped plan: the live registry is finite `max`
+ * only.
  */
 
-export const planNames = ['free', 'partner', 'pro', 'max'] as const
+export const planNames = ['free', 'standard', 'pro', 'max'] as const
 
 export type PlanName = (typeof planNames)[number]
 
 /**
  * Strict plan-name parser for untrusted admin/API input validation.
- * Unknown strings, typos, residual `'unlimited'`, nullish values, and
+ * Unknown strings, typos, retired plan names, nullish values, and
  * non-strings return null so callers can reject them.
  */
 export function parsePlanName(value: unknown): PlanName | null {
@@ -44,10 +43,9 @@ export function parseStoredPlanName(value: unknown): PlanName {
 }
 
 /**
- * Parse a plan name that may come from Stripe metadata or `users.stripe_plan`.
- * `max` is manual-only (never purchasable or Stripe-sourced). Residual
- * `'unlimited'` is also rejected. `stripe_plan` stays nullable; unknown /
- * null / `max` / `'unlimited'` values contribute nothing.
+ * Parse a plan name that may come from Stripe subscription metadata
+ * (`kody_plan`) or `users.stripe_plan`. `max` is manual-only (never
+ * purchasable or Stripe-sourced); unknown values contribute nothing.
  */
 export function parseStripePlanName(value: unknown): PlanName | null {
 	const plan = parsePlanName(value)
@@ -66,15 +64,15 @@ export function resolvePlanWrite(plan: PlanName | null | undefined): PlanName {
 
 /**
  * Rank order for comparing manual grants vs Stripe subscription plans.
- * Higher rank wins. free(0) < pro(1) < partner(2) < max(3).
+ * Higher rank wins. free(0) < standard(1) < pro(2) < max(3).
  */
 export function getPlanRank(plan: PlanName): number {
 	switch (plan) {
 		case 'free':
 			return 0
-		case 'pro':
+		case 'standard':
 			return 1
-		case 'partner':
+		case 'pro':
 			return 2
 		case 'max':
 			return 3
@@ -91,7 +89,7 @@ export function getPlanRank(plan: PlanName): number {
  * - Manual arg is a non-null {@link PlanName} (callers resolve stored values
  *   with {@link parseStoredPlanName} first).
  * - Higher-ranked of manual and stripe plans wins (`max` ranks highest).
- * - Unknown/NULL/`max`/residual `'unlimited'` stripe_plan contributes nothing.
+ * - Unknown, NULL, `max`, or retired stripe_plan values contribute nothing.
  */
 export function resolveEffectivePlan(
 	manualPlan: PlanName,
@@ -113,11 +111,8 @@ export type PlanLimits = {
 	maxScheduledJobs: number
 	/** Maximum concurrently running package services. */
 	maxPackageServices: number
-	/**
-	 * Finite 0/1 gate for services declared with mode `persistent`.
-	 * 0 = not allowed; 1 = allowed.
-	 */
-	packageServicePersistentAllowed: number
+	/** Maximum concurrently running services declared with mode `persistent`. */
+	maxPersistentPackageServices: number
 	/** Maximum active repo sessions (repo_sessions with status 'active'). */
 	maxRepoSessions: number
 	/** Maximum outbound email send attempts per UTC day. */
@@ -191,22 +186,23 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
- * Inherited abuse caps for the first-class `max` plan. Email is
- * abuse-sensitive in both directions — inbound volume is
- * attacker-controlled (anyone can send to a `{username}@<platform domain>`
- * address) and outbound sending is an outreach-abuse surface — so `max` is
- * not uncapped for mail. These are intentional abuse backstops (not the
- * ordinary 100×-pro derivation used for other max ceilings) and sit between
- * the `free` and `pro` plan email limits.
+ * Email caps for the first-class `max` plan. Email is abuse-sensitive in
+ * both directions — inbound volume is attacker-controlled (anyone can send
+ * to a `{username}@<platform domain>` address) and outbound sending is an
+ * outreach-abuse surface — so `max` is not uncapped for mail. These are
+ * intentional abuse backstops (not the ordinary 100×-pro derivation used
+ * for other max ceilings), but they dominate every other plan's email
+ * limits so granting `max` never reduces a user's email capacity.
+ * `email_message_bytes` is pinned to standard/pro parity because the
+ * per-message ceiling is a platform bound (see the PlanLimits field doc),
+ * not a scalable quota.
  */
 export const maxPlanEmailLimits = {
-	email_sends_per_day: 100,
-	email_receives_per_day: 200,
-	stored_email_messages: 2_000,
-	email_message_bytes: 512 * 1024,
+	email_sends_per_day: 10_000,
+	email_receives_per_day: 20_000,
+	stored_email_messages: 100_000,
+	email_message_bytes: 768 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
-
-export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
 
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
@@ -215,10 +211,10 @@ export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
  * subscriptions onto these plan names but the limit numbers stay
  * independent of pricing.
  *
- * Ordinary `max` ceilings are an explicit product choice: 100× the
- * corresponding `pro` limit (exact product for integer counters; storage
- * uses 100× of pro's 1 GiB → 100 GiB). Email resources intentionally use
- * {@link maxPlanEmailLimits} abuse caps instead.
+ * Ordinary `max` ceilings are explicit product choices based on the new
+ * `pro` plan. Most retain the previous ceilings even where that is 25× or
+ * 50× pro rather than a uniform multiplier. Email resources intentionally
+ * use {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
 	// Free is deliberately generous on *counts* and unchanged on *rates*.
@@ -239,10 +235,14 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxRepos: 20,
 		maxSavedPackages: 25,
 		maxScheduledJobs: 10,
-		// Long-lived compute. Unchanged, and persistent services stay off.
+		// Long-lived compute. Persistent services stay off.
 		maxPackageServices: 1,
-		packageServicePersistentAllowed: 0,
-		maxRepoSessions: 5,
+		maxPersistentPackageServices: 0,
+		// Sessions are cheap (D1 row + dormant DO workspace + Artifacts
+		// branch) and the 7-day abandoned-session sweep keeps idle ones from
+		// accumulating, so the caps are sized for agent workflows that open
+		// a session per conversation rather than for genuine concurrency.
+		maxRepoSessions: 50,
 		// notify-self and reply-to-stored only, so the outreach-abuse surface
 		// is small; a daily digest plus a few alerts should not hit the wall.
 		maxEmailSendsPerDay: 10,
@@ -250,7 +250,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxEmailReceivesPerDay: 50,
 		maxStoredEmailMessages: 500,
 		maxEmailMessageBytes: 256 * 1024,
-		maxSecrets: 15,
+		maxSecrets: 25,
 		maxStorageBytes: 64 * 1024 * 1024,
 		// Compute. Unchanged.
 		maxConcurrentWorkflows: 3,
@@ -258,15 +258,15 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 500,
 		maxOutboundFetchesPerDay: 2_000,
 	},
-	pro: {
+	standard: {
 		maxRepos: 200,
 		maxSavedPackages: 100,
 		maxScheduledJobs: 50,
 		maxPackageServices: 10,
-		packageServicePersistentAllowed: 1,
-		maxRepoSessions: 20,
+		maxPersistentPackageServices: 1,
+		maxRepoSessions: 200,
 		maxEmailSendsPerDay: 200,
-		maxEmailReceivesPerDay: 1000,
+		maxEmailReceivesPerDay: 1_000,
 		maxStoredEmailMessages: 10_000,
 		maxEmailMessageBytes: 768 * 1024,
 		maxSecrets: 100,
@@ -275,15 +275,15 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 5_000,
 		maxOutboundFetchesPerDay: 20_000,
 	},
-	partner: {
+	pro: {
 		maxRepos: 400,
 		maxSavedPackages: 200,
-		maxScheduledJobs: 100,
+		maxScheduledJobs: 150,
 		maxPackageServices: 20,
-		packageServicePersistentAllowed: 1,
-		maxRepoSessions: 40,
+		maxPersistentPackageServices: 3,
+		maxRepoSessions: 400,
 		maxEmailSendsPerDay: 500,
-		maxEmailReceivesPerDay: 2000,
+		maxEmailReceivesPerDay: 2_000,
 		maxStoredEmailMessages: 25_000,
 		maxEmailMessageBytes: 768 * 1024,
 		maxSecrets: 200,
@@ -293,58 +293,39 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 40_000,
 	},
 	max: {
-		// 100× pro (200) → 20_000; product placeholder uses 10_000 per spec.
+		// 25× pro (400) → 10_000.
 		maxRepos: 10_000,
-		// 100× pro (100) → 10_000.
+		// 50× pro (200) → 10_000.
 		maxSavedPackages: 10_000,
-		// 100× pro (50) → 5_000.
+		// Product ceiling (about 33× pro).
 		maxScheduledJobs: 5_000,
-		// 100× pro (10) → 1_000.
+		// 50× pro (20) → 1_000.
 		maxPackageServices: 1_000,
-		// Same finite 0/1 gate as pro (1 = persistent services allowed).
-		packageServicePersistentAllowed: 1,
-		// 100× pro (20) → 2_000.
-		maxRepoSessions: 2_000,
+		// Product ceiling for no-duration-cap service runs.
+		maxPersistentPackageServices: 10,
+		// 50× pro (400) → 20_000.
+		maxRepoSessions: 20_000,
 		// Inherited abuse caps (not 100× pro); see maxPlanEmailLimits.
 		maxEmailSendsPerDay: maxPlanEmailLimits.email_sends_per_day,
 		maxEmailReceivesPerDay: maxPlanEmailLimits.email_receives_per_day,
 		maxStoredEmailMessages: maxPlanEmailLimits.stored_email_messages,
 		maxEmailMessageBytes: maxPlanEmailLimits.email_message_bytes,
-		// 100× pro (100) → 10_000.
+		// 50× pro (200) → 10_000.
 		maxSecrets: 10_000,
-		// 100× pro (1 GiB) → 100 GiB.
+		// 20× pro (5 GiB) → 100 GiB.
 		maxStorageBytes: 100 * 1024 * 1024 * 1024,
-		// 100× pro (50) → 5_000 (explicit product choice).
+		// 50× pro (100) → 5_000.
 		maxConcurrentWorkflows: 5_000,
-		// 100× pro (5_000) → 500_000.
+		// 50× pro (10_000) → 500_000.
 		maxExecuteCallsPerDay: 500_000,
-		// 100× pro (20_000) → 2_000_000.
+		// 50× pro (40_000) → 2_000_000.
 		maxOutboundFetchesPerDay: 2_000_000,
 	},
 }
 
-export function isMaxPlanEmailResource(
-	resource: EntitlementResource,
-): resource is MaxPlanEmailResource {
-	return resource in maxPlanEmailLimits
-}
-
-/**
- * Resolve the effective limit for an email resource under a plan. The
- * `max` plan uses {@link maxPlanEmailLimits} as its email caps; other plans
- * use their ordinary plan limits.
- */
-export function resolveEmailResourceLimit(
-	plan: PlanName,
-	resource: MaxPlanEmailResource,
-): number {
-	return resolvePlanLimit(plan, resource)
-}
-
 /**
  * Resolve the numeric limit for a resource under a plan. Every plan limit
- * is finite. Boolean-style allowances (persistent services) are expressed
- * as a 0/1 gate so every enforcement point uses the same numeric contract.
+ * is finite, including persistent-service concurrency counts.
  */
 export function resolvePlanLimit(
 	plan: PlanName,
@@ -361,7 +342,7 @@ export function resolvePlanLimit(
 		case 'package_services':
 			return limits.maxPackageServices
 		case 'persistent_package_services':
-			return limits.packageServicePersistentAllowed
+			return limits.maxPersistentPackageServices
 		case 'repo_sessions':
 			return limits.maxRepoSessions
 		case 'email_sends_per_day':

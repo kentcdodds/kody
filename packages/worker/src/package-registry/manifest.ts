@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { listJsonSchemaSubsetProblems } from '@kody-internal/shared/json-schema-subset.ts'
 import { z } from 'zod'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
@@ -40,7 +41,9 @@ function assertPackageEmittedEventTopics(input: {
 	manifestPath?: string
 }) {
 	const packageScope = getPackageNameScope(input.manifest.name)
-	for (const topic of Object.keys(input.manifest.kody.emits ?? {})) {
+	for (const [topic, emittedEvent] of Object.entries(
+		input.manifest.kody.emits ?? {},
+	)) {
 		if (!customPackageEventTopicPattern.test(topic)) {
 			throw new Error(
 				`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.emits topic "${topic}" must use the scoped form "@scope/topic.name" with a lower-dot-case topic body.`,
@@ -51,6 +54,20 @@ function assertPackageEmittedEventTopics(input: {
 			throw new Error(
 				`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.emits topic "${topic}" must use the package scope "@${packageScope}".`,
 			)
+		}
+		if (emittedEvent.payloadSchema !== undefined) {
+			const rootType = emittedEvent.payloadSchema['type']
+			if (rootType !== 'object') {
+				throw new Error(
+					`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.emits topic "${topic}" payloadSchema must declare "type": "object" (event payloads are JSON objects).`,
+				)
+			}
+			const problems = listJsonSchemaSubsetProblems(emittedEvent.payloadSchema)
+			if (problems.length > 0) {
+				throw new Error(
+					`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.emits topic "${topic}" payloadSchema is not a supported JSON Schema subset:\n${problems.join('\n')}`,
+				)
+			}
 		}
 	}
 }
@@ -287,6 +304,7 @@ export function listPackageEmittedEvents(manifest: AuthoredPackageJson) {
 		.map(([topic, emittedEvent]) => ({
 			topic,
 			description: emittedEvent.description.trim(),
+			payloadSchema: emittedEvent.payloadSchema ?? null,
 		}))
 		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
@@ -376,6 +394,7 @@ export type PackageSearchProjection = {
 	emits?: Array<{
 		topic: string
 		description: string
+		payloadSchema?: Record<string, unknown> | null
 	}>
 	retrievers: Array<PackageRetrieverManifestEntry>
 	webhooks: Array<PackageWebhookManifestEntry>

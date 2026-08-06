@@ -1547,10 +1547,10 @@ export default async function main() {
 	expect(aliasedStorageLint?.message).toContain('packageStorage()')
 })
 
-test('runRepoChecks fails on the removed dynamic invocation surface with replacements named', async () => {
-	// Narrow-phase contract: packages.check, packages.invokeChecked, and
-	// literal dynamic import("kody:@...") fail new publishes; the message
-	// names each usage, its replacement, and the migration codemod.
+test('runRepoChecks rejects unsupported invocation forms with replacements named', async () => {
+	// Permanent contract: packages.check, packages.invokeChecked, and literal
+	// dynamic import("kody:@...") fail publishes; the message names each usage,
+	// its replacement, and the repair codemod.
 	const removed = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[

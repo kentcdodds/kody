@@ -463,7 +463,6 @@ export async function calculateUserD1StorageBytes(input: {
 					'timezone',
 					'caller_context_json',
 					'last_run_status',
-					'last_run_error',
 					'source_id',
 					'published_commit',
 					'storage_id',
@@ -571,7 +570,7 @@ export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
 	now?: Date
-	/** Required: UserMeter is authoritative after the cutover. */
+	/** Required because UserMeter is the storage-usage authority. */
 	env: UserMeterEnv
 }): Promise<{ bytes: number; updated: boolean; deferred: boolean }> {
 	const nowIso = (input.now ?? new Date()).toISOString()
@@ -692,10 +691,9 @@ export const packageServiceStateStaleMs = 24 * 60 * 60 * 1000
 
 /**
  * UserMeter-authoritative running count for a user's package services.
- * Reads directly from the DO; no D1 access. Lifecycle dual-writes
- * (`upsertPackageServiceState`) populate the meter so enforcement is
- * immediately consistent. The `excludeService` and 24h staleness semantics
- * are preserved exactly.
+ * Reads directly from the DO; no D1 access. Lifecycle updates populate both
+ * this authoritative liveness state and the D1 enumeration inventory. The
+ * `excludeService` and 24h staleness semantics are preserved exactly.
  *
  * Requires `env.USER_METER`. Throws immediately when the binding is absent
  * (fail-closed for enforcement).
@@ -704,6 +702,7 @@ export async function countRunningPackageServices(input: {
 	env: UserMeterEnv
 	userId: string
 	excludeService?: { packageId: string; serviceName: string }
+	mode?: 'bounded' | 'persistent'
 	now?: Date
 }): Promise<number> {
 	const now = input.now ?? new Date()
@@ -711,6 +710,7 @@ export async function countRunningPackageServices(input: {
 	const { count } = await meter.countRunningPackageServices({
 		staleAfterMs: packageServiceStateStaleMs,
 		excludeService: input.excludeService,
+		mode: input.mode,
 		now: now.toISOString(),
 	})
 	return count
@@ -750,9 +750,9 @@ export async function readEntitlementResourceUsage(input: {
 				'package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
 			)
 		case 'persistent_package_services':
-			// Finite 0/1 gate: the limit is 0 (not allowed) or 1 (allowed),
-			// so the current count never changes the outcome.
-			return 0
+			throw new Error(
+				'persistent_package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
+			)
 		case 'repo_sessions':
 			return await countRows(
 				db,
@@ -885,6 +885,14 @@ export async function readCurrentEntitlementResourceUsage(input: {
 		return await countRunningPackageServices({
 			env: input.env,
 			userId: input.userId,
+			now: input.now,
+		})
+	}
+	if (input.resource === 'persistent_package_services') {
+		return await countRunningPackageServices({
+			env: input.env,
+			userId: input.userId,
+			mode: 'persistent',
 			now: input.now,
 		})
 	}

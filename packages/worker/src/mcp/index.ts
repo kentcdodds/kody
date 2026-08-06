@@ -8,6 +8,10 @@ import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import { buildMcpServerInstructions } from './server-instructions.ts'
 import { registerTools } from './register-tools.ts'
+import {
+	asMcpToolServer,
+	type McpRegistrationAgent,
+} from './mcp-registration-agent.ts'
 import { createKodyMcpServer } from './sentry-mcp-server.ts'
 import { getMcpUserServerInstructions } from './user-server-instructions-repo.ts'
 import { getCapabilityRegistryForContext } from './capabilities/registry.ts'
@@ -63,7 +67,32 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 		})
-		await registerTools(this)
+		await registerTools(this.getRegistrationAgent())
+	}
+	/**
+	 * Registration surface shared with the stateless lane (see
+	 * `asMcpToolServer` for the SDK v1/v2 seam). `state`/`setState` are
+	 * forwarded live so tool runners keep their per-session behavior
+	 * (search preamble dedup, raw-fetch host nudges) on this lane.
+	 */
+	getRegistrationAgent() {
+		const self = this
+		const agent: McpRegistrationAgent & {
+			state?: State
+			setState?: (state: State) => void
+		} = {
+			server: asMcpToolServer(this.server),
+			getEnv: () => self.getEnv(),
+			getCallerContext: () => self.getCallerContext(),
+			requireDomain: () => self.requireDomain(),
+			getLoopbackExports: () => self.getLoopbackExports(),
+			waitUntil: (promise) => self.waitUntil(promise),
+			get state() {
+				return self.state
+			},
+			setState: (state) => self.setState(state),
+		}
+		return agent
 	}
 	getCallerContext() {
 		return parseMcpCallerContext(this.props)

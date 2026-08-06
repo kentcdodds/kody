@@ -46,6 +46,8 @@ type ResolvedProductionBindings = {
 	communityActivityDispatchDeadLetterQueueName: string
 	scheduledDispatchQueueName: string
 	scheduledDispatchDeadLetterQueueName: string
+	packageEventsDispatchQueueName: string
+	packageEventsDispatchDeadLetterQueueName: string
 }
 
 function parseArgs(argv: Array<string>): {
@@ -443,7 +445,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName}, Package Events Queue: ${bindings.packageEventsDispatchQueueName}, Package Events DLQ: ${bindings.packageEventsDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -544,6 +546,18 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.scheduledDispatchDeadLetterQueueName,
 		dryRun: options.dryRun,
 	})
+	const packageEventsDispatchQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.packageEventsDispatchQueueName,
+		dryRun: options.dryRun,
+	})
+	const packageEventsDispatchDeadLetterQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.packageEventsDispatchDeadLetterQueueName,
+		dryRun: options.dryRun,
+	})
 	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
 	const emailEventSubscription = await ensureEmailSendingEventSubscription({
 		accountId: accountId ?? 'dry-run-account',
@@ -624,6 +638,12 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`scheduled_dispatch_queue_name=${scheduledDispatchQueue.name}`)
 	console.log(
 		`scheduled_dispatch_dead_letter_queue_name=${scheduledDispatchDeadLetterQueue.name}`,
+	)
+	console.log(
+		`package_events_dispatch_queue_name=${packageEventsDispatchQueue.name}`,
+	)
+	console.log(
+		`package_events_dispatch_dead_letter_queue_name=${packageEventsDispatchDeadLetterQueue.name}`,
 	)
 	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
 	console.log(

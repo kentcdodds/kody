@@ -205,6 +205,7 @@ export const EnvSchema = object({
 	EMAIL_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	FLAG_EXPOSURES: optionalAnalyticsEngineDatasetSchema,
+	MCP_PROTOCOL_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,
@@ -244,6 +245,7 @@ export const EnvSchema = object({
 	STRIPE_WEBHOOK_SECRET: optionalNonEmptyStringSchema,
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
+	STRIPE_STANDARD_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
 	// Disaster-recovery exporter → DR-account R2 bucket (S3 API). Disabled
 	// unless DR_EXPORT_ENABLED is the literal string "true" and credentials
@@ -253,7 +255,8 @@ export const EnvSchema = object({
 	DR_BACKUP_BUCKET_NAME: optionalNonEmptyStringSchema,
 	DR_BACKUP_ACCESS_KEY_ID: optionalNonEmptyStringSchema,
 	DR_BACKUP_SECRET_ACCESS_KEY: optionalNonEmptyStringSchema,
-	// Bearer secret for POST /__maintenance/dr-restore. Fail-closed when unset.
+	// Bearer secret for production DR restore and DO PITR maintenance routes.
+	// Both fail closed when unset.
 	DR_RESTORE_SECRET: optionalNonEmptyStringSchema,
 })
 

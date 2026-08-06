@@ -3,9 +3,18 @@
  * tests can exercise the predicates with plain event shapes.
  */
 
+type SentryStackFrame = {
+	filename?: string
+	abs_path?: string
+	absPath?: string
+}
+
 type SentryExceptionValue = {
 	type?: string
 	value?: string
+	stacktrace?: {
+		frames?: Array<SentryStackFrame>
+	}
 }
 
 export type SentryErrorEventLike = {
@@ -20,6 +29,20 @@ function sentryEventMessages(event: SentryErrorEventLike) {
 		event.message,
 		...(event.exception?.values?.map((value) => value.value) ?? []),
 	]
+}
+
+function sentryEventStackFrameUrls(event: SentryErrorEventLike) {
+	const urls: Array<string> = []
+	for (const value of event.exception?.values ?? []) {
+		for (const frame of value.stacktrace?.frames ?? []) {
+			for (const candidate of [frame.abs_path, frame.absPath, frame.filename]) {
+				if (typeof candidate === 'string' && candidate.length > 0) {
+					urls.push(candidate)
+				}
+			}
+		}
+	}
+	return urls
 }
 
 /**
@@ -181,6 +204,105 @@ export function filterBrowserInjectedGlobalNoiseSentryEvent<
 	return event
 }
 
+/**
+ * Fathom Analytics (`cdn.usefathom.com/script.js`) tracks pageviews with a
+ * temporary `<img>` beacon and removes it from `load`/`error` handlers via
+ * `img.parentNode.removeChild(img)`. When the beacon was already detached
+ * (SPA navigation / soft reload), `parentNode` is null and Chromium throws.
+ * Signature from production issue 7653117289 / KODY-CLOUDFLARE-3Q.
+ *
+ * Match is intentionally narrow: removeChild-on-null TypeError text AND a
+ * stack frame from the Fathom CDN. Never blanket-drop removeChild errors from
+ * app code.
+ */
+const fathomRemoveChildNullMessage =
+	/^(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)$/
+
+const fathomAnalyticsHostname = 'cdn.usefathom.com'
+
+export function isFathomRemoveChildNullMessage(message: string) {
+	return fathomRemoveChildNullMessage.test(message.trim())
+}
+
+export function isFathomAnalyticsStackFrameUrl(url: string) {
+	try {
+		return (
+			new URL(url, 'https://sentry.invalid').hostname ===
+			fathomAnalyticsHostname
+		)
+	} catch {
+		return false
+	}
+}
+
+export function isFathomRemoveChildNullSentryEvent(
+	event: SentryErrorEventLike,
+) {
+	const hasRemoveChildNull = sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isFathomRemoveChildNullMessage(message),
+	)
+	if (!hasRemoveChildNull) return false
+	return sentryEventStackFrameUrls(event).some(isFathomAnalyticsStackFrameUrl)
+}
+
+export function filterFathomRemoveChildNullSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T): T | null {
+	if (isFathomRemoveChildNullSentryEvent(event)) return null
+	return event
+}
+
+/**
+ * Chrome extension messaging noise: when an extension calls a Chrome API
+ * (e.g. `tabs.update`) against an object id that no longer exists, Chromium
+ * rejects with this exact IPC wording. The rejected promise is often
+ * unhandled, so Sentry's `onunhandledrejection` handler captures it as a
+ * non-Error rejection on the host page — with no app stack frames.
+ *
+ * Signature from production issue 7655189301 / KODY-CLOUDFLARE-3S (breadcrumb
+ * showed an antifingerprint extension injecting into heykody.dev). Match is
+ * intentionally narrow: only this Chrome "Object Not Found Matching Id…,
+ * MethodName…, ParamCount…" form (optionally wrapped by Sentry's Non-Error
+ * rejection preface). Never blanket-drop UnhandledRejection.
+ */
+const chromeExtensionObjectNotFoundMessage =
+	/(?:^|\b)Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+\b/
+
+export function isChromeExtensionObjectNotFoundMessage(message: string) {
+	return chromeExtensionObjectNotFoundMessage.test(message.trim())
+}
+
+export function isChromeExtensionObjectNotFoundError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionObjectNotFoundMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionObjectNotFoundMessage(error.message)
+}
+
+export function isChromeExtensionObjectNotFoundSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isChromeExtensionObjectNotFoundError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isChromeExtensionObjectNotFoundMessage(message),
+	)
+}
+
+export function filterChromeExtensionObjectNotFoundSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isChromeExtensionObjectNotFoundSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -197,6 +319,15 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterBrowserInjectedGlobalNoiseSentryEvent(event, originalException) ===
+		null
+	) {
+		return null
+	}
+	if (filterFathomRemoveChildNullSentryEvent(event) === null) {
+		return null
+	}
+	if (
+		filterChromeExtensionObjectNotFoundSentryEvent(event, originalException) ===
 		null
 	) {
 		return null

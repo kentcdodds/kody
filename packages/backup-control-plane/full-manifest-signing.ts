@@ -1,4 +1,5 @@
 import {
+	backupFullManifestLegacySchemaVersion,
 	backupFullManifestSchemaVersion,
 	backupFullManifestSignatureAlgorithm,
 	canonicalBackupFullManifestPayload,
@@ -36,8 +37,9 @@ export async function verifyBackupFullManifestSignature(
 	manifest: BackupFullManifest,
 ): Promise<boolean> {
 	if (
-		manifest.schemaVersion !== backupFullManifestSchemaVersion ||
-		manifest.payload.schemaVersion !== backupFullManifestSchemaVersion ||
+		(manifest.schemaVersion !== backupFullManifestLegacySchemaVersion &&
+			manifest.schemaVersion !== backupFullManifestSchemaVersion) ||
+		manifest.payload.schemaVersion !== manifest.schemaVersion ||
 		manifest.payload.signing.algorithm !==
 			backupFullManifestSignatureAlgorithm ||
 		manifest.signature.algorithm !== backupFullManifestSignatureAlgorithm ||

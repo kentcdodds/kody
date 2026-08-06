@@ -736,9 +736,8 @@ export async function finishPackageInvocationRecord(input: {
 }
 
 /**
- * Release a claim whose execution never started (transient artifact failure
- * or the dual-read D1 fallback finding a pre-migration owner). Deletes the
- * still-`in_progress` ledger row and the attempt's `running` run row.
+ * Release a claim whose execution never started. Deletes the still-`in_progress`
+ * ledger row and the attempt's `running` run row.
  */
 export async function releasePackageInvocationRecord(input: {
 	env: Env

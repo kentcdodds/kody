@@ -263,14 +263,12 @@ package as that package so it receives `packageContext`, package-owned storage,
 package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
-dynamic `import("kody:@...")` are not available. Calling any of them from new
-source or newly built bundles throws a teaching error naming the replacement,
-and package publish checks fail on them. Older published bundles that still
-embed host-resolved dynamic-import placeholders hydrate at execution time until
-those packages republish. `packages.invoke` performs the contract check inline,
-and the static/dynamic rules above cover the literal dynamic import cases. The
-`0002-static-first-invocation` package codemod migrates `invokeChecked` call
-sites mechanically.
+dynamic `import("kody:@...")` are not available. Package publish checks reject
+them permanently, and runtime teaching errors name the supported replacement.
+`packages.invoke` performs the contract check inline, and the static/dynamic
+rules above cover literal dynamic import cases. The
+`0002-static-first-invocation` package codemod remains available to repair
+`invokeChecked` call sites mechanically.
 
 ## Package storage
 

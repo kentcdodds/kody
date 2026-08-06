@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
 	claimJobRow,
+	disableExpiredJobRowsForUser,
 	finalizeClaimedJobRow,
 	getJobRowById,
 	getNextRunnableJobRow,
@@ -34,12 +35,7 @@ async function ensureJobsSchema() {
 			updated_at TEXT NOT NULL,
 			last_run_at TEXT,
 			last_run_status TEXT,
-			last_run_error TEXT,
-			last_duration_ms INTEGER,
 			next_run_at TEXT NOT NULL,
-			run_count INTEGER NOT NULL DEFAULT 0,
-			success_count INTEGER NOT NULL DEFAULT 0,
-			error_count INTEGER NOT NULL DEFAULT 0,
 			claim_token TEXT,
 			running_since TEXT,
 			lease_expires_at TEXT,
@@ -255,107 +251,15 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 	expect(retriedOccurrence?.retry_count).toBe(1)
 })
 
-async function seedLegacyRunObservabilityFallback(input: {
-	userId: string
-	jobId: string
-	lastRunAt: string
-	lastRunStatus: 'success' | 'error'
-	lastRunError: string
-	lastDurationMs: number
-	runCount: number
-	successCount: number
-	errorCount: number
-}) {
-	await env.APP_DB.prepare(
-		`UPDATE jobs SET
-			last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
-			run_count = ?, success_count = ?, error_count = ?
-		WHERE id = ? AND user_id = ?`,
-	)
-		.bind(
-			input.lastRunAt,
-			input.lastRunStatus,
-			input.lastRunError,
-			input.lastDurationMs,
-			input.runCount,
-			input.successCount,
-			input.errorCount,
-			input.jobId,
-			input.userId,
-		)
-		.run()
-}
-
-test('metadata updateJobRow preserves legacy error/duration when last_run_at is unchanged', async () => {
+test('job writes retain D1 run anchors and default RunLog-owned fields', async () => {
 	await ensureJobsSchema()
-	const userId = 'user-metadata-preserve'
-	const lastRunAt = '2026-04-20T11:00:00.000Z'
+	const userId = 'user-run-anchors'
 	await insertJob({
-		id: 'metadata-preserve',
+		id: 'run-anchors',
 		userId,
 		nextRunAt: '2026-04-20T12:00:00.000Z',
 	})
-	await seedLegacyRunObservabilityFallback({
-		userId,
-		jobId: 'metadata-preserve',
-		lastRunAt,
-		lastRunStatus: 'error',
-		lastRunError: 'legacy boom',
-		lastDurationMs: 321,
-		runCount: 4,
-		successCount: 2,
-		errorCount: 2,
-	})
-	const row = await getJobRowById(env.APP_DB, userId, 'metadata-preserve')
-	if (!row) throw new Error('Expected job row.')
-
-	expect(
-		await updateJobRow({
-			db: env.APP_DB,
-			userId,
-			job: {
-				...row.record,
-				name: 'Renamed without a new run',
-				updatedAt: '2026-04-20T11:30:00.000Z',
-			},
-			callerContextJson: row.callerContextJson,
-		}),
-	).toBe(true)
-
-	expect(
-		await getJobRowById(env.APP_DB, userId, 'metadata-preserve'),
-	).toMatchObject({
-		name: 'Renamed without a new run',
-		last_run_at: lastRunAt,
-		last_run_status: 'error',
-		last_run_error: 'legacy boom',
-		last_duration_ms: 321,
-		run_count: 4,
-		success_count: 2,
-		error_count: 2,
-	})
-})
-
-test('manual updateJobRow clears stale error/duration when last_run_at advances; counters stay put', async () => {
-	await ensureJobsSchema()
-	const userId = 'user-manual-clear'
-	await insertJob({
-		id: 'manual-clear',
-		userId,
-		nextRunAt: '2026-04-20T12:00:00.000Z',
-	})
-	await seedLegacyRunObservabilityFallback({
-		userId,
-		jobId: 'manual-clear',
-		lastRunAt: '2026-04-20T11:00:00.000Z',
-		lastRunStatus: 'error',
-		lastRunError: 'stale legacy error',
-		lastDurationMs: 888,
-		runCount: 3,
-		successCount: 1,
-		errorCount: 2,
-	})
-	const row = await getJobRowById(env.APP_DB, userId, 'manual-clear')
+	const row = await getJobRowById(env.APP_DB, userId, 'run-anchors')
 	if (!row) throw new Error('Expected job row.')
 
 	const finishedAt = '2026-04-20T12:05:00.000Z'
@@ -368,8 +272,7 @@ test('manual updateJobRow clears stale error/duration when last_run_at advances;
 				updatedAt: finishedAt,
 				lastRunAt: finishedAt,
 				lastRunStatus: 'success',
-				// Must not be written authoritatively; also must not survive.
-				lastRunError: 'poison-should-not-persist',
+				lastRunError: 'RunLog-only error',
 				lastDurationMs: 999,
 				runCount: 99,
 				successCount: 99,
@@ -379,85 +282,61 @@ test('manual updateJobRow clears stale error/duration when last_run_at advances;
 		}),
 	).toBe(true)
 
-	expect(await getJobRowById(env.APP_DB, userId, 'manual-clear')).toMatchObject(
-		{
-			last_run_at: finishedAt,
-			last_run_status: 'success',
-			last_run_error: null,
-			last_duration_ms: null,
-			run_count: 3,
-			success_count: 1,
-			error_count: 2,
+	const updated = await getJobRowById(env.APP_DB, userId, 'run-anchors')
+	expect(updated).toMatchObject({
+		last_run_at: finishedAt,
+		last_run_status: 'success',
+		record: {
+			lastRunAt: finishedAt,
+			lastRunStatus: 'success',
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
 		},
-	)
-})
+	})
+	expect(updated).not.toHaveProperty('last_run_error')
+	expect(updated).not.toHaveProperty('last_duration_ms')
+	expect(updated?.record.lastRunError).toBeUndefined()
+	expect(updated?.record.lastDurationMs).toBeUndefined()
 
-test('finalizeClaimedJobRow clears stale error/duration on new run without writing counters', async () => {
-	await ensureJobsSchema()
-	const userId = 'user-finalize-observability'
 	const scheduledFor = '2026-04-20T12:00:00.000Z'
-	await insertJob({
-		id: 'finalize-observability',
-		userId,
-		nextRunAt: scheduledFor,
-	})
-	await seedLegacyRunObservabilityFallback({
-		userId,
-		jobId: 'finalize-observability',
-		lastRunAt: '2026-04-20T11:00:00.000Z',
-		lastRunStatus: 'error',
-		lastRunError: 'previous failure',
-		lastDurationMs: 654,
-		runCount: 5,
-		successCount: 3,
-		errorCount: 2,
-	})
 	const claimed = await claimJobRow({
 		db: env.APP_DB,
 		userId,
-		jobId: 'finalize-observability',
-		now: new Date(scheduledFor),
-		claimToken: 'claim-obs',
+		jobId: 'run-anchors',
+		now: new Date('2026-04-20T12:10:00.000Z'),
+		claimToken: 'claim-run-anchors',
 	})
 	if (!claimed) throw new Error('Expected job claim.')
-
-	const finishedAt = '2026-04-20T12:00:05.000Z'
+	const finalizedAt = '2026-04-20T12:10:05.000Z'
 	expect(
 		await finalizeClaimedJobRow({
 			db: env.APP_DB,
 			userId,
 			job: {
 				...claimed.record,
-				updatedAt: finishedAt,
-				lastRunAt: finishedAt,
-				lastRunStatus: 'success',
-				// Poison values: finalization must not copy these into D1.
-				lastRunError: 'should-not-persist',
-				lastDurationMs: 999,
-				runCount: 7,
-				successCount: 5,
-				errorCount: 2,
-				enabled: false,
-				nextRunAt: scheduledFor,
+				updatedAt: finalizedAt,
+				lastRunAt: finalizedAt,
+				lastRunStatus: 'error',
 			},
 			callerContextJson: claimed.callerContextJson,
-			claimToken: 'claim-obs',
+			claimToken: 'claim-run-anchors',
 			scheduledFor,
 		}),
 	).toBe(true)
-
-	const row = await getJobRowById(env.APP_DB, userId, 'finalize-observability')
-	expect(row).toMatchObject({
-		last_run_at: finishedAt,
-		last_run_status: 'success',
+	expect(await getJobRowById(env.APP_DB, userId, 'run-anchors')).toMatchObject({
+		last_run_at: finalizedAt,
+		last_run_status: 'error',
 		last_completed_scheduled_for: scheduledFor,
-		claim_token: null,
-		enabled: 0,
-		last_run_error: null,
-		last_duration_ms: null,
-		run_count: 5,
-		success_count: 3,
-		error_count: 2,
+		record: {
+			lastRunAt: finalizedAt,
+			lastRunStatus: 'error',
+			lastRunError: undefined,
+			lastDurationMs: undefined,
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+		},
 	})
 })
 
@@ -535,7 +414,6 @@ test('ordinary updates cancel claims and completed occurrence guards fence malfo
 
 test('expired jobs are skipped by due/claim/next-runnable and disableExpired flips enabled', async () => {
 	await ensureJobsSchema()
-	const { disableExpiredJobRowsForUser } = await import('./repo.ts')
 	const userId = 'user-expires'
 	const nowIso = '2026-04-20T12:00:00.000Z'
 	await insertJob({

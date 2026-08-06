@@ -2,10 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
-import {
-	planNames,
-	resolveEmailResourceLimit,
-} from '#worker/entitlements/plans.ts'
+import { planNames, resolvePlanLimit } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
 	readCurrentEntitlementResourceUsage,
@@ -76,20 +73,17 @@ export const emailUsageGetCapability = defineDomainCapability(
 				day: utcDayKey(now),
 				stored_messages: {
 					count: storedMessages,
-					limit: resolveEmailResourceLimit(plan, 'stored_email_messages'),
+					limit: resolvePlanLimit(plan, 'stored_email_messages'),
 				},
 				sends_today: {
 					count: sendsToday,
-					limit: resolveEmailResourceLimit(plan, 'email_sends_per_day'),
+					limit: resolvePlanLimit(plan, 'email_sends_per_day'),
 				},
 				receives_today: {
 					count: receivesToday,
-					limit: resolveEmailResourceLimit(plan, 'email_receives_per_day'),
+					limit: resolvePlanLimit(plan, 'email_receives_per_day'),
 				},
-				max_message_bytes: resolveEmailResourceLimit(
-					plan,
-					'email_message_bytes',
-				),
+				max_message_bytes: resolvePlanLimit(plan, 'email_message_bytes'),
 			}
 		},
 	},

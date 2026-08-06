@@ -2,22 +2,34 @@ import {
 	backupBlobKey,
 	backupR2BucketLabels,
 	backupStagingSchemaVersion,
+	parseLegacyStagingSummary,
+	parseStagingSummary,
 	stagingArtifactsIndexKey,
+	stagingMailboxDumpKey,
+	stagingMailboxIndexKey,
 	stagingPrefix,
 	stagingR2IndexKey,
+	stagingRunLogDumpKey,
+	stagingRunLogIndexKey,
 	stagingStorageDumpKey,
 	stagingStorageIndexKey,
 	stagingSummaryKey,
 	type ArtifactsIndex,
 	type ArtifactsIndexEntry,
 	type BackupR2BucketLabel,
+	type MailboxIndex,
+	type OwnerIndexEntry,
+	type RunLogDumpEntry,
+	type RunLogIndex,
 	type StagingFileSummary,
 	type StagingSummary,
 	type StorageDumpEntry,
 	type StorageIndex,
 	type StorageIndexEntry,
 } from '@kody-internal/shared/backup-staging.ts'
+import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { runLogRpc } from '#worker/run-records/service.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	createDrBackupS3Client,
@@ -34,12 +46,14 @@ import {
 	readLinkedChunkEntries,
 	resolvePreviousSealedDay,
 	stagingChunkKey,
+	stagingOwnerDumpChunkKey,
 	stagingR2IndexChunkKey,
 	stagingStorageDumpChunkKey,
 	type IncrementalR2IndexEntry,
 } from '#worker/dr/exporter-staging.ts'
 import {
 	listPlatformArtifactInventory,
+	listPlatformOwnerInventory,
 	listPlatformStorageInventory,
 	type ArtifactInventoryEntry,
 	type StorageInventoryEntry,
@@ -65,14 +79,32 @@ const storageExportPageSize = 250
 const indexChunkEntryLimit = 100
 const previousSealedDayLookbackDays = 35
 const progressLeaseDurationMs = 2 * 60_000
-const exporterProgressSchemaVersion = 2 as const
+const exporterProgressSchemaVersion = 3 as const
+const ownerExportPageSize = 250
+const runLogInitialCursor = 'job-run-observability:'
 
 export type DrExporterPhase =
+	| 'mailbox'
+	| 'run-log'
 	| 'storage'
 	| 'r2'
 	| 'artifacts'
 	| 'finalize'
 	| 'done'
+
+type OwnerLaneProgress = {
+	/** Observability only; resume is identity-driven from index chunks. */
+	ownerIndex: number
+	pageStartAfter: string | null
+	partialOwnerId: string | null
+	dumpChunkCount: number
+	dumpChunkHead: string | null
+	partialEntryCount: number
+	partialBytes: number
+	entryChunkCount: number
+	entryChunkHead: string | null
+	pendingEntries: Array<OwnerIndexEntry>
+}
 
 export type DrExporterProgress = {
 	schemaVersion: typeof exporterProgressSchemaVersion
@@ -83,6 +115,10 @@ export type DrExporterProgress = {
 	revision: number
 	leaseId: string | null
 	leaseExpiresAt: string | null
+	/** Set while conditionally replacing a schema-v1 completion marker. */
+	legacySummaryEtag?: string | null
+	mailbox: OwnerLaneProgress
+	runLog: OwnerLaneProgress
 	/**
 	 * Count of storage identities completed or skipped. The inventory is
 	 * re-listed every tick and can drift mid-run (jobs registering new
@@ -141,6 +177,8 @@ export type DrExportTickResult = {
 	timeBudgetExhausted: boolean
 	skipped: boolean
 	reason?: string
+	mailboxDumpsCompleted: number
+	runLogDumpsCompleted: number
 	storageDumpsCompleted: number
 	r2ObjectsProcessed: number
 	artifactsProcessed: number
@@ -162,15 +200,33 @@ function utf8ByteLength(value: string) {
 	return new TextEncoder().encode(value).byteLength
 }
 
+function createInitialOwnerLaneProgress(): OwnerLaneProgress {
+	return {
+		ownerIndex: 0,
+		pageStartAfter: null,
+		partialOwnerId: null,
+		dumpChunkCount: 0,
+		dumpChunkHead: null,
+		partialEntryCount: 0,
+		partialBytes: 0,
+		entryChunkCount: 0,
+		entryChunkHead: null,
+		pendingEntries: [],
+	}
+}
+
 function createInitialProgress(day: string, now: Date): DrExporterProgress {
 	return {
 		schemaVersion: exporterProgressSchemaVersion,
 		day,
 		startedAt: now.toISOString(),
-		phase: 'storage',
+		phase: 'mailbox',
 		revision: 0,
 		leaseId: null,
 		leaseExpiresAt: null,
+		legacySummaryEtag: null,
+		mailbox: createInitialOwnerLaneProgress(),
+		runLog: createInitialOwnerLaneProgress(),
 		storageIndex: 0,
 		storagePageStartAfter: null,
 		storagePartialIdentity: null,
@@ -208,6 +264,8 @@ function parseProgress(value: unknown): DrExporterProgress | null {
 	}
 	const phase = record.phase
 	if (
+		phase !== 'mailbox' &&
+		phase !== 'run-log' &&
 		phase !== 'storage' &&
 		phase !== 'r2' &&
 		phase !== 'artifacts' &&
@@ -220,7 +278,42 @@ function parseProgress(value: unknown): DrExporterProgress | null {
 		typeof record.revision === 'number' && Number.isSafeInteger(record.revision)
 			? record.revision
 			: 0
+	if (
+		!isOwnerLaneProgress(record.mailbox) ||
+		!isOwnerLaneProgress(record.runLog)
+	) {
+		return null
+	}
 	return { ...(value as DrExporterProgress), revision }
+}
+
+function isNonNegativeInteger(candidate: unknown): candidate is number {
+	return (
+		typeof candidate === 'number' &&
+		Number.isSafeInteger(candidate) &&
+		candidate >= 0
+	)
+}
+
+function isNullableString(candidate: unknown): candidate is string | null {
+	return candidate === null || typeof candidate === 'string'
+}
+
+function isOwnerLaneProgress(value: unknown): value is OwnerLaneProgress {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+	const lane = value as Record<string, unknown>
+	return (
+		isNonNegativeInteger(lane.ownerIndex) &&
+		isNullableString(lane.pageStartAfter) &&
+		isNullableString(lane.partialOwnerId) &&
+		isNonNegativeInteger(lane.dumpChunkCount) &&
+		isNullableString(lane.dumpChunkHead) &&
+		isNonNegativeInteger(lane.partialEntryCount) &&
+		isNonNegativeInteger(lane.partialBytes) &&
+		isNonNegativeInteger(lane.entryChunkCount) &&
+		isNullableString(lane.entryChunkHead) &&
+		Array.isArray(lane.pendingEntries)
+	)
 }
 
 async function fileSummary(
@@ -357,6 +450,209 @@ async function loadOrCreateProgress(input: {
 	}
 }
 
+const oversizedMailboxDumpWarningPrefix = 'mailbox dump too large: '
+const oversizedRunLogDumpWarningPrefix = 'run-log dump too large: '
+
+function resetPartialOwnerState(lane: OwnerLaneProgress) {
+	lane.pageStartAfter = null
+	lane.partialOwnerId = null
+	lane.dumpChunkCount = 0
+	lane.dumpChunkHead = null
+	lane.partialEntryCount = 0
+	lane.partialBytes = 0
+}
+
+async function flushOwnerIndexChunk(input: {
+	s3: DrBackupS3Client
+	day: string
+	kind: 'mailbox-index' | 'run-log-index'
+	lane: OwnerLaneProgress
+}) {
+	if (input.lane.pendingEntries.length === 0) return
+	const body = input.lane.pendingEntries.map(ndjsonLine).join('')
+	input.lane.entryChunkHead = await putLinkedChunk({
+		s3: input.s3,
+		keyPrefix: stagingChunkKey(input.day, input.kind),
+		entriesBody: body,
+		previousKey: input.lane.entryChunkHead,
+	})
+	input.lane.entryChunkCount += 1
+	input.lane.pendingEntries = []
+}
+
+async function collectHandledOwnerIds(input: {
+	s3: DrBackupS3Client
+	progress: DrExporterProgress
+	lane: OwnerLaneProgress
+	oversizedWarningPrefix: string
+}) {
+	const chunkEntries = await readLinkedChunkEntries<OwnerIndexEntry>({
+		s3: input.s3,
+		headKey: input.lane.entryChunkHead,
+		chunkCount: input.lane.entryChunkCount,
+	})
+	const handled = new Set([
+		...chunkEntries.map((entry) => entry.ownerId),
+		...input.lane.pendingEntries.map((entry) => entry.ownerId),
+	])
+	for (const warning of input.progress.warnings) {
+		if (warning.startsWith(input.oversizedWarningPrefix)) {
+			handled.add(warning.slice(input.oversizedWarningPrefix.length))
+		}
+	}
+	return handled
+}
+
+async function exportOwnerPhase(input: {
+	s3: DrBackupS3Client
+	session: ProgressSession
+	owners: Array<string>
+	startedAtMs: number
+	timeBudgetMs: number
+	lane: OwnerLaneProgress
+	laneName: 'mailbox' | 'run-log'
+	indexKind: 'mailbox-index' | 'run-log-index'
+	initialCursor: string | null
+	oversizedWarningPrefix: string
+	dumpKey: (day: string, ownerId: string) => string
+	fetchPage: (
+		ownerId: string,
+		startAfter: string | null,
+	) => Promise<{
+		entries: Array<unknown>
+		nextStartAfter: string | null
+		truncated: boolean
+	}>
+	onDumpCompleted: () => void
+	nextPhase: DrExporterPhase
+}): Promise<boolean> {
+	const { progress } = input.session
+	const handledOwnerIds = await collectHandledOwnerIds({
+		s3: input.s3,
+		progress,
+		lane: input.lane,
+		oversizedWarningPrefix: input.oversizedWarningPrefix,
+	})
+	let ownerIndex = 0
+	for (;;) {
+		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
+		let ownerId: string | undefined
+		while (ownerIndex < input.owners.length) {
+			const candidate = input.owners[ownerIndex]!
+			ownerIndex += 1
+			if (!handledOwnerIds.has(candidate)) {
+				ownerId = candidate
+				break
+			}
+		}
+		if (!ownerId) break
+		if (input.lane.partialOwnerId !== ownerId) {
+			resetPartialOwnerState(input.lane)
+			input.lane.partialOwnerId = ownerId
+		}
+		const page = await input.fetchPage(
+			ownerId,
+			input.lane.pageStartAfter ?? input.initialCursor,
+		)
+		const pageBody = page.entries.map(ndjsonLine).join('')
+		const pageBytes = utf8ByteLength(pageBody)
+		input.lane.partialEntryCount += page.entries.length
+		if (
+			input.lane.partialBytes + pageBytes >
+			drExportMaxStorageDumpBufferBytes
+		) {
+			progress.warnings.push(`${input.oversizedWarningPrefix}${ownerId}`)
+			input.lane.ownerIndex += 1
+			resetPartialOwnerState(input.lane)
+			handledOwnerIds.add(ownerId)
+			await persistProgress(input.s3, input.session)
+			continue
+		}
+		if (pageBody.length > 0) {
+			input.lane.dumpChunkHead = await putLinkedChunk({
+				s3: input.s3,
+				keyPrefix: stagingOwnerDumpChunkKey(
+					progress.day,
+					input.laneName,
+					ownerId,
+				),
+				entriesBody: pageBody,
+				previousKey: input.lane.dumpChunkHead,
+			})
+			input.lane.dumpChunkCount += 1
+			input.lane.partialBytes += pageBytes
+		}
+		if (page.truncated && page.nextStartAfter) {
+			input.lane.pageStartAfter = page.nextStartAfter
+			await persistProgress(input.s3, input.session)
+			continue
+		}
+		const objectKey = input.dumpKey(progress.day, ownerId)
+		const body = await readLinkedChunkBody({
+			s3: input.s3,
+			headKey: input.lane.dumpChunkHead,
+			chunkCount: input.lane.dumpChunkCount,
+		})
+		const storedBody = await putImmutableOutput({
+			s3: input.s3,
+			key: objectKey,
+			body,
+			contentType: 'application/x-ndjson',
+		})
+		const summary = await fileSummary(objectKey, storedBody)
+		input.lane.pendingEntries.push({
+			ownerId,
+			objectKey,
+			entryCount: ndjsonEntryCount(storedBody),
+			bytes: summary.bytes,
+			sha256: summary.sha256,
+		})
+		if (input.lane.pendingEntries.length >= indexChunkEntryLimit) {
+			await flushOwnerIndexChunk({
+				s3: input.s3,
+				day: progress.day,
+				kind: input.indexKind,
+				lane: input.lane,
+			})
+		}
+		handledOwnerIds.add(ownerId)
+		input.lane.ownerIndex += 1
+		resetPartialOwnerState(input.lane)
+		input.onDumpCompleted()
+		await persistProgress(input.s3, input.session)
+	}
+	await flushOwnerIndexChunk({
+		s3: input.s3,
+		day: progress.day,
+		kind: input.indexKind,
+		lane: input.lane,
+	})
+	progress.phase = input.nextPhase
+	await persistProgress(input.s3, input.session)
+	return false
+}
+
+function runLogDumpEntries(page: {
+	jobRunObservability: Array<unknown>
+	packageRunSuccesses: Array<unknown>
+	activationMilestones: Array<unknown>
+}): Array<RunLogDumpEntry> {
+	return [
+		...page.jobRunObservability.map((row) => ({
+			kind: 'jobRunObservability' as const,
+			row,
+		})),
+		...page.packageRunSuccesses.map((row) => ({
+			kind: 'packageRunSuccess' as const,
+			row,
+		})),
+		...page.activationMilestones.map((row) => ({
+			kind: 'activationMilestone' as const,
+			row,
+		})),
+	]
+}
+
 const oversizedStorageDumpWarningPrefix = 'storage dump too large: '
 
 function resetPartialStorageState(progress: DrExporterProgress) {
@@ -396,6 +692,86 @@ async function collectHandledStorageIdentities(input: {
 		}
 	}
 	return handled
+}
+
+async function exportMailboxPhase(input: {
+	env: Env
+	s3: DrBackupS3Client
+	session: ProgressSession
+	owners: Array<string>
+	startedAtMs: number
+	timeBudgetMs: number
+	counts: { mailboxDumpsCompleted: number }
+}) {
+	return exportOwnerPhase({
+		s3: input.s3,
+		session: input.session,
+		owners: input.owners,
+		startedAtMs: input.startedAtMs,
+		timeBudgetMs: input.timeBudgetMs,
+		lane: input.session.progress.mailbox,
+		laneName: 'mailbox',
+		indexKind: 'mailbox-index',
+		initialCursor: null,
+		oversizedWarningPrefix: oversizedMailboxDumpWarningPrefix,
+		dumpKey: stagingMailboxDumpKey,
+		async fetchPage(ownerId, startAfter) {
+			const page = await mailboxRpc({
+				env: input.env,
+				userId: ownerId,
+			}).exportMailbox({
+				pageSize: ownerExportPageSize,
+				startAfter,
+			})
+			return { ...page, entries: page.rows }
+		},
+		onDumpCompleted: () => {
+			input.counts.mailboxDumpsCompleted += 1
+		},
+		nextPhase: 'run-log',
+	})
+}
+
+async function exportRunLogPhase(input: {
+	env: Env
+	s3: DrBackupS3Client
+	session: ProgressSession
+	owners: Array<string>
+	startedAtMs: number
+	timeBudgetMs: number
+	counts: { runLogDumpsCompleted: number }
+}) {
+	return exportOwnerPhase({
+		s3: input.s3,
+		session: input.session,
+		owners: input.owners,
+		startedAtMs: input.startedAtMs,
+		timeBudgetMs: input.timeBudgetMs,
+		lane: input.session.progress.runLog,
+		laneName: 'run-log',
+		indexKind: 'run-log-index',
+		initialCursor: runLogInitialCursor,
+		oversizedWarningPrefix: oversizedRunLogDumpWarningPrefix,
+		dumpKey: stagingRunLogDumpKey,
+		async fetchPage(ownerId, startAfter) {
+			const page = await runLogRpc({
+				env: input.env,
+				userId: ownerId,
+			}).exportRuns({
+				pageSize: ownerExportPageSize,
+				startAfter,
+			})
+			return {
+				entries: runLogDumpEntries(page),
+				nextStartAfter: page.nextStartAfter,
+				truncated: page.truncated,
+			}
+		},
+		onDumpCompleted: () => {
+			input.counts.runLogDumpsCompleted += 1
+		},
+		nextPhase: 'storage',
+	})
 }
 
 async function exportStoragePhase(input: {
@@ -698,6 +1074,27 @@ async function exportArtifactsPhase(input: {
 	return false
 }
 
+async function putCompletionSummary(input: {
+	s3: DrBackupS3Client
+	key: string
+	body: string
+	legacyEtag: string | null | undefined
+}) {
+	if (input.legacyEtag) {
+		await input.s3.put(input.key, input.body, {
+			contentType: 'application/json',
+			ifMatch: input.legacyEtag,
+		})
+		return
+	}
+	await putImmutableOutput({
+		s3: input.s3,
+		key: input.key,
+		body: input.body,
+		contentType: 'application/json',
+	})
+}
+
 async function finalizeExport(input: {
 	env: Env
 	s3: DrBackupS3Client
@@ -706,6 +1103,45 @@ async function finalizeExport(input: {
 }): Promise<StagingSummary> {
 	const { session, s3, env, now } = input
 	const { progress } = session
+	const mailboxEntries = await readLinkedChunkEntries<OwnerIndexEntry>({
+		s3,
+		headKey: progress.mailbox.entryChunkHead,
+		chunkCount: progress.mailbox.entryChunkCount,
+	})
+	const mailboxIndexKey = stagingMailboxIndexKey(progress.day)
+	const storedMailboxIndexBody = await putImmutableOutput({
+		s3,
+		key: mailboxIndexKey,
+		body: JSON.stringify({
+			schemaVersion: backupStagingSchemaVersion,
+			day: progress.day,
+			entries: mailboxEntries,
+		} satisfies MailboxIndex),
+		contentType: 'application/json',
+	})
+	const mailboxIndex = await fileSummary(
+		mailboxIndexKey,
+		storedMailboxIndexBody,
+	)
+
+	const runLogEntries = await readLinkedChunkEntries<OwnerIndexEntry>({
+		s3,
+		headKey: progress.runLog.entryChunkHead,
+		chunkCount: progress.runLog.entryChunkCount,
+	})
+	const runLogIndexKey = stagingRunLogIndexKey(progress.day)
+	const storedRunLogIndexBody = await putImmutableOutput({
+		s3,
+		key: runLogIndexKey,
+		body: JSON.stringify({
+			schemaVersion: backupStagingSchemaVersion,
+			day: progress.day,
+			entries: runLogEntries,
+		} satisfies RunLogIndex),
+		contentType: 'application/json',
+	})
+	const runLogIndex = await fileSummary(runLogIndexKey, storedRunLogIndexBody)
+
 	const storageEntries = await readLinkedChunkEntries<StorageIndexEntry>({
 		s3,
 		headKey: progress.storageEntryChunkHead,
@@ -756,6 +1192,8 @@ async function finalizeExport(input: {
 		startedAt: progress.startedAt,
 		completedAt: now.toISOString(),
 		buildCommit: env.APP_COMMIT_SHA?.trim() || 'unknown',
+		mailboxIndex,
+		runLogIndex,
 		storageIndex,
 		r2Indexes: progress.r2Completed,
 		artifactsIndex,
@@ -763,11 +1201,11 @@ async function finalizeExport(input: {
 		blobsReused: progress.blobsReused,
 		warnings: progress.warnings,
 	}
-	await putImmutableOutput({
+	await putCompletionSummary({
 		s3,
 		key: stagingSummaryKey(progress.day),
 		body: JSON.stringify(summary),
-		contentType: 'application/json',
+		legacyEtag: progress.legacySummaryEtag,
 	})
 	progress.phase = 'done'
 	await persistProgress(s3, session)
@@ -788,6 +1226,8 @@ export async function runDrExportTick(input: {
 		timeBudgetExhausted: false,
 		skipped: true,
 		reason,
+		mailboxDumpsCompleted: 0,
+		runLogDumpsCompleted: 0,
 		storageDumpsCompleted: 0,
 		r2ObjectsProcessed: 0,
 		artifactsProcessed: 0,
@@ -808,15 +1248,35 @@ export async function runDrExportTick(input: {
 	const s3 = input.s3 ?? createDrBackupS3Client(config)
 
 	const existingSummary = await s3.getText(stagingSummaryKey(day))
+	let legacySummaryEtag: string | null = null
 	if (existingSummary) {
-		return empty('already-complete')
+		let parsed: unknown
+		try {
+			parsed = JSON.parse(existingSummary.text) as unknown
+			const summary = parseStagingSummary(parsed)
+			if (summary.day === day) return empty('already-complete')
+			return empty('already-complete')
+		} catch {
+			try {
+				const summary = parseLegacyStagingSummary(parsed)
+				if (summary.day !== day || !existingSummary.etag) {
+					return empty('already-complete')
+				}
+				legacySummaryEtag = existingSummary.etag
+			} catch {
+				return empty('already-complete')
+			}
+		}
 	}
 
 	const timeBudgetMs = input.timeBudgetMs ?? drExportRunTimeBudgetMs
 	const startedAtMs = Date.now()
 	const session = await loadOrCreateProgress({ s3, day, now })
 	const { progress } = session
+	progress.legacySummaryEtag = legacySummaryEtag
 	const counts = {
+		mailboxDumpsCompleted: 0,
+		runLogDumpsCompleted: 0,
 		storageDumpsCompleted: 0,
 		r2ObjectsProcessed: 0,
 		artifactsProcessed: 0,
@@ -835,7 +1295,33 @@ export async function runDrExportTick(input: {
 		progress.leaseId = crypto.randomUUID()
 		await persistProgress(s3, session)
 
-		if (progress.phase === 'storage') {
+		const owners =
+			progress.phase === 'mailbox' || progress.phase === 'run-log'
+				? await listPlatformOwnerInventory(input.env.APP_DB)
+				: []
+		if (progress.phase === 'mailbox') {
+			timeBudgetExhausted = await exportMailboxPhase({
+				env: input.env,
+				s3,
+				session,
+				owners,
+				startedAtMs,
+				timeBudgetMs,
+				counts,
+			})
+		}
+		if (!timeBudgetExhausted && progress.phase === 'run-log') {
+			timeBudgetExhausted = await exportRunLogPhase({
+				env: input.env,
+				s3,
+				session,
+				owners,
+				startedAtMs,
+				timeBudgetMs,
+				counts,
+			})
+		}
+		if (!timeBudgetExhausted && progress.phase === 'storage') {
 			const inventory = await listPlatformStorageInventory(input.env.APP_DB)
 			timeBudgetExhausted = await exportStoragePhase({
 				env: input.env,
@@ -883,6 +1369,8 @@ export async function runDrExportTick(input: {
 			phase: progress.phase,
 			timeBudgetExhausted,
 			skipped: false,
+			mailboxDumpsCompleted: counts.mailboxDumpsCompleted,
+			runLogDumpsCompleted: counts.runLogDumpsCompleted,
 			storageDumpsCompleted: counts.storageDumpsCompleted,
 			r2ObjectsProcessed: counts.r2ObjectsProcessed,
 			artifactsProcessed: counts.artifactsProcessed,
@@ -963,7 +1451,7 @@ export async function runDrExportWatchdogTick(input: {
 		const progress = parseProgress(JSON.parse(progressText.text) as unknown)
 		if (progress) {
 			phase = progress.phase
-			detail = ` storageIndex=${progress.storageIndex} artifactsIndex=${progress.artifactsIndex} revision=${progress.revision} warnings=${progress.warnings.length}`
+			detail = ` mailboxOwnerIndex=${progress.mailbox.ownerIndex} runLogOwnerIndex=${progress.runLog.ownerIndex} storageIndex=${progress.storageIndex} artifactsIndex=${progress.artifactsIndex} revision=${progress.revision} warnings=${progress.warnings.length}`
 		}
 	}
 	throw new Error(

@@ -19,8 +19,6 @@ type TemporalLanguagePattern = {
 export const exemptRelativePaths = new Set([
 	'docs/contributing/documentation.md',
 	'docs/contributing/secret-rotation.md',
-	// Point-in-time migration audit; temporal phrasing is expected.
-	'docs/contributing/architecture/capability-and-primitive-audit-2026-07.md',
 ])
 
 /** Directories whose pages are intentionally point-in-time records. */
@@ -44,6 +42,22 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 		{
 			label: 'were removed',
 			regex: /\bwere(?:\s+\*{1,2})?\s*removed\b(?:\*{1,2})?/i,
+		},
+		{
+			label: 'was/were retired',
+			regex: /\b(?:was|were)(?:\s+\*{1,2})?\s*retired\b(?:\*{1,2})?/i,
+		},
+		{
+			label: 'dropped by migration',
+			regex: /\bdropped by migration\b/i,
+		},
+		{
+			label: 'migration N dropped',
+			regex: /\bmigration\s+\d+\s+dropped\b/i,
+		},
+		{
+			label: 'post-cutover',
+			regex: /\bpost-cutover\b/i,
 		},
 		{
 			label:

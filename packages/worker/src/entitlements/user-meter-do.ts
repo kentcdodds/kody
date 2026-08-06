@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { DurableObject } from 'cloudflare:workers'
+import {
+	type DurableObjectPitrRpc,
+	getRecoveryBookmark,
+	restoreToBookmark,
+} from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { type EntitlementResource } from './plans.ts'
 
@@ -26,7 +31,7 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 8
+const userMeterSchemaVersion = 9
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
@@ -50,6 +55,8 @@ const packageServiceSourceUpdatedAtPattern =
 const packageServiceStatuses = ['running', 'idle', 'stopped', 'error'] as const
 export type UserMeterPackageServiceStatus =
 	(typeof packageServiceStatuses)[number]
+const packageServiceModes = ['bounded', 'persistent'] as const
+export type UserMeterPackageServiceMode = (typeof packageServiceModes)[number]
 
 export function isUserMeterPackageServiceStatus(
 	status: string,
@@ -58,8 +65,8 @@ export function isUserMeterPackageServiceStatus(
 }
 
 /**
- * Legacy D1 mirror `updated_at` token. Lexicographic order matches revision
- * order; `r/` sorts after pre-cutover ISO timestamps.
+ * D1 enumeration-inventory `updated_at` token. Lexicographic order matches
+ * revision order, and `r/` sorts after ISO timestamps.
  */
 export function userMeterMirrorUpdatedAtToken(revision: number): string {
 	const safeRevision =
@@ -143,6 +150,7 @@ export type UserMeterPackageServiceState = {
 	packageId: string
 	serviceName: string
 	status: UserMeterPackageServiceStatus
+	mode: UserMeterPackageServiceMode
 	startedAt: string | null
 	sourceUpdatedAt: string
 	revision: number
@@ -292,6 +300,7 @@ type PackageServiceSqlRow = {
 	package_id: string
 	service_name: string
 	status: string
+	mode: string
 	started_at: string | null
 	source_updated_at: string
 	revision: number
@@ -370,6 +379,15 @@ function assertPackageServiceStatus(
 		)
 	}
 	return status
+}
+
+function assertPackageServiceMode(mode: string): UserMeterPackageServiceMode {
+	if (!(packageServiceModes as ReadonlyArray<string>).includes(mode)) {
+		throw new Error(
+			`UserMeter package service mode must be one of ${packageServiceModes.join(', ')}; got ${JSON.stringify(mode)}.`,
+		)
+	}
+	return mode as UserMeterPackageServiceMode
 }
 
 function assertSourceUpdatedAt(sourceUpdatedAt: string): string {
@@ -537,6 +555,23 @@ class UserMeterBase extends DurableObject<Env> {
 		})
 	}
 
+	async getRecoveryBookmark(input: {
+		timestampMs: number
+	}): Promise<{ bookmark: string }> {
+		return await getRecoveryBookmark(this.ctx, input, {
+			environment: this.env,
+		})
+	}
+
+	async restoreToBookmark(input: {
+		bookmark: string
+	}): Promise<{ undoBookmark: string }> {
+		return await restoreToBookmark(this.ctx, input, {
+			objectKind: 'user-meter',
+			environment: this.env,
+		})
+	}
+
 	private initializeSchema() {
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS user_meter_meta (
@@ -603,12 +638,13 @@ class UserMeterBase extends DurableObject<Env> {
 				updated_at TEXT NOT NULL
 			)
 		`)
-		// Authoritative package-service liveness state (schema v5).
+		// Authoritative package-service liveness state (schema v5; mode at v9).
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS package_service_states (
 				package_id TEXT NOT NULL,
 				service_name TEXT NOT NULL,
 				status TEXT NOT NULL,
+				mode TEXT NOT NULL DEFAULT 'persistent',
 				started_at TEXT,
 				source_updated_at TEXT NOT NULL,
 				revision INTEGER NOT NULL,
@@ -616,6 +652,19 @@ class UserMeterBase extends DurableObject<Env> {
 				PRIMARY KEY (package_id, service_name)
 			)
 		`)
+		if (version != null && version < 9) {
+			try {
+				// Treat warm legacy rows as persistent until the owning service
+				// heartbeat records its exact mode. Temporary over-counting is
+				// fail-closed for the no-duration-cap concurrency limit.
+				this.ctx.storage.sql.exec(
+					`ALTER TABLE package_service_states
+					ADD COLUMN mode TEXT NOT NULL DEFAULT 'persistent'`,
+				)
+			} catch {
+				// Column already present on a partially migrated object.
+			}
+		}
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_package_service_states_status_source
 			ON package_service_states (status, source_updated_at)`,
@@ -1013,7 +1062,7 @@ class UserMeterBase extends DurableObject<Env> {
 		return readyState(row.count, row.revision)
 	}
 
-	/** Cold seed from the retained D1 mirror when authoritative state is absent. */
+	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	async initializeStorageBytes(input: {
 		bytes: number
 		updatedAt: string
@@ -1097,9 +1146,8 @@ class UserMeterBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Absolute shadow-set from D1. Materializes the singleton and bumps
-	 * revision. Callers should re-read latest D1 before invoking so delayed
-	 * shadows cannot leave the DO behind D1.
+	 * Absolute maintenance set for authoritative storage usage. Materializes
+	 * the singleton and bumps its revision.
 	 */
 	async setStorageBytes(input: {
 		bytes: number
@@ -1202,10 +1250,12 @@ class UserMeterBase extends DurableObject<Env> {
 	): UserMeterPackageServiceState {
 		const revision = Math.max(0, Number(row.revision ?? 0))
 		const status = assertPackageServiceStatus(String(row.status))
+		const mode = assertPackageServiceMode(String(row.mode))
 		return {
 			packageId: String(row.package_id),
 			serviceName: String(row.service_name),
 			status,
+			mode,
 			startedAt:
 				status === 'running' && row.started_at != null
 					? String(row.started_at)
@@ -1223,7 +1273,7 @@ class UserMeterBase extends DurableObject<Env> {
 	): UserMeterPackageServiceState | null {
 		const row = this.ctx.storage.sql
 			.exec<PackageServiceSqlRow>(
-				`SELECT package_id, service_name, status, started_at,
+				`SELECT package_id, service_name, status, mode, started_at,
 					source_updated_at, revision, updated_at
 				FROM package_service_states
 				WHERE package_id = ? AND service_name = ?`,
@@ -1238,7 +1288,7 @@ class UserMeterBase extends DurableObject<Env> {
 	private listAllPackageServiceRows(): Array<UserMeterPackageServiceState> {
 		const rows = this.ctx.storage.sql
 			.exec<PackageServiceSqlRow>(
-				`SELECT package_id, service_name, status, started_at,
+				`SELECT package_id, service_name, status, mode, started_at,
 					source_updated_at, revision, updated_at
 				FROM package_service_states
 				ORDER BY package_id ASC, service_name ASC`,
@@ -1255,6 +1305,7 @@ class UserMeterBase extends DurableObject<Env> {
 		packageId: string
 		serviceName: string
 		status: string
+		mode?: string
 		startedAt?: string | null
 		sourceUpdatedAt: string
 		updatedAt?: string
@@ -1262,6 +1313,9 @@ class UserMeterBase extends DurableObject<Env> {
 		const packageId = assertPackageServiceId('packageId', input.packageId)
 		const serviceName = assertPackageServiceId('serviceName', input.serviceName)
 		const status = assertPackageServiceStatus(input.status)
+		// Repair callers and pre-v9 RPC clients omit mode. Counting them as
+		// persistent is conservative until a lifecycle heartbeat corrects it.
+		const mode = assertPackageServiceMode(input.mode ?? 'persistent')
 		const sourceUpdatedAt = assertSourceUpdatedAt(input.sourceUpdatedAt)
 		const updatedAt =
 			typeof input.updatedAt === 'string' && input.updatedAt.length > 0
@@ -1285,12 +1339,13 @@ class UserMeterBase extends DurableObject<Env> {
 		if (!existing) {
 			this.ctx.storage.sql.exec(
 				`INSERT INTO package_service_states (
-					package_id, service_name, status, started_at,
+					package_id, service_name, status, mode, started_at,
 					source_updated_at, revision, updated_at
-				) VALUES (?, ?, ?, ?, ?, 1, ?)`,
+				) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
 				packageId,
 				serviceName,
 				status,
+				mode,
 				startedAt,
 				sourceUpdatedAt,
 				updatedAt,
@@ -1298,7 +1353,7 @@ class UserMeterBase extends DurableObject<Env> {
 			const row = this.readPackageServiceRow(packageId, serviceName)
 			if (!row) {
 				throw new Error(
-					'UserMeter upsertPackageServiceState failed to materialize shadow row.',
+					'UserMeter upsertPackageServiceState failed to materialize liveness row.',
 				)
 			}
 			return { applied: true, created: true, state: row }
@@ -1308,12 +1363,14 @@ class UserMeterBase extends DurableObject<Env> {
 		this.ctx.storage.sql.exec(
 			`UPDATE package_service_states
 			SET status = ?,
+				mode = ?,
 				started_at = ?,
 				source_updated_at = ?,
 				revision = ?,
 				updated_at = ?
 			WHERE package_id = ? AND service_name = ? AND revision = ?`,
 			status,
+			mode,
 			startedAt,
 			sourceUpdatedAt,
 			nextRevision,
@@ -1325,7 +1382,7 @@ class UserMeterBase extends DurableObject<Env> {
 		const row = this.readPackageServiceRow(packageId, serviceName)
 		if (!row) {
 			throw new Error(
-				'UserMeter upsertPackageServiceState lost the shadow row.',
+				'UserMeter upsertPackageServiceState lost the liveness row.',
 			)
 		}
 		return { applied: true, created: false, state: row }
@@ -1360,7 +1417,7 @@ class UserMeterBase extends DurableObject<Env> {
 		const rows = (
 			cursor
 				? this.ctx.storage.sql.exec<PackageServiceSqlRow>(
-						`SELECT package_id, service_name, status, started_at,
+						`SELECT package_id, service_name, status, mode, started_at,
 							source_updated_at, revision, updated_at
 						FROM package_service_states
 						WHERE package_id > ?
@@ -1373,7 +1430,7 @@ class UserMeterBase extends DurableObject<Env> {
 						pageSize + 1,
 					)
 				: this.ctx.storage.sql.exec<PackageServiceSqlRow>(
-						`SELECT package_id, service_name, status, started_at,
+						`SELECT package_id, service_name, status, mode, started_at,
 							source_updated_at, revision, updated_at
 						FROM package_service_states
 						ORDER BY package_id ASC, service_name ASC
@@ -1402,6 +1459,7 @@ class UserMeterBase extends DurableObject<Env> {
 	async countRunningPackageServices(input: {
 		staleAfterMs?: number
 		excludeService?: { packageId: string; serviceName: string }
+		mode?: string
 		now?: string
 	}): Promise<UserMeterPackageServiceCountResult> {
 		const now = input.now ? new Date(input.now) : new Date()
@@ -1420,6 +1478,8 @@ class UserMeterBase extends DurableObject<Env> {
 		const serviceName = exclusion
 			? assertPackageServiceId('serviceName', exclusion.serviceName)
 			: null
+		const mode =
+			input.mode === undefined ? null : assertPackageServiceMode(input.mode)
 		const row = (
 			packageId && serviceName
 				? this.ctx.storage.sql.exec<{ count: number }>(
@@ -1427,8 +1487,11 @@ class UserMeterBase extends DurableObject<Env> {
 						FROM package_service_states
 						WHERE status = 'running'
 							AND source_updated_at >= ?
+							AND (? IS NULL OR mode = ?)
 							AND NOT (package_id = ? AND service_name = ?)`,
 						freshAfter,
+						mode,
+						mode,
 						packageId,
 						serviceName,
 					)
@@ -1436,8 +1499,11 @@ class UserMeterBase extends DurableObject<Env> {
 						`SELECT COUNT(*) AS count
 						FROM package_service_states
 						WHERE status = 'running'
-							AND source_updated_at >= ?`,
+							AND source_updated_at >= ?
+							AND (? IS NULL OR mode = ?)`,
 						freshAfter,
+						mode,
+						mode,
 					)
 		).toArray()[0]
 		return { count: Math.max(0, Number(row?.count ?? 0)) }
@@ -1449,6 +1515,7 @@ class UserMeterBase extends DurableObject<Env> {
 			packageId: string
 			serviceName: string
 			status: string
+			mode?: string
 			startedAt?: string | null
 			sourceUpdatedAt: string
 			updatedAt?: string
@@ -1909,7 +1976,7 @@ export const UserMeter = Sentry.instrumentDurableObjectWithSentry(
 	UserMeterBase,
 )
 
-export type UserMeterRpc = {
+export type UserMeterRpc = DurableObjectPitrRpc & {
 	initialize: (input: {
 		resource: string
 		day: string
@@ -1939,7 +2006,7 @@ export type UserMeterRpc = {
 		day: string
 		updatedAt: string
 	}) => Promise<UserMeterRefundResult>
-	/** Cold seed from the retained D1 mirror when authoritative state is absent. */
+	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	initializeStorageBytes: (input: {
 		bytes: number
 		updatedAt: string
@@ -1967,16 +2034,17 @@ export type UserMeterRpc = {
 		expectedRevision: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesReconcileResult>
-	/** Dual-write shadow upsert (D1 writes first); monotonic sourceUpdatedAt guard. */
+	/** Authoritative liveness upsert; monotonic sourceUpdatedAt guard. */
 	upsertPackageServiceState: (input: {
 		packageId: string
 		serviceName: string
 		status: string
+		mode?: string
 		startedAt?: string | null
 		sourceUpdatedAt: string
 		updatedAt?: string
 	}) => Promise<UserMeterPackageServiceUpsertResult>
-	/** Shadow delete on service stop/purge. D1 delete runs first. */
+	/** Authoritative liveness delete on service stop or purge. */
 	deletePackageServiceState: (input: {
 		packageId: string
 		serviceName: string
@@ -1990,12 +2058,13 @@ export type UserMeterRpc = {
 	countRunningPackageServices: (input: {
 		staleAfterMs?: number
 		excludeService?: { packageId: string; serviceName: string }
+		mode?: string
 		now?: string
 	}) => Promise<UserMeterPackageServiceCountResult>
 	/**
-	 * Explicit migration/repair primitive: bulk-seed from D1
+	 * Explicit repair primitive: bulk-seed from the D1 enumeration inventory
 	 * `package_service_states` (all statuses). Uses monotonic `sourceUpdatedAt`
-	 * guard so live dual-write shadow rows are never clobbered. Not on the
+	 * guard so live authoritative rows are never clobbered. Not on the
 	 * enforcement path — `countRunningPackageServices` reads the DO directly.
 	 */
 	bootstrapPackageServiceStates: (input: {
@@ -2003,6 +2072,7 @@ export type UserMeterRpc = {
 			packageId: string
 			serviceName: string
 			status: string
+			mode?: string
 			startedAt?: string | null
 			sourceUpdatedAt: string
 			updatedAt?: string

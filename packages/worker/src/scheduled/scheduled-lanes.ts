@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/cloudflare'
 import {
+	checkUsageEntitlementPressureAndNotify,
+	shouldRunUsageEntitlementAlertCron,
+} from '#app/usage-entitlement-alerts.ts'
+import {
 	checkAuthDenialBurstAndNotify,
 	shouldRunAuthDenialAlertCron,
 } from '#app/auth-denial-alerts.ts'
@@ -45,6 +49,7 @@ export const scheduledLaneNames = [
 	'usage_aggregation',
 	'auth_denial_alert',
 	'email_delivery_alert',
+	'usage_entitlement_alert',
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
@@ -91,6 +96,9 @@ export function getScheduledLanes(input: {
 	}
 	if (shouldRunEmailDeliveryAlertCron(input.scheduledAt)) {
 		lanes.push('email_delivery_alert')
+	}
+	if (shouldRunUsageEntitlementAlertCron(input.scheduledAt)) {
+		lanes.push('usage_entitlement_alert')
 	}
 	if (
 		shouldRunDrExportCron(input.scheduledAt) &&
@@ -168,6 +176,11 @@ export async function runScheduledLane(input: {
 			})
 		case 'email_delivery_alert':
 			return checkEmailDeliveryBurstAndNotify({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'usage_entitlement_alert':
+			return checkUsageEntitlementPressureAndNotify({
 				env: input.env,
 				now: input.scheduledAt,
 			})

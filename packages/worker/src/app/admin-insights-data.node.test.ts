@@ -34,6 +34,19 @@ const runLogMocks = vi.hoisted(() => ({
 	maxInFlight: 0,
 }))
 
+const fleetUsageMocks = vi.hoisted(() => ({
+	loadFleetUsageInsights: vi.fn(async () => ({
+		topRuntimeDurationConsumers: [],
+		topEventCountConsumers: [],
+		topDurationConsumersByMetric: [],
+		entitlementPressure: [],
+	})),
+}))
+
+vi.mock('#worker/admin/fleet-usage-insights.ts', () => ({
+	loadFleetUsageInsights: fleetUsageMocks.loadFleetUsageInsights,
+}))
+
 vi.mock('#worker/run-records/service.ts', () => ({
 	getAdminInsightsSnapshot: (input: { env: Env; userId: string }) =>
 		runLogMocks.getAdminInsightsSnapshot(input),
@@ -181,7 +194,11 @@ const defaultInsightsUsers = [
 ]
 
 function emptySnapshot(): RunLogAdminInsightsSnapshot {
-	return { workflowStatusCounts: [], activationMilestones: [] }
+	return {
+		workflowStatusCounts: [],
+		activationMilestones: [],
+		jobRunCounts: { success: 0, error: 0 },
+	}
 }
 
 function createInsightsTestDb(
@@ -203,8 +220,6 @@ function createInsightsTestDb(
 						return {
 							total: 4,
 							enabled: 3,
-							success_runs: 20,
-							error_runs: 2,
 						} as T
 					}
 					if (normalizedQuery.includes('from users where created_at < ?')) {
@@ -370,6 +385,7 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus RunLog 
 				{ status: 'complete', count: 5 },
 				{ status: 'errored', count: 1 },
 			],
+			jobRunCounts: { success: 12, error: 2 },
 			activationMilestones: [
 				{
 					milestone: 'package_run_succeeded',
@@ -385,6 +401,7 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus RunLog 
 		},
 		'user-b': {
 			workflowStatusCounts: [{ status: 'complete', count: 3 }],
+			jobRunCounts: { success: 8, error: 0 },
 			activationMilestones: [
 				{
 					milestone: 'package_run_succeeded',
@@ -465,6 +482,12 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus RunLog 
 		successRuns: 20,
 		errorRuns: 2,
 	})
+	const jobStatsQuery = db.seenQueries.find((query) =>
+		normalizeQuery(query).includes('from jobs'),
+	)
+	expect(normalizeQuery(jobStatsQuery ?? '')).toBe(
+		'select count(*) as total, sum(enabled) as enabled from jobs',
+	)
 	expect(data.activation.steps).toEqual([
 		{ step: 'signed_up', users: 8 },
 		{ step: 'email_verified', users: 5 },
@@ -503,6 +526,7 @@ test('multi-user RunLog aggregation sums workflow statuses and milestone users',
 					{ status: 'running', count: 2 },
 					{ status: 'complete', count: 1 },
 				],
+				jobRunCounts: { success: 3, error: 1 },
 				activationMilestones: [
 					{
 						milestone: 'package_run_succeeded',
@@ -524,6 +548,7 @@ test('multi-user RunLog aggregation sums workflow statuses and milestone users',
 			},
 			snapshot: {
 				workflowStatusCounts: [{ status: 'complete', count: 4 }],
+				jobRunCounts: { success: 5, error: 2 },
 				activationMilestones: [
 					{
 						milestone: 'package_run_succeeded',
@@ -547,6 +572,8 @@ test('multi-user RunLog aggregation sums workflow statuses and milestone users',
 		{ status: 'complete', count: 5 },
 		{ status: 'running', count: 2 },
 	])
+	expect(folded.jobSuccessRuns).toBe(8)
+	expect(folded.jobErrorRuns).toBe(3)
 	expect(folded.packageRunSucceededUsers).toBe(2)
 	expect(folded.packageActivatedUsers).toBe(1)
 	expect(folded.medianHoursToActivation).toBe(12)
@@ -596,6 +623,7 @@ test('activation latency uses package_activated reachedAt against D1 email_verif
 	stubSnapshotsByUser({
 		'user-a': {
 			workflowStatusCounts: [],
+			jobRunCounts: { success: 0, error: 0 },
 			activationMilestones: [
 				{
 					milestone: 'package_activated',
@@ -606,6 +634,7 @@ test('activation latency uses package_activated reachedAt against D1 email_verif
 		},
 		'user-b': {
 			workflowStatusCounts: [],
+			jobRunCounts: { success: 0, error: 0 },
 			activationMilestones: [
 				{
 					milestone: 'package_activated',
@@ -617,6 +646,7 @@ test('activation latency uses package_activated reachedAt against D1 email_verif
 		},
 		'user-c': {
 			workflowStatusCounts: [],
+			jobRunCounts: { success: 0, error: 0 },
 			activationMilestones: [
 				{
 					milestone: 'package_activated',
@@ -694,6 +724,12 @@ test('degraded RunLog snapshots warn and zero run-derived charts without failing
 	expect(data.ok).toBe(true)
 	expect(data.totals.workflowRuns).toBe(0)
 	expect(data.workflowStatuses).toEqual([])
+	expect(data.jobHealth).toEqual({
+		totalJobs: 4,
+		enabledJobs: 3,
+		successRuns: 0,
+		errorRuns: 0,
+	})
 	expect(data.activation.steps).toEqual([
 		{ step: 'signed_up', users: 8 },
 		{ step: 'email_verified', users: 5 },
@@ -733,6 +769,7 @@ test('admin insights uses content-free getAdminInsightsSnapshot point reads only
 	consoleWarn.mockImplementation(() => {})
 	const snapshot: RunLogAdminInsightsSnapshot = {
 		workflowStatusCounts: [{ status: 'complete', count: 1 }],
+		jobRunCounts: { success: 2, error: 1 },
 		activationMilestones: [
 			{
 				milestone: 'package_run_succeeded',

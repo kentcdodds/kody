@@ -12,16 +12,16 @@ import {
 export const staticFirstInvocationCodemodId = '0002-static-first-invocation'
 
 const invokeCheckedDetectMessage =
-	'Calls deprecated `packages.invokeChecked`; rewrites mechanically to `packages.invoke` (same call shape and behavior — the runtime aliases them). Optionally, a human may later prefer a static `kody:@scope/pkg/export` import when the target package is known at write time.'
+	'Calls unsupported `packages.invokeChecked`; rewrites mechanically to `packages.invoke` with the same input shape and contract-checking behavior. A static `kody:@scope/pkg/export` import is preferable when the target package is known at write time.'
 
 const checkDetectMessage =
-	'Calls deprecated `packages.check`; `packages.invoke` already contract-checks before invoking, so restructure the call site manually (no mechanical rewrite preserves the contract return value).'
+	'Calls unsupported `packages.check`; `packages.invoke` already contract-checks before invoking, so restructure the call site manually (no mechanical rewrite preserves the contract return value).'
 
 const dynamicImportDetectMessage =
 	'Uses a literal dynamic `import("kody:@...")`; migrate manually — `packages.invoke` when the target is data, or a static import (declared in `package.json#kody.dependencies`) when the target is known at write time. Namespace semantics differ, so no mechanical rewrite is safe.'
 
 const manualParseFailureMessage =
-	'File references the deprecated dynamic invocation surface but could not be parsed; migrate to `packages.invoke` / static imports manually.'
+	'File references unsupported invocation forms but could not be parsed; replace them with `packages.invoke` / static imports manually.'
 
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
@@ -49,10 +49,9 @@ function parseProgram(source: string): AstNode | null {
 }
 
 /**
- * Textual net for the parse-failure path: `collectDeprecatedInvocationUsage`
- * returns nothing for files it cannot parse, so unparseable files that still
- * mention the deprecated surface must be caught here and surfaced as
- * `needsManual` instead of silently scanning clean.
+ * Textual net for the parse-failure path. The AST-based permanent publish guard
+ * cannot classify unparseable files, so the codemod surfaces likely unsupported
+ * forms as `needsManual` instead of silently scanning clean.
  */
 function referencesDeprecatedSurface(source: string) {
 	return (
@@ -245,7 +244,7 @@ function transform(
 }
 
 /**
- * Static-first invocation migration (narrow phase of the two-rule model):
+ * Permanent repair path for the static-first invocation guard:
  *
  * - `packages.invokeChecked(...)` is rewritten mechanically to
  *   `packages.invoke(...)` — identical input shape; invoke is always
@@ -257,7 +256,7 @@ function transform(
 export const staticFirstInvocationCodemod: PackageCodemod = {
 	id: staticFirstInvocationCodemodId,
 	description:
-		'Rewrite deprecated packages.invokeChecked calls to packages.invoke and flag packages.check / literal dynamic import("kody:@...") usage for manual static-first migration.',
+		'Repair unsupported packages.invokeChecked calls with packages.invoke and flag packages.check / literal dynamic import("kody:@...") usage for manual replacement.',
 	detect,
 	transform,
 }

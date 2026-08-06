@@ -113,6 +113,10 @@ const packageWebhooksSchema = z
 
 export const packageEmittedEventDefinitionSchema = z.object({
 	description: z.string().min(1),
+	// JSON Schema subset for dispatch-time payload validation; the supported
+	// keyword set is enforced in parseAuthoredPackageJson (manifest.ts) so
+	// schema problems surface as publish-time manifest errors.
+	payloadSchema: z.record(z.string(), z.unknown()).optional(),
 })
 
 export type PackageEmittedEventDefinition = z.infer<

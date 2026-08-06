@@ -1,22 +1,33 @@
 import { expect, test, vi } from 'vitest'
 import {
+	backupStagingLegacySchemaVersion,
+	backupStagingSchemaVersion,
 	backupBlobKey,
 	sealedFullManifestKey,
 	sealedFullPrefix,
+	stagingArtifactsIndexKey,
+	stagingMailboxDumpKey,
+	stagingMailboxIndexKey,
 	stagingR2IndexKey,
+	stagingRunLogDumpKey,
+	stagingRunLogIndexKey,
 	stagingStorageDumpKey,
+	stagingStorageIndexKey,
 	stagingSummaryKey,
 	type StorageDumpEntry,
 } from '@kody-internal/shared/backup-staging.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
 	drExportMaxStorageDumpBufferBytes,
+	__testOnlyCreateInitialProgress,
+	__testOnlyParseProgress,
 	listPlatformStorageInventory,
 	runDrExportTick,
 	runDrExportWatchdogTick,
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
+import { listPlatformOwnerInventory } from '#worker/dr/exporter-inventory.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 import {
 	DrBackupPreconditionFailedError,
@@ -28,6 +39,14 @@ const storageMocks = vi.hoisted(() => ({
 	exportStorage: vi.fn(),
 }))
 
+const mailboxMocks = vi.hoisted(() => ({
+	exportMailbox: vi.fn(),
+}))
+
+const runLogMocks = vi.hoisted(() => ({
+	exportRuns: vi.fn(),
+}))
+
 const storageBucketMocks = vi.hoisted(() => ({
 	listPlatformStorageBuckets: vi.fn(
 		async () => [] as Array<{ userId: string; storageId: string }>,
@@ -37,6 +56,18 @@ const storageBucketMocks = vi.hoisted(() => ({
 vi.mock('#worker/storage-runner.ts', () => ({
 	storageRunnerRpc: () => ({
 		exportStorage: storageMocks.exportStorage,
+	}),
+}))
+
+vi.mock('#worker/email/mailbox-client.ts', () => ({
+	mailboxRpc: () => ({
+		exportMailbox: mailboxMocks.exportMailbox,
+	}),
+}))
+
+vi.mock('#worker/run-records/service.ts', () => ({
+	runLogRpc: () => ({
+		exportRuns: runLogMocks.exportRuns,
 	}),
 }))
 
@@ -93,6 +124,7 @@ function createMemoryS3() {
 }
 
 function createDb(results: {
+	users?: Array<{ ownerId: string }>
 	jobs?: Array<{ userId: string; storageId: string }>
 	archived?: Array<{ userId: string; storageId: string }>
 	packages?: Array<{ userId: string; storageId: string }>
@@ -113,6 +145,9 @@ function createDb(results: {
 		prepare(sql: string) {
 			return {
 				all: async () => {
+					if (sql.includes('FROM users')) {
+						return { results: results.users ?? [] }
+					}
 					if (sql.includes('FROM jobs')) {
 						return { results: results.jobs ?? [] }
 					}
@@ -207,6 +242,30 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 		pageSize: 250,
 		estimatedBytes: 10,
 	})
+	mailboxMocks.exportMailbox.mockReset()
+	mailboxMocks.exportMailbox.mockResolvedValue({
+		rows: [{ kind: 'thread', row: { id: 'thread-1' } }],
+		truncated: false,
+		nextStartAfter: null,
+	})
+	runLogMocks.exportRuns.mockReset()
+	runLogMocks.exportRuns.mockResolvedValue({
+		runs: [{ id: 'excluded-run' }],
+		logs: [{ id: 'excluded-log' }],
+		packageInvocations: [{ id: 'excluded-invocation' }],
+		workflowProjections: [{ id: 'excluded-projection' }],
+		jobRunObservability: [{ jobId: 'job-1', runCount: 2 }],
+		packageRunSuccesses: [{ packageId: 'pkg-1', successCount: 2 }],
+		activationMilestones: [
+			{
+				milestone: 'package_activated',
+				reachedAt: '2026-07-23T00:00:00.000Z',
+				packageId: 'pkg-1',
+			},
+		],
+		truncated: false,
+		nextStartAfter: null,
+	})
 	const { client, objects } = createMemoryS3()
 	const blobBytes = new TextEncoder().encode('email-bytes')
 	const blobDigest = await sha256Hex(blobBytes)
@@ -223,6 +282,7 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
 		APP_COMMIT_SHA: 'abcdef1',
 		APP_DB: createDb({
+			users: [{ ownerId: 'user-a' }],
 			jobs: [{ userId: 'user-a', storageId: 'job:1' }],
 			artifacts: [
 				{
@@ -253,9 +313,74 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(first.skipped).toBe(false)
 	expect(first.summaryWritten).toBe(true)
 	expect(first.phase).toBe('done')
+	expect(first.mailboxDumpsCompleted).toBe(1)
+	expect(first.runLogDumpsCompleted).toBe(1)
 	expect(first.blobsReused).toBeGreaterThanOrEqual(1)
 
 	const day = '2026-07-23'
+	const mailboxDump = (await client.getText(
+		stagingMailboxDumpKey(day, 'user-a'),
+	))!.text
+	expect(
+		mailboxDump
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line)),
+	).toEqual([{ kind: 'thread', row: { id: 'thread-1' } }])
+	const mailboxIndex = JSON.parse(
+		(await client.getText(stagingMailboxIndexKey(day)))!.text,
+	) as {
+		entries: Array<{
+			ownerId: string
+			objectKey: string
+			entryCount: number
+			bytes: number
+			sha256: string
+		}>
+	}
+	expect(mailboxIndex.entries).toEqual([
+		{
+			ownerId: 'user-a',
+			objectKey: stagingMailboxDumpKey(day, 'user-a'),
+			entryCount: 1,
+			bytes: new TextEncoder().encode(mailboxDump).byteLength,
+			sha256: await sha256Hex(mailboxDump),
+		},
+	])
+
+	expect(runLogMocks.exportRuns).toHaveBeenCalledWith({
+		pageSize: 250,
+		startAfter: 'job-run-observability:',
+	})
+	const runLogDump = (await client.getText(
+		stagingRunLogDumpKey(day, 'user-a'),
+	))!.text
+	const runLogRows = runLogDump
+		.trim()
+		.split('\n')
+		.map((line) => JSON.parse(line) as { kind: string; row: unknown })
+	expect(runLogRows.map((row) => row.kind)).toEqual([
+		'jobRunObservability',
+		'packageRunSuccess',
+		'activationMilestone',
+	])
+	expect(runLogDump).not.toContain('excluded-run')
+	expect(runLogDump).not.toContain('excluded-log')
+	expect(runLogDump).not.toContain('excluded-invocation')
+	expect(runLogDump).not.toContain('excluded-projection')
+	const runLogIndex = JSON.parse(
+		(await client.getText(stagingRunLogIndexKey(day)))!.text,
+	) as { entries: Array<Record<string, unknown>> }
+	expect(runLogIndex.entries).toEqual([
+		{
+			ownerId: 'user-a',
+			objectKey: stagingRunLogDumpKey(day, 'user-a'),
+			entryCount: 3,
+			bytes: new TextEncoder().encode(runLogDump).byteLength,
+			sha256: await sha256Hex(runLogDump),
+		},
+	])
+
 	const identity = encodeStorageIdentity('user-a', 'job:1')
 	const dumpKey = stagingStorageDumpKey(day, identity)
 	const dump = await client.getText(dumpKey)
@@ -278,6 +403,16 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 		(await client.getText(stagingSummaryKey(day)))!.text,
 	)
 	expect(summary.day).toBe(day)
+	expect(summary.mailboxIndex).toEqual({
+		objectKey: stagingMailboxIndexKey(day),
+		bytes: new TextEncoder().encode(JSON.stringify(mailboxIndex)).byteLength,
+		sha256: await sha256Hex(JSON.stringify(mailboxIndex)),
+	})
+	expect(summary.runLogIndex).toEqual({
+		objectKey: stagingRunLogIndexKey(day),
+		bytes: new TextEncoder().encode(JSON.stringify(runLogIndex)).byteLength,
+		sha256: await sha256Hex(JSON.stringify(runLogIndex)),
+	})
 	expect(summary.storageIndex.sha256).toMatch(/^[0-9a-f]{64}$/)
 	expect(summary.blobsWritten).toBeGreaterThanOrEqual(1)
 	expect(summary.blobsReused).toBeGreaterThanOrEqual(1)
@@ -357,6 +492,109 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 				key.startsWith('staging/2026-07-23/exporter/chunks/storage-index/'),
 			),
 		).toBe(true)
+	} finally {
+		dateNow.mockRestore()
+	}
+})
+
+test('mailbox paging resumes without duplicate or missing rows', async () => {
+	mailboxMocks.exportMailbox.mockReset()
+	mailboxMocks.exportMailbox
+		.mockResolvedValueOnce({
+			rows: [
+				{ kind: 'message', row: { id: 'message-a' } },
+				{ kind: 'message', row: { id: 'message-b' } },
+			],
+			truncated: true,
+			nextStartAfter: 'message:message-b',
+		})
+		.mockResolvedValueOnce({
+			rows: [{ kind: 'message', row: { id: 'message-c' } }],
+			truncated: false,
+			nextStartAfter: null,
+		})
+	runLogMocks.exportRuns.mockResolvedValue({
+		runs: [],
+		logs: [],
+		packageInvocations: [],
+		workflowProjections: [],
+		jobRunObservability: [],
+		packageRunSuccesses: [],
+		activationMilestones: [],
+		truncated: false,
+		nextStartAfter: null,
+	})
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 0,
+	})
+	const { client } = createMemoryS3()
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	const originalPut = client.put.bind(client)
+	let exhausted = false
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
+		if (
+			!exhausted &&
+			key.endsWith('/exporter/progress.json') &&
+			typeof body === 'string' &&
+			body.includes('"pageStartAfter":"message:message-b"')
+		) {
+			exhausted = true
+			nowMs += 50_000
+		}
+		return result
+	}
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({ users: [{ ownerId: 'user/with space' }] }),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		MAILBOX: {},
+		RUN_LOG: {},
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	try {
+		const tick1 = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T01:00:00.000Z'),
+			timeBudgetMs: 20_000,
+			s3: client,
+		})
+		expect(tick1.timeBudgetExhausted).toBe(true)
+		expect(tick1.mailboxDumpsCompleted).toBe(0)
+
+		nowMs = 1_000_000
+		const tick2 = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T01:05:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(tick2.summaryWritten).toBe(true)
+		expect(mailboxMocks.exportMailbox.mock.calls).toEqual([
+			[{ pageSize: 250, startAfter: null }],
+			[{ pageSize: 250, startAfter: 'message:message-b' }],
+		])
+		const dump = (await client.getText(
+			stagingMailboxDumpKey('2026-07-23', 'user/with space'),
+		))!.text
+		const ids = dump
+			.trim()
+			.split('\n')
+			.map((line) => (JSON.parse(line) as { row: { id: string } }).row.id)
+		expect(ids).toEqual(['message-a', 'message-b', 'message-c'])
+		expect(new Set(ids).size).toBe(ids.length)
 	} finally {
 		dateNow.mockRestore()
 	}
@@ -513,13 +751,19 @@ test('exporter aborts quietly when progress If-Match precondition fails', async 
 	}))
 	const { client } = createMemoryS3()
 	const originalPut = client.put.bind(client)
-	let progressPuts = 0
+	let storageDumpWritten = false
+	let failedProgressAfterStorageDump = false
 	client.put = async (key, body, options) => {
-		if (key.includes('exporter/progress.json')) {
-			progressPuts += 1
-			if (progressPuts === 2) {
-				throw new DrBackupPreconditionFailedError(key)
-			}
+		if (key.includes('/storage/') && key.endsWith('.ndjson')) {
+			storageDumpWritten = true
+		}
+		if (
+			key.includes('exporter/progress.json') &&
+			storageDumpWritten &&
+			!failedProgressAfterStorageDump
+		) {
+			failedProgressAfterStorageDump = true
+			throw new DrBackupPreconditionFailedError(key)
 		}
 		return originalPut(key, body, options)
 	}
@@ -857,7 +1101,7 @@ test('R2 export reuses unchanged objects from the latest sealed index', async ()
 	])
 })
 
-test('DR inventory includes registry buckets and package_service_states services', async () => {
+test('DR inventory includes registry storage and excludes deleting owners', async () => {
 	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValueOnce([
 		{ userId: 'user-a', storageId: 'exec:adhoc-only' },
 	])
@@ -877,6 +1121,99 @@ test('DR inventory includes registry buckets and package_service_states services
 		'service:pkg-1:worker',
 	])
 	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
+
+	const prepare = vi.fn((sql: string) => ({
+		all: async () => ({
+			results: [{ ownerId: 'active-owner' }],
+		}),
+		sql,
+	}))
+	const owners = await listPlatformOwnerInventory({
+		prepare,
+	} as unknown as D1Database)
+	expect(owners).toEqual(['active-owner'])
+	expect(prepare).toHaveBeenCalledWith(
+		expect.stringMatching(/FROM users\s+WHERE deleting_at IS NULL/),
+	)
+})
+
+test('progress parsing rejects missing or malformed owner lanes', () => {
+	const progress = __testOnlyCreateInitialProgress(
+		'2026-07-23',
+		new Date('2026-07-23T00:30:00.000Z'),
+	)
+	expect(__testOnlyParseProgress(progress)).toMatchObject({
+		phase: 'mailbox',
+	})
+	expect(
+		__testOnlyParseProgress({ ...progress, mailbox: undefined }),
+	).toBeNull()
+	expect(
+		__testOnlyParseProgress({
+			...progress,
+			runLog: { ...progress.runLog, dumpChunkCount: -1 },
+		}),
+	).toBeNull()
+})
+
+test('a schema-v1 completion marker is conditionally upgraded after owner lanes finish', async () => {
+	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValue([])
+	const { client } = createMemoryS3()
+	const day = '2026-07-23'
+	const file = (objectKey: string, sha: string) => ({
+		objectKey,
+		bytes: 0,
+		sha256: sha.repeat(64),
+	})
+	await client.put(
+		stagingSummaryKey(day),
+		JSON.stringify({
+			schemaVersion: backupStagingLegacySchemaVersion,
+			day,
+			startedAt: `${day}T00:30:00.000Z`,
+			completedAt: `${day}T00:35:00.000Z`,
+			buildCommit: 'legacy-build',
+			storageIndex: file(stagingStorageIndexKey(day), 'a'),
+			r2Indexes: {},
+			artifactsIndex: file(stagingArtifactsIndexKey(day), 'b'),
+			blobsWritten: 0,
+			blobsReused: 0,
+			warnings: [],
+		}),
+	)
+	const legacy = await client.getText(stagingSummaryKey(day))
+	const putSpy = vi.spyOn(client, 'put')
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	const result = await runDrExportTick({
+		env,
+		now: new Date(`${day}T01:00:00.000Z`),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result.summaryWritten).toBe(true)
+	const upgraded = JSON.parse(
+		(await client.getText(stagingSummaryKey(day)))!.text,
+	) as Record<string, unknown>
+	expect(upgraded.schemaVersion).toBe(backupStagingSchemaVersion)
+	expect(upgraded).toHaveProperty('mailboxIndex')
+	expect(upgraded).toHaveProperty('runLogIndex')
+	expect(putSpy).toHaveBeenCalledWith(
+		stagingSummaryKey(day),
+		expect.any(String),
+		expect.objectContaining({ ifMatch: legacy!.etag }),
+	)
 })
 
 test('watchdog passes on a written summary and fails loudly on an incomplete night', async () => {
@@ -910,13 +1247,37 @@ test('watchdog passes on a written summary and fails loudly on an incomplete nig
 		'staging/2026-07-23/exporter/progress.json',
 		new TextEncoder().encode(
 			JSON.stringify({
-				schemaVersion: 2,
+				schemaVersion: 3,
 				day: '2026-07-23',
 				startedAt: '2026-07-23T00:30:00.000Z',
 				phase: 'artifacts',
 				revision: 42,
 				leaseId: null,
 				leaseExpiresAt: null,
+				mailbox: {
+					ownerIndex: 10,
+					pageStartAfter: null,
+					partialOwnerId: null,
+					dumpChunkCount: 0,
+					dumpChunkHead: null,
+					partialEntryCount: 0,
+					partialBytes: 0,
+					entryChunkCount: 0,
+					entryChunkHead: null,
+					pendingEntries: [],
+				},
+				runLog: {
+					ownerIndex: 10,
+					pageStartAfter: null,
+					partialOwnerId: null,
+					dumpChunkCount: 0,
+					dumpChunkHead: null,
+					partialEntryCount: 0,
+					partialBytes: 0,
+					entryChunkCount: 0,
+					entryChunkHead: null,
+					pendingEntries: [],
+				},
 				storageIndex: 10,
 				storagePageStartAfter: null,
 				storagePartialIdentity: null,

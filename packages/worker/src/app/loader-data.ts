@@ -287,7 +287,7 @@ export type AdminUsageEntitlementResource =
 	| 'execute_calls_per_day'
 	| 'outbound_fetches_per_day'
 
-export type AdminPlanName = 'free' | 'partner' | 'pro' | 'max'
+export type AdminPlanName = 'free' | 'standard' | 'pro' | 'max'
 
 export type AdminUsageRollup = {
 	metric: AdminUsageMetric
@@ -454,6 +454,38 @@ export type AdminInsightsRunLogCompleteness = {
 	complete: boolean
 }
 
+export type AdminInsightsDurationConsumer = {
+	stableUserId: string
+	username: string
+	totalDurationMs: number
+}
+
+export type AdminInsightsEventCountConsumer = {
+	stableUserId: string
+	username: string
+	eventCount: number
+}
+
+export type AdminInsightsMetricDurationConsumers = {
+	metric: AdminUsageMetric
+	consumers: Array<AdminInsightsDurationConsumer>
+}
+
+export type AdminInsightsEntitlementPressureResource = {
+	resource: AdminUsageEntitlementResource
+	label: string
+	current: number
+	limit: number
+	percentOfLimit: number
+}
+
+export type AdminInsightsEntitlementPressureUser = {
+	stableUserId: string
+	username: string
+	plan: AdminPlanName
+	pressuredResources: Array<AdminInsightsEntitlementPressureResource>
+}
+
 export type AdminInsightsLoaderData = {
 	ok: true
 	generatedAt: string
@@ -470,6 +502,10 @@ export type AdminInsightsLoaderData = {
 	jobHealth: AdminInsightsJobHealth
 	activation: AdminInsightsActivation
 	runLogCompleteness: AdminInsightsRunLogCompleteness
+	topRuntimeDurationConsumers: Array<AdminInsightsDurationConsumer>
+	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>
+	topDurationConsumersByMetric: Array<AdminInsightsMetricDurationConsumers>
+	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
 }
 
 export type AdminSystemEmailListItem = {
@@ -1263,7 +1299,7 @@ export type AccountBillingLoaderData = {
 	cancelAt: string | null
 	/** Stripe subscription status from on-page refresh; null if unknown/unavailable. */
 	subscriptionStatus: string | null
-	checkoutAvailable: boolean
+	purchasablePlans: Array<'standard' | 'pro'>
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
 	error?: string
@@ -1272,6 +1308,10 @@ export type AccountBillingLoaderData = {
 export type AccountUsageEntitlementConsumption = {
 	resource: string
 	label: string
+	group: 'daily' | 'counts' | 'storage' | 'limits'
+	kind: 'counter' | 'per_unit_max'
+	whatCounts: string
+	howToReduce: string
 	current: number
 	limit: number
 	percentOfLimit: number | null

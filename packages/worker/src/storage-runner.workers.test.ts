@@ -10,9 +10,11 @@ import {
 	flushStorageBucketRegistrationsForTests,
 	listUserStorageBucketEstimates,
 	listUserStorageBucketIds,
+	registerStorageBucket,
 } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
 	createStorageKodyTools,
@@ -282,6 +284,76 @@ test('storage runner storage byte entitlement aggregates only inventoried user b
 		key: 'first-bucket',
 		value: 'stored bytes',
 	})
+})
+
+test('storage byte entitlement composes repo-session workspace estimates', async () => {
+	await ensureEntitlementTestSchema(env.APP_DB)
+	clearStorageBucketRegistrationDedupeForTests()
+	const limit = planLimits.pro.maxStorageBytes
+	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
+	const email = `storage-session-${crypto.randomUUID()}@example.com`
+	const userId = await seedPlannedStorageUser({
+		email,
+		plan: 'pro',
+		meterBytes: 0,
+	})
+	const storageId = createExecuteStorageId()
+	const runner = storageRunnerRpc({ env, userId, storageId })
+	await runner.setValue({ key: 'runner-data', value: 'stored bytes' })
+	const sessionId = crypto.randomUUID()
+	const sessionStorageId = `repo-session:${sessionId}`
+	const pending: Array<Promise<unknown>> = []
+	registerStorageBucket({
+		env,
+		userId,
+		storageId: sessionStorageId,
+		kind: 'repo_session',
+		waitUntil: (promise) => pending.push(promise),
+	})
+	await Promise.all(pending)
+	await flushStorageBucketRegistrationsForTests()
+
+	const runnerBytes = (await runner.getEstimatedBytes()).estimatedBytes
+	const sessionBytes = (
+		await repoSessionRpc(env, sessionId).getEstimatedBytes()
+	).estimatedBytes
+	expect(sessionBytes).toBeGreaterThan(0)
+	const d1Bytes = limit - runnerBytes - sessionBytes
+	await userMeterRpc({ env, userId }).setStorageBytes({
+		bytes: d1Bytes,
+		updatedAt: new Date().toISOString(),
+	})
+
+	const denied = await assertStorageRunnerWriteWithinEntitlement({
+		env,
+		userId,
+		email,
+		storageId,
+		requested: 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected repo-session bytes to reach the storage limit.')
+	}
+	expect(denied.details.current).toBe(d1Bytes + runnerBytes + sessionBytes)
+
+	await env.APP_DB.prepare(
+		`DELETE FROM user_storage_buckets
+		WHERE user_id = ? AND storage_id = ?`,
+	)
+		.bind(userId, sessionStorageId)
+		.run()
+	await expect(
+		assertStorageRunnerWriteWithinEntitlement({
+			env,
+			userId,
+			email,
+			storageId,
+			requested: 1,
+		}),
+	).resolves.toBeUndefined()
 })
 
 test('storage runner supports raw SQL with explicit writable access', async () => {

@@ -174,8 +174,7 @@ function createPackageInvokeTools(input: {
 		error.response = response
 		throw error
 	}
-	// `packages.check` and `packages.invokeChecked` were removed with the
-	// static-first model; the sandbox prelude throws teaching errors for them
-	// without a host round trip.
+	// Unsupported helpers stay out of the host bridge; permanent sandbox
+	// teaching stubs reject them without a host round trip.
 	return { invoke }
 }

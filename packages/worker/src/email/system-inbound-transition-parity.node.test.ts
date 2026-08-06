@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { type InboundDelivery } from './inbound-delivery.ts'
 import { insertSystemEmailMessage } from './system-email-graph-store.ts'
@@ -19,15 +19,7 @@ const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 function createDedicatedDatabase() {
 	const sqlite = new DatabaseSync(':memory:')
-	for (const fileName of readdirSync(migrationsDirectory)
-		.filter(
-			(file) =>
-				file.endsWith('.sql') &&
-				file <= '0131-system-email-graph-authority.sql',
-		)
-		.sort()) {
-		sqlite.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-	}
+	applyAllMigrations(sqlite, migrationsDirectory)
 	sqlite.exec(`
 		INSERT INTO email_inboxes (
 			id, user_id, name, description, enabled, created_at, updated_at

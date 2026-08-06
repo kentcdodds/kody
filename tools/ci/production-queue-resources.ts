@@ -4,6 +4,11 @@ import {
 	communityActivityDispatchQueueName,
 } from '../../packages/worker/src/community/activity-dispatch-queue-names.ts'
 import {
+	packageEventsDispatchDeadLetterQueueName,
+	packageEventsDispatchQueueBinding,
+	packageEventsDispatchQueueName,
+} from '../../packages/worker/src/package-events/dispatch-queue-names.ts'
+import {
 	platformFeedbackDispatchDeadLetterQueueName,
 	platformFeedbackDispatchQueueBinding,
 	platformFeedbackDispatchQueueName,
@@ -23,7 +28,7 @@ const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
 const expectedMaxBatchSize = 10
 const expectedMaxBatchTimeout = 5
 const expectedMaxRetries = 3
-const expectedConsumerCount = 5
+const expectedConsumerCount = 6
 
 function readQueueConsumer(input: {
 	consumers: Array<unknown>
@@ -137,6 +142,13 @@ export function parseProductionQueueResources(input: {
 		maxBatchTimeout: 0,
 		maxConcurrency: 16,
 	})
+	const packageEventsDispatch = readQueueConsumer({
+		consumers,
+		queueName: packageEventsDispatchQueueName,
+		deadLetterQueueName: packageEventsDispatchDeadLetterQueueName,
+		configPath: input.configPath,
+		maxConcurrency: 16,
+	})
 	const producers = queueConfig.producers
 	if (!Array.isArray(producers)) {
 		throw new Error(
@@ -161,6 +173,12 @@ export function parseProductionQueueResources(input: {
 		queueName: scheduledDispatchQueueName,
 		configPath: input.configPath,
 	})
+	readQueueProducer({
+		producers,
+		binding: packageEventsDispatchQueueBinding,
+		queueName: packageEventsDispatchQueueName,
+		configPath: input.configPath,
+	})
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,
@@ -174,5 +192,8 @@ export function parseProductionQueueResources(input: {
 			communityActivityDispatch.deadLetterQueue,
 		scheduledDispatchQueueName: scheduledDispatch.queue,
 		scheduledDispatchDeadLetterQueueName: scheduledDispatch.deadLetterQueue,
+		packageEventsDispatchQueueName: packageEventsDispatch.queue,
+		packageEventsDispatchDeadLetterQueueName:
+			packageEventsDispatch.deadLetterQueue,
 	}
 }

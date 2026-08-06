@@ -56,6 +56,130 @@ The result lists package id, `kody.id`, package name, topic, handler,
 description, and filters. Use this before debugging event dispatch, building
 fan-out, or deciding whether a package already subscribes to a topic.
 
+## Package-emitted topics (`@scope/...`)
+
+Packages can define their own event topics and emit to them; every other package
+saved by the same user that declares the topic in `kody.subscriptions` receives
+the event. There is no cross-user delivery.
+
+### Declaring emitted topics
+
+Declare topics in `package.json#kody.emits`. Topics must use the scoped form
+`@{username}/topic.name` with a lower-dot-case body, and the scope must match
+the emitting package's npm scope:
+
+```json
+{
+	"name": "@kentcdodds/discord-gateway",
+	"kody": {
+		"id": "discord-gateway",
+		"description": "Discord gateway.",
+		"emits": {
+			"@kentcdodds/discord.message.created": {
+				"description": "A Discord message was created.",
+				"payloadSchema": {
+					"type": "object",
+					"properties": {
+						"messageId": { "type": "string", "minLength": 1 },
+						"channelId": { "type": "string" }
+					},
+					"required": ["messageId", "channelId"],
+					"additionalProperties": false
+				}
+			}
+		}
+	}
+}
+```
+
+`payloadSchema` is optional. When present it must be a JSON Schema subset with
+root `"type": "object"`; supported keywords are `type`, `description`,
+`properties`, `required`, `additionalProperties` (boolean), `items`, `enum`,
+`const`, `minLength`, `maxLength`, `minimum`, `maximum`, `minItems`, and
+`maxItems`. Unsupported keywords fail package checks at publish time so authors
+never rely on silently ignored constraints. Declared schemas appear in package
+search/detail projections so subscribers can discover payload shapes.
+
+### Emitting
+
+Emit from any package runtime context (exports, subscription handlers,
+package-owned jobs, services, apps, retrievers) with the `events` helper:
+
+```ts
+import { events } from 'kody:runtime'
+
+await events.dispatch({
+	topic: '@kentcdodds/discord.message.created',
+	idempotencyKey: `discord:message-create:${message.id}`,
+	payload: { messageId: message.id, channelId: message.channelId },
+})
+```
+
+Rules:
+
+- The topic must be declared in the emitting package's `kody.emits`.
+- `idempotencyKey` is required; payloads must be JSON objects and are validated
+  against `payloadSchema` when declared.
+- Payloads are capped at 64 KiB (canonical JSON). Store large data with
+  `packageStorage()` and emit a reference instead.
+- `events.dispatch` is unavailable in ad hoc `execute` runs — topics belong to
+  packages, so emit from package code (or `packages.invoke` into one).
+
+### Delivery semantics
+
+Dispatch is asynchronous and durable: `events.dispatch` validates the event,
+enqueues it on the `kody-package-events-dispatch` Queue (with DLQ), and returns
+`{ topic, source, idempotencyKey, status: "enqueued" }` immediately. Emitters
+never observe subscriber results or latency; check each subscriber's run records
+for handler outcomes.
+
+The Queue consumer resolves the emitting user's subscribed packages at delivery
+time and invokes each `subscription:@scope/topic` handler with:
+
+```ts
+type PackageEventEnvelope = {
+	event: string
+	source: { type: 'package'; package_id: string; kody_id: string }
+	idempotency_key: string
+	payload: Record<string, unknown>
+}
+```
+
+- Per-subscriber invocations are exactly-once keyed on
+  `(source package, subscriber package, topic, idempotencyKey)`, so Queue
+  redelivery replays stored results instead of re-running handlers.
+- Infrastructure failures before handler code runs retry via the Queue (3
+  attempts, then the `kody-package-events-dispatch-dlq` dead-letter queue).
+  Terminal handler failures do not retry — a stored failed invocation replays
+  rather than re-running — and stay visible in run records.
+- Event-driven chains carry the same nested invocation depth budget as
+  `packages.invoke` (max 8 hops), so emit cycles between packages terminate.
+- In environments without the Queue binding (local dev, preview) — or when an
+  enqueue fails — dispatch falls back to inline delivery with the same consumer
+  code path and reports `status: "delivered_inline"` instead of `"enqueued"`.
+
+### Filters on package-emitted topics
+
+A subscription to a package-emitted topic may declare `filters`; every filter
+key must be present in the event payload with an equal JSON value or the
+subscriber is skipped:
+
+```json
+{
+	"kody": {
+		"subscriptions": {
+			"@kentcdodds/discord.message.created": {
+				"handler": "./src/on-general-chat-message.ts",
+				"filters": { "channelId": "1470913684598423592" }
+			}
+		}
+	}
+}
+```
+
+Platform-owned topics (below) keep their existing behavior: their dispatchers
+define whether and how `filters` apply.
+
 ## `email.message.received`
 
 Accepted stored inbound email dispatches `email.message.received` after Kody

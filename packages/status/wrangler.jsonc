@@ -1,0 +1,50 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "kody-status",
+	"main": "./worker.ts",
+	"compatibility_date": "2026-07-22",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true,
+	},
+	// One probe pass per minute; incidents open after two consecutive failures.
+	"triggers": {
+		"crons": ["* * * * *"],
+	},
+	// Deliberately independent from the main worker: the status page must stay
+	// up when heykody.dev deploys break or the app D1 database is down, so it
+	// has its own domain and its own Durable Object storage.
+	"routes": [
+		{
+			"pattern": "status.heykody.dev",
+			"custom_domain": true,
+		},
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "STATUS_STORE",
+				"class_name": "StatusStore",
+			},
+		],
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["StatusStore"],
+		},
+	],
+	"vars": {
+		"PRIMARY_ORIGIN": "https://heykody.dev",
+		"PACKAGE_APP_ORIGIN": "https://kodyapps.dev",
+		"STATUS_PAGE_URL": "https://status.heykody.dev",
+		"ALERT_EMAIL_TO": "me@kentcdodds.com",
+		"ALERT_EMAIL_FROM": "kody@heykody.dev",
+		"STATUS_ALERT_DAILY_LIMIT": "6",
+		// Production Kody Cloudflare account (same as the main worker); the
+		// matching CLOUDFLARE_API_TOKEN with Email Sending permission is a
+		// Worker secret set by the deploy workflow.
+		"CLOUDFLARE_ACCOUNT_ID": "a99ee2e72728dd52902ef288b7b1447d",
+		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
+	},
+}

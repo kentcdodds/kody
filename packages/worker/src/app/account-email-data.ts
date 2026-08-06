@@ -27,10 +27,7 @@ import {
 	type EmailMessageRecord,
 	type EmailProcessingStatus,
 } from '#worker/email/types.ts'
-import {
-	resolveEmailResourceLimit,
-	type PlanName,
-} from '#worker/entitlements/plans.ts'
+import { resolvePlanLimit, type PlanName } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
 	readCurrentEntitlementResourceUsage,
@@ -264,17 +261,17 @@ async function loadUsage(input: {
 		day: utcDayKey(now),
 		stored_messages: {
 			count: storedMessages,
-			limit: resolveEmailResourceLimit(plan, 'stored_email_messages'),
+			limit: resolvePlanLimit(plan, 'stored_email_messages'),
 		},
 		sends_today: {
 			count: sendsToday,
-			limit: resolveEmailResourceLimit(plan, 'email_sends_per_day'),
+			limit: resolvePlanLimit(plan, 'email_sends_per_day'),
 		},
 		receives_today: {
 			count: receivesToday,
-			limit: resolveEmailResourceLimit(plan, 'email_receives_per_day'),
+			limit: resolvePlanLimit(plan, 'email_receives_per_day'),
 		},
-		max_message_bytes: resolveEmailResourceLimit(plan, 'email_message_bytes'),
+		max_message_bytes: resolvePlanLimit(plan, 'email_message_bytes'),
 	}
 }
 

@@ -23,6 +23,20 @@ Primary operator surface:
 
 Do not use `tools/export-d1-remote-to-sqlite.sh` as a backup or restore tool.
 
+## Prevention
+
+### Deploy guardrails
+
+`npm run deploy-guardrails:check` protects the reviewed Durable Object migration
+and binding baseline in `tools/ci/durable-object-baseline.json`. Every
+`deleted_classes` migration must exactly match
+`tools/ci/do-deletion-allowlist.json`; changing that allowlist is the explicit
+code-review gate for destructive class deletion. The same check rejects removal
+or renaming of protected `new_sqlite_classes` tags, changes to protected
+Wrangler binding identities (`name`, `class_name`, `script_name`, or
+`environment`), and destructive Cloudflare CLI deletion commands in GitHub
+workflows unless the job is operator-triggered with `workflow_dispatch`.
+
 ## Live evidence log
 
 First-proven dates for each lane (newest first). Re-prove and update after
@@ -43,10 +57,11 @@ lifecycle.
 
 ## Objectives
 
-| Scope                | RPO    | Notes                                                                                                     |
-| -------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
-| All canonical stores | 24h    | D1, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package/job source snapshots |
-| D1 freshness         | hourly | Control-plane size/ETag freshness; deep checksum via drill                                                |
+| Scope                 | RPO    | Notes                                                                                                                                        |
+| --------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| All canonical stores  | 24h    | D1, per-user Mailbox graphs, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package/job source snapshots           |
+| Selected RunLog state | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded |
+| D1 freshness          | hourly | Control-plane size/ETag freshness; deep checksum via drill                                                                                   |
 
 RTO is whatever the operator can achieve with the UI restore workflow after a
 successful sealed-day drill. There is no provider-level cross-store atomic
@@ -69,7 +84,8 @@ administered **DR (“KCD”) Cloudflare account**:
 Production worker (source account)          Backup control plane (DR account)
 ───────────────────────────────             ────────────────────────────────
 Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
-  stage StorageRunner / R2 / artifacts  →   Hourly: D1 freshness + catch-up
+  stage Mailbox / selected RunLog state
+  / StorageRunner / R2 / artifacts      →   Hourly: D1 freshness + catch-up
   into staging/{day}/...                    Hourly: seal complete days
 06:15 UTC: staging watchdog → Sentry        Admin UI: drill / production restore
 ```
@@ -131,6 +147,17 @@ Contract: `packages/shared/src/backup-staging.ts`.
 2. **Other canonical stores (production worker)** — When
    `DR_EXPORT_ENABLED=true` and DR S3 credentials are set, nightly ticks
    (`packages/worker/src/dr/exporter.ts`) stage:
+   - **Mailbox** — owner inventory from D1 `users.stable_user_id`, with one
+     keyset-paged `Mailbox.exportMailbox` NDJSON dump per owner and a
+     checksummed mailbox index. Mailbox is the sole authority for USER email
+     threads, messages, attachments, and delivery-event metadata; raw MIME and
+     external attachment bytes remain in `EMAIL_BLOBS` and are captured by the
+     R2 lane.
+   - **Selected RunLog state** — the same owner inventory, with `exportRuns`
+     started at its `job-run-observability:` cursor so only the never-pruned
+     `job_run_observability`, `package_run_successes`, and
+     `activation_milestones` tables are staged. Retained run/log history,
+     invocation-ledger rows, and workflow projections are deliberately skipped.
    - **StorageRunner** — platform-wide inventory from D1, NDJSON dump per
      storage identity via `exportStorage`
    - **R2** — `EMAIL_BLOBS` and `COMMUNITY_ASSETS` listed and copied into
@@ -146,17 +173,19 @@ Contract: `packages/shared/src/backup-staging.ts`.
    - **Published artifacts** — `BUNDLE_ARTIFACTS_KV` published source snapshots
      for rows in `entity_sources` with a `published_commit`
    - **Resumable phase state** — `exporter/progress.json` contains phase
-     cursors, counters, a bounded index-entry tail, and conditional-write
-     revision data. Storage dump pages and storage, R2, and artifact index
-     entries are written under `exporter/chunks/` as bounded NDJSON objects.
-     Finalization reads those chunks and emits the stable storage, R2, and
-     artifact index contracts referenced by `exporter/summary.json`. Chunk
-     objects are content-addressed linked lists whose head keys and counts live
-     in progress. Stale writers can therefore leave only unreferenced chunks;
-     they cannot overwrite chunks selected by a newer lease. Progress updates
-     retain `If-Match` ownership semantics. Canonical per-day dumps, indexes,
-     and the completion summary are create-only; a resumed writer adopts an
-     already completed object instead of replacing it.
+     cursors, counters, bounded index-entry tails, and conditional-write
+     revision data. Mailbox, selected RunLog, and StorageRunner dump pages plus
+     all phase index entries are written under `exporter/chunks/` as bounded
+     NDJSON objects. Finalization reads those chunks and emits the stable
+     mailbox, RunLog, storage, R2, and artifact index contracts referenced by
+     `exporter/summary.json`. Chunk objects are content-addressed linked lists
+     whose head keys and counts live in progress. Stale writers can therefore
+     leave only unreferenced chunks; they cannot overwrite chunks selected by a
+     newer lease. Progress updates retain `If-Match` ownership semantics.
+     Canonical per-day dumps, indexes, and the completion summary are
+     create-only; a resumed writer adopts an already completed object instead of
+     replacing it. Per-owner Mailbox and RunLog dumps use the same 16 MiB
+     admission ceiling and summary-warning behavior as StorageRunner dumps.
 3. **Seal** — Control plane verifies staged checksums against
    `staging/{day}/exporter/summary.json`, requires a verified same-day D1
    manifest, copies staged files under `daily/full/{day}/...`, and signs a
@@ -191,35 +220,51 @@ migration filenames at the deployment commit; recompute when adding a migration:
 node -e "const fs=require('node:fs'),{createHash}=require('node:crypto');console.log(createHash('sha256').update(JSON.stringify(fs.readdirSync('packages/worker/migrations').filter(f=>f.endsWith('.sql')).sort())).digest('hex'))"
 ```
 
-### Derived stores (not backed up)
+### Derived and accepted-loss stores
 
-Restore rebuilds these; do not treat them as recovery media:
+Restore rebuilds the derived stores below; do not treat them as recovery media:
 
 - Vectorize (`CAPABILITY_VECTOR_INDEX`) — reindex
 - OAuth KV / browser sessions / provider tokens — users reconnect
 - Queues, Workflow instances, Durable Object alarms — recreate from config + D1
 - Derived community icons and ordinary KV caches
-- **RunLog / run records** — per-user execution history (runs + console log
-  lines) lives in the `RunLog` Durable Object with ~30 day self-enforced
-  retention. It is observability data, not a canonical store. The production DR
-  exporter stages a fixed set of stores (StorageRunner NDJSON, R2 blob indexes,
-  published artifact snapshots) and does **not** enumerate or dump `RunLog`.
-  Account export/deletion cover run records for user-facing portability and
-  purge; disaster recovery deliberately does not.
+- **UserMeter** — daily entitlement counters self-prune and can be
+  re-established by traffic; authoritative storage-byte state is corrected by
+  the revision-guarded physical-storage reconciliation lane. Package-service
+  running state is ephemeral and services must be restarted/reconciled after an
+  incident. Losing UserMeter state can temporarily undercount usage or require
+  service restart, but it does not lose stored user content; this is accepted
+  rather than adding a nightly UserMeter dump lane.
+- **RunLog run history** — per-user runs and console lines have ~30-day
+  self-enforced retention and remain accepted observability loss. Account
+  export/deletion still cover them for user-facing portability and purge.
+  Nightly DR starts `exportRuns` at `job-run-observability:` and therefore
+  captures only job observability, package-run success counters, and activation
+  milestones.
 
   **Known risk — keyed invocation idempotency ledger:** the same `RunLog` DO
   also holds the keyed package-invocation idempotency ledger (claims + 90-day
-  terminal replay responses; the legacy D1 `package_invocations` table was
-  dropped, so the DO is the only store). Losing the DO therefore loses
-  idempotency/replay state, not just observability: webhook providers and other
-  keyed callers that retry deliveries would **re-execute** invocations whose
-  keys were already terminal, and in-flight replays would return fresh
-  executions instead of stored responses. This is accepted with eyes open: lost
-  rows are gone — later traffic re-establishes claims only for keys used after
-  the loss, it does not restore protection for keys used before it. The blast
-  radius is duplicate side effects (a loss of correctness state) bounded by the
-  90-day retention window; no stored user content is lost. The DO ledger is not
-  part of DR media, and D1 backups do not carry any invocation ledger.
+  terminal replay responses). There is no D1 `package_invocations` table; the DO
+  is the only store. Losing the DO therefore loses idempotency/replay state, not
+  just observability: webhook providers and other keyed callers that retry
+  deliveries would **re-execute** invocations whose keys were already terminal,
+  and in-flight replays would return fresh executions instead of stored
+  responses. This is accepted with eyes open: lost rows are gone — later traffic
+  re-establishes claims only for keys used after the loss, it does not restore
+  protection for keys used before it. The blast radius is duplicate side effects
+  (a loss of correctness state) bounded by the 90-day retention window; no
+  stored user content is lost. The DO ledger is not part of DR media, and D1
+  backups do not carry any invocation ledger.
+
+- **RunLog workflow projections** — correctness projections are also before the
+  selective export cursor and remain excluded. Incident handling must treat
+  in-flight workflow state as lost and restart or reconcile affected workflows.
+- **`AUDIT_DB`** — the separate D1 database containing hashed security audit
+  events with 180-day retention has no cross-account backup lane. This is
+  accepted-unprotected operator/security evidence, not user content. **Operator
+  confirmation required:** confirm that losing the retained audit trail in a DR
+  account-loss event remains acceptable, or open a follow-up for an independent
+  `AUDIT_DB` export before declaring the program complete.
 
 ### Honest gaps
 
@@ -227,6 +272,11 @@ Restore rebuilds these; do not treat them as recovery media:
   `BUNDLE_ARTIFACTS_KV` are staged. Full repo history is not restorable from
   backup media.
 - **Unpublished / in-progress repo-session work** is not exported.
+- **Mailbox restore is manual.** Staging and sealing protect the authoritative
+  graph and verify every owner dump against the mailbox index, but the normal
+  production restore handler does not yet import Mailbox rows. Automated,
+  resumable Mailbox re-import is tracked as a follow-up under
+  [#1223](https://github.com/kentcdodds/kody/issues/1223).
 - **StorageRunner restore is replace-per-bucket** (`importStorage` mode
   `replace`): each inventoried storage id is cleared and rewritten from the
   sealed dump. Storage ids absent from the inventory are not deleted by restore.
@@ -236,13 +286,12 @@ Restore rebuilds these; do not treat them as recovery media:
   `archived_job_artifacts`, the `user_storage_buckets` registry (including
   ad-hoc / execute buckets), and `package_service_states` (projected service
   storage ids). Platform DR has only a `D1Database`, so it does **not** walk
-  package manifests or enumerate `RunLog` Durable Objects. A service whose
-  Durable Object never projected into `package_service_states` is therefore
-  absent from sealed-day inventory until it heartbeats or transitions; account
-  deletion/export cover those via manifest enumeration. Buckets known only
-  inside a user's `RunLog` (and never registered in `user_storage_buckets` or an
-  entity table) remain outside DR inventory by design — RunLog is observability,
-  not a canonical store.
+  package manifests. A service whose Durable Object never projected into
+  `package_service_states` is therefore absent from sealed-day inventory until
+  it heartbeats or transitions; account deletion/export cover those via manifest
+  enumeration. Buckets known only inside a user's `RunLog` (and never registered
+  in `user_storage_buckets` or an entity table) remain outside DR inventory by
+  design; the selective RunLog lane does not export run-associated storage ids.
 
 ## Credentials and Access
 
@@ -359,19 +408,132 @@ Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
 config, and expect users to reauthorize OAuth and remote connectors.
 
+### Durable Object point-in-time recovery
+
+Use Durable Object (DO) PITR for an application bug or corruption inside one
+**surviving** SQLite-backed object. It restores that object's complete SQLite
+database, including SQL tables and key-value storage, to an approximate point
+within Cloudflare's rolling 30-day history. It is not a replacement for sealed
+backups: if an object or its class was deleted, use backup media where that
+class is covered. Deleting a Durable Object class destroys its PITR history and
+makes this procedure impossible.
+
+The operator endpoint is production-only infrastructure, is not registered on
+user, MCP, or package surfaces, and reuses `DR_RESTORE_SECRET`. Disable ingress
+or otherwise stop writes to the affected user before recovery. Supply the user's
+exact `stable_user_id`, not username, email, or a D1 numeric id. Valid `kind`
+values are `mailbox`, `run-log`, `user-meter`, and `storage-runner`;
+`storage-runner` also requires its exact storage id.
+
+1. Resolve a bookmark for the incident timestamp. Cloudflare returns the
+   bookmark nearest that time:
+
+   ```sh
+   USER_ID='EXACT_STABLE_USER_ID'
+   INCIDENT_AT='YYYY-MM-DDTHH:MM:SSZ'
+   INCIDENT_TIMESTAMP_MS="$(
+     node -e 'const ms=Date.parse(process.argv[1]);if(!Number.isFinite(ms))process.exit(1);console.log(ms)' \
+       "$INCIDENT_AT"
+   )"
+   curl --fail-with-body \
+     --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/do-pitr" \
+     --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+     --header "Content-Type: application/json" \
+     --data @- <<JSON
+     {
+       "operation": "get-recovery-bookmark",
+       "kind": "mailbox",
+       "userId": "$USER_ID",
+       "timestampMs": $INCIDENT_TIMESTAMP_MS
+     }
+   JSON
+   ```
+
+   For StorageRunner, add `"storageId": "EXACT_STORAGE_ID"`. Keep the returned
+   `bookmark` in the incident record and inspect it before the destructive step.
+
+2. Schedule the restore. The object logs the undo bookmark as a structured
+   `do-pitr-restore-scheduled` event, returns it as `undoBookmark`, and resets
+   immediately so the next object session applies the restore:
+
+   ```sh
+   BOOKMARK='BOOKMARK_FROM_STEP_1'
+   curl --fail-with-body \
+     --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/do-pitr" \
+     --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+     --header "Content-Type: application/json" \
+     --data @- <<JSON
+     {
+       "operation": "restore-to-bookmark",
+       "kind": "mailbox",
+       "userId": "$USER_ID",
+       "bookmark": "$BOOKMARK"
+     }
+   JSON
+   ```
+
+   Copy `undoBookmark` immediately and verify the affected object's state before
+   restoring ingress. The operator log (`event=do-pitr-operator-restore`)
+   includes the operation id, exact object identity, target bookmark, and undo
+   bookmark. PITR is unavailable in local development and Workers unit-test
+   emulation; the endpoint reports `pitr-unavailable` there.
+
+3. To undo the recovery, repeat step 2 against the same exact object identity,
+   using the saved `undoBookmark` as `bookmark`. The undo itself returns a new
+   undo bookmark; retain that handle too. Do not assume logs from the restored
+   object's own historical storage contain the handle—the structured platform
+   log and the operator response are the recovery record.
+
+### Manual Mailbox re-import
+
+Prefer
+[Durable Object point-in-time recovery](#durable-object-point-in-time-recovery)
+when the Mailbox object survives and the target is still inside Cloudflare's
+30-day history. The sealed Mailbox lane is recovery media for object/class or
+account loss, but automated re-import is not yet part of
+`POST /__maintenance/dr-restore`. During an incident:
+
+1. Keep ingress disabled and complete the signed D1 plus R2 restore first, so
+   every raw MIME and external-attachment key referenced by Mailbox rows exists.
+2. Verify the full-manifest signature and the sealed mailbox-index byte count
+   and SHA-256. For every owner entry, verify the NDJSON object's byte count and
+   SHA-256 before reading any rows. A drill stops here: proving the index and
+   every referenced dump against their checksums is the required Mailbox drill
+   gate; do not mutate production during a drill.
+3. Build and review an incident-only maintenance command from the restored
+   commit. For each `ownerId`, stream that owner's dump into a new or confirmed
+   empty `Mailbox` object. Recreate threads and messages with their attachments
+   through `upsertMessageGraph`, then delivery events through
+   `upsertDeliveryEvents`. Preserve the exported ids and timestamps, process
+   parents before children, and never call `purge` on an existing object without
+   a separately reviewed destructive-restore plan.
+4. Compare `countMailbox` with the dump's per-kind counts, then spot-check
+   inbound raw MIME and external attachments through normal reads. Re-enable
+   ingress only after every intended owner passes.
+
+An automated resumable importer, including conflict policy for non-empty
+objects, remains a tracked follow-up in
+[#1223](https://github.com/kentcdodds/kody/issues/1223).
+
 ## Schedules and freshness
 
-| When (UTC)               | Who               | What                                                                                               |
-| ------------------------ | ----------------- | -------------------------------------------------------------------------------------------------- |
-| `*/5` during 00:30–06:10 | Production worker | Stage non-D1 stores for the current UTC day (cheap no-op once the summary exists)                  |
-| 06:15                    | Production worker | Staging watchdog: a missing `exporter/summary.json` fails the lane → Sentry                        |
-| 02:15                    | Control plane     | Primary D1 export Workflow                                                                         |
-| 02:45–05:45 hourly       | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                    |
-| Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days |
+| When (UTC)               | Who               | What                                                                                                              |
+| ------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `*/5` during 00:30–06:10 | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete) |
+| 06:15                    | Production worker | Staging watchdog: a missing `exporter/summary.json` fails the lane → Sentry                                       |
+| 02:15                    | Control plane     | Primary D1 export Workflow                                                                                        |
+| 02:45–05:45 hourly       | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                                   |
+| Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                |
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
-`freshness-stale`, size-ceiling hits, missing manifests, seal failures,
-`backup-unrestorable-statements`, or unexpected disablement of the enable gates.
+`freshness-unrestorable` (the SQL contains statements D1 cannot import),
+`freshness-stale`, size-ceiling hits, missing manifests or required SQL stats,
+seal failures, `backup-unrestorable-statements`, or unexpected disablement of
+the enable gates. Unrestorable exports never receive a canonical day manifest;
+catch-up retries can re-export the day after the oversized row or write path is
+bounded. Older unrestorable days may already have canonical and full manifests;
+immutable media is intentionally left unchanged, so freshness, dashboard, drill,
+and production-restore gates remain essential until it ages out.
 
 ## Offline CLI fallback
 
@@ -455,7 +617,9 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
       `DR_RESTORE_SECRET` (same value as control plane).
 - [ ] Control plane `PRIMARY_WORKER_ORIGIN` points at production.
 - [ ] One manual/nightly staging run writes
-      `staging/{day}/exporter/summary.json` with acceptable warnings.
+      `staging/{day}/exporter/summary.json` with acceptable warnings; verify the
+      mailbox and RunLog indexes and at least one referenced owner dump against
+      the recorded byte count and SHA-256.
 
 ### 5. Benchmark and enable D1 schedule
 
@@ -477,9 +641,10 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - [ ] Set `DR_EXPORT_ENABLED=true` in production after staging path is proven.
 - [ ] Monthly: UI isolated D1 drill on a retained day; confirm alert paths for
       freshness failures.
-- [ ] Quarterly: seal verification + spot-check StorageRunner/R2/artifact
-      restore into a non-production target (or full UI production restore only
-      during a real incident after a fresh drill on that day).
+- [ ] Quarterly: seal verification + verify every Mailbox owner dump against its
+      sealed index + spot-check StorageRunner/R2/artifact restore into a
+      non-production target (or full UI production restore only during a real
+      incident after a fresh drill on that day).
 - [ ] After material schema/storage/encryption changes: extra drill before
       trusting the newest sealed day.
 
@@ -492,7 +657,13 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - Multipart D1 capture / statement-safe split restore
 - Full Artifacts Git history or unpublished repo-session work
 - Backup of Vectorize, OAuth KV, queues, Workflow runtime, alarms (rebuild)
-- Backup of `RunLog` run records (observability; ~30 day DO self-retention)
+- Backup of `RunLog` run records and logs (observability; ~30 day DO
+  self-retention), invocation idempotency ledger, and workflow projections;
+  never-pruned job observability and activation state are backed up
+- Automated Mailbox re-import (sealed dumps are manually recoverable)
+- Backup of UserMeter (reconciliation/restart is the accepted recovery path)
+- Backup of `AUDIT_DB` hashed audit events (180-day evidence; accepted pending
+  explicit operator confirmation)
 - Plaintext `SECRET_STORE_KEY` or other credentials inside backup media
 - Using `tools/export-d1-remote-to-sqlite.sh` as DR
 

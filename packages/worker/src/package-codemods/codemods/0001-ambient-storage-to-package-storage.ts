@@ -695,6 +695,10 @@ function transformAmbientStorage(
 	}
 }
 
+/**
+ * Permanent repair path for the publish-time ambient-storage guard. It remains
+ * available so package authors can remediate rejected source safely.
+ */
 export const ambientStorageToPackageStorageCodemod = {
 	id: ambientStorageToPackageStorageCodemodId,
 	description:

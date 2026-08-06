@@ -1,4 +1,5 @@
 import { runD1WithRetry } from '#worker/d1-retry.ts'
+import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
 	type EntityKind,
 	type EntitySourceRow,
@@ -304,9 +305,31 @@ export async function deleteEntitySource(
 		userId: string
 	},
 ): Promise<boolean> {
-	const result = await db
-		.prepare(`DELETE FROM entity_sources WHERE id = ? AND user_id = ?`)
-		.bind(input.id, input.userId)
-		.run()
+	const results = await db.batch([
+		db
+			.prepare(`DELETE FROM entity_sources WHERE id = ? AND user_id = ?`)
+			.bind(input.id, input.userId),
+		db
+			.prepare(
+				`DELETE FROM user_storage_buckets
+				WHERE user_id = ?
+					AND kind = 'repo_session'
+					AND storage_id IN (
+						SELECT ? || id
+						FROM repo_sessions
+						WHERE user_id = ? AND source_id = ?
+					)`,
+			)
+			.bind(
+				input.userId,
+				repoSessionStorageBucketId(''),
+				input.userId,
+				input.id,
+			),
+	])
+	const result = results[0]
+	if (!result) {
+		throw new Error('Entity source deletion returned no D1 result.')
+	}
 	return (result.meta.changes ?? 0) > 0
 }
