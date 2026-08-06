@@ -57,11 +57,10 @@ const wrapperCss = {
 	'& pre': {
 		margin: 0,
 	},
-	'&:hover button, & button:focus-visible': {
-		opacity: 1,
-	},
 }
 
+// Always visible (dimmed at rest): hover-reveal would hide the affordance on
+// touch devices, and guide snippets exist to be copied.
 const copyButtonCss = {
 	position: 'absolute' as const,
 	top: spacing.xs,
@@ -74,9 +73,10 @@ const copyButtonCss = {
 	fontSize: typography.fontSize.xs,
 	fontWeight: typography.fontWeight.semibold,
 	cursor: 'pointer',
-	opacity: 0,
-	transition: 'opacity 120ms ease',
+	opacity: 0.75,
+	transition: 'opacity 120ms ease, color 120ms ease',
 	'&:hover': {
+		opacity: 1,
 		color: colors.text,
 	},
 }
