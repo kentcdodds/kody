@@ -1564,6 +1564,8 @@ test('account export includes run_records section with runs, ledger, and dedicat
 					since: '1970-01-01T00:00:00.000Z',
 					total: 1,
 					errors: 0,
+					ignored: 0,
+					resolved: 0,
 					running: 0,
 					bySurface: [],
 				}),

@@ -32,6 +32,7 @@ import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
 	type AccountActivitySummary,
+	type AccountActivityTriageFilter,
 } from '#app/loader-data.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -56,6 +57,16 @@ const statusFilterOptions: Array<{
 	{ value: 'error', label: 'Errors' },
 	{ value: 'all', label: 'All' },
 	{ value: 'running', label: 'Running' },
+]
+
+const triageFilterOptions: Array<{
+	value: AccountActivityTriageFilter
+	label: string
+}> = [
+	{ value: 'open', label: 'Open' },
+	{ value: 'ignored', label: 'Ignored' },
+	{ value: 'resolved', label: 'Resolved' },
+	{ value: 'all', label: 'All triage' },
 ]
 
 const surfaceFilterOptions: Array<{
@@ -156,13 +167,38 @@ function readSurfaceFilter(href: string): AccountActivitySurfaceFilter {
 	return match?.value ?? 'all'
 }
 
+function readTriageFilter(href: string): AccountActivityTriageFilter {
+	const params = new URL(href, 'http://localhost').searchParams
+	const value =
+		params.get('error_triage')?.trim() ?? params.get('triage')?.trim()
+	const match = triageFilterOptions.find((option) => option.value === value)
+	return match?.value ?? 'open'
+}
+
+function triageLabel(triage: AccountActivityRunListItem['errorTriage']) {
+	switch (triage) {
+		case 'ignored':
+			return 'Ignored'
+		case 'resolved':
+			return 'Resolved'
+		case null:
+			return 'Open'
+		default: {
+			const exhaustive: never = triage
+			return exhaustive
+		}
+	}
+}
+
 function buildActivitySearch(input: {
 	status: AccountActivityStatusFilter
 	surface: AccountActivitySurfaceFilter
+	triage: AccountActivityTriageFilter
 }) {
 	const params = new URLSearchParams()
 	if (input.status !== 'error') params.set('status', input.status)
 	if (input.surface !== 'all') params.set('surface', input.surface)
+	if (input.triage !== 'open') params.set('error_triage', input.triage)
 	const search = params.toString()
 	return search ? `?${search}` : ''
 }
@@ -171,7 +207,8 @@ function getDataLatchKey(href: string) {
 	const selection = activityRoute.getSelection(href)
 	const status = readStatusFilter(href)
 	const surface = readSurfaceFilter(href)
-	const filterKey = `${status}:${surface}`
+	const triage = readTriageFilter(href)
+	const filterKey = `${status}:${surface}:${triage}`
 	return selection.selectedId
 		? `/account/activity/${encodeURIComponent(selection.selectedId)}?${filterKey}`
 		: `/account/activity?${filterKey}`
@@ -181,9 +218,11 @@ function buildActivityApiRequestUrl(href: string, cursor?: string | null) {
 	const requestUrl = new URL(accountActivityApiPath, 'http://localhost')
 	const status = readStatusFilter(href)
 	const surface = readSurfaceFilter(href)
+	const triage = readTriageFilter(href)
 	if (status !== 'error') requestUrl.searchParams.set('status', status)
 	else requestUrl.searchParams.set('status', 'error')
 	if (surface !== 'all') requestUrl.searchParams.set('surface', surface)
+	if (triage !== 'open') requestUrl.searchParams.set('error_triage', triage)
 	const selectedRunId = activityRoute.getSelection(href).selectedId
 	if (selectedRunId) {
 		requestUrl.searchParams.set('selected', selectedRunId)
@@ -337,12 +376,14 @@ export function AccountActivityRoute(handle: Handle) {
 	function updateFilters(input: {
 		status?: AccountActivityStatusFilter
 		surface?: AccountActivitySurfaceFilter
+		triage?: AccountActivityTriageFilter
 	}) {
 		const href = getCurrentHref()
 		const selection = activityRoute.getSelection(href)
 		const search = buildActivitySearch({
 			status: input.status ?? readStatusFilter(href),
 			surface: input.surface ?? readSurfaceFilter(href),
+			triage: input.triage ?? readTriageFilter(href),
 		})
 		if (selection.selectedId) {
 			navigate(activityRoute.buildDetailHref(selection.selectedId, search))
@@ -370,9 +411,11 @@ export function AccountActivityRoute(handle: Handle) {
 		const selection = activityRoute.getSelection(currentHref)
 		const statusFilter = readStatusFilter(currentHref)
 		const surfaceFilter = readSurfaceFilter(currentHref)
+		const triageFilter = readTriageFilter(currentHref)
 		const filterSearch = buildActivitySearch({
 			status: statusFilter,
 			surface: surfaceFilter,
+			triage: triageFilter,
 		})
 		const detail =
 			selectedRun && selectedRun.id === selection.selectedId
@@ -390,7 +433,10 @@ export function AccountActivityRoute(handle: Handle) {
 			!waitingForDetail &&
 			status === 'ready'
 		const emptyBecauseErrors =
-			statusFilter === 'error' && surfaceFilter === 'all' && runs.length === 0
+			statusFilter === 'error' &&
+			surfaceFilter === 'all' &&
+			triageFilter === 'open' &&
+			runs.length === 0
 		const emptyBecauseFilters = runs.length === 0 && !emptyBecauseErrors
 		const readySummary = status === 'ready' ? summary : null
 
@@ -424,7 +470,13 @@ export function AccountActivityRoute(handle: Handle) {
 						>
 							{[
 								{ label: 'Runs (7 days)', value: String(readySummary.total) },
-								{ label: 'Errors', value: String(readySummary.errors) },
+								{ label: 'Open errors', value: String(readySummary.errors) },
+								{
+									label: 'Ignored / resolved',
+									value: String(
+										readySummary.ignored + readySummary.resolved,
+									),
+								},
 								{ label: 'Running now', value: String(readySummary.running) },
 							].map((item) => (
 								<div
@@ -451,7 +503,8 @@ export function AccountActivityRoute(handle: Handle) {
 											fontSize: typography.fontSize.xl,
 											fontWeight: typography.fontWeight.semibold,
 											color:
-												item.label === 'Errors' && readySummary.errors > 0
+												item.label === 'Open errors' &&
+												readySummary.errors > 0
 													? colors.error
 													: colors.text,
 										})}
@@ -478,7 +531,7 @@ export function AccountActivityRoute(handle: Handle) {
 							sidebar={
 								<AccountManagementSidebar
 									title="Runs"
-									description="Default view shows errors. Change filters to browse all recorded runs."
+									description="Default view shows open errors. Ignored/resolved noise is hidden until you change triage."
 								>
 									<div
 										mix={css({
@@ -538,6 +591,35 @@ export function AccountActivityRoute(handle: Handle) {
 												]}
 											>
 												{surfaceFilterOptions.map((option) => (
+													<option key={option.value} value={option.value}>
+														{option.label}
+													</option>
+												))}
+											</select>
+										</label>
+										<label mix={[css(fieldCss), css({ gridColumn: '1 / -1' })]}>
+											<span mix={css(fieldLabelCss)}>Triage</span>
+											<select
+												data-field-ring
+												aria-label="Triage filter"
+												value={triageFilter}
+												mix={[
+													on('change', (event) => {
+														const value = event.currentTarget
+															.value as AccountActivityTriageFilter
+														if (
+															!triageFilterOptions.some(
+																(option) => option.value === value,
+															)
+														) {
+															return
+														}
+														updateFilters({ triage: value })
+													}),
+													css(selectCss),
+												]}
+											>
+												{triageFilterOptions.map((option) => (
 													<option key={option.value} value={option.value}>
 														{option.label}
 													</option>
@@ -675,6 +757,20 @@ export function AccountActivityRoute(handle: Handle) {
 														{statusLabel(detail.status)}
 													</span>
 												),
+											},
+											{
+												label: 'Triage',
+												value: triageLabel(detail.errorTriage),
+											},
+											{
+												label: 'Triage note',
+												value: detail.triageNote ?? '—',
+											},
+											{
+												label: 'Triaged at',
+												value: detail.triagedAt
+													? formatTimestamp(detail.triagedAt)
+													: '—',
 											},
 											{
 												label: 'Surface',

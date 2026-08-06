@@ -5,11 +5,14 @@ import {
 	summarizeRunRecords,
 } from '#worker/run-records/service.ts'
 import {
+	type RunErrorTriage,
+	type RunErrorTriageFilter,
 	type RunLogLevel,
 	type RunRecord,
 	type RunRecordLog,
 	type RunStatus,
 	type RunSurface,
+	runErrorTriageFilterValues,
 	runRecordRetentionDays,
 	runSurfaceValues,
 } from '#worker/run-records/types.ts'
@@ -35,6 +38,10 @@ export const accountActivitySurfaceFilterValues = [
 export type AccountActivitySurfaceFilter =
 	(typeof accountActivitySurfaceFilterValues)[number]
 
+export const accountActivityTriageFilterValues = runErrorTriageFilterValues
+
+export type AccountActivityTriageFilter = RunErrorTriageFilter
+
 export type AccountActivityRunListItem = {
 	id: string
 	surface: RunSurface
@@ -45,6 +52,7 @@ export type AccountActivityRunListItem = {
 	durationMs: number | null
 	errorName: string | null
 	errorMessage: string | null
+	errorTriage: RunErrorTriage | null
 	packageId: string | null
 	jobId: string | null
 	logCount: number
@@ -67,6 +75,9 @@ export type AccountActivityRunDetail = AccountActivityRunListItem & {
 	sessionId: string | null
 	idempotencyKey: string | null
 	parentRunId: string | null
+	triageNote: string | null
+	triagedAt: string | null
+	triagedBy: string | null
 	metadata: Record<string, unknown>
 	logs: Array<AccountActivityRunLog>
 }
@@ -75,6 +86,8 @@ export type AccountActivitySummary = {
 	since: string
 	total: number
 	errors: number
+	ignored: number
+	resolved: number
 	running: number
 }
 
@@ -82,6 +95,7 @@ export type AccountActivityLoaderData = {
 	ok: true
 	statusFilter: AccountActivityStatusFilter
 	surfaceFilter: AccountActivitySurfaceFilter
+	triageFilter: AccountActivityTriageFilter
 	summary: AccountActivitySummary
 	runs: Array<AccountActivityRunListItem>
 	nextCursor: string | null
@@ -114,6 +128,15 @@ export function isAccountActivitySurfaceFilter(
 	)
 }
 
+export function isAccountActivityTriageFilter(
+	value: string | null | undefined,
+): value is AccountActivityTriageFilter {
+	return (
+		typeof value === 'string' &&
+		(accountActivityTriageFilterValues as ReadonlyArray<string>).includes(value)
+	)
+}
+
 export function readAccountActivitySelectedRunId(
 	requestUrl: string,
 	pathRunId?: string,
@@ -140,6 +163,10 @@ export function readAccountActivityFilters(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
 	const statusRaw = url.searchParams.get('status')?.trim() ?? null
 	const surfaceRaw = url.searchParams.get('surface')?.trim() ?? null
+	const triageRaw =
+		url.searchParams.get('error_triage')?.trim() ??
+		url.searchParams.get('triage')?.trim() ??
+		null
 	const cursor = url.searchParams.get('cursor')?.trim() || null
 	return {
 		statusFilter: isAccountActivityStatusFilter(statusRaw)
@@ -148,6 +175,9 @@ export function readAccountActivityFilters(requestUrl: string) {
 		surfaceFilter: isAccountActivitySurfaceFilter(surfaceRaw)
 			? surfaceRaw
 			: ('all' satisfies AccountActivitySurfaceFilter),
+		triageFilter: isAccountActivityTriageFilter(triageRaw)
+			? triageRaw
+			: ('open' satisfies AccountActivityTriageFilter),
 		cursor,
 	}
 }
@@ -187,6 +217,7 @@ function toListItem(run: RunRecord): AccountActivityRunListItem {
 		durationMs: run.durationMs,
 		errorName: run.errorName,
 		errorMessage: run.errorMessage,
+		errorTriage: run.errorTriage,
 		packageId: run.packageId,
 		jobId: run.jobId,
 		logCount: run.logCount,
@@ -208,6 +239,9 @@ function toDetail(
 		sessionId: run.sessionId,
 		idempotencyKey: run.idempotencyKey,
 		parentRunId: run.parentRunId,
+		triageNote: run.triageNote,
+		triagedAt: run.triagedAt,
+		triagedBy: run.triagedBy,
 		metadata: run.metadata,
 		logs: logs
 			.slice()
@@ -238,9 +272,8 @@ export async function loadAccountActivityData(input: {
 		input.request.url,
 		input.pathRunId,
 	)
-	const { statusFilter, surfaceFilter, cursor } = readAccountActivityFilters(
-		input.request.url,
-	)
+	const { statusFilter, surfaceFilter, triageFilter, cursor } =
+		readAccountActivityFilters(input.request.url)
 	const since = summarySince(now)
 
 	const [summary, page, selectedRecord] = await Promise.all([
@@ -256,6 +289,7 @@ export async function loadAccountActivityData(input: {
 				status: statusFilterToRunStatus(statusFilter),
 				surface: surfaceFilterToRunSurface(surfaceFilter),
 				since,
+				errorTriage: triageFilter,
 			},
 			limit: defaultPageSize,
 			cursor,
@@ -273,10 +307,13 @@ export async function loadAccountActivityData(input: {
 		ok: true,
 		statusFilter,
 		surfaceFilter,
+		triageFilter,
 		summary: {
 			since: summary.since,
 			total: summary.total,
 			errors: summary.errors,
+			ignored: summary.ignored,
+			resolved: summary.resolved,
 			running: summary.running,
 		},
 		runs: page.runs.map(toListItem),

@@ -15,8 +15,9 @@ last-run error, duration, or counters). Those neighbors are covered in
 
 A run record is one execution attempt on a named **surface**: status (`running`
 / `success` / `error`), optional package/job/workflow identifiers, start and
-finish timestamps, duration, truncated error fields, JSON metadata, and up to
-200 captured log lines.
+finish timestamps, duration, truncated error fields, optional soft error triage
+(`error_triage`: `ignored` / `resolved`, plus note / who / when — separate from
+execution status), JSON metadata, and up to 200 captured log lines.
 
 Package ownership is optional. Ad-hoc MCP `execute`, standalone `kody.json`
 jobs, and inline workflows have no `package_id`; the record still lands under
@@ -24,9 +25,9 @@ the signed-in user. That optionality is why run records are not shaped as
 package-scoped debug rows.
 
 Code lives in `packages/worker/src/run-records/` (types, worker service, and the
-`RunLog` Durable Object). MCP read capabilities live under
-`packages/worker/src/mcp/capabilities/runs/`. The account UI is
-`/account/activity`.
+`RunLog` Durable Object). MCP capabilities live under
+`packages/worker/src/mcp/capabilities/runs/` (list/get/summary plus soft triage
+via `run_update`). The account UI is `/account/activity`.
 
 ## Surfaces
 
@@ -355,11 +356,24 @@ retention anchors only. Package services heartbeat `package_service_states`.
 History browsers (`/account/activity`, `run_list` / `run_get` / `run_summary`)
 read `RunLog`.
 
+## Soft error triage
+
+Execution `status` stays `running` / `success` / `error`. Retained **error**
+rows may also carry soft triage (`error_triage`: `ignored` | `resolved`, plus
+optional `triage_note`, `triaged_at`, `triaged_by`). Triage is non-destructive:
+error name/message/logs stay put; Activity and `run_list` default to
+`error_triage=open` so handled noise drops out of the default view;
+`run_summary.errors` counts only open errors and exposes separate
+`ignored` / `resolved` totals. Terminal `finishRun` upserts preserve triage on
+error finishes and clear it if a row somehow finishes non-error. Schema version
+10 on the RunLog DO.
+
 ## Reading the data
 
-- UI: `/account/activity` (failures-first by default; filters, 7-day summary,
-  log viewer, cursor pagination). `/account/jobs` recent runs link into it.
-- MCP domain `runs`: `run_list`, `run_get`, `run_summary`.
+- UI: `/account/activity` (open failures first by default; status / triage /
+  surface filters, 7-day summary with ignored/resolved counts, log viewer,
+  cursor pagination). `/account/jobs` recent runs link into it.
+- MCP domain `runs`: `run_list`, `run_get`, `run_summary`, `run_update`.
 - Account export: section `run_records` pages through the user’s `RunLog`.
 - Account deletion: `clearAll` on the user’s `RunLog` stub (deletes every DO
   table — runs, ledger, and dedicated state — then reinitializes schema).

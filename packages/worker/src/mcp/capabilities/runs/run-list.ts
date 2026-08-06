@@ -5,6 +5,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 import {
 	formatRunRecord,
+	runErrorTriageFilterSchema,
 	runListLimitSchema,
 	runRecordSchema,
 	runStatusSchema,
@@ -37,6 +38,11 @@ const inputSchema = z.object({
 		.describe(
 			'Optional ISO 8601 lower bound on started_at (inclusive), for example 2026-07-01T00:00:00.000Z.',
 		),
+	error_triage: runErrorTriageFilterSchema
+		.optional()
+		.describe(
+			'Soft error-triage filter. Defaults to open (hides ignored/resolved noise). Use ignored, resolved, or all to inspect triaged runs.',
+		),
 	limit: runListLimitSchema,
 	cursor: z
 		.string()
@@ -60,7 +66,7 @@ export const runListCapability = defineDomainCapability(
 	{
 		name: 'run_list',
 		description:
-			'List recent execution history across jobs, webhooks, package apps, services, workflows, and other runtimes so you can debug failures, crashes, and "why did my job stop working" questions. Key-less successful ad-hoc execute runs are intentionally not recorded (only execute failures are, plus execute calls that supplied an idempotencyKey); every other surface records both success and error. Terminal rows may include a bounded metadata.result snapshot. Records are retained about 30 days, capped per user, and pruned failure-last (successes drop before errors).',
+			'List recent execution history across jobs, webhooks, package apps, services, workflows, and other runtimes so you can debug failures, crashes, and "why did my job stop working" questions. Key-less successful ad-hoc execute runs are intentionally not recorded (only execute failures are, plus execute calls that supplied an idempotencyKey); every other surface records both success and error. Terminal rows may include a bounded metadata.result snapshot. By default, ignored/resolved error runs are hidden (error_triage defaults to open); use run_update to triage noise, or pass error_triage all/ignored/resolved to inspect those rows. Records are retained about 30 days, capped per user, and pruned failure-last (successes drop before errors).',
 		keywords: [
 			'run',
 			'runs',
@@ -77,6 +83,9 @@ export const runListCapability = defineDomainCapability(
 			'package app',
 			'observability',
 			'trace',
+			'ignored',
+			'resolved',
+			'triage',
 		],
 		readOnly: true,
 		idempotent: true,
@@ -94,6 +103,7 @@ export const runListCapability = defineDomainCapability(
 					packageId: args.package_id ?? null,
 					jobId: args.job_id ?? null,
 					since: args.since ?? null,
+					errorTriage: args.error_triage ?? 'open',
 				},
 				limit: args.limit ?? null,
 				cursor: args.cursor ?? null,

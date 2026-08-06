@@ -59,6 +59,10 @@ function makeRun(overrides: Partial<RunRecord> = {}): RunRecord {
 		durationMs: 1000,
 		errorName: 'Error',
 		errorMessage: 'boom',
+		errorTriage: null,
+		triageNote: null,
+		triagedAt: null,
+		triagedBy: null,
 		metadata: {},
 		logCount: 2,
 		...overrides,
@@ -71,15 +75,17 @@ test('activity helpers parse filters and prefer path selected run ids', () => {
 	).toEqual({
 		statusFilter: 'error',
 		surfaceFilter: 'all',
+		triageFilter: 'open',
 		cursor: null,
 	})
 	expect(
 		readAccountActivityFilters(
-			'https://example.com/account/activity?status=all&surface=job&cursor=abc',
+			'https://example.com/account/activity?status=all&surface=job&cursor=abc&error_triage=ignored',
 		),
 	).toEqual({
 		statusFilter: 'all',
 		surfaceFilter: 'job',
+		triageFilter: 'ignored',
 		cursor: 'abc',
 	})
 	expect(statusFilterToRunStatus('error')).toBe('error')
@@ -111,6 +117,8 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 		since: '2026-07-19T12:00:00.000Z',
 		total: 4,
 		errors: 1,
+		ignored: 0,
+		resolved: 0,
 		running: 0,
 		bySurface: [{ surface: 'job', total: 4, errors: 1 }],
 	})
@@ -160,6 +168,7 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 			status: 'error',
 			surface: 'job',
 			since: '2026-07-19T12:00:00.000Z',
+			errorTriage: 'open',
 		},
 		limit: 25,
 		cursor: null,
@@ -173,9 +182,12 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 		ok: true,
 		statusFilter: 'error',
 		surfaceFilter: 'job',
+		triageFilter: 'open',
 		summary: {
 			total: 4,
 			errors: 1,
+			ignored: 0,
+			resolved: 0,
 			running: 0,
 		},
 		nextCursor: 'cursor-2',
@@ -219,6 +231,7 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 				status: null,
 				surface: null,
 				since: '2026-07-19T12:00:00.000Z',
+				errorTriage: 'open',
 			},
 			cursor: 'page-2',
 		}),

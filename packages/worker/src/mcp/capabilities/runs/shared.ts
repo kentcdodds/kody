@@ -4,6 +4,9 @@ import {
 	type RunRecordLog,
 	type RunRecordSummary,
 	type RunRecordSurfaceSummary,
+	runErrorTriageFilterValues,
+	runErrorTriageMaxNoteLength,
+	runErrorTriageValues,
 	runLogLevelValues,
 	runRecordDefaultPageSize,
 	runRecordMaxPageSize,
@@ -14,6 +17,17 @@ import {
 export const runSurfaceSchema = z.enum(runSurfaceValues)
 
 export const runStatusSchema = z.enum(runStatusValues)
+
+export const runErrorTriageSchema = z.enum(runErrorTriageValues)
+
+export const runErrorTriageFilterSchema = z.enum(runErrorTriageFilterValues)
+
+/** Wire values for `run_update`: set triage or reopen (`open`). */
+export const runErrorTriageUpdateSchema = z.enum([
+	'ignored',
+	'resolved',
+	'open',
+])
 
 export const runRecordSchema = z.object({
 	id: z.string(),
@@ -36,6 +50,14 @@ export const runRecordSchema = z.object({
 	duration_ms: z.number().int().nonnegative().nullable(),
 	error_name: z.string().nullable(),
 	error_message: z.string().nullable(),
+	error_triage: runErrorTriageSchema
+		.nullable()
+		.describe(
+			'Soft triage for error runs: ignored, resolved, or null when open / not an error.',
+		),
+	triage_note: z.string().nullable(),
+	triaged_at: z.string().nullable(),
+	triaged_by: z.string().nullable(),
 	metadata: z.record(z.string(), z.unknown()),
 	log_count: z.number().int().nonnegative(),
 })
@@ -57,7 +79,21 @@ export const runRecordSurfaceSummarySchema = z.object({
 export const runRecordSummarySchema = z.object({
 	since: z.string(),
 	total: z.number().int().nonnegative(),
-	errors: z.number().int().nonnegative(),
+	errors: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('Open (not ignored/resolved) error count.'),
+	ignored: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('Error runs marked ignored.'),
+	resolved: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe('Error runs marked resolved.'),
 	running: z.number().int().nonnegative(),
 	by_surface: z.array(runRecordSurfaceSummarySchema),
 })
@@ -70,6 +106,14 @@ export const runListLimitSchema = z
 	.optional()
 	.describe(
 		`Page size (default ${runRecordDefaultPageSize}, max ${runRecordMaxPageSize}).`,
+	)
+
+export const runTriageNoteSchema = z
+	.string()
+	.max(runErrorTriageMaxNoteLength)
+	.optional()
+	.describe(
+		`Optional note (at most ${runErrorTriageMaxNoteLength} characters). Omit to preserve the current note when setting ignored/resolved; pass an empty string to clear it. Cleared automatically when triage is set to open.`,
 	)
 
 export function formatRunRecord(
@@ -96,6 +140,10 @@ export function formatRunRecord(
 		duration_ms: run.durationMs,
 		error_name: run.errorName,
 		error_message: run.errorMessage,
+		error_triage: run.errorTriage,
+		triage_note: run.triageNote,
+		triaged_at: run.triagedAt,
+		triaged_by: run.triagedBy,
 		metadata: run.metadata,
 		log_count: run.logCount,
 	}
@@ -130,6 +178,8 @@ export function formatRunRecordSummary(
 		since: summary.since,
 		total: summary.total,
 		errors: summary.errors,
+		ignored: summary.ignored,
+		resolved: summary.resolved,
 		running: summary.running,
 		by_surface: summary.bySurface.map(formatRunRecordSurfaceSummary),
 	}

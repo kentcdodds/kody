@@ -391,6 +391,8 @@ test('summarizeRunRecords returns totals and per-surface error counts', async ()
 	})
 	expect(summary.total).toBe(5)
 	expect(summary.errors).toBe(3)
+	expect(summary.ignored).toBe(0)
+	expect(summary.resolved).toBe(0)
 	expect(summary.running).toBe(0)
 	expect(summary.bySurface).toEqual(
 		expect.arrayContaining([

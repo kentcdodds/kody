@@ -31,6 +31,8 @@ import {
 	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'
 import {
+	type RunErrorTriage,
+	type RunErrorTriageFilter,
 	type RunLogLevel,
 	type RunRecord,
 	type RunRecordLog,
@@ -39,6 +41,8 @@ import {
 	type RunStatus,
 	type RunSurface,
 	packageInvocationLedgerRetentionDays,
+	runErrorTriageMaxNoteLength,
+	runErrorTriageValues,
 	runRecordMaxJsonBytes,
 	runRecordMaxLogEntriesPerRun,
 	runRecordMaxRunsPerUser,
@@ -65,7 +69,7 @@ const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 9
+const runLogSchemaVersion = 10
 
 /**
  * Cursor namespaces for `exportRuns` phases after the raw run-id phase.
@@ -182,8 +186,21 @@ type ListRunsInput = {
 	jobId?: string | null
 	name?: string | null
 	since?: string | null
+	errorTriage?: RunErrorTriageFilter | null
 	limit: number
 	cursor?: string | null
+}
+
+export type UpdateRunErrorTriageInput = {
+	runId: string
+	/** `null` clears triage (reopen). */
+	errorTriage: RunErrorTriage | null
+	/**
+	 * `undefined` preserves the current note; `null` or empty clears it.
+	 * Ignored when clearing triage (note is always cleared on reopen).
+	 */
+	triageNote?: string | null
+	triagedBy: string
 }
 
 type ExportRunsInput = {
@@ -297,12 +314,18 @@ function normalizePageSize(pageSize: number | undefined, fallback: number) {
 	return Math.min(Math.max(requested, 1), runRecordMaxPageSize)
 }
 
+function isRunErrorTriage(value: string): value is RunErrorTriage {
+	return (runErrorTriageValues as ReadonlyArray<string>).includes(value)
+}
+
 function mapRunRow(
 	row: Record<string, SqlStorageValue>,
 	logCount: number,
 ): RunRecord {
 	const surface = String(row['surface'] ?? '')
 	const status = String(row['status'] ?? '')
+	const rawTriage =
+		row['error_triage'] == null ? null : String(row['error_triage'])
 	return {
 		id: String(row['id']),
 		surface: (isRunSurface(surface) ? surface : 'execute') as RunSurface,
@@ -331,6 +354,10 @@ function mapRunRow(
 		errorName: row['error_name'] == null ? null : String(row['error_name']),
 		errorMessage:
 			row['error_message'] == null ? null : String(row['error_message']),
+		errorTriage: rawTriage && isRunErrorTriage(rawTriage) ? rawTriage : null,
+		triageNote: row['triage_note'] == null ? null : String(row['triage_note']),
+		triagedAt: row['triaged_at'] == null ? null : String(row['triaged_at']),
+		triagedBy: row['triaged_by'] == null ? null : String(row['triaged_by']),
 		metadata: parseJsonRecord(row['metadata_json']),
 		logCount,
 	}
@@ -522,9 +549,16 @@ class RunLogBase extends DurableObject<Env> {
 				error_message TEXT,
 				metadata_json TEXT NOT NULL DEFAULT '{}',
 				created_at TEXT NOT NULL,
-				updated_at TEXT NOT NULL
+				updated_at TEXT NOT NULL,
+				error_triage TEXT,
+				triage_note TEXT,
+				triaged_at TEXT,
+				triaged_by TEXT
 			)
 		`)
+		if (installedVersion != null && installedVersion < 10) {
+			this.migrateRunsErrorTriageForV10()
+		}
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC, id DESC)`,
 		)
@@ -704,6 +738,18 @@ class RunLogBase extends DurableObject<Env> {
 		})
 	}
 
+	/**
+	 * Soft error-triage columns for Activity noise control. Idempotent when a
+	 * warm object somehow re-enters schema init: SQLite rejects duplicate
+	 * ADD COLUMN, so we only run under the version gate above.
+	 */
+	private migrateRunsErrorTriageForV10() {
+		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN error_triage TEXT`)
+		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN triage_note TEXT`)
+		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN triaged_at TEXT`)
+		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN triaged_by TEXT`)
+	}
+
 	private getMeta(key: string): number | null {
 		const row = this.ctx.storage.sql
 			.exec<{ value: number }>(
@@ -837,6 +883,9 @@ class RunLogBase extends DurableObject<Env> {
 
 	private upsertRun(run: RunLogRowInput, mode: 'ignore' | 'replace') {
 		const metadataJson = clampMetadataJson(run.metadataJson || '{}')
+		// New rows start with open triage (NULL). On conflict, preserve soft
+		// triage for error finishes; clear it when the terminal status is not
+		// error so success/running rows never stay hidden behind stale triage.
 		const statement =
 			mode === 'ignore'
 				? `INSERT OR IGNORE INTO runs (
@@ -844,15 +893,53 @@ class RunLogBase extends DurableObject<Env> {
 					published_commit, storage_id, job_id, workflow_id, invocation_id,
 					session_id, idempotency_key, parent_run_id, started_at, finished_at,
 					duration_ms, error_name, error_message, metadata_json, created_at,
-					updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-				: `INSERT OR REPLACE INTO runs (
+					updated_at, error_triage, triage_note, triaged_at, triaged_by
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)`
+				: `INSERT INTO runs (
 					id, surface, status, name, package_id, package_kody_id, source_id,
 					published_commit, storage_id, job_id, workflow_id, invocation_id,
 					session_id, idempotency_key, parent_run_id, started_at, finished_at,
 					duration_ms, error_name, error_message, metadata_json, created_at,
-					updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+					updated_at, error_triage, triage_note, triaged_at, triaged_by
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+				ON CONFLICT(id) DO UPDATE SET
+					surface = excluded.surface,
+					status = excluded.status,
+					name = excluded.name,
+					package_id = excluded.package_id,
+					package_kody_id = excluded.package_kody_id,
+					source_id = excluded.source_id,
+					published_commit = excluded.published_commit,
+					storage_id = excluded.storage_id,
+					job_id = excluded.job_id,
+					workflow_id = excluded.workflow_id,
+					invocation_id = excluded.invocation_id,
+					session_id = excluded.session_id,
+					idempotency_key = excluded.idempotency_key,
+					parent_run_id = excluded.parent_run_id,
+					started_at = excluded.started_at,
+					finished_at = excluded.finished_at,
+					duration_ms = excluded.duration_ms,
+					error_name = excluded.error_name,
+					error_message = excluded.error_message,
+					metadata_json = excluded.metadata_json,
+					updated_at = excluded.updated_at,
+					error_triage = CASE
+						WHEN excluded.status = 'error' THEN runs.error_triage
+						ELSE NULL
+					END,
+					triage_note = CASE
+						WHEN excluded.status = 'error' THEN runs.triage_note
+						ELSE NULL
+					END,
+					triaged_at = CASE
+						WHEN excluded.status = 'error' THEN runs.triaged_at
+						ELSE NULL
+					END,
+					triaged_by = CASE
+						WHEN excluded.status = 'error' THEN runs.triaged_by
+						ELSE NULL
+					END`
 		this.ctx.storage.sql.exec(
 			statement,
 			run.id,
@@ -2363,6 +2450,21 @@ class RunLogBase extends DurableObject<Env> {
 			clauses.push('r.started_at >= ?')
 			params.push(input.since)
 		}
+		const errorTriage = input.errorTriage ?? null
+		if (errorTriage === 'open') {
+			// Hide ignored/resolved noise; successes and running rows have NULL
+			// triage and remain visible.
+			clauses.push('r.error_triage IS NULL')
+		} else if (errorTriage === 'ignored') {
+			clauses.push(`r.error_triage = 'ignored'`)
+		} else if (errorTriage === 'resolved') {
+			clauses.push(`r.error_triage = 'resolved'`)
+		} else if (errorTriage === 'all' || errorTriage == null) {
+			// No triage filter.
+		} else {
+			const exhaustive: never = errorTriage
+			throw new Error(`Unhandled error triage filter: ${String(exhaustive)}`)
+		}
 		if (input.cursor) {
 			const cursor = decodeCursor(input.cursor)
 			if (cursor) {
@@ -2432,10 +2534,21 @@ class RunLogBase extends DurableObject<Env> {
 		this.reconcileStaleRunning()
 		const since = input.since
 		const totals = this.ctx.storage.sql
-			.exec<{ total: number; errors: number; running: number }>(
+			.exec<{
+				total: number
+				errors: number
+				ignored: number
+				resolved: number
+				running: number
+			}>(
 				`SELECT
 					COUNT(*) AS total,
-					SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+					SUM(CASE
+						WHEN status = 'error' AND error_triage IS NULL THEN 1
+						ELSE 0
+					END) AS errors,
+					SUM(CASE WHEN error_triage = 'ignored' THEN 1 ELSE 0 END) AS ignored,
+					SUM(CASE WHEN error_triage = 'resolved' THEN 1 ELSE 0 END) AS resolved,
 					SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
 				FROM runs
 				WHERE started_at >= ?`,
@@ -2447,7 +2560,10 @@ class RunLogBase extends DurableObject<Env> {
 				`SELECT
 					surface,
 					COUNT(*) AS total,
-					SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors
+					SUM(CASE
+						WHEN status = 'error' AND error_triage IS NULL THEN 1
+						ELSE 0
+					END) AS errors
 				FROM runs
 				WHERE started_at >= ?
 				GROUP BY surface
@@ -2459,6 +2575,8 @@ class RunLogBase extends DurableObject<Env> {
 			since,
 			total: Number(totals.total ?? 0) || 0,
 			errors: Number(totals.errors ?? 0) || 0,
+			ignored: Number(totals.ignored ?? 0) || 0,
+			resolved: Number(totals.resolved ?? 0) || 0,
 			running: Number(totals.running ?? 0) || 0,
 			bySurface: bySurfaceRows.map((row) => ({
 				surface: (isRunSurface(row.surface)
@@ -2468,6 +2586,91 @@ class RunLogBase extends DurableObject<Env> {
 				errors: Number(row.errors ?? 0) || 0,
 			})),
 		}
+	}
+
+	/**
+	 * Soft-triage a retained error run. Does not delete or rewrite error
+	 * details. Only `status = 'error'` rows accept ignored/resolved; reopen
+	 * (`errorTriage: null`) clears triage on any retained row that has it.
+	 */
+	async updateRunErrorTriage(
+		input: UpdateRunErrorTriageInput,
+	): Promise<RunRecord | null> {
+		const existing = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT r.*,
+					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+				FROM runs r
+				WHERE r.id = ?
+				LIMIT 1`,
+				input.runId,
+			)
+			.toArray()[0]
+		if (!existing) return null
+
+		const current = mapRunRow(
+			existing,
+			Number(existing['log_count'] ?? 0) || 0,
+		)
+		const nextTriage = input.errorTriage
+		if (nextTriage != null && current.status !== 'error') {
+			throw new Error(
+				`Run "${input.runId}" has status "${current.status}"; only error runs can be ignored or resolved.`,
+			)
+		}
+
+		const now = new Date().toISOString()
+		let triageNote: string | null
+		let triagedAt: string | null
+		let triagedBy: string | null
+		if (nextTriage == null) {
+			triageNote = null
+			triagedAt = null
+			triagedBy = null
+		} else {
+			if (input.triageNote === undefined) {
+				triageNote = current.triageNote
+			} else if (input.triageNote == null) {
+				triageNote = null
+			} else {
+				const trimmed = input.triageNote.trim()
+				triageNote =
+					trimmed.length === 0
+						? null
+						: trimmed.slice(0, runErrorTriageMaxNoteLength)
+			}
+			triagedAt = now
+			triagedBy = input.triagedBy.trim() || null
+		}
+
+		this.ctx.storage.sql.exec(
+			`UPDATE runs
+			SET error_triage = ?,
+				triage_note = ?,
+				triaged_at = ?,
+				triaged_by = ?,
+				updated_at = ?
+			WHERE id = ?`,
+			nextTriage,
+			triageNote,
+			triagedAt,
+			triagedBy,
+			now,
+			input.runId,
+		)
+
+		const updated = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT r.*,
+					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+				FROM runs r
+				WHERE r.id = ?
+				LIMIT 1`,
+				input.runId,
+			)
+			.toArray()[0]
+		if (!updated) return null
+		return mapRunRow(updated, Number(updated['log_count'] ?? 0) || 0)
 	}
 
 	async listStorageIds(): Promise<Array<string>> {
@@ -2941,6 +3144,9 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		logs: Array<RunLogEntryInput>
 	}) => Promise<{ ok: true }>
 	listRuns: (input: ListRunsInput) => Promise<RunRecordPage>
+	updateRunErrorTriage: (
+		input: UpdateRunErrorTriageInput,
+	) => Promise<RunRecord | null>
 	getRun: (input: {
 		runId: string
 	}) => Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null>

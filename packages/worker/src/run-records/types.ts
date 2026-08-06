@@ -37,6 +37,31 @@ export type RunStatus = (typeof runStatusValues)[number]
 
 export type RunTerminalStatus = Exclude<RunStatus, 'running'>
 
+/**
+ * Soft triage for retained **error** runs. Separate from {@link RunStatus}
+ * (execution outcome). `null` means open / not triaged. Ignored and resolved
+ * runs keep their original error fields; triage only changes Activity noise.
+ */
+export const runErrorTriageValues = ['ignored', 'resolved'] as const
+
+export type RunErrorTriage = (typeof runErrorTriageValues)[number]
+
+/**
+ * List/summary filter over {@link RunErrorTriage}. `open` = not ignored or
+ * resolved (default for user-facing Activity / `run_list`).
+ */
+export const runErrorTriageFilterValues = [
+	'open',
+	'ignored',
+	'resolved',
+	'all',
+] as const
+
+export type RunErrorTriageFilter = (typeof runErrorTriageFilterValues)[number]
+
+/** Max length for optional triage notes set via `run_update`. */
+export const runErrorTriageMaxNoteLength = 2000
+
 export const runLogLevelValues = [
 	'debug',
 	'info',
@@ -161,6 +186,15 @@ export type RunRecord = {
 	durationMs: number | null
 	errorName: string | null
 	errorMessage: string | null
+	/**
+	 * Soft triage for error runs (`ignored` / `resolved`). `null` when open or
+	 * when the run is not an error.
+	 */
+	errorTriage: RunErrorTriage | null
+	triageNote: string | null
+	triagedAt: string | null
+	/** User id of whoever last set triage (account owner or agent acting for them). */
+	triagedBy: string | null
 	metadata: Record<string, unknown>
 	logCount: number
 }
@@ -196,6 +230,11 @@ export type RunRecordFilter = {
 	name?: string | null
 	/** ISO 8601 lower bound on `startedAt`, inclusive. */
 	since?: string | null
+	/**
+	 * Soft error-triage filter. Omit / `null` means no triage filter (all runs).
+	 * User-facing `run_list` and Activity pass `open` by default.
+	 */
+	errorTriage?: RunErrorTriageFilter | null
 }
 
 export type RunRecordPage = {
@@ -207,13 +246,19 @@ export type RunRecordPage = {
 export type RunRecordSurfaceSummary = {
 	surface: RunSurface
 	total: number
+	/** Open (not ignored/resolved) error count for this surface. */
 	errors: number
 }
 
 export type RunRecordSummary = {
 	since: string
 	total: number
+	/** Open (not ignored/resolved) error count — “is anything broken?”. */
 	errors: number
+	/** Error runs marked ignored. */
+	ignored: number
+	/** Error runs marked resolved. */
+	resolved: number
 	running: number
 	bySurface: Array<RunRecordSurfaceSummary>
 }

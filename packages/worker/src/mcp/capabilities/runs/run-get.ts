@@ -30,7 +30,7 @@ export const runGetCapability = defineDomainCapability(
 	{
 		name: 'run_get',
 		description:
-			'Load one retained run with its captured log lines, error details, and (when available) a bounded metadata.result snapshot of the handler return value — useful for webhook deliveries, package exports, and keyed execute recovery. Records are retained about 30 days, capped per user, and pruned failure-last. Key-less successful ad-hoc execute runs are not stored; execute failures and execute calls that supplied an idempotencyKey are retained.',
+			'Load one retained run with its captured log lines, error details, soft triage fields (error_triage / note / who / when), and (when available) a bounded metadata.result snapshot of the handler return value — useful for webhook deliveries, package exports, and keyed execute recovery. Works for ignored/resolved runs too. Records are retained about 30 days, capped per user, and pruned failure-last. Key-less successful ad-hoc execute runs are not stored; execute failures and execute calls that supplied an idempotencyKey are retained.',
 		keywords: [
 			'run',
 			'logs',
@@ -41,6 +41,9 @@ export const runGetCapability = defineDomainCapability(
 			'trace',
 			'stack',
 			'why did it fail',
+			'ignored',
+			'resolved',
+			'triage',
 		],
 		readOnly: true,
 		idempotent: true,

@@ -6,28 +6,36 @@ agent) can see what happened.
 
 ## Where to look
 
-Open **`/account/activity`** while signed in. The page defaults to **failures
-first**, with:
+Open **`/account/activity`** while signed in. The page defaults to **open
+failures first**, with:
 
-- a short summary of recent totals and errors
-- filters by status and runtime surface (jobs, webhooks, package apps, services,
-  workflows, and others)
-- a detail view with captured log lines
+- a short summary of recent totals, open errors, and ignored/resolved counts
+- filters by status, triage (open / ignored / resolved / all), and runtime
+  surface (jobs, webhooks, package apps, services, workflows, and others)
+- a detail view with captured log lines and any triage note
 - cursor pagination for older pages
+
+Ignored and resolved error runs stay in history but are hidden from the default
+view so soft-failures and already-fixed noise do not clutter Activity.
 
 From **`/account/jobs`**, each job’s recent runs link into the same Activity
 detail view.
 
 ## Ask your agent
 
-The MCP **`runs`** domain reads the same data:
+The MCP **`runs`** domain reads and triages the same data:
 
-- **`run_summary`** — “is anything broken?” totals and per-surface breakdown
-- **`run_list`** — filtered history (by surface, status, job, package, time)
-- **`run_get`** — one run plus its log lines
+- **`run_summary`** — “is anything broken?” open-error totals (plus ignored /
+  resolved counts) and per-surface breakdown
+- **`run_list`** — filtered history (by surface, status, job, package, time,
+  and `error_triage`; defaults to **open**, hiding ignored/resolved)
+- **`run_get`** — one run plus its log lines and triage fields
+- **`run_update`** — mark a retained **error** run as `ignored` or `resolved`
+  (or `open` to clear triage), with an optional note — non-destructive soft
+  triage; error details stay intact
 
-Search for “runs”, “failures”, or “why did my job stop working” if your host
-does not surface those names yet.
+Search for “runs”, “failures”, “ignore this error”, or “why did my job stop
+working” if your host does not surface those names yet.
 
 ## What is retained
 

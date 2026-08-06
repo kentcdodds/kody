@@ -9,6 +9,7 @@ import {
 import { runGetCapability } from './run-get.ts'
 import { runListCapability } from './run-list.ts'
 import { runSummaryCapability } from './run-summary.ts'
+import { runUpdateCapability } from './run-update.ts'
 
 // Each RunLog Durable Object RPC costs ~400ms in the vitest workers pool (the
 // production finish path measures ~0.4ms), and these tests make ~20 of them.
@@ -84,6 +85,12 @@ test(
 		).rejects.toThrow(/Authenticated MCP user/)
 		await expect(
 			runSummaryCapability.handler({}, { env, callerContext }),
+		).rejects.toThrow(/Authenticated MCP user/)
+		await expect(
+			runUpdateCapability.handler(
+				{ run_id: 'missing', triage: 'ignored' },
+				{ env, callerContext },
+			),
 		).rejects.toThrow(/Authenticated MCP user/)
 	},
 	runLogSuiteTimeoutMs,
@@ -214,6 +221,153 @@ test(
 		)
 		expect(otherSummary.total).toBe(0)
 		expect(otherSummary.errors).toBe(0)
+		expect(otherSummary.ignored).toBe(0)
+		expect(otherSummary.resolved).toBe(0)
+	},
+	runLogSuiteTimeoutMs,
+)
+
+test(
+	'run_update triage: set/list/filter/summary/reopen and preserve error details',
+	async () => {
+		const ownerId = uniqueUserId('triage')
+		const ownerContext = buildCallerContext({
+			userId: ownerId,
+			email: `${ownerId}@example.com`,
+		})
+		const startedAtBase = Date.now() - 60_000
+		await finishRun({
+			userId: ownerId,
+			id: 'err-open',
+			startedAt: new Date(startedAtBase).toISOString(),
+			context: baseContext({ surface: 'job', name: 'keep-open' }),
+			status: 'error',
+			error: new Error('still broken'),
+		})
+		await finishRun({
+			userId: ownerId,
+			id: 'err-noise',
+			startedAt: new Date(startedAtBase + 1000).toISOString(),
+			context: baseContext({ surface: 'job', name: 'soft-fail' }),
+			status: 'error',
+			error: new Error('expected flake'),
+		})
+		await finishRun({
+			userId: ownerId,
+			id: 'ok-run',
+			startedAt: new Date(startedAtBase + 2000).toISOString(),
+			context: baseContext({ surface: 'job', name: 'ok' }),
+			status: 'success',
+		})
+
+		const ignored = await runUpdateCapability.handler(
+			{
+				run_id: 'err-noise',
+				triage: 'ignored',
+				note: 'known flake',
+			},
+			{ env, callerContext: ownerContext },
+		)
+		expect(ignored.run).toMatchObject({
+			id: 'err-noise',
+			status: 'error',
+			error_message: 'expected flake',
+			error_triage: 'ignored',
+			triage_note: 'known flake',
+			triaged_by: ownerId,
+		})
+		expect(ignored.run.triaged_at).toBeTruthy()
+
+		// A later finish must preserve soft triage (INSERT OR REPLACE used to wipe it).
+		await finishRun({
+			userId: ownerId,
+			id: 'err-noise',
+			startedAt: new Date(startedAtBase + 1000).toISOString(),
+			context: baseContext({ surface: 'job', name: 'soft-fail' }),
+			status: 'error',
+			error: new Error('expected flake'),
+		})
+		const afterFinish = await runGetCapability.handler(
+			{ run_id: 'err-noise' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(afterFinish.run).toMatchObject({
+			error_triage: 'ignored',
+			triage_note: 'known flake',
+			triaged_by: ownerId,
+			error_message: 'expected flake',
+		})
+
+		await expect(
+			runUpdateCapability.handler(
+				{ run_id: 'ok-run', triage: 'resolved' },
+				{ env, callerContext: ownerContext },
+			),
+		).rejects.toThrow(/only error runs/)
+
+		const defaultList = await runListCapability.handler(
+			{ status: 'error' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(defaultList.runs.map((run) => run.id)).toEqual(['err-open'])
+
+		const ignoredList = await runListCapability.handler(
+			{ error_triage: 'ignored' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(ignoredList.runs.map((run) => run.id)).toEqual(['err-noise'])
+
+		const allList = await runListCapability.handler(
+			{ error_triage: 'all', status: 'error' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(allList.runs.map((run) => run.id).sort()).toEqual([
+			'err-noise',
+			'err-open',
+		])
+
+		const resolved = await runUpdateCapability.handler(
+			{ run_id: 'err-noise', triage: 'resolved', note: 'fixed upstream' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(resolved.run.error_triage).toBe('resolved')
+		expect(resolved.run.triage_note).toBe('fixed upstream')
+		expect(resolved.run.error_message).toBe('expected flake')
+
+		const summary = await runSummaryCapability.handler(
+			{},
+			{ env, callerContext: ownerContext },
+		)
+		expect(summary.errors).toBe(1)
+		expect(summary.ignored).toBe(0)
+		expect(summary.resolved).toBe(1)
+
+		const reopened = await runUpdateCapability.handler(
+			{ run_id: 'err-noise', triage: 'open' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(reopened.run).toMatchObject({
+			error_triage: null,
+			triage_note: null,
+			triaged_at: null,
+			triaged_by: null,
+			error_message: 'expected flake',
+		})
+
+		const afterReopen = await runSummaryCapability.handler(
+			{},
+			{ env, callerContext: ownerContext },
+		)
+		expect(afterReopen.errors).toBe(2)
+		expect(afterReopen.ignored).toBe(0)
+		expect(afterReopen.resolved).toBe(0)
+
+		const detail = await runGetCapability.handler(
+			{ run_id: 'err-noise' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(detail.run.error_triage).toBeNull()
+		expect(detail.run.error_message).toBe('expected flake')
 	},
 	runLogSuiteTimeoutMs,
 )
