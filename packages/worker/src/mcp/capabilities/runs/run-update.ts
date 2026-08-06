@@ -58,30 +58,31 @@ export const runUpdateCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const errorTriage = args.triage === 'open' ? null : args.triage
-			try {
-				const run = await updateRunErrorTriage({
-					env: ctx.env,
-					userId: user.userId,
-					runId: args.run_id,
-					errorTriage,
-					triageNote: args.note,
-				})
-				if (!run) {
-					throw new McpCallerError(`Run "${args.run_id}" was not found.`)
+			const outcome = await updateRunErrorTriage({
+				env: ctx.env,
+				userId: user.userId,
+				runId: args.run_id,
+				errorTriage,
+				triageNote: args.note,
+			})
+			if (!outcome.ok) {
+				switch (outcome.reason) {
+					case 'not_found':
+					case 'unavailable':
+						throw new McpCallerError(`Run "${args.run_id}" was not found.`)
+					case 'not_error':
+						throw new McpCallerError(
+							`Run "${outcome.runId}" has status "${outcome.status}"; only error runs can be ignored or resolved.`,
+						)
+					default: {
+						const exhaustive: never = outcome
+						throw new McpCallerError(
+							`Unexpected triage outcome: ${JSON.stringify(exhaustive)}`,
+						)
+					}
 				}
-				return { run: formatRunRecord(run) }
-			} catch (error) {
-				if (error instanceof McpCallerError) throw error
-				const message =
-					error instanceof Error ? error.message : 'Failed to update run triage.'
-				if (
-					message.includes('only error runs can be ignored or resolved') ||
-					message.includes('was not found')
-				) {
-					throw new McpCallerError(message)
-				}
-				throw error
 			}
+			return { run: formatRunRecord(outcome.run) }
 		},
 	},
 )

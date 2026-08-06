@@ -203,6 +203,11 @@ export type UpdateRunErrorTriageInput = {
 	triagedBy: string
 }
 
+export type UpdateRunErrorTriageResult =
+	| { ok: true; run: RunRecord }
+	| { ok: false; reason: 'not_found' }
+	| { ok: false; reason: 'not_error'; status: RunStatus; runId: string }
+
 type ExportRunsInput = {
 	pageSize: number
 	startAfter?: string | null
@@ -2592,10 +2597,12 @@ class RunLogBase extends DurableObject<Env> {
 	 * Soft-triage a retained error run. Does not delete or rewrite error
 	 * details. Only `status = 'error'` rows accept ignored/resolved; reopen
 	 * (`errorTriage: null`) clears triage on any retained row that has it.
+	 * Returns a result object instead of throwing so RPC callers can map
+	 * caller errors without uncaught DO promise rejections.
 	 */
 	async updateRunErrorTriage(
 		input: UpdateRunErrorTriageInput,
-	): Promise<RunRecord | null> {
+	): Promise<UpdateRunErrorTriageResult> {
 		const existing = this.ctx.storage.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT r.*,
@@ -2606,7 +2613,7 @@ class RunLogBase extends DurableObject<Env> {
 				input.runId,
 			)
 			.toArray()[0]
-		if (!existing) return null
+		if (!existing) return { ok: false, reason: 'not_found' }
 
 		const current = mapRunRow(
 			existing,
@@ -2614,9 +2621,12 @@ class RunLogBase extends DurableObject<Env> {
 		)
 		const nextTriage = input.errorTriage
 		if (nextTriage != null && current.status !== 'error') {
-			throw new Error(
-				`Run "${input.runId}" has status "${current.status}"; only error runs can be ignored or resolved.`,
-			)
+			return {
+				ok: false,
+				reason: 'not_error',
+				status: current.status,
+				runId: input.runId,
+			}
 		}
 
 		const now = new Date().toISOString()
@@ -2669,8 +2679,11 @@ class RunLogBase extends DurableObject<Env> {
 				input.runId,
 			)
 			.toArray()[0]
-		if (!updated) return null
-		return mapRunRow(updated, Number(updated['log_count'] ?? 0) || 0)
+		if (!updated) return { ok: false, reason: 'not_found' }
+		return {
+			ok: true,
+			run: mapRunRow(updated, Number(updated['log_count'] ?? 0) || 0),
+		}
 	}
 
 	async listStorageIds(): Promise<Array<string>> {
@@ -3146,7 +3159,7 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 	listRuns: (input: ListRunsInput) => Promise<RunRecordPage>
 	updateRunErrorTriage: (
 		input: UpdateRunErrorTriageInput,
-	) => Promise<RunRecord | null>
+	) => Promise<UpdateRunErrorTriageResult>
 	getRun: (input: {
 		runId: string
 	}) => Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null>

@@ -528,10 +528,15 @@ export async function listRunRecords(input: {
 	})
 }
 
+export type UpdateRunErrorTriageOutcome =
+	| { ok: true; run: RunRecord }
+	| { ok: false; reason: 'not_found' }
+	| { ok: false; reason: 'not_error'; status: RunStatus; runId: string }
+	| { ok: false; reason: 'unavailable' }
+
 /**
  * Soft-triage a retained error run (`ignored` / `resolved`) or clear triage
  * (`errorTriage: null`). Non-destructive: error details stay on the record.
- * Returns `null` when the run is missing from this user's RunLog.
  */
 export async function updateRunErrorTriage(input: {
 	env: Env
@@ -539,8 +544,8 @@ export async function updateRunErrorTriage(input: {
 	runId: string
 	errorTriage: RunErrorTriage | null
 	triageNote?: string | null
-}): Promise<RunRecord | null> {
-	if (!runLogBinding(input.env)) return null
+}): Promise<UpdateRunErrorTriageOutcome> {
+	if (!runLogBinding(input.env)) return { ok: false, reason: 'unavailable' }
 	return await runLogRpc({
 		env: input.env,
 		userId: input.userId,
