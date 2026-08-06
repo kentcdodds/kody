@@ -20,7 +20,10 @@ import {
 	listBlogPosts,
 	toBlogPostSummary,
 } from '#worker/blog/catalog.ts'
-import { formatBlogPostDate } from '#app/blog-display.ts'
+import {
+	BLOG_PLACEHOLDER_CALLOUT,
+	formatBlogPostDate,
+} from '#app/blog-display.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -704,6 +707,7 @@ test('renderAppPage renders the redesigned blog post', async () => {
 	expect(html).toContain(post!.title)
 	expect(html).toContain('Kent C. Dodds')
 	expect(html).toContain(formatBlogPostDate(post!.date))
+	expect(html).toContain(BLOG_PLACEHOLDER_CALLOUT)
 	// Markdown body renders in the prose voice: authored `##` stays h2 (not
 	// the README demotion to h4) and first-party links skip the ugc rel.
 	expect(html).toMatch(/<h2[^>]*>/)

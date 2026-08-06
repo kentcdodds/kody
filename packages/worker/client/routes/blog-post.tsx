@@ -1,5 +1,9 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
-import { BLOG_AUTHOR_NAME, formatBlogPostDate } from '#app/blog-display.ts'
+import {
+	BLOG_AUTHOR_NAME,
+	BLOG_PLACEHOLDER_CALLOUT,
+	formatBlogPostDate,
+} from '#app/blog-display.ts'
 import { type BlogPostLoaderData } from '#app/loader-data.ts'
 import { routes } from '#app/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
@@ -13,7 +17,12 @@ import {
 } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, transitions, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
 import {
 	getPillButtonCss,
 	pageHeadCss,
@@ -23,10 +32,11 @@ import {
 /**
  * Blog post, ported from the redesign prototype (`landing/blog-post.html`).
  * A 43rem editorial measure: back link → post head (display title + meta,
- * page-open rise) → `.prose` body rendered from the server's markdown
- * catalog → quiet foot (read-next pointer + Kody greeting + waitlist
- * button). Nothing here hardcodes post content — body, dates, and the
- * read-next pointer all come from the blog API.
+ * page-open rise) → AI-placeholder callout → `.prose` body rendered from
+ * the server's markdown catalog → quiet foot (read-next pointer + Kody
+ * greeting + waitlist button). Nothing here hardcodes post content — body,
+ * dates, and the read-next pointer all come from the blog API. The
+ * placeholder callout is template chrome until Kent rewrites each post.
  */
 
 export function getSlugFromPathname(pathname: string) {
@@ -233,6 +243,15 @@ export function BlogPostRoute(handle: Handle) {
 							</p>
 						</header>
 
+						<aside
+							data-rise
+							style={{ '--rise': '3' }}
+							mix={css(placeholderCalloutCss)}
+							role="note"
+						>
+							<p>{BLOG_PLACEHOLDER_CALLOUT}</p>
+						</aside>
+
 						<div mix={css(proseCss)}>{renderPostBody(post.body)}</div>
 
 						<footer mix={css(postFootCss)}>
@@ -332,6 +351,22 @@ const postStatusCss = {
 	margin: 'clamp(1.8rem, 4vw, 2.5rem) 0 0',
 	color: colors.textMuted,
 	fontSize: '0.98rem',
+}
+
+const placeholderCalloutCss = {
+	marginTop: 'clamp(1.4rem, 3vw, 2rem)',
+	padding: '1rem 1.15rem',
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
+	backgroundColor: colors.surface,
+	'& p': {
+		margin: 0,
+		color: colors.textMuted,
+		fontSize: '0.95rem',
+		lineHeight: 1.5,
+		maxWidth: '62ch',
+		textWrap: 'pretty' as const,
+	},
 }
 
 /* ---------- post foot: read next + the standing invitation ---------- */
