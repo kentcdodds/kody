@@ -283,10 +283,15 @@ h3 {
 	text-wrap: balance;
 }
 
+/* No `border-radius` here. This rule used to force 4px onto whatever you
+   tabbed to, visibly resquaring pills, cards, and rounded fields at the moment
+   they took focus — and since it is unlayered, no component style could win
+   against it, so it had grown a set of per-component escape hatches whose only
+   job was to put the real radius back. `outline` already follows the element's
+   own `border-radius`, so the declaration was never needed. */
 :focus-visible {
 	outline: 2.5px solid var(--color-primary);
 	outline-offset: 3px;
-	border-radius: 4px;
 }
 
 /* The router moves focus to <main> after client-side navigation (and the
@@ -305,23 +310,25 @@ main:focus-visible {
 	outline: none;
 }
 
-/* Individually bordered redesign fields (login form): the field draws its own
-   focus ring — green border + soft glow, see getAuthInputCss() — so the
-   global outline above would double-ring it and force its 4px radius onto a
-   12px input. Same unlayered escape hatch as data-focus-container. */
-[data-field-ring]:focus-visible {
-	outline: none;
-	/* Keep the field's own 12px corners (getAuthInputCss) — the global
-	   :focus-visible rule would force its 4px radius onto the input. */
-	border-radius: 12px;
+/* ...except a submit button inside one. The suppression above is meant for the
+   text segments, which share the container's ring and show a caret. The button
+   is its own action, and by the time focus reaches it the container ring is
+   already lit, so without this there was no indication at all that the button
+   had focus. Drawn inside the button (negative offset) so it cannot collide
+   with the container edge, in the on-primary tone that the button's own label
+   uses: 4.6:1 on the green fill in light, 7.8:1 in dark. */
+[data-focus-container] button:focus-visible {
+	outline: 2.5px solid var(--color-on-primary);
+	outline-offset: -5px;
 }
 
-/* Rows whose whole box is the link (timeline events) keep their own corners:
-   the outline stays, but the global 4px radius above would square off a ring
-   drawn around a 10px row. Unlayered for the same reason as the rules above —
-   a rule inside `@layer rmx.*` cannot win against them. */
-[data-rounded-focus]:focus-visible {
-	border-radius: 10px;
+/* Individually bordered redesign fields (login form): the field draws its own
+   focus ring — green border + soft glow, see getAuthInputCss() — so the global
+   outline above would double-ring it. Same unlayered escape hatch as
+   data-focus-container. The radius override this used to carry is gone with the
+   global one it was undoing. */
+[data-field-ring]:focus-visible {
+	outline: none;
 }
 
 ::selection {

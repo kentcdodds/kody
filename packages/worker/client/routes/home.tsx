@@ -1061,6 +1061,15 @@ const waitlistFormCss = {
 	textAlign: 'left' as const,
 }
 
+/*
+ * Pill geometry shared by the container and its segments, so a focused
+ * segment's tint nests concentrically inside the container's curve instead of
+ * guessing at it.
+ */
+const waitlistPillRadius = '999px'
+const waitlistStackRadius = '28px'
+const waitlistPillPadding = '0.3rem'
+
 /* One connected control: name · divider · email · button in a single pill. */
 const waitlistFieldsCss = {
 	display: 'grid',
@@ -1068,8 +1077,8 @@ const waitlistFieldsCss = {
 	alignItems: 'stretch',
 	backgroundColor: colors.surface,
 	border: `1.5px solid ${colors.border}`,
-	borderRadius: '999px',
-	padding: '0.3rem',
+	borderRadius: waitlistPillRadius,
+	padding: waitlistPillPadding,
 	transition: `border-color 160ms ${transitions.easeOut}, box-shadow 160ms ${transitions.easeOut}`,
 	'&:focus-within': {
 		borderColor: colors.primary,
@@ -1078,8 +1087,8 @@ const waitlistFieldsCss = {
 	'@media (max-width: 640px)': {
 		/* The pill relaxes into a stacked segmented control. */
 		gridTemplateColumns: '1fr',
-		borderRadius: '28px',
-		'& button': { width: '100%', marginTop: '0.3rem' },
+		borderRadius: waitlistStackRadius,
+		'& button': { width: '100%', marginTop: waitlistPillPadding },
 	},
 }
 
@@ -1088,31 +1097,41 @@ const waitlistInputCss = {
 	color: colors.text,
 	backgroundColor: 'transparent',
 	border: 'none',
-	borderRadius: '999px',
+	/*
+	 * Leading segment of the pill, so it takes the container's inner curve on
+	 * its outer edge and stays square where it meets the next segment. A full
+	 * `999px` capsule here read as a lozenge floating inside the pill once the
+	 * focus tint made the shape visible.
+	 */
+	borderRadius: `calc(${waitlistPillRadius} - ${waitlistPillPadding}) 0 0 calc(${waitlistPillRadius} - ${waitlistPillPadding})`,
 	padding: '0.7rem 1.1rem',
 	minWidth: 0,
 	'&::placeholder': { color: colors.textMuted, opacity: 1 },
 	/*
-	 * The container's `:focus-within` ring says focus is somewhere inside the
-	 * pill but not which of the two fields has it, so tabbing from name to
-	 * email changed nothing on screen. Tinting the focused field reads as the
-	 * active segment — and unlike an inset ring it works for both the pill's
-	 * rounded left end and the square-cornered email field.
+	 * No background change on focus. Both segments are text inputs, so the
+	 * caret already shows which one has focus, and the container's
+	 * `:focus-within` ring shows the composite control is focused — together
+	 * that is the visible focus indicator. A tint on top of those read as a
+	 * lighter slab sitting inside the pill, most obviously in dark mode.
 	 */
-	'&:focus': { outline: 'none', backgroundColor: colors.primarySoft },
+	'&:focus': { outline: 'none' },
 	'@media (max-width: 640px)': {
 		paddingBlock: '0.85rem',
+		/* Stacked: the leading segment now rounds along the top instead. */
+		borderRadius: `calc(${waitlistStackRadius} - ${waitlistPillPadding}) calc(${waitlistStackRadius} - ${waitlistPillPadding}) 0 0`,
 	},
 }
 
 const waitlistEmailInputCss = {
 	...waitlistInputCss,
 	borderLeft: `1px solid ${colors.border}`,
+	/* Middle segment: square on both sides, between the name and the button. */
 	borderRadius: 0,
 	'@media (max-width: 640px)': {
 		paddingBlock: '0.85rem',
 		borderLeft: 'none',
 		borderTop: `1px solid ${colors.border}`,
+		borderRadius: 0,
 	},
 }
 

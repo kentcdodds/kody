@@ -294,7 +294,6 @@ function renderEvent(event: PublicCommunityActivityItem) {
 		>
 			<a
 				href={routes.communityDetail.href({ listingId: event.listingId })}
-				data-rounded-focus
 				mix={css(eventLinkCss)}
 			>
 				<span data-timeline-glyph mix={css(glyphCss)}>
