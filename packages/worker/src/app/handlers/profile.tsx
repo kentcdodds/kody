@@ -16,6 +16,7 @@ import {
 } from '#worker/community/social-service.ts'
 import { type CommunityProfileRecord } from '#worker/community/types.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { parseOgTheme } from '#worker/og/palette.ts'
 
 const followBodySchema = z.object({
 	follow: z.boolean(),
@@ -120,7 +121,7 @@ async function loadProfileOgAvatarDataUri(input: {
 export function createProfileOgImageHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ params }) {
+		async handler({ request, params }) {
 			const profile = await getCommunityProfileByUsername({
 				env,
 				username: params.username,
@@ -131,6 +132,10 @@ export function createProfileOgImageHandler(env: Env) {
 			}
 
 			const avatarDataUri = await loadProfileOgAvatarDataUri({ env, profile })
+			// `?theme=light` renders the pale variant; anything unrecognised
+			// falls back to the default rather than erroring.
+			const theme = parseOgTheme(new URL(request.url).searchParams.get('theme'))
+
 			// Lazy import (sanctioned exception to the no-inline-imports rule):
 			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
 			// binaries, which would otherwise bloat isolate cold starts for a
@@ -145,6 +150,7 @@ export function createProfileOgImageHandler(env: Env) {
 				publicPackageCount: profile.publicPackageCount,
 				listingCount: profile.listingCount,
 				avatarDataUri,
+				theme,
 			})
 
 			return new Response(png, {

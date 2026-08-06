@@ -1,4 +1,8 @@
-import { ogPalette } from '#worker/og/palette.ts'
+import {
+	getOgPalette,
+	type OgPalette,
+	type OgTheme,
+} from '#worker/og/palette.ts'
 import {
 	createOgFrame,
 	renderOgImage,
@@ -15,6 +19,8 @@ const BIO_MAX_HEIGHT = Math.round(BIO_FONT_SIZE * BIO_LINE_HEIGHT * 2)
 const AVATAR_SIZE = 96
 
 export type ProfileOgImageInput = {
+	/** Card palette; defaults to `OG_DEFAULT_THEME`. */
+	theme?: OgTheme
 	displayName: string
 	username: string
 	bio: string | null
@@ -37,7 +43,10 @@ function formatProfileStats(input: ProfileOgImageInput): string {
 	].join(' · ')
 }
 
-function createAvatarPlaceholder(displayName: string): SatoriElement {
+function createAvatarPlaceholder(
+	displayName: string,
+	palette: OgPalette,
+): SatoriElement {
 	const initial = (displayName.trim().charAt(0) || '?').toUpperCase()
 	return {
 		type: 'div',
@@ -47,13 +56,14 @@ function createAvatarPlaceholder(displayName: string): SatoriElement {
 				height: AVATAR_SIZE,
 				borderRadius: AVATAR_SIZE / 2,
 				marginRight: 24,
-				backgroundColor: ogPalette.primary,
-				color: ogPalette.onPrimary,
+				backgroundColor: palette.primary,
+				color: palette.onPrimary,
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'center',
+				fontFamily: 'Bricolage Grotesque',
 				fontSize: 40,
-				fontWeight: 600,
+				fontWeight: 700,
 			},
 			children: initial,
 		},
@@ -62,7 +72,7 @@ function createAvatarPlaceholder(displayName: string): SatoriElement {
 
 function createAvatarNode(input: ProfileOgImageInput): SatoriElement {
 	if (!input.avatarDataUri) {
-		return createAvatarPlaceholder(input.displayName)
+		return createAvatarPlaceholder(input.displayName, getOgPalette(input.theme))
 	}
 
 	return {
@@ -83,6 +93,7 @@ function createAvatarNode(input: ProfileOgImageInput): SatoriElement {
 }
 
 function createProfileIdentityRow(input: ProfileOgImageInput): SatoriElement {
+	const palette = getOgPalette(input.theme)
 	return {
 		type: 'div',
 		props: {
@@ -106,10 +117,11 @@ function createProfileIdentityRow(input: ProfileOgImageInput): SatoriElement {
 								type: 'div',
 								props: {
 									style: {
+										fontFamily: 'Bricolage Grotesque',
 										fontSize: 48,
-										fontWeight: 600,
+										fontWeight: 700,
 										letterSpacing: '-0.02em',
-										color: ogPalette.primary,
+										color: palette.primary,
 										marginBottom: 8,
 									},
 									children: input.displayName,
@@ -120,7 +132,7 @@ function createProfileIdentityRow(input: ProfileOgImageInput): SatoriElement {
 								props: {
 									style: {
 										fontSize: 24,
-										color: ogPalette.muted,
+										color: palette.textMuted,
 									},
 									children: `@${input.username}`,
 								},
@@ -134,12 +146,14 @@ function createProfileIdentityRow(input: ProfileOgImageInput): SatoriElement {
 }
 
 function createOgMarkup(input: ProfileOgImageInput): SatoriElement {
+	const palette = getOgPalette(input.theme)
 	const bio =
 		input.bio == null || input.bio.trim() === ''
 			? null
 			: truncateOgText(input.bio, BIO_MAX_LENGTH)
 
 	return createOgFrame({
+		theme: input.theme,
 		label: 'Community profile',
 		children: [
 			createProfileIdentityRow(input),
@@ -151,7 +165,7 @@ function createOgMarkup(input: ProfileOgImageInput): SatoriElement {
 								style: {
 									fontSize: BIO_FONT_SIZE,
 									lineHeight: BIO_LINE_HEIGHT,
-									color: ogPalette.muted,
+									color: palette.textMuted,
 									marginBottom: 28,
 									maxHeight: BIO_MAX_HEIGHT,
 									overflow: 'hidden',
@@ -166,7 +180,7 @@ function createOgMarkup(input: ProfileOgImageInput): SatoriElement {
 				props: {
 					style: {
 						fontSize: 22,
-						color: ogPalette.muted,
+						color: palette.textMuted,
 					},
 					children: formatProfileStats(input),
 				},

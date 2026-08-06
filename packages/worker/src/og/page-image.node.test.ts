@@ -12,21 +12,19 @@ function expectPngBytes(png: Uint8Array) {
 }
 
 test('renderPageOgImage returns valid PNG bytes for home and community', async () => {
-	const home = await renderPageOgImage({
-		page: publicOgPages.home,
-		label: 'heykody.dev',
-	})
+	const home = await renderPageOgImage({ page: publicOgPages.home })
 	expectPngBytes(home)
 
-	const community = await renderPageOgImage({
-		page: publicOgPages.community,
-		label: 'heykody.dev',
-	})
+	const community = await renderPageOgImage({ page: publicOgPages.community })
 	expectPngBytes(community)
 
-	const blog = await renderPageOgImage({
-		page: publicOgPages.blog,
-		label: 'heykody.dev',
-	})
+	const blog = await renderPageOgImage({ page: publicOgPages.blog })
 	expectPngBytes(blog)
+})
+
+test('renderPageOgImage renders both themes', async () => {
+	for (const theme of ['light', 'dark'] as const) {
+		const png = await renderPageOgImage({ page: publicOgPages.home, theme })
+		expectPngBytes(png)
+	}
 })

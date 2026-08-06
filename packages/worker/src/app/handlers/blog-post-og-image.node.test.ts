@@ -38,7 +38,26 @@ test('blog post OG image renders PNG for a catalog post and 404s unknown slugs',
 		title: post!.title,
 		description: post!.description,
 		date: post!.date,
+		theme: 'dark',
 	})
+
+	// `?theme=light` is the only recognised override; junk falls back to dark.
+	for (const [query, expected] of [
+		['?theme=light', 'light'],
+		['?theme=chartreuse', 'dark'],
+	] as const) {
+		mocks.renderBlogPostOgImage.mockClear()
+		await handler.handler({
+			request: new Request(
+				`https://example.com/blog/${post!.slug}/og.png${query}`,
+			),
+			params: { slug: post!.slug },
+			url: new URL(`https://example.com/blog/${post!.slug}/og.png${query}`),
+		} as never)
+		expect(mocks.renderBlogPostOgImage).toHaveBeenCalledWith(
+			expect.objectContaining({ theme: expected }),
+		)
+	}
 
 	const missing = await handler.handler({
 		request: new Request('https://example.com/blog/does-not-exist/og.png'),

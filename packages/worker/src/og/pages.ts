@@ -22,8 +22,10 @@ export type PublicOgPage = {
 export const publicOgPages = {
 	home: {
 		imageTitle: "Your assistant's home",
+		// Complements the title rather than restating it: the card shows both at
+		// once, so repeating the headline wastes the only supporting line.
 		imageSubtitle:
-			"Your assistant's home — memory, keys, code, and automations, portable across every MCP host.",
+			'Memory, keys, code, and automations — portable across every MCP host.',
 		ogTitle: "Kody — your assistant's home",
 		ogDescription:
 			"Your assistant's home — memory, keys, code, and automations, portable across every MCP host.",

@@ -20,6 +20,7 @@ import {
 	reportCommunityListing,
 } from '#worker/community/service.ts'
 import { type CommunityListingRecord } from '#worker/community/types.ts'
+import { parseOgTheme } from '#worker/og/palette.ts'
 
 const reportReasonSchema = z
 	.string()
@@ -126,7 +127,7 @@ async function loadCommunityOgIconDataUri(input: {
 export function createCommunityDetailOgImageHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ params }) {
+		async handler({ request, params }) {
 			const listingId = params.listingId
 			const listing = await getCommunityListingWithAggregates({
 				env,
@@ -139,6 +140,10 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 
 			const publicListing = toPublicCommunityListing(listing)
 			const iconDataUri = await loadCommunityOgIconDataUri({ env, listing })
+			// `?theme=light` renders the pale variant; anything unrecognised
+			// falls back to the default rather than erroring.
+			const theme = parseOgTheme(new URL(request.url).searchParams.get('theme'))
+
 			// Lazy import (sanctioned exception to the no-inline-imports rule):
 			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
 			// binaries, which would otherwise bloat isolate cold starts for a
@@ -154,6 +159,7 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 				forkCount: publicListing.forkCount,
 				starCount: publicListing.starCount,
 				iconDataUri,
+				theme,
 			})
 
 			return new Response(png, {

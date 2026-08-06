@@ -1,32 +1,57 @@
 /**
- * Light-mode palette for Satori-rendered Open Graph images.
+ * Palettes for Satori-rendered Open Graph images.
  *
- * Satori cannot read CSS custom properties, so these values mirror the
- * light-mode design tokens in `packages/worker/public/styles.css` (`:root`).
- * Keep the two in sync when the app palette changes.
+ * Satori cannot read CSS custom properties, so these values mirror the design
+ * tokens in `packages/worker/public/styles.css`. Keep the two in sync when the
+ * app palette changes. Cards default to dark so Kody's lantern can light the
+ * brand's signature graphite canvas; `?theme=light` on an OG route renders the
+ * pale variant instead.
+ *
+ * `textReading` is the one deliberate departure from the app tokens: a share
+ * card is usually read at a third of its rendered size in a feed, where
+ * `textMuted` turns to grey mush. It sits between `textMuted` and `text` —
+ * 11.1:1 on the dark ground versus 7.4:1, and 8.6:1 on the pale one versus
+ * 6.3:1 — and is only for body copy on a card.
  */
-export const ogPalette = {
-	/** --color-background */
-	background: '#f8fafc',
-	/** --color-surface */
-	surface: '#f1f5f9',
-	/** --color-text */
-	text: '#0f172a',
-	/** --color-text-muted */
-	muted: '#475569',
-	/** --color-border */
-	border: '#cbd5e1',
-	/** --color-primary */
-	primary: '#2563eb',
-	/** --color-primary-text (used for the wordmark, matching the home hero) */
-	primaryText: '#1e40af',
-	/** --color-on-primary */
-	onPrimary: '#ffffff',
+export const ogPalettes = {
+	light: {
+		primary: '#008819',
+		primaryHover: '#007406',
+		onPrimary: '#f8fbf8',
+		primaryText: '#007100',
+		background: '#e6e8ea',
+		surface: '#f6f7f8',
+		text: '#171b20',
+		textMuted: '#4e535a',
+		textReading: '#3a3f46',
+		border: '#c7cbd0',
+	},
+	dark: {
+		primary: '#33c447',
+		primaryHover: '#48d858',
+		onPrimary: '#031c08',
+		primaryText: '#45cd55',
+		background: '#111417',
+		surface: '#1b1e23',
+		text: '#eaedf0',
+		textMuted: '#a0a5ab',
+		textReading: '#c5c9ce',
+		border: '#32363b',
+	},
 } as const
 
-/**
- * Card corner radius in canvas pixels. The app's `--radius-xl` is 16px;
- * OG images render at 1200×630 (roughly 1.5× typical UI scale), so 24px
- * keeps the same visual proportion.
- */
-export const OG_CARD_RADIUS = 24
+export type OgTheme = keyof typeof ogPalettes
+export type OgPalette = (typeof ogPalettes)[OgTheme]
+
+/** Dark is the default look; `?theme=light` on an OG route asks for the other. */
+export const OG_DEFAULT_THEME: OgTheme = 'dark'
+
+export function parseOgTheme(value: string | null): OgTheme {
+	return value === 'light' || value === 'dark' ? value : OG_DEFAULT_THEME
+}
+
+export function getOgPalette(theme: OgTheme = OG_DEFAULT_THEME) {
+	return ogPalettes[theme]
+}
+
+export const ogPalette = ogPalettes[OG_DEFAULT_THEME]

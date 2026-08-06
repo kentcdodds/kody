@@ -1,4 +1,4 @@
-import { ogPalette } from '#worker/og/palette.ts'
+import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import {
 	createOgFrame,
 	renderOgImage,
@@ -11,25 +11,30 @@ const DESCRIPTION_MAX_LENGTH = 160
 const BLOG_AUTHOR = 'Kent C. Dodds'
 
 export type BlogPostOgImageInput = {
+	/** Card palette; defaults to `OG_DEFAULT_THEME`. */
+	theme?: OgTheme
 	title: string
 	description: string
 	date: string
 }
 
 function createBlogPostOgMarkup(input: BlogPostOgImageInput): SatoriElement {
+	const palette = getOgPalette(input.theme)
 	return createOgFrame({
+		theme: input.theme,
 		label: 'Blog',
 		children: [
 			{
 				type: 'div',
 				props: {
 					style: {
+						fontFamily: 'Bricolage Grotesque',
 						fontSize: 52,
-						fontWeight: 600,
+						fontWeight: 700,
 						lineHeight: 1.2,
 						letterSpacing: '-0.02em',
 						marginBottom: 24,
-						color: ogPalette.text,
+						color: palette.text,
 					},
 					children: truncateOgText(input.title, TITLE_MAX_LENGTH),
 				},
@@ -40,7 +45,7 @@ function createBlogPostOgMarkup(input: BlogPostOgImageInput): SatoriElement {
 					style: {
 						fontSize: 28,
 						lineHeight: 1.4,
-						color: ogPalette.muted,
+						color: palette.textMuted,
 						marginBottom: 32,
 					},
 					children: truncateOgText(input.description, DESCRIPTION_MAX_LENGTH),
@@ -52,7 +57,7 @@ function createBlogPostOgMarkup(input: BlogPostOgImageInput): SatoriElement {
 					style: {
 						display: 'flex',
 						fontSize: 22,
-						color: ogPalette.muted,
+						color: palette.textMuted,
 					},
 					children: `${input.date} · ${BLOG_AUTHOR}`,
 				},
