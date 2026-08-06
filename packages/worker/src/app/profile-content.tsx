@@ -160,9 +160,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 										{pkg.communityListingId ? (
 											<span mix={css(communityBadgeCss)}>Community</span>
 										) : (
-											<span mix={css(unpublishedBadgeCss)}>
-												Not published
-											</span>
+											<span mix={css(unpublishedBadgeCss)}>Not published</span>
 										)}
 									</div>
 									{pkg.description ? (
