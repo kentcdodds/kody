@@ -38,7 +38,12 @@ secret reference, then run work through **execute**.
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
   `/account/secrets/new`, or the flows described in
-  [Secrets, values, and host approval](./secrets-and-values.md).
+  [Secrets, values, and host approval](./secrets-and-values.md). Per-provider
+  connect guides are available: load
+  `coding_guide_get({ guide: "provider_<name>" })` (for example
+  `provider_github`) or browse
+  [https://heykody.dev/guides](https://heykody.dev/guides) (each page also
+  serves raw markdown at `/guides/<slug>.md`).
 - **Confirm destructive work** before mutating GitHub, Cloudflare, or Cursor
   Cloud Agents. See [Mutating actions and confirmations](./mutating-actions.md).
 - **Verify before changing memory.** If you think something should become

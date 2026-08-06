@@ -9,6 +9,8 @@ export type IntegrationProviderSuggestion = {
 	name: string
 	tagline: string
 	scopeHint: string
+	/** Web slug for the bundled provider setup guide at `/guides/:slug`. */
+	guideSlug?: string
 }
 
 export const integrationProviderSuggestions: ReadonlyArray<IntegrationProviderSuggestion> =
@@ -19,12 +21,21 @@ export const integrationProviderSuggestions: ReadonlyArray<IntegrationProviderSu
 			tagline: 'Repos, issues, pull requests, notifications.',
 			scopeHint:
 				'reading and managing my repositories, issues, and pull requests',
+			guideSlug: 'github',
 		},
 		{
 			id: 'google',
 			name: 'Google',
 			tagline: 'Gmail, Calendar, Drive.',
 			scopeHint: 'reading my Gmail, Calendar, and Drive data',
+			guideSlug: 'google',
+		},
+		{
+			id: 'notion',
+			name: 'Notion',
+			tagline: 'Pages, databases, notes.',
+			scopeHint: 'reading and updating my Notion pages',
+			guideSlug: 'notion',
 		},
 		{
 			id: 'slack',
@@ -37,6 +48,7 @@ export const integrationProviderSuggestions: ReadonlyArray<IntegrationProviderSu
 			name: 'Spotify',
 			tagline: 'Playlists, playback, listening history.',
 			scopeHint: 'managing my playlists and playback',
+			guideSlug: 'spotify',
 		},
 		{
 			id: 'x',
@@ -49,12 +61,24 @@ export const integrationProviderSuggestions: ReadonlyArray<IntegrationProviderSu
 			name: 'Discord',
 			tagline: 'Servers, channels, messages.',
 			scopeHint: 'reading and sending messages in my servers',
+			guideSlug: 'discord',
 		},
 	]
 
 export function buildIntegrationSetupPrompt(
 	provider: IntegrationProviderSuggestion,
 ) {
+	if (provider.guideSlug) {
+		// The guide holds the verified console steps (and may lead with a
+		// personal-token lane), so the prompt defers to it instead of
+		// hardcoding an OAuth-app walkthrough.
+		return [
+			`Load the official Kody setup guide with coding_guide_get({ guide: 'provider_${provider.guideSlug}' }) and follow it to connect ${provider.name} to my Kody account.`,
+			'First explain the plan in plain language.',
+			`Then walk me through the guide's recommended path step by step, choose the minimal access for ${provider.scopeHint},`,
+			'save the integration in Kody, and verify the connection with the guide\u2019s smoke test.',
+		].join(' ')
+	}
 	return [
 		`Help me connect ${provider.name} to my Kody account as an integration.`,
 		'First explain the plan in plain language.',

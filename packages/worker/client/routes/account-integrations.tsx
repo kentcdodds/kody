@@ -1175,6 +1175,23 @@ export function AccountIntegrationsRoute(handle: Handle) {
 													{provider.name}
 												</h3>
 												<p mix={css(descriptionCss)}>{provider.tagline}</p>
+												{provider.guideSlug ? (
+													<p
+														mix={css({
+															margin: 0,
+															fontSize: typography.fontSize.sm,
+														})}
+													>
+														<a
+															href={routes.guideDetail.href({
+																slug: provider.guideSlug,
+															})}
+															mix={css(primaryLinkCss)}
+														>
+															Setup guide
+														</a>
+													</p>
+												) : null}
 											</div>
 											<div>
 												<CopyTextButton
