@@ -1,17 +1,11 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
-	compactInputCss,
-	getPrimaryButtonCss,
+	getPillButtonCss,
 	layoutMaxWidths,
+	pageGutter,
 } from '#client/styles/style-primitives.ts'
-import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+import { colors, transitions, typography } from '#client/styles/tokens.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
 	honeypotFieldName,
@@ -113,22 +107,16 @@ export function WaitlistBanner(handle: Handle) {
 			<section aria-label="Join the waiting list" mix={css(bannerCss)}>
 				<div mix={css(bannerInnerCss)}>
 					{isSuccess ? (
-						<p
-							aria-live="polite"
-							mix={css({
-								margin: 0,
-								color: colors.text,
-								fontSize: typography.fontSize.sm,
-								fontWeight: typography.fontWeight.medium,
-							})}
-						>
+						<p aria-live="polite" mix={css(successCss)}>
 							{message}
 						</p>
 					) : (
 						<>
 							<p mix={css(promptCss)}>
-								Built for people who want to own their automations. Join the
-								waitlist for an invite.
+								<span data-lede>
+									Built for people who want to own their automations.
+								</span>{' '}
+								Join the waitlist for an invite.
 							</p>
 							<form mix={[css(formCss), on('submit', handleSubmit)]}>
 								<input
@@ -139,34 +127,49 @@ export function WaitlistBanner(handle: Handle) {
 									aria-hidden="true"
 									mix={css(honeypotCss)}
 								/>
-								<label mix={css(nameFieldCss)}>
-									<span mix={css(visuallyHiddenCss)}>First name</span>
+								{/*
+								 * One connected pill, same grammar as the hero waitlist and
+								 * the community search. `data-focus-container` opts into the
+								 * shared rules in styles.css: the container shows a single
+								 * ring for the whole control and the submit draws its own
+								 * inside itself.
+								 */}
+								<div data-focus-container mix={css(pillCss)}>
+									<label
+										for={`${handle.id}-waitlist-name`}
+										mix={css(visuallyHiddenCss)}
+									>
+										First name
+									</label>
 									<input
+										id={`${handle.id}-waitlist-name`}
 										type="text"
 										name="firstName"
 										required
 										autoComplete="given-name"
 										maxLength={80}
 										placeholder="First name"
-										mix={css(bannerInputCss)}
+										mix={css(pillNameInputCss)}
 									/>
-								</label>
-								<div mix={css(emailGroupCss)}>
-									<label mix={css(emailFieldCss)}>
-										<span mix={css(visuallyHiddenCss)}>Email</span>
-										<input
-											type="email"
-											name="email"
-											required
-											autoComplete="email"
-											placeholder="Email"
-											mix={css(emailInputCss)}
-										/>
+									<label
+										for={`${handle.id}-waitlist-email`}
+										mix={css(visuallyHiddenCss)}
+									>
+										Email
 									</label>
+									<input
+										id={`${handle.id}-waitlist-email`}
+										type="email"
+										name="email"
+										required
+										autoComplete="email"
+										placeholder="Email"
+										mix={css(pillEmailInputCss)}
+									/>
 									<button
 										type="submit"
 										disabled={isSubmitting}
-										mix={css(submitCss)}
+										mix={css(pillSubmitCss)}
 									>
 										{isSubmitting ? 'Joining…' : 'Join'}
 									</button>
@@ -175,19 +178,24 @@ export function WaitlistBanner(handle: Handle) {
 									<div class={turnstileWidgetClassName}></div>
 								) : null}
 							</form>
+							{/*
+							 * Announcer stays mounted so a live region has something to
+							 * change, but it is out of flow — rendered conditionally it used
+							 * to reserve an empty line and add roughly 20px to a strip whose
+							 * whole point is being shallow.
+							 */}
 							<p
 								aria-live="polite"
 								role={status === 'error' ? 'alert' : undefined}
-								mix={css({
-									margin: 0,
-									color: colors.error,
-									fontSize: typography.fontSize.xs,
-									width: '100%',
-									textAlign: 'center' as const,
-								})}
+								mix={css(visuallyHiddenCss)}
 							>
 								{message ?? ''}
 							</p>
+							{message ? (
+								<p aria-hidden="true" mix={css(errorCss)}>
+									{message}
+								</p>
+							) : null}
 						</>
 					)}
 				</div>
@@ -196,18 +204,28 @@ export function WaitlistBanner(handle: Handle) {
 	}
 }
 
+/* Pill geometry, shared so a segment's corners nest inside the container's. */
+const pillRadius = '999px'
+const pillStackRadius = '20px'
+const pillPadding = '0.25rem'
+
+/* Stacks below this: three segments cannot hold their placeholders on a phone
+   without truncating them to nonsense. */
+const stackMq = '@media (max-width: 720px)'
+
 const bannerCss = {
 	width: '100%',
 	margin: 0,
-	padding: `${spacing.xs} ${spacing.xl}`,
+	/* Deliberately shallow — this sits above the header on secondary pages and
+	   should read as a quiet strip, not a second hero. */
+	padding: `0.55rem ${pageGutter}`,
 	borderBottom: `1px solid ${colors.border}`,
+	/* A whisper of the accent so the strip separates from the header without
+	   competing with it. */
 	backgroundColor: colors.primarySoftest,
 	boxSizing: 'border-box' as const,
-	[mq.tablet]: {
-		padding: `${spacing.xs} ${spacing.sm}`,
-	},
-	[mq.mobile]: {
-		padding: `${spacing.xs} ${spacing.md}`,
+	[stackMq]: {
+		padding: `0.7rem ${pageGutter}`,
 	},
 }
 
@@ -218,106 +236,121 @@ const bannerInnerCss = {
 	display: 'flex',
 	alignItems: 'center',
 	justifyContent: 'center',
-	gap: spacing.sm,
+	gap: '1rem',
 	flexWrap: 'wrap' as const,
 	boxSizing: 'border-box' as const,
+	[stackMq]: {
+		gap: '0.55rem',
+	},
 }
 
 const promptCss = {
 	margin: 0,
 	color: colors.text,
-	fontSize: typography.fontSize.sm,
-	fontWeight: typography.fontWeight.medium,
-	whiteSpace: 'nowrap' as const,
-	[mq.mobile]: {
-		whiteSpace: 'normal' as const,
+	fontSize: '0.92rem',
+	fontWeight: 550,
+	/* The positioning line is context; the sentence after it is the ask. */
+	'& > [data-lede]': { color: colors.textMuted },
+	[stackMq]: {
 		textAlign: 'center' as const,
 		width: '100%',
+		fontSize: '0.88rem',
+		/* Only the ask survives on a phone. Keeping the positioning line instead
+		   cost two wrapped lines on a strip that should be one. */
+		'& > [data-lede]': { display: 'none' },
 	},
 }
 
 const formCss = {
 	display: 'flex',
 	alignItems: 'stretch',
-	gap: spacing.xs,
-	flexWrap: 'wrap' as const,
-	marginBottom: 0,
-	[mq.mobile]: {
+	margin: 0,
+	minWidth: 0,
+	[stackMq]: {
 		width: '100%',
 	},
 }
 
-const nameFieldCss = {
+const pillCss = {
 	display: 'grid',
-	margin: 0,
-	flex: '0 1 9rem',
-	minWidth: '7rem',
-	[mq.mobile]: {
-		flex: '1 1 6rem',
-		minWidth: '5.5rem',
-	},
-}
-
-const emailGroupCss = {
-	display: 'flex',
+	gridTemplateColumns: 'minmax(0, 8.5rem) minmax(0, 12rem) auto',
 	alignItems: 'stretch',
-	flex: '1 1 14rem',
-	minWidth: '12rem',
-	border: `1px solid ${colors.border}`,
-	borderRadius: radius.sm,
-	overflow: 'hidden',
+	width: '100%',
 	backgroundColor: colors.surface,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: pillRadius,
+	padding: pillPadding,
+	boxSizing: 'border-box' as const,
+	transition: `border-color 160ms ${transitions.easeOut}, box-shadow 160ms ${transitions.easeOut}`,
 	'&:focus-within': {
 		borderColor: colors.primary,
+		boxShadow: `0 0 0 3px oklch(from ${colors.primary} l c h / 0.25)`,
 	},
-	[mq.mobile]: {
-		flex: '1 1 11rem',
-		minWidth: '10rem',
+	[stackMq]: {
+		/* Two fields across, the button spanning beneath them: keeps the strip to
+		   two rows instead of three while every placeholder stays readable. */
+		gridTemplateColumns: '1fr 1fr',
+		borderRadius: pillStackRadius,
+		gap: pillPadding,
 	},
 }
 
-const emailFieldCss = {
-	display: 'grid',
-	margin: 0,
-	flex: '1 1 auto',
-	minWidth: 0,
-}
-
-const bannerInputCss = {
-	...compactInputCss,
-	height: '100%',
-	backgroundColor: colors.surface,
-	borderRadius: radius.sm,
-}
-
-const emailInputCss = {
-	...bannerInputCss,
+const pillInputBaseCss = {
+	font: `400 0.92rem/1.2 ${typography.fontFamilyBody}`,
+	color: colors.text,
+	backgroundColor: 'transparent',
 	border: 'none',
-	borderRadius: 0,
-	boxShadow: 'none',
-	outline: 'none',
-	'&:focus': {
-		outline: 'none',
-		boxShadow: 'none',
-		borderColor: 'transparent',
+	padding: '0.4rem 0.9rem',
+	minWidth: 0,
+	'&::placeholder': { color: colors.textMuted, opacity: 1 },
+	/* No tint on focus: the container ring plus the caret already say where
+	   focus is, and a filled segment reads as a slab inside the pill. */
+	'&:focus': { outline: 'none' },
+}
+
+const pillNameInputCss = {
+	...pillInputBaseCss,
+	/* Leading segment: the container's inner curve outside, square where it
+	   meets the next segment. */
+	borderRadius: `calc(${pillRadius} - ${pillPadding}) 0 0 calc(${pillRadius} - ${pillPadding})`,
+	[stackMq]: {
+		borderRadius: `calc(${pillStackRadius} - ${pillPadding}) 0 0 0`,
 	},
 }
 
-const submitCss = {
-	...getPrimaryButtonCss({ size: 'md' }),
-	padding: `${spacing.xs} ${spacing.md}`,
-	fontSize: typography.fontSize.sm,
+const pillEmailInputCss = {
+	...pillInputBaseCss,
+	borderLeft: `1px solid ${colors.border}`,
 	borderRadius: 0,
-	flex: '0 0 auto',
-	alignSelf: 'stretch',
-	transform: 'none',
-	'&:not(:disabled):hover': {
-		backgroundColor: colors.primaryHover,
-		transform: 'none',
+	[stackMq]: {
+		borderRadius: `0 calc(${pillStackRadius} - ${pillPadding}) 0 0`,
 	},
-	'&:not(:disabled):active': {
-		backgroundColor: colors.primaryActive,
-		transform: 'none',
+}
+
+const successCss = {
+	margin: 0,
+	color: colors.text,
+	fontSize: '0.92rem',
+	fontWeight: 550,
+	textAlign: 'center' as const,
+}
+
+const errorCss = {
+	margin: 0,
+	color: colors.error,
+	fontSize: '0.82rem',
+	width: '100%',
+	textAlign: 'center' as const,
+}
+
+const pillSubmitCss = {
+	...getPillButtonCss(),
+	fontSize: '0.9rem',
+	padding: '0.4rem 1.15rem',
+	whiteSpace: 'nowrap' as const,
+	[stackMq]: {
+		gridColumn: '1 / -1',
+		justifyContent: 'center',
 	},
 }
 
