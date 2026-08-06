@@ -378,7 +378,9 @@ const menuPanelCss = {
 	overflowY: 'auto' as const,
 	margin: 0,
 	padding: '0.5rem',
-	display: 'grid',
+	// No base `display`: a closed popover must keep the UA's `display: none`,
+	// or the invisible fixed panel keeps swallowing taps where the menu was.
+	// The `display … allow-discrete` transition holds `grid` through the exit.
 	gap: '0.35rem',
 	border: `1.5px solid ${colors.border}`,
 	borderRadius: '18px',
@@ -391,6 +393,7 @@ const menuPanelCss = {
 	transformOrigin: 'top center',
 	transition: `opacity 180ms ${transitions.easeOut}, translate 180ms ${transitions.easeOut}, scale 180ms ${transitions.easeOut}, display 180ms allow-discrete, overlay 180ms allow-discrete`,
 	'&:popover-open': {
+		display: 'grid',
 		opacity: 1,
 		translate: '0 0',
 		scale: '1',
@@ -414,8 +417,12 @@ const menuPanelCss = {
 		scale: 'none',
 		transition: `opacity 120ms ${transitions.easeOut}, display 120ms allow-discrete, overlay 120ms allow-discrete`,
 	},
-	// Desktop never sees it; the inline nav is the menu there.
-	'@media (min-width: 821px)': { display: 'none' },
+	// Desktop never sees it; the inline nav is the menu there. `:popover-open`
+	// is repeated so this outranks the open state's `display: grid`.
+	'@media (min-width: 821px)': {
+		display: 'none',
+		'&:popover-open': { display: 'none' },
+	},
 }
 
 const menuGroupCss = {
