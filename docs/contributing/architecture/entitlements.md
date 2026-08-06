@@ -51,8 +51,8 @@ without including the raw value or user data. Untrusted admin/API input uses
 `parsePlanName` so typos, unknown strings, and retired plan names are rejected
 as validation failures.
 
-Migration `0002-restructure-plan-tiers.sql` maps the former `pro` tier to
-`standard`, the former `partner` tier to `pro`, and rebuilds both CHECK
+Migration `0002-restructure-plan-tiers.sql` maps stored `pro` values to
+`standard`, stored `partner` values to `pro`, and rebuilds both CHECK
 constraints for the current registry.
 
 `users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
@@ -378,10 +378,10 @@ reconcile lane, cold-drift correction, and the parity report.
 The pre-squash plan-column evolution (NULL rows → `'unlimited'` backfill → NOT
 NULL → `'unlimited'` renamed to `'max'` → DEFAULT `'free'` → CHECK constraints)
 is collapsed into the squashed baseline; the individual migration files live in
-Git history only. Post-squash, `0002-restructure-plan-tiers.sql` renames stored
-`pro` to `standard` and `partner` to `pro` (on `users.plan`,
-`users.stripe_plan`, and `invites.plan`) and rebuilds both CHECK constraints for
-`free`, `standard`, `pro`, and `max`.
+Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
+`standard` and `partner` to `pro` (on `users.plan`, `users.stripe_plan`, and
+`invites.plan`) and rebuilds both CHECK constraints for `free`, `standard`,
+`pro`, and `max`.
 
 ## Assigning plans
 

@@ -144,9 +144,8 @@ Quick notes for getting a local kody environment running.
   deterministic guard that rewrote `d1_migrations` bookkeeping in existing
   databases — it verifies the applied set matches the frozen pre-squash list
   exactly before touching anything, and no-ops on fresh or already-squashed
-  databases. Production and preview settled post-squash on 2026-08-05, so the
-  guard now runs only for local applies (pre-squash developer state dirs);
-  delete it once those have died out.
+  databases. The guard runs only for local applies against pre-squash developer
+  state dirs; delete it once those have died out.
 
 ## Documentation maintenance
 
