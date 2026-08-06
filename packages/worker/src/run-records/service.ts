@@ -546,13 +546,17 @@ export async function updateRunErrorTriage(input: {
 	triageNote?: string | null
 }): Promise<UpdateRunErrorTriageOutcome> {
 	if (!runLogBinding(input.env)) return { ok: false, reason: 'unavailable' }
+	// Treat omitted / undefined note as preserve. Pass an explicit boolean over
+	// DO RPC so we do not depend on `undefined` surviving structured clone.
+	const preserveTriageNote = input.triageNote === undefined
 	return await runLogRpc({
 		env: input.env,
 		userId: input.userId,
 	}).updateRunErrorTriage({
 		runId: input.runId,
 		errorTriage: input.errorTriage,
-		triageNote: input.triageNote,
+		preserveTriageNote,
+		triageNote: preserveTriageNote ? null : (input.triageNote ?? null),
 		triagedBy: input.userId,
 	})
 }

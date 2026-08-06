@@ -334,13 +334,23 @@ test(
 		expect(resolved.run.triage_note).toBe('fixed upstream')
 		expect(resolved.run.error_message).toBe('expected flake')
 
+		// Omitting note must preserve the existing triage note across the DO RPC.
+		const keepNote = await runUpdateCapability.handler(
+			{ run_id: 'err-noise', triage: 'ignored' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(keepNote.run).toMatchObject({
+			error_triage: 'ignored',
+			triage_note: 'fixed upstream',
+		})
+
 		const summary = await runSummaryCapability.handler(
 			{},
 			{ env, callerContext: ownerContext },
 		)
 		expect(summary.errors).toBe(1)
-		expect(summary.ignored).toBe(0)
-		expect(summary.resolved).toBe(1)
+		expect(summary.ignored).toBe(1)
+		expect(summary.resolved).toBe(0)
 
 		const reopened = await runUpdateCapability.handler(
 			{ run_id: 'err-noise', triage: 'open' },

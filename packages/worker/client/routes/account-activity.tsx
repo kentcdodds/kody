@@ -175,8 +175,11 @@ function readTriageFilter(href: string): AccountActivityTriageFilter {
 	return match?.value ?? 'open'
 }
 
-function triageLabel(triage: AccountActivityRunListItem['errorTriage']) {
-	switch (triage) {
+function triageLabel(
+	run: Pick<AccountActivityRunListItem, 'status' | 'errorTriage'>,
+) {
+	if (run.status !== 'error') return '—'
+	switch (run.errorTriage) {
 		case 'ignored':
 			return 'Ignored'
 		case 'resolved':
@@ -184,7 +187,7 @@ function triageLabel(triage: AccountActivityRunListItem['errorTriage']) {
 		case null:
 			return 'Open'
 		default: {
-			const exhaustive: never = triage
+			const exhaustive: never = run.errorTriage
 			return exhaustive
 		}
 	}
@@ -757,7 +760,7 @@ export function AccountActivityRoute(handle: Handle) {
 											},
 											{
 												label: 'Triage',
-												value: triageLabel(detail.errorTriage),
+												value: triageLabel(detail),
 											},
 											{
 												label: 'Triage note',
@@ -768,6 +771,10 @@ export function AccountActivityRoute(handle: Handle) {
 												value: detail.triagedAt
 													? formatTimestamp(detail.triagedAt)
 													: '—',
+											},
+											{
+												label: 'Triaged by',
+												value: detail.triagedBy ?? '—',
 											},
 											{
 												label: 'Surface',

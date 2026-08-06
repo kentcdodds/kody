@@ -196,8 +196,13 @@ export type UpdateRunErrorTriageInput = {
 	/** `null` clears triage (reopen). */
 	errorTriage: RunErrorTriage | null
 	/**
-	 * `undefined` preserves the current note; `null` or empty clears it.
-	 * Ignored when clearing triage (note is always cleared on reopen).
+	 * When true, keep the existing note (used when the caller omitted `note`
+	 * so RPC cannot rely on `undefined` surviving structured clone).
+	 */
+	preserveTriageNote?: boolean
+	/**
+	 * `null` or empty clears the note. Ignored when `preserveTriageNote` is
+	 * true, and cleared automatically when reopening (`errorTriage: null`).
 	 */
 	triageNote?: string | null
 	triagedBy: string
@@ -2635,7 +2640,7 @@ class RunLogBase extends DurableObject<Env> {
 			triagedAt = null
 			triagedBy = null
 		} else {
-			if (input.triageNote === undefined) {
+			if (input.preserveTriageNote) {
 				triageNote = current.triageNote
 			} else if (input.triageNote == null) {
 				triageNote = null
