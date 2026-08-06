@@ -18,7 +18,7 @@ export type TimelineRun = {
 export type TimelineDay = {
 	/** Stable `YYYY-MM-DD` key (UTC) for list keys and heading ids. */
 	dayKey: string
-	/** The first event's timestamp, for the heading's `<time datetime>`. */
+	/** Formatted date for the heading's visible text ("August 4, 2026"). */
 	dayLabel: string
 	runs: Array<TimelineRun>
 }
