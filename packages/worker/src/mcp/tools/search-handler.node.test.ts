@@ -299,7 +299,10 @@ test('search tool returns compact query markdown while preserving structured aux
 		}
 		matches: Array<{ type: string; entityRef?: string }>
 	}
-	expect(result.warnings).toHaveLength(2)
+	// Two retriever warnings plus the once-per-conversation onboarding
+	// reminder (this mock env derives an incomplete checklist).
+	expect(result.warnings).toHaveLength(3)
+	expect(result.warnings[2]).toContain('Onboarding:')
 	expect(result.matches).toEqual([
 		expect.objectContaining({
 			type: 'capability',

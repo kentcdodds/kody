@@ -323,10 +323,13 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		mcpServerUrl: '',
 		setupPrompt: '',
 		discoveryPrompt: expect.stringContaining('what-is-kody'),
+		introEmailPrompt: '',
+		memoryPrompt: '',
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		checklist: null,
 	})
 	expect(accountHtml).toContain('Verify your email')
 	expect(accountHtml).toContain('No accounts connected yet.')
