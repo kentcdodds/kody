@@ -82,6 +82,8 @@ show metadata, aggregate ratings, **star count** (stargazers — distinct from 1
 ratings), fork count, the README (not the full source tree), and a dynamically
 generated Open Graph image (1200×630). When the owner keeps a
 [public profile](./community-profiles.md), the listing links to `/@username`.
+Private owners still show as `@username` with a lock that explains the profile
+is private.
 
 Each detail page includes a **copyable prompt** you can hand to your agent to
 start a fork. You can also ask your agent to use `community_search` or

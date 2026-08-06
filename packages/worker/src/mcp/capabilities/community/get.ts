@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
+import { getUserSocialRowByUsername } from '#worker/community/social-repo.ts'
 import { listCommunityStargazersForListing } from '#worker/community/social-service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -56,7 +57,7 @@ export const communityGetCapability = defineDomainCapability(
 			trusted: communityTrustedFieldSchema,
 			featured: communityFeaturedFieldSchema,
 			owner_username: z.string(),
-			owner_profile_url: z.string(),
+			owner_profile_url: z.string().nullable(),
 			public_url: z.string(),
 			published_at: z.string(),
 			readme_untrusted: z.string().nullable(),
@@ -79,6 +80,11 @@ export const communityGetCapability = defineDomainCapability(
 				throw new Error('Community listing not found.')
 			}
 			const ownerUsername = resolveCommunityOwnerUsername(listing.name)
+			const ownerRow = await getUserSocialRowByUsername(
+				ctx.env.APP_DB,
+				ownerUsername,
+			)
+			const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
 			const { totalStars, stargazers } =
 				await listCommunityStargazersForListing({
 					env: ctx.env,
@@ -97,10 +103,9 @@ export const communityGetCapability = defineDomainCapability(
 				trusted: listing.trusted,
 				featured: listing.featured,
 				owner_username: ownerUsername,
-				owner_profile_url: buildCommunityOwnerProfileUrl(
-					baseUrl,
-					ownerUsername,
-				),
+				owner_profile_url: ownerProfilePublic
+					? buildCommunityOwnerProfileUrl(baseUrl, ownerUsername)
+					: null,
 				public_url: buildCommunityPublicUrl(baseUrl, listing.id),
 				published_at: listing.publishedAt,
 				...toCommunityListingAggregatesOutput(listing),

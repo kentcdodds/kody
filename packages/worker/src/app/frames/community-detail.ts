@@ -18,6 +18,9 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 		if (!detail) {
 			return ''
 		}
-		return renderCommunityDetailContentHtml({ listing: detail.listing })
+		return renderCommunityDetailContentHtml({
+			listing: detail.listing,
+			ownerProfilePublic: detail.ownerProfilePublic,
+		})
 	},
 })

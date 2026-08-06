@@ -30,6 +30,7 @@ const communityMockModule = vi.hoisted(() => ({
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
 	getCommunityListingWithAggregates: vi.fn(),
+	getUserSocialRowByUsername: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -42,6 +43,18 @@ vi.mock('#worker/community/service.ts', () => ({
 	reportCommunityListing: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
 }))
+
+vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<
+		typeof import('#worker/community/social-repo.ts')
+	>()
+	return {
+		...actual,
+		getCommunityStar: vi.fn().mockResolvedValue(false),
+		getUserSocialRowByUsername: (...args: Array<unknown>) =>
+			communityMockModule.getUserSocialRowByUsername(...args),
+	}
+})
 
 const sampleListing = {
 	id: 'listing-1',
@@ -621,6 +634,9 @@ test('community detail SSR renders the redesigned article', async () => {
 	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
 		detailListing,
 	)
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+	})
 
 	const response = await createCommunityDetailHandler(env).handler({
 		request: new Request('https://example.com/community/listing-detail-1'),
@@ -637,7 +653,10 @@ test('community detail SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-listing-icon-detail"')
 	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
 	expect(html).toContain('@kentcdodds/<wbr />github-triage')
-	expect(html).toContain('by @kentcdodds')
+	expect(html).toContain('by ')
+	expect(html).toContain('href="/@kentcdodds"')
+	expect(html).toContain('>@kentcdodds</a>')
+	expect(html).not.toContain('data-testid="community-detail-owner-private"')
 	expect(html).toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('License')
 	expect(html).toContain('MIT')

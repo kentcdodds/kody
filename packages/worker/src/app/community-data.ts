@@ -24,7 +24,10 @@ import {
 	searchCommunityListings,
 	getCommunityListingWithAggregates,
 } from '#worker/community/service.ts'
-import { getCommunityStar } from '#worker/community/social-repo.ts'
+import {
+	getCommunityStar,
+	getUserSocialRowByUsername,
+} from '#worker/community/social-repo.ts'
 
 const defaultCommunityListLimit = 50
 const onboardingFeaturedListingLimit = 12
@@ -165,6 +168,12 @@ async function loadCommunityDetailDataUncached(
 
 	if (!listing) return null
 
+	const ownerRow = await getUserSocialRowByUsername(
+		env.APP_DB,
+		listing.ownerUsername,
+	)
+	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
+
 	const user = await readAuthenticatedAppUser(request, env)
 	const starredByViewer =
 		user != null
@@ -178,6 +187,7 @@ async function loadCommunityDetailDataUncached(
 		Boolean(user),
 		user?.roles.includes('admin') ?? false,
 		starredByViewer,
+		ownerProfilePublic,
 	)
 }
 
@@ -186,10 +196,12 @@ export function composeCommunityDetailLoaderData(
 	loggedIn: boolean,
 	viewerIsAdmin = false,
 	starredByViewer = false,
+	ownerProfilePublic = false,
 ): CommunityDetailLoaderData {
 	return {
 		ok: true,
 		listing,
+		ownerProfilePublic,
 		loggedIn,
 		viewerIsAdmin,
 		forkPrompt: buildForkPrompt({

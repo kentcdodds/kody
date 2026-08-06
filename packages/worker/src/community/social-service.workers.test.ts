@@ -1,5 +1,9 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import {
+	getCommunityPublicCacheVersion,
+	resetDataCacheForTests,
+} from '#app/data-cache.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { CommunityActionError } from './errors.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
@@ -421,6 +425,8 @@ test('updateCommunityProfile validates display name and bio bounds', async () =>
 		}),
 	).rejects.toThrow(/Bio must be at most 500/)
 
+	resetDataCacheForTests()
+	const versionBeforeVisibilityChange = getCommunityPublicCacheVersion()
 	await updateCommunityProfile({
 		env,
 		numericUserId: user.numericId,
@@ -428,6 +434,9 @@ test('updateCommunityProfile validates display name and bio bounds', async () =>
 		bio: '  Hello world  ',
 		visibility: 'private',
 	})
+	expect(getCommunityPublicCacheVersion()).toBe(
+		versionBeforeVisibilityChange + 1,
+	)
 	const profile = await getCommunityProfileByUsername({
 		env,
 		username: user.username,
@@ -439,13 +448,21 @@ test('updateCommunityProfile validates display name and bio bounds', async () =>
 		visibility: 'private',
 	})
 
+	const versionBeforePublicRestore = getCommunityPublicCacheVersion()
 	await updateCommunityProfile({
 		env,
 		numericUserId: user.numericId,
 		displayName: '   ',
 		bio: '',
+	})
+	expect(getCommunityPublicCacheVersion()).toBe(versionBeforePublicRestore)
+
+	await updateCommunityProfile({
+		env,
+		numericUserId: user.numericId,
 		visibility: 'public',
 	})
+	expect(getCommunityPublicCacheVersion()).toBe(versionBeforePublicRestore + 1)
 	const cleared = await getCommunityProfileByUsername({
 		env,
 		username: user.username,

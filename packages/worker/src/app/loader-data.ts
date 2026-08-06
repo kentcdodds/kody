@@ -50,6 +50,8 @@ export type CommunityIndexLoaderData = {
 export type CommunityDetailLoaderData = {
 	ok: true
 	listing: PublicCommunityListing
+	/** True when `/@owner` is publicly reachable. */
+	ownerProfilePublic: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string

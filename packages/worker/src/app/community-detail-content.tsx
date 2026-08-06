@@ -17,6 +17,7 @@ import {
 	communityTagPillCss,
 } from '#app/community-listings-content.tsx'
 import { routes } from '#app/routes.ts'
+import { visuallyHiddenCss } from '#client/styles/style-primitives.ts'
 import { colors } from '#client/styles/tokens.ts'
 
 /**
@@ -31,12 +32,13 @@ import { colors } from '#client/styles/tokens.ts'
 
 export type CommunityDetailContentProps = {
 	listing: PublicCommunityListing
+	ownerProfilePublic: boolean
 }
 
 export function CommunityDetailContent(
 	handle: Handle<CommunityDetailContentProps>,
 ) {
-	const { listing } = handle.props
+	const { listing, ownerProfilePublic } = handle.props
 
 	return () => (
 		<div data-testid="community-detail-frame">
@@ -53,7 +55,47 @@ export function CommunityDetailContent(
 				<CommunityListingIcon listing={listing} size="detail" />
 				<div mix={css(headTextCss)}>
 					<h1>{renderCommunityListingName(listing.name)}</h1>
-					<p>by @{listing.ownerUsername}</p>
+					<p>
+						by{' '}
+						{ownerProfilePublic ? (
+							<a
+								href={routes.profile.href({
+									username: listing.ownerUsername,
+								})}
+								mix={css(ownerLinkCss)}
+							>
+								@{listing.ownerUsername}
+							</a>
+						) : (
+							<>
+								@{listing.ownerUsername}
+								<span
+									data-testid="community-detail-owner-private"
+									title="This profile is private"
+									mix={css(ownerPrivateLockCss)}
+								>
+									<svg
+										viewBox="0 0 16 16"
+										width="0.9em"
+										height="0.9em"
+										aria-hidden="true"
+										focusable={false}
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.5"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									>
+										<rect x="3.5" y="7.2" width="9" height="6.3" rx="1.4" />
+										<path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" />
+									</svg>
+									<span mix={css(visuallyHiddenCss)}>
+										This profile is private
+									</span>
+								</span>
+							</>
+						)}
+					</p>
 				</div>
 				{listing.trusted ? (
 					<span
@@ -178,6 +220,24 @@ const headTextCss = {
 		color: colors.textMuted,
 		fontSize: '0.95rem',
 	},
+}
+
+const ownerLinkCss = {
+	color: colors.textMuted,
+	fontWeight: 550,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.primaryText,
+	},
+}
+
+const ownerPrivateLockCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	marginLeft: '0.35rem',
+	color: colors.textMuted,
+	verticalAlign: 'middle',
+	cursor: 'help',
 }
 
 const badgeCss = {

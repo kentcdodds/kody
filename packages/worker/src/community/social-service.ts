@@ -177,6 +177,9 @@ export async function updateCommunityProfile(input: {
 		numericUserId: input.numericUserId,
 		...patch,
 	})
+	if (patch.visibility !== undefined) {
+		invalidateCommunityPublicCache()
+	}
 }
 
 export async function followCommunityUser(input: {

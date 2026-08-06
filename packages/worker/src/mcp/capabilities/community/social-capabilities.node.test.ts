@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 	getProfileActivity: vi.fn(),
 	listPublicProfilePackages: vi.fn(),
 	getUserSocialRowByStableId: vi.fn(),
+	getUserSocialRowByUsername: vi.fn(),
 	getCommunityListingWithAggregates: vi.fn(),
 }))
 
@@ -56,6 +57,8 @@ vi.mock('#worker/community/social-service.ts', () => ({
 vi.mock('#worker/community/social-repo.ts', () => ({
 	getUserSocialRowByStableId: (...args: Array<unknown>) =>
 		mocks.getUserSocialRowByStableId(...args),
+	getUserSocialRowByUsername: (...args: Array<unknown>) =>
+		mocks.getUserSocialRowByUsername(...args),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -349,6 +352,9 @@ test('community star/unstar, starred_list, timeline, and listing stargazers', as
 		],
 	})
 	mocks.getCommunityListingWithAggregates.mockResolvedValue(makeListing())
+	mocks.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+	})
 	mocks.listStarredCommunityListings.mockResolvedValue([makeListing()])
 	mocks.getCommunityTimeline.mockResolvedValue([makeActivity()])
 
@@ -380,11 +386,22 @@ test('community star/unstar, starred_list, timeline, and listing stargazers', as
 	expect(detail).toMatchObject({
 		listing_id: 'listing-1',
 		star_count: 3,
+		owner_username: 'bob',
+		owner_profile_url: 'https://example.com/@bob',
 		stargazers: {
 			total_stars: 4,
 			recent_stargazers: [{ username: 'alice' }],
 		},
 	})
+
+	mocks.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'private',
+	})
+	const privateDetail = await communityGetCapability.handler(
+		{ listing_id: 'listing-1' },
+		createContext(),
+	)
+	expect(privateDetail.owner_profile_url).toBeNull()
 
 	const starredList = await communityStarredListCapability.handler(
 		{},

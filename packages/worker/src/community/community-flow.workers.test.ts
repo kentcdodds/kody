@@ -262,6 +262,22 @@ test('community package flow works end-to-end through capability handlers', asyn
 	)
 	expect(getResult.readme_untrusted).toContain('## Intent')
 	expect(getResult.content_warning).toBe(communityContentWarning)
+	expect(getResult.owner_username).toBe('usera')
+	expect(getResult.owner_profile_url).toBe(`${baseUrl}/@usera`)
+
+	await runSql(
+		`UPDATE users SET profile_visibility = 'private' WHERE stable_user_id = ?`,
+		owner.userId,
+	)
+	const privateOwnerGet = await communityGetCapability.handler(
+		{ listing_id: listingId },
+		forkerCtx,
+	)
+	expect(privateOwnerGet.owner_profile_url).toBeNull()
+	await runSql(
+		`UPDATE users SET profile_visibility = 'public' WHERE stable_user_id = ?`,
+		owner.userId,
+	)
 
 	const forkResult = await communityForkCapability.handler(
 		{ listing_id: listingId },

@@ -51,6 +51,7 @@ import { UserAvatar } from '#app/user-avatar.tsx'
 type CommunityDetailApiPayload = {
 	ok: true
 	listing: PublicCommunityListing
+	ownerProfilePublic: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
