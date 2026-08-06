@@ -344,7 +344,11 @@ test('UserMeter inbound claim and consume roll back together on claim insert fai
 		).rejects.toThrow('injected inbound claim insert failure')
 		sql.exec = originalExec
 		expect(
-			await instance.read({ resource: 'email_receives_per_day', day }),
+			await instance.read({
+				resource: 'email_receives_per_day',
+				day,
+				now: updatedAt,
+			}),
 		).toMatchObject({ outcome: 'ready', count: 0 })
 		expect(
 			sql
