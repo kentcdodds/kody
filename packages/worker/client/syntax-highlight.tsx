@@ -115,7 +115,7 @@ function rootStyleFromTokens(fg: string | undefined, bg: string | undefined) {
 
 function renderPlainCode(code: string, key?: number): RemixNode {
 	return (
-		<pre key={key} class={shikiPreClass} tabIndex={0}>
+		<pre key={key} class={shikiPreClass}>
 			<code>{code}</code>
 		</pre>
 	)
@@ -146,7 +146,6 @@ export function renderHighlightedCode(
 			<pre
 				key={key}
 				class={shikiPreClass}
-				tabIndex={0}
 				style={rootStyleFromTokens(result.fg, result.bg)}
 			>
 				<code>

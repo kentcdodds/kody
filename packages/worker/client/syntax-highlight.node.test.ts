@@ -9,8 +9,9 @@ test('highlights known languages with dual-theme token styles and escapes conten
 			children: renderHighlightedCode('const secret = "<script>"', 'ts'),
 		}),
 	)
-	expect(tsHtml).toContain('class="shiki shiki-themes github-light github-dark"')
-	expect(tsHtml).toContain('tabindex="0"')
+	expect(tsHtml).toContain(
+		'class="shiki shiki-themes github-light github-dark"',
+	)
 	expect(tsHtml).toContain('--shiki-dark:')
 	expect(tsHtml).toContain('const')
 	expect(tsHtml).toContain('&lt;script&gt;')
