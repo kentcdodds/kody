@@ -49,7 +49,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({ line: 6, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 6,
-			pattern: 'now support/accept/require/use/store/return/call/read/pass',
+			pattern: 'now support/accept/require/use/store/return/call/read/pass/run',
 		}),
 	])
 
@@ -69,7 +69,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({ line: 2, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 2,
-			pattern: 'now support/accept/require/use/store/return/call/read/pass',
+			pattern: 'now support/accept/require/use/store/return/call/read/pass/run',
 		}),
 	])
 
@@ -93,7 +93,7 @@ test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 		expect.objectContaining({
 			line: 5,
 			column: 22,
-			pattern: 'now support/accept/require/use/store/return/call/read/pass',
+			pattern: 'now support/accept/require/use/store/return/call/read/pass/run',
 		}),
 	])
 
@@ -141,6 +141,8 @@ test.each([
 		'Post-cutover unrestorable exports never receive a manifest.',
 		'post-cutover',
 	],
+	['Post-squash, the follow-up migration renames stored tiers.', 'post-squash'],
+	['The guard now runs only for local applies.', 'now support'],
 ])('flags rollout prose %j', (content, pattern) => {
 	expect(
 		findTemporalLanguageMatches({
@@ -240,7 +242,8 @@ test('exempts principles and migration pages and scans discovered docs', async (
 			expect.objectContaining({
 				file: 'docs/use/example.md',
 				line: 1,
-				pattern: 'now support/accept/require/use/store/return/call/read/pass',
+				pattern:
+					'now support/accept/require/use/store/return/call/read/pass/run',
 			}),
 		])
 	} finally {

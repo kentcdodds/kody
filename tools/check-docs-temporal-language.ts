@@ -60,15 +60,19 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 			regex: /\bpost-cutover\b/i,
 		},
 		{
+			label: 'post-squash',
+			regex: /\bpost-squash\b/i,
+		},
+		{
 			label:
 				'no longer support/accept/require/use/fan/carry/replay/incur/authoritative/insert/needed',
 			regex:
 				/\bno longer (?:support|accept|require|use|fan|carry|replay|incur|authoritative|insert|needed)s?\b/i,
 		},
 		{
-			label: 'now support/accept/require/use/store/return/call/read/pass',
+			label: 'now support/accept/require/use/store/return/call/read/pass/run',
 			regex:
-				/\bnow (?:support|accept|require|use|store|return|call|read|pass)(?:es|s)?\b/i,
+				/\bnow (?:support|accept|require|use|store|return|call|read|pass|run)(?:es|s)?\b/i,
 		},
 		{ label: 'is now a/the', regex: /\bis now (?:a|an|the)\b/i },
 		{ label: 'are now', regex: /\bare now\b/i },
