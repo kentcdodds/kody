@@ -1,4 +1,5 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { joinAppUrl } from '#worker/app-base-url.ts'
 import { pruneDeliveryAlertEvents } from '#worker/email/delivery-alert-events.ts'
 import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
 
@@ -83,10 +84,13 @@ export async function checkEmailDeliveryBurstAndNotify(input: {
 	if (recipients.length === 0) {
 		return { status: 'skipped', reason: 'no_admins' }
 	}
-	const baseUrl = input.env.APP_BASE_URL?.trim() || `https://${systemDomain}`
+	const insightsUrl = joinAppUrl({
+		env: input.env,
+		path: '/admin/insights',
+	})
 	const text = [
 		`Kody recorded ${count} bounced or complained email outcomes in the last ${windowMinutes} minutes (threshold ${threshold}).`,
-		`Review Email delivery health at ${baseUrl}/admin/insights.`,
+		`Review Email delivery health at ${insightsUrl}.`,
 		`Checked at ${now.toISOString()}.`,
 	].join('\n\n')
 	const sent = await sendCloudflareEmail(

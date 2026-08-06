@@ -11,6 +11,7 @@ vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
 }))
 
 const {
+	adminFleetRuntimeDurationAlertMetrics,
 	detectFleetUsagePressure,
 	fleetRuntimeDurationAlertThresholdMs,
 	loadFleetUsageInsights,
@@ -41,12 +42,20 @@ function createFleetDb(input: {
 		event_count: number
 	}>
 	runtimeByUser?: Record<string, number>
+	adminUserIds?: Array<string>
+	onDurationQueryBind?: (params: Array<unknown>) => void
 }) {
 	return {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
-				bind(..._params: Array<unknown>) {
+				bind(...params: Array<unknown>) {
+					if (
+						normalized.includes('sum(total_duration_ms)') &&
+						normalized.includes('user_id in')
+					) {
+						input.onDurationQueryBind?.(params)
+					}
 					return this
 				},
 				async all<T>() {
@@ -66,6 +75,16 @@ function createFleetDb(input: {
 					) {
 						return {
 							results: (input.activeUsers ?? []) as Array<T>,
+						}
+					}
+					if (
+						normalized.includes("r.name = 'admin'") &&
+						normalized.includes('stable_user_id')
+					) {
+						return {
+							results: (input.adminUserIds ?? []).map((stable_user_id) => ({
+								stable_user_id,
+							})) as Array<T>,
 						}
 					}
 					if (
@@ -205,9 +224,22 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 					},
 				]
 			}
+			if (input.usageUserId === 'user-admin') {
+				return [
+					{
+						resource: 'saved_packages',
+						label: 'saved packages',
+						current: 9_001,
+						limit: 10_000,
+						percentOfLimit: 0.9001,
+						overEightyPercent: true,
+					},
+				]
+			}
 			return []
 		},
 	)
+	let durationQueryBind: Array<unknown> | undefined
 	const db = createFleetDb({
 		activeUsers: [
 			{
@@ -224,9 +256,21 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 				stripe_plan: null,
 				event_count: 40,
 			},
+			{
+				stable_user_id: 'user-admin',
+				username: 'kentcdodds',
+				plan: 'max',
+				stripe_plan: null,
+				event_count: 90,
+			},
 		],
+		adminUserIds: ['user-admin'],
 		runtimeByUser: {
 			'user-b': fleetRuntimeDurationAlertThresholdMs + 1,
+			'user-admin': fleetRuntimeDurationAlertThresholdMs * 2,
+		},
+		onDurationQueryBind(params) {
+			durationQueryBind = params
 		},
 	})
 	const issues = await detectFleetUsagePressure({
@@ -244,10 +288,26 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 			percentOfLimit: 0.9,
 		},
 		{
+			kind: 'entitlement',
+			stableUserId: 'user-admin',
+			username: 'kentcdodds',
+			resource: 'saved_packages',
+			label: 'saved packages',
+			percentOfLimit: 0.9001,
+		},
+		{
 			kind: 'runtime_duration',
 			stableUserId: 'user-b',
 			username: 'bob',
 			totalDurationMs: fleetRuntimeDurationAlertThresholdMs + 1,
 		},
+	])
+	expect(adminFleetRuntimeDurationAlertMetrics).toEqual([
+		'execute',
+		'job_run',
+		'workflow_run',
+	])
+	expect(durationQueryBind?.slice(1, 4)).toEqual([
+		...adminFleetRuntimeDurationAlertMetrics,
 	])
 })

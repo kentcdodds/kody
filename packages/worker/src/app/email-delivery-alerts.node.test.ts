@@ -70,7 +70,7 @@ test('thin delivery alert signals notify once per cooldown window', async () => 
 	} as unknown as KVNamespace
 	const env = {
 		APP_DB: createDb(35),
-		APP_BASE_URL: 'https://heykody.dev',
+		APP_BASE_URL: 'https://heykody.dev/',
 		USER_EMAIL_DOMAIN: 'mail.heykody.dev',
 		BUNDLE_ARTIFACTS_KV: kv,
 	}
@@ -79,6 +79,9 @@ test('thin delivery alert signals notify once per cooldown window', async () => 
 		await expect(
 			checkEmailDeliveryBurstAndNotify({ env, now, threshold: 20 }),
 		).resolves.toEqual({ status: 'notified', count: 35, recipients: 1 })
+		const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
+		expect(payload.text).toContain('https://heykody.dev/admin/insights')
+		expect(payload.text).not.toContain('heykody.dev//')
 		expect(kvStore.get(emailDeliveryAlertKvKey)).toBe(String(now.getTime()))
 		await expect(
 			checkEmailDeliveryBurstAndNotify({

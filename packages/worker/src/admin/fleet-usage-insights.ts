@@ -31,10 +31,23 @@ export const adminFleetRuntimeDurationMetrics = [
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
 /**
- * Combined current-month runtime duration (execute + job_run + workflow_run +
- * service_runtime) above which a single account warrants operator review. 24h of
- * wall-clock metered runtime in one UTC month is a practical "heavy but not
- * necessarily abusive" ceiling before paging.
+ * Runtime metrics that can page operators. Persistent `service_runtime` is
+ * wall-clock time a package service stayed up — one always-on service crosses
+ * 24h in a single day — so it stays on the insights rankings but is excluded
+ * from the alert total.
+ */
+export const adminFleetRuntimeDurationAlertMetrics = [
+	'execute',
+	'job_run',
+	'workflow_run',
+] as const satisfies ReadonlyArray<AdminUsageMetric>
+
+/**
+ * Combined current-month execute + job_run + workflow_run duration above which
+ * a non-admin account warrants operator review. 24h of metered sandbox / job /
+ * workflow wall-clock in one UTC month is a practical "heavy but not
+ * necessarily abusive" ceiling before paging. Admin accounts are omitted from
+ * this signal so operator dogfooding does not page the on-call roster.
  */
 export const fleetRuntimeDurationAlertThresholdMs = 24 * 60 * 60 * 1000
 
@@ -120,11 +133,15 @@ export async function detectFleetUsagePressure(input: {
 	)
 	if (activeUsers.length === 0) return []
 
-	const durationByUser = await queryCombinedRuntimeDurationByUserIds(
-		input.db,
-		currentMonth,
-		activeUsers.map((user) => user.stable_user_id),
-	)
+	const [durationByUser, adminUserIds] = await Promise.all([
+		queryCombinedRuntimeDurationByUserIds(
+			input.db,
+			currentMonth,
+			activeUsers.map((user) => user.stable_user_id),
+			adminFleetRuntimeDurationAlertMetrics,
+		),
+		listAdminStableUserIds(input.db),
+	])
 	const issues: Array<FleetEntitlementPressureIssue> = []
 
 	await mapWithConcurrency(
@@ -152,6 +169,7 @@ export async function detectFleetUsagePressure(input: {
 					percentOfLimit: item.percentOfLimit,
 				})
 			}
+			if (adminUserIds.has(user.stable_user_id)) return
 			const totalDurationMs = durationByUser.get(user.stable_user_id) ?? 0
 			if (totalDurationMs > runtimeDurationThresholdMs) {
 				issues.push({
@@ -369,15 +387,28 @@ async function listActiveUsersForEntitlementSweep(
 	return rows.results ?? []
 }
 
+async function listAdminStableUserIds(db: D1Database) {
+	const rows = await db
+		.prepare(
+			`SELECT u.stable_user_id
+			 FROM users u
+			 INNER JOIN user_roles ur ON ur.user_id = u.id
+			 INNER JOIN roles r ON r.id = ur.role_id
+			 WHERE r.name = 'admin'
+				AND u.deleting_at IS NULL`,
+		)
+		.all<{ stable_user_id: string }>()
+	return new Set((rows.results ?? []).map((row) => row.stable_user_id))
+}
+
 async function queryCombinedRuntimeDurationByUserIds(
 	db: D1Database,
 	currentMonth: string,
 	userIds: ReadonlyArray<string>,
+	metrics: ReadonlyArray<AdminUsageMetric> = adminFleetRuntimeDurationMetrics,
 ): Promise<Map<string, number>> {
 	if (userIds.length === 0) return new Map()
-	const metricPlaceholders = adminFleetRuntimeDurationMetrics
-		.map(() => '?')
-		.join(', ')
+	const metricPlaceholders = metrics.map(() => '?').join(', ')
 	const userPlaceholders = userIds.map(() => '?').join(', ')
 	const rows = await db
 		.prepare(
@@ -388,7 +419,7 @@ async function queryCombinedRuntimeDurationByUserIds(
 				AND user_id IN (${userPlaceholders})
 			 GROUP BY user_id`,
 		)
-		.bind(currentMonth, ...adminFleetRuntimeDurationMetrics, ...userIds)
+		.bind(currentMonth, ...metrics, ...userIds)
 		.all<RuntimeDurationRow>()
 	const byUser = new Map<string, number>()
 	for (const row of rows.results ?? []) {

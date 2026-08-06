@@ -1,4 +1,5 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { joinAppUrl } from '#worker/app-base-url.ts'
 import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
 
 /**
@@ -134,11 +135,14 @@ async function notifyAdminsOfAuthDenialBurst(input: {
 		return { status: 'skipped', reason: 'no_admins' }
 	}
 
-	const baseUrl = input.env.APP_BASE_URL?.trim() || `https://${systemDomain}`
+	const insightsUrl = joinAppUrl({
+		env: input.env,
+		path: '/admin/insights',
+	})
 	const text = [
 		`Kody recorded ${input.count} MCP auth denials in the last ${input.windowMinutes} minutes (threshold ${input.threshold}).`,
 		'A single denial is routine; a burst can mean permission probing or a compromised account.',
-		`Review the failure charts at ${baseUrl}/admin/insights and query auth failures with admin_audit_log_query.`,
+		`Review the failure charts at ${insightsUrl} and query auth failures with admin_audit_log_query.`,
 		`Checked at ${input.now.toISOString()}.`,
 	].join('\n\n')
 

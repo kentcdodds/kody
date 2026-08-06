@@ -142,3 +142,22 @@ export function getAppBaseUrl(input: {
 
 	return DEFAULT_APP_BASE_URL
 }
+
+/**
+ * Join a first-party app path onto the public origin. Cron and email
+ * call sites must use this (or `getAppBaseUrl` + a path) instead of
+ * `${APP_BASE_URL}/…`, because production `APP_BASE_URL` may include a
+ * trailing slash and would otherwise emit `https://host//path`.
+ */
+export function joinAppUrl(input: {
+	env: AppBaseUrlEnv
+	path: string
+	requestUrl?: string | URL | null
+}) {
+	const origin = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	const path = input.path.startsWith('/') ? input.path : `/${input.path}`
+	return `${origin}${path}`
+}

@@ -13,6 +13,7 @@
 
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { joinAppUrl } from '#worker/app-base-url.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { getSystemEmailDomain } from './platform-address.ts'
 import { type EmailDeliveryStatus } from './types.ts'
@@ -178,7 +179,7 @@ async function notifyAdminsOfOutboundEmailPause(input: {
 		const text = [
 			`Outbound email was automatically paused for user "${username}" after ${reason}.`,
 			'The account can still receive mail and use every other capability; only outbound sending is blocked.',
-			`Review the delivery history and clear the pause from ${input.env.APP_BASE_URL?.trim() || `https://${systemDomain}`}/admin/users if this was a false positive.`,
+			`Review the delivery history and clear the pause from ${joinAppUrl({ env: input.env, path: '/admin/users' })} if this was a false positive.`,
 		].join('\n\n')
 		await sendCloudflareEmail(
 			{

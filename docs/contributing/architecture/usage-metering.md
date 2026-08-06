@@ -328,6 +328,10 @@ Guarantees and rules:
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emails admin-role users when any swept account crosses
-  > 80% of a plan-limit resource or when combined runtime duration for the month
-  > exceeds `fleetRuntimeDurationAlertThresholdMs` (24h). KV cooldown key
-  > `ops-alert:usage-entitlement-pressure:v1` suppresses repeat pages.
+  > 80% of a plan-limit resource, or when a **non-admin** account's combined
+  execute + job_run + workflow_run duration for the month exceeds
+  `fleetRuntimeDurationAlertThresholdMs` (24h). Persistent `service_runtime` and
+  admin-role dogfooding stay on `/admin/insights` rankings but do not page.
+  KV cooldown key `ops-alert:usage-entitlement-pressure:v1` suppresses repeat
+  pages. Admin email links are built with `joinAppUrl` so a trailing slash on
+  `APP_BASE_URL` cannot produce `https://host//admin/…`.

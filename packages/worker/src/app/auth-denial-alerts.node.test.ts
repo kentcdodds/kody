@@ -77,7 +77,7 @@ test('auth denial burst alerts stay quiet below threshold, then notify and cool 
 	const env = {
 		APP_DB: createDb(80),
 		AUDIT_DB: createDb(80),
-		APP_BASE_URL: 'https://heykody.dev',
+		APP_BASE_URL: 'https://heykody.dev/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
 		BUNDLE_ARTIFACTS_KV: kv,
@@ -91,6 +91,9 @@ test('auth denial burst alerts stay quiet below threshold, then notify and cool 
 		})
 		expect(first).toEqual({ status: 'notified', count: 80, recipients: 1 })
 		expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+		const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
+		expect(payload.text).toContain('https://heykody.dev/admin/insights')
+		expect(payload.text).not.toContain('heykody.dev//')
 		expect(kvStore.get(authDenialAlertKvKey)).toBe(String(now.getTime()))
 		expect(consoleWarn).toHaveBeenCalledWith(
 			'auth-denial-burst-alerted',

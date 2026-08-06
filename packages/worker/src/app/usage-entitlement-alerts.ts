@@ -5,6 +5,7 @@ import {
 	fleetRuntimeDurationAlertThresholdMs,
 	type FleetEntitlementPressureIssue,
 } from '#worker/admin/fleet-usage-insights.ts'
+import { joinAppUrl } from '#worker/app-base-url.ts'
 import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
 
 /**
@@ -116,7 +117,14 @@ async function notifyAdminsOfUsageEntitlementPressure(input: {
 		return { status: 'skipped', reason: 'no_admins' }
 	}
 
-	const baseUrl = input.env.APP_BASE_URL?.trim() || `https://${systemDomain}`
+	const insightsUrl = joinAppUrl({
+		env: input.env,
+		path: '/admin/insights',
+	})
+	const usersUrl = joinAppUrl({
+		env: input.env,
+		path: '/admin/users',
+	})
 	const runtimeHours = Math.round(
 		fleetRuntimeDurationAlertThresholdMs / (60 * 60 * 1000),
 	)
@@ -126,7 +134,7 @@ async function notifyAdminsOfUsageEntitlementPressure(input: {
 	const text = [
 		`Kody detected ${input.issues.length} fleet usage pressure signal(s) while sweeping the top ${adminFleetEntitlementSweepUserLimit} active accounts this UTC month.`,
 		lines.join('\n'),
-		`Review entitlement pressure and top consumers at ${baseUrl}/admin/insights, or drill into a user at ${baseUrl}/admin/users.`,
+		`Review entitlement pressure and top consumers at ${insightsUrl}, or drill into a user at ${usersUrl}.`,
 		`Checked at ${input.now.toISOString()}.`,
 	].join('\n\n')
 
@@ -174,7 +182,7 @@ function formatIssueLine(
 		return `• ${issue.username} (${issue.stableUserId}): ${issue.label} at ${percent}% of plan limit`
 	}
 	const hours = (issue.totalDurationMs / (60 * 60 * 1000)).toFixed(1)
-	return `• ${issue.username} (${issue.stableUserId}): ${hours}h combined runtime this month (threshold ${runtimeHours}h)`
+	return `• ${issue.username} (${issue.stableUserId}): ${hours}h execute/job/workflow runtime this month (threshold ${runtimeHours}h)`
 }
 
 function escapeHtml(value: string) {

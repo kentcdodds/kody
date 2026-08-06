@@ -3,6 +3,7 @@ import {
 	getAppBaseUrl,
 	getPackageAppBaseUrl,
 	getPackageAppOriginConfigurationError,
+	joinAppUrl,
 } from './app-base-url.ts'
 
 test('getAppBaseUrl prefers the request origin when present', () => {
@@ -40,6 +41,21 @@ test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev', () => {
 			requestUrl: null,
 		}),
 	).toBe('https://heykody.dev')
+})
+
+test('joinAppUrl strips a trailing slash on APP_BASE_URL', () => {
+	expect(
+		joinAppUrl({
+			env: { APP_BASE_URL: 'https://heykody.dev/' },
+			path: '/admin/insights',
+		}),
+	).toBe('https://heykody.dev/admin/insights')
+	expect(
+		joinAppUrl({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			path: 'admin/users',
+		}),
+	).toBe('https://heykody.dev/admin/users')
 })
 
 test('the package-app origin is configurable and never resolves as the app origin', () => {

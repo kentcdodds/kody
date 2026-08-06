@@ -101,7 +101,7 @@ test('usage entitlement alerts stay quiet without pressure, then notify and cool
 	} as unknown as KVNamespace
 	const env = {
 		APP_DB: createDb(),
-		APP_BASE_URL: 'https://heykody.dev',
+		APP_BASE_URL: 'https://heykody.dev/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
 		BUNDLE_ARTIFACTS_KV: kv,
@@ -111,6 +111,12 @@ test('usage entitlement alerts stay quiet without pressure, then notify and cool
 		const first = await checkUsageEntitlementPressureAndNotify({ env, now })
 		expect(first).toEqual({ status: 'notified', issueCount: 1, recipients: 1 })
 		expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+		const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+			text: string
+		}
+		expect(payload.text).toContain('https://heykody.dev/admin/insights')
+		expect(payload.text).toContain('https://heykody.dev/admin/users')
+		expect(payload.text).not.toContain('https://heykody.dev//')
 		expect(kvStore.get(usageEntitlementAlertKvKey)).toBe(String(now.getTime()))
 
 		const second = await checkUsageEntitlementPressureAndNotify({
@@ -148,11 +154,48 @@ test('usage entitlement alerts no-op when no admins exist', async () => {
 	const result = await checkUsageEntitlementPressureAndNotify({
 		env: {
 			APP_DB: db,
-			APP_BASE_URL: 'https://heykody.dev',
+			APP_BASE_URL: 'https://heykody.dev/',
 			CLOUDFLARE_ACCOUNT_ID: 'acct',
 			CLOUDFLARE_API_TOKEN: 'token',
 		},
 	})
 	expect(result).toEqual({ status: 'skipped', reason: 'no_admins' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+})
+
+test('usage entitlement alerts describe execute/job/workflow runtime without double-slash links', async () => {
+	detectFleetUsagePressure.mockResolvedValue([
+		{
+			kind: 'runtime_duration',
+			stableUserId: 'user-b',
+			username: 'bob',
+			totalDurationMs: 90_000_000,
+		},
+	])
+	consoleWarn.mockImplementation(() => {})
+	try {
+		const result = await checkUsageEntitlementPressureAndNotify({
+			env: {
+				APP_DB: createDb(),
+				APP_BASE_URL: 'https://heykody.dev/',
+				CLOUDFLARE_ACCOUNT_ID: 'acct',
+				CLOUDFLARE_API_TOKEN: 'token',
+			},
+			now: new Date('2026-08-06T23:00:40.000Z'),
+		})
+		expect(result).toEqual({ status: 'notified', issueCount: 1, recipients: 1 })
+		const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+			text: string
+			html: string
+		}
+		expect(payload.text).toContain(
+			'25.0h execute/job/workflow runtime this month (threshold 24h)',
+		)
+		expect(payload.text).toContain('https://heykody.dev/admin/insights')
+		expect(payload.text).toContain('https://heykody.dev/admin/users')
+		expect(payload.text).not.toContain('heykody.dev//')
+		expect(payload.html).not.toContain('heykody.dev//')
+	} finally {
+		consoleWarn.mockReset()
+	}
 })
