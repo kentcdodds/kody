@@ -45,9 +45,8 @@ vi.mock('#worker/community/service.ts', () => ({
 }))
 
 vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
-	const actual = await importOriginal<
-		typeof import('#worker/community/social-repo.ts')
-	>()
+	const actual =
+		await importOriginal<typeof import('#worker/community/social-repo.ts')>()
 	return {
 		...actual,
 		getCommunityStar: vi.fn().mockResolvedValue(false),
