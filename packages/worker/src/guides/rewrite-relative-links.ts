@@ -38,21 +38,24 @@ export function rewriteRelativeGuideLinks(input: {
 	knownSlugs: ReadonlySet<string>
 }): string {
 	const { body, sourceDir, knownSlugs } = input
-	return body.replace(/\]\(([^)\s]+)\)/g, (match, rawTarget: string) => {
-		if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(rawTarget)) {
-			return match
-		}
-		const [path = '', fragment] = rawTarget.split('#', 2)
-		const suffix = fragment ? `#${fragment}` : ''
-		const resolved = resolveRepoPath(sourceDir, path)
-		if (!resolved) return match
+	return body.replace(
+		/\]\(([^)\s]+)((?:\s+(?:"[^"]*"|'[^']*'))?)\)/g,
+		(match, rawTarget: string, title: string) => {
+			if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(rawTarget)) {
+				return match
+			}
+			const [path = '', fragment] = rawTarget.split('#', 2)
+			const suffix = fragment ? `#${fragment}` : ''
+			const resolved = resolveRepoPath(sourceDir, path)
+			if (!resolved) return match
 
-		const guideFile = /^docs\/guides\/(?:providers\/)?([a-z0-9-]+)\.md$/.exec(
-			resolved,
-		)
-		if (guideFile && knownSlugs.has(guideFile[1]!)) {
-			return `](/guides/${guideFile[1]}${suffix})`
-		}
-		return `](${GITHUB_BLOB_BASE}/${resolved}${suffix})`
-	})
+			const guideFile = /^docs\/guides\/(?:providers\/)?([a-z0-9-]+)\.md$/.exec(
+				resolved,
+			)
+			if (guideFile && knownSlugs.has(guideFile[1]!)) {
+				return `](/guides/${guideFile[1]}${suffix}${title})`
+			}
+			return `](${GITHUB_BLOB_BASE}/${resolved}${suffix}${title})`
+		},
+	)
 }

@@ -38,6 +38,14 @@ test('prefersMarkdown only wins when text/markdown outranks HTML', () => {
 	expect(prefersMarkdown(requestWithAccept('text/markdown;q=0.5, */*'))).toBe(
 		false,
 	)
+	// Wildcards match both representations; exact types override them.
+	expect(
+		prefersMarkdown(requestWithAccept('text/html;q=0, text/*;q=0.8')),
+	).toBe(true)
+	expect(
+		prefersMarkdown(requestWithAccept('text/markdown;q=0, text/*;q=0.8')),
+	).toBe(false)
+	expect(prefersMarkdown(requestWithAccept('text/*'))).toBe(false)
 })
 
 test('withVaryAccept appends Accept without clobbering existing Vary values', () => {

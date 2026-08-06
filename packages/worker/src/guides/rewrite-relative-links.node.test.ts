@@ -32,6 +32,16 @@ test('rewriteRelativeGuideLinks maps guide files to /guides routes and repo docs
 	expect(rewritten).not.toContain('](../')
 })
 
+test('rewriteRelativeGuideLinks preserves markdown link titles', () => {
+	const rewritten = rewriteRelativeGuideLinks({
+		body: 'Read [OAuth](./oauth.md "OAuth guide") and [g](providers/google.md \'G\').',
+		sourceDir: 'docs/guides',
+		knownSlugs,
+	})
+	expect(rewritten).toContain('](/guides/oauth "OAuth guide")')
+	expect(rewritten).toContain("](/guides/google 'G')")
+})
+
 test('rewriteRelativeGuideLinks resolves provider-directory sources against their own dir', () => {
 	const rewritten = rewriteRelativeGuideLinks({
 		body: 'See [oauth](../oauth.md) and [google](./google.md).',

@@ -4,17 +4,40 @@
  * explicit `.md` route or send `Accept: text/markdown` to the HTML route.
  */
 
+/** Quality per media-range specificity tier; exact beats text/* beats * / *. */
+type RangeQualities = {
+	exact: number | null
+	textWildcard: number | null
+	globalWildcard: number | null
+}
+
+function effectiveQuality(ranges: RangeQualities): number {
+	return ranges.exact ?? ranges.textWildcard ?? ranges.globalWildcard ?? 0
+}
+
 /**
  * True when the request's Accept header prefers `text/markdown` over
- * `text/html`. HTML wins ties (including wildcard and absent headers) so
- * browsers keep getting the rendered page.
+ * `text/html`. Wildcard ranges (`text/*` and the global wildcard) match both
+ * representations and an exact type overrides a wildcard, so
+ * `text/html;q=0, text/*;q=0.8` serves markdown. HTML wins ties (including
+ * bare wildcards and absent headers) so browsers keep getting the rendered
+ * page.
  */
 export function prefersMarkdown(request: Request): boolean {
 	const accept = request.headers.get('accept')
 	if (!accept) return false
 
-	let markdownQuality = 0
-	let htmlQuality = 0
+	const markdown: RangeQualities = {
+		exact: null,
+		textWildcard: null,
+		globalWildcard: null,
+	}
+	const html: RangeQualities = {
+		exact: null,
+		textWildcard: null,
+		globalWildcard: null,
+	}
+
 	for (const entry of accept.split(',')) {
 		const [rawType, ...params] = entry.trim().split(';')
 		const type = rawType?.trim().toLowerCase()
@@ -27,14 +50,24 @@ export function prefersMarkdown(request: Request): boolean {
 				if (Number.isFinite(parsed)) quality = parsed
 			}
 		}
-		if (type === 'text/markdown') {
-			markdownQuality = Math.max(markdownQuality, quality)
-		}
-		if (type === 'text/html' || type === 'text/*' || type === '*/*') {
-			htmlQuality = Math.max(htmlQuality, quality)
+		const tier: keyof RangeQualities | null =
+			type === '*/*'
+				? 'globalWildcard'
+				: type === 'text/*'
+					? 'textWildcard'
+					: type === 'text/markdown' || type === 'text/html'
+						? 'exact'
+						: null
+		if (!tier) continue
+		if (tier === 'exact') {
+			const target = type === 'text/markdown' ? markdown : html
+			target.exact = Math.max(target.exact ?? 0, quality)
+		} else {
+			markdown[tier] = Math.max(markdown[tier] ?? 0, quality)
+			html[tier] = Math.max(html[tier] ?? 0, quality)
 		}
 	}
-	return markdownQuality > htmlQuality
+	return effectiveQuality(markdown) > effectiveQuality(html)
 }
 
 export function markdownResponse(body: string, status = 200): Response {
