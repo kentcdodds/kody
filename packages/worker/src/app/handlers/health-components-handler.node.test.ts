@@ -113,6 +113,23 @@ test('D1 checks retry transient blips but fail fast on other errors', async () =
 	expect(
 		failed.components.find((component) => component.id === 'app_db'),
 	).toMatchObject({ ok: false, error: 'error' })
+
+	let persistentAttempts = 0
+	const persistentBindings = createHealthyBindings()
+	persistentBindings.AUDIT_DB = {
+		prepare: () => ({
+			first: async () => {
+				persistentAttempts += 1
+				throw new Error('D1_ERROR: Network connection lost.')
+			},
+		}),
+	} as unknown as D1Database
+	const persistent = await collectHealthComponents(persistentBindings)
+	expect(persistentAttempts).toBe(3)
+	expect(persistent.ok).toBe(false)
+	expect(
+		persistent.components.find((component) => component.id === 'audit_db'),
+	).toMatchObject({ ok: false, error: 'error' })
 })
 
 test('health components handler memoizes, coalesces in-flight work, and returns 503 on failure', async () => {
