@@ -27,3 +27,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0006 — No repo/package CI primitive for now](./0006-no-repo-ci-primitive.md)
 - [0007 — Keep in-house feature flags; revisit Flagship at GA](./0007-keep-in-house-feature-flags.md)
 - [0008 — Declined ADLC primitives (traces, previews, browser runs, session mining)](./0008-declined-adlc-primitives.md)
+- [0009 — Shiki for in-app syntax highlighting](./0009-shiki-syntax-highlighting.md)

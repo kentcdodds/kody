@@ -8,6 +8,9 @@
  *   types, so every string goes through the framework's escaping.
  * - Raw HTML tokens (block and inline) are rendered as escaped literal text,
  *   never as markup.
+ * - Fenced code is highlighted with Shiki tokens rendered as JSX text and
+ *   inline styles — never `innerHTML` — so highlighting cannot introduce
+ *   markup. Unknown languages fall back to escaped plaintext.
  * - No resource-loading elements are emitted (`<img>`, `<iframe>`, media,
  *   etc.), so a README can never make a viewer's browser issue requests —
  *   including to hosted package endpoints (`/@username/packages/*`), which
@@ -25,6 +28,7 @@ import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
 
@@ -239,15 +243,19 @@ function renderToken(
 			)
 		case 'hr':
 			return <hr key={key} />
-		case 'code':
+		case 'code': {
+			const codeToken = token as Tokens.Code
 			if (options.copyCodeBlocks) {
-				return <CopyCodeBlock key={key} code={token.text} />
+				return (
+					<CopyCodeBlock
+						key={key}
+						code={codeToken.text}
+						lang={codeToken.lang}
+					/>
+				)
 			}
-			return (
-				<pre key={key}>
-					<code>{token.text}</code>
-				</pre>
-			)
+			return renderHighlightedCode(codeToken.text, codeToken.lang, key)
+		}
 		case 'list': {
 			// marked's Token union includes a generic catch-all, so `type`
 			// narrowing alone leaves these fields untyped (same for `table`).

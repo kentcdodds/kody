@@ -34,6 +34,7 @@ import {
 	type AccountActivitySummary,
 } from '#app/loader-data.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
 	cardCss,
 	cardTitleCss,
@@ -788,23 +789,26 @@ export function AccountActivityRoute(handle: Handle) {
 									{Object.keys(detail.metadata).length > 0 ? (
 										<div mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Metadata</span>
-											<pre
+											<div
 												mix={css({
-													margin: 0,
-													padding: spacing.sm,
-													borderRadius: radius.md,
-													border: `1px solid ${colors.border}`,
-													backgroundColor: colors.background,
-													color: colors.text,
-													fontFamily:
-														'ui-monospace, SFMono-Regular, Menlo, monospace',
-													fontSize: typography.fontSize.sm,
-													overflowX: 'auto',
-													whiteSpace: 'pre-wrap',
+													'& pre': {
+														margin: 0,
+														padding: spacing.sm,
+														borderRadius: radius.md,
+														border: `1px solid ${colors.border}`,
+														fontFamily:
+															'ui-monospace, SFMono-Regular, Menlo, monospace',
+														fontSize: typography.fontSize.sm,
+														overflowX: 'auto',
+														whiteSpace: 'pre-wrap',
+													},
 												})}
 											>
-												{JSON.stringify(detail.metadata, null, 2)}
-											</pre>
+												{renderHighlightedCode(
+													JSON.stringify(detail.metadata, null, 2),
+													'json',
+												)}
+											</div>
 										</div>
 									) : null}
 								</section>

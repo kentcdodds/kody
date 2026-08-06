@@ -126,6 +126,18 @@ router.
 `packages/worker/src/app/routes.ts` to handler modules (home, auth, account,
 session, logout, password reset, health).
 
+## Syntax highlighting
+
+Browser pages that show code — markdown bodies on guides, blog posts, and
+community READMEs, onboarding MCP config snippets, and JSON dumps on account
+jobs/activity — highlight with [Shiki](https://shiki.style/). The Worker uses a
+fine-grained sync highlighter (`createHighlighterCoreSync` + the JavaScript
+regex engine, no Oniguruma WASM) with a fixed language set and GitHub
+light/dark dual themes. Tokens become Remix JSX text and inline styles, never
+`innerHTML`, so untrusted README fences stay inside the markdown safety model.
+Theme switching follows `:root[data-theme]` (and `prefers-color-scheme` when no
+theme is set) via CSS variables in `packages/worker/public/styles.css`.
+
 ## Client-side navigation flow
 
 The browser app intercepts same-origin `<a>` clicks and same-origin form

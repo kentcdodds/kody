@@ -12,7 +12,7 @@ to become.
 - [Project Intent](../project-intent.md): current scope, goals, and non-goals
   for the project.
 - [Request Lifecycle](./request-lifecycle.md): how requests are routed in the
-  Worker.
+  Worker, including syntax highlighting on code-bearing pages.
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
 - [Platform accounts](./platform-accounts.md): operator-provisioned platform

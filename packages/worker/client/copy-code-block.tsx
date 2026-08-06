@@ -2,14 +2,14 @@ import { type Handle, css } from 'remix/ui'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 
-export type CopyCodeBlockProps = { code: string }
+export type CopyCodeBlockProps = { code: string; lang?: string | null }
 
 /**
- * A `<pre>` code block with a hover/focus copy button, for first-party
+ * A highlighted `<pre>` code block with a copy button, for first-party
  * markdown surfaces (guides) whose snippets exist to be pasted into an
- * agent or terminal. The block itself stays plain text; only the button is
- * interactive.
+ * agent or terminal. Only the button is interactive.
  */
 export function CopyCodeBlock(handle: Handle<CopyCodeBlockProps>) {
 	let copyState: 'idle' | 'copied' | 'error' = 'idle'
@@ -34,9 +34,7 @@ export function CopyCodeBlock(handle: Handle<CopyCodeBlockProps>) {
 
 	return () => (
 		<div mix={css(wrapperCss)}>
-			<pre>
-				<code>{handle.props.code}</code>
-			</pre>
+			{renderHighlightedCode(handle.props.code, handle.props.lang)}
 			<button
 				type="button"
 				aria-label="Copy code to clipboard"

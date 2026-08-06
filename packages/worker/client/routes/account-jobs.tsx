@@ -43,6 +43,7 @@ import {
 	type AccountJobsLoaderData,
 } from '#app/loader-data.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
 	cardCss,
 	cardTitleCss,
@@ -1243,22 +1244,25 @@ export function AccountJobsRoute(handle: Handle) {
 								{detail.params ? (
 									<div mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Params</span>
-										<pre
+										<div
 											mix={css({
-												margin: 0,
-												padding: spacing.sm,
-												borderRadius: radius.md,
-												border: `1px solid ${colors.border}`,
-												backgroundColor: colors.background,
-												color: colors.text,
-												fontFamily: 'monospace',
-												fontSize: typography.fontSize.sm,
-												overflowX: 'auto',
-												whiteSpace: 'pre-wrap',
+												'& pre': {
+													margin: 0,
+													padding: spacing.sm,
+													borderRadius: radius.md,
+													border: `1px solid ${colors.border}`,
+													fontFamily: 'monospace',
+													fontSize: typography.fontSize.sm,
+													overflowX: 'auto',
+													whiteSpace: 'pre-wrap',
+												},
 											})}
 										>
-											{JSON.stringify(detail.params, null, 2)}
-										</pre>
+											{renderHighlightedCode(
+												JSON.stringify(detail.params, null, 2),
+												'json',
+											)}
+										</div>
 									</div>
 								) : null}
 

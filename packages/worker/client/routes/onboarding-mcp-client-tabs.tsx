@@ -26,6 +26,7 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import { getPillButtonCss, hoverMq } from '#client/styles/style-primitives.ts'
+import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
@@ -36,6 +37,7 @@ type CopyCardProps = {
 	value: string
 	copyLabel: string
 	variant?: 'pill' | 'ghost'
+	lang?: string | null
 }
 
 /**
@@ -57,7 +59,9 @@ function CopyCard(handle: Handle<CopyCardProps>) {
 					/>
 				</div>
 			</div>
-			<pre mix={css(snippetPreCss)}>{handle.props.value}</pre>
+			<div mix={css(snippetPreCss)}>
+				{renderHighlightedCode(handle.props.value, handle.props.lang)}
+			</div>
 		</div>
 	)
 }
@@ -115,7 +119,12 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						JSON config (merge under your existing <code>mcpServers</code> if
 						you already have one):
 					</p>
-					<CopyCard label="mcp.json" value={cursorJson} copyLabel="Copy JSON" />
+					<CopyCard
+						label="mcp.json"
+						value={cursorJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -174,6 +183,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						value={codexToml}
 						copyLabel="Copy TOML"
 						variant="pill"
+						lang="toml"
 					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
@@ -243,6 +253,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						value={claudeCodeCommand}
 						copyLabel="Copy command"
 						variant="pill"
+						lang="sh"
 					/>
 					<p>
 						Or merge this into a project <code>.mcp.json</code> (or the
@@ -253,6 +264,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						label=".mcp.json"
 						value={claudeCodeJson}
 						copyLabel="Copy JSON"
+						lang="json"
 					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
@@ -273,6 +285,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						value={openCodeJson}
 						copyLabel="Copy JSON"
 						variant="pill"
+						lang="json"
 					/>
 					<p>
 						You can also run <code>opencode mcp add</code> and paste the URL
@@ -299,6 +312,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						value={vsCodeJson}
 						copyLabel="Copy JSON"
 						variant="pill"
+						lang="json"
 					/>
 					<p>
 						Use Agent mode in Copilot Chat so MCP tools are available, then
@@ -521,12 +535,15 @@ const snippetActionCss = {
 }
 
 const snippetPreCss = {
-	margin: 0,
-	padding: '1rem 1.2rem',
-	font: '500 0.92rem/1.6 ui-monospace, "SF Mono", Menlo, monospace',
-	color: colors.text,
-	whiteSpace: 'pre-wrap' as const,
-	wordBreak: 'break-word' as const,
+	'& pre': {
+		margin: 0,
+		padding: '1rem 1.2rem',
+		font: '500 0.92rem/1.6 ui-monospace, "SF Mono", Menlo, monospace',
+		whiteSpace: 'pre-wrap' as const,
+		wordBreak: 'break-word' as const,
+		backgroundColor: 'transparent',
+		overflow: 'visible' as const,
+	},
 }
 
 const clientNoteCss = {
