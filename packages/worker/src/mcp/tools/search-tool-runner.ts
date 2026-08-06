@@ -45,6 +45,7 @@ import {
 import { elapsedMs } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
+import { buildOnboardingSearchNotice } from './search-onboarding-notice.ts'
 import { resolveConversationId } from './tool-call-context.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
@@ -418,9 +419,11 @@ export async function runSearchTool(input: {
 		const statefulAgent = agent as McpRegistrationAgent & {
 			state?: {
 				searchConversationIdsWithPreamble?: Array<string>
+				onboardingNoticeConversationIds?: Array<string>
 			}
 			setState?: (state: {
 				searchConversationIdsWithPreamble?: Array<string>
+				onboardingNoticeConversationIds?: Array<string>
 			}) => void
 		}
 		const searchConversationIdsWithPreamble = Array.isArray(
@@ -439,6 +442,37 @@ export async function runSearchTool(input: {
 					conversationId,
 				],
 			})
+		}
+		// Onboarding reminder: at most once per conversation, only while the
+		// user's derived checklist is incomplete and undismissed.
+		const onboardingNoticeConversationIds = Array.isArray(
+			statefulAgent.state?.onboardingNoticeConversationIds,
+		)
+			? (statefulAgent.state?.onboardingNoticeConversationIds ?? [])
+			: []
+		const considerOnboardingNotice =
+			userId !== null &&
+			(!args.conversationId ||
+				!onboardingNoticeConversationIds.includes(conversationId))
+		if (considerOnboardingNotice) {
+			const notice = await buildOnboardingSearchNotice({
+				env: agent.getEnv(),
+				userId,
+				baseUrl,
+				waitUntil: agent.waitUntil?.bind(agent),
+			})
+			if (notice) {
+				structuredWarnings.push(notice)
+				if (typeof statefulAgent.setState === 'function') {
+					statefulAgent.setState({
+						...(statefulAgent.state ?? {}),
+						onboardingNoticeConversationIds: [
+							...onboardingNoticeConversationIds,
+							conversationId,
+						],
+					})
+				}
+			}
 		}
 		const formattingStartMs = performance.now()
 		const { payload: trimmedPayload, serialized } = applyMaxResponseSize(

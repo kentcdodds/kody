@@ -179,6 +179,7 @@ import { createLoginHandler } from '#app/handlers/login.ts'
 import { createOgPageImageHandler } from '#app/handlers/og-page-image.ts'
 import {
 	createOnboardingApiHandler,
+	createOnboardingChecklistDismissHandler,
 	createOnboardingHandler,
 } from '#app/handlers/onboarding.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
@@ -246,6 +247,8 @@ export function createAppRouter(env: Env) {
 			terms: createTermsHandler(env),
 			onboarding: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),
+			onboardingChecklistDismissPost:
+				createOnboardingChecklistDismissHandler(env),
 			resetPassword: createResetPasswordHandler(env),
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),

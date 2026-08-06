@@ -154,6 +154,7 @@ export const routes = route({
 	terms: '/terms',
 	onboarding: '/onboarding',
 	onboardingApi: '/onboarding.json',
+	onboardingChecklistDismissPost: post('/onboarding/checklist-dismiss.json'),
 	resetPassword: '/reset-password',
 	verify: '/verify',
 	verifyTwoFactorApi: post('/verify/2fa.json'),

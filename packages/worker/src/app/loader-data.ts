@@ -12,10 +12,12 @@ import {
 	type RoleName,
 } from '#worker/identity/permissions.ts'
 import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
+import { type OnboardingChecklistItemId } from '#worker/onboarding-checklist-types.ts'
 import { type SignupMode } from '#app/signup-mode.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
+export type { OnboardingChecklistItemId }
 
 export type BlogPostSummaryLoaderData = {
 	slug: string
@@ -673,14 +675,6 @@ export type OnboardingLoaderData = {
 	/** Derived progress checklist; null when logged out. */
 	checklist: OnboardingChecklistLoaderData | null
 }
-
-export type OnboardingChecklistItemId =
-	| 'verify-email'
-	| 'connect-agent'
-	| 'first-hello'
-	| 'save-memory'
-	| 'connect-integration'
-	| 'install-starter'
 
 export type OnboardingChecklistLoaderData = {
 	items: Array<{
