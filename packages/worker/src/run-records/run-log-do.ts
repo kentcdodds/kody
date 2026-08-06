@@ -762,9 +762,7 @@ class RunLogBase extends DurableObject<Env> {
 			'triaged_by',
 		] as const) {
 			try {
-				this.ctx.storage.sql.exec(
-					`ALTER TABLE runs ADD COLUMN ${column} TEXT`,
-				)
+				this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN ${column} TEXT`)
 			} catch {
 				// Column already present on a partially migrated object.
 			}
