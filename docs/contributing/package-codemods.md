@@ -201,6 +201,26 @@ step matched zero packages.
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
 
+### Run lifecycle
+
+Runs are created as `running` and end `completed` only when a caller pages until
+`nextCursor` is null. The other transitions keep the ledger honest when paging
+stops early:
+
+- **Heartbeat** — every step re-asserts `running` and bumps the run's
+  `updated_at`, so `updated_at` doubles as a liveness signal. Continuing a
+  `failed` or `abandoned` run reopens it.
+- **`failed`** — written when a step throws at the run level (paging, ledger
+  writes); per-item failures never fail the run.
+- **`abandoned`** — written when the admin UI stops a run (stop button, step
+  ceiling, stuck cursor) via `POST /admin/codemods/run/stop.json`, or by lazy
+  reconciliation: loading the admin history marks `running` runs whose heartbeat
+  is older than one hour. There is no scheduled sweeper; abandoned callers
+  (closed tabs, agents that stopped paging) are caught on the next history load.
+
+Abandoned and failed **apply** runs can still hold `applied` items; revert
+accepts them (the admin UI only blocks revert while a run is `running`).
+
 ### Safety rails
 
 - **`skipped_unpublished`** — packages with no published commit are skipped.
@@ -231,7 +251,8 @@ not in the ledger tables.
 
 **`package_codemod_runs`:** `id`, `codemod_id`, `mode`, `scope_user_id` (`NULL`
 for fleet runs), `initiated_by_user_id`, `filters_json`, `status` (`running` |
-`completed` | `failed`), `revert_of_run_id`, `created_at`, `updated_at`.
+`completed` | `failed` | `abandoned`), `revert_of_run_id`, `created_at`,
+`updated_at`.
 
 **`package_codemod_run_items`:** `id`, `run_id`, `user_id`, `package_id`,
 `kody_id`, `status`, `before_commit`, `after_commit`, `changed_paths_json`,

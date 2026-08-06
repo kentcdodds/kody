@@ -5,7 +5,11 @@ import {
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import { type PackageCodemodFinding } from './types.ts'
 
-export type PackageCodemodRunStatus = 'running' | 'completed' | 'failed'
+export type PackageCodemodRunStatus =
+	| 'running'
+	| 'completed'
+	| 'failed'
+	| 'abandoned'
 
 export type PackageCodemodRunRecord = {
 	id: string
@@ -124,7 +128,10 @@ function mapRunRow(row: Record<string, unknown>): PackageCodemodRunRecord {
 		initiatedByUserId: String(row['initiated_by_user_id']),
 		filtersJson: String(row['filters_json'] ?? '{}'),
 		status:
-			status === 'completed' || status === 'failed' || status === 'running'
+			status === 'completed' ||
+			status === 'failed' ||
+			status === 'running' ||
+			status === 'abandoned'
 				? status
 				: 'failed',
 		revertOfRunId:
@@ -238,6 +245,31 @@ export async function updatePackageCodemodRunStatus(
 		)
 		.bind(input.status, updatedAt, input.id)
 		.run()
+}
+
+/**
+ * Mark `running` runs whose heartbeat (`updated_at`) predates the cutoff as
+ * `abandoned`. Completion only happens when a caller pages to the end, so
+ * runs whose caller stopped paging (closed tab, stopped agent) otherwise sit
+ * in `running` forever. Returns the number of runs marked.
+ */
+export async function markAbandonedPackageCodemodRuns(
+	db: D1Database,
+	input: {
+		updatedBefore: string
+		updatedAt?: string
+	},
+): Promise<number> {
+	const updatedAt = input.updatedAt ?? new Date().toISOString()
+	const result = await db
+		.prepare(
+			`UPDATE package_codemod_runs
+			SET status = 'abandoned', updated_at = ?
+			WHERE status = 'running' AND updated_at < ?`,
+		)
+		.bind(updatedAt, input.updatedBefore)
+		.run()
+	return result.meta.changes ?? 0
 }
 
 export async function getPackageCodemodRunById(

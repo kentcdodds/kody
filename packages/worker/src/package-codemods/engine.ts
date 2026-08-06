@@ -351,6 +351,17 @@ async function ensureRun(input: {
 				`Package codemod run "${input.runId}" filters do not match the requested filters.`,
 			)
 		}
+		if (existing.status !== 'completed') {
+			// Heartbeat: every continuation step re-asserts `running` and bumps
+			// `updated_at`, so stale-run reconciliation only marks runs nobody is
+			// paging. This also reopens runs previously marked failed or
+			// abandoned when a caller resumes them.
+			await updatePackageCodemodRunStatus(input.env.APP_DB, {
+				id: existing.id,
+				status: 'running',
+			})
+			return { ...existing, status: 'running' }
+		}
 		return existing
 	}
 	return await createPackageCodemodRun(input.env.APP_DB, {
@@ -1177,69 +1188,86 @@ export async function runPackageCodemodStep(input: {
 		filters: input.filters,
 		revertOfRunId: input.revertOfRunId,
 	})
-	const subscriptionCache = createPackageCodemodSubscriptionCache()
-	if (input.mode === 'revert') {
-		return await processRevertStep({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			codemod,
-			run,
-			scope: input.scope,
-			cursor: input.cursor ?? null,
-			limit,
-			waitUntil: input.waitUntil,
-			subscriptionCache,
-		})
-	}
-
-	const { packages, nextCursor } = await listCandidatePackages({
-		env: input.env,
-		scope: input.scope,
-		filters: input.filters,
-		cursor: input.cursor ?? null,
-		limit,
-	})
-	const items: Array<PackageCodemodRunItemResult> = []
-	const summary: Partial<Record<PackageCodemodItemStatus, number>> = {}
-	for (const savedPackage of packages) {
-		let result: PersistedItemResult
-		try {
-			result = await processPackageForMode({
+	try {
+		const subscriptionCache = createPackageCodemodSubscriptionCache()
+		if (input.mode === 'revert') {
+			return await processRevertStep({
 				env: input.env,
 				baseUrl: input.baseUrl,
-				mode: input.mode,
 				codemod,
-				savedPackage,
-				runId: run.id,
+				run,
+				scope: input.scope,
+				cursor: input.cursor ?? null,
+				limit,
 				waitUntil: input.waitUntil,
 				subscriptionCache,
 			})
-		} catch (error) {
-			result = emptyItemResult({
-				itemId: crypto.randomUUID(),
-				userId: savedPackage.userId,
-				packageId: savedPackage.id,
-				kodyId: savedPackage.kodyId,
-				status: 'failed',
-				error: getErrorMessage(error),
+		}
+
+		const { packages, nextCursor } = await listCandidatePackages({
+			env: input.env,
+			scope: input.scope,
+			filters: input.filters,
+			cursor: input.cursor ?? null,
+			limit,
+		})
+		const items: Array<PackageCodemodRunItemResult> = []
+		const summary: Partial<Record<PackageCodemodItemStatus, number>> = {}
+		for (const savedPackage of packages) {
+			let result: PersistedItemResult
+			try {
+				result = await processPackageForMode({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					mode: input.mode,
+					codemod,
+					savedPackage,
+					runId: run.id,
+					waitUntil: input.waitUntil,
+					subscriptionCache,
+				})
+			} catch (error) {
+				result = emptyItemResult({
+					itemId: crypto.randomUUID(),
+					userId: savedPackage.userId,
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					status: 'failed',
+					error: getErrorMessage(error),
+				})
+			}
+			await persistItem(input.env, result, run.id)
+			items.push(toPublicItem(result))
+			incrementSummary(summary, result.status)
+		}
+		if (nextCursor == null) {
+			await updatePackageCodemodRunStatus(input.env.APP_DB, {
+				id: run.id,
+				status: 'completed',
 			})
 		}
-		await persistItem(input.env, result, run.id)
-		items.push(toPublicItem(result))
-		incrementSummary(summary, result.status)
-	}
-	if (nextCursor == null) {
-		await updatePackageCodemodRunStatus(input.env.APP_DB, {
-			id: run.id,
-			status: 'completed',
-		})
-	}
-	return {
-		runId: run.id,
-		codemodId: input.codemodId,
-		mode: input.mode,
-		items,
-		nextCursor,
-		summary,
+		return {
+			runId: run.id,
+			codemodId: input.codemodId,
+			mode: input.mode,
+			items,
+			nextCursor,
+			summary,
+		}
+	} catch (error) {
+		// Per-package failures are isolated above; only step-level failures
+		// (paging, ledger writes, unexpected throws) reach here. Without this
+		// the run would sit in `running` forever, since the caller never gets
+		// a cursor back to continue with. A later continuation step reopens
+		// the run via the ensureRun heartbeat.
+		try {
+			await updatePackageCodemodRunStatus(input.env.APP_DB, {
+				id: run.id,
+				status: 'failed',
+			})
+		} catch {
+			// Best-effort: surface the original step error, not the status write.
+		}
+		throw error
 	}
 }

@@ -225,7 +225,7 @@ export type AdminCodemodRunListItem = {
 	scopeUserId: string | null
 	initiatedByUserId: string
 	filtersJson: string
-	status: 'running' | 'completed' | 'failed'
+	status: 'running' | 'completed' | 'failed' | 'abandoned'
 	revertOfRunId: string | null
 	createdAt: string
 	updatedAt: string

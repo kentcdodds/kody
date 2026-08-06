@@ -15,6 +15,8 @@ const mockModule = vi.hoisted(() => ({
 	listPackageCodemodRuns: vi.fn(),
 	listPackageCodemodRunItems: vi.fn(),
 	getPackageCodemodRunById: vi.fn(),
+	markAbandonedPackageCodemodRuns: vi.fn(),
+	updatePackageCodemodRunStatus: vi.fn(),
 	runPackageCodemodStep: vi.fn(),
 }))
 
@@ -47,6 +49,10 @@ vi.mock('#worker/package-codemods/ledger.ts', () => ({
 		mockModule.listPackageCodemodRunItems(...args),
 	getPackageCodemodRunById: (...args: Array<unknown>) =>
 		mockModule.getPackageCodemodRunById(...args),
+	markAbandonedPackageCodemodRuns: (...args: Array<unknown>) =>
+		mockModule.markAbandonedPackageCodemodRuns(...args),
+	updatePackageCodemodRunStatus: (...args: Array<unknown>) =>
+		mockModule.updatePackageCodemodRunStatus(...args),
 }))
 
 vi.mock('#worker/package-codemods/engine.ts', () => ({
@@ -86,8 +92,11 @@ function createTestEnv() {
 	} as unknown as Env
 }
 
-const { createAdminCodemodsApiHandler, createAdminCodemodsRunApiHandler } =
-	await import('./admin-codemods.ts')
+const {
+	createAdminCodemodsApiHandler,
+	createAdminCodemodsRunApiHandler,
+	createAdminCodemodsRunStopApiHandler,
+} = await import('./admin-codemods.ts')
 
 function createGetRequest(search = '') {
 	const url = new URL(`https://example.com/admin/codemods.json${search}`)
@@ -103,6 +112,22 @@ function createGetRequest(search = '') {
 
 function createRunRequest(body: unknown) {
 	const url = new URL('https://example.com/admin/codemods/run.json')
+	return {
+		request: new Request(url, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(body),
+		}),
+		params: {},
+		url,
+	} as never
+}
+
+function createStopRequest(body: unknown) {
+	const url = new URL('https://example.com/admin/codemods/run/stop.json')
 	return {
 		request: new Request(url, {
 			method: 'POST',
@@ -164,6 +189,7 @@ test('admin codemods GET requires admin and returns codemods plus recent runs', 
 		},
 	])
 	mockModule.listPackageCodemodRuns.mockResolvedValue([sampleRun])
+	mockModule.markAbandonedPackageCodemodRuns.mockResolvedValue(0)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	const unauthorized = await handler.handler(createGetRequest())
@@ -193,6 +219,14 @@ test('admin codemods GET requires admin and returns codemods plus recent runs', 
 	expect(mockModule.listPackageCodemodRuns).toHaveBeenCalledWith(env.APP_DB, {
 		limit: 50,
 	})
+	const reconcileCall =
+		mockModule.markAbandonedPackageCodemodRuns.mock.calls.at(-1) as
+			| [unknown, { updatedBefore: string }]
+			| undefined
+	expect(reconcileCall?.[0]).toBe(env.APP_DB)
+	const cutoffMs = Date.parse(reconcileCall![1].updatedBefore)
+	expect(Date.now() - cutoffMs).toBeGreaterThanOrEqual(60 * 60 * 1000 - 1)
+	expect(Date.now() - cutoffMs).toBeLessThan(2 * 60 * 60 * 1000)
 })
 
 test('admin codemods GET with runId returns paged run items', async () => {
@@ -398,4 +432,78 @@ test('admin codemods run POST rejects invalid requests and allows omitted filter
 	)?.[0] as { filters?: unknown } | undefined
 	expect(omittedCall).toBeDefined()
 	expect(omittedCall).not.toHaveProperty('filters')
+})
+
+test('admin codemods stop POST requires admin and marks running runs abandoned', async () => {
+	const env = createTestEnv()
+	const handler = createAdminCodemodsRunStopApiHandler(env)
+	logAuditEventSpy.mockClear()
+	mockModule.updatePackageCodemodRunStatus.mockClear()
+	mockModule.updatePackageCodemodRunStatus.mockResolvedValue(undefined)
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	const unauthorized = await handler.handler(
+		createStopRequest({ runId: 'run-1' }),
+	)
+	expect(unauthorized.status).toBe(401)
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['user']),
+	)
+	const forbidden = await handler.handler(createStopRequest({ runId: 'run-1' }))
+	expect(forbidden.status).toBe(403)
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const missingRunId = await handler.handler(createStopRequest({}))
+	expect(missingRunId.status).toBe(400)
+
+	mockModule.getPackageCodemodRunById.mockResolvedValue(null)
+	const notFound = await handler.handler(
+		createStopRequest({ runId: 'run-missing' }),
+	)
+	expect(notFound.status).toBe(404)
+
+	mockModule.getPackageCodemodRunById.mockResolvedValue({
+		...sampleRun,
+		status: 'completed',
+	})
+	const alreadyTerminal = await handler.handler(
+		createStopRequest({ runId: 'run-1' }),
+	)
+	expect(alreadyTerminal.status).toBe(200)
+	await expect(alreadyTerminal.json()).resolves.toEqual({
+		ok: true,
+		runId: 'run-1',
+		status: 'completed',
+	})
+	expect(mockModule.updatePackageCodemodRunStatus).not.toHaveBeenCalled()
+
+	mockModule.getPackageCodemodRunById.mockResolvedValue({
+		...sampleRun,
+		status: 'running',
+	})
+	const stopped = await handler.handler(createStopRequest({ runId: 'run-1' }))
+	expect(stopped.status).toBe(200)
+	await expect(stopped.json()).resolves.toEqual({
+		ok: true,
+		runId: 'run-1',
+		status: 'abandoned',
+	})
+	expect(mockModule.updatePackageCodemodRunStatus).toHaveBeenCalledWith(
+		env.APP_DB,
+		{ id: 'run-1', status: 'abandoned' },
+	)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'package_codemod_run_stop',
+			result: 'success',
+			email: 'admin@example.com',
+			path: '/admin/codemods/run/stop.json',
+			reason:
+				'run_id=run-1;codemod_id=0001-ambient-storage-to-package-storage;mode=scan',
+		}),
+	)
 })

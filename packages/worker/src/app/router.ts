@@ -21,6 +21,7 @@ import {
 	createAdminCodemodsApiHandler,
 	createAdminCodemodsHandler,
 	createAdminCodemodsRunApiHandler,
+	createAdminCodemodsRunStopApiHandler,
 } from '#app/handlers/admin-codemods.ts'
 import {
 	createAdminRolesApiHandler,
@@ -332,6 +333,7 @@ export function createAppRouter(env: Env) {
 			adminCodemods: createAdminCodemodsHandler(env),
 			adminCodemodsApi: createAdminCodemodsApiHandler(env),
 			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),
+			adminCodemodsRunStopApi: createAdminCodemodsRunStopApiHandler(env),
 			adminRoles: createAdminRolesHandler(env),
 			adminRolesApi: createAdminRolesApiHandler(env),
 			adminCommunityReports: createAdminCommunityReportsHandler(env),

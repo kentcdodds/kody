@@ -23,6 +23,8 @@ import {
 	getPackageCodemodRunById,
 	listPackageCodemodRunItems,
 	listPackageCodemodRuns,
+	markAbandonedPackageCodemodRuns,
+	updatePackageCodemodRunStatus,
 } from '#worker/package-codemods/ledger.ts'
 import {
 	getPackageCodemodById,
@@ -33,6 +35,10 @@ import { readPositiveInt } from '#worker/query-params.ts'
 const recentRunsLimit = 50
 const defaultRunItemsLimit = 50
 const maxRunItemsLimit = 200
+// Every engine step re-asserts `running` (heartbeat), and a step is a single
+// Workers request, so a `running` run untouched for this long has no caller
+// paging it anymore.
+const staleRunningRunThresholdMs = 60 * 60 * 1000
 
 const packageCodemodRunModes = [
 	'scan',
@@ -44,6 +50,14 @@ const packageCodemodRunModes = [
 export async function loadAdminCodemodsData(
 	env: Env,
 ): Promise<AdminCodemodsLoaderData> {
+	// Lazy reconciliation instead of a scheduled sweeper: viewing the admin
+	// history is the moment stale `running` rows would mislead, so mark them
+	// `abandoned` right before listing.
+	await markAbandonedPackageCodemodRuns(env.APP_DB, {
+		updatedBefore: new Date(
+			Date.now() - staleRunningRunThresholdMs,
+		).toISOString(),
+	})
 	const [codemods, runs] = await Promise.all([
 		Promise.resolve(listPackageCodemods()),
 		listPackageCodemodRuns(env.APP_DB, { limit: recentRunsLimit }),
@@ -193,6 +207,62 @@ export function createAdminCodemodsRunApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.adminCodemodsRunApi>
+}
+
+export function createAdminCodemodsRunStopApiHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, url }) {
+			try {
+				if (request.method !== 'POST') {
+					return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+				}
+				const actor = await requireUserWithRole(request, env, 'admin')
+				const body = await request.json().catch(() => null)
+				if (!body || typeof body !== 'object') {
+					return jsonResponse(
+						{ ok: false, error: 'Invalid request body.' },
+						400,
+					)
+				}
+				const runId = readNonEmptyTrimmedString(body, 'runId')
+				if (!runId) {
+					return jsonResponse({ ok: false, error: 'runId is required.' }, 400)
+				}
+				const run = await getPackageCodemodRunById(env.APP_DB, runId)
+				if (!run) {
+					return jsonResponse(
+						{
+							ok: false,
+							error: `Package codemod run "${runId}" was not found.`,
+						},
+						404,
+					)
+				}
+				if (run.status !== 'running') {
+					return jsonResponse({ ok: true, runId, status: run.status })
+				}
+				await updatePackageCodemodRunStatus(env.APP_DB, {
+					id: runId,
+					status: 'abandoned',
+				})
+				const requestIp = getRequestIp(request) ?? undefined
+				void logAuditEvent({
+					category: 'admin',
+					action: 'package_codemod_run_stop',
+					result: 'success',
+					email: actor.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: `run_id=${runId};codemod_id=${run.codemodId};mode=${run.mode}`,
+				})
+				return jsonResponse({ ok: true, runId, status: 'abandoned' })
+			} catch (error) {
+				if (error instanceof Response) return error
+				throw error
+			}
+		},
+	} satisfies Action<typeof routes.adminCodemodsRunStopApi>
 }
 
 type ParseRunBodyResult =

@@ -9,6 +9,7 @@ import {
 	insertPackageCodemodRunItem,
 	listPackageCodemodRunItems,
 	listPackageCodemodRuns,
+	markAbandonedPackageCodemodRuns,
 	updatePackageCodemodRunStatus,
 } from './ledger.ts'
 
@@ -164,4 +165,66 @@ test('package codemod ledger pages runs and items with filters', async () => {
 	expect(
 		await getPackageCodemodRunItemById(db, 'item-1', { userId: 'user-2' }),
 	).toBeNull()
+})
+
+test('package codemod ledger marks only stale running runs abandoned', async () => {
+	const { db } = createLedgerDb()
+
+	await createPackageCodemodRun(db, {
+		id: 'run-stale-running',
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'scan',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		createdAt: '2026-07-30T10:00:00.000Z',
+		updatedAt: '2026-07-30T10:00:00.000Z',
+	})
+	await createPackageCodemodRun(db, {
+		id: 'run-fresh-running',
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'scan',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		createdAt: '2026-07-30T10:00:00.000Z',
+		updatedAt: '2026-07-30T12:30:00.000Z',
+	})
+	await createPackageCodemodRun(db, {
+		id: 'run-stale-completed',
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'apply',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		status: 'completed',
+		createdAt: '2026-07-30T10:00:00.000Z',
+		updatedAt: '2026-07-30T10:00:00.000Z',
+	})
+
+	const marked = await markAbandonedPackageCodemodRuns(db, {
+		updatedBefore: '2026-07-30T12:00:00.000Z',
+		updatedAt: '2026-07-30T13:00:00.000Z',
+	})
+	expect(marked).toBe(1)
+	expect(await getPackageCodemodRunById(db, 'run-stale-running')).toMatchObject(
+		{
+			status: 'abandoned',
+			updatedAt: '2026-07-30T13:00:00.000Z',
+		},
+	)
+	expect(await getPackageCodemodRunById(db, 'run-fresh-running')).toMatchObject(
+		{
+			status: 'running',
+			updatedAt: '2026-07-30T12:30:00.000Z',
+		},
+	)
+	expect(
+		await getPackageCodemodRunById(db, 'run-stale-completed'),
+	).toMatchObject({
+		status: 'completed',
+		updatedAt: '2026-07-30T10:00:00.000Z',
+	})
+
+	const noneLeft = await markAbandonedPackageCodemodRuns(db, {
+		updatedBefore: '2026-07-30T12:00:00.000Z',
+	})
+	expect(noneLeft).toBe(0)
 })

@@ -9,6 +9,7 @@ import {
 	getPackageCodemodRunItemById,
 	insertPackageCodemodRunItem,
 	listPackageCodemodRunItems,
+	listPackageCodemodRuns,
 	packageCodemodLedgerTextBounds,
 } from './ledger.ts'
 
@@ -1168,6 +1169,83 @@ test('package codemod fleet revert applies packageIds filters and leaves others 
 	expect(
 		await getPackageCodemodRunItemById(env.APP_DB, 'item-pkg-keep-b'),
 	).toMatchObject({ status: 'applied' })
+})
+
+test('package codemod step-level throw marks the run failed instead of leaving it running', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	mocks.listSavedPackagesPage.mockRejectedValue(new Error('paging boom'))
+
+	await expect(
+		runPackageCodemodStep({
+			env,
+			baseUrl: 'https://example.com',
+			initiatedByUserId: 'admin-1',
+			codemodId,
+			mode: 'scan',
+			scope: { kind: 'fleet' },
+			limit: 5,
+		}),
+	).rejects.toThrow('paging boom')
+
+	// The step threw before returning a runId, so look the run up directly.
+	const runs = await listPackageCodemodRuns(env.APP_DB, { limit: 10 })
+	expect(runs).toHaveLength(1)
+	expect(runs[0]).toMatchObject({ status: 'failed' })
+})
+
+test('package codemod continuation steps heartbeat the run and reopen abandoned runs', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	const pkgA = savedPackage({
+		id: 'hb-a',
+		userId: 'user-1',
+		kodyId: 'hb-a',
+		sourceId: 'source-hb-a',
+	})
+	const pkgB = savedPackage({
+		id: 'hb-b',
+		userId: 'user-1',
+		kodyId: 'hb-b',
+		sourceId: 'source-hb-b',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkgA, pkgB])
+	mocks.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string; userId: string }) =>
+			loadedSource({
+				files: cleanFiles(),
+				publishedCommit: `commit-${input.sourceId}`,
+				repoId: input.sourceId,
+				sourceId: input.sourceId,
+				userId: input.userId,
+			}),
+	)
+
+	await createPackageCodemodRun(env.APP_DB, {
+		id: 'run-heartbeat',
+		codemodId,
+		mode: 'scan',
+		scopeUserId: 'user-1',
+		initiatedByUserId: 'admin-1',
+		status: 'abandoned',
+		createdAt: '2026-07-30T10:00:00.000Z',
+		updatedAt: '2026-07-30T10:00:00.000Z',
+	})
+
+	const step = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'user', userId: 'user-1' },
+		runId: 'run-heartbeat',
+		limit: 1,
+	})
+	expect(step.nextCursor).not.toBeNull()
+	const reopened = await getPackageCodemodRunById(env.APP_DB, 'run-heartbeat')
+	expect(reopened).toMatchObject({ status: 'running' })
+	expect(reopened!.updatedAt > '2026-07-30T10:00:00.000Z').toBe(true)
 })
 
 test('package codemod step rejects a cursor without a runId', async () => {

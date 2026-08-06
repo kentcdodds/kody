@@ -55,6 +55,7 @@ type LiveRunItem = {
 
 const adminCodemodsApiPath = '/admin/codemods.json'
 const adminCodemodsRunApiPath = '/admin/codemods/run.json'
+const adminCodemodsRunStopApiPath = '/admin/codemods/run/stop.json'
 const maxRunSteps = 200
 
 const runModes = [
@@ -313,6 +314,25 @@ export function AdminCodemodsRoute(handle: Handle) {
 		return body
 	}
 
+	// Best-effort: without this, a run whose paging loop stops client-side
+	// (stop button, step ceiling, stuck cursor) stays `running` in the ledger
+	// forever. Server-side stale reconciliation is the fallback.
+	async function markRunStopped(runId: string) {
+		try {
+			await fetch(adminCodemodsRunStopApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ runId }),
+			})
+		} catch {
+			// The stale-run sweep on the next history load covers this.
+		}
+	}
+
 	async function postRunStep(body: Record<string, unknown>) {
 		const response = await fetch(adminCodemodsRunApiPath, {
 			method: 'POST',
@@ -364,6 +384,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 		try {
 			for (;;) {
 				if (stopRequested) {
+					if (runId) await markRunStopped(runId)
 					runPhase = 'complete'
 					message = `Stopped ${input.mode} for ${input.codemodId}${liveRunId ? ` (run ${liveRunId})` : ''} after ${stepCount} step(s).`
 					messageTone = 'info'
@@ -372,6 +393,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 					return
 				}
 				if (stepCount >= maxRunSteps) {
+					if (runId) await markRunStopped(runId)
 					runPhase = 'error'
 					message = `Stopped after ${maxRunSteps} steps without completing. Resume later with the same run id if needed.`
 					messageTone = 'error'
@@ -418,6 +440,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 					previousCursor !== undefined &&
 					previousCursor === step.nextCursor
 				) {
+					if (runId) await markRunStopped(runId)
 					runPhase = 'error'
 					message = `Codemod run stopped: cursor did not advance (${step.nextCursor}).`
 					messageTone = 'error'
@@ -712,7 +735,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 											name="revertOfRunId"
 											type="text"
 											required
-											placeholder="completed apply run id"
+											placeholder="prior apply run id"
 											value={revertOfRunId}
 											disabled={!canMutate}
 											mix={[
@@ -880,10 +903,12 @@ export function AdminCodemodsRoute(handle: Handle) {
 										<thead>
 											<tr>
 												<th mix={css(cellCss)}>Created</th>
+												<th mix={css(cellCss)}>Run</th>
 												<th mix={css(cellCss)}>Codemod</th>
 												<th mix={css(cellCss)}>Mode</th>
 												<th mix={css(cellCss)}>Status</th>
 												<th mix={css(cellCss)}>Scope</th>
+												<th mix={css(cellCss)}>Initiated by</th>
 												<th mix={css(cellCss)}>Actions</th>
 											</tr>
 										</thead>
@@ -892,12 +917,25 @@ export function AdminCodemodsRoute(handle: Handle) {
 												const revertConfirmActive =
 													pendingConfirmKey ===
 													getConfirmKey('revert-history', run.id)
+												// Abandoned and failed apply runs can hold applied
+												// items too; only an actively-paging run is off
+												// limits for revert.
 												const canRevert =
-													run.mode === 'apply' && run.status === 'completed'
+													run.mode === 'apply' && run.status !== 'running'
 												return (
 													<tr key={run.id}>
 														<td mix={css(cellCss)}>
 															{formatNullableTimestamp(run.createdAt)}
+														</td>
+														<td mix={css(cellCss)}>
+															<code
+																title={run.id}
+																mix={css({
+																	fontSize: typography.fontSize.sm,
+																})}
+															>
+																{run.id.slice(0, 8)}
+															</code>
 														</td>
 														<td mix={css(cellCss)}>
 															<code
@@ -913,6 +951,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 														<td mix={css(cellCss)}>
 															{run.scopeUserId ?? 'fleet'}
 														</td>
+														<td mix={css(cellCss)}>{run.initiatedByUserId}</td>
 														<td mix={css(cellCss)}>
 															<div
 																mix={css({
