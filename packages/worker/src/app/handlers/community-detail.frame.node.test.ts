@@ -149,4 +149,22 @@ test('community detail handler returns bare detail frame HTML for target header'
 	const followingHtml = await followingResponse.text()
 	expect(followingHtml).toContain('data-following="true"')
 	expect(followingHtml).toContain('title="Unfollow"')
+
+	const followErrorResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/community/listing-1?followError=You%20cannot%20follow%20yourself.',
+			{
+				headers: { 'x-remix-target': 'community-detail' },
+			},
+		),
+		params: { listingId: 'listing-1' },
+		url: new URL(
+			'https://example.com/community/listing-1?followError=You%20cannot%20follow%20yourself.',
+		),
+	} as never)
+	const followErrorHtml = await followErrorResponse.text()
+	expect(followErrorHtml).toContain(
+		'data-testid="community-detail-owner-follow-error"',
+	)
+	expect(followErrorHtml).toContain('You cannot follow yourself.')
 })

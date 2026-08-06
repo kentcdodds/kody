@@ -96,6 +96,20 @@ function getCurrentListingId(handle: Handle) {
 	return getListingIdFromPathname(readRouterPathname(handle))
 }
 
+function buildCommunityDetailFrameSrc(href: string) {
+	const url = new URL(href, 'http://localhost')
+	const listingId = getListingIdFromPathname(url.pathname)
+	if (!listingId) return url.pathname
+	const followError = url.searchParams.get('followError')
+	if (!followError) return routes.communityDetail.href({ listingId })
+	const frameUrl = new URL(
+		routes.communityDetail.href({ listingId }),
+		'http://localhost',
+	)
+	frameUrl.searchParams.set('followError', followError)
+	return `${frameUrl.pathname}${frameUrl.search}`
+}
+
 export async function communityDetailRouteLoader(
 	url: URL,
 	signal: AbortSignal,
@@ -105,7 +119,7 @@ export async function communityDetailRouteLoader(
 		throw new Error('Community listing not found.')
 	}
 
-	const frameSrc = routes.communityDetail.href({ listingId })
+	const frameSrc = buildCommunityDetailFrameSrc(`${url.pathname}${url.search}`)
 	const shellPromise = fetch(routes.communityDetailApi.href({ listingId }), {
 		headers: { Accept: 'application/json' },
 		signal,
@@ -539,7 +553,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
 		if (!frame) return
 
-		const nextSrc = routes.communityDetail.href({ listingId })
+		const nextSrc = buildCommunityDetailFrameSrc(readCurrentRouterHref(handle))
 		if (frame.src !== nextSrc) {
 			frame.src = nextSrc
 		}
@@ -630,7 +644,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			handle.queueTask(loadDetailShell)
 		}
 
-		const frameSrc = routes.communityDetail.href({ listingId })
+		const frameSrc = buildCommunityDetailFrameSrc(currentHref)
 
 		// Never show another listing's shell data: even if an in-flight fetch
 		// for the previous listing resolves late, mismatched ids render the

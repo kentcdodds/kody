@@ -287,6 +287,26 @@ test('profile follow POST enforces auth and toggles follow', async () => {
 	mockModule.followCommunityUser.mockRejectedValue(
 		new CommunityActionError('You cannot follow yourself.'),
 	)
+	const formError = await handler.handler({
+		request: new Request('https://example.com/profiles/alice/follow.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				follow: 'true',
+				returnTo: '/community/listing-1',
+			}),
+		}),
+		params: { username: 'alice' },
+		url: new URL('https://example.com/profiles/alice/follow.json'),
+	} as never)
+	expect(formError.status).toBe(303)
+	expect(formError.headers.get('Location')).toBe(
+		'/community/listing-1?followError=You+cannot+follow+yourself.',
+	)
+
+	mockModule.followCommunityUser.mockRejectedValue(
+		new CommunityActionError('You cannot follow yourself.'),
+	)
 	const errorResponse = await handler.handler({
 		request: new Request('https://example.com/profiles/alice/follow.json', {
 			method: 'POST',

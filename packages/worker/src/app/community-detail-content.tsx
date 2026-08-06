@@ -37,6 +37,7 @@ export type CommunityDetailContentProps = {
 	viewerFollowsOwner: boolean
 	viewerIsOwner: boolean
 	returnTo: string
+	followError: string | null
 }
 
 export function CommunityDetailContent(
@@ -49,6 +50,7 @@ export function CommunityDetailContent(
 		viewerFollowsOwner,
 		viewerIsOwner,
 		returnTo,
+		followError,
 	} = handle.props
 
 	return () => (
@@ -114,6 +116,7 @@ export function CommunityDetailContent(
 									loggedIn,
 									viewerFollowsOwner,
 									returnTo,
+									followError,
 								})
 							: null}
 					</p>
@@ -203,6 +206,7 @@ function renderOwnerFollowControl(input: {
 	loggedIn: boolean
 	viewerFollowsOwner: boolean
 	returnTo: string
+	followError: string | null
 }) {
 	if (!input.loggedIn) {
 		const loginHref = `${routes.login.href()}?redirectTo=${encodeURIComponent(input.returnTo)}`
@@ -220,32 +224,43 @@ function renderOwnerFollowControl(input: {
 	}
 
 	return (
-		<form
-			method="post"
-			action={routes.profileFollowApiPost.href({ username: input.username })}
-			mix={css(ownerFollowFormCss)}
-		>
-			<input
-				type="hidden"
-				name="follow"
-				value={String(!input.viewerFollowsOwner)}
-			/>
-			<input type="hidden" name="returnTo" value={input.returnTo} />
-			<button
-				type="submit"
-				title={input.viewerFollowsOwner ? 'Unfollow' : 'Follow'}
-				data-testid="community-detail-owner-follow"
-				data-following={input.viewerFollowsOwner ? 'true' : 'false'}
-				mix={css(ownerFollowButtonCss)}
+		<span mix={css(ownerFollowControlCss)}>
+			<form
+				method="post"
+				action={routes.profileFollowApiPost.href({ username: input.username })}
+				mix={css(ownerFollowFormCss)}
 			>
-				{renderFollowGlyph(input.viewerFollowsOwner)}
-				<span mix={css(visuallyHiddenCss)}>
-					{input.viewerFollowsOwner
-						? `Unfollow @${input.username}`
-						: `Follow @${input.username}`}
+				<input
+					type="hidden"
+					name="follow"
+					value={String(!input.viewerFollowsOwner)}
+				/>
+				<input type="hidden" name="returnTo" value={input.returnTo} />
+				<button
+					type="submit"
+					title={input.viewerFollowsOwner ? 'Unfollow' : 'Follow'}
+					data-testid="community-detail-owner-follow"
+					data-following={input.viewerFollowsOwner ? 'true' : 'false'}
+					mix={css(ownerFollowButtonCss)}
+				>
+					{renderFollowGlyph(input.viewerFollowsOwner)}
+					<span mix={css(visuallyHiddenCss)}>
+						{input.viewerFollowsOwner
+							? `Unfollow @${input.username}`
+							: `Follow @${input.username}`}
+					</span>
+				</button>
+			</form>
+			{input.followError ? (
+				<span
+					role="alert"
+					data-testid="community-detail-owner-follow-error"
+					mix={css(ownerFollowErrorCss)}
+				>
+					{input.followError}
 				</span>
-			</button>
-		</form>
+			) : null}
+		</span>
 	)
 }
 
@@ -352,9 +367,21 @@ const ownerPrivateLockCss = {
 	cursor: 'help',
 }
 
+const ownerFollowControlCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.45rem',
+	minWidth: 0,
+}
+
 const ownerFollowFormCss = {
 	display: 'inline-flex',
 	margin: 0,
+}
+
+const ownerFollowErrorCss = {
+	color: colors.danger,
+	fontSize: '0.85rem',
 }
 
 const ownerFollowButtonCss = {

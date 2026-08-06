@@ -25,6 +25,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			viewerFollowsOwner: detail.viewerFollowsOwner,
 			viewerIsOwner: detail.viewerIsOwner,
 			returnTo: routes.communityDetail.href({ listingId }),
+			followError: new URL(request.url).searchParams.get('followError'),
 		})
 	},
 })

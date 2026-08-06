@@ -35,6 +35,15 @@ function readSafeReturnTo(value: FormDataEntryValue | null) {
 	return normalizeRedirectTo(value)
 }
 
+function redirectWithFollowError(returnTo: string, message: string) {
+	const url = new URL(returnTo, 'https://kody.invalid')
+	url.searchParams.set('followError', message.slice(0, 200))
+	return new Response(null, {
+		status: 303,
+		headers: { Location: `${url.pathname}${url.search}${url.hash}` },
+	})
+}
+
 export function createProfileHandler(env: Env) {
 	return {
 		middleware: [],
@@ -245,14 +254,17 @@ export function createProfileFollowApiPostHandler(env: Env) {
 			} catch (error) {
 				if (error instanceof CommunityActionError) {
 					if (returnTo) {
-						return new Response(null, {
-							status: 303,
-							headers: { Location: returnTo },
-						})
+						return redirectWithFollowError(returnTo, error.message)
 					}
 					return jsonResponse({ ok: false, error: error.message }, 400)
 				}
 				console.error('Profile follow update failed:', error)
+				if (returnTo) {
+					return redirectWithFollowError(
+						returnTo,
+						'Unable to update follow status.',
+					)
+				}
 				return jsonResponse(
 					{ ok: false, error: 'Unable to update follow status.' },
 					500,
