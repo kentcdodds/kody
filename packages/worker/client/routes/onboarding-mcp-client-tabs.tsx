@@ -474,6 +474,16 @@ const tabPanelCss = {
 		borderRadius: '6px',
 		padding: '0.1em 0.4em',
 	},
+	// Snippet wells render Shiki as `<pre><code>`. Without this reset the
+	// inline-code chip above paints a gray pill around every wrapped line.
+	'& pre code': {
+		font: 'inherit',
+		color: 'inherit',
+		backgroundColor: 'transparent',
+		border: 'none',
+		borderRadius: 0,
+		padding: 0,
+	},
 	// Enters via @starting-style so a fast host-switch retargets the
 	// in-flight transition instead of restarting keyframes from zero.
 	'@media (prefers-reduced-motion: no-preference)': {
@@ -543,6 +553,14 @@ const snippetPreCss = {
 		wordBreak: 'break-word' as const,
 		backgroundColor: 'transparent',
 		overflow: 'visible' as const,
+	},
+	'& pre code': {
+		font: 'inherit',
+		color: 'inherit',
+		backgroundColor: 'transparent',
+		border: 'none',
+		borderRadius: 0,
+		padding: 0,
 	},
 }
 
