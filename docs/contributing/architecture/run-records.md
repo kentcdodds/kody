@@ -363,10 +363,10 @@ rows may also carry soft triage (`error_triage`: `ignored` | `resolved`, plus
 optional `triage_note`, `triaged_at`, `triaged_by`). Triage is non-destructive:
 error name/message/logs stay put; Activity and `run_list` default to
 `error_triage=open` so handled noise drops out of the default view;
-`run_summary.errors` counts only open errors and exposes separate
-`ignored` / `resolved` totals. Terminal `finishRun` upserts preserve triage on
-error finishes and clear it if a row somehow finishes non-error. Schema version
-10 on the RunLog DO.
+`run_summary.errors` counts only open errors and exposes separate `ignored` /
+`resolved` totals. Terminal `finishRun` upserts preserve triage on error
+finishes and clear it if a row somehow finishes non-error. Schema version 10 on
+the RunLog DO.
 
 ## Reading the data
 

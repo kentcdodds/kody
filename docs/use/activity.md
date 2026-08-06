@@ -27,8 +27,8 @@ The MCP **`runs`** domain reads and triages the same data:
 
 - **`run_summary`** — “is anything broken?” open-error totals (plus ignored /
   resolved counts) and per-surface breakdown
-- **`run_list`** — filtered history (by surface, status, job, package, time,
-  and `error_triage`; defaults to **open**, hiding ignored/resolved)
+- **`run_list`** — filtered history (by surface, status, job, package, time, and
+  `error_triage`; defaults to **open**, hiding ignored/resolved)
 - **`run_get`** — one run plus its log lines and triage fields
 - **`run_update`** — mark a retained **error** run as `ignored` or `resolved`
   (or `open` to clear triage), with an optional note — non-destructive soft

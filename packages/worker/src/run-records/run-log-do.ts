@@ -2615,10 +2615,7 @@ class RunLogBase extends DurableObject<Env> {
 			.toArray()[0]
 		if (!existing) return { ok: false, reason: 'not_found' }
 
-		const current = mapRunRow(
-			existing,
-			Number(existing['log_count'] ?? 0) || 0,
-		)
+		const current = mapRunRow(existing, Number(existing['log_count'] ?? 0) || 0)
 		const nextTriage = input.errorTriage
 		if (nextTriage != null && current.status !== 'error') {
 			return {

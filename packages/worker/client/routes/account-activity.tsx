@@ -473,9 +473,7 @@ export function AccountActivityRoute(handle: Handle) {
 								{ label: 'Open errors', value: String(readySummary.errors) },
 								{
 									label: 'Ignored / resolved',
-									value: String(
-										readySummary.ignored + readySummary.resolved,
-									),
+									value: String(readySummary.ignored + readySummary.resolved),
 								},
 								{ label: 'Running now', value: String(readySummary.running) },
 							].map((item) => (
@@ -503,8 +501,7 @@ export function AccountActivityRoute(handle: Handle) {
 											fontSize: typography.fontSize.xl,
 											fontWeight: typography.fontWeight.semibold,
 											color:
-												item.label === 'Open errors' &&
-												readySummary.errors > 0
+												item.label === 'Open errors' && readySummary.errors > 0
 													? colors.error
 													: colors.text,
 										})}
