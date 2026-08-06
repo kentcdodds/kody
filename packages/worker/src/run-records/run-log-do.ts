@@ -749,15 +749,26 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Soft error-triage columns for Activity noise control. Idempotent when a
-	 * warm object somehow re-enters schema init: SQLite rejects duplicate
-	 * ADD COLUMN, so we only run under the version gate above.
+	 * Soft error-triage columns for Activity noise control. Warm objects may
+	 * already have these columns when CREATE TABLE IF NOT EXISTS ran against
+	 * the current DDL before the version gate called this helper — ignore
+	 * duplicate-column errors so re-entry stays idempotent.
 	 */
 	private migrateRunsErrorTriageForV10() {
-		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN error_triage TEXT`)
-		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN triage_note TEXT`)
-		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN triaged_at TEXT`)
-		this.ctx.storage.sql.exec(`ALTER TABLE runs ADD COLUMN triaged_by TEXT`)
+		for (const column of [
+			'error_triage',
+			'triage_note',
+			'triaged_at',
+			'triaged_by',
+		] as const) {
+			try {
+				this.ctx.storage.sql.exec(
+					`ALTER TABLE runs ADD COLUMN ${column} TEXT`,
+				)
+			} catch {
+				// Column already present on a partially migrated object.
+			}
+		}
 	}
 
 	private getMeta(key: string): number | null {
