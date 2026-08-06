@@ -1072,7 +1072,10 @@ const authPanelCss = {
 	backgroundColor: colors.surface,
 	[mobileMq]: {
 		justifyContent: 'flex-start',
-		paddingTop: 'clamp(4.5rem, 12vw, 6rem)',
+		/* Was clamp(4.5rem, 12vw, 6rem) to clear the absolutely positioned
+		   corner. The corner is hidden at this breakpoint now, so the panel only
+		   needs its own breathing room. */
+		paddingTop: 'clamp(1.75rem, 6vw, 2.75rem)',
 	},
 }
 
@@ -1095,6 +1098,11 @@ const authHeadCss = {
 	'& p': {
 		margin: '0.5rem 0 0',
 		color: colors.textMuted,
+	},
+	/* Centred on phones to sit under the centred brand mark; the two-panel
+	   desktop layout keeps the heading left-aligned with the form below it. */
+	[mobileMq]: {
+		textAlign: 'center' as const,
 	},
 }
 
@@ -1259,6 +1267,17 @@ const authCornerCss = {
 		textDecoration: 'none',
 	},
 	'& > a:hover': { color: colors.text },
+	/*
+	 * Gone on phones, where this floated over the top of the card and crowded
+	 * the brand. The "back" link is redundant there because `authBrandMobileCss`
+	 * puts a real link home inside the card at this breakpoint — which is also
+	 * why the corner has to stay on wider screens, where that in-card brand is
+	 * `display: none` and the only other one is inside the `aria-hidden` visual
+	 * panel at `tabIndex={-1}`. Hiding it there would leave no reachable way
+	 * home. The theme toggle goes with it; the theme still follows the system
+	 * preference, and this is a screen you pass through.
+	 */
+	[mobileMq]: { display: 'none' },
 }
 
 const honeypotCss = {

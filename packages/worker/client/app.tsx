@@ -186,6 +186,19 @@ export function App(handle: Handle<AppProps>) {
 						flexDirection: 'column',
 						fontFamily: typography.fontFamily,
 						boxSizing: 'border-box',
+						/*
+						 * The redesign's decorative glows are pseudo-elements with
+						 * negative horizontal insets (`heroArtCss`, `pageHeadCss`, and
+						 * the per-page overrides that borrow them), so they bleed past
+						 * the viewport by design. Left unclipped that bleed becomes real
+						 * horizontal page scroll on a phone — measured at 12-66px across
+						 * the marketing routes — which also knocks the fixed mobile-menu
+						 * popover out of line with the sticky header once you swipe
+						 * sideways. `clip` rather than `hidden`: it contains the bleed
+						 * without creating a scroll container, so the sticky header still
+						 * resolves against the viewport and vertical bleed still shows.
+						 */
+						overflowX: 'clip',
 					})}
 				>
 					<a

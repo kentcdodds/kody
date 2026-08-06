@@ -93,6 +93,12 @@ const footerEndCss = {
 	'@media (max-width: 720px)': {
 		justifySelf: 'center',
 	},
+	/* Stacked nav: the toggle moves below the link column rather than beside it,
+	   which would leave it floating against a tall stack. */
+	'@media (max-width: 560px)': {
+		flexDirection: 'column' as const,
+		gap: '1.1rem',
+	},
 }
 
 const footerNavCss = {
@@ -105,4 +111,22 @@ const footerNavCss = {
 		transition: `color ${transitions.fast}`,
 	},
 	'& a:hover': { color: colors.text },
+	/* Stacked on phones: four links in a row sit close enough to mis-tap, and
+	   the column gives each one a comfortable target without the 44px minimum
+	   the header menu needs (these are the last thing on the page, not the
+	   primary nav). Centred to match the rest of the stacked footer. */
+	'@media (max-width: 560px)': {
+		flexDirection: 'column' as const,
+		alignItems: 'center',
+		gap: '0.2rem',
+		'& a': {
+			display: 'flex',
+			alignItems: 'center',
+			minHeight: '40px',
+			paddingInline: '0.75rem',
+			color: colors.textMuted,
+			textDecoration: 'none',
+			transition: `color ${transitions.fast}`,
+		},
+	},
 }

@@ -836,6 +836,13 @@ const wizardPanelCss = {
 	padding: 'clamp(1.4rem, 3.5vw, 2.2rem)',
 	display: 'grid',
 	gap: '1.15rem',
+	/*
+	 * Grid items floor at min-content, so one unbreakable child (a long URL, a
+	 * wide code sample) would otherwise widen the whole panel and the page with
+	 * it. Keep the column free to shrink and let the child wrap instead.
+	 */
+	minWidth: 0,
+	'& > *': { minWidth: 0 },
 }
 
 const panelHeadCss = {
@@ -888,8 +895,17 @@ const panelLedeCss = {
 /* Nested surfaces step down to the page ground so they read as wells. */
 const promptBlockCss = {
 	margin: 0,
+	minWidth: 0,
 	'& blockquote': {
 		margin: 0,
+		/*
+		 * The prompt embeds full URLs, which are unbreakable words. Without this
+		 * the blockquote's min-content width is the longest URL, and since a grid
+		 * item cannot shrink below min-content that width propagated all the way
+		 * out to the page — 172px of horizontal scroll on a 390px viewport,
+		 * dragging the lede, the action row, and the wizard footer wide with it.
+		 */
+		overflowWrap: 'anywhere' as const,
 		fontSize: '0.98rem',
 		lineHeight: 1.6,
 		color: colors.text,
