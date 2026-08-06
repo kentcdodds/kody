@@ -309,8 +309,11 @@ test('UserMeter inbound claim and consume roll back together on claim insert fai
 		`meter-atomic-${crypto.randomUUID().slice(0, 8)}`,
 		'free',
 	)
-	const day = '2026-07-30'
-	const updatedAt = '2026-07-30T12:00:00.000Z'
+	// Use "today" so read()'s default wall-clock retention sweep does not
+	// delete the seeded counter (7-day window).
+	const now = new Date()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
 	const deliveryId = `email-inbound-delivery:atomic-${crypto.randomUUID()}`
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(account.userId)),

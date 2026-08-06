@@ -682,7 +682,9 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		updatedAt: '2026-07-31T17:02:00.000Z',
 	})
 
-	const day = '2026-07-31'
+	// Wall-clock retention on export/read; keep counters inside the 7-day window.
+	const day = utcDayKey()
+	const counterUpdatedAt = new Date().toISOString()
 	for (const resource of [
 		'email_receives_per_day',
 		'email_sends_per_day',
@@ -693,7 +695,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 			resource,
 			day,
 			count: 1,
-			updatedAt: '2026-07-31T17:03:00.000Z',
+			updatedAt: counterUpdatedAt,
 		})
 	}
 
@@ -867,7 +869,8 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 	})
 	expect(bootstrap).toEqual({ applied: 1, skipped: 1 })
 
-	const day = '2026-08-01'
+	const day = utcDayKey()
+	const counterUpdatedAt = new Date().toISOString()
 	for (const resource of [
 		'email_receives_per_day',
 		'email_sends_per_day',
@@ -876,7 +879,7 @@ test('UserMeter package-service states are monotonic, isolated, exportable, and 
 			resource,
 			day,
 			count: 1,
-			updatedAt: '2026-08-01T12:00:00.000Z',
+			updatedAt: counterUpdatedAt,
 		})
 	}
 
@@ -1118,7 +1121,8 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	).resolves.toEqual({ finalized: true })
 
 	// Export: deletionState emitted on first page only.
-	const day = '2026-08-01'
+	const day = utcDayKey()
+	const counterUpdatedAt = new Date().toISOString()
 	for (const resource of [
 		'email_receives_per_day',
 		'email_sends_per_day',
@@ -1127,7 +1131,7 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 			resource,
 			day,
 			count: 1,
-			updatedAt: '2026-08-01T12:00:00.000Z',
+			updatedAt: counterUpdatedAt,
 		})
 	}
 	const firstPage = await meterA.exportCounters({ pageSize: 1 })
