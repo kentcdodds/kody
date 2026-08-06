@@ -23,6 +23,9 @@ detail view.
 
 ## Ask your agent
 
+`/account/activity` includes a short copyable prompt that tells your agent to
+review open errors and recommend whether to ignore, resolve, or fix them.
+
 The MCP **`runs`** domain reads and triages the same data:
 
 - **`run_summary`** — “is anything broken?” open-error totals (plus ignored /

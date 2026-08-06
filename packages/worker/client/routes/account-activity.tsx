@@ -1,5 +1,6 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
@@ -47,6 +48,12 @@ import {
 } from '#client/styles/style-primitives.ts'
 
 const selectCss = getSelectCss()
+
+const activityErrorReviewPrompt = [
+	'Look at my open Kody activity errors.',
+	'Start with run_summary, then run_list for open errors, and run_get on the ones that matter.',
+	'Explain each failure and recommend whether to ignore it, mark it resolved, or fix something.',
+].join(' ')
 
 const accountActivityApiPath = '/account/activity.json'
 const activityRoute = createListDetailRoute('/account/activity')
@@ -451,6 +458,32 @@ export function AccountActivityRoute(handle: Handle) {
 					description="Failures and recent runs across jobs, packages, apps, and other surfaces — with the logs you need to diagnose them."
 					currentHref={currentHref}
 				/>
+				<figure
+					mix={css({
+						display: 'grid',
+						gap: spacing.sm,
+						justifyItems: 'start',
+						margin: 0,
+						maxWidth: '46rem',
+					})}
+				>
+					<blockquote
+						mix={css({
+							margin: 0,
+							color: colors.textMuted,
+							fontSize: typography.fontSize.sm,
+							lineHeight: 1.5,
+						})}
+					>
+						{activityErrorReviewPrompt}
+					</blockquote>
+					<CopyTextButton
+						value={activityErrorReviewPrompt}
+						idleLabel="Copy prompt"
+						variant="ghost"
+						size="sm"
+					/>
+				</figure>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
