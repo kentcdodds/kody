@@ -52,10 +52,12 @@ Once connected, you can ask Kody things like:
 Save it through the account secrets page — never paste the token into chat:
 
 ```text
-https://heykody.dev/account/secrets/new?name=githubToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
+https://heykody.dev/account/secrets/new?name=githubAccessToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
 ```
 
-Approve the `api.github.com` host on the same page after saving.
+Approve the `api.github.com` host on the same page after saving. The name
+`githubAccessToken` is exactly what the official `@kody/github` community
+package reads by default, so a fork of it works without renaming anything.
 
 ## Lane B: OAuth App (durable, multi-account)
 
@@ -96,7 +98,7 @@ export default async function main() {
 	const response = await fetch('https://api.github.com/user', {
 		headers: {
 			Accept: 'application/vnd.github+json',
-			Authorization: 'Bearer {{secret:githubToken}}',
+			Authorization: 'Bearer {{secret:githubAccessToken}}',
 			'X-GitHub-Api-Version': '2022-11-28',
 		},
 	})
@@ -158,8 +160,30 @@ per-capability.
 - Token exchange fails in Lane B: the client secret is required even with PKCE.
   Regenerate the secret and reconnect.
 
-## Go further
+## Fork the official package and verify
 
-After the smoke test passes, run `community_search` for trusted GitHub helper
-packages (prefer trusted listings) before hand-rolling API calls, or create a
-thin helpers package that owns the GitHub API surface for your workflows.
+A saved token or integration is credentials only. Finish by forking the trusted
+official package so day-to-day work goes through maintained helpers instead of
+hand-rolled API calls:
+
+1. Find the listing with `community_search({ query: 'github' })` — the trusted
+   `@kody/github` listing wraps REST, GraphQL, pagination, and PR helpers.
+2. Fork it with `community_fork` (or click **Install** on the listing page). The
+   fork lands in your account under your own scope.
+3. Check the fork's README **Required setup**: its default `bot` account reads
+   the `githubAccessToken` secret — the exact name Lane A saved, so no
+   adaptation is needed for the default lane. Remove or remap the extra
+   `kent`/`explicit-only` account aliases if you do not want them.
+4. Verify the package against your credentials by running its identity smoke
+   test from `execute`:
+
+```ts
+import getViewer from 'kody:@<your-username>/github/get-viewer'
+
+export default async function main() {
+	return getViewer({ account: 'bot' })
+}
+```
+
+A successful response returns the GitHub login your token resolves to — proving
+the fork, the secret, and the host approval all line up.

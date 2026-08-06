@@ -158,9 +158,29 @@ Changing scopes means reconnecting: update the **Data Access** tab, then open
 - `403` from Gmail with a Calendar-only token: scopes are per-connection.
   Reconnect with the Gmail scope added.
 
-## Go further
+## Fork the official package and verify
 
-A saved integration is auth credentials only. After the smoke test passes, run
-`community_search` for trusted Google, Gmail, or Calendar helper packages
-(prefer trusted listings), or create a thin helpers package instead of calling
-`createAuthenticatedFetch` from `execute` for every task.
+A saved integration is auth credentials only. Finish by forking the trusted
+official package so day-to-day work goes through maintained Gmail, Calendar, and
+Drive helpers instead of raw `createAuthenticatedFetch` calls:
+
+1. Find the listing with `community_search({ query: 'google' })` — the trusted
+   `@kody/google` listing covers Gmail, Calendar, Drive, People, and YouTube.
+2. Fork it with `community_fork` (or click **Install** on the listing page).
+3. Check the fork's README **Required setup**: the `personal` account alias maps
+   to an integration named `google` — the default name this guide's connect link
+   uses, so the primary lane needs no adaptation. Trim the other account aliases
+   (`business`, `youtube-*`) unless you connect those too.
+4. Verify the package against your integration with its built-in smoke test from
+   `execute`:
+
+```ts
+import { smokeTest } from 'kody:@<your-username>/google'
+
+export default async function main() {
+	return smokeTest({ account: 'personal' })
+}
+```
+
+A successful response returns the Google profile your integration resolves to —
+proving the fork, the OAuth tokens, and the host approvals all line up.

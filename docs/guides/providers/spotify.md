@@ -141,9 +141,23 @@ Changing scopes means reconnecting: `/connect/oauth?provider=spotify` with a new
   authorization, not the last refresh). Reconnect at
   `/connect/oauth?provider=spotify` to start a fresh six-month window.
 
-## Go further
+## Fork the official package and verify
 
-After the smoke test passes, run `community_search` for trusted Spotify helper
-packages (prefer trusted listings) — playback and library helpers are common —
-or create a thin helpers package rather than repeating raw Web API calls in
-`execute`.
+A saved integration is auth credentials only. Finish by forking the community
+package so playback, playlist, and library work goes through maintained helpers:
+
+1. Find the listing with `community_search({ query: 'spotify' })` — the
+   `@kentcdodds/spotify` listing wraps playback, playlists, search, library, and
+   devices. It is not admin-trusted, so review the forked source before
+   publishing (forks land inert until you publish them).
+2. Fork it with `community_fork` (or click **Install** on the listing page).
+3. Check the fork's README **Required setup**: the default account maps to an
+   integration named `spotify` — the name this guide's connect link uses, so the
+   primary lane works as-is. Remove the `spotify-family` second-account wiring
+   unless you have one.
+4. Verify the package against your integration from `execute` with a read-only
+   helper, for example a library or search export, and confirm it returns your
+   data. Playback helpers additionally need an active Spotify device.
+
+That closes the loop: credentials connected, smoke-tested raw, and exercised
+through the package your automations will actually call.

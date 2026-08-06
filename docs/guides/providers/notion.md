@@ -158,9 +158,30 @@ internal connection, edit the page's **Connections** menu.
 - Installation scope wrong on a public connection: it cannot be edited after
   creation; create a new public connection instead.
 
-## Go further
+## Fork the official package and verify
 
-The community package `@kentcdodds/notion` documents this connect flow in its
-README and wraps common Notion calls. After the smoke test passes, run
-`community_search` for it or other trusted Notion helper packages (prefer
-trusted listings) before hand-rolling API calls in `execute`.
+A saved integration is auth credentials only. Finish by forking the trusted
+official package so day-to-day work goes through maintained search, read, query,
+and confirmed-write helpers:
+
+1. Find the listing with `community_search({ query: 'notion' })` — the trusted
+   `@kody/notion` listing wraps pages, databases, and a generic request escape
+   hatch.
+2. Fork it with `community_fork` (or click **Install** on the listing page).
+3. Check the fork's README **Required setup**: it expects an OAuth integration
+   named `notion` — the default name this guide's connect link uses, so no
+   adaptation is needed.
+4. Verify the package against your integration with its built-in smoke test from
+   `execute`:
+
+```ts
+import smokeTest from 'kody:@<your-username>/notion/smoke-test'
+
+export default async function main() {
+	return smokeTest()
+}
+```
+
+A successful response confirms OAuth access without returning workspace PII —
+proving the fork, the tokens, and the page grants all line up. Remember the
+package only sees pages you shared on Notion's consent screen.

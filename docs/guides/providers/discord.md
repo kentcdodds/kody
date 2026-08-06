@@ -174,9 +174,22 @@ Content — not by OAuth scopes.
   channel permissions. Reinstall with the right permissions integer or fix its
   role.
 
-## Go further
+## Wrap it in a package and verify
 
-After the smoke test passes, run `community_search` for trusted Discord helper
-packages (prefer trusted listings) — posting helpers and gateway/bot patterns
-are common — or create a thin helpers package instead of repeating raw API calls
-in `execute`.
+A saved integration or bot-token secret is credentials only. Finish by putting a
+package in front of it so your automations call maintained helpers instead of
+repeating raw API calls:
+
+1. Run `community_search({ query: 'discord' })` for an existing listing and
+   prefer a trusted match when one appears; fork it with `community_fork` (or
+   click **Install** on the listing page), align its README **Required setup**
+   with the integration or secret names from this guide, and run its smoke test
+   from `execute`.
+2. When no listing fits, create a thin helpers package that owns your Discord
+   surface (post message, read channel, member checks) following
+   `coding_guide_get({ guide: "package_authoring" })`, and give it a smoke-test
+   export that calls `users/@me` with your credentials.
+
+Either way, end by invoking the package's smoke test and confirming it returns
+your bot or user identity — proving the package, the credentials, and the host
+approval all line up.
