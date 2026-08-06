@@ -1,4 +1,5 @@
 import { type Handle, css, on } from 'remix/ui'
+import { adminGrantDiffersFromSubscription } from '#app/account-plan-display.ts'
 import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,
@@ -34,6 +35,7 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	layoutMaxWidths,
+	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 
@@ -351,19 +353,21 @@ export function AccountBillingRoute(handle: Handle) {
 		const showManageCta = Boolean(
 			billing?.configured && billing.hasStripeCustomer,
 		)
-		const currentPlanItems =
-			billing && billing.manualPlan !== billing.stripePlan
-				? [
-						{
-							label: 'Granted plan',
-							value: formatPlanLabel(billing.manualPlan, 'Free'),
-						},
-						{
-							label: 'Subscription plan',
-							value: formatPlanLabel(billing.stripePlan, 'None'),
-						},
-					]
-				: []
+		const planSourcesDiffer =
+			billing != null &&
+			adminGrantDiffersFromSubscription(billing.manualPlan, billing.stripePlan)
+		const currentPlanItems = planSourcesDiffer
+			? [
+					{
+						label: 'Granted plan',
+						value: formatPlanLabel(billing.manualPlan, 'Free'),
+					},
+					{
+						label: 'Subscription plan',
+						value: formatPlanLabel(billing.stripePlan, 'None'),
+					},
+				]
+			: []
 
 		return (
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
@@ -411,16 +415,13 @@ export function AccountBillingRoute(handle: Handle) {
 							</AccountManagementMessage>
 						) : null}
 
-						<AccountManagementPanel
-							title="Current plan"
-							description="Your effective plan is the higher of any admin grant and your Stripe subscription."
-						>
+						<AccountManagementPanel title="Current plan">
 							<div
 								mix={css({
 									display: 'flex',
 									flexWrap: 'wrap',
-									alignItems: 'center',
-									gap: spacing.sm,
+									alignItems: 'baseline',
+									gap: `${spacing.sm} ${spacing.md}`,
 								})}
 							>
 								<p
@@ -438,12 +439,21 @@ export function AccountBillingRoute(handle: Handle) {
 										{statusInfo.label}
 									</span>
 								) : null}
+								<a href={billing.usageHref} mix={css(mutedLinkCss)}>
+									view usage
+								</a>
 							</div>
 							{statusInfo && statusInfo.tone !== 'action' ? (
 								<p mix={css(descriptionCss)}>{statusInfo.detail}</p>
 							) : null}
 							{currentPlanItems.length > 0 ? (
-								<MetadataGrid items={currentPlanItems} />
+								<>
+									<p mix={css(descriptionCss)}>
+										Your effective plan is the higher of any admin grant and
+										your Stripe subscription.
+									</p>
+									<MetadataGrid items={currentPlanItems} />
+								</>
 							) : null}
 							{billing.cancelAt ? (
 								<p mix={css(descriptionCss)}>
@@ -451,26 +461,21 @@ export function AccountBillingRoute(handle: Handle) {
 									{formatCancelDate(billing.cancelAt)}.
 								</p>
 							) : null}
-							<p mix={css(descriptionCss)}>
-								Upgrades and payment changes apply after Stripe confirms them
-								(usually within a few seconds via webhooks). Refresh this page
-								if the plan looks stale.
-							</p>
 						</AccountManagementPanel>
 
-						<AccountManagementPanel
-							title="Actions"
-							description="Open the Stripe portal or check entitlement use."
-						>
-							<div
-								mix={css({
-									display: 'flex',
-									flexWrap: 'wrap',
-									gap: spacing.sm,
-									alignItems: 'center',
-								})}
+						{showManageCta ? (
+							<AccountManagementPanel
+								title="Actions"
+								description="Open the Stripe portal for payment methods, invoices, and cancellation."
 							>
-								{showManageCta ? (
+								<div
+									mix={css({
+										display: 'flex',
+										flexWrap: 'wrap',
+										gap: spacing.sm,
+										alignItems: 'center',
+									})}
+								>
 									<a
 										href={billingPortalPath}
 										mix={css({
@@ -484,20 +489,9 @@ export function AccountBillingRoute(handle: Handle) {
 									>
 										Manage subscription
 									</a>
-								) : null}
-								<a
-									href={billing.usageHref}
-									mix={css({
-										...secondaryButtonCss,
-										display: 'inline-block',
-										textDecoration: 'none',
-										textAlign: 'center',
-									})}
-								>
-									View usage
-								</a>
-							</div>
-						</AccountManagementPanel>
+								</div>
+							</AccountManagementPanel>
+						) : null}
 
 						<AccountManagementPanel
 							title="Plans"

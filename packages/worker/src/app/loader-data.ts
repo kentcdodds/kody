@@ -1365,6 +1365,8 @@ export type AccountUsageEntitlementConsumption = {
 export type AccountUsageLoaderData = {
 	ok: true
 	plan: AdminPlanName
+	manualPlan: AdminPlanName
+	stripePlan: AdminPlanName | null
 	today: string
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>

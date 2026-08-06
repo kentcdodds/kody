@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { adminGrantDiffersFromSubscription } from '#app/account-plan-display.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
@@ -252,20 +253,44 @@ export function AccountUsageRoute(handle: Handle) {
 				) : null}
 				{usage ? (
 					<>
-						<AccountManagementPanel
-							title="Plan"
-							description="Effective plan after combining any granted plan with your Stripe subscription."
-						>
-							<MetadataGrid
-								items={[
-									{
-										label: 'Effective plan',
-										value: formatPlanLabel(usage.plan),
-									},
-									{ label: 'Usage day (UTC)', value: usage.today },
-								]}
-							/>
-							<p mix={css({ margin: `${spacing.sm} 0 0` })}>
+						<AccountManagementPanel title="Plan">
+							<p
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								})}
+							>
+								Current plan: {formatPlanLabel(usage.plan)}
+							</p>
+							{adminGrantDiffersFromSubscription(
+								usage.manualPlan,
+								usage.stripePlan,
+							) ? (
+								<>
+									<p mix={css(descriptionCss)}>
+										Your effective plan is the higher of any admin grant and
+										your Stripe subscription.
+									</p>
+									<MetadataGrid
+										items={[
+											{
+												label: 'Granted plan',
+												value: formatPlanLabel(usage.manualPlan),
+											},
+											{
+												label: 'Subscription plan',
+												value: usage.stripePlan
+													? formatPlanLabel(usage.stripePlan)
+													: 'None',
+											},
+										]}
+									/>
+								</>
+							) : null}
+							<p mix={css(descriptionCss)}>Usage day (UTC): {usage.today}</p>
+							<p mix={css({ margin: 0 })}>
 								<a href={billingPath} mix={css(primaryLinkCss)}>
 									Manage billing
 								</a>

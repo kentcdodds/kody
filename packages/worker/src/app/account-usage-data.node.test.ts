@@ -105,6 +105,8 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	})
 	expect(baseline?.ok).toBe(true)
 	expect(baseline?.plan).toBe('free')
+	expect(baseline?.manualPlan).toBe('free')
+	expect(baseline?.stripePlan).toBe(null)
 	expect(baseline?.today).toBe('2026-07-25')
 	expect(currentFor(baseline, 'saved_packages')?.current).toBe(2)
 	expect(currentFor(baseline, 'concurrent_workflows')?.current).toBe(0)
@@ -211,4 +213,34 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		now,
 	})
 	expect(currentFor(storageData, 'storage_bytes')?.current).toBe(4_321)
+
+	const { db: grantDb } = createUsageTestDb({
+		userId: 12,
+		email: 'usage-grant@example.com',
+		plan: 'max',
+		stripePlan: null,
+	})
+	const grantData = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: grantDb }) as Env,
+		userId: 12,
+		now,
+	})
+	expect(grantData?.plan).toBe('max')
+	expect(grantData?.manualPlan).toBe('max')
+	expect(grantData?.stripePlan).toBe(null)
+
+	const { db: subscribedDb } = createUsageTestDb({
+		userId: 13,
+		email: 'usage-sub@example.com',
+		plan: 'free',
+		stripePlan: 'pro',
+	})
+	const subscribedData = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: subscribedDb }) as Env,
+		userId: 13,
+		now,
+	})
+	expect(subscribedData?.plan).toBe('pro')
+	expect(subscribedData?.manualPlan).toBe('free')
+	expect(subscribedData?.stripePlan).toBe('pro')
 })

@@ -1,5 +1,6 @@
 import {
 	parseStoredPlanName,
+	parseStripePlanName,
 	resolveEffectivePlan,
 } from '#worker/entitlements/plans.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
@@ -33,10 +34,8 @@ export async function loadAccountUsageData(input: {
 		.first<UsageUserRow>()
 	if (!row) return null
 
-	const plan = resolveEffectivePlan(
-		parseStoredPlanName(row.plan),
-		row.stripe_plan,
-	)
+	const manualPlan = parseStoredPlanName(row.plan)
+	const plan = resolveEffectivePlan(manualPlan, row.stripe_plan)
 	const usageUserId = resolveUserStableId(row)
 	const snapshot = await readEntitlementUsageSnapshot({
 		db: input.env.APP_DB,
@@ -49,6 +48,8 @@ export async function loadAccountUsageData(input: {
 	return {
 		ok: true,
 		plan: snapshot.plan,
+		manualPlan,
+		stripePlan: parseStripePlanName(row.stripe_plan),
 		today: snapshot.today,
 		entitlementConsumption: snapshot.resources.map(toAccountUsageRow),
 		warnings: snapshot.warnings.map(toAccountUsageRow),
