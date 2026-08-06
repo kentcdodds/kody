@@ -10,6 +10,11 @@ import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
 import packageServicePattern from '../../../../docs/guides/package-service-pattern.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
+import providerDiscord from '../../../../docs/guides/providers/discord.md'
+import providerGithub from '../../../../docs/guides/providers/github.md'
+import providerGoogle from '../../../../docs/guides/providers/google.md'
+import providerNotion from '../../../../docs/guides/providers/notion.md'
+import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
 
 /**
@@ -39,6 +44,11 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
 	{ slug: 'platform-friction', raw: platformFriction },
 	{ slug: 'openapi-integrations', raw: openapiIntegrations },
+	{ slug: 'google', raw: providerGoogle },
+	{ slug: 'github', raw: providerGithub },
+	{ slug: 'notion', raw: providerNotion },
+	{ slug: 'spotify', raw: providerSpotify },
+	{ slug: 'discord', raw: providerDiscord },
 ]
 
 function buildCatalog(): ReadonlyArray<Guide> {

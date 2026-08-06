@@ -1,0 +1,166 @@
+---
+id: provider_google
+title: Connect Google (Gmail, Calendar, Drive)
+summary:
+  Verified walkthrough for connecting a personal Google OAuth client to Kody:
+  Google Auth Platform console steps, the Testing-status 7-day refresh-token
+  trap, sensitive vs restricted scopes for Calendar/Gmail/Drive, the prefilled
+  /connect/oauth link, and a Calendar smoke test.
+category: provider
+provider: Google
+lastVerified: 2026-08
+---
+
+# Connect Google (Gmail, Calendar, Drive)
+
+Google integrations in Kody are bring-your-own-OAuth-app: you create a small
+personal OAuth client in Google Cloud, then connect it through the hosted
+`/connect/oauth` flow. There is no shared Kody app; your credentials stay in
+your account.
+
+## What you get
+
+Once connected, you can ask Kody things like:
+
+- "What is on my calendar tomorrow?" or "Summarize this week's meetings."
+- "Check my inbox for the invoice from Acme and summarize it."
+- "Find the latest budget spreadsheet in my Drive."
+
+## Before you start
+
+- You need a Google account and access to
+  [Google Cloud console](https://console.cloud.google.com). A free account is
+  enough; a personal OAuth client costs nothing.
+- The OAuth settings live under **APIs & Services -> Google Auth Platform**
+  (with **Branding**, **Audience**, **Clients**, and **Data Access** tabs).
+  Older tutorials that navigate to an "OAuth consent screen" menu item are
+  stale; the same settings live in Google Auth Platform.
+- Gmail read scopes are "restricted" in Google's verification program. That is
+  fine for a personal (unverified) app; see the Scopes section before choosing.
+
+## Create the OAuth client
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com) and create
+   or select a project.
+2. In **APIs & Services -> Library**, enable each API you plan to use: **Google
+   Calendar API**, **Gmail API**, and/or **Google Drive API**.
+3. Open **APIs & Services -> Google Auth Platform** and click **Get started**.
+   The wizard asks for app **Branding** (name, support email), **Audience**
+   (choose **External**), and contact information.
+4. On the **Clients** tab, click **Create Client**, choose application type
+   **Web application**, and add the redirect URI
+   `https://heykody.dev/connect/oauth` (exact match; a self-hosted deployment
+   registers its own origin plus `/connect/oauth`).
+5. Copy the **client ID** and **client secret** shown after creation.
+6. On the **Data Access** tab, add the scopes you plan to request (see the
+   Scopes section).
+7. While the app's publishing status is **Testing**, add your own Google account
+   as a test user on the **Audience** tab.
+
+## Publish to Production (avoid the 7-day trap)
+
+Apps with publishing status **Testing** get refresh tokens that expire after
+seven days. Everything works during setup, then the integration silently dies a
+week later with `invalid_grant` errors on refresh.
+
+Fix: on the **Audience** page, click **Publish app** to move the app to
+**Production**. Google shows an "unverified app" warning during consent — click
+**Advanced -> Go to <app name> (unsafe)** and continue. For a personal app this
+is expected: the unverified-app cap of 100 users is irrelevant when you are the
+only user, and full verification (which restricted Gmail scopes would require,
+including an annual CASA security assessment) only matters for apps distributed
+to the public.
+
+## Connect to Kody
+
+Open a prefilled connect link while signed in to Kody. Google is a confidential
+client (the client secret is sent form-encoded to the token endpoint), and
+`access_type=offline` plus `prompt=consent` make sure a refresh token is issued:
+
+```text
+https://heykody.dev/connect/oauth?provider=google&authorizeUrl=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2%2Fauth&tokenUrl=https%3A%2F%2Foauth2.googleapis.com%2Ftoken&flow=confidential&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly&allowedHosts=www.googleapis.com&extraAuthorizeParams=%7B%22access_type%22%3A%22offline%22%2C%22prompt%22%3A%22consent%22%7D
+```
+
+Decoded, that is authorize URL `https://accounts.google.com/o/oauth2/v2/auth`,
+token URL `https://oauth2.googleapis.com/token`, `flow=confidential`, the
+`calendar.readonly` scope, `allowedHosts=www.googleapis.com`, and
+`extraAuthorizeParams={"access_type":"offline","prompt":"consent"}`. To add
+Gmail, append `https://www.googleapis.com/auth/gmail.readonly` to `scopes`
+(space-separated) and add `gmail.googleapis.com` to `allowedHosts`. Paste the
+client ID and client secret into the setup form on that page, then authorize.
+
+Google only returns a refresh token on the first consent for a given client;
+`prompt=consent` forces a fresh grant so reconnects also get one.
+
+## Verify
+
+Run this smoke test in `execute` after connecting (adjust the integration name
+if you chose something other than `google`):
+
+```ts
+import { createAuthenticatedFetch } from 'kody:runtime'
+
+export default async function main() {
+	const googleFetch = await createAuthenticatedFetch('google')
+	const response = await googleFetch(
+		'https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=3',
+	)
+	if (!response.ok) {
+		throw new Error(
+			`Calendar smoke test failed: ${response.status} ${await response.text()}`,
+		)
+	}
+	const data = (await response.json()) as {
+		items?: Array<{ summary?: string }>
+	}
+	return { calendars: data.items?.map((item) => item.summary) }
+}
+```
+
+For a Gmail-scoped connection, swap the URL for
+`https://gmail.googleapis.com/gmail/v1/users/me/profile` (and make sure
+`gmail.googleapis.com` is in the connection's allowed hosts).
+
+## Scopes
+
+Start minimal and widen only when a task needs it:
+
+- Minimal read-mostly tier: `https://www.googleapis.com/auth/calendar.readonly`
+  (or the narrower `calendar.events.readonly`),
+  `https://www.googleapis.com/auth/drive.readonly`. These are "sensitive"
+  scopes; verification only matters for public apps.
+- Gmail read: `https://www.googleapis.com/auth/gmail.readonly`. Every Gmail read
+  scope, including `gmail.metadata`, is "restricted" — public apps would need
+  full Google verification with an annual CASA security assessment, which is why
+  this setup stays a personal unverified app.
+- Send-only: `https://www.googleapis.com/auth/gmail.send` is sensitive rather
+  than restricted, so an app that only sends mail avoids the restricted tier.
+- Fuller tier: read-write Calendar (`.../auth/calendar`) or Drive
+  (`.../auth/drive`) let Kody create events and files, at the cost of a much
+  bigger blast radius if misused.
+
+Changing scopes means reconnecting: update the **Data Access** tab, then open
+`/connect/oauth?provider=google` with the new `scopes` value.
+
+## Troubleshooting
+
+- `redirect_uri_mismatch` during consent: the registered redirect URI must be
+  exactly `https://heykody.dev/connect/oauth` — no trailing slash, no `www`.
+- Integration works for a week, then fails with `invalid_grant`: the app is in
+  **Testing** publishing status. Publish it to Production and reconnect.
+- No refresh token saved: Google only returns one on first consent. Reconnect
+  with `prompt=consent` in `extraAuthorizeParams` (the prefilled link includes
+  it).
+- `403 accessNotConfigured` or "API has not been used in project": enable the
+  Calendar/Gmail/Drive API in the project's API Library.
+- "Google hasn't verified this app" interstitial: expected for a personal app.
+  Click **Advanced** and continue.
+- `403` from Gmail with a Calendar-only token: scopes are per-connection.
+  Reconnect with the Gmail scope added.
+
+## Go further
+
+A saved integration is auth credentials only. After the smoke test passes, run
+`community_search` for trusted Google, Gmail, or Calendar helper packages
+(prefer trusted listings), or create a thin helpers package instead of calling
+`createAuthenticatedFetch` from `execute` for every task.

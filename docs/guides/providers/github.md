@@ -1,0 +1,164 @@
+---
+id: provider_github
+title: Connect GitHub
+summary:
+  Verified walkthrough for connecting GitHub to Kody: the fine-grained
+  personal access token lane (fastest), the OAuth App lane for durable
+  multi-account setups, endpoints and scope choices, prefilled connect
+  links, and copy-paste smoke tests for both lanes.
+category: provider
+provider: GitHub
+lastVerified: 2026-08
+---
+
+# Connect GitHub
+
+GitHub offers two good lanes: a personal access token saved as a Kody secret
+(fastest, and how most Kody GitHub automation runs), or your own OAuth App
+connected through `/connect/oauth` (durable, supports multiple accounts).
+
+## What you get
+
+Once connected, you can ask Kody things like:
+
+- "List my open pull requests and summarize the review comments."
+- "Create an issue in my dotfiles repo about the flaky bootstrap script."
+- "What merged in acme/api this week?"
+
+## Before you start
+
+- Personal accounts are free; no review process applies to either lane.
+- If you need repositories in an organization with OAuth App access
+  restrictions, an org owner must approve your OAuth App (Lane B) before it can
+  see org data. Fine-grained tokens (Lane A) have their own per-org approval
+  flow for org-owned repositories.
+- The API rate limit is 5,000 requests per hour per authenticated user.
+
+## Lane A: personal access token (fastest)
+
+1. Open
+   [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens)
+   and click **Generate new token** (fine-grained). Classic tokens at
+   [github.com/settings/tokens](https://github.com/settings/tokens) also work
+   but grant coarser access.
+2. Name the token, set an expiration, choose **Only select repositories** (or
+   all repositories), and pick the minimum repository permissions the task needs
+   (for example **Contents: Read-only** and **Pull requests: Read-only** for
+   reporting; add write permissions only for automation that mutates).
+3. Generate the token and copy it once.
+
+### Save the token in Kody
+
+Save it through the account secrets page — never paste the token into chat:
+
+```text
+https://heykody.dev/account/secrets/new?name=githubToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
+```
+
+Approve the `api.github.com` host on the same page after saving.
+
+## Lane B: OAuth App (durable, multi-account)
+
+1. Open [github.com/settings/developers](https://github.com/settings/developers)
+   -> **OAuth Apps** -> **New OAuth App**.
+2. Fill in the application name and homepage URL, and set the **Authorization
+   callback URL** to `https://heykody.dev/connect/oauth` (OAuth Apps accept one
+   callback URL; a self-hosted deployment registers its own origin plus
+   `/connect/oauth`).
+3. After creating the app, click **Generate a new client secret** and copy the
+   client ID and secret.
+
+GitHub supports S256 PKCE and recommends it, but PKCE does not replace the
+client secret — the secret is still required at the token endpoint, so the Kody
+flow is `confidential`. OAuth App tokens do not expire and there are no refresh
+tokens; revoke the grant from GitHub settings to kill a token.
+
+### Connect to Kody
+
+```text
+https://heykody.dev/connect/oauth?provider=github&authorizeUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Faccess_token&flow=confidential&scopes=read%3Auser%20notifications&allowedHosts=api.github.com
+```
+
+Decoded: authorize URL `https://github.com/login/oauth/authorize`, token URL
+`https://github.com/login/oauth/access_token`, `flow=confidential`, scopes
+`read:user notifications` (space-separated; adjust per the Scopes section), and
+`allowedHosts=api.github.com`. Add `pkce=true` to layer S256 PKCE on top of the
+confidential exchange. Paste the client ID and secret into the setup form, then
+authorize.
+
+## Verify
+
+Lane A (saved secret) — run in `execute` after the host is approved:
+
+```ts
+export default async function main() {
+	const response = await fetch('https://api.github.com/user', {
+		headers: {
+			Accept: 'application/vnd.github+json',
+			Authorization: 'Bearer {{secret:githubToken}}',
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+	})
+	if (!response.ok) {
+		throw new Error(
+			`GitHub smoke test failed: ${response.status} ${await response.text()}`,
+		)
+	}
+	const user = (await response.json()) as { login: string }
+	return { login: user.login }
+}
+```
+
+Lane B (OAuth integration):
+
+```ts
+import { createAuthenticatedFetch } from 'kody:runtime'
+
+export default async function main() {
+	const githubFetch = await createAuthenticatedFetch('github')
+	const response = await githubFetch('https://api.github.com/user', {
+		headers: { Accept: 'application/vnd.github+json' },
+	})
+	if (!response.ok) {
+		throw new Error(
+			`GitHub smoke test failed: ${response.status} ${await response.text()}`,
+		)
+	}
+	const user = (await response.json()) as { login: string }
+	return { login: user.login }
+}
+```
+
+## Scopes
+
+OAuth App scopes are space-delimited and coarse:
+
+- Minimal read-mostly tier: `read:user`, `user:email`, `notifications`,
+  `public_repo` (public repositories only), `read:org`.
+- Fuller tier: `repo` grants full read/write on private repositories — there is
+  no read-only scope for private repos, so requesting private access means
+  accepting write access too. Add `gist` for gists.
+
+Fine-grained tokens (Lane A) are the better tool when you want read-only access
+to private repositories: their permissions are per-repository and
+per-capability.
+
+## Troubleshooting
+
+- `The redirect_uri MUST match the registered callback URL`: the callback must
+  be exactly `https://heykody.dev/connect/oauth`.
+- Organization repositories missing from results: the org restricts OAuth App
+  access. Request approval under the org's third-party access settings, or use a
+  fine-grained token approved for that org.
+- `401 Bad credentials` with a saved token: the token expired or its value has a
+  stray space. Rotate it at the token settings page and update the secret.
+- `403` with `X-RateLimit-Remaining: 0`: the 5,000 req/hr per-user limit. Wait
+  for the reset or batch queries with the GraphQL API.
+- Token exchange fails in Lane B: the client secret is required even with PKCE.
+  Regenerate the secret and reconnect.
+
+## Go further
+
+After the smoke test passes, run `community_search` for trusted GitHub helper
+packages (prefer trusted listings) before hand-rolling API calls, or create a
+thin helpers package that owns the GitHub API surface for your workflows.
