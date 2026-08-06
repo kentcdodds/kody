@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import {
 	buildDiscoveryPrompt,
+	buildIntroEmailPrompt,
 	buildMcpServerUrl,
+	buildMemoryPrompt,
 	buildOnboardingSetupPrompt,
 	loadOnboardingData,
 	loadPublicOnboardingData,
@@ -40,10 +42,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		introEmailPrompt: buildIntroEmailPrompt(),
+		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		checklist: null,
 	})
 
 	const withoutClient = await loadOnboardingData({
@@ -65,10 +70,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		introEmailPrompt: buildIntroEmailPrompt(),
+		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
 		featuredListings: [],
+		checklist: null,
 	})
 
 	const withClient = await loadOnboardingData({
@@ -108,6 +116,9 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		mcpServerUrl: '',
 		setupPrompt: '',
+		// First-win prompts need a verified email (they send/store real data).
+		introEmailPrompt: '',
+		memoryPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({
 			env: {},
@@ -133,7 +144,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 
 test('the documented Try it prompt matches the production discovery prompt', async () => {
 	const documentation = await readFile(
-		new URL('../../../../docs/use/what-can-kody-do.md', import.meta.url),
+		new URL('../../../../docs/guides/what-is-kody.md', import.meta.url),
 		'utf8',
 	)
 	const tryItSection = documentation

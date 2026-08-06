@@ -1,6 +1,9 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
-import { type OnboardingLoaderData } from '#app/loader-data.ts'
+import {
+	type OnboardingChecklistLoaderData,
+	type OnboardingLoaderData,
+} from '#app/loader-data.ts'
 
 const mcpServerPath = '/mcp'
 
@@ -36,9 +39,10 @@ export function buildOnboardingSetupPrompt() {
 
 /**
  * Discovery prompt for people who have not connected (or signed up) yet. It
- * only assumes the agent can fetch a URL or search the web, and points at the
- * GitHub usage docs, which resolve without any Kody account or MCP session.
- * The parenthetical identifies this deployment (heykody.dev in production).
+ * only assumes the agent can fetch a URL: the interview steering lives in
+ * the `what-is-kody` guide itself (as embedded notes for agents), so the
+ * prompt stays short enough to read before pasting. The parenthetical
+ * identifies this deployment (heykody.dev in production).
  */
 export function buildDiscoveryPrompt(input: {
 	env: Pick<OnboardingEnv, 'APP_BASE_URL'>
@@ -50,14 +54,24 @@ export function buildDiscoveryPrompt(input: {
 	})
 	return [
 		`I'm deciding whether Kody (${origin}) would be useful for me.`,
-		'Read https://github.com/kentcdodds/kody/blob/main/docs/use/what-can-kody-do.md and follow its links for anything you need more detail on.',
-		"Interview me conversationally about the tools I use, recurring chores I do by hand, and automations I've wished for.",
-		'Ask at most 2 short questions per message, then wait for my answer.',
-		'Keep each message under roughly 120 words until your final recommendations.',
-		'Finish with 3–5 specific things Kody could do for me, ranked by payoff versus setup effort, each with a concrete first step.',
+		`Read ${origin}/guides/what-is-kody and then interview me to find out what Kody could do for me.`,
 		"Don't set anything up yet — this works before I have an account.",
-		`After the ranked list, finish with a short "Next steps if you want to connect me to Kody" section. Point me to ${origin}/onboarding and explain that the only setup is adding Kody as an MCP server there — there is no CLI to install.`,
 	].join(' ')
+}
+
+/**
+ * First-win prompt: a visible result inside a minute with zero third-party
+ * setup. The email invites a reply on purpose — replying and then asking the
+ * agent to read the reply teaches the storage-first email model (Kody stores
+ * mail; the agent reads it when asked; nothing answers by itself).
+ */
+export function buildIntroEmailPrompt() {
+	return 'Send me a welcome email introducing yourself, and invite me to reply to it.'
+}
+
+/** Second first-win prompt: start durable memory with a tiny interview. */
+export function buildMemoryPrompt() {
+	return 'Ask me a couple of questions about who I am and what I work with, then remember what matters.'
 }
 
 /**
@@ -95,10 +109,13 @@ export function loadPublicOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
+		introEmailPrompt: buildIntroEmailPrompt(),
+		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		checklist: null,
 	}
 }
 
@@ -112,6 +129,8 @@ export async function loadOnboardingData(input: {
 	 * worker Env); this module stays narrow so it is trivially testable.
 	 */
 	featuredListings?: Array<OnboardingFeaturedListing>
+	/** Derived progress checklist, computed by the handler. */
+	checklist?: OnboardingChecklistLoaderData | null
 }): Promise<OnboardingLoaderData> {
 	const hasMcpClient = await userHasMcpOAuthGrants(
 		input.env,
@@ -141,9 +160,12 @@ export async function loadOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
+		introEmailPrompt: input.emailVerified ? buildIntroEmailPrompt() : '',
+		memoryPrompt: input.emailVerified ? buildMemoryPrompt() : '',
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
+		checklist: input.checklist ?? null,
 	}
 }

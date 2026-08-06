@@ -661,11 +661,34 @@ export type OnboardingLoaderData = {
 	setupPrompt: string
 	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */
 	discoveryPrompt: string
+	/** First-win prompt: welcome email that invites a reply. */
+	introEmailPrompt: string
+	/** First-win prompt: tiny interview that seeds durable memories. */
+	memoryPrompt: string
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
 	/** Admin-featured trusted listings offered as one-click starter installs. */
 	featuredListings: Array<OnboardingFeaturedListing>
+	/** Derived progress checklist; null when logged out. */
+	checklist: OnboardingChecklistLoaderData | null
+}
+
+export type OnboardingChecklistItemId =
+	| 'verify-email'
+	| 'connect-agent'
+	| 'first-hello'
+	| 'save-memory'
+	| 'connect-integration'
+	| 'install-starter'
+
+export type OnboardingChecklistLoaderData = {
+	items: Array<{
+		id: OnboardingChecklistItemId
+		done: boolean
+	}>
+	/** True when the user dismissed the checklist everywhere. */
+	dismissed: boolean
 }
 
 export type AccountTwoFactorLoaderData = {

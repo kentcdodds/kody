@@ -20,6 +20,7 @@ import providerGoogle from '../../../../docs/guides/providers/google.md'
 import providerNotion from '../../../../docs/guides/providers/notion.md'
 import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
+import whatIsKody from '../../../../docs/guides/what-is-kody.md'
 
 /**
  * Static guide sources. The canonical markdown lives in `docs/guides/` (also
@@ -30,6 +31,7 @@ import secretBackedIntegration from '../../../../docs/guides/secret-backed-integ
  * `docs/guides/` and add one import + entry here. Slug = filename minus `.md`.
  */
 const guideSources: Array<{ slug: string; raw: string }> = [
+	{ slug: 'what-is-kody', raw: whatIsKody },
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },

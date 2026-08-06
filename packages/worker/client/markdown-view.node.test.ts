@@ -92,6 +92,16 @@ test('markdown safety escapes raw HTML, never emits images, and drops unsafe lin
 	expect(html).not.toContain('<img')
 	expect(html).not.toContain('<iframe')
 	expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+	// Comment-only HTML (guide agent notes) renders as nothing — it must not
+	// leak into the page as literal text.
+	const withComments = await renderMarkdown(
+		'before\n\n<!--\nagent notes: hidden\n-->\n\nafter <!-- inline note --> end',
+	)
+	expect(withComments).toContain('before')
+	expect(withComments).toContain('after')
+	expect(withComments).not.toContain('agent notes')
+	expect(withComments).not.toContain('inline note')
+	expect(withComments).not.toContain('&lt;!--')
 	expect(html).toContain('&lt;img src=')
 	expect(html).toContain(
 		'<a href="https://img.example/badge.svg" target="_blank" rel="noopener noreferrer nofollow ugc">badge</a>',

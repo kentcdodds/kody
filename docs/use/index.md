@@ -17,7 +17,7 @@ Read in order for a full tour, or jump to a topic.
 
 - [Official guides](https://heykody.dev/guides) — bundled setup and workflow
   markdown (MCP `coding_guide_get`, web index, and raw `.md` per page)
-- [What can Kody do?](./what-can-kody-do.md) — capability tour and discovery
+- [What is Kody?](../guides/what-is-kody.md) — capability tour and discovery
   prompt for people (and agents) deciding whether Kody fits, before any setup
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
   OAuth, and use the setup prompt

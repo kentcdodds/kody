@@ -141,6 +141,13 @@ function resolveMarkdownLink(
 	return { href: safeHref, external: true }
 }
 
+/** True when raw HTML consists only of comments and whitespace. */
+function isHtmlCommentOnly(raw: unknown): boolean {
+	if (typeof raw !== 'string') return false
+	const stripped = raw.replace(/<!--[\s\S]*?-->/g, '')
+	return stripped.trim() === '' && stripped !== raw
+}
+
 const namedEntities: Record<string, string> = {
 	amp: '&',
 	lt: '<',
@@ -327,8 +334,13 @@ function renderToken(
 			// this renderer exists to prevent. Offer the image as a link instead.
 			return renderLink(key, token.href, token.text || token.href, options)
 		case 'html':
-			// Escaped literal text, so authors see their markup but it never
-			// becomes part of the document.
+			// Comment-only tokens carry author/agent notes (guides embed agent
+			// steering in HTML comments); showing them as literal text would
+			// leak scaffolding into the page, so they render as nothing under
+			// every policy. Other raw HTML stays escaped literal text so
+			// authors see their markup but it never becomes part of the
+			// document.
+			if (isHtmlCommentOnly(token.raw)) return null
 			return token.raw
 		case 'text': {
 			const textToken = token as Tokens.Text
