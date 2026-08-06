@@ -7,6 +7,7 @@ import {
 	formatCommunityActivityDate,
 } from '#app/community-activity-display.ts'
 import { formatCommunityPublishedDate } from '#app/community-display.ts'
+import { renderCommunityListingName } from '#app/community-listing-name.tsx'
 import {
 	type PublicCommunityActivityItem,
 	type PublicCommunityProfile,
@@ -14,10 +15,17 @@ import {
 } from '#app/community-public-types.ts'
 import { routes } from '#app/routes.ts'
 import { UserAvatar } from '#app/user-avatar.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
+	hoverMq,
 	mutedLinkCss,
 	pageDescriptionCss,
 	pageHeaderCss,
@@ -30,6 +38,29 @@ export type ProfileContentProps = {
 	activity: Array<PublicCommunityActivityItem>
 	query: string | null
 	isSelf: boolean
+}
+
+function renderForkIcon() {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width="16"
+			height="16"
+			aria-hidden="true"
+			focusable={false}
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<circle cx="12" cy="18" r="3" />
+			<circle cx="6" cy="6" r="3" />
+			<circle cx="18" cy="6" r="3" />
+			<path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
+			<path d="M12 12v3" />
+		</svg>
+	)
 }
 
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
@@ -96,54 +127,62 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					</p>
 				) : (
 					<ul mix={css(packageListCss)}>
-						{packages.map((pkg) => (
-							<li key={pkg.kodyId} mix={css(cardCss)}>
-								<div mix={css(packageHeadingCss)}>
-									<h3 mix={css(packageNameCss)}>{pkg.name}</h3>
-									{pkg.communityListingId ? (
-										<span mix={css(communityBadgeCss)}>Community</span>
-									) : (
-										<span mix={css(unpublishedBadgeCss)}>Not published</span>
-									)}
-								</div>
-								<p mix={css(mutedCss)}>{pkg.kodyId}</p>
-								{pkg.description ? (
-									<p mix={css(descriptionCss)}>{pkg.description}</p>
-								) : null}
-								{pkg.tags.length > 0 ? (
-									<ul mix={css(tagListCss)}>
-										{pkg.tags.map((tag) => (
-											<li key={tag} mix={css(tagPillCss)}>
-												{tag}
-											</li>
-										))}
-									</ul>
-								) : null}
-								<p mix={css(mutedCss)}>
-									Updated {formatCommunityPublishedDate(pkg.updatedAt)}
-								</p>
-								{pkg.communityListingId ? (
-									<p mix={css(packageActionsCss)}>
-										<a
-											href={routes.communityDetail.href({
-												listingId: pkg.communityListingId,
-											})}
-											mix={css(mutedLinkCss)}
-										>
-											View listing
-										</a>
-										<a
-											href={routes.communityDetail.href({
-												listingId: pkg.communityListingId,
-											})}
-											mix={css(mutedLinkCss)}
-										>
-											Fork
-										</a>
+						{packages.map((pkg) => {
+							const listingHref = pkg.communityListingId
+								? routes.communityDetail.href({
+										listingId: pkg.communityListingId,
+									})
+								: null
+							return (
+								<li key={pkg.kodyId} mix={css(cardCss)}>
+									<div mix={css(packageHeadingCss)}>
+										<div mix={css(packageTitleGroupCss)}>
+											{listingHref ? (
+												<a
+													href={`${listingHref}#fork-title`}
+													title="fork"
+													aria-label="fork"
+													mix={css(forkButtonCss)}
+												>
+													{renderForkIcon()}
+												</a>
+											) : null}
+											<h3 mix={css(packageNameCss)}>
+												{listingHref ? (
+													<a href={listingHref} mix={css(packageNameLinkCss)}>
+														{renderCommunityListingName(pkg.name)}
+													</a>
+												) : (
+													renderCommunityListingName(pkg.name)
+												)}
+											</h3>
+										</div>
+										{pkg.communityListingId ? (
+											<span mix={css(communityBadgeCss)}>Community</span>
+										) : (
+											<span mix={css(unpublishedBadgeCss)}>
+												Not published
+											</span>
+										)}
+									</div>
+									{pkg.description ? (
+										<p mix={css(descriptionCss)}>{pkg.description}</p>
+									) : null}
+									{pkg.tags.length > 0 ? (
+										<ul mix={css(tagListCss)}>
+											{pkg.tags.map((tag) => (
+												<li key={tag} mix={css(tagPillCss)}>
+													{tag}
+												</li>
+											))}
+										</ul>
+									) : null}
+									<p mix={css(mutedCss)}>
+										Updated {formatCommunityPublishedDate(pkg.updatedAt)}
 									</p>
-								) : null}
-							</li>
-						))}
+								</li>
+							)
+						})}
 					</ul>
 				)}
 			</section>
@@ -265,12 +304,51 @@ const packageHeadingCss = {
 	flexWrap: 'wrap' as const,
 }
 
+const packageTitleGroupCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.sm,
+	minWidth: 0,
+	flex: '1 1 auto',
+}
+
 const packageNameCss = {
 	margin: 0,
 	fontSize: typography.fontSize.base,
 	fontWeight: typography.fontWeight.semibold,
 	color: colors.text,
 	overflowWrap: 'anywhere' as const,
+	minWidth: 0,
+}
+
+const packageNameLinkCss = {
+	color: 'inherit',
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.primaryText,
+	},
+}
+
+const forkButtonCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	flex: 'none',
+	width: '1.75rem',
+	height: '1.75rem',
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: 'transparent',
+	color: colors.textMuted,
+	textDecoration: 'none',
+	transition: `color ${transitions.fast}, border-color ${transitions.fast}, background-color ${transitions.fast}`,
+	[hoverMq]: {
+		'&:hover': {
+			color: colors.primaryText,
+			borderColor: colors.primaryText,
+			backgroundColor: colors.primarySoftest,
+		},
+	},
 }
 
 const communityBadgeCss = {
@@ -307,12 +385,6 @@ const tagPillCss = {
 	backgroundColor: colors.primarySoftest,
 	color: colors.primaryText,
 	fontSize: typography.fontSize.sm,
-}
-
-const packageActionsCss = {
-	display: 'flex',
-	gap: spacing.md,
-	margin: 0,
 }
 
 const activityListCss = {

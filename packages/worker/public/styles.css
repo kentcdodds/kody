@@ -118,6 +118,9 @@
 	--color-danger-hover-dark: oklch(0.7 0.17 25);
 	--color-on-danger-dark: oklch(0.2 0.05 25);
 
+	/* Tab stops in code and other preformatted text. Browsers default to 8. */
+	tab-size: 2;
+
 	/* Typography */
 	--font-display: 'Bricolage Grotesque', system-ui, sans-serif;
 	--font-body: 'Wix Madefor Text', system-ui, sans-serif;
