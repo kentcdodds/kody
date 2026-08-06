@@ -11,7 +11,11 @@ import {
 import { type BlogPost } from '#worker/blog/parse-frontmatter.ts'
 import { buildBlogRssXml } from '#worker/blog/rss.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { markdownResponse, prefersMarkdown } from '#app/markdown-negotiation.ts'
+import {
+	markdownResponse,
+	prefersMarkdown,
+	withVaryAccept,
+} from '#app/markdown-negotiation.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 
 export function createBlogHandler(env: Env) {
@@ -65,25 +69,29 @@ export function createBlogPostHandler(env: Env) {
 				if (prefersMarkdown(request)) {
 					return markdownResponse('# Blog post not found\n', 404)
 				}
-				return renderAppPage({
-					request,
-					env,
-					title: 'Blog post not found',
-					notFound: true,
-					status: 404,
-				})
+				return withVaryAccept(
+					await renderAppPage({
+						request,
+						env,
+						title: 'Blog post not found',
+						notFound: true,
+						status: 404,
+					}),
+				)
 			}
 			if (prefersMarkdown(request)) {
 				return markdownResponse(post.body)
 			}
 
-			return renderAppPage({
-				request,
-				env,
-				loaderData: {
-					blogPost: toBlogPostLoaderData(post),
-				},
-			})
+			return withVaryAccept(
+				await renderAppPage({
+					request,
+					env,
+					loaderData: {
+						blogPost: toBlogPostLoaderData(post),
+					},
+				}),
+			)
 		},
 	} satisfies Action<typeof routes.blogPost>
 }

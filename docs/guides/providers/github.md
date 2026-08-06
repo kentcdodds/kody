@@ -70,8 +70,9 @@ Approve the `api.github.com` host on the same page after saving.
 
 GitHub supports S256 PKCE and recommends it, but PKCE does not replace the
 client secret — the secret is still required at the token endpoint, so the Kody
-flow is `confidential`. OAuth App tokens do not expire and there are no refresh
-tokens; revoke the grant from GitHub settings to kill a token.
+flow is `confidential`. OAuth App tokens have no scheduled expiry and there are
+no refresh tokens, but GitHub revokes a token after a year without use; revoke
+the grant from GitHub settings to kill one sooner.
 
 ### Connect to Kody
 

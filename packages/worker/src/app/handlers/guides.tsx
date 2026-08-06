@@ -5,7 +5,11 @@ import {
 	listGuides,
 	toGuideSummary,
 } from '#worker/guides/catalog.ts'
-import { markdownResponse, prefersMarkdown } from '#app/markdown-negotiation.ts'
+import {
+	markdownResponse,
+	prefersMarkdown,
+	withVaryAccept,
+} from '#app/markdown-negotiation.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -48,14 +52,16 @@ export function createGuidesHandler(env: Env) {
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 				return markdownResponse(buildGuidesIndexMarkdown(baseUrl))
 			}
-			return renderAppPage({
-				request,
-				env,
-				title: 'Guides',
-				loaderData: {
-					guides: { ok: true, guides: listGuides().map(toGuideSummary) },
-				},
-			})
+			return withVaryAccept(
+				await renderAppPage({
+					request,
+					env,
+					title: 'Guides',
+					loaderData: {
+						guides: { ok: true, guides: listGuides().map(toGuideSummary) },
+					},
+				}),
+			)
 		},
 	} satisfies Action<typeof routes.guides>
 }
@@ -91,35 +97,39 @@ export function createGuideDetailHandler(env: Env) {
 				if (prefersMarkdown(request)) {
 					return markdownResponse('# Guide not found\n', 404)
 				}
-				return renderAppPage({
-					request,
-					env,
-					title: 'Guide not found',
-					notFound: true,
-					status: 404,
-				})
+				return withVaryAccept(
+					await renderAppPage({
+						request,
+						env,
+						title: 'Guide not found',
+						notFound: true,
+						status: 404,
+					}),
+				)
 			}
 			if (prefersMarkdown(request)) {
 				return markdownResponse(guide.body)
 			}
-			return renderAppPage({
-				request,
-				env,
-				title: guide.title,
-				loaderData: {
-					guideDetail: {
-						ok: true,
-						slug: guide.slug,
-						id: guide.id,
-						title: guide.title,
-						summary: guide.summary,
-						category: guide.category,
-						provider: guide.provider,
-						lastVerified: guide.lastVerified,
-						body: guide.body,
+			return withVaryAccept(
+				await renderAppPage({
+					request,
+					env,
+					title: guide.title,
+					loaderData: {
+						guideDetail: {
+							ok: true,
+							slug: guide.slug,
+							id: guide.id,
+							title: guide.title,
+							summary: guide.summary,
+							category: guide.category,
+							provider: guide.provider,
+							lastVerified: guide.lastVerified,
+							body: guide.body,
+						},
 					},
-				},
-			})
+				}),
+			)
 		},
 	} satisfies Action<typeof routes.guideDetail>
 }

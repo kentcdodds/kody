@@ -47,3 +47,21 @@ export function markdownResponse(body: string, status = 200): Response {
 		},
 	})
 }
+
+/**
+ * Marks a negotiated route's HTML variant as Accept-dependent so shared
+ * caches never serve HTML to a markdown-first client (or vice versa).
+ * Preserves any existing Vary values.
+ */
+export function withVaryAccept(response: Response): Response {
+	const existing = response.headers.get('vary')
+	const values = new Set(
+		(existing ?? '')
+			.split(',')
+			.map((value) => value.trim().toLowerCase())
+			.filter(Boolean),
+	)
+	if (values.has('accept') || values.has('*')) return response
+	response.headers.append('Vary', 'Accept')
+	return response
+}

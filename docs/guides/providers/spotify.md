@@ -34,7 +34,11 @@ prerequisites.
 
 - Since February 2026, Development Mode requires the app owner to hold Spotify
   Premium. If Premium lapses, the app stops working until it is restored.
-- New developers can create up to 25 client IDs.
+- Developers can create up to 25 client IDs (raised from 1 in July 2026); all of
+  a developer's Development Mode apps share one API quota budget.
+- Refresh tokens expire six months after the user's original authorization
+  (refreshing an access token does not extend this), so plan on reconnecting
+  about twice a year; see Troubleshooting.
 - Some Web API endpoints are unavailable in Development Mode; see the
   [February 2026 migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide)
   for the endpoint list.
@@ -76,8 +80,10 @@ Decoded: authorize URL `https://accounts.spotify.com/authorize`, token URL
 `allowedHosts=api.spotify.com`. Paste the client ID into the setup form, then
 authorize.
 
-Access tokens last one hour, and PKCE refresh tokens rotate on every use. Kody's
-token refresh handles both automatically.
+Access tokens last one hour. Refresh responses may rotate the refresh token or
+omit it (keep using the existing one when omitted) — Kody's token refresh
+handles both cases automatically. Refresh tokens hard-expire six months after
+the original authorization regardless of use.
 
 ## Verify
 
@@ -130,6 +136,10 @@ Changing scopes means reconnecting: `/connect/oauth?provider=spotify` with a new
 - `401` after roughly an hour in a long-running script: access tokens expire
   hourly. Use `createAuthenticatedFetch`, which refreshes automatically, instead
   of caching a raw token.
+- `invalid_grant` on refresh about six months after connecting: the refresh
+  token reached its six-month lifetime (measured from the original
+  authorization, not the last refresh). Reconnect at
+  `/connect/oauth?provider=spotify` to start a fresh six-month window.
 
 ## Go further
 
