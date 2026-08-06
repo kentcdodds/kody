@@ -1,4 +1,8 @@
 import { parseGuideMarkdown, type Guide } from './parse-frontmatter.ts'
+import {
+	rewriteRelativeGuideLinks,
+	type GuideSourceDir,
+} from './rewrite-relative-links.ts'
 import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
 import integrationBackedAppHappyPath from '../../../../docs/guides/integration-backed-app-happy-path.md'
@@ -52,17 +56,31 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 ]
 
 function buildCatalog(): ReadonlyArray<Guide> {
-	const guides = guideSources.map(({ slug, raw }) =>
+	const parsed = guideSources.map(({ slug, raw }) =>
 		parseGuideMarkdown(slug, raw),
 	)
 	const ids = new Set<string>()
-	for (const guide of guides) {
+	for (const guide of parsed) {
 		if (ids.has(guide.id)) {
 			throw new Error(`Duplicate guide id "${guide.id}".`)
 		}
 		ids.add(guide.id)
 	}
-	return guides
+	// Authored bodies keep GitHub-relative links; the bundled copies rewrite
+	// them so every serving surface gets resolvable targets.
+	const knownSlugs = new Set(parsed.map((guide) => guide.slug))
+	return parsed.map((guide) => {
+		const sourceDir: GuideSourceDir =
+			guide.category === 'provider' ? 'docs/guides/providers' : 'docs/guides'
+		return {
+			...guide,
+			body: rewriteRelativeGuideLinks({
+				body: guide.body,
+				sourceDir,
+				knownSlugs,
+			}),
+		}
+	})
 }
 
 export const guides: ReadonlyArray<Guide> = buildCatalog()

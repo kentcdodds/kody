@@ -13,6 +13,10 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		expect(guide.title.length).toBeGreaterThan(0)
 		expect(guide.summary.length).toBeGreaterThan(0)
 		expect(guide.body.length).toBeGreaterThan(200)
+		// Bundled bodies must not carry unresolvable relative links; the
+		// catalog rewrites them to /guides routes or GitHub blob URLs.
+		expect(guide.body).not.toMatch(/\]\(\.{1,2}\//)
+		expect(guide.body).not.toMatch(/\]\([a-z0-9-]+\.md/)
 	}
 	for (const guide of guides.filter((g) => g.category === 'provider')) {
 		expect(guide.provider).toBeTruthy()
