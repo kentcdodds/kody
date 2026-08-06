@@ -36,6 +36,7 @@
 		"./src/app/blog-display.ts",
 		"./src/app/document-head.ts",
 		"./src/app/loader-data.ts",
+		"./src/app/account-plan-display.ts",
 		"./src/app/safe-redirect.ts",
 		"./src/app/signup-mode.ts",
 		"./src/identity/permissions.ts",
