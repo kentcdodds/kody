@@ -53,6 +53,7 @@ vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
 	return {
 		...actual,
 		getCommunityStar: vi.fn().mockResolvedValue(false),
+		getUserFollow: vi.fn().mockResolvedValue(false),
 		getUserSocialRowByUsername: (...args: Array<unknown>) =>
 			communityMockModule.getUserSocialRowByUsername(...args),
 	}
@@ -638,6 +639,7 @@ test('community detail SSR renders the redesigned article', async () => {
 	)
 	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
 		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
 	})
 
 	const response = await createCommunityDetailHandler(env).handler({
@@ -658,6 +660,7 @@ test('community detail SSR renders the redesigned article', async () => {
 	expect(html).toContain('by ')
 	expect(html).toContain('href="/@kentcdodds"')
 	expect(html).toContain('>@kentcdodds</a>')
+	expect(html).toContain('data-testid="community-detail-owner-follow"')
 	expect(html).not.toContain('data-testid="community-detail-owner-private"')
 	expect(html).toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('License')

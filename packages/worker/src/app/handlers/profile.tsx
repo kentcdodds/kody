@@ -5,6 +5,7 @@ import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { loadProfileData } from '#app/profile-data.ts'
 import { type routes } from '#app/routes.ts'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getUserAvatarObject } from '#worker/community/avatar.ts'
@@ -21,6 +22,18 @@ import { parseOgTheme } from '#worker/og/palette.ts'
 const followBodySchema = z.object({
 	follow: z.boolean(),
 })
+
+function parseBooleanFormField(value: FormDataEntryValue | null) {
+	if (typeof value !== 'string') return null
+	if (value === 'true') return true
+	if (value === 'false') return false
+	return null
+}
+
+function readSafeReturnTo(value: FormDataEntryValue | null) {
+	if (typeof value !== 'string') return null
+	return normalizeRedirectTo(value)
+}
 
 export function createProfileHandler(env: Env) {
 	return {
@@ -177,14 +190,39 @@ export function createProfileFollowApiPostHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
 
-			const body = await request.json().catch(() => null)
-			const parsed = followBodySchema.safeParse(body)
-			if (!parsed.success) {
-				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
+			const contentType = request.headers.get('content-type') ?? ''
+			let follow: boolean | null = null
+			let returnTo: string | null = null
+			if (contentType.includes('application/json')) {
+				const body = await request.json().catch(() => null)
+				const parsed = followBodySchema.safeParse(body)
+				if (!parsed.success) {
+					return jsonResponse(
+						{ ok: false, error: 'Invalid request body.' },
+						400,
+					)
+				}
+				follow = parsed.data.follow
+			} else {
+				const form = await request.formData().catch(() => null)
+				if (!form) {
+					return jsonResponse(
+						{ ok: false, error: 'Invalid request body.' },
+						400,
+					)
+				}
+				follow = parseBooleanFormField(form.get('follow'))
+				returnTo = readSafeReturnTo(form.get('returnTo'))
+				if (follow == null) {
+					return jsonResponse(
+						{ ok: false, error: 'Invalid request body.' },
+						400,
+					)
+				}
 			}
 
 			try {
-				if (parsed.data.follow) {
+				if (follow) {
 					await followCommunityUser({
 						env,
 						followerUserId: user.mcpUser.userId,
@@ -197,9 +235,21 @@ export function createProfileFollowApiPostHandler(env: Env) {
 						followeeUsername: params.username,
 					})
 				}
-				return jsonResponse({ ok: true, following: parsed.data.follow })
+				if (returnTo) {
+					return new Response(null, {
+						status: 303,
+						headers: { Location: returnTo },
+					})
+				}
+				return jsonResponse({ ok: true, following: follow })
 			} catch (error) {
 				if (error instanceof CommunityActionError) {
+					if (returnTo) {
+						return new Response(null, {
+							status: 303,
+							headers: { Location: returnTo },
+						})
+					}
 					return jsonResponse({ ok: false, error: error.message }, 400)
 				}
 				console.error('Profile follow update failed:', error)

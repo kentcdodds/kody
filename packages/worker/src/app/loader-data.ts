@@ -79,6 +79,10 @@ export type CommunityDetailLoaderData = {
 	listing: PublicCommunityListing
 	/** True when `/@owner` is publicly reachable. */
 	ownerProfilePublic: boolean
+	/** True when the signed-in viewer follows the listing owner. */
+	viewerFollowsOwner: boolean
+	/** True when the signed-in viewer owns this listing. */
+	viewerIsOwner: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string

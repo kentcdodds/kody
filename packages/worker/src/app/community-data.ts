@@ -26,8 +26,10 @@ import {
 } from '#worker/community/service.ts'
 import {
 	getCommunityStar,
+	getUserFollow,
 	getUserSocialRowByUsername,
 } from '#worker/community/social-repo.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 const defaultCommunityListLimit = 50
 const onboardingFeaturedListingLimit = 12
@@ -173,41 +175,58 @@ async function loadCommunityDetailDataUncached(
 		listing.ownerUsername,
 	)
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
+	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
 
 	const user = await readAuthenticatedAppUser(request, env)
-	const starredByViewer =
+	const viewerUserId = user?.mcpUser.userId ?? null
+	const viewerIsOwner =
+		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
+	const [starredByViewer, viewerFollowsOwner] = await Promise.all([
 		user != null
-			? await getCommunityStar(env.APP_DB, {
+			? getCommunityStar(env.APP_DB, {
 					listingId,
 					userId: user.mcpUser.userId,
 				})
-			: false
-	return composeCommunityDetailLoaderData(
+			: false,
+		user != null && ownerUserId != null && ownerProfilePublic && !viewerIsOwner
+			? getUserFollow(env.APP_DB, {
+					followerUserId: user.mcpUser.userId,
+					followeeUserId: ownerUserId,
+				})
+			: false,
+	])
+	return composeCommunityDetailLoaderData({
 		listing,
-		Boolean(user),
-		user?.roles.includes('admin') ?? false,
+		loggedIn: Boolean(user),
+		viewerIsAdmin: user?.roles.includes('admin') ?? false,
 		starredByViewer,
 		ownerProfilePublic,
-	)
+		viewerFollowsOwner,
+		viewerIsOwner,
+	})
 }
 
-export function composeCommunityDetailLoaderData(
-	listing: PublicCommunityListing,
-	loggedIn: boolean,
-	viewerIsAdmin = false,
-	starredByViewer = false,
-	ownerProfilePublic = false,
-): CommunityDetailLoaderData {
+export function composeCommunityDetailLoaderData(input: {
+	listing: PublicCommunityListing
+	loggedIn: boolean
+	viewerIsAdmin?: boolean
+	starredByViewer?: boolean
+	ownerProfilePublic?: boolean
+	viewerFollowsOwner?: boolean
+	viewerIsOwner?: boolean
+}): CommunityDetailLoaderData {
 	return {
 		ok: true,
-		listing,
-		ownerProfilePublic,
-		loggedIn,
-		viewerIsAdmin,
+		listing: input.listing,
+		ownerProfilePublic: input.ownerProfilePublic ?? false,
+		viewerFollowsOwner: input.viewerFollowsOwner ?? false,
+		viewerIsOwner: input.viewerIsOwner ?? false,
+		loggedIn: input.loggedIn,
+		viewerIsAdmin: input.viewerIsAdmin ?? false,
 		forkPrompt: buildForkPrompt({
-			name: listing.name,
-			listingId: listing.id,
+			name: input.listing.name,
+			listingId: input.listing.id,
 		}),
-		starredByViewer,
+		starredByViewer: input.starredByViewer ?? false,
 	}
 }

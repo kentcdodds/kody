@@ -6,6 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingWithAggregates: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
+	getUserFollow: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -23,6 +24,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 
 vi.mock('#worker/community/social-repo.ts', () => ({
 	getCommunityStar: vi.fn().mockResolvedValue(false),
+	getUserFollow: (...args: Array<unknown>) => mockModule.getUserFollow(...args),
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mockModule.getUserSocialRowByUsername(...args),
 }))
@@ -64,7 +66,9 @@ test('community detail handler returns bare detail frame HTML for target header'
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
 		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
 	})
+	mockModule.getUserFollow.mockResolvedValue(false)
 
 	const handler = createCommunityDetailHandler(env)
 	const publicResponse = await handler.handler({
@@ -83,6 +87,9 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).toContain('/community/listing-1/icon/abc1234567890')
 	expect(publicHtml).toContain('href="/@kentcdodds"')
 	expect(publicHtml).toContain('>@kentcdodds</a>')
+	expect(publicHtml).toContain('data-testid="community-detail-owner-follow"')
+	expect(publicHtml).toContain('title="Follow"')
+	expect(publicHtml).toContain('/login?redirectTo=%2Fcommunity%2Flisting-1')
 	expect(publicHtml).not.toContain(
 		'data-testid="community-detail-owner-private"',
 	)
@@ -91,6 +98,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
 		profile_visibility: 'private',
+		stable_user_id: 'owner-mcp-id',
 	})
 	const privateResponse = await handler.handler({
 		request: new Request('https://example.com/community/listing-1', {
@@ -104,4 +112,41 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(privateHtml).toContain('data-testid="community-detail-owner-private"')
 	expect(privateHtml).toContain('title="This profile is private"')
 	expect(privateHtml).not.toContain('href="/@kentcdodds"')
+	expect(privateHtml).not.toContain(
+		'data-testid="community-detail-owner-follow"',
+	)
+
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'viewer-mcp-id' },
+		roles: [],
+	})
+	const signedInResponse = await handler.handler({
+		request: new Request('https://example.com/community/listing-1', {
+			headers: { 'x-remix-target': 'community-detail' },
+		}),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1'),
+	} as never)
+	const signedInHtml = await signedInResponse.text()
+	expect(signedInHtml).toContain('data-testid="community-detail-owner-follow"')
+	expect(signedInHtml).toContain('name="follow"')
+	expect(signedInHtml).toContain('name="returnTo"')
+	expect(signedInHtml).toContain('/profiles/kentcdodds/follow.json')
+	expect(signedInHtml).toContain('title="Follow"')
+
+	mockModule.getUserFollow.mockResolvedValue(true)
+	const followingResponse = await handler.handler({
+		request: new Request('https://example.com/community/listing-1', {
+			headers: { 'x-remix-target': 'community-detail' },
+		}),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1'),
+	} as never)
+	const followingHtml = await followingResponse.text()
+	expect(followingHtml).toContain('data-following="true"')
+	expect(followingHtml).toContain('title="Unfollow"')
 })

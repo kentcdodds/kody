@@ -33,12 +33,23 @@ import { colors } from '#client/styles/tokens.ts'
 export type CommunityDetailContentProps = {
 	listing: PublicCommunityListing
 	ownerProfilePublic: boolean
+	loggedIn: boolean
+	viewerFollowsOwner: boolean
+	viewerIsOwner: boolean
+	returnTo: string
 }
 
 export function CommunityDetailContent(
 	handle: Handle<CommunityDetailContentProps>,
 ) {
-	const { listing, ownerProfilePublic } = handle.props
+	const {
+		listing,
+		ownerProfilePublic,
+		loggedIn,
+		viewerFollowsOwner,
+		viewerIsOwner,
+		returnTo,
+	} = handle.props
 
 	return () => (
 		<div data-testid="community-detail-frame">
@@ -55,46 +66,56 @@ export function CommunityDetailContent(
 				<CommunityListingIcon listing={listing} size="detail" />
 				<div mix={css(headTextCss)}>
 					<h1>{renderCommunityListingName(listing.name)}</h1>
-					<p>
-						by{' '}
-						{ownerProfilePublic ? (
-							<a
-								href={routes.profile.href({
-									username: listing.ownerUsername,
-								})}
-								mix={css(ownerLinkCss)}
-							>
-								@{listing.ownerUsername}
-							</a>
-						) : (
-							<>
-								@{listing.ownerUsername}
-								<span
-									data-testid="community-detail-owner-private"
-									title="This profile is private"
-									mix={css(ownerPrivateLockCss)}
+					<p mix={css(ownerLineCss)}>
+						<span>
+							by{' '}
+							{ownerProfilePublic ? (
+								<a
+									href={routes.profile.href({
+										username: listing.ownerUsername,
+									})}
+									mix={css(ownerLinkCss)}
 								>
-									<svg
-										viewBox="0 0 16 16"
-										width="0.9em"
-										height="0.9em"
-										aria-hidden="true"
-										focusable={false}
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="1.5"
-										strokeLinecap="round"
-										strokeLinejoin="round"
+									@{listing.ownerUsername}
+								</a>
+							) : (
+								<>
+									@{listing.ownerUsername}
+									<span
+										data-testid="community-detail-owner-private"
+										title="This profile is private"
+										mix={css(ownerPrivateLockCss)}
 									>
-										<rect x="3.5" y="7.2" width="9" height="6.3" rx="1.4" />
-										<path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" />
-									</svg>
-									<span mix={css(visuallyHiddenCss)}>
-										This profile is private
+										<svg
+											viewBox="0 0 16 16"
+											width="0.9em"
+											height="0.9em"
+											aria-hidden="true"
+											focusable={false}
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="1.5"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										>
+											<rect x="3.5" y="7.2" width="9" height="6.3" rx="1.4" />
+											<path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" />
+										</svg>
+										<span mix={css(visuallyHiddenCss)}>
+											This profile is private
+										</span>
 									</span>
-								</span>
-							</>
-						)}
+								</>
+							)}
+						</span>
+						{ownerProfilePublic && !viewerIsOwner
+							? renderOwnerFollowControl({
+									username: listing.ownerUsername,
+									loggedIn,
+									viewerFollowsOwner,
+									returnTo,
+								})
+							: null}
 					</p>
 				</div>
 				{listing.trusted ? (
@@ -177,6 +198,93 @@ export function CommunityDetailContent(
 	)
 }
 
+function renderOwnerFollowControl(input: {
+	username: string
+	loggedIn: boolean
+	viewerFollowsOwner: boolean
+	returnTo: string
+}) {
+	if (!input.loggedIn) {
+		const loginHref = `${routes.login.href()}?redirectTo=${encodeURIComponent(input.returnTo)}`
+		return (
+			<a
+				href={loginHref}
+				title="Follow"
+				data-testid="community-detail-owner-follow"
+				mix={css(ownerFollowButtonCss)}
+			>
+				{renderFollowGlyph(false)}
+				<span mix={css(visuallyHiddenCss)}>Follow @{input.username}</span>
+			</a>
+		)
+	}
+
+	return (
+		<form
+			method="post"
+			action={routes.profileFollowApiPost.href({ username: input.username })}
+			mix={css(ownerFollowFormCss)}
+		>
+			<input
+				type="hidden"
+				name="follow"
+				value={String(!input.viewerFollowsOwner)}
+			/>
+			<input type="hidden" name="returnTo" value={input.returnTo} />
+			<button
+				type="submit"
+				title={input.viewerFollowsOwner ? 'Unfollow' : 'Follow'}
+				data-testid="community-detail-owner-follow"
+				data-following={input.viewerFollowsOwner ? 'true' : 'false'}
+				mix={css(ownerFollowButtonCss)}
+			>
+				{renderFollowGlyph(input.viewerFollowsOwner)}
+				<span mix={css(visuallyHiddenCss)}>
+					{input.viewerFollowsOwner
+						? `Unfollow @${input.username}`
+						: `Follow @${input.username}`}
+				</span>
+			</button>
+		</form>
+	)
+}
+
+function renderFollowGlyph(following: boolean) {
+	return following ? (
+		<svg
+			viewBox="0 0 16 16"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			focusable={false}
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.5"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<circle cx="8" cy="8" r="5.4" />
+			<path d="M5.3 8.1 7.1 9.9 10.8 6.1" />
+		</svg>
+	) : (
+		<svg
+			viewBox="0 0 16 16"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			focusable={false}
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.5"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<circle cx="8" cy="8" r="5.4" />
+			<path d="M8 5.2v5.6M5.2 8h5.6" />
+		</svg>
+	)
+}
+
 export async function renderCommunityDetailContentHtml(
 	props: CommunityDetailContentProps,
 ) {
@@ -215,11 +323,15 @@ const headTextCss = {
 		lineHeight: 1.05,
 		overflowWrap: 'anywhere' as const,
 	},
-	'& p': {
-		margin: '0.25rem 0 0',
-		color: colors.textMuted,
-		fontSize: '0.95rem',
-	},
+}
+
+const ownerLineCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.45rem',
+	margin: '0.25rem 0 0',
+	color: colors.textMuted,
+	fontSize: '0.95rem',
 }
 
 const ownerLinkCss = {
@@ -238,6 +350,30 @@ const ownerPrivateLockCss = {
 	color: colors.textMuted,
 	verticalAlign: 'middle',
 	cursor: 'help',
+}
+
+const ownerFollowFormCss = {
+	display: 'inline-flex',
+	margin: 0,
+}
+
+const ownerFollowButtonCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '1.55rem',
+	height: '1.55rem',
+	padding: 0,
+	border: `1px solid ${colors.border}`,
+	borderRadius: '999px',
+	backgroundColor: 'transparent',
+	color: colors.textMuted,
+	textDecoration: 'none',
+	cursor: 'pointer',
+	'&:hover': {
+		color: colors.primaryText,
+		borderColor: colors.primaryText,
+	},
 }
 
 const badgeCss = {
