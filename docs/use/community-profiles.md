@@ -58,8 +58,9 @@ private) through `community_profile_get` / `community_profile_update`.
 ## Following and the timeline
 
 Signed-in users can follow public profiles with no approval step. Private
-profiles reject follows. New accounts automatically follow `@kody` when that
-profile exists and is public. You can unfollow afterward.
+profiles reject follows. New accounts automatically follow `@kody` and
+`@kentcdodds` when those profiles exist and are public. You can unfollow
+afterward.
 
 `/timeline` (signed-in) lists public activity from accounts you follow, newest
 first. Timeline item types:

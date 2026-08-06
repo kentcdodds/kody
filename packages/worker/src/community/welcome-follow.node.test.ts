@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { followDefaultWelcomeAccount } from './welcome-follow.ts'
+import { followDefaultWelcomeAccounts } from './welcome-follow.ts'
 
 type FakeUser = {
 	username: string
@@ -9,10 +9,11 @@ type FakeUser = {
 }
 
 function createFakeDb(input: {
-	kody?: FakeUser | null
+	users?: Record<string, FakeUser | null>
 	onInsert?: (followerUserId: string, followeeUserId: string) => void
 	failLookup?: boolean
 }) {
+	const users = input.users ?? {}
 	return {
 		prepare(query: string) {
 			return {
@@ -24,16 +25,18 @@ function createFakeDb(input: {
 								query.includes('FROM users') &&
 								query.includes('username = ?')
 							) {
-								if (String(params[0]) !== 'kody' || !input.kody) return null
+								const username = String(params[0])
+								const user = users[username]
+								if (!user) return null
 								return {
 									id: 1,
-									username: input.kody.username,
-									email: 'kody@example.com',
-									stable_user_id: input.kody.stable_user_id,
+									username: user.username,
+									email: `${user.username}@example.com`,
+									stable_user_id: user.stable_user_id,
 									display_name: null,
 									bio: null,
 									avatar_key: null,
-									profile_visibility: input.kody.profile_visibility,
+									profile_visibility: user.profile_visibility,
 									created_at: '2026-01-01T00:00:00.000Z',
 								}
 							}
@@ -53,68 +56,100 @@ function createFakeDb(input: {
 	} as unknown as D1Database
 }
 
-test('followDefaultWelcomeAccount follows public @kody and ignores missing/private/self', async () => {
+test('followDefaultWelcomeAccounts follows public @kody and @kentcdodds', async () => {
 	const inserts: Array<[string, string]> = []
 	const publicDb = createFakeDb({
-		kody: {
-			username: 'kody',
-			stable_user_id: 'stable-kody',
-			profile_visibility: 'public',
+		users: {
+			kody: {
+				username: 'kody',
+				stable_user_id: 'stable-kody',
+				profile_visibility: 'public',
+			},
+			kentcdodds: {
+				username: 'kentcdodds',
+				stable_user_id: 'stable-kent',
+				profile_visibility: 'public',
+			},
 		},
 		onInsert: (followerUserId, followeeUserId) => {
 			inserts.push([followerUserId, followeeUserId])
 		},
 	})
-	await followDefaultWelcomeAccount({
+	await followDefaultWelcomeAccounts({
 		db: publicDb,
 		followerUserId: 'stable-new-user',
 	})
-	expect(inserts).toEqual([['stable-new-user', 'stable-kody']])
+	expect(inserts).toEqual([
+		['stable-new-user', 'stable-kody'],
+		['stable-new-user', 'stable-kent'],
+	])
 
-	const missingDb = createFakeDb({ kody: null })
-	await followDefaultWelcomeAccount({
+	const missingDb = createFakeDb({ users: {} })
+	await followDefaultWelcomeAccounts({
 		db: missingDb,
 		followerUserId: 'stable-new-user',
 	})
 
-	const privateDb = createFakeDb({
-		kody: {
-			username: 'kody',
-			stable_user_id: 'stable-kody',
-			profile_visibility: 'private',
+	const privateKentInserts: Array<[string, string]> = []
+	const privateKentDb = createFakeDb({
+		users: {
+			kody: {
+				username: 'kody',
+				stable_user_id: 'stable-kody',
+				profile_visibility: 'public',
+			},
+			kentcdodds: {
+				username: 'kentcdodds',
+				stable_user_id: 'stable-kent',
+				profile_visibility: 'private',
+			},
 		},
-		onInsert: () => {
-			throw new Error('should not insert for private @kody')
+		onInsert: (followerUserId, followeeUserId) => {
+			privateKentInserts.push([followerUserId, followeeUserId])
 		},
 	})
-	await followDefaultWelcomeAccount({
-		db: privateDb,
+	await followDefaultWelcomeAccounts({
+		db: privateKentDb,
 		followerUserId: 'stable-new-user',
 	})
+	expect(privateKentInserts).toEqual([['stable-new-user', 'stable-kody']])
 
 	const selfDb = createFakeDb({
-		kody: {
-			username: 'kody',
-			stable_user_id: 'stable-kody',
-			profile_visibility: 'public',
+		users: {
+			kody: {
+				username: 'kody',
+				stable_user_id: 'stable-kody',
+				profile_visibility: 'public',
+			},
+			kentcdodds: {
+				username: 'kentcdodds',
+				stable_user_id: 'stable-kent',
+				profile_visibility: 'public',
+			},
 		},
-		onInsert: () => {
-			throw new Error('should not self-follow @kody')
+		onInsert: (_followerUserId, followeeUserId) => {
+			if (followeeUserId === 'stable-kent') {
+				throw new Error('should not self-follow @kentcdodds')
+			}
 		},
 	})
-	await followDefaultWelcomeAccount({
+	await followDefaultWelcomeAccounts({
 		db: selfDb,
-		followerUserId: 'stable-kody',
+		followerUserId: 'stable-kent',
 	})
 
 	consoleWarn.mockImplementation(() => {})
 	const failingDb = createFakeDb({ failLookup: true })
-	await followDefaultWelcomeAccount({
+	await followDefaultWelcomeAccounts({
 		db: failingDb,
 		followerUserId: 'stable-new-user',
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Failed to auto-follow @kody for new user:',
+		expect.any(Error),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'Failed to auto-follow @kentcdodds for new user:',
 		expect.any(Error),
 	)
 })
