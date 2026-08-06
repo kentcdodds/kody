@@ -47,6 +47,7 @@ import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#app/signup-mode.ts'
+import { followDefaultWelcomeAccount } from '#worker/community/welcome-follow.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -425,6 +426,10 @@ export function createAuthHandler(env: Env) {
 				await maybeTagKitSubscriberOnSignup({
 					env,
 					email: normalizedEmail,
+				})
+				await followDefaultWelcomeAccount({
+					db: env.APP_DB,
+					followerUserId: record.stableUserId,
 				})
 
 				const cookie = await createAuthCookie(

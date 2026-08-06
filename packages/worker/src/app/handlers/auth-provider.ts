@@ -64,6 +64,7 @@ import {
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#app/signup-mode.ts'
+import { followDefaultWelcomeAccount } from '#worker/community/welcome-follow.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -585,6 +586,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			await maybeTagKitSubscriberOnSignup({
 				env,
 				email,
+			})
+			await followDefaultWelcomeAccount({
+				db: env.APP_DB,
+				followerUserId: stableUserId,
 			})
 
 			void logAuditEvent({
