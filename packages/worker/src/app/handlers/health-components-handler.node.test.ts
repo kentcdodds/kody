@@ -75,6 +75,46 @@ test('collectHealthComponents reports healthy, failed, and unavailable bindings'
 	}
 })
 
+test('D1 checks retry transient blips but fail fast on other errors', async () => {
+	let auditAttempts = 0
+	const bindings = createHealthyBindings()
+	bindings.AUDIT_DB = {
+		prepare: () => ({
+			first: async () => {
+				auditAttempts += 1
+				if (auditAttempts === 1) {
+					throw new Error('D1_ERROR: Network connection lost.')
+				}
+				return { 1: 1 }
+			},
+		}),
+	} as unknown as D1Database
+	const recovered = await collectHealthComponents(bindings)
+	expect(auditAttempts).toBe(2)
+	expect(recovered.ok).toBe(true)
+	expect(
+		recovered.components.find((component) => component.id === 'audit_db'),
+	).toMatchObject({ ok: true })
+
+	consoleWarn.mockImplementation(() => {})
+	let appAttempts = 0
+	const failingBindings = createHealthyBindings()
+	failingBindings.APP_DB = {
+		prepare: () => ({
+			first: async () => {
+				appAttempts += 1
+				throw new Error('no such table: users')
+			},
+		}),
+	} as unknown as D1Database
+	const failed = await collectHealthComponents(failingBindings)
+	expect(appAttempts).toBe(1)
+	expect(failed.ok).toBe(false)
+	expect(
+		failed.components.find((component) => component.id === 'app_db'),
+	).toMatchObject({ ok: false, error: 'error' })
+})
+
 test('health components handler memoizes, coalesces in-flight work, and returns 503 on failure', async () => {
 	let prepareCalls = 0
 	const bindings = createHealthyBindings()

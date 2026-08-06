@@ -1,5 +1,6 @@
 import { type Action } from 'remix/router'
 import { type routes } from '#app/routes.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 /**
@@ -12,6 +13,17 @@ import { type AppEnv } from '#worker/env-schema.ts'
 
 const componentCheckTimeoutMs = 3_000
 const resultCacheTtlMs = 10_000
+
+/**
+ * Transient D1 blips (SQLITE_BUSY, "Network connection lost", opaque
+ * "internal error; reference = …") are tolerated with retries on every
+ * production D1 path, so a single blip must not register as component
+ * downtime on the public status page — the mostly idle audit database was
+ * losing uptime to exactly these. Three attempts with the standard backoff
+ * (worst case ~450ms of sleep) stay well inside the 3s check timeout, so
+ * sustained unavailability still fails the check.
+ */
+const d1CheckRetryOptions = { maxAttempts: 3 } as const
 
 export const healthComponentIds = [
 	'app_db',
@@ -95,11 +107,23 @@ export async function collectHealthComponents(
 	const components = await Promise.all([
 		runComponentCheck(
 			'app_db',
-			appDb ? () => appDb.prepare('SELECT 1').first() : null,
+			appDb
+				? () =>
+						runD1WithRetry(
+							() => appDb.prepare('SELECT 1').first(),
+							d1CheckRetryOptions,
+						)
+				: null,
 		),
 		runComponentCheck(
 			'audit_db',
-			auditDb ? () => auditDb.prepare('SELECT 1').first() : null,
+			auditDb
+				? () =>
+						runD1WithRetry(
+							() => auditDb.prepare('SELECT 1').first(),
+							d1CheckRetryOptions,
+						)
+				: null,
 		),
 		runComponentCheck(
 			'kv',
