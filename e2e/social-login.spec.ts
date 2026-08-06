@@ -23,9 +23,12 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	await expect(
 		page.getByRole('heading', { name: 'Account', exact: true }),
 	).toBeVisible()
-	await expect(
-		page.getByText('Email: mock-github-user@example.com (verified)'),
-	).toBeVisible()
+	// The redesign moved the verified state out of the sentence and into a pill
+	// beside the address, so "(verified)" is no longer part of one contiguous
+	// string. Assert the address and the pill separately.
+	const emailNote = page.getByText('Email: mock-github-user@example.com')
+	await expect(emailNote).toBeVisible()
+	await expect(emailNote.getByText('verified')).toBeVisible()
 
 	const connectionsCard = page.getByRole('region', {
 		name: 'Connected accounts',

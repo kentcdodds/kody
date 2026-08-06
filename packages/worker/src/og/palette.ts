@@ -17,8 +17,8 @@ export const ogPalettes = {
 	light: {
 		primary: '#008819',
 		primaryHover: '#007406',
-		onPrimary: '#f8fbf8',
-		primaryText: '#007100',
+		onPrimary: '#ffffff',
+		primaryText: '#006d00',
 		background: '#e6e8ea',
 		surface: '#f6f7f8',
 		text: '#171b20',

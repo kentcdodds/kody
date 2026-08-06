@@ -18,7 +18,9 @@ const publicRoutes: RouteScenario[] = [
 		path: '/',
 		ready: async (page) => {
 			await expect(
-				page.getByRole('heading', { name: /Kody augments your agent/i }),
+				page.getByRole('heading', {
+					name: /Your AI agent,\s*finally useful\./i,
+				}),
 			).toBeVisible()
 		},
 	},
@@ -53,6 +55,28 @@ const authenticatedRoutes: RouteScenario[] = [
 	},
 ]
 
+/**
+ * Wait for entrance animations to settle before sampling colours.
+ *
+ * The `rise` reveal animates `opacity: 0 -> 1` over 700ms with a staggered
+ * delay, so an element is "visible" to Playwright long before it reaches its
+ * final colour. axe computes contrast from the composited pixel, so scanning
+ * mid-fade reports the blend against the page ground (the hero title read as
+ * `#989b9e` rather than its settled `#171b20`) as a contrast failure.
+ *
+ * Indefinite animations (the spinner) never finish, so they are skipped rather
+ * than waited on.
+ */
+async function waitForAnimationsToSettle(page: Page) {
+	await page.waitForFunction(() =>
+		document.getAnimations().every((animation) => {
+			const timing = animation.effect?.getComputedTiming()
+			if (timing?.activeDuration === Infinity) return true
+			return animation.playState === 'finished'
+		}),
+	)
+}
+
 async function scanRoute(page: Page, scenario: RouteScenario, theme: Theme) {
 	await page.emulateMedia({ colorScheme: theme })
 	await page.goto(scenario.path)
@@ -60,6 +84,7 @@ async function scanRoute(page: Page, scenario: RouteScenario, theme: Theme) {
 		document.documentElement.dataset.theme = selectedTheme
 	}, theme)
 	await scenario.ready(page)
+	await waitForAnimationsToSettle(page)
 
 	const axe = new AxeBuilder({ page }).withTags([
 		'wcag2a',

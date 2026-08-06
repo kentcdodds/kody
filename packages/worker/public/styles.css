@@ -81,8 +81,16 @@
 	--color-primary: oklch(0.54 0.18 145);
 	--color-primary-hover: oklch(0.48 0.17 145);
 	--color-primary-active: oklch(0.48 0.17 145);
-	--color-on-primary: oklch(0.985 0.005 145);
-	--color-primary-text: oklch(0.47 0.17 145);
+	/* Pure white, not an off-white: the near-white this used to be
+	   (oklch(0.985 0.005 145), #f8fbf8) measured 4.44:1 on --color-primary,
+	   just under the 4.5:1 AA floor for 16px text like the primary pill CTA.
+	   White clears it at 4.63:1 and is indistinguishable on a green ground. */
+	--color-on-primary: oklch(1 0 0);
+	/* One step darker than the 0.47 this started at, which measured 4.36:1 on
+	   the 12%-primary soft green the "verified" pill uses as its ground — just
+	   under the 4.5:1 AA floor. 0.455 reads 4.63:1 there and improves every
+	   other green-on-light-ground use of this token too. */
+	--color-primary-text: oklch(0.455 0.17 145);
 	--color-background: oklch(0.93 0.004 250);
 	--color-surface: oklch(0.975 0.002 250);
 	--color-text: oklch(0.22 0.012 260);
