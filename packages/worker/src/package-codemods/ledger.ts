@@ -228,23 +228,34 @@ export async function createPackageCodemodRun(
 	}
 }
 
+/**
+ * Set a run's status. When `expectedStatus` is given the write only applies
+ * while the row still has that status, so a read-check-write caller (e.g. the
+ * admin stop endpoint) cannot overwrite a concurrent transition. Returns the
+ * number of rows changed.
+ */
 export async function updatePackageCodemodRunStatus(
 	db: D1Database,
 	input: {
 		id: string
 		status: PackageCodemodRunStatus
+		expectedStatus?: PackageCodemodRunStatus
 		updatedAt?: string
 	},
-) {
+): Promise<number> {
 	const updatedAt = input.updatedAt ?? new Date().toISOString()
-	await db
+	const statusCondition = input.expectedStatus != null ? ' AND status = ?' : ''
+	const params: Array<unknown> = [input.status, updatedAt, input.id]
+	if (input.expectedStatus != null) params.push(input.expectedStatus)
+	const result = await db
 		.prepare(
 			`UPDATE package_codemod_runs
 			SET status = ?, updated_at = ?
-			WHERE id = ?`,
+			WHERE id = ?${statusCondition}`,
 		)
-		.bind(input.status, updatedAt, input.id)
+		.bind(...params)
 		.run()
+	return result.meta.changes ?? 0
 }
 
 /**

@@ -456,6 +456,7 @@ test('admin codemods stop POST requires admin and marks running runs abandoned',
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
+	mockModule.updatePackageCodemodRunStatus.mockResolvedValue(1)
 	const missingRunId = await handler.handler(createStopRequest({}))
 	expect(missingRunId.status).toBe(400)
 
@@ -493,7 +494,7 @@ test('admin codemods stop POST requires admin and marks running runs abandoned',
 	})
 	expect(mockModule.updatePackageCodemodRunStatus).toHaveBeenCalledWith(
 		env.APP_DB,
-		{ id: 'run-1', status: 'abandoned' },
+		{ id: 'run-1', status: 'abandoned', expectedStatus: 'running' },
 	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -506,4 +507,20 @@ test('admin codemods stop POST requires admin and marks running runs abandoned',
 				'run_id=run-1;codemod_id=0001-ambient-storage-to-package-storage;mode=scan',
 		}),
 	)
+
+	// Race: the run completed between the read and the conditional write; the
+	// stop endpoint reports the winning status instead of overwriting it.
+	logAuditEventSpy.mockClear()
+	mockModule.updatePackageCodemodRunStatus.mockResolvedValue(0)
+	mockModule.getPackageCodemodRunById
+		.mockResolvedValueOnce({ ...sampleRun, status: 'running' })
+		.mockResolvedValueOnce({ ...sampleRun, status: 'completed' })
+	const lostRace = await handler.handler(createStopRequest({ runId: 'run-1' }))
+	expect(lostRace.status).toBe(200)
+	await expect(lostRace.json()).resolves.toEqual({
+		ok: true,
+		runId: 'run-1',
+		status: 'completed',
+	})
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })

@@ -242,10 +242,21 @@ export function createAdminCodemodsRunStopApiHandler(env: Env) {
 				if (run.status !== 'running') {
 					return jsonResponse({ ok: true, runId, status: run.status })
 				}
-				await updatePackageCodemodRunStatus(env.APP_DB, {
+				// Conditional on the row still being `running` so a concurrent
+				// engine step that just completed the run is not overwritten.
+				const changed = await updatePackageCodemodRunStatus(env.APP_DB, {
 					id: runId,
 					status: 'abandoned',
+					expectedStatus: 'running',
 				})
+				if (changed === 0) {
+					const current = await getPackageCodemodRunById(env.APP_DB, runId)
+					return jsonResponse({
+						ok: true,
+						runId,
+						status: current?.status ?? run.status,
+					})
+				}
 				const requestIp = getRequestIp(request) ?? undefined
 				void logAuditEvent({
 					category: 'admin',

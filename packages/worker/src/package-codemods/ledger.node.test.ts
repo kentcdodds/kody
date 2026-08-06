@@ -227,4 +227,25 @@ test('package codemod ledger marks only stale running runs abandoned', async () 
 		updatedBefore: '2026-07-30T12:00:00.000Z',
 	})
 	expect(noneLeft).toBe(0)
+
+	// Conditional status write: a run that already left `running` is not
+	// overwritten when the caller expected `running`.
+	const missedRace = await updatePackageCodemodRunStatus(db, {
+		id: 'run-stale-completed',
+		status: 'abandoned',
+		expectedStatus: 'running',
+	})
+	expect(missedRace).toBe(0)
+	expect(
+		await getPackageCodemodRunById(db, 'run-stale-completed'),
+	).toMatchObject({ status: 'completed' })
+	const wonRace = await updatePackageCodemodRunStatus(db, {
+		id: 'run-fresh-running',
+		status: 'abandoned',
+		expectedStatus: 'running',
+	})
+	expect(wonRace).toBe(1)
+	expect(await getPackageCodemodRunById(db, 'run-fresh-running')).toMatchObject(
+		{ status: 'abandoned' },
+	)
 })
