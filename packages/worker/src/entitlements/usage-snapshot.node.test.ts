@@ -66,7 +66,7 @@ function createUsageTestDb(input: {
 	}
 }
 
-test('readEntitlementUsageSnapshot marks rows above 80% as warnings', async () => {
+test('readEntitlementUsageSnapshot warns at 80% and includes the account resource set', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const day = utcDayKey(now)
 	const email = 'warn@example.com'
@@ -99,18 +99,6 @@ test('readEntitlementUsageSnapshot marks rows above 80% as warnings', async () =
 		(row) => row.resource === 'saved_packages',
 	)
 	expect(packages?.overEightyPercent).toBe(false)
-})
-
-test('readEntitlementUsageSnapshot includes all registered usage resources', async () => {
-	const email = 'all@example.com'
-	const { stableUserId, db } = createUsageTestDb({ email, repoCount: 1 })
-	const env = withUsageEnv({ APP_DB: db })
-	const snapshot = await readEntitlementUsageSnapshot({
-		db,
-		env: env as Env,
-		usageUserId: stableUserId,
-		plan: 'pro',
-	})
 	expect(snapshot.resources.map((row) => row.resource)).toEqual(
 		accountUsageEntitlementResources,
 	)

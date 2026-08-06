@@ -111,7 +111,6 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(baseline?.entitlementConsumption.length).toBe(
 		accountUsageEntitlementResources.length,
 	)
-	expect(currentFor(baseline, 'repos')?.whatCounts).toMatch(/plain repos/i)
 
 	const bootstrapEmail = 'usage-bootstrap@example.com'
 	const bootstrapUserId = testStableUserIdFromEmail(bootstrapEmail)

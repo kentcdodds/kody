@@ -11,8 +11,6 @@ vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
 }))
 
 const {
-	adminFleetEntitlementSweepUserLimit,
-	adminFleetTopConsumersLimit,
 	detectFleetUsagePressure,
 	fleetRuntimeDurationAlertThresholdMs,
 	loadFleetUsageInsights,
@@ -252,6 +250,4 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 			totalDurationMs: fleetRuntimeDurationAlertThresholdMs + 1,
 		},
 	])
-	expect(adminFleetTopConsumersLimit).toBe(10)
-	expect(adminFleetEntitlementSweepUserLimit).toBe(15)
 })

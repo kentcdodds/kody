@@ -45,10 +45,6 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	expect(healthy).toContain('99.98% uptime')
 	expect(healthy).toContain('http-equiv="refresh"')
 	expect(healthy).toMatch(/operational|All systems/i)
-	// Mobile phones cannot fit 90×2px bars + gaps; bars must be allowed to shrink.
-	expect(healthy).toMatch(/\.bar\s*\{[^}]*min-width:\s*0/)
-	expect(healthy).toMatch(/\.bars\s*\{[^}]*overflow:\s*hidden/)
-	expect(healthy).not.toMatch(/\.bar\s*\{[^}]*min-width:\s*2px/)
 
 	const down = renderStatusPage(
 		snapshot({

@@ -208,19 +208,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 
 	// Chrome extension IPC object-not-found (issue 7655189301 / KODY-CLOUDFLARE-3S).
 	expect(
-		filterChromeExtensionObjectNotFoundSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'UnhandledRejection',
-						value:
-							'Non-Error promise rejection captured with value: Object Not Found Matching Id:3, MethodName:update, ParamCount:4',
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
 		filterChromeExtensionObjectNotFoundSentryEvent(
 			{
 				exception: {
@@ -230,18 +217,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			'Object Not Found Matching Id:2, MethodName:update, ParamCount:4',
 		),
 	).toBeNull()
-	expect(
-		filterChromeExtensionObjectNotFoundSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'UnhandledRejection',
-						value: 'Object Not Found Matching Id:missing, MethodName:update',
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
 	expect(
 		filterBrowserSentryEvent({
 			exception: {

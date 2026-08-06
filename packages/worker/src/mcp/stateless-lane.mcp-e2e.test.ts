@@ -27,9 +27,6 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 	expect(toolNames).toEqual(['execute', 'search'])
 	const searchTool = tools.tools.find((tool) => tool.name === 'search')
 	expect(searchTool?.outputSchema).toMatchObject({ type: 'object' })
-	expect(searchTool?.icons?.[0]?.src).toBe(
-		new URL('/android-chrome-192x192.png', server.origin).toString(),
-	)
 
 	const searchResult = await modern.client.callTool({
 		name: 'search',

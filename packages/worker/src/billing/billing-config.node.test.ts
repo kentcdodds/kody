@@ -264,9 +264,8 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		cancelAt: null,
 		subscriptionStatus: 'past_due',
 	})
-})
 
-test('price ids independently control purchasable tiers', () => {
+	expect(getPurchasablePlans(env)).toEqual(['standard', 'pro'])
 	expect(
 		getPurchasablePlans({
 			STRIPE_STANDARD_PRICE_ID: 'price_standard',

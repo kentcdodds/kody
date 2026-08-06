@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	classifyMcpProtocolRequest,
 	recordMcpProtocolEvent,
@@ -19,8 +20,8 @@ function jsonRequest(body: unknown, headers: Record<string, string> = {}) {
 	})
 }
 
-test('legacy initialize handshake classifies legacy with client info', async () => {
-	const request = jsonRequest({
+test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', async () => {
+	const initializeRequest = jsonRequest({
 		jsonrpc: '2.0',
 		id: 1,
 		method: 'initialize',
@@ -30,8 +31,7 @@ test('legacy initialize handshake classifies legacy with client info', async () 
 			clientInfo: { name: 'claude-ai', version: '0.1.0' },
 		},
 	})
-	const classification = await classifyMcpProtocolRequest(request)
-	expect(classification).toMatchObject({
+	expect(await classifyMcpProtocolRequest(initializeRequest)).toMatchObject({
 		lane: 'legacy',
 		method: 'initialize',
 		protocolVersion: '2025-06-18',
@@ -39,32 +39,29 @@ test('legacy initialize handshake classifies legacy with client info', async () 
 		clientVersion: '0.1.0',
 	})
 	// The request body stays readable for the lane that serves it.
-	expect(await request.text()).toContain('initialize')
-})
+	expect(await initializeRequest.text()).toContain('initialize')
 
-test('legacy post-handshake call reports the negotiated header version', async () => {
-	const classification = await classifyMcpProtocolRequest(
-		jsonRequest(
-			{
-				jsonrpc: '2.0',
-				id: 2,
-				method: 'tools/call',
-				params: { name: 'search', arguments: { query: 'email' } },
-			},
-			{ 'mcp-protocol-version': '2025-03-26' },
+	expect(
+		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 2,
+					method: 'tools/call',
+					params: { name: 'search', arguments: { query: 'email' } },
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
 		),
-	)
-	expect(classification).toMatchObject({
+	).toMatchObject({
 		lane: 'legacy',
 		method: 'tools/call',
 		protocolVersion: '2025-03-26',
 		clientName: '',
 		clientVersion: '',
 	})
-})
 
-test('modern envelope request classifies modern', async () => {
-	const classification = await classifyMcpProtocolRequest(
+	const modern = await classifyMcpProtocolRequest(
 		jsonRequest(
 			{
 				jsonrpc: '2.0',
@@ -90,51 +87,46 @@ test('modern envelope request classifies modern', async () => {
 			},
 		),
 	)
-	expect(classification).toMatchObject({
+	expect(modern).toMatchObject({
 		lane: 'modern',
 		method: 'tools/call',
 		protocolVersion: '2026-07-28',
 		clientName: 'modern-client',
 		clientVersion: '2.0.0',
 	})
-	expect(classification.parsedBody).toMatchObject({ method: 'tools/call' })
-})
+	expect(modern.parsedBody).toMatchObject({ method: 'tools/call' })
 
-test('body-less session operations classify legacy http methods', async () => {
-	const get = await classifyMcpProtocolRequest(
-		new Request(mcpUrl, {
-			headers: {
-				Accept: 'text/event-stream',
-				'mcp-protocol-version': '2025-06-18',
-			},
-		}),
-	)
-	expect(get).toMatchObject({
+	expect(
+		await classifyMcpProtocolRequest(
+			new Request(mcpUrl, {
+				headers: {
+					Accept: 'text/event-stream',
+					'mcp-protocol-version': '2025-06-18',
+				},
+			}),
+		),
+	).toMatchObject({
 		lane: 'legacy',
 		method: 'http:GET',
 		protocolVersion: '2025-06-18',
 	})
+	expect(
+		await classifyMcpProtocolRequest(new Request(mcpUrl, { method: 'DELETE' })),
+	).toMatchObject({ lane: 'legacy', method: 'http:DELETE' })
 
-	const del = await classifyMcpProtocolRequest(
-		new Request(mcpUrl, { method: 'DELETE' }),
-	)
-	expect(del).toMatchObject({ lane: 'legacy', method: 'http:DELETE' })
-})
-
-test('invalid JSON body classifies legacy without throwing', async () => {
-	const classification = await classifyMcpProtocolRequest(
+	const invalid = await classifyMcpProtocolRequest(
 		new Request(mcpUrl, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: 'not json',
 		}),
 	)
-	expect(classification.lane).toBe('legacy')
-	expect(classification.method).toBe('unknown')
-	expect(classification.parsedBody).toBeUndefined()
+	expect(invalid.lane).toBe('legacy')
+	expect(invalid.method).toBe('unknown')
+	expect(invalid.parsedBody).toBeUndefined()
 })
 
-test('recordMcpProtocolEvent writes one lane data point', () => {
+test('recordMcpProtocolEvent writes a data point, no-ops without binding, and swallows sink errors', () => {
 	const writeDataPoint = vi.fn<(point: AnalyticsEngineDataPoint) => void>()
 	const env = {
 		MCP_PROTOCOL_EVENTS: {
@@ -161,9 +153,7 @@ test('recordMcpProtocolEvent writes one lane data point', () => {
 		],
 		doubles: [1],
 	})
-})
 
-test('recordMcpProtocolEvent is a no-op without the binding and never throws', () => {
 	expect(() =>
 		recordMcpProtocolEvent(
 			{},
@@ -177,31 +167,27 @@ test('recordMcpProtocolEvent is a no-op without the binding and never throws', (
 		),
 	).not.toThrow()
 
-	const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	try {
-		expect(() =>
-			recordMcpProtocolEvent(
-				{
-					MCP_PROTOCOL_EVENTS: {
-						writeDataPoint: () => {
-							throw new Error('sink offline')
-						},
-					} as unknown as AnalyticsEngineDataset,
-				},
-				{
-					lane: 'modern',
-					method: 'tools/list',
-					protocolVersion: '2026-07-28',
-					clientName: '',
-					clientVersion: '',
-				},
-			),
-		).not.toThrow()
-		expect(consoleWarn).toHaveBeenCalledWith(
-			'mcp-protocol-event-failed',
-			expect.any(Error),
-		)
-	} finally {
-		consoleWarn.mockRestore()
-	}
+	consoleWarn.mockImplementation(() => {})
+	expect(() =>
+		recordMcpProtocolEvent(
+			{
+				MCP_PROTOCOL_EVENTS: {
+					writeDataPoint: () => {
+						throw new Error('sink offline')
+					},
+				} as unknown as AnalyticsEngineDataset,
+			},
+			{
+				lane: 'modern',
+				method: 'tools/list',
+				protocolVersion: '2026-07-28',
+				clientName: '',
+				clientVersion: '',
+			},
+		),
+	).not.toThrow()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp-protocol-event-failed',
+		expect.any(Error),
+	)
 })

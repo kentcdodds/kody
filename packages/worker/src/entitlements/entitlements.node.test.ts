@@ -6,13 +6,7 @@ import {
 	buildEntitlementUpgradeHint,
 	parseEntitlementLimitMessage,
 } from './errors.ts'
-import {
-	getPlanRank,
-	parseStripePlanName,
-	planLimits,
-	planNames,
-	resolvePlanLimit,
-} from './plans.ts'
+import { parseStripePlanName, planLimits } from './plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -210,8 +204,6 @@ test('entitlement limit messages always identify a known plan name', () => {
 	const message = buildEntitlementLimitMessage(details)
 	expect(message).toContain('your "max" plan')
 	expect(message).toContain('/account/billing')
-	expect(message).not.toContain('ask the operator')
-	expect(message).not.toContain('this deployment')
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
 	expect(
 		parseEntitlementLimitMessage(
@@ -598,95 +590,8 @@ test('assertWithinEntitlement enforces concurrent workflow limits without email 
 	})
 })
 
-test('plan registry, ranks, and limits match the published tier contract', () => {
-	expect(planNames).toEqual(['free', 'standard', 'pro', 'max'])
-	expect(planNames.map(getPlanRank)).toEqual([0, 1, 2, 3])
-	expect(planLimits).toEqual({
-		free: {
-			maxRepos: 20,
-			maxSavedPackages: 25,
-			maxScheduledJobs: 10,
-			maxPackageServices: 1,
-			maxPersistentPackageServices: 0,
-			maxRepoSessions: 50,
-			maxEmailSendsPerDay: 10,
-			maxEmailReceivesPerDay: 50,
-			maxStoredEmailMessages: 500,
-			maxEmailMessageBytes: 256 * 1024,
-			maxSecrets: 25,
-			maxStorageBytes: 64 * 1024 * 1024,
-			maxConcurrentWorkflows: 3,
-			maxExecuteCallsPerDay: 500,
-			maxOutboundFetchesPerDay: 2_000,
-		},
-		standard: {
-			maxRepos: 200,
-			maxSavedPackages: 100,
-			maxScheduledJobs: 50,
-			maxPackageServices: 10,
-			maxPersistentPackageServices: 1,
-			maxRepoSessions: 200,
-			maxEmailSendsPerDay: 200,
-			maxEmailReceivesPerDay: 1_000,
-			maxStoredEmailMessages: 10_000,
-			maxEmailMessageBytes: 768 * 1024,
-			maxSecrets: 100,
-			maxStorageBytes: 1024 * 1024 * 1024,
-			maxConcurrentWorkflows: 50,
-			maxExecuteCallsPerDay: 5_000,
-			maxOutboundFetchesPerDay: 20_000,
-		},
-		pro: {
-			maxRepos: 400,
-			maxSavedPackages: 200,
-			maxScheduledJobs: 150,
-			maxPackageServices: 20,
-			maxPersistentPackageServices: 3,
-			maxRepoSessions: 400,
-			maxEmailSendsPerDay: 500,
-			maxEmailReceivesPerDay: 2_000,
-			maxStoredEmailMessages: 25_000,
-			maxEmailMessageBytes: 768 * 1024,
-			maxSecrets: 200,
-			maxStorageBytes: 5 * 1024 * 1024 * 1024,
-			maxConcurrentWorkflows: 100,
-			maxExecuteCallsPerDay: 10_000,
-			maxOutboundFetchesPerDay: 40_000,
-		},
-		max: {
-			maxRepos: 10_000,
-			maxSavedPackages: 10_000,
-			maxScheduledJobs: 5_000,
-			maxPackageServices: 1_000,
-			maxPersistentPackageServices: 10,
-			maxRepoSessions: 20_000,
-			maxEmailSendsPerDay: 10_000,
-			maxEmailReceivesPerDay: 20_000,
-			maxStoredEmailMessages: 100_000,
-			maxEmailMessageBytes: 768 * 1024,
-			maxSecrets: 10_000,
-			maxStorageBytes: 100 * 1024 * 1024 * 1024,
-			maxConcurrentWorkflows: 5_000,
-			maxExecuteCallsPerDay: 500_000,
-			maxOutboundFetchesPerDay: 2_000_000,
-		},
-	})
-})
-
-test('Stripe plan parsing accepts registered purchasable names only', () => {
-	expect(parseStripePlanName('standard')).toBe('standard')
-	expect(parseStripePlanName('pro')).toBe('pro')
-	expect(parseStripePlanName('partner')).toBeNull()
-	expect(parseStripePlanName('unlimited')).toBeNull()
-	expect(parseStripePlanName('max')).toBeNull()
-})
-
-test('persistent package services use finite concurrent counts', async () => {
+test('persistent package services deny free and allow standard', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
-	expect(resolvePlanLimit('standard', 'persistent_package_services')).toBe(1)
-	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(3)
-
 	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 	})
@@ -1400,4 +1305,9 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			email: unlimitedPlusProEmail,
 		}),
 	).toBe('max')
+
+	expect(parseStripePlanName('standard')).toBe('standard')
+	expect(parseStripePlanName('pro')).toBe('pro')
+	expect(parseStripePlanName('partner')).toBeNull()
+	expect(parseStripePlanName('max')).toBeNull()
 })

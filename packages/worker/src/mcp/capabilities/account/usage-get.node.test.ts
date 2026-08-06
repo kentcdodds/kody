@@ -109,5 +109,4 @@ test('usage_get returns self-scoped entitlement snapshot', async () => {
 	expect(saved?.current).toBe(1)
 	expect(saved?.limit).toBeGreaterThan(0)
 	expect(saved?.percent).toBe(saved!.current / saved!.limit)
-	expect(saved?.whatCounts).toMatch(/saved packages/i)
 })

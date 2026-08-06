@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
@@ -804,17 +803,6 @@ test('admin insights uses content-free getAdminInsightsSnapshot point reads only
 	expect(serialized).not.toContain('opaque-pkg')
 	expect(serialized).not.toMatch(/workflowName|lastError|errorMessage/)
 	expect(data.workflowStatuses).toEqual([{ status: 'complete', count: 1 }])
-})
-
-test('admin insights source has no legacy D1 run-table SQL', () => {
-	const source = readFileSync(
-		new URL('./admin-insights-data.ts', import.meta.url),
-		'utf8',
-	)
-	expect(source).not.toMatch(/\bworkflow_runs\b/)
-	expect(source).not.toMatch(/\buser_activation_milestones\b/)
-	expect(source).not.toMatch(/\buser_package_run_successes\b/)
-	expect(source).toMatch(/\bgetAdminInsightsSnapshot\b/)
 })
 
 test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async () => {

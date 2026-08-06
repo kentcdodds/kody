@@ -22,9 +22,8 @@ const timing = {
 const searchSchema = z.object(searchToolOutputSchema)
 const executeSchema = z.object(executeToolOutputSchema)
 
-test.each([
-	[
-		'ranked list result',
+test('search structured content passes advertised schema for all return paths', async () => {
+	const payloads = [
 		{
 			conversationId: 'c1',
 			timing,
@@ -36,35 +35,27 @@ test.each([
 				matches: [{ type: 'capability', name: 'email_send' }],
 			},
 		},
-	],
-	[
-		'entity detail result',
-		{ conversationId: 'c1', timing, result: { entityRef: 'x:capability' } },
-	],
-	[
-		'entity batch with partial failures',
+		{
+			conversationId: 'c1',
+			timing,
+			result: { entityRef: 'x:capability' },
+		},
 		{
 			conversationId: 'c1',
 			timing,
 			result: [{ entityRef: 'a:capability', error: 'not found' }],
 			error: 'All entity lookups failed.',
 		},
-	],
-	[
-		'validation error',
 		{ conversationId: 'c1', timing, error: 'Provide "query".' },
-	],
-])(
-	'search structured content passes advertised schema: %s',
-	async (_, payload) => {
+	]
+	for (const payload of payloads) {
 		const parsed = await searchSchema.safeParseAsync(payload)
 		expect(parsed.success).toBe(true)
-	},
-)
+	}
+})
 
-test.each([
-	[
-		'success with storage and warnings',
+test('execute structured content passes advertised schema for all return paths', async () => {
+	const payloads = [
 		{
 			conversationId: 'c1',
 			timing: { ...timing, serverTiming: [{ name: 'registry', ms: 5 }] },
@@ -75,9 +66,6 @@ test.each([
 			warnings: ['Consider integration auth helpers for api.example.com.'],
 			memories: { surfaced: [], suppressedCount: 0 },
 		},
-	],
-	[
-		'truncated result',
 		{
 			conversationId: 'c1',
 			timing,
@@ -87,9 +75,6 @@ test.each([
 			result: 'partial…',
 			logs: [],
 		},
-	],
-	[
-		'sandbox error',
 		{
 			conversationId: 'c1',
 			timing,
@@ -98,9 +83,6 @@ test.each([
 			errorDetails: { phase: 'sandbox' },
 			logs: [],
 		},
-	],
-	[
-		'keyed replay',
 		{
 			conversationId: 'c1',
 			timing,
@@ -110,9 +92,6 @@ test.each([
 			result: { ok: true },
 			logs: [],
 		},
-	],
-	[
-		'keyed in-progress lookup',
 		{
 			conversationId: 'c1',
 			timing,
@@ -120,14 +99,12 @@ test.each([
 			inProgress: true,
 			status: 'running',
 		},
-	],
-])(
-	'execute structured content passes advertised schema: %s',
-	async (_, payload) => {
+	]
+	for (const payload of payloads) {
 		const parsed = await executeSchema.safeParseAsync(payload)
 		expect(parsed.success).toBe(true)
-	},
-)
+	}
+})
 
 test('schemas convert to JSON Schema without throwing', () => {
 	// The SDK advertises the zod schemas as JSON Schema on tools/list; a
