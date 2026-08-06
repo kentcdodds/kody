@@ -1,0 +1,47 @@
+import { expect, test } from 'vitest'
+import { markdownResponse, prefersMarkdown } from './markdown-negotiation.ts'
+
+function requestWithAccept(accept: string | null): Request {
+	return new Request(
+		'https://kody.example/guides/oauth',
+		accept === null ? undefined : { headers: { accept } },
+	)
+}
+
+test('prefersMarkdown only wins when text/markdown outranks HTML', () => {
+	// Browsers and default fetches keep the HTML page.
+	expect(prefersMarkdown(requestWithAccept(null))).toBe(false)
+	expect(prefersMarkdown(requestWithAccept('*/*'))).toBe(false)
+	expect(
+		prefersMarkdown(
+			requestWithAccept(
+				'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			),
+		),
+	).toBe(false)
+	// Markdown-first agents get the raw document.
+	expect(prefersMarkdown(requestWithAccept('text/markdown'))).toBe(true)
+	expect(
+		prefersMarkdown(requestWithAccept('text/markdown, text/plain;q=0.9')),
+	).toBe(true)
+	expect(
+		prefersMarkdown(requestWithAccept('text/markdown;q=1, text/html;q=0.5')),
+	).toBe(true)
+	// Explicit ties go to HTML.
+	expect(prefersMarkdown(requestWithAccept('text/html, text/markdown'))).toBe(
+		false,
+	)
+	expect(prefersMarkdown(requestWithAccept('text/markdown;q=0.5, */*'))).toBe(
+		false,
+	)
+})
+
+test('markdownResponse sets the content type and Vary header', async () => {
+	const response = markdownResponse('# Hello\n')
+	expect(response.status).toBe(200)
+	expect(response.headers.get('content-type')).toBe(
+		'text/markdown; charset=utf-8',
+	)
+	expect(response.headers.get('vary')).toBe('Accept')
+	expect(await response.text()).toBe('# Hello\n')
+})

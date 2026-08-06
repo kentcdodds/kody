@@ -30,6 +30,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 				<div mix={css(footerEndCss)}>
 					<nav aria-label="Footer" mix={css(footerNavCss)}>
 						<a href="/community">Community</a>
+						<a href="/guides">Guides</a>
 						<a href="/pricing">Pricing</a>
 						<a href="/blog">Blog</a>
 						{handle.props.loggedIn ? (

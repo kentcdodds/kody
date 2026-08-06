@@ -1,3 +1,14 @@
+---
+id: platform_friction
+title: Kody platform friction guide
+summary:
+  Use for meaningful Kody friction, bugs, poor experiences, or suggestions:
+  show the exact proposal and account-identity notification disclosure
+  before asking for explicit approval, and write one actionable issue per
+  submission (repro steps, expected vs actual, impact).
+category: platform
+---
+
 # Kody platform friction guide
 
 Use this guide when Kody itself creates friction while you are using built-in

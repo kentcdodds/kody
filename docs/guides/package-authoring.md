@@ -1,3 +1,13 @@
+---
+id: package_authoring
+title: Package authoring guide
+summary:
+  START HERE when creating or materially changing a Kody package: package
+  shape, README.md Intent section, secret-using package approval checklist,
+  and scope-update guidance without adding new primitives.
+category: platform
+---
+
 # Package authoring guide
 
 Use this guide when creating a new Kody package or materially changing an

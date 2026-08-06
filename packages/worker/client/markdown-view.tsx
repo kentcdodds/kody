@@ -23,6 +23,7 @@
  */
 import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
+import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
@@ -40,6 +41,20 @@ export type RenderMarkdownOptions = {
 	 * (`nofollow ugc`); first-party content passes 'noopener noreferrer'.
 	 */
 	linkRel?: string
+	/**
+	 * Link resolution policy. The default `untrusted` policy (community
+	 * READMEs) only allows absolute http(s)/mailto URLs and refuses anything
+	 * that reaches a user scope. `first-party` is ONLY for repo-authored
+	 * content (guides, blog): it additionally allows same-origin relative
+	 * links (`/connect/oauth?...`), rendered as normal same-tab navigations.
+	 * User-scope paths stay refused under every policy.
+	 */
+	linkPolicy?: 'untrusted' | 'first-party'
+	/**
+	 * Render fenced code blocks with a copy-to-clipboard button. Only for
+	 * first-party surfaces whose snippets are meant to be pasted (guides).
+	 */
+	copyCodeBlocks?: boolean
 }
 
 type ResolvedRenderOptions = Required<RenderMarkdownOptions>
@@ -47,6 +62,8 @@ type ResolvedRenderOptions = Required<RenderMarkdownOptions>
 const defaultRenderOptions: ResolvedRenderOptions = {
 	headingOffset: 2,
 	linkRel: 'noopener noreferrer nofollow ugc',
+	linkPolicy: 'untrusted',
+	copyCodeBlocks: false,
 }
 
 /**
@@ -93,6 +110,33 @@ export function getSafeMarkdownLinkHref(href: string): string | null {
 	return url.href
 }
 
+type ResolvedMarkdownLink = { href: string; external: boolean }
+
+/**
+ * Resolves a link under the render options' policy. Under `first-party`,
+ * root-relative links (`/guides/oauth`, `/connect/oauth?...`) resolve as
+ * internal same-tab navigations — still refusing user-scope paths, which are
+ * never linkable from rendered markdown regardless of trust level.
+ */
+function resolveMarkdownLink(
+	href: string,
+	options: ResolvedRenderOptions,
+): ResolvedMarkdownLink | null {
+	if (options.linkPolicy === 'first-party' && href.startsWith('/')) {
+		let url: URL
+		try {
+			url = new URL(href, 'https://kody.local')
+		} catch {
+			return null
+		}
+		if (hasUserScopePath(url)) return null
+		return { href: `${url.pathname}${url.search}${url.hash}`, external: false }
+	}
+	const safeHref = getSafeMarkdownLinkHref(href)
+	if (!safeHref) return null
+	return { href: safeHref, external: true }
+}
+
 const namedEntities: Record<string, string> = {
 	amp: '&',
 	lt: '<',
@@ -135,10 +179,17 @@ function renderLink(
 	children: RemixNode,
 	options: ResolvedRenderOptions,
 ): RemixNode {
-	const safeHref = getSafeMarkdownLinkHref(href)
-	if (!safeHref) return <span key={key}>{children}</span>
+	const resolved = resolveMarkdownLink(href, options)
+	if (!resolved) return <span key={key}>{children}</span>
+	if (!resolved.external) {
+		return (
+			<a key={key} href={resolved.href}>
+				{children}
+			</a>
+		)
+	}
 	return (
-		<a key={key} href={safeHref} target="_blank" rel={options.linkRel}>
+		<a key={key} href={resolved.href} target="_blank" rel={options.linkRel}>
 			{children}
 		</a>
 	)
@@ -189,6 +240,9 @@ function renderToken(
 		case 'hr':
 			return <hr key={key} />
 		case 'code':
+			if (options.copyCodeBlocks) {
+				return <CopyCodeBlock key={key} code={token.text} />
+			}
 			return (
 				<pre key={key}>
 					<code>{token.text}</code>

@@ -158,9 +158,18 @@ import {
 	createBlogHandler,
 	createBlogPostApiHandler,
 	createBlogPostHandler,
+	createBlogPostMarkdownHandler,
 	createBlogPostOgImageHandler,
 	createBlogRssHandler,
 } from '#app/handlers/blog.tsx'
+import {
+	createGuideDetailApiHandler,
+	createGuideDetailHandler,
+	createGuideDetailMarkdownHandler,
+	createGuidesApiHandler,
+	createGuidesHandler,
+	createGuidesMarkdownHandler,
+} from '#app/handlers/guides.tsx'
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHealthComponentsHandler } from '#app/handlers/health-components.ts'
 import { createSentryTunnelHandler } from '#app/handlers/sentry-tunnel.ts'
@@ -223,7 +232,14 @@ export function createAppRouter(env: Env) {
 			blogRss: createBlogRssHandler(env),
 			blogPost: createBlogPostHandler(env),
 			blogPostApi: createBlogPostApiHandler(env),
+			blogPostMarkdown: createBlogPostMarkdownHandler(env),
 			blogPostOgImage: createBlogPostOgImageHandler(env),
+			guides: createGuidesHandler(env),
+			guidesApi: createGuidesApiHandler(env),
+			guidesMarkdown: createGuidesMarkdownHandler(env),
+			guideDetail: createGuideDetailHandler(env),
+			guideDetailApi: createGuideDetailApiHandler(env),
+			guideDetailMarkdown: createGuideDetailMarkdownHandler(env),
 			pricing: createPricingHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),

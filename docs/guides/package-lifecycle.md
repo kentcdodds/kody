@@ -1,3 +1,13 @@
+---
+id: package_lifecycle
+title: Durable package lifecycle guide
+summary:
+  Choose between invoking existing behavior, temporary execute exploration,
+  forking a close trusted community package, direct job schedules, and creating
+  a durable repo-backed package; test package-owned job wrappers safely.
+category: platform
+---
+
 # Durable package lifecycle
 
 Use this guide to decide whether to reuse existing behavior, explore with

@@ -11,6 +11,7 @@ import {
 import { type BlogPost } from '#worker/blog/parse-frontmatter.ts'
 import { buildBlogRssXml } from '#worker/blog/rss.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { markdownResponse, prefersMarkdown } from '#app/markdown-negotiation.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 
 export function createBlogHandler(env: Env) {
@@ -61,6 +62,9 @@ export function createBlogPostHandler(env: Env) {
 		async handler({ request, params }) {
 			const post = getBlogPost(params.slug)
 			if (!post) {
+				if (prefersMarkdown(request)) {
+					return markdownResponse('# Blog post not found\n', 404)
+				}
 				return renderAppPage({
 					request,
 					env,
@@ -68,6 +72,9 @@ export function createBlogPostHandler(env: Env) {
 					notFound: true,
 					status: 404,
 				})
+			}
+			if (prefersMarkdown(request)) {
+				return markdownResponse(post.body)
 			}
 
 			return renderAppPage({
@@ -93,6 +100,19 @@ export function createBlogPostApiHandler(_env: Env) {
 			return jsonResponse(toBlogPostLoaderData(post))
 		},
 	} satisfies Action<typeof routes.blogPostApi>
+}
+
+export function createBlogPostMarkdownHandler(_env: Env) {
+	return {
+		middleware: [],
+		async handler({ params }) {
+			const post = getBlogPost(params.slug)
+			if (!post) {
+				return markdownResponse('# Blog post not found\n', 404)
+			}
+			return markdownResponse(post.body)
+		},
+	} satisfies Action<typeof routes.blogPostMarkdown>
 }
 
 export function createBlogPostOgImageHandler(_env: Env) {

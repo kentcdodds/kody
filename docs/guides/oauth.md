@@ -1,3 +1,14 @@
+---
+id: oauth
+title: OAuth guide (standard path)
+summary:
+  START HERE for third-party OAuth: hosted /connect/oauth, the exact
+  redirect URI (https://heykody.dev/connect/oauth), required query params,
+  PKCE vs confidential, post-connect nextSteps with trusted community
+  helpers suggestions, and how it differs from MCP OAuth.
+category: platform
+---
+
 # OAuth guide
 
 Read this guide first for third-party OAuth (GitHub, Linear, Spotify, and

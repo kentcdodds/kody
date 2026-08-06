@@ -1,3 +1,13 @@
+---
+id: package_service_pattern
+title: Package service pattern guide
+summary:
+  Build a package-native long-lived service using kody.services, package app
+  realtime fanout, service-owned storage, background lifecycle helpers, and
+  scheduled wake-ups.
+category: platform
+---
+
 # Package service pattern
 
 Use this guide when you want a **native Kody package** to own a long-lived

@@ -41,6 +41,33 @@ export type BlogPostLoaderData = {
 	readNext: { slug: string; title: string } | null
 }
 
+export type GuideSummaryLoaderData = {
+	slug: string
+	id: string
+	title: string
+	summary: string
+	category: 'platform' | 'provider'
+	provider: string | null
+	lastVerified: string | null
+}
+
+export type GuidesLoaderData = {
+	ok: true
+	guides: Array<GuideSummaryLoaderData>
+}
+
+export type GuideDetailLoaderData = {
+	ok: true
+	slug: string
+	id: string
+	title: string
+	summary: string
+	category: 'platform' | 'provider'
+	provider: string | null
+	lastVerified: string | null
+	body: string
+}
+
 export type CommunityIndexLoaderData = {
 	ok: true
 	listings: Array<PublicCommunityListing>
@@ -1252,6 +1279,8 @@ export type OAuthAuthorizeLoaderData =
 export type AppLoaderData = {
 	blog?: BlogLoaderData
 	blogPost?: BlogPostLoaderData
+	guides?: GuidesLoaderData
+	guideDetail?: GuideDetailLoaderData
 	communityDetailShell?: CommunityDetailShellLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
 	timeline?: TimelineLoaderData

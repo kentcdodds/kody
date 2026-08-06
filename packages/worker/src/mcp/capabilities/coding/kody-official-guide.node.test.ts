@@ -1,10 +1,6 @@
 import { expect, test } from 'vitest'
-import { http, HttpResponse } from 'msw'
-import {
-	buildKodyOfficialGuideUrlForTest,
-	kodyOfficialGuideCapability,
-} from './kody-official-guide.ts'
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { kodyOfficialGuideCapability } from './kody-official-guide.ts'
+import { guides } from '#worker/guides/catalog.ts'
 
 const ctx = {
 	env: {} as Env,
@@ -14,43 +10,35 @@ const ctx = {
 	},
 }
 
-test('coding_guide_get fetches markdown and surfaces fetch failures', async () => {
-	const url = buildKodyOfficialGuideUrlForTest('package_lifecycle')
-	{
-		using _server = createMswNodeServer([
-			http.get(url, () =>
-				HttpResponse.text('# Hello\n\nbody', {
-					headers: { 'content-type': 'text/markdown' },
-				}),
-			),
-		])
+test('coding_guide_get serves every bundled guide and rejects unknown ids', async () => {
+	// Stable ids agents already rely on must keep resolving.
+	for (const id of [
+		'package_authoring',
+		'package_lifecycle',
+		'integration_bootstrap',
+		'oauth',
+		'connect_secret',
+		'platform_friction',
+	]) {
+		const guide = guides.find((entry) => entry.id === id)
+		expect(guide, `catalog is missing guide id "${id}"`).toBeDefined()
+	}
+
+	for (const guide of guides) {
 		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'package_lifecycle' },
+			{ guide: guide.id },
 			ctx,
 		)
-		expect(result.title).toBe('Durable package lifecycle guide')
-		expect(result.body).toBe('# Hello\n\nbody')
+		expect(result.title).toBe(guide.title)
+		// Body is served without the frontmatter block and starts at the
+		// authored heading.
+		expect(result.body.startsWith('#')).toBe(true)
+		expect(result.body).not.toContain('\n---\nid:')
+		expect(result.body.length).toBeGreaterThan(200)
 	}
 
-	{
-		using _server = createMswNodeServer([
-			http.get(buildKodyOfficialGuideUrlForTest('connect_secret'), () =>
-				HttpResponse.text('missing', { status: 404 }),
-			),
-		])
-		await expect(
-			kodyOfficialGuideCapability.handler({ guide: 'connect_secret' }, ctx),
-		).rejects.toThrow(/Kody guide fetch failed: HTTP 404/)
-	}
-
-	{
-		using _server = createMswNodeServer([
-			http.get(buildKodyOfficialGuideUrlForTest('oauth'), () =>
-				HttpResponse.error(),
-			),
-		])
-		await expect(
-			kodyOfficialGuideCapability.handler({ guide: 'oauth' }, ctx),
-		).rejects.toThrow(/Kody guide fetch failed: Failed to fetch/)
-	}
+	// Unknown ids are rejected by the enum input schema before the handler.
+	await expect(
+		kodyOfficialGuideCapability.handler({ guide: 'does_not_exist' }, ctx),
+	).rejects.toThrow(/Invalid option/)
 })

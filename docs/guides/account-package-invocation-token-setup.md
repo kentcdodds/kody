@@ -1,3 +1,13 @@
+---
+id: package_invocation_token_setup
+title: Account package invocation token setup guide
+summary:
+  Hosted /account/package-invocation-tokens/new setup URL shape, owner-scoped
+  /@:username/api/package-invocations invocation route shape, query params, and
+  bearer-token safety policy for external package invocation clients.
+category: platform
+---
+
 # Account package invocation token setup guide
 
 Use the hosted **`/account/package-invocation-tokens/new`** page when an

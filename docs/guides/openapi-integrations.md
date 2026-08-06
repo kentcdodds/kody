@@ -1,3 +1,13 @@
+---
+id: openapi_integrations
+title: OpenAPI integrations guide
+summary:
+  OpenAPI discover → summarize → scaffold workflow and durable curated
+  openapi_binding_save bindings callable as kody.openapi["name"].slug(...); auth
+  still comes from a saved integration or secrets.
+category: platform
+---
+
 # OpenAPI integrations
 
 Use this guide when a third-party API publishes an OpenAPI 3.x document and you

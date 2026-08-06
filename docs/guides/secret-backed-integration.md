@@ -1,3 +1,14 @@
+---
+id: secret_backed_integration
+title: Secret-backed integration recipe
+summary:
+  Default non-OAuth recipe for secret-backed integrations: research auth,
+  collect secrets through /account/secrets/new, run a smoke test, build the
+  downstream package, then surface package secret approval links (prefer
+  bulk) before calling the work complete.
+category: platform
+---
+
 # Secret-backed integration recipe
 
 Use this guide after `integration_bootstrap` when the integration uses one or

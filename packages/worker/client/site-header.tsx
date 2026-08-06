@@ -31,6 +31,7 @@ export type SiteHeaderProps = {
  */
 const marketingLinks = [
 	{ href: '/community', label: 'Community' },
+	{ href: '/guides', label: 'Guides' },
 	{ href: '/pricing', label: 'Pricing' },
 	{ href: '/blog', label: 'Blog' },
 ] as const

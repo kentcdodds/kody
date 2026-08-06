@@ -1,3 +1,14 @@
+---
+id: package_subscriptions
+title: Package subscription guide
+summary:
+  Use package.json#kody.subscriptions for package-owned event handlers; discover
+  subscribers with package_subscriptions_list and follow metadata-first email,
+  run.error.recorded activity notifiers, plus consent-gated admin-only
+  platform.feedback.submitted notification guidance.
+category: platform
+---
+
 # Package subscription guide
 
 Use package subscriptions when a saved package should react to Kody-owned event

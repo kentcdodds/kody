@@ -1,3 +1,14 @@
+---
+id: integration_bootstrap
+title: Integration bootstrap guide
+summary:
+  START HERE when a third-party integration must work before saving a
+  dependent package or package app: inspect integration/secret state, stop
+  for setup, run an authenticated smoke test, then use connect nextSteps or
+  community_search (prefer trusted) before building from scratch.
+category: platform
+---
+
 # Integration bootstrap guide
 
 **Read this guide first** when a user wants a package, package app, or workflow

@@ -1,3 +1,12 @@
+---
+id: connect_secret
+title: Account secret setup guide
+summary:
+  Hosted /account/secrets/new URL shape, query params, approval policy for API
+  keys and PATs, and post-hoc package approval URLs including bulk approve.
+category: platform
+---
+
 # Account secret setup guide
 
 Use the hosted **`/account/secrets/new`** page whenever the user needs to enter

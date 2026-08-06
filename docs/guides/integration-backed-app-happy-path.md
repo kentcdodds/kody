@@ -1,3 +1,13 @@
+---
+id: integration_backed_app
+title: Integration-backed package app happy path
+summary:
+  After integration/secret verification and a cheap smoke test, proceed directly
+  to a package app rooted in package.json and package-owned code; avoid
+  unnecessary repo spelunking.
+category: platform
+---
+
 # Integration-backed package app happy path
 
 Use this guide after `integration_bootstrap` proves the integration already
