@@ -9,6 +9,7 @@ import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
+	type OnboardingChecklistLoaderData,
 	type AccountConnectionListItem,
 	type AccountConnectionsLoaderData,
 	type AccountProfileLoaderData,
@@ -44,6 +45,7 @@ import {
 	verifiedPillCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
+import { shouldShowOnboardingChecklist } from '#client/routes/onboarding-checklist.tsx'
 import {
 	renderEmailVerificationPrompt,
 	requestResendVerification,
@@ -157,6 +159,7 @@ export function AccountRoute(handle: Handle) {
 	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
+	let onboardingChecklist: OnboardingChecklistLoaderData | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	function applyConnectionsPayload(payload: AccountConnectionsLoaderData) {
@@ -232,6 +235,7 @@ export function AccountRoute(handle: Handle) {
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		needsOnboarding = payload?.needsOnboarding === true
+		onboardingChecklist = payload?.checklist ?? null
 	}
 
 	async function loadAccountProfile(signal: AbortSignal) {
@@ -663,7 +667,11 @@ export function AccountRoute(handle: Handle) {
 									secondaryLabel: 'Verification page',
 								})
 							: null}
-						{emailVerified && needsOnboarding ? renderOnboardingBanner() : null}
+						{emailVerified &&
+						(needsOnboarding ||
+							shouldShowOnboardingChecklist(onboardingChecklist))
+							? renderOnboardingBanner({ checklist: onboardingChecklist })
+							: null}
 						<AccountManagementPanel
 							title="Profile"
 							description="Your username is unique. Display name, bio, avatar, and visibility control your public community profile."

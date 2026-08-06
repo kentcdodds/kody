@@ -15,6 +15,7 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+import { type OnboardingChecklistLoaderData } from '#app/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
 import {
 	fetchOnboardingPayload,
@@ -22,6 +23,10 @@ import {
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
 import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
+import {
+	OnboardingChecklistCard,
+	shouldShowOnboardingChecklist,
+} from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
 import {
@@ -44,20 +49,21 @@ import {
 
 /**
  * Onboarding wizard, ported from the redesign prototype
- * (`landing/onboarding.html`): shirt-pattern head, three-step stepper
- * (Discover · Connect your agent · Install a starter package), one surface
+ * (`landing/onboarding.html`): shirt-pattern head, four-step stepper
+ * (Discover · Connect your agent · See it work · Install a starter package), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
  * behind a disclosure. All server state (prompts, MCP URL, featured
  * listings, hasMcpClient polling) stays exactly as before — this is a
  * restyle, not a rearchitecture.
  */
 
-type OnboardingStep = 1 | 2 | 3
+type OnboardingStep = 1 | 2 | 3 | 4
 
 const onboardingSteps = [
 	{ number: 1, label: 'Discover', hash: 'discovery' },
 	{ number: 2, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 3, label: 'Install a starter package', hash: 'starter-packages' },
+	{ number: 3, label: 'See it work', hash: 'first-win' },
+	{ number: 4, label: 'Install a starter package', hash: 'starter-packages' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
 	label: string
@@ -110,8 +116,12 @@ export function OnboardingRoute(handle: Handle) {
 	let mcpServerUrl = ''
 	let setupPrompt = ''
 	let discoveryPrompt = ''
+	let introEmailPrompt = ''
+	let memoryPrompt = ''
 	let hasMcpClient = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
+	let checklist: OnboardingChecklistLoaderData | null = null
+	let checklistHidden = false
 	let activeStep: OnboardingStep = 1
 	let initializedStep = false
 	let appliedInitialHash = false
@@ -126,8 +136,12 @@ export function OnboardingRoute(handle: Handle) {
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
 		discoveryPrompt = payload.discoveryPrompt
+		introEmailPrompt = payload.introEmailPrompt
+		memoryPrompt = payload.memoryPrompt
 		hasMcpClient = payload.hasMcpClient
 		featuredListings = payload.featuredListings ?? []
+		checklist = payload.checklist
+		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
@@ -373,6 +387,16 @@ export function OnboardingRoute(handle: Handle) {
 							})}
 						</nav>
 
+						{shouldShowOnboardingChecklist(checklist) && !checklistHidden ? (
+							<OnboardingChecklistCard
+								checklist={checklist!}
+								onDismissed={() => {
+									checklistHidden = true
+									handle.update()
+								}}
+							/>
+						) : null}
+
 						{activeStep === 1 ? (
 							<section
 								id="discovery"
@@ -502,6 +526,84 @@ export function OnboardingRoute(handle: Handle) {
 
 						{activeStep === 3 ? (
 							<section
+								id="first-win"
+								aria-labelledby="first-win-title"
+								data-testid="onboarding-first-win"
+								mix={[css(wizardPanelCss), panelEntrance()]}
+							>
+								<div mix={css(panelHeadCss)}>
+									<div>
+										<p mix={css(panelKickerCss)}>Step 3</p>
+										<h2
+											id="first-win-title"
+											tabIndex={-1}
+											mix={css(panelTitleCss)}
+										>
+											See it work
+										</h2>
+									</div>
+									<img
+										data-panel-art
+										src="/images/kody-greeting.webp"
+										width={627}
+										height={627}
+										loading="lazy"
+										alt="Kody waving beside a warm envelope"
+										style={{ '--tilt': '1.5deg' }}
+										mix={css(panelArtCss)}
+									/>
+								</div>
+								<p mix={css(panelLedeCss)}>
+									Paste these into your connected agent — Kody stores what
+									lands, and your agent reads it back when you ask.
+								</p>
+								<div mix={css(firstWinGridCss)}>
+									<article mix={css(firstWinCardCss)}>
+										<h3 mix={css(firstWinCardTitleCss)}>Say hello</h3>
+										<p mix={css(firstWinGuidanceCss)}>
+											Paste this into your connected agent; Kody emails you from
+											your own Kody address within a minute. When it lands,
+											reply to it — then ask your agent what you said. Kody
+											stores your reply; nothing answers by itself until your
+											agent reads it.
+										</p>
+										<figure mix={css(promptBlockCss)}>
+											<blockquote>{introEmailPrompt}</blockquote>
+										</figure>
+										<CopyTextButton
+											value={introEmailPrompt}
+											idleLabel="Copy hello prompt"
+											variant="pill"
+										/>
+									</article>
+									<article mix={css(firstWinCardCss)}>
+										<h3 mix={css(firstWinCardTitleCss)}>
+											Teach Kody about you
+										</h3>
+										<p mix={css(firstWinGuidanceCss)}>
+											Your agent will ask a couple of questions and save durable
+											memories that follow you across every agent connected to
+											your account.
+										</p>
+										<figure mix={css(promptBlockCss)}>
+											<blockquote>{memoryPrompt}</blockquote>
+										</figure>
+										<CopyTextButton
+											value={memoryPrompt}
+											idleLabel="Copy memory prompt"
+											variant="pill"
+										/>
+									</article>
+								</div>
+								<WizardNavigation
+									activeStep={activeStep}
+									onSelectStep={selectStep}
+								/>
+							</section>
+						) : null}
+
+						{activeStep === 4 ? (
+							<section
 								id="starter-packages"
 								aria-labelledby="starters-title"
 								data-testid="onboarding-starter-packages"
@@ -509,7 +611,7 @@ export function OnboardingRoute(handle: Handle) {
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
-										<p mix={css(panelKickerCss)}>Step 3</p>
+										<p mix={css(panelKickerCss)}>Step 4</p>
 										<h2
 											id="starters-title"
 											tabIndex={-1}
@@ -590,7 +692,7 @@ function WizardNavigation(
 				? ((handle.props.activeStep - 1) as OnboardingStep)
 				: null
 		const nextStep =
-			handle.props.activeStep < 3
+			handle.props.activeStep < 4
 				? ((handle.props.activeStep + 1) as OnboardingStep)
 				: null
 
@@ -758,8 +860,11 @@ const errorMessageCss = {
 const wizardStepsCss = {
 	marginTop: 'clamp(2.2rem, 5vw, 3.2rem)',
 	display: 'grid',
-	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+	gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
 	gap: '0.8rem',
+	'@media (max-width: 900px)': {
+		gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+	},
 	'@media (max-width: 720px)': {
 		gridTemplateColumns: '1fr',
 		gap: '0.5rem',
@@ -920,6 +1025,36 @@ const panelActionsCss = {
 	display: 'flex',
 	flexWrap: 'wrap' as const,
 	gap: '0.6rem',
+}
+
+const firstWinGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(min(16rem, 100%), 1fr))',
+	gap: '0.9rem',
+}
+
+const firstWinCardCss = {
+	display: 'grid',
+	gap: '0.75rem',
+	padding: '1rem 1.1rem',
+	backgroundColor: colors.background,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
+	minWidth: 0,
+}
+
+const firstWinCardTitleCss = {
+	margin: 0,
+	fontSize: '1.02rem',
+	fontWeight: 700,
+	lineHeight: 1.3,
+}
+
+const firstWinGuidanceCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.94rem',
+	lineHeight: 1.55,
 }
 
 const ghostActionButtonCss = getGhostButtonCss()

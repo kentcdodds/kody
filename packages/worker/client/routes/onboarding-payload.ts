@@ -1,4 +1,5 @@
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
+import { type OnboardingChecklistLoaderData } from '#app/loader-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
 /**
@@ -12,10 +13,13 @@ export type OnboardingPayload = {
 	mcpServerUrl: string
 	setupPrompt: string
 	discoveryPrompt: string
+	introEmailPrompt: string
+	memoryPrompt: string
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
 	featuredListings: Array<OnboardingFeaturedListing>
+	checklist: OnboardingChecklistLoaderData | null
 }
 
 export const onboardingApiPath = '/onboarding.json'

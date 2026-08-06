@@ -1,8 +1,17 @@
 import { css } from 'remix/ui'
+import { type OnboardingChecklistLoaderData } from '#app/loader-data.ts'
 import { getPillButtonCss } from '#client/styles/style-primitives.ts'
 import { noticeCardCss } from '#client/routes/account-management-components.tsx'
 import { colors } from '#client/styles/tokens.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
+import {
+	getFirstUndoneChecklistItemLabel,
+	shouldShowOnboardingChecklist,
+} from '#client/routes/onboarding-checklist.tsx'
+
+type OnboardingBannerOptions = {
+	checklist?: OnboardingChecklistLoaderData | null
+}
 
 /**
  * Callout shown when the signed-in verified user still needs MCP host setup.
@@ -10,7 +19,14 @@ import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
  * banner — mascot cutout standing on the bottom edge, copy in the middle, the
  * green pill CTA on the right. Green lives in the CTA, never in the chrome.
  */
-export function renderOnboardingBanner() {
+export function renderOnboardingBanner(options?: OnboardingBannerOptions) {
+	const checklist = options?.checklist
+	const showChecklistProgress = shouldShowOnboardingChecklist(checklist)
+	const nextLabel =
+		showChecklistProgress && checklist
+			? getFirstUndoneChecklistItemLabel(checklist)
+			: null
+
 	return (
 		<section
 			aria-label="Get started with Kody"
@@ -60,9 +76,9 @@ export function renderOnboardingBanner() {
 						lineHeight: 1.5,
 					})}
 				>
-					Kody works through MCP. Add this deployment as an MCP server in
-					Cursor, Claude, or any MCP-capable agent, then ask your agent to help
-					you get set up.
+					{showChecklistProgress && nextLabel
+						? `Next up: ${nextLabel}`
+						: 'Kody works through MCP. Add this deployment as an MCP server in Cursor, Claude, or any MCP-capable agent, then ask your agent to help you get set up.'}
 				</p>
 			</div>
 			<a
@@ -74,7 +90,7 @@ export function renderOnboardingBanner() {
 					padding: '0.8rem 1.35rem',
 				})}
 			>
-				Connect your agent
+				{showChecklistProgress ? 'Continue onboarding' : 'Connect your agent'}
 			</a>
 		</section>
 	)
