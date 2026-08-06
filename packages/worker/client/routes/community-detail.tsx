@@ -28,6 +28,7 @@ import {
 	mergeCss,
 	pageHeadCss,
 	proseCss,
+	visuallyHiddenCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type PublicCommunityListing,
@@ -636,22 +637,39 @@ export function CommunityDetailRoute(handle: Handle) {
 		const shellMatchesListing = shellLoadedForListingId === listingId
 		const showShellReady = shellStatus === 'ready' && shellMatchesListing
 		const showShellError = shellStatus === 'error' && shellMatchesListing
+		const shellStatusMessage = showShellError
+			? 'Unable to load fork and report details for this listing.'
+			: showShellReady
+				? ''
+				: 'Loading community package details…'
 
 		return (
 			<article mix={css(detailArticleCss)}>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
-				{!showShellReady && !showShellError ? (
-					<p mix={css(shellStatusCss)} role="status">
-						Loading community package details…
-					</p>
-				) : null}
-
-				{showShellError ? (
-					<p mix={css(shellStatusCss)} role="status">
-						Unable to load fork and report details for this listing.
-					</p>
-				) : null}
+				{/*
+				 * A live region only announces text that changes while the region
+				 * is already in the accessibility tree, so the announcer stays
+				 * mounted for the life of the view and keeps one fixed role.
+				 * Swapping two `role="status"` paragraphs announced the failure
+				 * inconsistently, because the loading one unmounted as the error
+				 * one mounted. Same shape as `renderStatusMessage` in login.tsx.
+				 */}
+				<p role="status" mix={css(visuallyHiddenCss)}>
+					{shellStatusMessage}
+				</p>
+				{/*
+				 * The visible copy is hidden from assistive tech so the same
+				 * sentence is not announced twice, and stays out of the flow while
+				 * empty so it adds no gap.
+				 */}
+				<p
+					aria-hidden="true"
+					hidden={shellStatusMessage ? undefined : true}
+					mix={css(shellStatusCss)}
+				>
+					{shellStatusMessage}
+				</p>
 
 				{showShellReady ? (
 					<>
@@ -873,12 +891,25 @@ export function CommunityDetailRoute(handle: Handle) {
 									{starMessage}
 								</p>
 							) : null}
-							<p data-testid="community-stargazers-total">
-								{stargazersTotal}{' '}
-								{stargazersTotal === 1 ? 'stargazer' : 'stargazers'}
-							</p>
+							{/*
+							 * Only once the fetch resolved. `stargazersTotal` starts
+							 * at 0, so rendering it unconditionally put a second,
+							 * contradictory number next to the shell's own
+							 * `starCount` ("5 stars" above "0 stargazers") for the
+							 * length of the request — and left it there for good if
+							 * the request failed.
+							 */}
+							{stargazersStatus === 'ready' ? (
+								<p data-testid="community-stargazers-total">
+									{stargazersTotal}{' '}
+									{stargazersTotal === 1 ? 'stargazer' : 'stargazers'}
+								</p>
+							) : null}
 							{stargazersStatus === 'loading' ? (
 								<p>Loading stargazers…</p>
+							) : null}
+							{stargazersStatus === 'error' ? (
+								<p>Unable to load the stargazer list.</p>
 							) : null}
 							{stargazersStatus === 'ready' && stargazers.length > 0 ? (
 								<ul
@@ -1056,6 +1087,11 @@ export function CommunityDetailRoute(handle: Handle) {
    blog post head's fabric. */
 const detailArticleCss = {
 	position: 'relative' as const,
+	// This borrows `pageHeadCss`'s `zIndex: -1` pseudo without borrowing the
+	// rest of it, so it has to carry the `isolate` that scopes that negative
+	// z-index. Without it the glow escapes this stacking context and can fall
+	// behind an ancestor's background instead of backing the article.
+	isolation: 'isolate' as const,
 	maxWidth: '46rem',
 	marginInline: 'auto',
 	width: '100%',

@@ -1196,6 +1196,13 @@ const authDividerCss = {
 
 const authOauthCss = {
 	display: 'flex',
+	/*
+	 * `authProviders` comes from deployment config, so the count varies. Three
+	 * short labels still fit the 400px card, but each button is `flex: 1 1 0`
+	 * with `minWidth: 0` and no `text-overflow`, so a fourth provider would
+	 * squeeze them past their labels. Wrapping moves the extras to a new row.
+	 */
+	flexWrap: 'wrap' as const,
 	gap: '0.7rem',
 }
 

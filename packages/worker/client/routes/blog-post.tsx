@@ -298,6 +298,11 @@ const postBackCss = {
    head). */
 const postHeadCss = {
 	position: 'relative' as const,
+	// Borrows `pageHeadCss`'s `zIndex: -1` pseudo without the rest of it, so it
+	// has to carry the `isolate` that scopes that negative z-index to this
+	// element. `blogHeadCss` and timeline's `headCss` spread all of
+	// `pageHeadCss` and inherit it for free.
+	isolation: 'isolate' as const,
 	marginTop: '1.8rem',
 	'&::before': {
 		...pageHeadCss['&::before'],

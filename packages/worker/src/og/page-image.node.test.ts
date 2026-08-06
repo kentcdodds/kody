@@ -22,9 +22,20 @@ test('renderPageOgImage returns valid PNG bytes for home and community', async (
 	expectPngBytes(blog)
 })
 
-test('renderPageOgImage renders both themes', async () => {
-	for (const theme of ['light', 'dark'] as const) {
-		const png = await renderPageOgImage({ page: publicOgPages.home, theme })
-		expectPngBytes(png)
-	}
+test('renderPageOgImage renders each theme differently', async () => {
+	const light = await renderPageOgImage({
+		page: publicOgPages.home,
+		theme: 'light',
+	})
+	const dark = await renderPageOgImage({
+		page: publicOgPages.home,
+		theme: 'dark',
+	})
+	expectPngBytes(light)
+	expectPngBytes(dark)
+
+	// Valid PNG bytes alone would pass even if `theme` were ignored entirely,
+	// which is the regression worth catching: the palette, the pattern tint, and
+	// the halo all switch on it, so the two encodings cannot coincide.
+	expect(Buffer.from(light).equals(Buffer.from(dark))).toBe(false)
 })

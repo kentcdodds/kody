@@ -8,7 +8,11 @@ import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
 import { renderCommunityListingName } from '#app/community-listing-name.tsx'
 import { routes } from '#app/routes.ts'
 import { colors, transitions } from '#client/styles/tokens.ts'
-import { getSurfaceCardCss, mergeCss } from '#client/styles/style-primitives.ts'
+import {
+	getSurfaceCardCss,
+	mergeCss,
+	visuallyHiddenCss,
+} from '#client/styles/style-primitives.ts'
 
 /**
  * Server-rendered community listings (the `community-listings` frame),
@@ -88,12 +92,29 @@ export function CommunityListingsContent(
 							) : null}
 							<p mix={css(statsCss)}>
 								{listing.ratingCount > 0 ? (
+									/*
+									 * Every other stat in this row says what it is
+									 * ("12 forks", "5 stars", "effort …"), but the
+									 * rating is a glyph and two bare numbers, which
+									 * announced as "black star 4.5 (12)". The glyph is
+									 * decorative and the numbers get a spoken label.
+									 */
 									<span mix={css(ratingCss)}>
-										<span mix={css(ratingStarCss)}>★</span>{' '}
-										{listing.averageStars == null
-											? '—'
-											: listing.averageStars.toFixed(1)}{' '}
-										({listing.ratingCount})
+										<span aria-hidden="true" mix={css(ratingStarCss)}>
+											★
+										</span>
+										<span mix={css(visuallyHiddenCss)}>
+											{listing.averageStars == null
+												? `not yet rated, ${formatCount(listing.ratingCount, 'rating')}`
+												: `rated ${listing.averageStars.toFixed(1)} out of 5 from ${formatCount(listing.ratingCount, 'rating')}`}
+										</span>
+										<span aria-hidden="true">
+											{' '}
+											{listing.averageStars == null
+												? '—'
+												: listing.averageStars.toFixed(1)}{' '}
+											({listing.ratingCount})
+										</span>
 									</span>
 								) : (
 									<span>No ratings yet</span>

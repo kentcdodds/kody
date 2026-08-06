@@ -1092,7 +1092,14 @@ const waitlistInputCss = {
 	padding: '0.7rem 1.1rem',
 	minWidth: 0,
 	'&::placeholder': { color: colors.textMuted, opacity: 1 },
-	'&:focus': { outline: 'none' },
+	/*
+	 * The container's `:focus-within` ring says focus is somewhere inside the
+	 * pill but not which of the two fields has it, so tabbing from name to
+	 * email changed nothing on screen. Tinting the focused field reads as the
+	 * active segment — and unlike an inset ring it works for both the pill's
+	 * rounded left end and the square-cornered email field.
+	 */
+	'&:focus': { outline: 'none', backgroundColor: colors.primarySoft },
 	'@media (max-width: 640px)': {
 		paddingBlock: '0.85rem',
 	},

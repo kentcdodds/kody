@@ -167,7 +167,14 @@ function renderFeaturedPostItem(post: BlogPostSummaryLoaderData) {
 					src="/images/kody-agent-briefing.webp"
 					width={480}
 					height={480}
-					alt="Kody the koala holding up a briefing sheet, lantern glowing at his side"
+					/*
+					 * Decorative. The img sits inside the anchor, so alt text is
+					 * appended to the link's accessible name — a screen reader
+					 * would announce the date, title, description, and then a
+					 * mascot description as one long link name. The art says
+					 * nothing the copy does not already say.
+					 */
+					alt=""
 					mix={css(featuredArtCss)}
 				/>
 			</a>
