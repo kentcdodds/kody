@@ -100,48 +100,54 @@ test('filters Cloudflare incidents to products kody runs on', () => {
 })
 
 test('provider incident fetch fails soft on timeout, http errors, and bad JSON', async () => {
-	const timedOut = await fetchRelevantProviderIncidents({
-		timeoutMs: 5,
-		fetcher: async () =>
-			await new Promise(() => {
-				/* never resolves */
-			}),
-	})
-	expect(timedOut.ok).toBe(false)
-	expect(timedOut.incidents).toEqual([])
+	const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	try {
+		const timedOut = await fetchRelevantProviderIncidents({
+			timeoutMs: 5,
+			fetcher: async () =>
+				await new Promise(() => {
+					/* never resolves */
+				}),
+		})
+		expect(timedOut.ok).toBe(false)
+		expect(timedOut.incidents).toEqual([])
 
-	const httpError = await fetchRelevantProviderIncidents({
-		fetcher: async () => new Response('nope', { status: 503 }),
-	})
-	expect(httpError).toEqual({
-		ok: false,
-		incidents: [],
-		error: 'HTTP 503',
-	})
+		const httpError = await fetchRelevantProviderIncidents({
+			fetcher: async () => new Response('nope', { status: 503 }),
+		})
+		expect(httpError).toEqual({
+			ok: false,
+			incidents: [],
+			error: 'HTTP 503',
+		})
 
-	const badJson = await fetchRelevantProviderIncidents({
-		fetcher: async () =>
-			new Response('not-json', {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			}),
-	})
-	expect(badJson.ok).toBe(false)
+		const badJson = await fetchRelevantProviderIncidents({
+			fetcher: async () =>
+				new Response('not-json', {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}),
+		})
+		expect(badJson.ok).toBe(false)
 
-	const okEmpty = await fetchRelevantProviderIncidents({
-		fetcher: async () =>
-			Response.json({
-				incidents: [streamIncident, popIncident],
-			}),
-	})
-	expect(okEmpty).toEqual({ ok: true, incidents: [] })
+		const okEmpty = await fetchRelevantProviderIncidents({
+			fetcher: async () =>
+				Response.json({
+					incidents: [streamIncident, popIncident],
+				}),
+		})
+		expect(okEmpty).toEqual({ ok: true, incidents: [] })
 
-	const okRelevant = await fetchRelevantProviderIncidents({
-		fetcher: async () => Response.json({ incidents: [r2Incident] }),
-	})
-	expect(okRelevant.ok).toBe(true)
-	expect(okRelevant.incidents).toHaveLength(1)
-	expect(okRelevant.incidents[0]?.name).toBe('R2 Availability Issues')
+		const okRelevant = await fetchRelevantProviderIncidents({
+			fetcher: async () => Response.json({ incidents: [r2Incident] }),
+		})
+		expect(okRelevant.ok).toBe(true)
+		expect(okRelevant.incidents).toHaveLength(1)
+		expect(okRelevant.incidents[0]?.name).toBe('R2 Availability Issues')
+		expect(consoleWarn).toHaveBeenCalled()
+	} finally {
+		consoleWarn.mockRestore()
+	}
 })
 
 test('provider incident cache parses within TTL and rejects stale or corrupt entries', () => {
