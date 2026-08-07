@@ -287,34 +287,43 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 		])
 
 		// A legacy host equal to the package-app domain would silently collapse
-		// the package-app isolation boundary; that must fail the deploy.
+		// the package-app isolation boundary, and a malformed hostname (empty
+		// DNS label) would publish a bogus custom-domain route; both must fail
+		// the deploy.
 		const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
 			throw new Error('process.exit called')
 		}) as never)
 		try {
-			await expect(
-				writeGeneratedWranglerConfig({
-					baseConfigPath: workerWranglerConfigPath,
-					outConfigPath: path.join(tempDir, 'wrangler-bad-legacy.json'),
-					envName: 'production',
-					d1DatabaseName: 'kody',
-					d1DatabaseId: 'dry-run-kody',
-					auditD1DatabaseName: 'kody-audit',
-					auditD1DatabaseId: 'dry-run-kody-audit',
-					oauthKvId: 'dry-run-kody-oauth',
-					bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
-					communityAssetsBucketName: 'kody-community-assets',
-					emailBlobsBucketName: 'kody-email-blobs',
-					workerVars: {
-						APP_BASE_URL: 'https://heykody.app',
-						APP_LEGACY_HOSTS: String(
-							new URL(String(packageAppBaseUrl)).hostname,
-						),
-					},
-				}),
-			).rejects.toThrow('process.exit called')
+			const failingLegacyHostValues = [
+				String(new URL(String(packageAppBaseUrl)).hostname),
+				'heykody..dev',
+			]
+			for (const legacyHosts of failingLegacyHostValues) {
+				await expect(
+					writeGeneratedWranglerConfig({
+						baseConfigPath: workerWranglerConfigPath,
+						outConfigPath: path.join(tempDir, 'wrangler-bad-legacy.json'),
+						envName: 'production',
+						d1DatabaseName: 'kody',
+						d1DatabaseId: 'dry-run-kody',
+						auditD1DatabaseName: 'kody-audit',
+						auditD1DatabaseId: 'dry-run-kody-audit',
+						oauthKvId: 'dry-run-kody-oauth',
+						bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+						communityAssetsBucketName: 'kody-community-assets',
+						emailBlobsBucketName: 'kody-email-blobs',
+						workerVars: {
+							APP_BASE_URL: 'https://heykody.app',
+							APP_LEGACY_HOSTS: legacyHosts,
+						},
+					}),
+				).rejects.toThrow('process.exit called')
+			}
 			expect(consoleError).toHaveBeenCalledWith(
 				expect.stringContaining('APP_LEGACY_HOSTS'),
+			)
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringContaining('invalid hostname'),
 			)
 		} finally {
 			exitSpy.mockRestore()

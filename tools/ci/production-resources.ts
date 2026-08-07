@@ -5,6 +5,7 @@ import {
 	ensureEmailSendingEventSubscription,
 	ensureR2Bucket,
 	fail,
+	isValidBareHostname,
 	listCloudflareQueues,
 	listD1Databases,
 	listKvNamespaces,
@@ -133,12 +134,25 @@ function resolveEmailSendingDomain(input: {
 	const configured = process.env.USER_EMAIL_DOMAIN?.trim()
 		.toLowerCase()
 		.replace(/\.$/, '')
+	// An invalid explicit value fails the deploy instead of silently falling
+	// through: falling back would rederive the domain from APP_BASE_URL and
+	// could repoint the Email Sending subscription at an unverified domain.
+	if (configured && !isValidBareHostname(configured)) {
+		fail(`USER_EMAIL_DOMAIN is not a valid bare hostname: ${configured}`)
+	}
 	if (configured) return configured
 	// The committed wrangler.jsonc var pins the user email domain across a
 	// domain migration: without it, flipping the APP_BASE_URL repository
 	// variable would rederive the domain from the new hostname and repoint
 	// the Email Sending event subscription at an unverified domain.
-	if (input.committedUserEmailDomain) return input.committedUserEmailDomain
+	if (input.committedUserEmailDomain) {
+		if (!isValidBareHostname(input.committedUserEmailDomain)) {
+			fail(
+				`Committed USER_EMAIL_DOMAIN in wrangler.jsonc is not a valid bare hostname: ${input.committedUserEmailDomain}`,
+			)
+		}
+		return input.committedUserEmailDomain
+	}
 	const appBaseUrl = process.env.APP_BASE_URL?.trim()
 	if (!appBaseUrl) {
 		if (input.dryRun) return 'inbox.example.com'

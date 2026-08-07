@@ -304,7 +304,9 @@ automatically:
   URL is available — e.g. workflows and email. Example `https://heykody.app`.
   Most request-scoped app/MCP URLs use the inbound request origin so OAuth
   metadata matches the host the client connected to. Password reset email sends
-  require this value and use `kody@<hostname>` as the sender.)
+  require a system email domain and use `kody@<domain>` as the sender — the
+  `SYSTEM_EMAIL_DOMAIN` override when set, otherwise the `APP_BASE_URL`
+  hostname.)
 - `PACKAGE_APP_BASE_URL` (Wrangler `var`; required in production and optional
   for confirmed local/preview/test runtimes; origin for hosted package apps.
   Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
@@ -466,8 +468,10 @@ How to get/set each value:
 - `APP_BASE_URL` (optional)
   - Use your production app URL (for example `https://heykody.app`) as the
     fallback public origin for workflows and password-reset email.
-  - Add it when password reset email should send; the sender is derived as
-    `kody@<hostname>`, so verify that sender/domain in Cloudflare Email Service.
+  - Add it when password reset email should send; the sender is
+    `kody@<system email domain>` (the `SYSTEM_EMAIL_DOMAIN` override when set,
+    otherwise the `APP_BASE_URL` hostname), so verify that sender/domain in
+    Cloudflare Email Service.
   - It also lets deploy-time health/version checks use a fixed URL.
   - Production CI writes this into the generated Wrangler `vars` config before
     deploy, rather than syncing it as a Worker secret.

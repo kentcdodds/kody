@@ -883,7 +883,17 @@ function readHostnameVar(input: {
 	return hostname
 }
 
-const bareHostnamePattern = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
+const hostnameLabelPattern = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+
+/**
+ * A bare hostname: dot-separated non-empty DNS labels, no scheme, no
+ * user-info. Rejects values like `heykody..dev` or `user@host` that a
+ * looser character-class check would let into the generated route set.
+ */
+export function isValidBareHostname(hostname: string) {
+	if (!hostname) return false
+	return hostname.split('.').every((label) => hostnameLabelPattern.test(label))
+}
 
 /**
  * Parse the comma-separated `APP_LEGACY_HOSTS` var into bare hostnames.
@@ -902,7 +912,7 @@ function readLegacyHostsVar(input: {
 	for (const entry of configured.split(',')) {
 		const hostname = entry.trim().toLowerCase().replace(/\.$/, '')
 		if (!hostname) continue
-		if (!bareHostnamePattern.test(hostname)) {
+		if (!isValidBareHostname(hostname)) {
 			return fail(
 				`wrangler config "${input.baseConfigPath}" has an invalid hostname in "env.${input.envName}.vars.APP_LEGACY_HOSTS": ${entry.trim()}. Use bare hostnames (no scheme), comma-separated.`,
 			)
