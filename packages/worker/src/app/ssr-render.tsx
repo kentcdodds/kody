@@ -124,6 +124,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		(
 			<SsrDocument
 				documentHead={documentHead}
+				canonicalOrigin={origin}
 				url={url}
 				session={session}
 				loaderData={loaderData}

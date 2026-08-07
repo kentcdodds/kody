@@ -7,6 +7,7 @@ import {
 	buildStylesheetHref,
 } from '#app/client-build-id.ts'
 import {
+	CANONICAL_ORIGIN_META_NAME,
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
 } from '#app/document-head.ts'
@@ -21,6 +22,13 @@ export const STYLESHEET_HREF = '/styles.css'
 export type SsrDocumentProps = AppRootProps & {
 	title?: string
 	documentHead?: ResolvedDocumentHead
+	/**
+	 * Canonical origin the head URLs were absolutized with. Embedded as a
+	 * meta tag so SPA navigations rebuild canonical/OG URLs on the same
+	 * origin instead of `window.location.origin`, which diverges on a
+	 * dual-served legacy host during a domain migration.
+	 */
+	canonicalOrigin?: string
 	clientEntryHref?: string
 	stylesheetHref?: string
 	/**
@@ -207,6 +215,12 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				</title>
 				{handle.props.documentHead ? (
 					<ManagedDocumentHead head={handle.props.documentHead} />
+				) : null}
+				{handle.props.canonicalOrigin ? (
+					<meta
+						name={CANONICAL_ORIGIN_META_NAME}
+						content={handle.props.canonicalOrigin}
+					/>
 				) : null}
 				{handle.props.sentryConfig ? (
 					<meta
