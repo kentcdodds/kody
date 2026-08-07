@@ -548,7 +548,7 @@ test('renderAppPage renders the redesigned landing page shell', async () => {
 	expect(html).toContain('aria-label="Main"')
 	expect(html).toContain('aria-label="Footer"')
 	expect(html).toContain('aria-label="Dark mode"')
-	expect(html).toContain('href="/#invite"')
+	expect(html).toContain('id="invite"')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {

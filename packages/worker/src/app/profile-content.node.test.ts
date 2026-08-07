@@ -48,6 +48,8 @@ test('profile packages link the listing name and fork via a single icon control'
 	expect(html).toContain('href="/community/listing-1"')
 	expect(html.match(/fathom-analytics/g)).toHaveLength(1)
 	expect(html).toContain('href="/community/listing-1#fork-title"')
+	// Listed packages get one fork control; unpublished packages do not.
 	expect(html.match(/aria-label="fork"/g)).toHaveLength(1)
-	expect(html).toContain(unpublishedPackage.name)
+	expect(html).toContain('notes')
+	expect(html).not.toContain('href="/community/notes')
 })
