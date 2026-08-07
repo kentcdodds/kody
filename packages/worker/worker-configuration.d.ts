@@ -73,10 +73,6 @@ declare module "*.md" {
 	const value: string;
 	export default value;
 }
-declare module "*.md" {
-	const value: string;
-	export default value;
-}
 declare module "*.wasm" {
 	const value: WebAssembly.Module;
 	export default value;
