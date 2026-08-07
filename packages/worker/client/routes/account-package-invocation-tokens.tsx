@@ -931,15 +931,17 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
-	function selectToken(token: AccountPackageInvocationTokenListItem) {
-		selectedTokenId = token.id
-		editorState = token.revokedAt
-			? createEmptyEditorState()
-			: createEditorStateFromToken(token)
-		lastNewTokenQueryKey = ''
+	/**
+	 * Local cleanup when a sidebar link starts navigating to another token.
+	 * Editor state is deliberately NOT seeded here: until the navigation
+	 * commits, the URL (and therefore `getCurrentSelectedTokenId`) still
+	 * points at the previous token, and a save during that window would write
+	 * the new token's editor fields onto the old token. `applyPayload`
+	 * initializes the editor from the committed payload instead.
+	 */
+	function resetTokenSelectionState() {
 		revokeConfirm = false
 		deleteTokenCheck.reset()
-		editMode = !token.revokedAt
 		message = null
 		messageTone = 'info'
 		handle.update()
@@ -1073,7 +1075,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														)}
 														active={isSelected}
 														disabled={isMutating}
-														onNavigate={() => selectToken(token)}
+														onNavigate={resetTokenSelectionState}
 													>
 														<div
 															mix={css({
