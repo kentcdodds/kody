@@ -24,6 +24,7 @@ import {
 	listPlatformStorageInventory,
 	runDrExportTick,
 	runDrExportWatchdogTick,
+	shouldRunDrExportCatchUpCron,
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
@@ -221,6 +222,20 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(
 		shouldRunDrExportWatchdogCron(new Date('2026-07-23T06:20:00.000Z')),
 	).toBe(false)
+	// Catch-up cadence: never inside the nightly window, one tick per 15
+	// minutes outside it.
+	expect(
+		shouldRunDrExportCatchUpCron(new Date('2026-07-23T01:45:00.000Z')),
+	).toBe(false)
+	expect(
+		shouldRunDrExportCatchUpCron(new Date('2026-07-23T12:00:00.000Z')),
+	).toBe(true)
+	expect(
+		shouldRunDrExportCatchUpCron(new Date('2026-07-23T12:05:00.000Z')),
+	).toBe(false)
+	expect(
+		shouldRunDrExportCatchUpCron(new Date('2026-07-23T00:15:00.000Z')),
+	).toBe(true)
 	expect(
 		await runDrExportTick({
 			env: { DR_EXPORT_ENABLED: 'false' } as unknown as Env,
@@ -492,6 +507,303 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 				key.startsWith('staging/2026-07-23/exporter/chunks/storage-index/'),
 			),
 		).toBe(true)
+	} finally {
+		dateNow.mockRestore()
+	}
+})
+
+test('daytime catch-up resumes a stranded previous day until its summary is written', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [{ key: 'k', value: 1 }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 1,
+	})
+	const { client } = createMemoryS3()
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	const originalPut = client.put.bind(client)
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
+		// Exhaust the tick budget after each storage dump so the night ends
+		// with staged progress but no summary — a stranded day.
+		if (key.includes('/storage/') && key.endsWith('.ndjson')) {
+			nowMs += 50_000
+		}
+		return result
+	}
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({
+			jobs: [
+				{ userId: 'user-a', storageId: 'job:1' },
+				{ userId: 'user-a', storageId: 'job:2' },
+			],
+		}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	try {
+		const nightly = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T06:10:00.000Z'),
+			timeBudgetMs: 20_000,
+			s3: client,
+		})
+		expect(nightly).toMatchObject({
+			day: '2026-07-23',
+			mode: 'nightly',
+			timeBudgetExhausted: true,
+			summaryWritten: false,
+		})
+		expect(await client.getText(stagingSummaryKey('2026-07-23'))).toBeNull()
+
+		// Outside the window, ticks off the catch-up cadence stay cheap skips.
+		nowMs = 1_000_000
+		expect(
+			await runDrExportTick({
+				env,
+				now: new Date('2026-07-24T12:05:00.000Z'),
+				timeBudgetMs: 60_000,
+				s3: client,
+			}),
+		).toMatchObject({ skipped: true, reason: 'outside-nightly-window' })
+
+		// A cadence tick on the next day finds and finishes the stranded day.
+		const catchUp = await runDrExportTick({
+			env,
+			now: new Date('2026-07-24T12:00:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(catchUp).toMatchObject({
+			day: '2026-07-23',
+			mode: 'catch-up',
+			skipped: false,
+			summaryWritten: true,
+		})
+		const summary = JSON.parse(
+			(await client.getText(stagingSummaryKey('2026-07-23')))!.text,
+		) as { day: string }
+		expect(summary.day).toBe('2026-07-23')
+
+		// With the day complete, later cadence ticks exit cheaply.
+		const idle = await runDrExportTick({
+			env,
+			now: new Date('2026-07-24T12:15:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(idle).toMatchObject({
+			mode: 'catch-up',
+			skipped: true,
+			reason: 'no-stranded-day',
+		})
+	} finally {
+		dateNow.mockRestore()
+	}
+})
+
+test('catch-up honors an active progress lease and resumes after it expires', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [{ key: 'k', value: 1 }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 1,
+	})
+	const { client } = createMemoryS3()
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	const originalPut = client.put.bind(client)
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
+		if (key.includes('/storage/') && key.endsWith('.ndjson')) {
+			nowMs += 50_000
+		}
+		return result
+	}
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({
+			jobs: [
+				{ userId: 'user-a', storageId: 'job:1' },
+				{ userId: 'user-a', storageId: 'job:2' },
+			],
+		}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+	const progressKey = 'staging/2026-07-23/exporter/progress.json'
+
+	try {
+		await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T06:10:00.000Z'),
+			timeBudgetMs: 20_000,
+			s3: client,
+		})
+
+		// Simulate another writer mid-tick: an unexpired lease on progress.
+		const stored = JSON.parse(
+			(await client.getText(progressKey))!.text,
+		) as Record<string, unknown>
+		stored.leaseId = 'another-writer'
+		stored.leaseExpiresAt = new Date(nowMs + 60_000).toISOString()
+		await originalPut(progressKey, JSON.stringify(stored))
+
+		nowMs = 1_000_000
+		const blocked = await runDrExportTick({
+			env,
+			now: new Date('2026-07-24T12:00:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(blocked).toMatchObject({
+			day: '2026-07-23',
+			mode: 'catch-up',
+			skipped: true,
+			reason: 'progress-lease-active',
+		})
+
+		// Once the lease expires, catch-up takes over and finishes the day.
+		nowMs = 2_000_000
+		const resumed = await runDrExportTick({
+			env,
+			now: new Date('2026-07-24T12:15:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(resumed).toMatchObject({
+			day: '2026-07-23',
+			mode: 'catch-up',
+			summaryWritten: true,
+		})
+	} finally {
+		dateNow.mockRestore()
+	}
+})
+
+test('operator day override resumes one specific stranded day and rejects invalid targets', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [{ key: 'k', value: 1 }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 1,
+	})
+	const { client } = createMemoryS3()
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	const originalPut = client.put.bind(client)
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
+		if (key.includes('/storage/') && key.endsWith('.ndjson')) {
+			nowMs += 50_000
+		}
+		return result
+	}
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({
+			jobs: [
+				{ userId: 'user-a', storageId: 'job:1' },
+				{ userId: 'user-a', storageId: 'job:2' },
+			],
+		}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+	// Any daytime minute: the operator override ignores window and cadence.
+	const operatorNow = new Date('2026-07-24T09:07:00.000Z')
+
+	try {
+		await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T06:10:00.000Z'),
+			timeBudgetMs: 20_000,
+			s3: client,
+		})
+		nowMs = 1_000_000
+
+		await expect(
+			runDrExportTick({ env, day: 'not-a-day', now: operatorNow, s3: client }),
+		).rejects.toThrow(/invalid backup day/)
+		await expect(
+			runDrExportTick({
+				env,
+				day: '2026-07-25',
+				now: operatorNow,
+				s3: client,
+			}),
+		).rejects.toThrow(/future/)
+
+		// Resume-only: a day that never staged progress is not started fresh.
+		expect(
+			await runDrExportTick({
+				env,
+				day: '2026-07-20',
+				now: operatorNow,
+				timeBudgetMs: 60_000,
+				s3: client,
+			}),
+		).toMatchObject({
+			day: '2026-07-20',
+			mode: 'operator',
+			skipped: true,
+			reason: 'no-staged-progress',
+		})
+
+		const finished = await runDrExportTick({
+			env,
+			day: '2026-07-23',
+			now: operatorNow,
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(finished).toMatchObject({
+			day: '2026-07-23',
+			mode: 'operator',
+			summaryWritten: true,
+		})
+
+		expect(
+			await runDrExportTick({
+				env,
+				day: '2026-07-23',
+				now: operatorNow,
+				timeBudgetMs: 60_000,
+				s3: client,
+			}),
+		).toMatchObject({
+			day: '2026-07-23',
+			mode: 'operator',
+			skipped: true,
+			reason: 'already-complete',
+		})
 	} finally {
 		dateNow.mockRestore()
 	}
@@ -1309,4 +1621,30 @@ test('watchdog passes on a written summary and fails loudly on an incomplete nig
 	await expect(
 		runDrExportWatchdogTick({ env, now, s3: incomplete.client }),
 	).rejects.toThrow(/summary missing for 2026-07-23.*phase=artifacts/)
+})
+
+test('watchdog stays loud when an earlier day is stranded despite catch-up', async () => {
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+	} as unknown as Env
+	const now = new Date('2026-07-23T06:15:00.000Z')
+	const { client } = createMemoryS3()
+	// Tonight finished, but the day before is still progress-without-summary.
+	await client.put(stagingSummaryKey('2026-07-23'), '{}')
+	await client.put('staging/2026-07-22/exporter/progress.json', '{}')
+	await expect(
+		runDrExportWatchdogTick({ env, now, s3: client }),
+	).rejects.toThrow(/catch-up is stuck.*2026-07-22/)
+
+	// A previous day with neither progress nor summary (for example before DR
+	// enablement) is not stranded.
+	const clean = createMemoryS3()
+	await clean.client.put(stagingSummaryKey('2026-07-23'), '{}')
+	expect(
+		await runDrExportWatchdogTick({ env, now, s3: clean.client }),
+	).toMatchObject({ day: '2026-07-23', summaryPresent: true })
 })

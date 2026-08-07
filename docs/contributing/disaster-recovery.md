@@ -87,7 +87,9 @@ Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
   stage Mailbox / selected RunLog state
   / StorageRunner / R2 / artifacts      →   Hourly: D1 freshness + catch-up
   into staging/{day}/...                    Hourly: seal complete days
-06:15 UTC: staging watchdog → Sentry        Admin UI: drill / production restore
+Daytime */15 ticks: staging catch-up        Admin UI: drill / production restore
+  resume a stranded day (≤2 days back)
+06:15 UTC: staging watchdog → Sentry
 ```
 
 ### What intentionally lives on the DR (KCD) account
@@ -172,6 +174,16 @@ Contract: `packages/shared/src/backup-staging.ts`.
      full download and hash path.
    - **Published artifacts** — `BUNDLE_ARTIFACTS_KV` published source snapshots
      for rows in `entity_sources` with a `published_commit`
+   - **Stranded-day catch-up** — a night with more staging work than the
+     00:30–06:10 window can hold ends with `exporter/progress.json` but no
+     `exporter/summary.json` (a _stranded day_; first hit live on 2026-08-07).
+     Outside the nightly window, one tick every 15 minutes scans today plus the
+     previous 2 days for progress-without-summary and resumes the most recent
+     stranded day under the normal ~20 s budget and progress lease until its
+     summary is written. Catch-up is resume-only: a day that never staged
+     progress is not started fresh (its dumps would contain current data, not
+     that day's). Data staged during catch-up is read at resume time; a slightly
+     newer dump is preferred over an unsealable day.
    - **Resumable phase state** — `exporter/progress.json` contains phase
      cursors, counters, bounded index-entry tails, and conditional-write
      revision data. Mailbox, selected RunLog, and StorageRunner dump pages plus
@@ -517,13 +529,44 @@ objects, remains a tracked follow-up in
 
 ## Schedules and freshness
 
-| When (UTC)               | Who               | What                                                                                                              |
-| ------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `*/5` during 00:30–06:10 | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete) |
-| 06:15                    | Production worker | Staging watchdog: a missing `exporter/summary.json` fails the lane → Sentry                                       |
-| 02:15                    | Control plane     | Primary D1 export Workflow                                                                                        |
-| 02:45–05:45 hourly       | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                                   |
-| Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                |
+| When (UTC)                       | Who               | What                                                                                                                     |
+| -------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `*/5` during 00:30–06:10         | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete)        |
+| Every 15 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the most recent stranded day (progress without summary, today − ≤2 days); cheap no-op otherwise |
+| 06:15                            | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry       |
+| 02:15                            | Control plane     | Primary D1 export Workflow                                                                                               |
+| 02:45–05:45 hourly               | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                                          |
+| Hourly `:45`                     | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                       |
+
+### Stranded staging days (manual finish)
+
+Failure mode: the nightly exporter hard-stops when the window closes, so a night
+with too much work leaves `staging/{day}/exporter/progress.json` without
+`exporter/summary.json`. The 06:15 watchdog pages; without a summary the day can
+never seal. Daytime catch-up ticks (table above) normally finish the day
+automatically within a few hours, and the hourly control-plane seal (3-day
+lookback) then seals it — no operator action needed.
+
+Operate manually when catch-up is stuck, the day has already fallen outside the
+catch-up lookback, or you want the day finished immediately:
+
+```sh
+DAY='YYYY-MM-DD'
+curl --fail-with-body \
+  --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/dr-export" \
+  --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+  --header "Content-Type: application/json" \
+  --data "{\"day\": \"$DAY\"}"
+```
+
+Each request runs up to 5 resume ticks (`maxTicks`, 1–10) with the normal ~20 s
+budget and lease semantics, so it is safe alongside scheduled catch-up ticks.
+Repeat until the response reports `"summaryWritten": true` (or
+`"reason": "already-complete"`). The endpoint is resume-only: a day with no
+staged progress returns `"reason": "no-staged-progress"` instead of starting a
+fresh export for a past day. After the summary exists, the next hourly
+control-plane seal covers the day if it is within the 3-day seal lookback;
+otherwise seal it from the admin UI (`POST /actions/seal-day`).
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
 `freshness-unrestorable` (the SQL contains statements D1 cannot import),

@@ -1,4 +1,5 @@
 import {
+	assertBackupDay,
 	backupBlobKey,
 	backupR2BucketLabels,
 	backupStagingSchemaVersion,
@@ -59,13 +60,17 @@ import {
 	type StorageInventoryEntry,
 } from '#worker/dr/exporter-inventory.ts'
 import {
+	drExportCatchUpLookbackDays,
 	isDrExportConfigured,
+	shouldRunDrExportCatchUpCron,
 	shouldRunDrExportCron,
 } from '#worker/dr/exporter-schedule.ts'
 
 export { listPlatformStorageInventory } from '#worker/dr/exporter-inventory.ts'
 export {
+	drExportCatchUpLookbackDays,
 	isDrExportConfigured,
+	shouldRunDrExportCatchUpCron,
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter-schedule.ts'
@@ -171,8 +176,11 @@ type ProgressSession = {
 	etag: string | null
 }
 
+export type DrExportTickMode = 'nightly' | 'catch-up' | 'operator'
+
 export type DrExportTickResult = {
 	day: string
+	mode: DrExportTickMode
 	phase: DrExporterPhase
 	timeBudgetExhausted: boolean
 	skipped: boolean
@@ -194,6 +202,35 @@ function stagingProgressKey(day: string) {
 
 function formatUtcDay(date: Date) {
 	return date.toISOString().slice(0, 10)
+}
+
+function utcDayMinus(day: string, daysBack: number) {
+	const date = new Date(`${day}T00:00:00.000Z`)
+	date.setUTCDate(date.getUTCDate() - daysBack)
+	return date.toISOString().slice(0, 10)
+}
+
+/**
+ * Most recent day (today first) whose staging has progress but no completion
+ * summary — a night the exporter started and never finished because the
+ * window closed. Days with neither object never started (for example before
+ * DR enablement) and are deliberately not eligible: catch-up resumes staged
+ * work, it never starts a fresh past-day export whose dumps would actually
+ * contain current data.
+ */
+async function findStrandedStagingDay(input: {
+	s3: DrBackupS3Client
+	today: string
+	lookbackDays: number
+}): Promise<string | null> {
+	for (let offset = 0; offset <= input.lookbackDays; offset += 1) {
+		const candidate = utcDayMinus(input.today, offset)
+		if ((await input.s3.head(stagingSummaryKey(candidate))).exists) continue
+		if ((await input.s3.head(stagingProgressKey(candidate))).exists) {
+			return candidate
+		}
+	}
+	return null
 }
 
 function utf8ByteLength(value: string) {
@@ -1217,11 +1254,32 @@ export async function runDrExportTick(input: {
 	now?: Date
 	timeBudgetMs?: number
 	s3?: DrBackupS3Client
+	/**
+	 * Operator override: resume and finish one specific UTC day's staging
+	 * regardless of the nightly window and catch-up cadence. Resume-only —
+	 * the tick skips (`no-staged-progress`) when the day never staged any
+	 * progress, so it cannot start a fresh export of a past day.
+	 */
+	day?: string
 }): Promise<DrExportTickResult> {
 	const now = input.now ?? new Date()
-	const day = formatUtcDay(now)
+	const today = formatUtcDay(now)
+	if (input.day !== undefined) {
+		assertBackupDay(input.day)
+		if (input.day > today) {
+			throw new Error(`DR export day ${input.day} is in the future`)
+		}
+	}
+	const mode: DrExportTickMode =
+		input.day !== undefined
+			? 'operator'
+			: shouldRunDrExportCron(now)
+				? 'nightly'
+				: 'catch-up'
+	let day = input.day ?? today
 	const empty = (reason: string): DrExportTickResult => ({
 		day,
+		mode,
 		phase: 'done',
 		timeBudgetExhausted: false,
 		skipped: true,
@@ -1237,7 +1295,7 @@ export async function runDrExportTick(input: {
 		summaryWritten: false,
 	})
 
-	if (!shouldRunDrExportCron(now)) {
+	if (mode === 'catch-up' && !shouldRunDrExportCatchUpCron(now)) {
 		return empty('outside-nightly-window')
 	}
 	if (!isDrExportConfigured(input.env)) {
@@ -1246,6 +1304,24 @@ export async function runDrExportTick(input: {
 	const config = readDrBackupS3Config(input.env)
 	if (!config) return empty('not-configured')
 	const s3 = input.s3 ?? createDrBackupS3Client(config)
+
+	if (mode === 'catch-up') {
+		const stranded = await findStrandedStagingDay({
+			s3,
+			today,
+			lookbackDays: drExportCatchUpLookbackDays,
+		})
+		if (!stranded) return empty('no-stranded-day')
+		day = stranded
+	}
+	if (mode === 'operator') {
+		const progressHead = await s3.head(stagingProgressKey(day))
+		if (!progressHead.exists) {
+			const summaryHead = await s3.head(stagingSummaryKey(day))
+			if (summaryHead.exists) return empty('already-complete')
+			return empty('no-staged-progress')
+		}
+	}
 
 	const existingSummary = await s3.getText(stagingSummaryKey(day))
 	let legacySummaryEtag: string | null = null
@@ -1366,6 +1442,7 @@ export async function runDrExportTick(input: {
 
 		const result: DrExportTickResult = {
 			day,
+			mode,
 			phase: progress.phase,
 			timeBudgetExhausted,
 			skipped: false,
@@ -1388,6 +1465,7 @@ export async function runDrExportTick(input: {
 				'dr_export_tick',
 				JSON.stringify({
 					day,
+					mode,
 					skipped: true,
 					reason: 'progress-precondition-failed',
 				}),
@@ -1409,7 +1487,10 @@ export type DrExportWatchdogResult = {
  * Post-window health check for the nightly staging exporter. Throws when the
  * day's `exporter/summary.json` is missing so the scheduled-lane handler
  * reports the failure to Sentry — an incomplete night is otherwise silent
- * (the exporter just stops getting ticks when the window closes).
+ * (the exporter just stops getting ticks when the window closes). Also throws
+ * when an earlier day within the catch-up lookback is still stranded
+ * (progress without summary), so a stuck catch-up stays loud once per day
+ * instead of failing silently forever.
  */
 export async function runDrExportWatchdogTick(input: {
 	env: Env
@@ -1437,12 +1518,29 @@ export async function runDrExportWatchdogTick(input: {
 	}
 	const s3 = input.s3 ?? createDrBackupS3Client(config)
 	const summary = await s3.getText(stagingSummaryKey(day))
-	if (summary) {
+	const strandedPreviousDays: Array<string> = []
+	for (let offset = 1; offset <= drExportCatchUpLookbackDays; offset += 1) {
+		const candidate = utcDayMinus(day, offset)
+		if ((await s3.head(stagingSummaryKey(candidate))).exists) continue
+		if ((await s3.head(stagingProgressKey(candidate))).exists) {
+			strandedPreviousDays.push(candidate)
+		}
+	}
+	if (summary && strandedPreviousDays.length === 0) {
 		console.info(
 			'dr_export_watchdog',
 			JSON.stringify({ day, summaryPresent: true }),
 		)
 		return { day, skipped: false, summaryPresent: true }
+	}
+	const strandedDetail =
+		strandedPreviousDays.length > 0
+			? ` Earlier staging days are still stranded despite catch-up: ${strandedPreviousDays.join(', ')}.`
+			: ''
+	if (summary) {
+		throw new Error(
+			`DR staging catch-up is stuck.${strandedDetail} Each listed day has exporter progress but no summary; resume it via POST /__maintenance/dr-export.`,
+		)
 	}
 	const progressText = await s3.getText(stagingProgressKey(day))
 	let phase = 'missing'
@@ -1455,7 +1553,7 @@ export async function runDrExportWatchdogTick(input: {
 		}
 	}
 	throw new Error(
-		`DR staging summary missing for ${day} after the export window closed (progress phase=${phase}${detail}). The night's non-D1 backup is incomplete and the day cannot be sealed.`,
+		`DR staging summary missing for ${day} after the export window closed (progress phase=${phase}${detail}). The night's non-D1 backup is incomplete and the day cannot be sealed. Daytime catch-up ticks will resume it; if it stays stranded, finish it via POST /__maintenance/dr-export.${strandedDetail}`,
 	)
 }
 

@@ -63,6 +63,7 @@ import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { dispatchScheduledLanes } from '#worker/scheduled/scheduled-dispatch-queue.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
+import { handleDrExportRequest } from '#worker/dr/dr-export-maintenance.ts'
 import { handleDoPitrRequest } from '#worker/dr/do-pitr-maintenance.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
@@ -289,6 +290,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/dr-restore') {
 			return handleDrRestoreRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/dr-export') {
+			return handleDrExportRequest(request, env)
 		}
 
 		if (url.pathname === '/__maintenance/do-pitr') {
