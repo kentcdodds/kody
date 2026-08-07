@@ -27,7 +27,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -709,20 +709,17 @@ export function AccountJobsRoute(handle: Handle) {
 									<AccountManagementList>
 										{filteredJobs.map((item) => (
 											<li key={item.id}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={jobsRoute.buildDetailHref(
+														item.id,
+														getCurrentSearch(),
+													)}
 													active={selection.selectedId === item.id}
 													disabled={isMutating}
-													onClick={() => {
-														if (isMutating) return
+													onNavigate={() => {
 														deleteJobCheck.reset()
 														editing = false
 														setMessage(null)
-														navigate(
-															jobsRoute.buildDetailHref(
-																item.id,
-																getCurrentSearch(),
-															),
-														)
 													}}
 												>
 													<span
@@ -820,7 +817,7 @@ export function AccountJobsRoute(handle: Handle) {
 													>
 														{statusLabel(item)}
 													</span>
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 									</AccountManagementList>

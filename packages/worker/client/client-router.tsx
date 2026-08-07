@@ -239,7 +239,17 @@ export function matchRoute(
 	)
 }
 
-function shouldHandleClick(event: MouseEvent, anchor: HTMLAnchorElement) {
+/**
+ * True when the router will intercept this anchor click and run an SPA
+ * navigation (plain left-click on a same-origin, non-download, self-target
+ * link). Components that reset local state before an in-page navigation use
+ * this so modified clicks (open in new tab, download) leave the current page
+ * untouched.
+ */
+export function shouldRouterHandleClick(
+	event: MouseEvent,
+	anchor: HTMLAnchorElement,
+) {
 	if (event.defaultPrevented) return false
 	if (event.button !== 0) return false
 	if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey)
@@ -259,7 +269,7 @@ function handleDocumentClick(event: MouseEvent) {
 	const target = event.target as Element | null
 	const anchor = target?.closest('a') as HTMLAnchorElement | null
 	if (!anchor || typeof window === 'undefined') return
-	if (!shouldHandleClick(event, anchor)) return
+	if (!shouldRouterHandleClick(event, anchor)) return
 
 	event.preventDefault()
 	const destination = new URL(anchor.href, window.location.href)

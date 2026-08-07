@@ -1,6 +1,7 @@
 import { css, type Handle } from 'remix/ui'
 import { routes } from '#app/routes.ts'
 import { on } from '#client/event-mixin.ts'
+import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import {
 	colors,
 	radius,
@@ -677,28 +678,52 @@ export function AccountManagementSearchField(
 	)
 }
 
-type AccountManagementListItemButtonProps = {
+type AccountManagementListItemLinkProps = {
+	href: string
 	active: boolean
 	disabled?: boolean
-	onClick: () => void
+	/**
+	 * Pre-navigation state resets (clear messages, collapse delete
+	 * confirmations). Runs only for clicks the router intercepts as an SPA
+	 * navigation, so open-in-new-tab clicks leave the current pane untouched.
+	 */
+	onNavigate?: () => void
 	children: AccountManagementSlot
 }
 
-export function AccountManagementListItemButton(
-	handle: Handle<AccountManagementListItemButtonProps>,
+/**
+ * List/detail sidebar entry rendered as a real link: middle/cmd-click opens
+ * the record in a new tab, hover warms the destination loader, and
+ * `data-prevent-scroll-reset` keeps the page's scroll position when the
+ * detail pane swaps in. While `disabled`, the `href` is dropped so the router
+ * ignores clicks mid-mutation.
+ */
+export function AccountManagementListItemLink(
+	handle: Handle<AccountManagementListItemLinkProps>,
 ) {
 	return () => (
-		<button
-			type="button"
-			disabled={handle.props.disabled}
+		<a
+			href={handle.props.disabled ? undefined : handle.props.href}
+			data-prevent-scroll-reset
 			aria-current={handle.props.active ? 'true' : undefined}
+			aria-disabled={handle.props.disabled ? 'true' : undefined}
 			mix={[
-				on('click', handle.props.onClick),
+				on('click', (event: MouseEvent) => {
+					if (handle.props.disabled || !handle.props.onNavigate) return
+					if (
+						!(event.currentTarget instanceof HTMLAnchorElement) ||
+						!shouldRouterHandleClick(event, event.currentTarget)
+					) {
+						return
+					}
+					handle.props.onNavigate()
+				}),
 				css({
 					width: '100%',
 					minWidth: 0,
 					maxWidth: '100%',
 					textAlign: 'left',
+					textDecoration: 'none',
 					display: 'grid',
 					gap: spacing.xs,
 					padding: spacing.md,
@@ -719,7 +744,7 @@ export function AccountManagementListItemButton(
 			]}
 		>
 			{handle.props.children}
-		</button>
+		</a>
 	)
 }
 

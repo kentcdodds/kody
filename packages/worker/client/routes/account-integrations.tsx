@@ -6,7 +6,7 @@ import {
 } from '#app/loader-data.ts'
 import { routes } from '#app/routes.ts'
 import { type Handle, css } from 'remix/ui'
-import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
@@ -27,7 +27,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -513,44 +513,39 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														key={group.appSlug}
 														mix={css({ display: 'grid', gap: spacing.xs })}
 													>
-														<button
-															type="button"
-															mix={[
-																on('click', () => {
-																	navigate(
-																		buildOauthAppHref(
-																			group.appSlug,
-																			getCurrentSearch(),
-																		),
-																	)
-																}),
-																css({
-																	display: 'grid',
-																	gap: spacing.xs,
-																	padding: `${spacing.xs} ${spacing.sm}`,
-																	border: 'none',
-																	borderRadius: radius.md,
-																	backgroundColor: appActive
-																		? colors.primarySoftest
-																		: 'transparent',
-																	color: colors.text,
-																	textAlign: 'left',
-																	cursor: 'pointer',
-																	transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
-																	// Selecting a connection swaps the panel
-																	// beside this list, which is easy to miss —
-																	// the press itself has to register.
-																	'&:active': { scale: '0.98' },
-																	[hoverMq]: {
-																		'&:hover': {
-																			backgroundColor: colors.primarySoftest,
-																		},
+														<a
+															href={buildOauthAppHref(
+																group.appSlug,
+																getCurrentSearch(),
+															)}
+															data-prevent-scroll-reset
+															mix={css({
+																display: 'grid',
+																gap: spacing.xs,
+																padding: `${spacing.xs} ${spacing.sm}`,
+																border: 'none',
+																borderRadius: radius.md,
+																backgroundColor: appActive
+																	? colors.primarySoftest
+																	: 'transparent',
+																color: colors.text,
+																textAlign: 'left',
+																textDecoration: 'none',
+																cursor: 'pointer',
+																transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
+																// Selecting a connection swaps the panel
+																// beside this list, which is easy to miss —
+																// the press itself has to register.
+																'&:active': { scale: '0.98' },
+																[hoverMq]: {
+																	'&:hover': {
+																		backgroundColor: colors.primarySoftest,
 																	},
-																	'@media (prefers-reduced-motion: reduce)': {
-																		'&:active': { scale: 'none' },
-																	},
-																}),
-															]}
+																},
+																'@media (prefers-reduced-motion: reduce)': {
+																	'&:active': { scale: 'none' },
+																},
+															})}
 														>
 															<strong
 																mix={css({
@@ -571,25 +566,21 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																	? `${group.connections.length} connections · shared OAuth app`
 																	: 'OAuth app'}
 															</span>
-														</button>
+														</a>
 														<AccountManagementList>
 															{group.connections.map((integration) => (
 																<li
 																	key={integration.name}
 																	mix={css({ minWidth: 0 })}
 																>
-																	<AccountManagementListItemButton
+																	<AccountManagementListItemLink
+																		href={integrationsRoute.buildDetailHref(
+																			integration.name,
+																			getCurrentSearch(),
+																		)}
 																		active={
 																			selection.selectedId === integration.name
 																		}
-																		onClick={() => {
-																			navigate(
-																				integrationsRoute.buildDetailHref(
-																					integration.name,
-																					getCurrentSearch(),
-																				),
-																			)
-																		}}
 																	>
 																		<strong
 																			mix={css({
@@ -633,7 +624,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																				{appTitle}
 																			</span>
 																		)}
-																	</AccountManagementListItemButton>
+																	</AccountManagementListItemLink>
 																</li>
 															))}
 														</AccountManagementList>
@@ -646,42 +637,37 @@ export function AccountIntegrationsRoute(handle: Handle) {
 												key={app.slug}
 												mix={css({ display: 'grid', gap: spacing.xs })}
 											>
-												<button
-													type="button"
-													mix={[
-														on('click', () => {
-															navigate(
-																buildOauthAppHref(app.slug, getCurrentSearch()),
-															)
-														}),
-														css({
-															display: 'grid',
-															gap: spacing.xs,
-															padding: `${spacing.xs} ${spacing.sm}`,
-															border: 'none',
-															borderRadius: radius.md,
-															backgroundColor:
-																selectedAppSlug === app.slug
-																	? colors.primarySoftest
-																	: 'transparent',
-															color: colors.text,
-															textAlign: 'left',
-															cursor: 'pointer',
-															transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
-															// Selecting an app swaps the panel beside this
-															// list, which is easy to miss — the press itself
-															// has to register.
-															'&:active': { scale: '0.98' },
-															[hoverMq]: {
-																'&:hover': {
-																	backgroundColor: colors.primarySoftest,
-																},
+												<a
+													href={buildOauthAppHref(app.slug, getCurrentSearch())}
+													data-prevent-scroll-reset
+													mix={css({
+														display: 'grid',
+														gap: spacing.xs,
+														padding: `${spacing.xs} ${spacing.sm}`,
+														border: 'none',
+														borderRadius: radius.md,
+														backgroundColor:
+															selectedAppSlug === app.slug
+																? colors.primarySoftest
+																: 'transparent',
+														color: colors.text,
+														textAlign: 'left',
+														textDecoration: 'none',
+														cursor: 'pointer',
+														transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
+														// Selecting an app swaps the panel beside this
+														// list, which is easy to miss — the press itself
+														// has to register.
+														'&:active': { scale: '0.98' },
+														[hoverMq]: {
+															'&:hover': {
+																backgroundColor: colors.primarySoftest,
 															},
-															'@media (prefers-reduced-motion: reduce)': {
-																'&:active': { scale: 'none' },
-															},
-														}),
-													]}
+														},
+														'@media (prefers-reduced-motion: reduce)': {
+															'&:active': { scale: 'none' },
+														},
+													})}
 												>
 													<strong
 														mix={css({
@@ -700,7 +686,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 													>
 														OAuth app · no connections yet
 													</span>
-												</button>
+												</a>
 											</div>
 										))}
 									</div>
@@ -814,6 +800,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															connection.name,
 															getCurrentSearch(),
 														)}
+														data-prevent-scroll-reset
 														mix={css(primaryLinkCss)}
 													>
 														{connection.accountLabel?.trim() || connection.name}

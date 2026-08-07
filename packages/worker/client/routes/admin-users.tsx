@@ -1,7 +1,7 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'
 import {
 	createInfiniteList,
@@ -24,7 +24,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementSearchField,
@@ -772,13 +772,10 @@ export function AdminUsersRoute(handle: Handle) {
 									<AccountManagementList>
 										{users.map((user) => (
 											<li key={user.stableUserId} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={buildUserDetailHref(user.stableUserId)}
 													active={selectedStableUserId === user.stableUserId}
 													disabled={isMutating}
-													onClick={() => {
-														if (isMutating) return
-														navigate(buildUserDetailHref(user.stableUserId))
-													}}
 												>
 													<strong mix={css({ display: 'block' })}>
 														{user.username}
@@ -803,7 +800,7 @@ export function AdminUsersRoute(handle: Handle) {
 															? user.roles.join(', ')
 															: 'No roles'}
 													</span>
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 										{hasMore ? (

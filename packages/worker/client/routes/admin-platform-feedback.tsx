@@ -2,7 +2,7 @@ import {
 	formatNullableTimestamp,
 	formatTimestamp,
 } from '#client/format-timestamp.ts'
-import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -30,7 +30,7 @@ import { type Handle, css } from 'remix/ui'
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountManagementSidebar,
@@ -386,13 +386,9 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 												const isActive = selectedFeedbackId === feedback.id
 												return (
 													<li key={feedback.id} mix={css({ minWidth: 0 })}>
-														<AccountManagementListItemButton
+														<AccountManagementListItemLink
+															href={buildFeedbackHref(currentHref, feedback.id)}
 															active={isActive}
-															onClick={() => {
-																navigate(
-																	buildFeedbackHref(currentHref, feedback.id),
-																)
-															}}
 														>
 															<strong
 																mix={css({
@@ -430,7 +426,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 																	{feedback.summary_untrusted}
 																</span>
 															) : null}
-														</AccountManagementListItemButton>
+														</AccountManagementListItemLink>
 													</li>
 												)
 											})}

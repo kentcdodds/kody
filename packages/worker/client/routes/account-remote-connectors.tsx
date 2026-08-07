@@ -21,7 +21,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -647,15 +647,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	}
 
 	function selectConnector(connector: RemoteConnectorListItem) {
-		if (saveState !== 'idle') return
 		editorState = createEditorStateFromConnector(connector)
 		syncedSelectionKey = `id:${connector.id}`
 		deleteConnectorCheck.reset()
 		showSharedSecret = false
 		message = null
-		syncRouterLocation(
-			remoteConnectorsRoute.buildDetailHref(connector.id, getCurrentSearch()),
-		)
 		handle.update()
 	}
 
@@ -825,10 +821,14 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									<AccountManagementList>
 										{filteredConnectors.map((connector) => (
 											<li key={connector.id}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={remoteConnectorsRoute.buildDetailHref(
+														connector.id,
+														getCurrentSearch(),
+													)}
 													active={selection.selectedId === connector.id}
 													disabled={isMutating}
-													onClick={() => selectConnector(connector)}
+													onNavigate={() => selectConnector(connector)}
 												>
 													<strong>{connectorLabel(connector)}</strong>
 													<span
@@ -843,7 +843,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 															? 'Secret saved'
 															: 'Missing secret'}
 													</span>
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 									</AccountManagementList>

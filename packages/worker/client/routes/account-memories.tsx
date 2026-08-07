@@ -24,7 +24,7 @@ import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -401,19 +401,16 @@ export function AccountMemoriesRoute(handle: Handle) {
 									<AccountManagementList>
 										{filteredMemories.map((item) => (
 											<li key={item.id} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={memoriesRoute.buildDetailHref(
+														item.id,
+														getCurrentSearch(),
+													)}
 													active={selection.selectedId === item.id}
 													disabled={isMutating}
-													onClick={() => {
-														if (isMutating) return
+													onNavigate={() => {
 														deleteMode = null
 														setMessage(null)
-														navigate(
-															memoriesRoute.buildDetailHref(
-																item.id,
-																getCurrentSearch(),
-															),
-														)
 													}}
 												>
 													<strong
@@ -453,7 +450,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 													>
 														{item.summary}
 													</span>
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 									</AccountManagementList>

@@ -1,7 +1,7 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import {
@@ -23,7 +23,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -432,16 +432,12 @@ export function AccountPackagesRoute(handle: Handle) {
 									<AccountManagementList>
 										{packages.map((pkg) => (
 											<li key={pkg.id} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={packagesRoute.buildDetailHref(
+														pkg.id,
+														getCurrentSearch(),
+													)}
 													active={activePackageId === pkg.id}
-													onClick={() => {
-														navigate(
-															packagesRoute.buildDetailHref(
-																pkg.id,
-																getCurrentSearch(),
-															),
-														)
-													}}
 												>
 													<div
 														mix={css({
@@ -496,7 +492,7 @@ export function AccountPackagesRoute(handle: Handle) {
 															{pkg.description}
 														</span>
 													) : null}
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 										{hasMore ? (

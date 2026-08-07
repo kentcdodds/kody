@@ -3,7 +3,7 @@ import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { on } from '#client/event-mixin.ts'
-import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -16,7 +16,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -494,19 +494,15 @@ export function AccountEmailRoute(handle: Handle) {
 											<AccountManagementList>
 												{data.messages.map((emailMessage) => (
 													<li key={emailMessage.id} mix={css({ minWidth: 0 })}>
-														<AccountManagementListItemButton
+														<AccountManagementListItemLink
+															href={emailRoute.buildDetailHref(
+																emailMessage.id,
+																getCurrentSearch(),
+															)}
 															active={
 																selectedMessageId === emailMessage.id ||
 																selectedMessage?.id === emailMessage.id
 															}
-															onClick={() => {
-																navigate(
-																	emailRoute.buildDetailHref(
-																		emailMessage.id,
-																		getCurrentSearch(),
-																	),
-																)
-															}}
 														>
 															<div
 																mix={css({
@@ -576,7 +572,7 @@ export function AccountEmailRoute(handle: Handle) {
 																	</span>
 																) : null}
 															</span>
-														</AccountManagementListItemButton>
+														</AccountManagementListItemLink>
 													</li>
 												))}
 											</AccountManagementList>

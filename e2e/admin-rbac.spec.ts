@@ -73,7 +73,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 
 	await page.goto(`/admin/users?q=rbac-${runId}`)
 	await expect(
-		page.getByRole('button', { name: memberUser.username }),
+		page.getByRole('link', { name: memberUser.username }),
 	).toBeVisible()
 	await expect(page.getByText(memberUser.email)).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
@@ -92,13 +92,13 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
 
-	await page.getByRole('button', { name: memberUser.username }).click()
+	await page.getByRole('link', { name: memberUser.username }).click()
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
 	await expect(page.getByText('super-secret-value')).toHaveCount(0)
 
 	await page.goto(`/admin/users?q=rbac-${runId}`)
-	await page.getByRole('button', { name: memberUser.username }).click()
+	await page.getByRole('link', { name: memberUser.username }).click()
 	const roleSelect = page.getByLabel('Role', { exact: true })
 	await roleSelect.selectOption('admin')
 	await page.getByRole('button', { name: 'Assign', exact: true }).click()

@@ -20,7 +20,7 @@ import {
 	accountManagementNarrowMq,
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountManagementSidebar,
@@ -683,17 +683,13 @@ export function AccountActivityRoute(handle: Handle) {
 											<AccountManagementList>
 												{runs.map((item) => (
 													<li key={item.id}>
-														<AccountManagementListItemButton
+														<AccountManagementListItemLink
+															href={activityRoute.buildDetailHref(
+																item.id,
+																filterSearch,
+															)}
 															active={selection.selectedId === item.id}
-															onClick={() => {
-																setMessage(null)
-																navigate(
-																	activityRoute.buildDetailHref(
-																		item.id,
-																		filterSearch,
-																	),
-																)
-															}}
+															onNavigate={() => setMessage(null)}
 														>
 															<span
 																mix={css({
@@ -753,7 +749,7 @@ export function AccountActivityRoute(handle: Handle) {
 																	{item.errorMessage}
 																</span>
 															) : null}
-														</AccountManagementListItemButton>
+														</AccountManagementListItemLink>
 													</li>
 												))}
 											</AccountManagementList>

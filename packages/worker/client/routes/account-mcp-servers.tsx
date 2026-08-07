@@ -20,7 +20,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -461,19 +461,16 @@ export function AccountMcpServersRoute(handle: Handle) {
 									<AccountManagementList>
 										{filteredServers.map((item) => (
 											<li key={item.id}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={mcpServersRoute.buildDetailHref(
+														item.id,
+														getCurrentSearch(),
+													)}
 													active={selection.selectedId === item.id}
 													disabled={isMutating}
-													onClick={() => {
-														if (isMutating) return
+													onNavigate={() => {
 														deleteServerCheck.reset()
 														setMessage(null)
-														navigate(
-															mcpServersRoute.buildDetailHref(
-																item.id,
-																getCurrentSearch(),
-															),
-														)
 													}}
 												>
 													<strong>{item.name}</strong>
@@ -488,7 +485,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 															? ` · ${item.toolCount} tool${item.toolCount === 1 ? '' : 's'}`
 															: ''}
 													</span>
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 									</AccountManagementList>

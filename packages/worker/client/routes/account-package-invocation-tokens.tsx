@@ -48,7 +48,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -942,12 +942,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editMode = !token.revokedAt
 		message = null
 		messageTone = 'info'
-		syncRouterLocation(
-			packageInvocationTokensRoute.buildDetailHref(
-				token.id,
-				getCurrentSearch(),
-			),
-		)
 		handle.update()
 	}
 
@@ -1072,13 +1066,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											const isSelected = effectiveSelectedTokenId === token.id
 											return (
 												<li key={token.id} mix={css({ minWidth: 0 })}>
-													<AccountManagementListItemButton
+													<AccountManagementListItemLink
+														href={packageInvocationTokensRoute.buildDetailHref(
+															token.id,
+															getCurrentSearch(),
+														)}
 														active={isSelected}
 														disabled={isMutating}
-														onClick={() => {
-															if (isMutating) return
-															selectToken(token)
-														}}
+														onNavigate={() => selectToken(token)}
 													>
 														<div
 															mix={css({
@@ -1132,7 +1127,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														>
 															Exports: {formatScope(token.exportNames)}
 														</span>
-													</AccountManagementListItemButton>
+													</AccountManagementListItemLink>
 												</li>
 											)
 										})}

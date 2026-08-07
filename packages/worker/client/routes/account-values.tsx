@@ -20,7 +20,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -395,13 +395,9 @@ export function AccountValuesRoute(handle: Handle) {
 		}
 	}
 
-	function selectValue(entry: AccountValueListItem) {
-		if (saveState !== 'idle') return
+	function resetSelectionState() {
 		deleteValueCheck.reset()
 		setMessage(null)
-		syncRouterLocation(
-			valuesRoute.buildDetailHref(entry.id, getCurrentSearch()),
-		)
 		handle.update()
 	}
 
@@ -545,10 +541,14 @@ export function AccountValuesRoute(handle: Handle) {
 									<AccountManagementList>
 										{filteredValues.map((entry) => (
 											<li key={entry.id}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={valuesRoute.buildDetailHref(
+														entry.id,
+														getCurrentSearch(),
+													)}
 													active={selection.selectedId === entry.id}
 													disabled={isMutating}
-													onClick={() => selectValue(entry)}
+													onNavigate={resetSelectionState}
 												>
 													<strong>{entry.name}</strong>
 													<span
@@ -563,7 +563,7 @@ export function AccountValuesRoute(handle: Handle) {
 													>
 														{entry.valuePreview || entry.description || '—'}
 													</span>
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										))}
 									</AccountManagementList>

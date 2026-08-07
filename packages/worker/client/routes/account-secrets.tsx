@@ -61,7 +61,7 @@ import {
 import {
 	AccountManagementLayout,
 	AccountManagementList,
-	AccountManagementListItemButton,
+	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementSearchField,
 	AccountManagementShell,
@@ -1366,15 +1366,10 @@ export function AccountSecretsRoute(handle: Handle) {
 										const isActive = activeSecretId === secret.id
 										return (
 											<li key={secret.id} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemButton
+												<AccountManagementListItemLink
+													href={buildSecretHref(secret, getCurrentSearch())}
 													active={isActive}
 													disabled={isMutating}
-													onClick={() => {
-														if (isMutating) return
-														navigate(
-															buildSecretHref(secret, getCurrentSearch()),
-														)
-													}}
 												>
 													<div
 														mix={css({
@@ -1431,7 +1426,7 @@ export function AccountSecretsRoute(handle: Handle) {
 															{secret.description}
 														</span>
 													) : null}
-												</AccountManagementListItemButton>
+												</AccountManagementListItemLink>
 											</li>
 										)
 									})}
