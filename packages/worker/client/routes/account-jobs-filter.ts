@@ -7,6 +7,7 @@ export type FilterableAccountJob = {
 	id: string
 	name: string
 	ownership: string
+	packageName?: string | null
 	scheduleSummary: string
 	timezone: string
 	enabled: boolean
@@ -76,6 +77,7 @@ export function filterAccountJobs<Job extends FilterableAccountJob>(
 			job.name,
 			job.id,
 			job.ownership,
+			job.packageName ?? '',
 			job.scheduleSummary,
 			job.timezone,
 			job.lastRunStatus,

@@ -1002,6 +1002,8 @@ export type AccountJobListItem = {
 	id: string
 	name: string
 	ownership: AccountJobOwnership
+	packageId: string | null
+	packageName: string | null
 	scheduleSummary: string
 	scheduleType: AccountJobSchedule['type']
 	timezone: string

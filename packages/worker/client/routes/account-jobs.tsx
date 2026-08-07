@@ -158,8 +158,30 @@ export async function accountJobsRouteLoader(
 	return { accountJobs: payload }
 }
 
-function ownershipLabel(ownership: AccountJobListItem['ownership']) {
-	return ownership === 'package' ? 'Package' : 'Ad-hoc'
+function ownershipLabel(
+	job: Pick<AccountJobListItem, 'ownership' | 'packageName'>,
+) {
+	if (job.ownership === 'package') {
+		return job.packageName ?? 'Package'
+	}
+	return 'Ad-hoc'
+}
+
+function ownershipValue(
+	job: Pick<AccountJobListItem, 'ownership' | 'packageId' | 'packageName'>,
+) {
+	if (job.ownership !== 'package') return 'Ad-hoc'
+	if (job.packageId && job.packageName) {
+		return (
+			<a
+				href={`/account/packages/${encodeURIComponent(job.packageId)}`}
+				mix={css(primaryLinkCss)}
+			>
+				{job.packageName}
+			</a>
+		)
+	}
+	return job.packageName ?? 'Package'
 }
 
 function statusLabel(
@@ -725,7 +747,7 @@ export function AccountJobsRoute(handle: Handle) {
 								),
 								ownership: (
 									<RecordChips
-										items={[ownershipLabel(item.ownership)]}
+										items={[ownershipLabel(item)]}
 										active={item.ownership === 'package'}
 									/>
 								),
@@ -757,7 +779,7 @@ export function AccountJobsRoute(handle: Handle) {
 										items={[
 											{
 												label: 'Ownership',
-												value: ownershipLabel(detail.ownership),
+												value: ownershipValue(detail),
 											},
 											{
 												label: 'Preserve',

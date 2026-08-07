@@ -11,6 +11,7 @@ import {
 import { readJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
 import { inspectJobsForUser } from '#worker/jobs/inspect.ts'
 import { type JobSchedule, type JobView } from '#worker/jobs/types.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -23,6 +24,8 @@ export type AccountJobListItem = {
 	id: string
 	name: string
 	ownership: JobOwnership
+	packageId: string | null
+	packageName: string | null
 	scheduleSummary: string
 	scheduleType: JobSchedule['type']
 	timezone: string
@@ -99,6 +102,19 @@ export function jobOwnershipForId(jobId: string): JobOwnership {
 	return isPackageOwnedJobId(jobId) ? 'package' : 'ad-hoc'
 }
 
+/**
+ * Package job ids are `package-job:{packageId}:{encodeURIComponent(jobName)}`.
+ * Returns null for ad-hoc jobs or malformed package job ids.
+ */
+export function packageIdFromJobId(jobId: string): string | null {
+	if (!isPackageOwnedJobId(jobId)) return null
+	const rest = jobId.slice(packageJobIdPrefix.length)
+	const separatorIndex = rest.indexOf(':')
+	if (separatorIndex <= 0) return null
+	const packageId = rest.slice(0, separatorIndex).trim()
+	return packageId || null
+}
+
 export function readAccountJobsSelectedJobId(
 	requestUrl: string,
 	pathJobId?: string,
@@ -123,12 +139,16 @@ export function readAccountJobsSelectedJobId(
 
 function toListItem(
 	job: JobView,
+	packageNamesById: ReadonlyMap<string, string>,
 	inspection = buildJobInspectionOutput(job),
 ): AccountJobListItem {
+	const packageId = packageIdFromJobId(job.id)
 	return {
 		id: job.id,
 		name: job.name,
 		ownership: jobOwnershipForId(job.id),
+		packageId,
+		packageName: packageId ? (packageNamesById.get(packageId) ?? null) : null,
 		scheduleSummary: job.scheduleSummary,
 		scheduleType: job.schedule.type,
 		timezone: job.timezone,
@@ -172,6 +192,7 @@ async function toDetail(input: {
 	env: Env
 	userId: string
 	job: JobView
+	packageNamesById: ReadonlyMap<string, string>
 }): Promise<AccountJobDetail> {
 	const inspection = buildJobInspectionOutput(input.job)
 	const recentRuns = await loadRecentRunsForJob({
@@ -180,7 +201,7 @@ async function toDetail(input: {
 		jobId: input.job.id,
 	})
 	return {
-		...toListItem(input.job, inspection),
+		...toListItem(input.job, input.packageNamesById, inspection),
 		params: input.job.params ?? null,
 		schedule: input.job.schedule,
 		lastRunError: input.job.lastRunError ?? null,
@@ -218,26 +239,33 @@ export async function loadAccountJobsData(input: {
 		input.request.url,
 		input.pathJobId,
 	)
-	const inspection = await inspectJobsForUser({
-		env: input.env,
-		userId,
-	})
+	const [inspection, savedPackages, retentionPreferences] = await Promise.all([
+		inspectJobsForUser({
+			env: input.env,
+			userId,
+		}),
+		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
+		readJobRetentionPreferencesForUser({
+			db: input.env.APP_DB,
+			userId,
+		}),
+	])
+	const packageNamesById = new Map(
+		savedPackages.map((savedPackage) => [savedPackage.id, savedPackage.name]),
+	)
 	const selectedRecord = selectedJobId
 		? (inspection.jobs.find((job) => job.id === selectedJobId) ?? null)
 		: null
-	const retentionPreferences = await readJobRetentionPreferencesForUser({
-		db: input.env.APP_DB,
-		userId,
-	})
 
 	return {
 		ok: true,
-		jobs: inspection.jobs.map((job) => toListItem(job)),
+		jobs: inspection.jobs.map((job) => toListItem(job, packageNamesById)),
 		selectedJob: selectedRecord
 			? await toDetail({
 					env: input.env,
 					userId,
 					job: selectedRecord,
+					packageNamesById,
 				})
 			: null,
 		selectedJobId,

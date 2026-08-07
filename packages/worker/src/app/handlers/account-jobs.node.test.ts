@@ -100,6 +100,23 @@ const mockModule = vi.hoisted(() => ({
 		failedOrNeverRanOnceDays: input.failedOrNeverRanOnceDays,
 		disabledRecurringDays: input.disabledRecurringDays,
 	})),
+	listSavedPackagesByUserId: vi.fn(async () => [
+		{
+			id: 'pkg-1',
+			userId: 'stable-user-1',
+			name: 'State Store',
+			kodyId: 'state-store',
+			description: '',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-pkg-1',
+			hasApp: false,
+			hidden: false,
+			isPrivate: true,
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+		},
+	]),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -149,6 +166,11 @@ vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
 vi.mock('#worker/run-records/service.ts', () => ({
 	listRunRecords: (...args: Array<unknown>) =>
 		mockModule.listRunRecords(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByUserId(...args),
 }))
 
 const { createAccountJobsApiHandler } = await import('./account-jobs.ts')
@@ -231,6 +253,8 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 			expect.objectContaining({
 				id: 'job-adhoc-1',
 				ownership: 'ad-hoc',
+				packageId: null,
+				packageName: null,
 				scheduleSummary: adHocJob.scheduleSummary,
 				scheduleType: 'cron',
 				enabled: true,
@@ -242,6 +266,8 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 			expect.objectContaining({
 				id: 'package-job:pkg-1:nightly',
 				ownership: 'package',
+				packageId: 'pkg-1',
+				packageName: 'State Store',
 				scheduleType: 'interval',
 			}),
 		],

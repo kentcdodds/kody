@@ -170,4 +170,23 @@ test('account jobs filters cover active/history views and ownership', () => {
 			nowMs,
 		}).map((item) => item.id),
 	).toEqual(['failed-once'])
+
+	expect(
+		filterAccountJobs(
+			[
+				job({
+					id: 'named-package',
+					name: 'Nightly sync',
+					ownership: 'package',
+					packageName: 'State Store',
+				}),
+			],
+			{
+				view: 'all',
+				ownership: 'all',
+				search: 'state store',
+				nowMs,
+			},
+		).map((item) => item.id),
+	).toEqual(['named-package'])
 })
