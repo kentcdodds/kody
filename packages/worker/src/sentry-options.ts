@@ -89,23 +89,35 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
 }
 
 /**
- * Exact message emitted by the execute sandbox when caller code exceeds
- * `timeoutMs` (`packages/worker/src/mcp/executor.ts`). Inline workflows rethrow
- * that string as `UserCodeError`; `instrumentWorkflowWithSentry` then
+ * Prefix of the message emitted by the execute sandbox when caller code
+ * exceeds `timeoutMs` (`packages/worker/src/mcp/executor.ts`); the executor
+ * appends the budget (`Execution timed out after 90s`) so consumers can tell
+ * a 90s ad hoc execute cut from a 270s workflow-step cut. Inline workflows
+ * rethrow that string as `UserCodeError`; `instrumentWorkflowWithSentry` then
  * auto-captures it. MCP execute already skips sandbox failures via
  * `sandboxError`, but workflow instrumentation still reports the rethrow.
  * Other platform timeouts use different wording (Kit, webhook, snapshot, …).
  *
  * Backstop for unmarked timeout rethrows. Prefer `UserCodeError` at the
- * boundary; keep this in sync with `executorSandboxTimeoutMessage` in
+ * boundary; keep this in sync with `createExecutorSandboxTimeoutMessage` in
  * `mcp/executor.ts`.
  */
 export const executorSandboxTimeoutMessage = 'Execution timed out'
 
+/**
+ * Anchored on purpose: wrapped forms (for example `Error: Execution timed
+ * out`) are rethrows from other layers and must keep reaching Sentry.
+ */
+const executorSandboxTimeoutMessagePattern = new RegExp(
+	`^${executorSandboxTimeoutMessage}(?: after \\d+(?:\\.\\d+)?m?s)?$`,
+)
+
+export function isExecutorSandboxTimeoutMessage(message: string) {
+	return executorSandboxTimeoutMessagePattern.test(message)
+}
+
 export function isExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
-	return sentryEventMessages(event).some(
-		(message) => message === executorSandboxTimeoutMessage,
-	)
+	return sentryEventMessages(event).some(isExecutorSandboxTimeoutMessage)
 }
 
 export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {

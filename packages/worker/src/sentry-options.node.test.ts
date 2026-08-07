@@ -117,6 +117,18 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(
 		filterSentryEvent({ message: executorSandboxTimeoutMessage }),
 	).toBeNull()
+	// The executor appends the enforced budget to the message; both budget
+	// spellings stay filtered.
+	expect(
+		filterSentryEvent({
+			message: `${executorSandboxTimeoutMessage} after 90s`,
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			message: `${executorSandboxTimeoutMessage} after 40ms`,
+		}),
+	).toBeNull()
 
 	const platformBuildFailure = {
 		exception: {

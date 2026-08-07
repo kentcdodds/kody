@@ -15,6 +15,7 @@ import {
 	createKodyProviderProxySource,
 	createExecuteExecutor,
 	createExecutorModuleSource,
+	createExecutorSandboxTimeoutMessage,
 	createToolDispatchers,
 	extractRawContent,
 	formatExecutionOutput,
@@ -525,7 +526,8 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 		gatewayProps: createGatewayProps('hang-user'),
 		timeoutMs: 40,
 	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
-	expect(result.error).toBe(executorSandboxTimeoutMessage)
+	expect(result.error).toBe(createExecutorSandboxTimeoutMessage(40))
+	expect(result.error).toBe(`${executorSandboxTimeoutMessage} after 40ms`)
 	expect(result.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
 })
@@ -581,7 +583,7 @@ test('createExecuteExecutor drops queued evaluations when the host deadline expi
 			timeoutMs: 40,
 		}).execute('async () => "queued"', providers)
 
-		expect(queuedResult.error).toBe(executorSandboxTimeoutMessage)
+		expect(queuedResult.error).toBe(createExecutorSandboxTimeoutMessage(40))
 		expect(evaluateStarts).toBe(4)
 
 		releaseHolders()
@@ -1502,26 +1504,39 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	})
 
 	// A sandbox timeout is terminal for the identical call: the hint steers
-	// toward durable workflows (or smaller calls) instead of a futile retry.
+	// toward durable workflows (or smaller calls) instead of a futile retry,
+	// and reports the budget the executor baked into the message.
 	expect(
-		getExecutionErrorDetails(new Error(executorSandboxTimeoutMessage)),
+		getExecutionErrorDetails(
+			new Error(createExecutorSandboxTimeoutMessage(90_000)),
+		),
 	).toMatchObject({
 		kind: 'execution_timed_out',
+		timedOutAfterMs: 90_000,
 		nextStep: expect.stringContaining('workflows.create'),
 		suggestedAction: { type: 'fix_code' },
 	})
-	// Executor results carry the timeout as a bare string, and nested package
-	// invocations wrap it with an `[execution_failed]` prefix in a cause.
+	expect(
+		getExecutionErrorDetails(
+			new Error(createExecutorSandboxTimeoutMessage(270_000)),
+		)?.nextStep,
+	).toContain('270s')
+	// Legacy budget-less messages (older stored responses, non-Error abort
+	// reasons) still classify, without a parsed budget.
 	expect(getExecutionErrorDetails(executorSandboxTimeoutMessage)).toMatchObject(
-		{ kind: 'execution_timed_out' },
+		{ kind: 'execution_timed_out', timedOutAfterMs: null },
 	)
+	// Nested package invocations wrap the message with an
+	// `[execution_failed]` prefix in a cause.
 	expect(
 		getExecutionErrorDetails(
 			new Error('Nested execute failed.', {
-				cause: new Error(`[execution_failed] ${executorSandboxTimeoutMessage}`),
+				cause: new Error(
+					`[execution_failed] ${createExecutorSandboxTimeoutMessage(90_000)}`,
+				),
 			}),
 		),
-	).toMatchObject({ kind: 'execution_timed_out' })
+	).toMatchObject({ kind: 'execution_timed_out', timedOutAfterMs: 90_000 })
 	// Messages that merely mention timing out mid-sentence stay unhinted.
 	expect(
 		getExecutionErrorDetails(

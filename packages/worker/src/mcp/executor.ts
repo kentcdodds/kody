@@ -44,7 +44,10 @@ import {
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
-import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
+import {
+	executorSandboxTimeoutMessage,
+	isExecutorSandboxTimeoutMessage,
+} from '#worker/sentry-options.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
 
 export { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
@@ -194,6 +197,18 @@ async function withDynamicWorkerEvaluationPermit<T>(
 	})
 }
 
+/**
+ * The executor is the only component that knows the enforced budget at the
+ * moment a timeout fires, so it bakes the budget into the message
+ * (`Execution timed out after 90s`). The string is the part of the result
+ * that survives every boundary the error crosses (dynamic worker RPC,
+ * persisted invocation responses, `UserCodeError` rethrows), so downstream
+ * consumers can report the actual budget without guessing the run context.
+ */
+export function createExecutorSandboxTimeoutMessage(timeoutMs: number) {
+	return `${executorSandboxTimeoutMessage} after ${formatTimeoutBudget(timeoutMs)}`
+}
+
 function throwIfEvaluationDeadlineAborted(signal?: AbortSignal) {
 	if (!signal?.aborted) return
 	const reason = signal.reason
@@ -226,7 +241,7 @@ export async function raceWithHostEvaluationDeadline<T>(
 	const timeoutPromise = new Promise<never>((_resolve, reject) => {
 		timeoutId = setTimeout(
 			() => {
-				const error = new Error(executorSandboxTimeoutMessage)
+				const error = new Error(createExecutorSandboxTimeoutMessage(timeoutMs))
 				controller.abort(error)
 				reject(error)
 			},
@@ -278,7 +293,13 @@ async function runWithDynamicWorkerEvaluationPermit<T>(
 				if (index >= 0) {
 					gate.queue.splice(index, 1)
 				}
-				waiter.reject(new Error(executorSandboxTimeoutMessage))
+				// The deadline abort reason carries the budget-annotated timeout
+				// message; fall back to the bare message for non-Error reasons.
+				waiter.reject(
+					signal?.reason instanceof Error
+						? signal.reason
+						: new Error(executorSandboxTimeoutMessage),
+				)
 			}
 			const cleanup = () => {
 				if (signal) {
@@ -500,11 +521,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					)
 				} catch (error) {
 					const message = getErrorMessage(error)
-					if (message === executorSandboxTimeoutMessage) {
+					if (isExecutorSandboxTimeoutMessage(message)) {
 						outcome = 'error'
 						return {
 							result: undefined,
-							error: executorSandboxTimeoutMessage,
+							error: message,
 							logs: [],
 						}
 					}
@@ -640,7 +661,7 @@ function createExecutorModule(input: {
 		'    let __timeoutId;',
 		'    try {',
 		'      const __timeoutPromise = new Promise((_, reject) => {',
-		`        __timeoutId = setTimeout(() => reject(new Error(${JSON.stringify(executorSandboxTimeoutMessage)})), ${input.timeoutMs});`,
+		`        __timeoutId = setTimeout(() => reject(new Error(${JSON.stringify(createExecutorSandboxTimeoutMessage(input.timeoutMs))})), ${input.timeoutMs});`,
 		'      });',
 		'      const result = await Promise.race([',
 		...userCodeInvocation,
@@ -1021,6 +1042,8 @@ export type ExecutionErrorDetails =
 			kind: 'execution_timed_out'
 			message: string
 			nextStep: string
+			/** Enforced budget parsed from the message; null for legacy budget-less messages. */
+			timedOutAfterMs: number | null
 			suggestedAction: {
 				type: 'fix_code'
 			}
@@ -1054,15 +1077,20 @@ export function getExecutionErrorDetails(
 		}
 	}
 
-	if (causeMessages.some(isExecutorSandboxTimeoutErrorMessage)) {
-		return {
-			kind: 'execution_timed_out',
-			message,
-			nextStep:
-				"The sandbox enforces a hard execution time budget (~90s for ad hoc execute), so retrying the identical call will time out again. For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — `import { workflows } from 'kody:runtime'` then `workflows.create({ code, params })` — and inspect progress with `workflow_run_list`. Otherwise split the work into smaller calls that each finish well within the budget.",
-			suggestedAction: {
-				type: 'fix_code',
-			},
+	for (const causeMessage of causeMessages) {
+		const timeoutDetails = parseExecutorSandboxTimeoutErrorMessage(causeMessage)
+		if (timeoutDetails) {
+			return {
+				kind: 'execution_timed_out',
+				message,
+				nextStep: createExecutionTimedOutNextStep(
+					timeoutDetails.timedOutAfterMs,
+				),
+				timedOutAfterMs: timeoutDetails.timedOutAfterMs,
+				suggestedAction: {
+					type: 'fix_code',
+				},
+			}
 		}
 	}
 
@@ -1313,16 +1341,36 @@ function isDisposedRpcStubMessage(message: string) {
 }
 
 /**
- * The sandbox enforces a hard evaluation deadline (see
- * `createExecuteExecutor`), so a bare "Execution timed out" is terminal for
- * the identical call. Matching tolerates wrapper prefixes such as
- * `[execution_failed] ` from package invocation responses.
+ * Recognize `createExecutorSandboxTimeoutMessage` output (and the legacy
+ * budget-less form) at the end of an error message, tolerating wrapper
+ * prefixes such as `[execution_failed] ` from package invocation responses.
+ * The captured budget lets the structured hint report the actual enforced
+ * limit instead of assuming the ad hoc execute default.
  */
-function isExecutorSandboxTimeoutErrorMessage(message: string) {
-	return (
-		message === executorSandboxTimeoutMessage ||
-		message.endsWith(` ${executorSandboxTimeoutMessage}`)
-	)
+const executorSandboxTimeoutDetailsPattern = new RegExp(
+	`(?:^|\\s)${executorSandboxTimeoutMessage}(?: after (\\d+(?:\\.\\d+)?)(m?s))?$`,
+)
+
+function parseExecutorSandboxTimeoutErrorMessage(message: string) {
+	const match = executorSandboxTimeoutDetailsPattern.exec(message)
+	if (!match) return null
+	const [, amount, unit] = match
+	if (!amount) return { timedOutAfterMs: null }
+	const value = Number(amount)
+	return { timedOutAfterMs: unit === 'ms' ? value : value * 1000 }
+}
+
+function createExecutionTimedOutNextStep(timedOutAfterMs: number | null) {
+	const budgetSentence =
+		timedOutAfterMs === null
+			? 'The sandbox enforces a hard execution time budget (~90s for ad hoc execute), so retrying the identical call will time out again.'
+			: `The sandbox enforces a hard execution time budget and this run used its full ${formatTimeoutBudget(timedOutAfterMs)}, so retrying the identical call will time out again.`
+	return `${budgetSentence} For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — \`import { workflows } from 'kody:runtime'\` then \`workflows.create({ code, params })\` — and inspect progress with \`workflow_run_list\`. Otherwise split the work into smaller calls that each finish well within the budget.`
+}
+
+function formatTimeoutBudget(timeoutMs: number) {
+	const seconds = timeoutMs / 1000
+	return Number.isInteger(seconds) ? `${seconds}s` : `${timeoutMs}ms`
 }
 
 function parseMissingRuntimeExportMessage(message: string) {
