@@ -71,18 +71,22 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
-- Workers-unit cost is dominated by `@cloudflare/vitest-pool-workers`, not by
-  assertion logic. Measured on this repo: ~5s Vite transform per file, plus
-  ~10–18s to load Durable Object classes (Mailbox / UserMeter / RunLog) through
-  the Vitest module runner (warm RPCs ~1–2ms; production ~0.4ms).
-  `globalSetup` cannot warm this — it runs in Node. Workers `setupFiles`
-  imports `workers-do-warmup.ts`, which touches those DOs via
-  `runInDurableObject` once per Worker module cache so **test bodies** see
-  ~1–10ms first RPCs. Suite wall clock is similar (the cold load still
-  happens in setup); `hookTimeout` is 60s on workers-unit to cover the first
-  setup per Worker. Prefer `*.node.test.ts` whenever the file does not need
-  real bindings. The shared Vitest `testTimeout` is 20s for remaining
-  workerd-only work (for example `@cloudflare/worker-bundler`).
+- Workers-unit harness rules (see
+  [decision 0011](./decisions/0011-workers-unit-pool-harness.md)):
+  - **Prefer `*.node.test.ts`** unless the assertion needs real Cloudflare
+    bindings or Workers-only APIs (`@cloudflare/worker-bundler`, DO RPC, etc.).
+  - **Do not** warm Durable Objects from `globalSetup` (Node-only; cannot touch
+    workerd). Warmup belongs in workers-unit `setupFiles`
+    (`workers-do-warmup.ts`) — once per Worker module cache.
+  - **Do not** use `--no-isolate` / shared storage to chase suite wall clock.
+    Per-file isolation stays; disabling it breaks suites that assume a clean
+    store.
+  - **Do not** stub away DOs in workers tests when binding fidelity is the
+    point, and do not “fix” pool slowness with `--no-verify` or a shorter
+    local `testTimeout`. Shared `testTimeout` is 20s; workers-unit
+    `hookTimeout` is 60s for first-Worker setup.
+  - Pool cold load (~10–18s DO class load) is inherent today; suite wall clock
+    will not match production RPC latency until the upstream pool improves.
 - Vitest is configured with `clearMocks` and `mockReset` globally
   (`vitest-shared.ts`). Each test starts with a clean mock slate; inline the
   setup a test needs rather than relying on leftover state from a prior case.

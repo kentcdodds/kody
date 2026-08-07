@@ -30,3 +30,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0009 — Shiki for in-app syntax highlighting](./0009-shiki-syntax-highlighting.md)
 - [0010 — One RecordTable for account and admin list/detail screens](./0010-account-record-table.md)
   ([supporting material](./0010-account-record-table/index.md))
+- [0011 — Workers-unit keeps per-file isolation; warm DOs in setupFiles](./0011-workers-unit-pool-harness.md)
