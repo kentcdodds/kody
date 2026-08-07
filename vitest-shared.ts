@@ -6,7 +6,9 @@ import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
 export const rootDir = fileURLToPath(new URL('.', import.meta.url))
-const testTimeout = process.env.CI ? 20_000 : 5_000
+// Match CI. A 5s local budget failed pre-push on loaded machines while
+// `CI=1 npm run test` stayed green, which forced `--no-verify`.
+const testTimeout = 20_000
 
 loadDotEnv({
 	path: resolve(rootDir, 'packages/worker/.env'),
