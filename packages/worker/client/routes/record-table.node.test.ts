@@ -150,3 +150,43 @@ test('a refetch reports itself in the toolbar instead of above the table', async
 	expect(html).toContain('<table')
 	expect(html).toContain('Alpha')
 })
+
+test('a selected row with no record yet claims no expanded region', async () => {
+	const html = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Packages',
+			columns,
+			rows,
+			selectedId: 'b',
+		}),
+	)
+
+	// The detail is still loading (or 404'd), so there is no record row —
+	// reporting one would point assistive tech at an id that is not in the DOM.
+	expect(html).not.toContain('aria-expanded="true"')
+	expect(html).not.toContain('aria-controls')
+	expect(html).not.toContain('data-record-row="true"')
+})
+
+test('expand mode falls back to a pane when the selected row is off the window', async () => {
+	const html = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Runs',
+			columns,
+			rows,
+			// A deep link, a filter change, or paging past the selection: the
+			// record is loaded but has no row to unfold under.
+			selectedId: 'not-in-this-window',
+			record: jsx('p', { children: 'Orphan record' }),
+		}),
+	)
+
+	expect(html).toContain('Orphan record')
+	expect(html).not.toContain('data-record-row="true"')
+	// It renders after the table rather than vanishing.
+	expect(html.indexOf('Orphan record')).toBeGreaterThan(
+		html.indexOf('</table>'),
+	)
+})

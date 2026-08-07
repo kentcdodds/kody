@@ -32,6 +32,7 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	recordBodyCss,
+	recordCellClamp,
 } from '#client/routes/record-table.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -43,18 +44,7 @@ import {
 	getGhostButtonCss,
 } from '#client/styles/style-primitives.ts'
 
-/**
- * Subjects and summaries are arbitrary length, and a table cell will not
- * shrink below its content, so the clamp lives on a block inside the cell.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '30ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(30))
 
 const accountMemoriesApiPath = '/account/memories.json'
 const memoriesRoute = createListDetailRoute('/account/memories')

@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
@@ -29,6 +30,7 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
@@ -42,18 +44,7 @@ import {
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 
-/**
- * Descriptions and value previews are arbitrary length, and a table cell
- * will not shrink below its content, so the clamp lives on a block inside.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '28ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(28))
 import {
 	type AccountValueDetail,
 	type AccountValueListItem,
@@ -575,7 +566,7 @@ export function AccountValuesRoute(handle: Handle) {
 								),
 								updated: (
 									<span mix={css(recordStampCss)}>
-										{new Date(entry.updatedAt).toLocaleDateString()}
+										{formatTimestampDate(entry.updatedAt)}
 									</span>
 								),
 							},

@@ -25,6 +25,7 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
@@ -97,15 +98,13 @@ const subjectCellCss = css({
 	display: 'inline-flex',
 	alignItems: 'center',
 	gap: spacing.xs,
-	maxWidth: '34ch',
+	// `min()` for the same reason as `recordCellClamp`: below 620px this sits
+	// in a card that can be narrower than the clamp.
+	maxWidth: 'min(34ch, 100%)',
 	minWidth: 0,
 })
 
-const clampedCellCss = css({
-	...truncatedTextCss,
-	display: 'block',
-	maxWidth: '26ch',
-})
+const clampedCellCss = css(recordCellClamp(26))
 
 function readSearchQuery(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''

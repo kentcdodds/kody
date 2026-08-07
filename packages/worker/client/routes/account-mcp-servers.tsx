@@ -29,6 +29,7 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	recordBodyCss,
+	recordCellClamp,
 } from '#client/routes/record-table.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -41,18 +42,7 @@ import {
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 
-/**
- * Server URLs are arbitrary length, and a table cell will not shrink below
- * its content, so the clamp lives on a block inside the cell.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '26ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(26))
 
 type McpServerListItem = {
 	id: string

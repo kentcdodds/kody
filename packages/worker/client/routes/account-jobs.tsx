@@ -39,6 +39,7 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 } from '#client/routes/record-table.tsx'
 import {
 	type AccountJobDetail,
@@ -61,18 +62,7 @@ import {
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 
-/**
- * Job names and schedule summaries are arbitrary length, and a table cell
- * will not shrink below its content, so the clamp lives on a block inside.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '28ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(28))
 
 const selectCss = getSelectCss()
 

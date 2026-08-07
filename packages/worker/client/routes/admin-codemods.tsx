@@ -24,8 +24,9 @@ import {
 } from './account-management-components.tsx'
 import {
 	RecordTable,
-	type RecordTableColumn,
+	recordCellClamp,
 	recordStampCss,
+	type RecordTableColumn,
 } from './record-table.tsx'
 
 /**
@@ -41,18 +42,7 @@ const codemodItemColumns: Array<RecordTableColumn> = [
 	{ key: 'error', label: 'error' },
 ]
 
-/**
- * Ids, paths, and error strings are arbitrary length, and a table cell will
- * not shrink below its content, so the clamp lives on a block inside it.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '24ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(24))
 import {
 	type AdminCodemodListItem,
 	type AdminCodemodRunItemListItem,

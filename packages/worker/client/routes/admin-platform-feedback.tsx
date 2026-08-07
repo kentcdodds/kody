@@ -30,6 +30,7 @@ import {
 	RecordTable,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
 
@@ -59,19 +60,7 @@ const categoryOptions = [
 	{ value: 'other', label: 'Other' },
 ] as const
 
-/**
- * Summary is free-form untrusted text of any length. A table cell will not
- * shrink below its content on its own, so the clamp has to live on a block
- * inside the cell rather than on the cell itself.
- */
-const summaryPreviewCss = css({
-	display: 'block',
-	maxWidth: '32ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-	color: colors.textMuted,
-})
+const summaryPreviewCss = css(recordCellClamp(32))
 
 const untrustedTextCss = css({
 	margin: 0,

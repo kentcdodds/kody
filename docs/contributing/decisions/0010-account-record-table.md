@@ -41,8 +41,9 @@ the record renders:
 Rows stay real anchors built from `createListDetailRoute`, so the selected
 record remains in the URL and the scroll-preserving list navigation from #1270
 keeps working. `MetadataGrid` drops its `columns` prop for
-`repeat(auto-fit, minmax(14rem, 1fr))`, and identifiers render through an
-`IdValue` primitive as single-line copy targets rather than wrapped prose.
+`repeat(auto-fit, minmax(min(14rem, 100%), 1fr))`, and identifiers render
+through an `IdValue` primitive as single-line copy targets rather than wrapped
+prose.
 
 Community listings and `/account/stars` stay card grids. They are content
 (title, description, star count) rather than uniform records, and

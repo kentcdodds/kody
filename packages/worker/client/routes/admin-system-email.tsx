@@ -17,21 +17,14 @@ import {
 	MetadataGrid,
 	TimestampValue,
 } from './account-management-components.tsx'
-import { RecordTable, recordStampCss } from './record-table.tsx'
+import {
+	RecordTable,
+	recordCellClamp,
+	recordStampCss,
+} from './record-table.tsx'
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
 
-/**
- * Subjects and sender addresses are arbitrary length, and a table cell will
- * not shrink below its content, so the clamp lives on a block inside it.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '30ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(30))
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,

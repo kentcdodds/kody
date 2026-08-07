@@ -69,6 +69,7 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
 
@@ -472,18 +473,7 @@ function filterSecrets(
 	})
 }
 
-/**
- * Names, packages, and descriptions are arbitrary length, and a table cell
- * will not shrink below its content, so the clamp lives on a block inside.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '26ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(26))
 
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
@@ -1297,9 +1287,11 @@ export function AccountSecretsRoute(handle: Handle) {
 							: undefined
 					}
 					emptyLabel={
-						secrets.length === 0
-							? 'No secrets yet. Create one to get started.'
-							: 'No secrets match the current filters.'
+						status !== 'ready'
+							? 'Loading secrets…'
+							: secrets.length === 0
+								? 'No secrets yet. Create one to get started.'
+								: 'No secrets match the current filters.'
 					}
 					toolbar={
 						<>

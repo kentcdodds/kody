@@ -29,6 +29,7 @@ import {
 	RecordTable,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import {
@@ -50,18 +51,7 @@ import {
 	getGhostButtonCss,
 } from '#client/styles/style-primitives.ts'
 
-/**
- * Run names and error messages are arbitrary length, and a table cell will
- * not shrink below its content, so the clamp lives on a block inside it.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '30ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(30))
 
 const activityErrorReviewPrompt = [
 	'Look at my open Kody activity errors.',

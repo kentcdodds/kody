@@ -34,6 +34,7 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	recordBodyCss,
+	recordCellClamp,
 } from '#client/routes/record-table.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
@@ -120,18 +121,7 @@ const providerCatalogGridCss = {
 	gap: spacing.lg,
 }
 
-/**
- * Names, slugs, and connection keys are arbitrary length, and a table cell
- * will not shrink below its content, so the clamp lives on a block inside.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '26ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(26))
 
 /**
  * Latch key for the list payload. Selection segments and the client-side `q`

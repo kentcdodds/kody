@@ -359,6 +359,23 @@ export function RecordTableSelect(
 	)
 }
 
+/**
+ * One-line cell text with an ellipsis. A table cell will not shrink below its
+ * content, so the clamp has to live on a block inside it — and the width is
+ * `min(…, 100%)` because below 620px that block sits in a card that can be
+ * narrower than the clamp itself.
+ */
+export function recordCellClamp(ch: number) {
+	return {
+		display: 'block',
+		minWidth: 0,
+		maxWidth: `min(${ch}ch, 100%)`,
+		overflow: 'hidden',
+		textOverflow: 'ellipsis',
+		whiteSpace: 'nowrap' as const,
+	}
+}
+
 /** Date/duration cell: one token, aligned figures, quieter than the name. */
 export const recordStampCss = {
 	whiteSpace: 'nowrap' as const,
@@ -474,6 +491,16 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 		// fight to read. `pane` and `none` keep the cap, which is what keeps
 		// the record below reachable without a long scroll first.
 		const capped = mode !== 'expand'
+		// `expand` puts the record inside the row it belongs to, which only works
+		// while that row is on screen. A deep link, a filter change, or paging
+		// past the selection leaves a loaded record with no row to unfold under —
+		// so it falls back to a pane below the table rather than disappearing.
+		const orphanedRecord = Boolean(
+			mode === 'expand' &&
+			handle.props.record &&
+			selectedId != null &&
+			!rows.some((row) => row.id === selectedId),
+		)
 
 		const table = (
 			<table aria-label={handle.props.ariaLabel} mix={css(tableCss)}>
@@ -494,8 +521,12 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 					{rows.flatMap((row) => {
 						const selected = selectable && row.id === selectedId
 						const recordRowId = `${handle.id}-record-${row.id}`
-						const expanded =
-							selected && mode === 'expand' && handle.props.record
+						// A selected row with no record yet (still loading, or the detail
+						// 404'd) renders no record row, so the link must not claim an
+						// expanded region that is not in the DOM.
+						const expanded = Boolean(
+							selected && mode === 'expand' && handle.props.record,
+						)
 
 						return [
 							<tr
@@ -522,16 +553,12 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 													aria-current={selected ? 'true' : undefined}
 													aria-expanded={
 														mode === 'expand'
-															? selected
+															? expanded
 																? 'true'
 																: 'false'
 															: undefined
 													}
-													aria-controls={
-														mode === 'expand' && selected
-															? recordRowId
-															: undefined
-													}
+													aria-controls={expanded ? recordRowId : undefined}
 													mix={[
 														css(rowLinkCss),
 														on('click', (event: MouseEvent) => {
@@ -625,7 +652,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 						<div mix={css(footerCss)}>{handle.props.footer}</div>
 					) : null}
 				</div>
-				{mode === 'pane' && handle.props.record ? (
+				{(mode === 'pane' || orphanedRecord) && handle.props.record ? (
 					<div mix={css(paneCss)}>{handle.props.record}</div>
 				) : null}
 			</section>

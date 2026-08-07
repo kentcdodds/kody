@@ -55,6 +55,7 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
 
@@ -95,19 +96,7 @@ function readFilterState(href: string) {
 	}
 }
 
-/**
- * Names, package scopes, and export lists are arbitrary length, and a table
- * cell will not shrink below its content, so the clamp lives on a block
- * inside the cell.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '26ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(26))
 
 function createEmptyEditorState(): EditorState {
 	return {
@@ -1692,19 +1681,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													{
 														label: 'Created',
 														value: (
-															<TimestampValue
-																value={selectedToken.createdAt}
-																fallback="Never"
-															/>
+															<TimestampValue value={selectedToken.createdAt} />
 														),
 													},
 													{
 														label: 'Updated',
 														value: (
-															<TimestampValue
-																value={selectedToken.updatedAt}
-																fallback="Never"
-															/>
+															<TimestampValue value={selectedToken.updatedAt} />
 														),
 													},
 													{

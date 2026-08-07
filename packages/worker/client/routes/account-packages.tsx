@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
@@ -427,7 +428,7 @@ export function AccountPackagesRoute(handle: Handle) {
 							tags: <RecordChips items={pkg.tags.slice(0, 3)} />,
 							updated: (
 								<span mix={css(recordStampCss)}>
-									{new Date(pkg.updatedAt).toLocaleDateString()}
+									{formatTimestampDate(pkg.updatedAt)}
 								</span>
 							),
 						},

@@ -35,6 +35,7 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 } from './record-table.tsx'
 import { ChartLegend } from '#client/charts/chart-legend.tsx'
 import { StackedBarChart } from '#client/charts/stacked-bar-chart.tsx'
@@ -58,18 +59,7 @@ import {
 
 const selectCss = getSelectCss()
 
-/**
- * Emails are arbitrary length and a table cell will not shrink below its
- * content, so the clamp lives on a block inside the cell.
- */
-const clampedCellCss = css({
-	display: 'block',
-	minWidth: 0,
-	maxWidth: '28ch',
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-})
+const clampedCellCss = css(recordCellClamp(28))
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 type UsageStatus = 'loading' | 'ready' | 'error'
