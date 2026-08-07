@@ -58,7 +58,9 @@ const inputSchema = z.object({
 })
 
 const auditLogEntrySchema = z.object({
-	id: z.number().int().positive(),
+	// SQLite INTEGER PRIMARY KEY allows explicit id=0; AUTOINCREMENT starts at
+	// 1 for app writes, but legacy/manual rows must still parse.
+	id: z.number().int().nonnegative(),
 	category: z.enum(auditEventCategories),
 	action: z.string(),
 	result: z.enum(auditEventResults),

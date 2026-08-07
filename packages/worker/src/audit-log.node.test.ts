@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
-import { logAuditEvent } from './audit-log.ts'
+import { logAuditEvent, queryAuditLog } from './audit-log.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
@@ -110,4 +110,28 @@ test('audit writes retry transient errors and report dedicated sink failures', a
 		failedSinks: ['AUDIT_DB'],
 		errors: [expect.any(Error)],
 	})
+})
+
+test('queryAuditLog returns explicit SQLite zero rowids', async () => {
+	const audit = createAuditDb()
+	audit.sqlite
+		.prepare(
+			`INSERT INTO audit_events (id, category, action, result, timestamp)
+			 VALUES (0, 'admin', 'legacy_seed', 'success', '2026-01-01T00:00:00.000Z')`,
+		)
+		.run()
+
+	const result = await queryAuditLog(audit.db, {
+		action: 'legacy_seed',
+		limit: 10,
+	})
+	expect(result.total).toBe(1)
+	expect(result.events).toEqual([
+		expect.objectContaining({
+			id: 0,
+			action: 'legacy_seed',
+			category: 'admin',
+			result: 'success',
+		}),
+	])
 })
