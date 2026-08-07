@@ -128,3 +128,5 @@ is separate from this repository's license.
 <div align="center">
   <sub>Built with ❤️ by <a href="https://epicweb.dev">Epic Web</a></sub>
 </div>
+
+<!-- baseline preview helper for PR 1292 A/B; temporary -->
