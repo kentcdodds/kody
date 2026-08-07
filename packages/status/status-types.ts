@@ -3,7 +3,7 @@
  * state, and the snapshot shape the public page renders.
  */
 
-import  { type ProviderIncident } from './provider-incidents.ts'
+import { type ProviderIncident } from './provider-incidents.ts'
 
 export type { ProviderIncident }
 
