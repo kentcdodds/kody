@@ -607,9 +607,7 @@ export function OnboardingRoute(handle: Handle) {
 													mix={css(connectStatusCss)}
 													role="status"
 													aria-live="polite"
-													data-connected={
-														hasFirstHello ? 'true' : undefined
-													}
+													data-connected={hasFirstHello ? 'true' : undefined}
 													data-testid="onboarding-first-hello-status"
 												>
 													{hasFirstHello ? (
@@ -635,10 +633,10 @@ export function OnboardingRoute(handle: Handle) {
 											) : null}
 										</div>
 										<p mix={css(firstWinGuidanceCss)}>
-											1. Paste the first prompt so Kody emails you from your
-											own Kody address. 2. Reply to that email. 3. Paste the
-											second prompt so your agent looks up your reply — Kody
-											stores mail; nothing answers by itself until you ask.
+											1. Paste the first prompt so Kody emails you from your own
+											Kody address. 2. Reply to that email. 3. Paste the second
+											prompt so your agent looks up your reply — Kody stores
+											mail; nothing answers by itself until you ask.
 										</p>
 										<figure mix={css(promptBlockCss)}>
 											<blockquote>{introEmailPrompt}</blockquote>
@@ -667,9 +665,7 @@ export function OnboardingRoute(handle: Handle) {
 													mix={css(connectStatusCss)}
 													role="status"
 													aria-live="polite"
-													data-connected={
-														hasSavedMemory ? 'true' : undefined
-													}
+													data-connected={hasSavedMemory ? 'true' : undefined}
 													data-testid="onboarding-save-memory-status"
 												>
 													{hasSavedMemory ? (
@@ -695,9 +691,9 @@ export function OnboardingRoute(handle: Handle) {
 											) : null}
 										</div>
 										<p mix={css(firstWinGuidanceCss)}>
-											Paste this into your connected agent. It will ask a
-											couple of questions and save durable memories that follow
-											you across every agent connected to your account.
+											Paste this into your connected agent. It will ask a couple
+											of questions and save durable memories that follow you
+											across every agent connected to your account.
 										</p>
 										<figure mix={css(promptBlockCss)}>
 											<blockquote>{memoryPrompt}</blockquote>
