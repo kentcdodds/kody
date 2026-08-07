@@ -66,8 +66,9 @@ to become.
   OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
   via `kody.openapi[...]` (host approval never widened by untrusted specs).
 - [OAuth integrations](./integrations.md): first-class OAuth apps and
-  connections in D1 (`user_oauth_apps` / `user_integrations`), secret-store
-  credential references, dual host gates, `/connect/oauth`, and
+  connections in D1 (`user_oauth_apps` / `user_integrations`), including
+  operator-provisioned platform (built-in) apps (`platform_oauth_apps`),
+  secret-store credential references, dual host gates, `/connect/oauth`, and
   `createAuthenticatedFetch`.
 
 ## OAuth integration host allowlist
@@ -89,7 +90,9 @@ arbitrary hosts:
   (`assertIntegrationHostAllowed`, `getIntegrationAllowedHosts`).
 
 This invariant must hold for any code path that materializes an integration
-token and then attaches it to an outbound request.
+token and then attaches it to an outbound request. Host-side refresh via
+`integration_token_refresh` materializes tokens only server-side and returns
+metadata, so no new sandbox-visible token path is introduced.
 
 ## Source of truth in code
 

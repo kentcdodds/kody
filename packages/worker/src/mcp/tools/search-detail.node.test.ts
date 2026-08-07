@@ -77,6 +77,7 @@ function emptySearchRows() {
 function createJoinedIntegration(name: string): JoinedIntegration {
 	const now = '2026-01-01T00:00:00.000Z'
 	return {
+		lane: 'user',
 		app: {
 			userId: 'user-1',
 			slug: name,
@@ -99,6 +100,7 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 			userId: 'user-1',
 			name,
 			appSlug: name,
+			platformAppSlug: null,
 			accountLabel: null,
 			description: `${name} OAuth integration`,
 			scopes: ['repo'],

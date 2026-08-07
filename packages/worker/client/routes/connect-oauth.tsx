@@ -419,12 +419,15 @@ export function ConnectOauthRoute(handle: Handle) {
 			flow: nextConfig.flow,
 			clientId: nextConfig.clientId,
 			hasStoredClientSecret,
+			platform: Boolean(nextConfig.platformAppSlug),
 		})
 		if (setupStatus.isReady) {
 			setStatus(
-				existingIntegrationConfig
-					? 'Loaded your existing integration config and client credentials. Ready to connect.'
-					: 'Loaded your existing OAuth client configuration. Ready to connect.',
+				nextConfig.platformAppSlug
+					? 'Built-in integration — no OAuth app setup needed. Ready to connect.'
+					: existingIntegrationConfig
+						? 'Loaded your existing integration config and client credentials. Ready to connect.'
+						: 'Loaded your existing OAuth client configuration. Ready to connect.',
 			)
 			setStep('connect')
 			return
@@ -508,6 +511,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				tokenExchangeStyle: nextConfig.tokenExchangeStyle,
 				clientSecretSecretName: nextConfig.clientSecretSecretName,
 				allowedHosts: nextConfig.allowedHosts,
+				...(nextConfig.platformAppSlug
+					? { platformAppSlug: nextConfig.platformAppSlug }
+					: {}),
 			}),
 		})
 		const text = await response.text()
@@ -706,6 +712,9 @@ export function ConnectOauthRoute(handle: Handle) {
 					action: 'connect_oauth',
 					provider: config.provider,
 					callbackUrl,
+					...(config.platformAppSlug
+						? { platformAppSlug: config.platformAppSlug }
+						: {}),
 					authorizeUrl: config.authorizeUrl,
 					tokenUrl: config.tokenUrl,
 					apiBaseUrl: config.apiBaseUrl,
@@ -751,6 +760,9 @@ export function ConnectOauthRoute(handle: Handle) {
 	}
 
 	const renderRedirectUriCard = () => {
+		// Built-in apps are registered by the operator; users have nothing to
+		// paste into a provider console.
+		if (config?.platformAppSlug) return null
 		const redirectUri = getRedirectUri()
 		if (!redirectUri) return null
 		return (

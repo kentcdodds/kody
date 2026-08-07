@@ -222,7 +222,10 @@ async function fetchRegistryDocument(
 	}
 
 	if (!response.ok) {
-		return { outcome: 'failure', message: `HTTP ${response.status} for ${url}` }
+		return {
+			outcome: 'failure',
+			message: `HTTP ${response.status} for ${url}`,
+		}
 	}
 
 	let body: string

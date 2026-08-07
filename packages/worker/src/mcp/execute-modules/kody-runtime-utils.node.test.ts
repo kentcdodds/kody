@@ -602,6 +602,141 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 	)
 })
 
+const githubPlatformIntegration = {
+	name: 'github',
+	tokenUrl: 'https://github.test/login/oauth/access_token',
+	apiBaseUrl: 'https://api.github.test',
+	flow: 'confidential' as const,
+	clientId: 'platform-github-client-id',
+	clientSecretSecretName: null,
+	accessTokenSecretName: 'githubAccessToken',
+	refreshTokenSecretName: 'githubRefreshToken',
+	requiredHosts: ['api.github.test'],
+	platform: true,
+}
+
+function createPlatformKody() {
+	const tokenRefreshCalls: Array<CapabilityArgs> = []
+	const kody = {
+		async integration_get(args: CapabilityArgs) {
+			expect(args.name).toBe(githubPlatformIntegration.name)
+			return { integration: githubPlatformIntegration }
+		},
+		async integration_token_refresh(args: CapabilityArgs) {
+			tokenRefreshCalls.push(args)
+			return {
+				ok: true,
+				refreshedAt: new Date().toISOString(),
+				refreshTokenRotated: false,
+			}
+		},
+		async secret_set_many() {
+			throw new Error(
+				'platform refresh must never persist secrets from the sandbox',
+			)
+		},
+	} satisfies KodyNamespace
+	return { kody, tokenRefreshCalls }
+}
+
+test('refreshAccessToken refuses platform integrations instead of exposing a raw token', async () => {
+	const { kody, tokenRefreshCalls } = createPlatformKody()
+	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
+		'raw tokens are never exposed to sandboxed code',
+	)
+	expect(tokenRefreshCalls).toEqual([])
+})
+
+test('createAuthenticatedFetch refreshes platform integrations host-side and retries with a placeholder header', async () => {
+	const fetchCalls: Array<Request> = []
+	const { kody, tokenRefreshCalls } = createPlatformKody()
+	{
+		using _interceptor = createGithubPlatformFetchInterceptor({
+			fetchCalls,
+			apiResponses: [
+				{ status: 401, body: { error: 'expired' } },
+				{ status: 200, body: { ok: true } },
+			],
+		})
+		const authenticatedFetch = await createAuthenticatedFetch(kody, 'github')
+		const response = await authenticatedFetch('/user')
+		expect(await response.json()).toEqual({ ok: true })
+	}
+	expect(tokenRefreshCalls).toEqual([{ name: 'github' }])
+	expect(fetchCalls).toHaveLength(2)
+	// Both attempts use the placeholder header: the raw token never enters
+	// the sandbox even on the post-refresh retry.
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:githubAccessToken|scope=user}}',
+	)
+	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:githubAccessToken|scope=user}}',
+	)
+})
+
+test('prelude platform helpers mirror the host-side refresh behavior', async () => {
+	const prelude = createExecuteHelperPrelude()
+	const createSandboxHelpers = new Function(
+		'kody',
+		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
+	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
+
+	const { kody, tokenRefreshCalls } = createPlatformKody()
+	const helpers = createSandboxHelpers(kody)
+	await expect(helpers.refreshAccessToken('github')).rejects.toThrow(
+		'raw tokens are never exposed to sandboxed code',
+	)
+
+	const fetchCalls: Array<Request> = []
+	{
+		using _interceptor = createGithubPlatformFetchInterceptor({
+			fetchCalls,
+			apiResponses: [
+				{ status: 401, body: { error: 'expired' } },
+				{ status: 200, body: { ok: true } },
+			],
+		})
+		const authenticatedFetch = await helpers.createAuthenticatedFetch('github')
+		const response = await authenticatedFetch('/user')
+		expect(await response.json()).toEqual({ ok: true })
+	}
+	expect(tokenRefreshCalls).toEqual([{ name: 'github' }])
+	expect(fetchCalls).toHaveLength(2)
+	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:githubAccessToken|scope=user}}',
+	)
+})
+
+function createGithubPlatformFetchInterceptor(options: {
+	fetchCalls: Array<Request>
+	apiResponses: Array<ApiResponseSpec>
+}) {
+	const apiResponses = [...options.apiResponses]
+	const interceptor = new FetchInterceptor()
+	interceptor.on('request', ({ request, controller }) => {
+		void (async () => {
+			try {
+				options.fetchCalls.push(request.clone())
+				const apiResponse = apiResponses.shift()
+				await controller.respondWith(
+					Response.json(apiResponse?.body ?? { ok: true }, {
+						status: apiResponse?.status ?? 200,
+						headers: { 'content-type': 'application/json' },
+					}),
+				)
+			} catch (error) {
+				controller.errorWith(error)
+			}
+		})()
+	})
+	interceptor.apply()
+	return {
+		[Symbol.dispose]() {
+			interceptor.dispose()
+		},
+	}
+}
+
 test('confidential-flow token refresh includes inline client id and client secret placeholder', async () => {
 	const fetchCalls: Array<Request> = []
 	const { kody, secretSetManyCalls } = createKody(githubConfidentialIntegration)

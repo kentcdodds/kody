@@ -1,7 +1,7 @@
 import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
 import { cosineSimilarity, lexicalScore } from '#worker/vectorize/scoring.ts'
 import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
-import { toIntegrationConfig } from '#worker/integrations/service.ts'
+import { toJoinedIntegrationConfig } from '#worker/integrations/service.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import {
@@ -48,8 +48,9 @@ export function buildIntegrationSearchDocument(input: {
 export const integrationSearchEntityPlugin = {
 	type: 'integration',
 	buildDescriptors(input) {
-		return input.optionalRows.userIntegrationRows.map(({ app, connection }) => {
-			const config = toIntegrationConfig(app, connection)
+		return input.optionalRows.userIntegrationRows.map((entry) => {
+			const { connection } = entry
+			const config = toJoinedIntegrationConfig(entry)
 			return {
 				type: 'integration' as const,
 				id: connection.name,
@@ -70,8 +71,9 @@ export const integrationSearchEntityPlugin = {
 	},
 	buildCandidates(input) {
 		return input.optionalRows.userIntegrationRows
-			.map(({ app, connection }) => {
-				const config = toIntegrationConfig(app, connection)
+			.map((entry) => {
+				const { connection } = entry
+				const config = toJoinedIntegrationConfig(entry)
 				const description = describeIntegration({
 					description: connection.description,
 					flow: config.flow,

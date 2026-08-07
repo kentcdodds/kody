@@ -308,7 +308,8 @@ primitives:
     group: assistant
     name: OAuth integrations
     summary:
-      Per-user OAuth apps and connections; credentials stay in the secret store.
+      Per-user connections over user-owned or platform (built-in) OAuth apps;
+      token secrets stay in the user secret store.
     code:
       - packages/worker/src/integrations/
       - packages/worker/src/mcp/capabilities/integrations/

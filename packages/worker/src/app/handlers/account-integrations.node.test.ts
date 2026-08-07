@@ -22,6 +22,7 @@ const mockModule = vi.hoisted(() => ({
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
 	listJoinedIntegrations: vi.fn(async () => [
 		{
+			lane: 'user' as const,
 			app: {
 				userId: 'stable-user-1',
 				slug: 'google',
@@ -44,6 +45,7 @@ const mockModule = vi.hoisted(() => ({
 				userId: 'stable-user-1',
 				name: 'google',
 				appSlug: 'google',
+				platformAppSlug: null,
 				accountLabel: 'Personal',
 				description: '',
 				scopes: ['openid', 'email'],
@@ -57,6 +59,7 @@ const mockModule = vi.hoisted(() => ({
 			},
 		},
 		{
+			lane: 'user' as const,
 			app: {
 				userId: 'stable-user-1',
 				slug: 'google',
@@ -79,6 +82,7 @@ const mockModule = vi.hoisted(() => ({
 				userId: 'stable-user-1',
 				name: 'google-calendar',
 				appSlug: 'google',
+				platformAppSlug: null,
 				accountLabel: 'Work calendar',
 				description: '',
 				scopes: ['calendar.readonly'],
@@ -92,6 +96,7 @@ const mockModule = vi.hoisted(() => ({
 			},
 		},
 		{
+			lane: 'user' as const,
 			app: {
 				userId: 'stable-user-1',
 				slug: 'github',
@@ -114,6 +119,7 @@ const mockModule = vi.hoisted(() => ({
 				userId: 'stable-user-1',
 				name: 'github',
 				appSlug: 'github',
+				platformAppSlug: null,
 				accountLabel: null,
 				description: '',
 				scopes: ['repo', 'read:user'],
@@ -128,6 +134,7 @@ const mockModule = vi.hoisted(() => ({
 		},
 	]),
 	getJoinedIntegration: vi.fn(async () => ({
+		lane: 'user' as const,
 		app: {
 			userId: 'stable-user-1',
 			slug: 'github',
@@ -150,6 +157,7 @@ const mockModule = vi.hoisted(() => ({
 			userId: 'stable-user-1',
 			name: 'github',
 			appSlug: 'github',
+			platformAppSlug: null,
 			accountLabel: null,
 			description: '',
 			scopes: ['repo', 'read:user'],
@@ -239,6 +247,7 @@ const mockModule = vi.hoisted(() => ({
 		createdAt: '1970-01-01T00:00:00.000Z',
 		updatedAt: '1970-01-01T00:00:00.002Z',
 	})),
+	getAvailablePlatformApp: vi.fn(async () => null),
 	listSecrets: vi.fn(async () => []),
 	saveSecret: vi.fn(async () => ({
 		name: 'googleClientSecret',
@@ -292,6 +301,8 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
 		rotateOauthAppClientCredentials: (...args: Array<unknown>) =>
 			mockModule.rotateOauthAppClientCredentials(...args),
+		getAvailablePlatformApp: (...args: Array<unknown>) =>
+			mockModule.getAvailablePlatformApp(...args),
 	}
 })
 

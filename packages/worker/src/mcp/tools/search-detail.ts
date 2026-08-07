@@ -10,7 +10,7 @@ import { getValue } from '#mcp/values/service.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	getJoinedIntegration,
-	toIntegrationConfig,
+	toJoinedIntegrationConfig,
 } from '#worker/integrations/service.ts'
 import {
 	getSavedPackageById,
@@ -138,7 +138,7 @@ export async function resolveEntityDetail(input: {
 		if (!joined) {
 			throw new McpCallerError('Saved integration not found for this user.')
 		}
-		const config = toIntegrationConfig(joined.app, joined.connection)
+		const config = toJoinedIntegrationConfig(joined)
 		const relatedPackageSuggestions =
 			await collectIntegrationPackageSuggestions({
 				env: input.agent.getEnv(),

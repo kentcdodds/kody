@@ -786,6 +786,7 @@ test('integration entity detail enriches related packages without bloating ranke
 	}
 	const now = '2026-01-01T00:00:00.000Z'
 	const githubJoinedIntegration = {
+		lane: 'user' as const,
 		app: {
 			userId: 'user-1',
 			slug: 'github',
@@ -808,6 +809,7 @@ test('integration entity detail enriches related packages without bloating ranke
 			userId: 'user-1',
 			name: 'github',
 			appSlug: 'github',
+			platformAppSlug: null,
 			accountLabel: null,
 			description: 'GitHub OAuth integration',
 			scopes: [],

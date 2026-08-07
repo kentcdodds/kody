@@ -80,7 +80,9 @@ export const integrationOauthAppRotateCredentialsCapability =
 				userId: user.userId,
 			})
 			const connections = joined
-				.filter(({ app }) => app.slug === rotated.slug)
+				.filter(
+					(entry) => entry.lane === 'user' && entry.app.slug === rotated.slug,
+				)
 				.map(({ connection }) => ({
 					name: connection.name,
 					accountLabel: connection.accountLabel,

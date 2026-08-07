@@ -59,6 +59,7 @@ function createJoinedIntegration(input: {
 	const appSlug = input.appSlug ?? input.name
 	const now = '2026-01-01T00:00:00.000Z'
 	return {
+		lane: 'user',
 		app: {
 			userId,
 			slug: appSlug,
@@ -81,6 +82,7 @@ function createJoinedIntegration(input: {
 			userId,
 			name: input.name,
 			appSlug,
+			platformAppSlug: null,
 			accountLabel: null,
 			description: input.description ?? `${input.name} integration`,
 			scopes: input.scopes ?? [],

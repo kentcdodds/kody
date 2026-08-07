@@ -53,13 +53,14 @@ export const integrationOauthAppListCapability = defineDomainCapability(
 				string,
 				Array<{ name: string; accountLabel: string | null }>
 			>()
-			for (const { app, connection } of joined) {
-				const existing = connectionsByAppSlug.get(app.slug) ?? []
+			for (const entry of joined) {
+				if (entry.lane !== 'user') continue
+				const existing = connectionsByAppSlug.get(entry.app.slug) ?? []
 				existing.push({
-					name: connection.name,
-					accountLabel: connection.accountLabel,
+					name: entry.connection.name,
+					accountLabel: entry.connection.accountLabel,
 				})
-				connectionsByAppSlug.set(app.slug, existing)
+				connectionsByAppSlug.set(entry.app.slug, existing)
 			}
 			return {
 				apps: apps.map((app) =>

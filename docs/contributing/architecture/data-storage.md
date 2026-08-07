@@ -359,12 +359,27 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   OAuth app rows keyed by `(user_id, slug)`. Holds shared client id, client-
   secret secret name, provider endpoints, and flow options. See
   [OAuth integrations](./integrations.md).
-- `user_integrations` (`0101-user-oauth-apps-and-integrations.sql`): per-user
-  OAuth connections keyed by `(user_id, name)`, with composite FK
-  `(user_id, app_slug) → user_oauth_apps(user_id, slug)` (`ON DELETE RESTRICT`).
-  Holds `scopes_json`, `required_hosts_json`, and access/refresh token secret
-  names. Secret credential values stay in `secret_entries`; the non-secret
-  `client_id` is stored inline on `user_oauth_apps`.
+- `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
+  built-in OAuth apps users connect to without registering their own provider
+  app. Global operator config with **no `user_id`** (like feature flags, not
+  user data). Keyed by `slug`; holds the inline non-secret `client_id`, provider
+  endpoints, flow options, the allowed/default scope menu,
+  `required_hosts_json`, and `enabled`. `client_secret_encrypted` is the one
+  credential ciphertext stored outside `secret_entries` (AES-GCM with a
+  dedicated purpose, so no `{{secret:…}}` placeholder can name it);
+  `getPlatformOauthAppClientSecret` in
+  `packages/worker/src/integrations/platform-apps.ts` is its only decrypt
+  accessor. See
+  [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
+- `user_integrations` (`0101-user-oauth-apps-and-integrations.sql`, rebuilt by
+  `0004-platform-oauth-apps.sql`): per-user OAuth connections keyed by
+  `(user_id, name)`. Exactly one of nullable `app_slug` (composite FK
+  `(user_id, app_slug) → user_oauth_apps(user_id, slug)`) or nullable
+  `platform_app_slug` (FK to `platform_oauth_apps(slug)`) is set, enforced by a
+  `CHECK` constraint; both FKs use `ON DELETE RESTRICT`. Holds `scopes_json`,
+  `required_hosts_json`, and access/refresh token secret names. Secret
+  credential values stay in `secret_entries` in both lanes; the non-secret
+  `client_id` is stored inline on the owning app row.
 - `user_openapi_bindings` (`0102-user-openapi-bindings.sql`): per-user OpenAPI
   provider binding rows keyed by `(user_id, name)`. Holds `spec_url`,
   `api_base_url`, `auth_json`, `selection_json`, `include_destructive`, and

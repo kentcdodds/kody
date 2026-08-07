@@ -54,6 +54,12 @@ export type ConnectOauthConfig = {
 	accessTokenSecretName: string
 	refreshTokenSecretName: string
 	allowedHosts: Array<string>
+	/**
+	 * Set when connecting through a platform (built-in) OAuth app: the
+	 * operator owns the client registration, token exchange runs host-side
+	 * with the shared secret, and the client-credential setup step is skipped.
+	 */
+	platformAppSlug: string | null
 }
 
 export type StoredIntegrationAuthorization = NonNullable<
@@ -83,6 +89,8 @@ export type StoredIntegrationConfig = Omit<
 	/** Omitted when unset so persisted JSON stays sparse (matches pre-import shape). */
 	tokenExchangeStyle?: TokenExchangeStyle | null
 	authorization?: StoredIntegrationAuthorization | null
+	/** Platform (built-in) app slug when the record is a platform connection or prefill. */
+	platformAppSlug?: string | null
 }
 
 export type ConnectOauthHostApprovalLink = {
@@ -168,6 +176,9 @@ export function toStoredIntegrationConfig(
 						integration.authorization.extraAuthorizeParams ?? {},
 				}
 			: null,
+		...(integration.platform === true
+			? { platformAppSlug: integration.appSlug }
+			: {}),
 	}
 }
 
@@ -220,10 +231,16 @@ export function parseStoredIntegrationConfig(
 		const authorization = parseStoredIntegrationAuthorization(
 			parsed.authorization,
 		)
+		const platformAppSlug =
+			typeof parsed.platformAppSlug === 'string' &&
+			parsed.platformAppSlug.trim()
+				? parsed.platformAppSlug.trim()
+				: null
 		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
 			return null
 		}
 		return {
+			...(platformAppSlug ? { platformAppSlug } : {}),
 			name,
 			tokenUrl,
 			apiBaseUrl:
@@ -336,7 +353,9 @@ export function mergeConnectOauthConfig(input: {
 		...(input.storedIntegration?.requiredHosts ?? []),
 	])
 	if (allowedHosts.length === 0) return null
+	const platformAppSlug = input.storedIntegration?.platformAppSlug ?? null
 	return {
+		platformAppSlug,
 		provider,
 		providerKey,
 		authorizeHost,
@@ -361,8 +380,10 @@ export function mergeConnectOauthConfig(input: {
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
 		clientId: input.storedIntegration?.clientId?.trim() || '',
+		// Platform apps keep the shared client secret server-side: there is
+		// never a user secret name for it, whatever the flow.
 		clientSecretSecretName:
-			flow === 'confidential'
+			flow === 'confidential' && !platformAppSlug
 				? (input.storedIntegration?.clientSecretSecretName ??
 					`${providerKey}ClientSecret`)
 				: null,
@@ -430,16 +451,30 @@ export function parseSessionConnectOauthConfig(
 		Array.isArray(record.scopes) &&
 		Array.isArray(record.allowedHosts) &&
 		record.scopes.every((value) => typeof value === 'string') &&
-		record.allowedHosts.every((value) => typeof value === 'string')
+		record.allowedHosts.every((value) => typeof value === 'string') &&
+		(record.platformAppSlug == null ||
+			typeof record.platformAppSlug === 'string')
 	if (!isValid) return null
-	return record as unknown as ConnectOauthConfig
+	return {
+		...(record as unknown as ConnectOauthConfig),
+		platformAppSlug:
+			typeof record.platformAppSlug === 'string'
+				? record.platformAppSlug
+				: null,
+	}
 }
 
 export function summarizeStoredSetupState(input: {
 	flow: OAuthFlow
 	clientId: string | null
 	hasStoredClientSecret: boolean
+	platform?: boolean
 }) {
+	// Platform (built-in) apps need no user-provided credentials: the
+	// operator registered the app and the shared secret stays server-side.
+	if (input.platform === true) {
+		return { missingFields: [], isReady: true }
+	}
 	const missingFields: Array<string> = []
 	if (!input.clientId?.trim()) missingFields.push('client ID')
 	if (input.flow === 'confidential' && !input.hasStoredClientSecret) {

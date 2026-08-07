@@ -31,6 +31,12 @@ type IntegrationConfig = {
 		scopeSeparator?: string | null
 		extraAuthorizeParams?: Record<string, string>
 	} | null
+	/**
+	 * Platform (built-in) app connection: the shared client secret stays
+	 * server-side, so token refresh must go through the host-side
+	 * `integration_token_refresh` capability.
+	 */
+	platform?: boolean
 }
 
 type IntegrationGetResult = {
@@ -73,6 +79,7 @@ export const secretHeaders = {
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
+	'integration_token_refresh',
 	'secret_set',
 	'secret_set_many',
 ] as const
@@ -93,7 +100,25 @@ export async function refreshAccessToken(
 	providerName: string,
 ): Promise<string> {
 	const integration = await readIntegrationConfig(kody, providerName)
+	if (integration.platform === true) {
+		throw new Error(
+			`Integration "${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("${providerName}") — it refreshes host-side via integration_token_refresh automatically.`,
+		)
+	}
 	return refreshAccessTokenWithIntegration(kody, providerName, integration)
+}
+
+async function refreshPlatformIntegrationTokens(
+	kody: KodyNamespace,
+	providerName: string,
+) {
+	const tokenRefresh = kody.integration_token_refresh
+	if (typeof tokenRefresh !== 'function') {
+		throw new Error(
+			'kody.integration_token_refresh is not available in this sandbox.',
+		)
+	}
+	await tokenRefresh({ name: providerName })
 }
 
 export async function createAuthenticatedFetch(
@@ -103,6 +128,23 @@ export async function createAuthenticatedFetch(
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
 	const integration = await readIntegrationConfig(kody, providerName)
+
+	// Platform connections refresh host-side and retry with a placeholder
+	// header (the placeholder resolves to the fresh token at the gateway), so
+	// the raw token never enters the sandbox. User-lane connections keep the
+	// in-sandbox refresh flow.
+	const retryAuthorizationHeader = async () => {
+		if (integration.platform === true) {
+			await refreshPlatformIntegrationTokens(kody, providerName)
+			return buildAccessTokenAuthorizationHeader(providerName, integration)
+		}
+		const refreshedAccessToken = await refreshAccessTokenWithIntegration(
+			kody,
+			providerName,
+			integration,
+		)
+		return `Bearer ${refreshedAccessToken}`
+	}
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
 		const resolvedUrl = resolveRequestUrl(input, integration)
@@ -120,25 +162,15 @@ export async function createAuthenticatedFetch(
 			)
 		} catch (error) {
 			if (!isMissingAccessTokenSecretError(error, integration)) throw error
-			const refreshedAccessToken = await refreshAccessTokenWithIntegration(
-				kody,
-				providerName,
-				integration,
-			)
 			return fetch(
-				createBearerRequest(retryRequest, `Bearer ${refreshedAccessToken}`),
+				createBearerRequest(retryRequest, await retryAuthorizationHeader()),
 			)
 		}
 		if (response.status !== 401) return response
 
 		await response.body?.cancel()
-		const refreshedAccessToken = await refreshAccessTokenWithIntegration(
-			kody,
-			providerName,
-			integration,
-		)
 		return fetch(
-			createBearerRequest(retryRequest, `Bearer ${refreshedAccessToken}`),
+			createBearerRequest(retryRequest, await retryAuthorizationHeader()),
 		)
 	}
 }
@@ -715,8 +747,25 @@ const __kodyResolveRequestUrl = (input, integration) => {
   }
   return input;
 };
+const __kodyRefreshPlatformIntegrationTokens = async (providerName) => {
+  const tokenRefresh = kody.integration_token_refresh;
+  if (typeof tokenRefresh !== 'function') {
+    throw new Error(
+      'kody.integration_token_refresh is not available in this sandbox.',
+    );
+  }
+  await tokenRefresh({ name: providerName });
+};
 const __kodyRefreshAccessToken = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
+  if (integration.platform === true) {
+    throw new Error(
+      \`Integration "\${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("\${providerName}") — it refreshes host-side via integration_token_refresh automatically.\`,
+    );
+  }
+  return __kodyRefreshAccessTokenWithIntegration(providerName, integration);
+};
+const __kodyRefreshAccessTokenWithIntegration = async (providerName, integration) => {
   const clientId = integration.clientId.trim();
   if (!clientId) {
     throw new Error(
@@ -795,6 +844,20 @@ const __kodyRefreshAccessToken = async (providerName) => {
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
+  // Platform connections refresh host-side and retry with a placeholder
+  // header (resolved to the fresh token at the gateway), so the raw token
+  // never enters the sandbox.
+  const retryAuthorizationHeader = async () => {
+    if (integration.platform === true) {
+      await __kodyRefreshPlatformIntegrationTokens(providerName);
+      return __kodyBuildAccessTokenAuthorizationHeader(providerName, integration);
+    }
+    const refreshedAccessToken = await __kodyRefreshAccessTokenWithIntegration(
+      providerName,
+      integration,
+    );
+    return \`Bearer \${refreshedAccessToken}\`;
+  };
   return async (input, init) => {
     const resolvedUrl = __kodyResolveRequestUrl(input, integration);
     __kodyAssertIntegrationHostAllowed(providerName, integration, resolvedUrl);
@@ -810,16 +873,14 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
       );
     } catch (error) {
       if (!__kodyIsMissingAccessTokenSecretError(error, integration)) throw error;
-      const refreshedAccessToken = await __kodyRefreshAccessToken(providerName);
       return fetch(
-        __kodyCreateBearerRequest(retryRequest, \`Bearer \${refreshedAccessToken}\`),
+        __kodyCreateBearerRequest(retryRequest, await retryAuthorizationHeader()),
       );
     }
     if (response.status !== 401) return response;
     await response.body?.cancel();
-    const refreshedAccessToken = await __kodyRefreshAccessToken(providerName);
     return fetch(
-      __kodyCreateBearerRequest(retryRequest, \`Bearer \${refreshedAccessToken}\`),
+      __kodyCreateBearerRequest(retryRequest, await retryAuthorizationHeader()),
     );
   };
 };

@@ -2467,6 +2467,7 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 				skipCapabilityRegistry: true,
 				additionalTools: {
 					integration_get: async () => ({}),
+					integration_token_refresh: async () => ({}),
 					value_get: async () => ({}),
 					secret_set: async () => ({}),
 					secret_set_many: async () => ({}),
