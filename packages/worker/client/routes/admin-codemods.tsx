@@ -21,9 +21,38 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 	accountInputCss,
-	accountManagementTableCellCss,
-	accountManagementTableCss,
 } from './account-management-components.tsx'
+import {
+	RecordTable,
+	type RecordTableColumn,
+	recordStampCss,
+} from './record-table.tsx'
+
+/**
+ * The live run and the history drill-down list the same item shape, so they
+ * share one column set.
+ */
+const codemodItemColumns: Array<RecordTableColumn> = [
+	{ key: 'kodyId', label: 'kodyId', primary: true },
+	{ key: 'userId', label: 'userId', drop: 2 },
+	{ key: 'status', label: 'status' },
+	{ key: 'changedPaths', label: 'changedPaths', drop: 1 },
+	{ key: 'findings', label: 'findings', drop: 3 },
+	{ key: 'error', label: 'error' },
+]
+
+/**
+ * Ids, paths, and error strings are arbitrary length, and a table cell will
+ * not shrink below its content, so the clamp lives on a block inside it.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '24ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 import {
 	type AdminCodemodListItem,
 	type AdminCodemodRunItemListItem,
@@ -522,8 +551,6 @@ export function AdminCodemodsRoute(handle: Handle) {
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
-	const tableCss = accountManagementTableCss
-	const cellCss = accountManagementTableCellCss
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -850,41 +877,32 @@ export function AdminCodemodsRoute(handle: Handle) {
 							title="Live results"
 							description={formatSummaryCounts(liveSummary)}
 						>
-							<div mix={css({ overflowX: 'auto' })}>
-								<table mix={css(tableCss)}>
-									<thead>
-										<tr>
-											<th mix={css(cellCss)}>kodyId</th>
-											<th mix={css(cellCss)}>userId</th>
-											<th mix={css(cellCss)}>status</th>
-											<th mix={css(cellCss)}>changedPaths</th>
-											<th mix={css(cellCss)}>findings</th>
-											<th mix={css(cellCss)}>error</th>
-										</tr>
-									</thead>
-									<tbody>
-										{liveItems.map((item) => (
-											<tr key={item.itemId}>
-												<td mix={css(cellCss)}>{item.kodyId}</td>
-												<td mix={css(cellCss)}>{item.userId}</td>
-												<td mix={css(cellCss)}>{item.status}</td>
-												<td mix={css(cellCss)}>
-													{item.changedPaths.join(', ') || '—'}
-												</td>
-												<td mix={css(cellCss)}>
-													{formatFindings(item.findings)}
-												</td>
-												<td mix={css(cellCss)}>{item.error ?? '—'}</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
-							{liveItems.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									{isRunning ? 'Waiting for the first page…' : 'No items.'}
-								</p>
-							) : null}
+							<RecordTable
+								mode="none"
+								ariaLabel="Live codemod results"
+								scrollHeight="28rem"
+								emptyLabel={
+									isRunning ? 'Waiting for the first page…' : 'No items.'
+								}
+								columns={codemodItemColumns}
+								rows={liveItems.map((item) => ({
+									id: item.itemId,
+									cells: {
+										kodyId: item.kodyId,
+										userId: <span mix={clampedCellCss}>{item.userId}</span>,
+										status: item.status,
+										changedPaths: (
+											<span mix={clampedCellCss}>
+												{item.changedPaths.join(', ') || '—'}
+											</span>
+										),
+										findings: formatFindings(item.findings),
+										error: (
+											<span mix={clampedCellCss}>{item.error ?? '—'}</span>
+										),
+									},
+								}))}
+							/>
 						</AccountManagementPanel>
 					) : null}
 
@@ -898,118 +916,117 @@ export function AdminCodemodsRoute(handle: Handle) {
 							</p>
 						) : (
 							<div mix={css({ display: 'grid', gap: spacing.md })}>
-								<div mix={css({ overflowX: 'auto' })}>
-									<table mix={css(tableCss)}>
-										<thead>
-											<tr>
-												<th mix={css(cellCss)}>Created</th>
-												<th mix={css(cellCss)}>Run</th>
-												<th mix={css(cellCss)}>Codemod</th>
-												<th mix={css(cellCss)}>Mode</th>
-												<th mix={css(cellCss)}>Status</th>
-												<th mix={css(cellCss)}>Scope</th>
-												<th mix={css(cellCss)}>Initiated by</th>
-												<th mix={css(cellCss)}>Actions</th>
-											</tr>
-										</thead>
-										<tbody>
-											{runs.map((run) => {
-												const revertConfirmActive =
-													pendingConfirmKey ===
-													getConfirmKey('revert-history', run.id)
-												// Abandoned and failed apply runs can hold applied
-												// items too; only an actively-paging run is off
-												// limits for revert.
-												const canRevert =
-													run.mode === 'apply' && run.status !== 'running'
-												return (
-													<tr key={run.id}>
-														<td mix={css(cellCss)}>
-															{formatNullableTimestamp(run.createdAt)}
-														</td>
-														<td mix={css(cellCss)}>
-															<code
-																title={run.id}
-																mix={css({
-																	fontSize: typography.fontSize.sm,
-																})}
+								<RecordTable
+									mode="pane"
+									ariaLabel="Codemod run history"
+									selectedId={selectedHistoryRunId}
+									scrollHeight="28rem"
+									columns={[
+										{ key: 'run', label: 'Run', primary: true },
+										{ key: 'created', label: 'Created' },
+										{ key: 'codemod', label: 'Codemod', drop: 1 },
+										{ key: 'mode', label: 'Mode' },
+										{ key: 'status', label: 'Status' },
+										{ key: 'scope', label: 'Scope', drop: 2 },
+										{ key: 'initiatedBy', label: 'Initiated by', drop: 3 },
+										{ key: 'actions', label: 'Actions' },
+									]}
+									rows={runs.map((run) => {
+										const revertConfirmActive =
+											pendingConfirmKey ===
+											getConfirmKey('revert-history', run.id)
+										// Abandoned and failed apply runs can hold applied items
+										// too; only an actively-paging run is off limits for revert.
+										const canRevert =
+											run.mode === 'apply' && run.status !== 'running'
+										return {
+											id: run.id,
+											cells: {
+												run: (
+													<code
+														title={run.id}
+														mix={css({ fontSize: typography.fontSize.sm })}
+													>
+														{run.id.slice(0, 8)}
+													</code>
+												),
+												created: (
+													<span mix={css(recordStampCss)}>
+														{formatNullableTimestamp(run.createdAt)}
+													</span>
+												),
+												codemod: (
+													<code mix={css({ fontSize: typography.fontSize.sm })}>
+														{run.codemodId}
+													</code>
+												),
+												mode: run.mode,
+												status: run.status,
+												scope: (
+													<span mix={clampedCellCss}>
+														{run.scopeUserId ?? 'fleet'}
+													</span>
+												),
+												initiatedBy: (
+													<span mix={clampedCellCss}>
+														{run.initiatedByUserId}
+													</span>
+												),
+												actions: (
+													<span
+														mix={css({
+															display: 'flex',
+															gap: spacing.xs,
+															flexWrap: 'wrap',
+														})}
+													>
+														<button
+															type="button"
+															disabled={historyLoading}
+															mix={[
+																on('click', () => {
+																	void loadHistoryRun(run.id)
+																}),
+																css(secondaryButtonCss),
+															]}
+														>
+															{selectedHistoryRunId === run.id && historyLoading
+																? 'Loading…'
+																: 'Details'}
+														</button>
+														{canRevert ? (
+															<button
+																type="button"
+																disabled={!canMutate}
+																mix={[
+																	...getDestructiveButtonMix(
+																		'revert-history',
+																		run.id,
+																		() => {
+																			selectedCodemodId = run.codemodId
+																			selectedMode = 'revert'
+																			revertOfRunId = run.id
+																			void runPagedCodemod({
+																				mode: 'revert',
+																				codemodId: run.codemodId,
+																				revertOfRunId: run.id,
+																			})
+																		},
+																	),
+																	css(dangerButtonCss),
+																]}
 															>
-																{run.id.slice(0, 8)}
-															</code>
-														</td>
-														<td mix={css(cellCss)}>
-															<code
-																mix={css({
-																	fontSize: typography.fontSize.sm,
-																})}
-															>
-																{run.codemodId}
-															</code>
-														</td>
-														<td mix={css(cellCss)}>{run.mode}</td>
-														<td mix={css(cellCss)}>{run.status}</td>
-														<td mix={css(cellCss)}>
-															{run.scopeUserId ?? 'fleet'}
-														</td>
-														<td mix={css(cellCss)}>{run.initiatedByUserId}</td>
-														<td mix={css(cellCss)}>
-															<div
-																mix={css({
-																	display: 'flex',
-																	gap: spacing.xs,
-																	flexWrap: 'wrap',
-																})}
-															>
-																<button
-																	type="button"
-																	disabled={historyLoading}
-																	mix={[
-																		on('click', () => {
-																			void loadHistoryRun(run.id)
-																		}),
-																		css(secondaryButtonCss),
-																	]}
-																>
-																	{selectedHistoryRunId === run.id &&
-																	historyLoading
-																		? 'Loading…'
-																		: 'Details'}
-																</button>
-																{canRevert ? (
-																	<button
-																		type="button"
-																		disabled={!canMutate}
-																		mix={[
-																			...getDestructiveButtonMix(
-																				'revert-history',
-																				run.id,
-																				() => {
-																					selectedCodemodId = run.codemodId
-																					selectedMode = 'revert'
-																					revertOfRunId = run.id
-																					void runPagedCodemod({
-																						mode: 'revert',
-																						codemodId: run.codemodId,
-																						revertOfRunId: run.id,
-																					})
-																				},
-																			),
-																			css(dangerButtonCss),
-																		]}
-																	>
-																		{revertConfirmActive
-																			? 'Confirm revert'
-																			: 'Revert'}
-																	</button>
-																) : null}
-															</div>
-														</td>
-													</tr>
-												)
-											})}
-										</tbody>
-									</table>
-								</div>
+																{revertConfirmActive
+																	? 'Confirm revert'
+																	: 'Revert'}
+															</button>
+														) : null}
+													</span>
+												),
+											},
+										}
+									})}
+								/>
 
 								{selectedHistoryRunId ? (
 									<div mix={css({ display: 'grid', gap: spacing.sm })}>
@@ -1025,36 +1042,33 @@ export function AdminCodemodsRoute(handle: Handle) {
 											</p>
 										) : null}
 										{historyItems.length > 0 ? (
-											<div mix={css({ overflowX: 'auto' })}>
-												<table mix={css(tableCss)}>
-													<thead>
-														<tr>
-															<th mix={css(cellCss)}>kodyId</th>
-															<th mix={css(cellCss)}>userId</th>
-															<th mix={css(cellCss)}>status</th>
-															<th mix={css(cellCss)}>changedPaths</th>
-															<th mix={css(cellCss)}>findings</th>
-															<th mix={css(cellCss)}>error</th>
-														</tr>
-													</thead>
-													<tbody>
-														{historyItems.map((item) => (
-															<tr key={item.id}>
-																<td mix={css(cellCss)}>{item.kodyId}</td>
-																<td mix={css(cellCss)}>{item.userId}</td>
-																<td mix={css(cellCss)}>{item.status}</td>
-																<td mix={css(cellCss)}>
-																	{item.changedPaths.join(', ') || '—'}
-																</td>
-																<td mix={css(cellCss)}>
-																	{formatFindings(item.findings)}
-																</td>
-																<td mix={css(cellCss)}>{item.error ?? '—'}</td>
-															</tr>
-														))}
-													</tbody>
-												</table>
-											</div>
+											<RecordTable
+												mode="none"
+												ariaLabel="Run items"
+												scrollHeight="28rem"
+												columns={codemodItemColumns}
+												rows={historyItems.map((item) => ({
+													id: item.id,
+													cells: {
+														kodyId: item.kodyId,
+														userId: (
+															<span mix={clampedCellCss}>{item.userId}</span>
+														),
+														status: item.status,
+														changedPaths: (
+															<span mix={clampedCellCss}>
+																{item.changedPaths.join(', ') || '—'}
+															</span>
+														),
+														findings: formatFindings(item.findings),
+														error: (
+															<span mix={clampedCellCss}>
+																{item.error ?? '—'}
+															</span>
+														),
+													},
+												}))}
+											/>
 										) : !historyLoading ? (
 											<p mix={css({ margin: 0, color: colors.textMuted })}>
 												No items for this run.

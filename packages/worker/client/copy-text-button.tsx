@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import {
+	getChipButtonCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	getPrimaryButtonCss,
@@ -15,14 +16,21 @@ type CopyTextButtonProps = {
 	idleLabel?: string
 	/**
 	 * `pill` is the redesign's display-face pill (prompt-block copy);
-	 * `ghost` its bordered transparent sibling (snippet copy).
+	 * `ghost` its bordered transparent sibling (snippet copy); `chip` the
+	 * value-sized control that rides along with an id.
 	 */
-	variant?: 'primary' | 'secondary' | 'pill' | 'ghost'
+	variant?: 'primary' | 'secondary' | 'pill' | 'ghost' | 'chip'
 	/**
 	 * `sm` is the in-page action size the account and admin areas use.
 	 * Applies to the `pill` and `ghost` variants.
 	 */
 	size?: 'md' | 'sm'
+	/**
+	 * Names the button when its own label cannot. A metadata band carries one
+	 * copy button per id, and a screen reader's button list of six identical
+	 * "Copy" entries says nothing about which id each one takes.
+	 */
+	ariaLabel?: string
 }
 
 type CopyState = 'idle' | 'copied' | 'error'
@@ -37,6 +45,7 @@ const secondaryCopyButtonCss = mergeCss(
 )
 const pillCopyButtonCss = mergeCss(getPillButtonCss(), getSwapLabelCss())
 const ghostCopyButtonCss = mergeCss(getGhostButtonCss(), getSwapLabelCss())
+const chipCopyButtonCss = mergeCss(getChipButtonCss(), getSwapLabelCss())
 
 const smallPillCopyButtonCss = mergeCss(
 	getPillButtonCss({ size: 'sm' }),
@@ -52,6 +61,7 @@ const copyButtonCssByVariant = {
 	secondary: secondaryCopyButtonCss,
 	pill: pillCopyButtonCss,
 	ghost: ghostCopyButtonCss,
+	chip: chipCopyButtonCss,
 } as const
 
 const smallCopyButtonCssByVariant = {
@@ -112,6 +122,7 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 	return () => (
 		<button
 			type="button"
+			aria-label={handle.props.ariaLabel}
 			mix={[
 				css(
 					getCopyButtonCss(

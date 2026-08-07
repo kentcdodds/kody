@@ -20,7 +20,9 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
+	IdValue,
 	MetadataGrid,
+	TimestampValue,
 	accountInputCss,
 	noticeCardCss,
 } from './account-management-components.tsx'
@@ -503,7 +505,6 @@ export function AdminInvitesRoute(handle: Handle) {
 									</button>
 								</div>
 								<MetadataGrid
-									columns={3}
 									items={[
 										{ label: 'Status', value: getInviteStatus(invite) },
 										{
@@ -516,23 +517,43 @@ export function AdminInvitesRoute(handle: Handle) {
 										},
 										{
 											label: 'Expires',
-											value: formatNullableTimestamp(invite.expiresAt),
+											value: (
+												<TimestampValue
+													value={invite.expiresAt}
+													fallback="Never"
+												/>
+											),
 										},
 										{
 											label: 'Created',
-											value: formatNullableTimestamp(invite.createdAt),
+											value: (
+												<TimestampValue
+													value={invite.createdAt}
+													fallback="Never"
+												/>
+											),
 										},
 										{
 											label: 'Created by',
 											value:
 												invite.createdByEmail ??
-												(invite.createdByStableUserId == null
-													? 'Unknown'
-													: invite.createdByStableUserId),
+												(invite.createdByStableUserId == null ? (
+													'Unknown'
+												) : (
+													<IdValue
+														value={invite.createdByStableUserId}
+														label="creator id"
+													/>
+												)),
 										},
 										{
 											label: 'Revoked',
-											value: formatNullableTimestamp(invite.revokedAt),
+											value: (
+												<TimestampValue
+													value={invite.revokedAt}
+													fallback="Never"
+												/>
+											),
 										},
 									]}
 								/>

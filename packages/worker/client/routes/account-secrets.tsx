@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import {
 	type AccountSecretDetail,
@@ -44,7 +43,6 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import {
-	cardCss,
 	fieldCss,
 	fieldLabelCss,
 	getDangerPillCss,
@@ -59,17 +57,20 @@ import {
 	normalizeAllowedPackages,
 } from './secret-normalization.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	TimestampValue,
 	accountInputCss,
 } from './account-management-components.tsx'
+import {
+	RecordTable,
+	RecordTableSearch,
+	RecordTableSelect,
+	recordBodyCss,
+	recordStampCss,
+} from './record-table.tsx'
 
 const selectCss = getSelectCss()
 
@@ -471,12 +472,18 @@ function filterSecrets(
 	})
 }
 
-const truncatedTextCss = {
+/**
+ * Names, packages, and descriptions are arbitrary length, and a table cell
+ * will not shrink below its content, so the clamp lives on a block inside.
+ */
+const clampedCellCss = css({
+	display: 'block',
 	minWidth: 0,
+	maxWidth: '26ch',
 	overflow: 'hidden',
 	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap',
-} as const
+})
 
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
@@ -1280,60 +1287,51 @@ export function AccountSecretsRoute(handle: Handle) {
 					</AccountManagementMessage>
 				) : null}
 
-				<AccountManagementLayout
-					sidebar={
-						<AccountManagementSidebar
-							title="Saved secrets"
-							description="Select a secret to edit its metadata, value, and allowed hosts."
-						>
-							<div
-								mix={css({
-									display: 'grid',
-									gap: spacing.sm,
-								})}
+				<RecordTable
+					mode="pane"
+					ariaLabel="Saved secrets"
+					selectedId={activeSecretId}
+					countLabel={
+						status === 'ready'
+							? `${filteredSecrets.length} of ${secrets.length} shown`
+							: undefined
+					}
+					emptyLabel={
+						secrets.length === 0
+							? 'No secrets yet. Create one to get started.'
+							: 'No secrets match the current filters.'
+					}
+					toolbar={
+						<>
+							<RecordTableSearch
+								label="Search secrets"
+								placeholder="Search secrets"
+								value={filters.search}
+								onInput={(value) => {
+									replaceLocation(
+										buildHrefWithUpdatedFilters({ search: value }),
+									)
+								}}
+							/>
+							<RecordTableSelect
+								label="Filter secrets by scope"
+								value={filters.scope}
+								onChange={(value) => {
+									const nextScope = value as SecretFilterScope
+									replaceLocation(
+										buildHrefWithUpdatedFilters({
+											scope: nextScope,
+											packageId: nextScope === 'user' ? '' : filters.packageId,
+										}),
+									)
+								}}
 							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search secrets"
-									value={filters.search}
-									onInput={(value) => {
-										replaceLocation(
-											buildHrefWithUpdatedFilters({ search: value }),
-										)
-									}}
-								/>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Scope</span>
-									<select
-										data-field-ring
-										value={filters.scope}
-										aria-label="Filter secrets by scope"
-										mix={[
-											on(
-												'change',
-
-												(event) => {
-													const nextScope = event.currentTarget
-														.value as SecretFilterScope
-													replaceLocation(
-														buildHrefWithUpdatedFilters({
-															scope: nextScope,
-															packageId:
-																nextScope === 'user' ? '' : filters.packageId,
-														}),
-													)
-												},
-											),
-
-											css(selectCss),
-										]}
-									>
-										<option value="all">All scopes</option>
-										<option value="user">User</option>
-										<option value="package">Package</option>
-									</select>
-								</label>
-								{packageOptions.length > 0 ? (
+								<option value="all">All scopes</option>
+								<option value="user">User</option>
+								<option value="package">Package</option>
+							</RecordTableSelect>
+							{packageOptions.length > 0 ? (
+								<span mix={css({ flex: '1 1 14rem', minWidth: '10rem' })}>
 									<Combobox
 										key={`secret-package-filter:${filters.packageId}`}
 										id="secret-package-filter"
@@ -1350,104 +1348,45 @@ export function AccountSecretsRoute(handle: Handle) {
 											)
 										}}
 									/>
-								) : null}
-							</div>
-							{status === 'ready' && secrets.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No secrets yet. Create one to get started.
-								</p>
-							) : status === 'ready' && filteredSecrets.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No secrets match the current filters.
-								</p>
-							) : (
-								<AccountManagementList>
-									{filteredSecrets.map((secret) => {
-										const isActive = activeSecretId === secret.id
-										return (
-											<li key={secret.id} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemLink
-													href={buildSecretHref(secret, getCurrentSearch())}
-													active={isActive}
-													disabled={isMutating}
-												>
-													<div
-														mix={css({
-															display: 'grid',
-															gridTemplateColumns: 'minmax(0, 1fr) auto',
-															gap: spacing.md,
-															alignItems: 'baseline',
-															minWidth: 0,
-														})}
-													>
-														<strong
-															mix={css({
-																...truncatedTextCss,
-																display: 'block',
-															})}
-														>
-															{secret.name}
-														</strong>
-														<span
-															mix={css({
-																fontSize: typography.fontSize.xs,
-																color: colors.textMuted,
-															})}
-														>
-															{formatRelativeTtl(secret.ttlMs)}
-														</span>
-													</div>
-													<span
-														mix={css({
-															...truncatedTextCss,
-															display: 'block',
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-														})}
-													>
-														{getScopeLabel(secret.scope)}
-														{secret.packageTitle
-															? ` - ${secret.packageTitle}`
-															: ''}
-													</span>
-													{secret.description ? (
-														<span
-															mix={css({
-																display: '-webkit-box',
-																fontSize: typography.fontSize.sm,
-																color: colors.textMuted,
-																overflow: 'hidden',
-																overflowWrap: 'anywhere',
-																textOverflow: 'ellipsis',
-																'-webkit-box-orient': 'vertical',
-																'-webkit-line-clamp': '2',
-															})}
-														>
-															{secret.description}
-														</span>
-													) : null}
-												</AccountManagementListItemLink>
-											</li>
-										)
-									})}
-								</AccountManagementList>
-							)}
-						</AccountManagementSidebar>
+								</span>
+							) : null}
+						</>
 					}
-				>
-					<div
-						mix={css({
-							...cardCss,
-							gap: spacing.lg,
-						})}
-					>
-						{showEditor ? (
+					columns={[
+						{ key: 'name', label: 'Secret', primary: true },
+						{ key: 'scope', label: 'Scope' },
+						{ key: 'package', label: 'Package', drop: 2 },
+						{ key: 'description', label: 'Description', drop: 1 },
+						{ key: 'ttl', label: 'Expires' },
+					]}
+					rows={filteredSecrets.map((secret) => ({
+						id: secret.id,
+						// A save or delete is in flight; the editor below owns the
+						// selection until it settles.
+						href: isMutating
+							? undefined
+							: buildSecretHref(secret, getCurrentSearch()),
+						cells: {
+							name: <span mix={clampedCellCss}>{secret.name}</span>,
+							scope: getScopeLabel(secret.scope),
+							package: (
+								<span mix={clampedCellCss}>{secret.packageTitle || '—'}</span>
+							),
+							description: (
+								<span mix={clampedCellCss}>{secret.description || '—'}</span>
+							),
+							ttl: (
+								<span mix={css(recordStampCss)}>
+									{formatRelativeTtl(secret.ttlMs)}
+								</span>
+							),
+						},
+					}))}
+					record={
+						showEditor ? (
 							<form
 								{...passwordManagerIgnoreProps}
-								mix={[
-									css({ display: 'grid', gap: spacing.lg }),
-									on('submit', saveSecretChanges),
-								]}
+								mix={[css(recordBodyCss), on('submit', saveSecretChanges)]}
 							>
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
 									<h2
@@ -1668,15 +1607,18 @@ export function AccountSecretsRoute(handle: Handle) {
 
 								{selectedSecret ? (
 									<MetadataGrid
-										columns={3}
 										items={[
 											{
 												label: 'Created',
-												value: formatTimestamp(selectedSecret.createdAt),
+												value: (
+													<TimestampValue value={selectedSecret.createdAt} />
+												),
 											},
 											{
 												label: 'Updated',
-												value: formatTimestamp(selectedSecret.updatedAt),
+												value: (
+													<TimestampValue value={selectedSecret.updatedAt} />
+												),
 											},
 											{
 												label: 'Expiry',
@@ -1736,25 +1678,9 @@ export function AccountSecretsRoute(handle: Handle) {
 									) : null}
 								</div>
 							</form>
-						) : (
-							<div mix={css({ display: 'grid', gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select a secret
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick a secret from the list to edit it, or create a new one.
-								</p>
-							</div>
-						)}
-					</div>
-				</AccountManagementLayout>
+						) : null
+					}
+				/>
 			</AccountManagementShell>
 		)
 	}

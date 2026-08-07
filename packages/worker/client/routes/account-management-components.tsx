@@ -1,7 +1,8 @@
 import { css, type Handle } from 'remix/ui'
 import { routes } from '#app/routes.ts'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
-import { shouldRouterHandleClick } from '#client/client-router.tsx'
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import {
 	colors,
 	radius,
@@ -11,7 +12,6 @@ import {
 } from '#client/styles/tokens.ts'
 import {
 	getAuthInputCss,
-	getSurfaceCardCss,
 	hoverMq,
 	layoutMaxWidths,
 	pageGutter,
@@ -503,251 +503,6 @@ export function AccountManagementMessage(
 	)
 }
 
-type AccountManagementLayoutProps = {
-	sidebar: AccountManagementSlot
-	children: AccountManagementSlot
-	sidebarWidth?: string
-	/**
-	 * On narrow viewports the panes stack. `detail-first` puts the selected
-	 * record above the list so phones are not stuck scrolling past filters.
-	 */
-	narrowOrder?: 'sidebar-first' | 'detail-first'
-}
-
-export function AccountManagementLayout(
-	handle: Handle<AccountManagementLayoutProps>,
-) {
-	return () => (
-		<section
-			mix={css({
-				display: 'grid',
-				gridTemplateColumns: `${handle.props.sidebarWidth ?? 'minmax(18rem, 22rem)'} minmax(0, 1fr)`,
-				gap: spacing.lg,
-				alignItems: 'start',
-				minWidth: 0,
-				[accountManagementStackMq]: {
-					gridTemplateColumns: 'minmax(0, 1fr)',
-					...(handle.props.narrowOrder === 'detail-first'
-						? {
-								'& > :last-child': {
-									order: -1,
-								},
-							}
-						: {}),
-				},
-			})}
-		>
-			{handle.props.sidebar}
-			<div mix={css({ display: 'grid', gap: spacing.lg, minWidth: 0 })}>
-				{handle.props.children}
-			</div>
-		</section>
-	)
-}
-
-type AccountManagementSidebarProps = {
-	title: string
-	description: string
-	children: AccountManagementSlot
-}
-
-export function AccountManagementSidebar(
-	handle: Handle<AccountManagementSidebarProps>,
-) {
-	return () => (
-		<aside
-			mix={css({
-				...getSurfaceCardCss(),
-				padding: spacing.lg,
-				display: 'grid',
-				gap: spacing.md,
-				alignSelf: 'start',
-				// Grid items default to min-width:auto; without this, long
-				// search placeholders / unbreakable tokens expand past the
-				// sidebar track and paint over the detail pane.
-				minWidth: 0,
-				maxWidth: '100%',
-				overflow: 'hidden',
-			})}
-		>
-			<div mix={css({ display: 'grid', gap: '0.6rem', minWidth: 0 })}>
-				<h2 mix={css(accountSectionTitleCss)}>{handle.props.title}</h2>
-				<p
-					mix={css({
-						...accountSectionLedeCss,
-						overflowWrap: 'anywhere',
-					})}
-				>
-					{handle.props.description}
-				</p>
-			</div>
-			{handle.props.children}
-		</aside>
-	)
-}
-
-/**
- * Default in-sidebar scroll viewport for management lists. Keeps long result
- * sets from stretching the whole page; callers can override per page.
- */
-export const accountManagementListMaxHeight = 'min(65vh, 48rem)'
-
-type AccountManagementListProps = {
-	children: AccountManagementSlot
-	/**
-	 * Scroll viewport height. Defaults to {@link accountManagementListMaxHeight}.
-	 * Pass `null` only for the rare list that should grow with the page.
-	 */
-	maxHeight?: string | null
-}
-
-export function AccountManagementList(
-	handle: Handle<AccountManagementListProps>,
-) {
-	return () => {
-		const maxHeight =
-			handle.props.maxHeight === undefined
-				? accountManagementListMaxHeight
-				: handle.props.maxHeight
-		const scrollable = maxHeight != null
-
-		return (
-			<div
-				mix={css({
-					minWidth: 0,
-					maxHeight: scrollable ? maxHeight : undefined,
-					overflowY: scrollable ? 'auto' : undefined,
-					overflowX: scrollable ? 'hidden' : undefined,
-					paddingRight: scrollable ? spacing.xs : undefined,
-				})}
-			>
-				<ul
-					mix={css({
-						listStyle: 'none',
-						padding: 0,
-						margin: 0,
-						display: 'grid',
-						gap: spacing.sm,
-						minWidth: 0,
-					})}
-				>
-					{handle.props.children}
-				</ul>
-			</div>
-		)
-	}
-}
-
-type AccountManagementSearchFieldProps = {
-	label: string
-	placeholder: string
-	value: string
-	onInput: (value: string) => void
-}
-
-/**
- * URL-backed search input for sidebar lists (secrets, admin users, ...).
- * Callers own the URL update — typically `replaceLocation(...)` with the
- * value written to a `q` query param.
- */
-export function AccountManagementSearchField(
-	handle: Handle<AccountManagementSearchFieldProps>,
-) {
-	return () => (
-		<label mix={css(accountFieldCss)}>
-			<span mix={css(accountFieldLabelCss)}>{handle.props.label}</span>
-			<input
-				type="search"
-				data-field-ring
-				value={handle.props.value}
-				placeholder={handle.props.placeholder}
-				aria-label={handle.props.label}
-				mix={[
-					on('input', (event) =>
-						handle.props.onInput(
-							(event.currentTarget as HTMLInputElement).value,
-						),
-					),
-					css({
-						...accountInputCss,
-						paddingRight: spacing.xl,
-					}),
-				]}
-			/>
-		</label>
-	)
-}
-
-type AccountManagementListItemLinkProps = {
-	href: string
-	active: boolean
-	disabled?: boolean
-	/**
-	 * Pre-navigation state resets (clear messages, collapse delete
-	 * confirmations). Runs only for clicks the router intercepts as an SPA
-	 * navigation, so open-in-new-tab clicks leave the current pane untouched.
-	 */
-	onNavigate?: () => void
-	children: AccountManagementSlot
-}
-
-/**
- * List/detail sidebar entry rendered as a real link: middle/cmd-click opens
- * the record in a new tab, hover warms the destination loader, and
- * `data-prevent-scroll-reset` keeps the page's scroll position when the
- * detail pane swaps in. While `disabled`, the `href` is dropped so the router
- * ignores clicks mid-mutation.
- */
-export function AccountManagementListItemLink(
-	handle: Handle<AccountManagementListItemLinkProps>,
-) {
-	return () => (
-		<a
-			href={handle.props.disabled ? undefined : handle.props.href}
-			data-prevent-scroll-reset
-			aria-current={handle.props.active ? 'true' : undefined}
-			aria-disabled={handle.props.disabled ? 'true' : undefined}
-			mix={[
-				on('click', (event: MouseEvent) => {
-					if (handle.props.disabled || !handle.props.onNavigate) return
-					if (
-						!(event.currentTarget instanceof HTMLAnchorElement) ||
-						!shouldRouterHandleClick(event, event.currentTarget)
-					) {
-						return
-					}
-					handle.props.onNavigate()
-				}),
-				css({
-					width: '100%',
-					minWidth: 0,
-					maxWidth: '100%',
-					textAlign: 'left',
-					textDecoration: 'none',
-					display: 'grid',
-					gap: spacing.xs,
-					padding: spacing.md,
-					overflow: 'hidden',
-					overflowWrap: 'anywhere',
-					borderRadius: radius.md,
-					border: `1px solid ${
-						handle.props.active ? colors.primary : colors.border
-					}`,
-					borderLeftWidth: handle.props.active ? '0.3rem' : '1px',
-					backgroundColor: handle.props.active
-						? colors.primarySoftest
-						: colors.background,
-					color: colors.text,
-					cursor: handle.props.disabled ? 'not-allowed' : 'pointer',
-					opacity: handle.props.disabled ? 0.7 : 1,
-				}),
-			]}
-		>
-			{handle.props.children}
-		</a>
-	)
-}
-
 type AccountManagementPanelProps = {
 	title?: string
 	description?: string
@@ -802,7 +557,6 @@ type MetadataGridProps = {
 		label: string
 		value: AccountManagementSlot
 	}>
-	columns?: 2 | 3
 }
 
 export function MetadataGrid(handle: Handle<MetadataGridProps>) {
@@ -810,12 +564,17 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 		<dl
 			mix={css({
 				display: 'grid',
-				gridTemplateColumns: `repeat(${handle.props.columns ?? 2}, minmax(0, 1fr))`,
+				// Columns come from the room available rather than a per-page
+				// count. A declared `columns={3}` divided the 376px detail pane
+				// into 115px columns, which is a third of a UUID. The 14rem floor
+				// is what an id needs at the `IdValue` size; below two of those
+				// the band is a single column on its own, at every viewport,
+				// without a breakpoint having to guess the container's width.
+				// The `min()` keeps the floor from overflowing a container
+				// narrower than the floor itself.
+				gridTemplateColumns: 'repeat(auto-fit, minmax(min(14rem, 100%), 1fr))',
 				gap: spacing.md,
 				margin: 0,
-				[accountManagementNarrowMq]: {
-					gridTemplateColumns: '1fr',
-				},
 			})}
 		>
 			{handle.props.items.map((item) => (
@@ -838,6 +597,84 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 }
 
 /**
+ * An identifier is a copy target, not a sentence. The value stays on one line
+ * and clips, so a 36-character UUID can no longer break a metadata column into
+ * five lines of hex.
+ *
+ * The whole string stays in the DOM — clipping is CSS, never a truncated
+ * substring — so a screen reader still reads the id in full, and `user-select:
+ * all` turns one click into a whole-value selection for anyone the clipboard
+ * button does not work for. `title` is the mouse-hover convenience on top of
+ * that, not the mechanism.
+ */
+export function IdValue(
+	handle: Handle<{
+		value: string
+		/** Field name, so the copy button says which id it takes. */
+		label: string
+	}>,
+) {
+	return () => (
+		<span
+			mix={css({
+				display: 'flex',
+				alignItems: 'center',
+				gap: '0.35rem',
+				minWidth: 0,
+			})}
+		>
+			<code
+				title={handle.props.value}
+				mix={css({
+					minWidth: 0,
+					overflow: 'hidden',
+					textOverflow: 'ellipsis',
+					whiteSpace: 'nowrap',
+					userSelect: 'all',
+					fontFamily: 'monospace',
+					fontSize: typography.fontSize.sm,
+					padding: '0.2rem 0.42rem',
+					borderRadius: radius.sm,
+					border: `1px solid ${colors.border}`,
+					backgroundColor: colors.background,
+					color: colors.text,
+				})}
+			>
+				{handle.props.value}
+			</code>
+			<CopyTextButton
+				value={handle.props.value}
+				variant="chip"
+				ariaLabel={`Copy ${handle.props.label}`}
+			/>
+		</span>
+	)
+}
+
+/**
+ * A timestamp in a metadata cell reads as one token: a locale string breaking
+ * after its comma looks like two values, and tabular figures keep a column of
+ * them from shifting sideways as the digits change.
+ */
+export function TimestampValue(
+	handle: Handle<{ value: string | null; fallback?: string }>,
+) {
+	return () => (
+		<span
+			mix={css({
+				whiteSpace: 'nowrap',
+				fontVariantNumeric: 'tabular-nums',
+			})}
+		>
+			{formatNullableTimestamp(
+				handle.props.value,
+				handle.props.fallback ?? '—',
+			)}
+		</span>
+	)
+}
+
+/**
  * Quiet surface callout, matching the prototype's `.onboard-callout` chrome.
  * The redesign never uses green as a background wash — emphasis lives in the
  * callout's copy and action, not its border.
@@ -849,23 +686,4 @@ export const noticeCardCss = {
 	borderRadius: radius.card,
 	border: `1.5px solid ${colors.border}`,
 	backgroundColor: colors.surface,
-}
-
-export const accountManagementTableCss = {
-	width: '100%',
-	borderCollapse: 'collapse' as const,
-	fontSize: typography.fontSize.sm,
-}
-
-export const accountManagementTableCellCss = {
-	padding: `${spacing.sm} ${spacing.md}`,
-	borderBottom: `1px solid ${colors.border}`,
-	textAlign: 'left' as const,
-	verticalAlign: 'top' as const,
-}
-
-export const accountManagementTableNumericCellCss = {
-	...accountManagementTableCellCss,
-	textAlign: 'right' as const,
-	fontVariantNumeric: 'tabular-nums',
 }

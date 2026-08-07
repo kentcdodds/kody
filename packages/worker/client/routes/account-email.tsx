@@ -14,24 +14,24 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
+import {
+	RecordTable,
+	RecordTableSearch,
+	RecordTableSelect,
+	recordBodyCss,
+	recordStampCss,
+} from '#client/routes/record-table.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
-	fieldCss,
-	fieldLabelCss,
 	getDangerPillCss,
 	getGhostButtonCss,
-	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type AccountEmailLoaderData,
@@ -42,8 +42,6 @@ import {
 type PageStatus = 'loading' | 'ready' | 'error'
 type ClassifyState = 'idle' | 'saving'
 type ClassificationFilter = 'all' | 'quarantined'
-
-const selectCss = getSelectCss()
 
 const accountEmailApiPath = '/account/email.json'
 const emailRoute = createListDetailRoute('/account/email')
@@ -87,6 +85,27 @@ const truncatedTextCss = {
 	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap',
 } as const
+
+/**
+ * Subjects and addresses are arbitrary length, and a table cell will not
+ * shrink below its content, so the clamp lives on a block inside the cell.
+ * The subject also carries the quarantine badge: it is the one column that
+ * never drops and the one that becomes the card heading, so a warning put
+ * anywhere else can vanish at exactly the width where it matters most.
+ */
+const subjectCellCss = css({
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+	maxWidth: '34ch',
+	minWidth: 0,
+})
+
+const clampedCellCss = css({
+	...truncatedTextCss,
+	display: 'block',
+	maxWidth: '26ch',
+})
 
 function readSearchQuery(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
@@ -439,442 +458,322 @@ export function AccountEmailRoute(handle: Handle) {
 								) : null}
 							</div>
 						) : null}
-						<AccountManagementLayout
-							sidebar={
-								<AccountManagementSidebar
-									title="Messages"
-									description="Select a message to read its body and metadata."
-								>
-									<div
-										mix={css({
-											display: 'grid',
-											gap: spacing.sm,
-										})}
-									>
-										<AccountManagementSearchField
-											label="Search"
-											placeholder="Search subject or from"
-											value={searchQuery}
-											onInput={(value) => {
-												replaceLocation(buildHrefWithUpdatedSearch(value))
-											}}
-										/>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Filter</span>
-											<select
-												data-field-ring
-												value={classificationFilter}
-												aria-label="Filter messages by classification"
-												mix={[
-													on('change', (event) => {
-														const nextFilter =
-															event.currentTarget.value === 'quarantined'
-																? 'quarantined'
-																: 'all'
-														replaceLocation(
-															buildHrefWithClassification(nextFilter),
-														)
-													}),
-													css(selectCss),
-												]}
-											>
-												<option value="all">All messages</option>
-												<option value="quarantined">Quarantined</option>
-											</select>
-										</label>
-									</div>
-									{status === 'ready' && data.messages.length === 0 ? (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											{searchQuery || classificationFilter !== 'all'
-												? 'No messages match the current filters.'
-												: 'No messages in your inbox yet.'}
-										</p>
-									) : (
-										<>
-											<AccountManagementList>
-												{data.messages.map((emailMessage) => (
-													<li key={emailMessage.id} mix={css({ minWidth: 0 })}>
-														<AccountManagementListItemLink
-															href={emailRoute.buildDetailHref(
-																emailMessage.id,
-																getCurrentSearch(),
-															)}
-															active={
-																selectedMessageId === emailMessage.id ||
-																selectedMessage?.id === emailMessage.id
-															}
-														>
-															<div
-																mix={css({
-																	display: 'grid',
-																	gridTemplateColumns: 'minmax(0, 1fr) auto',
-																	gap: spacing.md,
-																	alignItems: 'baseline',
-																	minWidth: 0,
-																})}
-															>
-																<strong
-																	mix={css({
-																		...truncatedTextCss,
-																		display: 'block',
-																	})}
-																>
-																	{emailMessage.subject || '(no subject)'}
-																</strong>
-																<span
-																	mix={css({
-																		fontSize: typography.fontSize.xs,
-																		color: colors.textMuted,
-																	})}
-																>
-																	{formatNullableTimestamp(
-																		messageDate(emailMessage),
-																		'Unknown',
-																	)}
-																</span>
-															</div>
-															<span
-																mix={css({
-																	...truncatedTextCss,
-																	display: 'block',
-																	fontSize: typography.fontSize.sm,
-																	color: colors.textMuted,
-																})}
-															>
-																{emailMessage.from_address ??
-																	emailMessage.envelope_from ??
-																	'Unknown sender'}
-															</span>
-															<span
-																mix={css({
-																	display: 'flex',
-																	flexWrap: 'wrap',
-																	gap: spacing.xs,
-																	alignItems: 'center',
-																	fontSize: typography.fontSize.xs,
-																	color: colors.textMuted,
-																})}
-															>
-																<span>
-																	{directionLabel(emailMessage.direction)} ·{' '}
-																	{statusLabel(emailMessage)}
-																</span>
-																{emailMessage.classification ===
-																'quarantined' ? (
-																	<span
-																		title={
-																			emailMessage.classification_reason ??
-																			'Quarantined'
-																		}
-																		mix={css(quarantinedBadgeCss)}
-																	>
-																		Quarantined
-																	</span>
-																) : null}
-															</span>
-														</AccountManagementListItemLink>
-													</li>
-												))}
-											</AccountManagementList>
-											{status === 'ready' ? (
-												<div
-													mix={css({
-														display: 'flex',
-														gap: spacing.sm,
-														alignItems: 'center',
-														justifyContent: 'space-between',
-														marginTop: spacing.sm,
-													})}
-												>
-													<p
-														mix={css({
-															margin: 0,
-															color: colors.textMuted,
-															fontSize: typography.fontSize.xs,
-														})}
-													>
-														Page {currentPage} of {totalPages} · {data.total}{' '}
-														{data.total === 1 ? 'message' : 'messages'}
-													</p>
-													{totalPages > 1 ? (
-														<div
-															mix={css({
-																display: 'flex',
-																gap: spacing.xs,
-															})}
-														>
-															<button
-																type="button"
-																disabled={currentPage <= 1}
-																mix={[
-																	on('click', () => {
-																		replaceLocation(
-																			buildHrefWithPage(currentPage - 1),
-																		)
-																	}),
-																	css(secondaryButtonCss),
-																]}
-															>
-																Previous
-															</button>
-															<button
-																type="button"
-																disabled={currentPage >= totalPages}
-																mix={[
-																	on('click', () => {
-																		replaceLocation(
-																			buildHrefWithPage(currentPage + 1),
-																		)
-																	}),
-																	css(secondaryButtonCss),
-																]}
-															>
-																Next
-															</button>
-														</div>
-													) : null}
-												</div>
-											) : null}
-										</>
-									)}
-								</AccountManagementSidebar>
+						<RecordTable
+							mode="expand"
+							ariaLabel="Inbox messages"
+							selectedId={selectedMessageId}
+							countLabel={
+								status === 'ready'
+									? `${data.total} ${data.total === 1 ? 'message' : 'messages'}`
+									: undefined
 							}
-						>
-							{selectedMessage ? (
-								<div mix={css({ ...cardCss, gap: spacing.lg })}>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<div
-											mix={css({
-												display: 'flex',
-												flexWrap: 'wrap',
-												gap: spacing.sm,
-												alignItems: 'center',
-											})}
-										>
-											<h2
-												mix={css({
-													margin: 0,
-													fontSize: typography.fontSize.lg,
-													fontWeight: typography.fontWeight.semibold,
-													color: colors.text,
-													overflowWrap: 'anywhere',
-												})}
-											>
-												{selectedMessage.subject || '(no subject)'}
-											</h2>
-											{selectedMessage.classification === 'quarantined' ? (
+							emptyLabel={
+								searchQuery || classificationFilter !== 'all'
+									? 'No messages match the current filters.'
+									: 'No messages in your inbox yet.'
+							}
+							toolbar={
+								<>
+									<RecordTableSearch
+										label="Search messages"
+										placeholder="Search subject or from"
+										value={searchQuery}
+										onInput={(value) => {
+											replaceLocation(buildHrefWithUpdatedSearch(value))
+										}}
+									/>
+									<RecordTableSelect
+										label="Filter messages by classification"
+										value={classificationFilter}
+										onChange={(value) => {
+											replaceLocation(
+												buildHrefWithClassification(
+													value === 'quarantined' ? 'quarantined' : 'all',
+												),
+											)
+										}}
+									>
+										<option value="all">All messages</option>
+										<option value="quarantined">Quarantined</option>
+									</RecordTableSelect>
+								</>
+							}
+							columns={[
+								{ key: 'subject', label: 'Subject', primary: true },
+								{ key: 'from', label: 'From', drop: 1 },
+								{ key: 'direction', label: 'Direction', drop: 3 },
+								{ key: 'status', label: 'Status', drop: 2 },
+								{ key: 'date', label: 'Date' },
+							]}
+							rows={data.messages.map((emailMessage) => ({
+								id: emailMessage.id,
+								href: emailRoute.buildDetailHref(
+									emailMessage.id,
+									getCurrentSearch(),
+								),
+								cells: {
+									subject: (
+										<span mix={subjectCellCss}>
+											<span mix={css(truncatedTextCss)}>
+												{emailMessage.subject || '(no subject)'}
+											</span>
+											{emailMessage.classification === 'quarantined' ? (
 												<span
 													title={
-														selectedMessage.classification_reason ??
-														'Quarantined'
+														emailMessage.classification_reason ?? 'Quarantined'
 													}
 													mix={css(quarantinedBadgeCss)}
 												>
 													Quarantined
 												</span>
 											) : null}
-										</div>
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											{directionLabel(selectedMessage.direction)} message
-										</p>
-										{selectedMessage.classification === 'quarantined' &&
-										selectedMessage.classification_reason ? (
-											<p
-												mix={css({
-													margin: 0,
-													color: colors.textMuted,
-													fontSize: typography.fontSize.sm,
-												})}
-											>
-												{selectedMessage.classification_reason}
-											</p>
-										) : null}
-									</div>
-									{selectedMessage.direction === 'inbound' ? (
-										<div
-											mix={css({
-												display: 'flex',
-												flexWrap: 'wrap',
-												gap: spacing.sm,
-											})}
-										>
-											{selectedMessage.classification === 'quarantined' ? (
-												<button
-													type="button"
-													disabled={classifyState !== 'idle'}
-													mix={[
-														on('click', () => {
-															void classifySelectedMessage('accepted')
-														}),
-														css(secondaryButtonCss),
-													]}
-												>
-													{classifyState === 'saving'
-														? 'Updating…'
-														: 'Not spam'}
-												</button>
-											) : (
-												<button
-													type="button"
-													disabled={classifyState !== 'idle'}
-													mix={[
-														on('click', () => {
-															void classifySelectedMessage('quarantined')
-														}),
-														css(dangerButtonCss),
-													]}
-												>
-													{classifyState === 'saving'
-														? 'Updating…'
-														: 'Mark as spam'}
-												</button>
+										</span>
+									),
+									from: (
+										<span mix={clampedCellCss}>
+											{emailMessage.from_address ??
+												emailMessage.envelope_from ??
+												'Unknown sender'}
+										</span>
+									),
+									direction: directionLabel(emailMessage.direction),
+									status: statusLabel(emailMessage),
+									date: (
+										<span mix={css(recordStampCss)}>
+											{formatNullableTimestamp(
+												messageDate(emailMessage),
+												'Unknown',
 											)}
-										</div>
-									) : null}
-									<MetadataGrid
-										columns={3}
-										items={[
-											{
-												label: 'From',
-												value:
-													selectedMessage.from_address ??
-													selectedMessage.envelope_from ??
-													'Unknown',
-											},
-											{
-												label: 'To',
-												value:
-													selectedMessage.to_addresses.join(', ') || 'None',
-											},
-											{
-												label: 'Date',
-												value: formatNullableTimestamp(
-													messageDate(selectedMessage),
-													'Unknown',
-												),
-											},
-											{
-												label: 'Direction',
-												value: directionLabel(selectedMessage.direction),
-											},
-											{
-												label: 'Processing',
-												value: selectedMessage.processing_status,
-											},
-											{
-												label: 'Delivery',
-												value: selectedMessage.delivery_status ?? 'None',
-											},
-											{
-												label: 'Classification',
-												value: selectedMessage.classification,
-											},
-											{
-												label: 'CC',
-												value:
-													selectedMessage.cc_addresses.join(', ') || 'None',
-											},
-											{
-												label: 'Reply-To',
-												value:
-													selectedMessage.reply_to_addresses.join(', ') ||
-													'None',
-											},
-											{
-												label: 'Attachments',
-												value: String(selectedMessage.attachments.length),
-											},
-										]}
-									/>
-									{selectedMessage.attachments.length > 0 ? (
-										<section mix={css({ display: 'grid', gap: spacing.sm })}>
-											<h3
-												mix={css({
-													margin: 0,
-													fontSize: typography.fontSize.base,
-												})}
-											>
-												Attachments
-											</h3>
-											<ul
-												mix={css({
-													margin: 0,
-													paddingLeft: spacing.lg,
-													display: 'grid',
-													gap: spacing.xs,
-												})}
-											>
-												{selectedMessage.attachments.map((attachment) => (
-													<li key={attachment.id}>
-														{attachment.filename || '(unnamed)'}
-														{attachment.content_type
-															? ` · ${attachment.content_type}`
-															: ''}
-														{attachment.size != null
-															? ` · ${attachment.size} bytes`
-															: ''}
-													</li>
-												))}
-											</ul>
-										</section>
-									) : null}
-									<section mix={css({ display: 'grid', gap: spacing.sm })}>
-										<h3
+										</span>
+									),
+								},
+							}))}
+							footer={
+								totalPages > 1 ? (
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											alignItems: 'center',
+											justifyContent: 'center',
+										})}
+									>
+										<button
+											type="button"
+											disabled={currentPage <= 1}
+											mix={[
+												on('click', () => {
+													replaceLocation(buildHrefWithPage(currentPage - 1))
+												}),
+												css(secondaryButtonCss),
+											]}
+										>
+											Previous
+										</button>
+										<p
 											mix={css({
 												margin: 0,
-												fontSize: typography.fontSize.base,
+												color: colors.textMuted,
+												fontSize: typography.fontSize.xs,
 											})}
 										>
-											Message body
-										</h3>
-										<Tabs defaultActiveTab="html">
-											<TabList aria-label="Email body">
-												<Tab name="html">HTML</Tab>
-												<Tab name="text">Text</Tab>
-												<Tab name="source">HTML Source</Tab>
-											</TabList>
-											<TabPanel name="html">
-												{selectedMessage.html_body ? (
-													<iframe
-														title="Email HTML preview"
-														sandbox=""
-														referrerPolicy="no-referrer"
-														srcdoc={buildAdminEmailHtmlPreviewDocument(
-															selectedMessage.html_body,
-														)}
-														mix={emailHtmlPreviewIframeCss}
-													/>
+											Page {currentPage} of {totalPages}
+										</p>
+										<button
+											type="button"
+											disabled={currentPage >= totalPages}
+											mix={[
+												on('click', () => {
+													replaceLocation(buildHrefWithPage(currentPage + 1))
+												}),
+												css(secondaryButtonCss),
+											]}
+										>
+											Next
+										</button>
+									</div>
+								) : null
+							}
+							record={
+								selectedMessage ? (
+									<div mix={css(recordBodyCss)}>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<div
+												mix={css({
+													display: 'flex',
+													flexWrap: 'wrap',
+													gap: spacing.sm,
+													alignItems: 'center',
+												})}
+											>
+												<h2
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.lg,
+														fontWeight: typography.fontWeight.semibold,
+														color: colors.text,
+														overflowWrap: 'anywhere',
+													})}
+												>
+													{selectedMessage.subject || '(no subject)'}
+												</h2>
+												{selectedMessage.classification === 'quarantined' ? (
+													<span
+														title={
+															selectedMessage.classification_reason ??
+															'Quarantined'
+														}
+														mix={css(quarantinedBadgeCss)}
+													>
+														Quarantined
+													</span>
+												) : null}
+											</div>
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												{directionLabel(selectedMessage.direction)} message
+											</p>
+											{selectedMessage.classification === 'quarantined' &&
+											selectedMessage.classification_reason ? (
+												<p
+													mix={css({
+														margin: 0,
+														color: colors.textMuted,
+														fontSize: typography.fontSize.sm,
+													})}
+												>
+													{selectedMessage.classification_reason}
+												</p>
+											) : null}
+										</div>
+										{selectedMessage.direction === 'inbound' ? (
+											<div
+												mix={css({
+													display: 'flex',
+													flexWrap: 'wrap',
+													gap: spacing.sm,
+												})}
+											>
+												{selectedMessage.classification === 'quarantined' ? (
+													<button
+														type="button"
+														disabled={classifyState !== 'idle'}
+														mix={[
+															on('click', () => {
+																void classifySelectedMessage('accepted')
+															}),
+															css(secondaryButtonCss),
+														]}
+													>
+														{classifyState === 'saving'
+															? 'Updating…'
+															: 'Not spam'}
+													</button>
 												) : (
-													<p mix={emailBodyEmptyCss}>
-														No HTML body exists for this message.
-													</p>
+													<button
+														type="button"
+														disabled={classifyState !== 'idle'}
+														mix={[
+															on('click', () => {
+																void classifySelectedMessage('quarantined')
+															}),
+															css(dangerButtonCss),
+														]}
+													>
+														{classifyState === 'saving'
+															? 'Updating…'
+															: 'Mark as spam'}
+													</button>
 												)}
-											</TabPanel>
-											<TabPanel name="text">
-												{selectedMessage.text_body ? (
-													<pre mix={emailBodyPreCss}>
-														{selectedMessage.text_body}
-													</pre>
-												) : (
-													<p mix={emailBodyEmptyCss}>
-														No text body exists for this message.
-													</p>
-												)}
-											</TabPanel>
-											<TabPanel name="source">
-												{selectedMessage.html_body ? (
-													<pre mix={emailBodyPreCss}>
-														{selectedMessage.html_body}
-													</pre>
-												) : (
-													<p mix={emailBodyEmptyCss}>
-														No HTML body exists for this message.
-													</p>
-												)}
-											</TabPanel>
-										</Tabs>
-									</section>
-									{selectedMessage.delivery_events.length > 0 ? (
+											</div>
+										) : null}
+										<MetadataGrid
+											items={[
+												{
+													label: 'From',
+													value:
+														selectedMessage.from_address ??
+														selectedMessage.envelope_from ??
+														'Unknown',
+												},
+												{
+													label: 'To',
+													value:
+														selectedMessage.to_addresses.join(', ') || 'None',
+												},
+												{
+													label: 'Date',
+													value: (
+														<TimestampValue
+															value={messageDate(selectedMessage)}
+															fallback="Unknown"
+														/>
+													),
+												},
+												{
+													label: 'Direction',
+													value: directionLabel(selectedMessage.direction),
+												},
+												{
+													label: 'Processing',
+													value: selectedMessage.processing_status,
+												},
+												{
+													label: 'Delivery',
+													value: selectedMessage.delivery_status ?? 'None',
+												},
+												{
+													label: 'Classification',
+													value: selectedMessage.classification,
+												},
+												{
+													label: 'CC',
+													value:
+														selectedMessage.cc_addresses.join(', ') || 'None',
+												},
+												{
+													label: 'Reply-To',
+													value:
+														selectedMessage.reply_to_addresses.join(', ') ||
+														'None',
+												},
+												{
+													label: 'Attachments',
+													value: String(selectedMessage.attachments.length),
+												},
+											]}
+										/>
+										{selectedMessage.attachments.length > 0 ? (
+											<section mix={css({ display: 'grid', gap: spacing.sm })}>
+												<h3
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.base,
+													})}
+												>
+													Attachments
+												</h3>
+												<ul
+													mix={css({
+														margin: 0,
+														paddingLeft: spacing.lg,
+														display: 'grid',
+														gap: spacing.xs,
+													})}
+												>
+													{selectedMessage.attachments.map((attachment) => (
+														<li key={attachment.id}>
+															{attachment.filename || '(unnamed)'}
+															{attachment.content_type
+																? ` · ${attachment.content_type}`
+																: ''}
+															{attachment.size != null
+																? ` · ${attachment.size} bytes`
+																: ''}
+														</li>
+													))}
+												</ul>
+											</section>
+										) : null}
 										<section mix={css({ display: 'grid', gap: spacing.sm })}>
 											<h3
 												mix={css({
@@ -882,66 +781,90 @@ export function AccountEmailRoute(handle: Handle) {
 													fontSize: typography.fontSize.base,
 												})}
 											>
-												Delivery events
+												Message body
 											</h3>
-											<ul
-												mix={css({
-													margin: 0,
-													paddingLeft: spacing.lg,
-													display: 'grid',
-													gap: spacing.xs,
-												})}
-											>
-												{selectedMessage.delivery_events.map((event) => (
-													<li key={event.id}>
-														{event.event_type} ·{' '}
-														{formatNullableTimestamp(
-															event.created_at,
-															'Unknown',
-														)}
-														{event.provider ? ` · ${event.provider}` : ''}
-													</li>
-												))}
-											</ul>
+											<Tabs defaultActiveTab="html">
+												<TabList aria-label="Email body">
+													<Tab name="html">HTML</Tab>
+													<Tab name="text">Text</Tab>
+													<Tab name="source">HTML Source</Tab>
+												</TabList>
+												<TabPanel name="html">
+													{selectedMessage.html_body ? (
+														<iframe
+															title="Email HTML preview"
+															sandbox=""
+															referrerPolicy="no-referrer"
+															srcdoc={buildAdminEmailHtmlPreviewDocument(
+																selectedMessage.html_body,
+															)}
+															mix={emailHtmlPreviewIframeCss}
+														/>
+													) : (
+														<p mix={emailBodyEmptyCss}>
+															No HTML body exists for this message.
+														</p>
+													)}
+												</TabPanel>
+												<TabPanel name="text">
+													{selectedMessage.text_body ? (
+														<pre mix={emailBodyPreCss}>
+															{selectedMessage.text_body}
+														</pre>
+													) : (
+														<p mix={emailBodyEmptyCss}>
+															No text body exists for this message.
+														</p>
+													)}
+												</TabPanel>
+												<TabPanel name="source">
+													{selectedMessage.html_body ? (
+														<pre mix={emailBodyPreCss}>
+															{selectedMessage.html_body}
+														</pre>
+													) : (
+														<p mix={emailBodyEmptyCss}>
+															No HTML body exists for this message.
+														</p>
+													)}
+												</TabPanel>
+											</Tabs>
 										</section>
-									) : null}
-								</div>
-							) : selectedMessageId ? (
-								<div mix={css({ ...cardCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										Message not found
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										This message does not exist for your account or is
-										unavailable.
-									</p>
-								</div>
-							) : (
-								<div mix={css({ ...cardCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										Select a message
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Pick a message from the list to read its body, headers, and
-										attachment metadata.
-									</p>
-								</div>
-							)}
-						</AccountManagementLayout>
+										{selectedMessage.delivery_events.length > 0 ? (
+											<section mix={css({ display: 'grid', gap: spacing.sm })}>
+												<h3
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.base,
+													})}
+												>
+													Delivery events
+												</h3>
+												<ul
+													mix={css({
+														margin: 0,
+														paddingLeft: spacing.lg,
+														display: 'grid',
+														gap: spacing.xs,
+													})}
+												>
+													{selectedMessage.delivery_events.map((event) => (
+														<li key={event.id}>
+															{event.event_type} ·{' '}
+															{formatNullableTimestamp(
+																event.created_at,
+																'Unknown',
+															)}
+															{event.provider ? ` · ${event.provider}` : ''}
+														</li>
+													))}
+												</ul>
+											</section>
+										) : null}
+									</div>
+								) : null
+							}
+						/>
 					</>
 				) : null}
 				{data && showUnverified ? (

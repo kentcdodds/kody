@@ -1,7 +1,4 @@
-import {
-	formatNullableTimestamp,
-	formatTimestamp,
-} from '#client/format-timestamp.ts'
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import {
@@ -46,18 +43,20 @@ import {
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	TimestampValue,
 	accountInputCss,
 	accountTextareaCss,
 } from './account-management-components.tsx'
+import {
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+	recordStampCss,
+} from './record-table.tsx'
 
 type PackageOption =
 	AccountPackageInvocationTokensLoaderData['packages'][number]
@@ -96,12 +95,19 @@ function readFilterState(href: string) {
 	}
 }
 
-const truncatedTextCss = {
+/**
+ * Names, package scopes, and export lists are arbitrary length, and a table
+ * cell will not shrink below its content, so the clamp lives on a block
+ * inside the cell.
+ */
+const clampedCellCss = css({
+	display: 'block',
 	minWidth: 0,
+	maxWidth: '26ch',
 	overflow: 'hidden',
 	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap',
-} as const
+})
 
 function createEmptyEditorState(): EditorState {
 	return {
@@ -1002,8 +1008,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			selection.selectedId != null &&
 			!selectedToken &&
 			!isRefreshingForLocationChange
-		const showEmptySelection =
-			!selection.isCreating && selection.selectedId == null
 		const showSupportingSections =
 			selection.isCreating || selection.selectedId != null
 		const endpointTemplate = username
@@ -1039,750 +1043,540 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<AccountManagementLayout
-						sidebarWidth="minmax(18rem, 24rem)"
-						sidebar={
-							<AccountManagementSidebar
-								title="Tokens"
-								description="Revoked tokens remain listed for auditability and do not authorize external invocation requests."
-							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search tokens"
-									value={filters.search}
-									onInput={(value) => {
-										replaceLocation(buildHrefWithUpdatedSearch(value))
-									}}
-								/>
-								{tokens.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No package invocation tokens yet.
-									</p>
-								) : filteredTokens.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No tokens match the current filters.
-									</p>
-								) : (
-									<AccountManagementList>
-										{filteredTokens.map((token) => {
-											const isSelected = effectiveSelectedTokenId === token.id
-											return (
-												<li key={token.id} mix={css({ minWidth: 0 })}>
-													<AccountManagementListItemLink
-														href={packageInvocationTokensRoute.buildDetailHref(
-															token.id,
-															getCurrentSearch(),
-														)}
-														active={isSelected}
-														disabled={isMutating}
-														onNavigate={resetTokenSelectionState}
-													>
-														<div
-															mix={css({
-																display: 'grid',
-																gridTemplateColumns: 'minmax(0, 1fr) auto',
-																gap: spacing.md,
-																alignItems: 'baseline',
-																minWidth: 0,
-															})}
-														>
-															<strong
-																mix={css({
-																	...truncatedTextCss,
-																	display: 'block',
-																})}
-															>
-																{token.name}
-															</strong>
-															<span
-																mix={css({
-																	fontSize: typography.fontSize.xs,
-																	color: colors.textMuted,
-																})}
-															>
-																{formatTimestamp(token.createdAt)}
-															</span>
-														</div>
-														<span
-															mix={css({
-																...truncatedTextCss,
-																display: 'block',
-																fontSize: typography.fontSize.sm,
-																color: colors.textMuted,
-															})}
-														>
-															{tokenStatus(token)}
-															{' · '}
-															{tokenPackageSummary(token)}
-														</span>
-														<span
-															mix={css({
-																display: '-webkit-box',
-																fontSize: typography.fontSize.sm,
-																color: colors.textMuted,
-																overflow: 'hidden',
-																overflowWrap: 'anywhere',
-																textOverflow: 'ellipsis',
-																'-webkit-box-orient': 'vertical',
-																'-webkit-line-clamp': '2',
-															})}
-														>
-															Exports: {formatScope(token.exportNames)}
-														</span>
-													</AccountManagementListItemLink>
-												</li>
-											)
-										})}
-									</AccountManagementList>
-								)}
-							</AccountManagementSidebar>
+					<RecordTable
+						mode="pane"
+						ariaLabel="Package invocation tokens"
+						selectedId={effectiveSelectedTokenId}
+						onNavigate={resetTokenSelectionState}
+						countLabel={`${filteredTokens.length} of ${tokens.length} shown`}
+						emptyLabel={
+							tokens.length === 0
+								? 'No package invocation tokens yet.'
+								: 'No tokens match the current filters.'
 						}
-					>
-						<div mix={css({ display: 'grid', gap: spacing.lg })}>
-							{selection.isCreating ? (
-								<form
-									method="post"
-									noValidate
-									{...passwordManagerIgnoreProps}
-									mix={[
-										on('submit', (event) => {
-											event.preventDefault()
-											if (event.currentTarget instanceof HTMLFormElement) {
-												void createToken(event.currentTarget)
-											}
-										}),
-										css(cardCss),
-									]}
-								>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>Create token</h2>
-										<p mix={css(descriptionCss)}>
-											Paste the raw token once. Kody stores only its hash, so
-											keep the raw value in the trusted client.
-										</p>
-									</div>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Name</span>
-										<input
-											data-field-ring
-											name="name"
-											type="text"
-											value={editorState.name}
-											placeholder="Personal automation"
-											disabled={isMutating}
-											required
+						toolbar={
+							<RecordTableSearch
+								label="Search tokens"
+								placeholder="Search tokens"
+								value={filters.search}
+								onInput={(value) => {
+									replaceLocation(buildHrefWithUpdatedSearch(value))
+								}}
+							/>
+						}
+						columns={[
+							{ key: 'name', label: 'Token', primary: true },
+							{ key: 'status', label: 'Status' },
+							{ key: 'packages', label: 'Packages', drop: 2 },
+							{ key: 'exports', label: 'Exports', drop: 1 },
+							{ key: 'created', label: 'Created' },
+						]}
+						rows={filteredTokens.map((token) => ({
+							id: token.id,
+							// A create, edit, or revoke is in flight; the editor below
+							// owns the selection until it settles.
+							href: isMutating
+								? undefined
+								: packageInvocationTokensRoute.buildDetailHref(
+										token.id,
+										getCurrentSearch(),
+									),
+							cells: {
+								name: <span mix={clampedCellCss}>{token.name}</span>,
+								status: tokenStatus(token),
+								packages: (
+									<span mix={clampedCellCss}>{tokenPackageSummary(token)}</span>
+								),
+								exports: (
+									<span mix={clampedCellCss}>
+										{formatScope(token.exportNames)}
+									</span>
+								),
+								created: (
+									<span mix={css(recordStampCss)}>
+										{formatTimestamp(token.createdAt)}
+									</span>
+								),
+							},
+						}))}
+						record={
+							showSupportingSections ? (
+								<div mix={css(recordBodyCss)}>
+									{selection.isCreating ? (
+										<form
+											method="post"
+											noValidate
+											{...passwordManagerIgnoreProps}
 											mix={[
-												on('input', (event) => {
-													setEditorField('name', event.currentTarget.value)
-													handle.update()
+												on('submit', (event) => {
+													event.preventDefault()
+													if (event.currentTarget instanceof HTMLFormElement) {
+														void createToken(event.currentTarget)
+													}
 												}),
-												css(accountInputCss),
+												css(cardCss),
 											]}
-										/>
-									</label>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Raw token</span>
-										<div
-											mix={css({
-												display: 'grid',
-												gridTemplateColumns: 'minmax(0, 1fr) auto auto',
-												gap: spacing.sm,
-												[mq.mobile]: {
-													gridTemplateColumns: '1fr',
-												},
-											})}
 										>
-											<input
-												data-field-ring
-												name="rawToken"
-												type="password"
-												value={editorState.rawToken}
-												placeholder="Paste or generate a token"
-												{...passwordManagerIgnoreProps}
-												disabled={isMutating}
-												required
-												mix={[
-													on('input', (event) => {
-														setEditorField(
-															'rawToken',
-															event.currentTarget.value,
-														)
-														handle.update()
-													}),
-													css(accountInputCss),
-												]}
-											/>
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on('click', generateEditorRawToken),
-													css(secondaryButtonCss),
-												]}
-											>
-												Generate
-											</button>
-											<button
-												type="button"
-												disabled={isMutating || !editorState.rawToken}
-												mix={[
-													on('click', () => void copyEditorRawToken()),
-													css(secondaryButtonCss),
-												]}
-											>
-												Copy
-											</button>
-										</div>
-										<span mix={css(descriptionCss)}>
-											Use Generate when the exact bearer value does not matter.
-											Copy or deliver this exact raw value to the external
-											service or secret before saving.
-										</span>
-									</label>
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h2 mix={css(cardTitleCss)}>Create token</h2>
+												<p mix={css(descriptionCss)}>
+													Paste the raw token once. Kody stores only its hash,
+													so keep the raw value in the trusted client.
+												</p>
+											</div>
 
-									<div
-										mix={css({
-											display: 'grid',
-											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-											gap: spacing.md,
-											[mq.mobile]: {
-												gridTemplateColumns: '1fr',
-											},
-										})}
-									>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
-											<textarea
-												data-field-ring
-												name="packageKodyIds"
-												value={editorState.packageKodyIdsText}
-												placeholder={'discord-gateway\n*'}
-												disabled={isMutating}
-												mix={[
-													on('input', (event) => {
-														setEditorField(
-															'packageKodyIdsText',
-															event.currentTarget.value,
-														)
-														handle.update()
-													}),
-													css(accountTextareaCss),
-												]}
-											/>
-										</label>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Package IDs</span>
-											<textarea
-												data-field-ring
-												name="packageIds"
-												value={editorState.packageIdsText}
-												placeholder="pkg_..."
-												disabled={isMutating}
-												mix={[
-													on('input', (event) => {
-														setEditorField(
-															'packageIdsText',
-															event.currentTarget.value,
-														)
-														handle.update()
-													}),
-													css(accountTextareaCss),
-												]}
-											/>
-										</label>
-									</div>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Export names</span>
-										<textarea
-											data-field-ring
-											name="exportNames"
-											value={editorState.exportNamesText}
-											placeholder={'dispatch-message-created\n*'}
-											disabled={isMutating}
-											required
-											mix={[
-												on('input', (event) => {
-													setEditorField(
-														'exportNamesText',
-														event.currentTarget.value,
-													)
-													handle.update()
-												}),
-												css(accountTextareaCss),
-											]}
-										/>
-									</label>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Allowed sources</span>
-										<textarea
-											data-field-ring
-											name="sources"
-											value={editorState.sourcesText}
-											placeholder="personal-client"
-											disabled={isMutating}
-											mix={[
-												on('input', (event) => {
-													setEditorField(
-														'sourcesText',
-														event.currentTarget.value,
-													)
-													handle.update()
-												}),
-												css(accountTextareaCss),
-											]}
-										/>
-										<span mix={css(descriptionCss)}>
-											Leave blank to allow requests that omit source. If a
-											request supplies source, it must be listed here exactly.
-										</span>
-									</label>
-
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											flexWrap: 'wrap',
-										})}
-									>
-										<button
-											type="submit"
-											disabled={isMutating}
-											mix={css(primaryButtonCss)}
-										>
-											{saveState === 'creating'
-												? 'Creating...'
-												: 'Create token'}
-										</button>
-									</div>
-								</form>
-							) : null}
-
-							{showEmptySelection ? (
-								<div mix={css({ ...cardCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										Select a token
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Pick a token from the list to view or edit it, or create a
-										new one.
-									</p>
-								</div>
-							) : null}
-
-							{isEditingSelectedToken ? (
-								<form
-									method="post"
-									noValidate
-									{...passwordManagerIgnoreProps}
-									mix={[
-										on('submit', (event) => {
-											event.preventDefault()
-											if (event.currentTarget instanceof HTMLFormElement) {
-												void updateSelectedToken(event.currentTarget)
-											}
-										}),
-										css(cardCss),
-									]}
-								>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>Edit token</h2>
-										<p mix={css(descriptionCss)}>
-											Update this token's display name, bearer value, and
-											allowed scopes. The current raw token and stored hash are
-											never shown.
-										</p>
-										<span mix={css(tokenStatusCss(selectedToken))}>
-											{tokenStatus(selectedToken)}
-										</span>
-									</div>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Name</span>
-										<input
-											data-field-ring
-											name="name"
-											type="text"
-											value={editorState.name}
-											placeholder="Personal automation"
-											disabled={isMutating}
-											required
-											mix={[
-												on('input', (event) => {
-													setEditorField('name', event.currentTarget.value)
-													handle.update()
-												}),
-												css(accountInputCss),
-											]}
-										/>
-									</label>
-
-									<div
-										mix={css({
-											display: 'grid',
-											gap: spacing.sm,
-											padding: spacing.md,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.border}`,
-											backgroundColor: colors.background,
-										})}
-									>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<span mix={css(fieldLabelCss)}>Token value</span>
-											<p mix={css(descriptionCss)}>
-												The current token value is hidden and cannot be
-												recovered. To edit it, enter or generate a new raw token
-												value here, then save.
-											</p>
-										</div>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>New raw token value</span>
-											<div
-												mix={css({
-													display: 'grid',
-													gridTemplateColumns: 'minmax(0, 1fr) auto auto',
-													gap: spacing.sm,
-													[mq.mobile]: {
-														gridTemplateColumns: '1fr',
-													},
-												})}
-											>
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Name</span>
 												<input
 													data-field-ring
-													name="rawToken"
-													type="password"
-													value={editorState.rawToken}
-													placeholder="Leave blank to keep the current token value"
-													{...passwordManagerIgnoreProps}
+													name="name"
+													type="text"
+													value={editorState.name}
+													placeholder="Personal automation"
 													disabled={isMutating}
+													required
 													mix={[
 														on('input', (event) => {
-															setEditorField(
-																'rawToken',
-																event.currentTarget.value,
-															)
+															setEditorField('name', event.currentTarget.value)
 															handle.update()
 														}),
 														css(accountInputCss),
 													]}
 												/>
-												<button
-													type="button"
+											</label>
+
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Raw token</span>
+												<div
+													mix={css({
+														display: 'grid',
+														gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+														gap: spacing.sm,
+														[mq.mobile]: {
+															gridTemplateColumns: '1fr',
+														},
+													})}
+												>
+													<input
+														data-field-ring
+														name="rawToken"
+														type="password"
+														value={editorState.rawToken}
+														placeholder="Paste or generate a token"
+														{...passwordManagerIgnoreProps}
+														disabled={isMutating}
+														required
+														mix={[
+															on('input', (event) => {
+																setEditorField(
+																	'rawToken',
+																	event.currentTarget.value,
+																)
+																handle.update()
+															}),
+															css(accountInputCss),
+														]}
+													/>
+													<button
+														type="button"
+														disabled={isMutating}
+														mix={[
+															on('click', generateEditorRawToken),
+															css(secondaryButtonCss),
+														]}
+													>
+														Generate
+													</button>
+													<button
+														type="button"
+														disabled={isMutating || !editorState.rawToken}
+														mix={[
+															on('click', () => void copyEditorRawToken()),
+															css(secondaryButtonCss),
+														]}
+													>
+														Copy
+													</button>
+												</div>
+												<span mix={css(descriptionCss)}>
+													Use Generate when the exact bearer value does not
+													matter. Copy or deliver this exact raw value to the
+													external service or secret before saving.
+												</span>
+											</label>
+
+											<div
+												mix={css({
+													display: 'grid',
+													gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+													gap: spacing.md,
+													[mq.mobile]: {
+														gridTemplateColumns: '1fr',
+													},
+												})}
+											>
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
+													<textarea
+														data-field-ring
+														name="packageKodyIds"
+														value={editorState.packageKodyIdsText}
+														placeholder={'discord-gateway\n*'}
+														disabled={isMutating}
+														mix={[
+															on('input', (event) => {
+																setEditorField(
+																	'packageKodyIdsText',
+																	event.currentTarget.value,
+																)
+																handle.update()
+															}),
+															css(accountTextareaCss),
+														]}
+													/>
+												</label>
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>Package IDs</span>
+													<textarea
+														data-field-ring
+														name="packageIds"
+														value={editorState.packageIdsText}
+														placeholder="pkg_..."
+														disabled={isMutating}
+														mix={[
+															on('input', (event) => {
+																setEditorField(
+																	'packageIdsText',
+																	event.currentTarget.value,
+																)
+																handle.update()
+															}),
+															css(accountTextareaCss),
+														]}
+													/>
+												</label>
+											</div>
+
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Export names</span>
+												<textarea
+													data-field-ring
+													name="exportNames"
+													value={editorState.exportNamesText}
+													placeholder={'dispatch-message-created\n*'}
+													disabled={isMutating}
+													required
+													mix={[
+														on('input', (event) => {
+															setEditorField(
+																'exportNamesText',
+																event.currentTarget.value,
+															)
+															handle.update()
+														}),
+														css(accountTextareaCss),
+													]}
+												/>
+											</label>
+
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Allowed sources</span>
+												<textarea
+													data-field-ring
+													name="sources"
+													value={editorState.sourcesText}
+													placeholder="personal-client"
 													disabled={isMutating}
 													mix={[
-														on('click', generateEditorRawToken),
-														css(secondaryButtonCss),
+														on('input', (event) => {
+															setEditorField(
+																'sourcesText',
+																event.currentTarget.value,
+															)
+															handle.update()
+														}),
+														css(accountTextareaCss),
 													]}
-												>
-													Generate
-												</button>
+												/>
+												<span mix={css(descriptionCss)}>
+													Leave blank to allow requests that omit source. If a
+													request supplies source, it must be listed here
+													exactly.
+												</span>
+											</label>
+
+											<div
+												mix={css({
+													display: 'flex',
+													gap: spacing.sm,
+													flexWrap: 'wrap',
+												})}
+											>
 												<button
-													type="button"
-													disabled={isMutating || !editorState.rawToken}
-													mix={[
-														on('click', () => void copyEditorRawToken()),
-														css(secondaryButtonCss),
-													]}
+													type="submit"
+													disabled={isMutating}
+													mix={css(primaryButtonCss)}
 												>
-													Copy
+													{saveState === 'creating'
+														? 'Creating...'
+														: 'Create token'}
 												</button>
 											</div>
-											<span mix={css(descriptionCss)}>
-												Leave this blank to keep the current token value. Kody
-												stores only the hash of any new value, so copy or
-												deliver the exact replacement before saving.
-											</span>
-										</label>
-									</div>
+										</form>
+									) : null}
 
-									<div
-										mix={css({
-											display: 'grid',
-											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-											gap: spacing.md,
-											[mq.mobile]: {
-												gridTemplateColumns: '1fr',
-											},
-										})}
-									>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
-											<textarea
-												data-field-ring
-												name="packageKodyIds"
-												value={editorState.packageKodyIdsText}
-												placeholder={'discord-gateway\n*'}
-												disabled={isMutating}
-												mix={[
-													on('input', (event) => {
-														setEditorField(
-															'packageKodyIdsText',
-															event.currentTarget.value,
-														)
-														handle.update()
-													}),
-													css(accountTextareaCss),
-												]}
-											/>
-										</label>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Package IDs</span>
-											<textarea
-												data-field-ring
-												name="packageIds"
-												value={editorState.packageIdsText}
-												placeholder="pkg_..."
-												disabled={isMutating}
-												mix={[
-													on('input', (event) => {
-														setEditorField(
-															'packageIdsText',
-															event.currentTarget.value,
-														)
-														handle.update()
-													}),
-													css(accountTextareaCss),
-												]}
-											/>
-										</label>
-									</div>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Export names</span>
-										<textarea
-											data-field-ring
-											name="exportNames"
-											value={editorState.exportNamesText}
-											placeholder={'dispatch-message-created\n*'}
-											disabled={isMutating}
-											required
+									{isEditingSelectedToken ? (
+										<form
+											method="post"
+											noValidate
+											{...passwordManagerIgnoreProps}
 											mix={[
-												on('input', (event) => {
-													setEditorField(
-														'exportNamesText',
-														event.currentTarget.value,
-													)
-													handle.update()
-												}),
-												css(accountTextareaCss),
-											]}
-										/>
-									</label>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Allowed sources</span>
-										<textarea
-											data-field-ring
-											name="sources"
-											value={editorState.sourcesText}
-											placeholder="personal-client"
-											disabled={isMutating}
-											mix={[
-												on('input', (event) => {
-													setEditorField(
-														'sourcesText',
-														event.currentTarget.value,
-													)
-													handle.update()
-												}),
-												css(accountTextareaCss),
-											]}
-										/>
-										<span mix={css(descriptionCss)}>
-											Leave blank to allow requests that omit source. If a
-											request supplies source, it must be listed here exactly.
-										</span>
-									</label>
-
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											flexWrap: 'wrap',
-										})}
-									>
-										<button
-											type="submit"
-											disabled={isMutating}
-											mix={css(primaryButtonCss)}
-										>
-											{saveState === 'updating' ? 'Saving...' : 'Save token'}
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', cancelEditToken),
-												css(secondaryButtonCss),
-											]}
-										>
-											Cancel
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () => {
-													if (!revokeConfirm) {
-														revokeConfirm = true
-														deleteTokenCheck.reset()
-														handle.update()
-														return
+												on('submit', (event) => {
+													event.preventDefault()
+													if (event.currentTarget instanceof HTMLFormElement) {
+														void updateSelectedToken(event.currentTarget)
 													}
-													void revokeSelectedToken()
 												}),
-												css(dangerButtonCss),
+												css(cardCss),
 											]}
 										>
-											{saveState === 'revoking'
-												? 'Revoking...'
-												: revokeConfirm
-													? 'Confirm revoke'
-													: 'Revoke token'}
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												...deleteTokenCheck.getButtonMix({
-													onFirstClick: () => {
-														revokeConfirm = false
-													},
-													on: {
-														click: () => void deleteSelectedToken(),
-													},
-												}),
-												css(dangerButtonCss),
-											]}
-										>
-											{saveState === 'deleting'
-												? 'Deleting...'
-												: deleteTokenCheck.doubleCheck
-													? 'Confirm permanent delete'
-													: 'Delete permanently'}
-										</button>
-									</div>
-								</form>
-							) : null}
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h2 mix={css(cardTitleCss)}>Edit token</h2>
+												<p mix={css(descriptionCss)}>
+													Update this token's display name, bearer value, and
+													allowed scopes. The current raw token and stored hash
+													are never shown.
+												</p>
+												<span mix={css(tokenStatusCss(selectedToken))}>
+													{tokenStatus(selectedToken)}
+												</span>
+											</div>
 
-							{showSupportingSections ? (
-								<section mix={css(cardCss)}>
-									<h2 mix={css(cardTitleCss)}>Invocation endpoint</h2>
-									<p mix={css(descriptionCss)}>
-										External clients call this endpoint with the raw token in
-										the Authorization header.
-									</p>
-									<code
-										mix={css({
-											display: 'block',
-											padding: spacing.sm,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.border}`,
-											backgroundColor: colors.background,
-											color: colors.text,
-											fontFamily: 'monospace',
-											fontSize: typography.fontSize.sm,
-											overflowWrap: 'anywhere',
-										})}
-									>
-										{endpointTemplate}
-									</code>
-								</section>
-							) : null}
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Name</span>
+												<input
+													data-field-ring
+													name="name"
+													type="text"
+													value={editorState.name}
+													placeholder="Personal automation"
+													disabled={isMutating}
+													required
+													mix={[
+														on('input', (event) => {
+															setEditorField('name', event.currentTarget.value)
+															handle.update()
+														}),
+														css(accountInputCss),
+													]}
+												/>
+											</label>
 
-							{selectedToken && !isEditingSelectedToken ? (
-								<section mix={css(cardCss)}>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>{selectedToken.name}</h2>
-										<span mix={css(tokenStatusCss(selectedToken))}>
-											{tokenStatus(selectedToken)}
-										</span>
-										<p mix={css(descriptionCss)}>
-											Token material is hidden permanently. This view only shows
-											metadata and policy scopes.
-										</p>
-									</div>
-									<MetadataGrid
-										items={[
-											{
-												label: 'Package Kody IDs',
-												value: formatScope(selectedToken.packageKodyIds),
-											},
-											{
-												label: 'Package IDs',
-												value: formatScope(selectedToken.packageIds),
-											},
-											{
-												label: 'Exports',
-												value: formatScope(selectedToken.exportNames),
-											},
-											{
-												label: 'Sources',
-												value: formatScope(selectedToken.sources),
-											},
-											{
-												label: 'Last used',
-												value: formatNullableTimestamp(
-													selectedToken.lastUsedAt,
-												),
-											},
-											{
-												label: 'Created',
-												value: formatNullableTimestamp(selectedToken.createdAt),
-											},
-											{
-												label: 'Updated',
-												value: formatNullableTimestamp(selectedToken.updatedAt),
-											},
-											{
-												label: 'Revoked',
-												value: formatNullableTimestamp(selectedToken.revokedAt),
-											},
-										]}
-									/>
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											flexWrap: 'wrap',
-										})}
-									>
-										{selectedToken.revokedAt ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on('click', () => {
-														void reinstateSelectedToken()
-													}),
-													css(secondaryButtonCss),
-												]}
+											<div
+												mix={css({
+													display: 'grid',
+													gap: spacing.sm,
+													padding: spacing.md,
+													borderRadius: radius.md,
+													border: `1px solid ${colors.border}`,
+													backgroundColor: colors.background,
+												})}
 											>
-												{saveState === 'reinstating'
-													? 'Reinstating...'
-													: 'Reinstate token'}
-											</button>
-										) : (
-											<>
+												<div mix={css({ display: 'grid', gap: spacing.xs })}>
+													<span mix={css(fieldLabelCss)}>Token value</span>
+													<p mix={css(descriptionCss)}>
+														The current token value is hidden and cannot be
+														recovered. To edit it, enter or generate a new raw
+														token value here, then save.
+													</p>
+												</div>
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>
+														New raw token value
+													</span>
+													<div
+														mix={css({
+															display: 'grid',
+															gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+															gap: spacing.sm,
+															[mq.mobile]: {
+																gridTemplateColumns: '1fr',
+															},
+														})}
+													>
+														<input
+															data-field-ring
+															name="rawToken"
+															type="password"
+															value={editorState.rawToken}
+															placeholder="Leave blank to keep the current token value"
+															{...passwordManagerIgnoreProps}
+															disabled={isMutating}
+															mix={[
+																on('input', (event) => {
+																	setEditorField(
+																		'rawToken',
+																		event.currentTarget.value,
+																	)
+																	handle.update()
+																}),
+																css(accountInputCss),
+															]}
+														/>
+														<button
+															type="button"
+															disabled={isMutating}
+															mix={[
+																on('click', generateEditorRawToken),
+																css(secondaryButtonCss),
+															]}
+														>
+															Generate
+														</button>
+														<button
+															type="button"
+															disabled={isMutating || !editorState.rawToken}
+															mix={[
+																on('click', () => void copyEditorRawToken()),
+																css(secondaryButtonCss),
+															]}
+														>
+															Copy
+														</button>
+													</div>
+													<span mix={css(descriptionCss)}>
+														Leave this blank to keep the current token value.
+														Kody stores only the hash of any new value, so copy
+														or deliver the exact replacement before saving.
+													</span>
+												</label>
+											</div>
+
+											<div
+												mix={css({
+													display: 'grid',
+													gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+													gap: spacing.md,
+													[mq.mobile]: {
+														gridTemplateColumns: '1fr',
+													},
+												})}
+											>
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
+													<textarea
+														data-field-ring
+														name="packageKodyIds"
+														value={editorState.packageKodyIdsText}
+														placeholder={'discord-gateway\n*'}
+														disabled={isMutating}
+														mix={[
+															on('input', (event) => {
+																setEditorField(
+																	'packageKodyIdsText',
+																	event.currentTarget.value,
+																)
+																handle.update()
+															}),
+															css(accountTextareaCss),
+														]}
+													/>
+												</label>
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>Package IDs</span>
+													<textarea
+														data-field-ring
+														name="packageIds"
+														value={editorState.packageIdsText}
+														placeholder="pkg_..."
+														disabled={isMutating}
+														mix={[
+															on('input', (event) => {
+																setEditorField(
+																	'packageIdsText',
+																	event.currentTarget.value,
+																)
+																handle.update()
+															}),
+															css(accountTextareaCss),
+														]}
+													/>
+												</label>
+											</div>
+
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Export names</span>
+												<textarea
+													data-field-ring
+													name="exportNames"
+													value={editorState.exportNamesText}
+													placeholder={'dispatch-message-created\n*'}
+													disabled={isMutating}
+													required
+													mix={[
+														on('input', (event) => {
+															setEditorField(
+																'exportNamesText',
+																event.currentTarget.value,
+															)
+															handle.update()
+														}),
+														css(accountTextareaCss),
+													]}
+												/>
+											</label>
+
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Allowed sources</span>
+												<textarea
+													data-field-ring
+													name="sources"
+													value={editorState.sourcesText}
+													placeholder="personal-client"
+													disabled={isMutating}
+													mix={[
+														on('input', (event) => {
+															setEditorField(
+																'sourcesText',
+																event.currentTarget.value,
+															)
+															handle.update()
+														}),
+														css(accountTextareaCss),
+													]}
+												/>
+												<span mix={css(descriptionCss)}>
+													Leave blank to allow requests that omit source. If a
+													request supplies source, it must be listed here
+													exactly.
+												</span>
+											</label>
+
+											<div
+												mix={css({
+													display: 'flex',
+													gap: spacing.sm,
+													flexWrap: 'wrap',
+												})}
+											>
+												<button
+													type="submit"
+													disabled={isMutating}
+													mix={css(primaryButtonCss)}
+												>
+													{saveState === 'updating'
+														? 'Saving...'
+														: 'Save token'}
+												</button>
 												<button
 													type="button"
 													disabled={isMutating}
 													mix={[
-														on('click', () => startEditToken(selectedToken)),
+														on('click', cancelEditToken),
 														css(secondaryButtonCss),
 													]}
 												>
-													Edit token
+													Cancel
 												</button>
 												<button
 													type="button"
@@ -1806,95 +1600,273 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 															? 'Confirm revoke'
 															: 'Revoke token'}
 												</button>
-											</>
-										)}
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												...deleteTokenCheck.getButtonMix({
-													onFirstClick: () => {
-														revokeConfirm = false
-													},
-													on: {
-														click: () => void deleteSelectedToken(),
-													},
-												}),
-												css(dangerButtonCss),
-											]}
-										>
-											{saveState === 'deleting'
-												? 'Deleting...'
-												: deleteTokenCheck.doubleCheck
-													? 'Confirm permanent delete'
-													: 'Delete permanently'}
-										</button>
-									</div>
-								</section>
-							) : null}
+												<button
+													type="button"
+													disabled={isMutating}
+													mix={[
+														...deleteTokenCheck.getButtonMix({
+															onFirstClick: () => {
+																revokeConfirm = false
+															},
+															on: {
+																click: () => void deleteSelectedToken(),
+															},
+														}),
+														css(dangerButtonCss),
+													]}
+												>
+													{saveState === 'deleting'
+														? 'Deleting...'
+														: deleteTokenCheck.doubleCheck
+															? 'Confirm permanent delete'
+															: 'Delete permanently'}
+												</button>
+											</div>
+										</form>
+									) : null}
 
-							{showTokenNotFound ? (
-								<section mix={css(cardCss)}>
-									<h2 mix={css(cardTitleCss)}>Token not found</h2>
-									<p mix={css(descriptionCss)}>
-										This package invocation token does not exist for this
-										account or is unavailable.
-									</p>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => {
-												selectedTokenId = null
-												editorState = createEmptyEditorState()
-												editMode = false
-												syncRouterLocation(
-													packageInvocationTokensRoute.buildListHref(
-														getCurrentSearch(),
-													),
-												)
-												handle.update()
-											}),
-											css(secondaryButtonCss),
-										]}
-									>
-										Back to tokens
-									</button>
-								</section>
-							) : null}
+									{showSupportingSections ? (
+										<section mix={css(cardCss)}>
+											<h2 mix={css(cardTitleCss)}>Invocation endpoint</h2>
+											<p mix={css(descriptionCss)}>
+												External clients call this endpoint with the raw token
+												in the Authorization header.
+											</p>
+											<code
+												mix={css({
+													display: 'block',
+													padding: spacing.sm,
+													borderRadius: radius.md,
+													border: `1px solid ${colors.border}`,
+													backgroundColor: colors.background,
+													color: colors.text,
+													fontFamily: 'monospace',
+													fontSize: typography.fontSize.sm,
+													overflowWrap: 'anywhere',
+												})}
+											>
+												{endpointTemplate}
+											</code>
+										</section>
+									) : null}
 
-							{showSupportingSections ? (
-								<section mix={css(cardCss)}>
-									<h2 mix={css(cardTitleCss)}>Owned packages</h2>
-									<p mix={css(descriptionCss)}>
-										Concrete package scopes must refer to packages owned by this
-										account. Use <code>*</code> only for trusted personal
-										clients.
-									</p>
-									{packages.length === 0 ? (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											No saved packages yet.
-										</p>
-									) : (
-										<ul
-											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
-												color: colors.text,
-											})}
-										>
-											{packages.map((savedPackage) => (
-												<li key={savedPackage.id}>
-													<strong>{savedPackage.kodyId}</strong> -{' '}
-													{savedPackage.name}
-												</li>
-											))}
-										</ul>
-									)}
-								</section>
-							) : null}
-						</div>
-					</AccountManagementLayout>
+									{selectedToken && !isEditingSelectedToken ? (
+										<section mix={css(cardCss)}>
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h2 mix={css(cardTitleCss)}>{selectedToken.name}</h2>
+												<span mix={css(tokenStatusCss(selectedToken))}>
+													{tokenStatus(selectedToken)}
+												</span>
+												<p mix={css(descriptionCss)}>
+													Token material is hidden permanently. This view only
+													shows metadata and policy scopes.
+												</p>
+											</div>
+											<MetadataGrid
+												items={[
+													{
+														label: 'Package Kody IDs',
+														value: formatScope(selectedToken.packageKodyIds),
+													},
+													{
+														label: 'Package IDs',
+														value: formatScope(selectedToken.packageIds),
+													},
+													{
+														label: 'Exports',
+														value: formatScope(selectedToken.exportNames),
+													},
+													{
+														label: 'Sources',
+														value: formatScope(selectedToken.sources),
+													},
+													{
+														label: 'Last used',
+														value: (
+															<TimestampValue
+																value={selectedToken.lastUsedAt}
+																fallback="Never"
+															/>
+														),
+													},
+													{
+														label: 'Created',
+														value: (
+															<TimestampValue
+																value={selectedToken.createdAt}
+																fallback="Never"
+															/>
+														),
+													},
+													{
+														label: 'Updated',
+														value: (
+															<TimestampValue
+																value={selectedToken.updatedAt}
+																fallback="Never"
+															/>
+														),
+													},
+													{
+														label: 'Revoked',
+														value: (
+															<TimestampValue
+																value={selectedToken.revokedAt}
+																fallback="Never"
+															/>
+														),
+													},
+												]}
+											/>
+											<div
+												mix={css({
+													display: 'flex',
+													gap: spacing.sm,
+													flexWrap: 'wrap',
+												})}
+											>
+												{selectedToken.revokedAt ? (
+													<button
+														type="button"
+														disabled={isMutating}
+														mix={[
+															on('click', () => {
+																void reinstateSelectedToken()
+															}),
+															css(secondaryButtonCss),
+														]}
+													>
+														{saveState === 'reinstating'
+															? 'Reinstating...'
+															: 'Reinstate token'}
+													</button>
+												) : (
+													<>
+														<button
+															type="button"
+															disabled={isMutating}
+															mix={[
+																on('click', () =>
+																	startEditToken(selectedToken),
+																),
+																css(secondaryButtonCss),
+															]}
+														>
+															Edit token
+														</button>
+														<button
+															type="button"
+															disabled={isMutating}
+															mix={[
+																on('click', () => {
+																	if (!revokeConfirm) {
+																		revokeConfirm = true
+																		deleteTokenCheck.reset()
+																		handle.update()
+																		return
+																	}
+																	void revokeSelectedToken()
+																}),
+																css(dangerButtonCss),
+															]}
+														>
+															{saveState === 'revoking'
+																? 'Revoking...'
+																: revokeConfirm
+																	? 'Confirm revoke'
+																	: 'Revoke token'}
+														</button>
+													</>
+												)}
+												<button
+													type="button"
+													disabled={isMutating}
+													mix={[
+														...deleteTokenCheck.getButtonMix({
+															onFirstClick: () => {
+																revokeConfirm = false
+															},
+															on: {
+																click: () => void deleteSelectedToken(),
+															},
+														}),
+														css(dangerButtonCss),
+													]}
+												>
+													{saveState === 'deleting'
+														? 'Deleting...'
+														: deleteTokenCheck.doubleCheck
+															? 'Confirm permanent delete'
+															: 'Delete permanently'}
+												</button>
+											</div>
+										</section>
+									) : null}
+
+									{showTokenNotFound ? (
+										<section mix={css(cardCss)}>
+											<h2 mix={css(cardTitleCss)}>Token not found</h2>
+											<p mix={css(descriptionCss)}>
+												This package invocation token does not exist for this
+												account or is unavailable.
+											</p>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', () => {
+														selectedTokenId = null
+														editorState = createEmptyEditorState()
+														editMode = false
+														syncRouterLocation(
+															packageInvocationTokensRoute.buildListHref(
+																getCurrentSearch(),
+															),
+														)
+														handle.update()
+													}),
+													css(secondaryButtonCss),
+												]}
+											>
+												Back to tokens
+											</button>
+										</section>
+									) : null}
+
+									{showSupportingSections ? (
+										<section mix={css(cardCss)}>
+											<h2 mix={css(cardTitleCss)}>Owned packages</h2>
+											<p mix={css(descriptionCss)}>
+												Concrete package scopes must refer to packages owned by
+												this account. Use <code>*</code> only for trusted
+												personal clients.
+											</p>
+											{packages.length === 0 ? (
+												<p mix={css({ margin: 0, color: colors.textMuted })}>
+													No saved packages yet.
+												</p>
+											) : (
+												<ul
+													mix={css({
+														margin: 0,
+														paddingLeft: spacing.lg,
+														color: colors.text,
+													})}
+												>
+													{packages.map((savedPackage) => (
+														<li key={savedPackage.id}>
+															<strong>{savedPackage.kodyId}</strong> -{' '}
+															{savedPackage.name}
+														</li>
+													))}
+												</ul>
+											)}
+										</section>
+									) : null}
+								</div>
+							) : null
+						}
+					/>
 				) : null}
 			</AccountManagementShell>
 		)

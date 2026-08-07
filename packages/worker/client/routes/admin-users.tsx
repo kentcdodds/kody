@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -14,7 +13,6 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
 	fieldCss,
 	fieldLabelCss,
 	getGhostButtonCss,
@@ -22,21 +20,22 @@ import {
 	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementPanel,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AdminPageHeader,
+	IdValue,
 	MetadataGrid,
-	accountManagementTableCellCss,
-	accountManagementTableCss,
-	accountManagementTableNumericCellCss,
+	TimestampValue,
 	noticeCardCss,
 } from './account-management-components.tsx'
+import {
+	RecordChips,
+	RecordTable,
+	RecordTableSearch,
+	RecordTableSelect,
+	recordBodyCss,
+} from './record-table.tsx'
 import { ChartLegend } from '#client/charts/chart-legend.tsx'
 import { StackedBarChart } from '#client/charts/stacked-bar-chart.tsx'
 import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
@@ -58,6 +57,19 @@ import {
 } from '#client/route-loader.ts'
 
 const selectCss = getSelectCss()
+
+/**
+ * Emails are arbitrary length and a table cell will not shrink below its
+ * content, so the clamp lives on a block inside the cell.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '28ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 type UsageStatus = 'loading' | 'ready' | 'error'
@@ -718,138 +730,92 @@ export function AdminUsersRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				<AccountManagementLayout
-					sidebar={
-						<AccountManagementSidebar
-							title="Accounts"
-							description="Select a user to review metadata and roles."
-						>
-							<div mix={css({ display: 'grid', gap: spacing.sm })}>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search by username or email"
-									value={filters.search}
-									onInput={(value) => {
-										replaceLocation(
-											buildHrefWithUpdatedFilters({ search: value }),
-										)
-									}}
-								/>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Role</span>
-									<select
-										data-field-ring
-										value={filters.role}
-										aria-label="Filter users by role"
-										mix={[
-											on('change', (event) => {
-												replaceLocation(
-													buildHrefWithUpdatedFilters({
-														role: event.currentTarget.value,
-													}),
-												)
-											}),
-											css(selectCss),
-										]}
-									>
-										<option value="">All roles</option>
-										{availableRoles.map((role) => (
-											<option key={role} value={role}>
-												{role}
-											</option>
-										))}
-									</select>
-								</label>
-							</div>
-							{status === 'ready' && users.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									{hasActiveFilters
-										? 'No users match the current filters.'
-										: 'No users found.'}
-								</p>
-							) : (
-								<>
-									<AccountManagementList>
-										{users.map((user) => (
-											<li key={user.stableUserId} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemLink
-													href={buildUserDetailHref(user.stableUserId)}
-													active={selectedStableUserId === user.stableUserId}
-													disabled={isMutating}
-												>
-													<strong mix={css({ display: 'block' })}>
-														{user.username}
-													</strong>
-													<span
-														mix={css({
-															display: 'block',
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-														})}
-													>
-														{user.email}
-													</span>
-													<span
-														mix={css({
-															display: 'block',
-															fontSize: typography.fontSize.xs,
-															color: colors.textMuted,
-														})}
-													>
-														{user.roles.length > 0
-															? user.roles.join(', ')
-															: 'No roles'}
-													</span>
-												</AccountManagementListItemLink>
-											</li>
-										))}
-										{hasMore ? (
-											<li
-												key="load-more-sentinel"
-												mix={[
-													infiniteScrollSentinel(loadMoreUsers),
-													css({ display: 'grid' }),
-												]}
-											>
-												<button
-													type="button"
-													disabled={isLoadingMore}
-													mix={[
-														on('click', () => void loadMoreUsers()),
-														css(secondaryButtonCss),
-													]}
-												>
-													{isLoadingMore ? 'Loading more…' : 'Load more'}
-												</button>
-											</li>
-										) : null}
-									</AccountManagementList>
-									{usersSnapshot.error ? (
-										<AccountManagementMessage tone="error">
-											{usersSnapshot.error}
-										</AccountManagementMessage>
-									) : null}
-									{status === 'ready' ? (
-										<p
-											mix={css({
-												margin: 0,
-												marginTop: spacing.sm,
-												color: colors.textMuted,
-												fontSize: typography.fontSize.xs,
-											})}
-										>
-											Showing {users.length} of {totalCount}{' '}
-											{totalCount === 1 ? 'account' : 'accounts'}
-										</p>
-									) : null}
-								</>
-							)}
-						</AccountManagementSidebar>
+				{usersSnapshot.error ? (
+					<AccountManagementMessage tone="error">
+						{usersSnapshot.error}
+					</AccountManagementMessage>
+				) : null}
+				<RecordTable
+					mode="expand"
+					ariaLabel="User accounts"
+					selectedId={selectedStableUserId}
+					countLabel={
+						status === 'ready'
+							? `${users.length} of ${totalCount} ${totalCount === 1 ? 'account' : 'accounts'}`
+							: undefined
 					}
-				>
-					<div mix={css({ ...cardCss, gap: spacing.lg })}>
-						{selectedUser ? (
-							<>
+					emptyLabel={
+						status === 'ready'
+							? hasActiveFilters
+								? 'No users match the current filters.'
+								: 'No users found.'
+							: 'Loading users…'
+					}
+					toolbar={
+						<>
+							<RecordTableSearch
+								label="Search users"
+								placeholder="Search by username or email"
+								value={filters.search}
+								onInput={(value) => {
+									replaceLocation(
+										buildHrefWithUpdatedFilters({ search: value }),
+									)
+								}}
+							/>
+							<RecordTableSelect
+								label="Filter users by role"
+								value={filters.role}
+								onChange={(value) => {
+									replaceLocation(buildHrefWithUpdatedFilters({ role: value }))
+								}}
+							>
+								<option value="">All roles</option>
+								{availableRoles.map((role) => (
+									<option key={role} value={role}>
+										{role}
+									</option>
+								))}
+							</RecordTableSelect>
+						</>
+					}
+					columns={[
+						{ key: 'username', label: 'Username', primary: true },
+						{ key: 'email', label: 'Email', drop: 1 },
+						{ key: 'roles', label: 'Roles', drop: 2 },
+					]}
+					rows={users.map((user) => ({
+						id: user.stableUserId,
+						// A role or plan mutation is in flight against the selected
+						// user; navigating away mid-write would strand it.
+						href: isMutating
+							? undefined
+							: buildUserDetailHref(user.stableUserId),
+						cells: {
+							username: user.username,
+							email: <span mix={clampedCellCss}>{user.email}</span>,
+							roles: <RecordChips items={user.roles} empty="No roles" />,
+						},
+					}))}
+					footer={
+						hasMore ? (
+							<div mix={infiniteScrollSentinel(loadMoreUsers)}>
+								<button
+									type="button"
+									disabled={isLoadingMore}
+									mix={[
+										on('click', () => void loadMoreUsers()),
+										css({ ...secondaryButtonCss, width: '100%' }),
+									]}
+								>
+									{isLoadingMore ? 'Loading more…' : 'Load more'}
+								</button>
+							</div>
+						) : null
+					}
+					record={
+						selectedUser ? (
+							<div mix={css(recordBodyCss)}>
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
 									<h2
 										mix={css({
@@ -866,7 +832,6 @@ export function AdminUsersRoute(handle: Handle) {
 									</p>
 								</div>
 								<MetadataGrid
-									columns={3}
 									items={[
 										{ label: 'Email', value: selectedUser.email },
 										{
@@ -877,7 +842,12 @@ export function AdminUsersRoute(handle: Handle) {
 										},
 										{
 											label: 'Stable user id',
-											value: selectedUser.stableUserId,
+											value: (
+												<IdValue
+													value={selectedUser.stableUserId}
+													label="stable user id"
+												/>
+											),
 										},
 										{
 											label: 'Roles',
@@ -892,23 +862,33 @@ export function AdminUsersRoute(handle: Handle) {
 										},
 										{
 											label: 'Suspended',
-											value: selectedUser.suspended_at
-												? formatTimestamp(selectedUser.suspended_at)
-												: 'No',
+											value: (
+												<TimestampValue
+													value={selectedUser.suspended_at}
+													fallback="No"
+												/>
+											),
 										},
 										{
 											label: 'Outbound email',
-											value: selectedUser.email_outbound_paused_at
-												? `Paused ${formatTimestamp(selectedUser.email_outbound_paused_at)}`
-												: 'Active',
+											value: selectedUser.email_outbound_paused_at ? (
+												<>
+													Paused{' '}
+													<TimestampValue
+														value={selectedUser.email_outbound_paused_at}
+													/>
+												</>
+											) : (
+												'Active'
+											),
 										},
 										{
 											label: 'Created',
-											value: formatTimestamp(selectedUser.created_at),
+											value: <TimestampValue value={selectedUser.created_at} />,
 										},
 										{
 											label: 'Updated',
-											value: formatTimestamp(selectedUser.updated_at),
+											value: <TimestampValue value={selectedUser.updated_at} />,
 										},
 									]}
 								/>
@@ -1175,105 +1155,60 @@ export function AdminUsersRoute(handle: Handle) {
 												>
 													Entitlements
 												</h3>
-												<div mix={css({ overflowX: 'auto' })}>
-													<table mix={css(accountManagementTableCss)}>
-														<thead>
-															<tr>
-																<th mix={css(accountManagementTableCellCss)}>
-																	Resource
-																</th>
-																<th
-																	mix={css(
-																		accountManagementTableNumericCellCss,
-																	)}
-																>
-																	In use
-																</th>
-																<th
-																	mix={css(
-																		accountManagementTableNumericCellCss,
-																	)}
-																>
-																	Limit
-																</th>
-																<th
-																	mix={css(
-																		accountManagementTableNumericCellCss,
-																	)}
-																>
-																	Used
-																</th>
-															</tr>
-														</thead>
-														<tbody>
-															{selectedUsage.entitlementConsumption.map(
-																(item) => (
-																	<tr key={item.resource}>
-																		<td
-																			mix={css(accountManagementTableCellCss)}
-																		>
-																			{item.label}
-																		</td>
-																		<td
-																			mix={css(
-																				accountManagementTableNumericCellCss,
-																			)}
-																		>
-																			{item.current === null
-																				? 'Not measured'
-																				: formatIntegerNumber(item.current)}
-																		</td>
-																		<td
-																			mix={css(
-																				accountManagementTableNumericCellCss,
-																			)}
-																		>
-																			{formatUsageLimit(item.limit)}
-																		</td>
-																		<td
-																			mix={css({
-																				...accountManagementTableNumericCellCss,
-																				...(item.overEightyPercent
-																					? {
-																							color: chartColor.amber,
-																							fontWeight:
-																								typography.fontWeight.semibold,
-																						}
-																					: {}),
-																			})}
-																		>
-																			{formatUsagePercent(item.percentOfLimit)}
-																		</td>
-																	</tr>
+												<RecordTable
+													mode="none"
+													ariaLabel="Entitlement consumption"
+													// The list is short and already sits inside an
+													// expanded record; a nested scroller would be a
+													// second thing to fight on the way down the page.
+													scrollHeight="none"
+													columns={[
+														{
+															key: 'resource',
+															label: 'Resource',
+															primary: true,
+														},
+														{ key: 'current', label: 'In use', align: 'end' },
+														{ key: 'limit', label: 'Limit', align: 'end' },
+														{ key: 'used', label: 'Used', align: 'end' },
+													]}
+													rows={selectedUsage.entitlementConsumption.map(
+														(item) => ({
+															id: item.resource,
+															cells: {
+																resource: item.label,
+																current:
+																	item.current === null
+																		? 'Not measured'
+																		: formatIntegerNumber(item.current),
+																limit: formatUsageLimit(item.limit),
+																used: (
+																	<span
+																		mix={css(
+																			item.overEightyPercent
+																				? {
+																						color: chartColor.amber,
+																						fontWeight:
+																							typography.fontWeight.semibold,
+																					}
+																				: {},
+																		)}
+																	>
+																		{formatUsagePercent(item.percentOfLimit)}
+																	</span>
 																),
-															)}
-														</tbody>
-													</table>
-												</div>
+															},
+														}),
+													)}
+												/>
 											</div>
 										</>
 									) : null}
 								</AccountManagementPanel>
-							</>
-						) : (
-							<div mix={css({ display: 'grid', gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select an account
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick an account from the list to view its details.
-								</p>
 							</div>
-						)}
-					</div>
-				</AccountManagementLayout>
+						) : null
+					}
+				/>
 			</AccountManagementShell>
 		)
 	}

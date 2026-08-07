@@ -20,6 +20,7 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AdminPageHeader,
+	IdValue,
 	accountInputCss,
 } from './account-management-components.tsx'
 import { type AdminCommunityReportsLoaderData } from '#app/loader-data.ts'
@@ -27,6 +28,18 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+/**
+ * `IdValue` is a flex row (value plus copy control), so the label beside it
+ * needs a flex line of its own rather than the default text flow.
+ */
+const idLineCss = {
+	...descriptionCss,
+	display: 'flex',
+	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: spacing.xs,
+}
 
 type AdminCommunityReportListItem =
 	AdminCommunityReportsLoaderData['reports'][number]
@@ -333,13 +346,19 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 									<p mix={css(descriptionCss)}>
 										<strong>Status:</strong> {report.status}
 									</p>
-									<p mix={css(descriptionCss)}>
-										<strong>Reporter:</strong>{' '}
-										<code>{report.reporterUserId}</code>
+									<p mix={css(idLineCss)}>
+										<strong>Reporter:</strong>
+										<IdValue
+											value={report.reporterUserId}
+											label="reporter user id"
+										/>
 									</p>
-									<p mix={css(descriptionCss)}>
-										<strong>Owner:</strong>{' '}
-										<code>{report.listingOwnerUserId}</code>
+									<p mix={css(idLineCss)}>
+										<strong>Owner:</strong>
+										<IdValue
+											value={report.listingOwnerUserId}
+											label="listing owner user id"
+										/>
 									</p>
 									<p mix={css(descriptionCss)}>
 										<strong>Created:</strong>{' '}

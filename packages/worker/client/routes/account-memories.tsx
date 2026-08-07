@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -22,19 +21,20 @@ import {
 } from '#app/loader-data.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
+import {
+	RecordChips,
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+} from '#client/routes/record-table.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
@@ -42,6 +42,19 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 } from '#client/styles/style-primitives.ts'
+
+/**
+ * Subjects and summaries are arbitrary length, and a table cell will not
+ * shrink below its content, so the clamp lives on a block inside the cell.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '30ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 
 const accountMemoriesApiPath = '/account/memories.json'
 const memoriesRoute = createListDetailRoute('/account/memories')
@@ -348,331 +361,312 @@ export function AccountMemoriesRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<AccountManagementLayout
-						sidebarWidth="minmax(18rem, 24rem)"
-						sidebar={
-							<AccountManagementSidebar
-								title="Saved memories"
-								description="Select a memory to inspect details, sources, and timestamps. Showing up to 100 most recent memories."
-							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search subject, category, tags, summary"
-									value={search}
-									onInput={(value) => {
-										replaceLocation(
-											buildHrefWithUpdatedParams({ search: value }),
-										)
-									}}
-								/>
-								<label
-									mix={css({
-										display: 'flex',
-										alignItems: 'center',
-										gap: spacing.sm,
-										color: colors.textMuted,
-										fontSize: typography.fontSize.sm,
-									})}
-								>
-									<input
-										type="checkbox"
-										checked={includeDeleted}
-										disabled={isMutating}
-										mix={on('change', (event) => {
+					<>
+						<p
+							mix={css({
+								margin: 0,
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
+							Showing up to the 100 most recent memories. Agents create them
+							through verify and upsert.
+						</p>
+						<RecordTable
+							mode="pane"
+							ariaLabel="Saved memories"
+							selectedId={selection.selectedId}
+							onNavigate={() => {
+								deleteMode = null
+								setMessage(null)
+							}}
+							countLabel={`${filteredMemories.length} of ${memories.length} shown`}
+							emptyLabel={
+								memories.length === 0
+									? 'No memories yet. Agents create them through verify and upsert.'
+									: 'No memories match the current filters.'
+							}
+							toolbar={
+								<>
+									<RecordTableSearch
+										label="Search memories"
+										placeholder="Search subject, category, tags, summary"
+										value={search}
+										onInput={(value) => {
 											replaceLocation(
-												buildHrefWithUpdatedParams({
-													includeDeleted: event.currentTarget.checked,
-												}),
+												buildHrefWithUpdatedParams({ search: value }),
 											)
-										})}
+										}}
 									/>
-									Include deleted
-								</label>
-								{memories.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No memories yet. Agents create them through verify and
-										upsert.
-									</p>
-								) : filteredMemories.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No memories match the current filters.
-									</p>
-								) : (
-									<AccountManagementList>
-										{filteredMemories.map((item) => (
-											<li key={item.id} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemLink
-													href={memoriesRoute.buildDetailHref(
-														item.id,
-														getCurrentSearch(),
-													)}
-													active={selection.selectedId === item.id}
-													disabled={isMutating}
-													onNavigate={() => {
-														deleteMode = null
-														setMessage(null)
-													}}
-												>
-													<strong
-														mix={css({
-															minWidth: 0,
-															overflowWrap: 'anywhere',
-														})}
-													>
-														{item.subject}
-													</strong>
-													<span
-														mix={css({
-															color: statusColor(item.status),
-															fontSize: typography.fontSize.sm,
-														})}
-													>
-														{statusLabel(item.status)}
-														{item.category ? ` · ${item.category}` : ''}
-													</span>
-													{item.tags.length > 0 ? (
+									<label
+										mix={css({
+											display: 'flex',
+											alignItems: 'center',
+											gap: spacing.xs,
+											flex: 'none',
+											color: colors.textMuted,
+											fontSize: typography.fontSize.sm,
+											whiteSpace: 'nowrap',
+										})}
+									>
+										<input
+											type="checkbox"
+											checked={includeDeleted}
+											disabled={isMutating}
+											mix={on('change', (event) => {
+												replaceLocation(
+													buildHrefWithUpdatedParams({
+														includeDeleted: event.currentTarget.checked,
+													}),
+												)
+											})}
+										/>
+										Include deleted
+									</label>
+								</>
+							}
+							columns={[
+								{ key: 'subject', label: 'Subject', primary: true },
+								{ key: 'status', label: 'Status' },
+								{ key: 'category', label: 'Category', drop: 2 },
+								{ key: 'tags', label: 'Tags', drop: 1 },
+								{ key: 'summary', label: 'Summary', drop: 3 },
+							]}
+							rows={filteredMemories.map((item) => ({
+								id: item.id,
+								// A delete or restore is in flight; navigating away from
+								// the row being mutated would strand the confirmation.
+								href: isMutating
+									? undefined
+									: memoriesRoute.buildDetailHref(item.id, getCurrentSearch()),
+								cells: {
+									subject: <span mix={clampedCellCss}>{item.subject}</span>,
+									status: (
+										<span mix={css({ color: statusColor(item.status) })}>
+											{statusLabel(item.status)}
+										</span>
+									),
+									category: item.category ?? '—',
+									tags: <RecordChips items={item.tags} empty="—" />,
+									summary: <span mix={clampedCellCss}>{item.summary}</span>,
+								},
+							}))}
+							record={
+								detailMemory ? (
+									<section mix={css(recordBodyCss)}>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<h2 mix={css(cardTitleCss)}>{detailMemory.subject}</h2>
+											<p mix={css(descriptionCss)}>{detailMemory.summary}</p>
+										</div>
+
+										<MetadataGrid
+											items={[
+												{
+													label: 'Status',
+													value: (
 														<span
 															mix={css({
-																color: colors.textMuted,
-																fontSize: typography.fontSize.sm,
-																overflowWrap: 'anywhere',
+																color: statusColor(detailMemory.status),
 															})}
 														>
-															{item.tags.join(', ')}
+															{statusLabel(detailMemory.status)}
 														</span>
-													) : null}
-													<span
-														mix={css({
-															color: colors.textMuted,
-															fontSize: typography.fontSize.sm,
-															overflowWrap: 'anywhere',
-														})}
-													>
-														{item.summary}
-													</span>
-												</AccountManagementListItemLink>
-											</li>
-										))}
-									</AccountManagementList>
-								)}
-							</AccountManagementSidebar>
-						}
-					>
-						{detailMemory ? (
-							<section mix={css(cardCss)}>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>{detailMemory.subject}</h2>
-									<p mix={css(descriptionCss)}>{detailMemory.summary}</p>
-								</div>
+													),
+												},
+												{
+													label: 'Category',
+													value: formatOptional(detailMemory.category),
+												},
+												{
+													label: 'Tags',
+													value:
+														detailMemory.tags.length > 0
+															? detailMemory.tags.join(', ')
+															: '—',
+												},
+												{
+													label: 'Dedupe key',
+													value: formatOptional(detailMemory.dedupeKey),
+												},
+												{
+													label: 'Created',
+													value: (
+														<TimestampValue value={detailMemory.createdAt} />
+													),
+												},
+												{
+													label: 'Updated',
+													value: (
+														<TimestampValue value={detailMemory.updatedAt} />
+													),
+												},
+												{
+													label: 'Last accessed',
+													value: (
+														<TimestampValue
+															value={detailMemory.lastAccessedAt}
+														/>
+													),
+												},
+												{
+													label: 'Deleted',
+													value: (
+														<TimestampValue value={detailMemory.deletedAt} />
+													),
+												},
+											]}
+										/>
 
-								<MetadataGrid
-									items={[
-										{
-											label: 'Status',
-											value: (
-												<span
-													mix={css({ color: statusColor(detailMemory.status) })}
+										<div mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Details</span>
+											<p
+												mix={css({
+													margin: 0,
+													padding: spacing.sm,
+													borderRadius: radius.md,
+													border: `1px solid ${colors.border}`,
+													backgroundColor: colors.background,
+													color: colors.text,
+													whiteSpace: 'pre-wrap',
+													overflowWrap: 'anywhere',
+												})}
+											>
+												{detailMemory.details.trim()
+													? detailMemory.details
+													: '—'}
+											</p>
+										</div>
+
+										<div mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Source URIs</span>
+											{detailMemory.sourceUris.length === 0 ? (
+												<p mix={css({ margin: 0, color: colors.textMuted })}>
+													—
+												</p>
+											) : (
+												<ul
+													mix={css({
+														margin: 0,
+														paddingLeft: spacing.lg,
+														display: 'grid',
+														gap: spacing.xs,
+													})}
 												>
-													{statusLabel(detailMemory.status)}
-												</span>
-											),
-										},
-										{
-											label: 'Category',
-											value: formatOptional(detailMemory.category),
-										},
-										{
-											label: 'Tags',
-											value:
-												detailMemory.tags.length > 0
-													? detailMemory.tags.join(', ')
-													: '—',
-										},
-										{
-											label: 'Dedupe key',
-											value: formatOptional(detailMemory.dedupeKey),
-										},
-										{
-											label: 'Created',
-											value: formatTimestamp(detailMemory.createdAt),
-										},
-										{
-											label: 'Updated',
-											value: formatTimestamp(detailMemory.updatedAt),
-										},
-										{
-											label: 'Last accessed',
-											value: detailMemory.lastAccessedAt
-												? formatTimestamp(detailMemory.lastAccessedAt)
-												: '—',
-										},
-										{
-											label: 'Deleted',
-											value: detailMemory.deletedAt
-												? formatTimestamp(detailMemory.deletedAt)
-												: '—',
-										},
-									]}
-								/>
+													{detailMemory.sourceUris.map((uri) => (
+														<li key={uri}>
+															<a
+																href={uri}
+																target="_blank"
+																rel="noreferrer"
+																mix={css({
+																	color: colors.primary,
+																	overflowWrap: 'anywhere',
+																})}
+															>
+																{uri}
+															</a>
+														</li>
+													))}
+												</ul>
+											)}
+										</div>
 
-								<div mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Details</span>
-									<p
-										mix={css({
-											margin: 0,
-											padding: spacing.sm,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.border}`,
-											backgroundColor: colors.background,
-											color: colors.text,
-											whiteSpace: 'pre-wrap',
-											overflowWrap: 'anywhere',
-										})}
-									>
-										{detailMemory.details.trim() ? detailMemory.details : '—'}
-									</p>
-								</div>
-
-								<div mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Source URIs</span>
-									{detailMemory.sourceUris.length === 0 ? (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>—</p>
-									) : (
-										<ul
+										<div
 											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
-												display: 'grid',
-												gap: spacing.xs,
+												display: 'flex',
+												gap: spacing.sm,
+												flexWrap: 'wrap',
+												alignItems: 'center',
 											})}
 										>
-											{detailMemory.sourceUris.map((uri) => (
-												<li key={uri}>
-													<a
-														href={uri}
-														target="_blank"
-														rel="noreferrer"
-														mix={css({
-															color: colors.primary,
-															overflowWrap: 'anywhere',
-														})}
-													>
-														{uri}
-													</a>
-												</li>
-											))}
-										</ul>
-									)}
-								</div>
-
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-										alignItems: 'center',
-									})}
-								>
-									<button
-										type="button"
-										disabled={isMutating || detailMemory.status === 'deleted'}
-										mix={[
-											on('click', () => {
-												if (deleteMode !== 'soft') {
-													deleteMode = 'soft'
-													handle.update()
-													return
+											<button
+												type="button"
+												disabled={
+													isMutating || detailMemory.status === 'deleted'
 												}
-												void postDelete({
-													memoryId: detailMemory.id,
-													force: false,
-												})
-											}),
-											css(dangerButtonCss),
-										]}
-									>
-										{actionState === 'busy' && deleteMode === 'soft'
-											? 'Deleting...'
-											: deleteMode === 'soft'
-												? 'Confirm soft delete'
-												: 'Soft delete'}
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => {
-												if (deleteMode !== 'hard') {
-													deleteMode = 'hard'
-													handle.update()
-													return
-												}
-												void postDelete({
-													memoryId: detailMemory.id,
-													force: true,
-												})
-											}),
-											css(dangerButtonCss),
-										]}
-									>
-										{actionState === 'busy' && deleteMode === 'hard'
-											? 'Deleting...'
-											: deleteMode === 'hard'
-												? 'Confirm permanent delete'
-												: 'Delete permanently'}
-									</button>
-									{deleteMode ? (
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () => {
-													deleteMode = null
-													handle.update()
-												}),
-												css(secondaryButtonCss),
-											]}
+												mix={[
+													on('click', () => {
+														if (deleteMode !== 'soft') {
+															deleteMode = 'soft'
+															handle.update()
+															return
+														}
+														void postDelete({
+															memoryId: detailMemory.id,
+															force: false,
+														})
+													}),
+													css(dangerButtonCss),
+												]}
+											>
+												{actionState === 'busy' && deleteMode === 'soft'
+													? 'Deleting...'
+													: deleteMode === 'soft'
+														? 'Confirm soft delete'
+														: 'Soft delete'}
+											</button>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', () => {
+														if (deleteMode !== 'hard') {
+															deleteMode = 'hard'
+															handle.update()
+															return
+														}
+														void postDelete({
+															memoryId: detailMemory.id,
+															force: true,
+														})
+													}),
+													css(dangerButtonCss),
+												]}
+											>
+												{actionState === 'busy' && deleteMode === 'hard'
+													? 'Deleting...'
+													: deleteMode === 'hard'
+														? 'Confirm permanent delete'
+														: 'Delete permanently'}
+											</button>
+											{deleteMode ? (
+												<button
+													type="button"
+													disabled={isMutating}
+													mix={[
+														on('click', () => {
+															deleteMode = null
+															handle.update()
+														}),
+														css(secondaryButtonCss),
+													]}
+												>
+													Cancel
+												</button>
+											) : null}
+										</div>
+									</section>
+								) : showMemoryNotFound ? (
+									<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+										<h2
+											mix={css({
+												margin: 0,
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												color: colors.text,
+											})}
 										>
-											Cancel
-										</button>
-									) : null}
-								</div>
-							</section>
-						) : showMemoryNotFound ? (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Memory not found
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This memory does not exist for this account or is unavailable.
-								</p>
-							</div>
-						) : (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select a memory
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick a memory from the list to inspect its details, sources,
-									and timestamps.
-								</p>
-							</div>
-						)}
-					</AccountManagementLayout>
+											Memory not found
+										</h2>
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											This memory does not exist for this account or is
+											unavailable.
+										</p>
+									</div>
+								) : null
+							}
+						/>
+					</>
 				) : null}
 			</AccountManagementShell>
 		)

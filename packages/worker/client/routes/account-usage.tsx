@@ -23,10 +23,8 @@ import {
 	AccountManagementShell,
 	AccountPageHeader,
 	MetadataGrid,
-	accountManagementTableCellCss,
-	accountManagementTableCss,
-	accountManagementTableNumericCellCss,
 } from '#client/routes/account-management-components.tsx'
+import { RecordTable } from '#client/routes/record-table.tsx'
 import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -333,83 +331,65 @@ export function AccountUsageRoute(handle: Handle) {
 									'Current use compared to your plan limit.'
 								}
 							>
-								<div mix={css({ overflowX: 'auto' })}>
-									<table mix={css(accountManagementTableCss)}>
-										<thead>
-											<tr>
-												<th mix={css(accountManagementTableCellCss)}>
-													Resource
-												</th>
-												<th mix={css(accountManagementTableNumericCellCss)}>
-													In use
-												</th>
-												<th mix={css(accountManagementTableNumericCellCss)}>
-													Limit
-												</th>
-												<th mix={css(accountManagementTableNumericCellCss)}>
-													Used
-												</th>
-												<th mix={css(accountManagementTableCellCss)}>
-													Progress
-												</th>
-											</tr>
-										</thead>
-										<tbody>
-											{rows.map((item) => (
-												<tr key={item.resource}>
-													<td mix={css(accountManagementTableCellCss)}>
-														<div
-															mix={css({
-																display: 'grid',
-																gap: spacing.xs,
-															})}
-														>
-															<span
-																mix={css({
-																	fontWeight: typography.fontWeight.medium,
-																	color: colors.text,
-																})}
-															>
-																{item.label}
-															</span>
-															<span
-																mix={css({
-																	fontSize: typography.fontSize.sm,
-																	color: colors.textMuted,
-																	lineHeight: 1.4,
-																})}
-															>
-																{item.whatCounts} {item.howToReduce}
-															</span>
-														</div>
-													</td>
-													<td mix={css(accountManagementTableNumericCellCss)}>
-														{formatCurrentValue(item)}
-													</td>
-													<td mix={css(accountManagementTableNumericCellCss)}>
-														{formatLimitValue(item)}
-													</td>
-													<td
+								<RecordTable
+									mode="none"
+									ariaLabel={`${entitlementGroupLabels[group]} usage`}
+									// Each group is a handful of rows inside a panel that is
+									// already part of a scrolling page; a nested scroller here
+									// would only hide rows.
+									scrollHeight="none"
+									columns={[
+										{ key: 'resource', label: 'Resource', primary: true },
+										{ key: 'current', label: 'In use', align: 'end' },
+										{ key: 'limit', label: 'Limit', align: 'end' },
+										{ key: 'used', label: 'Used', align: 'end' },
+										{ key: 'progress', label: 'Progress' },
+									]}
+									rows={rows.map((item) => ({
+										id: item.resource,
+										cells: {
+											resource: (
+												<span mix={css({ display: 'grid', gap: spacing.xs })}>
+													<span
 														mix={css({
-															...accountManagementTableNumericCellCss,
-															...(item.overEightyPercent
-																? {
-																		color: chartColor.amber,
-																		fontWeight: typography.fontWeight.semibold,
-																	}
-																: {}),
+															fontWeight: typography.fontWeight.medium,
+															color: colors.text,
 														})}
 													>
-														{formatUsagePercent(item.percentOfLimit)}
-													</td>
-													<td mix={css(accountManagementTableCellCss)}>
-														{renderUsageProgressBar(item)}
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
+														{item.label}
+													</span>
+													<span
+														mix={css({
+															fontSize: typography.fontSize.sm,
+															color: colors.textMuted,
+															lineHeight: 1.4,
+															whiteSpace: 'normal',
+														})}
+													>
+														{item.whatCounts} {item.howToReduce}
+													</span>
+												</span>
+											),
+											current: formatCurrentValue(item),
+											limit: formatLimitValue(item),
+											used: (
+												<span
+													mix={css(
+														item.overEightyPercent
+															? {
+																	color: chartColor.amber,
+																	fontWeight: typography.fontWeight.semibold,
+																}
+															: {},
+													)}
+												>
+													{formatUsagePercent(item.percentOfLimit)}
+												</span>
+											),
+											progress: renderUsageProgressBar(item),
+										},
+									}))}
+								/>
 							</AccountManagementPanel>
 						))}
 					</>

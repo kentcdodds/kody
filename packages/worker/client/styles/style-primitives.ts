@@ -272,6 +272,44 @@ export function getDangerPillCss(options?: PillButtonCssOptions) {
 }
 
 /**
+ * Control that sits beside a value rather than in an action row — the copy
+ * button of an `IdValue`. Deliberately not a pill: at this size the display
+ * face and the full radius read as a second value, and the pill's `sm`
+ * padding would take most of a metadata column from the id it belongs to.
+ * It borrows the chrome of the code chip next to it instead.
+ */
+export function getChipButtonCss() {
+	return {
+		display: 'inline-flex',
+		alignItems: 'center',
+		justifyContent: 'center',
+		flex: 'none',
+		padding: '0.18rem 0.4rem',
+		borderRadius: radius.sm,
+		border: `1px solid ${colors.border}`,
+		backgroundColor: 'transparent',
+		color: colors.textMuted,
+		fontFamily: typography.fontFamily,
+		fontSize: typography.fontSize.xs,
+		fontWeight: typography.fontWeight.semibold,
+		lineHeight: 1.4,
+		cursor: 'pointer',
+		whiteSpace: 'nowrap' as const,
+		transition: `color 160ms ${transitions.easeOut}, border-color 160ms ${transitions.easeOut}`,
+		[hoverMq]: {
+			'&:not(:disabled):hover': {
+				color: colors.primaryText,
+				borderColor: colors.primary,
+			},
+		},
+		'&:not(:disabled):active': {
+			transform: 'scale(0.97)',
+		},
+		...buttonReducedMotionCss,
+	}
+}
+
+/**
  * Layout-stable label swap for buttons whose text changes with state
  * ("Copy" → "Copied", "Join the waiting list" → "Joining…"). Every label
  * renders grid-stacked in the same cell so the widest one reserves the width

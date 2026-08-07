@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -13,24 +12,25 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { getGhostButtonCss } from '#client/styles/style-primitives.ts'
 import {
-	cardCss,
-	fieldCss,
-	fieldLabelCss,
-	getGhostButtonCss,
-	getSelectCss,
-} from '#client/styles/style-primitives.ts'
-import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
+	accountDisclosureCss,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountPageHeader,
-	AccountManagementSidebar,
+	IdValue,
 	MetadataGrid,
+	TimestampValue,
 } from './account-management-components.tsx'
+import {
+	RecordChips,
+	RecordDot,
+	RecordTable,
+	RecordTableSearch,
+	RecordTableSelect,
+	recordBodyCss,
+	recordStampCss,
+} from './record-table.tsx'
 import {
 	type AccountPackageDetail,
 	type AccountPackageListItem,
@@ -42,8 +42,6 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-
-const selectCss = getSelectCss()
 
 type PageStatus = 'loading' | 'ready' | 'error'
 
@@ -119,28 +117,6 @@ export async function accountPackagesRouteLoader(
 	}
 	return { accountPackages: payload }
 }
-
-function formatUpdatedDate(updatedAt: string) {
-	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
-}
-
-const truncatedTextCss = {
-	minWidth: 0,
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap',
-} as const
-
-const tagChipCss = {
-	display: 'inline-block',
-	padding: `0 ${spacing.sm}`,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.xs,
-	lineHeight: '1.5rem',
-} as const
 
 export function AccountPackagesRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
@@ -359,189 +335,122 @@ export function AccountPackagesRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				<AccountManagementLayout
-					sidebar={
-						<AccountManagementSidebar
-							title="Saved packages"
-							description="Select a package to review its metadata."
-						>
-							<div mix={css({ display: 'grid', gap: spacing.sm })}>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search by name, id, description, or tag"
-									value={filters.search}
-									onInput={(value) => {
-										replaceLocation(
-											buildHrefWithUpdatedFilters({ search: value }),
-										)
-									}}
-								/>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>App</span>
-									<select
-										data-field-ring
-										value={filters.app}
-										aria-label="Filter packages by app"
-										mix={[
-											on('change', (event) => {
-												const nextApp = event.currentTarget
-													.value as AccountPackagesAppFilter
-												replaceLocation(
-													buildHrefWithUpdatedFilters({ app: nextApp }),
-												)
-											}),
-											css(selectCss),
-										]}
-									>
-										<option value="all">All packages</option>
-										<option value="with">With an app</option>
-										<option value="without">Without an app</option>
-									</select>
-								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Sort</span>
-									<select
-										data-field-ring
-										value={filters.sort}
-										aria-label="Sort packages"
-										mix={[
-											on('change', (event) => {
-												const nextSort = event.currentTarget
-													.value as AccountPackagesSort
-												replaceLocation(
-													buildHrefWithUpdatedFilters({ sort: nextSort }),
-												)
-											}),
-											css(selectCss),
-										]}
-									>
-										<option value="updated">Recently updated</option>
-										<option value="created">Recently created</option>
-										<option value="name">Name</option>
-									</select>
-								</label>
-							</div>
-							{status === 'ready' && packages.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									{hasActiveFilters
-										? 'No packages match the current filters.'
-										: 'No saved packages yet. Ask Kody to save one to get started.'}
-								</p>
-							) : (
-								<>
-									<AccountManagementList>
-										{packages.map((pkg) => (
-											<li key={pkg.id} mix={css({ minWidth: 0 })}>
-												<AccountManagementListItemLink
-													href={packagesRoute.buildDetailHref(
-														pkg.id,
-														getCurrentSearch(),
-													)}
-													active={activePackageId === pkg.id}
-												>
-													<div
-														mix={css({
-															display: 'grid',
-															gridTemplateColumns: 'minmax(0, 1fr) auto',
-															gap: spacing.md,
-															alignItems: 'baseline',
-															minWidth: 0,
-														})}
-													>
-														<strong
-															mix={css({
-																...truncatedTextCss,
-																display: 'block',
-															})}
-														>
-															{pkg.name}
-														</strong>
-														<span
-															mix={css({
-																fontSize: typography.fontSize.xs,
-																color: colors.textMuted,
-															})}
-														>
-															{formatUpdatedDate(pkg.updatedAt)}
-														</span>
-													</div>
-													<span
-														mix={css({
-															...truncatedTextCss,
-															display: 'block',
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-														})}
-													>
-														{pkg.kodyId}
-														{pkg.hasApp ? ' - has app' : ''}
-													</span>
-													{pkg.description ? (
-														<span
-															mix={css({
-																display: '-webkit-box',
-																fontSize: typography.fontSize.sm,
-																color: colors.textMuted,
-																overflow: 'hidden',
-																overflowWrap: 'anywhere',
-																textOverflow: 'ellipsis',
-																'-webkit-box-orient': 'vertical',
-																'-webkit-line-clamp': '2',
-															})}
-														>
-															{pkg.description}
-														</span>
-													) : null}
-												</AccountManagementListItemLink>
-											</li>
-										))}
-										{hasMore ? (
-											<li
-												key="load-more-sentinel"
-												mix={[
-													infiniteScrollSentinel(loadMorePackages),
-													css({ display: 'grid' }),
-												]}
-											>
-												<button
-													type="button"
-													disabled={isLoadingMore}
-													mix={[
-														on('click', () => void loadMorePackages()),
-														css(secondaryButtonCss),
-													]}
-												>
-													{isLoadingMore ? 'Loading more…' : 'Load more'}
-												</button>
-											</li>
-										) : null}
-									</AccountManagementList>
-									{packagesSnapshot.error ? (
-										<AccountManagementMessage tone="error">
-											{packagesSnapshot.error}
-										</AccountManagementMessage>
-									) : null}
-									{status === 'ready' ? (
-										<p
-											mix={css({
-												margin: 0,
-												marginTop: spacing.sm,
-												color: colors.textMuted,
-												fontSize: typography.fontSize.xs,
-											})}
-										>
-											Showing {packages.length} of {totalCount}{' '}
-											{totalCount === 1 ? 'package' : 'packages'}
-										</p>
-									) : null}
-								</>
-							)}
-						</AccountManagementSidebar>
+				<RecordTable
+					mode="expand"
+					ariaLabel="Saved packages"
+					selectedId={activePackageId}
+					countLabel={
+						status === 'ready'
+							? `${packages.length} of ${totalCount} ${totalCount === 1 ? 'package' : 'packages'}`
+							: undefined
 					}
-				>
-					<div mix={css({ ...cardCss, gap: spacing.lg })}>
-						{selectedPackage ? (
-							<>
+					emptyLabel={
+						status === 'ready'
+							? hasActiveFilters
+								? 'No packages match the current filters.'
+								: 'No saved packages yet. Ask Kody to save one to get started.'
+							: 'Loading packages…'
+					}
+					toolbar={
+						<>
+							<RecordTableSearch
+								label="Search packages"
+								placeholder="Search by name, id, description, or tag"
+								value={filters.search}
+								onInput={(value) => {
+									replaceLocation(
+										buildHrefWithUpdatedFilters({ search: value }),
+									)
+								}}
+							/>
+							<RecordTableSelect
+								label="Filter packages by app"
+								value={filters.app}
+								onChange={(value) => {
+									replaceLocation(
+										buildHrefWithUpdatedFilters({
+											app: value as AccountPackagesAppFilter,
+										}),
+									)
+								}}
+							>
+								<option value="all">All packages</option>
+								<option value="with">With an app</option>
+								<option value="without">Without an app</option>
+							</RecordTableSelect>
+							<RecordTableSelect
+								label="Sort packages"
+								value={filters.sort}
+								onChange={(value) => {
+									replaceLocation(
+										buildHrefWithUpdatedFilters({
+											sort: value as AccountPackagesSort,
+										}),
+									)
+								}}
+							>
+								<option value="updated">Recently updated</option>
+								<option value="created">Recently created</option>
+								<option value="name">Name</option>
+							</RecordTableSelect>
+						</>
+					}
+					columns={[
+						{ key: 'name', label: 'Name', primary: true },
+						{ key: 'kodyId', label: 'Kody id', drop: 2 },
+						{ key: 'hasApp', label: 'App' },
+						{ key: 'tags', label: 'Tags', drop: 1 },
+						{ key: 'updated', label: 'Updated' },
+					]}
+					rows={packages.map((pkg) => ({
+						id: pkg.id,
+						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
+						cells: {
+							name: pkg.name,
+							kodyId: (
+								<code
+									mix={css({
+										fontSize: '0.8rem',
+										color: colors.textMuted,
+										whiteSpace: 'nowrap',
+									})}
+								>
+									{pkg.kodyId}
+								</code>
+							),
+							hasApp: (
+								<RecordDot
+									active={pkg.hasApp}
+									title={pkg.hasApp ? 'Declares a package app' : 'No app'}
+								/>
+							),
+							tags: <RecordChips items={pkg.tags.slice(0, 3)} />,
+							updated: (
+								<span mix={css(recordStampCss)}>
+									{new Date(pkg.updatedAt).toLocaleDateString()}
+								</span>
+							),
+						},
+					}))}
+					footer={
+						hasMore ? (
+							<div mix={infiniteScrollSentinel(loadMorePackages)}>
+								<button
+									type="button"
+									disabled={isLoadingMore}
+									mix={[
+										on('click', () => void loadMorePackages()),
+										css({ ...secondaryButtonCss, width: '100%' }),
+									]}
+								>
+									{isLoadingMore ? 'Loading more…' : 'Load more'}
+								</button>
+							</div>
+						) : null
+					}
+					record={
+						selectedPackage ? (
+							<div mix={css(recordBodyCss)}>
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
 									<h2
 										mix={css({
@@ -571,30 +480,26 @@ export function AccountPackagesRoute(handle: Handle) {
 									)}
 								</div>
 								{selectedPackage.tags.length > 0 ? (
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.xs,
-											flexWrap: 'wrap',
-										})}
-									>
-										{selectedPackage.tags.map((tag) => (
-											<span key={tag} mix={css(tagChipCss)}>
-												{tag}
-											</span>
-										))}
-									</div>
+									<RecordChips items={selectedPackage.tags} />
 								) : null}
 								<MetadataGrid
-									columns={3}
 									items={[
-										{ label: 'Kody id', value: selectedPackage.kodyId },
+										{
+											label: 'Kody id',
+											value: (
+												<IdValue
+													value={selectedPackage.kodyId}
+													label="Kody id"
+												/>
+											),
+										},
 										{
 											label: 'Package id',
 											value: (
-												<code mix={css({ overflowWrap: 'anywhere' })}>
-													{selectedPackage.id}
-												</code>
+												<IdValue
+													value={selectedPackage.id}
+													label="package id"
+												/>
 											),
 										},
 										{
@@ -606,55 +511,55 @@ export function AccountPackagesRoute(handle: Handle) {
 										{
 											label: 'Source id',
 											value: (
-												<code mix={css({ overflowWrap: 'anywhere' })}>
-													{selectedPackage.sourceId}
-												</code>
+												<IdValue
+													value={selectedPackage.sourceId}
+													label="source id"
+												/>
 											),
 										},
 										{
 											label: 'Created',
-											value: formatTimestamp(selectedPackage.createdAt),
+											value: (
+												<TimestampValue value={selectedPackage.createdAt} />
+											),
 										},
 										{
 											label: 'Updated',
-											value: formatTimestamp(selectedPackage.updatedAt),
+											value: (
+												<TimestampValue value={selectedPackage.updatedAt} />
+											),
 										},
 									]}
 								/>
 								{selectedPackage.searchText ? (
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<span mix={css(fieldLabelCss)}>Search text</span>
+									// The search index is a wall of concatenated text with no
+									// reading order. Left in flow it set the height of the whole
+									// screen; behind a disclosure it costs a line until asked
+									// for, and the box scrolls rather than growing.
+									<details mix={css(accountDisclosureCss)}>
+										<summary>Search text</summary>
 										<p
 											mix={css({
 												margin: 0,
+												maxHeight: '12rem',
+												overflowY: 'auto',
+												padding: spacing.sm,
+												borderRadius: radius.md,
+												border: `1px solid ${colors.border}`,
+												backgroundColor: colors.background,
 												color: colors.textMuted,
+												fontSize: typography.fontSize.sm,
 												overflowWrap: 'anywhere',
 											})}
 										>
 											{selectedPackage.searchText}
 										</p>
-									</div>
+									</details>
 								) : null}
-							</>
-						) : (
-							<div mix={css({ display: 'grid', gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select a package
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick a package from the list to review its metadata.
-								</p>
 							</div>
-						)}
-					</div>
-				</AccountManagementLayout>
+						) : null
+					}
+				/>
 			</AccountManagementShell>
 		)
 	}

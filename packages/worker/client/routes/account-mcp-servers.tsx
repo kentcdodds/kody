@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -18,20 +17,21 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	TimestampValue,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import {
+	RecordDot,
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+} from '#client/routes/record-table.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
@@ -40,6 +40,19 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
+
+/**
+ * Server URLs are arbitrary length, and a table cell will not shrink below
+ * its content, so the clamp lives on a block inside the cell.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '26ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 
 type McpServerListItem = {
 	id: string
@@ -434,398 +447,380 @@ export function AccountMcpServersRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<AccountManagementLayout
-						sidebarWidth="minmax(18rem, 24rem)"
-						sidebar={
-							<AccountManagementSidebar
-								title="Connected servers"
-								description="Tools from enabled, connected servers are callable from execute via kody.mcp['server-name'].tool_name(...)."
-							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search servers"
-									value={search}
-									onInput={(value) => {
-										replaceLocation(buildHrefWithUpdatedSearch(value))
-									}}
-								/>
-								{servers.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No MCP servers yet. Add one to get started.
-									</p>
-								) : filteredServers.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No servers match the current filters.
-									</p>
-								) : (
-									<AccountManagementList>
-										{filteredServers.map((item) => (
-											<li key={item.id}>
-												<AccountManagementListItemLink
-													href={mcpServersRoute.buildDetailHref(
-														item.id,
-														getCurrentSearch(),
-													)}
-													active={selection.selectedId === item.id}
-													disabled={isMutating}
-													onNavigate={() => {
-														deleteServerCheck.reset()
-														setMessage(null)
-													}}
-												>
-													<strong>{item.name}</strong>
-													<span
-														mix={css({
-															color: stateColor(item),
-															fontSize: typography.fontSize.sm,
-														})}
-													>
-														{stateLabel(item)}
-														{item.connected
-															? ` · ${item.toolCount} tool${item.toolCount === 1 ? '' : 's'}`
-															: ''}
-													</span>
-												</AccountManagementListItemLink>
-											</li>
-										))}
-									</AccountManagementList>
-								)}
-							</AccountManagementSidebar>
+					<RecordTable
+						mode="pane"
+						ariaLabel="Connected MCP servers"
+						selectedId={selection.selectedId}
+						onNavigate={() => {
+							deleteServerCheck.reset()
+							setMessage(null)
+						}}
+						countLabel={`${filteredServers.length} of ${servers.length} shown`}
+						emptyLabel={
+							servers.length === 0
+								? 'No MCP servers yet. Add one to get started.'
+								: 'No servers match the current filters.'
 						}
-					>
-						{selection.isCreating ? (
-							<form
-								method="post"
-								noValidate
-								mix={[
-									on('submit', (event) => {
-										event.preventDefault()
-										if (event.currentTarget instanceof HTMLFormElement) {
-											void addServer(event.currentTarget)
-										}
-									}),
-									css(cardCss),
-								]}
-							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>Add MCP server</h2>
-									<p mix={css(descriptionCss)}>
-										Provide a short name and the server URL. Remote servers must
-										use https; Kody connects as an MCP client and discovers the
-										server&apos;s tools.
-									</p>
-								</div>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Server name</span>
-									<input
-										data-field-ring
-										name="name"
-										type="text"
-										value={addName}
-										placeholder="linear"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												addName = event.currentTarget.value
-												handle.update()
-											}),
-											css(accountInputCss),
-										]}
-									/>
-									<span mix={css(descriptionCss)}>
-										Lowercase letters, numbers, and dashes. Used as the
-										kody.mcp[&quot;name&quot;] namespace.
+						toolbar={
+							<RecordTableSearch
+								label="Search servers"
+								placeholder="Search servers"
+								value={search}
+								onInput={(value) => {
+									replaceLocation(buildHrefWithUpdatedSearch(value))
+								}}
+							/>
+						}
+						columns={[
+							{ key: 'name', label: 'Server', primary: true },
+							{ key: 'state', label: 'State' },
+							{ key: 'enabled', label: 'Enabled' },
+							{ key: 'url', label: 'URL', drop: 1 },
+							{ key: 'tools', label: 'Tools', align: 'end', drop: 2 },
+						]}
+						rows={filteredServers.map((item) => ({
+							id: item.id,
+							// An add, toggle, or removal is in flight; the editor below
+							// owns the selection until it settles.
+							href: isMutating
+								? undefined
+								: mcpServersRoute.buildDetailHref(item.id, getCurrentSearch()),
+							cells: {
+								name: item.name,
+								state: (
+									<span mix={css({ color: stateColor(item) })}>
+										{stateLabel(item)}
 									</span>
-								</label>
+								),
+								enabled: (
+									<RecordDot
+										active={item.enabled}
+										title={item.enabled ? 'Enabled' : 'Disabled'}
+									/>
+								),
+								url: <span mix={clampedCellCss}>{item.url}</span>,
+								tools: item.connected ? String(item.toolCount) : '—',
+							},
+						}))}
+						record={
+							selection.isCreating ? (
+								<form
+									method="post"
+									noValidate
+									mix={[
+										on('submit', (event) => {
+											event.preventDefault()
+											if (event.currentTarget instanceof HTMLFormElement) {
+												void addServer(event.currentTarget)
+											}
+										}),
+										css(recordBodyCss),
+									]}
+								>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>Add MCP server</h2>
+										<p mix={css(descriptionCss)}>
+											Provide a short name and the server URL. Remote servers
+											must use https; Kody connects as an MCP client and
+											discovers the server&apos;s tools.
+										</p>
+									</div>
 
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Server URL</span>
-									<input
-										data-field-ring
-										name="url"
-										type="url"
-										value={addUrl}
-										placeholder="https://mcp.example.com/mcp"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												addUrl = event.currentTarget.value
-												handle.update()
-											}),
-											css(accountInputCss),
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Server name</span>
+										<input
+											data-field-ring
+											name="name"
+											type="text"
+											value={addName}
+											placeholder="linear"
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													addName = event.currentTarget.value
+													handle.update()
+												}),
+												css(accountInputCss),
+											]}
+										/>
+										<span mix={css(descriptionCss)}>
+											Lowercase letters, numbers, and dashes. Used as the
+											kody.mcp[&quot;name&quot;] namespace.
+										</span>
+									</label>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Server URL</span>
+										<input
+											data-field-ring
+											name="url"
+											type="url"
+											value={addUrl}
+											placeholder="https://mcp.example.com/mcp"
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													addUrl = event.currentTarget.value
+													handle.update()
+												}),
+												css(accountInputCss),
+											]}
+										/>
+									</label>
+
+									<div>
+										<button
+											type="submit"
+											disabled={isMutating}
+											mix={css(primaryButtonCss)}
+										>
+											{actionState === 'busy' ? 'Adding...' : 'Add server'}
+										</button>
+									</div>
+								</form>
+							) : server ? (
+								<section mix={css(recordBodyCss)}>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>{server.name}</h2>
+										<p mix={css(descriptionCss)}>
+											Saved MCP server connection. Kody keeps OAuth tokens and
+											connection state isolated to your account.
+										</p>
+									</div>
+
+									<MetadataGrid
+										items={[
+											{
+												label: 'Status',
+												value: (
+													<span mix={css({ color: stateColor(server) })}>
+														{stateLabel(server)}
+													</span>
+												),
+											},
+											{
+												label: 'Tools',
+												value: server.connected
+													? `${server.toolCount} discovered`
+													: '—',
+											},
+											{
+												label: 'Added',
+												value: <TimestampValue value={server.createdAt} />,
+											},
+											{
+												label: 'Updated',
+												value: <TimestampValue value={server.updatedAt} />,
+											},
 										]}
 									/>
-								</label>
 
-								<div>
-									<button
-										type="submit"
-										disabled={isMutating}
-										mix={css(primaryButtonCss)}
-									>
-										{actionState === 'busy' ? 'Adding...' : 'Add server'}
-									</button>
-								</div>
-							</form>
-						) : server ? (
-							<section mix={css(cardCss)}>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>{server.name}</h2>
-									<p mix={css(descriptionCss)}>
-										Saved MCP server connection. Kody keeps OAuth tokens and
-										connection state isolated to your account.
-									</p>
-								</div>
-
-								<MetadataGrid
-									items={[
-										{
-											label: 'Status',
-											value: (
-												<span mix={css({ color: stateColor(server) })}>
-													{stateLabel(server)}
-												</span>
-											),
-										},
-										{
-											label: 'Tools',
-											value: server.connected
-												? `${server.toolCount} discovered`
-												: '—',
-										},
-										{
-											label: 'Added',
-											value: formatTimestamp(server.createdAt),
-										},
-										{
-											label: 'Updated',
-											value: formatTimestamp(server.updatedAt),
-										},
-									]}
-								/>
-
-								<div mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Server URL</span>
-									<code
-										mix={css({
-											padding: spacing.sm,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.border}`,
-											backgroundColor: colors.background,
-											color: colors.text,
-											fontFamily: 'monospace',
-											fontSize: typography.fontSize.sm,
-											overflowWrap: 'anywhere',
-										})}
-									>
-										{server.url}
-									</code>
-								</div>
-
-								{server.error ? (
-									<AccountManagementMessage tone="error">
-										{server.error}
-									</AccountManagementMessage>
-								) : null}
-
-								{server.state === 'authenticating' && !server.authUrl ? (
-									<AccountManagementMessage tone="error">
-										Authorization is incomplete and no authorization link is
-										available. Click Reconnect to restart OAuth, or remove and
-										add the server again.
-									</AccountManagementMessage>
-								) : null}
-
-								{server.authUrl && server.state === 'authenticating' ? (
-									<div
-										mix={css({
-											display: 'grid',
-											gap: spacing.sm,
-											padding: spacing.md,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.primary}`,
-											backgroundColor: colors.primarySoftest,
-										})}
-									>
-										<span mix={css({ color: colors.text })}>
-											This server requires OAuth authorization before its tools
-											become available.
-										</span>
-										<div>
-											<a
-												href={server.authUrl}
-												mix={css({
-													...primaryButtonCss,
-													display: 'inline-block',
-													textDecoration: 'none',
-												})}
-											>
-												Authorize {server.name}
-											</a>
-										</div>
-									</div>
-								) : null}
-
-								{server.connected && server.tools.length > 0 ? (
 									<div mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Discovered tools</span>
-										<ul
+										<span mix={css(fieldLabelCss)}>Server URL</span>
+										<code
 											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
+												padding: spacing.sm,
+												borderRadius: radius.md,
+												border: `1px solid ${colors.border}`,
+												backgroundColor: colors.background,
 												color: colors.text,
-												display: 'grid',
-												gap: spacing.xs,
+												fontFamily: 'monospace',
+												fontSize: typography.fontSize.sm,
+												overflowWrap: 'anywhere',
 											})}
 										>
-											{server.tools.map((tool) => (
-												<li key={tool}>
-													<code
-														mix={css({
-															fontFamily: 'monospace',
-															fontSize: typography.fontSize.sm,
-														})}
-													>
-														{tool}
-													</code>
-												</li>
-											))}
-										</ul>
+											{server.url}
+										</code>
 									</div>
-								) : null}
 
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-									})}
-								>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () =>
-												postAction({
-													body: { action: 'reconnect', id: server.id },
-													successMessage: () => 'Reconnect requested.',
-													failureMessage: 'Unable to reconnect MCP server.',
-												}),
-											),
-											css(primaryButtonCss),
-										]}
+									{server.error ? (
+										<AccountManagementMessage tone="error">
+											{server.error}
+										</AccountManagementMessage>
+									) : null}
+
+									{server.state === 'authenticating' && !server.authUrl ? (
+										<AccountManagementMessage tone="error">
+											Authorization is incomplete and no authorization link is
+											available. Click Reconnect to restart OAuth, or remove and
+											add the server again.
+										</AccountManagementMessage>
+									) : null}
+
+									{server.authUrl && server.state === 'authenticating' ? (
+										<div
+											mix={css({
+												display: 'grid',
+												gap: spacing.sm,
+												padding: spacing.md,
+												borderRadius: radius.md,
+												border: `1px solid ${colors.primary}`,
+												backgroundColor: colors.primarySoftest,
+											})}
+										>
+											<span mix={css({ color: colors.text })}>
+												This server requires OAuth authorization before its
+												tools become available.
+											</span>
+											<div>
+												<a
+													href={server.authUrl}
+													mix={css({
+														...primaryButtonCss,
+														display: 'inline-block',
+														textDecoration: 'none',
+													})}
+												>
+													Authorize {server.name}
+												</a>
+											</div>
+										</div>
+									) : null}
+
+									{server.connected && server.tools.length > 0 ? (
+										<div mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Discovered tools</span>
+											<ul
+												mix={css({
+													margin: 0,
+													paddingLeft: spacing.lg,
+													color: colors.text,
+													display: 'grid',
+													gap: spacing.xs,
+												})}
+											>
+												{server.tools.map((tool) => (
+													<li key={tool}>
+														<code
+															mix={css({
+																fontFamily: 'monospace',
+																fontSize: typography.fontSize.sm,
+															})}
+														>
+															{tool}
+														</code>
+													</li>
+												))}
+											</ul>
+										</div>
+									) : null}
+
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											flexWrap: 'wrap',
+										})}
 									>
-										Reconnect
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () =>
-												postAction({
-													body: { action: 'refresh', id: server.id },
-													successMessage: () => 'Refreshed server tools.',
-													failureMessage: 'Unable to refresh MCP server tools.',
-												}),
-											),
-											css(secondaryButtonCss),
-										]}
-									>
-										Refresh tools
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () =>
-												postAction({
-													body: {
-														action: 'set-enabled',
-														id: server.id,
-														enabled: !server.enabled,
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () =>
+													postAction({
+														body: { action: 'reconnect', id: server.id },
+														successMessage: () => 'Reconnect requested.',
+														failureMessage: 'Unable to reconnect MCP server.',
+													}),
+												),
+												css(primaryButtonCss),
+											]}
+										>
+											Reconnect
+										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () =>
+													postAction({
+														body: { action: 'refresh', id: server.id },
+														successMessage: () => 'Refreshed server tools.',
+														failureMessage:
+															'Unable to refresh MCP server tools.',
+													}),
+												),
+												css(secondaryButtonCss),
+											]}
+										>
+											Refresh tools
+										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () =>
+													postAction({
+														body: {
+															action: 'set-enabled',
+															id: server.id,
+															enabled: !server.enabled,
+														},
+														successMessage: () =>
+															server.enabled
+																? 'Disabled MCP server.'
+																: 'Enabled MCP server.',
+														failureMessage: 'Unable to update MCP server.',
+													}),
+												),
+												css(secondaryButtonCss),
+											]}
+										>
+											{server.enabled ? 'Disable' : 'Enable'}
+										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												...deleteServerCheck.getButtonMix({
+													on: {
+														click: () =>
+															void postAction({
+																body: { action: 'delete', id: server.id },
+																successMessage: () => 'Removed MCP server.',
+																failureMessage: 'Unable to remove MCP server.',
+																afterSuccess: () => {
+																	navigate(
+																		mcpServersRoute.buildListHref(
+																			getCurrentSearch(),
+																		),
+																	)
+																},
+															}),
 													},
-													successMessage: () =>
-														server.enabled
-															? 'Disabled MCP server.'
-															: 'Enabled MCP server.',
-													failureMessage: 'Unable to update MCP server.',
+													resetAfterAction: false,
 												}),
-											),
-											css(secondaryButtonCss),
-										]}
+												css(dangerButtonCss),
+											]}
+										>
+											{deleteServerCheck.doubleCheck
+												? 'Confirm remove'
+												: 'Remove'}
+										</button>
+									</div>
+								</section>
+							) : showServerNotFound ? (
+								<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+									<h2
+										mix={css({
+											margin: 0,
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+											color: colors.text,
+										})}
 									>
-										{server.enabled ? 'Disable' : 'Enable'}
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											...deleteServerCheck.getButtonMix({
-												on: {
-													click: () =>
-														void postAction({
-															body: { action: 'delete', id: server.id },
-															successMessage: () => 'Removed MCP server.',
-															failureMessage: 'Unable to remove MCP server.',
-															afterSuccess: () => {
-																navigate(
-																	mcpServersRoute.buildListHref(
-																		getCurrentSearch(),
-																	),
-																)
-															},
-														}),
-												},
-												resetAfterAction: false,
-											}),
-											css(dangerButtonCss),
-										]}
-									>
-										{deleteServerCheck.doubleCheck
-											? 'Confirm remove'
-											: 'Remove'}
-									</button>
+										Server not found
+									</h2>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										This MCP server does not exist for this account or is
+										unavailable.
+									</p>
 								</div>
-							</section>
-						) : showServerNotFound ? (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Server not found
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This MCP server does not exist for this account or is
-									unavailable.
-								</p>
-							</div>
-						) : (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select a server
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick an MCP server from the list to inspect it, or add a new
-									one.
-								</p>
-							</div>
-						)}
-					</AccountManagementLayout>
+							) : null
+						}
+					/>
 				) : null}
 			</AccountManagementShell>
 		)

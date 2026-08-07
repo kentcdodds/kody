@@ -18,15 +18,19 @@ import {
 } from '#client/route-loader.ts'
 import {
 	accountManagementNarrowMq,
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
+	IdValue,
 	MetadataGrid,
+	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
+import {
+	RecordTable,
+	RecordTableSelect,
+	recordBodyCss,
+	recordStampCss,
+} from '#client/routes/record-table.tsx'
 import {
 	type AccountActivityLoaderData,
 	type AccountActivityRunDetail,
@@ -39,16 +43,25 @@ import {
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
-	cardCss,
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
 	getGhostButtonCss,
-	getSelectCss,
 } from '#client/styles/style-primitives.ts'
 
-const selectCss = getSelectCss()
+/**
+ * Run names and error messages are arbitrary length, and a table cell will
+ * not shrink below its content, so the clamp lives on a block inside it.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '30ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 
 const activityErrorReviewPrompt = [
 	'Look at my open Kody activity errors.',
@@ -449,7 +462,6 @@ export function AccountActivityRoute(handle: Handle) {
 			surfaceFilter === 'all' &&
 			triageFilter === 'open' &&
 			runs.length === 0
-		const emptyBecauseFilters = runs.length === 0 && !emptyBecauseErrors
 		const readySummary = status === 'ready' ? summary : null
 
 		return (
@@ -558,461 +570,385 @@ export function AccountActivityRoute(handle: Handle) {
 							})}
 						>
 							Successful ad-hoc execute runs are not recorded (only failures
-							are). Run records are kept for about {retentionDays} days.
+							are). Run records are kept for about {retentionDays} days. The
+							default view shows open errors; ignored and resolved runs stay
+							hidden until you change the triage filter.
 						</p>
 
-						<AccountManagementLayout
-							sidebarWidth="minmax(18rem, 26rem)"
-							narrowOrder={
-								selection.selectedId ? 'detail-first' : 'sidebar-first'
+						{showRunNotFound ? (
+							<AccountManagementMessage tone="error">
+								This run does not exist for this account, or it has aged out of
+								the retention window.
+							</AccountManagementMessage>
+						) : null}
+
+						<RecordTable
+							mode="expand"
+							ariaLabel="Activity runs"
+							selectedId={selection.selectedId}
+							onNavigate={() => setMessage(null)}
+							emptyLabel={
+								emptyBecauseErrors
+									? 'No failures in the last 7 days. That is good news — when something breaks, it will show up here with its logs.'
+									: 'No runs match the current filters.'
 							}
-							sidebar={
-								<AccountManagementSidebar
-									title="Runs"
-									description="Default view shows open errors. Ignored/resolved noise is hidden until you change triage."
-								>
-									<div
+							toolbar={
+								<>
+									<RecordTableSelect
+										label="Status filter"
+										value={statusFilter}
+										onChange={(value) => {
+											if (
+												value !== 'error' &&
+												value !== 'all' &&
+												value !== 'running'
+											) {
+												return
+											}
+											updateFilters({ status: value })
+										}}
+									>
+										{statusFilterOptions.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</RecordTableSelect>
+									<RecordTableSelect
+										label="Surface filter"
+										value={surfaceFilter}
+										onChange={(rawValue) => {
+											const value = rawValue as AccountActivitySurfaceFilter
+											if (
+												!surfaceFilterOptions.some(
+													(option) => option.value === value,
+												)
+											) {
+												return
+											}
+											updateFilters({ surface: value })
+										}}
+									>
+										{surfaceFilterOptions.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</RecordTableSelect>
+									<RecordTableSelect
+										label="Triage filter"
+										value={triageFilter}
+										onChange={(rawValue) => {
+											const value = rawValue as AccountActivityTriageFilter
+											if (
+												!triageFilterOptions.some(
+													(option) => option.value === value,
+												)
+											) {
+												return
+											}
+											updateFilters({ triage: value })
+										}}
+									>
+										{triageFilterOptions.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</RecordTableSelect>
+								</>
+							}
+							columns={[
+								{ key: 'name', label: 'Run', primary: true },
+								{ key: 'surface', label: 'Surface', drop: 3 },
+								{ key: 'status', label: 'Status' },
+								{ key: 'error', label: 'Error', drop: 1 },
+								{ key: 'started', label: 'Started', drop: 2 },
+								{ key: 'duration', label: 'Duration', align: 'end' },
+							]}
+							rows={runs.map((item) => ({
+								id: item.id,
+								href: activityRoute.buildDetailHref(item.id, filterSearch),
+								cells: {
+									name: (
+										<span mix={clampedCellCss}>{runDisplayName(item)}</span>
+									),
+									surface: surfaceLabel(item.surface),
+									status: (
+										<span mix={css({ color: statusColor(item.status) })}>
+											{statusLabel(item.status)}
+										</span>
+									),
+									error: item.errorMessage ? (
+										<span mix={[clampedCellCss, css({ color: colors.error })]}>
+											{item.errorMessage}
+										</span>
+									) : null,
+									started: (
+										<span mix={css(recordStampCss)}>
+											{formatTimestamp(item.startedAt)}
+										</span>
+									),
+									duration: (
+										<span mix={css(recordStampCss)}>
+											{formatDurationMs(item.durationMs)}
+										</span>
+									),
+								},
+							}))}
+							footer={
+								nextCursor ? (
+									<button
+										type="button"
+										disabled={loadingMore}
+										mix={[
+											on('click', () => void loadMoreRuns()),
+											css({ ...secondaryButtonCss, width: '100%' }),
+										]}
+									>
+										{loadingMore ? 'Loading more…' : 'Load more'}
+									</button>
+								) : null
+							}
+							record={
+								detail ? (
+									<section
 										mix={css({
-											display: 'grid',
-											gap: spacing.sm,
-											gridTemplateColumns: '1fr 1fr',
-											[accountManagementNarrowMq]: {
-												gridTemplateColumns: '1fr',
-											},
+											...recordBodyCss,
+											overflowWrap: 'anywhere',
+											'& > *': { minWidth: 0 },
 										})}
 									>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Status</span>
-											<select
-												data-field-ring
-												aria-label="Status filter"
-												value={statusFilter}
-												mix={[
-													on('change', (event) => {
-														const value = event.currentTarget.value
-														if (
-															value !== 'error' &&
-															value !== 'all' &&
-															value !== 'running'
-														) {
-															return
-														}
-														updateFilters({ status: value })
-													}),
-													css(selectCss),
-												]}
-											>
-												{statusFilterOptions.map((option) => (
-													<option key={option.value} value={option.value}>
-														{option.label}
-													</option>
-												))}
-											</select>
-										</label>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Surface</span>
-											<select
-												data-field-ring
-												aria-label="Surface filter"
-												value={surfaceFilter}
-												mix={[
-													on('change', (event) => {
-														const value = event.currentTarget
-															.value as AccountActivitySurfaceFilter
-														if (
-															!surfaceFilterOptions.some(
-																(option) => option.value === value,
-															)
-														) {
-															return
-														}
-														updateFilters({ surface: value })
-													}),
-													css(selectCss),
-												]}
-											>
-												{surfaceFilterOptions.map((option) => (
-													<option key={option.value} value={option.value}>
-														{option.label}
-													</option>
-												))}
-											</select>
-										</label>
-										<label mix={[css(fieldCss), css({ gridColumn: '1 / -1' })]}>
-											<span mix={css(fieldLabelCss)}>Triage</span>
-											<select
-												data-field-ring
-												aria-label="Triage filter"
-												value={triageFilter}
-												mix={[
-													on('change', (event) => {
-														const value = event.currentTarget
-															.value as AccountActivityTriageFilter
-														if (
-															!triageFilterOptions.some(
-																(option) => option.value === value,
-															)
-														) {
-															return
-														}
-														updateFilters({ triage: value })
-													}),
-													css(selectCss),
-												]}
-											>
-												{triageFilterOptions.map((option) => (
-													<option key={option.value} value={option.value}>
-														{option.label}
-													</option>
-												))}
-											</select>
-										</label>
-									</div>
-
-									{emptyBecauseErrors ? (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											No failures in the last 7 days. That is good news — when
-											something breaks, it will show up here with its logs.
-										</p>
-									) : emptyBecauseFilters ? (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											No runs match the current filters.
-										</p>
-									) : (
-										<>
-											<AccountManagementList>
-												{runs.map((item) => (
-													<li key={item.id}>
-														<AccountManagementListItemLink
-															href={activityRoute.buildDetailHref(
-																item.id,
-																filterSearch,
-															)}
-															active={selection.selectedId === item.id}
-															onNavigate={() => setMessage(null)}
-														>
-															<span
-																mix={css({
-																	display: 'flex',
-																	gap: spacing.sm,
-																	alignItems: 'center',
-																	justifyContent: 'space-between',
-																	minWidth: 0,
-																})}
-															>
-																<strong
-																	mix={css({
-																		minWidth: 0,
-																		overflow: 'hidden',
-																		textOverflow: 'ellipsis',
-																		whiteSpace: 'nowrap',
-																	})}
-																>
-																	{runDisplayName(item)}
-																</strong>
-																<span
-																	mix={css({
-																		flexShrink: 0,
-																		fontSize: typography.fontSize.xs,
-																		color: colors.textMuted,
-																		border: `1px solid ${colors.border}`,
-																		borderRadius: radius.md,
-																		padding: `0 ${spacing.sm}`,
-																		lineHeight: '1.4rem',
-																	})}
-																>
-																	{surfaceLabel(item.surface)}
-																</span>
-															</span>
-															<span
-																mix={css({
-																	color: statusColor(item.status),
-																	fontSize: typography.fontSize.sm,
-																})}
-															>
-																{statusLabel(item.status)}
-																{' · '}
-																{formatTimestamp(item.startedAt)}
-																{' · '}
-																{formatDurationMs(item.durationMs)}
-															</span>
-															{item.errorMessage ? (
-																<span
-																	mix={css({
-																		color: colors.error,
-																		fontSize: typography.fontSize.sm,
-																		overflow: 'hidden',
-																		textOverflow: 'ellipsis',
-																		whiteSpace: 'nowrap',
-																	})}
-																>
-																	{item.errorMessage}
-																</span>
-															) : null}
-														</AccountManagementListItemLink>
-													</li>
-												))}
-											</AccountManagementList>
-											{nextCursor ? (
-												<button
-													type="button"
-													disabled={loadingMore}
-													mix={[
-														on('click', () => void loadMoreRuns()),
-														css(secondaryButtonCss),
-													]}
-												>
-													{loadingMore ? 'Loading more…' : 'Load more'}
-												</button>
-											) : null}
-										</>
-									)}
-								</AccountManagementSidebar>
-							}
-						>
-							{detail ? (
-								<section
-									mix={css({
-										...cardCss,
-										minWidth: 0,
-										overflowWrap: 'anywhere',
-										'& > *': { minWidth: 0 },
-									})}
-								>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>{runDisplayName(detail)}</h2>
-										<p mix={css(descriptionCss)}>
-											{surfaceLabel(detail.surface)} run with{' '}
-											{detail.logCount === 1
-												? '1 captured log line'
-												: `${detail.logCount} captured log lines`}
-											.
-										</p>
-									</div>
-
-									<MetadataGrid
-										items={[
-											{
-												label: 'Status',
-												value: (
-													<span
-														mix={css({ color: statusColor(detail.status) })}
-													>
-														{statusLabel(detail.status)}
-													</span>
-												),
-											},
-											{
-												label: 'Triage',
-												value: triageLabel(detail),
-											},
-											{
-												label: 'Triage note',
-												value: detail.triageNote ?? '—',
-											},
-											{
-												label: 'Triaged at',
-												value: detail.triagedAt
-													? formatTimestamp(detail.triagedAt)
-													: '—',
-											},
-											{
-												label: 'Triaged by',
-												value: detail.triagedBy ?? '—',
-											},
-											{
-												label: 'Surface',
-												value: surfaceLabel(detail.surface),
-											},
-											{
-												label: 'Started',
-												value: formatTimestamp(detail.startedAt),
-											},
-											{
-												label: 'Finished',
-												value: detail.finishedAt
-													? formatTimestamp(detail.finishedAt)
-													: '—',
-											},
-											{
-												label: 'Duration',
-												value: formatDurationMs(detail.durationMs),
-											},
-											{
-												label: 'Package id',
-												value: detail.packageId ?? '—',
-											},
-											{
-												label: 'Job id',
-												value: detail.jobId ?? '—',
-											},
-											{
-												label: 'Workflow id',
-												value: detail.workflowId ?? '—',
-											},
-											{
-												label: 'Storage id',
-												value: detail.storageId ?? '—',
-											},
-											{
-												label: 'Source id',
-												value: detail.sourceId ?? '—',
-											},
-											{
-												label: 'Published commit',
-												value: detail.publishedCommit ?? '—',
-											},
-											{
-												label: 'Run id',
-												value: detail.id,
-											},
-										]}
-									/>
-
-									{detail.errorMessage ? (
-										<AccountManagementMessage tone="error">
-											{detail.errorName
-												? `${detail.errorName}: ${detail.errorMessage}`
-												: detail.errorMessage}
-										</AccountManagementMessage>
-									) : null}
-
-									<div mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Logs</span>
-										{detail.logs.length === 0 ? (
-											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												No log lines were captured for this run.
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<h2 mix={css(cardTitleCss)}>{runDisplayName(detail)}</h2>
+											<p mix={css(descriptionCss)}>
+												{surfaceLabel(detail.surface)} run with{' '}
+												{detail.logCount === 1
+													? '1 captured log line'
+													: `${detail.logCount} captured log lines`}
+												.
 											</p>
-										) : (
-											<pre
-												mix={css({
-													margin: 0,
-													padding: spacing.md,
-													borderRadius: radius.md,
-													border: `1px solid ${colors.border}`,
-													backgroundColor: colors.background,
-													color: colors.text,
-													fontFamily:
-														'ui-monospace, SFMono-Regular, Menlo, monospace',
-													fontSize: typography.fontSize.sm,
-													overflowX: 'auto',
-													whiteSpace: 'pre-wrap',
-													overflowWrap: 'anywhere',
-													display: 'grid',
-													gap: spacing.xs,
-												})}
-											>
-												{detail.logs.map((entry) => (
-													<span
-														key={`${entry.sequence}-${entry.level}`}
-														mix={css({
-															display: 'grid',
-															gridTemplateColumns: '4.5rem minmax(0, 1fr)',
-															gap: spacing.sm,
-															color: logLevelColor(entry.level),
-															[accountManagementNarrowMq]: {
-																gridTemplateColumns: 'minmax(0, 1fr)',
-																gap: spacing.xs,
-															},
-														})}
-													>
-														<span
-															mix={css({
-																color: colors.textMuted,
-																textTransform: 'uppercase',
-																fontSize: typography.fontSize.xs,
-																lineHeight: '1.5rem',
-															})}
-														>
-															{entry.level}
-														</span>
-														<span>{entry.message}</span>
-													</span>
-												))}
-											</pre>
-										)}
-									</div>
+										</div>
 
-									{Object.keys(detail.metadata).length > 0 ? (
+										<MetadataGrid
+											items={[
+												{
+													label: 'Status',
+													value: (
+														<span
+															mix={css({ color: statusColor(detail.status) })}
+														>
+															{statusLabel(detail.status)}
+														</span>
+													),
+												},
+												{
+													label: 'Triage',
+													value: triageLabel(detail),
+												},
+												{
+													label: 'Triage note',
+													value: detail.triageNote ?? '—',
+												},
+												{
+													label: 'Triaged at',
+													value: <TimestampValue value={detail.triagedAt} />,
+												},
+												{
+													label: 'Triaged by',
+													value: detail.triagedBy ?? '—',
+												},
+												{
+													label: 'Surface',
+													value: surfaceLabel(detail.surface),
+												},
+												{
+													label: 'Started',
+													value: <TimestampValue value={detail.startedAt} />,
+												},
+												{
+													label: 'Finished',
+													value: <TimestampValue value={detail.finishedAt} />,
+												},
+												{
+													label: 'Duration',
+													value: formatDurationMs(detail.durationMs),
+												},
+												{
+													label: 'Package id',
+													value: detail.packageId ? (
+														<IdValue
+															value={detail.packageId}
+															label="package id"
+														/>
+													) : (
+														'—'
+													),
+												},
+												{
+													label: 'Job id',
+													value: detail.jobId ? (
+														<IdValue value={detail.jobId} label="job id" />
+													) : (
+														'—'
+													),
+												},
+												{
+													label: 'Workflow id',
+													value: detail.workflowId ? (
+														<IdValue
+															value={detail.workflowId}
+															label="workflow id"
+														/>
+													) : (
+														'—'
+													),
+												},
+												{
+													label: 'Storage id',
+													value: detail.storageId ? (
+														<IdValue
+															value={detail.storageId}
+															label="storage id"
+														/>
+													) : (
+														'—'
+													),
+												},
+												{
+													label: 'Source id',
+													value: detail.sourceId ? (
+														<IdValue
+															value={detail.sourceId}
+															label="source id"
+														/>
+													) : (
+														'—'
+													),
+												},
+												{
+													label: 'Published commit',
+													value: detail.publishedCommit ? (
+														<IdValue
+															value={detail.publishedCommit}
+															label="published commit"
+														/>
+													) : (
+														'—'
+													),
+												},
+												{
+													label: 'Run id',
+													value: <IdValue value={detail.id} label="run id" />,
+												},
+											]}
+										/>
+
+										{detail.errorMessage ? (
+											<AccountManagementMessage tone="error">
+												{detail.errorName
+													? `${detail.errorName}: ${detail.errorMessage}`
+													: detail.errorMessage}
+											</AccountManagementMessage>
+										) : null}
+
 										<div mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Metadata</span>
-											<div
-												mix={css({
-													minWidth: 0,
-													'& pre': {
+											<span mix={css(fieldLabelCss)}>Logs</span>
+											{detail.logs.length === 0 ? (
+												<p mix={css({ margin: 0, color: colors.textMuted })}>
+													No log lines were captured for this run.
+												</p>
+											) : (
+												<pre
+													mix={css({
 														margin: 0,
-														padding: spacing.sm,
+														padding: spacing.md,
 														borderRadius: radius.md,
 														border: `1px solid ${colors.border}`,
+														backgroundColor: colors.background,
+														color: colors.text,
 														fontFamily:
 															'ui-monospace, SFMono-Regular, Menlo, monospace',
 														fontSize: typography.fontSize.sm,
 														overflowX: 'auto',
 														whiteSpace: 'pre-wrap',
 														overflowWrap: 'anywhere',
-													},
-												})}
-											>
-												{renderHighlightedCode(
-													JSON.stringify(detail.metadata, null, 2),
-													'json',
-												)}
-											</div>
+														display: 'grid',
+														gap: spacing.xs,
+													})}
+												>
+													{detail.logs.map((entry) => (
+														<span
+															key={`${entry.sequence}-${entry.level}`}
+															mix={css({
+																display: 'grid',
+																gridTemplateColumns: '4.5rem minmax(0, 1fr)',
+																gap: spacing.sm,
+																color: logLevelColor(entry.level),
+																[accountManagementNarrowMq]: {
+																	gridTemplateColumns: 'minmax(0, 1fr)',
+																	gap: spacing.xs,
+																},
+															})}
+														>
+															<span
+																mix={css({
+																	color: colors.textMuted,
+																	textTransform: 'uppercase',
+																	fontSize: typography.fontSize.xs,
+																	lineHeight: '1.5rem',
+																})}
+															>
+																{entry.level}
+															</span>
+															<span>{entry.message}</span>
+														</span>
+													))}
+												</pre>
+											)}
 										</div>
-									) : null}
-								</section>
-							) : waitingForDetail ? (
-								<div mix={css({ ...cardCss, gap: spacing.sm })}>
-									<h2
+
+										{Object.keys(detail.metadata).length > 0 ? (
+											<div mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>Metadata</span>
+												<div
+													mix={css({
+														minWidth: 0,
+														'& pre': {
+															margin: 0,
+															padding: spacing.sm,
+															borderRadius: radius.md,
+															border: `1px solid ${colors.border}`,
+															fontFamily:
+																'ui-monospace, SFMono-Regular, Menlo, monospace',
+															fontSize: typography.fontSize.sm,
+															overflowX: 'auto',
+															whiteSpace: 'pre-wrap',
+															overflowWrap: 'anywhere',
+														},
+													})}
+												>
+													{renderHighlightedCode(
+														JSON.stringify(detail.metadata, null, 2),
+														'json',
+													)}
+												</div>
+											</div>
+										) : null}
+									</section>
+								) : waitingForDetail ? (
+									<p
 										mix={css({
+											...recordBodyCss,
 											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
+											color: colors.textMuted,
 										})}
 									>
-										{listMatch ? runDisplayName(listMatch) : 'Loading run'}
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Loading run details...
+										Loading run details…
 									</p>
-								</div>
-							) : showRunNotFound ? (
-								<div mix={css({ ...cardCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										Run not found
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										This run does not exist for this account, or it has aged out
-										of the retention window.
-									</p>
-								</div>
-							) : (
-								<div mix={css({ ...cardCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										Select a run
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Pick a run from the list to inspect metadata and captured
-										logs.
-									</p>
-								</div>
-							)}
-						</AccountManagementLayout>
+								) : null
+							}
+						/>
 					</>
 				) : null}
 			</AccountManagementShell>

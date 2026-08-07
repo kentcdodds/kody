@@ -47,8 +47,10 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	// (regression: absolute placeholder-origin URLs caused "Failed to fetch").
 	await page.getByRole('link', { name: 'Secrets', exact: true }).click()
 	await expect(page).toHaveURL(/\/account\/secrets$/)
+	// The list is a named region; it replaced the sidebar heading that used to
+	// carry this name, and it is present whether or not the account has rows.
 	await expect(
-		page.getByRole('heading', { name: 'Saved secrets', exact: true }),
+		page.getByRole('region', { name: 'Saved secrets', exact: true }),
 	).toBeVisible()
 	await expect(page.getByText('Failed to fetch')).not.toBeVisible()
 

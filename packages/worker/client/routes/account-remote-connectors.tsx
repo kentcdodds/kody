@@ -19,16 +19,17 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import {
+	RecordDot,
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+} from '#client/routes/record-table.tsx'
 import {
 	colors,
 	radius,
@@ -38,7 +39,6 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import {
-	cardCss,
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
@@ -48,6 +48,19 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
+
+/**
+ * Connector URLs are arbitrary length, and a table cell will not shrink
+ * below its content, so the clamp lives on a block inside the cell.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '26ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 import { writeClipboardText } from '#client/clipboard.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-connectors.ts'
@@ -794,397 +807,398 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<AccountManagementLayout
-						sidebarWidth="minmax(18rem, 24rem)"
-						sidebar={
-							<AccountManagementSidebar
-								title="Configured connectors"
-								description="Enabled and attached entries are included in your standard MCP and chat caller context."
-							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search connectors"
-									value={search}
-									onInput={(value) => {
-										replaceLocation(buildHrefWithUpdatedSearch(value))
-									}}
-								/>
-								{connectors.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No remote connectors yet. Create one to get started.
-									</p>
-								) : filteredConnectors.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No connectors match the current filters.
-									</p>
-								) : (
-									<AccountManagementList>
-										{filteredConnectors.map((connector) => (
-											<li key={connector.id}>
-												<AccountManagementListItemLink
-													href={remoteConnectorsRoute.buildDetailHref(
-														connector.id,
-														getCurrentSearch(),
-													)}
-													active={selection.selectedId === connector.id}
-													disabled={isMutating}
-													onNavigate={() => selectConnector(connector)}
-												>
-													<strong>{connectorLabel(connector)}</strong>
-													<span
-														mix={css({
-															color: colors.textMuted,
-															fontSize: typography.fontSize.sm,
-														})}
-													>
-														{connector.enabled ? 'Enabled' : 'Disabled'} ·{' '}
-														{connector.attached ? 'Attached' : 'Not attached'} ·{' '}
-														{connector.hasSharedSecret
-															? 'Secret saved'
-															: 'Missing secret'}
-													</span>
-												</AccountManagementListItemLink>
-											</li>
-										))}
-									</AccountManagementList>
-								)}
-							</AccountManagementSidebar>
+					<RecordTable
+						mode="pane"
+						ariaLabel="Configured remote connectors"
+						selectedId={selection.selectedId}
+						countLabel={`${filteredConnectors.length} of ${connectors.length} shown`}
+						emptyLabel={
+							connectors.length === 0
+								? 'No remote connectors yet. Create one to get started.'
+								: 'No connectors match the current filters.'
 						}
-					>
-						{showEditor ? (
-							<form
-								method="post"
-								noValidate
-								{...passwordManagerIgnoreProps}
-								mix={[
-									on('submit', (event) => {
-										event.preventDefault()
-										if (event.currentTarget instanceof HTMLFormElement) {
-											void saveConnector(event.currentTarget)
-										}
-									}),
-									css(cardCss),
-								]}
-							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
-									<p mix={css(descriptionCss)}>
-										Connector names are explicit, user-chosen, and unique across
-										your account. The shared secret is loaded into the password
-										field for editing.
-									</p>
-								</div>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Connector name</span>
-									<input
-										data-field-ring
-										name="instanceId"
-										type="text"
-										value={editorState.instanceId}
-										placeholder="home"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												editorState = {
-													...editorState,
-													instanceId: event.currentTarget.value,
-												}
-												handle.update()
-											}),
-											css(accountInputCss),
-										]}
+						toolbar={
+							<RecordTableSearch
+								label="Search connectors"
+								placeholder="Search connectors"
+								value={search}
+								onInput={(value) => {
+									replaceLocation(buildHrefWithUpdatedSearch(value))
+								}}
+							/>
+						}
+						columns={[
+							{ key: 'name', label: 'Connector', primary: true },
+							{ key: 'enabled', label: 'Enabled' },
+							{ key: 'attached', label: 'Attached' },
+							{ key: 'secret', label: 'Secret' },
+							{ key: 'url', label: 'URL', drop: 1 },
+						]}
+						rows={filteredConnectors.map((connector) => ({
+							id: connector.id,
+							// A save or delete is in flight; the editor below owns the
+							// selection until it settles.
+							href: isMutating
+								? undefined
+								: remoteConnectorsRoute.buildDetailHref(
+										connector.id,
+										getCurrentSearch(),
+									),
+							cells: {
+								name: connectorLabel(connector),
+								enabled: (
+									<RecordDot
+										active={connector.enabled}
+										title={connector.enabled ? 'Enabled' : 'Disabled'}
 									/>
-								</label>
-								<div mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Connector URL</span>
-									{connectorUrl ? (
+								),
+								attached: (
+									<RecordDot
+										active={connector.attached}
+										title={connector.attached ? 'Attached' : 'Not attached'}
+									/>
+								),
+								secret: (
+									<RecordDot
+										active={connector.hasSharedSecret}
+										title={
+											connector.hasSharedSecret
+												? 'Secret saved'
+												: 'Missing secret'
+										}
+									/>
+								),
+								url: <span mix={clampedCellCss}>{connector.connectorUrl}</span>,
+							},
+						}))}
+						onNavigate={(connectorId) => {
+							const connector = filteredConnectors.find(
+								(entry) => entry.id === connectorId,
+							)
+							if (connector) selectConnector(connector)
+						}}
+						record={
+							showEditor ? (
+								<form
+									method="post"
+									noValidate
+									{...passwordManagerIgnoreProps}
+									mix={[
+										on('submit', (event) => {
+											event.preventDefault()
+											if (event.currentTarget instanceof HTMLFormElement) {
+												void saveConnector(event.currentTarget)
+											}
+										}),
+										css(recordBodyCss),
+									]}
+								>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
+										<p mix={css(descriptionCss)}>
+											Connector names are explicit, user-chosen, and unique
+											across your account. The shared secret is loaded into the
+											password field for editing.
+										</p>
+									</div>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Connector name</span>
+										<input
+											data-field-ring
+											name="instanceId"
+											type="text"
+											value={editorState.instanceId}
+											placeholder="home"
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													editorState = {
+														...editorState,
+														instanceId: event.currentTarget.value,
+													}
+													handle.update()
+												}),
+												css(accountInputCss),
+											]}
+										/>
+									</label>
+									<div mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Connector URL</span>
+										{connectorUrl ? (
+											<div
+												mix={css({
+													display: 'flex',
+													gap: spacing.sm,
+													alignItems: 'stretch',
+													flexWrap: 'wrap',
+												})}
+											>
+												<code
+													mix={css({
+														flex: '1 1 22rem',
+														minWidth: 0,
+														padding: spacing.sm,
+														borderRadius: radius.md,
+														border: `1px solid ${colors.border}`,
+														backgroundColor: colors.background,
+														color: colors.text,
+														fontFamily: 'monospace',
+														fontSize: typography.fontSize.sm,
+														overflowWrap: 'anywhere',
+													})}
+												>
+													{connectorUrl}
+												</code>
+												<CopyToClipboard
+													key={connectorUrl}
+													url={connectorUrl}
+												/>
+											</div>
+										) : (
+											<p mix={css(descriptionCss)}>
+												Enter a connector name to build the connector WebSocket
+												URL.
+											</p>
+										)}
+										<p mix={css(descriptionCss)}>
+											Includes your username <code>{username}</code> so
+											connector sessions stay isolated to your account.
+										</p>
+									</div>
+									<div mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>
+											Shared secret
+											{editorState.hasSharedSecret ? ' (saved)' : ''}
+										</span>
 										<div
 											mix={css({
 												display: 'flex',
 												gap: spacing.sm,
-												alignItems: 'stretch',
+												alignItems: 'center',
 												flexWrap: 'wrap',
 											})}
 										>
-											<code
+											<div
 												mix={css({
-													flex: '1 1 22rem',
+													position: 'relative',
+													flex: '1 1 18rem',
 													minWidth: 0,
-													padding: spacing.sm,
-													borderRadius: radius.md,
-													border: `1px solid ${colors.border}`,
-													backgroundColor: colors.background,
-													color: colors.text,
-													fontFamily: 'monospace',
-													fontSize: typography.fontSize.sm,
-													overflowWrap: 'anywhere',
 												})}
 											>
-												{connectorUrl}
-											</code>
-											<CopyToClipboard key={connectorUrl} url={connectorUrl} />
+												{showSharedSecret ? (
+													<input
+														data-field-ring
+														name="sharedSecret"
+														aria-label="Shared secret"
+														type="text"
+														value={editorState.sharedSecret}
+														placeholder="Connector hello shared secret"
+														{...passwordManagerIgnoreProps}
+														disabled={isMutating}
+														mix={[
+															on('input', (event) => {
+																setSharedSecret(event.currentTarget.value)
+																handle.update()
+															}),
+															css({
+																...accountInputCss,
+																paddingRight: '3rem',
+															}),
+														]}
+													/>
+												) : (
+													<input
+														data-field-ring
+														name="sharedSecret"
+														aria-label="Shared secret"
+														type="password"
+														value={editorState.sharedSecret}
+														placeholder="Connector hello shared secret"
+														{...passwordManagerIgnoreProps}
+														disabled={isMutating}
+														mix={[
+															on('input', (event) => {
+																setSharedSecret(event.currentTarget.value)
+																handle.update()
+															}),
+															css({
+																...accountInputCss,
+																paddingRight: '3rem',
+															}),
+														]}
+													/>
+												)}
+												<button
+													type="button"
+													aria-label={
+														showSharedSecret
+															? 'Hide shared secret'
+															: 'Show shared secret'
+													}
+													title={
+														showSharedSecret
+															? 'Hide shared secret'
+															: 'Show shared secret'
+													}
+													disabled={isMutating || !editorState.sharedSecret}
+													mix={[
+														on('click', () => {
+															showSharedSecret = !showSharedSecret
+															handle.update()
+														}),
+														css(iconButtonCss),
+													]}
+												>
+													{EyeIcon({ showSecret: showSharedSecret })}
+												</button>
+											</div>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', generateConnectorSecret),
+													css(secondaryButtonCss),
+												]}
+											>
+												Generate
+											</button>
 										</div>
-									) : (
-										<p mix={css(descriptionCss)}>
-											Enter a connector name to build the connector WebSocket
-											URL.
-										</p>
-									)}
-									<p mix={css(descriptionCss)}>
-										Includes your username <code>{username}</code> so connector
-										sessions stay isolated to your account.
-									</p>
-								</div>
-								<div mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>
-										Shared secret
-										{editorState.hasSharedSecret ? ' (saved)' : ''}
-									</span>
+									</div>
+									<label
+										mix={css({
+											display: 'flex',
+											alignItems: 'flex-start',
+											gap: spacing.sm,
+											color: colors.text,
+										})}
+									>
+										<input
+											name="enabled"
+											type="checkbox"
+											role="switch"
+											checked={editorState.enabled}
+											aria-checked={editorState.enabled}
+											disabled={isMutating}
+											mix={[
+												css(switchCss),
+												on('change', (event) => {
+													editorState = {
+														...editorState,
+														enabled: event.currentTarget.checked,
+													}
+													handle.update()
+												}),
+											]}
+										/>
+										<span>
+											<strong>Enabled</strong>
+											<br />
+											<span mix={css({ color: colors.textMuted })}>
+												Allow this connector secret to authenticate websocket
+												hello messages.
+											</span>
+										</span>
+									</label>
+									<label
+										mix={css({
+											display: 'flex',
+											alignItems: 'flex-start',
+											gap: spacing.sm,
+											color: colors.text,
+										})}
+									>
+										<input
+											name="attached"
+											type="checkbox"
+											role="switch"
+											checked={editorState.attached}
+											aria-checked={editorState.attached}
+											disabled={isMutating || !editorState.enabled}
+											mix={[
+												css(switchCss),
+												on('change', (event) => {
+													if (!editorState.enabled) {
+														event.currentTarget.checked = editorState.attached
+														return
+													}
+													editorState = {
+														...editorState,
+														attached: event.currentTarget.checked,
+													}
+													handle.update()
+												}),
+											]}
+										/>
+										<span>
+											<strong>Attach to normal Kody context</strong>
+											<br />
+											<span mix={css({ color: colors.textMuted })}>
+												Include this ref in regular MCP and chat sessions for
+												capability search, execution, and status checks.
+											</span>
+										</span>
+									</label>
+
+									{isEditing ? (
+										<div
+											mix={css({
+												color: colors.textMuted,
+												fontSize: typography.fontSize.sm,
+											})}
+										>
+											Last updated{' '}
+											{formatTimestamp(selectedConnector?.updatedAt ?? '')}
+										</div>
+									) : null}
+
 									<div
 										mix={css({
 											display: 'flex',
 											gap: spacing.sm,
-											alignItems: 'center',
 											flexWrap: 'wrap',
 										})}
 									>
-										<div
-											mix={css({
-												position: 'relative',
-												flex: '1 1 18rem',
-												minWidth: 0,
-											})}
+										<button
+											type="submit"
+											disabled={isMutating}
+											mix={css(primaryButtonCss)}
 										>
-											{showSharedSecret ? (
-												<input
-													data-field-ring
-													name="sharedSecret"
-													aria-label="Shared secret"
-													type="text"
-													value={editorState.sharedSecret}
-													placeholder="Connector hello shared secret"
-													{...passwordManagerIgnoreProps}
-													disabled={isMutating}
-													mix={[
-														on('input', (event) => {
-															setSharedSecret(event.currentTarget.value)
-															handle.update()
-														}),
-														css({
-															...accountInputCss,
-															paddingRight: '3rem',
-														}),
-													]}
-												/>
-											) : (
-												<input
-													data-field-ring
-													name="sharedSecret"
-													aria-label="Shared secret"
-													type="password"
-													value={editorState.sharedSecret}
-													placeholder="Connector hello shared secret"
-													{...passwordManagerIgnoreProps}
-													disabled={isMutating}
-													mix={[
-														on('input', (event) => {
-															setSharedSecret(event.currentTarget.value)
-															handle.update()
-														}),
-														css({
-															...accountInputCss,
-															paddingRight: '3rem',
-														}),
-													]}
-												/>
-											)}
+											{saveState === 'saving' ? 'Saving...' : 'Save connector'}
+										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[on('click', resetEditor), css(secondaryButtonCss)]}
+										>
+											Reset form
+										</button>
+										{isEditing ? (
 											<button
 												type="button"
-												aria-label={
-													showSharedSecret
-														? 'Hide shared secret'
-														: 'Show shared secret'
-												}
-												title={
-													showSharedSecret
-														? 'Hide shared secret'
-														: 'Show shared secret'
-												}
-												disabled={isMutating || !editorState.sharedSecret}
+												disabled={isMutating}
 												mix={[
-													on('click', () => {
-														showSharedSecret = !showSharedSecret
-														handle.update()
+													...deleteConnectorCheck.getButtonMix({
+														on: {
+															click: () => void deleteConnector(),
+														},
 													}),
-													css(iconButtonCss),
+													css(dangerButtonCss),
 												]}
 											>
-												{EyeIcon({ showSecret: showSharedSecret })}
+												{saveState === 'deleting'
+													? 'Deleting...'
+													: deleteConnectorCheck.doubleCheck
+														? 'Confirm delete'
+														: 'Delete'}
 											</button>
-										</div>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', generateConnectorSecret),
-												css(secondaryButtonCss),
-											]}
-										>
-											Generate
-										</button>
+										) : null}
 									</div>
-								</div>
-								<label
-									mix={css({
-										display: 'flex',
-										alignItems: 'flex-start',
-										gap: spacing.sm,
-										color: colors.text,
-									})}
-								>
-									<input
-										name="enabled"
-										type="checkbox"
-										role="switch"
-										checked={editorState.enabled}
-										aria-checked={editorState.enabled}
-										disabled={isMutating}
-										mix={[
-											css(switchCss),
-											on('change', (event) => {
-												editorState = {
-													...editorState,
-													enabled: event.currentTarget.checked,
-												}
-												handle.update()
-											}),
-										]}
-									/>
-									<span>
-										<strong>Enabled</strong>
-										<br />
-										<span mix={css({ color: colors.textMuted })}>
-											Allow this connector secret to authenticate websocket
-											hello messages.
-										</span>
-									</span>
-								</label>
-								<label
-									mix={css({
-										display: 'flex',
-										alignItems: 'flex-start',
-										gap: spacing.sm,
-										color: colors.text,
-									})}
-								>
-									<input
-										name="attached"
-										type="checkbox"
-										role="switch"
-										checked={editorState.attached}
-										aria-checked={editorState.attached}
-										disabled={isMutating || !editorState.enabled}
-										mix={[
-											css(switchCss),
-											on('change', (event) => {
-												if (!editorState.enabled) {
-													event.currentTarget.checked = editorState.attached
-													return
-												}
-												editorState = {
-													...editorState,
-													attached: event.currentTarget.checked,
-												}
-												handle.update()
-											}),
-										]}
-									/>
-									<span>
-										<strong>Attach to normal Kody context</strong>
-										<br />
-										<span mix={css({ color: colors.textMuted })}>
-											Include this ref in regular MCP and chat sessions for
-											capability search, execution, and status checks.
-										</span>
-									</span>
-								</label>
-
-								{isEditing ? (
-									<div
-										mix={css({
-											color: colors.textMuted,
-											fontSize: typography.fontSize.sm,
-										})}
-									>
-										Last updated{' '}
-										{formatTimestamp(selectedConnector?.updatedAt ?? '')}
-									</div>
-								) : null}
-
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-									})}
-								>
-									<button
-										type="submit"
-										disabled={isMutating}
-										mix={css(primaryButtonCss)}
-									>
-										{saveState === 'saving' ? 'Saving...' : 'Save connector'}
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[on('click', resetEditor), css(secondaryButtonCss)]}
-									>
-										Reset form
-									</button>
-									{isEditing ? (
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												...deleteConnectorCheck.getButtonMix({
-													on: {
-														click: () => void deleteConnector(),
-													},
-												}),
-												css(dangerButtonCss),
-											]}
-										>
-											{saveState === 'deleting'
-												? 'Deleting...'
-												: deleteConnectorCheck.doubleCheck
-													? 'Confirm delete'
-													: 'Delete'}
-										</button>
-									) : null}
-								</div>
-							</form>
-						) : (
-							<div mix={css({ display: 'grid', gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select a connector
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick a connector from the list to edit it, or create a new
-									one.
-								</p>
-							</div>
-						)}
-					</AccountManagementLayout>
+								</form>
+							) : null
+						}
+					/>
 				) : null}
 			</AccountManagementShell>
 		)

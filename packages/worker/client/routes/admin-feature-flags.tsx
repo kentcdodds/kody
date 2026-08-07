@@ -21,7 +21,9 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
+	IdValue,
 	MetadataGrid,
+	TimestampValue,
 	accountInputCss,
 } from './account-management-components.tsx'
 import {
@@ -406,7 +408,6 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 									{flag.metricReadout?.status === 'ok' ? (
 										<>
 											<MetadataGrid
-												columns={3}
 												items={[
 													{
 														label: 'On cohort',
@@ -559,18 +560,27 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 								</div>
 								{flag.global ? (
 									<MetadataGrid
-										columns={3}
 										items={[
 											{
 												label: 'Last updated',
-												value: formatNullableTimestamp(flag.global.updatedAt),
+												value: (
+													<TimestampValue
+														value={flag.global.updatedAt}
+														fallback="Never"
+													/>
+												),
 											},
 											{
 												label: 'Updated by',
 												value:
-													flag.global.updatedByStableUserId == null
-														? 'Unknown'
-														: flag.global.updatedByStableUserId,
+													flag.global.updatedByStableUserId == null ? (
+														'Unknown'
+													) : (
+														<IdValue
+															value={flag.global.updatedByStableUserId}
+															label="updater id"
+														/>
+													),
 											},
 											{
 												label: 'Note',

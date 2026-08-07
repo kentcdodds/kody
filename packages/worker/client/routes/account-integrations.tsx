@@ -25,16 +25,16 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import {
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+} from '#client/routes/record-table.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
 	buildCustomIntegrationSetupPrompt,
@@ -43,18 +43,10 @@ import {
 } from '#client/routes/integration-provider-catalog.ts'
 import {
 	filterIntegrations,
-	groupIntegrationsByApp,
 	integrationDisplayName,
-	oauthAppDisplayName,
 } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
-import {
-	colors,
-	radius,
-	spacing,
-	transitions,
-	typography,
-} from '#client/styles/tokens.ts'
+import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -67,7 +59,6 @@ import {
 	fieldLabelCss,
 	getDangerPillCss,
 	getPillButtonCss,
-	hoverMq,
 	insetCardCss,
 	primaryLinkCss,
 	sectionTitleCss,
@@ -129,12 +120,18 @@ const providerCatalogGridCss = {
 	gap: spacing.lg,
 }
 
-const truncatedTextCss = {
+/**
+ * Names, slugs, and connection keys are arbitrary length, and a table cell
+ * will not shrink below its content, so the clamp lives on a block inside.
+ */
+const clampedCellCss = css({
+	display: 'block',
 	minWidth: 0,
+	maxWidth: '26ch',
 	overflow: 'hidden',
 	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap',
-} as const
+})
 
 /**
  * Latch key for the list payload. Selection segments and the client-side `q`
@@ -418,12 +415,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				: 'Add another service: copy a prompt into your agent.'
 		const filteredIntegrations = filterIntegrations(integrations, search)
 		const filteredApps = filterOauthApps(apps, search)
-		const connectionAppSlugs = new Set(
-			filteredIntegrations.map((integration) => integration.appSlug),
-		)
-		const connectionlessApps = filteredApps.filter(
-			(app) => app.connectionCount === 0 && !connectionAppSlugs.has(app.slug),
-		)
 		const selectedIntegration =
 			selectedAppSlug == null
 				? (integrations.find(
@@ -452,8 +443,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const connectHref = selectedIntegration
 			? buildConnectOauthHref(selectedIntegration)
 			: null
-		const hasSidebarMatches =
-			filteredIntegrations.length > 0 || connectionlessApps.length > 0
 
 		return (
 			<AccountManagementShell>
@@ -477,662 +466,541 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<AccountManagementLayout
-						sidebarWidth="minmax(18rem, 24rem)"
-						sidebar={
-							<AccountManagementSidebar
-								title="Connected integrations"
-								description="Select a connection or open its shared OAuth app to view status, reconnect, or rotate client credentials."
-							>
-								<AccountManagementSearchField
-									label="Search"
+					<>
+						{/*
+						 * The sidebar nested connections under their OAuth app. A table
+						 * has no second level, so the grouping becomes two tables and an
+						 * App column — apps are a short list you pick from, connections
+						 * are the long list you scan, and each keeps its own selection.
+						 */}
+						<RecordTable
+							mode="pane"
+							ariaLabel="OAuth apps"
+							selectedId={selectedAppSlug}
+							countLabel={`${filteredApps.length} of ${apps.length} apps`}
+							emptyLabel={
+								apps.length === 0
+									? 'No OAuth apps yet. Copy a setup prompt below to get started.'
+									: 'No OAuth apps match the current filters.'
+							}
+							toolbar={
+								<RecordTableSearch
+									label="Search integrations"
 									placeholder="Search names, hosts, scopes, or client IDs"
 									value={search}
 									onInput={(value) => {
 										replaceLocation(buildHrefWithUpdatedSearch(value))
 									}}
 								/>
-								{integrations.length === 0 && apps.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No integrations yet. Copy a setup prompt below to get
-										started.
-									</p>
-								) : !hasSidebarMatches ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No integrations match the current filters.
-									</p>
-								) : (
-									<div mix={css({ display: 'grid', gap: spacing.md })}>
-										{groupIntegrationsByApp(filteredIntegrations).map(
-											(group) => {
-												const appTitle = oauthAppDisplayName(group)
-												const showAppHeader = group.connections.length > 1
-												const appActive = selectedAppSlug === group.appSlug
-												return (
-													<div
-														key={group.appSlug}
-														mix={css({ display: 'grid', gap: spacing.xs })}
-													>
-														<a
-															href={buildOauthAppHref(
-																group.appSlug,
-																getCurrentSearch(),
-															)}
-															data-prevent-scroll-reset
-															mix={css({
-																display: 'grid',
-																gap: spacing.xs,
-																padding: `${spacing.xs} ${spacing.sm}`,
-																border: 'none',
-																borderRadius: radius.md,
-																backgroundColor: appActive
-																	? colors.primarySoftest
-																	: 'transparent',
-																color: colors.text,
-																textAlign: 'left',
-																textDecoration: 'none',
-																cursor: 'pointer',
-																transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
-																// Selecting a connection swaps the panel
-																// beside this list, which is easy to miss —
-																// the press itself has to register.
-																'&:active': { scale: '0.98' },
-																[hoverMq]: {
-																	'&:hover': {
-																		backgroundColor: colors.primarySoftest,
-																	},
-																},
-																'@media (prefers-reduced-motion: reduce)': {
-																	'&:active': { scale: 'none' },
-																},
-															})}
-														>
-															<strong
-																mix={css({
-																	...truncatedTextCss,
-																	fontSize: typography.fontSize.sm,
-																	color: colors.text,
-																})}
-															>
-																{appTitle}
-															</strong>
-															<span
-																mix={css({
-																	fontSize: typography.fontSize.sm,
-																	color: colors.textMuted,
-																})}
-															>
-																{showAppHeader
-																	? `${group.connections.length} connections · shared OAuth app`
-																	: 'OAuth app'}
-															</span>
-														</a>
-														<AccountManagementList>
-															{group.connections.map((integration) => (
-																<li
-																	key={integration.name}
-																	mix={css({ minWidth: 0 })}
-																>
-																	<AccountManagementListItemLink
-																		href={integrationsRoute.buildDetailHref(
-																			integration.name,
-																			getCurrentSearch(),
-																		)}
-																		active={
-																			selection.selectedId === integration.name
-																		}
-																	>
-																		<strong
-																			mix={css({
-																				...truncatedTextCss,
-																				display: 'block',
-																			})}
-																		>
-																			{integrationDisplayName(integration)}
-																		</strong>
-																		<span
-																			mix={css({
-																				...truncatedTextCss,
-																				display: 'block',
-																				fontSize: typography.fontSize.sm,
-																				color: colors.textMuted,
-																			})}
-																		>
-																			{connectionStatusLabel(integration)} ·{' '}
-																			{integration.flow}
-																		</span>
-																		{showAppHeader ? (
-																			<span
-																				mix={css({
-																					...truncatedTextCss,
-																					display: 'block',
-																					fontSize: typography.fontSize.sm,
-																					color: colors.textMuted,
-																				})}
-																			>
-																				{integration.name}
-																			</span>
-																		) : (
-																			<span
-																				mix={css({
-																					...truncatedTextCss,
-																					display: 'block',
-																					fontSize: typography.fontSize.sm,
-																					color: colors.textMuted,
-																				})}
-																			>
-																				{appTitle}
-																			</span>
-																		)}
-																	</AccountManagementListItemLink>
-																</li>
-															))}
-														</AccountManagementList>
-													</div>
-												)
-											},
-										)}
-										{connectionlessApps.map((app) => (
-											<div
-												key={app.slug}
-												mix={css({ display: 'grid', gap: spacing.xs })}
-											>
-												<a
-													href={buildOauthAppHref(app.slug, getCurrentSearch())}
-													data-prevent-scroll-reset
-													mix={css({
-														display: 'grid',
-														gap: spacing.xs,
-														padding: `${spacing.xs} ${spacing.sm}`,
-														border: 'none',
-														borderRadius: radius.md,
-														backgroundColor:
-															selectedAppSlug === app.slug
-																? colors.primarySoftest
-																: 'transparent',
-														color: colors.text,
-														textAlign: 'left',
-														textDecoration: 'none',
-														cursor: 'pointer',
-														transition: `background-color ${transitions.fast}, scale ${transitions.fast}`,
-														// Selecting an app swaps the panel beside this
-														// list, which is easy to miss — the press itself
-														// has to register.
-														'&:active': { scale: '0.98' },
-														[hoverMq]: {
-															'&:hover': {
-																backgroundColor: colors.primarySoftest,
-															},
-														},
-														'@media (prefers-reduced-motion: reduce)': {
-															'&:active': { scale: 'none' },
-														},
-													})}
-												>
-													<strong
-														mix={css({
-															...truncatedTextCss,
-															fontSize: typography.fontSize.sm,
-															color: colors.text,
-														})}
-													>
-														{oauthAppTitle(app)}
-													</strong>
-													<span
-														mix={css({
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-														})}
-													>
-														OAuth app · no connections yet
-													</span>
-												</a>
-											</div>
-										))}
-									</div>
-								)}
-							</AccountManagementSidebar>
-						}
-					>
-						{selectedApp ? (
-							<section mix={css(cardCss)}>
-								<header
-									mix={css({
-										display: 'flex',
-										alignItems: 'flex-start',
-										justifyContent: 'space-between',
-										gap: spacing.md,
-									})}
-								>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>
-											{oauthAppTitle(selectedApp)}
-										</h2>
-										<p mix={css(descriptionCss)}>
-											Shared OAuth app <code>{selectedApp.slug}</code>
-											{selectedApp.connections.length > 0
-												? ` · ${selectedApp.connections.length} connection${selectedApp.connections.length === 1 ? '' : 's'}`
-												: ' · no connections yet'}
-										</p>
-									</div>
-									<span
-										mix={css({
-											width: 'max-content',
-											padding: `${spacing.xs} ${spacing.sm}`,
-											borderRadius: radius.full,
-											backgroundColor: colors.primarySoftest,
-											color: colors.primaryText,
-											fontSize: typography.fontSize.sm,
-											fontWeight: typography.fontWeight.medium,
-										})}
-									>
-										{selectedApp.flow}
-									</span>
-								</header>
-
-								<section mix={css(detailGridCss)}>
-									{renderIntegrationDetail('Provider', selectedApp.provider)}
-									{renderIntegrationDetail('Slug', selectedApp.slug)}
-									{renderIntegrationDetail(
-										'Label',
-										formatOptional(selectedApp.label),
-									)}
-									{renderIntegrationDetail('Client ID', selectedApp.clientId)}
-									{renderIntegrationDetail(
-										'Client-secret secret name',
-										formatOptional(selectedApp.clientSecretSecretName),
-									)}
-									{renderIntegrationDetail('Token URL', selectedApp.tokenUrl)}
-									{renderIntegrationDetail(
-										'Authorize URL',
-										formatOptional(selectedApp.authorizeUrl),
-									)}
-									{renderIntegrationDetail(
-										'API base URL',
-										formatOptional(selectedApp.apiBaseUrl),
-									)}
-									{renderIntegrationDetail('Flow', selectedApp.flow)}
-									{renderIntegrationDetail(
-										'PKCE',
-										selectedApp.usePkce == null
-											? selectedApp.flow === 'pkce'
-												? 'Default on'
-												: 'Default off'
-											: selectedApp.usePkce
-												? 'Enabled'
-												: 'Disabled',
-									)}
-									{renderIntegrationDetail(
-										'Token exchange style',
-										formatOptional(selectedApp.tokenExchangeStyle),
-									)}
-									{renderIntegrationDetail(
-										'Created',
-										formatTimestamp(selectedApp.createdAt),
-									)}
-									{renderIntegrationDetail(
-										'Updated',
-										formatTimestamp(selectedApp.updatedAt),
-									)}
-								</section>
-
-								<section mix={css(insetCardCss)}>
-									<h3 mix={css(sectionTitleCss)}>Connections using this app</h3>
-									{selectedApp.connections.length === 0 ? (
-										<p mix={css(descriptionCss)}>
-											No connections yet. Finish connect setup for a provider
-											that uses this app, or reconnect from a connection detail
-											page.
-										</p>
-									) : (
-										<ul
-											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
-												display: 'grid',
-												gap: spacing.xs,
-											})}
-										>
-											{selectedApp.connections.map((connection) => (
-												<li key={connection.name}>
-													<a
-														href={integrationsRoute.buildDetailHref(
-															connection.name,
-															getCurrentSearch(),
-														)}
-														data-prevent-scroll-reset
-														mix={css(primaryLinkCss)}
-													>
-														{connection.accountLabel?.trim() || connection.name}
-													</a>
-													{connection.accountLabel?.trim() ? (
-														<span
-															mix={css({
-																color: colors.textMuted,
-																fontSize: typography.fontSize.sm,
-															})}
-														>
-															{' '}
-															(<code>{connection.name}</code>)
-														</span>
-													) : null}
-												</li>
-											))}
-										</ul>
-									)}
-								</section>
-
-								<section mix={css(insetCardCss)}>
-									<h3 mix={css(sectionTitleCss)}>Rotate client credentials</h3>
-									<p mix={css(descriptionCss)}>
-										Rotating credentials updates this shared OAuth app once.
-										Every connection below will use the new client id and client
-										secret on the next authorize or token exchange.
-									</p>
-									{selectedApp.connections.length > 0 ? (
-										<ul
-											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
-												display: 'grid',
-												gap: spacing.xs,
-												color: colors.text,
-											})}
-										>
-											{selectedApp.connections.map((connection) => (
-												<li key={`rotate-${connection.name}`}>
-													{connection.accountLabel?.trim() || connection.name} (
-													<code>{connection.name}</code>)
-												</li>
-											))}
-										</ul>
-									) : (
-										<p mix={css(descriptionCss)}>
-											No connections currently share these credentials.
-										</p>
-									)}
-									{rotateMessage ? (
-										<AccountManagementMessage tone={rotateMessageTone}>
-											{rotateMessage}
-										</AccountManagementMessage>
-									) : null}
-									<form
-										mix={[
-											on('submit', (event) => {
-												event.preventDefault()
-												void submitRotateCredentials(selectedApp)
-											}),
-											css({
-												display: 'grid',
-												gap: spacing.md,
-												marginTop: spacing.sm,
-											}),
-										]}
-									>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>
-												Client ID (optional to keep current)
+							}
+							columns={[
+								{ key: 'name', label: 'OAuth app', primary: true },
+								{ key: 'provider', label: 'Provider', drop: 2 },
+								{ key: 'slug', label: 'Slug', drop: 1 },
+								{
+									key: 'connections',
+									label: 'Connections',
+									align: 'end',
+								},
+							]}
+							rows={filteredApps.map((app) => ({
+								id: app.slug,
+								href: buildOauthAppHref(app.slug, getCurrentSearch()),
+								cells: {
+									name: oauthAppTitle(app),
+									provider: app.provider || '—',
+									slug: <span mix={clampedCellCss}>{app.slug}</span>,
+									connections: String(app.connectionCount),
+								},
+							}))}
+						/>
+						<RecordTable
+							mode="pane"
+							ariaLabel="Connections"
+							selectedId={selectedAppSlug == null ? selection.selectedId : null}
+							countLabel={`${filteredIntegrations.length} of ${integrations.length} connections`}
+							emptyLabel={
+								integrations.length === 0
+									? 'No connections yet. Copy a setup prompt below to get started.'
+									: 'No connections match the current filters.'
+							}
+							columns={[
+								{ key: 'name', label: 'Connection', primary: true },
+								{ key: 'app', label: 'OAuth app', drop: 2 },
+								{ key: 'status', label: 'Status' },
+								{ key: 'flow', label: 'Flow', drop: 3 },
+								{ key: 'key', label: 'Key', drop: 1 },
+							]}
+							rows={filteredIntegrations.map((integration) => {
+								const app = apps.find(
+									(entry) => entry.slug === integration.appSlug,
+								)
+								return {
+									id: integration.name,
+									href: integrationsRoute.buildDetailHref(
+										integration.name,
+										getCurrentSearch(),
+									),
+									cells: {
+										name: (
+											<span mix={clampedCellCss}>
+												{integrationDisplayName(integration)}
 											</span>
-											<input
-												type="text"
-												data-field-ring
-												name="oauthAppClientId"
-												value={rotateClientId}
-												{...passwordManagerIgnoreProps}
-												mix={[
-													on('input', (event) => {
-														rotateClientId = event.currentTarget.value
-														handle.update()
-													}),
-													css(accountInputCss),
-												]}
-											/>
-										</label>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>New client secret</span>
-											<input
-												type="password"
-												data-field-ring
-												name="oauthAppClientSecret"
-												value={rotateClientSecret}
-												{...passwordManagerIgnoreProps}
-												mix={[
-													on('input', (event) => {
-														rotateClientSecret = event.currentTarget.value
-														handle.update()
-													}),
-													css(accountInputCss),
-												]}
-											/>
-										</label>
-										<label
+										),
+										app: app ? oauthAppTitle(app) : integration.appSlug,
+										status: connectionStatusLabel(integration),
+										flow: integration.flow,
+										key: <span mix={clampedCellCss}>{integration.name}</span>,
+									},
+								}
+							})}
+							record={
+								selectedApp ? (
+									<section mix={css(recordBodyCss)}>
+										<header
 											mix={css({
 												display: 'flex',
 												alignItems: 'flex-start',
-												gap: spacing.sm,
-												color: colors.text,
-												fontSize: typography.fontSize.sm,
+												justifyContent: 'space-between',
+												gap: spacing.md,
 											})}
 										>
-											<input
-												type="checkbox"
-												checked={rotateConfirmed}
-												mix={on('change', (event) => {
-													rotateConfirmed = event.currentTarget.checked
-													handle.update()
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h2 mix={css(cardTitleCss)}>
+													{oauthAppTitle(selectedApp)}
+												</h2>
+												<p mix={css(descriptionCss)}>
+													Shared OAuth app <code>{selectedApp.slug}</code>
+													{selectedApp.connections.length > 0
+														? ` · ${selectedApp.connections.length} connection${selectedApp.connections.length === 1 ? '' : 's'}`
+														: ' · no connections yet'}
+												</p>
+											</div>
+											<span
+												mix={css({
+													width: 'max-content',
+													padding: `${spacing.xs} ${spacing.sm}`,
+													borderRadius: radius.full,
+													backgroundColor: colors.primarySoftest,
+													color: colors.primaryText,
+													fontSize: typography.fontSize.sm,
+													fontWeight: typography.fontWeight.medium,
 												})}
-											/>
-											<span>
-												I understand this updates credentials for
-												{selectedApp.connections.length === 0
-													? ' this OAuth app'
-													: selectedApp.connections.length === 1
-														? ' 1 connection that shares this OAuth app'
-														: ` all ${selectedApp.connections.length} connections that share this OAuth app`}
-												.
+											>
+												{selectedApp.flow}
 											</span>
-										</label>
-										<div>
-											<button
-												type="submit"
-												disabled={rotateStatus === 'saving' || !rotateConfirmed}
-												mix={css(dangerButtonCss)}
+										</header>
+
+										<section mix={css(detailGridCss)}>
+											{renderIntegrationDetail(
+												'Provider',
+												selectedApp.provider,
+											)}
+											{renderIntegrationDetail('Slug', selectedApp.slug)}
+											{renderIntegrationDetail(
+												'Label',
+												formatOptional(selectedApp.label),
+											)}
+											{renderIntegrationDetail(
+												'Client ID',
+												selectedApp.clientId,
+											)}
+											{renderIntegrationDetail(
+												'Client-secret secret name',
+												formatOptional(selectedApp.clientSecretSecretName),
+											)}
+											{renderIntegrationDetail(
+												'Token URL',
+												selectedApp.tokenUrl,
+											)}
+											{renderIntegrationDetail(
+												'Authorize URL',
+												formatOptional(selectedApp.authorizeUrl),
+											)}
+											{renderIntegrationDetail(
+												'API base URL',
+												formatOptional(selectedApp.apiBaseUrl),
+											)}
+											{renderIntegrationDetail('Flow', selectedApp.flow)}
+											{renderIntegrationDetail(
+												'PKCE',
+												selectedApp.usePkce == null
+													? selectedApp.flow === 'pkce'
+														? 'Default on'
+														: 'Default off'
+													: selectedApp.usePkce
+														? 'Enabled'
+														: 'Disabled',
+											)}
+											{renderIntegrationDetail(
+												'Token exchange style',
+												formatOptional(selectedApp.tokenExchangeStyle),
+											)}
+											{renderIntegrationDetail(
+												'Created',
+												formatTimestamp(selectedApp.createdAt),
+											)}
+											{renderIntegrationDetail(
+												'Updated',
+												formatTimestamp(selectedApp.updatedAt),
+											)}
+										</section>
+
+										<section mix={css(insetCardCss)}>
+											<h3 mix={css(sectionTitleCss)}>
+												Connections using this app
+											</h3>
+											{selectedApp.connections.length === 0 ? (
+												<p mix={css(descriptionCss)}>
+													No connections yet. Finish connect setup for a
+													provider that uses this app, or reconnect from a
+													connection detail page.
+												</p>
+											) : (
+												<ul
+													mix={css({
+														margin: 0,
+														paddingLeft: spacing.lg,
+														display: 'grid',
+														gap: spacing.xs,
+													})}
+												>
+													{selectedApp.connections.map((connection) => (
+														<li key={connection.name}>
+															<a
+																href={integrationsRoute.buildDetailHref(
+																	connection.name,
+																	getCurrentSearch(),
+																)}
+																data-prevent-scroll-reset
+																mix={css(primaryLinkCss)}
+															>
+																{connection.accountLabel?.trim() ||
+																	connection.name}
+															</a>
+															{connection.accountLabel?.trim() ? (
+																<span
+																	mix={css({
+																		color: colors.textMuted,
+																		fontSize: typography.fontSize.sm,
+																	})}
+																>
+																	{' '}
+																	(<code>{connection.name}</code>)
+																</span>
+															) : null}
+														</li>
+													))}
+												</ul>
+											)}
+										</section>
+
+										<section mix={css(insetCardCss)}>
+											<h3 mix={css(sectionTitleCss)}>
+												Rotate client credentials
+											</h3>
+											<p mix={css(descriptionCss)}>
+												Rotating credentials updates this shared OAuth app once.
+												Every connection below will use the new client id and
+												client secret on the next authorize or token exchange.
+											</p>
+											{selectedApp.connections.length > 0 ? (
+												<ul
+													mix={css({
+														margin: 0,
+														paddingLeft: spacing.lg,
+														display: 'grid',
+														gap: spacing.xs,
+														color: colors.text,
+													})}
+												>
+													{selectedApp.connections.map((connection) => (
+														<li key={`rotate-${connection.name}`}>
+															{connection.accountLabel?.trim() ||
+																connection.name}{' '}
+															(<code>{connection.name}</code>)
+														</li>
+													))}
+												</ul>
+											) : (
+												<p mix={css(descriptionCss)}>
+													No connections currently share these credentials.
+												</p>
+											)}
+											{rotateMessage ? (
+												<AccountManagementMessage tone={rotateMessageTone}>
+													{rotateMessage}
+												</AccountManagementMessage>
+											) : null}
+											<form
+												mix={[
+													on('submit', (event) => {
+														event.preventDefault()
+														void submitRotateCredentials(selectedApp)
+													}),
+													css({
+														display: 'grid',
+														gap: spacing.md,
+														marginTop: spacing.sm,
+													}),
+												]}
 											>
-												{rotateStatus === 'saving'
-													? 'Rotating...'
-													: 'Rotate credentials'}
-											</button>
-										</div>
-									</form>
-								</section>
-							</section>
-						) : selectedIntegration ? (
-							<section mix={css(cardCss)}>
-								<header
-									mix={css({
-										display: 'flex',
-										alignItems: 'flex-start',
-										justifyContent: 'space-between',
-										gap: spacing.md,
-									})}
-								>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>
-											{integrationDisplayName(selectedIntegration)}
-										</h2>
-										<p mix={css(descriptionCss)}>
-											Connection <code>{selectedIntegration.name}</code> on
-											OAuth app{' '}
-											<a
-												href={buildOauthAppHref(
-													selectedIntegration.appSlug,
-													getCurrentSearch(),
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>
+														Client ID (optional to keep current)
+													</span>
+													<input
+														type="text"
+														data-field-ring
+														name="oauthAppClientId"
+														value={rotateClientId}
+														{...passwordManagerIgnoreProps}
+														mix={[
+															on('input', (event) => {
+																rotateClientId = event.currentTarget.value
+																handle.update()
+															}),
+															css(accountInputCss),
+														]}
+													/>
+												</label>
+												<label mix={css(fieldCss)}>
+													<span mix={css(fieldLabelCss)}>
+														New client secret
+													</span>
+													<input
+														type="password"
+														data-field-ring
+														name="oauthAppClientSecret"
+														value={rotateClientSecret}
+														{...passwordManagerIgnoreProps}
+														mix={[
+															on('input', (event) => {
+																rotateClientSecret = event.currentTarget.value
+																handle.update()
+															}),
+															css(accountInputCss),
+														]}
+													/>
+												</label>
+												<label
+													mix={css({
+														display: 'flex',
+														alignItems: 'flex-start',
+														gap: spacing.sm,
+														color: colors.text,
+														fontSize: typography.fontSize.sm,
+													})}
+												>
+													<input
+														type="checkbox"
+														checked={rotateConfirmed}
+														mix={on('change', (event) => {
+															rotateConfirmed = event.currentTarget.checked
+															handle.update()
+														})}
+													/>
+													<span>
+														I understand this updates credentials for
+														{selectedApp.connections.length === 0
+															? ' this OAuth app'
+															: selectedApp.connections.length === 1
+																? ' 1 connection that shares this OAuth app'
+																: ` all ${selectedApp.connections.length} connections that share this OAuth app`}
+														.
+													</span>
+												</label>
+												<div>
+													<button
+														type="submit"
+														disabled={
+															rotateStatus === 'saving' || !rotateConfirmed
+														}
+														mix={css(dangerButtonCss)}
+													>
+														{rotateStatus === 'saving'
+															? 'Rotating...'
+															: 'Rotate credentials'}
+													</button>
+												</div>
+											</form>
+										</section>
+									</section>
+								) : selectedIntegration ? (
+									<section mix={css(recordBodyCss)}>
+										<header
+											mix={css({
+												display: 'flex',
+												alignItems: 'flex-start',
+												justifyContent: 'space-between',
+												gap: spacing.md,
+											})}
+										>
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h2 mix={css(cardTitleCss)}>
+													{integrationDisplayName(selectedIntegration)}
+												</h2>
+												<p mix={css(descriptionCss)}>
+													Connection <code>{selectedIntegration.name}</code> on
+													OAuth app{' '}
+													<a
+														href={buildOauthAppHref(
+															selectedIntegration.appSlug,
+															getCurrentSearch(),
+														)}
+														mix={css(primaryLinkCss)}
+													>
+														<code>{selectedIntegration.appSlug}</code>
+													</a>
+													{selectedAppConnectionCount > 1
+														? ` · ${selectedAppConnectionCount} connections share this app`
+														: ''}
+												</p>
+											</div>
+											<span
+												mix={css({
+													width: 'max-content',
+													padding: `${spacing.xs} ${spacing.sm}`,
+													borderRadius: radius.full,
+													backgroundColor: colors.primarySoftest,
+													color: colors.primaryText,
+													fontSize: typography.fontSize.sm,
+													fontWeight: typography.fontWeight.medium,
+												})}
+											>
+												{selectedIntegration.flow}
+											</span>
+										</header>
+
+										<section mix={css(detailGridCss)}>
+											{renderIntegrationDetail(
+												'Token URL',
+												selectedIntegration.tokenUrl,
+											)}
+											{renderIntegrationDetail(
+												'API base URL',
+												formatOptional(selectedIntegration.apiBaseUrl),
+											)}
+											{renderIntegrationDetail(
+												'Authorize URL',
+												formatOptional(
+													selectedIntegration.authorization?.authorizeUrl,
+												),
+											)}
+											{renderIntegrationDetail(
+												'Scopes',
+												formatList(selectedIntegration.authorization?.scopes),
+											)}
+										</section>
+
+										<section mix={css(insetCardCss)}>
+											<h3 mix={css(sectionTitleCss)}>OAuth app & secrets</h3>
+											<div mix={css(detailGridCss)}>
+												{renderIntegrationDetail(
+													'Client ID',
+													selectedIntegration.clientId,
 												)}
-												mix={css(primaryLinkCss)}
+												{renderIntegrationDetail(
+													'Client secret',
+													formatOptional(
+														selectedIntegration.clientSecretSecretName,
+													),
+												)}
+												{renderIntegrationDetail(
+													'Access token secret',
+													selectedIntegration.accessTokenSecretName,
+												)}
+												{renderIntegrationDetail(
+													'Refresh token secret',
+													formatOptional(
+														selectedIntegration.refreshTokenSecretName,
+													),
+												)}
+											</div>
+											<p
+												mix={css({ ...descriptionCss, marginTop: spacing.sm })}
 											>
-												<code>{selectedIntegration.appSlug}</code>
-											</a>
-											{selectedAppConnectionCount > 1
-												? ` · ${selectedAppConnectionCount} connections share this app`
-												: ''}
+												<a
+													href={buildOauthAppHref(
+														selectedIntegration.appSlug,
+														getCurrentSearch(),
+													)}
+													mix={css(primaryLinkCss)}
+												>
+													Manage OAuth app
+												</a>
+											</p>
+										</section>
+
+										<section mix={css(detailGridCss)}>
+											{renderIntegrationDetail(
+												'Required hosts',
+												formatList(selectedIntegration.requiredHosts),
+											)}
+											{renderIntegrationDetail(
+												'Updated',
+												formatTimestamp(selectedIntegration.updatedAt),
+											)}
+										</section>
+
+										{connectHref ? (
+											<div>
+												<a
+													href={connectHref}
+													mix={css({
+														...getPillButtonCss({ size: 'sm' }),
+														display: 'inline-flex',
+														textDecoration: 'none',
+													})}
+												>
+													Reconnect OAuth
+												</a>
+											</div>
+										) : (
+											<p mix={css(descriptionCss)}>
+												This integration does not include authorization details
+												yet.
+											</p>
+										)}
+									</section>
+								) : showOauthAppNotFound ? (
+									<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+										<h2
+											mix={css({
+												margin: 0,
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												color: colors.text,
+											})}
+										>
+											OAuth app not found
+										</h2>
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											This OAuth app does not exist for this account or is
+											unavailable.
 										</p>
 									</div>
-									<span
-										mix={css({
-											width: 'max-content',
-											padding: `${spacing.xs} ${spacing.sm}`,
-											borderRadius: radius.full,
-											backgroundColor: colors.primarySoftest,
-											color: colors.primaryText,
-											fontSize: typography.fontSize.sm,
-											fontWeight: typography.fontWeight.medium,
-										})}
-									>
-										{selectedIntegration.flow}
-									</span>
-								</header>
-
-								<section mix={css(detailGridCss)}>
-									{renderIntegrationDetail(
-										'Token URL',
-										selectedIntegration.tokenUrl,
-									)}
-									{renderIntegrationDetail(
-										'API base URL',
-										formatOptional(selectedIntegration.apiBaseUrl),
-									)}
-									{renderIntegrationDetail(
-										'Authorize URL',
-										formatOptional(
-											selectedIntegration.authorization?.authorizeUrl,
-										),
-									)}
-									{renderIntegrationDetail(
-										'Scopes',
-										formatList(selectedIntegration.authorization?.scopes),
-									)}
-								</section>
-
-								<section mix={css(insetCardCss)}>
-									<h3 mix={css(sectionTitleCss)}>OAuth app & secrets</h3>
-									<div mix={css(detailGridCss)}>
-										{renderIntegrationDetail(
-											'Client ID',
-											selectedIntegration.clientId,
-										)}
-										{renderIntegrationDetail(
-											'Client secret',
-											formatOptional(
-												selectedIntegration.clientSecretSecretName,
-											),
-										)}
-										{renderIntegrationDetail(
-											'Access token secret',
-											selectedIntegration.accessTokenSecretName,
-										)}
-										{renderIntegrationDetail(
-											'Refresh token secret',
-											formatOptional(
-												selectedIntegration.refreshTokenSecretName,
-											),
-										)}
-									</div>
-									<p mix={css({ ...descriptionCss, marginTop: spacing.sm })}>
-										<a
-											href={buildOauthAppHref(
-												selectedIntegration.appSlug,
-												getCurrentSearch(),
-											)}
-											mix={css(primaryLinkCss)}
-										>
-											Manage OAuth app
-										</a>
-									</p>
-								</section>
-
-								<section mix={css(detailGridCss)}>
-									{renderIntegrationDetail(
-										'Required hosts',
-										formatList(selectedIntegration.requiredHosts),
-									)}
-									{renderIntegrationDetail(
-										'Updated',
-										formatTimestamp(selectedIntegration.updatedAt),
-									)}
-								</section>
-
-								{connectHref ? (
-									<div>
-										<a
-											href={connectHref}
+								) : showIntegrationNotFound ? (
+									<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+										<h2
 											mix={css({
-												...getPillButtonCss({ size: 'sm' }),
-												display: 'inline-flex',
-												textDecoration: 'none',
+												margin: 0,
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												color: colors.text,
 											})}
 										>
-											Reconnect OAuth
-										</a>
+											Integration not found
+										</h2>
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											This integration does not exist for this account or is
+											unavailable.
+										</p>
 									</div>
-								) : (
-									<p mix={css(descriptionCss)}>
-										This integration does not include authorization details yet.
-									</p>
-								)}
-							</section>
-						) : showOauthAppNotFound ? (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									OAuth app not found
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This OAuth app does not exist for this account or is
-									unavailable.
-								</p>
-							</div>
-						) : showIntegrationNotFound ? (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Integration not found
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This integration does not exist for this account or is
-									unavailable.
-								</p>
-							</div>
-						) : (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select an integration
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick a connection or OAuth app from the list to view its
-									status, reconnect, or rotate shared credentials.
-								</p>
-							</div>
-						)}
-					</AccountManagementLayout>
+								) : null
+							}
+						/>
+					</>
 				) : null}
 
 				{status === 'ready' ? (

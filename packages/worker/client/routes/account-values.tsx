@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -18,21 +17,22 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementLayout,
-	AccountManagementList,
-	AccountManagementListItemLink,
 	AccountManagementMessage,
-	AccountManagementSearchField,
 	AccountManagementShell,
-	AccountManagementSidebar,
 	AccountPageHeader,
 	MetadataGrid,
+	TimestampValue,
 	accountInputCss,
 	accountTextareaCss,
 } from '#client/routes/account-management-components.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+	recordStampCss,
+} from '#client/routes/record-table.tsx'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import {
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
@@ -41,6 +41,19 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#client/styles/style-primitives.ts'
+
+/**
+ * Descriptions and value previews are arbitrary length, and a table cell
+ * will not shrink below its content, so the clamp lives on a block inside.
+ */
+const clampedCellCss = css({
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '28ch',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+})
 import {
 	type AccountValueDetail,
 	type AccountValueListItem,
@@ -514,290 +527,266 @@ export function AccountValuesRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<AccountManagementLayout
-						sidebarWidth="minmax(18rem, 24rem)"
-						sidebar={
-							<AccountManagementSidebar
-								title="Saved values"
-								description="User-scoped values only. Integration and OpenAPI bindings are managed elsewhere."
-							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search values"
-									value={search}
-									onInput={(value) => {
-										replaceLocation(buildHrefWithUpdatedSearch(value))
-									}}
-								/>
-								{values.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No values yet. Create one to get started.
-									</p>
-								) : filteredValues.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No values match the current filters.
-									</p>
-								) : (
-									<AccountManagementList>
-										{filteredValues.map((entry) => (
-											<li key={entry.id}>
-												<AccountManagementListItemLink
-													href={valuesRoute.buildDetailHref(
-														entry.id,
-														getCurrentSearch(),
-													)}
-													active={selection.selectedId === entry.id}
-													disabled={isMutating}
-													onNavigate={resetSelectionState}
-												>
-													<strong>{entry.name}</strong>
-													<span
-														mix={css({
-															color: colors.textMuted,
-															fontSize: typography.fontSize.sm,
-															fontFamily: 'monospace',
-															overflow: 'hidden',
-															textOverflow: 'ellipsis',
-															whiteSpace: 'nowrap',
-														})}
-													>
-														{entry.valuePreview || entry.description || '—'}
-													</span>
-												</AccountManagementListItemLink>
-											</li>
-										))}
-									</AccountManagementList>
-								)}
-							</AccountManagementSidebar>
+					<RecordTable
+						mode="pane"
+						ariaLabel="Saved values"
+						selectedId={selection.selectedId}
+						onNavigate={resetSelectionState}
+						countLabel={`${filteredValues.length} of ${values.length} shown`}
+						emptyLabel={
+							values.length === 0
+								? 'No values yet. Create one to get started.'
+								: 'No values match the current filters.'
 						}
-					>
-						{isLoadingSelection ? (
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								Loading value...
-							</p>
-						) : showEditor ? (
-							<form
-								method="post"
-								noValidate
-								mix={[
-									on('submit', (event) => {
-										event.preventDefault()
-										if (event.currentTarget instanceof HTMLFormElement) {
-											void saveValueEntry(event.currentTarget)
-										}
-									}),
-									css(cardCss),
-								]}
-							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
-									<p mix={css(descriptionCss)}>
-										{selection.isCreating
-											? 'Create a named value your packages and workflows can read. Names are unique within your user scope.'
-											: 'Edit this user-scoped value. The name is fixed; saving updates description and value only.'}
-									</p>
-								</div>
+						toolbar={
+							<RecordTableSearch
+								label="Search values"
+								placeholder="Search values"
+								value={search}
+								onInput={(value) => {
+									replaceLocation(buildHrefWithUpdatedSearch(value))
+								}}
+							/>
+						}
+						columns={[
+							{ key: 'name', label: 'Name', primary: true },
+							{ key: 'description', label: 'Description', drop: 1 },
+							{ key: 'preview', label: 'Value', drop: 2 },
+							{ key: 'updated', label: 'Updated' },
+						]}
+						rows={filteredValues.map((entry) => ({
+							id: entry.id,
+							// A save or delete is in flight; the editor below owns the
+							// selection until it settles.
+							href: isMutating
+								? undefined
+								: valuesRoute.buildDetailHref(entry.id, getCurrentSearch()),
+							cells: {
+								name: entry.name,
+								description: (
+									<span mix={clampedCellCss}>{entry.description || '—'}</span>
+								),
+								preview: (
+									<span
+										mix={[clampedCellCss, css({ fontFamily: 'monospace' })]}
+									>
+										{entry.valuePreview || '—'}
+									</span>
+								),
+								updated: (
+									<span mix={css(recordStampCss)}>
+										{new Date(entry.updatedAt).toLocaleDateString()}
+									</span>
+								),
+							},
+						}))}
+						record={
+							isLoadingSelection ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Loading value...
+								</p>
+							) : showEditor ? (
+								<form
+									method="post"
+									noValidate
+									mix={[
+										on('submit', (event) => {
+											event.preventDefault()
+											if (event.currentTarget instanceof HTMLFormElement) {
+												void saveValueEntry(event.currentTarget)
+											}
+										}),
+										css(recordBodyCss),
+									]}
+								>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
+										<p mix={css(descriptionCss)}>
+											{selection.isCreating
+												? 'Create a named value your packages and workflows can read. Names are unique within your user scope.'
+												: 'Edit this user-scoped value. The name is fixed; saving updates description and value only.'}
+										</p>
+									</div>
 
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Name</span>
-									<input
-										data-field-ring
-										name="name"
-										type="text"
-										value={editorState.name}
-										placeholder="preferred-locale"
-										disabled={isMutating}
-										readOnly={isEditing}
-										required
-										mix={[
-											on('input', (event) => {
-												if (isEditing) return
-												editorState = {
-													...editorState,
-													name: event.currentTarget.value,
-												}
-												handle.update()
-											}),
-											css({
-												...accountInputCss,
-												...(isEditing
-													? {
-															color: colors.textMuted,
-															cursor: 'default',
-														}
-													: null),
-											}),
-										]}
-									/>
-								</label>
-								{isEditing ? (
-									<p
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Name</span>
+										<input
+											data-field-ring
+											name="name"
+											type="text"
+											value={editorState.name}
+											placeholder="preferred-locale"
+											disabled={isMutating}
+											readOnly={isEditing}
+											required
+											mix={[
+												on('input', (event) => {
+													if (isEditing) return
+													editorState = {
+														...editorState,
+														name: event.currentTarget.value,
+													}
+													handle.update()
+												}),
+												css({
+													...accountInputCss,
+													...(isEditing
+														? {
+																color: colors.textMuted,
+																cursor: 'default',
+															}
+														: null),
+												}),
+											]}
+										/>
+									</label>
+									{isEditing ? (
+										<p
+											mix={css({
+												margin: 0,
+												color: colors.textMuted,
+												fontSize: typography.fontSize.sm,
+											})}
+										>
+											Name cannot be changed after creation. Create a new value
+											to use a different name.
+										</p>
+									) : null}
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Description</span>
+										<input
+											data-field-ring
+											name="description"
+											type="text"
+											value={editorState.description}
+											placeholder="Optional description"
+											disabled={isMutating}
+											mix={[
+												on('input', (event) => {
+													editorState = {
+														...editorState,
+														description: event.currentTarget.value,
+													}
+													handle.update()
+												}),
+												css(accountInputCss),
+											]}
+										/>
+									</label>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Value</span>
+										<textarea
+											data-field-ring
+											name="value"
+											value={editorState.value}
+											placeholder="Readable configuration text"
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													editorState = {
+														...editorState,
+														value: event.currentTarget.value,
+													}
+													handle.update()
+												}),
+												css(monospaceValueCss),
+											]}
+										/>
+									</label>
+
+									{detail ? (
+										<MetadataGrid
+											items={[
+												{
+													label: 'Scope',
+													value: detail.scope,
+												},
+												{
+													label: 'Created',
+													value: <TimestampValue value={detail.createdAt} />,
+												},
+												{
+													label: 'Updated',
+													value: <TimestampValue value={detail.updatedAt} />,
+												},
+												{
+													label: 'TTL',
+													value: formatRelativeTtl(detail.ttlMs),
+												},
+											]}
+										/>
+									) : null}
+
+									<div
 										mix={css({
-											margin: 0,
-											color: colors.textMuted,
-											fontSize: typography.fontSize.sm,
+											display: 'flex',
+											gap: spacing.sm,
+											flexWrap: 'wrap',
 										})}
 									>
-										Name cannot be changed after creation. Create a new value to
-										use a different name.
-									</p>
-								) : null}
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Description</span>
-									<input
-										data-field-ring
-										name="description"
-										type="text"
-										value={editorState.description}
-										placeholder="Optional description"
-										disabled={isMutating}
-										mix={[
-											on('input', (event) => {
-												editorState = {
-													...editorState,
-													description: event.currentTarget.value,
-												}
-												handle.update()
-											}),
-											css(accountInputCss),
-										]}
-									/>
-								</label>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Value</span>
-									<textarea
-										data-field-ring
-										name="value"
-										value={editorState.value}
-										placeholder="Readable configuration text"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												editorState = {
-													...editorState,
-													value: event.currentTarget.value,
-												}
-												handle.update()
-											}),
-											css(monospaceValueCss),
-										]}
-									/>
-								</label>
-
-								{detail ? (
-									<MetadataGrid
-										items={[
-											{
-												label: 'Scope',
-												value: detail.scope,
-											},
-											{
-												label: 'Created',
-												value: formatTimestamp(detail.createdAt),
-											},
-											{
-												label: 'Updated',
-												value: formatTimestamp(detail.updatedAt),
-											},
-											{
-												label: 'TTL',
-												value: formatRelativeTtl(detail.ttlMs),
-											},
-										]}
-									/>
-								) : null}
-
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-									})}
-								>
-									<button
-										type="submit"
-										disabled={isMutating}
-										mix={css(primaryButtonCss)}
-									>
-										{saveState === 'saving'
-											? 'Saving...'
-											: selection.isCreating
-												? 'Create value'
-												: 'Save value'}
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[on('click', resetEditor), css(secondaryButtonCss)]}
-									>
-										Reset form
-									</button>
-									{isEditing ? (
+										<button
+											type="submit"
+											disabled={isMutating}
+											mix={css(primaryButtonCss)}
+										>
+											{saveState === 'saving'
+												? 'Saving...'
+												: selection.isCreating
+													? 'Create value'
+													: 'Save value'}
+										</button>
 										<button
 											type="button"
 											disabled={isMutating}
-											mix={[
-												...deleteValueCheck.getButtonMix({
-													on: {
-														click: () => void deleteValueEntry(),
-													},
-												}),
-												css(dangerButtonCss),
-											]}
+											mix={[on('click', resetEditor), css(secondaryButtonCss)]}
 										>
-											{saveState === 'deleting'
-												? 'Deleting...'
-												: deleteValueCheck.doubleCheck
-													? 'Confirm delete'
-													: 'Delete'}
+											Reset form
 										</button>
-									) : null}
+										{isEditing ? (
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													...deleteValueCheck.getButtonMix({
+														on: {
+															click: () => void deleteValueEntry(),
+														},
+													}),
+													css(dangerButtonCss),
+												]}
+											>
+												{saveState === 'deleting'
+													? 'Deleting...'
+													: deleteValueCheck.doubleCheck
+														? 'Confirm delete'
+														: 'Delete'}
+											</button>
+										) : null}
+									</div>
+								</form>
+							) : showValueNotFound ? (
+								<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+									<h2
+										mix={css({
+											margin: 0,
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+											color: colors.text,
+										})}
+									>
+										Value not found
+									</h2>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										This value does not exist for this account or is managed by
+										another settings page.
+									</p>
 								</div>
-							</form>
-						) : showValueNotFound ? (
-							<div mix={css({ ...cardCss, gap: spacing.sm })}>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Value not found
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									This value does not exist for this account or is managed by
-									another settings page.
-								</p>
-							</div>
-						) : (
-							<div
-								mix={css({
-									...cardCss,
-									gap: spacing.sm,
-									borderRadius: radius.lg,
-								})}
-							>
-								<h2
-									mix={css({
-										margin: 0,
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									Select a value
-								</h2>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick a value from the list to edit it, or create a new one.
-								</p>
-							</div>
-						)}
-					</AccountManagementLayout>
+							) : null
+						}
+					/>
 				) : null}
 			</AccountManagementShell>
 		)
