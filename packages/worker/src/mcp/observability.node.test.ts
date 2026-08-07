@@ -213,9 +213,23 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				}),
 			}),
 		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'remote:home:bond_shade_set_position',
+			domain: 'remote:home',
+			capabilitySource: 'remote-connector',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
+			cause: new Error(
+				'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
+			),
+		})
 	})
 
-	expect(payloads).toHaveLength(11)
+	expect(payloads).toHaveLength(12)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
@@ -262,9 +276,23 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			},
 			cause: new Error('no such table: notes: SQLITE_ERROR'),
 		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'remote:home:bond_shade_set_position',
+			domain: 'remote:home',
+			capabilitySource: 'remote-connector',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'Remote capability "home:bond_shade_set_position" failed: timeout',
+			cause: new Error(
+				'Remote capability "home:bond_shade_set_position" failed: timeout',
+			),
+		})
 	})
 
-	expect(sentryMock.captureException).toHaveBeenCalledTimes(3)
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(4)
 	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
 		1,
 		expect.objectContaining({ message: 'platform handler blew up' }),
@@ -277,6 +305,13 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		3,
 		expect.objectContaining({
 			message: 'no such table: notes: SQLITE_ERROR',
+		}),
+	)
+	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
+		4,
+		expect.objectContaining({
+			message:
+				'Remote capability "home:bond_shade_set_position" failed: timeout',
 		}),
 	)
 	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')

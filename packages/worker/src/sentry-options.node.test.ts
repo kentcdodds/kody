@@ -142,6 +142,31 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		filterSentryEvent({ message: executorSandboxTimeoutMessage }),
 	).toBeNull()
 
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Remote capability "home:bond_shade_set_position" failed: timeout',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
 	const platformBuildFailure = {
 		exception: {
 			values: [
