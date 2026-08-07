@@ -156,7 +156,12 @@ export function OnboardingStarterCard(
 				mix={css(starterCardCss)}
 				data-testid={`onboarding-starter-${listing.id}`}
 			>
-				<a href={detailHref} mix={css(starterCardLinkCss)}>
+				<a
+					href={detailHref}
+					target="_blank"
+					rel="noreferrer noopener"
+					mix={css(starterCardLinkCss)}
+				>
 					<CommunityListingIcon listing={listing} size="starter" />
 					<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
 					<span mix={css(starterCardDescriptionCss)}>

@@ -171,7 +171,20 @@ export function OnboardingChecklistCard(
 									{item.done || !href ? (
 										<span mix={css(checklistLabelCss)}>{label}</span>
 									) : (
-										<a href={href} mix={css(checklistLinkCss)}>
+										<a
+											href={href}
+											// Hash links move within onboarding itself; everything
+											// else opens elsewhere and must not eat this tab.
+											target={
+												href.startsWith(onboardingPath) ? undefined : '_blank'
+											}
+											rel={
+												href.startsWith(onboardingPath)
+													? undefined
+													: 'noreferrer noopener'
+											}
+											mix={css(checklistLinkCss)}
+										>
 											{label}
 										</a>
 									)}
@@ -182,6 +195,8 @@ export function OnboardingChecklistCard(
 												<span key={provider.id} mix={css(providerEntryCss)}>
 													<a
 														href={provider.href}
+														target="_blank"
+														rel="noreferrer noopener"
 														mix={css(integrationProviderLinkCss)}
 													>
 														<ProviderIcon providerId={provider.id} size="1em" />

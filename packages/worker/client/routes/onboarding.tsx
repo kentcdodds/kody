@@ -287,8 +287,12 @@ export function OnboardingRoute(handle: Handle) {
 					const waiting = loggedIn && step.number === waitingStep && !done
 					return (
 						<li key={step.number}>
-							<span
-								mix={css(firstWinStepPillCss)}
+							<button
+								type="button"
+								mix={[
+									css(firstWinStepPillCss),
+									on('click', () => selectFirstWinStep(step.number)),
+								]}
 								data-state={done ? 'done' : waiting ? 'waiting' : undefined}
 								aria-current={step.number === shown ? 'step' : undefined}
 							>
@@ -305,7 +309,7 @@ export function OnboardingRoute(handle: Handle) {
 									)}
 								</span>
 								<span>{step.label}</span>
-							</span>
+							</button>
 						</li>
 					)
 				})}
@@ -350,7 +354,12 @@ export function OnboardingRoute(handle: Handle) {
 						seconds. This page moves on when your reply lands.
 					</p>
 					<p mix={css(firstWinGuidanceCss)}>
-						<a href="/account/email" mix={css(primaryLinkCss)}>
+						<a
+							href="/account/email"
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(primaryLinkCss)}
+						>
 							Open your Kody inbox
 						</a>{' '}
 						to see the stored copy.
@@ -568,7 +577,12 @@ export function OnboardingRoute(handle: Handle) {
 					<p data-rise style={{ '--rise': '1' }}>
 						Connect any MCP-capable AI agent to your Kody account, then ask it
 						to help you set things up. New here?{' '}
-						<a href="/guides/what-is-kody" mix={css(headerGuideLinkCss)}>
+						<a
+							href="/guides/what-is-kody"
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(headerGuideLinkCss)}
+						>
 							Read what Kody can do
 						</a>{' '}
 						first.
@@ -797,7 +811,12 @@ export function OnboardingRoute(handle: Handle) {
 									<OnboardingDiyCard setupPrompt={setupPrompt} />
 								</ul>
 								<p mix={css({ margin: '0.2rem 0 0' })}>
-									<a href="/community" mix={css(primaryLinkCss)}>
+									<a
+										href="/community"
+										target="_blank"
+										rel="noreferrer noopener"
+										mix={css(primaryLinkCss)}
+									>
 										Browse all community packages
 									</a>
 								</p>
@@ -1242,13 +1261,24 @@ const firstWinStepPillCss = {
 	border: `1.5px solid ${colors.border}`,
 	borderRadius: '999px',
 	whiteSpace: 'nowrap' as const,
-	'&[data-state="waiting"]': {
-		borderColor: colors.primary,
-		color: colors.text,
+	cursor: 'pointer',
+	transition: 'border-color 120ms ease, color 120ms ease',
+	[hoverMq]: {
+		'&:hover': {
+			borderColor: `oklch(from ${colors.primary} l c h / 0.6)`,
+			color: colors.text,
+		},
 	},
 	'&[data-state="done"]': {
 		borderColor: `oklch(from ${colors.primary} l c h / 0.5)`,
 		color: colors.primaryText,
+	},
+	// The highlight tracks the sub-step being VIEWED (Next/Back can peek
+	// ahead of the signals); the spinner alone marks the one being waited
+	// on. Declared last so viewing a done pill still reads as current.
+	'&[aria-current="step"]': {
+		borderColor: colors.primary,
+		color: colors.text,
 	},
 }
 
