@@ -1,6 +1,7 @@
 import { type Action } from 'remix/router'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
+import { loadChecklist } from '#app/handlers/onboarding.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -26,6 +27,15 @@ export function createAccountHandler(env: Env) {
 						emailVerified: user.emailVerified,
 					}),
 				])
+			// The banner shows checklist progress, so the SSR payload needs the
+			// checklist too — hydration keeps SSR data and does not refetch.
+			if (user.emailVerified) {
+				onboarding.checklist = await loadChecklist(
+					env,
+					user.mcpUser.userId,
+					onboarding.hasMcpClient,
+				)
+			}
 			return renderAppPage({
 				request,
 				env,

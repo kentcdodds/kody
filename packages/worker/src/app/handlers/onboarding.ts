@@ -21,7 +21,7 @@ import { type routes } from '#app/routes.ts'
  * integrations, saved packages), so it only computes for verified users —
  * unverified accounts have nothing to derive and should not pay the probes.
  */
-async function loadChecklist(
+export async function loadChecklist(
 	env: Env,
 	userId: string,
 	hasMcpClient: boolean,
