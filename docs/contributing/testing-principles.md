@@ -73,15 +73,16 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
 - Workers-unit cost is dominated by `@cloudflare/vitest-pool-workers`, not by
   assertion logic. Measured on this repo: ~5s Vite transform per file, plus
-  ~10s on the **first** Durable Object RPC in that file while the pool loads
-  the DO class through the Vitest module runner (warm RPCs ~1–2ms; production
-  Mailbox/RunLog RPCs ~0.4ms). Storage isolation is per file, so each
-  Mailbox/UserMeter/RunLog suite re-pays the cold load. That tax is inherent
-  to the current pool (Cloudflare is exploring Vite bundled-dev to shrink
-  module-fallback round-trips); do not “fix” it by stubbing away the DO when
-  the test’s point is binding fidelity. Prefer `*.node.test.ts` whenever the
-  file does not need real bindings. The shared Vitest timeout is 20s so a
-  single cold DO RPC does not fail the default budget.
+  ~10–18s to load Durable Object classes (Mailbox / UserMeter / RunLog) through
+  the Vitest module runner (warm RPCs ~1–2ms; production ~0.4ms).
+  `globalSetup` cannot warm this — it runs in Node. Workers `setupFiles`
+  imports `workers-do-warmup.ts`, which touches those DOs via
+  `runInDurableObject` once per Worker module cache so **test bodies** see
+  ~1–10ms first RPCs. Suite wall clock is similar (the cold load still
+  happens in setup); `hookTimeout` is 60s on workers-unit to cover the first
+  setup per Worker. Prefer `*.node.test.ts` whenever the file does not need
+  real bindings. The shared Vitest `testTimeout` is 20s for remaining
+  workerd-only work (for example `@cloudflare/worker-bundler`).
 - Vitest is configured with `clearMocks` and `mockReset` globally
   (`vitest-shared.ts`). Each test starts with a clean mock slate; inline the
   setup a test needs rather than relying on leftover state from a prior case.
