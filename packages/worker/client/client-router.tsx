@@ -25,6 +25,10 @@ import {
 	type RouterNavigateOptions,
 	type RouterNavigationEventDetail,
 } from './router-scroll-state.ts'
+import {
+	createViewTransitionScheduler,
+	type ViewTransitionStarter,
+} from './view-transition-scheduler.ts'
 
 export { type RouteLoader } from './route-loader.ts'
 
@@ -76,8 +80,6 @@ function getCurrentDocumentPath() {
 	return `${window.location.pathname}${window.location.search}`
 }
 
-let activeViewTransition: { skipTransition(): void } | null = null
-
 /**
  * Areas whose pages sit inside a persistent shell (a sticky rail beside the
  * content). Moving between them is tab switching, not page-to-page
@@ -126,19 +128,23 @@ function swapDom(onSwapped?: () => void) {
 	)
 }
 
+function resolveViewTransitionStarter(): ViewTransitionStarter | null {
+	if (typeof document === 'undefined') return null
+	if (!('startViewTransition' in document)) return null
+	return (
+		document as Document & {
+			startViewTransition: ViewTransitionStarter
+		}
+	).startViewTransition.bind(document)
+}
+
+const viewTransitionScheduler = createViewTransitionScheduler(
+	resolveViewTransitionStarter,
+)
+
 function notify(onSwapped?: () => void) {
-	const startViewTransition =
-		'startViewTransition' in document
-			? (
-					document as Document & {
-						startViewTransition: (callback: () => Promise<void>) => {
-							skipTransition(): void
-						}
-					}
-				).startViewTransition.bind(document)
-			: null
 	if (
-		!startViewTransition ||
+		!resolveViewTransitionStarter() ||
 		matchMedia('(prefers-reduced-motion: reduce)').matches ||
 		isSameShellAreaNavigation(
 			lastNotifiedDocumentPath,
@@ -149,12 +155,16 @@ function notify(onSwapped?: () => void) {
 		// CTA is `#invite`).
 		getCurrentDocumentPath() === lastNotifiedDocumentPath
 	) {
+		// Instant path: drop any in-flight/queued VT so a superseded chain
+		// step cannot restart a transition after this swap.
+		viewTransitionScheduler.cancelPending()
 		void swapDom(onSwapped)
 		return
 	}
-	// A superseding navigation must not stack transitions.
-	activeViewTransition?.skipTransition()
-	activeViewTransition = startViewTransition(() => swapDom(onSwapped))
+	// Serialize superseding navigations: skip the active animation, then wait
+	// for its update callback to settle before starting the next transition
+	// (Chrome InvalidStateError / unhandledrejection — KODY-CLOUDFLARE-3Y).
+	viewTransitionScheduler.run(() => swapDom(onSwapped))
 }
 
 function createNavigationEventDetail(
