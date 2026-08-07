@@ -26,6 +26,7 @@
 			"executor": "nx:run-commands",
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
+				"{workspaceRoot}/packages/worker/public/client-entry.js.map",
 				"{workspaceRoot}/packages/worker/public/assets",
 				"{workspaceRoot}/packages/worker/public/client-manifest.json"
 			],
@@ -37,6 +38,7 @@
 			"executor": "nx:run-commands",
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
+				"{workspaceRoot}/packages/worker/public/client-entry.js.map",
 				"{workspaceRoot}/packages/worker/public/assets",
 				"{workspaceRoot}/packages/worker/public/client-manifest.json"
 			],

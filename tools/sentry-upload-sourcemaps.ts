@@ -52,6 +52,9 @@ const sentryCliWrapper = join(
 
 function upload(dir: string, label: string): void {
 	console.log(`sentry-upload-sourcemaps: uploading ${label} from ${dir}`)
+	// Auth comes from the inherited SENTRY_AUTH_TOKEN env var (already
+	// validated above) rather than --auth-token, so the secret never appears
+	// in child process arguments.
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -65,8 +68,6 @@ function upload(dir: string, label: string): void {
 			org!,
 			'--project',
 			project!,
-			'--auth-token',
-			authToken!,
 			'--validate',
 		],
 		{ cwd: root, stdio: 'inherit' },
