@@ -5,6 +5,7 @@ import {
 	createPublishedPackagePromiseCache,
 } from '#worker/package-registry/published-package-cache.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import { importWorkerBundler } from '#worker/worker-bundler-modules.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import {
 	createRelativeImportSpecifier,
@@ -37,7 +38,7 @@ async function createWorkerBundle(input: {
 	entryPoint: string
 }) {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
-	const { createWorker } = await import('@cloudflare/worker-bundler')
+	const { createWorker } = await importWorkerBundler()
 	return await createWorker(input)
 }
 

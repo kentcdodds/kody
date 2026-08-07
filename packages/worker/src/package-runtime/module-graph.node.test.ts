@@ -15,8 +15,10 @@ const mockModule = vi.hoisted(() => ({
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 }))
 
-vi.mock('@cloudflare/worker-bundler', () => ({
-	createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
+vi.mock('#worker/worker-bundler-modules.ts', () => ({
+	importWorkerBundler: async () => ({
+		createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
+	}),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({

@@ -288,56 +288,57 @@ function createPackageJobManifestText(
 	return JSON.stringify(createPackageJobManifest(input))
 }
 
-vi.mock('@cloudflare/worker-bundler', () => ({
-	createFileSystemSnapshot: vi.fn(
-		async (files: AsyncIterable<[string, string]>) => {
-			const snapshotFiles = new Map<string, string>()
-			for await (const [path, content] of files) {
-				snapshotFiles.set(path, content)
-			}
-			return {
-				read(path: string) {
-					return snapshotFiles.get(path) ?? null
-				},
-			}
-		},
-	),
-	createWorker: vi.fn(
-		async ({
-			files,
-			entryPoint,
-		}: {
-			files: Record<string, string>
-			entryPoint?: string
-		}) => {
-			const mainModule = 'dist/bundled-entry.js'
-			const selectedEntryPoint = entryPoint ?? 'index.ts'
-			return {
-				mainModule,
-				modules: {
-					[mainModule]: files[selectedEntryPoint] ?? '',
-				},
-				warnings: [],
-			}
-		},
-	),
-}))
-
-vi.mock('@cloudflare/worker-bundler/typescript', () => ({
-	createTypescriptLanguageService: vi.fn(async () => ({
-		fileSystem: {
-			read: vi.fn(() => null),
-			write: vi.fn(),
-		},
-		languageService: {
-			getSemanticDiagnostics: vi.fn((entryPoint: string) =>
-				entryPoint === '.__kody_repo_module_check__.ts' ||
-				entryPoint === 'src/job.ts'
-					? []
-					: [{ messageText: `missing ${entryPoint}` }],
-			),
-		},
-	})),
+vi.mock('#worker/worker-bundler-modules.ts', () => ({
+	importWorkerBundler: async () => ({
+		createFileSystemSnapshot: vi.fn(
+			async (files: AsyncIterable<[string, string]>) => {
+				const snapshotFiles = new Map<string, string>()
+				for await (const [path, content] of files) {
+					snapshotFiles.set(path, content)
+				}
+				return {
+					read(path: string) {
+						return snapshotFiles.get(path) ?? null
+					},
+				}
+			},
+		),
+		createWorker: vi.fn(
+			async ({
+				files,
+				entryPoint,
+			}: {
+				files: Record<string, string>
+				entryPoint?: string
+			}) => {
+				const mainModule = 'dist/bundled-entry.js'
+				const selectedEntryPoint = entryPoint ?? 'index.ts'
+				return {
+					mainModule,
+					modules: {
+						[mainModule]: files[selectedEntryPoint] ?? '',
+					},
+					warnings: [],
+				}
+			},
+		),
+	}),
+	importWorkerBundlerTypescript: async () => ({
+		createTypescriptLanguageService: vi.fn(async () => ({
+			fileSystem: {
+				read: vi.fn(() => null),
+				write: vi.fn(),
+			},
+			languageService: {
+				getSemanticDiagnostics: vi.fn((entryPoint: string) =>
+					entryPoint === '.__kody_repo_module_check__.ts' ||
+					entryPoint === 'src/job.ts'
+						? []
+						: [{ messageText: `missing ${entryPoint}` }],
+				),
+			},
+		})),
+	}),
 }))
 
 function createDatabase(

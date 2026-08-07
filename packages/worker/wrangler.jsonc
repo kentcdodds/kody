@@ -17,10 +17,41 @@
 	"main": "./src/index.ts",
 	"minify": true,
 	"upload_source_maps": true,
+	// `find_additional_modules` uploads files matching `rules` (below `base_dir`,
+	// which defaults to `./src`) as separate external modules instead of inlining
+	// them into the main module. The pre-bundled worker-bundler modules in
+	// `src/generated/` (built by `tools/build-worker-bundler-modules.ts`) rely on
+	// this so their ~4 MB only loads when repo checks dynamically import them,
+	// instead of being parsed and evaluated on every isolate cold start.
+	"find_additional_modules": true,
 	"rules": [
 		{
+			// Specifier-shaped globs (`./`/`../` prefixes) on purpose: every
+			// markdown import in the worker is a relative specifier, and these
+			// globs must NOT match traversal-relative file names (for example
+			// `blog/posts/foo.md`). If the traversal discovered those files,
+			// wrangler would upload them under their directory-relative names
+			// while keeping the original `./posts/foo.md` import specifiers,
+			// which resolve against the bundled entry module and fail at boot
+			// with "No such module".
 			"type": "Text",
-			"globs": ["**/*.md"],
+			"globs": ["./**/*.md", "../**/*.md"],
+			"fallthrough": true,
+		},
+		{
+			// Both spellings are required: the bare glob matches file names during
+			// the on-disk traversal that discovers additional modules, while the
+			// `./`-prefixed glob matches the import specifier so wrangler keeps
+			// `import('./generated/…')` external instead of inlining it. Single-star
+			// globs on purpose: wrangler's specifier matcher converts globs without
+			// globstar support, so `**/*` can never match a flat specifier.
+			"type": "ESModule",
+			"globs": ["generated/*.mjs", "./generated/*.mjs"],
+			"fallthrough": true,
+		},
+		{
+			"type": "CompiledWasm",
+			"globs": ["generated/*.wasm"],
 			"fallthrough": true,
 		},
 	],

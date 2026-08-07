@@ -34,6 +34,10 @@ import {
 	type ModuleAstNode,
 } from '#worker/module-source.ts'
 import {
+	importWorkerBundler,
+	importWorkerBundlerTypescript,
+} from '#worker/worker-bundler-modules.ts'
+import {
 	createRepoCapabilitiesModuleTypecheckHarness,
 	repoBackedModuleEntrypointExportErrorMessage,
 	repoCapabilitiesModuleTypecheckHarnessPath,
@@ -121,8 +125,7 @@ export const repoChecksSourceMaxTotalBytes = 15 * 1024 * 1024
 
 async function loadWorkerBundlerSnapshotTools() {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
-	const { createFileSystemSnapshot } =
-		await import('@cloudflare/worker-bundler')
+	const { createFileSystemSnapshot } = await importWorkerBundler()
 	return {
 		createFileSystemSnapshot,
 	}
@@ -130,7 +133,7 @@ async function loadWorkerBundlerSnapshotTools() {
 
 async function loadWorkerBundlerTypescriptTools() {
 	const { createTypescriptLanguageService } =
-		await import('@cloudflare/worker-bundler/typescript')
+		await importWorkerBundlerTypescript()
 	return {
 		createTypescriptLanguageService,
 	}
