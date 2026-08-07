@@ -6,8 +6,9 @@ import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
 export const rootDir = fileURLToPath(new URL('.', import.meta.url))
-// Match CI. A 5s local budget failed pre-push on loaded machines while
-// `CI=1 npm run test` stayed green, which forced `--no-verify`.
+// Match CI. First Durable Object RPC in a workers-unit file costs ~10s in
+// `@cloudflare/vitest-pool-workers` (module-runner load; warm RPCs are ~1ms,
+// production ~0.4ms). A 5s local default timed those out and forced `--no-verify`.
 const testTimeout = 20_000
 
 loadDotEnv({

@@ -71,7 +71,8 @@ Quick notes for getting a local kody environment running.
   created.
 - `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
   (`CI=1` worker Vitest + Playwright E2E) so pushes are blocked when those
-  suites fail. Vitest's default timeout is 20s locally and in CI; the push gate
+  suites fail. Vitest's default timeout is 20s because the workers pool's first
+  Durable Object RPC in a file is ~10s (see testing principles); the push gate
   also sets `CI=1` so worker count and Playwright retries match GitHub Actions.
 - Because the commit hook already enforces formatting, lint fixes, and
   typechecking, agents do not need to run those checks separately before every
