@@ -273,7 +273,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 					currentHref={currentHref}
 				/>
 
-				{status === 'loading' ? (
+				{status === 'loading' && lastLoadedHref === '' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading platform feedback…
 					</p>
@@ -309,6 +309,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 
 						<RecordTable
 							mode="expand"
+							busy={status === 'loading'}
 							ariaLabel="Platform feedback queue"
 							selectedId={selectedFeedbackId}
 							countLabel={`${data.total} submission${data.total === 1 ? '' : 's'}`}

@@ -1,7 +1,13 @@
 import { css, type Handle } from 'remix/ui'
 import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
 import {
 	getAuthInputCss,
 	getSelectCss,
@@ -79,6 +85,12 @@ type RecordTableProps = {
 	/** Collection controls: search, filters, the sort select. */
 	toolbar?: Slot
 	countLabel?: string
+	/**
+	 * A refetch is in flight. Reported in the count slot, which is already on
+	 * the page — a page-level "Loading…" line above the table reflowed
+	 * everything below it on every keystroke of a search that refetches.
+	 */
+	busy?: boolean
 	emptyLabel?: string
 	/** Below the table, inside its pane: the infinite-list "Load more" control. */
 	footer?: Slot
@@ -146,6 +158,11 @@ const countCss = {
 	color: colors.textMuted,
 	whiteSpace: 'nowrap' as const,
 	fontVariantNumeric: 'tabular-nums',
+	// A refetch dims the count rather than replacing its text. The search field
+	// beside it is `flex: 1 1 12rem`, so any width change here resizes the box
+	// the reader is typing into.
+	transition: `opacity 120ms ${transitions.easeOut}`,
+	'&[data-busy]': { opacity: 0.45 },
 	'@container (max-width: 620px)': { marginLeft: 0 },
 }
 
@@ -561,14 +578,31 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 		)
 
 		return (
-			<section aria-label={handle.props.ariaLabel} mix={css(shellCss)}>
+			<section
+				aria-label={handle.props.ariaLabel}
+				aria-busy={handle.props.busy ? 'true' : undefined}
+				mix={css(shellCss)}
+			>
 				<div mix={[css(paneCss), css(cardFallbackCss)]}>
 					{handle.props.toolbar || handle.props.countLabel ? (
 						<div mix={css(toolbarCss)}>
 							{handle.props.toolbar}
 							{handle.props.countLabel ? (
-								<p mix={css(countCss)}>{handle.props.countLabel}</p>
+								<p
+									mix={css(countCss)}
+									data-busy={handle.props.busy ? 'true' : undefined}
+								>
+									{handle.props.countLabel}
+								</p>
 							) : null}
+							{/*
+							 * Out of flow, so announcing the refetch costs no layout.
+							 * Polite because this narrates something the reader started;
+							 * assertive would interrupt their own typing.
+							 */}
+							<span mix={css(visuallyHiddenCss)} aria-live="polite">
+								{handle.props.busy ? 'Updating…' : ''}
+							</span>
 						</div>
 					) : null}
 					{rows.length === 0 ? (

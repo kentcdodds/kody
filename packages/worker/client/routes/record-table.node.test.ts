@@ -123,3 +123,30 @@ test('none mode renders no selection, even when an id is passed', async () => {
 	expect(html).not.toContain('data-selected="true"')
 	expect(html).not.toContain('should not render')
 })
+
+test('a refetch reports itself in the toolbar instead of above the table', async () => {
+	const html = await renderToString(
+		jsx(RecordTable, {
+			mode: 'pane',
+			ariaLabel: 'Packages',
+			columns,
+			rows,
+			countLabel: '2 of 2 shown',
+			busy: true,
+		}),
+	)
+
+	// A page-level "Loading…" line above the table reflowed everything below it
+	// on every keystroke of a search that refetches. The count dims in place
+	// instead — replacing its text would resize the search field beside it,
+	// which is the box the reader is typing into.
+	expect(html).toContain('aria-busy="true"')
+	expect(html).toContain('data-busy="true"')
+	expect(html).toContain('2 of 2 shown')
+	// The announcement is out of flow, so it costs no layout.
+	expect(html).toContain('aria-live="polite"')
+	expect(html).toContain('Updating…')
+	// The rows stay put while the refetch is in flight.
+	expect(html).toContain('<table')
+	expect(html).toContain('Alpha')
+})

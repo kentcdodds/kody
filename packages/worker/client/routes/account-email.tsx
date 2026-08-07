@@ -408,7 +408,7 @@ export function AccountEmailRoute(handle: Handle) {
 					description="Browse inbound and outbound messages for your platform email address. Compose and reply through Kody agents."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' ? (
+				{status === 'loading' && lastLoadedDataKey === '' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading email inbox…
 					</p>
@@ -460,6 +460,7 @@ export function AccountEmailRoute(handle: Handle) {
 						) : null}
 						<RecordTable
 							mode="expand"
+							busy={status === 'loading'}
 							ariaLabel="Inbox messages"
 							selectedId={selectedMessageId}
 							countLabel={

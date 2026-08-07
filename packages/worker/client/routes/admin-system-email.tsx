@@ -200,7 +200,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 					description="Operator-owned inboxes for reserved platform addresses. These messages are not user account data."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' ? (
+				{status === 'loading' && lastLoadedHref === '' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading system email…
 					</p>
@@ -224,6 +224,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 						>
 							<RecordTable
 								mode="pane"
+								busy={status === 'loading'}
 								ariaLabel="System inbox messages"
 								selectedId={selectedMessage?.id ?? null}
 								countLabel={`${data.total} stored`}

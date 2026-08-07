@@ -718,7 +718,7 @@ export function AdminUsersRoute(handle: Handle) {
 					description="Review account metadata and manage role assignments and entitlement plans. User content is never shown here."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' ? (
+				{status === 'loading' && lastLoadedDataKey === '' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading users…
 					</p>
@@ -737,13 +737,13 @@ export function AdminUsersRoute(handle: Handle) {
 				) : null}
 				<RecordTable
 					mode="expand"
+					busy={status === 'loading'}
 					ariaLabel="User accounts"
 					selectedId={selectedStableUserId}
-					countLabel={
-						status === 'ready'
-							? `${users.length} of ${totalCount} ${totalCount === 1 ? 'account' : 'accounts'}`
-							: undefined
-					}
+					// Unconditional: the snapshot keeps the previous window during a
+					// refetch, and dropping the slot mid-refetch resized the search
+					// field the reader is typing into.
+					countLabel={`${users.length} of ${totalCount} ${totalCount === 1 ? 'account' : 'accounts'}`}
 					emptyLabel={
 						status === 'ready'
 							? hasActiveFilters

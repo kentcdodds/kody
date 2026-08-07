@@ -323,7 +323,7 @@ export function AccountPackagesRoute(handle: Handle) {
 					description="Browse your saved packages and review their metadata. Packages are created and edited through Kody's MCP tools."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' ? (
+				{status === 'loading' && lastLoadedDataKey === '' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading packages…
 					</p>
@@ -337,13 +337,13 @@ export function AccountPackagesRoute(handle: Handle) {
 				) : null}
 				<RecordTable
 					mode="expand"
+					busy={status === 'loading'}
 					ariaLabel="Saved packages"
 					selectedId={activePackageId}
-					countLabel={
-						status === 'ready'
-							? `${packages.length} of ${totalCount} ${totalCount === 1 ? 'package' : 'packages'}`
-							: undefined
-					}
+					// Unconditional: the snapshot keeps the previous window during a
+					// refetch, and dropping the slot mid-refetch resized the search
+					// field the reader is typing into.
+					countLabel={`${packages.length} of ${totalCount} ${totalCount === 1 ? 'package' : 'packages'}`}
 					emptyLabel={
 						status === 'ready'
 							? hasActiveFilters
