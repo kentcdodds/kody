@@ -1,10 +1,12 @@
-import { getKodyHeroDataUri } from '#worker/og/hero-art.ts'
+import { getKodyHeroDataUri } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import { type PublicOgPage } from '#worker/og/pages.ts'
 import {
 	createOgFrame,
+	ensureRenderPipelineReady,
 	renderOgImage,
 	truncateOgText,
+	type OgAssetsFetcher,
 	type SatoriElement,
 } from '#worker/og/render.ts'
 
@@ -129,6 +131,8 @@ function createPageOgMarkup(input: {
 export async function renderPageOgImage(input: {
 	page: PublicOgPage
 	theme?: OgTheme
+	assets?: OgAssetsFetcher
 }): Promise<Uint8Array<ArrayBuffer>> {
-	return renderOgImage(createPageOgMarkup(input))
+	await ensureRenderPipelineReady({ assets: input.assets })
+	return renderOgImage(createPageOgMarkup(input), { assets: input.assets })
 }

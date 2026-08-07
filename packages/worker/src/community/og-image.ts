@@ -6,8 +6,10 @@ import {
 } from '#worker/og/palette.ts'
 import {
 	createOgFrame,
+	ensureRenderPipelineReady,
 	renderOgImage,
 	truncateOgText,
+	type OgAssetsFetcher,
 	type SatoriElement,
 } from '#worker/og/render.ts'
 
@@ -274,7 +276,8 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 }
 
 export async function renderCommunityOgImage(
-	input: CommunityOgImageInput,
+	input: CommunityOgImageInput & { assets?: OgAssetsFetcher },
 ): Promise<Uint8Array<ArrayBuffer>> {
-	return renderOgImage(createOgMarkup(input))
+	await ensureRenderPipelineReady({ assets: input.assets })
+	return renderOgImage(createOgMarkup(input), { assets: input.assets })
 }

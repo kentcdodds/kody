@@ -3,7 +3,7 @@ import { type routes } from '#app/routes.ts'
 import { getPublicOgPage } from '#worker/og/pages.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 
-export function createOgPageImageHandler() {
+export function createOgPageImageHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, params }) {
@@ -21,7 +21,7 @@ export function createOgPageImageHandler() {
 			// binaries, which would otherwise bloat isolate cold starts for a
 			// route that is only hit by social-media crawlers.
 			const { renderPageOgImage } = await import('#worker/og/page-image.ts')
-			const png = await renderPageOgImage({ page, theme })
+			const png = await renderPageOgImage({ page, theme, assets: env.ASSETS })
 
 			return new Response(png, {
 				status: 200,

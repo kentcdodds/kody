@@ -228,7 +228,7 @@ export function createAppRouter(env: Env) {
 			healthComponents: createHealthComponentsHandler(env),
 			sentryTunnel: createSentryTunnelHandler(env),
 			login: createLoginHandler(env),
-			ogPageImage: createOgPageImageHandler(),
+			ogPageImage: createOgPageImageHandler(env),
 			blog: createBlogHandler(env),
 			blogApi: createBlogApiHandler(env),
 			blogRss: createBlogRssHandler(env),

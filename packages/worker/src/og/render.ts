@@ -1,18 +1,22 @@
 import { initWasm, Resvg } from '@resvg/resvg-wasm'
 import satori, { init as initSatori } from 'satori/standalone'
 import {
+	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
+	getKodyLogoDataUri,
+	getKodyPatternDataUri,
 	getWixMadeforTextLatin400FontData,
 	ogResvgWasm,
 	ogYogaWasm,
+	type OgAssetsFetcher,
 } from '#worker/og/og-image-assets.ts'
-import { getKodyLogoDataUri } from '#worker/og/logo.ts'
 import {
 	getOgPalette,
 	type OgTheme,
 	OG_DEFAULT_THEME,
 } from '#worker/og/palette.ts'
-import { getKodyPatternDataUri } from '#worker/og/pattern-art.ts'
+
+export type { OgAssetsFetcher } from '#worker/og/og-image-assets.ts'
 
 export const OG_WIDTH = 1200
 export const OG_HEIGHT = 630
@@ -34,21 +38,27 @@ export type SatoriElement = {
 	}
 }
 
-let renderPipelineReady: Promise<void> | null = null
+let wasmReady: Promise<void> | null = null
 
-export function ensureRenderPipelineReady(): Promise<void> {
-	if (!renderPipelineReady) {
-		renderPipelineReady = Promise.all([
-			initSatori(ogYogaWasm),
-			initWasm(ogResvgWasm),
-		])
+export function ensureOgWasmReady(): Promise<void> {
+	if (!wasmReady) {
+		wasmReady = Promise.all([initSatori(ogYogaWasm), initWasm(ogResvgWasm)])
 			.then(() => undefined)
 			.catch((error) => {
-				renderPipelineReady = null
+				wasmReady = null
 				throw error
 			})
 	}
-	return renderPipelineReady
+	return wasmReady
+}
+
+export async function ensureRenderPipelineReady(input?: {
+	assets?: OgAssetsFetcher
+}): Promise<void> {
+	await Promise.all([
+		ensureOgWasmReady(),
+		ensureOgBinaryAssetsReady({ assets: input?.assets }),
+	])
 }
 
 /**
@@ -228,8 +238,9 @@ export function createOgFrame(input: {
  */
 export async function renderOgImage(
 	markup: SatoriElement,
+	input?: { assets?: OgAssetsFetcher },
 ): Promise<Uint8Array<ArrayBuffer>> {
-	await ensureRenderPipelineReady()
+	await ensureRenderPipelineReady({ assets: input?.assets })
 
 	const bodyFontData = getWixMadeforTextLatin400FontData()
 	const displayFontData = getBricolageGrotesqueLatin700FontData()

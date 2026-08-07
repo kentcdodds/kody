@@ -18,6 +18,7 @@
 		"./src/test-support/**/*.ts",
 		"./src/mcp/test-process.ts",
 		"./src/og/og-image-assets.node.ts",
+		"./src/og/og-binary-assets.node.ts",
 		"../**/*.test.ts",
 		"../**/*.spec.ts",
 		"../../**/*.test.ts",

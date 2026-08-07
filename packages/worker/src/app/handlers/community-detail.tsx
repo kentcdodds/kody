@@ -160,6 +160,7 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 				starCount: publicListing.starCount,
 				iconDataUri,
 				theme,
+				assets: env.ASSETS,
 			})
 
 			return new Response(png, {
