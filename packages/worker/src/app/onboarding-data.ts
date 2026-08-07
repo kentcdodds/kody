@@ -69,6 +69,15 @@ export function buildIntroEmailPrompt() {
 	return 'Hey Kody, send me a welcome email introducing yourself, and invite me to reply to it.'
 }
 
+/**
+ * Follow-up after the user replies to the welcome email. Kept separate from
+ * the send prompt so the UI can show "reply, then ask your agent to look it
+ * up" as an explicit second paste.
+ */
+export function buildIntroEmailLookupPrompt() {
+	return 'Hey Kody, look up my reply to your welcome email and tell me what I said.'
+}
+
 /** Second first-win prompt: start durable memory with a tiny interview. */
 export function buildMemoryPrompt() {
 	return 'Hey Kody, ask me a couple of questions about who I am and what I work with, then remember what matters.'
@@ -110,6 +119,7 @@ export function loadPublicOnboardingData(input: {
 			requestUrl: input.requestUrl,
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
+		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
 		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: false,
@@ -161,6 +171,9 @@ export async function loadOnboardingData(input: {
 			requestUrl: input.requestUrl,
 		}),
 		introEmailPrompt: input.emailVerified ? buildIntroEmailPrompt() : '',
+		introEmailLookupPrompt: input.emailVerified
+			? buildIntroEmailLookupPrompt()
+			: '',
 		memoryPrompt: input.emailVerified ? buildMemoryPrompt() : '',
 		hasMcpClient,
 		emailVerified: input.emailVerified,

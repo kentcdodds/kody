@@ -669,6 +669,8 @@ export type OnboardingLoaderData = {
 	discoveryPrompt: string
 	/** First-win prompt: welcome email that invites a reply. */
 	introEmailPrompt: string
+	/** First-win follow-up: ask the agent to read the user's reply. */
+	introEmailLookupPrompt: string
 	/** First-win prompt: tiny interview that seeds durable memories. */
 	memoryPrompt: string
 	hasMcpClient: boolean

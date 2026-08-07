@@ -25,6 +25,7 @@ import {
 import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
 import {
 	OnboardingChecklistCard,
+	isOnboardingChecklistItemDone,
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
@@ -53,8 +54,8 @@ import {
  * (Discover · Connect your agent · See it work · Install a starter package), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
  * behind a disclosure. All server state (prompts, MCP URL, featured
- * listings, hasMcpClient polling) stays exactly as before — this is a
- * restyle, not a rearchitecture.
+ * listings, hasMcpClient / first-win polling) stays in the route state —
+ * this is a restyle, not a rearchitecture.
  */
 
 type OnboardingStep = 1 | 2 | 3 | 4
@@ -117,8 +118,12 @@ export function OnboardingRoute(handle: Handle) {
 	let setupPrompt = ''
 	let discoveryPrompt = ''
 	let introEmailPrompt = ''
+	let introEmailLookupPrompt = ''
 	let memoryPrompt = ''
 	let hasMcpClient = false
+	let hasFirstHello = false
+	let hasSavedMemory = false
+	let hasFirstWin = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
@@ -132,25 +137,40 @@ export function OnboardingRoute(handle: Handle) {
 
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
+		const wasFirstWin = hasFirstWin
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
 		discoveryPrompt = payload.discoveryPrompt
 		introEmailPrompt = payload.introEmailPrompt
+		introEmailLookupPrompt = payload.introEmailLookupPrompt
 		memoryPrompt = payload.memoryPrompt
 		hasMcpClient = payload.hasMcpClient
+		hasFirstHello = isOnboardingChecklistItemDone(
+			payload.checklist,
+			'first-hello',
+		)
+		hasSavedMemory = isOnboardingChecklistItemDone(
+			payload.checklist,
+			'save-memory',
+		)
+		hasFirstWin = hasFirstHello && hasSavedMemory
 		featuredListings = payload.featuredListings ?? []
 		checklist = payload.checklist
 		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = payload.hasMcpClient ? 3 : 1
+			activeStep = hasFirstWin ? 4 : payload.hasMcpClient ? 3 : 1
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient) {
+		} else if (!wasConnected && payload.hasMcpClient && !hasFirstWin) {
 			panelAnimationArmed = true
 			activeStep = 3
 			updateStepHash(3)
+		} else if (!wasFirstWin && hasFirstWin) {
+			panelAnimationArmed = true
+			activeStep = 4
+			updateStepHash(4)
 		}
 	}
 
@@ -243,9 +263,10 @@ export function OnboardingRoute(handle: Handle) {
 		}
 	}
 
-	// Users typically keep this page open while their MCP client runs the
-	// OAuth flow, so poll the same JSON endpoint until a grant shows up and
-	// collapse the completed steps without requiring a manual refresh.
+	// Users typically keep this page open while their MCP client runs OAuth
+	// and while they finish the first-win prompts, so poll the same JSON
+	// endpoint until those signals land and collapse completed steps without
+	// a manual refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -253,12 +274,12 @@ export function OnboardingRoute(handle: Handle) {
 	// that race's "Network connection lost" ProxyWorker error into a fatal
 	// dev-server exit (cloudflare/workers-sdk#14926). Polling faster than 5s
 	// keeps the connection warm so the race never happens.
-	const mcpConnectionPollIntervalMs = 4000
+	const onboardingProgressPollIntervalMs = 4000
 	let pollIntervalId: ReturnType<typeof setInterval> | undefined
 	let pollInFlight = false
 
-	async function pollForMcpConnection() {
-		if (hasMcpClient) {
+	async function pollOnboardingProgress() {
+		if (hasFirstWin) {
 			clearInterval(pollIntervalId)
 			return
 		}
@@ -268,7 +289,23 @@ export function OnboardingRoute(handle: Handle) {
 		pollInFlight = true
 		try {
 			const payload = await fetchOnboardingPayload(handle.signal)
-			if (handle.signal.aborted || !payload?.hasMcpClient) return
+			if (handle.signal.aborted || !payload) return
+			const nextHasMcpClient = payload.hasMcpClient
+			const nextHasFirstHello = isOnboardingChecklistItemDone(
+				payload.checklist,
+				'first-hello',
+			)
+			const nextHasSavedMemory = isOnboardingChecklistItemDone(
+				payload.checklist,
+				'save-memory',
+			)
+			if (
+				nextHasMcpClient === hasMcpClient &&
+				nextHasFirstHello === hasFirstHello &&
+				nextHasSavedMemory === hasSavedMemory
+			) {
+				return
+			}
 			applyPayload(payload)
 			handle.update()
 		} catch {
@@ -280,8 +317,8 @@ export function OnboardingRoute(handle: Handle) {
 
 	if (typeof document !== 'undefined') {
 		pollIntervalId = setInterval(
-			pollForMcpConnection,
-			mcpConnectionPollIntervalMs,
+			pollOnboardingProgress,
+			onboardingProgressPollIntervalMs,
 		)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
 		window.addEventListener('hashchange', handleHashChange)
@@ -369,7 +406,9 @@ export function OnboardingRoute(handle: Handle) {
 						<nav aria-label="Onboarding steps" mix={css(wizardStepsCss)}>
 							{onboardingSteps.map((step) => {
 								const isActive = activeStep === step.number
-								const isComplete = hasMcpClient && step.number < 3
+								const isComplete =
+									(step.number < 3 && hasMcpClient) ||
+									(step.number === 3 && hasFirstWin)
 								return (
 									<button
 										key={step.number}
@@ -556,17 +595,50 @@ export function OnboardingRoute(handle: Handle) {
 								</div>
 								<p mix={css(panelLedeCss)}>
 									Paste these into your connected agent — Kody stores what
-									lands, and your agent reads it back when you ask.
+									lands, and your agent reads it back when you ask. This step
+									checks off once both are done.
 								</p>
 								<div mix={css(firstWinGridCss)}>
 									<article mix={css(firstWinCardCss)}>
-										<h3 mix={css(firstWinCardTitleCss)}>Say hello</h3>
+										<div mix={css(firstWinCardHeadCss)}>
+											<h3 mix={css(firstWinCardTitleCss)}>Say hello</h3>
+											{loggedIn ? (
+												<div
+													mix={css(connectStatusCss)}
+													role="status"
+													aria-live="polite"
+													data-connected={
+														hasFirstHello ? 'true' : undefined
+													}
+													data-testid="onboarding-first-hello-status"
+												>
+													{hasFirstHello ? (
+														<>
+															<span
+																mix={css(connectCheckCss)}
+																aria-hidden="true"
+															>
+																✓
+															</span>
+															<strong>Reply received</strong>
+														</>
+													) : (
+														<>
+															<span
+																mix={css(inlineSpinnerCss)}
+																aria-hidden="true"
+															/>
+															<strong>Waiting for your reply…</strong>
+														</>
+													)}
+												</div>
+											) : null}
+										</div>
 										<p mix={css(firstWinGuidanceCss)}>
-											Paste this into your connected agent; Kody emails you from
-											your own Kody address within a minute. When it lands,
-											reply to it — then ask your agent what you said. Kody
-											stores your reply; nothing answers by itself until your
-											agent reads it.
+											1. Paste the first prompt so Kody emails you from your
+											own Kody address. 2. Reply to that email. 3. Paste the
+											second prompt so your agent looks up your reply — Kody
+											stores mail; nothing answers by itself until you ask.
 										</p>
 										<figure mix={css(promptBlockCss)}>
 											<blockquote>{introEmailPrompt}</blockquote>
@@ -576,15 +648,56 @@ export function OnboardingRoute(handle: Handle) {
 											idleLabel="Copy hello prompt"
 											variant="pill"
 										/>
+										<figure mix={css(promptBlockCss)}>
+											<blockquote>{introEmailLookupPrompt}</blockquote>
+										</figure>
+										<CopyTextButton
+											value={introEmailLookupPrompt}
+											idleLabel="Copy lookup prompt"
+											variant="pill"
+										/>
 									</article>
 									<article mix={css(firstWinCardCss)}>
-										<h3 mix={css(firstWinCardTitleCss)}>
-											Teach Kody about you
-										</h3>
+										<div mix={css(firstWinCardHeadCss)}>
+											<h3 mix={css(firstWinCardTitleCss)}>
+												Teach Kody about you
+											</h3>
+											{loggedIn ? (
+												<div
+													mix={css(connectStatusCss)}
+													role="status"
+													aria-live="polite"
+													data-connected={
+														hasSavedMemory ? 'true' : undefined
+													}
+													data-testid="onboarding-save-memory-status"
+												>
+													{hasSavedMemory ? (
+														<>
+															<span
+																mix={css(connectCheckCss)}
+																aria-hidden="true"
+															>
+																✓
+															</span>
+															<strong>Memory saved</strong>
+														</>
+													) : (
+														<>
+															<span
+																mix={css(inlineSpinnerCss)}
+																aria-hidden="true"
+															/>
+															<strong>Waiting for a saved memory…</strong>
+														</>
+													)}
+												</div>
+											) : null}
+										</div>
 										<p mix={css(firstWinGuidanceCss)}>
-											Your agent will ask a couple of questions and save durable
-											memories that follow you across every agent connected to
-											your account.
+											Paste this into your connected agent. It will ask a
+											couple of questions and save durable memories that follow
+											you across every agent connected to your account.
 										</p>
 										<figure mix={css(promptBlockCss)}>
 											<blockquote>{memoryPrompt}</blockquote>
@@ -1055,6 +1168,11 @@ const firstWinCardCss = {
 	border: `1.5px solid ${colors.border}`,
 	borderRadius: radius.card,
 	minWidth: 0,
+}
+
+const firstWinCardHeadCss = {
+	display: 'grid',
+	gap: '0.65rem',
 }
 
 const firstWinCardTitleCss = {

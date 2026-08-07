@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	buildDiscoveryPrompt,
+	buildIntroEmailLookupPrompt,
 	buildIntroEmailPrompt,
 	buildMcpServerUrl,
 	buildMemoryPrompt,
@@ -26,6 +27,9 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toContain('https://preview.example')
 
+	// After the welcome reply, the lookup prompt is the explicit second paste.
+	expect(buildIntroEmailLookupPrompt().toLowerCase()).toContain('look up')
+
 	expect(
 		loadPublicOnboardingData({
 			env: { APP_BASE_URL: 'https://heykody.dev' },
@@ -41,6 +45,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
+		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
 		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: false,
@@ -69,6 +74,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
+		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
 		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: true,
@@ -116,6 +122,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		setupPrompt: '',
 		// First-win prompts need a verified email (they send/store real data).
 		introEmailPrompt: '',
+		introEmailLookupPrompt: '',
 		memoryPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({

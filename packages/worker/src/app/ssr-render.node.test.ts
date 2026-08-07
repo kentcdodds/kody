@@ -325,6 +325,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		setupPrompt: '',
 		discoveryPrompt: expect.stringContaining('what-is-kody'),
 		introEmailPrompt: '',
+		introEmailLookupPrompt: '',
 		memoryPrompt: '',
 		hasMcpClient: false,
 		emailVerified: false,

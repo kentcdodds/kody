@@ -67,6 +67,14 @@ export function getFirstUndoneChecklistItemLabel(
 	return undone ? onboardingChecklistItemLabels[undone.id] : null
 }
 
+/** True when the derived checklist marks the given item done. */
+export function isOnboardingChecklistItemDone(
+	checklist: OnboardingChecklistLoaderData | null | undefined,
+	id: OnboardingChecklistItemId,
+): boolean {
+	return checklist?.items.some((item) => item.id === id && item.done) ?? false
+}
+
 type OnboardingChecklistCardProps = {
 	checklist: OnboardingChecklistLoaderData
 	onDismissed?: () => void

@@ -7,6 +7,7 @@ import {
 } from '#app/handlers/onboarding.ts'
 import {
 	buildDiscoveryPrompt,
+	buildIntroEmailLookupPrompt,
 	buildIntroEmailPrompt,
 	buildMemoryPrompt,
 	buildOnboardingSetupPrompt,
@@ -45,6 +46,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
+		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
 		memoryPrompt: buildMemoryPrompt(),
 		hasMcpClient: false,
 		emailVerified: false,
