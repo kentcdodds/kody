@@ -28,9 +28,10 @@ Alternatives considered:
 
 Keep per-file storage isolation and parallel workers-unit. Do **not** warm
 Durable Objects from `globalSetup` or workers-unit `setupFiles`. Prefer
-`*.node.test.ts` whenever real bindings are not required. Keep a shared Vitest
-`testTimeout` of 20s (and `CI=1` on `test:push` / validate’s test and e2e legs)
-so the pool’s per-file DO cold load does not fail the default budget.
+`*.node.test.ts` unless real Cloudflare bindings or Workers-only APIs are
+required. Keep a shared Vitest `testTimeout` of 20s (and `CI=1` on `test:push` /
+validate’s test and e2e legs) so the pool’s per-file DO cold load does not fail
+the default budget.
 
 ## Consequences
 
@@ -38,8 +39,8 @@ so the pool’s per-file DO cold load does not fail the default budget.
   headroom keep an explicit per-test timeout.
 - Agents must not “fix” pool slowness with `--no-isolate`, `setupFiles` /
   `globalSetup` DO warmups, `--no-verify`, or a shorter local `testTimeout`.
-- Misclassified `*.workers.test.ts` files that never read bindings should become
-  `*.node.test.ts`.
+- Misclassified `*.workers.test.ts` files that never need bindings or
+  Workers-only APIs should become `*.node.test.ts`.
 - Revisit if Cloudflare’s pool loads DO classes cheaply (for example Vite
   bundled-dev), or if a warmup approach is proven not to disturb export wrapping
   / storage isolation.
