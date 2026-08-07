@@ -1,8 +1,9 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok, Claude Code, OpenCode, VS Code, or any other AI agent that supports MCP —
-not from a separate Kody chat app.
+Grok, Claude Code, OpenCode, GitHub Copilot (VS Code or CLI), the GitHub Copilot
+app, or any other AI agent that supports MCP — not from a separate Kody chat
+app.
 
 The in-app Get started page (`/onboarding`) has tabs with client-specific
 instructions and copyable config snippets for the host you are on.
@@ -48,15 +49,22 @@ MCP URL and setup prompt.
   with an `[mcp_servers.kody]` `url` entry.
 - **OpenCode** — Add a `mcp.kody` remote entry in `opencode.json`
   (`"type": "remote"`).
-- **VS Code** — Use `.vscode/mcp.json` with root key `servers` (not
-  `mcpServers`) and `"type": "http"`.
+- **Copilot** — In VS Code, use `.vscode/mcp.json` with root key `servers` (not
+  `mcpServers`) and `"type": "http"`, then Agent mode in Copilot Chat. In
+  Copilot CLI, run
+  `copilot mcp add --transport http kody <url>` or merge a `mcpServers` entry
+  into `~/.copilot/mcp-config.json` (CLI does not read `.vscode/mcp.json`).
+- **Copilot App** — In the GitHub Copilot app, open settings → **MCP Servers**
+  and add a custom remote HTTP server with the MCP URL. Servers from Copilot
+  CLI or repository MCP config are also available in the app.
 
 ### Coding vs non-coding agents
 
 Using Kody packages works great with non-coding agents such as Claude Desktop,
-ChatGPT, and Grok. For creating or editing packages, a coding agent (Cursor,
-Claude Code, Codex, VS Code, OpenCode, and similar) is usually smoother because
-those hosts can edit files and iterate on code more easily.
+ChatGPT, Grok, and the GitHub Copilot app. For creating or editing packages, a
+coding agent (Cursor, Claude Code, Codex, Copilot, OpenCode, and similar) is
+usually smoother because those hosts can edit files and iterate on code more
+easily.
 
 ## Install a starter or build your own
 

@@ -11,7 +11,8 @@ export type McpClientKind =
 	| 'grok'
 	| 'claude-code'
 	| 'opencode'
-	| 'vscode'
+	| 'copilot'
+	| 'copilot-app'
 	| 'other'
 
 export type McpClientTab = {
@@ -29,9 +30,18 @@ export const mcpClientTabs = [
 	{ id: 'grok', label: 'Grok', isNonCodingAgent: true },
 	{ id: 'claude-code', label: 'Claude Code', isNonCodingAgent: false },
 	{ id: 'opencode', label: 'OpenCode', isNonCodingAgent: false },
-	{ id: 'vscode', label: 'VS Code', isNonCodingAgent: false },
+	{ id: 'copilot', label: 'Copilot', isNonCodingAgent: false },
+	{ id: 'copilot-app', label: 'Copilot App', isNonCodingAgent: true },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
+
+/** GitHub docs for adding MCP servers in Copilot CLI (also used by the app). */
+export const copilotCliMcpGuideUrl =
+	'https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers'
+
+/** GitHub docs for MCP in the GitHub Copilot app. */
+export const copilotAppCustomizeGuideUrl =
+	'https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app'
 
 export const chatGptDeveloperModeGuideUrl =
 	'https://developers.openai.com/api/docs/guides/developer-mode'
@@ -47,7 +57,7 @@ export function buildKodyAppIconUrl(mcpServerUrl: string) {
 }
 
 export const nonCodingAgentNote =
-	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, VS Code, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
+	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Copilot, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
 
 export const codingAgentPackageHint =
 	'Coding agents are the best fit when you want to create or edit Kody packages. Once a package exists, non-coding agents can use it just fine.'
@@ -112,6 +122,26 @@ export function buildClaudeCodeAddCommand(mcpServerUrl: string) {
 export function buildVsCodeMcpJson(mcpServerUrl: string) {
 	return prettyJson({
 		servers: {
+			kody: {
+				type: 'http',
+				url: mcpServerUrl,
+			},
+		},
+	})
+}
+
+/** Copilot CLI one-shot remote HTTP add (writes `~/.copilot/mcp-config.json`). */
+export function buildCopilotCliAddCommand(mcpServerUrl: string) {
+	return `copilot mcp add --transport http kody ${mcpServerUrl}`
+}
+
+/**
+ * Copilot CLI / Copilot app user config (`~/.copilot/mcp-config.json`).
+ * Root key is `mcpServers` — Copilot CLI does not read `.vscode/mcp.json`.
+ */
+export function buildCopilotCliMcpJson(mcpServerUrl: string) {
+	return prettyJson({
+		mcpServers: {
 			kody: {
 				type: 'http',
 				url: mcpServerUrl,

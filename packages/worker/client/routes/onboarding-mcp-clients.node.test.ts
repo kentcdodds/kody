@@ -3,6 +3,8 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
+	buildCopilotCliAddCommand,
+	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
 	buildKodyAppIconUrl,
@@ -23,12 +25,19 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'grok',
 		'claude-code',
 		'opencode',
-		'vscode',
+		'copilot',
+		'copilot-app',
 		'other',
 	])
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
-	).toEqual(['chatgpt', 'claude-desktop', 'grok'])
+	).toEqual(['chatgpt', 'claude-desktop', 'grok', 'copilot-app'])
+	expect(mcpClientTabs.find((tab) => tab.id === 'copilot')?.label).toBe(
+		'Copilot',
+	)
+	expect(mcpClientTabs.find((tab) => tab.id === 'copilot-app')?.label).toBe(
+		'Copilot App',
+	)
 
 	expect(JSON.parse(buildCursorMcpJson(mcpServerUrl))).toEqual({
 		mcpServers: {
@@ -48,6 +57,17 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toContain(mcpServerUrl)
 	expect(JSON.parse(buildVsCodeMcpJson(mcpServerUrl))).toEqual({
 		servers: {
+			kody: {
+				type: 'http',
+				url: mcpServerUrl,
+			},
+		},
+	})
+	expect(buildCopilotCliAddCommand(mcpServerUrl)).toBe(
+		`copilot mcp add --transport http kody ${mcpServerUrl}`,
+	)
+	expect(JSON.parse(buildCopilotCliMcpJson(mcpServerUrl))).toEqual({
+		mcpServers: {
 			kody: {
 				type: 'http',
 				url: mcpServerUrl,

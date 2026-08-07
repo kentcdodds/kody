@@ -5,6 +5,8 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
+	buildCopilotCliAddCommand,
+	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
 	buildKodyAppIconUrl,
@@ -13,6 +15,8 @@ import {
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
 	codingAgentPackageHint,
+	copilotAppCustomizeGuideUrl,
+	copilotCliMcpGuideUrl,
 	grokConnectorsUrl,
 	grokCustomMcpGuideUrl,
 	type McpClientKind,
@@ -295,14 +299,17 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 				</>
 			)
 		}
-		case 'vscode': {
+		case 'copilot': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
+			const copilotCliCommand = buildCopilotCliAddCommand(mcpServerUrl)
+			const copilotCliJson = buildCopilotCliMcpJson(mcpServerUrl)
 			return (
 				<>
 					<p>
-						Install Kody directly, create or edit <code>.vscode/mcp.json</code>{' '}
-						in your workspace, or open user MCP config via the{' '}
+						<strong>In VS Code (Copilot Chat):</strong> install Kody directly,
+						create or edit <code>.vscode/mcp.json</code> in your workspace, or
+						open user MCP config via the{' '}
 						<strong>MCP: Open User Configuration</strong> command. VS Code uses
 						the root key <code>servers</code>, not <code>mcpServers</code>:
 					</p>
@@ -318,7 +325,82 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						Use Agent mode in Copilot Chat so MCP tools are available, then
 						complete OAuth when VS Code opens it.
 					</p>
+					<p>
+						<strong>In Copilot CLI:</strong> add a remote HTTP server (writes{' '}
+						<code>~/.copilot/mcp-config.json</code>). Copilot CLI does not read{' '}
+						<code>.vscode/mcp.json</code>:
+					</p>
+					<CopyCard
+						label="copilot CLI"
+						value={copilotCliCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+					<p>
+						Or merge this into <code>~/.copilot/mcp-config.json</code> (root key{' '}
+						<code>mcpServers</code>):
+					</p>
+					<CopyCard
+						label="~/.copilot/mcp-config.json"
+						value={copilotCliJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
+					<p>
+						See GitHub&apos;s{' '}
+						<a
+							href={copilotCliMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Copilot CLI MCP docs
+						</a>{' '}
+						for details. For the desktop GitHub Copilot app, use the{' '}
+						<strong>Copilot App</strong> tab.
+					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
+				</>
+			)
+		}
+		case 'copilot-app': {
+			const copilotCliJson = buildCopilotCliMcpJson(mcpServerUrl)
+			return (
+				<>
+					<p>
+						In the GitHub Copilot app, open settings and go to{' '}
+						<strong>MCP Servers</strong>. Add a custom remote HTTP server with
+						this MCP URL, then complete OAuth when the app opens it:
+					</p>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="pill"
+					/>
+					<p>
+						Servers you already configured for Copilot CLI (or in a repository)
+						are also available in the app. You can merge this into{' '}
+						<code>~/.copilot/mcp-config.json</code> instead:
+					</p>
+					<CopyCard
+						label="~/.copilot/mcp-config.json"
+						value={copilotCliJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
+					<p>
+						See GitHub&apos;s{' '}
+						<a
+							href={copilotAppCustomizeGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Copilot app customization docs
+						</a>{' '}
+						for MCP Servers, skills, and plugins.
+					</p>
+					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		}
@@ -339,8 +421,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 					<p>
 						Config file shapes differ by host. If your client expects a JSON{' '}
 						<code>mcpServers</code> map with a <code>url</code> field, start
-						from the Cursor snippet; if it uses <code>servers</code> with{' '}
-						<code>type: &quot;http&quot;</code>, use the VS Code snippet.
+						from the Cursor or Copilot CLI snippet; if it uses{' '}
+						<code>servers</code> with <code>type: &quot;http&quot;</code>, use
+						the Copilot (VS Code) snippet.
 					</p>
 				</>
 			)

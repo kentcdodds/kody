@@ -78,7 +78,7 @@ export function renderOnboardingBanner(options?: OnboardingBannerOptions) {
 				>
 					{showChecklistProgress && nextLabel
 						? `Next up: ${nextLabel}`
-						: 'Kody works through MCP. Add this deployment as an MCP server in Cursor, Claude, or any MCP-capable agent, then ask your agent to help you get set up.'}
+						: 'Kody works through MCP. Add this deployment as an MCP server in Cursor, Claude, Copilot, or any MCP-capable agent, then ask your agent to help you get set up.'}
 				</p>
 			</div>
 			<a
