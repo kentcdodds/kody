@@ -139,6 +139,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          # Legacy app hostnames kept attached (and optionally redirected)
+          # during a domain migration; see tools/ci/resource-utils.ts.
+          APP_LEGACY_HOSTS: ${{ vars.APP_LEGACY_HOSTS }}
+          APP_LEGACY_REDIRECT: ${{ vars.APP_LEGACY_REDIRECT }}
           USER_EMAIL_DOMAIN: ${{ vars.USER_EMAIL_DOMAIN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}

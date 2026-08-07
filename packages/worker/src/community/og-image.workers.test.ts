@@ -1,4 +1,5 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { env } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { renderCommunityIconFallbackPng } from './community-icon.ts'
 import { renderCommunityOgImage } from './og-image.ts'
@@ -16,6 +17,7 @@ test('renderCommunityOgImage works in workerd', async () => {
 		forkCount: 9,
 		starCount: 3,
 		iconDataUri: `data:image/png;base64,${bytesToBase64(iconPng)}`,
+		assets: env.ASSETS,
 	})
 
 	expect(png.byteLength).toBeGreaterThan(10_000)

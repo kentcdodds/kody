@@ -7,7 +7,7 @@ import {
 	buildStylesheetHref,
 	getClientBuildId,
 } from '#app/client-build-id.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	absolutizeDocumentHead,
@@ -80,7 +80,10 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	const url = getRequestUrl(request)
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
-	const origin = getAppBaseUrl({ env, requestUrl: request.url })
+	// Canonical/OG head URLs use the configured canonical origin so pages
+	// dual-served from a legacy host still point crawlers at the canonical
+	// domain; everything request-scoped keeps using getAppBaseUrl.
+	const origin = getCanonicalAppBaseUrl({ env, requestUrl: request.url })
 	const documentHead = absolutizeDocumentHead(
 		resolveDocumentHead(requestUrl.pathname, loaderData),
 		origin,
@@ -121,6 +124,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		(
 			<SsrDocument
 				documentHead={documentHead}
+				canonicalOrigin={origin}
 				url={url}
 				session={session}
 				loaderData={loaderData}

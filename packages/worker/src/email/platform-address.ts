@@ -11,14 +11,30 @@ export const defaultUserEmailSubdomainLabel = 'inbox'
 const bareHostnamePattern = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
 /**
- * The email domain operator-owned system mail lives on: the hostname of
- * `APP_BASE_URL` (for example `heykody.dev`). The transactional sender
- * (`kody@<apex>`) and the operator system inboxes both use this apex
- * domain, keeping them structurally separate from the user subdomain.
+ * The email domain operator-owned system mail lives on: the
+ * `SYSTEM_EMAIL_DOMAIN` env var when set, otherwise the hostname of
+ * `APP_BASE_URL`. The transactional sender (`kody@<domain>`) and the
+ * operator system inboxes both use this domain, keeping them structurally
+ * separate from the user subdomain.
+ *
+ * The override exists because email is pinned to `heykody.dev` (MX, SPF,
+ * DKIM, and Cloudflare Email Sending verification live on that zone) while
+ * the web origin moves to `heykody.app`: production sets
+ * `SYSTEM_EMAIL_DOMAIN=heykody.dev` so flipping `APP_BASE_URL` never moves
+ * system mail off the verified domain.
  */
 export function getSystemEmailDomain(env: {
 	APP_BASE_URL?: string | null
+	SYSTEM_EMAIL_DOMAIN?: string | null
 }): string | null {
+	const configuredDomain = env.SYSTEM_EMAIL_DOMAIN?.trim()
+		.toLowerCase()
+		.replace(/\.$/, '')
+	if (configuredDomain && bareHostnamePattern.test(configuredDomain)) {
+		return configuredDomain
+	}
+	// Runtime env validation should already catch a malformed override; fall
+	// back to the derived default defensively (same as getPlatformEmailDomain).
 	const configuredBaseUrl = env.APP_BASE_URL?.trim()
 	if (!configuredBaseUrl) return null
 	try {

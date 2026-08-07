@@ -17,10 +17,41 @@
 	"main": "./src/index.ts",
 	"minify": true,
 	"upload_source_maps": true,
+	// `find_additional_modules` uploads files matching `rules` (below `base_dir`,
+	// which defaults to `./src`) as separate external modules instead of inlining
+	// them into the main module. The pre-bundled worker-bundler modules in
+	// `src/generated/` (built by `tools/build-worker-bundler-modules.ts`) rely on
+	// this so their ~4 MB only loads when repo checks dynamically import them,
+	// instead of being parsed and evaluated on every isolate cold start.
+	"find_additional_modules": true,
 	"rules": [
 		{
+			// Specifier-shaped globs (`./`/`../` prefixes) on purpose: every
+			// markdown import in the worker is a relative specifier, and these
+			// globs must NOT match traversal-relative file names (for example
+			// `blog/posts/foo.md`). If the traversal discovered those files,
+			// wrangler would upload them under their directory-relative names
+			// while keeping the original `./posts/foo.md` import specifiers,
+			// which resolve against the bundled entry module and fail at boot
+			// with "No such module".
 			"type": "Text",
-			"globs": ["**/*.md"],
+			"globs": ["./**/*.md", "../**/*.md"],
+			"fallthrough": true,
+		},
+		{
+			// Both spellings are required: the bare glob matches file names during
+			// the on-disk traversal that discovers additional modules, while the
+			// `./`-prefixed glob matches the import specifier so wrangler keeps
+			// `import('./generated/…')` external instead of inlining it. Single-star
+			// globs on purpose: wrangler's specifier matcher converts globs without
+			// globstar support, so `**/*` can never match a flat specifier.
+			"type": "ESModule",
+			"globs": ["generated/*.mjs", "./generated/*.mjs"],
+			"fallthrough": true,
+		},
+		{
+			"type": "CompiledWasm",
+			"globs": ["generated/*.wasm"],
 			"fallthrough": true,
 		},
 	],
@@ -401,6 +432,16 @@
 				// https://kodyapps.dev/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
+				// Email domains are pinned to heykody.dev regardless of the web
+				// origin: MX/SPF/DKIM and Cloudflare Email Sending verification
+				// live on the heykody.dev zone, and every existing user inbox is
+				// {username}@inbox.heykody.dev. Without these pins, flipping
+				// APP_BASE_URL to https://heykody.app would silently rederive
+				// both domains onto heykody.app and break all existing
+				// addresses. Committed here (not just GitHub Actions vars) so
+				// the lock can never be lost to a missing repository variable.
+				"USER_EMAIL_DOMAIN": "inbox.heykody.dev",
+				"SYSTEM_EMAIL_DOMAIN": "heykody.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",

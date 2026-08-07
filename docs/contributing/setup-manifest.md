@@ -106,8 +106,8 @@ This project uses the following resources:
     **custom domain**, which provisions the DNS record and edge certificate.
   - The attach happens on deploy, but the routes are **generated, not
     committed**: `writeGeneratedWranglerConfig` (`tools/ci/resource-utils.ts`)
-    derives one `custom_domain` route per base-URL var (`APP_BASE_URL` and
-    `PACKAGE_APP_BASE_URL`) while writing
+    derives one `custom_domain` route per base-URL var (`APP_BASE_URL`,
+    `APP_LEGACY_HOSTS`, and `PACKAGE_APP_BASE_URL`) while writing
     `packages/worker/wrangler-production.generated.json`. Those vars are the
     single source of truth for both the hosts the Worker routes on and the
     domains the deploy attaches, so the two cannot drift.
@@ -118,7 +118,11 @@ This project uses the following resources:
     package-app origin, and why the generator fails the deploy when
     `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than publishing
     a partial set. Any domain attached out-of-band must be added here before the
-    next deploy, or that deploy will remove it.
+    next deploy, or that deploy will remove it. During a domain migration the
+    previous app host must therefore be listed in the `APP_LEGACY_HOSTS`
+    repository variable (comma-separated bare hostnames, e.g. `heykody.dev`)
+    before `APP_BASE_URL` flips to the new domain, so the old origin stays
+    attached and dual-served.
   - Publishing routes also flips `workers_dev` to `false`, which silently drops
     the `<name>.<subdomain>.workers.dev` trigger (Cloudflare then answers that
     hostname with error 1042). The generator sets `workers_dev: true` alongside
@@ -297,10 +301,12 @@ automatically:
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
 - `SECRET_STORE_KEY` (required; generate with `openssl rand -base64 48`)
 - `APP_BASE_URL` (optional; used as the fallback public origin when no request
-  URL is available — e.g. workflows and email. Example `https://heykody.dev`.
+  URL is available — e.g. workflows and email. Example `https://heykody.app`.
   Most request-scoped app/MCP URLs use the inbound request origin so OAuth
   metadata matches the host the client connected to. Password reset email sends
-  require this value and use `kody@<hostname>` as the sender.)
+  require a system email domain and use `kody@<domain>` as the sender — the
+  `SYSTEM_EMAIL_DOMAIN` override when set, otherwise the `APP_BASE_URL`
+  hostname.)
 - `PACKAGE_APP_BASE_URL` (Wrangler `var`; required in production and optional
   for confirmed local/preview/test runtimes; origin for hosted package apps.
   Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
@@ -460,10 +466,12 @@ How to get/set each value:
   - Generate locally: `openssl rand -hex 32`
   - Store the exact value as a repository secret in GitHub Actions.
 - `APP_BASE_URL` (optional)
-  - Use your production app URL (for example `https://heykody.dev`) as the
+  - Use your production app URL (for example `https://heykody.app`) as the
     fallback public origin for workflows and password-reset email.
-  - Add it when password reset email should send; the sender is derived as
-    `kody@<hostname>`, so verify that sender/domain in Cloudflare Email Service.
+  - Add it when password reset email should send; the sender is
+    `kody@<system email domain>` (the `SYSTEM_EMAIL_DOMAIN` override when set,
+    otherwise the `APP_BASE_URL` hostname), so verify that sender/domain in
+    Cloudflare Email Service.
   - It also lets deploy-time health/version checks use a fixed URL.
   - Production CI writes this into the generated Wrangler `vars` config before
     deploy, rather than syncing it as a Worker secret.
@@ -482,6 +490,20 @@ How to get/set each value:
   Email Sending event subscription).
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     it only when the production user email domain differs from the default.
+  - Production also commits `USER_EMAIL_DOMAIN=inbox.heykody.dev` (and
+    `SYSTEM_EMAIL_DOMAIN=heykody.dev`) in `packages/worker/wrangler.jsonc` so
+    email stays on the verified `heykody.dev` zone across the web origin's move
+    to `heykody.app`; the deploy tooling reads the same committed pin.
+- `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
+  **variables** for domain migrations; see
+  [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).
+  - `APP_LEGACY_HOSTS` lists previous app hostnames (comma-separated, e.g.
+    `heykody.dev`) that stay attached to the Worker as custom domains and are
+    dual-served.
+  - `APP_LEGACY_REDIRECT=true` later enables 308 redirects for browser GET/HEAD
+    navigation from those hosts to the canonical origin; protocol surfaces
+    (`/mcp`, OAuth, well-known, auth callbacks, webhooks, health) always keep
+    serving directly.
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
     gateway ID. The Worker uses this for Workers AI embedding calls when set;

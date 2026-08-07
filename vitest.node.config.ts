@@ -25,6 +25,20 @@ export default mergeConfig(
 					),
 				},
 				{
+					find: '#worker/og/og-binary-assets.ts',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/og/og-binary-assets.node.ts',
+					),
+				},
+				{
+					find: /\/og\/og-binary-assets\.ts$/,
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/og/og-binary-assets.node.ts',
+					),
+				},
+				{
 					find: '@sentry/cloudflare',
 					replacement: resolve(
 						rootDir,
@@ -44,6 +58,9 @@ export default mergeConfig(
 			name: 'node-unit',
 			environment: 'node',
 			include: ['**/*.node.test.ts'],
+			globalSetup: [
+				resolve(rootDir, 'tools/vitest-global-setup-worker-bundler-modules.ts'),
+			],
 			// Merged with the shared setupFiles (console spies). Routes the
 			// audit-log sink through a shared spy; see test-support/audit-log-spy.ts.
 			setupFiles: [

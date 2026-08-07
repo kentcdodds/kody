@@ -11,7 +11,7 @@ order: 7
 When you connect Google or GitHub to Kody, there's no one-click "Sign in with
 Google" button that just works. Instead, you go to the provider, create your own
 OAuth app, register the redirect URI, and then connect it at
-[heykody.dev/connect/oauth](https://heykody.dev/connect/oauth). The product's
+[heykody.app/connect/oauth](https://heykody.app/connect/oauth). The product's
 own copy is upfront about the cost: "a few minutes of setup instead of one
 click."
 
@@ -70,7 +70,7 @@ Flip every one of those. Create the OAuth app yourself and:
 
 The same principle covers plain API keys and personal access tokens. Those go
 into the server-side secret store via
-[a prefilled secrets page](https://heykody.dev/account/secrets/new), never
+[a prefilled secrets page](https://heykody.app/account/secrets/new), never
 pasted into chat. They're encrypted, referenced in code as `{{secret:name}}`
 placeholders, and resolved only for hosts you've approved, so the plaintext
 never enters a prompt. The
@@ -107,7 +107,7 @@ to create your app, and connect it. After the first one, the second takes half
 the time.
 
 Kody is invite-gated right now, so if you're not in yet,
-[join the waitlist on the signup page](https://heykody.dev/signup). The whole
+[join the waitlist on the signup page](https://heykody.app/signup). The whole
 thing is [Fair Source](https://github.com/kentcdodds/kody) if you want to verify
 any of this yourself, which, given the subject of this post, seems fitting.
 

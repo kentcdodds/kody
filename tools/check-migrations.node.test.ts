@@ -50,7 +50,7 @@ function mockGit(
 }
 
 // Runs the live checkMigrationsDirectory() path (git subprocess per migration
-// file), which can exceed the default 5s timeout on loaded local machines.
+// file), which can exceed the default test timeout on loaded local machines.
 test(
 	'migration filename helpers parse, score prefixes, and accept unique plus grandfathered pairs',
 	{ timeout: 30_000 },
@@ -321,7 +321,7 @@ test.each([
 )
 
 // Bootstraps a real temp git repo and spawns the checker script, which can
-// exceed the default 5s timeout on loaded local machines.
+// exceed the default test timeout on loaded local machines.
 test(
 	'runtime main validation rejects a historical migration and ledger co-edit',
 	{ timeout: 30_000 },

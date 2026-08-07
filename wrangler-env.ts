@@ -10,6 +10,7 @@ import {
 	stopChildProcessTree,
 } from './tools/dev-process-utils.ts'
 import { resolveLocalBinary } from './tools/node-runtime.ts'
+import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import {
 	getDefaultWranglerConfigPath,
 	resolveWranglerConfigPath,
@@ -39,6 +40,17 @@ if (
 	)
 ) {
 	commandArgs.push('--config', defaultWranglerConfigPath)
+}
+
+// The main worker config references pre-bundled modules in `src/generated/`
+// (see tools/build-worker-bundler-modules.ts), so make sure they exist before
+// any wrangler command that builds the worker. Skipped for explicit `--config`
+// invocations (mock servers, backup control plane) which don't use them.
+const isWorkerBuildCommand = ['dev', 'build', 'deploy', 'versions'].includes(
+	args[0] ?? '',
+)
+if (isWorkerBuildCommand && !hasConfigFlag) {
+	await ensureWorkerBundlerModules()
 }
 
 if (!hasEnvFlag) {

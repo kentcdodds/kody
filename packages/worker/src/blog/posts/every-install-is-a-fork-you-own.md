@@ -17,7 +17,7 @@ you found out the same way everyone else did: something broke.
 
 I've spent my career teaching people to read code, and it still bugs me how much
 of our tooling is built on the assumption that you won't. So when I built the
-community side of [Kody](https://heykody.dev), I made one decision that shapes
+community side of [Kody](https://heykody.app), I made one decision that shapes
 everything else:
 
 **In Kody's community, every install is a fork you own.**
@@ -34,7 +34,7 @@ Here's the mental model I want you to walk away with. There's a ladder you climb
 with any piece of software you depend on, and each rung is a level of ownership:
 
 1. **Install it.** One click at
-   [heykody.dev/community](https://heykody.dev/community). You now have a
+   [heykody.app/community](https://heykody.app/community). You now have a
    working fork.
 2. **Open it and read the code.** Packages are repo-backed: real code with a
    `package.json` and version history, not a config blob. You can see exactly
@@ -102,7 +102,7 @@ too.
 ## Try the ladder yourself
 
 If you want to see what this feels like, the loop is short. Browse
-[the community](https://heykody.dev/community), install something small, then
+[the community](https://heykody.app/community), install something small, then
 ask your agent to show you the code. That second step is the one most people
 have never done with software they installed, and it's the one that makes the
 rest of the ladder feel real. The docs on
@@ -114,5 +114,5 @@ cover the details, and the whole platform is
 that.
 
 Kody is invite-gated right now, so if you don't have an account yet,
-[join the waitlist on the signup page](https://heykody.dev/signup). And once
+[join the waitlist on the signup page](https://heykody.app/signup). And once
 you're in: don't stop at rung one. The code is yours. Read it.

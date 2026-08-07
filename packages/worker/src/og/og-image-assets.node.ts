@@ -7,9 +7,15 @@ const yogaWasmPath = require.resolve('satori/yoga.wasm')
 const resvgWasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm')
 
 export {
+	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
+	getKodyHeroDataUri,
+	getKodyLogoDataUri,
+	getKodyPatternDataUri,
 	getWixMadeforTextLatin400FontData,
-} from './fonts.ts'
+	resetOgBinaryAssetsCache,
+	type OgAssetsFetcher,
+} from './og-binary-assets.node.ts'
 
 export const ogYogaWasm = await WebAssembly.compile(readFileSync(yogaWasmPath))
 export const ogResvgWasm = await WebAssembly.compile(

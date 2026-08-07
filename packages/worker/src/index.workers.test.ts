@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 	runDrExportTick: vi.fn(async () => ({ skipped: true })),
 	runDrExportWatchdogTick: vi.fn(async () => ({ skipped: true })),
 	shouldRunDrExportCron: vi.fn(() => false),
+	shouldRunDrExportCatchUpCron: vi.fn(() => false),
 	shouldRunDrExportWatchdogCron: vi.fn(() => false),
 	isDrExportConfigured: vi.fn(() => false),
 	runJobScheduleWatchdogTick: vi.fn(async () => ({
@@ -93,6 +94,7 @@ vi.mock('#worker/dr/exporter.ts', () => ({
 	runDrExportTick: mocks.runDrExportTick,
 	runDrExportWatchdogTick: mocks.runDrExportWatchdogTick,
 	shouldRunDrExportCron: mocks.shouldRunDrExportCron,
+	shouldRunDrExportCatchUpCron: mocks.shouldRunDrExportCatchUpCron,
 	shouldRunDrExportWatchdogCron: mocks.shouldRunDrExportWatchdogCron,
 	isDrExportConfigured: mocks.isDrExportConfigured,
 }))

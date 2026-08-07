@@ -52,7 +52,7 @@ Once connected, you can ask Kody things like:
 Save it through the account secrets page — never paste the token into chat:
 
 ```text
-https://heykody.dev/account/secrets/new?name=notionToken&description=Notion%20internal%20connection%20token&allowedHosts=api.notion.com&scope=user
+https://heykody.app/account/secrets/new?name=notionToken&description=Notion%20internal%20connection%20token&allowedHosts=api.notion.com&scope=user
 ```
 
 Approve the `api.notion.com` host on the same page after saving.
@@ -62,13 +62,13 @@ Approve the `api.notion.com` host on the same page after saving.
 1. In the Developer portal, create a **public** connection. Choose the
    installation scope carefully — it cannot be changed after creation.
 2. On the **Configuration** tab, set the redirect URI to
-   `https://heykody.dev/connect/oauth` (a self-hosted deployment registers its
+   `https://heykody.app/connect/oauth` (a self-hosted deployment registers its
    own origin plus `/connect/oauth`) and copy the client ID and client secret.
 
 ### Connect to Kody
 
 ```text
-https://heykody.dev/connect/oauth?provider=notion&authorizeUrl=https%3A%2F%2Fapi.notion.com%2Fv1%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fapi.notion.com%2Fv1%2Foauth%2Ftoken&flow=confidential&extraAuthorizeParams=%7B%22owner%22%3A%22user%22%7D
+https://heykody.app/connect/oauth?provider=notion&authorizeUrl=https%3A%2F%2Fapi.notion.com%2Fv1%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fapi.notion.com%2Fv1%2Foauth%2Ftoken&flow=confidential&extraAuthorizeParams=%7B%22owner%22%3A%22user%22%7D
 ```
 
 Decoded: authorize URL `https://api.notion.com/v1/oauth/authorize`, token URL

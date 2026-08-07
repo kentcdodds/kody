@@ -123,7 +123,7 @@ export function createBlogPostMarkdownHandler(_env: Env) {
 	} satisfies Action<typeof routes.blogPostMarkdown>
 }
 
-export function createBlogPostOgImageHandler(_env: Env) {
+export function createBlogPostOgImageHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, params }) {
@@ -146,6 +146,7 @@ export function createBlogPostOgImageHandler(_env: Env) {
 				description: post.description,
 				date: post.date,
 				theme,
+				assets: env.ASSETS,
 			})
 
 			return new Response(png, {

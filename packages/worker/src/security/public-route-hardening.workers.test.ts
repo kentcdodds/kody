@@ -101,6 +101,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			notConfiguredMessage: 'DR restore is not configured',
 		},
 		{
+			path: '/__maintenance/dr-export',
+			secret: env.DR_RESTORE_SECRET,
+			notConfiguredMessage: 'DR export maintenance is not configured',
+		},
+		{
 			path: '/__maintenance/do-pitr',
 			secret: env.DR_RESTORE_SECRET,
 			notConfiguredMessage: 'Durable Object PITR is not configured',

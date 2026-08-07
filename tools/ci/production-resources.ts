@@ -5,6 +5,7 @@ import {
 	ensureEmailSendingEventSubscription,
 	ensureR2Bucket,
 	fail,
+	isValidBareHostname,
 	listCloudflareQueues,
 	listD1Databases,
 	listKvNamespaces,
@@ -49,6 +50,7 @@ type ResolvedProductionBindings = {
 	scheduledDispatchDeadLetterQueueName: string
 	packageEventsDispatchQueueName: string
 	packageEventsDispatchDeadLetterQueueName: string
+	committedUserEmailDomain: string | null
 }
 
 function parseArgs(argv: Array<string>): {
@@ -125,14 +127,35 @@ function defaultBundleArtifactsKvTitle(workerName: string) {
 	return truncateWithSuffix(workerName, '-bundle-artifacts', 63)
 }
 
-function resolveEmailSendingDomain(dryRun: boolean) {
+function resolveEmailSendingDomain(input: {
+	dryRun: boolean
+	committedUserEmailDomain: string | null
+}) {
 	const configured = process.env.USER_EMAIL_DOMAIN?.trim()
 		.toLowerCase()
 		.replace(/\.$/, '')
+	// An invalid explicit value fails the deploy instead of silently falling
+	// through: falling back would rederive the domain from APP_BASE_URL and
+	// could repoint the Email Sending subscription at an unverified domain.
+	if (configured && !isValidBareHostname(configured)) {
+		fail(`USER_EMAIL_DOMAIN is not a valid bare hostname: ${configured}`)
+	}
 	if (configured) return configured
+	// The committed wrangler.jsonc var pins the user email domain across a
+	// domain migration: without it, flipping the APP_BASE_URL repository
+	// variable would rederive the domain from the new hostname and repoint
+	// the Email Sending event subscription at an unverified domain.
+	if (input.committedUserEmailDomain) {
+		if (!isValidBareHostname(input.committedUserEmailDomain)) {
+			fail(
+				`Committed USER_EMAIL_DOMAIN in wrangler.jsonc is not a valid bare hostname: ${input.committedUserEmailDomain}`,
+			)
+		}
+		return input.committedUserEmailDomain
+	}
 	const appBaseUrl = process.env.APP_BASE_URL?.trim()
 	if (!appBaseUrl) {
-		if (dryRun) return 'inbox.example.com'
+		if (input.dryRun) return 'inbox.example.com'
 		fail(
 			'Missing APP_BASE_URL or USER_EMAIL_DOMAIN; cannot configure Email Sending event subscription.',
 		)
@@ -422,6 +445,17 @@ async function resolveProductionBindings({
 		)
 	}
 
+	const productionVars = (productionEnv as Record<string, unknown>).vars
+	const committedUserEmailDomainRaw =
+		productionVars && typeof productionVars === 'object'
+			? (productionVars as Record<string, unknown>).USER_EMAIL_DOMAIN
+			: undefined
+	const committedUserEmailDomain =
+		typeof committedUserEmailDomainRaw === 'string' &&
+		committedUserEmailDomainRaw.trim().length > 0
+			? committedUserEmailDomainRaw.trim().toLowerCase().replace(/\.$/, '')
+			: null
+
 	const resolved: ResolvedProductionBindings = {
 		workerName,
 		d1DatabaseName,
@@ -434,6 +468,7 @@ async function resolveProductionBindings({
 		bundleArtifactsKvConfiguredId,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		committedUserEmailDomain,
 		...queueResources,
 	}
 
@@ -555,7 +590,10 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.packageEventsDispatchDeadLetterQueueName,
 		existingQueues,
 	})
-	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
+	const emailSendingDomain = resolveEmailSendingDomain({
+		dryRun: options.dryRun,
+		committedUserEmailDomain: bindings.committedUserEmailDomain,
+	})
 	const emailEventSubscription = await ensureEmailSendingEventSubscription({
 		accountId: accountId ?? 'dry-run-account',
 		apiToken: apiToken ?? 'dry-run-token',
@@ -593,6 +631,8 @@ async function ensureProductionResources(options: CliOptions) {
 		emailBlobsBucketName: emailBlobs.name,
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
+			APP_LEGACY_HOSTS: process.env.APP_LEGACY_HOSTS,
+			APP_LEGACY_REDIRECT: process.env.APP_LEGACY_REDIRECT,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 			USER_EMAIL_DOMAIN: process.env.USER_EMAIL_DOMAIN,
 		},

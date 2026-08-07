@@ -43,13 +43,14 @@ First-proven dates for each lane (newest first). Re-prove and update after
 material schema/storage/pipeline changes; a lane is only as trusted as its most
 recent evidence.
 
-| Date (UTC) | Lane proven                                                                                                                                                                                                                                                                                                                                                    |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-07 | Offline escrow unseal smoke test proven with the real `SECRET_ESCROW_PASSPHRASE` against `escrow/secret-store-key.v1.json` ([#1091](https://github.com/kentcdodds/kody/issues/1091)): recovered key matched production `SECRET_STORE_KEY`; wrong passphrase failed cleanly (auth-tag error, no partial output).                                                |
-| 2026-07-28 | Isolated restore drill green through the product UI against a sealed day (`PRAGMA quick_check` ok, table counts plausible, temp database cleaned up). Required [#1002](https://github.com/kentcdodds/kody/pull/1002): presigned D1 import uploads reject chunked bodies with HTTP 411, so stream uploads go through `FixedLengthStream`.                       |
-| 2026-07-28 | First sealed full-backup day (`daily/full/2026-07-28/manifest.json`). Required [#1000](https://github.com/kentcdodds/kody/pull/1000): bucket-lock rules reject puts on existing keys with error 10069 before conditionals are evaluated, and exporter resume became identity-driven after mid-window inventory drift produced duplicate storage-index entries. |
-| 2026-07-28 | First completed staging run (`staging/2026-07-28/exporter/summary.json`; 186 storage dumps, R2 indexes, artifacts index).                                                                                                                                                                                                                                      |
-| 2026-07-26 | First verified nightly D1 export (signed manifest, stored-object digest verified; ~118 MB).                                                                                                                                                                                                                                                                    |
+| Date (UTC) | Lane proven                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-07 | First stranded staging day recovered and sealed (`daily/full/2026-08-07/manifest.json`, sealedAt 2026-08-07T19:45:16Z, 341 sealed objects). The night ran out of window mid-`artifacts` (progress revision 714, no summary; 06:15 watchdog paged correctly). Recovery resumed the existing `exporter/progress.json` (no staged work purged), staged the ~20 remaining snapshots, wrote `exporter/summary.json` at 19:05:29Z, and the unchanged hourly control-plane seal picked the day up at 19:45. Motivated the daytime catch-up lane and `POST /__maintenance/dr-export` ([#1287](https://github.com/kentcdodds/kody/pull/1287); [#1223](https://github.com/kentcdodds/kody/issues/1223)). |
+| 2026-08-07 | Offline escrow unseal smoke test proven with the real `SECRET_ESCROW_PASSPHRASE` against `escrow/secret-store-key.v1.json` ([#1091](https://github.com/kentcdodds/kody/issues/1091)): recovered key matched production `SECRET_STORE_KEY`; wrong passphrase failed cleanly (auth-tag error, no partial output).                                                                                                                                                                                                                                                                                                                                                                                |
+| 2026-07-28 | Isolated restore drill green through the product UI against a sealed day (`PRAGMA quick_check` ok, table counts plausible, temp database cleaned up). Required [#1002](https://github.com/kentcdodds/kody/pull/1002): presigned D1 import uploads reject chunked bodies with HTTP 411, so stream uploads go through `FixedLengthStream`.                                                                                                                                                                                                                                                                                                                                                       |
+| 2026-07-28 | First sealed full-backup day (`daily/full/2026-07-28/manifest.json`). Required [#1000](https://github.com/kentcdodds/kody/pull/1000): bucket-lock rules reject puts on existing keys with error 10069 before conditionals are evaluated, and exporter resume became identity-driven after mid-window inventory drift produced duplicate storage-index entries.                                                                                                                                                                                                                                                                                                                                 |
+| 2026-07-28 | First completed staging run (`staging/2026-07-28/exporter/summary.json`; 186 storage dumps, R2 indexes, artifacts index).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-07-26 | First verified nightly D1 export (signed manifest, stored-object digest verified; ~118 MB).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Still unproven live: graduated production restore into the production database
 (drill-level evidence only; it shares the `FixedLengthStream` upload path), and
@@ -87,7 +88,9 @@ Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
   stage Mailbox / selected RunLog state
   / StorageRunner / R2 / artifacts      →   Hourly: D1 freshness + catch-up
   into staging/{day}/...                    Hourly: seal complete days
-06:15 UTC: staging watchdog → Sentry        Admin UI: drill / production restore
+Daytime */15 ticks: staging catch-up        Admin UI: drill / production restore
+  resume a stranded day (≤2 days back)
+06:15 UTC: staging watchdog → Sentry
 ```
 
 ### What intentionally lives on the DR (KCD) account
@@ -172,6 +175,16 @@ Contract: `packages/shared/src/backup-staging.ts`.
      full download and hash path.
    - **Published artifacts** — `BUNDLE_ARTIFACTS_KV` published source snapshots
      for rows in `entity_sources` with a `published_commit`
+   - **Stranded-day catch-up** — a night with more staging work than the
+     00:30–06:10 window can hold ends with `exporter/progress.json` but no
+     `exporter/summary.json` (a _stranded day_; first hit live on 2026-08-07).
+     Outside the nightly window, one tick every 15 minutes scans today plus the
+     previous 2 days for progress-without-summary and resumes the most recent
+     stranded day under the normal ~20 s budget and progress lease until its
+     summary is written. Catch-up is resume-only: a day that never staged
+     progress is not started fresh (its dumps would contain current data, not
+     that day's). Data staged during catch-up is read at resume time; a slightly
+     newer dump is preferred over an unsealable day.
    - **Resumable phase state** — `exporter/progress.json` contains phase
      cursors, counters, bounded index-entry tails, and conditional-write
      revision data. Mailbox, selected RunLog, and StorageRunner dump pages plus
@@ -517,13 +530,44 @@ objects, remains a tracked follow-up in
 
 ## Schedules and freshness
 
-| When (UTC)               | Who               | What                                                                                                              |
-| ------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `*/5` during 00:30–06:10 | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete) |
-| 06:15                    | Production worker | Staging watchdog: a missing `exporter/summary.json` fails the lane → Sentry                                       |
-| 02:15                    | Control plane     | Primary D1 export Workflow                                                                                        |
-| 02:45–05:45 hourly       | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                                   |
-| Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                |
+| When (UTC)                       | Who               | What                                                                                                                     |
+| -------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `*/5` during 00:30–06:10         | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete)        |
+| Every 15 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the most recent stranded day (progress without summary, today − ≤2 days); cheap no-op otherwise |
+| 06:15                            | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry       |
+| 02:15                            | Control plane     | Primary D1 export Workflow                                                                                               |
+| 02:45–05:45 hourly               | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                                          |
+| Hourly `:45`                     | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                       |
+
+### Stranded staging days (manual finish)
+
+Failure mode: the nightly exporter hard-stops when the window closes, so a night
+with too much work leaves `staging/{day}/exporter/progress.json` without
+`exporter/summary.json`. The 06:15 watchdog pages; without a summary the day can
+never seal. Daytime catch-up ticks (table above) normally finish the day
+automatically within a few hours, and the hourly control-plane seal (3-day
+lookback) then seals it — no operator action needed.
+
+Operate manually when catch-up is stuck, the day has already fallen outside the
+catch-up lookback, or you want the day finished immediately:
+
+```sh
+DAY='YYYY-MM-DD'
+curl --fail-with-body \
+  --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/dr-export" \
+  --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+  --header "Content-Type: application/json" \
+  --data "{\"day\": \"$DAY\"}"
+```
+
+Each request runs up to 5 resume ticks (`maxTicks`, 1–10) with the normal ~20 s
+budget and lease semantics, so it is safe alongside scheduled catch-up ticks.
+Repeat until the response reports `"summaryWritten": true` (or
+`"reason": "already-complete"`). The endpoint is resume-only: a day with no
+staged progress returns `"reason": "no-staged-progress"` instead of starting a
+fresh export for a past day. After the summary exists, the next hourly
+control-plane seal covers the day if it is within the 3-day seal lookback;
+otherwise seal it from the admin UI (`POST /actions/seal-day`).
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
 `freshness-unrestorable` (the SQL contains statements D1 cannot import),

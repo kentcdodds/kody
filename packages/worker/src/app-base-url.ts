@@ -1,7 +1,7 @@
 import { getDomain } from 'tldts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 
-const DEFAULT_APP_BASE_URL = 'https://heykody.dev'
+const DEFAULT_APP_BASE_URL = 'https://heykody.app'
 
 type PackageAppBaseUrlEnv = {
 	PACKAGE_APP_BASE_URL?: string | null
@@ -141,6 +141,36 @@ export function getAppBaseUrl(input: {
 	}
 
 	return DEFAULT_APP_BASE_URL
+}
+
+/**
+ * Resolve the canonical public app origin, preferring the configured
+ * `APP_BASE_URL` over the request origin.
+ *
+ * This is the inverse preference of `getAppBaseUrl`: during a domain
+ * migration the Worker dual-serves the canonical host plus legacy hosts
+ * (`APP_LEGACY_HOSTS`), and canonical URLs emitted into HTML (`<link
+ * rel="canonical">`, OG/Twitter URLs) must point at the configured canonical
+ * origin even when the page was served from a legacy host. Request-scoped
+ * protocol surfaces (MCP OAuth metadata, app links) keep using
+ * `getAppBaseUrl` so they match the host the client actually connected to.
+ *
+ * Falls back to the request origin (local dev and preview leave
+ * `APP_BASE_URL` unset), then the production default.
+ */
+export function getCanonicalAppBaseUrl(input: {
+	env: AppBaseUrlEnv
+	requestUrl?: string | URL | null
+}) {
+	const configuredBaseUrl = input.env.APP_BASE_URL?.trim()
+	if (configuredBaseUrl) {
+		try {
+			return new URL(configuredBaseUrl).origin
+		} catch {
+			// Runtime env validation should already catch this; fall back defensively.
+		}
+	}
+	return getAppBaseUrl(input)
 }
 
 /**

@@ -3,8 +3,8 @@
 	"name": "io.github.kentcdodds/kody",
 	"title": "Kody",
 	"description": "Personal assistant MCP server with search, execute, packages, jobs, secrets, and integrations.",
-	"version": "1.0.0",
-	"websiteUrl": "https://heykody.dev",
+	"version": "1.0.1",
+	"websiteUrl": "https://heykody.app",
 	"repository": {
 		"url": "https://github.com/kentcdodds/kody",
 		"source": "github"
@@ -12,7 +12,7 @@
 	"remotes": [
 		{
 			"type": "streamable-http",
-			"url": "https://heykody.dev/mcp"
+			"url": "https://heykody.app/mcp"
 		}
 	]
 }

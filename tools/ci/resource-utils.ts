@@ -883,15 +883,57 @@ function readHostnameVar(input: {
 	return hostname
 }
 
+const hostnameLabelPattern = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+
+/**
+ * A bare hostname: dot-separated non-empty DNS labels, no scheme, no
+ * user-info. Rejects values like `heykody..dev` or `user@host` that a
+ * looser character-class check would let into the generated route set.
+ */
+export function isValidBareHostname(hostname: string) {
+	if (!hostname) return false
+	return hostname.split('.').every((label) => hostnameLabelPattern.test(label))
+}
+
+/**
+ * Parse the comma-separated `APP_LEGACY_HOSTS` var into bare hostnames.
+ * These are the previous app origins (for example `heykody.dev`) the Worker
+ * keeps serving during a domain migration.
+ */
+function readLegacyHostsVar(input: {
+	resolvedVars: Record<string, unknown>
+	baseConfigPath: string
+	envName: WranglerEnvName
+}) {
+	const configured = input.resolvedVars.APP_LEGACY_HOSTS
+	if (typeof configured !== 'string' || !configured.trim()) return []
+
+	const hostnames: Array<string> = []
+	for (const entry of configured.split(',')) {
+		const hostname = entry.trim().toLowerCase().replace(/\.$/, '')
+		if (!hostname) continue
+		if (!isValidBareHostname(hostname)) {
+			return fail(
+				`wrangler config "${input.baseConfigPath}" has an invalid hostname in "env.${input.envName}.vars.APP_LEGACY_HOSTS": ${entry.trim()}. Use bare hostnames (no scheme), comma-separated.`,
+			)
+		}
+		if (!hostnames.includes(hostname)) hostnames.push(hostname)
+	}
+	return hostnames
+}
+
 /**
  * Publish the Worker's Cloudflare custom domains, derived from the environment's
- * `APP_BASE_URL` and `PACKAGE_APP_BASE_URL`.
+ * `APP_BASE_URL`, `APP_LEGACY_HOSTS`, and `PACKAGE_APP_BASE_URL`.
  *
  * **`routes` is the complete custom-domain set for the script, not an addition to
  * it.** A deploy that lists only the package-app domain detaches the app origin
  * and deletes its DNS record, which takes production down. So the app origin is
  * always listed alongside the package-app origin, and a package-app origin
  * without an app origin fails the deploy instead of publishing a partial set.
+ * For the same reason a domain migration must list the previous app origin in
+ * `APP_LEGACY_HOSTS` when `APP_BASE_URL` moves to the new domain — otherwise
+ * the first deploy after the flip detaches the old origin and deletes its DNS.
  *
  * The routes are generated instead of committed because Wrangler resolves **local
  * dev** request URLs against the first configured route: a committed
@@ -934,6 +976,15 @@ function addPackageAppCustomDomainRoute(input: {
 		)
 	}
 
+	const legacyHostnames = readLegacyHostsVar(input).filter(
+		(hostname) => hostname !== appHostname,
+	)
+	if (legacyHostnames.includes(packageAppHostname)) {
+		return fail(
+			`wrangler config "${input.baseConfigPath}" lists the "PACKAGE_APP_BASE_URL" host (${packageAppHostname}) in "env.${input.envName}.vars.APP_LEGACY_HOSTS". Hosted package apps must stay a separate registrable domain from every app origin.`,
+		)
+	}
+
 	const existingRoutes = Array.isArray(input.targetEnv.routes)
 		? (input.targetEnv.routes as Array<unknown>)
 		: []
@@ -947,7 +998,7 @@ function addPackageAppCustomDomainRoute(input: {
 
 	input.targetEnv.routes = [
 		...existingRoutes,
-		...[appHostname, packageAppHostname]
+		...[appHostname, ...legacyHostnames, packageAppHostname]
 			.filter((hostname) => !routedHostnames.has(hostname))
 			.map((pattern) => ({ pattern, custom_domain: true })),
 	]
@@ -956,8 +1007,11 @@ function addPackageAppCustomDomainRoute(input: {
 	// backup access path (and that MCP clients may be pointed at). Ask for it
 	// explicitly so adding a custom domain does not silently take it away.
 	input.targetEnv.workers_dev = true
+	const legacyNote = legacyHostnames.length
+		? `, ${legacyHostnames.join(', ')} (APP_LEGACY_HOSTS)`
+		: ''
 	console.error(
-		`Custom domain routes: ${appHostname} (APP_BASE_URL), ${packageAppHostname} (PACKAGE_APP_BASE_URL); workers.dev trigger kept`,
+		`Custom domain routes: ${appHostname} (APP_BASE_URL)${legacyNote}, ${packageAppHostname} (PACKAGE_APP_BASE_URL); workers.dev trigger kept`,
 	)
 }
 

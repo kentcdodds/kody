@@ -939,7 +939,7 @@ export function LoginRoute(handle: Handle) {
 					</div>
 
 					<div mix={css(authCornerCss)}>
-						<a href="/">&larr; Back to heykody.dev</a>
+						<a href="/">&larr; Back to Kody</a>
 						<ThemeToggle />
 					</div>
 				</div>

@@ -96,7 +96,7 @@ package id scope.
 
 External callers invoke package exports with the owner-scoped route:
 
-`POST https://heykody.dev/@:username/api/package-invocations/:kodyId/:exportName`
+`POST https://heykody.app/@:username/api/package-invocations/:kodyId/:exportName`
 
 The `@:username` segment is required and must be the public username of the
 package owner. Do not use the stale unscoped form
@@ -110,7 +110,7 @@ Concrete YouTube WebSub Worker example:
 
 ```sh
 curl -X POST \
-	"https://heykody.dev/@kentcdodds/api/package-invocations/youtube-livestream-vod-manager/process-video" \
+	"https://heykody.app/@kentcdodds/api/package-invocations/youtube-livestream-vod-manager/process-video" \
 	-H "Authorization: Bearer <raw-token>" \
 	-H "Content-Type: application/json" \
 	-d '{

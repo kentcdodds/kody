@@ -45,7 +45,7 @@ and publish paths are covered in
   power (repo sessions, `repo_run_checks` against a staged tree, gated publish,
   git history) already exists as user capabilities. That userland pattern is
   packaged as the
-  [`@kentcdodds/codemod-runner`](https://heykody.dev/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
+  [`@kentcdodds/codemod-runner`](https://heykody.app/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
   community package: same contract vocabulary (`detect`/`transform`,
   dry-run-before-apply, drift skips, idempotency verification, revert
   snapshots), with the codemod authored as a package export the user owns. As

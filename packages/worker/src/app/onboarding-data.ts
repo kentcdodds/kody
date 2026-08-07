@@ -42,7 +42,7 @@ export function buildOnboardingSetupPrompt() {
  * only assumes the agent can fetch a URL: the interview steering lives in
  * the `what-is-kody` guide itself (as embedded notes for agents), so the
  * prompt stays short enough to read before pasting. The parenthetical
- * identifies this deployment (heykody.dev in production).
+ * identifies this deployment (heykody.app in production).
  */
 export function buildDiscoveryPrompt(input: {
 	env: Pick<OnboardingEnv, 'APP_BASE_URL'>

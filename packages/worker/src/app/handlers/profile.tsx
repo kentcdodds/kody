@@ -173,6 +173,7 @@ export function createProfileOgImageHandler(env: Env) {
 				listingCount: profile.listingCount,
 				avatarDataUri,
 				theme,
+				assets: env.ASSETS,
 			})
 
 			return new Response(png, {

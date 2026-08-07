@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	getAppBaseUrl,
+	getCanonicalAppBaseUrl,
 	getPackageAppBaseUrl,
 	getPackageAppOriginConfigurationError,
 	joinAppUrl,
@@ -22,7 +23,7 @@ test('getAppBaseUrl prefers the request origin when present', () => {
 	).toBe('https://heykody.dev')
 })
 
-test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev, and joinAppUrl strips trailing slashes', () => {
+test('getAppBaseUrl falls back to APP_BASE_URL then heykody.app, and joinAppUrl strips trailing slashes', () => {
 	expect(
 		getAppBaseUrl({
 			env: { APP_BASE_URL: 'https://configured.example/path' },
@@ -33,14 +34,14 @@ test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev, and joinAppUrl 
 		getAppBaseUrl({
 			env: { APP_BASE_URL: '' },
 		}),
-	).toBe('https://heykody.dev')
+	).toBe('https://heykody.app')
 
 	expect(
 		getAppBaseUrl({
 			env: {},
 			requestUrl: null,
 		}),
-	).toBe('https://heykody.dev')
+	).toBe('https://heykody.app')
 
 	expect(
 		joinAppUrl({
@@ -54,6 +55,28 @@ test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev, and joinAppUrl 
 			path: 'admin/users',
 		}),
 	).toBe('https://heykody.dev/admin/users')
+})
+
+test('getCanonicalAppBaseUrl prefers the configured origin over the request origin', () => {
+	// A page dual-served from a legacy host must emit canonical URLs on the
+	// configured canonical origin, not the host it happened to be served from.
+	expect(
+		getCanonicalAppBaseUrl({
+			env: { APP_BASE_URL: 'https://heykody.app' },
+			requestUrl: 'https://heykody.dev/blog',
+		}),
+	).toBe('https://heykody.app')
+
+	// Local dev and preview leave APP_BASE_URL unset; the request origin is
+	// the only origin those deployments can serve.
+	expect(
+		getCanonicalAppBaseUrl({
+			env: {},
+			requestUrl: 'http://localhost:3742/blog',
+		}),
+	).toBe('http://localhost:3742')
+
+	expect(getCanonicalAppBaseUrl({ env: {} })).toBe('https://heykody.app')
 })
 
 test('the package-app origin is configurable and never resolves as the app origin', () => {

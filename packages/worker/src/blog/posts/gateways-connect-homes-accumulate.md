@@ -108,7 +108,7 @@ that outlive the session.
 
 ## Same protocol, different center of gravity
 
-Both connect to your agent over MCP (Kody's endpoint is https://heykody.dev/mcp,
+Both connect to your agent over MCP (Kody's endpoint is https://heykody.app/mcp,
 and it works with Cursor, Claude Desktop, Claude Code, Codex and ChatGPT,
 OpenCode, VS Code, or any MCP-capable agent; see the
 [connection docs](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)).
@@ -119,11 +119,11 @@ Behind a gateway: other people's tools, reached through managed plumbing.
 Behind Kody: your stuff. Your host agent does all the reasoning (Kody makes zero
 inference calls, so there's no second model bill), and ownership runs through
 the whole design. Installing a
-[community package](https://heykody.dev/community) creates a published fork you
+[community package](https://heykody.app/community) creates a published fork you
 own and can edit
 ([docs](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md)).
 OAuth connections use your own OAuth app, created at the provider and connected
-at https://heykody.dev/connect/oauth: a few minutes of setup instead of one
+at https://heykody.app/connect/oauth: a few minutes of setup instead of one
 click, in exchange for your scopes, your rate limits, and no fixed provider list
 ([guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md)).
 And the whole thing is Fair Source, with code available at
@@ -155,7 +155,7 @@ If it's a connection, go evaluate gateways. Sincerely. Good tooling in that
 space makes the whole ecosystem better.
 
 If it's a place, that's what I built. Signup is invite-gated for now, with a
-waitlist on the signup page: https://heykody.dev/signup. Poke at the source
+waitlist on the signup page: https://heykody.app/signup. Poke at the source
 first if that's more your style. Either way, you'll know your own pain better
 after asking the question than after reading any comparison post, including this
 one.

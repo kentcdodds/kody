@@ -240,6 +240,99 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 	}
 })
 
+test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a domain migration', async () => {
+	consoleError.mockImplementation(() => {})
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-legacy-hosts-'))
+
+	try {
+		const outPath = path.join(tempDir, 'wrangler-production.generated.json')
+		await writeGeneratedWranglerConfig({
+			baseConfigPath: workerWranglerConfigPath,
+			outConfigPath: outPath,
+			envName: 'production',
+			d1DatabaseName: 'kody',
+			d1DatabaseId: 'dry-run-kody',
+			auditD1DatabaseName: 'kody-audit',
+			auditD1DatabaseId: 'dry-run-kody-audit',
+			oauthKvId: 'dry-run-kody-oauth',
+			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+			communityAssetsBucketName: 'kody-community-assets',
+			emailBlobsBucketName: 'kody-email-blobs',
+			// The heykody.dev -> heykody.app cutover shape: the canonical origin
+			// moves, and the legacy host must stay in the published route set —
+			// `routes` replaces the Worker's whole custom-domain set, so omitting
+			// it would detach heykody.dev and delete its DNS record.
+			workerVars: {
+				APP_BASE_URL: 'https://heykody.app',
+				APP_LEGACY_HOSTS: 'heykody.dev',
+			},
+		})
+
+		const config = parseJsonc<{
+			env?: {
+				production?: {
+					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					vars?: Record<string, unknown>
+				}
+			}
+		}>(await readFile(outPath, 'utf8'))
+		const packageAppBaseUrl = config.env?.production?.vars?.PACKAGE_APP_BASE_URL
+		expect(config.env?.production?.routes).toEqual([
+			{ pattern: 'heykody.app', custom_domain: true },
+			{ pattern: 'heykody.dev', custom_domain: true },
+			{
+				pattern: new URL(String(packageAppBaseUrl)).hostname,
+				custom_domain: true,
+			},
+		])
+
+		// A legacy host equal to the package-app domain would silently collapse
+		// the package-app isolation boundary, and a malformed hostname (empty
+		// DNS label) would publish a bogus custom-domain route; both must fail
+		// the deploy.
+		const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+			throw new Error('process.exit called')
+		}) as never)
+		try {
+			const failingLegacyHostValues = [
+				String(new URL(String(packageAppBaseUrl)).hostname),
+				'heykody..dev',
+			]
+			for (const legacyHosts of failingLegacyHostValues) {
+				await expect(
+					writeGeneratedWranglerConfig({
+						baseConfigPath: workerWranglerConfigPath,
+						outConfigPath: path.join(tempDir, 'wrangler-bad-legacy.json'),
+						envName: 'production',
+						d1DatabaseName: 'kody',
+						d1DatabaseId: 'dry-run-kody',
+						auditD1DatabaseName: 'kody-audit',
+						auditD1DatabaseId: 'dry-run-kody-audit',
+						oauthKvId: 'dry-run-kody-oauth',
+						bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+						communityAssetsBucketName: 'kody-community-assets',
+						emailBlobsBucketName: 'kody-email-blobs',
+						workerVars: {
+							APP_BASE_URL: 'https://heykody.app',
+							APP_LEGACY_HOSTS: legacyHosts,
+						},
+					}),
+				).rejects.toThrow('process.exit called')
+			}
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringContaining('APP_LEGACY_HOSTS'),
+			)
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringContaining('invalid hostname'),
+			)
+		} finally {
+			exitSpy.mockRestore()
+		}
+	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})
+
 test('parseR2BucketListOutput reads bucket names from labelled wrangler output', () => {
 	const output = [
 		'Listing buckets...',

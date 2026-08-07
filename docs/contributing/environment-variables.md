@@ -81,6 +81,33 @@ Optional Wrangler `var` (public, non-secret; see
   `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker and
   its image beacon.
 
+## App origin and domain migration
+
+Wrangler `vars` (public and non-secret; see
+`packages/worker/src/app-base-url.ts`,
+`packages/worker/src/app-legacy-redirect.ts`, and `tools/ci/resource-utils.ts`):
+
+- `APP_BASE_URL` — the canonical public app origin (`https://heykody.app` in
+  production, set as a GitHub Actions repository variable and injected by the
+  deploy). Unset for local dev and set to the ephemeral worker URL for previews.
+  The deploy derives a Workers `custom_domain` route from it, and
+  `getCanonicalAppBaseUrl` uses it for canonical/OG URLs in SSR HTML.
+- `APP_LEGACY_HOSTS` — optional comma-separated legacy app hostnames (for
+  example `heykody.dev`) kept attached to the Worker during a domain migration.
+  The generated deploy `routes` list **replaces** the Worker's entire
+  custom-domain set, so when `APP_BASE_URL` moves to a new domain the previous
+  host must be listed here — otherwise the first deploy after the flip detaches
+  the old origin and deletes its DNS record (that once took production down).
+  Set as a GitHub Actions repository variable.
+- `APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-preserving
+  `308` redirects from legacy hosts to the canonical origin for browser GET/HEAD
+  navigation only. Protocol surfaces are never redirected: `/mcp` (clients POST
+  and do not follow redirects), `/oauth/*` and `/.well-known/*` (origin-exact
+  metadata, Tesla public key), `/auth/*` and `/webauthn/*` (per-origin callbacks
+  and passkey `rpID`), `/connect/oauth`, `/health*`, `/__maintenance/*`,
+  webhooks, and package invocation APIs. Leave unset for the dual-serve
+  migration phase.
+
 ## Hosted package app origin
 
 Wrangler `var` (public and non-secret; required in production, optional in
@@ -248,7 +275,17 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   sender reputation stay separate from system transactional mail
   (`kody@<apex>`). The deployment's Cloudflare zone needs Email Routing enabled
   for this subdomain (Email > Email Routing > Settings > Add subdomain) with its
-  catch-all routed to the Worker.
+  catch-all routed to the Worker. Production commits
+  `USER_EMAIL_DOMAIN=inbox.heykody.dev` in `packages/worker/wrangler.jsonc` so
+  the web origin's move to `heykody.app` can never rederive user addresses onto
+  the new domain; the deploy tooling (`tools/ci/production-resources.ts`) reads
+  the same committed pin when configuring the Email Sending event subscription.
+- `SYSTEM_EMAIL_DOMAIN` — optional override for the system email domain (the
+  `kody@<domain>` transactional sender and operator system inboxes). Defaults to
+  the `APP_BASE_URL` hostname. Production commits
+  `SYSTEM_EMAIL_DOMAIN=heykody.dev` in `packages/worker/wrangler.jsonc` because
+  MX/SPF/DKIM and Cloudflare Email Sending verification live on the
+  `heykody.dev` zone and must not follow the web origin to `heykody.app`.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
   Defaults to `default` when unset (local dev and tests). Wrangler sets
   `production` and `preview` per environment in

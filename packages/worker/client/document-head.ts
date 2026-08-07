@@ -1,5 +1,6 @@
 import {
 	absolutizeDocumentHead,
+	CANONICAL_ORIGIN_META_NAME,
 	DOCUMENT_HEAD_ATTR,
 	resolveDocumentHead,
 	type ResolvedDocumentHead,
@@ -129,9 +130,16 @@ export function applyDocumentHead(
 	loaderData?: Partial<AppLoaderData>,
 ): void {
 	if (typeof document === 'undefined') return
+	// Reuse the canonical origin the server rendered with so SPA navigations
+	// on a dual-served legacy host keep canonical/OG URLs on the canonical
+	// domain instead of reverting to the current origin.
+	const canonicalOrigin =
+		document
+			.querySelector(`meta[name="${CANONICAL_ORIGIN_META_NAME}"]`)
+			?.getAttribute('content') || window.location.origin
 	const resolved = absolutizeDocumentHead(
 		resolveDocumentHead(pathname, loaderData),
-		window.location.origin,
+		canonicalOrigin,
 	)
 	applyResolvedDocumentHead(resolved)
 }

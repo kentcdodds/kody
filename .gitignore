@@ -37,3 +37,4 @@ packages/worker/public/assets/
 packages/worker/public/client-manifest.json
 packages/worker/wrangler-preview.generated.json
 packages/worker/wrangler-production.generated.json
+packages/worker/src/generated/

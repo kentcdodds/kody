@@ -1,8 +1,10 @@
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import {
 	createOgFrame,
+	ensureRenderPipelineReady,
 	renderOgImage,
 	truncateOgText,
+	type OgAssetsFetcher,
 	type SatoriElement,
 } from '#worker/og/render.ts'
 
@@ -67,7 +69,10 @@ function createBlogPostOgMarkup(input: BlogPostOgImageInput): SatoriElement {
 }
 
 export async function renderBlogPostOgImage(
-	input: BlogPostOgImageInput,
+	input: BlogPostOgImageInput & { assets?: OgAssetsFetcher },
 ): Promise<Uint8Array<ArrayBuffer>> {
-	return renderOgImage(createBlogPostOgMarkup(input))
+	await ensureRenderPipelineReady({ assets: input.assets })
+	return renderOgImage(createBlogPostOgMarkup(input), {
+		assets: input.assets,
+	})
 }

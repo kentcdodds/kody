@@ -71,6 +71,22 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
+- Workers-unit harness rules (see
+  [decision 0011](./decisions/0011-workers-unit-pool-harness.md)):
+  - **Prefer `*.node.test.ts`** unless the assertion needs real Cloudflare
+    bindings or Workers-only APIs (`@cloudflare/worker-bundler`, DO RPC, etc.).
+  - **Do not** warm Durable Objects from `globalSetup` (Node-only) or from
+    workers-unit `setupFiles` (breaks webhook / scheduled / `package_save`
+    suites).
+  - **Do not** use `--no-isolate` / shared storage to chase suite wall clock.
+    Per-file isolation stays; disabling it breaks suites that assume a clean
+    store.
+  - **Do not** stub away DOs in workers tests when binding fidelity is the
+    point, and do not “fix” pool slowness with `--no-verify` or a shorter local
+    `testTimeout`. Shared `testTimeout` is 20s so the pool’s ~10s first DO RPC
+    in a file does not fail the default budget.
+  - Pool cold load is inherent today; suite wall clock will not match production
+    RPC latency until the upstream pool improves.
 - Vitest is configured with `clearMocks` and `mockReset` globally
   (`vitest-shared.ts`). Each test starts with a clean mock slate; inline the
   setup a test needs rather than relying on leftover state from a prior case.

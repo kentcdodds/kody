@@ -70,8 +70,11 @@ Quick notes for getting a local kody environment running.
   for the repo, and runs `npm run migrations:check` before the commit is
   created.
 - `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
-  so pushes are blocked when the worker Vitest suites or Playwright E2E suite
-  fail.
+  (`CI=1` worker Vitest + Playwright E2E) so pushes are blocked when those
+  suites fail. Vitest's default `testTimeout` is 20s so the workers pool's first
+  Durable Object RPC in a file (~10s) does not fail the default budget (see
+  [decision 0011](./decisions/0011-workers-unit-pool-harness.md)); the push gate
+  also sets `CI=1` so worker count and Playwright retries match GitHub Actions.
 - Because the commit hook already enforces formatting, lint fixes, and
   typechecking, agents do not need to run those checks separately before every
   commit unless they want earlier feedback or are validating a larger change set
@@ -83,10 +86,11 @@ Quick notes for getting a local kody environment running.
   executes `format:check`, `lint`, `typecheck`, unit tests, Playwright E2E, MCP
   E2E, `backup:build`, `primitives:check`, and `migrations:check` in parallel,
   plus `deploy-guardrails:check` and `docs:check-temporal`, reporting every
-  failure (sibling checks are not aborted on the first failure). CI runs the
-  same checks as parallel GitHub Actions jobs (🧹 Static, 🧪 Node, ☁️ Workers,
-  🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes
-  locally, CI will pass.
+  failure (sibling checks are not aborted on the first failure). The unit-test
+  and Playwright legs set `CI=1` so timeouts and worker limits match the
+  contended parallel layout used in GitHub Actions. CI runs the same checks as
+  parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by
+  ✅ Validate). If `npm run validate` passes locally, CI will pass.
 - `npm run deploy-guardrails:check` protects reviewed Durable Object migration
   history and bindings in both Wrangler configs, requires exact allowlisting for
   class deletion, and rejects destructive Cloudflare CLI operations in

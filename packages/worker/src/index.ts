@@ -63,9 +63,11 @@ import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { dispatchScheduledLanes } from '#worker/scheduled/scheduled-dispatch-queue.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
+import { handleDrExportRequest } from '#worker/dr/dr-export-maintenance.ts'
 import { handleDoPitrRequest } from '#worker/dr/do-pitr-maintenance.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
+import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 
 export {
 	RepoSession,
@@ -289,6 +291,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/dr-restore') {
 			return handleDrRestoreRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/dr-export') {
+			return handleDrExportRequest(request, env)
 		}
 
 		if (url.pathname === '/__maintenance/do-pitr') {
@@ -553,6 +559,14 @@ const workerHandler = {
 		if (isNamespacedPackageInvocationEndpointPath(url.pathname)) {
 			return new Response('Not Found', { status: 404 })
 		}
+
+		// Domain-migration redirect for safe browser navigation from legacy app
+		// hosts. Runs after the API-shaped surfaces (package apps, invocation
+		// API, webhooks, connectors) so those keep serving on every attached
+		// host, and skips MCP/OAuth/auth/health paths itself. No-op unless
+		// APP_LEGACY_REDIRECT is enabled.
+		const legacyHostRedirect = getLegacyHostRedirectResponse({ request, env })
+		if (legacyHostRedirect) return legacyHostRedirect
 
 		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
 		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our

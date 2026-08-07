@@ -17,6 +17,7 @@ import {
 	isDrExportConfigured,
 	runDrExportTick,
 	runDrExportWatchdogTick,
+	shouldRunDrExportCatchUpCron,
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
@@ -101,7 +102,8 @@ export function getScheduledLanes(input: {
 		lanes.push('usage_entitlement_alert')
 	}
 	if (
-		shouldRunDrExportCron(input.scheduledAt) &&
+		(shouldRunDrExportCron(input.scheduledAt) ||
+			shouldRunDrExportCatchUpCron(input.scheduledAt)) &&
 		isDrExportConfigured(input.env)
 	) {
 		lanes.push('dr_export')

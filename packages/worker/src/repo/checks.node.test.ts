@@ -8,14 +8,15 @@ const mockModule = vi.hoisted(() => ({
 	buildKodyModuleBundle: vi.fn(),
 }))
 
-vi.mock('@cloudflare/worker-bundler', () => ({
-	createFileSystemSnapshot: (...args: Array<unknown>) =>
-		mockModule.createFileSystemSnapshot(...args),
-}))
-
-vi.mock('@cloudflare/worker-bundler/typescript', () => ({
-	createTypescriptLanguageService: (...args: Array<unknown>) =>
-		mockModule.createTypescriptLanguageService(...args),
+vi.mock('#worker/worker-bundler-modules.ts', () => ({
+	importWorkerBundler: async () => ({
+		createFileSystemSnapshot: (...args: Array<unknown>) =>
+			mockModule.createFileSystemSnapshot(...args),
+	}),
+	importWorkerBundlerTypescript: async () => ({
+		createTypescriptLanguageService: (...args: Array<unknown>) =>
+			mockModule.createTypescriptLanguageService(...args),
+	}),
 }))
 
 vi.mock('#worker/package-runtime/module-graph.ts', () => ({

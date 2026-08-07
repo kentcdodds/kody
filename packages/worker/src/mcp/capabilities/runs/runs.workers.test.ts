@@ -11,10 +11,10 @@ import { runListCapability } from './run-list.ts'
 import { runSummaryCapability } from './run-summary.ts'
 import { runUpdateCapability } from './run-update.ts'
 
-// Each RunLog Durable Object RPC costs ~400ms in the vitest workers pool (the
-// production finish path measures ~0.4ms), and these tests make ~20 of them.
-// The shared default is 5s locally, so budget explicitly like the other
-// Durable-Object-heavy suites rather than relying on it.
+// The first Durable Object class load in a workers-unit file costs ~10s in the
+// vitest pool (warm RPCs are ~1ms; production finish is ~0.4ms). These tests
+// also issue many RunLog RPCs, so budget well above the shared 20s default
+// (decision 0011 — do not try to warm DOs from setupFiles).
 const runLogSuiteTimeoutMs = 60_000
 
 // Every test mints a fresh user id, so its RunLog Durable Object starts empty

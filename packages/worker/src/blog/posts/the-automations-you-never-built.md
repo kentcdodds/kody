@@ -51,7 +51,7 @@ You already have an agent that can write the five-line script in seconds. That
 was never the bottleneck. The bottleneck was that the script had nowhere to
 live.
 
-This is a big part of why I built [Kody](https://heykody.dev): a durable home
+This is a big part of why I built [Kody](https://heykody.app): a durable home
 your agent connects to over MCP, whichever agent you already use. Here's how the
 death-by-a-thousand-questions list looks with one:
 
@@ -113,6 +113,6 @@ this" for the fifth time. That's your first job.
 If you have a Kody account,
 [connect the agent you already use](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)
 and describe that one thing. If you don't have an account yet, signup is
-invite-gated for now, so [join the waitlist](https://heykody.dev/signup).
+invite-gated for now, so [join the waitlist](https://heykody.app/signup).
 
 The list has waited years. It only needs one conversation to start shrinking.

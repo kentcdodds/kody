@@ -22,6 +22,9 @@ export default mergeConfig(
 		test: {
 			name: 'workers-unit',
 			include: ['**/*.workers.test.ts'],
+			globalSetup: [
+				resolve(rootDir, 'tools/vitest-global-setup-worker-bundler-modules.ts'),
+			],
 		},
 	}),
 )
