@@ -33,34 +33,42 @@ import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
  *   worker and client bundles)
  * - Tokens rendered as JSX text + inline styles (never `innerHTML`), so
  *   untrusted README fences stay inside the markdown safety model
+ *
+ * The highlighter is created lazily on first use so worker isolates that never
+ * render code fences avoid grammar compilation at cold start.
  */
-const highlighter = createHighlighterCoreSync({
-	themes: [githubLight, githubDark],
-	langs: [
-		typescriptLang,
-		tsxLang,
-		jsonLang,
-		yamlLang,
-		tomlLang,
-		markdownLang,
-		htmlLang,
-		cssLang,
-		shellscriptLang,
-		diffLang,
-		pythonLang,
-		dockerfileLang,
-		dotenvLang,
-		iniLang,
-		graphqlLang,
-		sqlLang,
-		xmlLang,
-		goLang,
-		rustLang,
-	],
-	engine: createJavaScriptRegexEngine({ forgiving: true }),
-})
+let highlighter: ReturnType<typeof createHighlighterCoreSync> | null = null
 
-const loadedLanguages = new Set(highlighter.getLoadedLanguages())
+function getHighlighter() {
+	if (!highlighter) {
+		highlighter = createHighlighterCoreSync({
+			themes: [githubLight, githubDark],
+			langs: [
+				typescriptLang,
+				tsxLang,
+				jsonLang,
+				yamlLang,
+				tomlLang,
+				markdownLang,
+				htmlLang,
+				cssLang,
+				shellscriptLang,
+				diffLang,
+				pythonLang,
+				dockerfileLang,
+				dotenvLang,
+				iniLang,
+				graphqlLang,
+				sqlLang,
+				xmlLang,
+				goLang,
+				rustLang,
+			],
+			engine: createJavaScriptRegexEngine({ forgiving: true }),
+		})
+	}
+	return highlighter
+}
 
 /** Skip highlighting past this size; huge dumps stay readable as plain text. */
 const maxHighlightChars = 50_000
@@ -94,7 +102,9 @@ function resolveLang(lang: string | null | undefined): string {
 		return 'plaintext'
 	}
 	const aliased = langAliases[normalized] ?? normalized
-	return loadedLanguages.has(aliased) ? aliased : 'plaintext'
+	return getHighlighter().getLoadedLanguages().includes(aliased)
+		? aliased
+		: 'plaintext'
 }
 
 function rootStyleFromTokens(fg: string | undefined, bg: string | undefined) {
@@ -134,7 +144,7 @@ export function renderHighlightedCode(
 
 	const resolvedLang = resolveLang(lang)
 	try {
-		const result = highlighter.codeToTokens(code, {
+		const result = getHighlighter().codeToTokens(code, {
 			lang: resolvedLang,
 			themes: {
 				light: 'github-light',
