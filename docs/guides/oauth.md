@@ -3,7 +3,7 @@ id: oauth
 title: OAuth guide (standard path)
 summary:
   START HERE for third-party OAuth: hosted /connect/oauth, the exact
-  redirect URI (https://heykody.dev/connect/oauth), required query params,
+  redirect URI (https://heykody.app/connect/oauth), required query params,
   PKCE vs confidential, post-connect nextSteps with trusted community
   helpers suggestions, and how it differs from MCP OAuth.
 category: platform
@@ -19,7 +19,7 @@ package or package app that depends on the resulting integration or tokens.
 
 ## Default path: `/connect/oauth`
 
-Send the signed-in user to `https://heykody.dev/connect/oauth` with query
+Send the signed-in user to `https://heykody.app/connect/oauth` with query
 parameters that describe the provider. The page runs authorize -> callback ->
 token exchange in a full browser context and persists access and refresh tokens
 through the account secrets flow.
@@ -28,16 +28,16 @@ This path does not require package-app-specific OAuth code.
 
 Example shape:
 
-`https://heykody.dev/connect/oauth?provider=...&authorizeUrl=...&tokenUrl=...`
+`https://heykody.app/connect/oauth?provider=...&authorizeUrl=...&tokenUrl=...`
 
 ## Redirect URI
 
 The redirect URI is:
 
-`https://heykody.dev/connect/oauth`
+`https://heykody.app/connect/oauth`
 
 Register it in the provider console exactly as written. Users connect to Kody at
-`https://heykody.dev`, so connect URLs use `https://heykody.dev/...`. The
+`https://heykody.app`, so connect URLs use `https://heykody.app/...`. The
 `/connect/oauth` page shows the redirect URI for the current origin with a copy
 button. A self-hosted deployment uses its own origin plus `/connect/oauth`.
 
@@ -184,9 +184,9 @@ create a thin helpers package.
 
 1. Confirm OAuth is the right auth shape.
 2. Build the connect URL with the required params:
-   `https://heykody.dev/connect/oauth?...`.
+   `https://heykody.app/connect/oauth?...`.
 3. Tell the user the exact redirect URI to register:
-   `https://heykody.dev/connect/oauth`. The page shows it with a copy button.
+   `https://heykody.app/connect/oauth`. The page shows it with a copy button.
 4. Have the user open the URL while signed in and wait for success.
 5. Run the authenticated smoke test from `integration_bootstrap`.
 6. Use the connect success `nextSteps` (or `community_search`, preferring

@@ -24,7 +24,7 @@ export function PrivacyRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Who is responsible for your data</h2>
 				<p mix={css(descriptionCss)}>
-					Kent C. Dodds, operator of Kody at heykody.dev, is the data controller
+					Kent C. Dodds, operator of Kody at heykody.app, is the data controller
 					for the hosted service. You can reach the operator at{' '}
 					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
 						support@heykody.dev

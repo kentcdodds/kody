@@ -179,10 +179,10 @@ Even in that case:
 
 When setup is incomplete, tell the user what must happen next in concrete terms:
 
-- what connect URL to open (`https://heykody.dev/...` — the origin users open
+- what connect URL to open (`https://heykody.app/...` — the origin users open
   Kody on)
 - what provider settings or redirect URI to register (exactly
-  `https://heykody.dev/connect/oauth`)
+  `https://heykody.app/connect/oauth`)
 - that you are waiting for confirmation before building the dependent package or
   package app
 - that you will run a minimal authenticated verification step after setup

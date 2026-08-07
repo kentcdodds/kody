@@ -24,7 +24,7 @@ Agent notes — for AI agents running a discovery conversation from this page:
   a job, a package, the inbox) and the first concrete step.
 - End with a short "Next steps if you want to connect me to Kody" section
   that points to the /onboarding page on the same origin this guide was
-  fetched from (https://heykody.dev/onboarding in production) and explains
+  fetched from (https://heykody.app/onboarding in production) and explains
   that the only setup is adding Kody as an MCP server there — there is no
   CLI to install.
 - Do not set anything up during discovery. Nothing in this flow requires an
@@ -76,7 +76,7 @@ supporting cast.
 
 - **Integrations and secrets** — bring your own API keys and OAuth apps for the
   services you already use; verified per-provider walkthroughs live at
-  [heykody.dev/guides](https://heykody.dev/guides). Credentials stay server-side
+  [heykody.app/guides](https://heykody.app/guides). Credentials stay server-side
   and never enter your agent's context. See
   [Secrets, values, and host approval](../use/secrets-and-values.md).
 - **Ad hoc execution** — your agent runs sandboxed code against those
@@ -131,7 +131,7 @@ Paste this into an agent that can fetch URLs or search the web. If an agent is
 already interviewing you about Kody, you do not need to paste it again — it is
 the same conversation.
 
-> I'm deciding whether Kody (https://heykody.dev) would be useful for me. Read
-> https://heykody.dev/guides/what-is-kody and then interview me to find out what
+> I'm deciding whether Kody (https://heykody.app) would be useful for me. Read
+> https://heykody.app/guides/what-is-kody and then interview me to find out what
 > Kody could do for me. Don't set anything up yet — this works before I have an
 > account.

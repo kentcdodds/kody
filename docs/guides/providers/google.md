@@ -49,7 +49,7 @@ Once connected, you can ask Kody things like:
    (choose **External**), and contact information.
 4. On the **Clients** tab, click **Create Client**, choose application type
    **Web application**, and add the redirect URI
-   `https://heykody.dev/connect/oauth` (exact match; a self-hosted deployment
+   `https://heykody.app/connect/oauth` (exact match; a self-hosted deployment
    registers its own origin plus `/connect/oauth`).
 5. Copy the **client ID** and **client secret** shown after creation.
 6. On the **Data Access** tab, add the scopes you plan to request (see the
@@ -78,7 +78,7 @@ client (the client secret is sent form-encoded to the token endpoint), and
 `access_type=offline` plus `prompt=consent` make sure a refresh token is issued:
 
 ```text
-https://heykody.dev/connect/oauth?provider=google&authorizeUrl=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2%2Fauth&tokenUrl=https%3A%2F%2Foauth2.googleapis.com%2Ftoken&flow=confidential&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly&allowedHosts=www.googleapis.com&extraAuthorizeParams=%7B%22access_type%22%3A%22offline%22%2C%22prompt%22%3A%22consent%22%7D
+https://heykody.app/connect/oauth?provider=google&authorizeUrl=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2%2Fauth&tokenUrl=https%3A%2F%2Foauth2.googleapis.com%2Ftoken&flow=confidential&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly&allowedHosts=www.googleapis.com&extraAuthorizeParams=%7B%22access_type%22%3A%22offline%22%2C%22prompt%22%3A%22consent%22%7D
 ```
 
 Decoded, that is authorize URL `https://accounts.google.com/o/oauth2/v2/auth`,
@@ -145,7 +145,7 @@ Changing scopes means reconnecting: update the **Data Access** tab, then open
 ## Troubleshooting
 
 - `redirect_uri_mismatch` during consent: the registered redirect URI must be
-  exactly `https://heykody.dev/connect/oauth` — no trailing slash, no `www`.
+  exactly `https://heykody.app/connect/oauth` — no trailing slash, no `www`.
 - Integration works for a week, then fails with `invalid_grant`: the app is in
   **Testing** publishing status. Publish it to Production and reconnect.
 - No refresh token saved: Google only returns one on first consent. Reconnect

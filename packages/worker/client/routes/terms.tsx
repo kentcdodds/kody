@@ -24,7 +24,7 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Who runs Kody</h2>
 				<p mix={css(descriptionCss)}>
-					Kody at heykody.dev is operated by Kent C. Dodds. Questions about
+					Kody at heykody.app is operated by Kent C. Dodds. Questions about
 					these terms or the service can go to{' '}
 					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
 						support@heykody.dev
