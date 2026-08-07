@@ -766,6 +766,12 @@ export function getAuthInputCss(options: AuthInputCssOptions = {}) {
 		width: '100%',
 		boxSizing: 'border-box' as const,
 		transition: `border-color 160ms ${transitions.easeOut}`,
+		// Text wider than the field is otherwise sliced through a letter. This
+		// has to sit on the input, not on `::placeholder` — `text-overflow` is
+		// not one of the properties that pseudo-element accepts — and it covers
+		// an overlong value as well as an overlong placeholder. Fields wide
+		// enough for their text never see the ellipsis.
+		textOverflow: 'ellipsis',
 		'&::placeholder': {
 			color: colors.textMuted,
 			opacity: 1,

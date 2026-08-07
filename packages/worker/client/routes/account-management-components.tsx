@@ -198,6 +198,11 @@ export function AccountManagementShell(
 					// The absolute rail contributes no height; keep room so a
 					// short page never lets the nav spill over the footer.
 					minHeight: '40rem',
+					// …and keep that reserved height out of the rows. `align-content`
+					// defaults to `stretch`, which hands the leftover space to the
+					// auto-sized tracks, so a page shorter than the floor grew a gap
+					// between every section instead of ending early.
+					alignContent: 'start',
 					...(handle.props.maxWidth
 						? {
 								'& > *:not([data-account-nav])': {
