@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -96,6 +97,7 @@ export function HomeRoute(handle: Handle) {
 	let needsOnboarding = false
 	let emailVerified = false
 	let loggedIn = false
+	let discoveryPrompt = ''
 	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
 	const loadLatch = createRouteLoadLatch()
 
@@ -103,6 +105,7 @@ export function HomeRoute(handle: Handle) {
 		needsOnboarding = payload?.needsOnboarding === true
 		emailVerified = payload?.emailVerified === true
 		loggedIn = payload?.loggedIn === true
+		discoveryPrompt = payload?.discoveryPrompt ?? ''
 		onboardingStatus = 'ready'
 	}
 
@@ -195,11 +198,29 @@ export function HomeRoute(handle: Handle) {
 					</div>
 					<p data-rise style={{ '--rise': '3' }} mix={css(heroHintCss)}>
 						Not sure what you&apos;d use it for?{' '}
-						<a href={`${onboardingPath}#discovery`} mix={css(inlineLinkCss)}>
-							Ask your agent with the discovery prompt
-						</a>{' '}
-						— no account needed.
+						<a href="/guides/what-is-kody" mix={css(inlineLinkCss)}>
+							Read what Kody can do
+						</a>
+						{discoveryPrompt ? (
+							<>
+								{' '}
+								— or copy one prompt and let your agent tell you. No account
+								needed.
+							</>
+						) : (
+							<> — no account needed.</>
+						)}
 					</p>
+					{discoveryPrompt ? (
+						<div data-rise style={{ '--rise': '3.2' }} mix={css(heroHintCss)}>
+							<CopyTextButton
+								value={discoveryPrompt}
+								idleLabel="Copy the discovery prompt"
+								variant="ghost"
+								size="sm"
+							/>
+						</div>
+					) : null}
 					<div data-rise style={{ '--rise': '1.5' }} mix={css(heroArtCss)}>
 						<HeroStage
 							size="landing"

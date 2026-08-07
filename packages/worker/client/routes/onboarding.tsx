@@ -51,20 +51,19 @@ import {
 /**
  * Onboarding wizard, ported from the redesign prototype
  * (`landing/onboarding.html`): shirt-pattern head, four-step stepper
- * (Discover · Connect your agent · See it work · Install a starter package), one surface
+ * (Connect your agent · See it work · Install a starter package), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
  * behind a disclosure. All server state (prompts, MCP URL, featured
  * listings, hasMcpClient / first-win polling) stays in the route state —
  * this is a restyle, not a rearchitecture.
  */
 
-type OnboardingStep = 1 | 2 | 3 | 4
+type OnboardingStep = 1 | 2 | 3
 
 const onboardingSteps = [
-	{ number: 1, label: 'Discover', hash: 'discovery' },
-	{ number: 2, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 3, label: 'See it work', hash: 'first-win' },
-	{ number: 4, label: 'Install a starter package', hash: 'starter-packages' },
+	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
+	{ number: 2, label: 'See it work', hash: 'first-win' },
+	{ number: 3, label: 'Install a starter package', hash: 'starter-packages' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
 	label: string
@@ -116,7 +115,6 @@ export function OnboardingRoute(handle: Handle) {
 	let loggedIn = false
 	let mcpServerUrl = ''
 	let setupPrompt = ''
-	let discoveryPrompt = ''
 	let introEmailPrompt = ''
 	let introEmailLookupPrompt = ''
 	let memoryPrompt = ''
@@ -141,7 +139,6 @@ export function OnboardingRoute(handle: Handle) {
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
-		discoveryPrompt = payload.discoveryPrompt
 		introEmailPrompt = payload.introEmailPrompt
 		introEmailLookupPrompt = payload.introEmailLookupPrompt
 		memoryPrompt = payload.memoryPrompt
@@ -161,16 +158,16 @@ export function OnboardingRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasFirstWin ? 4 : payload.hasMcpClient ? 3 : 1
+			activeStep = hasFirstWin ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
 		} else if (!wasConnected && payload.hasMcpClient && !hasFirstWin) {
 			panelAnimationArmed = true
-			activeStep = 3
-			updateStepHash(3)
+			activeStep = 2
+			updateStepHash(2)
 		} else if (!wasFirstWin && hasFirstWin) {
 			panelAnimationArmed = true
-			activeStep = 4
-			updateStepHash(4)
+			activeStep = 3
+			updateStepHash(3)
 		}
 	}
 
@@ -388,7 +385,11 @@ export function OnboardingRoute(handle: Handle) {
 					</h1>
 					<p data-rise style={{ '--rise': '1' }}>
 						Connect any MCP-capable AI agent to your Kody account, then ask it
-						to help you set things up.
+						to help you set things up. New here?{' '}
+						<a href="/guides/what-is-kody" mix={css(headerGuideLinkCss)}>
+							Read what Kody can do
+						</a>{' '}
+						first.
 					</p>
 				</header>
 
@@ -407,8 +408,8 @@ export function OnboardingRoute(handle: Handle) {
 							{onboardingSteps.map((step) => {
 								const isActive = activeStep === step.number
 								const isComplete =
-									(step.number < 3 && hasMcpClient) ||
-									(step.number === 3 && hasFirstWin)
+									(step.number === 1 && hasMcpClient) ||
+									(step.number === 2 && hasFirstWin)
 								return (
 									<button
 										key={step.number}
@@ -439,68 +440,6 @@ export function OnboardingRoute(handle: Handle) {
 
 						{activeStep === 1 ? (
 							<section
-								id="discovery"
-								aria-labelledby="discovery-title"
-								data-testid="onboarding-discovery"
-								mix={[css(wizardPanelCss), panelEntrance()]}
-							>
-								<div mix={css(panelHeadCss)}>
-									<div>
-										<p mix={css(panelKickerCss)}>Step 1 · Optional</p>
-										<h2
-											id="discovery-title"
-											tabIndex={-1}
-											mix={css(panelTitleCss)}
-										>
-											Discover what Kody can do
-										</h2>
-									</div>
-									<img
-										data-panel-art
-										src="/images/kody-agent-briefing.webp"
-										width={627}
-										height={627}
-										loading="lazy"
-										alt="Kody holding up a checklist card with both paws"
-										style={{ '--tilt': '-2.5deg' }}
-										mix={css(panelArtCss)}
-									/>
-								</div>
-								<p mix={css(panelLedeCss)}>
-									Paste this into any AI agent that can fetch a URL or search
-									the web — ChatGPT, Claude, Grok, or whatever you already use.
-									It reads Kody&apos;s docs, interviews you, and suggests
-									concrete automations. You can also skip this and connect
-									directly.
-								</p>
-								<figure mix={css(promptBlockCss)}>
-									<blockquote>{discoveryPrompt}</blockquote>
-								</figure>
-								<div mix={css(panelActionsCss)}>
-									<CopyTextButton
-										value={discoveryPrompt}
-										idleLabel="Copy discovery prompt"
-										variant="pill"
-									/>
-									<button
-										type="button"
-										mix={[
-											css(ghostActionButtonCss),
-											on('click', () => selectStep(2)),
-										]}
-									>
-										Skip discovery
-									</button>
-								</div>
-								<WizardNavigation
-									activeStep={activeStep}
-									onSelectStep={selectStep}
-								/>
-							</section>
-						) : null}
-
-						{activeStep === 2 ? (
-							<section
 								id="connect-agent"
 								aria-labelledby="connect-title"
 								data-testid="onboarding-connect-agent"
@@ -508,7 +447,7 @@ export function OnboardingRoute(handle: Handle) {
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
-										<p mix={css(panelKickerCss)}>Step 2</p>
+										<p mix={css(panelKickerCss)}>Step 1</p>
 										<h2
 											id="connect-title"
 											tabIndex={-1}
@@ -556,7 +495,7 @@ export function OnboardingRoute(handle: Handle) {
 							</section>
 						) : null}
 
-						{activeStep === 3 ? (
+						{activeStep === 2 ? (
 							<section
 								id="first-win"
 								aria-labelledby="first-win-title"
@@ -565,7 +504,7 @@ export function OnboardingRoute(handle: Handle) {
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
-										<p mix={css(panelKickerCss)}>Step 3</p>
+										<p mix={css(panelKickerCss)}>Step 2</p>
 										<h2
 											id="first-win-title"
 											tabIndex={-1}
@@ -676,7 +615,7 @@ export function OnboardingRoute(handle: Handle) {
 							</section>
 						) : null}
 
-						{activeStep === 4 ? (
+						{activeStep === 3 ? (
 							<section
 								id="starter-packages"
 								aria-labelledby="starters-title"
@@ -685,7 +624,7 @@ export function OnboardingRoute(handle: Handle) {
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
-										<p mix={css(panelKickerCss)}>Step 4</p>
+										<p mix={css(panelKickerCss)}>Step 3</p>
 										<h2
 											id="starters-title"
 											tabIndex={-1}
@@ -779,7 +718,7 @@ function WizardNavigation(
 				? ((handle.props.activeStep - 1) as OnboardingStep)
 				: null
 		const nextStep =
-			handle.props.activeStep < 4
+			handle.props.activeStep < 3
 				? ((handle.props.activeStep + 1) as OnboardingStep)
 				: null
 
@@ -1085,6 +1024,12 @@ const panelLedeCss = {
 }
 
 /* Nested surfaces step down to the page ground so they read as wells. */
+const headerGuideLinkCss = {
+	color: colors.primaryText,
+	textDecorationThickness: '1.5px',
+	textUnderlineOffset: '3px',
+}
+
 const promptBlockCss = {
 	margin: 0,
 	minWidth: 0,
@@ -1106,12 +1051,6 @@ const promptBlockCss = {
 		borderRadius: radius.card,
 		padding: '1.1rem 1.3rem',
 	},
-}
-
-const panelActionsCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: '0.6rem',
 }
 
 const firstWinGridCss = {
@@ -1148,8 +1087,6 @@ const firstWinGuidanceCss = {
 	fontSize: '0.94rem',
 	lineHeight: 1.55,
 }
-
-const ghostActionButtonCss = getGhostButtonCss()
 
 /* One-time authorization callout: the only hard-edged warning on the page. */
 const authNoteCss = {
