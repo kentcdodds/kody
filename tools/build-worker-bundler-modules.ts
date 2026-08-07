@@ -111,6 +111,25 @@ async function buildStampContent(bundlerPackageDir: string) {
 
 /** Idempotent: skips the esbuild work when the stamp is already current. */
 export async function ensureWorkerBundlerModules() {
+	// COLD-START EXPERIMENT (temporary branch, do not merge): emit tiny throwing
+	// stubs and skip the esbuild.wasm copy so the preview deploy carries no
+	// worker-bundler weight at all. Repo checks are intentionally broken here;
+	// this exists purely to measure upload-size impact on cold start.
+	await mkdir(generatedDir, { recursive: true })
+	const stub = (name: string) =>
+		`export function ${name}() { throw new Error('worker-bundler disabled for cold-start experiment') }\n`
+	await writeFile(
+		path.join(generatedDir, 'worker-bundler.mjs'),
+		stub('createFileSystemSnapshot') + stub('createWorker'),
+	)
+	await writeFile(
+		path.join(generatedDir, 'worker-bundler-typescript.mjs'),
+		stub('createTypescriptLanguageService'),
+	)
+	await writeFile(stampPath, JSON.stringify({ hash: 'experiment-stub' }))
+}
+
+async function unusedOriginalImplementation() {
 	const bundlerPackageDir = resolveWorkerBundlerDistDir()
 	const stampContent = await buildStampContent(bundlerPackageDir)
 	if ((await readStamp()) === stampContent) return
@@ -140,6 +159,7 @@ export async function ensureWorkerBundlerModules() {
 	)
 	await writeFile(stampPath, stampContent)
 }
+void unusedOriginalImplementation
 
 if (isExecutedDirectly(import.meta.url)) {
 	await ensureWorkerBundlerModules()
