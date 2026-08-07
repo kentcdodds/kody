@@ -163,8 +163,22 @@ test('warm UserMeter schema v7 upgrades to v9 and preserves leases', async () =>
 	})
 }, 30_000)
 
+/**
+ * A stable recent instant for daily-counter tests: yesterday at 15:00 UTC.
+ * The UserMeter DO purges daily counters older than its retention window
+ * against the real clock, so a hardcoded date silently ages out and flips
+ * cold-consume reads back to `needs_bootstrap` (this suite broke exactly
+ * seven days after its previous hardcoded date).
+ */
+function recentDailyCounterNow(): Date {
+	const now = new Date()
+	return new Date(
+		Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 15),
+	)
+}
+
 test('cold daily consume initializes at zero without D1 prepare/run and first unit is 1', async () => {
-	const now = new Date('2026-07-31T15:00:00.000Z')
+	const now = recentDailyCounterNow()
 	const day = utcDayKey(now)
 	const user = await seedFreeUser('meter-cold-zero')
 	const meter = userMeterRpc({ env, userId: user.userId })
@@ -239,8 +253,9 @@ test('warm daily consume/read never prepares entitlement_daily_counters', async 
 }, 30_000)
 
 test('next UTC day cold consume starts at zero independently', async () => {
-	const dayOne = new Date('2026-07-31T15:00:00.000Z')
-	const dayTwo = new Date('2026-08-01T01:00:00.000Z')
+	const dayOne = recentDailyCounterNow()
+	// Ten hours later crosses into the next UTC day (15:00Z -> 01:00Z).
+	const dayTwo = new Date(dayOne.getTime() + 10 * 60 * 60 * 1000)
 	const user = await seedFreeUser('meter-next-day')
 	const meter = userMeterRpc({ env, userId: user.userId })
 
@@ -293,7 +308,7 @@ test('next UTC day cold consume starts at zero independently', async () => {
 }, 30_000)
 
 test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user without D1 daily table', async () => {
-	const now = new Date('2026-07-31T15:00:00.000Z')
+	const now = recentDailyCounterNow()
 	const day = utcDayKey(now)
 	const sendLimit = planLimits.free.maxEmailSendsPerDay
 	const userA = await seedFreeUser('meter-a')
