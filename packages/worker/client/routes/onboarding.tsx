@@ -246,6 +246,14 @@ export function OnboardingRoute(handle: Handle) {
 	// Users typically keep this page open while their MCP client runs the
 	// OAuth flow, so poll the same JSON endpoint until a grant shows up and
 	// collapse the completed steps without requiring a manual refresh.
+	//
+	// The interval must stay clear of 5000ms: workerd's HTTP server closes
+	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
+	// a 5s poll makes every request race the close. wrangler >= 4.114 turns
+	// that race's "Network connection lost" ProxyWorker error into a fatal
+	// dev-server exit (cloudflare/workers-sdk#14926). Polling faster than 5s
+	// keeps the connection warm so the race never happens.
+	const mcpConnectionPollIntervalMs = 4000
 	let pollIntervalId: ReturnType<typeof setInterval> | undefined
 	let pollInFlight = false
 
@@ -271,7 +279,10 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	if (typeof document !== 'undefined') {
-		pollIntervalId = setInterval(pollForMcpConnection, 5000)
+		pollIntervalId = setInterval(
+			pollForMcpConnection,
+			mcpConnectionPollIntervalMs,
+		)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
 		window.addEventListener('hashchange', handleHashChange)
 		handle.signal.addEventListener('abort', () =>
