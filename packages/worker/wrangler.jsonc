@@ -410,10 +410,9 @@
 				// same change or subscription plan matching silently degrades
 				// to the kody_plan metadata fallback. Checkout sessions are
 				// created server-side for authenticated users (no public
-				// Payment Link). STRIPE_STANDARD_PRICE_ID carries the
-				// original $5/month price id (pre-rename Pro, on the "Kody
-				// Standard" product). STRIPE_PRO_PRICE_ID is the $20/month
-				// price on the "Kody Pro" product.
+				// Payment Link). STRIPE_STANDARD_PRICE_ID is the $5/month
+				// price on the "Kody Standard" product. STRIPE_PRO_PRICE_ID
+				// is the $20/month price on the "Kody Pro" product.
 				"STRIPE_STANDARD_PRICE_ID": "price_1Tv3W2LAQpAnsYszSr4PGBkE",
 				"STRIPE_PRO_PRICE_ID": "price_1U1AISLAQpAnsYszIQvRJNhl",
 				// Disaster-recovery exporter → locked R2 bucket in the KCD

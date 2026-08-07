@@ -362,8 +362,9 @@ automatically:
 - `STRIPE_STANDARD_PRICE_ID` (optional public Wrangler var committed in
   `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $5/month
   `standard` plan and used for authenticated Checkout Sessions.)
-- `STRIPE_PRO_PRICE_ID` (optional public Wrangler var, added to the production
-  env block once the $20/month `pro` price exists in Stripe.) Each price id is
+- `STRIPE_PRO_PRICE_ID` (optional public Wrangler var committed in
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $20/month
+  `pro` plan and used for authenticated Checkout Sessions.) Each price id is
   independent; an unset value only disables checkout for that tier.
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets

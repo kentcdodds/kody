@@ -1080,12 +1080,11 @@ usage-rollup aggregation, and bounded USER inbound Mailbox reconciliation
 (active-user discovery from the users/config index followed by owner-point
 Mailbox due-work RPCs; no shared graph scan). Each production queue message
 preserves `scheduled_lane_failed` / D1 lock-contention log and Sentry context. A
-handled lane failure is acknowledged and retried by the next cron tick, matching
-the old cron semantics. A failed enqueue is reported and runs through the inline
-fallback after all sibling enqueue attempts finish; multiple failed enqueues
-fall back sequentially to avoid D1 lock contention. Consumer transport failures
-retain the configured retry/DLQ behavior. No failure can abort or mask a sibling
-invocation.
+handled lane failure is acknowledged and retried by the next cron tick. A failed
+enqueue is reported and runs through the inline fallback after all sibling
+enqueue attempts finish; multiple failed enqueues fall back sequentially to
+avoid D1 lock contention. Consumer transport failures retain the configured
+retry/DLQ behavior. No failure can abort or mask a sibling invocation.
 
 Production note:
 
