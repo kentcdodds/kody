@@ -542,19 +542,11 @@ export function OnboardingRoute(handle: Handle) {
 									aria-live="polite"
 									data-connected={hasMcpClient ? 'true' : undefined}
 								>
-									{hasMcpClient ? (
-										<>
-											<span mix={css(connectCheckCss)} aria-hidden="true">
-												✓
-											</span>
-											<strong>You are connected</strong>
-										</>
-									) : (
-										<>
-											<span mix={css(inlineSpinnerCss)} aria-hidden="true" />
-											<strong>Waiting for your agent to connect…</strong>
-										</>
-									)}
+									{connectStatusContent({
+										connected: hasMcpClient,
+										connectedLabel: 'You are connected',
+										waitingLabel: 'Waiting for your agent to connect…',
+									})}
 								</div>
 								<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
 								<WizardNavigation
@@ -610,25 +602,11 @@ export function OnboardingRoute(handle: Handle) {
 													data-connected={hasFirstHello ? 'true' : undefined}
 													data-testid="onboarding-first-hello-status"
 												>
-													{hasFirstHello ? (
-														<>
-															<span
-																mix={css(connectCheckCss)}
-																aria-hidden="true"
-															>
-																✓
-															</span>
-															<strong>Reply received</strong>
-														</>
-													) : (
-														<>
-															<span
-																mix={css(inlineSpinnerCss)}
-																aria-hidden="true"
-															/>
-															<strong>Waiting for your reply…</strong>
-														</>
-													)}
+													{connectStatusContent({
+														connected: hasFirstHello,
+														connectedLabel: 'Reply received',
+														waitingLabel: 'Waiting for your reply…',
+													})}
 												</div>
 											) : null}
 										</div>
@@ -668,25 +646,11 @@ export function OnboardingRoute(handle: Handle) {
 													data-connected={hasSavedMemory ? 'true' : undefined}
 													data-testid="onboarding-save-memory-status"
 												>
-													{hasSavedMemory ? (
-														<>
-															<span
-																mix={css(connectCheckCss)}
-																aria-hidden="true"
-															>
-																✓
-															</span>
-															<strong>Memory saved</strong>
-														</>
-													) : (
-														<>
-															<span
-																mix={css(inlineSpinnerCss)}
-																aria-hidden="true"
-															/>
-															<strong>Waiting for a saved memory…</strong>
-														</>
-													)}
+													{connectStatusContent({
+														connected: hasSavedMemory,
+														connectedLabel: 'Memory saved',
+														waitingLabel: 'Waiting for a saved memory…',
+													})}
 												</div>
 											) : null}
 										</div>
@@ -1203,19 +1167,27 @@ const authNoteCss = {
 }
 
 /* Connection status pill: dashed while the product polls for the grant,
-   solid once the agent lands. */
+   solid once the agent lands. Height is locked to the check/spinner so
+   sibling pills in the step-3 grid stay the same size. */
 const connectStatusCss = {
-	display: 'flex',
+	display: 'inline-flex',
 	alignItems: 'center',
-	gap: '0.7rem',
+	gap: '0.55rem',
 	width: 'fit-content',
+	maxWidth: '100%',
+	boxSizing: 'border-box' as const,
 	color: colors.primaryText,
 	backgroundColor: `oklch(from ${colors.primary} l c h / 0.08)`,
 	border: `1.5px dashed oklch(from ${colors.primary} l c h / 0.45)`,
 	borderRadius: '999px',
-	padding: '0.65rem 1.2rem',
+	padding: '0.35rem 0.95rem 0.35rem 0.4rem',
+	lineHeight: 1,
 	'&[data-connected]': {
 		borderStyle: 'solid',
+	},
+	'& strong': {
+		lineHeight: 1.2,
+		fontWeight: 700,
 	},
 }
 
@@ -1223,13 +1195,47 @@ const connectCheckCss = {
 	flex: 'none',
 	display: 'grid',
 	placeItems: 'center',
+	boxSizing: 'border-box' as const,
 	width: '1.5rem',
 	height: '1.5rem',
 	borderRadius: '50%',
 	backgroundColor: colors.primary,
 	color: colors.onPrimary,
 	fontWeight: 760,
+	lineHeight: 1,
 	...wizardPopCss,
+}
+
+/** Match the check circle so waiting/connected pills share one height. */
+const connectStatusSpinnerCss = {
+	...inlineSpinnerCss,
+	width: '1.5rem',
+	height: '1.5rem',
+}
+
+function connectStatusContent(input: {
+	connected: boolean
+	connectedLabel: string
+	waitingLabel: string
+}) {
+	// Return an array (no inter-element whitespace text nodes) so flex height
+	// stays identical across sibling pills in the step-3 grid.
+	if (input.connected) {
+		return [
+			<span key="check" mix={css(connectCheckCss)} aria-hidden="true">
+				✓
+			</span>,
+			<strong key="label">{input.connectedLabel}</strong>,
+		]
+	}
+	return [
+		<span
+			key="spinner"
+			mix={css(connectStatusSpinnerCss)}
+			aria-hidden="true"
+		/>,
+		<strong key="label">{input.waitingLabel}</strong>,
+	]
 }
 
 /* Starter packages: compact centered cards; the DIY card breaks the grid
