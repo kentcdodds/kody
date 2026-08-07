@@ -324,9 +324,8 @@ async function cloudflareApiRequestOnce<T>(input: CloudflareApiRequestInput) {
 	const url = `${baseUrl.replace(/\/$/, '')}/accounts/${encodeURIComponent(input.accountId)}${input.pathname}`
 	const abortController = new AbortController()
 	const timeout = setTimeout(() => abortController.abort(), 30_000)
-	let response: Response
 	try {
-		response = await (input.fetcher ?? fetch)(url, {
+		const response = await (input.fetcher ?? fetch)(url, {
 			method: input.method ?? 'GET',
 			headers: {
 				Authorization: `Bearer ${input.apiToken}`,
@@ -336,30 +335,30 @@ async function cloudflareApiRequestOnce<T>(input: CloudflareApiRequestInput) {
 			...(input.body ? { body: JSON.stringify(input.body) } : {}),
 			signal: abortController.signal,
 		})
+		const text = await response.text()
+		let payload: CloudflareApiEnvelope<T>
+		try {
+			payload = JSON.parse(text) as CloudflareApiEnvelope<T>
+		} catch {
+			const preview = text.trim().slice(0, 200) || '(empty body)'
+			throw new Error(
+				`Malformed Cloudflare response (${response.status}) for ${input.pathname}: ${preview}`,
+			)
+		}
+		if (
+			!response.ok ||
+			payload.success !== true ||
+			payload.result === undefined
+		) {
+			const error = payload.errors?.[0]
+			throw new Error(
+				`Cloudflare API request failed (${response.status}): ${error?.message ?? error?.code ?? input.pathname}`,
+			)
+		}
+		return payload
 	} finally {
 		clearTimeout(timeout)
 	}
-	const text = await response.text()
-	let payload: CloudflareApiEnvelope<T>
-	try {
-		payload = JSON.parse(text) as CloudflareApiEnvelope<T>
-	} catch {
-		const preview = text.trim().slice(0, 200) || '(empty body)'
-		throw new Error(
-			`Malformed Cloudflare response (${response.status}) for ${input.pathname}: ${preview}`,
-		)
-	}
-	if (
-		!response.ok ||
-		payload.success !== true ||
-		payload.result === undefined
-	) {
-		const error = payload.errors?.[0]
-		throw new Error(
-			`Cloudflare API request failed (${response.status}): ${error?.message ?? error?.code ?? input.pathname}`,
-		)
-	}
-	return payload
 }
 
 export async function cloudflareApiRequest<T>(
