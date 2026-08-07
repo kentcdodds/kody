@@ -7,8 +7,6 @@ the record it supports.
 
 - [Screen inventory](./page-inventory.md) — every affected screen, its mode, and
   its `MetadataGrid` call site
-- [Prototypes](./prototypes/) — four self-contained pages, openable directly in
-  a browser
 
 ## The measurement that reframed it
 
@@ -37,11 +35,10 @@ the brand above it unless all three move together, and it does nothing for
 phones. Kept as a possible follow-up, not a prerequisite.
 
 **Replace the shell: rail into a horizontal section bar, uncapped width,
-mail-client split.** Prototyped in
-[02-rejected-shell-rewrites.html](./prototypes/02-rejected-shell-rewrites.html).
-It buys the most room, but the rail is not what starves the record — the split
-is — and a 15-item horizontal section bar scrolls sideways on a laptop, which
-trades one problem for another. Rejected in favour of leaving the shell alone.
+mail-client split.** It buys the most room, but the rail is not what starves the
+record — the split is — and a 15-item horizontal section bar scrolls sideways on
+a laptop, which trades one problem for another. Rejected in favour of leaving
+the shell alone.
 
 **A dedicated record route per screen.** Best density available, and the right
 answer for a record deep-linked from outside the account area. It discards the
@@ -134,8 +131,9 @@ one.
 
 ### Where the built API differs from the one settled above
 
-The API in this record was written from the prototype, which held one flat
-array. Two parts of it could not be built as specified:
+The API in this record was written against a throwaway HTML prototype, which
+held one flat array and no types. Two parts of it could not be built as
+specified:
 
 - **`columns[].render(row)` became `rows[].cells` keyed by column key.**
   `remix/ui`'s JSX does not carry component generics — neither inference nor an
@@ -148,7 +146,7 @@ array. Two parts of it could not be built as specified:
   `AccountPackageListItem`, not a richer view of the same object. `RecordTable`
   decides where the record goes; the screen decides what it is.
 
-Two more things the components forced that the prototype did not show:
+Two more things the real components forced that a static page could not show:
 
 - **`ariaLabel` names the region as well as the table.** An empty collection
   renders no `<table>` at all, so on a fresh account the toolbar, count, and

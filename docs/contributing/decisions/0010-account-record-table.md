@@ -19,8 +19,7 @@ of broken hex. There are 17 `MetadataGrid` call sites, nine of them at
 `columns={3}`. Four screens hand-roll a table through
 `accountManagementTableCss`.
 
-Measurements, the rejected alternatives, and a four-page working prototype of
-the accepted shape are in
+Measurements and the rejected alternatives are in
 [the supporting material](./0010-account-record-table/index.md).
 
 ## Decision
