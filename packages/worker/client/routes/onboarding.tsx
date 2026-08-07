@@ -886,7 +886,7 @@ const errorMessageCss = {
 const wizardStepsCss = {
 	marginTop: 'clamp(2.2rem, 5vw, 3.2rem)',
 	display: 'grid',
-	gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 	gap: '0.8rem',
 	'@media (max-width: 900px)': {
 		gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
