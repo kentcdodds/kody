@@ -1,0 +1,2303 @@
+<title>RecordTable — one primitive, four pages, three modes</title>
+
+<style>
+	/* ============================================================
+   FONTS — the app's own faces, inlined (CSP blocks font CDNs).
+   `swap` so a decode failure can never take the page's text down.
+   ============================================================ */
+	@font-face {
+		font-family: 'Bricolage Grotesque';
+		font-style: normal;
+		font-weight: 400 800;
+		font-display: swap;
+		src: url('../../../../../packages/worker/public/fonts/bricolage-grotesque-latin.woff2')
+			format('woff2');
+	}
+	@font-face {
+		font-family: 'Wix Madefor Text';
+		font-style: normal;
+		font-weight: 400 800;
+		font-display: swap;
+		src: url('../../../../../packages/worker/public/fonts/wix-madefor-text-latin.woff2')
+			format('woff2');
+	}
+
+	/* ============================================================
+   TOKENS — CHROME is the document you are reading (graphite +
+   measuring-tape amber). SPECIMEN tokens are transcribed from
+   packages/worker/public/styles.css. Amber never appears inside
+   a frame; green never appears outside one.
+   ============================================================ */
+	:root {
+		--paper: oklch(0.965 0.004 250);
+		--paper-sunk: oklch(0.925 0.005 250);
+		--ink: oklch(0.23 0.012 258);
+		--ink-soft: oklch(0.46 0.014 258);
+		--rule: oklch(0.87 0.007 250);
+		--rule-firm: oklch(0.76 0.01 250);
+		--tape: oklch(0.56 0.14 58);
+
+		--a-primary: oklch(0.54 0.18 145);
+		--a-primary-text: oklch(0.455 0.17 145);
+		--a-primary-soft: oklch(0.54 0.18 145 / 0.12);
+		--a-primary-softest: oklch(0.54 0.18 145 / 0.05);
+		--a-on-primary: oklch(1 0 0);
+		--a-bg: oklch(0.93 0.004 250);
+		--a-surface: oklch(0.975 0.002 250);
+		--a-text: oklch(0.22 0.012 260);
+		--a-text-muted: oklch(0.44 0.014 260);
+		--a-border: oklch(0.84 0.008 250);
+		--a-danger: oklch(0.55 0.19 25);
+
+		--display: 'Bricolage Grotesque', system-ui, sans-serif;
+		--body: 'Wix Madefor Text', system-ui, sans-serif;
+		--mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--paper: oklch(0.165 0.008 258);
+			--paper-sunk: oklch(0.13 0.008 258);
+			--ink: oklch(0.95 0.005 250);
+			--ink-soft: oklch(0.71 0.011 255);
+			--rule: oklch(0.3 0.011 255);
+			--rule-firm: oklch(0.42 0.014 255);
+			--tape: oklch(0.78 0.13 66);
+			--a-primary: oklch(0.72 0.205 145);
+			--a-primary-text: oklch(0.75 0.2 145);
+			--a-primary-soft: oklch(0.72 0.205 145 / 0.15);
+			--a-primary-softest: oklch(0.72 0.205 145 / 0.07);
+			--a-on-primary: oklch(0.2 0.05 148);
+			--a-bg: oklch(0.19 0.008 255);
+			--a-surface: oklch(0.235 0.01 255);
+			--a-text: oklch(0.945 0.005 250);
+			--a-text-muted: oklch(0.72 0.01 255);
+			--a-border: oklch(0.33 0.01 255);
+			--a-danger: oklch(0.75 0.16 25);
+		}
+	}
+	:root[data-theme='dark'] {
+		--paper: oklch(0.165 0.008 258);
+		--paper-sunk: oklch(0.13 0.008 258);
+		--ink: oklch(0.95 0.005 250);
+		--ink-soft: oklch(0.71 0.011 255);
+		--rule: oklch(0.3 0.011 255);
+		--rule-firm: oklch(0.42 0.014 255);
+		--tape: oklch(0.78 0.13 66);
+		--a-primary: oklch(0.72 0.205 145);
+		--a-primary-text: oklch(0.75 0.2 145);
+		--a-primary-soft: oklch(0.72 0.205 145 / 0.15);
+		--a-primary-softest: oklch(0.72 0.205 145 / 0.07);
+		--a-on-primary: oklch(0.2 0.05 148);
+		--a-bg: oklch(0.19 0.008 255);
+		--a-surface: oklch(0.235 0.01 255);
+		--a-text: oklch(0.945 0.005 250);
+		--a-text-muted: oklch(0.72 0.01 255);
+		--a-border: oklch(0.33 0.01 255);
+		--a-danger: oklch(0.75 0.16 25);
+	}
+	:root[data-theme='light'] {
+		--paper: oklch(0.965 0.004 250);
+		--paper-sunk: oklch(0.925 0.005 250);
+		--ink: oklch(0.23 0.012 258);
+		--ink-soft: oklch(0.46 0.014 258);
+		--rule: oklch(0.87 0.007 250);
+		--rule-firm: oklch(0.76 0.01 250);
+		--tape: oklch(0.56 0.14 58);
+		--a-primary: oklch(0.54 0.18 145);
+		--a-primary-text: oklch(0.455 0.17 145);
+		--a-primary-soft: oklch(0.54 0.18 145 / 0.12);
+		--a-primary-softest: oklch(0.54 0.18 145 / 0.05);
+		--a-on-primary: oklch(1 0 0);
+		--a-bg: oklch(0.93 0.004 250);
+		--a-surface: oklch(0.975 0.002 250);
+		--a-text: oklch(0.22 0.012 260);
+		--a-text-muted: oklch(0.44 0.014 260);
+		--a-border: oklch(0.84 0.008 250);
+		--a-danger: oklch(0.55 0.19 25);
+	}
+
+	/* ============================================================
+   CHROME
+   ============================================================ */
+	body {
+		margin: 0;
+		background: var(--paper);
+		color: var(--ink);
+		font-family: var(--body);
+		font-size: 16px;
+		line-height: 1.62;
+		-webkit-font-smoothing: antialiased;
+		/* `clip`, not `hidden`: hidden makes the body a scroll container and
+	   the sticky width rail stops resolving against the viewport. */
+		overflow-x: clip;
+	}
+	.wrap {
+		max-width: 84rem;
+		margin: 0 auto;
+		padding: clamp(2rem, 5vw, 4rem) clamp(1.25rem, 4vw, 3rem) 6rem;
+	}
+	.prose {
+		max-width: 64ch;
+	}
+	.eyebrow {
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.13em;
+		text-transform: uppercase;
+		color: var(--tape);
+		margin: 0 0 0.9rem;
+	}
+	h1 {
+		font-family: var(--display);
+		font-size: clamp(2rem, 5vw, 3.2rem);
+		font-weight: 780;
+		letter-spacing: -0.03em;
+		line-height: 1.04;
+		margin: 0 0 1.1rem;
+		text-wrap: balance;
+	}
+	h2 {
+		font-family: var(--display);
+		font-size: clamp(1.4rem, 3vw, 1.9rem);
+		font-weight: 740;
+		letter-spacing: -0.022em;
+		line-height: 1.12;
+		margin: 0 0 0.7rem;
+		text-wrap: balance;
+	}
+	h3 {
+		font-family: var(--display);
+		font-size: 1.18rem;
+		font-weight: 700;
+		letter-spacing: -0.016em;
+		margin: 0;
+	}
+	p {
+		margin: 0 0 1rem;
+	}
+	.prose > p:last-child {
+		margin-bottom: 0;
+	}
+	.lede {
+		font-size: 1.1rem;
+		color: var(--ink-soft);
+		text-wrap: pretty;
+	}
+	strong {
+		font-weight: 650;
+		color: var(--ink);
+	}
+	code {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		font-size: 0.9em;
+	}
+	:focus-visible {
+		outline: 2.5px solid var(--tape);
+		outline-offset: 3px;
+	}
+	hr.div {
+		border: 0;
+		border-top: 1px solid var(--rule);
+		margin: clamp(2.75rem, 5vw, 4rem) 0 clamp(1.75rem, 3vw, 2.5rem);
+	}
+	.sechead {
+		margin-bottom: 1.1rem;
+	}
+	.sechead .eyebrow {
+		margin-bottom: 0.5rem;
+	}
+	.sechead h2 {
+		margin: 0;
+	}
+
+	/* ---- width rail ---------------------------------------- */
+	.rail {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		background: color-mix(in oklab, var(--paper) 88%, transparent);
+		backdrop-filter: blur(10px);
+		border-bottom: 1px solid var(--rule);
+		margin: 0 calc(-1 * clamp(1.25rem, 4vw, 3rem));
+		padding: 0.8rem clamp(1.25rem, 4vw, 3rem);
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+	.rail-label {
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.13em;
+		text-transform: uppercase;
+		color: var(--tape);
+		flex: none;
+	}
+	.rail input[type='range'] {
+		flex: 1 1 10rem;
+		min-width: 6rem;
+		accent-color: var(--tape);
+		height: 1.5rem;
+	}
+	.rail-read {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		font-size: 1.05rem;
+		font-weight: 600;
+		flex: none;
+		min-width: 5rem;
+		text-align: right;
+	}
+	.presets {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
+	}
+	.presets button {
+		font: inherit;
+		font-size: 0.78rem;
+		font-family: var(--mono);
+		color: var(--ink-soft);
+		background: transparent;
+		border: 1px solid var(--rule-firm);
+		border-radius: 4px;
+		padding: 0.2rem 0.5rem;
+		cursor: pointer;
+		transition:
+			color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+	@media (hover: hover) {
+		.presets button:hover {
+			color: var(--ink);
+			border-color: var(--tape);
+		}
+	}
+	.presets button:active {
+		transform: scale(0.97);
+	}
+	.presets button[aria-pressed='true'] {
+		color: var(--paper);
+		background: var(--tape);
+		border-color: var(--tape);
+	}
+
+	/* ---- bench --------------------------------------------- */
+	.bench {
+		margin-top: clamp(2.5rem, 4.5vw, 3.5rem);
+	}
+	.bench-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1.25rem;
+		flex-wrap: wrap;
+		padding-bottom: 0.75rem;
+		border-bottom: 2px solid var(--ink);
+	}
+	.bench-head .route {
+		font-family: var(--mono);
+		font-size: 0.8rem;
+		color: var(--tape);
+		font-weight: 600;
+	}
+	.bench-head .why {
+		max-width: 56ch;
+		margin: 0.35rem 0 0;
+		font-size: 0.95rem;
+		color: var(--ink-soft);
+	}
+	.modebadge {
+		display: inline-block;
+		font-family: var(--mono);
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		color: var(--tape);
+		border: 1px solid var(--tape);
+		border-radius: 3px;
+		padding: 0.05rem 0.4rem;
+		margin-left: 0.5rem;
+		vertical-align: 0.12em;
+	}
+	.gauge {
+		flex: none;
+		display: flex;
+		gap: 1.4rem;
+		align-items: baseline;
+	}
+	.gauge div {
+		text-align: right;
+	}
+	.gauge .k {
+		display: block;
+		font-size: 0.64rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--ink-soft);
+		white-space: nowrap;
+	}
+	.gauge .v {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		font-size: 1.4rem;
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: -0.02em;
+	}
+	.gauge .v.pay {
+		color: var(--tape);
+	}
+	.gauge .v small {
+		font-size: 0.62em;
+		font-weight: 500;
+		color: var(--ink-soft);
+	}
+	.frame {
+		margin-top: 1rem;
+		overflow-x: auto;
+		overflow-y: hidden;
+		background: var(--paper-sunk);
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+	}
+	.caption {
+		margin: 0.65rem 0 0;
+		font-size: 0.82rem;
+		color: var(--ink-soft);
+		max-width: 78ch;
+	}
+
+	/* ---- the config, shown as the proof -------------------- */
+	.cfg {
+		margin-top: 0.9rem;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+		background: var(--paper-sunk);
+		overflow: hidden;
+	}
+	.cfg > summary {
+		cursor: pointer;
+		padding: 0.55rem 0.9rem;
+		font-size: 0.78rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--ink-soft);
+		list-style: none;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.cfg > summary::-webkit-details-marker {
+		display: none;
+	}
+	.cfg > summary::before {
+		content: '›';
+		transition: rotate 180ms cubic-bezier(0.23, 1, 0.32, 1);
+		display: inline-block;
+		color: var(--tape);
+	}
+	.cfg[open] > summary::before {
+		rotate: 90deg;
+	}
+	.cfg > summary .lines {
+		margin-left: auto;
+		font-family: var(--mono);
+		letter-spacing: 0;
+		text-transform: none;
+		font-weight: 500;
+		color: var(--tape);
+	}
+	.cfg pre {
+		margin: 0;
+		padding: 0 0.9rem 0.9rem;
+		overflow-x: auto;
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		line-height: 1.6;
+		color: var(--ink);
+		tab-size: 2;
+	}
+	.cfg .cm {
+		color: var(--ink-soft);
+		font-style: italic;
+	}
+	.cfg .kw {
+		color: var(--tape);
+	}
+
+	/* ============================================================
+   SPECIMEN — the account shell, untouched. Rail, gutters, the
+   72rem cap and both breakpoints are transcribed from
+   account-management-components.tsx. Container queries stand in
+   for the app's media queries (thresholds unchanged) so a frame
+   resizes independently of the browser, and `cqw` makes the
+   app's vw-based clamps resolve against the frame.
+   ============================================================ */
+	.sim {
+		width: var(--sim-w, 1244px);
+		container-type: inline-size;
+		background: var(--a-bg);
+		color: var(--a-text);
+		font-family: var(--body);
+		font-size: 16px;
+		line-height: 1.62;
+		--gutter: clamp(1.25rem, 4cqw, 2.5rem);
+		--navgap: clamp(2rem, 5cqw, 4.5rem);
+	}
+	.top {
+		display: flex;
+		align-items: center;
+		gap: 1.3rem;
+		max-width: 72rem;
+		margin: 0 auto;
+		padding: 1rem var(--gutter);
+		box-sizing: border-box;
+	}
+	.brand {
+		font-family: var(--display);
+		font-weight: 780;
+		font-size: 1.22rem;
+		letter-spacing: -0.02em;
+		white-space: nowrap;
+	}
+	.top nav {
+		display: flex;
+		gap: 1.1rem;
+		font-size: 0.92rem;
+		color: var(--a-text-muted);
+		font-weight: 500;
+		white-space: nowrap;
+	}
+	.top .grow {
+		margin-left: auto;
+	}
+	@container (max-width: 700px) {
+		.top .hide-s {
+			display: none;
+		}
+	}
+	.shell {
+		max-width: 72rem;
+		margin: 0 auto;
+		box-sizing: border-box;
+		position: relative;
+		display: grid;
+		gap: clamp(2rem, 4cqw, 2.75rem);
+		align-items: start;
+		padding: clamp(1.5rem, 4cqw, 2.5rem) var(--gutter) 2.5rem;
+		padding-left: calc(var(--gutter) + 200px + var(--navgap));
+	}
+	.rail-nav {
+		position: absolute;
+		left: var(--gutter);
+		top: clamp(1.5rem, 4cqw, 2.5rem);
+		width: 200px;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+	.rail-nav a {
+		padding: 0.5rem 0.9rem;
+		border-radius: 10px;
+		color: var(--a-text-muted);
+		font-weight: 550;
+		font-size: 0.98rem;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.rail-nav a[aria-current] {
+		color: var(--a-primary-text);
+		background: var(--a-primary-soft);
+	}
+	@container (max-width: 860px) {
+		.shell {
+			padding-left: var(--gutter);
+			gap: 2rem;
+		}
+		.rail-nav {
+			position: static;
+			width: auto;
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 0.3rem;
+		}
+	}
+	.sim h1 {
+		font-family: var(--display);
+		font-size: clamp(2rem, 4cqw, 2.7rem);
+		font-weight: 760;
+		letter-spacing: -0.026em;
+		line-height: 1.08;
+		margin: 0 0 0.5rem;
+		color: var(--a-text);
+	}
+	.sim .lede2 {
+		margin: 0;
+		color: var(--a-text-muted);
+		max-width: 60ch;
+	}
+
+	/* --- field + chip vocabulary ---------------------------- */
+	.inp,
+	.sel,
+	.ta {
+		font: inherit;
+		font-size: 0.95rem;
+		color: var(--a-text);
+		background: var(--a-bg);
+		border: 1.5px solid var(--a-border);
+		border-radius: 11px;
+		padding: 0.5rem 0.8rem;
+		min-width: 0;
+		width: 100%;
+		box-sizing: border-box;
+		appearance: none;
+	}
+	.ta {
+		resize: vertical;
+		min-height: 4.5rem;
+		font-family: var(--mono);
+		font-size: 0.85rem;
+	}
+	.sel {
+		padding-right: 1.9rem;
+		background-image:
+			linear-gradient(45deg, transparent 50%, var(--a-text-muted) 50%),
+			linear-gradient(135deg, var(--a-text-muted) 50%, transparent 50%);
+		background-position:
+			calc(100% - 1rem) 1rem,
+			calc(100% - 0.68rem) 1rem;
+		background-size:
+			6px 6px,
+			6px 6px;
+		background-repeat: no-repeat;
+	}
+	.fld {
+		display: grid;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.fld > span {
+		font-size: 0.9rem;
+		font-weight: 600;
+	}
+	.btn {
+		font: inherit;
+		font-size: 0.88rem;
+		font-weight: 600;
+		border-radius: 999px;
+		padding: 0.42rem 1rem;
+		cursor: pointer;
+		border: 1.5px solid var(--a-border);
+		background: transparent;
+		color: var(--a-text);
+		white-space: nowrap;
+		transition:
+			border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+	.btn:active {
+		transform: scale(0.97);
+	}
+	@media (hover: hover) {
+		.btn:hover {
+			border-color: var(--a-primary);
+		}
+	}
+	.btn.pri {
+		background: var(--a-primary);
+		border-color: var(--a-primary);
+		color: var(--a-on-primary);
+	}
+	.btn.dgr {
+		color: var(--a-danger);
+		border-color: color-mix(in oklab, var(--a-danger) 45%, transparent);
+	}
+	.acts {
+		display: flex;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+	.tags {
+		display: flex;
+		gap: 0.3rem;
+		flex-wrap: wrap;
+		min-width: 0;
+	}
+	.tags span {
+		padding: 0 0.5rem;
+		border-radius: 0.5rem;
+		border: 1px solid var(--a-border);
+		background: var(--a-surface);
+		color: var(--a-text-muted);
+		font-size: 0.75rem;
+		line-height: 1.4rem;
+		white-space: nowrap;
+	}
+	.tags span.on {
+		border-color: var(--a-primary);
+		color: var(--a-primary-text);
+		background: var(--a-primary-soft);
+	}
+	/* An id is a copy target, never a sentence: one line, ellipsis,
+   full value in the title, and a button that does the real job. */
+	.idv {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		min-width: 0;
+		margin-top: 0.15rem;
+	}
+	.idv code {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		background: var(--a-bg);
+		border: 1px solid var(--a-border);
+		border-radius: 6px;
+		padding: 0.2rem 0.42rem;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.idv button {
+		flex: none;
+		font: inherit;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--a-text-muted);
+		background: transparent;
+		border: 1px solid var(--a-border);
+		border-radius: 6px;
+		padding: 0.18rem 0.38rem;
+		cursor: pointer;
+	}
+	@media (hover: hover) {
+		.idv button:hover {
+			color: var(--a-primary-text);
+			border-color: var(--a-primary);
+		}
+	}
+	.idv button:active {
+		transform: scale(0.97);
+	}
+	.idv button[data-copied] {
+		color: var(--a-primary-text);
+		border-color: var(--a-primary);
+	}
+	/* Metadata columns emerge from the room available rather than
+   being declared. This replaces `columns={3}`. */
+	.band {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+		gap: 1rem 1.6rem;
+		margin: 0;
+	}
+	.band > div {
+		min-width: 0;
+	}
+	.band dt {
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--a-text-muted);
+	}
+	.band dd {
+		margin: 0.1rem 0 0;
+		color: var(--a-text);
+		min-width: 0;
+	}
+	.band .stamp {
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	.plumb {
+		border-top: 1px solid var(--a-border);
+		padding-top: 1rem;
+	}
+	.plumb > summary {
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.93rem;
+		color: var(--a-primary-text);
+		width: fit-content;
+		list-style: none;
+	}
+	.plumb > summary::-webkit-details-marker {
+		display: none;
+	}
+	.plumb > summary::before {
+		content: '›';
+		display: inline-block;
+		margin-right: 0.4rem;
+		transition: rotate 180ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+	.plumb[open] > summary::before {
+		rotate: 90deg;
+	}
+	.plumb[open] > summary {
+		margin-bottom: 0.8rem;
+	}
+	.blob {
+		margin: 0;
+		color: var(--a-text-muted);
+		font-size: 0.87rem;
+		line-height: 1.55;
+		max-height: 6.5rem;
+		overflow-y: auto;
+		padding-right: 0.5rem;
+		overflow-wrap: anywhere;
+	}
+	.subhead {
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--a-text-muted);
+		margin: 0 0 0.5rem;
+	}
+
+	/* ============================================================
+   RECORDTABLE — the primitive under test.
+   Every page below renders through this one block of CSS and
+   one render function. Pages differ only by their config.
+   ============================================================ */
+	.pane {
+		background: var(--a-surface);
+		border: 1.5px solid var(--a-border);
+		border-radius: 14px;
+		min-width: 0;
+		overflow: hidden;
+		box-sizing: border-box;
+	}
+	.stack {
+		display: grid;
+		gap: 1.25rem;
+		min-width: 0;
+	}
+	/* Toolbar: collection controls on one row. Replaces the sidebar's
+   stacked label-over-field block, which spent ~230px of height to
+   hold three controls. */
+	.tools {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.7rem 0.85rem;
+		border-bottom: 1px solid var(--a-border);
+		flex-wrap: wrap;
+	}
+	.tools .search {
+		flex: 1 1 12rem;
+		min-width: 7rem;
+		width: auto;
+	}
+	.tools .sel {
+		width: auto;
+		flex: none;
+	}
+	.tools .cnt {
+		margin: 0 0 0 auto;
+		font-size: 0.82rem;
+		color: var(--a-text-muted);
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	.scroll {
+		max-height: var(--scroll-h, 22rem);
+		overflow-y: auto;
+	}
+	table.recs {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.9rem;
+	}
+	table.recs th {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		text-align: left;
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--a-text-muted);
+		padding: 0.5rem 0.85rem;
+		border-bottom: 1px solid var(--a-border);
+		white-space: nowrap;
+		background: var(--a-surface);
+	}
+	table.recs th.num,
+	table.recs td.num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	table.recs td {
+		padding: 0.55rem 0.85rem;
+		border-bottom: 1px solid var(--a-border);
+		vertical-align: middle;
+		color: var(--a-text);
+	}
+	table.recs tbody tr.pick {
+		cursor: pointer;
+	}
+	table.recs tbody tr[aria-selected='true'] {
+		background: var(--a-primary-softest);
+		box-shadow: inset 3px 0 0 var(--a-primary);
+	}
+	@media (hover: hover) {
+		table.recs tbody tr.pick:hover:not([aria-selected='true']) {
+			background: var(--a-bg);
+		}
+	}
+	td.nm {
+		font-weight: 620;
+		white-space: nowrap;
+	}
+	td.mono code {
+		font-size: 0.8rem;
+		color: var(--a-text-muted);
+	}
+	td.tg .tags {
+		flex-wrap: nowrap;
+		overflow: hidden;
+	}
+	td.st {
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+		color: var(--a-text-muted);
+		font-size: 0.84rem;
+	}
+	/* State reads as a mark you can scan down a column, not a word. */
+	.dot {
+		display: inline-grid;
+		place-content: center;
+		width: 1.2rem;
+		height: 1.2rem;
+		border-radius: 999px;
+		border: 1px solid var(--a-border);
+		font-size: 0.68rem;
+		color: var(--a-text-muted);
+	}
+	.dot.on {
+		border-color: var(--a-primary);
+		color: var(--a-primary-text);
+		background: var(--a-primary-soft);
+	}
+	/* A usage bar earns its column: number plus shape. */
+	.meter {
+		display: grid;
+		gap: 0.2rem;
+		min-width: 6rem;
+	}
+	.meter .track {
+		height: 5px;
+		border-radius: 999px;
+		background: var(--a-border);
+		overflow: hidden;
+	}
+	.meter .fill {
+		height: 100%;
+		border-radius: 999px;
+		background: var(--a-primary);
+	}
+	.meter.warn .fill {
+		background: var(--a-danger);
+	}
+	.meter .lab {
+		font-size: 0.76rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--a-text-muted);
+		white-space: nowrap;
+	}
+	/* Columns that stop earning their width drop out, rather than
+   every column squeezing equally. Priority is per column. */
+	@container (max-width: 900px) {
+		.d3 {
+			display: none;
+		}
+	}
+	@container (max-width: 780px) {
+		.d2 {
+			display: none;
+		}
+	}
+	@container (max-width: 680px) {
+		.d1 {
+			display: none;
+		}
+	}
+
+	/* --- the record itself, at whatever width it is given ---- */
+	.recbody {
+		padding: 1.35rem;
+		display: grid;
+		gap: 1.35rem;
+		min-width: 0;
+	}
+	.rechead {
+		display: grid;
+		gap: 0.55rem;
+	}
+	.rechead h2 {
+		font-family: var(--display);
+		font-size: clamp(1.45rem, 2.3cqw, 1.9rem);
+		font-weight: 740;
+		letter-spacing: -0.02em;
+		line-height: 1.14;
+		margin: 0;
+		color: var(--a-text);
+	}
+	.rechead p {
+		margin: 0;
+		color: var(--a-text-muted);
+		max-width: 70ch;
+	}
+	/* mode="expand": the record unfolds inside the table, under its
+   own row, so the list never reflows around it. */
+	tr.exp > td {
+		padding: 0;
+		background: var(--a-bg);
+		box-shadow: inset 3px 0 0 var(--a-primary);
+	}
+	/* A two-column editor grid for pane-mode forms. */
+	.grid2 {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+		gap: 1rem;
+	}
+	.secret {
+		display: flex;
+		gap: 0.4rem;
+		align-items: center;
+	}
+	.secret code {
+		flex: 1 1 auto;
+		font-family: var(--mono);
+		font-size: 0.85rem;
+		background: var(--a-bg);
+		border: 1.5px solid var(--a-border);
+		border-radius: 11px;
+		padding: 0.5rem 0.8rem;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		letter-spacing: 0.08em;
+	}
+
+	/* ============================================================
+   MOBILE FALLBACK — the same <table>, no duplicate DOM.
+   Under 620px the header hides and each row becomes a card whose
+   cells carry their own label from `data-label`. A 5-column table
+   cannot survive a phone, and horizontally scrolling one is worse
+   than not having it.
+   ============================================================ */
+	@container (max-width: 620px) {
+		table.recs thead {
+			display: none;
+		}
+		table.recs,
+		table.recs tbody,
+		table.recs tr,
+		table.recs td {
+			display: block;
+			width: auto;
+		}
+		table.recs tbody tr:not(.exp) {
+			border-bottom: 1px solid var(--a-border);
+			padding: 0.55rem 0.85rem;
+		}
+		table.recs tbody tr[aria-selected='true'] {
+			box-shadow: inset 3px 0 0 var(--a-primary);
+		}
+		table.recs td {
+			border-bottom: 0;
+			padding: 0.1rem 0;
+			display: flex;
+			gap: 0.6rem;
+			align-items: baseline;
+		}
+		table.recs td::before {
+			content: attr(data-label);
+			flex: none;
+			min-width: 6.5rem;
+			font-size: 0.68rem;
+			font-weight: 700;
+			letter-spacing: 0.07em;
+			text-transform: uppercase;
+			color: var(--a-text-muted);
+		}
+		/* The name is the card's heading, so it keeps no label. */
+		table.recs td.nm {
+			display: block;
+			font-size: 1rem;
+			margin-bottom: 0.2rem;
+			white-space: normal;
+		}
+		table.recs td.nm::before {
+			content: none;
+		}
+		table.recs td.num {
+			text-align: left;
+		}
+		table.recs tr.exp,
+		table.recs tr.exp > td {
+			padding: 0;
+		}
+		table.recs tr.exp > td::before {
+			content: none;
+		}
+		.recbody {
+			padding: 1rem;
+		}
+		.tools {
+			gap: 0.5rem;
+		}
+		.tools .search {
+			flex: 1 1 100%;
+		}
+		.tools .sel {
+			flex: 1 1 8rem;
+		}
+		.tools .cnt {
+			margin-left: 0;
+		}
+	}
+
+	/* ============================================================
+   VERDICT
+   ============================================================ */
+	.tablewrap {
+		overflow-x: auto;
+		margin-top: 1.5rem;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+	}
+	table.cmp {
+		border-collapse: collapse;
+		width: 100%;
+		min-width: 50rem;
+		font-size: 0.92rem;
+	}
+	table.cmp th,
+	table.cmp td {
+		text-align: left;
+		padding: 0.7rem 1rem;
+		border-bottom: 1px solid var(--rule);
+		vertical-align: top;
+	}
+	table.cmp thead th {
+		font-size: 0.68rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--ink-soft);
+		background: var(--paper-sunk);
+		white-space: nowrap;
+	}
+	table.cmp tbody tr:last-child td {
+		border-bottom: 0;
+	}
+	table.cmp .n {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.pill {
+		display: inline-block;
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		padding: 0.1rem 0.45rem;
+		border-radius: 3px;
+		white-space: nowrap;
+		border: 1px solid currentColor;
+	}
+	.pill.yes {
+		color: var(--tape);
+	}
+	.pill.no {
+		color: var(--ink-soft);
+		opacity: 0.75;
+	}
+	.rec {
+		margin-top: 2.25rem;
+		border-top: 2px solid var(--tape);
+		padding-top: 1.1rem;
+		max-width: 64rem;
+	}
+	.rec h3 {
+		margin-bottom: 0.5rem;
+		font-size: 1.32rem;
+	}
+	.rec ol,
+	.rec ul {
+		margin: 0.6rem 0 0;
+		padding-left: 1.3rem;
+	}
+	.rec li {
+		margin-bottom: 0.5rem;
+	}
+	.rec li:last-child {
+		margin-bottom: 0;
+	}
+	.foot {
+		margin-top: 4rem;
+		padding-top: 1.25rem;
+		border-top: 1px solid var(--rule);
+		font-size: 0.85rem;
+		color: var(--ink-soft);
+		max-width: 76ch;
+	}
+</style>
+
+<div class="wrap">
+	<header class="prose">
+		<p class="eyebrow">End-to-end proof</p>
+		<h1>One primitive. Four pages. Three modes.</h1>
+		<p class="lede">
+			Every frame below renders through the same
+			<code>RecordTable</code> — one render function, one block of CSS. The
+			pages differ only in a config object, and each config is printed under its
+			frame. If those configs are small and declarative, the pattern
+			generalises; if any page needs a special case, that shows up here rather
+			than on page seven of a migration.
+		</p>
+	</header>
+
+	<div class="prose" style="margin-top: 1.5rem">
+		<p>
+			The four are chosen to break it, not to flatter it:
+			<strong>packages</strong> is the easy read-only case,
+			<strong>admin/users</strong> puts live controls inside an expanded row,
+			<strong>secrets</strong> has a real editor that expansion cannot hold, and
+			<strong>usage</strong> has no record at all — it is only a table, which is
+			the mode that replaces four hand-rolled ones.
+		</p>
+		<p>
+			The account shell is untouched everywhere: 200&nbsp;px rail, 72&nbsp;rem
+			cap, both breakpoints. Drag to 390&nbsp;px to see the same markup become
+			cards.
+		</p>
+	</div>
+
+	<hr class="div" />
+
+	<div class="rail">
+		<span class="rail-label" id="rl">Browser width</span>
+		<input
+			id="w"
+			type="range"
+			min="380"
+			max="1900"
+			step="2"
+			value="1244"
+			aria-labelledby="rl"
+		/>
+		<output class="rail-read" for="w" id="w-read">1244px</output>
+		<div class="presets" role="group" aria-label="Width presets">
+			<button type="button" data-w="390">390 · phone</button>
+			<button type="button" data-w="720">720 · cards</button>
+			<button type="button" data-w="900">900 · cols drop</button>
+			<button type="button" data-w="1244" aria-pressed="true">
+				1244 · your shot
+			</button>
+			<button type="button" data-w="1512">1512 · MBP 14"</button>
+		</div>
+	</div>
+
+	<!-- ============ packages ============ -->
+	<section class="bench" data-bench="packages">
+		<div class="bench-head">
+			<div>
+				<span class="route">/account/packages</span>
+				<h3>Packages <span class="modebadge">mode: expand</span></h3>
+				<p class="why">
+					The baseline case: six read-only fields and a search index. The record
+					unfolds under its own row, so the list never reflows and you keep your
+					place in it.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Record</span
+					><span class="v pay" data-gauge="rec">—</span>
+				</div>
+				<div>
+					<span class="k">Config</span><span class="v" data-gauge="cfg">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim="packages"></div></div>
+		<details class="cfg" data-cfg="packages" open>
+			<summary>The entire page config<span class="lines"></span></summary>
+			<pre></pre>
+		</details>
+	</section>
+
+	<!-- ============ admin users ============ -->
+	<section class="bench" data-bench="users">
+		<div class="bench-head">
+			<div>
+				<span class="route">/admin/users</span>
+				<h3>Admin users <span class="modebadge">mode: expand</span></h3>
+				<p class="why">
+					The honest test of "buttons are fine, fields are not". Nine read-only
+					fields plus a live <em>Manage roles</em> cluster and two dangerous
+					actions, all inside an expanded row. It also already hand-rolls a
+					table, so this is a replacement rather than an addition.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Record</span
+					><span class="v pay" data-gauge="rec">—</span>
+				</div>
+				<div>
+					<span class="k">Config</span><span class="v" data-gauge="cfg">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim="users"></div></div>
+		<p class="caption">
+			Verdict: it holds. A control <em>cluster</em> is short and horizontal, so
+			it sits in a row without pushing the table apart. Note the roles column
+			reads as chips you can scan down, which the current card list cannot do.
+		</p>
+		<details class="cfg" data-cfg="users">
+			<summary>The entire page config<span class="lines"></span></summary>
+			<pre></pre>
+		</details>
+	</section>
+
+	<!-- ============ secrets ============ -->
+	<section class="bench" data-bench="secrets">
+		<div class="bench-head">
+			<div>
+				<span class="route">/account/secrets</span>
+				<h3>Secrets <span class="modebadge">mode: pane</span></h3>
+				<p class="why">
+					The counter-example, and why <code>mode</code> is a prop rather than
+					two components. Eight editable fields, a masked value and destructive
+					actions: unfolded inside a table row this would push rows a screen
+					apart. In a pane beneath the table it gets the full 810&nbsp;px and
+					the table stays a table.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Record</span
+					><span class="v pay" data-gauge="rec">—</span>
+				</div>
+				<div>
+					<span class="k">Config</span><span class="v" data-gauge="cfg">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim="secrets"></div></div>
+		<p class="caption">
+			Same table, same toolbar, same metadata band — only
+			<code>mode: 'pane'</code> and a <code>renderRecord</code> that returns a
+			form differ. This is the shape all eight editor pages take.
+		</p>
+		<details class="cfg" data-cfg="secrets">
+			<summary>The entire page config<span class="lines"></span></summary>
+			<pre></pre>
+		</details>
+	</section>
+
+	<!-- ============ usage ============ -->
+	<section class="bench" data-bench="usage">
+		<div class="bench-head">
+			<div>
+				<span class="route">/account/usage</span>
+				<h3>Usage <span class="modebadge">mode: none</span></h3>
+				<p class="why">
+					No selection, no record — just a table. This is the mode that replaces
+					the four pages currently hand-rolling
+					<code>accountManagementTableCss</code>, and it is where the primitive
+					has to earn its keep on numbers: right-aligned tabular figures, a
+					meter that gives each row a shape, and a warning state that reads
+					before you get to the digits.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Table</span
+					><span class="v pay" data-gauge="rec">—</span>
+				</div>
+				<div>
+					<span class="k">Config</span><span class="v" data-gauge="cfg">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim="usage"></div></div>
+		<details class="cfg" data-cfg="usage">
+			<summary>The entire page config<span class="lines"></span></summary>
+			<pre></pre>
+		</details>
+	</section>
+
+	<hr class="div" />
+
+	<section>
+		<div class="sechead">
+			<p class="eyebrow">Result</p>
+			<h2>What the proof actually showed</h2>
+		</div>
+		<div class="tablewrap">
+			<table class="cmp">
+				<thead>
+					<tr>
+						<th>Page</th>
+						<th>Mode</th>
+						<th>Config<br />lines</th>
+						<th>Record<br />@ 1244px</th>
+						<th>Needed a special case?</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><code>account/packages</code></td>
+						<td class="n">expand</td>
+						<td class="n" data-cell="packages">—</td>
+						<td class="n" data-cellrec="packages">—</td>
+						<td><span class="pill no">no</span></td>
+					</tr>
+					<tr>
+						<td><code>admin/users</code></td>
+						<td class="n">expand</td>
+						<td class="n" data-cell="users">—</td>
+						<td class="n" data-cellrec="users">—</td>
+						<td>
+							<span class="pill no">no</span> — a control cluster fits a row; a
+							form would not
+						</td>
+					</tr>
+					<tr>
+						<td><code>account/secrets</code></td>
+						<td class="n">pane</td>
+						<td class="n" data-cell="secrets">—</td>
+						<td class="n" data-cellrec="secrets">—</td>
+						<td>
+							<span class="pill yes">yes</span> — this is what forced
+							<code>mode</code> to be a prop
+						</td>
+					</tr>
+					<tr>
+						<td><code>account/usage</code></td>
+						<td class="n">none</td>
+						<td class="n" data-cell="usage">—</td>
+						<td class="n" data-cellrec="usage">—</td>
+						<td>
+							<span class="pill yes">yes</span> — numeric columns needed
+							<code>align: 'end'</code> and a cell renderer
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<div class="rec">
+			<h3>It generalises — with three things I got wrong first</h3>
+			<p>
+				Four pages, four configs of 13–15 lines each, no per-page CSS. But
+				building it surfaced three things the survey alone did not:
+			</p>
+			<ol>
+				<li>
+					<strong
+						><code>mode</code> has to be a prop, not two components.</strong
+					>
+					I had planned <code>RecordTable</code> and a separate list-over-detail
+					layout. Secrets proves they are the same component: identical toolbar,
+					table, columns and metadata band, differing only in where the record
+					renders. Two components would have duplicated all of that.
+				</li>
+				<li>
+					<strong
+						>Columns need per-column drop priority, not a breakpoint.</strong
+					>
+					My first pass dropped columns at one width for every page. Usage has
+					five columns that all matter and packages has two that do not, so the
+					priority belongs in the column config — <code>drop: 1|2|3</code> — and
+					the card fallback at 620&nbsp;px catches whatever is left.
+				</li>
+				<li>
+					<strong>Expand mode must not cap the list's height.</strong> I gave
+					every mode the same scrolling list. In expand mode the record renders
+					<em>inside</em> that scroller, so the record ends up trapped in a
+					nested scroll you have to fight to read — visible the moment
+					admin/users unfolded eight fields and a role cluster. Pane and none
+					modes keep the cap, because there the cap is what keeps the record
+					below reachable. Only found this by building it.
+				</li>
+			</ol>
+			<p style="margin-top: 0.9rem">
+				<strong>Where it does not fit:</strong>
+				<code>account/stars</code> and the community listings are content, not
+				records — a title, a description, a star count. Those want the card grid
+				they already have. I would leave them alone and let the
+				<code>MetadataGrid</code> fix reach them instead.
+			</p>
+			<p>
+				<strong>Ready to build for real.</strong> Two commits as before: the
+				content layer (<code>MetadataGrid</code> auto-fit, <code>IdValue</code>,
+				13 call sites) then <code>RecordTable</code> with packages as its first
+				consumer. The API this proof settled on:
+			</p>
+			<pre
+				style="
+					font-family: var(--mono);
+					font-size: 0.8rem;
+					overflow-x: auto;
+					background: var(--paper-sunk);
+					border: 1px solid var(--rule);
+					border-radius: 6px;
+					padding: 0.9rem;
+					margin-top: 0.6rem;
+					line-height: 1.6;
+				"
+			>RecordTable({
+  mode: 'expand' | 'pane' | 'none',
+  columns: [{ key, label, align?, drop?, render? }],
+  rows, selectedId, buildHref,       <span class="cm">// rows stay real links</span>
+  toolbar: [ …controls ],
+  renderRecord?: (row) =&gt; nodes,
+  countLabel,
+})</pre>
+		</div>
+	</section>
+
+	<p class="foot">
+		Frames are built from the app's own tokens and both shipped typefaces, with
+		the shell, rail, gutters, 72&nbsp;rem cap and the 860/1100&nbsp;px
+		breakpoints transcribed from <code>account-management-components.tsx</code>.
+		Field names come from the real loader types in
+		<code>src/app/loader-data.ts</code> (<code>AccountPackageDetail</code>,
+		<code>AdminUserListItem</code>, <code>AccountSecretDetail</code>,
+		<code>AccountUsageEntitlementConsumption</code>). Config line counts and
+		every pixel figure are measured from the live DOM. Your real
+		<code>@vojta/cloudflare</code> record is used throughout; other rows are
+		plausible padding, since two records cannot show density.
+	</p>
+</div>
+
+<script>
+	/* ============================================================
+	   Real record content. Your cloudflare package is real; sibling
+	   rows and the other pages' rows are plausible padding.
+	   ============================================================ */
+	const PKG = {
+		name: '@vojta/cloudflare',
+		desc: 'Cloudflare helpers for APIs, analytics, WAF rulesets, logs, and docs.',
+		tags: ['cloudflare', 'workers', 'analytics', 'waf', 'logs', 'api'],
+		kodyId: 'cloudflare',
+		id: '840430b8-bc99-4f46-9ad0-82b05e4aabba',
+		sourceId: 'dacff0ef-d1a1-4f3d-ba4c-19618357a682',
+		created: '8/7/2026, 9:26:05 AM',
+		updated: '8/7/2026, 9:26:05 AM',
+		search:
+			'cloudflare api v4 rest client workers d1 r2 kv queues pages durable objects vectorize workers ai ai gateway wrangler docs developer docs dns zones accounts email routing token verify observability logs log explorer log search workers trace events http requests access requests ray id sql query graphql analytics httpRequestsAdaptiveGroups traffic requests status paths user agents outage forensics rulesets waf custom rules firewall block challenge skip bogus crawler routes',
+	}
+
+	const PACKAGES = [
+		{
+			name: '@vojta/cloudflare',
+			kodyId: 'cloudflare',
+			hasApp: false,
+			tags: PKG.tags,
+			updated: '8/7/2026',
+		},
+		{
+			name: '@vojta/skills',
+			kodyId: 'skills',
+			hasApp: false,
+			tags: ['skills', 'documents'],
+			updated: '8/7/2026',
+		},
+		{
+			name: '@vojta/github',
+			kodyId: 'github',
+			hasApp: true,
+			tags: ['github', 'prs'],
+			updated: '8/5/2026',
+		},
+		{
+			name: '@vojta/linear',
+			kodyId: 'linear',
+			hasApp: true,
+			tags: ['linear', 'issues'],
+			updated: '8/4/2026',
+		},
+		{
+			name: '@vojta/notion',
+			kodyId: 'notion',
+			hasApp: false,
+			tags: ['notion', 'docs'],
+			updated: '8/2/2026',
+		},
+		{
+			name: '@vojta/planetscale',
+			kodyId: 'planetscale',
+			hasApp: false,
+			tags: ['db', 'sql'],
+			updated: '7/29/2026',
+		},
+		{
+			name: '@vojta/sentry',
+			kodyId: 'sentry',
+			hasApp: true,
+			tags: ['errors'],
+			updated: '7/27/2026',
+		},
+		{
+			name: '@vojta/vercel',
+			kodyId: 'vercel',
+			hasApp: true,
+			tags: ['deploys'],
+			updated: '7/19/2026',
+		},
+	]
+
+	const USERS = [
+		{
+			username: 'vojta',
+			email: 'holik.vojta@gmail.com',
+			plan: 'pro',
+			roles: ['admin', 'user'],
+			verified: true,
+			suspended: null,
+			paused: null,
+			created: '3/2/2026',
+			updated: '8/7/2026',
+			stableUserId: 'usr_9f2c41ab7d0e4c18',
+		},
+		{
+			username: 'kentcdodds',
+			email: 'kent@kentcdodds.com',
+			plan: 'pro',
+			roles: ['admin', 'user'],
+			verified: true,
+			suspended: null,
+			paused: null,
+			created: '1/14/2026',
+			updated: '8/6/2026',
+			stableUserId: 'usr_1a4e77bc93f2d055',
+		},
+		{
+			username: 'marta',
+			email: 'marta@example.com',
+			plan: 'free',
+			roles: ['user'],
+			verified: true,
+			suspended: null,
+			paused: null,
+			created: '5/9/2026',
+			updated: '8/1/2026',
+			stableUserId: 'usr_5c81d0fe2ab74366',
+		},
+		{
+			username: 'devon',
+			email: 'devon@example.com',
+			plan: 'free',
+			roles: ['user'],
+			verified: false,
+			suspended: null,
+			paused: '7/2/2026',
+			created: '6/21/2026',
+			updated: '7/2/2026',
+			stableUserId: 'usr_77b3ac10de9f4821',
+		},
+		{
+			username: 'spammy',
+			email: 'spam@example.com',
+			plan: 'free',
+			roles: [],
+			verified: false,
+			suspended: '7/28/2026',
+			paused: '7/28/2026',
+			created: '7/26/2026',
+			updated: '7/28/2026',
+			stableUserId: 'usr_0e5fa93c471b8d22',
+		},
+		{
+			username: 'ines',
+			email: 'ines@example.com',
+			plan: 'pro',
+			roles: ['user'],
+			verified: true,
+			suspended: null,
+			paused: null,
+			created: '4/4/2026',
+			updated: '7/30/2026',
+			stableUserId: 'usr_ab21c8074f6e3910',
+		},
+	]
+
+	const SECRETS = [
+		{
+			name: 'openai-key',
+			scope: 'user',
+			pkg: null,
+			hosts: ['api.openai.com'],
+			caps: ['fetch'],
+			ttl: null,
+			updated: '8/6/2026',
+			desc: 'Model access for summarising inbound email.',
+		},
+		{
+			name: 'cf-api-token',
+			scope: 'package',
+			pkg: '@vojta/cloudflare',
+			hosts: ['api.cloudflare.com'],
+			caps: ['fetch', 'logs'],
+			ttl: 7776000000,
+			updated: '8/7/2026',
+			desc: 'Scoped token for the Cloudflare package.',
+		},
+		{
+			name: 'gh-pat',
+			scope: 'package',
+			pkg: '@vojta/github',
+			hosts: ['api.github.com'],
+			caps: ['fetch'],
+			ttl: null,
+			updated: '8/5/2026',
+			desc: 'Fine-grained PAT, read-only on issues and PRs.',
+		},
+		{
+			name: 'stripe-restricted',
+			scope: 'user',
+			pkg: null,
+			hosts: ['api.stripe.com'],
+			caps: ['fetch'],
+			ttl: 2592000000,
+			updated: '7/21/2026',
+			desc: 'Restricted key for invoice lookups.',
+		},
+		{
+			name: 'resend-key',
+			scope: 'user',
+			pkg: null,
+			hosts: ['api.resend.com'],
+			caps: ['fetch'],
+			ttl: null,
+			updated: '7/11/2026',
+			desc: 'Transactional sending.',
+		},
+	]
+
+	const USAGE = [
+		{
+			label: 'Agent runs',
+			whatCounts: 'One run per Hey Kody invocation',
+			current: 412,
+			limit: 2000,
+		},
+		{
+			label: 'Saved packages',
+			whatCounts: 'Packages stored in your account',
+			current: 2,
+			limit: 50,
+		},
+		{
+			label: 'Stored secrets',
+			whatCounts: 'Secrets across all scopes',
+			current: 5,
+			limit: 25,
+		},
+		{
+			label: 'Memory documents',
+			whatCounts: 'Documents in long-term memory',
+			current: 168,
+			limit: 200,
+		},
+		{
+			label: 'Scheduled jobs',
+			whatCounts: 'Enabled recurring jobs',
+			current: 3,
+			limit: 10,
+		},
+		{
+			label: 'Object storage',
+			whatCounts: 'Bytes across package assets',
+			current: 734,
+			limit: 1024,
+		},
+	]
+
+	const NAV = [
+		'Overview',
+		'Billing',
+		'Usage',
+		'Activity',
+		'Packages',
+		'Jobs',
+		'Stars',
+		'Secrets',
+		'Values',
+		'Integrations',
+		'Package tokens',
+		'Connectors',
+		'MCP servers',
+		'Memories',
+		'Email',
+	]
+
+	const esc = (s) =>
+		String(s).replace(
+			/[&<>"]/g,
+			(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+		)
+	const chips = (l, on) =>
+		`<span class="tags">${l.map((t) => `<span${on ? ' class="on"' : ''}>${esc(t)}</span>`).join('')}</span>`
+	const idChip = (v) =>
+		`<span class="idv"><code title="${esc(v)}">${esc(v)}</code><button type="button" data-copy="${esc(v)}">Copy</button></span>`
+	const cell = (k, v) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`
+	const stamp = (v) => `<span class="stamp">${esc(v)}</span>`
+	const dot = (on, title) =>
+		`<span class="dot${on ? ' on' : ''}" title="${esc(title)}">${on ? '●' : '–'}</span>`
+	const ttlLabel = (ms) =>
+		ms == null ? 'Never expires' : `${Math.round(ms / 86400000)} days`
+	const fld = (label, control) =>
+		`<label class="fld"><span>${esc(label)}</span>${control}</label>`
+
+	/* ============================================================
+	   RECORDTABLE — the primitive. Every page renders through this.
+	   ============================================================ */
+	function RecordTable(cfg, selected) {
+		const cols = cfg.columns
+		const pick = cfg.mode !== 'none'
+		const body = cfg.rows
+			.map((row, i) => {
+				const cells = cols
+					.map((c) => {
+						const cls = [
+							c.cls || '',
+							c.align === 'end' ? 'num' : '',
+							c.drop ? `d${c.drop}` : '',
+						]
+							.filter(Boolean)
+							.join(' ')
+						return `<td${cls ? ` class="${cls}"` : ''} data-label="${esc(c.label)}">${c.render(row)}</td>`
+					})
+					.join('')
+				const tr = `<tr${pick ? ' class="pick" data-row' : ''} data-i="${i}"${pick ? ` aria-selected="${i === selected}"` : ''}>${cells}</tr>`
+				if (cfg.mode !== 'expand' || i !== selected) return tr
+				return `${tr}<tr class="exp"><td colspan="${cols.length}">${cfg.renderRecord(row)}</td></tr>`
+			})
+			.join('')
+
+		const head = cols
+			.map((c) => {
+				const cls = [c.align === 'end' ? 'num' : '', c.drop ? `d${c.drop}` : '']
+					.filter(Boolean)
+					.join(' ')
+				return `<th scope="col"${cls ? ` class="${cls}"` : ''}>${esc(c.label)}</th>`
+			})
+			.join('')
+
+		/* Expand mode must not cap the list: the record lives *inside* the
+		   scroller, so a max-height traps it in a nested scroll you have to
+		   fight to read. Pane and none modes keep the cap, which is what
+		   keeps the record below reachable without a long scroll. */
+		const capped = cfg.mode !== 'expand'
+		const table = capped
+			? `<div class="scroll" style="--scroll-h:${cfg.scrollHeight || '22rem'}" data-port>
+				<table class="recs"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+			</div>`
+			: `<div data-port>
+				<table class="recs"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+			</div>`
+
+		const toolbar = `
+			<div class="tools">
+				${cfg.toolbar.join('')}
+				<p class="cnt">${esc(cfg.countLabel)}</p>
+			</div>`
+
+		if (cfg.mode === 'pane') {
+			return `<div class="stack">
+				<div class="pane">${toolbar}${table}</div>
+				<div class="pane" data-recpane>${cfg.renderRecord(cfg.rows[selected])}</div>
+			</div>`
+		}
+		return `<div class="stack"><div class="pane">${toolbar}${table}</div></div>`
+	}
+
+	const searchCtl = (ph) =>
+		`<input class="inp search" type="search" placeholder="${esc(ph)}" aria-label="Search" />`
+	const selCtl = (label, opts) =>
+		`<select class="sel" aria-label="${esc(label)}">${opts.map((o) => `<option>${esc(o)}</option>`).join('')}</select>`
+
+	/* ============================================================
+	   FOUR PAGE CONFIGS — the whole point of the exercise.
+	   ============================================================ */
+	const CONFIGS = {
+		packages: () => ({
+			mode: 'expand',
+			countLabel: `${PACKAGES.length} packages`,
+			toolbar: [
+				searchCtl('Search name, id, description or tag'),
+				selCtl('Filter by app', [
+					'All packages',
+					'With an app',
+					'Without an app',
+				]),
+				selCtl('Sort', ['Recently updated', 'Recently created', 'Name']),
+			],
+			columns: [
+				{ key: 'name', label: 'Name', cls: 'nm', render: (r) => esc(r.name) },
+				{
+					key: 'kodyId',
+					label: 'Kody id',
+					cls: 'mono',
+					drop: 2,
+					render: (r) => `<code>${esc(r.kodyId)}</code>`,
+				},
+				{
+					key: 'hasApp',
+					label: 'App',
+					render: (r) =>
+						dot(r.hasApp, r.hasApp ? 'Declares a package app' : 'No app'),
+				},
+				{
+					key: 'tags',
+					label: 'Tags',
+					cls: 'tg',
+					drop: 1,
+					render: (r) => chips(r.tags.slice(0, 3)),
+				},
+				{
+					key: 'updated',
+					label: 'Updated',
+					cls: 'st',
+					render: (r) => esc(r.updated),
+				},
+			],
+			rows: PACKAGES,
+			renderRecord: (r) => {
+				const real = r.kodyId === 'cloudflare'
+				return `<div class="recbody">
+					<div class="rechead">
+						<h2>${esc(r.name)}</h2>
+						<p>${esc(real ? PKG.desc : `Helpers for ${r.kodyId}, exposed to your agent through Kody's MCP tools.`)}</p>
+						${chips(r.tags)}
+					</div>
+					<dl class="band">
+						${cell('Kody id', `<code>${esc(r.kodyId)}</code>`)}
+						${cell('App', r.hasApp ? 'Declares a package app' : 'No app')}
+						${cell('Created', stamp(real ? PKG.created : r.updated))}
+						${cell('Updated', stamp(real ? PKG.updated : r.updated))}
+						${cell('Package id', idChip(real ? PKG.id : '00000000-0000-4000-8000-000000000000'))}
+						${cell('Source id', idChip(real ? PKG.sourceId : '11111111-1111-4111-8111-111111111111'))}
+					</dl>
+					${real ? `<details class="plumb"><summary>Search index</summary><p class="blob">${esc(PKG.search)}</p></details>` : ''}
+				</div>`
+			},
+		}),
+
+		users: () => ({
+			mode: 'expand',
+			countLabel: `${USERS.length} users`,
+			toolbar: [
+				searchCtl('Search username or email'),
+				selCtl('Filter by role', ['All roles', 'admin', 'user']),
+				selCtl('Filter by plan', ['All plans', 'free', 'pro']),
+			],
+			columns: [
+				{
+					key: 'username',
+					label: 'Username',
+					cls: 'nm',
+					render: (r) => esc(r.username),
+				},
+				{
+					key: 'email',
+					label: 'Email',
+					cls: 'mono',
+					drop: 2,
+					render: (r) => `<code>${esc(r.email)}</code>`,
+				},
+				{
+					key: 'plan',
+					label: 'Plan',
+					render: (r) => chips([r.plan], r.plan === 'pro'),
+				},
+				{
+					key: 'roles',
+					label: 'Roles',
+					cls: 'tg',
+					drop: 1,
+					render: (r) =>
+						r.roles.length
+							? chips(r.roles)
+							: '<span style="color:var(--a-text-muted)">None</span>',
+				},
+				{
+					key: 'state',
+					label: 'State',
+					drop: 3,
+					render: (r) =>
+						dot(
+							!r.suspended,
+							r.suspended ? `Suspended ${r.suspended}` : 'Active',
+						),
+				},
+				{
+					key: 'created',
+					label: 'Created',
+					cls: 'st',
+					render: (r) => esc(r.created),
+				},
+			],
+			rows: USERS,
+			renderRecord: (r) => `<div class="recbody">
+				<div class="rechead">
+					<h2>${esc(r.username)}</h2>
+					<p>Account metadata only — no secrets, packages, or other user content appears on this page.</p>
+				</div>
+				<dl class="band">
+					${cell('Email', `<code style="font-size:0.85rem">${esc(r.email)}</code>`)}
+					${cell('Email verified', r.verified ? 'Verified' : 'No')}
+					${cell('Plan', esc(r.plan))}
+					${cell('Suspended', r.suspended ? stamp(r.suspended) : 'No')}
+					${cell('Outbound email', r.paused ? `Paused ${esc(r.paused)}` : 'Active')}
+					${cell('Created', stamp(r.created))}
+					${cell('Updated', stamp(r.updated))}
+					${cell('Stable user id', idChip(r.stableUserId))}
+				</dl>
+				<div>
+					<p class="subhead">Manage roles</p>
+					<div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+						${r.roles.length ? chips(r.roles) : '<span style="color:var(--a-text-muted);font-size:0.9rem">No roles</span>'}
+						<select class="sel" aria-label="Role to add" style="width:auto;flex:none"><option>admin</option><option>user</option></select>
+						<button class="btn" type="button">Add role</button>
+					</div>
+				</div>
+				<div class="acts">
+					<button class="btn dgr" type="button">${r.suspended ? 'Unsuspend' : 'Suspend'} account</button>
+					<button class="btn dgr" type="button">${r.paused ? 'Resume' : 'Pause'} outbound email</button>
+				</div>
+			</div>`,
+		}),
+
+		secrets: () => ({
+			mode: 'pane',
+			countLabel: `${SECRETS.length} secrets`,
+			scrollHeight: '14rem',
+			toolbar: [
+				searchCtl('Search name or description'),
+				selCtl('Filter by scope', ['All scopes', 'user', 'package']),
+			],
+			columns: [
+				{ key: 'name', label: 'Name', cls: 'nm', render: (r) => esc(r.name) },
+				{
+					key: 'scope',
+					label: 'Scope',
+					render: (r) => chips([r.scope], r.scope === 'package'),
+				},
+				{
+					key: 'pkg',
+					label: 'Package',
+					cls: 'mono',
+					drop: 1,
+					render: (r) =>
+						r.pkg
+							? `<code>${esc(r.pkg)}</code>`
+							: '<span style="color:var(--a-text-muted)">—</span>',
+				},
+				{
+					key: 'ttl',
+					label: 'Expires',
+					cls: 'st',
+					drop: 2,
+					render: (r) => esc(ttlLabel(r.ttl)),
+				},
+				{
+					key: 'updated',
+					label: 'Updated',
+					cls: 'st',
+					render: (r) => esc(r.updated),
+				},
+			],
+			rows: SECRETS,
+			renderRecord: (r) => `<div class="recbody">
+				<div class="rechead">
+					<h2>${esc(r.name)}</h2>
+					<p>${esc(r.desc)}</p>
+				</div>
+				<div class="grid2">
+					${fld('Name', `<input class="inp" type="text" value="${esc(r.name)}" />`)}
+					${fld('Scope', `<select class="sel"><option${r.scope === 'user' ? ' selected' : ''}>user</option><option${r.scope === 'package' ? ' selected' : ''}>package</option></select>`)}
+				</div>
+				${r.scope === 'package' ? `<div class="grid2">${fld('Package', `<select class="sel"><option>${esc(r.pkg)}</option></select>`)}${fld('Expires after', `<input class="inp" type="text" value="${esc(ttlLabel(r.ttl))}" />`)}</div>` : `<div class="grid2">${fld('Expires after', `<input class="inp" type="text" value="${esc(ttlLabel(r.ttl))}" />`)}</div>`}
+				<label class="fld"><span>Value</span>
+					<span class="secret"><code>••••••••••••••••••••••••••••</code><button class="btn" type="button">Reveal</button></span>
+				</label>
+				${fld('Description', `<textarea class="ta">${esc(r.desc)}</textarea>`)}
+				<div class="grid2">
+					${fld('Allowed hosts', `<input class="inp" type="text" value="${esc(r.hosts.join(', '))}" />`)}
+					${fld('Allowed capabilities', `<input class="inp" type="text" value="${esc(r.caps.join(', '))}" />`)}
+				</div>
+				<div class="acts">
+					<button class="btn pri" type="button">Save secret</button>
+					<button class="btn" type="button">Cancel</button>
+					<button class="btn dgr" type="button">Delete</button>
+				</div>
+			</div>`,
+		}),
+
+		usage: () => ({
+			mode: 'none',
+			countLabel: 'Plan: pro · resets 9/1/2026',
+			scrollHeight: '24rem',
+			toolbar: [
+				selCtl('Filter by group', [
+					'All groups',
+					'daily',
+					'counts',
+					'storage',
+					'limits',
+				]),
+			],
+			columns: [
+				{
+					key: 'label',
+					label: 'Entitlement',
+					cls: 'nm',
+					render: (r) => esc(r.label),
+				},
+				{
+					key: 'whatCounts',
+					label: 'What counts',
+					drop: 1,
+					render: (r) =>
+						`<span style="color:var(--a-text-muted);font-size:0.86rem">${esc(r.whatCounts)}</span>`,
+				},
+				{
+					key: 'current',
+					label: 'Used',
+					align: 'end',
+					render: (r) => r.current.toLocaleString('en-US'),
+				},
+				{
+					key: 'limit',
+					label: 'Limit',
+					align: 'end',
+					drop: 2,
+					render: (r) => r.limit.toLocaleString('en-US'),
+				},
+				{
+					key: 'pct',
+					label: 'Of limit',
+					render: (r) => {
+						const pct = Math.round((r.current / r.limit) * 100)
+						const warn = pct >= 80
+						return `<span class="meter${warn ? ' warn' : ''}">
+							<span class="lab">${pct}%</span>
+							<span class="track"><span class="fill" style="width:${Math.min(pct, 100)}%"></span></span>
+						</span>`
+					},
+				},
+			],
+			rows: USAGE,
+			renderRecord: () => '',
+		}),
+	}
+
+	/* Page titles and ledes, straight from the routes. */
+	const PAGE = {
+		packages: [
+			'Packages',
+			"Browse your saved packages and review their metadata. Packages are created and edited through Kody's MCP tools.",
+			'Packages',
+		],
+		users: [
+			'Admin users',
+			'Review account metadata, roles and plans. Suspending an account signs it out everywhere.',
+			'Overview',
+		],
+		secrets: [
+			'Secrets',
+			'Store credentials your packages can use without ever exposing them to the agent.',
+			'Secrets',
+		],
+		usage: [
+			'Usage',
+			'What you have consumed against your plan this period.',
+			'Usage',
+		],
+	}
+
+	const shell = (key, inner) => {
+		const [title, lede, current] = PAGE[key]
+		return `
+		<div class="top">
+			<span class="brand">Kody</span>
+			<nav class="hide-s"><span>Community</span><span>Guides</span><span>Pricing</span><span>Blog</span></nav>
+			<span class="grow"></span>
+			<nav><span>vojta</span><span>Log out</span></nav>
+		</div>
+		<div class="shell">
+			<nav class="rail-nav" aria-label="Account sections">
+				${NAV.map((n) => `<a href="#"${n === current ? ' aria-current="page"' : ''}>${esc(n)}</a>`).join('')}
+			</nav>
+			<header>
+				<h1>${esc(title)}</h1>
+				<p class="lede2">${esc(lede)}</p>
+			</header>
+			<section>${inner}</section>
+		</div>`
+	}
+
+	/* ---------- mount ---------- */
+	const KEYS = Object.keys(CONFIGS)
+	const SEL = { packages: 0, users: 0, secrets: 1, usage: 0 }
+
+	function paint(key) {
+		const host = document.querySelector(`[data-sim="${key}"]`)
+		if (!host) return
+		const w = host.style.getPropertyValue('--sim-w')
+		host.innerHTML = shell(key, RecordTable(CONFIGS[key](), SEL[key]))
+		if (w) host.style.setProperty('--sim-w', w)
+	}
+
+	/* Print each config as the proof. Serialising the live object keeps
+	   the listing honest — it cannot drift from what rendered. */
+	function printConfig(key) {
+		const cfg = CONFIGS[key]()
+		const lines = [
+			`{`,
+			`  mode: '${cfg.mode}',`,
+			`  countLabel: '${cfg.countLabel}',`,
+			`  toolbar: [ ${cfg.toolbar.length} control${cfg.toolbar.length === 1 ? '' : 's'} ],`,
+			`  columns: [`,
+			...cfg.columns.map((c) => {
+				const bits = [`key: '${c.key}'`, `label: '${c.label}'`]
+				if (c.align) bits.push(`align: '${c.align}'`)
+				if (c.drop) bits.push(`drop: ${c.drop}`)
+				if (c.render) bits.push(`render`)
+				return `    { ${bits.join(', ')} },`
+			}),
+			`  ],`,
+			`  rows,`,
+			cfg.mode === 'none' ? null : `  renderRecord,`,
+			`}`,
+		].filter(Boolean)
+		const host = document.querySelector(`[data-cfg="${key}"]`)
+		if (!host) return lines.length
+		host.querySelector('pre').innerHTML = lines
+			.join('\n')
+			.replace(/'(expand|pane|none)'/g, '<span class="kw">\'$1\'</span>')
+		host.querySelector('.lines').textContent = `${lines.length} lines`
+		return lines.length
+	}
+
+	for (const key of KEYS) {
+		paint(key)
+		printConfig(key)
+	}
+
+	/* ---------- width ---------- */
+	const slider = document.getElementById('w')
+	const readout = document.getElementById('w-read')
+	const presets = [...document.querySelectorAll('.presets button')]
+
+	function setWidth(px) {
+		for (const s of document.querySelectorAll('.sim'))
+			s.style.setProperty('--sim-w', `${px}px`)
+		readout.textContent = `${px}px`
+		for (const b of presets)
+			b.setAttribute('aria-pressed', String(Number(b.dataset.w) === px))
+		measure()
+	}
+	slider.addEventListener('input', () => setWidth(Number(slider.value)))
+	for (const b of presets) {
+		b.addEventListener('click', () => {
+			slider.value = b.dataset.w
+			setWidth(Number(b.dataset.w))
+		})
+	}
+
+	/* ---------- gauges: measured, never asserted ---------- */
+	function recWidth(bench) {
+		const el =
+			bench.querySelector('.exp .recbody') ||
+			bench.querySelector('[data-recpane] .recbody') ||
+			bench.querySelector('table.recs')
+		return el ? Math.round(el.getBoundingClientRect().width) : 0
+	}
+	function put(el, text) {
+		if (!el || el.dataset.v === text) return
+		el.dataset.v = text
+		el.innerHTML = text
+	}
+	function measure() {
+		for (const key of KEYS) {
+			const bench = document.querySelector(`[data-bench="${key}"]`)
+			if (!bench) continue
+			put(
+				bench.querySelector('[data-gauge="rec"]'),
+				`${recWidth(bench)}<small>px</small>`,
+			)
+			const n =
+				document.querySelector(`[data-cfg="${key}"] .lines`)?.textContent ?? ''
+			put(
+				bench.querySelector('[data-gauge="cfg"]'),
+				`${parseInt(n, 10) || 0}<small>ln</small>`,
+			)
+		}
+	}
+	function fillTable() {
+		const saved = Number(slider.value)
+		for (const s of document.querySelectorAll('.sim'))
+			s.style.setProperty('--sim-w', '1244px')
+		for (const key of KEYS) {
+			const bench = document.querySelector(`[data-bench="${key}"]`)
+			if (!bench) continue
+			const c = document.querySelector(`[data-cell="${key}"]`)
+			const n =
+				document.querySelector(`[data-cfg="${key}"] .lines`)?.textContent ?? ''
+			if (c) c.textContent = String(parseInt(n, 10) || 0)
+			const cr = document.querySelector(`[data-cellrec="${key}"]`)
+			if (cr) cr.textContent = `${recWidth(bench)}px`
+		}
+		setWidth(saved)
+	}
+	;(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => {
+		fillTable()
+		measure()
+	})
+	new ResizeObserver(measure).observe(document.body)
+
+	/* ---------- clicks ---------- */
+	document.addEventListener('click', (event) => {
+		const copy = event.target.closest('[data-copy]')
+		if (copy) {
+			navigator.clipboard?.writeText(copy.dataset.copy)
+			copy.textContent = 'Copied'
+			copy.dataset.copied = ''
+			setTimeout(() => {
+				copy.textContent = 'Copy'
+				delete copy.dataset.copied
+			}, 1400)
+			return
+		}
+		const row = event.target.closest('tr[data-row]')
+		if (!row) return
+		const sim = row.closest('[data-sim]')
+		if (!sim) return
+		SEL[sim.dataset.sim] = Number(row.dataset.i)
+		paint(sim.dataset.sim)
+		measure()
+	})
+</script>

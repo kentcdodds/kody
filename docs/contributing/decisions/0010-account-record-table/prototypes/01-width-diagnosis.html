@@ -1,0 +1,1704 @@
+<title>Account detail density — four ways out</title>
+
+<style>
+	/* ============================================================
+   FONTS — the app's own faces, inlined (CSP blocks font CDNs)
+   ============================================================ */
+	@font-face {
+		font-family: 'Bricolage Grotesque';
+		font-style: normal;
+		font-weight: 400 800;
+		font-display: swap;
+		src: url('../../../../../packages/worker/public/fonts/bricolage-grotesque-latin.woff2')
+			format('woff2');
+	}
+	@font-face {
+		font-family: 'Wix Madefor Text';
+		font-style: normal;
+		font-weight: 400 800;
+		font-display: swap;
+		src: url('../../../../../packages/worker/public/fonts/wix-madefor-text-latin.woff2')
+			format('woff2');
+	}
+
+	/* ============================================================
+   TOKENS
+   Two palettes on purpose. The CHROME is the document you are
+   reading — a cool graphite bench with a measuring-tape amber
+   for every annotation. The SPECIMEN tokens are copied
+   verbatim from packages/worker/public/styles.css, so nothing
+   inside a frame is an approximation. Amber is never used
+   inside a frame; green is never used outside one.
+   ============================================================ */
+	:root {
+		--paper: oklch(0.965 0.004 250);
+		--paper-sunk: oklch(0.925 0.005 250);
+		--ink: oklch(0.23 0.012 258);
+		--ink-soft: oklch(0.46 0.014 258);
+		--rule: oklch(0.87 0.007 250);
+		--rule-firm: oklch(0.76 0.01 250);
+		--tape: oklch(0.56 0.14 58);
+		--tape-wash: oklch(0.56 0.14 58 / 0.11);
+
+		/* --- app tokens, light --- */
+		--a-primary: oklch(0.54 0.18 145);
+		--a-on-primary: oklch(1 0 0);
+		--a-primary-text: oklch(0.455 0.17 145);
+		--a-primary-soft: oklch(0.54 0.18 145 / 0.12);
+		--a-primary-softest: oklch(0.54 0.18 145 / 0.05);
+		--a-bg: oklch(0.93 0.004 250);
+		--a-surface: oklch(0.975 0.002 250);
+		--a-text: oklch(0.22 0.012 260);
+		--a-text-muted: oklch(0.44 0.014 260);
+		--a-border: oklch(0.84 0.008 250);
+
+		--display: 'Bricolage Grotesque', system-ui, sans-serif;
+		--body: 'Wix Madefor Text', system-ui, sans-serif;
+		--mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--paper: oklch(0.165 0.008 258);
+			--paper-sunk: oklch(0.13 0.008 258);
+			--ink: oklch(0.95 0.005 250);
+			--ink-soft: oklch(0.71 0.011 255);
+			--rule: oklch(0.3 0.011 255);
+			--rule-firm: oklch(0.42 0.014 255);
+			--tape: oklch(0.78 0.13 66);
+			--tape-wash: oklch(0.78 0.13 66 / 0.13);
+
+			--a-primary: oklch(0.72 0.205 145);
+			--a-on-primary: oklch(0.2 0.05 148);
+			--a-primary-text: oklch(0.75 0.2 145);
+			--a-primary-soft: oklch(0.72 0.205 145 / 0.15);
+			--a-primary-softest: oklch(0.72 0.205 145 / 0.07);
+			--a-bg: oklch(0.19 0.008 255);
+			--a-surface: oklch(0.235 0.01 255);
+			--a-text: oklch(0.945 0.005 250);
+			--a-text-muted: oklch(0.72 0.01 255);
+			--a-border: oklch(0.33 0.01 255);
+		}
+	}
+
+	/* The viewer's toggle must beat the media query in both directions. */
+	:root[data-theme='dark'] {
+		--paper: oklch(0.165 0.008 258);
+		--paper-sunk: oklch(0.13 0.008 258);
+		--ink: oklch(0.95 0.005 250);
+		--ink-soft: oklch(0.71 0.011 255);
+		--rule: oklch(0.3 0.011 255);
+		--rule-firm: oklch(0.42 0.014 255);
+		--tape: oklch(0.78 0.13 66);
+		--tape-wash: oklch(0.78 0.13 66 / 0.13);
+		--a-primary: oklch(0.72 0.205 145);
+		--a-on-primary: oklch(0.2 0.05 148);
+		--a-primary-text: oklch(0.75 0.2 145);
+		--a-primary-soft: oklch(0.72 0.205 145 / 0.15);
+		--a-primary-softest: oklch(0.72 0.205 145 / 0.07);
+		--a-bg: oklch(0.19 0.008 255);
+		--a-surface: oklch(0.235 0.01 255);
+		--a-text: oklch(0.945 0.005 250);
+		--a-text-muted: oklch(0.72 0.01 255);
+		--a-border: oklch(0.33 0.01 255);
+	}
+	:root[data-theme='light'] {
+		--paper: oklch(0.965 0.004 250);
+		--paper-sunk: oklch(0.925 0.005 250);
+		--ink: oklch(0.23 0.012 258);
+		--ink-soft: oklch(0.46 0.014 258);
+		--rule: oklch(0.87 0.007 250);
+		--rule-firm: oklch(0.76 0.01 250);
+		--tape: oklch(0.56 0.14 58);
+		--tape-wash: oklch(0.56 0.14 58 / 0.11);
+		--a-primary: oklch(0.54 0.18 145);
+		--a-on-primary: oklch(1 0 0);
+		--a-primary-text: oklch(0.455 0.17 145);
+		--a-primary-soft: oklch(0.54 0.18 145 / 0.12);
+		--a-primary-softest: oklch(0.54 0.18 145 / 0.05);
+		--a-bg: oklch(0.93 0.004 250);
+		--a-surface: oklch(0.975 0.002 250);
+		--a-text: oklch(0.22 0.012 260);
+		--a-text-muted: oklch(0.44 0.014 260);
+		--a-border: oklch(0.84 0.008 250);
+	}
+
+	/* ============================================================
+   CHROME
+   ============================================================ */
+	body {
+		margin: 0;
+		background: var(--paper);
+		color: var(--ink);
+		font-family: var(--body);
+		font-size: 16px;
+		line-height: 1.62;
+		-webkit-font-smoothing: antialiased;
+		/* `clip`, not `hidden`: hidden would make the body a scroll container and
+	   the sticky width rail would stop resolving against the viewport. */
+		overflow-x: clip;
+	}
+
+	.wrap {
+		max-width: 90rem;
+		margin: 0 auto;
+		padding: clamp(2rem, 5vw, 4.5rem) clamp(1.25rem, 4vw, 3rem) 6rem;
+	}
+
+	/* Prose sits on a reading measure; frames go full width of .wrap. */
+	.prose {
+		max-width: 64ch;
+	}
+
+	.eyebrow {
+		font-family: var(--body);
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.13em;
+		text-transform: uppercase;
+		color: var(--tape);
+		margin: 0 0 0.9rem;
+	}
+
+	h1 {
+		font-family: var(--display);
+		font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+		font-weight: 780;
+		letter-spacing: -0.03em;
+		line-height: 1.02;
+		margin: 0 0 1.1rem;
+		text-wrap: balance;
+	}
+
+	h2 {
+		font-family: var(--display);
+		font-size: clamp(1.45rem, 3vw, 1.95rem);
+		font-weight: 740;
+		letter-spacing: -0.022em;
+		line-height: 1.12;
+		margin: 0 0 0.7rem;
+		text-wrap: balance;
+	}
+
+	h3 {
+		font-family: var(--display);
+		font-size: 1.12rem;
+		font-weight: 700;
+		letter-spacing: -0.014em;
+		margin: 0;
+	}
+
+	p {
+		margin: 0 0 1rem;
+	}
+	.prose > p:last-child {
+		margin-bottom: 0;
+	}
+
+	.lede {
+		font-size: 1.12rem;
+		color: var(--ink-soft);
+		text-wrap: pretty;
+	}
+
+	strong {
+		font-weight: 650;
+		color: var(--ink);
+	}
+
+	code,
+	.num {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		font-size: 0.9em;
+	}
+
+	.tapenum {
+		color: var(--tape);
+		font-weight: 600;
+	}
+
+	a {
+		color: var(--ink);
+		text-decoration-color: var(--tape);
+		text-underline-offset: 0.2em;
+	}
+
+	:focus-visible {
+		outline: 2.5px solid var(--tape);
+		outline-offset: 3px;
+	}
+
+	hr.div {
+		border: 0;
+		border-top: 1px solid var(--rule);
+		margin: clamp(3rem, 6vw, 4.5rem) 0 clamp(1.75rem, 3vw, 2.5rem);
+	}
+
+	/* ---- section header ------------------------------------- */
+	.sechead {
+		margin-bottom: 1.1rem;
+	}
+	.sechead .eyebrow {
+		margin-bottom: 0.5rem;
+	}
+	.sechead h2 {
+		margin: 0;
+	}
+
+	/* ============================================================
+   THE WIDTH LEDGER — where 1152px actually goes
+   ============================================================ */
+	.ledger {
+		margin: 1.75rem 0 0;
+		max-width: 62rem;
+	}
+	.ledger-bar {
+		display: flex;
+		height: 3.4rem;
+		border: 1px solid var(--rule-firm);
+		border-radius: 5px;
+		overflow: hidden;
+		background: var(--paper-sunk);
+	}
+	.ledger-bar > span {
+		display: grid;
+		place-content: center;
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink-soft);
+		border-right: 1px solid var(--rule);
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		background: repeating-linear-gradient(
+			135deg,
+			transparent 0 5px,
+			var(--rule) 5px 6px
+		);
+	}
+	.ledger-bar > span:last-child {
+		border-right: 0;
+	}
+	.ledger-bar > span.pay {
+		background: var(--tape);
+		color: var(--paper);
+		font-weight: 700;
+		font-size: 0.82rem;
+	}
+	.ledger-key {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 1.4rem;
+		margin-top: 0.85rem;
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink-soft);
+		list-style: none;
+		padding: 0;
+	}
+	.ledger-key b {
+		color: var(--ink);
+		font-weight: 600;
+	}
+	.ledger-key li.pay b,
+	.ledger-key li.pay {
+		color: var(--tape);
+	}
+
+	/* ============================================================
+   WIDTH RAIL — one control drives every frame on the page
+   ============================================================ */
+	.rail {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		background: color-mix(in oklab, var(--paper) 88%, transparent);
+		backdrop-filter: blur(10px);
+		border-bottom: 1px solid var(--rule);
+		margin: 0 calc(-1 * clamp(1.25rem, 4vw, 3rem));
+		padding: 0.8rem clamp(1.25rem, 4vw, 3rem);
+		display: flex;
+		align-items: center;
+		gap: 1.1rem;
+		flex-wrap: wrap;
+	}
+	.rail-label {
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.13em;
+		text-transform: uppercase;
+		color: var(--tape);
+		flex: none;
+	}
+	.rail input[type='range'] {
+		flex: 1 1 14rem;
+		min-width: 8rem;
+		accent-color: var(--tape);
+		height: 1.5rem;
+	}
+	.rail-read {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		font-size: 1.05rem;
+		font-weight: 600;
+		flex: none;
+		min-width: 5.2rem;
+		text-align: right;
+	}
+	.presets {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
+	}
+	.presets button {
+		font: inherit;
+		font-size: 0.8rem;
+		font-family: var(--mono);
+		color: var(--ink-soft);
+		background: transparent;
+		border: 1px solid var(--rule-firm);
+		border-radius: 4px;
+		padding: 0.2rem 0.55rem;
+		cursor: pointer;
+		transition:
+			color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+	@media (hover: hover) {
+		.presets button:hover {
+			color: var(--ink);
+			border-color: var(--tape);
+		}
+	}
+	.presets button:active {
+		transform: scale(0.97);
+	}
+	.presets button[aria-pressed='true'] {
+		color: var(--paper);
+		background: var(--tape);
+		border-color: var(--tape);
+	}
+
+	/* ============================================================
+   BENCH — one specimen, its verdict, and its live frame
+   ============================================================ */
+	.bench {
+		margin-top: clamp(2.25rem, 4vw, 3.25rem);
+	}
+	.bench-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1.25rem;
+		flex-wrap: wrap;
+		padding-bottom: 0.75rem;
+		border-bottom: 2px solid var(--ink);
+	}
+	.bench-head .why {
+		max-width: 46ch;
+		margin: 0.3rem 0 0;
+		font-size: 0.95rem;
+		color: var(--ink-soft);
+	}
+	.bench-head .id {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--tape);
+		font-weight: 600;
+	}
+
+	/* The live readout, measured by ResizeObserver — not typed by hand. */
+	.gauge {
+		flex: none;
+		display: flex;
+		gap: 1.6rem;
+		align-items: baseline;
+	}
+	.gauge div {
+		text-align: right;
+	}
+	.gauge .k {
+		display: block;
+		font-size: 0.66rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--ink-soft);
+	}
+	.gauge .v {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		font-size: 1.5rem;
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: -0.02em;
+	}
+	.gauge .v.pay {
+		color: var(--tape);
+	}
+	.gauge .v small {
+		font-size: 0.62em;
+		font-weight: 500;
+		color: var(--ink-soft);
+	}
+
+	/* The frame scrolls itself so the page body never scrolls sideways. */
+	.frame {
+		margin-top: 1rem;
+		overflow-x: auto;
+		overflow-y: hidden;
+		background: var(--paper-sunk);
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+	}
+
+	/* ============================================================
+   SPECIMEN — a faithful rebuild of the real account console.
+   Every value below is transcribed from the source files named
+   in the comment. Container queries stand in for the app's
+   media queries so one frame can be resized independently of
+   the browser; the thresholds are the real ones (860 / 1100).
+   ============================================================ */
+	.sim {
+		width: var(--sim-w, 1244px);
+		container-type: inline-size;
+		background: var(--a-bg);
+		color: var(--a-text);
+		font-family: var(--body);
+		font-size: 16px;
+		line-height: 1.62;
+		--gutter: clamp(1.25rem, 4cqw, 2.5rem);
+		--nav-gap: clamp(2rem, 5cqw, 4.5rem);
+		--rail-w: 200px;
+		--shell-max: 72rem; /* layoutMaxWidths.extended */
+		--side-w: minmax(18rem, 22rem);
+		--meta-cols: 3;
+	}
+
+	/* --- header strip, just enough to place the shell in context */
+	.sim-top {
+		display: flex;
+		align-items: center;
+		gap: 1.4rem;
+		max-width: var(--shell-max);
+		margin: 0 auto;
+		padding: 1.1rem var(--gutter);
+		box-sizing: border-box;
+	}
+	.sim-brand {
+		font-family: var(--display);
+		font-weight: 780;
+		font-size: 1.25rem;
+		letter-spacing: -0.02em;
+	}
+	.sim-top nav {
+		display: flex;
+		gap: 1.15rem;
+		font-size: 0.94rem;
+		color: var(--a-text-muted);
+		font-weight: 500;
+	}
+	.sim-top .spacer {
+		margin-left: auto;
+	}
+
+	/* --- account shell: AccountManagementShell -------------- */
+	.shell {
+		max-width: var(--shell-max);
+		margin: 0 auto;
+		box-sizing: border-box;
+		position: relative;
+		display: grid;
+		gap: clamp(2rem, 4cqw, 2.75rem);
+		align-items: start;
+		min-height: 30rem;
+		padding: clamp(1.5rem, 4cqw, 2.5rem) var(--gutter) 3rem;
+		padding-left: calc(var(--gutter) + var(--rail-w) + var(--nav-gap));
+	}
+
+	/* --- AccountManagementLinkNav: absolute 200px rail ------- */
+	.rail-nav {
+		position: absolute;
+		left: var(--gutter);
+		top: clamp(1.5rem, 4cqw, 2.5rem);
+		width: var(--rail-w);
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+	.rail-nav a {
+		padding: 0.5rem 0.9rem;
+		border-radius: 10px;
+		color: var(--a-text-muted);
+		font-weight: 550;
+		font-size: 0.98rem;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.rail-nav a[aria-current] {
+		color: var(--a-primary-text);
+		background: var(--a-primary-soft);
+	}
+
+	/* --- page header ---------------------------------------- */
+	.sim-h1 {
+		font-family: var(--display);
+		font-size: clamp(2rem, 4cqw, 2.7rem);
+		font-weight: 760;
+		letter-spacing: -0.026em;
+		line-height: 1.08;
+		margin: 0 0 0.6rem;
+		color: var(--a-text);
+	}
+	.sim-lede {
+		margin: 0;
+		color: var(--a-text-muted);
+		max-width: 60ch;
+	}
+
+	/* --- AccountManagementLayout ---------------------------- */
+	.layout {
+		display: grid;
+		grid-template-columns: var(--side-w) minmax(0, 1fr);
+		gap: 1.5rem;
+		align-items: start;
+		min-width: 0;
+	}
+	@container (max-width: 1100px) {
+		.layout {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
+	/* --- sidebar ------------------------------------------- */
+	.side {
+		background: var(--a-surface);
+		border: 1.5px solid var(--a-border);
+		border-radius: 14px;
+		padding: 1.5rem;
+		display: grid;
+		gap: 1rem;
+		min-width: 0;
+		overflow: hidden;
+		box-sizing: border-box;
+	}
+	.side h2 {
+		font-family: var(--display);
+		font-size: 1.35rem;
+		font-weight: 720;
+		letter-spacing: -0.014em;
+		margin: 0;
+		color: var(--a-text);
+	}
+	.side .sub {
+		margin: 0.35rem 0 0;
+		color: var(--a-text-muted);
+		font-size: 0.98rem;
+	}
+	.fld {
+		display: grid;
+		gap: 0.45rem;
+		min-width: 0;
+	}
+	.fld > span {
+		font-size: 0.92rem;
+		font-weight: 600;
+	}
+	.fld input,
+	.fld select {
+		font: inherit;
+		font-size: 0.98rem;
+		color: var(--a-text);
+		background: var(--a-bg);
+		border: 1.5px solid var(--a-border);
+		border-radius: 12px;
+		padding: 0.7rem 0.9rem;
+		min-width: 0;
+		width: 100%;
+		box-sizing: border-box;
+		appearance: none;
+	}
+	.fld select {
+		background-image:
+			linear-gradient(45deg, transparent 50%, var(--a-text-muted) 50%),
+			linear-gradient(135deg, var(--a-text-muted) 50%, transparent 50%);
+		background-position:
+			calc(100% - 1.1rem) 1.2rem,
+			calc(100% - 0.75rem) 1.2rem;
+		background-size:
+			6px 6px,
+			6px 6px;
+		background-repeat: no-repeat;
+	}
+	.rows {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.row {
+		display: grid;
+		gap: 0.25rem;
+		padding: 1rem;
+		border: 1px solid var(--a-border);
+		border-radius: 0.5rem;
+		background: var(--a-bg);
+		min-width: 0;
+		overflow: hidden;
+		overflow-wrap: anywhere;
+		text-decoration: none;
+		color: var(--a-text);
+	}
+	.row[aria-current] {
+		border-color: var(--a-primary);
+		border-left-width: 0.3rem;
+		background: var(--a-primary-softest);
+	}
+	.row-top {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 1rem;
+		align-items: baseline;
+		min-width: 0;
+	}
+	.row-top strong {
+		font-weight: 650;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.row-top span {
+		font-size: 0.75rem;
+		color: var(--a-text-muted);
+		white-space: nowrap;
+	}
+	.row .kid {
+		font-size: 0.875rem;
+		color: var(--a-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.row .desc {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
+		font-size: 0.875rem;
+		color: var(--a-text-muted);
+	}
+	.count {
+		margin: 0.5rem 0 0;
+		font-size: 0.75rem;
+		color: var(--a-text-muted);
+	}
+
+	/* --- detail card --------------------------------------- */
+	.detail {
+		padding: 1.5rem;
+		border-radius: 0.75rem;
+		border: 1px solid var(--a-border);
+		background: var(--a-surface);
+		display: grid;
+		gap: 1.5rem;
+		min-width: 0;
+		box-sizing: border-box;
+	}
+	.detail h2 {
+		margin: 0;
+		font-family: var(--body);
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--a-text);
+		overflow-wrap: anywhere;
+	}
+	.detail .dsc {
+		margin: 0.25rem 0 0;
+		color: var(--a-text-muted);
+		overflow-wrap: anywhere;
+	}
+	.tags {
+		display: flex;
+		gap: 0.25rem;
+		flex-wrap: wrap;
+	}
+	.tags span {
+		padding: 0 0.5rem;
+		border-radius: 0.5rem;
+		border: 1px solid var(--a-border);
+		background: var(--a-surface);
+		color: var(--a-text-muted);
+		font-size: 0.75rem;
+		line-height: 1.5rem;
+	}
+
+	/* MetadataGrid — fixed column count, the current behaviour */
+	.meta {
+		display: grid;
+		grid-template-columns: repeat(var(--meta-cols), minmax(0, 1fr));
+		gap: 1rem;
+		margin: 0;
+	}
+	@container (max-width: 860px) {
+		.meta {
+			grid-template-columns: 1fr;
+		}
+	}
+	.meta > div {
+		min-width: 0;
+	}
+	.meta dt {
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--a-text);
+	}
+	.meta dd {
+		margin: 0;
+		color: var(--a-text);
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.meta dd code {
+		font-size: 0.9em;
+	}
+	.lbl {
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--a-text);
+	}
+	.blob {
+		margin: 0.25rem 0 0;
+		color: var(--a-text-muted);
+		overflow-wrap: anywhere;
+	}
+
+	/* ============================================================
+   VARIANT A — lift the cap
+   ============================================================ */
+	.v-a .sim,
+	.v-c .sim {
+		--shell-max: 96rem; /* layoutMaxWidths.wide */
+	}
+	/* The header keeps its own 72rem measure, so the console growing
+   past it would no longer line up with the brand. Both A and C
+   widen the header strip in step. */
+	.v-a .sim-top,
+	.v-c .sim-top {
+		max-width: 96rem;
+	}
+
+	/* ============================================================
+   VARIANT B — content that survives any width
+   Columns become emergent (auto-fit), and an id is a copy
+   target rather than a paragraph: one line, ellipsis, button.
+   ============================================================ */
+	.v-b .meta,
+	.v-c .meta {
+		grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+		gap: 1rem 1.5rem;
+	}
+	.v-b .meta dd,
+	.v-c .meta dd {
+		overflow-wrap: normal;
+	}
+	.v-b .stamp,
+	.v-c .stamp {
+		white-space: nowrap;
+	}
+
+	/* the id chip */
+	.idv {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+		margin-top: 0.1rem;
+	}
+	.idv code {
+		font-family: var(--mono);
+		font-size: 0.8rem;
+		background: var(--a-bg);
+		border: 1px solid var(--a-border);
+		border-radius: 6px;
+		padding: 0.2rem 0.45rem;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		direction: ltr;
+	}
+	.idv button {
+		flex: none;
+		font: inherit;
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--a-text-muted);
+		background: transparent;
+		border: 1px solid var(--a-border);
+		border-radius: 6px;
+		padding: 0.2rem 0.4rem;
+		cursor: pointer;
+		transition:
+			color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+			transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+	@media (hover: hover) {
+		.idv button:hover {
+			color: var(--a-primary-text);
+			border-color: var(--a-primary);
+		}
+	}
+	.idv button:active {
+		transform: scale(0.97);
+	}
+	.idv button[data-copied] {
+		color: var(--a-primary-text);
+		border-color: var(--a-primary);
+	}
+
+	/* ============================================================
+   VARIANT C — the two above, plus a hierarchy
+   Identity gets the top. Plumbing goes behind a disclosure —
+   the same <details> treatment the account pages already use
+   for "Change email".
+   ============================================================ */
+	.hero-id {
+		display: grid;
+		gap: 0.55rem;
+	}
+	.v-c .detail h2 {
+		font-family: var(--display);
+		font-size: 1.5rem;
+		font-weight: 740;
+		letter-spacing: -0.018em;
+		line-height: 1.15;
+	}
+	.plumb {
+		border-top: 1px solid var(--a-border);
+		padding-top: 1.1rem;
+	}
+	.plumb > summary {
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.95rem;
+		color: var(--a-primary-text);
+		width: fit-content;
+		list-style: none;
+	}
+	.plumb > summary::-webkit-details-marker {
+		display: none;
+	}
+	.plumb > summary::before {
+		content: '›';
+		display: inline-block;
+		margin-right: 0.4rem;
+		transition: rotate 180ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+	.plumb[open] > summary::before {
+		rotate: 90deg;
+	}
+	.plumb[open] > summary {
+		margin-bottom: 0.9rem;
+	}
+	.plumb > :not(summary) {
+		display: grid;
+		gap: 1.15rem;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.plumb > :not(summary) {
+			transition:
+				opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+				translate 200ms cubic-bezier(0.23, 1, 0.32, 1);
+			@starting-style {
+				opacity: 0;
+				translate: 0 4px;
+			}
+		}
+	}
+	/* The search index is debug data. It keeps a scroll box instead of
+   setting the height of the whole page. */
+	.v-c .blob {
+		font-size: 0.9rem;
+		max-height: 6.5rem;
+		overflow-y: auto;
+		padding-right: 0.5rem;
+		line-height: 1.55;
+	}
+
+	/* ============================================================
+   VERDICT TABLE
+   ============================================================ */
+	.tablewrap {
+		overflow-x: auto;
+		margin-top: 1.5rem;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+	}
+	table {
+		border-collapse: collapse;
+		width: 100%;
+		min-width: 44rem;
+		font-size: 0.92rem;
+	}
+	th,
+	td {
+		text-align: left;
+		padding: 0.7rem 1rem;
+		border-bottom: 1px solid var(--rule);
+		vertical-align: top;
+	}
+	thead th {
+		font-size: 0.68rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--ink-soft);
+		background: var(--paper-sunk);
+		white-space: nowrap;
+	}
+	tbody tr:last-child td {
+		border-bottom: 0;
+	}
+	td code {
+		font-size: 0.85em;
+		color: var(--ink-soft);
+	}
+	td .n {
+		font-family: var(--mono);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.pill {
+		display: inline-block;
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		padding: 0.1rem 0.45rem;
+		border-radius: 3px;
+		white-space: nowrap;
+		border: 1px solid currentColor;
+	}
+	.pill.yes {
+		color: var(--tape);
+	}
+	.pill.no {
+		color: var(--ink-soft);
+		opacity: 0.75;
+	}
+
+	/* ---- recommendation ------------------------------------
+   Marked by a firm top rule, the same device the bench heads
+   use, rather than card chrome. */
+	.rec {
+		margin-top: 2.25rem;
+		border-top: 2px solid var(--tape);
+		padding-top: 1.1rem;
+		max-width: 62rem;
+	}
+	.rec h3 {
+		margin-bottom: 0.5rem;
+		font-size: 1.3rem;
+	}
+	.rec p:last-child {
+		margin-bottom: 0;
+	}
+	.rec ol {
+		margin: 0.6rem 0 0;
+		padding-left: 1.3rem;
+	}
+	.rec li {
+		margin-bottom: 0.4rem;
+	}
+	.rec li:last-child {
+		margin-bottom: 0;
+	}
+
+	.foot {
+		margin-top: 4rem;
+		padding-top: 1.25rem;
+		border-top: 1px solid var(--rule);
+		font-size: 0.85rem;
+		color: var(--ink-soft);
+		max-width: 70ch;
+	}
+</style>
+
+<div class="wrap">
+	<header class="prose">
+		<p class="eyebrow">Account console · density study</p>
+		<h1>The detail pane gets 424&nbsp;px of a 1152&nbsp;px page.</h1>
+		<p class="lede">
+			Widening your browser does not help. The account shell is capped at
+			<code>72rem</code>, so past 1152&nbsp;px every extra pixel becomes margin.
+			That cap is the whole bug — the wrapped UUIDs are just what it looks like.
+		</p>
+	</header>
+
+	<section class="ledger" aria-labelledby="ledger-h">
+		<h2 id="ledger-h" class="eyebrow" style="margin-bottom: 0.75rem">
+			Where the 1152&nbsp;px goes
+		</h2>
+		<div
+			class="ledger-bar"
+			role="img"
+			aria-label="Width budget: 40px gutter, 200px nav rail, 62px gap, 352px list, 24px gap, 434px detail pane, 40px gutter."
+		>
+			<span style="flex: 40 0 0">40</span>
+			<span style="flex: 200 0 0">nav 200</span>
+			<span style="flex: 62 0 0">62</span>
+			<span style="flex: 352 0 0">list 352</span>
+			<span style="flex: 24 0 0">24</span>
+			<span class="pay" style="flex: 434 0 0">detail 434</span>
+			<span style="flex: 40 0 0">40</span>
+		</div>
+		<ul class="ledger-key">
+			<li><b>62%</b> navigation, filters, gutters</li>
+			<li class="pay"><b>38%</b> the record you came to read</li>
+			<li><b>115px</b> per metadata column at <code>columns={3}</code></li>
+			<li><b>36 chars</b> in a UUID</li>
+		</ul>
+	</section>
+
+	<div class="prose" style="margin-top: 2rem">
+		<p>
+			Three separate decisions stack into that 434&nbsp;px, and each one is
+			independently fixable:
+		</p>
+		<p>
+			<strong>The cap.</strong> <code>AccountManagementShell</code> uses
+			<code>layoutMaxWidths.extended</code> — 72rem. That is a reading measure,
+			right for prose and wrong for a three-column console. The rail costs
+			another 262&nbsp;px on every account page.
+		</p>
+		<p>
+			<strong>The column count.</strong>
+			<code>&lt;MetadataGrid columns={3}&gt;</code> is a fixed number, so it
+			divides whatever it is given. Three columns of 115&nbsp;px is strictly
+			worse than one column of 376&nbsp;px, and the component has no way to
+			know.
+		</p>
+		<p>
+			<strong>The ids.</strong> A UUID reaches the grid with
+			<code>overflow-wrap: anywhere</code>, which treats it as prose. It is not
+			prose — nobody reads a UUID, they copy it. That is a different component.
+		</p>
+	</div>
+
+	<hr class="div" />
+
+	<div class="rail">
+		<span class="rail-label" id="rail-label">Browser width</span>
+		<input
+			id="w"
+			type="range"
+			min="1100"
+			max="2560"
+			step="4"
+			value="1244"
+			aria-labelledby="rail-label"
+		/>
+		<output class="rail-read" for="w" id="w-read">1244px</output>
+		<div class="presets" role="group" aria-label="Width presets">
+			<button type="button" data-w="1244" aria-pressed="true">
+				1244 · your screenshot
+			</button>
+			<button type="button" data-w="1512" aria-pressed="false">
+				1512 · MBP 14"
+			</button>
+			<button type="button" data-w="1728" aria-pressed="false">
+				1728 · MBP 16"
+			</button>
+			<button type="button" data-w="2560" aria-pressed="false">
+				2560 · Studio Display
+			</button>
+		</div>
+	</div>
+
+	<!-- ============ SPECIMEN 0 · NOW ============ -->
+	<section class="bench v-now">
+		<div class="bench-head">
+			<div>
+				<span class="id">Specimen 0 · shipping today</span>
+				<h3>What it does now</h3>
+				<p class="why">
+					72rem cap, three fixed metadata columns, ids wrapped like sentences,
+					the raw search index printed at full height.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Detail pane</span>
+					<span class="v pay" data-gauge="detail">—</span>
+				</div>
+				<div>
+					<span class="k">Per column</span>
+					<span class="v" data-gauge="col">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim></div></div>
+	</section>
+
+	<!-- ============ SPECIMEN A ============ -->
+	<section class="bench v-a">
+		<div class="bench-head">
+			<div>
+				<span class="id">Specimen A · one token</span>
+				<h3>Lift the cap to 96rem</h3>
+				<p class="why">
+					<code>extended</code> → <code>wide</code> on the shell and the header
+					strip together. Nothing else changes. This is a one-line diff that
+					finally lets a big monitor mean something.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Detail pane</span>
+					<span class="v pay" data-gauge="detail">—</span>
+				</div>
+				<div>
+					<span class="k">Per column</span>
+					<span class="v" data-gauge="col">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim></div></div>
+	</section>
+
+	<!-- ============ SPECIMEN B ============ -->
+	<section class="bench v-b">
+		<div class="bench-head">
+			<div>
+				<span class="id">Specimen B · content, not layout</span>
+				<h3>Emergent columns, ids that never wrap</h3>
+				<p class="why">
+					Keeps the 72rem cap. <code>columns</code> becomes
+					<code>auto-fit / minmax(13rem, 1fr)</code>, so the count follows the
+					room. Ids become single-line copy chips. Fixes phones too, where no
+					amount of page width would have helped.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Detail pane</span>
+					<span class="v pay" data-gauge="detail">—</span>
+				</div>
+				<div>
+					<span class="k">Per column</span>
+					<span class="v" data-gauge="col">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim></div></div>
+	</section>
+
+	<!-- ============ SPECIMEN C ============ -->
+	<section class="bench v-c">
+		<div class="bench-head">
+			<div>
+				<span class="id">Specimen C · recommended</span>
+				<h3>A + B, and a hierarchy</h3>
+				<p class="why">
+					Identity leads in the display face. The facts a person actually reads
+					sit above the fold. Ids, source id and the search index — plumbing —
+					go behind the disclosure the account pages already use, and the index
+					gets a scroll box instead of setting page height.
+				</p>
+			</div>
+			<div class="gauge">
+				<div>
+					<span class="k">Detail pane</span>
+					<span class="v pay" data-gauge="detail">—</span>
+				</div>
+				<div>
+					<span class="k">Per column</span>
+					<span class="v" data-gauge="col">—</span>
+				</div>
+			</div>
+		</div>
+		<div class="frame"><div class="sim" data-sim></div></div>
+	</section>
+
+	<hr class="div" />
+
+	<section>
+		<div class="sechead">
+			<p class="eyebrow">Trade-offs</p>
+			<h2>What each one costs</h2>
+		</div>
+		<div class="tablewrap">
+			<table>
+				<thead>
+					<tr>
+						<th>Change</th>
+						<th>Files</th>
+						<th>Detail pane<br />@ 1728px</th>
+						<th>Helps mobile</th>
+						<th>Risk</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><b>A.</b> Shell cap → <code>wide</code></td>
+						<td class="n">2</td>
+						<td class="n" data-cell="a">—</td>
+						<td><span class="pill no">no</span></td>
+						<td>
+							Header and footer keep their 72rem measure. The console would
+							outgrow the brand above it unless they move together — the
+							specimen widens both.
+						</td>
+					</tr>
+					<tr>
+						<td>
+							<b>B.</b> <code>MetadataGrid</code> auto-fit +
+							<code>IdValue</code>
+						</td>
+						<td class="n">15</td>
+						<td class="n" data-cell="b">—</td>
+						<td><span class="pill yes">yes</span></td>
+						<td>
+							13 call sites drop their <code>columns</code> prop. Mechanical,
+							but it touches admin pages too, so it wants one pass and one
+							review.
+						</td>
+					</tr>
+					<tr>
+						<td><b>C.</b> A + B + disclosure hierarchy</td>
+						<td class="n">~17</td>
+						<td class="n" data-cell="c">—</td>
+						<td><span class="pill yes">yes</span></td>
+						<td>
+							Hiding ids behind a disclosure is a product call, not a layout
+							one. Worth checking against how you actually use these pages.
+						</td>
+					</tr>
+					<tr>
+						<td>
+							<b>D.</b> Detail takes the whole page <br /><span
+								style="color: var(--ink-soft); font-size: 0.88em"
+								>considered, not built</span
+							>
+						</td>
+						<td class="n">~14</td>
+						<td class="n">~1184</td>
+						<td><span class="pill yes">yes</span></td>
+						<td>
+							Best density by far, but it turns master–detail into drill-down
+							and throws away the scroll-preserving list navigation from
+							<code>#1270</code>. Not worth it for a width problem.
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<div class="rec">
+			<h3>Recommendation: C, landed in two commits</h3>
+			<p>
+				B first, because it stands alone and is the only part that helps a
+				phone. Then A, because it is two tokens and needs the header moved in
+				the same breath. The hierarchy rides along with B since it is the same
+				file.
+			</p>
+			<ol>
+				<li>
+					<strong>Commit 1 — content.</strong> <code>MetadataGrid</code> goes
+					auto-fit and loses <code>columns</code>; add an
+					<code>IdValue</code> primitive with copy; timestamps get
+					<code>nowrap</code>; search index moves behind a disclosure with a
+					scroll box. 13 call sites updated.
+				</li>
+				<li>
+					<strong>Commit 2 — measure.</strong> List/detail pages opt into
+					<code>layoutMaxWidths.wide</code>, and the header and footer follow so
+					the columns still line up.
+				</li>
+			</ol>
+		</div>
+	</section>
+
+	<section style="margin-top: clamp(2.5rem, 5vw, 3.5rem)">
+		<div class="sechead">
+			<p class="eyebrow">Blast radius</p>
+			<h2>The other 13 pages</h2>
+		</div>
+		<div class="prose">
+			<p>
+				This is not a Packages problem. Fourteen pages compose
+				<code>AccountManagementLayout</code>, and thirteen render a
+				<code>MetadataGrid</code> — nine of them at <code>columns={3}</code>,
+				which is the configuration that produces the 115&nbsp;px column:
+			</p>
+		</div>
+		<div class="tablewrap" style="max-width: 62rem">
+			<table style="min-width: 30rem">
+				<thead>
+					<tr>
+						<th>Page</th>
+						<th>List / detail</th>
+						<th>MetadataGrid</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><code>account/packages</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+					<tr>
+						<td><code>account/secrets</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+					<tr>
+						<td><code>account/email</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+					<tr>
+						<td><code>account/jobs</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/activity</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/values</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/memories</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/mcp-servers</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/integrations</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">—</td>
+					</tr>
+					<tr>
+						<td><code>account/remote-connectors</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">—</td>
+					</tr>
+					<tr>
+						<td><code>account/package-invocation-tokens</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/billing</code></td>
+						<td><span class="pill no">no</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>account/usage</code></td>
+						<td><span class="pill no">no</span></td>
+						<td class="n">default</td>
+					</tr>
+					<tr>
+						<td><code>admin/users</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+					<tr>
+						<td><code>admin/platform-feedback</code></td>
+						<td><span class="pill yes">yes</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+					<tr>
+						<td><code>admin/feature-flags</code></td>
+						<td><span class="pill no">no</span></td>
+						<td class="n">columns={3} ×2</td>
+					</tr>
+					<tr>
+						<td><code>admin/invites</code></td>
+						<td><span class="pill no">no</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+					<tr>
+						<td><code>admin/system-email</code></td>
+						<td><span class="pill no">no</span></td>
+						<td class="n">columns={3}</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</section>
+
+	<p class="foot">
+		Every frame above is the real layout rebuilt from
+		<code>account-management-components.tsx</code>,
+		<code>account-packages.tsx</code> and <code>public/styles.css</code>, using
+		the app's own tokens and both shipped typefaces. The app's media queries at
+		860&nbsp;px and 1100&nbsp;px are container queries here so one frame can be
+		resized without resizing your browser — thresholds unchanged. Every pixel
+		figure on this page is measured from the live DOM, not typed in.
+	</p>
+</div>
+
+<script>
+	const PKG = {
+		name: '@vojta/cloudflare',
+		desc: 'Cloudflare helpers for APIs, analytics, WAF rulesets, logs, and docs.',
+		tags: ['cloudflare', 'workers', 'analytics', 'waf', 'logs', 'api'],
+		kodyId: 'cloudflare',
+		id: '840430b8-bc99-4f46-9ad0-82b05e4aabba',
+		sourceId: 'dacff0ef-d1a1-4f3d-ba4c-19618357a682',
+		created: '8/7/2026, 9:26:05 AM',
+		updated: '8/7/2026, 9:26:05 AM',
+		search:
+			'cloudflare api v4 rest client workers d1 r2 kv queues pages durable objects vectorize workers ai ai gateway wrangler docs developer docs dns zones accounts email routing token verify observability logs log explorer log search workers trace events http requests access requests ray id sql query graphql analytics httpRequestsAdaptiveGroups traffic requests status paths user agents outage forensics rulesets waf custom rules firewall block challenge skip bogus crawler routes',
+	}
+
+	const NAV = [
+		'Overview',
+		'Billing',
+		'Usage',
+		'Activity',
+		'Packages',
+		'Jobs',
+		'Stars',
+		'Secrets',
+		'Values',
+		'Integrations',
+		'Package tokens',
+		'Connectors',
+		'MCP servers',
+		'Memories',
+		'Email',
+	]
+
+	const esc = (s) =>
+		String(s).replace(
+			/[&<>"]/g,
+			(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+		)
+
+	/* An id as a copy target: one line, ellipsis, button. Variants B and C. */
+	const idChip = (v) =>
+		`<div class="idv"><code title="${esc(v)}">${esc(v)}</code>` +
+		`<button type="button" data-copy="${esc(v)}">Copy</button></div>`
+
+	function metaRow(label, valueHtml) {
+		return `<div><dt>${esc(label)}</dt><dd>${valueHtml}</dd></div>`
+	}
+
+	/* --- the detail card, per variant ------------------------------- */
+	function detail(variant) {
+		const wrapped = (v) => `<code>${esc(v)}</code>`
+		const idCell = variant === 'now' ? wrapped : idChip
+		const stampClass = variant === 'now' ? '' : ' class="stamp"'
+
+		if (variant === 'c') {
+			return `
+				<div class="detail">
+					<div class="hero-id">
+						<h2>${esc(PKG.name)}</h2>
+						<p class="dsc">${esc(PKG.desc)}</p>
+						<div class="tags">${PKG.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+					</div>
+					<dl class="meta">
+						${metaRow('Kody id', `<code>${esc(PKG.kodyId)}</code>`)}
+						${metaRow('App', 'No app')}
+						${metaRow('Created', `<span class="stamp">${esc(PKG.created)}</span>`)}
+						${metaRow('Updated', `<span class="stamp">${esc(PKG.updated)}</span>`)}
+					</dl>
+					<details class="plumb">
+						<summary>Identifiers and search index</summary>
+						<div>
+							<dl class="meta">
+								${metaRow('Package id', idChip(PKG.id))}
+								${metaRow('Source id', idChip(PKG.sourceId))}
+							</dl>
+							<div>
+								<span class="lbl">Search text</span>
+								<p class="blob">${esc(PKG.search)}</p>
+							</div>
+						</div>
+					</details>
+				</div>`
+		}
+
+		return `
+			<div class="detail">
+				<div>
+					<h2>${esc(PKG.name)}</h2>
+					<p class="dsc">${esc(PKG.desc)}</p>
+				</div>
+				<div class="tags">${PKG.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+				<dl class="meta">
+					${metaRow('Kody id', `<code>${esc(PKG.kodyId)}</code>`)}
+					${metaRow('Package id', idCell(PKG.id))}
+					${metaRow('App', 'No app')}
+					${metaRow('Source id', idCell(PKG.sourceId))}
+					${metaRow('Created', `<span${stampClass}>${esc(PKG.created)}</span>`)}
+					${metaRow('Updated', `<span${stampClass}>${esc(PKG.updated)}</span>`)}
+				</dl>
+				<div>
+					<span class="lbl">Search text</span>
+					<p class="blob">${esc(PKG.search)}</p>
+				</div>
+			</div>`
+	}
+
+	function sim(variant) {
+		return `
+			<div class="sim-top">
+				<span class="sim-brand">Kody</span>
+				<nav><span>Community</span><span>Guides</span><span>Pricing</span><span>Blog</span><span>Timeline</span></nav>
+				<span class="spacer"></span>
+				<nav><span>vojta</span><span>Log out</span></nav>
+			</div>
+			<div class="shell">
+				<nav class="rail-nav" aria-label="Account sections">
+					${NAV.map((n) => `<a href="#" ${n === 'Packages' ? 'aria-current="page"' : ''}>${esc(n)}</a>`).join('')}
+				</nav>
+				<header>
+					<h1 class="sim-h1">Packages</h1>
+					<p class="sim-lede">Browse your saved packages and review their metadata. Packages are created and edited through Kody's MCP tools.</p>
+				</header>
+				<section class="layout">
+					<aside class="side">
+						<div>
+							<h2>Saved packages</h2>
+							<p class="sub">Select a package to review its metadata.</p>
+						</div>
+						<label class="fld"><span>Search</span><input type="search" placeholder="Search by name, id, description, or tag" /></label>
+						<label class="fld"><span>App</span><select><option>All packages</option></select></label>
+						<label class="fld"><span>Sort</span><select><option>Recently updated</option></select></label>
+						<ul class="rows">
+							<li><a class="row" href="#" aria-current="true">
+								<span class="row-top"><strong>@vojta/cloudflare</strong><span>Updated 8/7/2026</span></span>
+								<span class="kid">cloudflare</span>
+								<span class="desc">Cloudflare helpers for APIs, analytics, WAF rulesets, logs, and docs.</span>
+							</a></li>
+							<li><a class="row" href="#">
+								<span class="row-top"><strong>@vojta/skills</strong><span>Updated 8/7/2026</span></span>
+								<span class="kid">skills</span>
+								<span class="desc">Store, retrieve, edit, version, and revert reusable agent skill documents via…</span>
+							</a></li>
+						</ul>
+						<p class="count">Showing 2 of 2 packages</p>
+					</aside>
+					${detail(variant)}
+				</section>
+			</div>`
+	}
+
+	/* --- mount ------------------------------------------------------ */
+	const VARIANTS = [
+		['.v-now', 'now'],
+		['.v-a', 'a'],
+		['.v-b', 'b'],
+		['.v-c', 'c'],
+	]
+	for (const [sel, variant] of VARIANTS) {
+		const host = document.querySelector(`${sel} [data-sim]`)
+		if (host) host.innerHTML = sim(variant)
+	}
+
+	/* --- width control --------------------------------------------- */
+	const slider = document.getElementById('w')
+	const readout = document.getElementById('w-read')
+	const presets = [...document.querySelectorAll('.presets button')]
+	const sims = [...document.querySelectorAll('.sim')]
+
+	function applyWidth(px) {
+		for (const s of sims) s.style.setProperty('--sim-w', `${px}px`)
+		readout.textContent = `${px}px`
+		for (const b of presets) {
+			b.setAttribute('aria-pressed', String(Number(b.dataset.w) === px))
+		}
+		measure()
+	}
+
+	slider.addEventListener('input', () => applyWidth(Number(slider.value)))
+	for (const b of presets) {
+		b.addEventListener('click', () => {
+			slider.value = b.dataset.w
+			applyWidth(Number(b.dataset.w))
+		})
+	}
+
+	/* --- live gauges: measured, never asserted --------------------- */
+	function measure() {
+		for (const [sel] of VARIANTS) {
+			const bench = document.querySelector(sel)
+			if (!bench) continue
+			const pane = bench.querySelector('.detail')
+			const cell = bench.querySelector('.meta > div')
+			const dW = pane ? Math.round(pane.getBoundingClientRect().width) : 0
+			const cW = cell ? Math.round(cell.getBoundingClientRect().width) : 0
+			/* Write only on a real change. The gauges live in normal flow, so
+			   rewriting them unconditionally would feed the ResizeObserver
+			   below its own output. */
+			const put = (el, px) => {
+				if (!el || el.dataset.px === String(px)) return
+				el.dataset.px = String(px)
+				el.innerHTML = `${px}<small>px</small>`
+			}
+			put(bench.querySelector('[data-gauge="detail"]'), dW)
+			put(bench.querySelector('[data-gauge="col"]'), cW)
+		}
+	}
+
+	/* Fill the "@1728px" table cells by measuring at that width once. */
+	function fillTable() {
+		const saved = Number(slider.value)
+		for (const s of sims) s.style.setProperty('--sim-w', '1728px')
+		const at = (sel) => {
+			const p = document.querySelector(`${sel} .detail`)
+			return p ? Math.round(p.getBoundingClientRect().width) : 0
+		}
+		const cells = { a: at('.v-a'), b: at('.v-b'), c: at('.v-c') }
+		for (const [k, v] of Object.entries(cells)) {
+			const td = document.querySelector(`[data-cell="${k}"]`)
+			if (td) td.textContent = `${v}px`
+		}
+		applyWidth(saved)
+	}
+
+	/* Both faces are `font-display: block`, so wait for them before
+	   measuring — a fallback face would report different widths. */
+	const ready = document.fonts ? document.fonts.ready : Promise.resolve()
+	ready.then(() => {
+		fillTable()
+		measure()
+	})
+	new ResizeObserver(measure).observe(document.body)
+
+	/* --- copy buttons ---------------------------------------------- */
+	document.addEventListener('click', (event) => {
+		const btn = event.target.closest('[data-copy]')
+		if (!btn) return
+		navigator.clipboard?.writeText(btn.dataset.copy)
+		btn.textContent = 'Copied'
+		btn.dataset.copied = ''
+		setTimeout(() => {
+			btn.textContent = 'Copy'
+			delete btn.dataset.copied
+		}, 1400)
+	})
+</script>
