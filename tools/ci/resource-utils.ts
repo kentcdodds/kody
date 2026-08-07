@@ -336,15 +336,25 @@ async function cloudflareApiRequestOnce<T>(input: CloudflareApiRequestInput) {
 			signal: abortController.signal,
 		})
 		const text = await response.text()
-		let payload: CloudflareApiEnvelope<T>
+		const preview = text.trim().slice(0, 200) || '(empty body)'
+		let parsed: unknown
 		try {
-			payload = JSON.parse(text) as CloudflareApiEnvelope<T>
+			parsed = JSON.parse(text)
 		} catch {
-			const preview = text.trim().slice(0, 200) || '(empty body)'
 			throw new Error(
 				`Malformed Cloudflare response (${response.status}) for ${input.pathname}: ${preview}`,
 			)
 		}
+		if (
+			parsed === null ||
+			typeof parsed !== 'object' ||
+			Array.isArray(parsed)
+		) {
+			throw new Error(
+				`Malformed Cloudflare response (${response.status}) for ${input.pathname}: ${preview}`,
+			)
+		}
+		const payload = parsed as CloudflareApiEnvelope<T>
 		if (
 			!response.ok ||
 			payload.success !== true ||

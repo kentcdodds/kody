@@ -465,6 +465,31 @@ test('Cloudflare API requests retry gateway HTML/text blips then succeed', async
 		queue_name: 'kody-email-delivery',
 	})
 	expect(fetcher).toHaveBeenCalledTimes(2)
+
+	const nullBodyFetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(new Response('null', { status: 200 }))
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: {
+					queue_id: 'queue-2',
+					queue_name: 'kody-email-delivery',
+				},
+			}),
+		)
+	const nullBodyPayload = await cloudflareApiRequest({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		pathname: '/queues?page=1&per_page=100',
+		fetcher: nullBodyFetcher,
+		sleep: async () => {},
+	})
+	expect(nullBodyPayload.result).toEqual({
+		queue_id: 'queue-2',
+		queue_name: 'kody-email-delivery',
+	})
+	expect(nullBodyFetcher).toHaveBeenCalledTimes(2)
 	expect(
 		isRetryableCloudflareApiError(
 			new Error(
