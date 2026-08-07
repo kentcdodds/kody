@@ -171,8 +171,7 @@ export function OnboardingChecklistCard(
 										<p mix={css(integrationHintCss)}>
 											Try{' '}
 											{integrationGuideProviders.map((provider, index) => (
-												<span key={provider.id}>
-													{index > 0 ? ', ' : null}
+												<span key={provider.id} mix={css(providerEntryCss)}>
 													<a
 														href={provider.href}
 														mix={css(integrationProviderLinkCss)}
@@ -180,6 +179,11 @@ export function OnboardingChecklistCard(
 														<ProviderIcon providerId={provider.id} />
 														{provider.label}
 													</a>
+													{index < integrationGuideProviders.length - 2
+														? ', '
+														: index === integrationGuideProviders.length - 2
+															? ', or '
+															: null}
 												</span>
 											))}
 										</p>
@@ -285,6 +289,11 @@ const integrationHintCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.9rem',
+}
+
+/** Keeps the separator hugging its provider label instead of the next icon. */
+const providerEntryCss = {
+	whiteSpace: 'nowrap' as const,
 }
 
 const integrationProviderLinkCss = {

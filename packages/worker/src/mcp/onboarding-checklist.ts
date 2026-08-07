@@ -35,10 +35,11 @@ export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> &
 
 /**
  * Compute the checklist from existing signals: one Mailbox DO count (stored
- * inbound+outbound mail covers the "first hello" email exchange), and three
- * cheap D1 reads (active memories, saved integrations, saved packages).
- * Individual probe failures fail open to "not done" so a storage blip never
- * breaks onboarding surfaces.
+ * INBOUND mail — the welcome email alone is outbound, so "exchange a first
+ * email" only completes once the user's reply lands), and three cheap D1
+ * reads (active memories, saved integrations, saved packages). Individual
+ * probe failures fail open to "not done" so a storage blip never breaks
+ * onboarding surfaces.
  */
 export async function deriveOnboardingChecklist(input: {
 	env: OnboardingChecklistEnv
@@ -49,9 +50,13 @@ export async function deriveOnboardingChecklist(input: {
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
 	const now = input.now ?? new Date()
-	const [storedMail, memories, integrations, savedPackages] = await Promise.all(
-		[
-			countInternalUserEmailMessages({ env, ownerId: userId }).catch(() => 0),
+	const [inboundMail, memories, integrations, savedPackages] =
+		await Promise.all([
+			countInternalUserEmailMessages({
+				env,
+				ownerId: userId,
+				filters: { direction: 'inbound' },
+			}).catch(() => 0),
 			listMemoriesByUserId(env.APP_DB, userId, {
 				limit: 1,
 				statuses: ['active'],
@@ -64,13 +69,12 @@ export async function deriveOnboardingChecklist(input: {
 				resource: 'saved_packages',
 				now,
 			}).catch(() => 0),
-		],
-	)
+		])
 
 	const items: Array<OnboardingChecklistItem> = [
 		{ id: 'verify-email', done: input.emailVerified },
 		{ id: 'connect-agent', done: input.hasMcpClient },
-		{ id: 'first-hello', done: storedMail > 0 },
+		{ id: 'first-hello', done: inboundMail > 0 },
 		{ id: 'save-memory', done: memories.length > 0 },
 		{ id: 'connect-integration', done: integrations.length > 0 },
 		{ id: 'install-starter', done: savedPackages > 0 },

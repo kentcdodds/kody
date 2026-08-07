@@ -47,6 +47,11 @@ import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 import { buildOnboardingSearchNotice } from './search-onboarding-notice.ts'
 import { resolveConversationId } from './tool-call-context.ts'
+
+/** Bound on remembered notice conversations; oldest entries fall off. */
+const maxOnboardingNoticeConversationIds = 256
+/** Sessions without conversation ids see the notice at most this often. */
+const onboardingNoticeCooldownMs = 6 * 60 * 60 * 1000
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 
@@ -420,10 +425,12 @@ export async function runSearchTool(input: {
 			state?: {
 				searchConversationIdsWithPreamble?: Array<string>
 				onboardingNoticeConversationIds?: Array<string>
+				onboardingNoticeLastShownAtMs?: number
 			}
 			setState?: (state: {
 				searchConversationIdsWithPreamble?: Array<string>
 				onboardingNoticeConversationIds?: Array<string>
+				onboardingNoticeLastShownAtMs?: number
 			}) => void
 		}
 		const searchConversationIdsWithPreamble = Array.isArray(
@@ -444,16 +451,27 @@ export async function runSearchTool(input: {
 			})
 		}
 		// Onboarding reminder: at most once per conversation, only while the
-		// user's derived checklist is incomplete and undismissed.
+		// user's derived checklist is incomplete and undismissed. A session
+		// cooldown backstops hosts that never send a conversationId (each of
+		// their calls resolves a fresh server id, so the id list alone would
+		// repeat the notice every call), and the id list is capped so
+		// long-lived agent sessions cannot grow state unboundedly.
 		const onboardingNoticeConversationIds = Array.isArray(
 			statefulAgent.state?.onboardingNoticeConversationIds,
 		)
 			? (statefulAgent.state?.onboardingNoticeConversationIds ?? [])
 			: []
+		const onboardingNoticeLastShownAtMs =
+			typeof statefulAgent.state?.onboardingNoticeLastShownAtMs === 'number'
+				? statefulAgent.state.onboardingNoticeLastShownAtMs
+				: null
+		const withinNoticeCooldown =
+			onboardingNoticeLastShownAtMs !== null &&
+			Date.now() - onboardingNoticeLastShownAtMs < onboardingNoticeCooldownMs
 		const considerOnboardingNotice =
 			userId !== null &&
-			(!args.conversationId ||
-				!onboardingNoticeConversationIds.includes(conversationId))
+			!withinNoticeCooldown &&
+			!onboardingNoticeConversationIds.includes(conversationId)
 		if (considerOnboardingNotice) {
 			const notice = await buildOnboardingSearchNotice({
 				env: agent.getEnv(),
@@ -469,7 +487,8 @@ export async function runSearchTool(input: {
 						onboardingNoticeConversationIds: [
 							...onboardingNoticeConversationIds,
 							conversationId,
-						],
+						].slice(-maxOnboardingNoticeConversationIds),
+						onboardingNoticeLastShownAtMs: Date.now(),
 					})
 				}
 			}

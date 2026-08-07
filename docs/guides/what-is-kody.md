@@ -23,8 +23,10 @@ Agent notes — for AI agents running a discovery conversation from this page:
   setup effort. For each one, name the Kody pieces involved (an integration,
   a job, a package, the inbox) and the first concrete step.
 - End with a short "Next steps if you want to connect me to Kody" section
-  that points to https://heykody.dev/onboarding and explains that the only
-  setup is adding Kody as an MCP server there — there is no CLI to install.
+  that points to the /onboarding page on the same origin this guide was
+  fetched from (https://heykody.dev/onboarding in production) and explains
+  that the only setup is adding Kody as an MCP server there — there is no
+  CLI to install.
 - Do not set anything up during discovery. Nothing in this flow requires an
   account or an MCP connection.
 -->

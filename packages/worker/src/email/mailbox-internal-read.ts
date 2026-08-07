@@ -6,6 +6,7 @@ import {
 } from './mailbox-record-mappers.ts'
 import {
 	type MailboxBlobReferencePage,
+	type MailboxCountMessagesInput,
 	type MailboxCountResult,
 	type MailboxExportResult,
 } from './mailbox-types.ts'
@@ -84,12 +85,14 @@ export async function countInternalEmailMessages(input: {
 export async function countInternalUserEmailMessages(input: {
 	env: MailboxEnv
 	ownerId: string
+	/** Optional count filters (direction, classification, ...). */
+	filters?: MailboxCountMessagesInput
 }): Promise<number> {
 	assertUserOwner(input.ownerId)
 	const { total } = await mailboxRpc({
 		env: input.env,
 		userId: input.ownerId,
-	}).countMessages({})
+	}).countMessages(input.filters ?? {})
 	return total
 }
 

@@ -25,6 +25,7 @@ import {
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
 	onboardingNoticeConversationIds?: Array<string>
+	onboardingNoticeLastShownAtMs?: number
 	rawFetchHostNudges?: RawFetchHostNudgeState
 }
 export type Props = McpServerProps
