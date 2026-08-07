@@ -1,4 +1,9 @@
-import { statusComponentName, type StatusComponentId } from './status-types.ts'
+import { formatProviderIncidentAnnotation } from './provider-incidents.ts'
+import {
+	statusComponentName,
+	type ProviderIncident,
+	type StatusComponentId,
+} from './status-types.ts'
 
 /**
  * Operator alert policy:
@@ -85,23 +90,29 @@ export function composeStatusEmail(input: {
 	openIncidents: Array<OpenIncidentSummary>
 	statusPageUrl: string
 	now: number
+	providerIncidents?: Array<ProviderIncident> | null
 }): StatusEmailContent {
 	const componentNames = input.openIncidents
 		.map((incident) => statusComponentName(incident.component))
 		.join(', ')
 	const incidentLines = describeIncidents(input.openIncidents)
+	const providerAnnotation =
+		input.kind === 'all_clear'
+			? null
+			: formatProviderIncidentAnnotation(input.providerIncidents ?? [])
+	const providerBlock = providerAnnotation ? `\n\n${providerAnnotation}` : ''
 	const footerText = `Status page: ${input.statusPageUrl}`
 	const footerHtml = `<p><a href="${escapeHtml(input.statusPageUrl)}">Open the status page</a></p>`
 
 	switch (input.kind) {
 		case 'incident_opened': {
 			const subject = `[kody status] Incident: ${componentNames} down`
-			const text = `An incident is affecting kody.\n\n${incidentLines}\n\nYou will get at most one reminder per day while this is unresolved, and an all-clear email once everything recovers.\n\n${footerText}`
+			const text = `An incident is affecting kody.\n\n${incidentLines}${providerBlock}\n\nYou will get at most one reminder per day while this is unresolved, and an all-clear email once everything recovers.\n\n${footerText}`
 			return { subject, text, html: toHtml(text, footerHtml) }
 		}
 		case 'daily_reminder': {
 			const subject = `[kody status] Reminder: incident still unresolved (${componentNames})`
-			const text = `An incident affecting kody is still unresolved.\n\n${incidentLines}\n\n${footerText}`
+			const text = `An incident affecting kody is still unresolved.\n\n${incidentLines}${providerBlock}\n\n${footerText}`
 			return { subject, text, html: toHtml(text, footerHtml) }
 		}
 		case 'all_clear': {
