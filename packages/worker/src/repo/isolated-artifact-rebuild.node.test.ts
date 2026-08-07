@@ -102,7 +102,9 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 	})
 
 	runIsolatedArtifactRebuild.mockRejectedValueOnce(
-		new Error("Durable Object's isolate exceeded its memory limit and was reset."),
+		new Error(
+			"Durable Object's isolate exceeded its memory limit and was reset.",
+		),
 	)
 	const resetOutcome = await runner.run({
 		stagingKey,
