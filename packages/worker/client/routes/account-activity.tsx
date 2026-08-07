@@ -779,7 +779,8 @@ export function AccountActivityRoute(handle: Handle) {
 									mix={css({
 										...cardCss,
 										minWidth: 0,
-										overflow: 'hidden',
+										overflowWrap: 'anywhere',
+										'& > *': { minWidth: 0 },
 									})}
 								>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
