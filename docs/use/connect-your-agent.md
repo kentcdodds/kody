@@ -51,12 +51,12 @@ MCP URL and setup prompt.
   (`"type": "remote"`).
 - **Copilot** — In VS Code, use `.vscode/mcp.json` with root key `servers` (not
   `mcpServers`) and `"type": "http"`, then Agent mode in Copilot Chat. In
-  Copilot CLI, run
-  `copilot mcp add --transport http kody <url>` or merge a `mcpServers` entry
-  into `~/.copilot/mcp-config.json` (CLI does not read `.vscode/mcp.json`).
+  Copilot CLI, run `copilot mcp add --transport http kody <url>` or merge a
+  `mcpServers` entry into `~/.copilot/mcp-config.json` (CLI does not read
+  `.vscode/mcp.json`).
 - **Copilot App** — In the GitHub Copilot app, open settings → **MCP Servers**
-  and add a custom remote HTTP server with the MCP URL. Servers from Copilot
-  CLI or repository MCP config are also available in the app.
+  and add a custom remote HTTP server with the MCP URL. Servers from Copilot CLI
+  or repository MCP config are also available in the app.
 
 ### Coding vs non-coding agents
 
