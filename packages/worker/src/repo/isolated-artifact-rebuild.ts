@@ -1,5 +1,6 @@
 import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { isDurableObjectIsolateResourceLimitResetMessage } from '#worker/sentry-options.ts'
 
 /**
  * Heavy published-package artifact rebuilds run in fresh, throwaway
@@ -80,13 +81,12 @@ export type IsolatedArtifactRebuildRunner = {
 	discard(stagingKey: string): Promise<void>
 }
 
-function isDurableObjectResetError(error: unknown) {
+function isDurableObjectResourceLimitResetError(error: unknown) {
+	// Remap only memory/CPU limits to the "package too large" outcome.
+	// Deploy resets ("code was updated") must propagate so publish can retry.
 	return errorCauseChainIncludes(
 		error,
-		(message) =>
-			message.includes('Durable Object exceeded its CPU time limit') ||
-			message.includes("Durable Object's isolate exceeded its memory limit") ||
-			message.includes('Durable Object was reset'),
+		isDurableObjectIsolateResourceLimitResetMessage,
 	)
 }
 
@@ -134,7 +134,7 @@ export function createIsolatedArtifactRebuildRunner(
 			try {
 				return await stub.runIsolatedArtifactRebuild(request)
 			} catch (error) {
-				if (isDurableObjectResetError(error)) {
+				if (isDurableObjectResourceLimitResetError(error)) {
 					return {
 						ok: false,
 						message:

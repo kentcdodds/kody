@@ -726,7 +726,9 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	mockModule.rebuildPublishedPackageArtifact
 		.mockRejectedValueOnce(
 			new Error('rebuild target failed', {
-				cause: new Error('Durable Object exceeded its CPU time limit'),
+				cause: new Error(
+					'Durable Object exceeded its CPU time limit and was reset.',
+				),
 			}),
 		)
 		.mockResolvedValueOnce({
@@ -744,4 +746,52 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	expect(recoveredAfterRebuildReset.status).toBe('already_published')
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+
+	// Deploy-time DO resets use "Durable Object reset because…" (no "was").
+	// The old substring matcher missed that form and skipped retries entirely.
+	setupDefaultMocks()
+	mockModule.publishFromExternalRef.mockClear()
+	mockModule.rebuildPublishedPackageArtifact.mockClear()
+	consoleWarn.mockClear()
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
+		rebuildTarget,
+	])
+	mockModule.publishFromExternalRef
+		.mockResolvedValueOnce({
+			status: 'published',
+			previous_commit: 'commit-old',
+			published_commit: 'commit-new',
+			manifest: {},
+			checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		})
+		.mockResolvedValueOnce({
+			status: 'already_published',
+			published_commit: 'commit-new',
+		})
+	mockModule.rebuildPublishedPackageArtifact
+		.mockRejectedValueOnce(
+			new Error(
+				'Package source publish succeeded, but bundle artifact rebuild failed.',
+				{
+					cause: new Error(
+						'Durable Object reset because its code was updated.',
+					),
+				},
+			),
+		)
+		.mockResolvedValueOnce({
+			ok: true,
+			target: rebuildTarget,
+			kvKey: 'bundle-key',
+		})
+
+	const recoveredAfterCodeUpdatedReset =
+		await publishExternalPushCapability.handler(
+			{ package_id: 'package-1' },
+			createContext(),
+		)
+	expect(recoveredAfterCodeUpdatedReset.status).toBe('already_published')
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
 })

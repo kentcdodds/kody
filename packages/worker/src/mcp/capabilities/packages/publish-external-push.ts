@@ -10,6 +10,7 @@ import {
 	errorCauseChainIncludes,
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
+import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	getStaticPackageDependentsSummary,
@@ -55,13 +56,10 @@ export default async function main(params = {}) {
 }`
 
 function isTransientDurableObjectResetError(error: unknown) {
-	return errorCauseChainIncludes(
-		error,
-		(message) =>
-			message.includes('Durable Object exceeded its CPU time limit') ||
-			message.includes("Durable Object's isolate exceeded its memory limit") ||
-			message.includes('Durable Object was reset'),
-	)
+	// Exact platform reset strings (including deploy "code was updated").
+	// Substring matching on "Durable Object was reset" misses that form —
+	// Cloudflare says "Durable Object reset because…" with no "was".
+	return errorCauseChainIncludes(error, isDurableObjectIsolateResetMessage)
 }
 
 function logExternalPublishRetry(input: {

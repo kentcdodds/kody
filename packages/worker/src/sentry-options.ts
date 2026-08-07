@@ -173,11 +173,26 @@ export function isDurableObjectStorageObjectResetMessage(message: string) {
 	return durableObjectStorageObjectResetPattern.test(withoutErrorPrefix)
 }
 
-export function isDurableObjectIsolateResetMessage(message: string) {
+/**
+ * Memory/CPU isolate resets only. Isolated throwaway runners remap these to
+ * actionable "package too large" outcomes; deploy resets ("code was updated")
+ * and other platform resets must keep propagating so idempotent callers can
+ * retry on a fresh isolate.
+ */
+export function isDurableObjectIsolateResourceLimitResetMessage(
+	message: string,
+) {
 	const normalized = normalizeDurableObjectIsolateResetMessage(message)
 	return (
 		normalized === durableObjectIsolateMemoryResetMessage ||
-		normalized === durableObjectIsolateCpuResetMessage ||
+		normalized === durableObjectIsolateCpuResetMessage
+	)
+}
+
+export function isDurableObjectIsolateResetMessage(message: string) {
+	const normalized = normalizeDurableObjectIsolateResetMessage(message)
+	return (
+		isDurableObjectIsolateResourceLimitResetMessage(message) ||
 		normalized === durableObjectCodeUpdatedResetMessage ||
 		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage ||
 		normalized === durableObjectStorageOperationTimeoutResetMessage ||

@@ -9,7 +9,31 @@ import {
 	durableObjectStorageOperationTimeoutResetMessage,
 	executorSandboxTimeoutMessage,
 	filterSentryEvent,
+	isDurableObjectIsolateResourceLimitResetMessage,
 } from './sentry-options.ts'
+
+test('isDurableObjectIsolateResourceLimitResetMessage is memory/CPU only', () => {
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectIsolateMemoryResetMessage,
+		),
+	).toBe(true)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectIsolateCpuResetMessage,
+		),
+	).toBe(true)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectCodeUpdatedResetMessage,
+		),
+	).toBe(false)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectBlockConcurrencyWhileTimeoutResetMessage,
+		),
+	).toBe(false)
+})
 
 test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
 	expect(
