@@ -178,15 +178,23 @@ export function parseProviderIncidentCache(
 	}
 	if (now - cache.fetchedAt > maxAgeMs) return null
 	if (!Array.isArray(cache.incidents)) return null
-	return cache.incidents.filter(
-		(incident): incident is ProviderIncident =>
-			incident !== null &&
-			typeof incident === 'object' &&
-			typeof incident.id === 'string' &&
-			typeof incident.name === 'string' &&
-			typeof incident.status === 'string' &&
-			typeof incident.impact === 'string' &&
-			typeof incident.shortlink === 'string',
+	return cache.incidents.filter(isProviderIncident)
+}
+
+function isProviderIncident(value: unknown): value is ProviderIncident {
+	if (value === null || typeof value !== 'object') return false
+	const incident = value as Partial<ProviderIncident>
+	return (
+		typeof incident.id === 'string' &&
+		typeof incident.name === 'string' &&
+		typeof incident.status === 'string' &&
+		typeof incident.impact === 'string' &&
+		typeof incident.shortlink === 'string' &&
+		typeof incident.updatedAt === 'string' &&
+		Array.isArray(incident.affectedComponents) &&
+		incident.affectedComponents.every(
+			(component) => typeof component === 'string',
+		)
 	)
 }
 

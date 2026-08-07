@@ -164,6 +164,21 @@ test('provider incident cache parses within TTL and rejects stale or corrupt ent
 	).toBeNull()
 	expect(parseProviderIncidentCache('not-json', now)).toBeNull()
 	expect(parseProviderIncidentCache(null, now)).toBeNull()
+
+	const incomplete = JSON.stringify({
+		fetchedAt: now - 1_000,
+		incidents: [
+			{
+				id: 'inc-partial',
+				name: 'Missing fields',
+				status: 'investigating',
+				impact: 'minor',
+				shortlink: 'https://stspg.io/x',
+				// updatedAt / affectedComponents omitted on purpose
+			},
+		],
+	})
+	expect(parseProviderIncidentCache(incomplete, now)).toEqual([])
 })
 
 test('outage email annotation names active Cloudflare incidents', () => {
