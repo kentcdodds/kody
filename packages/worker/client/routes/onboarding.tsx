@@ -1067,6 +1067,10 @@ const firstWinCardCss = {
 	border: `1.5px solid ${colors.border}`,
 	borderRadius: radius.card,
 	minWidth: 0,
+	// Parent grid stretches both cards to equal height. Keep auto tracks at
+	// content size so leftover space does not inflate pills/buttons in the
+	// shorter column.
+	alignContent: 'start',
 }
 
 const firstWinCardHeadCss = {
