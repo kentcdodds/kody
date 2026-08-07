@@ -12,7 +12,7 @@ function requestWithAccept(accept: string | null): Request {
 	)
 }
 
-test('prefersMarkdown only wins when text/markdown outranks HTML', () => {
+test('markdown negotiation prefers markdown only when it outranks HTML and sets response headers', async () => {
 	// Browsers and default fetches keep the HTML page.
 	expect(prefersMarkdown(requestWithAccept(null))).toBe(false)
 	expect(prefersMarkdown(requestWithAccept('*/*'))).toBe(false)
@@ -46,24 +46,18 @@ test('prefersMarkdown only wins when text/markdown outranks HTML', () => {
 		prefersMarkdown(requestWithAccept('text/markdown;q=0, text/*;q=0.8')),
 	).toBe(false)
 	expect(prefersMarkdown(requestWithAccept('text/*'))).toBe(false)
-})
 
-test('withVaryAccept appends Accept without clobbering existing Vary values', () => {
 	const plain = withVaryAccept(new Response('x'))
 	expect(plain.headers.get('vary')).toBe('Accept')
-
 	const existing = withVaryAccept(
 		new Response('x', { headers: { Vary: 'Cookie' } }),
 	)
 	expect(existing.headers.get('vary')).toBe('Cookie, Accept')
-
 	const already = withVaryAccept(
 		new Response('x', { headers: { Vary: 'accept' } }),
 	)
 	expect(already.headers.get('vary')).toBe('accept')
-})
 
-test('markdownResponse sets the content type and Vary header', async () => {
 	const response = markdownResponse('# Hello\n')
 	expect(response.status).toBe(200)
 	expect(response.headers.get('content-type')).toBe(

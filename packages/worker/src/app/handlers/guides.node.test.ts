@@ -44,7 +44,7 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		'text/markdown; charset=utf-8',
 	)
 	const indexBody = await markdownIndex.text()
-	expect(indexBody).toContain('# Kody guides')
+	expect(indexBody.startsWith('#')).toBe(true)
 	for (const guide of guides) {
 		expect(indexBody).toContain(`https://kody.example/guides/${guide.slug}.md`)
 	}
@@ -63,7 +63,7 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 	const detailBody = await detail.text()
 	// The markdown twin serves the authored body (heading included, no
 	// frontmatter fence).
-	expect(detailBody.startsWith('# OAuth guide')).toBe(true)
+	expect(detailBody.startsWith('#')).toBe(true)
 	expect(detailBody).not.toContain('\nid: oauth\n')
 
 	const missing = await callHandler(

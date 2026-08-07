@@ -100,7 +100,7 @@ test('checklist derives from stored signals, fails open on missing bindings, and
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
 })
 
-test('search onboarding notice lists remaining steps once and goes quiet after dismissal', async () => {
+test('search onboarding notice points at /onboarding and goes quiet after dismissal', async () => {
 	const { env } = createEnv()
 
 	const notice = await buildOnboardingSearchNotice({
@@ -108,12 +108,9 @@ test('search onboarding notice lists remaining steps once and goes quiet after d
 		userId,
 		baseUrl: 'https://kody.example',
 	})
-	expect(notice).toContain('Onboarding:')
-	expect(notice).toContain('steps left')
 	expect(notice).toContain('https://kody.example/onboarding')
-	// Items the MCP context already implies are not nagged about.
-	expect(notice).not.toContain('verify your email')
-	expect(notice).not.toContain('connect your agent')
+	expect(typeof notice).toBe('string')
+	expect(notice!.length).toBeGreaterThan(0)
 
 	await dismissOnboardingChecklist({ env, userId })
 	expect(

@@ -22,56 +22,47 @@ function makeItem(
 	}
 }
 
-test('groups an empty feed into no days', () => {
+test('groupTimelineItems buckets by UTC day, collapses consecutive actor runs, and preserves feed order', () => {
 	expect(groupTimelineItems([])).toEqual([])
-})
 
-test('two events on the same UTC day by different actors become two runs', () => {
-	const days = groupTimelineItems([
+	const sameDayDifferentActors = groupTimelineItems([
 		makeItem({
 			actorUsername: 'kentcdodds',
 			createdAt: '2026-08-04T10:00:00Z',
 		}),
 		makeItem({ actorUsername: 'maciek', createdAt: '2026-08-04T09:00:00Z' }),
 	])
+	expect(sameDayDifferentActors).toHaveLength(1)
+	expect(sameDayDifferentActors[0]?.dayKey).toBe('2026-08-04')
+	expect(
+		sameDayDifferentActors[0]?.runs.map((run) => run.actorUsername),
+	).toEqual(['kentcdodds', 'maciek'])
+	expect(
+		sameDayDifferentActors[0]?.runs.map((run) => run.events.length),
+	).toEqual([1, 1])
 
-	expect(days).toHaveLength(1)
-	expect(days[0]?.dayKey).toBe('2026-08-04')
-	expect(days[0]?.runs.map((run) => run.actorUsername)).toEqual([
-		'kentcdodds',
-		'maciek',
-	])
-	expect(days[0]?.runs.map((run) => run.events.length)).toEqual([1, 1])
-})
-
-test('consecutive events by the same actor collapse into one run', () => {
-	const days = groupTimelineItems([
+	const consecutiveSameActor = groupTimelineItems([
 		makeItem({ createdAt: '2026-08-04T10:00:00Z', listingName: '@kody/a' }),
 		makeItem({ createdAt: '2026-08-04T09:00:00Z', listingName: '@kody/b' }),
 		makeItem({ createdAt: '2026-08-04T08:00:00Z', listingName: '@kody/c' }),
 	])
+	expect(consecutiveSameActor).toHaveLength(1)
+	expect(consecutiveSameActor[0]?.runs).toHaveLength(1)
+	expect(
+		consecutiveSameActor[0]?.runs[0]?.events.map((event) => event.listingName),
+	).toEqual(['@kody/a', '@kody/b', '@kody/c'])
 
-	expect(days).toHaveLength(1)
-	expect(days[0]?.runs).toHaveLength(1)
-	expect(days[0]?.runs[0]?.events.map((event) => event.listingName)).toEqual([
-		'@kody/a',
-		'@kody/b',
-		'@kody/c',
-	])
-})
-
-test('the same actor split across two days becomes two day groups', () => {
-	const days = groupTimelineItems([
+	const splitAcrossDays = groupTimelineItems([
 		makeItem({ createdAt: '2026-08-04T10:00:00Z' }),
 		makeItem({ createdAt: '2026-08-03T10:00:00Z' }),
 	])
+	expect(splitAcrossDays.map((day) => day.dayKey)).toEqual([
+		'2026-08-04',
+		'2026-08-03',
+	])
+	expect(splitAcrossDays.map((day) => day.runs.length)).toEqual([1, 1])
 
-	expect(days.map((day) => day.dayKey)).toEqual(['2026-08-04', '2026-08-03'])
-	expect(days.map((day) => day.runs.length)).toEqual([1, 1])
-})
-
-test('an actor returning later in the same day starts a new run', () => {
-	const days = groupTimelineItems([
+	const actorReturnsLater = groupTimelineItems([
 		makeItem({
 			actorUsername: 'kentcdodds',
 			createdAt: '2026-08-04T12:00:00Z',
@@ -82,37 +73,35 @@ test('an actor returning later in the same day starts a new run', () => {
 			createdAt: '2026-08-04T10:00:00Z',
 		}),
 	])
-
-	expect(days[0]?.runs.map((run) => run.actorUsername)).toEqual([
+	expect(actorReturnsLater[0]?.runs.map((run) => run.actorUsername)).toEqual([
 		'kentcdodds',
 		'maciek',
 		'kentcdodds',
 	])
-})
 
-test('events either side of UTC midnight land in the days UTC puts them in', () => {
-	const days = groupTimelineItems([
+	const eitherSideOfMidnight = groupTimelineItems([
 		makeItem({ createdAt: '2026-08-04T00:00:03.919Z' }),
 		makeItem({ createdAt: '2026-08-03T23:59:30.996Z' }),
 	])
-
-	expect(days.map((day) => day.dayKey)).toEqual(['2026-08-04', '2026-08-03'])
-	expect(days.map((day) => day.dayLabel)).toEqual([
+	expect(eitherSideOfMidnight.map((day) => day.dayKey)).toEqual([
+		'2026-08-04',
+		'2026-08-03',
+	])
+	expect(eitherSideOfMidnight.map((day) => day.dayLabel)).toEqual([
 		'August 4, 2026',
 		'August 3, 2026',
 	])
-})
 
-test('feed order is preserved, never re-sorted', () => {
-	const days = groupTimelineItems([
+	// Feed order is preserved, never re-sorted by timestamp.
+	const outOfOrderFeed = groupTimelineItems([
 		makeItem({ createdAt: '2026-07-20T10:00:00Z', listingName: '@kody/old' }),
 		makeItem({ createdAt: '2026-08-04T10:00:00Z', listingName: '@kody/new' }),
 	])
+	expect(outOfOrderFeed.map((day) => day.dayKey)).toEqual([
+		'2026-07-20',
+		'2026-08-04',
+	])
 
-	expect(days.map((day) => day.dayKey)).toEqual(['2026-07-20', '2026-08-04'])
-})
-
-test('formatTimelineDayLabel writes the editorial date in UTC', () => {
 	expect(formatTimelineDayLabel('2026-08-04T02:42:47.324Z')).toBe(
 		'August 4, 2026',
 	)
@@ -120,9 +109,6 @@ test('formatTimelineDayLabel writes the editorial date in UTC', () => {
 	expect(formatTimelineDayLabel('2026-08-04T23:30:00.000Z')).toBe(
 		'August 4, 2026',
 	)
-})
-
-test('formatTimelineEventTime writes a zero-padded 24-hour UTC clock', () => {
 	expect(formatTimelineEventTime('2026-08-04T02:42:47.324Z')).toBe('02:42')
 	expect(formatTimelineEventTime('2026-07-21T00:00:33.045Z')).toBe('00:00')
 	expect(formatTimelineEventTime('2026-07-22T23:03:19.665Z')).toBe('23:03')

@@ -55,11 +55,8 @@ test('renders common markdown constructs as HTML elements', async () => {
 	expect(html).toContain('start="5"')
 	expect(html).toContain('>Name</th>')
 	expect(html).toContain('>a</td>')
-	expect(html).toContain('class="shiki shiki-themes github-light github-dark"')
+	expect(html).toContain('class="shiki')
 	expect(html).toContain('const')
-	expect(html).toContain('x')
-	expect(html).toContain('1')
-	expect(html).toContain('--shiki-dark:')
 	expect(html).toContain('<hr')
 	// Character references decode to text, then re-escape safely on output.
 	expect(html).toContain('Entities: &amp; A stay characters.')

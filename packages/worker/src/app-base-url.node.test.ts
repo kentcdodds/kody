@@ -22,7 +22,7 @@ test('getAppBaseUrl prefers the request origin when present', () => {
 	).toBe('https://heykody.dev')
 })
 
-test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev', () => {
+test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev, and joinAppUrl strips trailing slashes', () => {
 	expect(
 		getAppBaseUrl({
 			env: { APP_BASE_URL: 'https://configured.example/path' },
@@ -41,9 +41,7 @@ test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev', () => {
 			requestUrl: null,
 		}),
 	).toBe('https://heykody.dev')
-})
 
-test('joinAppUrl strips a trailing slash on APP_BASE_URL', () => {
 	expect(
 		joinAppUrl({
 			env: { APP_BASE_URL: 'https://heykody.dev/' },

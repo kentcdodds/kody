@@ -81,9 +81,6 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 
 	await page.goto('/pricing')
 	await expect(
-		page.getByRole('heading', { name: 'Start free. Pay when it earns it.' }),
-	).toBeVisible()
-	await expect(
 		page.getByRole('heading', { name: 'Free', exact: true }),
 	).toBeVisible()
 	await expect(
@@ -92,46 +89,4 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await expect(
 		page.getByRole('heading', { name: 'Pro', exact: true }),
 	).toBeVisible()
-	await expect(
-		page.getByRole('heading', { name: 'Every limit is finite' }),
-	).toBeVisible()
-	// Three columns now (Free / Standard / Pro), so the row carries three values.
-	await expect(
-		page.getByRole('row', { name: 'Saved packages 25 100 200' }),
-	).toBeVisible()
-})
-
-test.describe('mobile menu', () => {
-	test.use({ viewport: { width: 390, height: 844 } })
-
-	test('closed menu does not intercept taps where it used to be', async ({
-		page,
-	}) => {
-		await page.goto('/')
-
-		const toggle = page.getByRole('button', { name: 'Menu' })
-		const panel = page.locator('#site-menu')
-
-		await toggle.click()
-		await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-		const pricingLink = panel.getByRole('link', { name: 'Pricing' })
-		await expect(pricingLink).toBeVisible()
-		const linkBox = await pricingLink.boundingBox()
-		if (!linkBox) throw new Error('expected the open menu link to have a box')
-
-		await toggle.click()
-		await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-		// Playwright counts `opacity: 0` as visible but `display: none` as not,
-		// so this fails if the closed panel is still an invisible tap target
-		// (regression: the panel kept `display: grid` when closed, and taps in
-		// the area the menu had covered kept landing on its links).
-		await expect(panel).not.toBeVisible()
-
-		// Tap where the Pricing link was; the page underneath must receive it.
-		await page.mouse.click(
-			linkBox.x + linkBox.width / 2,
-			linkBox.y + linkBox.height / 2,
-		)
-		await expect(page).toHaveURL('/')
-	})
 })

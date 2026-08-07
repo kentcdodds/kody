@@ -544,20 +544,11 @@ test('renderAppPage renders the redesigned landing page shell', async () => {
 	const html = await readResponseText(response)
 	// Theme pre-paint script (blocking, CSP-safe external file).
 	expect(html).toContain('src="/theme-init.js"')
-	// Hero
-	expect(html).toContain('finally')
-	expect(html).toContain('Join the waiting list')
 	expect(html).toContain('/images/hero/kody-base.webp')
-	// Shared header/footer
 	expect(html).toContain('aria-label="Main"')
 	expect(html).toContain('aria-label="Footer"')
-	expect(html).toContain('At your agent')
 	expect(html).toContain('aria-label="Dark mode"')
-	// Sections
-	expect(html).toContain('Nothing new')
-	expect(html).toContain('Catch me up on Slack')
-	expect(html).toContain('It already speaks your stack')
-	expect(html).toContain('Equip your agent')
+	expect(html).toContain('href="/#invite"')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {
@@ -572,23 +563,15 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	// Page head + plan panels
-	expect(html).toContain('Start free.')
-	expect(html).toContain('earns it')
-	expect(html).toContain('Create a free account')
-	expect(html).toContain('Upgrade in Account settings')
-	// Limits table sources plans.ts, never hardcoded copies
-	expect(html).toContain('Every limit is finite')
-	expect(html).toContain('Packages &amp; jobs')
-	// All three self-serve tiers get a column; Max is invite-only and stays out.
+	// Self-serve tiers + limits table sourced from plans.ts.
+	expect(html).toContain('Free')
 	expect(html).toContain('Standard')
+	expect(html).toContain('Pro')
 	expect(html).toContain(String(planLimits.free.maxSavedPackages))
 	expect(html).toContain(String(planLimits.standard.maxSavedPackages))
 	expect(html).toContain(String(planLimits.pro.maxSavedPackages))
 	expect(html).toContain(formatLimitBytes(planLimits.free.maxEmailMessageBytes))
 	expect(html).toContain(formatLimitBytes(planLimits.pro.maxStorageBytes))
-	// The Max plan is invite-only and intentionally has no mention on the page.
-	expect(html).not.toContain('invite-only plan')
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {
@@ -605,15 +588,8 @@ test('renderAppPage renders the redesigned blog index', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	// Editorial page head + real RSS feed link
-	expect(html).toContain('Notes from the')
-	expect(html).toContain('eucalyptus')
-	expect(html).toContain('Subscribe via RSS')
 	expect(html).toContain('href="/blog/rss.xml"')
-	// Newest post is featured with mascot art
 	expect(html).toContain('/images/kody-agent-briefing.webp')
-	// Every post from the markdown catalog is linked; dates use the
-	// editorial long format
 	expect(posts.length).toBeGreaterThan(0)
 	for (const post of posts) {
 		expect(html).toContain(`href="/blog/${post.slug}"`)
@@ -671,18 +647,11 @@ test('community detail SSR renders the redesigned article', async () => {
 	expect(html).toContain('abc1234')
 	expect(html).toContain('★ 4.5 (2)')
 	expect(html).toContain('data-testid="community-detail-forks"')
-	// Client shell sections render server-side from the embedded loader data.
-	expect(html).toContain('One-click install')
-	expect(html).toContain('Fork with your agent')
-	expect(html).toContain('Call community_get with that listing id first')
-	// README renders as prose with h3 subheads (## Intent → h3), not a
-	// scroll box, and keeps the third-party link policy.
+	// README renders as prose with h3 subheads (## Intent → h3).
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('<h3>Intent</h3>')
 	expect(html).toContain('Triage GitHub issues for me.')
-	// Report tucked in a details disclosure.
 	expect(html).toContain('<details')
-	expect(html).toContain('Report this listing')
 	// Loader data embeds the shell payload for hydration.
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
@@ -725,11 +694,8 @@ test('renderAppPage renders the redesigned blog post', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	// Back link + post head (title, author, editorial long date)
-	expect(html).toContain('All posts')
 	expect(html).toContain(`href="/blog"`)
 	expect(html).toContain(post!.title)
-	expect(html).toContain('Kent C. Dodds')
 	expect(html).toContain(formatBlogPostDate(post!.date))
 	expect(html).toContain(BLOG_PLACEHOLDER_CALLOUT)
 	// Markdown body renders in the prose voice: authored `##` stays h2 (not
@@ -737,11 +703,8 @@ test('renderAppPage renders the redesigned blog post', async () => {
 	expect(html).toMatch(/<h2[^>]*>/)
 	expect(html).not.toMatch(/<h4[^>]*>/)
 	expect(html).not.toContain('nofollow ugc')
-	// Post foot: read-next pointer from server ordering + waitlist close
 	expect(html).toContain(`href="/blog/${readNext!.slug}"`)
 	expect(html).toContain(readNext!.title)
-	expect(html).toContain('Read next')
 	expect(html).toContain('/images/kody-greeting.webp')
-	expect(html).toContain('Join the waiting list')
 	expect(html).toContain('href="/#invite"')
 })

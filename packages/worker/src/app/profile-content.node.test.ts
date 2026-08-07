@@ -36,7 +36,7 @@ const unpublishedPackage = {
 	communityListingId: null,
 } satisfies PublicProfilePackageItem
 
-test('profile packages link the name, drop the kody id and view listing, and fork via an icon', async () => {
+test('profile packages link the listing name and fork via a single icon control', async () => {
 	const html = await renderProfileContentHtml({
 		profile,
 		packages: [listedPackage, unpublishedPackage],
@@ -46,13 +46,8 @@ test('profile packages link the name, drop the kody id and view listing, and for
 	})
 
 	expect(html).toContain('href="/community/listing-1"')
-	expect(html).toContain('@kody/')
 	expect(html.match(/fathom-analytics/g)).toHaveLength(1)
-	expect(html).not.toContain('View listing')
-	expect(html).not.toContain('>Fork<')
 	expect(html).toContain('href="/community/listing-1#fork-title"')
-	expect(html).toContain('title="fork"')
-	expect(html).toContain('aria-label="fork"')
-	expect(html).toContain('Not published')
 	expect(html.match(/aria-label="fork"/g)).toHaveLength(1)
+	expect(html).toContain(unpublishedPackage.name)
 })

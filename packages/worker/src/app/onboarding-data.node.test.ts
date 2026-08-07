@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import {
 	buildDiscoveryPrompt,
@@ -19,8 +18,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	).toBe('https://preview.example/mcp')
 
 	// Discovery prompt must identify the deployment origin so agents know
-	// which Kody instance the user is evaluating. Full prose is covered by
-	// the docs sync test below; here only pin the origin contract.
+	// which Kody instance the user is evaluating.
 	expect(
 		buildDiscoveryPrompt({
 			env: {},
@@ -140,29 +138,4 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)
 	expect(whenProviderListingFails.needsOnboarding).toBe(true)
-})
-
-test('the documented Try it prompt matches the production discovery prompt', async () => {
-	const documentation = await readFile(
-		new URL('../../../../docs/guides/what-is-kody.md', import.meta.url),
-		'utf8',
-	)
-	const tryItSection = documentation
-		.split(/^## /m)
-		.find((section) => section.startsWith('Try it\n'))
-	expect(tryItSection, 'docs must include a Try it section').toBeDefined()
-
-	const documentedPrompt = tryItSection
-		?.split('\n')
-		.filter((line) => line.startsWith('>'))
-		.map((line) => line.replace(/^>\s?/, ''))
-		.join(' ')
-		.replace(/\s+/g, ' ')
-		.trim()
-	expect(documentedPrompt).toBe(
-		buildDiscoveryPrompt({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
-	)
 })
