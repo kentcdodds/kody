@@ -66,12 +66,12 @@ export function buildDiscoveryPrompt(input: {
  * mail; the agent reads it when asked; nothing answers by itself).
  */
 export function buildIntroEmailPrompt() {
-	return 'Send me a welcome email introducing yourself, and invite me to reply to it.'
+	return 'Hey Kody, send me a welcome email introducing yourself, and invite me to reply to it.'
 }
 
 /** Second first-win prompt: start durable memory with a tiny interview. */
 export function buildMemoryPrompt() {
-	return 'Ask me a couple of questions about who I am and what I work with, then remember what matters.'
+	return 'Hey Kody, ask me a couple of questions about who I am and what I work with, then remember what matters.'
 }
 
 /**

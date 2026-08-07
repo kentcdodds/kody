@@ -5,14 +5,14 @@ import { type Handle } from 'remix/ui'
  * suggestions. Inlined as SVG (no external assets) so they server-render with
  * the buttons and inherit sizing and color from the surrounding text.
  */
-const iconSize = '1.25em'
+const defaultIconSize = '1.25em'
 
-function renderGitHubIcon() {
+function renderGitHubIcon(size: string) {
 	return (
 		<svg
 			viewBox="0 0 16 16"
-			width={iconSize}
-			height={iconSize}
+			width={size}
+			height={size}
 			aria-hidden="true"
 			fill="currentColor"
 		>
@@ -21,14 +21,9 @@ function renderGitHubIcon() {
 	)
 }
 
-function renderGoogleIcon() {
+function renderGoogleIcon(size: string) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			width={iconSize}
-			height={iconSize}
-			aria-hidden="true"
-		>
+		<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
 			<path
 				fill="#4285F4"
 				d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
@@ -49,12 +44,12 @@ function renderGoogleIcon() {
 	)
 }
 
-function renderXIcon() {
+function renderXIcon(size: string) {
 	return (
 		<svg
 			viewBox="0 0 24 24"
-			width={iconSize}
-			height={iconSize}
+			width={size}
+			height={size}
 			aria-hidden="true"
 			fill="currentColor"
 		>
@@ -63,14 +58,9 @@ function renderXIcon() {
 	)
 }
 
-function renderSlackIcon() {
+function renderSlackIcon(size: string) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			width={iconSize}
-			height={iconSize}
-			aria-hidden="true"
-		>
+		<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
 			<path
 				fill="#E01E5A"
 				d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522z"
@@ -91,12 +81,12 @@ function renderSlackIcon() {
 	)
 }
 
-function renderSpotifyIcon() {
+function renderSpotifyIcon(size: string) {
 	return (
 		<svg
 			viewBox="0 0 24 24"
-			width={iconSize}
-			height={iconSize}
+			width={size}
+			height={size}
 			aria-hidden="true"
 			fill="#1DB954"
 		>
@@ -105,12 +95,12 @@ function renderSpotifyIcon() {
 	)
 }
 
-function renderNotionIcon() {
+function renderNotionIcon(size: string) {
 	return (
 		<svg
 			viewBox="0 0 100 100"
-			width={iconSize}
-			height={iconSize}
+			width={size}
+			height={size}
 			aria-hidden="true"
 			fill="currentColor"
 		>
@@ -119,12 +109,12 @@ function renderNotionIcon() {
 	)
 }
 
-function renderDiscordIcon() {
+function renderDiscordIcon(size: string) {
 	return (
 		<svg
 			viewBox="0 0 24 24"
-			width={iconSize}
-			height={iconSize}
+			width={size}
+			height={size}
 			aria-hidden="true"
 			fill="#5865F2"
 		>
@@ -133,7 +123,7 @@ function renderDiscordIcon() {
 	)
 }
 
-const providerIconRenderers: Record<string, () => JSX.Element> = {
+const providerIconRenderers: Record<string, (size: string) => JSX.Element> = {
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
 	x: renderXIcon,
@@ -143,6 +133,15 @@ const providerIconRenderers: Record<string, () => JSX.Element> = {
 	discord: renderDiscordIcon,
 }
 
-export function ProviderIcon(handle: Handle<{ providerId: string }>) {
-	return () => providerIconRenderers[handle.props.providerId]?.() ?? null
+export function ProviderIcon(
+	handle: Handle<{
+		providerId: string
+		/** Icon box size; inline-with-text usages should pass `1em`. */
+		size?: string
+	}>,
+) {
+	return () =>
+		providerIconRenderers[handle.props.providerId]?.(
+			handle.props.size ?? defaultIconSize,
+		) ?? null
 }

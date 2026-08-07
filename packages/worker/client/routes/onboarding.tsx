@@ -398,16 +398,6 @@ export function OnboardingRoute(handle: Handle) {
 							})}
 						</nav>
 
-						{shouldShowOnboardingChecklist(checklist) && !checklistHidden ? (
-							<OnboardingChecklistCard
-								checklist={checklist!}
-								onDismissed={() => {
-									checklistHidden = true
-									handle.update()
-								}}
-							/>
-						) : null}
-
 						{activeStep === 1 ? (
 							<section
 								id="discovery"
@@ -662,6 +652,19 @@ export function OnboardingRoute(handle: Handle) {
 										Browse all community packages
 									</a>
 								</p>
+								{/* The last step doubles as the "what's left" recap, so the
+								    derived checklist lives here instead of distracting from
+								    the earlier steps. */}
+								{shouldShowOnboardingChecklist(checklist) &&
+								!checklistHidden ? (
+									<OnboardingChecklistCard
+										checklist={checklist!}
+										onDismissed={() => {
+											checklistHidden = true
+											handle.update()
+										}}
+									/>
+								) : null}
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}

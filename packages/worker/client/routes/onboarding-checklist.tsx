@@ -176,7 +176,7 @@ export function OnboardingChecklistCard(
 														href={provider.href}
 														mix={css(integrationProviderLinkCss)}
 													>
-														<ProviderIcon providerId={provider.id} />
+														<ProviderIcon providerId={provider.id} size="1em" />
 														{provider.label}
 													</a>
 													{index < integrationGuideProviders.length - 2
