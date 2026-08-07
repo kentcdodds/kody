@@ -192,7 +192,7 @@ async function postWebhook(input: {
 				method: 'POST',
 				headers: {
 					'content-type': 'application/json',
-					...(input.headers ?? {}),
+					...input.headers,
 				},
 				body: input.body ?? JSON.stringify({ hello: 'world' }),
 			},

@@ -1,12 +1,12 @@
-import { initWasm, Resvg } from '@resvg/resvg-wasm'
+import { Resvg } from '@resvg/resvg-wasm'
 import satori, { init as initSatori } from 'satori/standalone'
+import { ensureResvgWasmReady } from '#worker/og/resvg-wasm-init.ts'
 import {
 	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
 	getKodyLogoDataUri,
 	getKodyPatternDataUri,
 	getWixMadeforTextLatin400FontData,
-	ogResvgWasm,
 	ogYogaWasm,
 	type OgAssetsFetcher,
 } from '#worker/og/og-image-assets.ts'
@@ -42,7 +42,7 @@ let wasmReady: Promise<void> | null = null
 
 export function ensureOgWasmReady(): Promise<void> {
 	if (!wasmReady) {
-		wasmReady = Promise.all([initSatori(ogYogaWasm), initWasm(ogResvgWasm)])
+		wasmReady = Promise.all([initSatori(ogYogaWasm), ensureResvgWasmReady()])
 			.then(() => undefined)
 			.catch((error) => {
 				wasmReady = null

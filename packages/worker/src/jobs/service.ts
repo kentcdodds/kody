@@ -492,7 +492,7 @@ async function executePublishedJobArtifact(input: {
 			...(packageContext ? { packageContext } : {}),
 			runRecord,
 			runRecordHandle: input.runRecordHandle,
-			...(packageRuntimeTools ?? {}),
+			...packageRuntimeTools,
 			waitUntil: input.runRecordHandle ? undefined : input.waitUntil,
 		},
 	).then((result) => ({

@@ -28,11 +28,43 @@ export function defineCapability<
 		? createSchemaParser(definition.outputSchema)
 		: null
 	const keywords = mergeKeywords(definition.keywords, definition.tags)
-	const inputSchema = toJsonSchema(definition.inputSchema)
-	const outputSchema = definition.outputSchema
-		? toJsonSchema(definition.outputSchema)
-		: undefined
 	const source = definition.source ?? 'builtin'
+
+	// Derived schema artifacts (JSON Schema conversion + TypeScript type-text
+	// generation) are deferred to first access: `defineCapability` runs at
+	// module scope for every builtin capability, and computing these for ~99
+	// capabilities burned ~100 ms of isolate cold-start CPU before anything
+	// needed them. Getters keep the `Capability` shape unchanged while moving
+	// the cost to the first registry/search/execute use per isolate.
+	let derivedMemo: {
+		inputSchema: CapabilityJsonSchema
+		outputSchema: CapabilityJsonSchema | undefined
+		inputTypeDefinition: string
+		outputTypeDefinition: string | undefined
+	} | null = null
+	const derived = () => {
+		if (!derivedMemo) {
+			const inputSchema = toJsonSchema(definition.inputSchema)
+			const outputSchema = definition.outputSchema
+				? toJsonSchema(definition.outputSchema)
+				: undefined
+			derivedMemo = {
+				inputSchema,
+				outputSchema,
+				inputTypeDefinition: createSchemaTypeDefinition({
+					jsonSchema: inputSchema,
+					typeName: createCapabilityTypeName(definition.name, 'Input'),
+				}),
+				outputTypeDefinition: outputSchema
+					? createSchemaTypeDefinition({
+							jsonSchema: outputSchema,
+							typeName: createCapabilityTypeName(definition.name, 'Output'),
+						})
+					: undefined,
+			}
+		}
+		return derivedMemo
+	}
 
 	return {
 		name: definition.name,
@@ -55,20 +87,18 @@ export function defineCapability<
 			: {}),
 		...(definition.mcpServer ? { mcpServer: definition.mcpServer } : {}),
 		...(definition.openApi ? { openApi: definition.openApi } : {}),
-		inputSchema,
-		...(outputSchema ? { outputSchema } : {}),
-		inputTypeDefinition: createSchemaTypeDefinition({
-			jsonSchema: inputSchema,
-			typeName: createCapabilityTypeName(definition.name, 'Input'),
-		}),
-		...(definition.outputSchema && outputSchema
-			? {
-					outputTypeDefinition: createSchemaTypeDefinition({
-						jsonSchema: outputSchema,
-						typeName: createCapabilityTypeName(definition.name, 'Output'),
-					}),
-				}
-			: {}),
+		get inputSchema() {
+			return derived().inputSchema
+		},
+		get outputSchema() {
+			return derived().outputSchema
+		},
+		get inputTypeDefinition() {
+			return derived().inputTypeDefinition
+		},
+		get outputTypeDefinition() {
+			return derived().outputTypeDefinition
+		},
 		async handler(args, ctx) {
 			const startedAt = performance.now()
 			const { baseUrl, hasUser, userId, storageId } = callerContextFields(

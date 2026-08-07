@@ -263,7 +263,7 @@ export function wrapDownstreamMcpToolResult(
 
 	if (needsContentPassthrough) {
 		return {
-			...(structuredRecord ?? {}),
+			...structuredRecord,
 			[mcpContentMarker]: contentBlocks,
 			...(structuredRecord
 				? { [mcpStructuredContentMarker]: structuredRecord }
