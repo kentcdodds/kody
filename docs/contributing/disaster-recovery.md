@@ -45,15 +45,15 @@ recent evidence.
 
 | Date (UTC) | Lane proven                                                                                                                                                                                                                                                                                                                                                    |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-07 | Offline escrow unseal smoke test proven with the real `SECRET_ESCROW_PASSPHRASE` against `escrow/secret-store-key.v1.json` ([#1091](https://github.com/kentcdodds/kody/issues/1091)): recovered key matched production `SECRET_STORE_KEY`; wrong passphrase failed cleanly (auth-tag error, no partial output).                                                |
 | 2026-07-28 | Isolated restore drill green through the product UI against a sealed day (`PRAGMA quick_check` ok, table counts plausible, temp database cleaned up). Required [#1002](https://github.com/kentcdodds/kody/pull/1002): presigned D1 import uploads reject chunked bodies with HTTP 411, so stream uploads go through `FixedLengthStream`.                       |
 | 2026-07-28 | First sealed full-backup day (`daily/full/2026-07-28/manifest.json`). Required [#1000](https://github.com/kentcdodds/kody/pull/1000): bucket-lock rules reject puts on existing keys with error 10069 before conditionals are evaluated, and exporter resume became identity-driven after mid-window inventory drift produced duplicate storage-index entries. |
 | 2026-07-28 | First completed staging run (`staging/2026-07-28/exporter/summary.json`; 186 storage dumps, R2 indexes, artifacts index).                                                                                                                                                                                                                                      |
 | 2026-07-26 | First verified nightly D1 export (signed manifest, stored-object digest verified; ~118 MB).                                                                                                                                                                                                                                                                    |
 
 Still unproven live: graduated production restore into the production database
-(drill-level evidence only; it shares the `FixedLengthStream` upload path), the
-offline escrow unseal smoke test, and `weekly/` retention aging through its
-lifecycle.
+(drill-level evidence only; it shares the `FixedLengthStream` upload path), and
+`weekly/` retention aging through its lifecycle.
 
 ## Objectives
 
@@ -634,10 +634,12 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 
 ### 6. Escrow and ongoing drills
 
-- [ ] `SECRET_ESCROW_PASSPHRASE` in password manager + GitHub secret; run
+- [x] `SECRET_ESCROW_PASSPHRASE` in password manager + GitHub secret; run
       `dr-escrow.yml`; dashboard shows escrow present; run
       `node tools/disaster-recovery/unseal-escrow.ts --input <sealed-blob> --output <secure-path>`
-      against the sealed blob with the real passphrase, offline.
+      against the sealed blob with the real passphrase, offline (proven
+      2026-08-07 — see live evidence log /
+      [#1091](https://github.com/kentcdodds/kody/issues/1091)).
 - [ ] Set `DR_EXPORT_ENABLED=true` in production after staging path is proven.
 - [ ] Monthly: UI isolated D1 drill on a retained day; confirm alert paths for
       freshness failures.
