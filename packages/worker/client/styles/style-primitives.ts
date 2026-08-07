@@ -399,6 +399,28 @@ export const pageHeadCss = {
 }
 
 /**
+ * Accent-bar callout: a quiet labeled aside with a solid accent border on
+ * its left side. The rule this encodes (see
+ * docs/contributing/code-style.md — "Accent borders"): the side carrying a
+ * solid accent border gets NO border radius; round only the corners facing
+ * away from the bar. A rounded corner dissolving into a straight accent bar
+ * reads as generated, not designed.
+ */
+export function getAccentCalloutCss(options?: { accentColor?: string }) {
+	const accent =
+		options?.accentColor ?? `oklch(from ${colors.primary} l c h / 0.45)`
+	return {
+		display: 'grid',
+		gap: '0.35rem',
+		padding: '0.9rem 1.1rem',
+		borderLeft: `3px solid ${accent}`,
+		/* Square against the accent bar, rounded away from it. */
+		borderRadius: `0 ${radius.md} ${radius.md} 0`,
+		backgroundColor: `oklch(from ${colors.primary} l c h / 0.05)`,
+	}
+}
+
+/**
  * The lantern Kody holds actually casts light. Screen blend adds warmth over
  * his paws without a background halo. Spread into the css object of the
  * positioned wrapper around the mascot illustration; `maxWidth` caps the glow

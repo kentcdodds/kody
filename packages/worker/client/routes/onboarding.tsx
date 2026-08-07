@@ -41,6 +41,7 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import {
+	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	hoverMq,
@@ -142,6 +143,23 @@ export function OnboardingRoute(handle: Handle) {
 		return 3
 	}
 
+	/**
+	 * Footer Back/Next let people walk the mini-wizard manually; null means
+	 * "follow the signals". Signal-driven advances reset it so the flow
+	 * snaps back to the real current sub-step.
+	 */
+	let viewedFirstWinStep: FirstWinSubStep | null = null
+
+	function shownFirstWinStep(): FirstWinSubStep {
+		return viewedFirstWinStep ?? firstWinSubStep()
+	}
+
+	function selectFirstWinStep(step: FirstWinSubStep) {
+		viewedFirstWinStep = step
+		scrollToNav('first-win-steps-nav')
+		handle.update()
+	}
+
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
 		const wasSavedMemory = hasSavedMemory
@@ -182,8 +200,10 @@ export function OnboardingRoute(handle: Handle) {
 			updateStepHash(3)
 			scrollToNav('onboarding-steps-nav')
 		} else if (activeStep === 2 && firstWinSubStep() !== previousSubStep) {
-			// Mini-wizard auto-advance (email sent, reply landed): keep the
-			// person anchored on the sub-step pills.
+			// Mini-wizard auto-advance (email sent, reply landed): snap back
+			// to the signal-driven sub-step and keep the person anchored on
+			// the pills.
+			viewedFirstWinStep = null
 			scrollToNav('first-win-steps-nav')
 		}
 	}
@@ -218,6 +238,8 @@ export function OnboardingRoute(handle: Handle) {
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
 		activeStep = step
+		// Entering a step fresh always shows the signal-driven sub-step.
+		viewedFirstWinStep = null
 		updateStepHash(step)
 		scrollToNav('onboarding-steps-nav')
 		void handle.update().then((signal) => {
@@ -248,7 +270,8 @@ export function OnboardingRoute(handle: Handle) {
 	 * show a check.
 	 */
 	function renderFirstWinSteps() {
-		const current = firstWinSubStep()
+		const waitingStep = firstWinSubStep()
+		const shown = shownFirstWinStep()
 		return (
 			<ol
 				id="first-win-steps-nav"
@@ -257,15 +280,13 @@ export function OnboardingRoute(handle: Handle) {
 			>
 				{firstWinSubStepDefinitions.map((step) => {
 					const done = firstWinSubStepDone(step.number)
-					const waiting = loggedIn && step.number === current && !done
+					const waiting = loggedIn && step.number === waitingStep && !done
 					return (
 						<li key={step.number}>
 							<span
 								mix={css(firstWinStepPillCss)}
 								data-state={done ? 'done' : waiting ? 'waiting' : undefined}
-								aria-current={
-									step.number === current && !done ? 'step' : undefined
-								}
+								aria-current={step.number === shown ? 'step' : undefined}
 							>
 								<span mix={css(firstWinStepMarkCss)} aria-hidden="true">
 									{done ? (
@@ -288,9 +309,9 @@ export function OnboardingRoute(handle: Handle) {
 		)
 	}
 
-	/** The current sub-step's instructions — the "do" half, unlabeled. */
+	/** The shown sub-step's instructions — the "do" half, unlabeled. */
 	function renderFirstWinContent() {
-		if (hasFirstWin) {
+		if (hasFirstWin && viewedFirstWinStep === null) {
 			return (
 				<p mix={css(firstWinDoneCss)} data-testid="onboarding-first-win-done">
 					Done — Kody introduced itself, you replied, and your answers are saved
@@ -298,7 +319,7 @@ export function OnboardingRoute(handle: Handle) {
 				</p>
 			)
 		}
-		const current = firstWinSubStep()
+		const current = shownFirstWinStep()
 		if (current === 1) {
 			return (
 				<div mix={css(firstWinContentCss)}>
@@ -707,6 +728,22 @@ export function OnboardingRoute(handle: Handle) {
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}
+									onBack={() => {
+										const shown = shownFirstWinStep()
+										if (shown > 1) {
+											selectFirstWinStep((shown - 1) as FirstWinSubStep)
+											return
+										}
+										selectStep(1)
+									}}
+									onNext={() => {
+										const shown = shownFirstWinStep()
+										if (shown < 3) {
+											selectFirstWinStep((shown + 1) as FirstWinSubStep)
+											return
+										}
+										selectStep(3)
+									}}
 								/>
 							</section>
 						) : null}
@@ -806,6 +843,13 @@ function WizardNavigation(
 	handle: Handle<{
 		activeStep: OnboardingStep
 		onSelectStep: (step: OnboardingStep) => void
+		/**
+		 * Override for steps that own inner navigation (the See-it-work
+		 * mini-wizard): when provided, the buttons delegate instead of
+		 * stepping the outer wizard.
+		 */
+		onBack?: () => void
+		onNext?: () => void
 	}>,
 ) {
 	return () => {
@@ -817,15 +861,17 @@ function WizardNavigation(
 			handle.props.activeStep < 3
 				? ((handle.props.activeStep + 1) as OnboardingStep)
 				: null
+		const { onBack, onNext } = handle.props
 
 		return (
 			<footer mix={css(wizardNavCss)}>
 				<button
 					type="button"
-					disabled={previousStep == null}
+					disabled={!onBack && previousStep == null}
 					mix={[
 						css(wizardBackButtonCss),
 						on('click', () => {
+							if (onBack) return onBack()
 							if (previousStep) handle.props.onSelectStep(previousStep)
 						}),
 					]}
@@ -834,10 +880,11 @@ function WizardNavigation(
 				</button>
 				<button
 					type="button"
-					disabled={nextStep == null}
+					disabled={!onNext && nextStep == null}
 					mix={[
 						css(wizardNextButtonCss),
 						on('click', () => {
+							if (onNext) return onNext()
 							if (nextStep) handle.props.onSelectStep(nextStep)
 						}),
 					]}
@@ -1235,12 +1282,7 @@ const firstWinDoneCss = {
 
 /* The "learn" half lives here, labeled and out of the instructions' way. */
 const howItWorksCss = {
-	display: 'grid',
-	gap: '0.35rem',
-	padding: '0.9rem 1.1rem',
-	borderLeft: `3px solid oklch(from ${colors.primary} l c h / 0.45)`,
-	borderRadius: radius.md,
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.05)`,
+	...getAccentCalloutCss(),
 	'& p': {
 		margin: 0,
 		color: colors.textMuted,

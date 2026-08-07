@@ -37,6 +37,16 @@ file style first, then run the formatter.
   similar utility types) instead.
 - Use `satisfies` when exporting objects that must match framework contracts.
 
+## Accent borders
+
+- An element with a solid accent border on one side (a callout's left bar, a
+  status stripe) gets no border radius on that side; round only the corners
+  facing away from the accent. A rounded corner dissolving into a straight
+  accent bar is a design tell.
+- For callouts, use `getAccentCalloutCss()` from
+  `packages/worker/client/styles/style-primitives.ts` instead of hand-rolling
+  the pattern.
+
 ## Absence values
 
 - Use `null` for explicit "no value" in local state or API responses.
