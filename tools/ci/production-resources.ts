@@ -5,6 +5,7 @@ import {
 	ensureEmailSendingEventSubscription,
 	ensureR2Bucket,
 	fail,
+	listCloudflareQueues,
 	listD1Databases,
 	listKvNamespaces,
 	parseJsonc,
@@ -486,77 +487,73 @@ async function ensureProductionResources(options: CliOptions) {
 			'Missing CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID, or CLOUDFLARE_API_TOKEN for Queue provisioning.',
 		)
 	}
-	const emailDeliveryQueue = await ensureCloudflareQueue({
+	const queueClient = {
 		accountId: accountId ?? 'dry-run-account',
 		apiToken: apiToken ?? 'dry-run-token',
-		name: bindings.emailDeliveryQueueName,
 		dryRun: options.dryRun,
+	}
+	const existingQueues = options.dryRun
+		? []
+		: await listCloudflareQueues(queueClient)
+	const emailDeliveryQueue = await ensureCloudflareQueue({
+		...queueClient,
+		name: bindings.emailDeliveryQueueName,
+		existingQueues,
 	})
 	const emailDeliveryDeadLetterQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.emailDeliveryDeadLetterQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const artifactsRepoEventsQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.artifactsRepoEventsQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const artifactsRepoEventsDeadLetterQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.artifactsRepoEventsDeadLetterQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const platformFeedbackDispatchQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.platformFeedbackDispatchQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const platformFeedbackDispatchDeadLetterQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.platformFeedbackDispatchDeadLetterQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const communityActivityDispatchQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.communityActivityDispatchQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const communityActivityDispatchDeadLetterQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.communityActivityDispatchDeadLetterQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const scheduledDispatchQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.scheduledDispatchQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const scheduledDispatchDeadLetterQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.scheduledDispatchDeadLetterQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const packageEventsDispatchQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.packageEventsDispatchQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const packageEventsDispatchDeadLetterQueue = await ensureCloudflareQueue({
-		accountId: accountId ?? 'dry-run-account',
-		apiToken: apiToken ?? 'dry-run-token',
+		...queueClient,
 		name: bindings.packageEventsDispatchDeadLetterQueueName,
-		dryRun: options.dryRun,
+		existingQueues,
 	})
 	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
 	const emailEventSubscription = await ensureEmailSendingEventSubscription({

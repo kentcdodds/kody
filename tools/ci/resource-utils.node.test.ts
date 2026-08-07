@@ -6,10 +6,12 @@ import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
 import {
+	cloudflareApiRequest,
 	emailSendingEventTypes,
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
+	isRetryableCloudflareApiError,
 	isWranglerNotFoundOutput,
 	parseJsonc,
 	parseR2BucketListOutput,
@@ -291,6 +293,24 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		}),
 	)
 
+	const listedQueues = [
+		{ queue_id: 'queue-existing', queue_name: 'kody-email-delivery' },
+	]
+	const reusedQueueFetch = vi.fn<typeof fetch>()
+	const reusedQueue = await ensureCloudflareQueue({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-email-delivery',
+		dryRun: false,
+		existingQueues: listedQueues,
+		fetcher: reusedQueueFetch,
+	})
+	expect(reusedQueue).toEqual({
+		id: 'queue-existing',
+		name: 'kody-email-delivery',
+	})
+	expect(reusedQueueFetch).not.toHaveBeenCalled()
+
 	const subscriptionFetch = vi
 		.fn<typeof fetch>()
 		.mockResolvedValueOnce(
@@ -410,6 +430,53 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		},
 		events: [...emailSendingEventTypes],
 	})
+})
+
+test('Cloudflare API requests retry gateway HTML/text blips then succeed', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			new Response(
+				'upstream connect error or disconnect/reset before headers. reset reason: connection termination',
+				{ status: 502, statusText: 'Bad Gateway' },
+			),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: {
+					queue_id: 'queue-1',
+					queue_name: 'kody-email-delivery',
+				},
+			}),
+		)
+	const payload = await cloudflareApiRequest({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		pathname: '/queues',
+		method: 'POST',
+		body: { queue_name: 'kody-email-delivery' },
+		fetcher,
+		sleep: async () => {},
+	})
+	expect(payload.result).toEqual({
+		queue_id: 'queue-1',
+		queue_name: 'kody-email-delivery',
+	})
+	expect(fetcher).toHaveBeenCalledTimes(2)
+	expect(
+		isRetryableCloudflareApiError(
+			new Error(
+				'Malformed Cloudflare response (502) for /queues: upstream connect error or disconnect/reset before headers. reset reason: connection termination',
+			),
+		),
+	).toBe(true)
+	expect(
+		isRetryableCloudflareApiError(
+			new Error('Cloudflare API request failed (400): invalid queue name'),
+		),
+	).toBe(false)
 })
 
 test('ensureArtifactsAccountEventSubscription creates account-level lifecycle subscription', async () => {
