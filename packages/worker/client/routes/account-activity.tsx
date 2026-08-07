@@ -17,6 +17,7 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
+	accountManagementNarrowMq,
 	AccountManagementLayout,
 	AccountManagementList,
 	AccountManagementListItemButton,
@@ -562,6 +563,9 @@ export function AccountActivityRoute(handle: Handle) {
 
 						<AccountManagementLayout
 							sidebarWidth="minmax(18rem, 26rem)"
+							narrowOrder={
+								selection.selectedId ? 'detail-first' : 'sidebar-first'
+							}
 							sidebar={
 								<AccountManagementSidebar
 									title="Runs"
@@ -572,6 +576,9 @@ export function AccountActivityRoute(handle: Handle) {
 											display: 'grid',
 											gap: spacing.sm,
 											gridTemplateColumns: '1fr 1fr',
+											[accountManagementNarrowMq]: {
+												gridTemplateColumns: '1fr',
+											},
 										})}
 									>
 										<label mix={css(fieldCss)}>
@@ -768,7 +775,13 @@ export function AccountActivityRoute(handle: Handle) {
 							}
 						>
 							{detail ? (
-								<section mix={css(cardCss)}>
+								<section
+									mix={css({
+										...cardCss,
+										minWidth: 0,
+										overflow: 'hidden',
+									})}
+								>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
 										<h2 mix={css(cardTitleCss)}>{runDisplayName(detail)}</h2>
 										<p mix={css(descriptionCss)}>
@@ -897,9 +910,13 @@ export function AccountActivityRoute(handle: Handle) {
 														key={`${entry.sequence}-${entry.level}`}
 														mix={css({
 															display: 'grid',
-															gridTemplateColumns: '4.5rem 1fr',
+															gridTemplateColumns: '4.5rem minmax(0, 1fr)',
 															gap: spacing.sm,
 															color: logLevelColor(entry.level),
+															[accountManagementNarrowMq]: {
+																gridTemplateColumns: 'minmax(0, 1fr)',
+																gap: spacing.xs,
+															},
 														})}
 													>
 														<span
@@ -924,6 +941,7 @@ export function AccountActivityRoute(handle: Handle) {
 											<span mix={css(fieldLabelCss)}>Metadata</span>
 											<div
 												mix={css({
+													minWidth: 0,
 													'& pre': {
 														margin: 0,
 														padding: spacing.sm,
@@ -934,6 +952,7 @@ export function AccountActivityRoute(handle: Handle) {
 														fontSize: typography.fontSize.sm,
 														overflowX: 'auto',
 														whiteSpace: 'pre-wrap',
+														overflowWrap: 'anywhere',
 													},
 												})}
 											>

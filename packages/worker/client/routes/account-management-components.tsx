@@ -148,8 +148,9 @@ type AccountManagementShellProps = {
 	children: AccountManagementSlot
 }
 
-/** The sidebar collapses to a wrapping row below this width (prototype 860px). */
-const accountNavMq = '@media (max-width: 860px)'
+/** Account nav and list/detail panes stack below this width (prototype 860px). */
+export const accountManagementNarrowMq = '@media (max-width: 860px)'
+const accountNavMq = accountManagementNarrowMq
 
 /** Prototype `.account` section rhythm: margin between blocks in the content column. */
 const accountSectionGap = 'clamp(2rem, 4vw, 2.75rem)'
@@ -500,6 +501,11 @@ type AccountManagementLayoutProps = {
 	sidebar: AccountManagementSlot
 	children: AccountManagementSlot
 	sidebarWidth?: string
+	/**
+	 * On narrow viewports the panes stack. `detail-first` puts the selected
+	 * record above the list so phones are not stuck scrolling past filters.
+	 */
+	narrowOrder?: 'sidebar-first' | 'detail-first'
 }
 
 export function AccountManagementLayout(
@@ -513,8 +519,15 @@ export function AccountManagementLayout(
 				gap: spacing.lg,
 				alignItems: 'start',
 				minWidth: 0,
-				[mq.mobile]: {
-					gridTemplateColumns: '1fr',
+				[accountManagementNarrowMq]: {
+					gridTemplateColumns: 'minmax(0, 1fr)',
+					...(handle.props.narrowOrder === 'detail-first'
+						? {
+								'& > :last-child': {
+									order: -1,
+								},
+							}
+						: {}),
 				},
 			})}
 		>
@@ -776,9 +789,18 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 			})}
 		>
 			{handle.props.items.map((item) => (
-				<div key={item.label}>
+				<div key={item.label} mix={css({ minWidth: 0 })}>
 					<dt mix={css(accountFieldLabelCss)}>{item.label}</dt>
-					<dd mix={css({ margin: 0, color: colors.text })}>{item.value}</dd>
+					<dd
+						mix={css({
+							margin: 0,
+							color: colors.text,
+							minWidth: 0,
+							overflowWrap: 'anywhere',
+						})}
+					>
+						{item.value}
+					</dd>
 				</div>
 			))}
 		</dl>
