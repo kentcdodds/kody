@@ -162,7 +162,7 @@ export function OnboardingRoute(handle: Handle) {
 
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
-		const wasSavedMemory = hasSavedMemory
+		const wasFirstWin = hasFirstWin
 		const previousSubStep = firstWinSubStep()
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
@@ -179,21 +179,23 @@ export function OnboardingRoute(handle: Handle) {
 			payload.checklist,
 			'save-memory',
 		)
-		hasFirstWin = hasFirstHello && hasSavedMemory
+		// Cumulative on purpose: the win is the whole loop, so a memory or
+		// reply that arrived outside it never skips the earlier sub-steps.
+		hasFirstWin = hasSentWelcomeEmail && hasFirstHello && hasSavedMemory
 		featuredListings = payload.featuredListings ?? []
 		checklist = payload.checklist
 		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasSavedMemory ? 3 : payload.hasMcpClient ? 2 : 1
+			activeStep = hasFirstWin ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient && !hasSavedMemory) {
+		} else if (!wasConnected && payload.hasMcpClient && !hasFirstWin) {
 			panelAnimationArmed = true
 			activeStep = 2
 			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
-		} else if (!wasSavedMemory && hasSavedMemory) {
+		} else if (!wasFirstWin && hasFirstWin) {
 			// The Remember sub-step finishing completes the whole first win.
 			panelAnimationArmed = true
 			activeStep = 3
@@ -257,10 +259,12 @@ export function OnboardingRoute(handle: Handle) {
 		})
 	}
 
+	/** Cumulative, matching `hasFirstWin`: a later pill never shows done
+	 * while an earlier one is still waiting. */
 	function firstWinSubStepDone(step: FirstWinSubStep): boolean {
 		if (step === 1) return hasSentWelcomeEmail
-		if (step === 2) return hasFirstHello
-		return hasSavedMemory
+		if (step === 2) return hasSentWelcomeEmail && hasFirstHello
+		return hasSentWelcomeEmail && hasFirstHello && hasSavedMemory
 	}
 
 	/**
