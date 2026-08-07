@@ -6,6 +6,7 @@ import {
 	filterChromeExtensionObjectNotFoundSentryEvent,
 	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
+	filterMetaMaskExtensionSentryEvent,
 } from './sentry-browser-filters.ts'
 
 test('browser Sentry filters drop AbortError and Firefox Xray noise and keep real errors', () => {
@@ -225,6 +226,76 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 						type: 'UnhandledRejection',
 						value:
 							'Non-Error promise rejection captured with value: Object Not Found Matching Id:3, MethodName:update, ParamCount:4',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	// MetaMask inpage.js session restore (issue 7658961865 / KODY-CLOUDFLARE-3X).
+	expect(
+		filterMetaMaskExtensionSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'i',
+						value: 'Failed to connect to MetaMask',
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js',
+								},
+							],
+						},
+					},
+					{
+						type: 'Error',
+						value: 'MetaMask extension not found',
+						stacktrace: {
+							frames: [
+								{
+									abs_path:
+										'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	// Message alone (no MetaMask extension frame) must not drop app errors.
+	expect(
+		filterMetaMaskExtensionSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Failed to connect to MetaMask',
+						stacktrace: {
+							frames: [{ abs_path: 'https://heykody.dev/assets/app-chunk.js' }],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'MetaMask extension not found',
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js',
+								},
+							],
+						},
 					},
 				],
 			},

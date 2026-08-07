@@ -303,6 +303,72 @@ export function filterChromeExtensionObjectNotFoundSentryEvent<
 	return event
 }
 
+/**
+ * MetaMask (`chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/…`) injects
+ * `inpage.js` into every page and tries to restore a wallet session on load.
+ * When the extension's background/service worker is unavailable it rejects
+ * with "Failed to connect to MetaMask" / "MetaMask extension not found".
+ * Signature from production issue 7658961865 / KODY-CLOUDFLARE-3X — stack is
+ * exclusively the extension; Kody never touches MetaMask.
+ *
+ * Match is intentionally narrow: MetaMask connect-failure wording AND a stack
+ * frame from MetaMask's published Chrome extension id. Never blanket-drop
+ * chrome-extension frames or wallet-related TypeErrors from app code.
+ */
+const metaMaskConnectFailureMessage =
+	/^(?:i:\s*)?(?:Failed to connect to MetaMask|MetaMask extension not found)\.?$/i
+
+/** Published MetaMask Chrome Web Store extension id. */
+const metaMaskChromeExtensionId = 'nkbihfbeogaeaoehlefnkodbefgpgknn'
+
+export function isMetaMaskConnectFailureMessage(message: string) {
+	return metaMaskConnectFailureMessage.test(message.trim())
+}
+
+export function isMetaMaskChromeExtensionStackFrameUrl(url: string) {
+	try {
+		const parsed = new URL(url, 'https://sentry.invalid')
+		return (
+			parsed.protocol === 'chrome-extension:' &&
+			parsed.hostname === metaMaskChromeExtensionId
+		)
+	} catch {
+		return false
+	}
+}
+
+export function isMetaMaskConnectFailureError(error: unknown) {
+	if (typeof error === 'string') {
+		return isMetaMaskConnectFailureMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isMetaMaskConnectFailureMessage(error.message)
+}
+
+export function isMetaMaskExtensionSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasMetaMaskMessage =
+		isMetaMaskConnectFailureError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' && isMetaMaskConnectFailureMessage(message),
+		)
+	if (!hasMetaMaskMessage) return false
+	return sentryEventStackFrameUrls(event).some(
+		isMetaMaskChromeExtensionStackFrameUrl,
+	)
+}
+
+export function filterMetaMaskExtensionSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isMetaMaskExtensionSentryEvent(event, originalException)) return null
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -330,6 +396,9 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		filterChromeExtensionObjectNotFoundSentryEvent(event, originalException) ===
 		null
 	) {
+		return null
+	}
+	if (filterMetaMaskExtensionSentryEvent(event, originalException) === null) {
 		return null
 	}
 	return event
