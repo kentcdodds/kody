@@ -655,6 +655,12 @@ const waitlistSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
 		opacity: 0.7,
 		transform: 'none',
 	},
+	[hoverMq]: {
+		'&[aria-disabled="true"]:hover, &[aria-disabled="true"]:active': {
+			transform: 'none',
+			boxShadow: 'none',
+		},
+	},
 })
 
 const codeLinkCss = {

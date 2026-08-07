@@ -43,6 +43,7 @@ import {
 	getLanternGlowCss,
 	getPillButtonCss,
 	getSwapLabelCss,
+	hoverMq,
 	mergeCss,
 	visuallyHiddenCss,
 } from '#client/styles/style-primitives.ts'
@@ -662,7 +663,7 @@ export function LoginRoute(handle: Handle) {
 								) : null}
 								{renderStatusMessage()}
 								<button
-									type="submit"
+									type={status === 'success' ? 'button' : 'submit'}
 									aria-disabled={
 										isSubmitting || status === 'success' ? 'true' : undefined
 									}
@@ -1181,6 +1182,12 @@ const authSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
 		opacity: 0.7,
 		cursor: 'progress',
 		transform: 'none',
+	},
+	[hoverMq]: {
+		'&[aria-disabled="true"]:hover, &[aria-disabled="true"]:active': {
+			transform: 'none',
+			boxShadow: 'none',
+		},
 	},
 })
 

@@ -2,7 +2,9 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
 	getPillButtonCss,
+	hoverMq,
 	layoutMaxWidths,
+	mergeCss,
 	pageGutter,
 } from '#client/styles/style-primitives.ts'
 import { colors, transitions, typography } from '#client/styles/tokens.ts'
@@ -345,8 +347,7 @@ const errorCss = {
 	textAlign: 'center' as const,
 }
 
-const pillSubmitCss = {
-	...getPillButtonCss(),
+const pillSubmitCss = mergeCss(getPillButtonCss(), {
 	fontSize: '0.9rem',
 	padding: '0.4rem 1.15rem',
 	whiteSpace: 'nowrap' as const,
@@ -355,11 +356,17 @@ const pillSubmitCss = {
 		opacity: 0.7,
 		transform: 'none',
 	},
+	[hoverMq]: {
+		'&[aria-disabled="true"]:hover, &[aria-disabled="true"]:active': {
+			transform: 'none',
+			boxShadow: 'none',
+		},
+	},
 	[stackMq]: {
 		gridColumn: '1 / -1',
 		justifyContent: 'center',
 	},
-}
+})
 
 const visuallyHiddenCss = {
 	position: 'absolute' as const,
