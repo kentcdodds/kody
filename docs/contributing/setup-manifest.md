@@ -490,10 +490,15 @@ How to get/set each value:
   Email Sending event subscription).
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     it only when the production user email domain differs from the default.
-  - Production also commits `USER_EMAIL_DOMAIN=inbox.heykody.dev` (and
-    `SYSTEM_EMAIL_DOMAIN=heykody.dev`) in `packages/worker/wrangler.jsonc` so
-    email stays on the verified `heykody.dev` zone across the web origin's move
-    to `heykody.app`; the deploy tooling reads the same committed pin.
+  - Production also commits `USER_EMAIL_DOMAIN=inbox.heykody.app` (and
+    `SYSTEM_EMAIL_DOMAIN=heykody.app`) in `packages/worker/wrangler.jsonc` so
+    the email domains can never silently rederive from `APP_BASE_URL`; the
+    deploy tooling reads the same committed pin. During the heykody.dev
+    migration window (through end of August 2026) the committed
+    `LEGACY_USER_EMAIL_DOMAINS=inbox.heykody.dev` and
+    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.dev` keep inbound mail to the old
+    addresses resolving to the same inboxes; empty the lists (and retire the
+    `heykody.dev` email DNS) after the window ends.
 - `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
   **variables** for domain migrations; see
   [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).

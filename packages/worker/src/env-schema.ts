@@ -210,11 +210,18 @@ export const EnvSchema = object({
 	// See docs/contributing/security.md.
 	PACKAGE_APP_BASE_URL: optionalUrlStringSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
-	// Overrides the system email domain derived from APP_BASE_URL. Production
-	// pins this to heykody.dev: email DNS (MX/SPF/DKIM) and Cloudflare Email
-	// Sending verification live on that zone, so system mail must not follow
-	// the web origin to heykody.app.
+	// Overrides the system email domain derived from APP_BASE_URL. Committed
+	// in production so email and the web origin can move independently.
 	SYSTEM_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
+	// Comma-separated previous user email domains (for example
+	// inbox.heykody.dev) that inbound mail is still accepted on during a
+	// domain migration; delivery resolves to the same user inboxes. Outbound
+	// always sends from the canonical USER_EMAIL_DOMAIN.
+	LEGACY_USER_EMAIL_DOMAINS: optionalNonEmptyStringSchema,
+	// Comma-separated previous system email domains (for example
+	// heykody.dev) that operator inboxes (kody@, support@, ...) keep
+	// receiving on during a domain migration.
+	LEGACY_SYSTEM_EMAIL_DOMAINS: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
 	EMAIL_EVENTS: optionalAnalyticsEngineDatasetSchema,

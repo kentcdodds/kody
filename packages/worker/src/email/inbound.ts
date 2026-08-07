@@ -41,7 +41,8 @@ import {
 	reconcileUserStaleInboundDeliveries,
 } from './inbound-delivery-reconciliation-authority.ts'
 import {
-	getPlatformEmailDomain,
+	getAcceptedSystemEmailDomains,
+	getAcceptedUserEmailDomains,
 	getSystemEmailDomain,
 } from './platform-address.ts'
 import {
@@ -158,6 +159,9 @@ export async function handleInboundEmail(
 		| 'BUNDLE_ARTIFACTS_KV'
 		| 'APP_BASE_URL'
 		| 'USER_EMAIL_DOMAIN'
+		| 'SYSTEM_EMAIL_DOMAIN'
+		| 'LEGACY_USER_EMAIL_DOMAINS'
+		| 'LEGACY_SYSTEM_EMAIL_DOMAINS'
 		| 'USAGE_EVENTS'
 		| 'USER_METER'
 		| 'MAILBOX'
@@ -173,9 +177,14 @@ export async function handleInboundEmail(
 		return
 	}
 
-	const platformDomain = getPlatformEmailDomain(inputEnv)
+	// Inbound accepts the canonical domains plus any LEGACY_*_EMAIL_DOMAINS:
+	// during a domain migration, mail sent to addresses on the previous
+	// domain keeps resolving to the same inboxes. Outbound (senders, alert
+	// lanes) always uses the canonical domains only.
+	const acceptedUserDomains = getAcceptedUserEmailDomains(inputEnv)
+	const acceptedSystemDomains = getAcceptedSystemEmailDomains(inputEnv)
 	const systemDomain = getSystemEmailDomain(inputEnv)
-	if (!platformDomain && !systemDomain) {
+	if (acceptedUserDomains.length === 0 && acceptedSystemDomains.length === 0) {
 		message.setReject('Email routing is not configured.')
 		return
 	}
@@ -193,7 +202,7 @@ export async function handleInboundEmail(
 	// lives exclusively on the user subdomain; all other apex mail rejects.
 	if (
 		systemDomain &&
-		recipientDomain === systemDomain &&
+		acceptedSystemDomains.includes(recipientDomain) &&
 		isSystemEmailLocal(localBase)
 	) {
 		await handleSystemInboundEmail({
@@ -201,17 +210,26 @@ export async function handleInboundEmail(
 			env: inputEnv,
 			recipient,
 			localPart: localBase,
+			// Replies and threading always use the canonical system domain,
+			// even when the message arrived on a legacy one.
 			systemDomain,
 			ctx,
 		})
 		return
 	}
-	if (!platformDomain || recipientDomain !== platformDomain) {
+	if (!acceptedUserDomains.includes(recipientDomain)) {
 		message.setReject('Unknown Kody email address.')
 		return
 	}
 	if (isReservedUsername(localBase)) {
 		message.setReject('This address is reserved for system mail.')
+		return
+	}
+	// Provisioning always records the canonical address (first accepted
+	// domain), even when the message arrived on a legacy domain.
+	const platformDomain = acceptedUserDomains[0]
+	if (!platformDomain) {
+		message.setReject('Email routing is not configured.')
 		return
 	}
 	const env = {

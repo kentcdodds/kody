@@ -39,7 +39,7 @@
 		"PACKAGE_APP_ORIGIN": "https://kodyapps.dev",
 		"STATUS_PAGE_URL": "https://status.heykody.dev",
 		"ALERT_EMAIL_TO": "me@kentcdodds.com",
-		"ALERT_EMAIL_FROM": "kody@heykody.dev",
+		"ALERT_EMAIL_FROM": "kody@heykody.app",
 		"STATUS_ALERT_DAILY_LIMIT": "6",
 		// Production Kody Cloudflare account (same as the main worker); the
 		// matching CLOUDFLARE_API_TOKEN with Email Sending permission is a

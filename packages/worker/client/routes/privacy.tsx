@@ -26,8 +26,8 @@ export function PrivacyRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					Kent C. Dodds, operator of Kody at heykody.app, is the data controller
 					for the hosted service. You can reach the operator at{' '}
-					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
-						support@heykody.dev
+					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
+						support@heykody.app
 					</a>
 					. A separately operated Kody deployment has its own operator and data
 					controller.
@@ -228,8 +228,8 @@ export function PrivacyRoute(_handle: Handle) {
 					Use Account settings to export a copy of your Kody data or delete your
 					account. You can also ask to access, correct, delete, restrict, or
 					receive your personal data, or object to its processing, by emailing{' '}
-					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
-						support@heykody.dev
+					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
+						support@heykody.app
 					</a>
 					. Which rights apply depends on where you live. We may need to verify
 					your identity before acting on a request.

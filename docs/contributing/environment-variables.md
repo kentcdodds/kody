@@ -276,16 +276,22 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   (`kody@<apex>`). The deployment's Cloudflare zone needs Email Routing enabled
   for this subdomain (Email > Email Routing > Settings > Add subdomain) with its
   catch-all routed to the Worker. Production commits
-  `USER_EMAIL_DOMAIN=inbox.heykody.dev` in `packages/worker/wrangler.jsonc` so
-  the web origin's move to `heykody.app` can never rederive user addresses onto
-  the new domain; the deploy tooling (`tools/ci/production-resources.ts`) reads
-  the same committed pin when configuring the Email Sending event subscription.
+  `USER_EMAIL_DOMAIN=inbox.heykody.app` in `packages/worker/wrangler.jsonc` so
+  the domain can never silently rederive from `APP_BASE_URL`; the deploy tooling
+  (`tools/ci/production-resources.ts`) reads the same committed pin when
+  configuring the Email Sending event subscription.
 - `SYSTEM_EMAIL_DOMAIN` — optional override for the system email domain (the
   `kody@<domain>` transactional sender and operator system inboxes). Defaults to
   the `APP_BASE_URL` hostname. Production commits
-  `SYSTEM_EMAIL_DOMAIN=heykody.dev` in `packages/worker/wrangler.jsonc` because
-  MX/SPF/DKIM and Cloudflare Email Sending verification live on the
-  `heykody.dev` zone and must not follow the web origin to `heykody.app`.
+  `SYSTEM_EMAIL_DOMAIN=heykody.app`.
+- `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` — optional
+  comma-separated previous email domains that inbound mail is still accepted on
+  during a domain migration (see
+  `packages/worker/src/email/platform-address.ts`). Delivery resolves to the
+  same inboxes; outbound always sends from the canonical domains. Production
+  commits `inbox.heykody.dev` / `heykody.dev` for the heykody.app migration
+  window (through end of August 2026), after which the lists can be emptied and
+  the `heykody.dev` email DNS retired.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
   Defaults to `default` when unset (local dev and tests). Wrangler sets
   `production` and `preview` per environment in

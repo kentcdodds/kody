@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import {
 	buildPlatformEmailAddress,
+	getAcceptedSystemEmailDomains,
+	getAcceptedUserEmailDomains,
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
 } from './platform-address.ts'
@@ -61,6 +63,38 @@ test('getSystemEmailDomain prefers a valid SYSTEM_EMAIL_DOMAIN override', () => 
 		}),
 	).toBe('heykody.dev')
 	expect(getSystemEmailDomain({})).toBeNull()
+})
+
+test('accepted inbound domains are canonical first plus legacy lists', () => {
+	// The migration shape: canonical on .app, previous .dev domains still
+	// accepted for inbound during the transition window.
+	expect(
+		getAcceptedUserEmailDomains({
+			USER_EMAIL_DOMAIN: 'inbox.heykody.app',
+			LEGACY_USER_EMAIL_DOMAINS: 'inbox.heykody.dev',
+		}),
+	).toEqual(['inbox.heykody.app', 'inbox.heykody.dev'])
+	expect(
+		getAcceptedSystemEmailDomains({
+			SYSTEM_EMAIL_DOMAIN: 'heykody.app',
+			LEGACY_SYSTEM_EMAIL_DOMAINS: 'heykody.dev',
+		}),
+	).toEqual(['heykody.app', 'heykody.dev'])
+
+	// No legacy configured: just the canonical domain (unchanged behavior).
+	expect(
+		getAcceptedUserEmailDomains({ APP_BASE_URL: 'https://heykody.app' }),
+	).toEqual(['inbox.heykody.app'])
+	expect(getAcceptedSystemEmailDomains({})).toEqual([])
+
+	// Normalization, dedupe against canonical, and malformed entries dropped.
+	expect(
+		getAcceptedUserEmailDomains({
+			USER_EMAIL_DOMAIN: 'inbox.heykody.app',
+			LEGACY_USER_EMAIL_DOMAINS:
+				' Inbox.HeyKody.DEV. , inbox.heykody.app, not a domain ,,',
+		}),
+	).toEqual(['inbox.heykody.app', 'inbox.heykody.dev'])
 })
 
 test('buildPlatformEmailAddress normalizes the username', () => {

@@ -26,8 +26,8 @@ export function TermsRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					Kody at heykody.app is operated by Kent C. Dodds. Questions about
 					these terms or the service can go to{' '}
-					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
-						support@heykody.dev
+					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
+						support@heykody.app
 					</a>
 					.
 				</p>
@@ -81,8 +81,8 @@ export function TermsRoute(_handle: Handle) {
 				</p>
 				<p mix={css(descriptionCss)}>
 					There are no automatic refunds. If something went wrong, email{' '}
-					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
-						support@heykody.dev
+					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
+						support@heykody.app
 					</a>
 					. Refund requests are considered case by case. Taxes and payment
 					processor terms may also apply.
