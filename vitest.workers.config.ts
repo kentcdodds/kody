@@ -27,7 +27,10 @@ export default mergeConfig(
 			// must cover that first setup per Worker.
 			hookTimeout: 60_000,
 			setupFiles: [
-				resolve(rootDir, 'packages/worker/src/test-support/workers-do-warmup.ts'),
+				resolve(
+					rootDir,
+					'packages/worker/src/test-support/workers-do-warmup.ts',
+				),
 			],
 		},
 	}),

@@ -82,9 +82,9 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     Per-file isolation stays; disabling it breaks suites that assume a clean
     store.
   - **Do not** stub away DOs in workers tests when binding fidelity is the
-    point, and do not “fix” pool slowness with `--no-verify` or a shorter
-    local `testTimeout`. Shared `testTimeout` is 20s; workers-unit
-    `hookTimeout` is 60s for first-Worker setup.
+    point, and do not “fix” pool slowness with `--no-verify` or a shorter local
+    `testTimeout`. Shared `testTimeout` is 20s; workers-unit `hookTimeout` is
+    60s for first-Worker setup.
   - Pool cold load (~10–18s DO class load) is inherent today; suite wall clock
     will not match production RPC latency until the upstream pool improves.
 - Vitest is configured with `clearMocks` and `mockReset` globally

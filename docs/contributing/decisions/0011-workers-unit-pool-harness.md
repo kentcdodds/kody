@@ -21,9 +21,10 @@ fidelity by stubbing DOs in node tests when the point is binding behavior.
 
 Keep per-file storage isolation and parallel workers-unit. Warm Mailbox,
 UserMeter, and RunLog once per Worker module cache via workers-unit `setupFiles`
-(`packages/worker/src/test-support/workers-do-warmup.ts`). Prefer `*.node.test.ts`
-whenever real bindings are not required. Do not disable isolation to chase suite
-wall clock; do not warm Durable Objects from `globalSetup`.
+(`packages/worker/src/test-support/workers-do-warmup.ts`). Prefer
+`*.node.test.ts` whenever real bindings are not required. Do not disable
+isolation to chase suite wall clock; do not warm Durable Objects from
+`globalSetup`.
 
 ## Consequences
 
