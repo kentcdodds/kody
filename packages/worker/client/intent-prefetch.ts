@@ -13,7 +13,7 @@ export const maxPrefetchAgeMs = 30_000
 
 function normalizePrefetchHref(href: string) {
 	const url = new URL(href, routerHrefOrigin)
-	return `${url.pathname}${url.search}${url.hash}`
+	return `${url.pathname}${url.search}`
 }
 
 // Monotonic clock: freshness math must not break when the wall clock is

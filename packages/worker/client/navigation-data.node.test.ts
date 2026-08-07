@@ -76,6 +76,26 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 	setPreloadedNavigationData('/account', {
 		accountProfile: {
 			ok: true,
+			email: 'kody@example.com',
+			emailVerified: true,
+			username: 'kody',
+			displayName: 'Kody',
+		},
+	})
+	expect(
+		tryConsumePreloadedLoaderData('accountProfile', '/account#invite'),
+	).toEqual({
+		ok: true,
+		email: 'kody@example.com',
+		emailVerified: true,
+		username: 'kody',
+		displayName: 'Kody',
+	})
+
+	clearPreloadedNavigationData()
+	setPreloadedNavigationData('/account', {
+		accountProfile: {
+			ok: true,
 			email: 'first@example.com',
 			emailVerified: true,
 			username: 'first',

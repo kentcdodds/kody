@@ -77,3 +77,14 @@ test('applied route loader data suppresses the fallback fetch', () => {
 		}),
 	).toBe(false)
 })
+
+test('in-page hashes are the same data location as pathname plus search', () => {
+	const latch = createRouteLoadLatch()
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/' })).toBe(true)
+	latch.markLoaded('/')
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/#invite' })).toBe(false)
+	expect(latch.isLoadedFor('/#invite')).toBe(true)
+	expect(
+		latch.needsLoad({ ...baseInput, currentHref: '/?ref=blog#invite' }),
+	).toBe(true)
+})

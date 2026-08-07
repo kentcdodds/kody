@@ -458,6 +458,7 @@ function WaitlistForm(handle: Handle) {
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
+		if (status === 'submitting') return
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const form = event.currentTarget
 
@@ -596,7 +597,8 @@ function WaitlistForm(handle: Handle) {
 							/>
 							<button
 								type="submit"
-								disabled={isSubmitting}
+								aria-disabled={isSubmitting ? 'true' : undefined}
+								aria-busy={isSubmitting ? 'true' : undefined}
 								mix={css(waitlistSubmitCss)}
 							>
 								<span
@@ -647,7 +649,13 @@ const pillButtonCss = getPillButtonCss()
 
 /* The submit pill keeps both labels grid-stacked in one cell, so swapping to
    "Joining…" never changes the button's size — the swap is a blur crossfade. */
-const waitlistSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss())
+const waitlistSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
+	'&[aria-disabled="true"]': {
+		cursor: 'progress',
+		opacity: 0.7,
+		transform: 'none',
+	},
+})
 
 const codeLinkCss = {
 	...inlineLinkCss,

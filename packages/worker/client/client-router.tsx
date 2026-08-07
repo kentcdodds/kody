@@ -143,7 +143,11 @@ function notify(onSwapped?: () => void) {
 		isSameShellAreaNavigation(
 			lastNotifiedDocumentPath,
 			getCurrentDocumentPath(),
-		)
+		) ||
+		// Hash-only moves stay on the same document. A view transition would
+		// snapshot the page and fight scroll restoration (the landing waitlist
+		// CTA is `#invite`).
+		getCurrentDocumentPath() === lastNotifiedDocumentPath
 	) {
 		void swapDom(onSwapped)
 		return
@@ -258,7 +262,7 @@ export function shouldRouterHandleClick(
 	if (anchor.hasAttribute('download')) return false
 
 	const href = anchor.getAttribute('href')
-	if (!href || href.startsWith('#')) return false
+	if (!href) return false
 
 	const destination = new URL(href, window.location.href)
 	if (destination.origin !== window.location.origin) return false
@@ -299,8 +303,8 @@ function getPrefetchableLink(
 	const destination = new URL(href, window.location.href)
 	if (destination.origin !== window.location.origin) return null
 	if (
-		getPathWithSearchAndHashFromUrl(destination) ===
-		getCurrentPathWithSearchAndHash()
+		`${destination.pathname}${destination.search}` ===
+		`${window.location.pathname}${window.location.search}`
 	) {
 		return null
 	}
@@ -900,7 +904,21 @@ async function navigateInternal(to: string, options?: NavigationRunOptions) {
 	const nextPath = getPathWithSearchAndHashFromUrl(destination)
 	const currentPath = getCurrentPathWithSearchAndHash()
 
-	if (nextPath === currentPath) return
+	if (nextPath === currentPath) {
+		// Re-activating the current hash (hero "Join the waiting list" while
+		// already at `/#invite`) must still scroll to the target. Native
+		// fragment clicks do that; a no-op here would leave the viewport stuck.
+		if (destination.hash) {
+			dispatchNavigationEnd(
+				createNavigationEventDetail(nextPath, {
+					...options,
+					historyAction: 'replace',
+					skipPushState: true,
+				}),
+			)
+		}
+		return
+	}
 
 	const sameDocumentLocation =
 		`${destination.pathname}${destination.search}` ===

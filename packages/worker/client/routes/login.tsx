@@ -224,6 +224,7 @@ export function LoginRoute(handle: Handle) {
 
 	async function handleWaitingListSubmit(event: SubmitEvent) {
 		event.preventDefault()
+		if (status === 'submitting' || status === 'success') return
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const form = event.currentTarget
 
@@ -662,7 +663,10 @@ export function LoginRoute(handle: Handle) {
 								{renderStatusMessage()}
 								<button
 									type="submit"
-									disabled={isSubmitting || status === 'success'}
+									aria-disabled={
+										isSubmitting || status === 'success' ? 'true' : undefined
+									}
+									aria-busy={isSubmitting ? 'true' : undefined}
 									mix={css(authSubmitCss)}
 								>
 									<span
@@ -1173,7 +1177,7 @@ const formMessageCss = {
 
 const authSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
 	marginTop: '0.3rem',
-	'&:disabled': {
+	'&:disabled, &[aria-disabled="true"]': {
 		opacity: 0.7,
 		cursor: 'progress',
 		transform: 'none',

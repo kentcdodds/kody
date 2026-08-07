@@ -12,7 +12,7 @@ const routerHrefOrigin = 'https://kody.local'
 
 export function normalizeRouterHref(href: string) {
 	const url = new URL(href, routerHrefOrigin)
-	return `${url.pathname}${url.search}${url.hash}`
+	return `${url.pathname}${url.search}`
 }
 
 export function hrefMatchesSsrUrl(currentHref: string, ssrUrl: string) {
@@ -36,8 +36,9 @@ export function AppLoaderDataProvider(
 
 /**
  * Returns SSR-embedded loader data for `key` only when `currentHref` matches
- * the document's SSR URL and this key has not been consumed yet. Successful
- * reads mark the key consumed so SPA navigations always refetch.
+ * the document's SSR URL (pathname + search; hashes are ignored) and this key
+ * has not been consumed yet. Successful reads mark the key consumed so SPA
+ * navigations always refetch.
  *
  * Callers must run their own URL/path guards **before** calling this helper.
  * Consumption is irreversible; if a guard rejects after a successful read the

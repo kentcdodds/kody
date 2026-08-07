@@ -200,9 +200,13 @@ pending after a short delay.
 The app shell also mounts **scroll restoration** for SPA navigations. The router
 saves each history entry's window scroll position, restores it on back/forward,
 scrolls to hash targets when present, and otherwise scrolls new navigations to
-the top after the destination route commits. Preserve the current scroll for a
-specific intercepted link or form with `data-prevent-scroll-reset`, or for
-programmatic navigation with `navigate(to, { preventScrollReset: true })`.
+the top after the destination route commits. Same-document hash links (for
+example the landing page's `#invite` waitlist CTA) are intercepted like other
+same-origin links so restoration can scroll to the target — native fragment
+scrolling is disabled while history scroll restoration is `manual`. Preserve the
+current scroll for a specific intercepted link or form with
+`data-prevent-scroll-reset`, or for programmatic navigation with
+`navigate(to, { preventScrollReset: true })`.
 
 Full page navigations occur for:
 

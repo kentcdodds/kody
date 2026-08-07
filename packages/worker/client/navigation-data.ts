@@ -4,7 +4,7 @@ const routerHrefOrigin = 'https://kody.local'
 
 function normalizeNavigationHref(href: string) {
 	const url = new URL(href, routerHrefOrigin)
-	return `${url.pathname}${url.search}${url.hash}`
+	return `${url.pathname}${url.search}`
 }
 
 let preloadedSlot: { href: string; data: Partial<AppLoaderData> } | null = null

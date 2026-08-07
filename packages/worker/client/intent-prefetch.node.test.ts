@@ -100,6 +100,11 @@ test('intent prefetch reuses in-flight runs, aborts superseded hrefs, and retrie
 	prefetchRouteOnIntent('/account', retry.loader, accountUrl)
 	expect(retry.calls).toHaveLength(1)
 	expect(takePrefetchedRouteResult('/account')).not.toBeNull()
+
+	abortIntentPrefetch()
+	const hashed = createDeferredLoader()
+	prefetchRouteOnIntent('/account#invite', hashed.loader, accountUrl)
+	expect(takePrefetchedRouteResult('/account')).not.toBeNull()
 })
 
 test('settled intent prefetches expire and restart on the next intent', async () => {

@@ -14,8 +14,9 @@ import {
 test('loader href helpers normalize URLs and compare pathname and search', () => {
 	expect(normalizeRouterHref('/community?q=beta')).toBe('/community?q=beta')
 	expect(normalizeRouterHref('https://kody.local/community?q=beta#top')).toBe(
-		'/community?q=beta#top',
+		'/community?q=beta',
 	)
+	expect(hrefMatchesSsrUrl('/#invite', '/')).toBe(true)
 
 	expect(hrefMatchesSsrUrl('/community?q=beta', '/community?q=beta')).toBe(true)
 	expect(

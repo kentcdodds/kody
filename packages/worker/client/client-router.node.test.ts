@@ -3,6 +3,7 @@ import {
 	isSameShellAreaNavigation,
 	matchRoute,
 	matchRouteLoader,
+	shouldRouterHandleClick,
 	type RouteLoader,
 } from './client-router.tsx'
 
@@ -94,4 +95,48 @@ test('view transitions are skipped only when a navigation stays inside one shell
 
 	// A path that merely starts with the area's characters is a different area.
 	expect(isSameShellAreaNavigation('/account', '/accounts-payable')).toBe(false)
+})
+
+test('same-origin hash links are intercepted so scroll restoration can reach them', () => {
+	const previousWindow = globalThis.window
+	globalThis.window = {
+		location: {
+			href: 'https://kody.local/',
+			origin: 'https://kody.local',
+		},
+	} as Window & typeof globalThis
+
+	try {
+		const click = {
+			defaultPrevented: false,
+			button: 0,
+			metaKey: false,
+			altKey: false,
+			ctrlKey: false,
+			shiftKey: false,
+		} as MouseEvent
+		const hashAnchor = {
+			target: '',
+			hasAttribute: () => false,
+			getAttribute: (name: string) => (name === 'href' ? '#invite' : null),
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, hashAnchor)).toBe(true)
+
+		const sameDocumentHashAnchor = {
+			target: '',
+			hasAttribute: () => false,
+			getAttribute: (name: string) => (name === 'href' ? '/#invite' : null),
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, sameDocumentHashAnchor)).toBe(true)
+
+		const externalAnchor = {
+			target: '',
+			hasAttribute: () => false,
+			getAttribute: (name: string) =>
+				name === 'href' ? 'https://example.com/#invite' : null,
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, externalAnchor)).toBe(false)
+	} finally {
+		globalThis.window = previousWindow
+	}
 })

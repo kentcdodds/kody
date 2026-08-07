@@ -45,6 +45,7 @@ export function WaitlistBanner(handle: Handle) {
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
+		if (status === 'submitting') return
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const form = event.currentTarget
 
@@ -168,7 +169,8 @@ export function WaitlistBanner(handle: Handle) {
 									/>
 									<button
 										type="submit"
-										disabled={isSubmitting}
+										aria-disabled={isSubmitting ? 'true' : undefined}
+										aria-busy={isSubmitting ? 'true' : undefined}
 										mix={css(pillSubmitCss)}
 									>
 										{isSubmitting ? 'Joining…' : 'Join'}
@@ -348,6 +350,11 @@ const pillSubmitCss = {
 	fontSize: '0.9rem',
 	padding: '0.4rem 1.15rem',
 	whiteSpace: 'nowrap' as const,
+	'&[aria-disabled="true"]': {
+		cursor: 'progress',
+		opacity: 0.7,
+		transform: 'none',
+	},
 	[stackMq]: {
 		gridColumn: '1 / -1',
 		justifyContent: 'center',
