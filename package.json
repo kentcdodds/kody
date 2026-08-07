@@ -30,7 +30,7 @@
     "dev:mock-cloudflare": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cloudflare/wrangler.jsonc",
     "deploy": "node --input-type=module -e \"if (['preview','test'].includes(process.env.CLOUDFLARE_ENV ?? '')) { await import('./tools/prepare-e2e-env.ts'); }\" && npm run build && node --env-file=packages/worker/.env ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
     "sentry:upload-sourcemaps": "node tools/sentry-upload-sourcemaps.ts",
-    "build:client:web": "npm run clean:client && mkdir -p .tmp && esbuild packages/worker/client/entry.tsx --bundle --splitting --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name]-[hash] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/ui --minify --metafile=.tmp/client-meta.json && node tools/build-client-manifest.ts",
+    "build:client:web": "npm run clean:client && mkdir -p .tmp && esbuild packages/worker/client/entry.tsx --bundle --splitting --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name]-[hash] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/ui --minify --sourcemap --metafile=.tmp/client-meta.json && node tools/build-client-manifest.ts && node node_modules/@sentry/cli/bin/sentry-cli sourcemaps inject packages/worker/public",
     "build:client": "npm run build:client:web",
     "build": "nx run worker:build",
     "backup:build": "wrangler deploy --dry-run --config packages/backup-control-plane/wrangler.jsonc",
