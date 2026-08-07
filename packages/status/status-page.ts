@@ -1,4 +1,7 @@
-import { cloudflareStatusPageUrl } from './provider-incidents.ts'
+import {
+	cloudflareStatusPageUrl,
+	sanitizeProviderIncidentShortlink,
+} from './provider-incidents.ts'
 import {
 	type ComponentSnapshot,
 	type IncidentView,
@@ -210,17 +213,18 @@ function renderProviderIncident(incident: ProviderIncident): string {
 		incident.affectedComponents.length > 0
 			? ` · affects ${escapeHtml(incident.affectedComponents.join(', '))}`
 			: ''
+	const href = sanitizeProviderIncidentShortlink(incident.shortlink)
 	return `<div class="provider-incident">
 	<div class="provider-incident-title">${escapeHtml(incident.name)}</div>
 	<div class="provider-incident-meta">${escapeHtml(incident.status)} · ${escapeHtml(incident.impact)} impact${components}</div>
-	<div class="provider-incident-meta"><a href="${escapeHtml(incident.shortlink)}">Cloudflare status</a> · updated ${escapeHtml(incident.updatedAt)}</div>
+	<div class="provider-incident-meta"><a href="${escapeHtml(href)}">Cloudflare status</a> · updated ${escapeHtml(incident.updatedAt)}</div>
 </div>`
 }
 
 function renderProviderIncidentsSection(
-	incidents: Array<ProviderIncident> | null,
+	incidents: Array<ProviderIncident> | null | undefined,
 ): string {
-	if (incidents === null || incidents.length === 0) return ''
+	if (incidents == null || incidents.length === 0) return ''
 	return `<section class="provider-section" aria-label="Provider incidents from Cloudflare">
 	<h2>Provider incidents (Cloudflare)</h2>
 	<p class="provider-lead">Declared by Cloudflare on <a href="${escapeHtml(cloudflareStatusPageUrl)}">cloudflarestatus.com</a>. Separate from kody's measured component health — for context only.</p>

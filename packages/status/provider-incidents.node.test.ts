@@ -1,11 +1,13 @@
 import { expect, test, vi } from 'vitest'
 import {
+	cloudflareStatusPageUrl,
 	fetchRelevantProviderIncidents,
 	filterRelevantProviderIncidents,
 	formatProviderIncidentAnnotation,
 	parseProviderIncidentCache,
 	parseProviderIncidentsPayload,
 	providerIncidentCacheStaleMs,
+	sanitizeProviderIncidentShortlink,
 	serializeProviderIncidentCache,
 	type ProviderIncident,
 } from './provider-incidents.ts'
@@ -179,6 +181,32 @@ test('provider incident cache parses within TTL and rejects stale or corrupt ent
 		],
 	})
 	expect(parseProviderIncidentCache(incomplete, now)).toEqual([])
+
+	const futureDated = serializeProviderIncidentCache({
+		fetchedAt: now + 60_000,
+		incidents: [providerIncident()],
+	})
+	expect(parseProviderIncidentCache(futureDated, now)).toBeNull()
+})
+
+test('provider shortlinks are restricted to Cloudflare Statuspage HTTPS hosts', () => {
+	expect(sanitizeProviderIncidentShortlink('https://stspg.io/r2')).toBe(
+		'https://stspg.io/r2',
+	)
+	expect(sanitizeProviderIncidentShortlink('javascript:alert(1)')).toBe(
+		cloudflareStatusPageUrl,
+	)
+	expect(sanitizeProviderIncidentShortlink('https://evil.example/phish')).toBe(
+		cloudflareStatusPageUrl,
+	)
+
+	const filtered = filterRelevantProviderIncidents([
+		{
+			...r2Incident,
+			shortlink: 'javascript:alert(1)',
+		},
+	])
+	expect(filtered[0]?.shortlink).toBe(cloudflareStatusPageUrl)
 })
 
 test('outage email annotation names active Cloudflare incidents', () => {

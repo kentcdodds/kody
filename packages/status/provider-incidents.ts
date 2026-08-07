@@ -104,6 +104,26 @@ export function isRelevantCloudflareComponentName(name: string): boolean {
 	return relevantNameSet.has(name)
 }
 
+const allowedProviderIncidentHosts = new Set([
+	'www.cloudflarestatus.com',
+	'cloudflarestatus.com',
+	'stspg.io',
+])
+
+/** Only HTTPS Statuspage / shortlink hosts are safe to put in page hrefs. */
+export function sanitizeProviderIncidentShortlink(raw: string): string {
+	try {
+		const url = new URL(raw.trim())
+		if (url.protocol !== 'https:') return cloudflareStatusPageUrl
+		if (!allowedProviderIncidentHosts.has(url.hostname.toLowerCase())) {
+			return cloudflareStatusPageUrl
+		}
+		return url.toString()
+	} catch {
+		return cloudflareStatusPageUrl
+	}
+}
+
 export function filterRelevantProviderIncidents(
 	incidents: Array<StatuspageIncident>,
 ): Array<ProviderIncident> {
@@ -121,10 +141,9 @@ export function filterRelevantProviderIncidents(
 			name: incident.name.trim(),
 			status: incident.status?.trim() || 'unknown',
 			impact: incident.impact?.trim() || 'unknown',
-			shortlink:
-				typeof incident.shortlink === 'string' && incident.shortlink.trim()
-					? incident.shortlink.trim()
-					: cloudflareStatusPageUrl,
+			shortlink: sanitizeProviderIncidentShortlink(
+				typeof incident.shortlink === 'string' ? incident.shortlink : '',
+			),
 			updatedAt:
 				typeof incident.updated_at === 'string' && incident.updated_at
 					? incident.updated_at
@@ -176,26 +195,45 @@ export function parseProviderIncidentCache(
 	) {
 		return null
 	}
-	if (now - cache.fetchedAt > maxAgeMs) return null
+	const ageMs = now - cache.fetchedAt
+	if (ageMs < 0 || ageMs > maxAgeMs) return null
 	if (!Array.isArray(cache.incidents)) return null
-	return cache.incidents.filter(isProviderIncident)
+	const incidents: Array<ProviderIncident> = []
+	for (const entry of cache.incidents) {
+		const incident = normalizeCachedProviderIncident(entry)
+		if (incident) incidents.push(incident)
+	}
+	return incidents
 }
 
-function isProviderIncident(value: unknown): value is ProviderIncident {
-	if (value === null || typeof value !== 'object') return false
+function normalizeCachedProviderIncident(
+	value: unknown,
+): ProviderIncident | null {
+	if (value === null || typeof value !== 'object') return null
 	const incident = value as Partial<ProviderIncident>
-	return (
-		typeof incident.id === 'string' &&
-		typeof incident.name === 'string' &&
-		typeof incident.status === 'string' &&
-		typeof incident.impact === 'string' &&
-		typeof incident.shortlink === 'string' &&
-		typeof incident.updatedAt === 'string' &&
-		Array.isArray(incident.affectedComponents) &&
-		incident.affectedComponents.every(
+	if (
+		typeof incident.id !== 'string' ||
+		typeof incident.name !== 'string' ||
+		typeof incident.status !== 'string' ||
+		typeof incident.impact !== 'string' ||
+		typeof incident.shortlink !== 'string' ||
+		typeof incident.updatedAt !== 'string' ||
+		!Array.isArray(incident.affectedComponents) ||
+		!incident.affectedComponents.every(
 			(component) => typeof component === 'string',
 		)
-	)
+	) {
+		return null
+	}
+	return {
+		id: incident.id,
+		name: incident.name,
+		status: incident.status,
+		impact: incident.impact,
+		shortlink: sanitizeProviderIncidentShortlink(incident.shortlink),
+		updatedAt: incident.updatedAt,
+		affectedComponents: incident.affectedComponents,
+	}
 }
 
 export type FetchProviderIncidentsOptions = {
