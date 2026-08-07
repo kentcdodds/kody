@@ -6,9 +6,9 @@ import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
 export const rootDir = fileURLToPath(new URL('.', import.meta.url))
-// Match CI. Workers-unit moves DO class load into setupFiles (see
-// workers-do-warmup.ts); keep 20s for remaining workerd-only work such as
-// `@cloudflare/worker-bundler` and contended validate runs.
+// Match CI. Workers-unit first Durable Object RPC in a file is ~10s in the
+// Vitest pool (decision 0011); a 5s local default timed that out and forced
+// `--no-verify`. Also covers workerd-only work such as worker-bundler.
 const testTimeout = 20_000
 
 loadDotEnv({

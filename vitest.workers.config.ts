@@ -22,16 +22,6 @@ export default mergeConfig(
 		test: {
 			name: 'workers-unit',
 			include: ['**/*.workers.test.ts'],
-			// First DO class load in the pool is ~10–18s; pay it in setupFiles
-			// (see workers-do-warmup.ts) so test bodies stay fast. hookTimeout
-			// must cover that first setup per Worker.
-			hookTimeout: 60_000,
-			setupFiles: [
-				resolve(
-					rootDir,
-					'packages/worker/src/test-support/workers-do-warmup.ts',
-				),
-			],
 		},
 	}),
 )
