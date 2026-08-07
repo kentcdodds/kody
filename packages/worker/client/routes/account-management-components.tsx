@@ -3,7 +3,6 @@ import { routes } from '#app/routes.ts'
 import { on } from '#client/event-mixin.ts'
 import {
 	colors,
-	mq,
 	radius,
 	spacing,
 	transitions,
@@ -148,9 +147,15 @@ type AccountManagementShellProps = {
 	children: AccountManagementSlot
 }
 
-/** Account nav and list/detail panes stack below this width (prototype 860px). */
+/** Account nav collapses to a wrapping row below this width (prototype 860px). */
 export const accountManagementNarrowMq = '@media (max-width: 860px)'
 const accountNavMq = accountManagementNarrowMq
+
+/**
+ * List/detail panes need more room than the nav rail. Between the nav collapse
+ * and this width the 200px rail is still out, so two content columns crush.
+ */
+export const accountManagementStackMq = '@media (max-width: 1100px)'
 
 /** Prototype `.account` section rhythm: margin between blocks in the content column. */
 const accountSectionGap = 'clamp(2rem, 4vw, 2.75rem)'
@@ -519,7 +524,7 @@ export function AccountManagementLayout(
 				gap: spacing.lg,
 				alignItems: 'start',
 				minWidth: 0,
-				[accountManagementNarrowMq]: {
+				[accountManagementStackMq]: {
 					gridTemplateColumns: 'minmax(0, 1fr)',
 					...(handle.props.narrowOrder === 'detail-first'
 						? {
@@ -783,7 +788,7 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 				gridTemplateColumns: `repeat(${handle.props.columns ?? 2}, minmax(0, 1fr))`,
 				gap: spacing.md,
 				margin: 0,
-				[mq.mobile]: {
+				[accountManagementNarrowMq]: {
 					gridTemplateColumns: '1fr',
 				},
 			})}
