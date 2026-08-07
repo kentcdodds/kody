@@ -401,6 +401,16 @@
 				// https://kodyapps.dev/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
+				// Email domains are pinned to heykody.dev regardless of the web
+				// origin: MX/SPF/DKIM and Cloudflare Email Sending verification
+				// live on the heykody.dev zone, and every existing user inbox is
+				// {username}@inbox.heykody.dev. Without these pins, flipping
+				// APP_BASE_URL to https://heykody.app would silently rederive
+				// both domains onto heykody.app and break all existing
+				// addresses. Committed here (not just GitHub Actions vars) so
+				// the lock can never be lost to a missing repository variable.
+				"USER_EMAIL_DOMAIN": "inbox.heykody.dev",
+				"SYSTEM_EMAIL_DOMAIN": "heykody.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",

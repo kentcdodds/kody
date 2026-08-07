@@ -8,7 +8,7 @@ description:
 order: 3
 ---
 
-My [Kody](https://heykody.dev) account currently holds 51 secrets. API keys,
+My [Kody](https://heykody.app) account currently holds 51 secrets. API keys,
 OAuth tokens, personal access tokens for services I actually use. My assistant
 can act on my behalf across all of them.
 
@@ -143,7 +143,7 @@ and the code behind every claim in this post is in
 [the repo](https://github.com/kentcdodds/kody).
 
 If you'd rather own your assistant than rent one,
-[heykody.dev/signup](https://heykody.dev/signup) is where to start (signup is
+[heykody.app/signup](https://heykody.app/signup) is where to start (signup is
 invite-gated right now, and the waitlist is on that page). And whether or not
 Kody is your thing, take the question with you: for every system holding your
 keys, ask whether the safety property is enforced by structure or by hope.

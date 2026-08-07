@@ -186,6 +186,16 @@ export const EnvSchema = object({
 		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
 	),
 	APP_BASE_URL: optionalUrlStringSchema,
+	// Comma-separated legacy app hostnames (for example `heykody.dev`) the
+	// Worker keeps serving alongside the canonical `APP_BASE_URL` host during
+	// a domain migration. The deploy attaches these as custom domains so
+	// flipping APP_BASE_URL never detaches the old origin or deletes its DNS.
+	APP_LEGACY_HOSTS: optionalNonEmptyStringSchema,
+	// Exact string 'true' enables 308 redirects from legacy hosts to the
+	// canonical origin for safe browser GET/HEAD requests. Protocol surfaces
+	// (/mcp, OAuth, well-known, webhooks, email) are never redirected. Off by
+	// default so the first migration phase is purely dual-serve.
+	APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
 	// Public account creation posture. `invite` is the safe default; switching
 	// to `open` is an explicit deployment configuration change.
 	SIGNUP_MODE: signupModeSchema,
@@ -200,6 +210,11 @@ export const EnvSchema = object({
 	// See docs/contributing/security.md.
 	PACKAGE_APP_BASE_URL: optionalUrlStringSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
+	// Overrides the system email domain derived from APP_BASE_URL. Production
+	// pins this to heykody.dev: email DNS (MX/SPF/DKIM) and Cloudflare Email
+	// Sending verification live on that zone, so system mail must not follow
+	// the web origin to heykody.app.
+	SYSTEM_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
 	EMAIL_EVENTS: optionalAnalyticsEngineDatasetSchema,

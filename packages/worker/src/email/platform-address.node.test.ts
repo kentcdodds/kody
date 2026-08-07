@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	buildPlatformEmailAddress,
 	getPlatformEmailDomain,
+	getSystemEmailDomain,
 } from './platform-address.ts'
 
 test('getPlatformEmailDomain derives inbox.<hostname> from APP_BASE_URL', () => {
@@ -34,6 +35,32 @@ test('getPlatformEmailDomain prefers a valid USER_EMAIL_DOMAIN override', () => 
 		}),
 	).toBe('inbox.heykody.dev')
 	expect(getPlatformEmailDomain({ USER_EMAIL_DOMAIN: 'user@host' })).toBeNull()
+})
+
+test('getSystemEmailDomain prefers a valid SYSTEM_EMAIL_DOMAIN override', () => {
+	// The migration lock: APP_BASE_URL moves to heykody.app but system mail
+	// (kody@..., operator inboxes) stays on the verified heykody.dev zone.
+	expect(
+		getSystemEmailDomain({
+			APP_BASE_URL: 'https://heykody.app',
+			SYSTEM_EMAIL_DOMAIN: 'heykody.dev',
+		}),
+	).toBe('heykody.dev')
+	expect(getSystemEmailDomain({ SYSTEM_EMAIL_DOMAIN: 'HeyKody.DEV.' })).toBe(
+		'heykody.dev',
+	)
+	// Without the override the domain derives from APP_BASE_URL as before.
+	expect(getSystemEmailDomain({ APP_BASE_URL: 'https://heykody.dev' })).toBe(
+		'heykody.dev',
+	)
+	// A malformed override falls back to the derived default.
+	expect(
+		getSystemEmailDomain({
+			APP_BASE_URL: 'https://heykody.dev',
+			SYSTEM_EMAIL_DOMAIN: 'not a hostname',
+		}),
+	).toBe('heykody.dev')
+	expect(getSystemEmailDomain({})).toBeNull()
 })
 
 test('buildPlatformEmailAddress normalizes the username', () => {

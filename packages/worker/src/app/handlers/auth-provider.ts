@@ -65,6 +65,7 @@ import {
 } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#app/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
+import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -73,7 +74,29 @@ import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.t
 const oauthNoUsablePasswordHash = 'oauth_created_no_usable_password'
 
 function getCallbackRedirectUri(env: Env, url: URL, provider: OauthProviderId) {
-	const base = env.APP_BASE_URL ? new URL(env.APP_BASE_URL) : url
+	// The OAuth login state lives in a host-scoped cookie, so the provider must
+	// call back to the host that started the flow whenever that host has a
+	// registered callback: the canonical APP_BASE_URL host or a dual-served
+	// legacy host (APP_LEGACY_HOSTS, both registered with providers during a
+	// domain migration). Other hosts (the workers.dev backup trigger) keep
+	// using the configured canonical callback as before.
+	const base = (() => {
+		if (!env.APP_BASE_URL) return url
+		let canonical: URL
+		try {
+			canonical = new URL(env.APP_BASE_URL)
+		} catch {
+			return url
+		}
+		const requestHost = url.hostname.toLowerCase()
+		if (
+			requestHost === canonical.hostname.toLowerCase() ||
+			parseLegacyHosts(env.APP_LEGACY_HOSTS).includes(requestHost)
+		) {
+			return url
+		}
+		return canonical
+	})()
 	return new URL(`/auth/${provider}/callback`, base).toString()
 }
 
