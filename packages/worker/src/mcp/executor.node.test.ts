@@ -1501,6 +1501,34 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		suggestedAction: { type: 'retry' },
 	})
 
+	// A sandbox timeout is terminal for the identical call: the hint steers
+	// toward durable workflows (or smaller calls) instead of a futile retry.
+	expect(
+		getExecutionErrorDetails(new Error(executorSandboxTimeoutMessage)),
+	).toMatchObject({
+		kind: 'execution_timed_out',
+		nextStep: expect.stringContaining('workflows.create'),
+		suggestedAction: { type: 'fix_code' },
+	})
+	// Executor results carry the timeout as a bare string, and nested package
+	// invocations wrap it with an `[execution_failed]` prefix in a cause.
+	expect(getExecutionErrorDetails(executorSandboxTimeoutMessage)).toMatchObject(
+		{ kind: 'execution_timed_out' },
+	)
+	expect(
+		getExecutionErrorDetails(
+			new Error('Nested execute failed.', {
+				cause: new Error(`[execution_failed] ${executorSandboxTimeoutMessage}`),
+			}),
+		),
+	).toMatchObject({ kind: 'execution_timed_out' })
+	// Messages that merely mention timing out mid-sentence stay unhinted.
+	expect(
+		getExecutionErrorDetails(
+			new Error('Upstream reported: Execution timed out unexpectedly'),
+		),
+	).toBeNull()
+
 	const errors = [
 		capabilityError,
 		new Error(createMissingSecretMessage('missingToken')),

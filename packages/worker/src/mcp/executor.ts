@@ -1017,6 +1017,14 @@ export type ExecutionErrorDetails =
 				type: 'retry'
 			}
 	  }
+	| {
+			kind: 'execution_timed_out'
+			message: string
+			nextStep: string
+			suggestedAction: {
+				type: 'fix_code'
+			}
+	  }
 
 export function getExecutionErrorDetails(
 	error: unknown,
@@ -1042,6 +1050,18 @@ export function getExecutionErrorDetails(
 			limit: maxConcurrentDynamicWorkerEvaluationsPerRequest,
 			suggestedAction: {
 				type: 'retry',
+			},
+		}
+	}
+
+	if (causeMessages.some(isExecutorSandboxTimeoutErrorMessage)) {
+		return {
+			kind: 'execution_timed_out',
+			message,
+			nextStep:
+				"The sandbox enforces a hard execution time budget (~90s for ad hoc execute), so retrying the identical call will time out again. For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — `import { workflows } from 'kody:runtime'` then `workflows.create({ code, params })` — and inspect progress with `workflow_run_list`. Otherwise split the work into smaller calls that each finish well within the budget.",
+			suggestedAction: {
+				type: 'fix_code',
 			},
 		}
 	}
@@ -1290,6 +1310,19 @@ function buildUnboundRuntimeHelperNextStep(helperName: string) {
  */
 function isDisposedRpcStubMessage(message: string) {
 	return message.includes('RPC stub used after being disposed')
+}
+
+/**
+ * The sandbox enforces a hard evaluation deadline (see
+ * `createExecuteExecutor`), so a bare "Execution timed out" is terminal for
+ * the identical call. Matching tolerates wrapper prefixes such as
+ * `[execution_failed] ` from package invocation responses.
+ */
+function isExecutorSandboxTimeoutErrorMessage(message: string) {
+	return (
+		message === executorSandboxTimeoutMessage ||
+		message.endsWith(` ${executorSandboxTimeoutMessage}`)
+	)
 }
 
 function parseMissingRuntimeExportMessage(message: string) {
