@@ -60,27 +60,23 @@ export function buildDiscoveryPrompt(input: {
 }
 
 /**
- * First-win prompt: a visible result inside a minute with zero third-party
- * setup. The email invites a reply on purpose — replying and then asking the
- * agent to read the reply teaches the storage-first email model (Kody stores
- * mail; the agent reads it when asked; nothing answers by itself).
+ * First-win mini-wizard, sub-step 1 (Send): one email carries both the
+ * introduction and a thirty-second interview, so a single reply exercises
+ * the storage-first email model and seeds durable memory. The "use Kody MCP
+ * to" prefix routes the request explicitly — "Hey Kody" alone is not enough
+ * for some models to pick the right tool.
  */
 export function buildIntroEmailPrompt() {
-	return 'Hey Kody, send me a welcome email introducing yourself, and invite me to reply to it.'
+	return 'Hey Kody, use Kody MCP to send me a welcome email introducing yourself and asking me my name, what I do for work, and what I do for fun. Invite me to reply.'
 }
 
 /**
- * Follow-up after the user replies to the welcome email. Kept separate from
- * the send prompt so the UI can show "reply, then ask your agent to look it
- * up" as an explicit second paste.
+ * First-win mini-wizard, sub-step 3 (Remember): after the reply lands, the
+ * agent reads it out of Kody's stored mail and turns the answers into
+ * durable memories in one paste.
  */
 export function buildIntroEmailLookupPrompt() {
-	return 'Hey Kody, look up my reply to your welcome email and tell me what I said.'
-}
-
-/** Second first-win prompt: start durable memory with a tiny interview. */
-export function buildMemoryPrompt() {
-	return 'Hey Kody, ask me a couple of questions about who I am and what I work with, then remember what matters.'
+	return 'Hey Kody, use Kody MCP to look up my reply to your welcome email and remember what matters about me.'
 }
 
 /**
@@ -120,7 +116,7 @@ export function loadPublicOnboardingData(input: {
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
 		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
-		memoryPrompt: buildMemoryPrompt(),
+		hasSentWelcomeEmail: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -174,11 +170,12 @@ export async function loadOnboardingData(input: {
 		introEmailLookupPrompt: input.emailVerified
 			? buildIntroEmailLookupPrompt()
 			: '',
-		memoryPrompt: input.emailVerified ? buildMemoryPrompt() : '',
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
+		// Computed by the handler alongside the checklist probes.
+		hasSentWelcomeEmail: false,
 		checklist: input.checklist ?? null,
 	}
 }

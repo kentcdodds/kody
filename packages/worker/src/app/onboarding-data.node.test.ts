@@ -4,7 +4,6 @@ import {
 	buildIntroEmailLookupPrompt,
 	buildIntroEmailPrompt,
 	buildMcpServerUrl,
-	buildMemoryPrompt,
 	buildOnboardingSetupPrompt,
 	loadOnboardingData,
 	loadPublicOnboardingData,
@@ -46,7 +45,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
 		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
-		memoryPrompt: buildMemoryPrompt(),
+		hasSentWelcomeEmail: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -75,7 +74,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
 		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
-		memoryPrompt: buildMemoryPrompt(),
+		hasSentWelcomeEmail: false,
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
@@ -123,7 +122,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		// First-win prompts need a verified email (they send/store real data).
 		introEmailPrompt: '',
 		introEmailLookupPrompt: '',
-		memoryPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({
 			env: {},

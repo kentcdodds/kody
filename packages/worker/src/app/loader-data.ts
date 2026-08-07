@@ -667,12 +667,12 @@ export type OnboardingLoaderData = {
 	setupPrompt: string
 	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */
 	discoveryPrompt: string
-	/** First-win prompt: welcome email that invites a reply. */
+	/** First-win send prompt: welcome email that carries the interview. */
 	introEmailPrompt: string
-	/** First-win follow-up: ask the agent to read the user's reply. */
+	/** First-win remember prompt: read the reply and save memories. */
 	introEmailLookupPrompt: string
-	/** First-win prompt: tiny interview that seeds durable memories. */
-	memoryPrompt: string
+	/** True when any outbound mail exists (first-win Send sub-step done). */
+	hasSentWelcomeEmail: boolean
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean

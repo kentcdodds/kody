@@ -15,7 +15,7 @@ export type OnboardingPayload = {
 	discoveryPrompt: string
 	introEmailPrompt: string
 	introEmailLookupPrompt: string
-	memoryPrompt: string
+	hasSentWelcomeEmail: boolean
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean

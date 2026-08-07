@@ -1,3 +1,4 @@
+import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
@@ -36,6 +37,23 @@ export async function loadChecklist(
 		readOnboardingChecklistDismissed({ env, userId }),
 	])
 	return { items: checklist.items, dismissed }
+}
+
+/**
+ * First-win Send sub-step signal: any stored outbound mail means the welcome
+ * email went out. Fails open to false so a Mailbox blip never breaks the
+ * onboarding payload.
+ */
+async function loadHasSentWelcomeEmail(
+	env: Env,
+	userId: string,
+): Promise<boolean> {
+	const outbound = await countInternalUserEmailMessages({
+		env,
+		ownerId: userId,
+		filters: { direction: 'outbound' },
+	}).catch(() => 0)
+	return outbound > 0
 }
 
 function redirectUnverifiedToPending(request: Request) {
@@ -81,11 +99,11 @@ export function createOnboardingHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
 			})
-			onboarding.checklist = await loadChecklist(
-				env,
-				user.mcpUser.userId,
-				onboarding.hasMcpClient,
-			)
+			;[onboarding.checklist, onboarding.hasSentWelcomeEmail] =
+				await Promise.all([
+					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+					loadHasSentWelcomeEmail(env, user.mcpUser.userId),
+				])
 			return renderAppPage({
 				request,
 				env,
@@ -127,11 +145,11 @@ export function createOnboardingApiHandler(env: Env) {
 					: [],
 			})
 			if (user.emailVerified) {
-				onboarding.checklist = await loadChecklist(
-					env,
-					user.mcpUser.userId,
-					onboarding.hasMcpClient,
-				)
+				;[onboarding.checklist, onboarding.hasSentWelcomeEmail] =
+					await Promise.all([
+						loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+						loadHasSentWelcomeEmail(env, user.mcpUser.userId),
+					])
 			}
 			return jsonResponse(onboarding)
 		},

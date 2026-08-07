@@ -9,7 +9,6 @@ import {
 	buildDiscoveryPrompt,
 	buildIntroEmailLookupPrompt,
 	buildIntroEmailPrompt,
-	buildMemoryPrompt,
 	buildOnboardingSetupPrompt,
 } from '#app/onboarding-data.ts'
 
@@ -47,7 +46,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		}),
 		introEmailPrompt: buildIntroEmailPrompt(),
 		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
-		memoryPrompt: buildMemoryPrompt(),
+		hasSentWelcomeEmail: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
