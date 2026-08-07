@@ -1,6 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, expect, test, vi } from 'vitest'
-import { saveSecret, resolveSecret } from '#mcp/secrets/service.ts'
+import {
+	saveSecret,
+	resolveSecret,
+	setSecretAllowedHosts,
+} from '#mcp/secrets/service.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -129,6 +133,22 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 	expect(refresh.found && refresh.value).toBe('rotated-refresh-token')
 })
 
+async function approveSecretHosts(
+	env: Env,
+	userId: string,
+	name: string,
+	allowedHosts: Array<string>,
+) {
+	await setSecretAllowedHosts({
+		env,
+		userId,
+		name,
+		scope: 'user',
+		allowedHosts,
+		storageContext,
+	})
+}
+
 test('user-lane refresh resolves the client secret from the user secret store', async () => {
 	const { env } = createHarness()
 	const userId = 'user-lane-refresh'
@@ -163,7 +183,23 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 	})
 	await seedUserTokens(env, userId, 'google')
 
+	// User-lane refresh honors the same per-secret host allowlist the fetch
+	// gateway enforces: unapproved token hosts fail closed...
 	const fetchMock = stubTokenEndpoint({ access_token: 'fresh-google-token' })
+	await expect(
+		refreshIntegrationTokens({ env, userId, name: 'google' }),
+	).rejects.toThrow(
+		'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+	)
+	expect(fetchMock).not.toHaveBeenCalled()
+
+	// ...and approved hosts refresh normally.
+	await approveSecretHosts(env, userId, 'googleRefreshToken', [
+		'oauth2.googleapis.com',
+	])
+	await approveSecretHosts(env, userId, 'googleClientSecret', [
+		'oauth2.googleapis.com',
+	])
 	const result = await refreshIntegrationTokens({
 		env,
 		userId,

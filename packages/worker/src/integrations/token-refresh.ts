@@ -1,3 +1,4 @@
+import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { resolveSecret, saveSecret } from '#mcp/secrets/service.ts'
 import {
 	buildOAuthTokenExchangeRequest,
@@ -56,6 +57,28 @@ export async function refreshIntegrationTokens(input: {
 	}
 
 	const storageContext = { sessionId: null, appId: null, packageId: null }
+	// User-lane destinations are user-configurable (integration_save can point
+	// tokenUrl anywhere), so materializing user secrets here must honor the
+	// same per-secret host allowlist the fetch gateway enforces for
+	// placeholder resolution. Platform-lane destinations are operator-pinned
+	// rows, so no user-secret allowlist applies.
+	const tokenHost = safeParseHost(app.tokenUrl)
+	if (!tokenHost) {
+		throw new Error(
+			`Integration "${connection.name}" has an invalid token URL.`,
+		)
+	}
+	const assertUserSecretAllowedForTokenHost = (
+		secretName: string,
+		allowedHosts: Array<string>,
+	) => {
+		if (joined.lane !== 'user') return
+		if (allowedHosts.includes(tokenHost)) return
+		throw new Error(
+			`Secret "${secretName}" is not approved for host "${tokenHost}". Approve the host on /account/secrets before refreshing this integration.`,
+		)
+	}
+
 	const refreshTokenSecret = await resolveSecret({
 		env: input.env,
 		userId: input.userId,
@@ -68,6 +91,10 @@ export async function refreshIntegrationTokens(input: {
 			`Refresh token secret "${refreshTokenSecretName}" was not found.`,
 		)
 	}
+	assertUserSecretAllowedForTokenHost(
+		refreshTokenSecretName,
+		refreshTokenSecret.allowedHosts,
+	)
 
 	let clientSecret: string | null = null
 	if (app.flow === 'confidential') {
@@ -95,6 +122,12 @@ export async function refreshIntegrationTokens(input: {
 					scope: 'user',
 					storageContext,
 				})
+				if (resolved.found) {
+					assertUserSecretAllowedForTokenHost(
+						clientSecretSecretName,
+						resolved.allowedHosts,
+					)
+				}
 				clientSecret = resolved.found ? (resolved.value ?? null) : null
 				break
 			}

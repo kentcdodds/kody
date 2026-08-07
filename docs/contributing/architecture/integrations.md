@@ -102,7 +102,11 @@ secret has no user-facing secret name by design. `integration_token_refresh`
 and client secret server-side, POSTs to the provider token URL, persists rotated
 tokens back to the user secret store, and returns only
 `{ ok, refreshedAt, refreshTokenRotated }` — never token values. User-lane
-connections may also refresh through it.
+connections may also refresh through it; because their `tokenUrl` is
+user-configurable, the user lane enforces each materialized secret's
+`allowed_hosts` against the token host before the request — the same containment
+the fetch gateway applies to placeholder resolution. Platform-lane destinations
+are operator-pinned rows, so no user-secret allowlist applies.
 
 In the sandbox, `refreshAccessToken` throws for platform integrations (their
 `integration_get` config carries `platform: true`), and
