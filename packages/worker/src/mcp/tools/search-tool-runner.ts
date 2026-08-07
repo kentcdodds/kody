@@ -443,7 +443,7 @@ export async function runSearchTool(input: {
 			!searchConversationIdsWithPreamble.includes(conversationId)
 		if (includePreamble && typeof statefulAgent.setState === 'function') {
 			statefulAgent.setState({
-				...statefulAgent.state,
+				...(statefulAgent.state ?? {}),
 				searchConversationIdsWithPreamble: [
 					...searchConversationIdsWithPreamble,
 					conversationId,
@@ -483,7 +483,7 @@ export async function runSearchTool(input: {
 				structuredWarnings.push(notice)
 				if (typeof statefulAgent.setState === 'function') {
 					statefulAgent.setState({
-						...statefulAgent.state,
+						...(statefulAgent.state ?? {}),
 						onboardingNoticeConversationIds: [
 							...onboardingNoticeConversationIds,
 							conversationId,

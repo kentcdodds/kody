@@ -867,7 +867,7 @@ async function resolveRawFetchHostNudges(input: {
 	})
 	if (typeof statefulAgent.setState === 'function') {
 		statefulAgent.setState({
-			...statefulAgent.state,
+			...(statefulAgent.state ?? {}),
 			rawFetchHostNudges: applied.state,
 		})
 	}

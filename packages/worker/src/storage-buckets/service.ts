@@ -471,7 +471,7 @@ export function storageBucketKindFromStorageId(
  * scheduled in this isolate.
  */
 export async function flushStorageBucketRegistrationsForTests(): Promise<void> {
-	await Promise.all(pendingRegistrations)
+	await Promise.all([...pendingRegistrations])
 }
 
 /** Test helper: clear the in-isolate registration dedupe and refresh throttle. */
