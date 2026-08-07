@@ -261,10 +261,10 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
   in-flight workflow state as lost and restart or reconcile affected workflows.
 - **`AUDIT_DB`** — the separate D1 database containing hashed security audit
   events with 180-day retention has no cross-account backup lane. This is
-  accepted-unprotected operator/security evidence, not user content. **Operator
-  confirmation required:** confirm that losing the retained audit trail in a DR
-  account-loss event remains acceptable, or open a follow-up for an independent
-  `AUDIT_DB` export before declaring the program complete.
+  **accepted-unprotected** operator/security evidence, not user content
+  (confirmed 2026-08-07): losing the retained audit trail in a DR account-loss
+  event is acceptable; new events accumulate again after restore. Revisit only
+  if forensics retention across account loss becomes a requirement.
 
 ### Honest gaps
 
@@ -664,8 +664,8 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
   never-pruned job observability and activation state are backed up
 - Automated Mailbox re-import (sealed dumps are manually recoverable)
 - Backup of UserMeter (reconciliation/restart is the accepted recovery path)
-- Backup of `AUDIT_DB` hashed audit events (180-day evidence; accepted pending
-  explicit operator confirmation)
+- Backup of `AUDIT_DB` hashed audit events (180-day evidence;
+  accepted-unprotected 2026-08-07 — operator confirmed no backup lane for now)
 - Plaintext `SECRET_STORE_KEY` or other credentials inside backup media
 - Using `tools/export-d1-remote-to-sqlite.sh` as DR
 
