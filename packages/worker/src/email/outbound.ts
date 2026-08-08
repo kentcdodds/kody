@@ -666,10 +666,6 @@ export async function sendOutboundEmail(
 			resource: 'email_sends_per_day',
 			now: entitlementNow,
 		})
-		recordEmailReportingEvent(input.env, {
-			userId: input.userId,
-			eventType: 'email_send',
-		})
 
 		const now = entitlementNow.toISOString()
 		const inboxId = original?.inboxId ?? input.inboxId ?? null
@@ -791,6 +787,10 @@ export async function sendOutboundEmail(
 			)
 			throw error
 		}
+		recordEmailReportingEvent(input.env, {
+			userId: input.userId,
+			eventType: 'email_send',
+		})
 		await mailbox.upsertDeliveryEvent({
 			ownerId: input.userId,
 			event: outboundDeliveryEvent({
