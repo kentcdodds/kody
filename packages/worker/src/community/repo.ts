@@ -725,6 +725,10 @@ export async function listCommunityForksByListingAndUser(
 	return (result.results ?? []).map((row) => mapCommunityForkRow(row))
 }
 
+/**
+ * Viewer forks for a set of listings. `ORDER BY created_at` applies inside
+ * each D1 chunk only; callers that need a global order must sort themselves.
+ */
 export async function listCommunityForksByListingIdsAndUser(
 	db: D1Database,
 	input: {

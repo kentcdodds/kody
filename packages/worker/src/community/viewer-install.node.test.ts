@@ -7,6 +7,7 @@ test('resolveViewerListingInstalls prefers matching kody_id, then listing forks'
 		{ id: 'listing-cloudflare', kodyId: 'cloudflare' },
 		{ id: 'listing-notion', kodyId: 'notion' },
 		{ id: 'listing-slack', kodyId: 'slack' },
+		{ id: 'listing-dropbox', kodyId: 'dropbox' },
 	]
 
 	const resolved = resolveViewerListingInstalls({
@@ -48,6 +49,20 @@ test('resolveViewerListingInstalls prefers matching kody_id, then listing forks'
 				forkedSourceId: 'src-notion-old',
 				createdAt: '2026-07-01T00:00:00.000Z',
 			},
+			{
+				listingId: 'listing-dropbox',
+				targetKodyId: 'older-dropbox',
+				forkedPackageId: 'pkg-dropbox-old',
+				forkedSourceId: 'src-dropbox-old',
+				createdAt: '2026-06-01T00:00:00.000Z',
+			},
+			{
+				listingId: 'listing-dropbox',
+				targetKodyId: 'my-dropbox',
+				forkedPackageId: 'pkg-dropbox-new',
+				forkedSourceId: 'src-dropbox-new',
+				createdAt: '2026-08-03T00:00:00.000Z',
+			},
 		],
 	})
 
@@ -67,4 +82,9 @@ test('resolveViewerListingInstalls prefers matching kody_id, then listing forks'
 		sourceId: 'src-notion',
 	})
 	expect(resolved.has('listing-slack')).toBe(false)
+	expect(resolved.get('listing-dropbox')).toEqual({
+		status: 'adaptation_required',
+		targetName: '@burhan/my-dropbox',
+		sourceId: 'src-dropbox-new',
+	})
 })

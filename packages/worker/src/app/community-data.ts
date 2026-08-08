@@ -99,12 +99,12 @@ export async function loadCommunityIndexData(
 		},
 	)
 
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readOptionalAuthenticatedViewer(request, env)
 	return {
 		ok: true,
 		listings: await overlayViewerInstallsOnListings({
 			env,
-			user: user?.mcpUser ?? null,
+			user,
 			listings,
 		}),
 		query: query || null,
@@ -135,10 +135,10 @@ export async function loadOnboardingFeaturedListings(
 				return rows.map(toOnboardingFeaturedListing)
 			},
 		)
-		const user = await readAuthenticatedAppUser(request, env)
+		const user = await readOptionalAuthenticatedViewer(request, env)
 		return overlayViewerInstallsOnListings({
 			env,
-			user: user?.mcpUser ?? null,
+			user,
 			listings,
 		})
 	} catch (error) {
@@ -203,7 +203,7 @@ async function loadCommunityDetailDataUncached(
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
 	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
 
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readOptionalAuthenticatedAppUser(request, env)
 	const viewerUserId = user?.mcpUser.userId ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
@@ -268,6 +268,23 @@ export function composeCommunityDetailLoaderData(input: {
 		starredByViewer: input.starredByViewer ?? false,
 		viewerInstall: input.viewerInstall ?? null,
 	}
+}
+
+/**
+ * Public listing pages stay up when session parsing or user lookup fails.
+ * Viewer overlays are optional; anonymous listings are the safe fallback.
+ */
+async function readOptionalAuthenticatedAppUser(request: Request, env: Env) {
+	try {
+		return await readAuthenticatedAppUser(request, env)
+	} catch (error) {
+		console.error('Failed to resolve authenticated viewer for listings:', error)
+		return null
+	}
+}
+
+async function readOptionalAuthenticatedViewer(request: Request, env: Env) {
+	return (await readOptionalAuthenticatedAppUser(request, env))?.mcpUser ?? null
 }
 
 async function overlayViewerInstallsOnListings<
