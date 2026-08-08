@@ -643,8 +643,9 @@ test('bulk triage rolls back earlier chunks when a later chunk fails', async () 
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
+		const baseMs = Date.now()
 		for (let index = 0; index < 100; index += 1) {
-			const startedAt = new Date(Date.now() - index).toISOString()
+			const startedAt = new Date(baseMs - index).toISOString()
 			insertRunRow(state, {
 				id: `atomic-${index}`,
 				status: 'error',
