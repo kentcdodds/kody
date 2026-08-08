@@ -19,6 +19,7 @@ import {
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
 import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-email-verified.ts'
+import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -109,6 +110,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let lastSearch = ''
 	let turnstileSiteKey: string | null | undefined
 	let sessionOverride: SessionInfo | null | undefined
+	let sessionOverrideBaseline: SessionInfo | null | undefined
 	let resetCompleted = false
 	let allowClientReset = false
 	let activeInfoRequestId = 0
@@ -243,19 +245,27 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	async function refreshSession() {
+		const appSession = readAppSession(handle)
 		const nextSession = await fetchSessionInfo()
+		sessionOverrideBaseline = appSession.session
 		sessionOverride = nextSession
 		queueSessionRefresh()
 		return nextSession
 	}
 
 	function readEffectiveSession() {
-		const appSession = readAppSession(handle)
+		const resolved = resolveAuthorizeSession({
+			shared: readAppSession(handle),
+			override: sessionOverride,
+			overrideBaseline: sessionOverrideBaseline,
+		})
+		if (resolved.clearOverride) {
+			sessionOverride = undefined
+			sessionOverrideBaseline = undefined
+		}
 		return {
-			session:
-				sessionOverride === undefined ? appSession.session : sessionOverride,
-			sessionStatus:
-				sessionOverride === undefined ? appSession.status : ('ready' as const),
+			session: resolved.session,
+			sessionStatus: resolved.status,
 		}
 	}
 

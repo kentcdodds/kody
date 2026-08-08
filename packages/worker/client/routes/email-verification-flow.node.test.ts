@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-email-verified.ts'
+import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
+import { type SessionInfo } from '#client/session.ts'
 import {
 	buildOnboardingPath,
 	onboardingPath,
@@ -42,6 +44,68 @@ test('email verification redirect helpers preserve safe targets and reject open 
 			infoEmailVerified: false,
 		}),
 	).toBe(false)
+
+	const unverifiedUser: SessionInfo = {
+		email: 'user@example.com',
+		emailVerified: false,
+		username: 'account-user',
+		roles: ['user'],
+		permissions: [],
+		featureFlags: { 'demo-indicator': false },
+	}
+	const verifiedUser: SessionInfo = {
+		...unverifiedUser,
+		emailVerified: true,
+	}
+	const otherUser: SessionInfo = {
+		...unverifiedUser,
+		email: 'other@example.com',
+		username: 'other-user',
+	}
+	expect(
+		resolveAuthorizeSession({
+			shared: { session: unverifiedUser, status: 'ready' },
+			override: verifiedUser,
+			overrideBaseline: unverifiedUser,
+		}),
+	).toEqual({
+		session: verifiedUser,
+		status: 'ready',
+		clearOverride: false,
+	})
+	expect(
+		resolveAuthorizeSession({
+			shared: { session: verifiedUser, status: 'ready' },
+			override: verifiedUser,
+			overrideBaseline: unverifiedUser,
+		}),
+	).toEqual({
+		session: verifiedUser,
+		status: 'ready',
+		clearOverride: true,
+	})
+	expect(
+		resolveAuthorizeSession({
+			shared: { session: otherUser, status: 'ready' },
+			override: verifiedUser,
+			overrideBaseline: unverifiedUser,
+		}),
+	).toEqual({
+		session: otherUser,
+		status: 'ready',
+		clearOverride: true,
+	})
+	expect(
+		resolveAuthorizeSession({
+			shared: { session: null, status: 'ready' },
+			override: verifiedUser,
+			overrideBaseline: unverifiedUser,
+		}),
+	).toEqual({
+		session: null,
+		status: 'ready',
+		clearOverride: true,
+	})
 
 	expect(buildOnboardingPath(null)).toBe(onboardingPath)
 	expect(buildOnboardingPath(oauthResume)).toBe(
