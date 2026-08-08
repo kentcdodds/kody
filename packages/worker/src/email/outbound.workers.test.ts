@@ -1095,6 +1095,34 @@ test('sendOutboundEmail increments the daily counter when under the plan limit',
 	expect(await readDailyEmailSendCounter(userId)).toBe(1)
 }, 30_000)
 
+test('sendOutboundEmail refunds the daily counter when mailbox storage fails before a copy is stored', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const email = `refund-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedVerifiedAccount({ email, plan: 'pro' })
+	expect(await readDailyEmailSendCounter(userId)).toBe(0)
+
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail: email,
+			recipientPolicy: 'self',
+			subject: 'Hello from Kody',
+			text: 'Body',
+			threadId: 'missing-thread',
+		}),
+	).rejects.toThrow('Email thread was not found: missing-thread')
+
+	expect(await readDailyEmailSendCounter(userId)).toBe(0)
+	expect(
+		await mailboxRpc({ env, userId }).listMessages({
+			direction: 'outbound',
+			limit: 5,
+		}),
+	).toMatchObject({ messages: [] })
+}, 30_000)
+
 test('sendOutboundEmail caps max-plan users at the email daily backstop', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 

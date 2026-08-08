@@ -112,8 +112,8 @@ onboarding, `/community` cards, and listing detail overlay a per-request
 or a `community_forks` row for that listing, so those surfaces show Copy prompt
 instead of Install. Listing cards and detail place Trusted / Installed / Forked
 badges on a row under the title so wrapping `@scope/name` stays aligned.
-`community_get` exposes the effective `featured` flag.
-Onboarding loads up to 12 featured listings.
+`community_get` exposes the effective `featured` flag. Onboarding loads up to 12
+featured listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
