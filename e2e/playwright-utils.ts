@@ -110,17 +110,21 @@ export const test = base.extend<{
 
 			// Manual retry loop (not expect().toPass): connection-refused must
 			// abort immediately instead of polling for the full auth budget
-			// after wrangler has already exited.
+			// after wrangler has already exited. Cap each request timeout to the
+			// remaining budget so Playwright's 30s API default cannot overrun it.
 			const deadline = Date.now() + authRetryBudgetMs
 			let response!: Awaited<ReturnType<typeof page.request.post>>
 			let lastError: unknown
 			for (;;) {
+				const remainingMs = Math.max(0, deadline - Date.now())
+				if (remainingMs === 0) break
 				try {
 					clearAuthRateLimitsInE2eDatabase()
 					if (preferredMode === 'login') {
 						response = await page.request.post('/auth', {
 							data: { email, password, mode: 'login' },
 							headers: { 'Content-Type': 'application/json' },
+							timeout: remainingMs,
 						})
 						if (!response.ok()) {
 							throw new Error(
@@ -128,11 +132,11 @@ export const test = base.extend<{
 							)
 						}
 					} else {
-						response = await signupOrLoginViaAuth(page.request, {
-							email,
-							username,
-							password,
-						})
+						response = await signupOrLoginViaAuth(
+							page.request,
+							{ email, username, password },
+							remainingMs,
+						)
 					}
 					lastError = undefined
 					break
@@ -144,6 +148,9 @@ export const test = base.extend<{
 				}
 			}
 			if (lastError) throw lastError
+			if (!response) {
+				throw new Error('Failed to authenticate within the auth retry budget.')
+			}
 
 			// `page.request` already shares the browser context's cookie jar, so
 			// the session cookie is registered for the 127.0.0.1 base URL by the
@@ -178,11 +185,15 @@ export const test = base.extend<{
 async function signupOrLoginViaAuth(
 	request: APIRequestContext,
 	credentials: { email: string; username: string; password: string },
+	timeoutMs?: number,
 ) {
 	const { email, username, password } = credentials
+	const requestTimeout =
+		timeoutMs === undefined ? undefined : { timeout: timeoutMs }
 	const signupResponse = await request.post('/auth', {
 		data: { email, username, password, mode: 'signup' },
 		headers: { 'Content-Type': 'application/json' },
+		...requestTimeout,
 	})
 
 	if (signupResponse.status() === 409) {
@@ -195,6 +206,7 @@ async function signupOrLoginViaAuth(
 		const loginResponse = await request.post('/auth', {
 			data: { email, password, mode: 'login' },
 			headers: { 'Content-Type': 'application/json' },
+			...requestTimeout,
 		})
 		if (!loginResponse.ok()) {
 			throw new Error(
