@@ -1728,6 +1728,84 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	})
 })
 
+test('executeJobOnce enforces job_runs_per_day before sandbox work', async () => {
+	// Usage rollup writes are best-effort and fail against this fake env.
+	silenceIncidentalRuntimeWarnings()
+	const { utcDayKey } = await import('@kody-internal/shared/date-keys.ts')
+	const { parseEntitlementLimitMessage } = await import(
+		'#worker/entitlements/errors.ts'
+	)
+	const callerContext = createBaseCallerContext()
+	const userId = callerContext.user.userId
+	// Matches the module-level resolveBackgroundMcpUser mock email.
+	const email = `${userId}@example.com`
+	const meter = createInMemoryUserMeterEnv()
+	const env = createJobServiceTestEnv(
+		{
+			APP_DB: createDatabase({
+				users: [{ email, plan: 'free', stable_user_id: userId }],
+			}),
+		},
+		meter,
+	)
+	const limit = planLimits.free.maxJobRunsPerDay
+	await meter.seed({
+		userId,
+		resource: 'job_runs_per_day',
+		day: utcDayKey(),
+		count: limit,
+	})
+
+	const executeSpy = vi.spyOn(
+		await import('#mcp/run-kody-registry.ts'),
+		'runBundledModuleWithRegistry',
+	)
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-run-quota',
+		userId,
+		name: 'Quota job',
+		sourceId: 'source-job-run-quota',
+		publishedCommit: null,
+		storageId: 'job:job-run-quota',
+		schedule: { type: 'interval', every: '1h' },
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: '2026-08-08T00:00:00.000Z',
+		updatedAt: '2026-08-08T00:00:00.000Z',
+		nextRunAt: '2026-08-08T13:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	}
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+		expect(outcome.execution.ok).toBe(false)
+		if (outcome.execution.ok) {
+			throw new Error('Expected job_runs_per_day denial.')
+		}
+		const details = parseEntitlementLimitMessage(outcome.execution.error)
+		expect(details).toMatchObject({
+			code: 'entitlement_limit_exceeded',
+			resource: 'job_runs_per_day',
+			plan: 'free',
+			limit,
+			current: limit,
+		})
+		expect(executeSpy).not.toHaveBeenCalled()
+	} finally {
+		executeSpy.mockRestore()
+	}
+})
+
 test('blank-email package context uses the max plan for storage writes and nested job scheduling', async () => {
 	const email = 'package-owner@example.com'
 	const userId = await createStableUserIdFromEmail(email)

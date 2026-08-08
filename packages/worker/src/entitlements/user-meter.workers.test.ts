@@ -738,6 +738,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		'email_receives_per_day',
 		'email_sends_per_day',
 		'execute_calls_per_day',
+		'job_runs_per_day',
 		'outbound_fetches_per_day',
 	] as const) {
 		await meter.initialize({
@@ -770,11 +771,19 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		startAfter: firstPage.nextStartAfter,
 	})
 	expect(secondPage.counters).toHaveLength(2)
-	expect(secondPage.truncated).toBe(false)
-	expect(secondPage.nextStartAfter).toBeNull()
+	expect(secondPage.truncated).toBe(true)
+	expect(secondPage.nextStartAfter).toEqual(expect.any(String))
 	expect(secondPage.storageBytesState).toBeNull()
 	expect(secondPage.packageServiceStates).toBeNull()
 	expect(secondPage.deletionState).toBeNull()
+
+	const thirdPage = await meter.exportCounters({
+		pageSize: 2,
+		startAfter: secondPage.nextStartAfter,
+	})
+	expect(thirdPage.counters).toHaveLength(1)
+	expect(thirdPage.truncated).toBe(false)
+	expect(thirdPage.nextStartAfter).toBeNull()
 
 	await expect(meter.purge()).resolves.toEqual({ ok: true })
 	expect(await meter.readStorageBytes()).toEqual({

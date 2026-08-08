@@ -15,6 +15,7 @@ export const dailyEntitlementResources = [
 	'email_receives_per_day',
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
+	'job_runs_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 export type DailyEntitlementResource =

@@ -60,6 +60,7 @@ import {
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	assertWithinEntitlement,
+	consumeDailyEntitlement,
 	readEntitlementResourceUsage,
 } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
@@ -1248,6 +1249,16 @@ export async function executeJobOnce(input: {
 						},
 						repoContext: input.callerContext.repoContext ?? null,
 					}
+					// Daily job-run quota before sandbox work so over-limit
+					// ticks cost nothing. Failed attempts still count.
+					await consumeDailyEntitlement({
+						db: input.env.APP_DB,
+						env: input.env,
+						userId: input.job.userId,
+						email: backgroundUser.email,
+						resource: 'job_runs_per_day',
+						waitUntil: input.waitUntil,
+					})
 					const result = await runRepoBackedJob({
 						env: input.env,
 						job: input.job,

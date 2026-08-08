@@ -757,6 +757,7 @@ export async function readEntitlementResourceUsage(input: {
 		case 'email_receives_per_day':
 		case 'execute_calls_per_day':
 		case 'outbound_fetches_per_day':
+		case 'job_runs_per_day':
 			// Authoritative daily counters live in UserMeter. Callers must use
 			// consumeDailyEntitlement / readDailyEntitlementResourceUsage /
 			// readCurrentEntitlementResourceUsage — the retired D1 mirror is gone.

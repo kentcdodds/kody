@@ -93,13 +93,14 @@ bound, not a scalable quota). All other resources use the ordinary
 | `storage_bytes`               | 100 GiB   |
 | `execute_calls_per_day`       | 500,000   |
 | `outbound_fetches_per_day`    | 2,000,000 |
+| `job_runs_per_day`            | 1,000,000 |
 
 ## Compute rate limits
 
-`execute_calls_per_day` and `outbound_fetches_per_day` are daily-counter
-resources (same mechanism as `email_sends_per_day`, consumed atomically with
-`consumeDailyEntitlement`). They close the metering → enforcement loop for the
-two compute surfaces `usage-metering.md` already observes:
+`execute_calls_per_day`, `outbound_fetches_per_day`, and `job_runs_per_day` are
+daily-counter resources (same mechanism as `email_sends_per_day`, consumed
+atomically with `consumeDailyEntitlement`). They close the metering →
+enforcement loop for the compute surfaces `usage-metering.md` already observes:
 
 - **Execute calls** are consumed at the top of the MCP `execute` tool handler
   (`packages/worker/src/mcp/tools/execute.ts`) before any bundling or sandbox
@@ -113,8 +114,12 @@ two compute surfaces `usage-metering.md` already observes:
   via `findUserAccountByStableUserId` so the caller's real plan binds. Genuinely
   accountless synthetic contexts resolve to `free` so missing identity plumbing
   cannot grant elevated quotas.
+- **Job runs** are consumed at the top of `executeJobOnce`
+  (`packages/worker/src/jobs/service.ts`) after caller-context resolution and
+  before sandbox work, so over-limit ticks fail cheaply. This is separate from
+  `scheduled_jobs` (how many job rows an account may own).
 
-Both consume only when the context has a `userId`, matching the usage-metering
+These consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped. Daily consumption is
 authoritative in the per-user `UserMeter` Durable Object; see
 [UserMeter](#usermeter).
@@ -122,10 +127,11 @@ authoritative in the per-user `UserMeter` Durable Object; see
 ## UserMeter
 
 Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
-`execute_calls_per_day`, `outbound_fetches_per_day`) are **authoritative in the
-per-user `UserMeter` Durable Object** (`USER_METER` binding). Code lives in
-`packages/worker/src/entitlements/user-meter-do.ts` and `user-meter-client.ts`;
-storage layout and naming are documented in [Data storage](./data-storage.md).
+`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`) are
+**authoritative in the per-user `UserMeter` Durable Object** (`USER_METER`
+binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
+`user-meter-client.ts`; storage layout and naming are documented in
+[Data storage](./data-storage.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
@@ -685,6 +691,9 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                 |
 | `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                      |
 | `concurrent_workflows`        | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                               |
+| `execute_calls_per_day`       | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                        |
+| `outbound_fetches_per_day`    | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                             |
+| `job_runs_per_day`            | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                         |
 | `storage_bytes`               | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
 
 ## Billing

@@ -144,6 +144,12 @@ export type PlanLimits = {
 	 * reputation for the whole deployment.
 	 */
 	maxOutboundFetchesPerDay: number
+	/**
+	 * Maximum scheduled-job executions per UTC day (cron, interval, and
+	 * run-now). Separate from `maxScheduledJobs` (how many job rows you may
+	 * own) so a handful of minutely jobs cannot burn unbounded compute.
+	 */
+	maxJobRunsPerDay: number
 }
 
 export const entitlementResources = [
@@ -162,6 +168,7 @@ export const entitlementResources = [
 	'concurrent_workflows',
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
+	'job_runs_per_day',
 ] as const
 
 export type EntitlementResource = (typeof entitlementResources)[number]
@@ -183,6 +190,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	concurrent_workflows: 'concurrent workflows',
 	execute_calls_per_day: 'execute calls per day',
 	outbound_fetches_per_day: 'outbound fetches per day',
+	job_runs_per_day: 'job runs per day',
 }
 
 /**
@@ -217,32 +225,21 @@ export const maxPlanEmailLimits = {
  * use {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
-	// Free is deliberately generous on *counts* and unchanged on *rates*.
-	//
-	// Counts (packages, jobs, secrets, repo sessions) are close to free to
-	// serve — a handful of D1 rows — and they are exactly what stands between
-	// someone and the moment the product makes sense, which is the second or
-	// third automation rather than the first. Rates and long-lived compute
-	// (execute calls, outbound fetches, inbound mail, workflows, services) are
-	// the real cost and abuse surfaces and stay where they were.
-	//
-	// The old ceilings ran out during setup rather than after conviction. Five
-	// secrets is the clearest case: one OAuth integration commonly needs three
-	// (client secret, access token, refresh token), so five allowed barely one
-	// and a half integrations on a product whose whole point is holding
-	// credentials safely.
+	// Free stays roomy for setup (packages, secrets, a handful of jobs) and
+	// tighter on rates / live compute — the real cost and the upgrade story.
+	// Secrets stay at 25 because one OAuth integration commonly needs three
+	// entries (client secret, access token, refresh token).
 	free: {
 		maxRepos: 20,
-		maxSavedPackages: 25,
-		maxScheduledJobs: 10,
+		maxSavedPackages: 15,
+		maxScheduledJobs: 5,
 		// Long-lived compute. Persistent services stay off.
 		maxPackageServices: 1,
 		maxPersistentPackageServices: 0,
 		// Sessions are cheap (D1 row + dormant DO workspace + Artifacts
 		// branch) and the 7-day abandoned-session sweep keeps idle ones from
-		// accumulating, so the caps are sized for agent workflows that open
-		// a session per conversation rather than for genuine concurrency.
-		maxRepoSessions: 50,
+		// accumulating; sized for a few agent conversations, not dozens.
+		maxRepoSessions: 15,
 		// notify-self and reply-to-stored only, so the outreach-abuse surface
 		// is small; a daily digest plus a few alerts should not hit the wall.
 		maxEmailSendsPerDay: 10,
@@ -251,12 +248,12 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStoredEmailMessages: 500,
 		maxEmailMessageBytes: 256 * 1024,
 		maxSecrets: 25,
-		maxStorageBytes: 64 * 1024 * 1024,
-		// Compute. Unchanged.
-		maxConcurrentWorkflows: 3,
-		// The primary cost meter. Unchanged.
-		maxExecuteCallsPerDay: 500,
-		maxOutboundFetchesPerDay: 2_000,
+		maxStorageBytes: 16 * 1024 * 1024,
+		// Concurrent active runs (not lifetime or daily).
+		maxConcurrentWorkflows: 2,
+		maxExecuteCallsPerDay: 250,
+		maxOutboundFetchesPerDay: 1_000,
+		maxJobRunsPerDay: 500,
 	},
 	standard: {
 		maxRepos: 200,
@@ -274,6 +271,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxConcurrentWorkflows: 50,
 		maxExecuteCallsPerDay: 5_000,
 		maxOutboundFetchesPerDay: 20_000,
+		maxJobRunsPerDay: 10_000,
 	},
 	pro: {
 		maxRepos: 400,
@@ -291,6 +289,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxConcurrentWorkflows: 100,
 		maxExecuteCallsPerDay: 10_000,
 		maxOutboundFetchesPerDay: 40_000,
+		maxJobRunsPerDay: 20_000,
 	},
 	max: {
 		// 25× pro (400) → 10_000.
@@ -320,6 +319,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 500_000,
 		// 50× pro (40_000) → 2_000_000.
 		maxOutboundFetchesPerDay: 2_000_000,
+		// 50× pro (20_000) → 1_000_000.
+		maxJobRunsPerDay: 1_000_000,
 	},
 }
 
@@ -363,6 +364,8 @@ export function resolvePlanLimit(
 			return limits.maxExecuteCallsPerDay
 		case 'outbound_fetches_per_day':
 			return limits.maxOutboundFetchesPerDay
+		case 'job_runs_per_day':
+			return limits.maxJobRunsPerDay
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)
