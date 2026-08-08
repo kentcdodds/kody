@@ -40,8 +40,9 @@ export async function getUserRolesAndPermissions(
 		if (row.role_name === 'user' || row.role_name === 'admin') {
 			roleSet.add(row.role_name)
 		}
-		if (row.action && row.entity && row.access) {
-			permissionSet.add(formatPermissionString(row))
+		const { action, entity, access } = row
+		if (action && entity && access) {
+			permissionSet.add(formatPermissionString({ action, entity, access }))
 		}
 	}
 
