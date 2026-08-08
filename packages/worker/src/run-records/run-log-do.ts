@@ -2908,9 +2908,8 @@ class RunLogBase extends DurableObject<Env> {
 				const triageNote =
 					input.triageNote == null
 						? null
-						: input.triageNote
-								.trim()
-								.slice(0, runErrorTriageMaxNoteLength) || null
+						: input.triageNote.trim().slice(0, runErrorTriageMaxNoteLength) ||
+							null
 				for (const runIdChunk of chunkArray(
 					matchedRunIds,
 					maxD1BoundParameters - 6,
