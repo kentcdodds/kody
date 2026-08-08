@@ -62,6 +62,43 @@ test('repo_tree maps missing-path ENOENT to McpCallerError', async () => {
 	})
 })
 
+test('repo_tree maps ENOENT errors in a cause chain to McpCallerError', async () => {
+	const missingPathError = Object.assign(
+		new Error('ENOENT: no such file or directory: /session/tests'),
+		{ code: 'ENOENT' },
+	)
+	const tree = vi.fn().mockRejectedValue(
+		Object.assign(new Error('Repository tree RPC failed.'), {
+			cause: missingPathError,
+		}),
+	)
+	mocks.repoSessionRpc.mockReturnValue({ tree })
+
+	const error = await repoTreeCapability
+		.handler(
+			{
+				session_id: 'session-1',
+				path: 'tests',
+			},
+			createContext(),
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: 'Path "tests" was not found in the repo session workspace.',
+	})
+	expect(tree).toHaveBeenCalledWith({
+		sessionId: 'session-1',
+		userId: 'user-alice',
+		path: 'tests',
+		maxDepth: undefined,
+	})
+})
+
 test('repo_tree still surfaces non-ENOENT failures as plain errors', async () => {
 	const tree = vi
 		.fn()
