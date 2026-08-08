@@ -236,16 +236,11 @@ export function wrapDownstreamMcpToolResult(
 	result: DownstreamMcpToolResult,
 	source: DownstreamMcpResultSource,
 ): Record<string, unknown> {
-	const hasStructured =
-		result.structuredContent !== undefined &&
-		result.structuredContent !== null &&
-		typeof result.structuredContent === 'object' &&
-		!Array.isArray(result.structuredContent)
+	const structuredContent = result.structuredContent
+	const hasStructured = isRecord(structuredContent)
 
 	const structuredRecord = hasStructured
-		? sanitizeStructuredContentRecord(
-				result.structuredContent as Record<string, unknown>,
-			)
+		? sanitizeStructuredContentRecord(structuredContent)
 		: null
 
 	const contentBlocks =
