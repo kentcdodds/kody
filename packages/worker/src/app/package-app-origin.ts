@@ -82,6 +82,19 @@ function createPackageAppOriginConfigurationErrorResponse(message: string) {
 	})
 }
 
+function createUnmatchedPackageAppPathResponse() {
+	return new Response(
+		'Package app URL not found. Package app URLs use /@username/packages/<kody-id>/<path>. Requests outside a package app mount are not dispatched to any app.',
+		{
+			status: 404,
+			headers: {
+				'Cache-Control': 'no-store',
+				'Content-Type': 'text/plain; charset=utf-8',
+			},
+		},
+	)
+}
+
 /**
  * Terminal response for a package-app request with no usable package-app
  * session. Deliberately not a redirect back to the app origin: only the visitor
@@ -211,7 +224,7 @@ async function handleRequestOnPackageAppOrigin(input: {
 		if (url.pathname === '/') {
 			return redirectResponse({ location: `${appBaseUrl}/`, status: 302 })
 		}
-		return new Response('Not Found', { status: 404 })
+		return createUnmatchedPackageAppPathResponse()
 	}
 
 	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)

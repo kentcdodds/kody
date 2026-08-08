@@ -384,6 +384,8 @@ export async function servePackageAppRequest(input: {
 			},
 			runtime: {
 				callerContext,
+				servingUsername: packagePath.username,
+				hostedOrigin: requestUrl.origin,
 			},
 		})
 		entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)

@@ -220,7 +220,11 @@ test('hosted package apps move to the package-app origin behind a single-use han
 			headers: { Cookie: `${packageSessionCookie}; ${sessionCookie}` },
 		})
 		expect(response.status, `expected 404 for ${path}`).toBe(404)
-		await expect(response.text()).resolves.toBe('Not Found')
+		const body = await response.text()
+		expect(body).toContain('/@username/packages/<kody-id>/<path>')
+		expect(body).toContain(
+			'Requests outside a package app mount are not dispatched to any app.',
+		)
 	}
 
 	// 8. The bare package-app origin is a plausible bookmark; send it home.

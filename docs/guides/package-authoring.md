@@ -65,6 +65,23 @@ This package exists to ...
 Keep the section concise. It should explain why the package exists and what
 success means for the user, not duplicate every implementation detail.
 
+## Package app routing
+
+Hosted package apps are mounted at `/@username/packages/<kody-id>/<path>`. The
+app receives only `/<path>` in its fetch request. Root-relative links such as
+`/audio/123` therefore escape the mount and are not routed back to the package
+app.
+
+Import `packageContext` from `kody:runtime` and build every in-app link,
+redirect, share/email URL, and OAuth callback against its public base:
+
+- `packageContext.hostedUrl` is the full public URL of the app mount.
+- `packageContext.appBasePath` is the origin-relative mount path.
+
+Kody derives both fields from the package's current serving username and
+`kody.id`, including after a rename or fork. Do not hard-code either path
+segment.
+
 ## `kody.description` (short public tagline)
 
 `package.json#kody.description` is a **short public tagline**, not a feature

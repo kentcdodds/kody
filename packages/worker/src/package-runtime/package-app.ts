@@ -66,6 +66,11 @@ import {
 	type RunRecordLogInput,
 	type RunTerminalStatus,
 } from '#worker/run-records/types.ts'
+import {
+	buildPackageAppPath,
+	buildPackageAppUrl,
+} from '@kody-internal/shared/public-urls.ts'
+import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -634,11 +639,13 @@ function resolveRealtimeHandler(userModule, facetName) {
 export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 	async fetch(request) {
 		const runtimeBridge = this.env.${packageAppRuntimeBindingName};
+		const requestUrl = new URL(request.url);
 		const runtimeRun = await startRuntimeRun(runtimeBridge, {
 			surface: 'app_fetch',
-			name: new URL(request.url).pathname,
+			name: requestUrl.pathname,
 			metadata: {
 				method: request.method,
+				queryString: requestUrl.search,
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
@@ -666,6 +673,9 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'success',
+				metadata: {
+					httpStatus: response.status,
+				},
 				logs: consoleCapture.logs,
 			});
 			return response;
@@ -929,12 +939,26 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		status: RunTerminalStatus
 		error?: unknown
 		logs?: Array<RunRecordLogInput>
+		metadata?: Record<string, unknown>
 	}) {
 		const logs = redactRunRecordLogs(input.logs, this.secretRedactor)
 		const error = redactRunRecordError(input.error, this.secretRedactor)
+		const handle =
+			input.run && input.metadata
+				? {
+						...input.run,
+						context: {
+							...input.run.context,
+							metadata: {
+								...input.run.context.metadata,
+								...input.metadata,
+							},
+						},
+					}
+				: input.run
 		const finishPromise = finishRunRecord({
 			env: this.env,
-			handle: input.run,
+			handle,
 			status: input.status,
 			error,
 			logs,
@@ -1422,6 +1446,8 @@ function createPackageAppWorkerCacheKey(input: {
 	sourceId: string
 	publishedCommit: string | null
 	baseUrl: string
+	appBasePath: string
+	hostedUrl: string
 	callerEmail: string
 	callerDisplayName: string
 }) {
@@ -1435,9 +1461,48 @@ function createPackageAppWorkerCacheKey(input: {
 		input.sourceId,
 		input.publishedCommit,
 		input.baseUrl,
+		input.appBasePath,
+		input.hostedUrl,
 		input.callerEmail,
 		input.callerDisplayName,
 	])
+}
+
+function getUsernameFromPackageName(packageName: string) {
+	const separatorIndex = packageName.indexOf('/')
+	if (!packageName.startsWith('@') || separatorIndex <= 1) {
+		throw new Error(
+			`Saved package name "${packageName}" must include a username scope.`,
+		)
+	}
+	return packageName.slice(1, separatorIndex)
+}
+
+function buildPackageAppPublicContext(input: {
+	env: Env
+	baseUrl: string
+	savedPackage: { kodyId: string; name: string }
+	runtime: {
+		servingUsername?: string
+		hostedOrigin?: string
+	}
+}) {
+	const username =
+		input.runtime.servingUsername ??
+		getUsernameFromPackageName(input.savedPackage.name)
+	const origin =
+		input.runtime.hostedOrigin ??
+		getPackageAppBaseUrl({ env: input.env }) ??
+		input.baseUrl
+	const publicUrlInput = {
+		origin,
+		username,
+		kodyId: input.savedPackage.kodyId,
+	}
+	return {
+		appBasePath: buildPackageAppPath(publicUrlInput),
+		hostedUrl: buildPackageAppUrl(publicUrlInput),
+	}
 }
 
 function resolvePackageAppManifest(input: {
@@ -1618,8 +1683,11 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 	sourceFiles?: Record<string, string>
 	runtime: {
 		callerContext: ReturnType<typeof createMcpCallerContext>
+		servingUsername?: string
+		hostedOrigin?: string
 	}
 }): Promise<PackageAppWorkerOptions> {
+	const publicContext = buildPackageAppPublicContext(input)
 	const manifest = resolvePackageAppManifest({
 		manifest: input.manifest,
 		source: input.source,
@@ -1686,6 +1754,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 				kodyId: input.savedPackage.kodyId,
 				sourceId: input.savedPackage.sourceId,
 				publishedCommit: input.savedPackage.publishedCommit,
+				...publicContext,
 			},
 		},
 		globalOutbound: workerExports?.KodyFetchGateway
@@ -1725,8 +1794,11 @@ export async function buildPackageAppWorker(input: {
 	sourceFiles?: Record<string, string>
 	runtime: {
 		callerContext: ReturnType<typeof createMcpCallerContext>
+		servingUsername?: string
+		hostedOrigin?: string
 	}
 }) {
+	const publicContext = buildPackageAppPublicContext(input)
 	const cacheKey = createPackageAppWorkerCacheKey({
 		userId: input.userId,
 		packageId: input.savedPackage.id,
@@ -1734,6 +1806,7 @@ export async function buildPackageAppWorker(input: {
 		sourceId: input.savedPackage.sourceId,
 		publishedCommit: input.savedPackage.publishedCommit,
 		baseUrl: input.baseUrl,
+		...publicContext,
 		callerEmail: input.runtime.callerContext.user?.email ?? '',
 		callerDisplayName:
 			input.runtime.callerContext.user?.displayName ??
