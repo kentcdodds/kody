@@ -28,11 +28,14 @@ test('createPackageCodeRequest strips Kody-Synthetic from real inbound traffic',
 })
 
 test('trusted synthetic dispatch exposes Kody-Synthetic only after platform opt-in', () => {
-	const inbound = new Request('https://apps.example.com/@kody/packages/demo/probe', {
-		headers: {
-			[packageAppSyntheticHeaderName]: packageAppSyntheticHeaderValue,
+	const inbound = new Request(
+		'https://apps.example.com/@kody/packages/demo/probe',
+		{
+			headers: {
+				[packageAppSyntheticHeaderName]: packageAppSyntheticHeaderValue,
+			},
 		},
-	})
+	)
 
 	const stripped = createPackageCodeRequest(
 		inbound,

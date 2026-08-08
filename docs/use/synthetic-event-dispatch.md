@@ -9,12 +9,12 @@ Use it to verify `package.json#kody.subscriptions` wiring immediately after
 publish. It targets only the package you name; it does not fan out to other
 subscribers and does not enqueue production Queue delivery.
 
-The platform sets top-level envelope fields `synthetic: true` and, for stored-mail
-replay, `replay_of`. Real event dispatch strips caller-supplied `synthetic` and
-`replay_of` from handler envelopes; callers cannot forge those fields on synthetic
-MCP calls either. Run records agree with the handler payload. Handlers treat
-synthetic events identically to production unless a deliberately visible
-irreversible-side-effect guard says otherwise.
+The platform sets top-level envelope fields `synthetic: true` and, for
+stored-mail replay, `replay_of`. Real event dispatch strips caller-supplied
+`synthetic` and `replay_of` from handler envelopes; callers cannot forge those
+fields on synthetic MCP calls either. Run records agree with the handler
+payload. Handlers treat synthetic events identically to production unless a
+deliberately visible irreversible-side-effect guard says otherwise.
 
 ## When to use it
 
@@ -43,12 +43,12 @@ Search the `packages` domain, then call `package_subscription_dispatch`:
 
 Fields:
 
-| Field               | Required | Meaning                                                                 |
-| ------------------- | -------- | ----------------------------------------------------------------------- |
-| `kody_id`           | yes      | Bare `kody.id` of the package whose handler should run                  |
-| `topic`             | yes      | Exact topic key from `kody.subscriptions`                               |
-| `params`            | one of   | Handler input fixture — use `{}` only when the handler tolerates empty  |
-| `email_message_id`  | one of   | Stored inbound message id; platform rebuilds the production envelope    |
+| Field              | Required | Meaning                                                                |
+| ------------------ | -------- | ---------------------------------------------------------------------- |
+| `kody_id`          | yes      | Bare `kody.id` of the package whose handler should run                 |
+| `topic`            | yes      | Exact topic key from `kody.subscriptions`                              |
+| `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty |
+| `email_message_id` | one of   | Stored inbound message id; platform rebuilds the production envelope   |
 
 Pass exactly **one** of `params` or `email_message_id`, not both. There is **no
 caller `idempotency_key`** — the platform generates internal idempotency keys.
@@ -57,17 +57,18 @@ Pass the bare `kody.id`, not the npm-scoped package name.
 
 ### Fixture input (`params`)
 
-`params` is the object merged into the handler envelope (before the platform adds
-`synthetic: true`). Shape depends on the topic:
+`params` is the object merged into the handler envelope (before the platform
+adds `synthetic: true`). Shape depends on the topic:
 
 - **Platform-owned topics** (`email.message.received`, `run.error.recorded`,
   `repo.pushed`, …) — use the metadata-first payloads documented in the
   [package subscriptions guide](../guides/package-subscriptions.md). Include
   only fields your handler reads.
 - **Package-emitted topics** (`@scope/topic.name`) — use the
-  `PackageEventEnvelope` shape (`event`, `source`, `idempotency_key`, `payload`).
-  Synthetic dispatch does not validate against the emitter's `kody.emits`
-  schema; supply a fixture `source` block when the handler depends on it.
+  `PackageEventEnvelope` shape (`event`, `source`, `idempotency_key`,
+  `payload`). Synthetic dispatch does not validate against the emitter's
+  `kody.emits` schema; supply a fixture `source` block when the handler depends
+  on it.
 
 Example minimal `run.error.recorded` fixture:
 
@@ -134,8 +135,8 @@ surface) for run records; the run record includes `synthetic: true` (and
   package; supply matching fields inside `params` when testing filter-dependent
   logic.
 - Admin-only delivery rules (for example `platform.feedback.submitted`) apply to
-  **production** fan-out only; synthetic dispatch runs your handler directly
-  for smoke testing.
+  **production** fan-out only; synthetic dispatch runs your handler directly for
+  smoke testing.
 - Side effects (`packageStorage()`, outbound APIs, downstream invokes) are real.
   Use a deliberately visible irreversible-side-effect guard when smoke tests
   should stay safe.
@@ -147,4 +148,5 @@ surface) for run records; the run record includes `synthetic: true` (and
 - [Package subscriptions guide](../guides/package-subscriptions.md) — topic
   payloads and production delivery semantics
 - [Package authoring guide](../guides/package-authoring.md#verify-your-publish)
-- Decision: [Synthetic package requests](../contributing/decisions/0013-synthetic-package-requests.md)
+- Decision:
+  [Synthetic package requests](../contributing/decisions/0013-synthetic-package-requests.md)

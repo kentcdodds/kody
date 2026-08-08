@@ -159,17 +159,18 @@ require it.
 After publish succeeds — and after any required secret approvals — run synthetic
 smoke tests for every declared surface before calling the package complete.
 Synthetic invocations are real-surface runs with real side effects; use a
-deliberately visible irreversible-side-effect guard when a smoke test should stay
-safe.
+deliberately visible irreversible-side-effect guard when a smoke test should
+stay safe.
 
 1. Read `test_hints` on the `package_publish_external_push` result when present.
    It lists copy-pasteable calls for declared apps and subscription topics.
-2. **Exports and secret mounts** — keyless `packages.invoke({ kodyId, exportName, params })`
-   against a read-only export or package-supported dry-run input that exercises
-   approved secrets (see [Secret-using packages](#secret-using-packages) above).
-3. **Package apps** — `package_app_fetch({ kody_id })` with the path, method, and
-   body your handler needs. Confirm `{ status, headers, body, truncated }` and
-   any `packageStorage()` side effects. See
+2. **Exports and secret mounts** — keyless
+   `packages.invoke({ kodyId, exportName, params })` against a read-only export
+   or package-supported dry-run input that exercises approved secrets (see
+   [Secret-using packages](#secret-using-packages) above).
+3. **Package apps** — `package_app_fetch({ kody_id })` with the path, method,
+   and body your handler needs. Confirm `{ status, headers, body, truncated }`
+   and any `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md).
 4. **Subscriptions** — `package_subscription_dispatch({ kody_id, topic, … })`
    with exactly one of `params` (fixture) or `email_message_id` (stored-mail

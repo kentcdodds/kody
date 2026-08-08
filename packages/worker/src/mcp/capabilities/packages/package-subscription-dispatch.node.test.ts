@@ -54,9 +54,8 @@ vi.mock('#worker/email/mailbox-internal-read.ts', () => ({
 		mocks.listInternalEmailAttachmentsForMessage,
 }))
 
-const { packageSubscriptionDispatchCapability } = await import(
-	'./package-subscription-dispatch.ts'
-)
+const { packageSubscriptionDispatchCapability } =
+	await import('./package-subscription-dispatch.ts')
 
 function createSavedPackage() {
 	return {

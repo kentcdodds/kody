@@ -4,9 +4,9 @@ title: Package subscription guide
 summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
   subscribers with package_subscriptions_list; smoke-test handlers with
-  package_subscription_dispatch; follow metadata-first email,
-  run.error.recorded activity notifiers, plus consent-gated admin-only
-  platform.feedback.submitted notification guidance.
+  package_subscription_dispatch; follow metadata-first email, run.error.recorded
+  activity notifiers, plus consent-gated admin-only platform.feedback.submitted
+  notification guidance.
 category: platform
 ---
 
@@ -103,23 +103,24 @@ with a starter snippet per declared topic when subscriptions are present.
 
 - **Platform markers.** The platform sets top-level `synthetic: true` and, for
   stored-mail replay, `replay_of`. Real event dispatch strips caller-supplied
-  `synthetic` and `replay_of` from handler envelopes. Run records agree with
-  the handler payload.
+  `synthetic` and `replay_of` from handler envelopes. Run records agree with the
+  handler payload.
 - **`params` or `email_message_id`.** Fixture `params` merge into the handler
   envelope before markers are added. `email_message_id` rebuilds the stored
   inbound email envelope from D1.
 - **Treat synthetic identically to production.** Handlers run the same code path
   unless a deliberately visible irreversible-side-effect guard says otherwise.
-- **Start minimal.** Begin with `{}` or the smallest object your handler accepts,
-  then add fields until the smoke test covers the branches you care about.
+- **Start minimal.** Begin with `{}` or the smallest object your handler
+  accepts, then add fields until the smoke test covers the branches you care
+  about.
 - **Filters are not applied.** Production dispatch for package-emitted topics
   skips subscribers when `filters` do not match the payload; synthetic dispatch
   always runs the named package. Put filter-matching fields inside `params` when
   testing filter-dependent code paths.
 - **Admin-only topics** (`email.system-message.received`,
-  `platform.feedback.submitted`, `community.activity.recorded`) gate **production**
-  fan-out on admin role; synthetic dispatch still runs your handler directly for
-  smoke testing.
+  `platform.feedback.submitted`, `community.activity.recorded`) gate
+  **production** fan-out on admin role; synthetic dispatch still runs your
+  handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 

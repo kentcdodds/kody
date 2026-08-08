@@ -148,8 +148,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				if (dispatchModeCount !== 1) {
 					ctx.addIssue({
 						code: 'custom',
-						message:
-							'Provide exactly one of `email_message_id` or `params`.',
+						message: 'Provide exactly one of `email_message_id` or `params`.',
 					})
 				}
 			}),

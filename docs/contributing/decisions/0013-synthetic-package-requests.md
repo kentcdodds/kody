@@ -20,9 +20,10 @@ Alternatives considered and rejected:
 - **Signed app URL.** Mint a short-lived signed URL that hits the public app
   mount without a browser session. Rejected: signed app URLs create a new
   leakable credential surface bypassing the login gate.
-- **Real inbox injection.** Store a fixture message in the user's inbox and
-  wait for production `email.message.received` dispatch. Rejected: injecting
-  synthetic messages into the real inbox pollutes real mail storage/classification.
+- **Real inbox injection.** Store a fixture message in the user's inbox and wait
+  for production `email.message.received` dispatch. Rejected: injecting
+  synthetic messages into the real inbox pollutes real mail
+  storage/classification.
 
 ## Decision
 
@@ -33,9 +34,9 @@ and secret mounts. **Side effects are real** — synthetic calls write storage,
 call outbound APIs, and enqueue downstream work like any other handler run.
 
 The platform **exclusively sets and strips trust markers**. Public app ingress
-strips caller-supplied `Kody-Synthetic` from requests; real event dispatch strips
-caller-supplied `synthetic` and `replay_of` from handler envelopes. Synthetic MCP
-calls set the markers; callers cannot forge them.
+strips caller-supplied `Kody-Synthetic` from requests; real event dispatch
+strips caller-supplied `synthetic` and `replay_of` from handler envelopes.
+Synthetic MCP calls set the markers; callers cannot forge them.
 
 - **`package_app_fetch`** — invoke a published package app's fetch handler with
   method, path, headers, and body. The platform sets request header
@@ -47,8 +48,8 @@ calls set the markers; callers cannot forge them.
   (not both). The platform sets top-level envelope fields `synthetic: true` and,
   for stored-mail replay, `replay_of`. Replay rebuilds the stored inbound email
   envelope from D1. There is **no caller `idempotency_key`** — the platform
-  generates internal idempotency keys. Targets only the named package; it does not
-  fan out platform events or enqueue production Queue delivery.
+  generates internal idempotency keys. Targets only the named package; it does
+  not fan out platform events or enqueue production Queue delivery.
 
 Run records for both surfaces include the same synthetic markers the handler
 payload carries. Handlers treat synthetic invocations identically to production
@@ -61,7 +62,8 @@ calls agents can run before treating the publish complete.
 ## Consequences
 
 - Post-publish verification stays on the compact MCP surface; no browser-run or
-  preview-URL primitive is added (see [0008](./0008-declined-adlc-primitives.md)).
+  preview-URL primitive is added (see
+  [0008](./0008-declined-adlc-primitives.md)).
 - Synthetic app fetches do not replace hosted-URL checks for UI, cookies, OAuth
   redirect flows, or websocket facets — they prove handler/runtime wiring only.
 - Synthetic subscription dispatch validates handler code and manifest wiring for

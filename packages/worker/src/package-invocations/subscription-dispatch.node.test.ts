@@ -11,9 +11,8 @@ vi.mock('./idempotent-module-invocation.ts', () => ({
 	invokeSavedPackageModule: mocks.invokeSavedPackageModule,
 }))
 
-const { invokePackageSubscriptionWithToolFactories } = await import(
-	'./subscription-dispatch.ts'
-)
+const { invokePackageSubscriptionWithToolFactories } =
+	await import('./subscription-dispatch.ts')
 
 test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers on real sources', async () => {
 	await invokePackageSubscriptionWithToolFactories({

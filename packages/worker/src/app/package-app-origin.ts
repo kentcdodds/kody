@@ -23,9 +23,7 @@ import {
 	parsePackageAppPath,
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
-import {
-	buildUnmatchedPackageAppOriginPathMessage,
-} from '#worker/package-runtime/package-app-synthetic.ts'
+import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 /**

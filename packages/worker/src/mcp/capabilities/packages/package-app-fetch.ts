@@ -143,7 +143,10 @@ function isTextualResponse(response: Response) {
 
 function encodePackageAppFetchBody(response: Response, bytes: Uint8Array) {
 	const text = decodeUtf8Body(bytes)
-	if (isTextualResponse(response) === true || (!response.headers.has('Content-Type') && text !== null)) {
+	if (
+		isTextualResponse(response) === true ||
+		(!response.headers.has('Content-Type') && text !== null)
+	) {
 		if (text === null) return bytesToBase64(bytes)
 		return text
 	}

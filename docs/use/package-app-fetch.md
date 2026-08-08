@@ -1,7 +1,7 @@
 # Package app fetch
 
-`package_app_fetch` invokes a published package app's fetch handler over MCP.
-It is a **platform-marked real-surface** `app_fetch` run: same package runtime,
+`package_app_fetch` invokes a published package app's fetch handler over MCP. It
+is a **platform-marked real-surface** `app_fetch` run: same package runtime,
 `packageStorage()`, and secret mounts as production traffic. **Side effects are
 real.**
 
@@ -68,11 +68,11 @@ equivalent) are rejected.
 
 The capability returns exactly:
 
-| Field       | Meaning                                                                 |
-| ----------- | ----------------------------------------------------------------------- |
-| `status`    | HTTP status code                                                        |
-| `headers`   | Response headers (safe allowlisted subset)                              |
-| `body`      | Response body text, or base64 when the handler returns binary content   |
+| Field       | Meaning                                                                |
+| ----------- | ---------------------------------------------------------------------- |
+| `status`    | HTTP status code                                                       |
+| `headers`   | Response headers (safe allowlisted subset)                             |
+| `body`      | Response body text, or base64 when the handler returns binary content  |
 | `truncated` | `true` when the body was truncated to fit the MCP response size budget |
 
 Failures surface as structured MCP errors with the handler's thrown message or
@@ -95,4 +95,5 @@ marker the handler saw.
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — subscription
   handler smoke tests
 - [Package authoring guide](../guides/package-authoring.md#verify-your-publish)
-- Decision: [Synthetic package requests](../contributing/decisions/0013-synthetic-package-requests.md)
+- Decision:
+  [Synthetic package requests](../contributing/decisions/0013-synthetic-package-requests.md)

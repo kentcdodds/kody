@@ -20,9 +20,7 @@ import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
 } from '#worker/package-runtime/subscription-artifacts.ts'
-import {
-	stripUntrustedSubscriptionEnvelopeFields,
-} from './subscription-envelope.ts'
+import { stripUntrustedSubscriptionEnvelopeFields } from './subscription-envelope.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from './infrastructure-codes.ts'
 import {
 	internalEmailSubscriptionTokenId,
