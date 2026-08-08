@@ -1,0 +1,27 @@
+export const packageAppSyntheticHeaderName = 'Kody-Synthetic'
+export const packageAppSyntheticHeaderValue = 'true'
+
+export const packageAppFetchCapabilityName = 'package_app_fetch'
+
+/**
+ * Platform-only dispatch marker for trusted in-process synthetic app fetches.
+ * Callers cannot set this via MCP input; only internal dispatch may opt in.
+ */
+export type PackageAppTrustedDispatch = {
+	readonly synthetic: true
+}
+
+export function isPackageAppSyntheticRequest(request: Request) {
+	return (
+		request.headers.get(packageAppSyntheticHeaderName) ===
+		packageAppSyntheticHeaderValue
+	)
+}
+
+export function buildPackageAppNotFoundMessage() {
+	return `Saved package app not found. Declare package.json#kody.app and publish, then smoke-test the fetch handler with ${packageAppFetchCapabilityName}.`
+}
+
+export function buildUnmatchedPackageAppOriginPathMessage() {
+	return `Package app URL not found. Package app URLs use /@username/packages/<kody-id>/<path>. Requests outside a package app mount are not dispatched to any app. To exercise a declared package app fetch handler over MCP, use ${packageAppFetchCapabilityName} instead.`
+}

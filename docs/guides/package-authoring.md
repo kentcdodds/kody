@@ -154,6 +154,36 @@ package approval. Unadopted community-forked packages may need both;
 self-authored and adopted packages still need host approval when outbound calls
 require it.
 
+## Verify your publish
+
+After publish succeeds — and after any required secret approvals — run synthetic
+smoke tests for every declared surface before calling the package complete.
+Synthetic invocations are real-surface runs with real side effects; use a
+deliberately visible irreversible-side-effect guard when a smoke test should
+stay safe.
+
+1. Read `test_hints` on the `package_publish_external_push` result when present.
+   It lists copy-pasteable calls for declared apps and subscription topics.
+2. **Exports and secret mounts** — keyless
+   `packages.invoke({ kodyId, exportName, params })` against a read-only export
+   or package-supported dry-run input that exercises approved secrets (see
+   [Secret-using packages](#secret-using-packages) above).
+3. **Package apps** — `package_app_fetch({ kody_id })` with the path, method,
+   and body your handler needs. Confirm `{ status, headers, body, truncated }`
+   and any `packageStorage()` side effects. See
+   [Package app fetch](../use/package-app-fetch.md).
+4. **Subscriptions** — `package_subscription_dispatch({ kody_id, topic, … })`
+   with exactly one of `params` (fixture) or `email_message_id` (stored-mail
+   replay) for each declared topic. See
+   [Synthetic event dispatch](../use/synthetic-event-dispatch.md) and the
+   [package subscriptions guide](./package-subscriptions.md#synthetic-dispatch).
+5. Optional UI checks — open `hosted_app_url` when the publish response includes
+   one; synthetic app fetches do not replace browser verification for layout,
+   OAuth redirects, or websocket facets.
+
+Only after these checks pass (or the user explicitly skips a surface) treat the
+package as ready to run.
+
 ## Community icon
 
 Public community packages should include one root `community-icon.svg`,

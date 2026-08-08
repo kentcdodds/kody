@@ -23,6 +23,10 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import {
+	buildPackageTestHints,
+	type PackageTestHints,
+} from '#worker/package-registry/package-test-hints.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
@@ -218,11 +222,24 @@ const staticDependentsSchema = z
 		'Bounded summary of saved packages whose published bundles statically captured this package through kody:@ imports.',
 	)
 
+const packageTestHintsSchema = z.object({
+	app: z.string().optional(),
+	subscriptions: z
+		.array(
+			z.object({
+				topic: z.string(),
+				snippet: z.string(),
+			}),
+		)
+		.optional(),
+})
+
 const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('already_published'),
 		published_commit: z.string().nullable(),
 		hosted_app_url: z.string().nullable(),
+		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
@@ -250,6 +267,7 @@ const outputSchema = z.discriminatedUnion('status', [
 		manifest: z.unknown(),
 		checks: z.array(checkSchema),
 		hosted_app_url: z.string().nullable(),
+		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
@@ -265,17 +283,54 @@ const outputSchema = z.discriminatedUnion('status', [
 
 type PublishExternalPushResult = z.infer<typeof outputSchema>
 
-function manifestDeclaresApp(manifest: unknown) {
+function readPackageTestHintsFromManifest(input: {
+	manifest: unknown
+	kodyId: string
+	packageScope?: string
+}): PackageTestHints | undefined {
+	const { manifest } = input
 	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
-		return false
+		return undefined
 	}
 	const kody = Reflect.get(manifest, 'kody')
-	return (
-		Boolean(kody) &&
-		typeof kody === 'object' &&
-		!Array.isArray(kody) &&
-		Reflect.get(kody, 'app') !== undefined
-	)
+	if (!kody || typeof kody !== 'object' || Array.isArray(kody)) return undefined
+	const subscriptions = Reflect.get(kody, 'subscriptions')
+	return buildPackageTestHints({
+		kodyId: input.kodyId,
+		...(input.packageScope ? { packageScope: input.packageScope } : {}),
+		hasApp: Reflect.get(kody, 'app') !== undefined,
+		subscriptionTopics:
+			subscriptions &&
+			typeof subscriptions === 'object' &&
+			!Array.isArray(subscriptions)
+				? Object.keys(subscriptions)
+				: [],
+	})
+}
+
+async function getPublishedPackageTestHints(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	kodyId: string
+	packageScope?: string
+}) {
+	try {
+		const published = await loadPublishedEntitySource({
+			env: input.env,
+			userId: input.userId,
+			sourceId: input.sourceId,
+		})
+		const packageJson = published.files['package.json']
+		if (!packageJson) return undefined
+		return readPackageTestHintsFromManifest({
+			manifest: JSON.parse(packageJson),
+			kodyId: input.kodyId,
+			...(input.packageScope ? { packageScope: input.packageScope } : {}),
+		})
+	} catch {
+		return undefined
+	}
 }
 
 async function resolvePublishedHostedAppUrl(input: {
@@ -424,6 +479,7 @@ async function runExternalPublishAttempt(input: {
 	expectedPackageScope: string
 	packageId: string
 	kodyId: string
+	testHintPackageScope?: string
 	hasApp: boolean
 	source: {
 		id: string
@@ -474,6 +530,15 @@ async function runExternalPublishAttempt(input: {
 					publishedCommit: result.published_commit,
 					baseUrl: input.baseUrl,
 				})
+				const testHints = await getPublishedPackageTestHints({
+					env: input.env,
+					userId: input.ownerUserId,
+					sourceId: input.source.id,
+					kodyId: input.kodyId,
+					...(input.testHintPackageScope
+						? { packageScope: input.testHintPackageScope }
+						: {}),
+				})
 				return {
 					...result,
 					hosted_app_url: await resolvePublishedHostedAppUrl({
@@ -484,6 +549,7 @@ async function runExternalPublishAttempt(input: {
 						kodyId: input.kodyId,
 						hasApp: input.hasApp,
 					}),
+					...(testHints ? { test_hints: testHints } : {}),
 					static_dependents: await getPublishStaticDependents({
 						db: input.env.APP_DB,
 						userId: input.ownerUserId,
@@ -512,6 +578,13 @@ async function runExternalPublishAttempt(input: {
 				publishedCommit: result.published_commit,
 				baseUrl: input.baseUrl,
 			})
+			const testHints = readPackageTestHintsFromManifest({
+				manifest: result.manifest,
+				kodyId: input.kodyId,
+				...(input.testHintPackageScope
+					? { packageScope: input.testHintPackageScope }
+					: {}),
+			})
 			return {
 				...result,
 				hosted_app_url: await resolvePublishedHostedAppUrl({
@@ -520,8 +593,9 @@ async function runExternalPublishAttempt(input: {
 					ownerScope: input.ownerScope,
 					ownerEmail: input.ownerEmail,
 					kodyId: input.kodyId,
-					hasApp: manifestDeclaresApp(result.manifest),
+					hasApp: Boolean(testHints?.app),
 				}),
+				...(testHints ? { test_hints: testHints } : {}),
 				static_dependents: await getPublishStaticDependents({
 					db: input.env.APP_DB,
 					userId: input.ownerUserId,
@@ -616,6 +690,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 				expectedPackageScope,
 				packageId,
 				kodyId,
+				...(args.package_scope
+					? { testHintPackageScope: args.package_scope }
+					: {}),
 				hasApp,
 				source: { id: source.id, repo_id: source.repo_id },
 				newCommit,

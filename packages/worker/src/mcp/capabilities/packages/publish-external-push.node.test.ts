@@ -163,7 +163,14 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 		previous_commit: 'commit-old',
 		published_commit: 'commit-new',
 		manifest: {
-			kody: { app: { entry: './src/app.ts' } },
+			kody: {
+				app: { entry: './src/app.ts' },
+				subscriptions: {
+					'email.message.received': {
+						handler: './src/on-email.ts',
+					},
+				},
+			},
 		},
 		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
 	})
@@ -177,6 +184,16 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	expect(publishedResult).toEqual(
 		expect.objectContaining({
 			hosted_app_url: 'https://packages.kody.test/@user/packages/demo-package',
+			test_hints: {
+				app: 'package_app_fetch({ kody_id: "demo-package" })',
+				subscriptions: [
+					{
+						topic: 'email.message.received',
+						snippet:
+							'package_subscription_dispatch({ kody_id: "demo-package", topic: "email.message.received", params: {} })',
+					},
+				],
+			},
 			static_dependents: expect.objectContaining({
 				total: 0,
 				items: [],

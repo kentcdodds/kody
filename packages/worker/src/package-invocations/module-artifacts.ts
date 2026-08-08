@@ -23,6 +23,7 @@ import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
 } from '#worker/package-runtime/subscription-artifacts.ts'
+import { buildPackageSubscriptionNotFoundMessage } from './subscription-envelope.ts'
 import {
 	normalizeExportName,
 	type PackageModuleResolution,
@@ -250,7 +251,10 @@ export function resolvePackageModuleResolution(input: {
 			const handler = input.manifest.kody.subscriptions?.[topic]?.handler
 			if (!handler) {
 				throw new Error(
-					`Package "${input.manifest.kody.id}" does not define subscription "${topic}".`,
+					buildPackageSubscriptionNotFoundMessage({
+						kodyId: input.manifest.kody.id,
+						topic,
+					}),
 				)
 			}
 			return {
@@ -271,7 +275,8 @@ export function isMissingPackageModuleError(error: unknown) {
 		error instanceof Error &&
 		(error.message.includes('does not define export') ||
 			error.message.includes('does not define a runtime target') ||
-			error.message.includes('does not define subscription'))
+			error.message.includes('does not define subscription') ||
+			error.message.includes('does not declare subscription'))
 	)
 }
 

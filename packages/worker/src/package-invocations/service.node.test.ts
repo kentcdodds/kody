@@ -1318,6 +1318,16 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 		}),
 	).rejects.toThrow(/payload is \d+ bytes; the maximum is 65536 bytes/)
 	expect(send).toHaveBeenCalledTimes(1)
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:invalid-shape',
+			payload: ['not', 'an', 'object'] as never,
+		}),
+	).rejects.toThrow(
+		'events.dispatch payload must be a JSON object when provided.',
+	)
+	expect(send).toHaveBeenCalledTimes(1)
 
 	const depthCappedTools = createRuntimeEventTools(db, {
 		envOverrides: { PACKAGE_EVENTS_DISPATCH_QUEUE: { send } },

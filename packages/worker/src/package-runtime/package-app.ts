@@ -71,6 +71,10 @@ import {
 	buildPackageAppUrl,
 } from '@kody-internal/shared/public-urls.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	packageAppSyntheticHeaderName,
+	packageAppSyntheticHeaderValue,
+} from './package-app-synthetic.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -602,6 +606,10 @@ function collectQueryParamNames(url) {
 	return [...new Set(url.searchParams.keys())];
 }
 
+function isSyntheticPackageAppRequest(request) {
+	return request.headers.get(${JSON.stringify(packageAppSyntheticHeaderName)}) === ${JSON.stringify(packageAppSyntheticHeaderValue)};
+}
+
 async function startRuntimeRun(runtimeBridge, input) {
 	return await runtimeBridge.packageRuntimeRunStart(input);
 }
@@ -650,6 +658,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			metadata: {
 				method: request.method,
 				queryParamNames: collectQueryParamNames(requestUrl),
+				...(isSyntheticPackageAppRequest(request) ? { synthetic: true } : {}),
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();

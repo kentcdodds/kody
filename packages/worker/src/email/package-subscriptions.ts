@@ -14,7 +14,7 @@ import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.
 import { listSystemEmailAttachments } from './system-email-graph-store.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
-const inboundEmailReceiptTopic = 'email.message.received'
+export const inboundEmailReceiptTopic = 'email.message.received'
 export const inboundEmailQuarantinedTopic = 'email.message.quarantined'
 const systemInboundEmailReceiptTopic = 'email.system-message.received'
 export const emailDeliveryUpdatedTopic = 'email.message.delivery.updated'
@@ -85,7 +85,7 @@ function toRuntimeAttachmentMetadata(attachment: EmailAttachmentRecord) {
 	}
 }
 
-function buildEmailEventPayload(input: {
+export function buildEmailReceiptSubscriptionEnvelope(input: {
 	event: EmailReceiptSubscriptionEnvelope['event']
 	message: EmailMessageRecord
 	attachments: Array<EmailAttachmentRecord>
@@ -203,7 +203,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 			userId: input.userId,
 			topic,
 		})
-	const eventPayload = buildEmailEventPayload({
+	const eventPayload = buildEmailReceiptSubscriptionEnvelope({
 		event: topic,
 		message: input.message,
 		attachments,
@@ -359,7 +359,7 @@ export async function dispatchSystemInboundEmailSubscriptionEvents(input: {
 				messageId: input.message.id,
 			})
 			const eventPayload = {
-				...buildEmailEventPayload({
+				...buildEmailReceiptSubscriptionEnvelope({
 					event: systemInboundEmailReceiptTopic,
 					message: input.message,
 					attachments,

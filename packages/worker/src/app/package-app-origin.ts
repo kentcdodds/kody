@@ -23,6 +23,7 @@ import {
 	parsePackageAppPath,
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
+import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 /**
@@ -83,16 +84,13 @@ function createPackageAppOriginConfigurationErrorResponse(message: string) {
 }
 
 function createUnmatchedPackageAppPathResponse() {
-	return new Response(
-		'Package app URL not found. Package app URLs use /@username/packages/<kody-id>/<path>. Requests outside a package app mount are not dispatched to any app.',
-		{
-			status: 404,
-			headers: {
-				'Cache-Control': 'no-store',
-				'Content-Type': 'text/plain; charset=utf-8',
-			},
+	return new Response(buildUnmatchedPackageAppOriginPathMessage(), {
+		status: 404,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
 		},
-	)
+	})
 }
 
 /**

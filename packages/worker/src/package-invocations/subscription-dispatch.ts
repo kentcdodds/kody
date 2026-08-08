@@ -20,12 +20,18 @@ import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
 } from '#worker/package-runtime/subscription-artifacts.ts'
+import {
+	isTrustedSyntheticSubscriptionDispatch,
+	stripUntrustedSubscriptionEnvelopeFields,
+	type TrustedSyntheticSubscriptionDispatch,
+} from './subscription-envelope.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from './infrastructure-codes.ts'
 import {
 	internalEmailSubscriptionTokenId,
 	internalPackageEventSubscriptionTokenId,
 	maxPackageRuntimeInvokeDepth,
 	normalizeNullableString,
+	syntheticPackageSubscriptionSource,
 	type LoadedPackageEventSubscription,
 	type PackageInvocationResponse,
 	type PackageRuntimeContext,
@@ -57,12 +63,19 @@ function parsePackageEventDispatchInput(rawInput: PackageEventDispatchInput) {
 	if (!idempotencyKey) {
 		throw new Error('events.dispatch requires a non-empty idempotencyKey.')
 	}
-	const payload = input.payload ?? {}
-	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+	const rawPayload = input.payload ?? {}
+	if (
+		!rawPayload ||
+		typeof rawPayload !== 'object' ||
+		Array.isArray(rawPayload)
+	) {
 		throw new Error(
 			'events.dispatch payload must be a JSON object when provided.',
 		)
 	}
+	const payload = stripUntrustedSubscriptionEnvelopeFields(
+		rawPayload as Record<string, unknown>,
+	)
 	return {
 		topic,
 		idempotencyKey,
@@ -200,7 +213,7 @@ export async function deliverPackageEventWithToolFactories(input: {
 		topic: message.topic,
 		payload: message.payload,
 	})
-	const envelope = {
+	const envelope = stripUntrustedSubscriptionEnvelopeFields({
 		event: message.topic,
 		source: {
 			type: 'package',
@@ -209,7 +222,7 @@ export async function deliverPackageEventWithToolFactories(input: {
 		},
 		idempotency_key: message.idempotencyKey,
 		payload: message.payload,
-	}
+	}) as Record<string, unknown>
 	const subscribers: PackageEventDeliveryResult['subscribers'] = []
 	const retryableInfrastructureErrors: Array<Error> = []
 	await runWithDynamicWorkerEvaluationBudget(async () => {
@@ -418,6 +431,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	params?: Record<string, unknown>
 	idempotencyKey: string
 	source?: string | null
+	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
@@ -433,6 +447,18 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 				'Package subscription invocations require a non-empty idempotencyKey.',
 		})
 	}
+	const synthetic = isTrustedSyntheticSubscriptionDispatch(
+		input.trustedSyntheticDispatch,
+	)
+	const requestedSource = normalizeNullableString(input.source)
+	const source = synthetic
+		? syntheticPackageSubscriptionSource
+		: requestedSource === syntheticPackageSubscriptionSource
+			? 'email'
+			: (requestedSource ?? 'email')
+	const params = synthetic
+		? input.params
+		: stripUntrustedSubscriptionEnvelopeFields(input.params)
 	return await invokeSavedPackageModule({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -446,9 +472,9 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 			kind: 'subscription',
 			topic,
 		},
-		params: input.params,
+		params,
 		idempotencyKey,
-		source: normalizeNullableString(input.source) ?? 'email',
+		source,
 		topic,
 		notFoundCode: 'subscription_not_found',
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,

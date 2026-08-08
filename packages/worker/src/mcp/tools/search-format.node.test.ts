@@ -1272,11 +1272,17 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			kody: {
 				id: 'notes-helper',
 				description: 'Notes helper package.',
+				subscriptions: {
+					'repo.pushed': {
+						handler: './on-repo-pushed.ts',
+					},
+				},
 			},
 		},
 		files: {
 			'package.json': '{}',
 			'index.ts': 'export default function main() {}',
+			'on-repo-pushed.ts': 'export default function handler() {}',
 		},
 	})
 	expect(packageDetail.markdown).toContain(
@@ -1285,11 +1291,24 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	expect(packageDetail.markdown).toContain(
 		'package_publish_external_push({ kody_id: "notes-helper" })',
 	)
+	expect(packageDetail.markdown).toContain('## Test')
+	expect(packageDetail.markdown).toContain(
+		'package_subscription_dispatch({ kody_id: "notes-helper", topic: "repo.pushed", params: {} })',
+	)
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',
 		maintain: {
 			gitLane: 'package_get_git_remote({ kody_id: "notes-helper" })',
 			publish: 'package_publish_external_push({ kody_id: "notes-helper" })',
+		},
+		test: {
+			subscriptions: [
+				{
+					topic: 'repo.pushed',
+					snippet:
+						'package_subscription_dispatch({ kody_id: "notes-helper", topic: "repo.pushed", params: {} })',
+				},
+			],
 		},
 	})
 })

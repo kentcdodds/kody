@@ -103,6 +103,10 @@ export type PackageRuntimeToolFactories = {
 }
 
 export const internalEmailSubscriptionTokenId = 'internal:email-subscriptions'
+export {
+	internalSyntheticSubscriptionTokenId,
+	syntheticPackageSubscriptionSource,
+} from './subscription-envelope.ts'
 export const internalPackageEventSubscriptionTokenId = 'internal:package-events'
 export const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
 export const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
