@@ -344,6 +344,7 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	const authorizeHtml = await authorizeHtmlResponse.text()
 	expect(authorizeHtml).toContain(baseClient.clientName ?? '')
 	expect(authorizeHtml).not.toContain('Loading authorization details')
+	expect(authorizeHtml).not.toContain('Checking your session')
 	expect(authorizeHtml).toContain('"oauthAuthorize"')
 
 	const mismatchResponse = await handleAuthorizeInfo(

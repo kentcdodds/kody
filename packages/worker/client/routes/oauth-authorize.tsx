@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
@@ -21,8 +22,8 @@ import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-em
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
+	queueSessionRefresh,
 	type SessionInfo,
-	type SessionStatus,
 } from '#client/session.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -107,8 +108,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let submittingDecision: OAuthAuthorizeDecision | null = null
 	let lastSearch = ''
 	let turnstileSiteKey: string | null | undefined
-	let session: SessionInfo | null = null
-	let sessionStatus: SessionStatus = 'idle'
+	let sessionOverride: SessionInfo | null | undefined
 	let resetCompleted = false
 	let allowClientReset = false
 	let activeInfoRequestId = 0
@@ -183,16 +183,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		}
 	}
 
-	async function loadSession() {
-		if (sessionStatus !== 'idle') return
-		sessionStatus = 'loading'
-
-		session = await fetchSessionInfo()
-
-		sessionStatus = 'ready'
-		handle.update()
-	}
-
 	function applyRouteLoaderData(currentHref: string) {
 		if (!isOAuthAuthorizePath(currentHref)) return false
 		const routeData = tryConsumeRouteLoaderData(
@@ -252,13 +242,19 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		}
 	}
 
+	async function refreshSession() {
+		const nextSession = await fetchSessionInfo()
+		sessionOverride = nextSession
+		queueSessionRefresh()
+		return nextSession
+	}
+
 	async function handleContinueAfterVerify() {
-		session = await fetchSessionInfo()
-		sessionStatus = 'ready'
+		const nextSession = await refreshSession()
 		activeInfoRequestId += 1
 		const requestId = activeInfoRequestId
 		await loadInfo(requestId)
-		if (session?.emailVerified) {
+		if (nextSession?.emailVerified) {
 			resendTone = 'info'
 			resendMessage = 'Email verified. You can approve the connection now.'
 		} else {
@@ -316,8 +312,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						: 'Unable to complete authorization.'
 				setMessage({ type: 'error', text: errorText })
 				if (payload?.code === 'email_verification_required') {
-					session = await fetchSessionInfo()
-					sessionStatus = 'ready'
+					await refreshSession()
 				}
 				submittingDecision = null
 				handle.update()
@@ -348,7 +343,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const hasSession = Boolean(session?.email)
+		const hasSession = Boolean(readAppSession(handle).session?.email)
 		await submitDecision(
 			'approve',
 			hasSession ? undefined : event.currentTarget,
@@ -362,6 +357,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		if (typeof document !== 'undefined' && turnstileSiteKey) {
 			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
 		}
+		const appSession = readAppSession(handle)
+		const session =
+			sessionOverride === undefined ? appSession.session : sessionOverride
+		const sessionStatus =
+			sessionOverride === undefined ? appSession.status : 'ready'
 		const currentHref = readCurrentRouterHref(handle)
 		const currentSearch = readRouterSearch(handle)
 		// Consume on every render so same-path preload-then-commit refreshes
@@ -391,10 +391,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				handle.queueTask(() => loadInfo(requestId))
 			}
 		}
-		if (sessionStatus === 'idle' && typeof document !== 'undefined') {
-			handle.queueTask(() => loadSession())
-		}
-
 		const clientLabel = info?.client?.name ?? 'Unknown client'
 		const scopes = info?.scopes ?? []
 		const scopeLabel =
@@ -444,9 +440,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					<p mix={css(sectionTitleCss)}>Requested scopes</p>
 					<p mix={css(descriptionCss)}>{scopeLabel}</p>
 				</section>
-				{isSessionLoading ? (
-					<p mix={css(descriptionCss)}>Checking your session...</p>
-				) : null}
 				{isLoggedIn ? (
 					<section mix={css(insetCardCss)}>
 						<p

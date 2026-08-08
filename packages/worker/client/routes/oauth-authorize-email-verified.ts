@@ -1,7 +1,7 @@
 /**
- * Once the live session has loaded, it is authoritative for the authorize
- * gate. Stale authorize-info metadata must not keep approval available after
- * the server reports email_verification_required.
+ * The live app session is authoritative for the authorize gate. Stale
+ * authorize-info metadata must not keep approval available after the server
+ * reports email_verification_required.
  */
 export function resolveAuthorizeEmailVerified(input: {
 	isSessionReady: boolean

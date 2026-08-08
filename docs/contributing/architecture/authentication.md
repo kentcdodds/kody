@@ -194,9 +194,12 @@ assistant features:
   unverified.
 - **MCP OAuth authorize**: `/oauth/authorize` rejects approval before creating a
   grant/token when the account email is unverified
-  (`403 email_verification_required`). The authorize UI keeps inline
-  verification/resend controls and the original OAuth query so verification in
-  another tab can resume without restarting the host connection.
+  (`403 email_verification_required`). The authorize HTML is server-rendered
+  with client/scopes from `/oauth/authorize-info` and the signed-in app session
+  from the SSR shell, so first paint already shows approve, inline login, or
+  verify-email instead of a client `/session` loading state. The authorize UI
+  keeps inline verification/resend controls and the original OAuth query so
+  verification in another tab can resume without restarting the host connection.
 - **MCP requests**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is
   the single chokepoint for `/mcp`. After token validation it checks
   `users.email_verified_at` (via `isAccountEmailVerified`) and rejects
@@ -488,6 +491,9 @@ routed from `packages/worker/src/index.ts`.
   on `/pending-verification` with that safe `redirectTo` preserved for
   continue-after-verify. The authorize tab itself should stay open when the
   email link is opened elsewhere, so the original OAuth query remains resumable.
+  Signed-in vs signed-out chrome on that page comes from the SSR-embedded app
+  session; the route does not wait on a separate browser `/session` fetch before
+  rendering approve or login.
 - Approval is rejected before `completeAuthorization` when the account email is
   unverified, so no grant/token is created until verification succeeds.
 

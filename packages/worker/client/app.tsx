@@ -11,6 +11,7 @@ import {
 	registerRouteLoaders,
 	Router,
 } from './client-router.tsx'
+import { AppSessionProvider } from './app-session-context.tsx'
 import { AppLoaderDataProvider } from './loader-data-context.tsx'
 import { NavigationProgress } from './navigation-progress.tsx'
 import { readRouterPathname, readRouterSearch } from './router-location.tsx'
@@ -176,113 +177,115 @@ export function App(handle: Handle<AppProps>) {
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
-				<NavigationProgress />
-				<ScrollRestoration />
-				<div
-					mix={css({
-						width: '100%',
-						minHeight: '100vh',
-						display: 'flex',
-						flexDirection: 'column',
-						fontFamily: typography.fontFamily,
-						boxSizing: 'border-box',
-						/*
-						 * The redesign's decorative glows are pseudo-elements with
-						 * negative horizontal insets (`heroArtCss`, `pageHeadCss`, and
-						 * the per-page overrides that borrow them), so they bleed past
-						 * the viewport by design. Left unclipped that bleed becomes real
-						 * horizontal page scroll on a phone — measured at 12-66px across
-						 * the marketing routes — which also knocks the fixed mobile-menu
-						 * popover out of line with the sticky header once you swipe
-						 * sideways. `clip` rather than `hidden`: it contains the bleed
-						 * without creating a scroll container, so the sticky header still
-						 * resolves against the viewport and vertical bleed still shows.
-						 */
-						overflowX: 'clip',
-					})}
-				>
-					<a
-						href="#main"
-						mix={[
-							on('click', (event) => {
-								const main = document.getElementById('main')
-								if (!(main instanceof HTMLElement)) return
-								event.preventDefault()
-								navigate('#main')
-								main.focus({ preventScroll: true })
-								main.scrollIntoView()
-							}),
-							css(visuallyHiddenUntilFocusedCss),
-						]}
+				<AppSessionProvider session={session} status={sessionStatus}>
+					<NavigationProgress />
+					<ScrollRestoration />
+					<div
+						mix={css({
+							width: '100%',
+							minHeight: '100vh',
+							display: 'flex',
+							flexDirection: 'column',
+							fontFamily: typography.fontFamily,
+							boxSizing: 'border-box',
+							/*
+							 * The redesign's decorative glows are pseudo-elements with
+							 * negative horizontal insets (`heroArtCss`, `pageHeadCss`, and
+							 * the per-page overrides that borrow them), so they bleed past
+							 * the viewport by design. Left unclipped that bleed becomes real
+							 * horizontal page scroll on a phone — measured at 12-66px across
+							 * the marketing routes — which also knocks the fixed mobile-menu
+							 * popover out of line with the sticky header once you swipe
+							 * sideways. `clip` rather than `hidden`: it contains the bleed
+							 * without creating a scroll container, so the sticky header still
+							 * resolves against the viewport and vertical bleed still shows.
+							 */
+							overflowX: 'clip',
+						})}
 					>
-						Skip to content
-					</a>
-					{hideWaitlistBanner ? null : <WaitlistBanner />}
-					{isAuthShellPath ? null : (
-						<SiteHeader
-							loggedIn={isLoggedIn}
-							displayName={sessionDisplayName}
-							showAdminLink={showAdminLink}
-							showDemoIndicator={isLoggedIn && showDemoIndicator}
-							loginHref={loginHref}
-							currentPathname={currentPathname}
-						/>
-					)}
-					<main
-						id="main"
-						tabIndex={-1}
-						mix={css(
-							isAuthShellPath
-								? {
-										width: '100%',
-										boxSizing: 'border-box',
-										flex: 1,
-										// The auth canvas stretches to fill the shell column.
-										display: 'grid',
-									}
-								: isRedesignedMarketingPath
-									? { width: '100%', boxSizing: 'border-box', flex: 1 }
-									: {
+						<a
+							href="#main"
+							mix={[
+								on('click', (event) => {
+									const main = document.getElementById('main')
+									if (!(main instanceof HTMLElement)) return
+									event.preventDefault()
+									navigate('#main')
+									main.focus({ preventScroll: true })
+									main.scrollIntoView()
+								}),
+								css(visuallyHiddenUntilFocusedCss),
+							]}
+						>
+							Skip to content
+						</a>
+						{hideWaitlistBanner ? null : <WaitlistBanner />}
+						{isAuthShellPath ? null : (
+							<SiteHeader
+								loggedIn={isLoggedIn}
+								displayName={sessionDisplayName}
+								showAdminLink={showAdminLink}
+								showDemoIndicator={isLoggedIn && showDemoIndicator}
+								loginHref={loginHref}
+								currentPathname={currentPathname}
+							/>
+						)}
+						<main
+							id="main"
+							tabIndex={-1}
+							mix={css(
+								isAuthShellPath
+									? {
 											width: '100%',
 											boxSizing: 'border-box',
 											flex: 1,
-											padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
-											[mq.tablet]: {
-												padding: `${spacing.sm} ${spacing.sm} 0`,
+											// The auth canvas stretches to fill the shell column.
+											display: 'grid',
+										}
+									: isRedesignedMarketingPath
+										? { width: '100%', boxSizing: 'border-box', flex: 1 }
+										: {
+												width: '100%',
+												boxSizing: 'border-box',
+												flex: 1,
+												padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
+												[mq.tablet]: {
+													padding: `${spacing.sm} ${spacing.sm} 0`,
+												},
+												[mq.mobile]: {
+													padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+												},
 											},
-											[mq.mobile]: {
-												padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-											},
-										},
+							)}
+						>
+							<Router
+								routes={clientRoutes}
+								loaderData={handle.props.loaderData}
+								notFound={handle.props.notFound}
+								fallback={
+									<section>
+										<h2
+											mix={css({
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												marginBottom: spacing.sm,
+												color: colors.text,
+											})}
+										>
+											Not Found
+										</h2>
+										<p mix={css({ color: colors.textMuted })}>
+											We could not find that page.
+										</p>
+									</section>
+								}
+							/>
+						</main>
+						{isAuthShellPath ? null : (
+							<SiteFooter loggedIn={isLoggedIn} loginHref={loginHref} />
 						)}
-					>
-						<Router
-							routes={clientRoutes}
-							loaderData={handle.props.loaderData}
-							notFound={handle.props.notFound}
-							fallback={
-								<section>
-									<h2
-										mix={css({
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											marginBottom: spacing.sm,
-											color: colors.text,
-										})}
-									>
-										Not Found
-									</h2>
-									<p mix={css({ color: colors.textMuted })}>
-										We could not find that page.
-									</p>
-								</section>
-							}
-						/>
-					</main>
-					{isAuthShellPath ? null : (
-						<SiteFooter loggedIn={isLoggedIn} loginHref={loginHref} />
-					)}
-				</div>
+					</div>
+				</AppSessionProvider>
 			</AppLoaderDataProvider>
 		)
 	}

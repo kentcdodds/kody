@@ -529,6 +529,57 @@ test('renderAppPage configures session secret before reading cookies', async () 
 	const html = await readResponseText(response)
 	expect(html).toContain('Authorize access')
 	expect(html).not.toContain('OAuth authorization failed')
+	expect(html).not.toContain('Checking your session')
+})
+
+test('renderAppPage server-renders signed-in oauth authorize without a session check', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(
+		createUserTestDb([
+			{
+				id: 1,
+				email: 'user@example.com',
+				username: 'account-user',
+				password_hash: 'unused',
+				stable_user_id: testStableUserIdFromEmail('user@example.com'),
+				created_at: new Date(0).toISOString(),
+				updated_at: new Date(0).toISOString(),
+			},
+		]),
+	)
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail('user@example.com'),
+			email: 'user@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+
+	const response = await renderAppPage({
+		request: new Request(
+			'https://example.com/oauth/authorize?response_type=code&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			oauthAuthorize: {
+				ok: true,
+				client: { id: 'client-1', name: 'Cursor' },
+				scopes: ['profile', 'email'],
+				emailVerified: false,
+			},
+		},
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('Authorize access')
+	expect(html).toContain('Cursor')
+	expect(html).toContain('Signed in as account-user')
+	expect(html).not.toContain('Checking your session')
+	expect(html).not.toContain('Loading authorization details')
 })
 
 test('renderAppPage renders the redesigned landing page shell', async () => {
