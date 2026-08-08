@@ -517,27 +517,54 @@ function targetOwnerId(
 		: sourceOwnerId
 }
 
-function rewriteMessageForDrill(
-	message: MailboxMessageRecord,
-	target: string,
-): MailboxMessageInput {
+function mailboxThreadInput(thread: MailboxThreadRecord): MailboxThreadInput {
 	return {
-		...message,
-		rawMimeKey:
-			message.rawMimeKey === null ? null : emailRawMimeKey(target, message.id),
+		...thread,
+		subjectNormalized: thread.subjectNormalized ?? '',
 	}
 }
 
-function rewriteAttachmentForDrill(
+function mailboxMessageInput(
+	message: MailboxMessageRecord,
+	drillTarget: string | null,
+): MailboxMessageInput {
+	return {
+		...message,
+		fromAddress: message.fromAddress ?? '',
+		subject: message.subject ?? '',
+		headers: message.headers ?? {},
+		rawSize: message.rawSize ?? 0,
+		rawMimeKey:
+			drillTarget !== null && message.rawMimeKey !== null
+				? emailRawMimeKey(drillTarget, message.id)
+				: message.rawMimeKey,
+	}
+}
+
+function mailboxAttachmentInput(
 	attachment: MailboxAttachmentRecord,
-	target: string,
+	drillTarget: string | null,
 ): MailboxAttachmentInput {
 	return {
 		...attachment,
+		contentType: attachment.contentType ?? 'application/octet-stream',
 		storageKey:
-			attachment.storageKind === 'external'
-				? emailAttachmentBlobKey(target, attachment.messageId, attachment.id)
+			drillTarget !== null && attachment.storageKind === 'external'
+				? emailAttachmentBlobKey(
+						drillTarget,
+						attachment.messageId,
+						attachment.id,
+					)
 				: attachment.storageKey,
+	}
+}
+
+function mailboxDeliveryEventInput(
+	event: MailboxDeliveryEventRecord,
+): MailboxDeliveryEventInput {
+	return {
+		...event,
+		provider: event.provider ?? 'kody',
 	}
 }
 
@@ -738,7 +765,7 @@ export async function runMailboxImportTick(input: {
 			if (budgetExhausted()) break
 			await mailbox.upsertMessageGraph({
 				ownerId: target,
-				thread: dump.threads[cursor.rowIndex]!,
+				thread: mailboxThreadInput(dump.threads[cursor.rowIndex]!),
 				message: null,
 			})
 			cursor.rowIndex += 1
@@ -757,14 +784,11 @@ export async function runMailboxImportTick(input: {
 			const sourceMessage = dump.messages[cursor.rowIndex]!
 			const sourceAttachments =
 				dump.attachmentsByMessage.get(sourceMessage.id) ?? []
-			const message = drill
-				? rewriteMessageForDrill(sourceMessage, target)
-				: (sourceMessage as MailboxMessageInput)
-			const attachments = drill
-				? sourceAttachments.map((attachment) =>
-						rewriteAttachmentForDrill(attachment, target),
-					)
-				: (sourceAttachments as Array<MailboxAttachmentInput>)
+			const drillTarget = drill ? target : null
+			const message = mailboxMessageInput(sourceMessage, drillTarget)
+			const attachments = sourceAttachments.map((attachment) =>
+				mailboxAttachmentInput(attachment, drillTarget),
+			)
 			await mailbox.upsertMessageGraph({
 				ownerId: target,
 				message,
@@ -786,10 +810,12 @@ export async function runMailboxImportTick(input: {
 			cursor.rowIndex < dump.deliveryEvents.length
 		) {
 			if (budgetExhausted()) break
-			const events = dump.deliveryEvents.slice(
-				cursor.rowIndex,
-				cursor.rowIndex + mailboxUpsertDeliveryEventsMax,
-			) as Array<MailboxDeliveryEventInput>
+			const events = dump.deliveryEvents
+				.slice(
+					cursor.rowIndex,
+					cursor.rowIndex + mailboxUpsertDeliveryEventsMax,
+				)
+				.map(mailboxDeliveryEventInput)
 			await mailbox.upsertDeliveryEvents({
 				ownerId: target,
 				events,
