@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
+import { TransientJobExecutionError } from './execution-safety.ts'
 
 const withAccountWriteLease = vi.fn(
 	async (input: { write: () => Promise<unknown> }) => input.write(),
@@ -334,7 +335,7 @@ test('scheduled package job claims carry package identity and the published sour
 	listDueJobRows.mockResolvedValue([row])
 	claimJobRow.mockResolvedValue(row)
 	getEntitySourceByIdForUser.mockRejectedValueOnce(
-		new Error('D1_ERROR: Network connection lost.'),
+		new TransientJobExecutionError('D1_ERROR: Network connection lost.'),
 	)
 
 	await expect(
