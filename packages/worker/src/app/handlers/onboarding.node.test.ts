@@ -14,8 +14,17 @@ import {
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
+const mockModule = vi.hoisted(() => ({
+	readAuthenticatedAppUser: vi.fn(),
+}))
+
 vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: vi.fn(async () => new Response('ok')),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: (...args: Array<unknown>) =>
+		mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -23,6 +32,7 @@ vi.mock('#worker/community/service.ts', () => ({
 }))
 
 test('onboarding serves public setup content to anonymous visitors', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	setAuthSessionSecret(testCookieSecret)
 	const env = { COOKIE_SECRET: testCookieSecret } as Env
 
