@@ -1,7 +1,4 @@
-import {
-	type SessionInfo,
-	type SessionStatus,
-} from '#client/session.ts'
+import { type SessionInfo, type SessionStatus } from '#client/session.ts'
 
 export type AuthorizeSessionSnapshot = {
 	session: SessionInfo | null
@@ -20,7 +17,9 @@ export function sessionsMatch(
 ) {
 	if (left === right) return true
 	if (!left || !right) return false
-	return left.email === right.email && left.emailVerified === right.emailVerified
+	return (
+		left.email === right.email && left.emailVerified === right.emailVerified
+	)
 }
 
 export function resolveAuthorizeSession(input: {
