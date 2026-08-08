@@ -87,6 +87,7 @@ export function createAccountMcpServersApiHandler(env: Env) {
 						env,
 						user,
 						body,
+						request,
 						kind: 'reconnect',
 					})
 				}
@@ -95,14 +96,15 @@ export function createAccountMcpServersApiHandler(env: Env) {
 						env,
 						user,
 						body,
+						request,
 						kind: 'refresh',
 					})
 				}
 				if (action === 'set-enabled') {
-					return await handleSetEnabledAction({ env, user, body })
+					return await handleSetEnabledAction({ env, user, body, request })
 				}
 				if (action === 'delete') {
-					return await handleDeleteAction({ env, user, body })
+					return await handleDeleteAction({ env, user, body, request })
 				}
 			} catch (error) {
 				return jsonResponse(
@@ -214,6 +216,7 @@ async function handleConnectionAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
+	request: Request
 	kind: 'reconnect' | 'refresh'
 }) {
 	const setting = await requireSetting(input)
@@ -229,6 +232,7 @@ async function handleConnectionAction(input: {
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
 		user: input.user,
+		requestUrl: input.request.url,
 	})
 	return jsonResponse({
 		...payload,
@@ -240,6 +244,7 @@ async function handleSetEnabledAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
+	request: Request
 }) {
 	const setting = await requireSetting(input)
 	const updated = await setMcpServerEnabled({
@@ -251,6 +256,7 @@ async function handleSetEnabledAction(input: {
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
 		user: input.user,
+		requestUrl: input.request.url,
 	})
 	return jsonResponse({
 		...payload,
@@ -262,6 +268,7 @@ async function handleDeleteAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
+	request: Request
 }) {
 	const setting = await requireSetting(input)
 	const deleted = await deleteMcpServer({
@@ -276,6 +283,7 @@ async function handleDeleteAction(input: {
 		await loadAccountMcpServersData({
 			env: input.env,
 			user: input.user,
+			requestUrl: input.request.url,
 		}),
 	)
 }
