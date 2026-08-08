@@ -26,7 +26,7 @@ import {
 	syncPackageJobsForPackage,
 	updateJob,
 } from './service.ts'
-import { listJobRowsByUserId } from './repo.ts'
+import { listJobRowsByUserId, refreshPackageJobRowIdentity } from './repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	type JobCreateInput,
@@ -860,6 +860,36 @@ function createDatabase(
 								}
 								return { meta: { changes, last_row_id: 0 } }
 							}
+							if (
+								query.startsWith('UPDATE jobs SET') &&
+								query.includes(
+									'source_id = ?, published_commit = ?, caller_context_json = ?, updated_at = ?',
+								)
+							) {
+								const existingJob = selectOne(
+									'jobs',
+									(existing) =>
+										existing['id'] === params[4] &&
+										existing['user_id'] === params[5],
+								)
+								if (!existingJob) {
+									return { meta: { changes: 0, last_row_id: 0 } }
+								}
+								upsert(
+									'jobs',
+									(existing) =>
+										existing['id'] === params[4] &&
+										existing['user_id'] === params[5],
+									{
+										...existingJob,
+										source_id: params[0],
+										published_commit: params[1],
+										caller_context_json: params[2],
+										updated_at: params[3],
+									},
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const existingJob = selectOne(
 									'jobs',
@@ -1252,6 +1282,15 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 				},
 			}),
 		})
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		entityKind: 'package',
+		entityId: input.packageId,
+		publishedCommit: 'package-published-commit',
+		manifestPath: 'package.json',
+	})
 
 	expect(
 		await syncPackageJobsForPackage({
@@ -1276,7 +1315,25 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	).toBe(true)
 	const rowsAfterAdd = await listJobRowsByUserId(env.APP_DB, input.userId)
 	expect(rowsAfterAdd).toHaveLength(1)
+	expect(rowsAfterAdd[0]?.record.publishedCommit).toBe(
+		'package-published-commit',
+	)
 	const nextRunAtAfterAdd = rowsAfterAdd[0]?.record.nextRunAt
+	await refreshPackageJobRowIdentity({
+		db: env.APP_DB,
+		userId: input.userId,
+		jobId: rowsAfterAdd[0]!.record.id,
+		sourceId: input.sourceId,
+		publishedCommit: null,
+		callerContextJson: JSON.stringify({
+			...rowsAfterAdd[0]!.callerContext,
+			user: {
+				...rowsAfterAdd[0]!.callerContext?.user,
+				email: '',
+			},
+		}),
+		updatedAt: rowsAfterAdd[0]!.record.updatedAt,
+	})
 
 	expect(
 		await syncPackageJobsForPackage({
@@ -1286,6 +1343,10 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	).toBe(false)
 	const rowsAfterNoOp = await listJobRowsByUserId(env.APP_DB, input.userId)
 	expect(rowsAfterNoOp[0]?.record.nextRunAt).toBe(nextRunAtAfterAdd)
+	expect(rowsAfterNoOp[0]?.record.publishedCommit).toBe(
+		'package-published-commit',
+	)
+	expect(rowsAfterNoOp[0]?.callerContext?.user.email).toBe('user-1@example.com')
 
 	expect(
 		await syncPackageJobsForPackage({

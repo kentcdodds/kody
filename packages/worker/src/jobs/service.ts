@@ -26,6 +26,7 @@ import {
 	listJobRowsByUserId,
 	getNextRunnableJobRow,
 	insertJobRow,
+	refreshPackageJobRowIdentity,
 	retryClaimedJobRow,
 	updateJobRow,
 } from './repo.ts'
@@ -65,6 +66,7 @@ import {
 	normalizePackageWorkspacePath,
 	type parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -104,6 +106,7 @@ import {
 	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
+import { buildPackageJobId, packageIdFromJobId } from './package-job-id.ts'
 
 export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 
@@ -493,17 +496,13 @@ async function executePublishedJobArtifact(input: {
 			...(packageContext ? { packageContext } : {}),
 			runRecord,
 			runRecordHandle: input.runRecordHandle,
-			...(packageRuntimeTools ?? {}),
+			...packageRuntimeTools,
 			waitUntil: input.runRecordHandle ? undefined : input.waitUntil,
 		},
 	).then((result) => ({
 		...result,
 		logs: [...input.bypassLogs, ...(result.logs ?? [])],
 	}))
-}
-
-function buildPackageJobId(packageId: string, jobName: string) {
-	return `package-job:${packageId}:${encodeURIComponent(jobName)}`
 }
 
 async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
@@ -666,6 +665,20 @@ export async function syncPackageJobsForPackage(input: {
 		stableUserId: input.userId,
 		env: input.env,
 		async write() {
+			const [callerContext, source] = await Promise.all([
+				createPackageJobCallerContext({
+					db: input.env.APP_DB,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					packageId: input.packageId,
+				}),
+				getEntitySourceByIdForUser(input.env.APP_DB, {
+					id: input.sourceId,
+					userId: input.userId,
+				}),
+			])
+			const callerContextJson = serializeCallerContext(callerContext)
+			const publishedCommit = source?.published_commit ?? null
 			const desiredJobs = input.manifest.kody.jobs ?? {}
 			const existingRows = await listJobRowsByUserId(
 				input.env.APP_DB,
@@ -692,11 +705,28 @@ export async function syncPackageJobsForPackage(input: {
 							JSON.stringify(schedule) &&
 						existing.record.timezone === timezone &&
 						existing.record.enabled === enabled
-					if (schedulerStateMatches) continue
+					if (schedulerStateMatches) {
+						const refreshed = await refreshPackageJobRowIdentity({
+							db: input.env.APP_DB,
+							userId: input.userId,
+							jobId: existing.record.id,
+							sourceId: input.sourceId,
+							publishedCommit,
+							callerContextJson,
+							updatedAt: now,
+						})
+						if (!refreshed) {
+							throw new Error(
+								`Package job "${existing.record.id}" identity could not be refreshed.`,
+							)
+						}
+						continue
+					}
 					const updated: JobRecord = {
 						...existing.record,
 						name: jobName,
 						sourceId: input.sourceId,
+						publishedCommit,
 						schedule,
 						timezone,
 						enabled,
@@ -710,14 +740,7 @@ export async function syncPackageJobsForPackage(input: {
 						db: input.env.APP_DB,
 						userId: input.userId,
 						job: updated,
-						callerContextJson: serializeCallerContext(
-							await createPackageJobCallerContext({
-								db: input.env.APP_DB,
-								baseUrl: input.baseUrl,
-								userId: input.userId,
-								packageId: input.packageId,
-							}),
-						),
+						callerContextJson,
 					})
 					schedulerStateChanged = true
 					continue
@@ -729,7 +752,7 @@ export async function syncPackageJobsForPackage(input: {
 					userId: input.userId,
 					name: jobName,
 					sourceId: input.sourceId,
-					publishedCommit: null,
+					publishedCommit,
 					storageId: createJobStorageId(
 						buildPackageJobId(input.packageId, jobName),
 					),
@@ -753,14 +776,7 @@ export async function syncPackageJobsForPackage(input: {
 					db: input.env.APP_DB,
 					userId: input.userId,
 					job: created,
-					callerContextJson: serializeCallerContext(
-						await createPackageJobCallerContext({
-							db: input.env.APP_DB,
-							baseUrl: input.baseUrl,
-							userId: input.userId,
-							packageId: input.packageId,
-						}),
-					),
+					callerContextJson,
 				})
 				schedulerStateChanged = true
 			}
@@ -1405,6 +1421,45 @@ export async function runJobNow(input: {
 	})
 }
 
+async function resolveScheduledJobRunAttribution(input: {
+	env: Env
+	job: JobRecord
+}) {
+	const packageId = packageIdFromJobId(input.job.id)
+	if (!packageId) {
+		return {
+			sourceId: input.job.sourceId,
+			publishedCommit: input.job.publishedCommit ?? null,
+			packageId: null,
+			kodyId: null,
+		}
+	}
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.job.sourceId,
+		userId: input.job.userId,
+	})
+	const publishedCommit =
+		source?.published_commit ?? input.job.publishedCommit ?? null
+	if (source?.entity_kind !== 'package' || source.entity_id !== packageId) {
+		return {
+			sourceId: input.job.sourceId,
+			publishedCommit,
+			packageId: null,
+			kodyId: null,
+		}
+	}
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.job.userId,
+		packageId,
+	})
+	return {
+		sourceId: source.id,
+		publishedCommit,
+		packageId,
+		kodyId: savedPackage?.kodyId ?? null,
+	}
+}
+
 async function executeClaimedScheduledJob(input: {
 	env: Env
 	row: NonNullable<Awaited<ReturnType<typeof claimJobRow>>>
@@ -1415,6 +1470,10 @@ async function executeClaimedScheduledJob(input: {
 		jobId: input.row.record.id,
 		scheduledFor: input.scheduledFor,
 	})
+	const attribution = await resolveScheduledJobRunAttribution({
+		env: input.env,
+		job: input.row.record,
+	})
 	const claim = await claimRunRecord({
 		env: input.env,
 		userId: input.row.record.userId,
@@ -1423,8 +1482,10 @@ async function executeClaimedScheduledJob(input: {
 			name: input.row.record.name,
 			jobId: input.row.record.id,
 			storageId: input.row.record.storageId,
-			sourceId: input.row.record.sourceId,
-			publishedCommit: input.row.record.publishedCommit,
+			sourceId: attribution.sourceId,
+			publishedCommit: attribution.publishedCommit,
+			packageId: attribution.packageId,
+			kodyId: attribution.kodyId,
 			idempotencyKey,
 			metadata: {
 				scheduledFor: input.scheduledFor,

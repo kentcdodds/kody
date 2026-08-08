@@ -618,6 +618,37 @@ export async function retryClaimedJobRow(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+/**
+ * Refresh package-owned execution identity without disturbing an in-flight
+ * scheduler claim or recomputing the next occurrence.
+ */
+export async function refreshPackageJobRowIdentity(input: {
+	db: D1Database
+	userId: string
+	jobId: string
+	sourceId: string
+	publishedCommit: string | null
+	callerContextJson: string
+	updatedAt: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET
+				source_id = ?, published_commit = ?, caller_context_json = ?, updated_at = ?
+			WHERE id = ? AND user_id = ?`,
+		)
+		.bind(
+			input.sourceId,
+			input.publishedCommit,
+			input.callerContextJson,
+			input.updatedAt,
+			input.jobId,
+			input.userId,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function deleteJobRow(
 	db: D1Database,
 	userId: string,
