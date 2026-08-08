@@ -76,6 +76,14 @@ export const communitySearchMatchSchema =
 		tags: z.array(z.string()),
 		owner_anonymous: z.literal(true),
 		trusted: communityTrustedFieldSchema,
+		relevance: z
+			.number()
+			.min(0)
+			.max(1)
+			.nullable()
+			.describe(
+				'Blended lexical and vector query relevance from 0 to 1; null when browsing with an empty query.',
+			),
 		public_url: z.string(),
 	})
 

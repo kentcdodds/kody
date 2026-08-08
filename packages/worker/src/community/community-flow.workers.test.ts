@@ -252,9 +252,14 @@ test('community package flow works end-to-end through capability handlers', asyn
 		{ query: 'community flow integration', limit: 10 },
 		forkerCtx,
 	)
+	expect(searchResult.outcome).toBe('matches')
 	expect(
 		searchResult.matches.some((match) => match.listing_id === listingId),
 	).toBe(true)
+	expect(
+		searchResult.matches.find((match) => match.listing_id === listingId)
+			?.relevance,
+	).toBeGreaterThanOrEqual(0.2)
 
 	const getResult = await communityGetCapability.handler(
 		{ listing_id: listingId },

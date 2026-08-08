@@ -133,6 +133,10 @@ export type CommunityStargazer = {
 export type CommunityListingWithAggregates = CommunityListingRecord &
 	CommunityListingAggregates
 
+export type CommunityListingSearchResult = CommunityListingWithAggregates & {
+	relevance: number | null
+}
+
 export const communityActivityKinds = ['fork', 'rating'] as const
 
 export type CommunityActivityKind = (typeof communityActivityKinds)[number]

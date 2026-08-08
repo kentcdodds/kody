@@ -166,6 +166,7 @@ test('community scoring and search rank listings and filter by query', async () 
 	expect(githubResults.map((listing) => listing.kodyId)).toEqual([
 		'github-triage',
 	])
+	expect(githubResults[0]?.relevance).toBeGreaterThanOrEqual(0.2)
 	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledWith(
 		expect.anything(),
 		{
@@ -181,6 +182,7 @@ test('community scoring and search rank listings and filter by query', async () 
 		limit: 10,
 	})
 	expect(mealResults.map((listing) => listing.kodyId)).toEqual(['meal-planner'])
+	expect(mealResults[0]?.relevance).toBeGreaterThanOrEqual(0.2)
 
 	const gibberishResults = await searchCommunityListings({
 		env: createEnv(),
@@ -188,6 +190,13 @@ test('community scoring and search rank listings and filter by query', async () 
 		limit: 10,
 	})
 	expect(gibberishResults).toEqual([])
+
+	const unrelatedResults = await searchCommunityListings({
+		env: createEnv(),
+		query: 'text to speech audio narration',
+		limit: 10,
+	})
+	expect(unrelatedResults).toEqual([])
 
 	const allResults = await searchCommunityListings({
 		env: createEnv(),
@@ -198,6 +207,7 @@ test('community scoring and search rank listings and filter by query', async () 
 		'github-triage',
 		'meal-planner',
 	])
+	expect(allResults.every((listing) => listing.relevance === null)).toBe(true)
 })
 
 test('trusted-first community search promotes a trusted relevance rank 13 before limiting', async () => {
