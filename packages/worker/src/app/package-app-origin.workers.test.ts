@@ -8,6 +8,10 @@ import {
 } from '#app/handlers/package-app.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import {
+	buildPackageAppNotFoundMessage,
+	buildUnmatchedPackageAppOriginPathMessage,
+} from '#worker/package-runtime/package-app-synthetic.ts'
+import {
 	ensurePackageSubscriptionTestSchema,
 	ensureRbacTestSchema,
 	seedAccount,
@@ -152,7 +156,7 @@ test('hosted package apps move to the package-app origin behind a single-use han
 	})
 	expect(servedResponse.status).toBe(404)
 	await expect(servedResponse.text()).resolves.toBe(
-		'Saved package app not found.',
+		buildPackageAppNotFoundMessage(),
 	)
 
 	// 4. A stale or forged token alongside a valid session is ignored rather than
@@ -165,7 +169,7 @@ test('hosted package apps move to the package-app origin behind a single-use han
 	})
 	expect(staleTokenResponse.status).toBe(404)
 	await expect(staleTokenResponse.text()).resolves.toBe(
-		'Saved package app not found.',
+		buildPackageAppNotFoundMessage(),
 	)
 
 	// 5. The package-app session is re-checked against the account on every
@@ -222,9 +226,7 @@ test('hosted package apps move to the package-app origin behind a single-use han
 		expect(response.status, `expected 404 for ${path}`).toBe(404)
 		const body = await response.text()
 		expect(body).toContain('/@username/packages/<kody-id>/<path>')
-		expect(body).toContain(
-			'Requests outside a package app mount are not dispatched to any app.',
-		)
+		expect(body).toBe(buildUnmatchedPackageAppOriginPathMessage())
 	}
 
 	// 8. The bare package-app origin is a plausible bookmark; send it home.
@@ -254,7 +256,7 @@ test('package apps stay inline on the app origin when no package-app origin is c
 	)
 	// Served inline (no cross-origin redirect); the saved package does not exist.
 	expect(response.status).toBe(404)
-	await expect(response.text()).resolves.toBe('Saved package app not found.')
+	await expect(response.text()).resolves.toBe(buildPackageAppNotFoundMessage())
 })
 
 test('production package apps fail closed when origin isolation is missing or unsafe', async () => {

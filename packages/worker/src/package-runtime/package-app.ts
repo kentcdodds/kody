@@ -602,6 +602,10 @@ function collectQueryParamNames(url) {
 	return [...new Set(url.searchParams.keys())];
 }
 
+function isSyntheticPackageAppRequest(request) {
+	return request.headers.get('Kody-Synthetic') === 'true';
+}
+
 async function startRuntimeRun(runtimeBridge, input) {
 	return await runtimeBridge.packageRuntimeRunStart(input);
 }
@@ -650,6 +654,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			metadata: {
 				method: request.method,
 				queryParamNames: collectQueryParamNames(requestUrl),
+				...(isSyntheticPackageAppRequest(request) ? { synthetic: true } : {}),
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();

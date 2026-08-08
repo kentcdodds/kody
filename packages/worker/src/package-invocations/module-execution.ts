@@ -29,6 +29,7 @@ import {
 	isMissingPackageModuleError,
 	isTransientModuleArtifactError,
 } from './module-artifacts.ts'
+import { buildSubscriptionInvocationRunMetadata } from './subscription-envelope.ts'
 import {
 	buildExecutionErrorResponse,
 	buildExecutionSuccessResponse,
@@ -186,11 +187,13 @@ export async function runSavedPackageModuleOnce(
 						}),
 						invocationId: input.invocationId,
 						idempotencyKey: input.idempotencyKey,
-						metadata: {
+						metadata: buildSubscriptionInvocationRunMetadata({
 							exportName: input.invocationName,
+							isSubscription: input.moduleSelector.kind === 'subscription',
 							source: input.source,
 							topic: input.topic,
-						},
+							params: input.params,
+						}),
 					}
 		executionStarted = true
 		const executionResult = await runBundledModuleWithRegistry(

@@ -27,6 +27,7 @@ import {
 import { type ensureModuleArtifact } from './module-artifacts.ts'
 import { runSavedPackageModuleOnce } from './module-execution.ts'
 import { buildJsonErrorResponse } from './responses.ts'
+import { buildSubscriptionInvocationRunMetadata } from './subscription-envelope.ts'
 import { boundedResponseJson, parseStoredResponse } from './repo.ts'
 
 export const packageInvocationStaleAfterMs = 15 * 60 * 1000
@@ -160,11 +161,13 @@ export async function invokeSavedPackageModule(input: {
 			}),
 			invocationId: null,
 			idempotencyKey: input.idempotencyKey,
-			metadata: {
+			metadata: buildSubscriptionInvocationRunMetadata({
 				exportName: input.invocationName,
+				isSubscription: input.moduleSelector.kind === 'subscription',
 				source: input.source,
 				topic: input.topic,
-			},
+				params: input.params,
+			}),
 		}
 	}
 
