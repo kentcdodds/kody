@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { trustedSyntheticSubscriptionDispatch } from './subscription-envelope.ts'
 
 const mocks = vi.hoisted(() => ({
 	invokeSavedPackageModule: vi.fn(async () => ({
@@ -40,7 +41,7 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 			replay_of: 'message-1',
 		},
 		idempotencyKey: 'email:message-1:pkg-1:email.message.received',
-		source: 'email',
+		source: 'synthetic',
 		toolFactories: {
 			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),
@@ -57,7 +58,7 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 	)
 })
 
-test('invokePackageSubscriptionWithToolFactories preserves synthetic markers for synthetic source', async () => {
+test('invokePackageSubscriptionWithToolFactories preserves synthetic markers only with the trusted dispatch token', async () => {
 	await invokePackageSubscriptionWithToolFactories({
 		env: {} as Env,
 		baseUrl: 'https://heykody.dev',
@@ -83,7 +84,7 @@ test('invokePackageSubscriptionWithToolFactories preserves synthetic markers for
 			replay_of: 'message-1',
 		},
 		idempotencyKey: 'synthetic:00000000-0000-4000-8000-000000000001',
-		source: 'synthetic',
+		trustedSyntheticDispatch,
 		toolFactories: {
 			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),

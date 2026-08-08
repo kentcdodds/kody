@@ -40,4 +40,22 @@ test('buildPackageTestHints returns only hints for declared package surfaces', (
 			},
 		],
 	})
+
+	expect(
+		buildPackageTestHints({
+			kodyId: 'demo',
+			hasApp: true,
+			subscriptionTopics: ['repo.pushed'],
+			packageScope: 'platform',
+		}),
+	).toEqual({
+		app: 'package_app_fetch({ kody_id: "demo", package_scope: "platform" })',
+		subscriptions: [
+			{
+				topic: 'repo.pushed',
+				snippet:
+					'package_subscription_dispatch({ kody_id: "demo", package_scope: "platform", topic: "repo.pushed", params: {} })',
+			},
+		],
+	})
 })

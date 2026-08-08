@@ -56,6 +56,7 @@ function createContext(input?: {
 	packageId?: string
 	appId?: string
 	storageId?: string
+	executionOrigin?: 'interactive' | 'background'
 }) {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
 		ownerUserId: 'user-1',
@@ -68,6 +69,7 @@ function createContext(input?: {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
+			executionOrigin: input?.executionOrigin ?? 'interactive',
 			user: {
 				userId: 'user-1',
 				email: 'kody@example.com',
@@ -110,7 +112,10 @@ test('package_app_fetch dispatches synthetic in-process app requests against hos
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response(JSON.stringify({ ok: true }), {
 			status: 200,
-			headers: { 'content-type': 'application/json' },
+			headers: {
+				'content-type': 'application/json',
+				'content-length': '999',
+			},
 		}),
 	)
 
@@ -119,6 +124,13 @@ test('package_app_fetch dispatches synthetic in-process app requests against hos
 			kody_id: 'demo-app',
 			path: '/api/health',
 			method: 'GET',
+			headers: {
+				Host: 'forged.example.com',
+				'CF-Ray': 'forged',
+				'X-Forwarded-For': '127.0.0.1',
+				Origin: 'https://caller.example.com',
+				'X-Test': 'kept',
+			},
 		},
 		createContext(),
 	)
@@ -148,6 +160,11 @@ test('package_app_fetch dispatches synthetic in-process app requests against hos
 	expect(request.url).toBe(
 		'https://apps.example.com/@kody/packages/demo-app/api/health',
 	)
+	expect(request.headers.get('Host')).toBeNull()
+	expect(request.headers.get('CF-Ray')).toBeNull()
+	expect(request.headers.get('X-Forwarded-For')).toBeNull()
+	expect(request.headers.get('Origin')).toBe('https://caller.example.com')
+	expect(request.headers.get('X-Test')).toBe('kept')
 })
 
 test('package_app_fetch resolves owned packages by package_id', async () => {
@@ -207,6 +224,14 @@ test('package_app_fetch rejects package runtime caller contexts', async () => {
 		packageAppFetchCapability.handler(
 			{ kody_id: 'demo-app' },
 			createContext({ storageId: 'bucket-1' }),
+		),
+	).rejects.toThrow(
+		'package_app_fetch is unavailable from package runtime contexts.',
+	)
+	await expect(
+		packageAppFetchCapability.handler(
+			{ kody_id: 'demo-app' },
+			createContext({ executionOrigin: 'background' }),
 		),
 	).rejects.toThrow(
 		'package_app_fetch is unavailable from package runtime contexts.',
@@ -292,6 +317,20 @@ test('package_app_fetch returns binary responses as base64 in body', async () =>
 		body: bytesToBase64(binary),
 		truncated: false,
 	})
+
+	const largeBinary = new TextEncoder().encode('b'.repeat(102_400))
+	mockModule.servePackageAppRequest.mockResolvedValue(
+		new Response(largeBinary, {
+			status: 200,
+			headers: { 'content-type': 'application/octet-stream' },
+		}),
+	)
+	const capped = await packageAppFetchCapability.handler(
+		{ kody_id: 'demo-app' },
+		createContext(),
+	)
+	expect(capped.body).toHaveLength(102_400)
+	expect(capped.truncated).toBe(true)
 })
 
 test('package_app_fetch rejects oversized request bodies', async () => {

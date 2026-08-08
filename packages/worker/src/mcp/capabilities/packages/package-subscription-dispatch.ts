@@ -20,6 +20,7 @@ import {
 	packageSubscriptionDispatchCapabilityName,
 	stripUntrustedSubscriptionEnvelopeFields,
 	syntheticPackageSubscriptionSource,
+	trustedSyntheticSubscriptionDispatch,
 } from '#worker/package-invocations/subscription-envelope.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import {
@@ -36,13 +37,18 @@ const inboundEmailReceiptTopic = 'email.message.received'
 
 const packageRuntimeCallerErrorMessage = `${packageSubscriptionDispatchCapabilityName} is unavailable from package runtime contexts. Call it from an interactive MCP agent instead.`
 
-function assertDirectMcpCaller(
+function assertDirectMcpCaller(callerContext: {
+	executionOrigin?: string
 	storageContext: {
 		packageId?: string | null
 		appId?: string | null
 		storageId?: string | null
-	} | null,
-) {
+	} | null
+}) {
+	if (callerContext.executionOrigin !== 'interactive') {
+		throw new McpCallerError(packageRuntimeCallerErrorMessage)
+	}
+	const storageContext = callerContext.storageContext
 	const packageId = storageContext?.packageId?.trim() ?? ''
 	const appId = storageContext?.appId?.trim() ?? ''
 	const storageId = storageContext?.storageId?.trim() ?? ''
@@ -172,7 +178,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			assertDirectMcpCaller(ctx.callerContext.storageContext ?? null)
+			assertDirectMcpCaller(ctx.callerContext)
 			requireExactlyOneDispatchInput(args)
 			const owner = await resolvePackageOwnerContext(
 				ctx.env,
@@ -265,7 +271,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				topic,
 				params,
 				idempotencyKey,
-				source: syntheticPackageSubscriptionSource,
+				trustedSyntheticDispatch: trustedSyntheticSubscriptionDispatch,
 				actorTokenId: internalSyntheticSubscriptionTokenId,
 			})
 			const retryableCode =

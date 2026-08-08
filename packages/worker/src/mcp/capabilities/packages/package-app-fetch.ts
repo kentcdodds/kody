@@ -36,15 +36,24 @@ const packageRuntimeCallerErrorMessage =
 const blockedRequestHeaderNames = new Set([
 	'cookie',
 	'authorization',
+	'connection',
+	'content-length',
+	'host',
 	'proxy-authorization',
+	'transfer-encoding',
 	'upgrade',
+	'forwarded',
 	packageAppSyntheticHeaderName.toLowerCase(),
 ])
 
 const blockedResponseHeaderNames = new Set([
 	'set-cookie',
 	'authorization',
+	'connection',
+	'content-encoding',
+	'content-length',
 	'proxy-authorization',
+	'transfer-encoding',
 ])
 
 const allowedMethods = new Set([
@@ -57,13 +66,18 @@ const allowedMethods = new Set([
 	'OPTIONS',
 ])
 
-function assertDirectMcpCaller(
+function assertDirectMcpCaller(callerContext: {
+	executionOrigin?: string
 	storageContext: {
 		packageId?: string | null
 		appId?: string | null
 		storageId?: string | null
-	} | null,
-) {
+	} | null
+}) {
+	if (callerContext.executionOrigin !== 'interactive') {
+		throw new McpCallerError(packageRuntimeCallerErrorMessage)
+	}
+	const storageContext = callerContext.storageContext
 	const packageId = storageContext?.packageId?.trim() ?? ''
 	const appId = storageContext?.appId?.trim() ?? ''
 	const storageId = storageContext?.storageId?.trim() ?? ''
@@ -88,7 +102,11 @@ function collectSafeRequestHeaders(
 		if (!normalized || blockedRequestHeaderNames.has(normalized)) {
 			continue
 		}
-		if (normalized.startsWith('x-kody-')) {
+		if (
+			normalized.startsWith('x-kody-') ||
+			normalized.startsWith('x-forwarded-') ||
+			normalized.startsWith('cf-')
+		) {
 			continue
 		}
 		collected.set(name, value)
@@ -302,7 +320,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			assertDirectMcpCaller(ctx.callerContext.storageContext ?? null)
+			assertDirectMcpCaller(ctx.callerContext)
 
 			const method = (args.method?.trim().toUpperCase() || 'GET') as string
 			if (!allowedMethods.has(method)) {
@@ -400,11 +418,17 @@ export const packageAppFetchCapability = defineDomainCapability(
 				response,
 				packageAppFetchMaxBodyBytes,
 			)
+			const encodedBody = encodePackageAppFetchBody(response, bytes)
+			const encodedBodyTooLarge =
+				new TextEncoder().encode(encodedBody).byteLength >
+				packageAppFetchMaxBodyBytes
 			return {
 				status: response.status,
 				headers: collectSafeResponseHeaders(response),
-				body: encodePackageAppFetchBody(response, bytes),
-				truncated,
+				body: encodedBodyTooLarge
+					? encodedBody.slice(0, packageAppFetchMaxBodyBytes)
+					: encodedBody,
+				truncated: truncated || encodedBodyTooLarge,
 			}
 		},
 	},

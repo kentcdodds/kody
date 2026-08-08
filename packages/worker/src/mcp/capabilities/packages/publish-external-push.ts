@@ -286,6 +286,7 @@ type PublishExternalPushResult = z.infer<typeof outputSchema>
 function readPackageTestHintsFromManifest(input: {
 	manifest: unknown
 	kodyId: string
+	packageScope?: string
 }): PackageTestHints | undefined {
 	const { manifest } = input
 	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -296,6 +297,7 @@ function readPackageTestHintsFromManifest(input: {
 	const subscriptions = Reflect.get(kody, 'subscriptions')
 	return buildPackageTestHints({
 		kodyId: input.kodyId,
+		...(input.packageScope ? { packageScope: input.packageScope } : {}),
 		hasApp: Reflect.get(kody, 'app') !== undefined,
 		subscriptionTopics:
 			subscriptions &&
@@ -311,6 +313,7 @@ async function getPublishedPackageTestHints(input: {
 	userId: string
 	sourceId: string
 	kodyId: string
+	packageScope?: string
 }) {
 	try {
 		const published = await loadPublishedEntitySource({
@@ -323,6 +326,7 @@ async function getPublishedPackageTestHints(input: {
 		return readPackageTestHintsFromManifest({
 			manifest: JSON.parse(packageJson),
 			kodyId: input.kodyId,
+			...(input.packageScope ? { packageScope: input.packageScope } : {}),
 		})
 	} catch {
 		return undefined
@@ -335,6 +339,7 @@ async function resolvePublishedHostedAppUrl(input: {
 	ownerScope: string
 	ownerEmail: string
 	kodyId: string
+	testHintPackageScope?: string
 	hasApp: boolean
 }) {
 	if (!input.hasApp) return null
@@ -530,6 +535,9 @@ async function runExternalPublishAttempt(input: {
 					userId: input.ownerUserId,
 					sourceId: input.source.id,
 					kodyId: input.kodyId,
+					...(input.testHintPackageScope
+						? { packageScope: input.testHintPackageScope }
+						: {}),
 				})
 				return {
 					...result,
@@ -573,6 +581,9 @@ async function runExternalPublishAttempt(input: {
 			const testHints = readPackageTestHintsFromManifest({
 				manifest: result.manifest,
 				kodyId: input.kodyId,
+				...(input.testHintPackageScope
+					? { packageScope: input.testHintPackageScope }
+					: {}),
 			})
 			return {
 				...result,
@@ -679,6 +690,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 				expectedPackageScope,
 				packageId,
 				kodyId,
+				...(args.package_scope
+					? { testHintPackageScope: args.package_scope }
+					: {}),
 				hasApp,
 				source: { id: source.id, repo_id: source.repo_id },
 				newCommit,

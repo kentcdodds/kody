@@ -20,7 +20,11 @@ import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
 } from '#worker/package-runtime/subscription-artifacts.ts'
-import { stripUntrustedSubscriptionEnvelopeFields } from './subscription-envelope.ts'
+import {
+	isTrustedSyntheticSubscriptionDispatch,
+	stripUntrustedSubscriptionEnvelopeFields,
+	type TrustedSyntheticSubscriptionDispatch,
+} from './subscription-envelope.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from './infrastructure-codes.ts'
 import {
 	internalEmailSubscriptionTokenId,
@@ -422,6 +426,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	params?: Record<string, unknown>
 	idempotencyKey: string
 	source?: string | null
+	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
@@ -437,11 +442,18 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 				'Package subscription invocations require a non-empty idempotencyKey.',
 		})
 	}
-	const source = normalizeNullableString(input.source) ?? 'email'
-	const params =
-		source === syntheticPackageSubscriptionSource
-			? input.params
-			: stripUntrustedSubscriptionEnvelopeFields(input.params)
+	const synthetic = isTrustedSyntheticSubscriptionDispatch(
+		input.trustedSyntheticDispatch,
+	)
+	const requestedSource = normalizeNullableString(input.source)
+	const source = synthetic
+		? syntheticPackageSubscriptionSource
+		: requestedSource === syntheticPackageSubscriptionSource
+			? 'email'
+			: (requestedSource ?? 'email')
+	const params = synthetic
+		? input.params
+		: stripUntrustedSubscriptionEnvelopeFields(input.params)
 	return await invokeSavedPackageModule({
 		env: input.env,
 		baseUrl: input.baseUrl,

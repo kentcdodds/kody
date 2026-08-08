@@ -6,6 +6,25 @@ export const syntheticPackageSubscriptionSource = 'synthetic'
 export const internalSyntheticSubscriptionTokenId =
 	'internal:synthetic-subscriptions'
 
+const syntheticSubscriptionDispatchBrand = Symbol(
+	'synthetic-subscription-dispatch',
+)
+
+export type TrustedSyntheticSubscriptionDispatch = {
+	readonly [syntheticSubscriptionDispatchBrand]: true
+}
+
+export const trustedSyntheticSubscriptionDispatch: TrustedSyntheticSubscriptionDispatch =
+	Object.freeze({
+		[syntheticSubscriptionDispatchBrand]: true,
+	})
+
+export function isTrustedSyntheticSubscriptionDispatch(
+	value: TrustedSyntheticSubscriptionDispatch | undefined,
+) {
+	return value === trustedSyntheticSubscriptionDispatch
+}
+
 const untrustedSubscriptionEnvelopeFields = ['synthetic', 'replay_of'] as const
 
 /**

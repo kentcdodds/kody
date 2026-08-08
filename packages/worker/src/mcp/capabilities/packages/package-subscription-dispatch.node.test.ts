@@ -77,6 +77,7 @@ function createSavedPackage() {
 
 function createCtx(
 	overrides?: Partial<{
+		executionOrigin: 'interactive' | 'background'
 		storageContext: {
 			packageId?: string | null
 			appId?: string | null
@@ -95,6 +96,7 @@ function createCtx(
 		env: { APP_DB: {} } as Env,
 		callerContext: {
 			baseUrl: 'https://heykody.dev',
+			executionOrigin: overrides?.executionOrigin ?? 'interactive',
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
@@ -156,7 +158,7 @@ test('package_subscription_dispatch sends synthetic params envelopes to one pack
 		expect.objectContaining({
 			savedPackage: createSavedPackage(),
 			topic: 'repo.pushed',
-			source: 'synthetic',
+			trustedSyntheticDispatch: expect.any(Object),
 			actorTokenId: 'internal:synthetic-subscriptions',
 			params: {
 				event: 'repo.pushed',
@@ -272,6 +274,18 @@ test('package_subscription_dispatch rejects package runtime caller contexts', as
 					storageId: 'package:pkg-1',
 				},
 			}) as never,
+		),
+	).rejects.toThrow(
+		'package_subscription_dispatch is unavailable from package runtime contexts.',
+	)
+	await expect(
+		packageSubscriptionDispatchCapability.handler(
+			{
+				kody_id: 'demo',
+				topic: 'repo.pushed',
+				params: { event: 'repo.pushed' },
+			},
+			createCtx({ executionOrigin: 'background' }) as never,
 		),
 	).rejects.toThrow(
 		'package_subscription_dispatch is unavailable from package runtime contexts.',
