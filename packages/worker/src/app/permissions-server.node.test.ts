@@ -240,6 +240,23 @@ test('getUserRolesAndPermissions returns empty arrays for users with no roles', 
 	expect(result).toEqual({ roles: [], permissions: [] })
 })
 
+test('getUserRolesAndPermissions still returns roles when permission columns are null', async () => {
+	const { db } = createRbacTestDb([
+		{
+			user_id: 1,
+			role_id: 2,
+			role_name: 'admin',
+			action: null as unknown as string,
+			entity: null as unknown as string,
+			access: null as unknown as string,
+		},
+	])
+
+	const result = await getUserRolesAndPermissions(db, 1)
+	expect(result.roles).toEqual(['admin'])
+	expect(result.permissions).toEqual([])
+})
+
 test('userHasPermission and userHasRole perform pure membership checks', () => {
 	const user = {
 		roles: ['user', 'admin'] as Array<RoleName>,
