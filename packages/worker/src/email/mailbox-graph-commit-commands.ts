@@ -15,6 +15,7 @@ import {
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
 	type MailboxThreadInput,
+	type MailboxUpsertMessageGraphInput,
 } from './mailbox-types.ts'
 
 export class MailboxGraphCommitCommands {
@@ -32,22 +33,14 @@ export class MailboxGraphCommitCommands {
 		this.maintenance = maintenance
 	}
 
-	async upsertMessageGraph(input: {
-		ownerId: string
-		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput | null
-		attachments?: Array<MailboxAttachmentInput>
-	}): Promise<{ ok: true; accepted: boolean }> {
+	async upsertMessageGraph(
+		input: MailboxUpsertMessageGraphInput,
+	): Promise<{ ok: true; accepted: boolean }> {
 		const message = input.message
 		let accepted = false
 		this.ctx.storage.transactionSync(() => {
 			const ownerId = this.store.assertOwner(input.ownerId)
 			if (message === null) {
-				if (!input.thread || input.attachments !== undefined) {
-					throw new Error(
-						'Standalone Mailbox thread upsert requires thread and forbids attachments.',
-					)
-				}
 				accepted = this.store.upsertThreadRow(input.thread).accepted
 				return
 			}

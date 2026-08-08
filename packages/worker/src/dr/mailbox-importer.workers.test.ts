@@ -28,6 +28,7 @@ import {
 } from '#worker/email/mailbox-types.ts'
 import {
 	mailboxImportDrillOwnerPrefix,
+	mailboxImportReplaceConfirmation,
 	runMailboxImportTick,
 } from '#worker/dr/mailbox-importer.ts'
 import {
@@ -267,6 +268,7 @@ async function createBackup(ownerId: string, day: string) {
 				dump,
 		}),
 		env: Object.assign(Object.create(env), {
+			DR_RESTORE_SECRET: 'workers-test-restore-secret',
 			BACKUP_MANIFEST_SIGNING_KEY_ID: keyId,
 			BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64: btoa(
 				String.fromCharCode(...publicKey),
@@ -373,6 +375,44 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 			env: occupiedBackup.env,
 			userId: occupiedOwner,
 		}).getMessage({ messageId: 'existing-message' }),
+	).not.toBeNull()
+
+	const replacementStarted = await runMailboxImportTick({
+		env: occupiedBackup.env,
+		day,
+		owners: [occupiedOwner],
+		conflictPolicy: 'replace',
+		replaceConfirmation: mailboxImportReplaceConfirmation,
+		timeBudgetMs: 0,
+		s3: occupiedBackup.s3.client,
+	})
+	expect(replacementStarted.progress.phase).toBe('preflight-threads')
+	expect(
+		await mailboxRpc({
+			env: occupiedBackup.env,
+			userId: occupiedOwner,
+		}).getMessage({ messageId: 'existing-message' }),
+	).not.toBeNull()
+	const replacementCompleted = await runMailboxImportTick({
+		env: occupiedBackup.env,
+		day,
+		owners: [occupiedOwner],
+		conflictPolicy: 'replace',
+		replaceConfirmation: mailboxImportReplaceConfirmation,
+		cursor: replacementStarted.nextCursor,
+		timeBudgetMs: 60_000,
+		s3: occupiedBackup.s3.client,
+	})
+	expect(replacementCompleted.verified).toBe(true)
+	const replacedMailbox = mailboxRpc({
+		env: occupiedBackup.env,
+		userId: occupiedOwner,
+	})
+	expect(
+		await replacedMailbox.getMessage({ messageId: 'existing-message' }),
+	).toBeNull()
+	expect(
+		await replacedMailbox.getMessage({ messageId: 'restore-message' }),
 	).not.toBeNull()
 
 	const corruptOwner = `workers-import-corrupt-${crypto.randomUUID()}`

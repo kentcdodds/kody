@@ -1,17 +1,5 @@
 import {
-	backupFullManifestSchemaVersion,
-	backupFullManifestSignatureAlgorithm,
-	canonicalBackupFullManifestPayload,
-	parseBackupFullManifest,
-	type BackupFullManifest,
-	type BackupFullManifestPayload,
-} from '@kody-internal/shared/backup-full-manifest.ts'
-import {
 	assertBackupDay,
-	backupStagingSchemaVersion,
-	sealedFullManifestKey,
-	sealedFullPrefix,
-	stagingPrefix,
 	type MailboxIndex,
 	type OwnerIndexEntry,
 } from '@kody-internal/shared/backup-staging.ts'
@@ -31,32 +19,39 @@ import {
 	type MailboxExportRow,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
+	type MailboxRpc,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
 } from '#worker/email/mailbox-types.ts'
 import {
-	handleSecretMaintenanceRequest,
 	MaintenanceFailureError,
+	timingSafeEqualString,
 } from '#worker/maintenance-handler.ts'
 import {
 	createDrBackupS3Client,
 	readDrBackupS3Config,
 	type DrBackupS3Client,
 } from '#worker/dr/backup-s3.ts'
+import {
+	loadVerifiedMailboxDumpText,
+	loadVerifiedMailboxIndex,
+} from '#worker/dr/mailbox-import-media.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
 
 export const mailboxImportRunTimeBudgetMs = 20_000
 export const mailboxImportReplaceConfirmation =
 	'PURGE NON-EMPTY TARGET MAILBOXES'
 export const mailboxImportDrillOwnerPrefix = '__mailbox-drill__:'
+const mailboxImportPreflightOwnerPrefix = '__mailbox-import-preflight__:'
 
 const mailboxImportCursorVersion = 1 as const
-const sha256Pattern = /^[0-9a-f]{64}$/
-const base64Pattern =
-	/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 type MailboxImportPhase =
 	| 'prepare'
+	| 'preflight-threads'
+	| 'preflight-messages'
+	| 'preflight-delivery-events'
+	| 'preflight-verify'
 	| 'threads'
 	| 'messages'
 	| 'delivery-events'
@@ -113,11 +108,6 @@ type ParsedMailboxDump = {
 	counts: MailboxCountResult
 }
 
-type SignatureConfiguration = {
-	keyId: string
-	publicKeySpkiBase64: string
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -129,218 +119,11 @@ function failure(
 	return new MaintenanceFailureError(message, { progress, warnings: [] })
 }
 
-function requireExactNonEmptyString(value: unknown, field: string): string {
-	if (
-		typeof value !== 'string' ||
-		value.length === 0 ||
-		value !== value.trim()
-	) {
-		throw failure(`${field} must be an exact non-empty string`)
-	}
-	return value
-}
-
 function requireNonNegativeInteger(value: unknown, field: string): number {
 	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
 		throw failure(`invalid cursor field ${field}`)
 	}
 	return value
-}
-
-function readSignatureConfiguration(env: Env): SignatureConfiguration {
-	const values = env as unknown as {
-		BACKUP_MANIFEST_SIGNING_KEY_ID?: string
-		BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64?: string
-	}
-	const keyId = values.BACKUP_MANIFEST_SIGNING_KEY_ID?.trim()
-	const publicKeySpkiBase64 =
-		values.BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64?.trim()
-	if (!keyId || !publicKeySpkiBase64) {
-		throw failure('Mailbox import manifest verification is not configured')
-	}
-	return { keyId, publicKeySpkiBase64 }
-}
-
-function decodeBase64(value: string, field: string): ArrayBuffer {
-	if (!base64Pattern.test(value)) {
-		throw failure(`${field} must be canonical base64`)
-	}
-	const binary = atob(value)
-	return Uint8Array.from(binary, (character) => character.charCodeAt(0)).buffer
-}
-
-async function verifyFullManifestSignature(
-	manifest: BackupFullManifest,
-	configuration: SignatureConfiguration,
-): Promise<boolean> {
-	if (
-		manifest.schemaVersion !== backupFullManifestSchemaVersion ||
-		manifest.payload.schemaVersion !== backupFullManifestSchemaVersion ||
-		manifest.payload.signing.keyId !== configuration.keyId ||
-		manifest.signature.keyId !== configuration.keyId ||
-		manifest.payload.signing.algorithm !==
-			backupFullManifestSignatureAlgorithm ||
-		manifest.signature.algorithm !== backupFullManifestSignatureAlgorithm
-	) {
-		return false
-	}
-	try {
-		const publicKey = await crypto.subtle.importKey(
-			'spki',
-			decodeBase64(
-				configuration.publicKeySpkiBase64,
-				'manifest verifying public key',
-			),
-			backupFullManifestSignatureAlgorithm,
-			false,
-			['verify'],
-		)
-		return await crypto.subtle.verify(
-			backupFullManifestSignatureAlgorithm,
-			publicKey,
-			decodeBase64(manifest.signature.value, 'full manifest signature'),
-			new TextEncoder().encode(
-				canonicalBackupFullManifestPayload(manifest.payload),
-			),
-		)
-	} catch {
-		return false
-	}
-}
-
-function decodeUtf8(bytes: Uint8Array, field: string): string {
-	try {
-		return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-	} catch {
-		throw failure(`${field} is not valid UTF-8`)
-	}
-}
-
-async function getRequiredBytes(
-	s3: DrBackupS3Client,
-	key: string,
-	description: string,
-): Promise<Uint8Array> {
-	const bytes = await s3.getBytes(key)
-	if (!bytes) throw failure(`${description} missing at ${key}`)
-	return bytes
-}
-
-async function verifyFileBytes(
-	bytes: Uint8Array,
-	expected: { bytes: number; sha256: string },
-	description: string,
-): Promise<void> {
-	if (bytes.byteLength !== expected.bytes) {
-		throw failure(
-			`${description} byte count mismatch: expected ${expected.bytes}, got ${bytes.byteLength}`,
-		)
-	}
-	const actualSha256 = await sha256Hex(bytes)
-	if (actualSha256 !== expected.sha256) {
-		throw failure(
-			`${description} sha256 mismatch: expected ${expected.sha256}, got ${actualSha256}`,
-		)
-	}
-}
-
-function parseMailboxIndex(value: unknown, day: string): MailboxIndex {
-	if (
-		!isRecord(value) ||
-		value.schemaVersion !== backupStagingSchemaVersion ||
-		value.day !== day ||
-		!Array.isArray(value.entries)
-	) {
-		throw failure('sealed mailbox index has an invalid versioned shape')
-	}
-	const ownerIds = new Set<string>()
-	for (const entry of value.entries) {
-		if (
-			!isRecord(entry) ||
-			typeof entry.ownerId !== 'string' ||
-			entry.ownerId.length === 0 ||
-			entry.ownerId !== entry.ownerId.trim() ||
-			typeof entry.objectKey !== 'string' ||
-			!entry.objectKey.startsWith(stagingPrefix(day)) ||
-			!Number.isSafeInteger(entry.entryCount) ||
-			Number(entry.entryCount) < 0 ||
-			!Number.isSafeInteger(entry.bytes) ||
-			Number(entry.bytes) < 0 ||
-			typeof entry.sha256 !== 'string' ||
-			!sha256Pattern.test(entry.sha256) ||
-			ownerIds.has(entry.ownerId)
-		) {
-			throw failure('sealed mailbox index contains an invalid owner entry')
-		}
-		ownerIds.add(entry.ownerId)
-	}
-	return value as MailboxIndex
-}
-
-function sealedDumpKey(day: string, stagingKey: string): string {
-	const prefix = stagingPrefix(day)
-	if (!stagingKey.startsWith(prefix)) {
-		throw failure(`mailbox dump key is outside ${prefix}`)
-	}
-	return `${sealedFullPrefix(day)}${stagingKey.slice(prefix.length)}`
-}
-
-async function loadVerifiedMailboxIndex(input: {
-	s3: DrBackupS3Client
-	env: Env
-	day: string
-}): Promise<MailboxIndex> {
-	const manifestBytes = await getRequiredBytes(
-		input.s3,
-		sealedFullManifestKey(input.day),
-		'sealed full manifest',
-	)
-	let manifest: BackupFullManifest
-	try {
-		manifest = parseBackupFullManifest(
-			JSON.parse(decodeUtf8(manifestBytes, 'sealed full manifest')) as unknown,
-		)
-	} catch (error) {
-		if (error instanceof MaintenanceFailureError) throw error
-		throw failure(`sealed full manifest is invalid: ${getErrorMessage(error)}`)
-	}
-	if (
-		manifest.schemaVersion !== backupFullManifestSchemaVersion ||
-		manifest.payload.day !== input.day
-	) {
-		throw failure('sealed full manifest does not cover the requested day')
-	}
-	if (
-		!(await verifyFullManifestSignature(
-			manifest,
-			readSignatureConfiguration(input.env),
-		))
-	) {
-		throw failure('sealed full manifest signature is invalid')
-	}
-	const payload = manifest.payload as BackupFullManifestPayload
-	if (!payload.mailboxIndex.objectKey.startsWith(sealedFullPrefix(input.day))) {
-		throw failure('sealed mailbox index key is outside the requested day')
-	}
-	const indexBytes = await getRequiredBytes(
-		input.s3,
-		payload.mailboxIndex.objectKey,
-		'sealed mailbox index',
-	)
-	await verifyFileBytes(
-		indexBytes,
-		payload.mailboxIndex,
-		'sealed mailbox index',
-	)
-	try {
-		return parseMailboxIndex(
-			JSON.parse(decodeUtf8(indexBytes, 'sealed mailbox index')) as unknown,
-			input.day,
-		)
-	} catch (error) {
-		if (error instanceof MaintenanceFailureError) throw error
-		throw failure(`sealed mailbox index is invalid: ${getErrorMessage(error)}`)
-	}
 }
 
 function parseDumpRow(value: unknown): MailboxExportRow {
@@ -463,31 +246,8 @@ async function loadVerifiedMailboxDump(
 	day: string,
 	entry: OwnerIndexEntry,
 ): Promise<ParsedMailboxDump> {
-	const key = sealedDumpKey(day, entry.objectKey)
-	const bytes = await getRequiredBytes(s3, key, 'sealed mailbox dump')
-	await verifyFileBytes(
-		bytes,
-		entry,
-		`sealed mailbox dump for ${entry.ownerId}`,
-	)
-	return parseMailboxDump(
-		decodeUtf8(bytes, `sealed mailbox dump for ${entry.ownerId}`),
-		entry.entryCount,
-	)
-}
-
-function parseOwnerSelection(value: unknown): MailboxImportOwnerSelection {
-	if (value === 'all-from-index') return value
-	if (!Array.isArray(value) || value.length === 0) {
-		throw failure('owners must be a non-empty array or "all-from-index"')
-	}
-	const owners = value.map((owner, index) =>
-		requireExactNonEmptyString(owner, `owners[${index}]`),
-	)
-	if (new Set(owners).size !== owners.length) {
-		throw failure('owners must not contain duplicates')
-	}
-	return owners
+	const text = await loadVerifiedMailboxDumpText({ s3, day, entry })
+	return parseMailboxDump(text, entry.entryCount)
 }
 
 function selectOwners(
@@ -515,6 +275,10 @@ function targetOwnerId(
 	return drill
 		? `${mailboxImportDrillOwnerPrefix}${day}:${encodeURIComponent(sourceOwnerId)}`
 		: sourceOwnerId
+}
+
+function preflightOwnerId(sourceOwnerId: string, day: string): string {
+	return `${mailboxImportPreflightOwnerPrefix}${day}:${encodeURIComponent(sourceOwnerId)}`
 }
 
 function mailboxThreadInput(thread: MailboxThreadRecord): MailboxThreadInput {
@@ -568,6 +332,74 @@ function mailboxDeliveryEventInput(
 	}
 }
 
+async function restoreThread(input: {
+	mailbox: MailboxRpc
+	ownerId: string
+	thread: MailboxThreadRecord
+	progress: MailboxImportTickResult['progress']
+}): Promise<void> {
+	const result = await input.mailbox.upsertMessageGraph({
+		ownerId: input.ownerId,
+		thread: mailboxThreadInput(input.thread),
+		message: null,
+	})
+	if (!result.accepted) {
+		throw failure(
+			`Mailbox rejected restored thread ${input.thread.id}`,
+			input.progress,
+		)
+	}
+}
+
+async function restoreMessage(input: {
+	mailbox: MailboxRpc
+	ownerId: string
+	message: MailboxMessageRecord
+	attachments: Array<MailboxAttachmentRecord>
+	drill: boolean
+	progress: MailboxImportTickResult['progress']
+}): Promise<number> {
+	const drillTarget = input.drill ? input.ownerId : null
+	const message = mailboxMessageInput(input.message, drillTarget)
+	const attachments = input.attachments.map((attachment) =>
+		mailboxAttachmentInput(attachment, drillTarget),
+	)
+	const result = await input.mailbox.upsertMessageGraph({
+		ownerId: input.ownerId,
+		message,
+		attachments,
+	})
+	if (!result.accepted) {
+		throw failure(
+			`Mailbox rejected restored message ${message.id}`,
+			input.progress,
+		)
+	}
+	return 1 + attachments.length
+}
+
+async function restoreDeliveryEvents(input: {
+	mailbox: MailboxRpc
+	ownerId: string
+	events: Array<MailboxDeliveryEventRecord>
+	progress: MailboxImportTickResult['progress']
+}): Promise<number> {
+	const events = input.events.map(mailboxDeliveryEventInput)
+	const result = await input.mailbox.upsertDeliveryEvents({
+		ownerId: input.ownerId,
+		events,
+		restore: true,
+	})
+	const rejected = result.results.find((item) => !item.accepted)
+	if (result.results.length !== events.length || rejected) {
+		throw failure(
+			`Mailbox rejected restored delivery event ${rejected?.eventId ?? 'unknown'}`,
+			input.progress,
+		)
+	}
+	return events.length
+}
+
 function mailboxCountsEqual(
 	left: MailboxCountResult,
 	right: MailboxCountResult,
@@ -580,15 +412,43 @@ function mailboxCountsEqual(
 	)
 }
 
-function encodeCursor(cursor: MailboxImportCursor): string {
-	return btoa(JSON.stringify(cursor))
+function cursorSecret(env: Env): string {
+	const secret = env.DR_RESTORE_SECRET?.trim()
+	if (!secret) throw failure('Mailbox import cursor signing is not configured')
+	return secret
 }
 
-function decodeCursor(
+async function cursorSignature(
+	payload: string,
+	secret: string,
+): Promise<string> {
+	const key = await crypto.subtle.importKey(
+		'raw',
+		new TextEncoder().encode(secret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	)
+	const signature = new Uint8Array(
+		await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)),
+	)
+	return btoa(String.fromCharCode(...signature))
+}
+
+async function encodeCursor(
+	cursor: MailboxImportCursor,
+	secret: string,
+): Promise<string> {
+	const payload = btoa(JSON.stringify(cursor))
+	return `${payload}.${await cursorSignature(payload, secret)}`
+}
+
+async function decodeCursor(
 	raw: string | undefined,
 	day: string,
 	requestFingerprint: string,
-): MailboxImportCursor {
+	secret: string,
+): Promise<MailboxImportCursor> {
 	if (!raw) {
 		return {
 			version: mailboxImportCursorVersion,
@@ -603,13 +463,26 @@ function decodeCursor(
 		}
 	}
 	try {
-		const value = JSON.parse(atob(raw)) as unknown
+		const parts = raw.split('.')
+		if (parts.length !== 2 || !parts[0] || !parts[1]) {
+			throw new Error('cursor signature is missing')
+		}
+		const [payload, signature] = parts as [string, string]
+		const expectedSignature = await cursorSignature(payload, secret)
+		if (!(await timingSafeEqualString(signature, expectedSignature))) {
+			throw new Error('cursor signature is invalid')
+		}
+		const value = JSON.parse(atob(payload)) as unknown
 		if (
 			!isRecord(value) ||
 			value.version !== mailboxImportCursorVersion ||
 			value.day !== day ||
 			value.requestFingerprint !== requestFingerprint ||
 			(value.phase !== 'prepare' &&
+				value.phase !== 'preflight-threads' &&
+				value.phase !== 'preflight-messages' &&
+				value.phase !== 'preflight-delivery-events' &&
+				value.phase !== 'preflight-verify' &&
 				value.phase !== 'threads' &&
 				value.phase !== 'messages' &&
 				value.phase !== 'delivery-events' &&
@@ -641,6 +514,73 @@ function decodeCursor(
 	} catch (error) {
 		if (error instanceof MaintenanceFailureError) throw error
 		throw failure(`Invalid mailbox import cursor: ${getErrorMessage(error)}`)
+	}
+}
+
+function validateCursorProgress(
+	cursor: MailboxImportCursor,
+	totalOwners: number,
+): void {
+	if (cursor.ownersPassed + cursor.ownersMismatched !== cursor.ownerIndex) {
+		throw failure('mailbox import cursor owner counters are inconsistent')
+	}
+	if (
+		cursor.ownersReplaced >
+		cursor.ownerIndex +
+			(cursor.phase === 'prepare' || cursor.phase === 'done' ? 0 : 1)
+	) {
+		throw failure('mailbox import cursor replacement counter is inconsistent')
+	}
+	if (cursor.phase === 'done') {
+		if (cursor.ownerIndex !== totalOwners || cursor.rowIndex !== 0) {
+			throw failure('mailbox import cursor reached done before all owners')
+		}
+		return
+	}
+	if (cursor.ownerIndex >= totalOwners && totalOwners > 0) {
+		throw failure('mailbox import cursor ownerIndex exceeds selected owners')
+	}
+	if (
+		(cursor.phase === 'prepare' ||
+			cursor.phase === 'preflight-verify' ||
+			cursor.phase === 'verify') &&
+		cursor.rowIndex !== 0
+	) {
+		throw failure(`${cursor.phase} cursor cannot have a row offset`)
+	}
+}
+
+function validateCursorRowIndex(
+	cursor: MailboxImportCursor,
+	dump: ParsedMailboxDump,
+): void {
+	let maximum = 0
+	switch (cursor.phase) {
+		case 'prepare':
+		case 'preflight-verify':
+		case 'verify':
+		case 'done':
+			maximum = 0
+			break
+		case 'preflight-threads':
+		case 'threads':
+			maximum = dump.threads.length
+			break
+		case 'preflight-messages':
+		case 'messages':
+			maximum = dump.messages.length
+			break
+		case 'preflight-delivery-events':
+		case 'delivery-events':
+			maximum = dump.deliveryEvents.length
+			break
+		default: {
+			const exhaustive: never = cursor.phase
+			throw failure(`Unhandled mailbox import phase: ${String(exhaustive)}`)
+		}
+	}
+	if (cursor.rowIndex > maximum) {
+		throw failure(`mailbox import cursor rowIndex exceeds ${cursor.phase} rows`)
 	}
 }
 
@@ -702,6 +642,7 @@ export async function runMailboxImportTick(input: {
 		)
 	}
 	const drill = input.drill ?? false
+	const signingSecret = cursorSecret(input.env)
 	const fingerprint = await requestFingerprint({
 		day: input.day,
 		owners: input.owners,
@@ -709,7 +650,12 @@ export async function runMailboxImportTick(input: {
 		replaceConfirmation,
 		drill,
 	})
-	const cursor = decodeCursor(input.cursor, input.day, fingerprint)
+	const cursor = await decodeCursor(
+		input.cursor,
+		input.day,
+		fingerprint,
+		signingSecret,
+	)
 	const config = readDrBackupS3Config(input.env)
 	if (!input.s3 && !config) {
 		throw failure('DR backup credentials are not configured')
@@ -721,12 +667,7 @@ export async function runMailboxImportTick(input: {
 		day: input.day,
 	})
 	const owners = selectOwners(index, input.owners)
-	if (cursor.ownerIndex > owners.length) {
-		throw failure('mailbox import cursor ownerIndex exceeds selected owners')
-	}
-	if (cursor.phase === 'done' && cursor.ownerIndex !== owners.length) {
-		throw failure('mailbox import cursor reached done before all owners')
-	}
+	validateCursorProgress(cursor, owners.length)
 
 	const startedAtMs = Date.now()
 	const timeBudgetMs = input.timeBudgetMs ?? mailboxImportRunTimeBudgetMs
@@ -738,8 +679,13 @@ export async function runMailboxImportTick(input: {
 	while (cursor.ownerIndex < owners.length && cursor.phase !== 'done') {
 		const owner = owners[cursor.ownerIndex]!
 		const dump = await loadVerifiedMailboxDump(s3, input.day, owner)
+		validateCursorRowIndex(cursor, dump)
 		const target = targetOwnerId(owner.ownerId, input.day, drill)
 		const mailbox = mailboxRpc({ env: input.env, userId: target })
+		const preflightMailbox = mailboxRpc({
+			env: input.env,
+			userId: preflightOwnerId(owner.ownerId, input.day),
+		})
 
 		if (cursor.phase === 'prepare') {
 			const current = await mailbox.countMailbox()
@@ -751,25 +697,38 @@ export async function runMailboxImportTick(input: {
 				)
 			}
 			if (nonEmpty) {
-				await mailbox.purge({ ownerId: target })
-				cursor.ownersReplaced += 1
+				const preflightCounts = await preflightMailbox.countMailbox()
+				if (Object.values(preflightCounts).some((count) => count > 0)) {
+					await preflightMailbox.purge({ ownerId: target })
+				}
+				cursor.phase = 'preflight-threads'
+			} else {
+				cursor.phase = 'threads'
 			}
-			cursor.phase = 'threads'
 			cursor.rowIndex = 0
 		}
 
 		while (
-			cursor.phase === 'threads' &&
+			(cursor.phase === 'preflight-threads' || cursor.phase === 'threads') &&
 			cursor.rowIndex < dump.threads.length
 		) {
 			if (budgetExhausted()) break
-			await mailbox.upsertMessageGraph({
+			await restoreThread({
+				mailbox:
+					cursor.phase === 'preflight-threads' ? preflightMailbox : mailbox,
 				ownerId: target,
-				thread: mailboxThreadInput(dump.threads[cursor.rowIndex]!),
-				message: null,
+				thread: dump.threads[cursor.rowIndex]!,
+				progress: progressFor(cursor, owners.length, rowsProcessed),
 			})
 			cursor.rowIndex += 1
 			rowsProcessed += 1
+		}
+		if (
+			cursor.phase === 'preflight-threads' &&
+			cursor.rowIndex >= dump.threads.length
+		) {
+			cursor.phase = 'preflight-messages'
+			cursor.rowIndex = 0
 		}
 		if (cursor.phase === 'threads' && cursor.rowIndex >= dump.threads.length) {
 			cursor.phase = 'messages'
@@ -777,25 +736,30 @@ export async function runMailboxImportTick(input: {
 		}
 
 		while (
-			cursor.phase === 'messages' &&
+			(cursor.phase === 'preflight-messages' || cursor.phase === 'messages') &&
 			cursor.rowIndex < dump.messages.length
 		) {
 			if (budgetExhausted()) break
 			const sourceMessage = dump.messages[cursor.rowIndex]!
 			const sourceAttachments =
 				dump.attachmentsByMessage.get(sourceMessage.id) ?? []
-			const drillTarget = drill ? target : null
-			const message = mailboxMessageInput(sourceMessage, drillTarget)
-			const attachments = sourceAttachments.map((attachment) =>
-				mailboxAttachmentInput(attachment, drillTarget),
-			)
-			await mailbox.upsertMessageGraph({
+			rowsProcessed += await restoreMessage({
+				mailbox:
+					cursor.phase === 'preflight-messages' ? preflightMailbox : mailbox,
 				ownerId: target,
-				message,
-				attachments,
+				message: sourceMessage,
+				attachments: sourceAttachments,
+				drill,
+				progress: progressFor(cursor, owners.length, rowsProcessed),
 			})
 			cursor.rowIndex += 1
-			rowsProcessed += 1 + attachments.length
+		}
+		if (
+			cursor.phase === 'preflight-messages' &&
+			cursor.rowIndex >= dump.messages.length
+		) {
+			cursor.phase = 'preflight-delivery-events'
+			cursor.rowIndex = 0
 		}
 		if (
 			cursor.phase === 'messages' &&
@@ -806,29 +770,55 @@ export async function runMailboxImportTick(input: {
 		}
 
 		while (
-			cursor.phase === 'delivery-events' &&
+			(cursor.phase === 'preflight-delivery-events' ||
+				cursor.phase === 'delivery-events') &&
 			cursor.rowIndex < dump.deliveryEvents.length
 		) {
 			if (budgetExhausted()) break
-			const events = dump.deliveryEvents
-				.slice(
-					cursor.rowIndex,
-					cursor.rowIndex + mailboxUpsertDeliveryEventsMax,
-				)
-				.map(mailboxDeliveryEventInput)
-			await mailbox.upsertDeliveryEvents({
+			const events = dump.deliveryEvents.slice(
+				cursor.rowIndex,
+				cursor.rowIndex + mailboxUpsertDeliveryEventsMax,
+			)
+			rowsProcessed += await restoreDeliveryEvents({
+				mailbox:
+					cursor.phase === 'preflight-delivery-events'
+						? preflightMailbox
+						: mailbox,
 				ownerId: target,
 				events,
-				restore: true,
+				progress: progressFor(cursor, owners.length, rowsProcessed),
 			})
 			cursor.rowIndex += events.length
-			rowsProcessed += events.length
+		}
+		if (
+			cursor.phase === 'preflight-delivery-events' &&
+			cursor.rowIndex >= dump.deliveryEvents.length
+		) {
+			cursor.phase = 'preflight-verify'
+			cursor.rowIndex = 0
 		}
 		if (
 			cursor.phase === 'delivery-events' &&
 			cursor.rowIndex >= dump.deliveryEvents.length
 		) {
 			cursor.phase = 'verify'
+			cursor.rowIndex = 0
+		}
+
+		if (cursor.phase === 'preflight-verify' && !budgetExhausted()) {
+			const preflightCounts = await preflightMailbox.countMailbox()
+			if (!mailboxCountsEqual(preflightCounts, dump.counts)) {
+				throw failure(
+					`Mailbox restore preflight count mismatch for ${owner.ownerId}`,
+					progressFor(cursor, owners.length, rowsProcessed),
+				)
+			}
+			const current = await mailbox.countMailbox()
+			if (Object.values(current).some((count) => count > 0)) {
+				await mailbox.purge({ ownerId: target })
+			}
+			cursor.ownersReplaced += 1
+			cursor.phase = 'threads'
 			cursor.rowIndex = 0
 		}
 
@@ -849,6 +839,12 @@ export async function runMailboxImportTick(input: {
 				cursor.ownersMismatched += 1
 				warnings.push(`Mailbox count mismatch for ${owner.ownerId}`)
 			}
+			if (conflictPolicy === 'replace') {
+				const preflightCounts = await preflightMailbox.countMailbox()
+				if (Object.values(preflightCounts).some((count) => count > 0)) {
+					await preflightMailbox.purge({ ownerId: target })
+				}
+			}
 			cursor.ownerIndex += 1
 			cursor.phase = cursor.ownerIndex >= owners.length ? 'done' : 'prepare'
 			cursor.rowIndex = 0
@@ -862,79 +858,9 @@ export async function runMailboxImportTick(input: {
 	return {
 		done,
 		verified: done && cursor.ownersMismatched === 0,
-		...(done ? {} : { nextCursor: encodeCursor(cursor) }),
+		...(done ? {} : { nextCursor: await encodeCursor(cursor, signingSecret) }),
 		progress: progressFor(cursor, owners.length, rowsProcessed),
 		ownerResults,
 		warnings,
 	}
-}
-
-function assertExactRequestKeys(body: Record<string, unknown>) {
-	const allowed = new Set([
-		'conflictPolicy',
-		'cursor',
-		'day',
-		'drill',
-		'owners',
-		'replaceConfirmation',
-	])
-	for (const key of Object.keys(body)) {
-		if (!allowed.has(key)) throw failure(`unknown request field: ${key}`)
-	}
-}
-
-export async function handleMailboxImportRequest(
-	request: Request,
-	env: Env,
-): Promise<Response> {
-	return await handleSecretMaintenanceRequest({
-		request,
-		secret: env.DR_RESTORE_SECRET,
-		notConfiguredMessage: 'Mailbox import is not configured',
-		run: async () => {
-			let body: Record<string, unknown>
-			try {
-				const value = (await request.json()) as unknown
-				if (!isRecord(value)) throw new Error('body is not an object')
-				body = value
-			} catch {
-				throw failure('Request body must be a JSON object')
-			}
-			assertExactRequestKeys(body)
-			const day = requireExactNonEmptyString(body['day'], 'day')
-			const owners = parseOwnerSelection(body['owners'])
-			const conflictPolicy =
-				body['conflictPolicy'] === undefined
-					? undefined
-					: body['conflictPolicy']
-			if (
-				conflictPolicy !== undefined &&
-				conflictPolicy !== 'refuse' &&
-				conflictPolicy !== 'replace'
-			) {
-				throw failure('conflictPolicy must be "refuse" or "replace"')
-			}
-			if (body['drill'] !== undefined && typeof body['drill'] !== 'boolean') {
-				throw failure('drill must be a boolean')
-			}
-			if (
-				body['replaceConfirmation'] !== undefined &&
-				typeof body['replaceConfirmation'] !== 'string'
-			) {
-				throw failure('replaceConfirmation must be a string')
-			}
-			if (body['cursor'] !== undefined && typeof body['cursor'] !== 'string') {
-				throw failure('cursor must be a string')
-			}
-			return await runMailboxImportTick({
-				env,
-				day,
-				owners,
-				conflictPolicy,
-				replaceConfirmation: body['replaceConfirmation'] as string | undefined,
-				drill: body['drill'] as boolean | undefined,
-				cursor: body['cursor'] as string | undefined,
-			})
-		},
-	})
 }

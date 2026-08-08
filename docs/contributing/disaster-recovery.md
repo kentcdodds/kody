@@ -508,8 +508,9 @@ full-manifest signature, verifies the mailbox index bytes and SHA-256, and
 verifies each selected owner dump's bytes and SHA-256 before writing that owner.
 Each tick writes parent threads, then messages with attachments through
 `upsertMessageGraph`, then delivery events through `upsertDeliveryEvents`.
-Returned cursors are bound to the day, owner selection, conflict policy, and
-drill flag; repeat the same request with `cursor` until `done`.
+Returned cursors are authenticated and bound to the day, owner selection,
+conflict policy, and drill flag; repeat the same request with `cursor` until
+`done`.
 
 Keep ingress disabled and complete the signed D1 plus R2 restore first. Select
 specific stable owner ids with an array, or explicitly select every index owner
@@ -549,7 +550,9 @@ Destructive replacement requires both `"conflictPolicy": "replace"` and the
 separate exact confirmation
 `"replaceConfirmation": "PURGE NON-EMPTY TARGET MAILBOXES"`. The importer never
 calls `purge` without both. Review that change to the request as a destructive
-restore step; keep the same fields on every resumed request.
+restore step; keep the same fields on every resumed request. Before purging a
+non-empty target, the importer first replays and count-verifies the complete
+dump through a reserved scratch preflight object.
 
 For a drill, use explicit owner ids and add `"drill": true`. The importer
 derives reserved scratch owner ids under `__mailbox-drill__:` and rewrites only

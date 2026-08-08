@@ -16,10 +16,10 @@ import {
 	type MailboxIndex,
 } from '@kody-internal/shared/backup-staging.ts'
 import {
-	handleMailboxImportRequest,
 	mailboxImportReplaceConfirmation,
 	runMailboxImportTick,
 } from '#worker/dr/mailbox-importer.ts'
+import { handleMailboxImportRequest } from '#worker/dr/mailbox-import-maintenance.ts'
 import {
 	type DrBackupS3Client,
 	type DrBackupS3PutOptions,
@@ -44,7 +44,7 @@ const emptyCounts = {
 	deliveryEvents: 0,
 }
 const threadCounts = {
-	threads: 1,
+	threads: 2,
 	messages: 0,
 	attachments: 0,
 	deliveryEvents: 0,
@@ -86,22 +86,30 @@ function createMemoryS3(seed: Record<string, string | Uint8Array>) {
 	return { client, objects }
 }
 
-async function createBackup() {
+async function createBackup(options: { indexDumpOwnerId?: string } = {}) {
 	const day = '2026-08-01'
 	const ownerId = 'owner-a'
-	const dump = `${JSON.stringify({
-		kind: 'thread',
-		row: {
-			id: 'thread-a',
-			inboxId: null,
-			subjectNormalized: 'subject',
-			rootMessageIdHeader: null,
-			lastMessageAt: '2026-08-01T00:00:00.000Z',
-			createdAt: '2026-08-01T00:00:00.000Z',
-			updatedAt: '2026-08-01T00:00:00.000Z',
-		},
-	})}\n`
-	const dumpKey = stagingMailboxDumpKey(day, ownerId)
+	const dump = ['thread-a', 'thread-b']
+		.map((id) =>
+			JSON.stringify({
+				kind: 'thread',
+				row: {
+					id,
+					inboxId: null,
+					subjectNormalized: 'subject',
+					rootMessageIdHeader: null,
+					lastMessageAt: '2026-08-01T00:00:00.000Z',
+					createdAt: '2026-08-01T00:00:00.000Z',
+					updatedAt: '2026-08-01T00:00:00.000Z',
+				},
+			}),
+		)
+		.map((line) => `${line}\n`)
+		.join('')
+	const dumpKey = stagingMailboxDumpKey(
+		day,
+		options.indexDumpOwnerId ?? ownerId,
+	)
 	const index: MailboxIndex = {
 		schemaVersion: backupStagingSchemaVersion,
 		day,
@@ -109,7 +117,7 @@ async function createBackup() {
 			{
 				ownerId,
 				objectKey: dumpKey,
-				entryCount: 1,
+				entryCount: 2,
 				bytes: new TextEncoder().encode(dump).byteLength,
 				sha256: await sha256Hex(dump),
 			},
@@ -172,6 +180,7 @@ async function createBackup() {
 			dump,
 	})
 	const env = {
+		DR_RESTORE_SECRET: 'node-test-restore-secret',
 		DR_BACKUP_ACCOUNT_ID: 'account',
 		DR_BACKUP_BUCKET_NAME: 'bucket',
 		DR_BACKUP_ACCESS_KEY_ID: 'access',
@@ -293,25 +302,67 @@ test('mailbox importer verifies sealed media before writes and refuses occupied 
 		}),
 	).rejects.toThrow(/signature is invalid/)
 	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
+
+	const swappedOwnerKey = await createBackup({ indexDumpOwnerId: 'owner-b' })
+	await expect(
+		runMailboxImportTick({
+			env: swappedOwnerKey.env,
+			day: swappedOwnerKey.day,
+			owners: [swappedOwnerKey.ownerId],
+			s3: swappedOwnerKey.s3.client,
+		}),
+	).rejects.toThrow(/invalid owner entry/)
+	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
 })
 
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {
 	resetMailboxMocks()
 	const backup = await createBackup()
-	mailboxMocks.countMailbox.mockResolvedValueOnce(threadCounts)
+	mailboxMocks.countMailbox
+		.mockResolvedValueOnce(threadCounts)
+		.mockResolvedValue(emptyCounts)
+	const now = vi
+		.spyOn(Date, 'now')
+		.mockReturnValueOnce(0)
+		.mockReturnValueOnce(0)
+		.mockReturnValue(2)
 	const first = await runMailboxImportTick({
 		env: backup.env,
 		day: backup.day,
 		owners: [backup.ownerId],
 		conflictPolicy: 'replace',
 		replaceConfirmation: mailboxImportReplaceConfirmation,
-		timeBudgetMs: 0,
+		timeBudgetMs: 1,
 		s3: backup.s3.client,
 	})
+	now.mockRestore()
 	expect(first.done).toBe(false)
-	expect(first.progress.phase).toBe('threads')
-	expect(mailboxMocks.purge).toHaveBeenCalledWith({ ownerId: backup.ownerId })
-	expect(mailboxMocks.upsertMessageGraph).not.toHaveBeenCalled()
+	expect(first.progress.phase).toBe('preflight-threads')
+	expect(mailboxMocks.purge).not.toHaveBeenCalled()
+	expect(mailboxMocks.upsertMessageGraph).toHaveBeenCalledTimes(1)
+
+	const [payload, signature] = first.nextCursor!.split('.')
+	const forgedPayload = btoa(
+		JSON.stringify({
+			...(JSON.parse(atob(payload!)) as Record<string, unknown>),
+			phase: 'done',
+			ownerIndex: 1,
+			rowIndex: 0,
+			ownersPassed: 1,
+		}),
+	)
+	await expect(
+		runMailboxImportTick({
+			env: backup.env,
+			day: backup.day,
+			owners: [backup.ownerId],
+			conflictPolicy: 'replace',
+			replaceConfirmation: mailboxImportReplaceConfirmation,
+			cursor: `${forgedPayload}.${signature}`,
+			timeBudgetMs: 60_000,
+			s3: backup.s3.client,
+		}),
+	).rejects.toThrow(/cursor signature is invalid/)
 
 	mailboxMocks.countMailbox.mockResolvedValue(threadCounts)
 	const completed = await runMailboxImportTick({
@@ -329,12 +380,14 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 		verified: true,
 		progress: { ownersPassed: 1, ownersMismatched: 0, ownersReplaced: 1 },
 	})
-	expect(mailboxMocks.purge).toHaveBeenCalledTimes(1)
-	expect(mailboxMocks.upsertMessageGraph).toHaveBeenCalledWith({
-		ownerId: backup.ownerId,
-		thread: expect.objectContaining({ id: 'thread-a' }),
-		message: null,
-	})
+	expect(mailboxMocks.purge).toHaveBeenCalledWith({ ownerId: backup.ownerId })
+	expect(mailboxMocks.upsertMessageGraph).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerId: backup.ownerId,
+			thread: expect.objectContaining({ id: 'thread-b' }),
+			message: null,
+		}),
+	)
 
 	const replayed = await runMailboxImportTick({
 		env: backup.env,
@@ -347,7 +400,24 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 		s3: backup.s3.client,
 	})
 	expect(replayed.verified).toBe(true)
-	expect(mailboxMocks.purge).toHaveBeenCalledTimes(1)
+
+	resetMailboxMocks()
+	const rejectedBackup = await createBackup()
+	mailboxMocks.countMailbox.mockResolvedValue(emptyCounts)
+	mailboxMocks.upsertMessageGraph.mockResolvedValue({
+		ok: true,
+		accepted: false,
+	})
+	await expect(
+		runMailboxImportTick({
+			env: rejectedBackup.env,
+			day: rejectedBackup.day,
+			owners: [rejectedBackup.ownerId],
+			timeBudgetMs: 60_000,
+			s3: rejectedBackup.s3.client,
+		}),
+	).rejects.toThrow(/rejected restored thread/)
+	expect(mailboxMocks.countMailbox).toHaveBeenCalledTimes(1)
 
 	resetMailboxMocks()
 	const mismatchBackup = await createBackup()
@@ -357,7 +427,7 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 	const mismatch = await runMailboxImportTick({
 		env: mismatchBackup.env,
 		day: mismatchBackup.day,
-		owners: [mismatchBackup.ownerId],
+		owners: 'all-from-index',
 		timeBudgetMs: 60_000,
 		s3: mismatchBackup.s3.client,
 	})

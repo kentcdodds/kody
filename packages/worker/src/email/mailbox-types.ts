@@ -474,6 +474,21 @@ export type MailboxUpsertDeliveryEventsResult = {
 	results: Array<MailboxUpsertDeliveryEventBatchItemResult>
 }
 
+export type MailboxUpsertMessageGraphInput =
+	| {
+			ownerId: string
+			thread?: MailboxThreadInput | null
+			message: MailboxMessageInput
+			attachments?: Array<MailboxAttachmentInput>
+	  }
+	| {
+			ownerId: string
+			/** DR import affordance for a parent thread with no surviving message. */
+			thread: MailboxThreadInput
+			message: null
+			attachments?: never
+	  }
+
 /**
  * Mirror / read / retention / purge surface. Authoritative USER inbound ledger
  * CAS RPCs are intersected below; `system:email` remains D1-only.
@@ -483,16 +498,9 @@ type MailboxCoreRpc = {
 	 * Authoritative USER graph write. The entire thread/message/attachment
 	 * graph commits in one owner-local SQLite transaction.
 	 */
-	upsertMessageGraph: (input: {
-		ownerId: string
-		thread?: MailboxThreadInput | null
-		/**
-		 * `null` is reserved for DR import of a standalone thread. Normal graph
-		 * writes always provide a message.
-		 */
-		message: MailboxMessageInput | null
-		attachments?: Array<MailboxAttachmentInput>
-	}) => Promise<{ ok: true; accepted: boolean }>
+	upsertMessageGraph: (
+		input: MailboxUpsertMessageGraphInput,
+	) => Promise<{ ok: true; accepted: boolean }>
 	/**
 	 * Authoritative USER inbound graph commit. The active `storing` lease and
 	 * graph identity are checked in the same SQLite transaction as all graph

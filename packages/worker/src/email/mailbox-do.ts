@@ -64,6 +64,7 @@ import {
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
 	type MailboxUpsertDeliveryEventsResult,
+	type MailboxUpsertMessageGraphInput,
 } from './mailbox-types.ts'
 
 /**
@@ -131,12 +132,9 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return await this.maintenance.runRetentionNow(input.ownerId)
 	}
 
-	async upsertMessageGraph(input: {
-		ownerId: string
-		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput | null
-		attachments?: Array<MailboxAttachmentInput>
-	}): Promise<{ ok: true; accepted: boolean }> {
+	async upsertMessageGraph(
+		input: MailboxUpsertMessageGraphInput,
+	): Promise<{ ok: true; accepted: boolean }> {
 		return await this.graphCommits.upsertMessageGraph(input)
 	}
 
@@ -873,6 +871,7 @@ export {
 	type MailboxThreadRecord,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
+	type MailboxUpsertMessageGraphInput,
 } from './mailbox-types.ts'
 export {
 	computeMailboxRetentionReschedule,

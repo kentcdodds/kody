@@ -65,7 +65,7 @@ import { dispatchScheduledLanes } from '#worker/scheduled/scheduled-dispatch-que
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
 import { handleDrExportRequest } from '#worker/dr/dr-export-maintenance.ts'
 import { handleDoPitrRequest } from '#worker/dr/do-pitr-maintenance.ts'
-import { handleMailboxImportRequest } from '#worker/dr/mailbox-importer.ts'
+import { handleMailboxImportRequest } from '#worker/dr/mailbox-import-maintenance.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
