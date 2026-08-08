@@ -58,7 +58,10 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
-import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import {
+	assertWithinEntitlement,
+	readEntitlementResourceUsage,
+} from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
@@ -691,6 +694,31 @@ export async function syncPackageJobsForPackage(input: {
 				packageRows.map((row) => [row.name, row] as const),
 			)
 			const desiredNames = new Set(Object.keys(desiredJobs))
+			const jobsToCreate = [...desiredNames].filter(
+				(name) => !existingByName.has(name),
+			).length
+			const jobsToRemove = packageRows.filter(
+				(row) => !desiredNames.has(row.name),
+			).length
+			if (jobsToCreate > 0) {
+				await assertWithinEntitlement({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					email: callerContext.user.email,
+					resource: 'scheduled_jobs',
+					requested: jobsToCreate,
+					getCurrent: async () =>
+						Math.max(
+							0,
+							(await readEntitlementResourceUsage({
+								db: input.env.APP_DB,
+								userId: input.userId,
+								resource: 'scheduled_jobs',
+								now: new Date(),
+							})) - jobsToRemove,
+						),
+				})
+			}
 			const now = new Date().toISOString()
 			let schedulerStateChanged = false
 

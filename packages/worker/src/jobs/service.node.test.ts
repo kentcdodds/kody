@@ -1399,6 +1399,90 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	expect(await listJobRowsByUserId(env.APP_DB, input.userId)).toEqual([])
 })
 
+test('package job sync preflights the full addition set without partial inserts', async () => {
+	const email = 'package-sync-free@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const now = '2026-08-08T12:00:00.000Z'
+	const existingJobCount = planLimits.free.maxScheduledJobs - 1
+	const db = createDatabase({
+		users: [{ email, plan: 'free', stable_user_id: userId }],
+		jobs: Array.from({ length: existingJobCount }, (_, index) => ({
+			id: `existing-${index}`,
+			user_id: userId,
+			name: `Existing ${index}`,
+			source_id: `existing-source-${index}`,
+			published_commit: 'existing-commit',
+			repo_check_policy_json: null,
+			storage_id: `job:existing-${index}`,
+			params_json: null,
+			schedule_json: JSON.stringify({ type: 'interval', every: '1h' }),
+			timezone: 'UTC',
+			enabled: 1,
+			kill_switch_enabled: 0,
+			preserved: 0,
+			expires_at: null,
+			caller_context_json: JSON.stringify(
+				createPlanUserCallerContext({ userId, email }),
+			),
+			created_at: now,
+			updated_at: now,
+			last_run_at: null,
+			last_run_status: null,
+			next_run_at: '2026-08-08T13:00:00.000Z',
+		})),
+	})
+	const env = createJobServiceTestEnv({ APP_DB: db })
+	await insertPublishedEntitySource({
+		db,
+		userId,
+		sourceId: 'new-package-source',
+		entityKind: 'package',
+		entityId: 'new-package',
+		publishedCommit: 'new-package-commit',
+		manifestPath: 'package.json',
+	})
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@owner/new-package',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'new-package',
+				description: 'Package entitlement test',
+				jobs: {
+					first: {
+						entry: './first.ts',
+						schedule: { type: 'interval', every: '1h' },
+					},
+					second: {
+						entry: './second.ts',
+						schedule: { type: 'interval', every: '1h' },
+					},
+				},
+			},
+		}),
+	})
+
+	const error = await syncPackageJobsForPackage({
+		env,
+		userId,
+		baseUrl: 'https://heykody.dev',
+		packageId: 'new-package',
+		sourceId: 'new-package-source',
+		manifest,
+	}).catch((caught: unknown) => caught)
+	expect(isEntitlementLimitError(error)).toBe(true)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected package sync to enforce the scheduled job limit.')
+	}
+	expect(error.details).toMatchObject({
+		resource: 'scheduled_jobs',
+		plan: 'free',
+		limit: planLimits.free.maxScheduledJobs,
+		current: existingJobCount,
+	})
+	expect(await listJobRowsByUserId(db, userId)).toHaveLength(existingJobCount)
+})
+
 test('create, update, and delete jobs sync the job manager alarm', async () => {
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
