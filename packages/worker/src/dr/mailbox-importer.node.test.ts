@@ -28,6 +28,8 @@ import { sha256Hex } from '#worker/dr/sha256.ts'
 
 const mailboxMocks = vi.hoisted(() => ({
 	countMailbox: vi.fn(),
+	inspectRestoreState: vi.fn(),
+	finalizeRestore: vi.fn(),
 	purge: vi.fn(),
 	upsertMessageGraph: vi.fn(),
 	upsertDeliveryEvents: vi.fn(),
@@ -48,6 +50,15 @@ const threadCounts = {
 	messages: 0,
 	attachments: 0,
 	deliveryEvents: 0,
+}
+
+function restoreStatus(counts: typeof emptyCounts, hiddenRows = 0) {
+	return {
+		counts,
+		hiddenRows,
+		empty:
+			hiddenRows === 0 && Object.values(counts).every((count) => count === 0),
+	}
 }
 
 function createMemoryS3(seed: Record<string, string | Uint8Array>) {
@@ -195,10 +206,14 @@ async function createBackup(options: { indexDumpOwnerId?: string } = {}) {
 
 function resetMailboxMocks() {
 	mailboxMocks.countMailbox.mockReset()
+	mailboxMocks.inspectRestoreState.mockReset()
+	mailboxMocks.finalizeRestore.mockReset()
 	mailboxMocks.purge.mockReset()
 	mailboxMocks.upsertMessageGraph.mockReset()
 	mailboxMocks.upsertDeliveryEvents.mockReset()
 	mailboxMocks.purge.mockResolvedValue({ ok: true })
+	mailboxMocks.inspectRestoreState.mockResolvedValue(restoreStatus(emptyCounts))
+	mailboxMocks.finalizeRestore.mockResolvedValue({ ok: true })
 	mailboxMocks.upsertMessageGraph.mockResolvedValue({
 		ok: true,
 		accepted: true,
@@ -252,7 +267,9 @@ test('mailbox import endpoint is secret-gated and replace needs exact confirmati
 test('mailbox importer verifies sealed media before writes and refuses occupied targets', async () => {
 	resetMailboxMocks()
 	const backup = await createBackup()
-	mailboxMocks.countMailbox.mockResolvedValue(threadCounts)
+	mailboxMocks.inspectRestoreState.mockResolvedValue(
+		restoreStatus(threadCounts),
+	)
 	await expect(
 		runMailboxImportTick({
 			env: backup.env,
@@ -318,9 +335,11 @@ test('mailbox importer verifies sealed media before writes and refuses occupied 
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {
 	resetMailboxMocks()
 	const backup = await createBackup()
-	mailboxMocks.countMailbox
-		.mockResolvedValueOnce(threadCounts)
-		.mockResolvedValue(emptyCounts)
+	mailboxMocks.inspectRestoreState
+		.mockResolvedValueOnce(restoreStatus(threadCounts))
+		.mockResolvedValueOnce(restoreStatus(emptyCounts))
+		.mockResolvedValue(restoreStatus(threadCounts))
+	mailboxMocks.countMailbox.mockResolvedValue(threadCounts)
 	const now = vi
 		.spyOn(Date, 'now')
 		.mockReturnValueOnce(0)
@@ -364,7 +383,6 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 		}),
 	).rejects.toThrow(/cursor signature is invalid/)
 
-	mailboxMocks.countMailbox.mockResolvedValue(threadCounts)
 	const completed = await runMailboxImportTick({
 		env: backup.env,
 		day: backup.day,
@@ -403,7 +421,6 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 
 	resetMailboxMocks()
 	const rejectedBackup = await createBackup()
-	mailboxMocks.countMailbox.mockResolvedValue(emptyCounts)
 	mailboxMocks.upsertMessageGraph.mockResolvedValue({
 		ok: true,
 		accepted: false,
@@ -417,13 +434,11 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 			s3: rejectedBackup.s3.client,
 		}),
 	).rejects.toThrow(/rejected restored thread/)
-	expect(mailboxMocks.countMailbox).toHaveBeenCalledTimes(1)
+	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
 
 	resetMailboxMocks()
 	const mismatchBackup = await createBackup()
-	mailboxMocks.countMailbox
-		.mockResolvedValueOnce(emptyCounts)
-		.mockResolvedValueOnce(emptyCounts)
+	mailboxMocks.countMailbox.mockResolvedValue(emptyCounts)
 	const mismatch = await runMailboxImportTick({
 		env: mismatchBackup.env,
 		day: mismatchBackup.day,

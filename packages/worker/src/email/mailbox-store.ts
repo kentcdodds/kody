@@ -23,6 +23,7 @@ import {
 	type MailboxListMessagesInput,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
+	type MailboxRestoreStatus,
 	type MailboxSearchMessagesInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
@@ -713,6 +714,30 @@ export class MailboxStore {
 			messages: Number(messages.n ?? 0) || 0,
 			attachments: Number(attachments.n ?? 0) || 0,
 			deliveryEvents: Number(deliveryEvents.n ?? 0) || 0,
+		}
+	}
+
+	inspectRestoreState(): MailboxRestoreStatus {
+		const counts = this.countMailbox()
+		const hiddenRows = this.sql
+			.exec<{ n: number }>(
+				`SELECT
+					(SELECT COUNT(*) FROM email_message_deletion_tombstones) +
+					(SELECT COUNT(*) FROM email_outbound_provider_index_repairs) +
+					(SELECT COUNT(*) FROM email_message_retention_retries)
+					AS n`,
+			)
+			.one()
+		const hiddenCount = Number(hiddenRows.n ?? 0) || 0
+		return {
+			counts,
+			hiddenRows: hiddenCount,
+			empty:
+				hiddenCount === 0 &&
+				counts.threads === 0 &&
+				counts.messages === 0 &&
+				counts.attachments === 0 &&
+				counts.deliveryEvents === 0,
 		}
 	}
 

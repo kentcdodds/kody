@@ -336,6 +336,12 @@ export type MailboxCountResult = {
 	deliveryEvents: number
 }
 
+export type MailboxRestoreStatus = {
+	counts: MailboxCountResult
+	hiddenRows: number
+	empty: boolean
+}
+
 /**
  * Aggregate result from {@link MailboxRpc.runRetentionNow} (and the shared
  * private retention turn used by `alarm`). Each invocation processes at most
@@ -480,6 +486,8 @@ export type MailboxUpsertMessageGraphInput =
 			thread?: MailboxThreadInput | null
 			message: MailboxMessageInput
 			attachments?: Array<MailboxAttachmentInput>
+			/** DR restore writes stay inert until finalizeRestore. */
+			restore?: true
 	  }
 	| {
 			ownerId: string
@@ -487,6 +495,7 @@ export type MailboxUpsertMessageGraphInput =
 			thread: MailboxThreadInput
 			message: null
 			attachments?: never
+			restore: true
 	  }
 
 /**
@@ -647,6 +656,8 @@ type MailboxCoreRpc = {
 		providerEventId: string
 	}) => Promise<MailboxDeliveryEventRecord | null>
 	countMailbox: () => Promise<MailboxCountResult>
+	inspectRestoreState: () => Promise<MailboxRestoreStatus>
+	finalizeRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
 	exportMailbox: (input: {
 		pageSize?: number
 		startAfter?: string | null

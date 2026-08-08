@@ -342,6 +342,7 @@ async function restoreThread(input: {
 		ownerId: input.ownerId,
 		thread: mailboxThreadInput(input.thread),
 		message: null,
+		restore: true,
 	})
 	if (!result.accepted) {
 		throw failure(
@@ -356,18 +357,18 @@ async function restoreMessage(input: {
 	ownerId: string
 	message: MailboxMessageRecord
 	attachments: Array<MailboxAttachmentRecord>
-	drill: boolean
+	blobOwnerId: string | null
 	progress: MailboxImportTickResult['progress']
 }): Promise<number> {
-	const drillTarget = input.drill ? input.ownerId : null
-	const message = mailboxMessageInput(input.message, drillTarget)
+	const message = mailboxMessageInput(input.message, input.blobOwnerId)
 	const attachments = input.attachments.map((attachment) =>
-		mailboxAttachmentInput(attachment, drillTarget),
+		mailboxAttachmentInput(attachment, input.blobOwnerId),
 	)
 	const result = await input.mailbox.upsertMessageGraph({
 		ownerId: input.ownerId,
 		message,
 		attachments,
+		restore: true,
 	})
 	if (!result.accepted) {
 		throw failure(
@@ -410,6 +411,39 @@ function mailboxCountsEqual(
 		left.attachments === right.attachments &&
 		left.deliveryEvents === right.deliveryEvents
 	)
+}
+
+function assertCanonicalDumpBlobKeys(
+	dump: ParsedMailboxDump,
+	sourceOwnerId: string,
+): void {
+	for (const message of dump.messages) {
+		const expectedRawMimeKey = emailRawMimeKey(sourceOwnerId, message.id)
+		if (
+			(message.direction === 'inbound' &&
+				message.rawMimeKey !== expectedRawMimeKey) ||
+			(message.direction === 'outbound' &&
+				message.rawMimeKey !== null &&
+				message.rawMimeKey !== expectedRawMimeKey)
+		) {
+			throw failure(`mailbox dump has a non-canonical raw MIME key`)
+		}
+		for (const attachment of dump.attachmentsByMessage.get(message.id) ?? []) {
+			const expectedAttachmentKey = emailAttachmentBlobKey(
+				sourceOwnerId,
+				message.id,
+				attachment.id,
+			)
+			if (
+				(attachment.storageKind === 'external' &&
+					attachment.storageKey !== expectedAttachmentKey) ||
+				(attachment.storageKind !== 'external' &&
+					attachment.storageKey !== null)
+			) {
+				throw failure(`mailbox dump has a non-canonical attachment key`)
+			}
+		}
+	}
 }
 
 function cursorSecret(env: Env): string {
@@ -679,17 +713,19 @@ export async function runMailboxImportTick(input: {
 	while (cursor.ownerIndex < owners.length && cursor.phase !== 'done') {
 		const owner = owners[cursor.ownerIndex]!
 		const dump = await loadVerifiedMailboxDump(s3, input.day, owner)
+		assertCanonicalDumpBlobKeys(dump, owner.ownerId)
 		validateCursorRowIndex(cursor, dump)
 		const target = targetOwnerId(owner.ownerId, input.day, drill)
+		const preflightId = preflightOwnerId(owner.ownerId, input.day)
 		const mailbox = mailboxRpc({ env: input.env, userId: target })
 		const preflightMailbox = mailboxRpc({
 			env: input.env,
-			userId: preflightOwnerId(owner.ownerId, input.day),
+			userId: preflightId,
 		})
 
 		if (cursor.phase === 'prepare') {
-			const current = await mailbox.countMailbox()
-			const nonEmpty = Object.values(current).some((count) => count > 0)
+			const current = await mailbox.inspectRestoreState()
+			const nonEmpty = !current.empty
 			if (nonEmpty && conflictPolicy === 'refuse') {
 				throw failure(
 					`target Mailbox for ${target} is non-empty; refusing import`,
@@ -697,9 +733,9 @@ export async function runMailboxImportTick(input: {
 				)
 			}
 			if (nonEmpty) {
-				const preflightCounts = await preflightMailbox.countMailbox()
-				if (Object.values(preflightCounts).some((count) => count > 0)) {
-					await preflightMailbox.purge({ ownerId: target })
+				const preflightState = await preflightMailbox.inspectRestoreState()
+				if (!preflightState.empty) {
+					await preflightMailbox.purge({ ownerId: preflightId })
 				}
 				cursor.phase = 'preflight-threads'
 			} else {
@@ -716,7 +752,7 @@ export async function runMailboxImportTick(input: {
 			await restoreThread({
 				mailbox:
 					cursor.phase === 'preflight-threads' ? preflightMailbox : mailbox,
-				ownerId: target,
+				ownerId: cursor.phase === 'preflight-threads' ? preflightId : target,
 				thread: dump.threads[cursor.rowIndex]!,
 				progress: progressFor(cursor, owners.length, rowsProcessed),
 			})
@@ -746,10 +782,15 @@ export async function runMailboxImportTick(input: {
 			rowsProcessed += await restoreMessage({
 				mailbox:
 					cursor.phase === 'preflight-messages' ? preflightMailbox : mailbox,
-				ownerId: target,
+				ownerId: cursor.phase === 'preflight-messages' ? preflightId : target,
 				message: sourceMessage,
 				attachments: sourceAttachments,
-				drill,
+				blobOwnerId:
+					cursor.phase === 'preflight-messages'
+						? preflightId
+						: drill
+							? target
+							: null,
 				progress: progressFor(cursor, owners.length, rowsProcessed),
 			})
 			cursor.rowIndex += 1
@@ -784,7 +825,8 @@ export async function runMailboxImportTick(input: {
 					cursor.phase === 'preflight-delivery-events'
 						? preflightMailbox
 						: mailbox,
-				ownerId: target,
+				ownerId:
+					cursor.phase === 'preflight-delivery-events' ? preflightId : target,
 				events,
 				progress: progressFor(cursor, owners.length, rowsProcessed),
 			})
@@ -813,8 +855,8 @@ export async function runMailboxImportTick(input: {
 					progressFor(cursor, owners.length, rowsProcessed),
 				)
 			}
-			const current = await mailbox.countMailbox()
-			if (Object.values(current).some((count) => count > 0)) {
+			const current = await mailbox.inspectRestoreState()
+			if (!current.empty) {
 				await mailbox.purge({ ownerId: target })
 			}
 			cursor.ownersReplaced += 1
@@ -835,14 +877,15 @@ export async function runMailboxImportTick(input: {
 			})
 			if (matches) {
 				cursor.ownersPassed += 1
+				if (!drill) await mailbox.finalizeRestore({ ownerId: target })
 			} else {
 				cursor.ownersMismatched += 1
 				warnings.push(`Mailbox count mismatch for ${owner.ownerId}`)
 			}
 			if (conflictPolicy === 'replace') {
-				const preflightCounts = await preflightMailbox.countMailbox()
-				if (Object.values(preflightCounts).some((count) => count > 0)) {
-					await preflightMailbox.purge({ ownerId: target })
+				const preflightState = await preflightMailbox.inspectRestoreState()
+				if (!preflightState.empty) {
+					await preflightMailbox.purge({ ownerId: preflightId })
 				}
 			}
 			cursor.ownerIndex += 1

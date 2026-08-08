@@ -1,3 +1,4 @@
+import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
@@ -154,7 +155,11 @@ function deliveryEvent(): MailboxDeliveryEventRecord {
 	}
 }
 
-async function createBackup(ownerId: string, day: string) {
+async function createBackup(
+	ownerId: string,
+	day: string,
+	options: { threadUpdatedAt?: string } = {},
+) {
 	const thread: MailboxThreadRecord = {
 		id: 'restore-thread',
 		inboxId: 'inbox-1',
@@ -162,7 +167,7 @@ async function createBackup(ownerId: string, day: string) {
 		rootMessageIdHeader: '<restore@example.com>',
 		lastMessageAt: '2026-08-01T01:02:03.000Z',
 		createdAt: '2026-08-01T01:02:03.000Z',
-		updatedAt: '2026-08-01T01:02:04.000Z',
+		updatedAt: options.threadUpdatedAt ?? '2026-08-01T01:02:04.000Z',
 	}
 	const rows: Array<MailboxExportRow> = [
 		{ kind: 'thread', row: thread },
@@ -347,6 +352,12 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 		attachments: 0,
 		deliveryEvents: 0,
 	})
+	const scratchStub = backup.env.MAILBOX.get(
+		backup.env.MAILBOX.idFromName(drillOwnerId),
+	)
+	await runInDurableObject(scratchStub, async (_instance, state) => {
+		expect(await state.storage.getAlarm()).toBeNull()
+	})
 
 	const occupiedOwner = `workers-import-occupied-${crypto.randomUUID()}`
 	const occupiedBackup = await createBackup(occupiedOwner, day)
@@ -393,6 +404,13 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 			userId: occupiedOwner,
 		}).getMessage({ messageId: 'existing-message' }),
 	).not.toBeNull()
+	const preflightId = `__mailbox-import-preflight__:${day}:${encodeURIComponent(occupiedOwner)}`
+	const preflightStub = occupiedBackup.env.MAILBOX.get(
+		occupiedBackup.env.MAILBOX.idFromName(preflightId),
+	)
+	await runInDurableObject(preflightStub, async (_instance, state) => {
+		expect(await state.storage.getAlarm()).toBeNull()
+	})
 	const replacementCompleted = await runMailboxImportTick({
 		env: occupiedBackup.env,
 		day,
@@ -413,6 +431,44 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 	).toBeNull()
 	expect(
 		await replacedMailbox.getMessage({ messageId: 'restore-message' }),
+	).not.toBeNull()
+	const replacedStub = occupiedBackup.env.MAILBOX.get(
+		occupiedBackup.env.MAILBOX.idFromName(occupiedOwner),
+	)
+	await runInDurableObject(replacedStub, async (_instance, state) => {
+		expect(await state.storage.getAlarm()).not.toBeNull()
+	})
+
+	const invalidOwner = `workers-import-invalid-${crypto.randomUUID()}`
+	const invalidBackup = await createBackup(invalidOwner, day, {
+		threadUpdatedAt: 'not-a-timestamp',
+	})
+	const invalidTarget = mailboxRpc({
+		env: invalidBackup.env,
+		userId: invalidOwner,
+	})
+	await invalidTarget.upsertMessageGraph({
+		ownerId: invalidOwner,
+		message: {
+			...message(invalidOwner),
+			id: 'surviving-message',
+			threadId: null,
+			rawMimeKey: emailRawMimeKey(invalidOwner, 'surviving-message'),
+		},
+	})
+	await expect(
+		runMailboxImportTick({
+			env: invalidBackup.env,
+			day,
+			owners: [invalidOwner],
+			conflictPolicy: 'replace',
+			replaceConfirmation: mailboxImportReplaceConfirmation,
+			timeBudgetMs: 60_000,
+			s3: invalidBackup.s3.client,
+		}),
+	).rejects.toThrow(/canonical ISO-8601/)
+	expect(
+		await invalidTarget.getMessage({ messageId: 'surviving-message' }),
 	).not.toBeNull()
 
 	const corruptOwner = `workers-import-corrupt-${crypto.randomUUID()}`
@@ -442,4 +498,30 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 		attachments: 0,
 		deliveryEvents: 0,
 	})
+
+	const tombstoneOwner = `workers-import-tombstone-${crypto.randomUUID()}`
+	const tombstoneBackup = await createBackup(tombstoneOwner, day)
+	const tombstoneMailbox = mailboxRpc({
+		env: tombstoneBackup.env,
+		userId: tombstoneOwner,
+	})
+	await tombstoneMailbox.tombstoneMissingMessage({
+		ownerId: tombstoneOwner,
+		messageId: 'restore-message',
+		deletedAt: '2026-08-03T00:00:00.000Z',
+	})
+	expect(await tombstoneMailbox.countMailbox()).toEqual({
+		threads: 0,
+		messages: 0,
+		attachments: 0,
+		deliveryEvents: 0,
+	})
+	await expect(
+		runMailboxImportTick({
+			env: tombstoneBackup.env,
+			day,
+			owners: [tombstoneOwner],
+			s3: tombstoneBackup.s3.client,
+		}),
+	).rejects.toThrow(/non-empty/)
 })

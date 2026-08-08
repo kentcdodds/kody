@@ -58,7 +58,7 @@ export class MailboxGraphCommitCommands {
 				this.store.replaceAttachmentsForMessage(message.id, input.attachments)
 			}
 		})
-		await this.maintenance.markDirtyAndEnsure()
+		if (!input.restore) await this.maintenance.markDirtyAndEnsure()
 		return { ok: true, accepted }
 	}
 

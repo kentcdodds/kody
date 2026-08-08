@@ -334,7 +334,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 			})
 		})
 		if (!result) throw new Error('Mailbox upsert transaction did not run.')
-		await this.maintenance.markDirtyAndEnsure()
+		if (!input.restore) await this.maintenance.markDirtyAndEnsure()
 		return result
 	}
 
@@ -615,6 +615,16 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return this.store.countMailbox()
 	}
 
+	async inspectRestoreState() {
+		return this.store.inspectRestoreState()
+	}
+
+	async finalizeRestore(input: { ownerId: string }): Promise<{ ok: true }> {
+		this.store.assertOwner(input.ownerId)
+		await this.maintenance.markDirtyAndEnsure()
+		return { ok: true }
+	}
+
 	async exportMailbox(input: {
 		pageSize?: number
 		startAfter?: string | null
@@ -866,6 +876,7 @@ export {
 	type MailboxMessageRecord,
 	type MailboxPartialMutationResult,
 	type MailboxRunRetentionNowResult,
+	type MailboxRestoreStatus,
 	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
