@@ -71,7 +71,10 @@ async function collectQueryParamNamesForTest(url: URL) {
 		'utf8',
 	)
 	const start = sourceText.indexOf('function collectQueryParamNames(url) {')
-	const end = sourceText.indexOf('\n\nasync function startRuntimeRun', start)
+	const end = sourceText.indexOf(
+		'\n\nfunction isSyntheticPackageAppRequest',
+		start,
+	)
 	if (start < 0 || end < 0) {
 		throw new Error('collectQueryParamNames source was not found.')
 	}
