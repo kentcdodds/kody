@@ -685,10 +685,10 @@ export async function runModuleWithRegistry(
 		runRecord?: RunRecordContext | null
 		runRecordHandle?: RunRecordHandle | null
 		/**
-		 * When set, terminal run-record writes are scheduled on this callback
-		 * (typically `ctx.waitUntil`) instead of being awaited. Observability
-		 * must not serialize the path it observes — same never-block contract
-		 * as `recordUsage`.
+		 * When set, post-terminal run-record side effects are scheduled on this
+		 * callback (typically `ctx.waitUntil`). The terminal Durable Object write
+		 * itself is always awaited so a completed invocation is not stranded as
+		 * `running`.
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
@@ -830,10 +830,9 @@ export async function runBundledModuleWithRegistry(
 		rawFetchHostSink?: RawFetchHostSink
 		conversationId?: string | null
 		/**
-		 * When set, terminal run-record writes are scheduled on this callback
-		 * (typically `ctx.waitUntil`) instead of being awaited. Observability
-		 * must not serialize the path it observes — same never-block contract
-		 * as `recordUsage`.
+		 * When set, post-terminal run-record side effects are scheduled on this
+		 * callback (typically `ctx.waitUntil`). The terminal Durable Object write
+		 * itself is always awaited.
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},

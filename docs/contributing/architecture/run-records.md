@@ -118,12 +118,15 @@ Rules:
   that already carries a minted run id, `startedAt`, persistence mode, and the
   full context — or `null` when there is no user / no `RUN_LOG` binding /
   missing context.
-- **`finishRunRecord` upserts the complete row in one RPC** (`finishRun`), then
-  replaces logs and enforces retention. A dropped `running` insert is harmless:
-  finish still writes the terminal row. That is why begin can stay off the
-  request critical path.
+- **`finishRunRecord` awaits the complete-row upsert in one RPC** (`finishRun`),
+  then replaces logs and enforces retention. A supplied `waitUntil` applies only
+  to post-terminal observers such as `run.error.recorded`, never to the terminal
+  write itself. A dropped `running` insert is harmless: finish still writes the
+  terminal row. That is why begin can stay off the request critical path.
 - **`on-failure` + `success` is a no-op** at finish (no DO write).
 - Finish **never throws into the observed path**. Sink failures log a warning.
+  It resolves `true` when the terminal write succeeds (or persistence is not
+  required by policy) and `false` when no terminal row was written.
 - Finish may accept an optional JSON-serializable **`result`**. When present it
   is stored under `metadata.result` after a bounded snapshot
   (`runRecordMaxResultSnapshotBytes`, currently 4 KiB). Oversized values become
@@ -220,7 +223,11 @@ of replaying.
 - **Terminal response + run-record finish are one awaited DO RPC**
   (`finishPackageInvocation`): the bounded replay response (restore-safe byte
   ceiling) and the terminal run row land together; the ledger update is fenced
-  on the claim timestamp so a competing reclaim cannot be overwritten.
+  on the claim timestamp so a competing reclaim cannot be overwritten. If that
+  RPC fails after package code completed, the caller receives
+  `idempotency_persistence_failed` rather than a false success. Durable callers
+  retry the same key; the live claim prevents duplicate execution while the
+  terminal result is unresolved.
 - **Ledger retention is DO-local**: terminal rows keep replay responses for 90
   days (`packageInvocationLedgerRetentionDays`), pruned by the same retention
   passes and alarm as run rows; `in_progress` rows are never pruned. There is no

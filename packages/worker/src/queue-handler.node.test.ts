@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { packageEventsDispatchQueueName } from '#worker/package-events/dispatch-queue-names.ts'
 import { scheduledDispatchQueueName } from '#worker/scheduled/scheduled-dispatch-queue-names.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import { webhookDispatchQueueName } from '#worker/webhooks/dispatch-queue-names.ts'
 
 const mocks = vi.hoisted(() => ({
 	handleCommunityActivityDispatchQueue: vi.fn(),
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 	handlePackageEventsDispatchQueue: vi.fn(),
 	handlePlatformFeedbackDispatchQueue: vi.fn(),
 	handleScheduledDispatchQueue: vi.fn(),
+	handleWebhookDispatchQueue: vi.fn(),
 }))
 
 vi.mock('#worker/community/activity-dispatch-queue.ts', () => ({
@@ -44,6 +46,11 @@ vi.mock('#worker/scheduled/scheduled-dispatch-queue.ts', () => ({
 	handleScheduledDispatchQueue: mocks.handleScheduledDispatchQueue,
 }))
 
+vi.mock('#worker/webhooks/dispatch-queue.ts', () => ({
+	handleWebhookDispatchQueue: mocks.handleWebhookDispatchQueue,
+	webhookDispatchQueueName: 'kody-webhook-dispatch',
+}))
+
 const { handleQueueBatch } = await import('./queue-handler.ts')
 
 function createBatch(queue: string) {
@@ -65,6 +72,7 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
 	const packageEventsBatch = createBatch(packageEventsDispatchQueueName)
 	const scheduledBatch = createBatch(scheduledDispatchQueueName)
+	const webhookBatch = createBatch(webhookDispatchQueueName)
 	const unknownBatch = createBatch('unexpected-queue')
 
 	await handleQueueBatch(emailBatch, env, ctx)
@@ -73,6 +81,7 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	await handleQueueBatch(communityActivityBatch, env, ctx)
 	await handleQueueBatch(packageEventsBatch, env, ctx)
 	await handleQueueBatch(scheduledBatch, env, ctx)
+	await handleQueueBatch(webhookBatch, env, ctx)
 	await handleQueueBatch(unknownBatch, env, ctx)
 
 	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledTimes(1)
@@ -108,6 +117,10 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 		scheduledBatch,
 		env,
 		ctx,
+	)
+	expect(mocks.handleWebhookDispatchQueue).toHaveBeenCalledWith(
+		webhookBatch,
+		env,
 	)
 	expect(unknownBatch.retryAll).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(consoleError).toHaveBeenCalledTimes(1)

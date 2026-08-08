@@ -308,6 +308,10 @@
 						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
 						"queue": "kody-package-events-dispatch",
 					},
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-webhook-dispatch",
+					},
 				],
 				"consumers": [
 					{
@@ -356,6 +360,14 @@
 						// cannot multiply into unbounded isolate loads.
 						"max_concurrency": 16,
 						"dead_letter_queue": "kody-package-events-dispatch-dlq",
+					},
+					{
+						"queue": "kody-webhook-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 5,
+						"max_retries": 10,
+						"max_concurrency": 16,
+						"dead_letter_queue": "kody-webhook-dispatch-dlq",
 					},
 				],
 			},
@@ -579,6 +591,24 @@
 					"name": "EMAIL",
 				},
 			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-preview-webhook-dispatch",
+					},
+				],
+				"consumers": [
+					{
+						"queue": "kody-preview-webhook-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 5,
+						"max_retries": 10,
+						"max_concurrency": 16,
+						"dead_letter_queue": "kody-preview-webhook-dispatch-dlq",
+					},
+				],
+			},
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
@@ -735,6 +765,23 @@
 					"name": "EMAIL",
 				},
 			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-test-webhook-dispatch",
+					},
+				],
+				"consumers": [
+					{
+						"queue": "kody-test-webhook-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 0,
+						"max_retries": 10,
+						"dead_letter_queue": "kody-test-webhook-dispatch-dlq",
+					},
+				],
+			},
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",

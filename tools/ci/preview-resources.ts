@@ -2,11 +2,14 @@ import { readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 import {
+	deleteCloudflareQueue,
 	deleteR2Bucket,
 	deleteWorkerScript,
+	ensureCloudflareQueue,
 	ensureR2Bucket,
 	fail,
 	listD1Databases,
+	listCloudflareQueues,
 	listKvNamespaces,
 	runWrangler,
 	truncateWithSuffix,
@@ -97,6 +100,8 @@ function buildPreviewResourceNames(workerName: string) {
 	const bundleKvSuffix = '-bundle-artifacts-kv'
 	const communityAssetsSuffix = '-community-assets'
 	const emailBlobsSuffix = '-email-blobs'
+	const webhookDispatchQueueSuffix = '-webhook-dispatch'
+	const webhookDispatchDeadLetterQueueSuffix = '-webhook-dispatch-dlq'
 
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
 	const auditD1DatabaseName = truncateWithSuffix(
@@ -120,6 +125,16 @@ function buildPreviewResourceNames(workerName: string) {
 		communityAssetsSuffix,
 		maxLen,
 	)
+	const webhookDispatchQueueName = truncateWithSuffix(
+		workerName,
+		webhookDispatchQueueSuffix,
+		maxLen,
+	)
+	const webhookDispatchDeadLetterQueueName = truncateWithSuffix(
+		workerName,
+		webhookDispatchDeadLetterQueueSuffix,
+		maxLen,
+	)
 
 	return {
 		d1DatabaseName,
@@ -128,6 +143,8 @@ function buildPreviewResourceNames(workerName: string) {
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		webhookDispatchQueueName,
+		webhookDispatchDeadLetterQueueName,
 	}
 }
 
@@ -268,6 +285,8 @@ async function ensurePreviewResources(options: CliOptions) {
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		webhookDispatchQueueName,
+		webhookDispatchDeadLetterQueueName,
 	} = buildPreviewResourceNames(options.workerName)
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
@@ -295,6 +314,31 @@ async function ensurePreviewResources(options: CliOptions) {
 		name: communityAssetsBucketName,
 		dryRun: options.dryRun,
 	})
+	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+	if ((!accountId || !apiToken) && !options.dryRun) {
+		fail(
+			'Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN for Queue provisioning.',
+		)
+	}
+	const queueClient = {
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		dryRun: options.dryRun,
+	}
+	const existingQueues = options.dryRun
+		? []
+		: await listCloudflareQueues(queueClient)
+	await ensureCloudflareQueue({
+		...queueClient,
+		name: webhookDispatchQueueName,
+		existingQueues,
+	})
+	await ensureCloudflareQueue({
+		...queueClient,
+		name: webhookDispatchDeadLetterQueueName,
+		existingQueues,
+	})
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
@@ -312,6 +356,13 @@ async function ensurePreviewResources(options: CliOptions) {
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
+		queueBindings: [
+			{
+				binding: 'WEBHOOK_DISPATCH_QUEUE',
+				queue: webhookDispatchQueueName,
+				deadLetterQueue: webhookDispatchDeadLetterQueueName,
+			},
+		],
 	})
 
 	// Emit GitHub Actions-friendly outputs (stdout only).
@@ -326,6 +377,10 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
+	console.log(`webhook_dispatch_queue_name=${webhookDispatchQueueName}`)
+	console.log(
+		`webhook_dispatch_dead_letter_queue_name=${webhookDispatchDeadLetterQueueName}`,
+	)
 }
 
 function listMockServerNames() {
@@ -368,7 +423,29 @@ async function cleanupPreviewResources(options: CliOptions) {
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		webhookDispatchQueueName,
+		webhookDispatchDeadLetterQueueName,
 	} = buildPreviewResourceNames(options.workerName)
+	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+	if ((!accountId || !apiToken) && !options.dryRun) {
+		fail(
+			'Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN for Queue cleanup.',
+		)
+	}
+	const queueClient = {
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		dryRun: options.dryRun,
+	}
+	await deleteCloudflareQueue({
+		...queueClient,
+		name: webhookDispatchQueueName,
+	})
+	await deleteCloudflareQueue({
+		...queueClient,
+		name: webhookDispatchDeadLetterQueueName,
+	})
 	deletePreviewWorkers(options.workerName, options.dryRun)
 	deleteR2Bucket({ name: communityAssetsBucketName, dryRun: options.dryRun })
 	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })

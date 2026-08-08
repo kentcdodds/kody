@@ -6,9 +6,11 @@ import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { computeWebhookHmacSignature, hashWebhookUrlSecret } from './crypto.ts'
+import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { handleWebhookIngressRequest } from './http.ts'
 
 const mocks = vi.hoisted(() => ({
+	enqueueWebhookDispatch: vi.fn(),
 	invokePackageExport: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
@@ -33,6 +35,17 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mocks.resolveSecret(...args),
 }))
+
+vi.mock('./dispatch-queue-producer.ts', async () => {
+	const actual = await vi.importActual<typeof DispatchQueueProducerModule>(
+		'./dispatch-queue-producer.ts',
+	)
+	return {
+		...actual,
+		enqueueWebhookDispatch: (...args: Array<unknown>) =>
+			mocks.enqueueWebhookDispatch(...args),
+	}
+})
 
 async function ensureSchema(db: D1Database) {
 	await db
@@ -192,7 +205,7 @@ async function postWebhook(input: {
 				method: 'POST',
 				headers: {
 					'content-type': 'application/json',
-					...(input.headers ?? {}),
+					...input.headers,
 				},
 				body: input.body ?? JSON.stringify({ hello: 'world' }),
 			},
@@ -251,6 +264,8 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	})
 
 	mocks.invokePackageExport.mockReset()
+	mocks.enqueueWebhookDispatch.mockReset()
+	mocks.enqueueWebhookDispatch.mockResolvedValue(undefined)
 	mocks.invokePackageExport.mockResolvedValue({
 		status: 200,
 		body: { ok: true, result: { handled: true } },
@@ -281,32 +296,34 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		headers: { 'x-hub-signature-256': signature },
 	})
 	expect(ack.status).toBe(202)
-	expect(mocks.invokePackageExport).toHaveBeenCalled()
-	const invokeArgs = mocks.invokePackageExport.mock.calls[0]?.[0] as {
-		token: { userId: string }
-		request: {
+	expect(mocks.invokePackageExport).not.toHaveBeenCalled()
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+	const enqueueArgs = mocks.enqueueWebhookDispatch.mock.calls[0]?.[0] as {
+		message: {
+			endpoint: { userId: string }
 			params: {
 				webhook: { packageKodyId: string; name: string }
 				request: { json: unknown }
 			}
 		}
 	}
-	expect(invokeArgs.token.userId).toBe(userId)
-	expect(invokeArgs.request.params.webhook).toEqual({
+	expect(enqueueArgs.message.endpoint.userId).toBe(userId)
+	expect(enqueueArgs.message.params.webhook).toEqual({
 		packageKodyId: 'sentry-bridge',
 		name: 'sentry',
 		receivedAt: expect.any(String),
 	})
-	expect(invokeArgs.request.params.request.json).toEqual({ event: 'push' })
-	const delivered = (await listDeliveries(userId, 'sentry'))[0]
-	expect(delivered?.status).toBe('success')
-	expect(delivered?.packageId).toBe('pkg-1')
-	expect(delivered?.kodyId).toBe('sentry-bridge')
-	expect(delivered?.metadata).toMatchObject({
-		httpStatus: 202,
-		outcome: 'delivered',
-		result: { handled: true },
+	expect(enqueueArgs.message.params.request.json).toEqual({ event: 'push' })
+
+	declareWebhook({ name: 'sentry' })
+	const oversizedAck = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+		urlSecret,
+		body: JSON.stringify({ payload: 'x'.repeat(70_000) }),
 	})
+	expect(oversizedAck.status).toBe(413)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
 
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 	mocks.invokePackageExport.mockClear()

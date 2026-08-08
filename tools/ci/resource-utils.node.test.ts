@@ -7,14 +7,15 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 
 import {
 	cloudflareApiRequest,
+	deleteCloudflareQueue,
 	emailSendingEventTypes,
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
+	isR2BucketAlreadyExistsOutput,
 	isRetryableCloudflareApiError,
 	isWranglerNotFoundOutput,
 	parseJsonc,
-	parseR2BucketListOutput,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
 
@@ -157,6 +158,13 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			bundleArtifactsKvId: 'dry-run-kody-pr-123-bundle-artifacts',
 			communityAssetsBucketName: 'kody-pr-123-community-assets',
 			emailBlobsBucketName: 'kody-pr-123-email-blobs',
+			queueBindings: [
+				{
+					binding: 'WEBHOOK_DISPATCH_QUEUE',
+					queue: 'kody-pr-123-webhook-dispatch',
+					deadLetterQueue: 'kody-pr-123-webhook-dispatch-dlq',
+				},
+			],
 		})
 
 		const previewConfig = parseJsonc<{
@@ -171,6 +179,13 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 						migrations_dir: string
 					}>
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
+					queues?: {
+						producers: Array<{ binding: string; queue: string }>
+						consumers: Array<{
+							queue: string
+							dead_letter_queue: string
+						}>
+					}
 					routes?: Array<{ pattern: string; custom_domain?: boolean }>
 				}
 			}
@@ -199,6 +214,20 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			},
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
 		])
+		expect(previewConfig.env?.preview?.queues).toMatchObject({
+			producers: [
+				{
+					binding: 'WEBHOOK_DISPATCH_QUEUE',
+					queue: 'kody-pr-123-webhook-dispatch',
+				},
+			],
+			consumers: [
+				{
+					queue: 'kody-pr-123-webhook-dispatch',
+					dead_letter_queue: 'kody-pr-123-webhook-dispatch-dlq',
+				},
+			],
+		})
 		// Preview serves package apps inline on its own origin, so it publishes no
 		// routes and keeps whatever domains and triggers it already had.
 		expect(previewConfig.env?.preview?.routes).toBeUndefined()
@@ -333,20 +362,18 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 	}
 })
 
-test('parseR2BucketListOutput reads bucket names from labelled wrangler output', () => {
-	const output = [
-		'Listing buckets...',
-		'name:           kody-email-blobs',
-		'creation_date:  2026-07-01T00:00:00.000Z',
-		'',
-		'name:           kody-pr-42-email-blobs',
-		'creation_date:  2026-07-02T00:00:00.000Z',
-	].join('\n')
-	expect(parseR2BucketListOutput(output)).toEqual([
-		'kody-email-blobs',
-		'kody-pr-42-email-blobs',
-	])
-	expect(parseR2BucketListOutput('')).toEqual([])
+test('isR2BucketAlreadyExistsOutput recognizes Wrangler bucket-exists errors', () => {
+	expect(
+		isR2BucketAlreadyExistsOutput(
+			'✘ [ERROR] A request to the Cloudflare API (/accounts/abc/r2/buckets) failed.\n\n' +
+				'  The bucket you tried to create already exists, and you own it. [code: 10004]',
+		),
+	).toBe(true)
+	expect(isR2BucketAlreadyExistsOutput('[code: 10004]')).toBe(true)
+	expect(
+		isR2BucketAlreadyExistsOutput('Authentication error [code: 10000]'),
+	).toBe(false)
+	expect(isR2BucketAlreadyExistsOutput('')).toBe(false)
 })
 
 test('Queue and Email Sending subscription ensure creates and reconciles Cloudflare resources', async () => {
@@ -523,6 +550,39 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		},
 		events: [...emailSendingEventTypes],
 	})
+})
+
+test('deleteCloudflareQueue removes an existing queue by id', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						queue_id: 'queue-preview',
+						queue_name: 'kody-pr-123-webhook-dispatch',
+					},
+				],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockResolvedValueOnce(Response.json({ success: true, result: null }))
+
+	await deleteCloudflareQueue({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-pr-123-webhook-dispatch',
+		dryRun: false,
+		fetcher,
+	})
+
+	expect(fetcher).toHaveBeenNthCalledWith(
+		2,
+		'https://api.cloudflare.com/client/v4/accounts/account-1/queues/queue-preview',
+		expect.objectContaining({ method: 'DELETE' }),
+	)
 })
 
 test('Cloudflare API requests retry gateway HTML/text blips then succeed', async () => {
