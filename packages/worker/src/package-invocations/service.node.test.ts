@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import {
 	createExecutePackageInvokeTools,
 	createPackageRuntimeInvokeTools,
@@ -2116,6 +2119,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 })
 
 test('completed keyed invocation reports terminal persistence failure instead of false success', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const db = createDatabase({ failFinish: true })
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockReset()
@@ -2135,13 +2139,13 @@ test('completed keyed invocation reports terminal persistence failure instead of
 	const first = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken(),
+		token: createToken({ sources: ['webhook'] }),
 		request,
 	})
 	const retry = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken(),
+		token: createToken({ sources: ['webhook'] }),
 		request,
 	})
 
