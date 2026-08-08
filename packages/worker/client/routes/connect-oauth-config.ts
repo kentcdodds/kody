@@ -241,11 +241,17 @@ export function parseStoredIntegrationConfig(
 			parsed.platformAppSlug.trim()
 				? parsed.platformAppSlug.trim()
 				: null
+		const platformAllowedScopes = Array.isArray(parsed.platformAllowedScopes)
+			? parsed.platformAllowedScopes.filter(
+					(value): value is string =>
+						typeof value === 'string' && Boolean(value),
+				)
+			: []
 		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
 			return null
 		}
 		return {
-			...(platformAppSlug ? { platformAppSlug } : {}),
+			...(platformAppSlug ? { platformAppSlug, platformAllowedScopes } : {}),
 			name,
 			tokenUrl,
 			apiBaseUrl:
