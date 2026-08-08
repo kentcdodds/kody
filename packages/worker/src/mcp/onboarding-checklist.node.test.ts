@@ -126,11 +126,13 @@ test('search onboarding notice points at /onboarding and goes quiet after dismis
 })
 
 test('first-win Send is done when email_send meter counts even without mailbox', async () => {
-	const { env, seed } = createEnv()
 	const now = new Date('2026-08-08T15:00:00.000Z')
+	const fresh = createEnv()
+	expect(await userHasSentWelcomeEmail({ env: fresh.env, userId, now })).toBe(
+		false,
+	)
 
-	expect(await userHasSentWelcomeEmail({ env, userId, now })).toBe(false)
-
+	const { env, seed } = createEnv()
 	await seed({
 		userId,
 		resource: 'email_sends_per_day',
