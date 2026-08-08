@@ -518,11 +518,9 @@ test(
 			targetKodyId: 'lean-target',
 			callerMarkerVisible: false,
 		})
-		// Unsupported helpers throw teaching errors naming the replacement.
-		expect(payload.removedInvokeCheckedError).toContain(
-			'packages.invokeChecked was removed',
-		)
-		expect(payload.removedCheckError).toContain('packages.check was removed')
+		// The helper object exposes only invoke; unknown properties fail naturally.
+		expect(payload.removedInvokeCheckedError).toContain('is not a function')
+		expect(payload.removedCheckError).toContain('is not a function')
 		// Realm separation in the other direction: the target's globals never
 		// leak back into the caller realm.
 		expect(payload.targetMarkerVisible).toBe(false)
