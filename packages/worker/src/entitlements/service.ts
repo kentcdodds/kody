@@ -34,10 +34,10 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
  * plan CHECK constraint.
  *
  * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
- * requires the real account email + stable id pair so a mismatched caller
- * context cannot resolve another account's plan. Missing emails fail closed
- * to `free` without a reverse lookup. Non-hex userIds short-circuit without
- * touching D1.
+ * uses the real account email + stable id pair when both are available so a
+ * mismatched caller context cannot resolve another account's plan. Background
+ * contexts with a blank/missing email reverse-resolve by stable id. Missing or
+ * invalid stable ids still fail closed to `free` without touching D1.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan): the higher-ranked
  * of the manual grant and Stripe subscription plan is returned (`max` ranks
@@ -51,12 +51,13 @@ export async function getUserPlan(
 	const email = input.email?.trim().toLowerCase()
 	if (!input.userId) return 'free'
 	if (!stableUserIdPattern.test(input.userId)) return 'free'
-	if (!email) return 'free'
 	const row = await db
 		.prepare(
-			`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
+			email
+				? `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
+				: `SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?`,
 		)
-		.bind(email, input.userId)
+		.bind(...(email ? [email, input.userId] : [input.userId]))
 		.first<{ plan: string; stripe_plan: string | null }>()
 	if (!row) return 'free'
 	return resolveEffectivePlan(parseStoredPlanName(row.plan), row.stripe_plan)

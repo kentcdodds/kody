@@ -291,12 +291,13 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
-	// Missing account emails fail closed without reverse-resolving identity.
-	const queryCount = queries.length
-	expect(await getUserPlan(db, { userId, email: null })).toBe('free')
-	expect(await getUserPlan(db, { userId, email: undefined })).toBe('free')
-	expect(await getUserPlan(db, { userId, email: '   ' })).toBe('free')
-	expect(queries).toHaveLength(queryCount)
+	// Background contexts reverse-resolve valid stable ids when their persisted
+	// email is blank or missing.
+	for (const email of [null, undefined, '   ']) {
+		expect(await getUserPlan(db, { userId, email })).toBe('pro')
+		expect(queries.at(-1)?.sql).toContain('WHERE stable_user_id = ?')
+		expect(queries.at(-1)?.params).toEqual([userId])
+	}
 
 	// Mismatched email/stable-id pairs fail closed without warning.
 	expect(
@@ -347,7 +348,8 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 		await getCachedUserPlan(second.db, { userId, email: plannedEmail }),
 	).toBe('free')
 
-	// Anonymous / invalid ids short-circuit without touching the cache or D1.
+	// Blank-email background contexts use their own cache entry and resolve by
+	// stable id. Invalid ids still short-circuit without touching D1.
 	expect(await getCachedUserPlan(db, { userId, email: null })).toBe('free')
 	expect(
 		await getCachedUserPlan(db, { userId: 'user-1', email: plannedEmail }),
@@ -531,7 +533,7 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 	expect(usageQueries()).toHaveLength(3)
 })
 
-test('assertWithinEntitlement enforces concurrent workflow limits without email and reverse-resolves blank emails', async () => {
+test('assertWithinEntitlement enforces concurrent workflow limits for unresolved and max-plan callers', async () => {
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const { db } = createEntitlementsTestDb()
 	// concurrent_workflows occupancy is RunLog-backed; create path passes
@@ -563,7 +565,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits without email 
 	await assertWithinEntitlement({
 		db: underMax.db,
 		userId,
-		email: plannedEmail,
+		email: '',
 		resource: 'concurrent_workflows',
 		getCurrent: async () => freeLimit,
 	})
@@ -574,7 +576,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits without email 
 	const maxDenial = await assertWithinEntitlement({
 		db: atMax.db,
 		userId,
-		email: plannedEmail,
+		email: null,
 		resource: 'concurrent_workflows',
 		getCurrent: async () => maxLimit,
 	}).then(
