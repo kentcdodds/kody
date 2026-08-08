@@ -1205,7 +1205,9 @@ export async function executeJobOnce(input: {
 					const backgroundUser = await resolveBackgroundMcpUser(
 						input.env.APP_DB,
 						input.job.userId,
-					)
+					).catch((error: unknown) => {
+						throw markPreExecutionTransientError(error)
+					})
 					const runtimeCallerContext: PersistedJobCallerContext = {
 						...input.callerContext,
 						executionOrigin: 'background',
@@ -1478,6 +1480,8 @@ async function executeClaimedScheduledJob(input: {
 	const attribution = await resolveScheduledJobRunAttribution({
 		env: input.env,
 		job: input.row.record,
+	}).catch((error: unknown) => {
+		throw markPreExecutionTransientError(error)
 	})
 	const claim = await claimRunRecord({
 		env: input.env,
@@ -1622,7 +1626,6 @@ export async function runDueJobsForUser(input: {
 						db: input.env.APP_DB,
 						userId: input.userId,
 						job: updated,
-						callerContextJson: row.callerContextJson,
 						claimToken,
 						scheduledFor: row.claimed_scheduled_for,
 					})

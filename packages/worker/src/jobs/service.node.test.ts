@@ -33,6 +33,7 @@ import {
 	type JobRecord,
 	type PersistedJobCallerContext,
 } from './types.ts'
+import { TransientJobExecutionError } from './execution-safety.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -54,6 +55,15 @@ const jobManagerMockModule = vi.hoisted(() => ({
 const storageRunnerMockModule = vi.hoisted(() => ({
 	clearStorage: vi.fn(async () => ({ ok: true as const })),
 	getEstimatedBytes: vi.fn(async () => ({ estimatedBytes: 0 })),
+}))
+
+const identityMockModule = vi.hoisted(() => ({
+	resolveBackgroundMcpUser: vi.fn(async (_db: D1Database, userId: string) => ({
+		userId,
+		email: `${userId}@example.com`,
+		username: userId,
+		displayName: userId,
+	})),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -93,12 +103,10 @@ vi.mock('./manager-client.ts', () => ({
 }))
 
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
-	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
-		userId,
-		email: `${userId}@example.com`,
-		username: userId,
-		displayName: userId,
-	}),
+	resolveBackgroundMcpUser: (...args: Array<unknown>) =>
+		identityMockModule.resolveBackgroundMcpUser(
+			...(args as [D1Database, string]),
+		),
 }))
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
@@ -173,6 +181,15 @@ afterEach(() => {
 	storageRunnerMockModule.getEstimatedBytes.mockResolvedValue({
 		estimatedBytes: 0,
 	})
+	identityMockModule.resolveBackgroundMcpUser.mockReset()
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, userId: string) => ({
+			userId,
+			email: `${userId}@example.com`,
+			username: userId,
+			displayName: userId,
+		}),
+	)
 })
 
 function mockRepoPersistence() {
@@ -2201,6 +2218,43 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		code: null,
 		error: 'Job manifest "kody.json" was not found.',
 	})
+})
+
+test('executeJobOnce retries transient background identity lookup failures', async () => {
+	const callerContext = createBaseCallerContext()
+	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
+	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+		new Error('D1_ERROR: Network connection lost.'),
+	)
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-identity-retry',
+		userId: callerContext.user.userId,
+		name: 'Identity retry',
+		sourceId: 'source-identity-retry',
+		publishedCommit: null,
+		storageId: 'job:job-identity-retry',
+		schedule: { type: 'interval', every: '1h' },
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: '2026-08-08T00:00:00.000Z',
+		updatedAt: '2026-08-08T00:00:00.000Z',
+		nextRunAt: '2026-08-08T01:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	}
+
+	await expect(
+		executeJobOnce({
+			env,
+			job,
+			callerContext,
+		}),
+	).rejects.toBeInstanceOf(TransientJobExecutionError)
 })
 
 test('executeJobOnce binds writable storage and overrides persisted interactive origin', async () => {

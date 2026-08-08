@@ -9,6 +9,7 @@ import {
 	jobExecutionLeaseMs,
 	listDueJobRows,
 	maxDueJobsPerAlarm,
+	refreshPackageJobRowIdentity,
 	retryClaimedJobRow,
 	updateJobRow,
 } from './repo.ts'
@@ -308,6 +309,20 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 		claimToken: 'claim-run-anchors',
 	})
 	if (!claimed) throw new Error('Expected job claim.')
+	const refreshedCallerContextJson = JSON.stringify({
+		user: { userId, email: 'refreshed@example.com' },
+	})
+	expect(
+		await refreshPackageJobRowIdentity({
+			db: env.APP_DB,
+			userId,
+			jobId: claimed.id,
+			sourceId: 'refreshed-source',
+			publishedCommit: 'refreshed-commit',
+			callerContextJson: refreshedCallerContextJson,
+			updatedAt: '2026-04-20T12:10:02.000Z',
+		}),
+	).toBe(true)
 	const finalizedAt = '2026-04-20T12:10:05.000Z'
 	expect(
 		await finalizeClaimedJobRow({
@@ -319,7 +334,6 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 				lastRunAt: finalizedAt,
 				lastRunStatus: 'error',
 			},
-			callerContextJson: claimed.callerContextJson,
 			claimToken: 'claim-run-anchors',
 			scheduledFor,
 		}),
@@ -328,6 +342,9 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 		last_run_at: finalizedAt,
 		last_run_status: 'error',
 		last_completed_scheduled_for: scheduledFor,
+		source_id: 'refreshed-source',
+		published_commit: 'refreshed-commit',
+		caller_context_json: refreshedCallerContextJson,
 		record: {
 			lastRunAt: finalizedAt,
 			lastRunStatus: 'error',
@@ -383,7 +400,6 @@ test('ordinary updates cancel claims and completed occurrence guards fence malfo
 			db: env.APP_DB,
 			userId,
 			job: claimed.record,
-			callerContextJson: claimed.callerContextJson,
 			claimToken: 'stale-token',
 			scheduledFor,
 		}),

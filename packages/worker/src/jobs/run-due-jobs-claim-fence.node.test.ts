@@ -327,4 +327,34 @@ test('scheduled package job claims carry package identity and the published sour
 			publishedCommit: 'published-package-commit',
 		}),
 	})
+
+	claimRunRecord.mockClear()
+	retryClaimedJobRow.mockReset()
+	retryClaimedJobRow.mockResolvedValue(true)
+	listDueJobRows.mockResolvedValue([row])
+	claimJobRow.mockResolvedValue(row)
+	getEntitySourceByIdForUser.mockRejectedValueOnce(
+		new Error('D1_ERROR: Network connection lost.'),
+	)
+
+	await expect(
+		runDueJobsForUser({
+			env: { APP_DB: {} } as Env,
+			userId: record.userId,
+			now,
+		}),
+	).resolves.toEqual({
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 0,
+		jobOutcomes: [],
+	})
+	expect(claimRunRecord).not.toHaveBeenCalled()
+	expect(retryClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			jobId: record.id,
+			claimToken: expect.any(String),
+			nextRunAt: '2026-07-30T19:00:05.000Z',
+		}),
+	)
 })
