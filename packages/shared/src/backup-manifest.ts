@@ -1,4 +1,5 @@
 import { canonicalJsonStringify } from './canonical-json.ts'
+import { isRecord } from './is-record.ts'
 
 export const backupManifestSchemaVersion = 2 as const
 export const backupManifestSignatureAlgorithm = 'Ed25519' as const
@@ -46,10 +47,6 @@ export type BackupManifest = {
 
 const sha256Pattern = /^[0-9a-f]{64}$/
 const keyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function hasExactKeys(
 	value: Record<string, unknown>,

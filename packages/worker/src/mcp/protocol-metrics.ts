@@ -31,6 +31,7 @@ import {
 	PROTOCOL_VERSION_META_KEY,
 	isLegacyRequest,
 } from '@modelcontextprotocol/server'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 export type McpProtocolLane = 'legacy' | 'modern'
 
@@ -51,10 +52,6 @@ export type McpProtocolClassification = {
 	 * to the stateless handler so the body is parsed at most once per request.
 	 */
 	parsedBody?: unknown
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function readString(value: unknown): string {

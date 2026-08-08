@@ -1,4 +1,5 @@
 import { canonicalJsonStringify } from './canonical-json.ts'
+import { isRecord } from './is-record.ts'
 
 /**
  * Deliberately small JSON Schema subset for package-event payload contracts.
@@ -37,10 +38,6 @@ const supportedTypes = new Set([
 	'null',
 ])
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 function isNonNegativeInteger(value: unknown): value is number {
 	return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
@@ -63,7 +60,7 @@ export function listJsonSchemaSubsetProblems(
 	schema: unknown,
 	path = '#',
 ): Array<string> {
-	if (!isPlainObject(schema)) {
+	if (!isRecord(schema)) {
 		return [`${path} must be a JSON object schema.`]
 	}
 	const problems: Array<string> = []
@@ -95,7 +92,7 @@ export function listJsonSchemaSubsetProblems(
 	}
 	if ('properties' in schema) {
 		const properties = schema['properties']
-		if (!isPlainObject(properties)) {
+		if (!isRecord(properties)) {
 			problems.push(`${path}.properties must be an object of schemas.`)
 		} else {
 			for (const [key, propertySchema] of Object.entries(properties)) {
@@ -155,7 +152,7 @@ export function listJsonSchemaSubsetProblems(
 function matchesType(type: string, value: unknown): boolean {
 	switch (type) {
 		case 'object':
-			return isPlainObject(value)
+			return isRecord(value)
 		case 'array':
 			return Array.isArray(value)
 		case 'string':
@@ -242,7 +239,7 @@ export function listJsonSchemaSubsetValueErrors(
 			errors.push(`${path} must have at most ${maxItems} items.`)
 		}
 		const items = schema['items']
-		if (isPlainObject(items)) {
+		if (isRecord(items)) {
 			for (const [index, entry] of value.entries()) {
 				errors.push(
 					...listJsonSchemaSubsetValueErrors(items, entry, `${path}[${index}]`),
@@ -250,7 +247,7 @@ export function listJsonSchemaSubsetValueErrors(
 			}
 		}
 	}
-	if (isPlainObject(value)) {
+	if (isRecord(value)) {
 		const required = schema['required']
 		if (Array.isArray(required)) {
 			for (const key of required) {
@@ -262,11 +259,11 @@ export function listJsonSchemaSubsetValueErrors(
 		// Missing `properties` means an empty declared set, so
 		// `additionalProperties: false` rejects every key (standard JSON
 		// Schema behavior).
-		const properties = isPlainObject(schema['properties'])
+		const properties = isRecord(schema['properties'])
 			? schema['properties']
 			: {}
 		for (const [key, propertySchema] of Object.entries(properties)) {
-			if (!(key in value) || !isPlainObject(propertySchema)) continue
+			if (!(key in value) || !isRecord(propertySchema)) continue
 			errors.push(
 				...listJsonSchemaSubsetValueErrors(
 					propertySchema,

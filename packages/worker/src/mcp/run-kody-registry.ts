@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import {
 	resolveProvider,
 	sanitizeToolName,
@@ -15,7 +16,6 @@ import {
 	getAdditionalPropertiesSchema,
 	getArrayItemSchema,
 	getSchemaProperties,
-	isRecord,
 	isSecretInputSchema,
 	resolveCapabilityInputSecrets,
 } from '#mcp/secrets/capability-inputs.ts'

@@ -1,3 +1,5 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
+
 import {
 	type CanonicalResourceId,
 	type EvidenceArtifact,
@@ -15,7 +17,6 @@ import {
 	identitiesEqual,
 	isIsoDate,
 	isNonemptyString,
-	isRecord,
 	parseIdentity,
 	sha256Pattern,
 } from './readiness-validation.ts'

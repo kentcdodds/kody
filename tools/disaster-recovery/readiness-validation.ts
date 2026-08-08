@@ -1,3 +1,5 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
+
 import { type ResourceIdentity } from './readiness-contracts.ts'
 
 export const sha256Pattern = /^[a-f0-9]{64}$/
@@ -18,10 +20,6 @@ export function exactKeys(
 		actual.length === sortedExpected.length &&
 		actual.every((key, index) => key === sortedExpected[index])
 	)
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 export function isNonemptyString(value: unknown): value is string {

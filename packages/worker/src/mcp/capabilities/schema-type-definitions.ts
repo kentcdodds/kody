@@ -1,3 +1,4 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { type CapabilityJsonSchema } from './types.ts'
 
 type TypeDefinitionOptions = {
@@ -182,8 +183,4 @@ function formatComment(
 		...lines.map((line) => `${indent} * ${line}`),
 		`${indent} */`,
 	].join('\n')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
