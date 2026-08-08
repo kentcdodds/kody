@@ -186,8 +186,17 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 	).resolves.toEqual({
 		dueJobCount: 1,
 		successCount: 0,
-		errorCount: 0,
-		jobOutcomes: [],
+		errorCount: 1,
+		jobOutcomes: [
+			{
+				jobId: record.id,
+				scheduleType: 'interval',
+				outcome: 'failure',
+				nextRunAt: '2026-07-30T19:00:05.000Z',
+				deleted: false,
+				error: 'D1_ERROR: Network connection lost.',
+			},
+		],
 	})
 	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
 	expect(finalizeClaimedJobRow).toHaveBeenCalledWith(
