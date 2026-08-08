@@ -443,6 +443,13 @@ Interactive surfaces still carry email (app sessions expose
 the stable userId do not need a separate email hydrate step for entitlement
 checks — `getUserPlan` reverse-resolves for them.
 
+Package-owned scheduled jobs also refresh their persisted caller identity and
+published commit on every package sync, including when schedule, timezone, and
+enabled state are unchanged. Execution rehydrates the account user from the job
+row's stable user ID before exposing storage or nested MCP capabilities. The
+stable-ID plan lookup remains a defense-in-depth fallback for legacy rows whose
+saved caller context predates that refresh behavior.
+
 Inbound email routing has no caller context and resolves the owning account via
 the indexed username lookup (`findPublicUserIdentityByUsername`) — it does not
 use stable-id reverse resolution. `findUserAccountByStableUserId` in
@@ -602,6 +609,17 @@ Rules:
      byte metadata or are derived from D1 and are documented in
      `data-storage.md`.
 
+**Account usage reporting:** `usage_get` and the account usage UI report the
+same two storage components: authoritative D1 payload bytes from UserMeter plus
+the latest non-null estimates in `user_storage_buckets`. A newly inventoried
+bucket with no estimate contributes zero until the estimate-backfill lane or a
+write-target probe records its first measurement. Enforcement remains more
+conservative: it live-probes the bucket being written and every unmeasured
+bucket, then adds those results to the D1 payload counter. Reporting can
+therefore lag enforcement briefly, but it no longer omits all StorageRunner
+bucket usage. The two values are not alternate D1 counters and this change does
+not alter storage-limit semantics.
+
 ### Concurrency
 
 Row-count limits are check-then-insert: the count query and the later insert are
@@ -650,13 +668,13 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
    `limit`, `current`). Build the test user's id with
    `createStableUserIdFromEmail(email)` (or any stored `stable_user_id`) and
    assert plan lookup against the email + stable-id pair; a mismatched pair must
-   resolve as `max`.
+   resolve as `free`.
 
 ## Enforcement points
 
 | Resource                      | Enforcement point                                                                                                                                                                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                                                                                                                       |
+| `scheduled_jobs`              | `createJob` and the full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot)         |
 | `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
 | `package_services`            | `service_start` capability path (`getCurrent` with authoritative `countRunningPackageServices(env)`; no D1 liveness read)                                                                                                             |
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'` (`getCurrent` counts only persistent running rows in the authoritative per-user UserMeter)                                                                                 |

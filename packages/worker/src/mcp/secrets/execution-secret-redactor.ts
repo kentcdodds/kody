@@ -1,3 +1,5 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
+
 export const redactedSecretText = '[REDACTED SECRET]'
 
 export type ExecutionSecretRedactor = {
@@ -21,10 +23,6 @@ export function createExecutionSecretRedactor(): ExecutionSecretRedactor {
 			return redactUnknownSecretValues(value, secretValues)
 		},
 	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function redactUnknownSecretValues(

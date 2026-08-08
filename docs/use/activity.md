@@ -36,14 +36,24 @@ The MCP **`runs`** domain reads and triages the same data:
 - **`run_update`** — mark a retained **error** run as `ignored` or `resolved`
   (or `open` to clear triage), with an optional note — non-destructive soft
   triage; error details stay intact
+- **`run_update_bulk`** — preview (`dry_run`) and soft-triage up to 100 errors
+  at a time by explicit run ids or exact job/package/surface/name/error filters;
+  repeat while `has_more` is true
+
+When a scheduled job later succeeds, Kody automatically marks earlier **open**
+errors for that same `job_id` resolved. Their execution status remains `error`,
+their error details and logs remain inspectable, and errors you explicitly
+ignored are not overwritten.
 
 Search for “runs”, “failures”, “ignore this error”, or “why did my job stop
 working” if your host does not surface those names yet.
 
 ## What is retained
 
-Records are kept about **30 days**, capped per account, and pruned so failures
-tend to outlive successes. Payload bodies for inbound webhooks are never stored
+Records are kept about **30 days** and capped per account. At the count cap,
+handled errors are pruned first, then successes, while open errors are retained
+last. Soft triage never deletes immediately: every row remains inspectable until
+normal retention prunes it. Payload bodies for inbound webhooks are never stored
 — only delivery metadata, a bounded handler-result snapshot when available, and
 logs. Package exports and keyed execute runs similarly retain a small
 `metadata.result` snapshot (truncated when large).

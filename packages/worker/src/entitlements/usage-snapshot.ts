@@ -12,6 +12,7 @@ import {
 	type EntitlementResourceVisibilityKind,
 } from './resource-visibility.ts'
 import { readCurrentEntitlementResourceUsage } from './service.ts'
+import { listUserStorageBucketEstimates } from '#worker/storage-buckets/service.ts'
 
 export const entitlementUsageWarningThreshold = 0.8
 
@@ -35,6 +36,31 @@ export type EntitlementUsageSnapshot = {
 	warnings: Array<EntitlementUsageSnapshotRow>
 }
 
+async function readVisibleEntitlementUsage(input: {
+	db: D1Database
+	env: Env
+	userId: string
+	resource: EntitlementResource
+	now: Date
+}) {
+	const authoritativeUsage = await readCurrentEntitlementResourceUsage({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+		resource: input.resource,
+		now: input.now,
+	})
+	if (input.resource !== 'storage_bytes') return authoritativeUsage
+	const bucketEstimates = await listUserStorageBucketEstimates({
+		env: input.env,
+		userId: input.userId,
+	})
+	return bucketEstimates.reduce(
+		(total, bucket) => total + (bucket.estimatedBytes ?? 0),
+		authoritativeUsage,
+	)
+}
+
 export async function readEntitlementUsageSnapshot(input: {
 	db: D1Database
 	env: Env
@@ -49,7 +75,7 @@ export async function readEntitlementUsageSnapshot(input: {
 			const current =
 				visibility.kind === 'per_unit_max'
 					? 0
-					: await readCurrentEntitlementResourceUsage({
+					: await readVisibleEntitlementUsage({
 							db: input.db,
 							env: input.env,
 							userId: input.usageUserId,

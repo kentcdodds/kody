@@ -1,3 +1,5 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
+
 import { canonicalJson } from './canonical-json.ts'
 import {
 	type EvidenceDetailsByKind,
@@ -14,7 +16,6 @@ import {
 	isNonemptyString,
 	isNonnegativeInteger,
 	isPositiveInteger,
-	isRecord,
 	parseIdentity,
 	sha256Pattern,
 	uuidPattern,

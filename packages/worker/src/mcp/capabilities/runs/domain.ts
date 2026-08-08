@@ -3,6 +3,7 @@ import { capabilityDomainNames } from '../domain-metadata.ts'
 import { runGetCapability } from './run-get.ts'
 import { runListCapability } from './run-list.ts'
 import { runSummaryCapability } from './run-summary.ts'
+import { runUpdateBulkCapability } from './run-update-bulk.ts'
 import { runUpdateCapability } from './run-update.ts'
 
 export const runsDomain = defineDomain({
@@ -30,5 +31,6 @@ export const runsDomain = defineDomain({
 		runGetCapability,
 		runSummaryCapability,
 		runUpdateCapability,
+		runUpdateBulkCapability,
 	],
 })

@@ -1,3 +1,5 @@
+import { isRecord } from './is-record.ts'
+
 export const backupSqlStatsSchemaVersion = 1
 
 /**
@@ -14,10 +16,6 @@ export type BackupSqlStats = {
 	maxStatementBytes: number
 	oversizedStatementCount: number
 	importStatementLimitBytes: number
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {

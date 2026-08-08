@@ -161,6 +161,45 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 						stacktrace: {
 							frames: [
 								{
+									filename: '/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"null is not an object (evaluating 'img.parentNode.removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									filename: '/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterFathomRemoveChildNullSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of null (reading 'removeChild')",
+						stacktrace: {
+							frames: [
+								{
 									abs_path: 'https://heykody.dev/assets/app-chunk.js',
 								},
 							],
@@ -200,6 +239,26 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 							frames: [
 								{
 									abs_path: 'https://cdn.usefathom.com/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"null is not an object (evaluating 'img.parentNode.removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									filename: '/script.js',
 								},
 							],
 						},

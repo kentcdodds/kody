@@ -1,4 +1,5 @@
 import { createPublicKey, verify } from 'node:crypto'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,10 +45,6 @@ function exactKeys(
 		actual.length === sortedExpected.length &&
 		actual.every((key, index) => key === sortedExpected[index])
 	)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 export function parseTrustedPublicKeyRegistry(

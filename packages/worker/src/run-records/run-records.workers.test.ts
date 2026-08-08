@@ -11,6 +11,7 @@ import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
 import {
 	abandonRunRecord,
 	beginRunRecord,
+	bulkUpdateRunErrorTriage,
 	claimRunRecord,
 	clearRunRecords,
 	finishRunRecord,
@@ -21,6 +22,7 @@ import {
 	runLogRpc,
 	snapshotRunRecordResult,
 	summarizeRunRecords,
+	updateRunErrorTriage,
 } from './service.ts'
 import {
 	runRecordMaxLogEntriesPerRun,
@@ -72,6 +74,10 @@ function insertRunRow(
 		finishedAt?: string | null
 		name?: string | null
 		surface?: string
+		jobId?: string | null
+		errorName?: string | null
+		errorMessage?: string | null
+		errorTriage?: 'ignored' | 'resolved' | null
 	},
 ) {
 	const finishedAt = input.finishedAt ?? null
@@ -93,6 +99,16 @@ function insertRunRow(
 		finishedAt == null ? null : 1,
 		input.startedAt,
 		finishedAt ?? input.startedAt,
+	)
+	state.storage.sql.exec(
+		`UPDATE runs
+		SET job_id = ?, error_name = ?, error_message = ?, error_triage = ?
+		WHERE id = ?`,
+		input.jobId ?? null,
+		input.errorName ?? null,
+		input.errorMessage ?? null,
+		input.errorTriage ?? null,
+		input.id,
 	)
 }
 
@@ -195,7 +211,7 @@ test('write surfaces journey', async () => {
 			waitPending.push(promise)
 		},
 	})
-	await expect(finishReturn).resolves.toBeUndefined()
+	await expect(finishReturn).resolves.toBe(true)
 	expect(waitPending).toHaveLength(1)
 	await drainWaitUntil(waitPending)
 	const waitDetail = await getRunRecord({
@@ -402,18 +418,305 @@ test('summarizeRunRecords returns totals and per-surface error counts', async ()
 	)
 })
 
+test('later job success soft-resolves prior open errors for only that job', async () => {
+	const userId = uniqueUserId('auto-resolve-job')
+	const baseMs = Date.now() - 60_000
+	const finish = async (input: {
+		id: string
+		jobId: string
+		status: 'success' | 'error'
+		error?: Error
+		offset: number
+	}) => {
+		await finishRunRecord({
+			env,
+			handle: {
+				id: input.id,
+				userId,
+				startedAt: new Date(baseMs + input.offset).toISOString(),
+				persistence: 'eager',
+				context: baseContext({
+					surface: 'job',
+					jobId: input.jobId,
+					name: 'recurring-job',
+				}),
+			},
+			status: input.status,
+			error: input.error,
+		})
+	}
+
+	await finish({
+		id: 'same-job-open',
+		jobId: 'job-a',
+		status: 'error',
+		error: new Error('first failure'),
+		offset: 0,
+	})
+	await finish({
+		id: 'same-job-ignored',
+		jobId: 'job-a',
+		status: 'error',
+		error: new Error('known noise'),
+		offset: 1,
+	})
+	await finish({
+		id: 'other-job-open',
+		jobId: 'job-b',
+		status: 'error',
+		error: new Error('still broken'),
+		offset: 2,
+	})
+	const ignored = await updateRunErrorTriage({
+		env,
+		userId,
+		runId: 'same-job-ignored',
+		errorTriage: 'ignored',
+		triageNote: 'user chose to ignore',
+	})
+	expect(ignored.ok).toBe(true)
+
+	await finish({
+		id: 'same-job-success',
+		jobId: 'job-a',
+		status: 'success',
+		offset: 3,
+	})
+
+	const all = await listRunRecords({
+		env,
+		userId,
+		filter: { errorTriage: 'all' },
+		limit: 10,
+	})
+	const byId = new Map(all.runs.map((run) => [run.id, run]))
+	expect(byId.get('same-job-open')).toMatchObject({
+		status: 'error',
+		errorMessage: 'first failure',
+		errorTriage: 'resolved',
+		triageNote: 'auto-resolved: later success of the same job',
+		triagedBy: 'system:auto-resolve',
+	})
+	expect(byId.get('same-job-ignored')).toMatchObject({
+		status: 'error',
+		errorTriage: 'ignored',
+		triageNote: 'user chose to ignore',
+	})
+	expect(byId.get('other-job-open')).toMatchObject({
+		status: 'error',
+		errorTriage: null,
+	})
+	expect(byId.get('same-job-success')).toMatchObject({
+		status: 'success',
+		errorTriage: null,
+	})
+	const summary = await summarizeRunRecords({ env, userId })
+	expect(summary).toMatchObject({
+		total: 4,
+		errors: 1,
+		ignored: 1,
+		resolved: 1,
+	})
+})
+
+test('bulk triage honors the public limit of 100 across write paths', async () => {
+	const runScenario = async (limit: number) => {
+		const userId = uniqueUserId(`bulk-triage-${limit}`)
+		const jobId = `exact-job-${limit}`
+		const runIds = Array.from(
+			{ length: limit },
+			(_, index) => `bulk-${limit}-${index}`,
+		)
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			for (let index = 0; index < limit; index += 1) {
+				const startedAt = new Date(Date.now() - index).toISOString()
+				insertRunRow(state, {
+					id: `bulk-${limit}-${index}`,
+					status: 'error',
+					startedAt,
+					finishedAt: startedAt,
+					jobId,
+					errorName: 'Error',
+					errorMessage: 'reproducible failure',
+				})
+			}
+		})
+
+		await expect(
+			bulkUpdateRunErrorTriage({
+				env,
+				userId,
+				filter: { jobId },
+				errorTriage: 'resolved',
+				triageNote: 'production cleanup',
+				limit,
+				dryRun: true,
+			}),
+		).resolves.toMatchObject({
+			matchedRunIds: expect.arrayContaining([`bulk-${limit}-0`]),
+			updatedCount: 0,
+			hasMore: false,
+		})
+		await expect(
+			bulkUpdateRunErrorTriage({
+				env,
+				userId,
+				filter: { jobId },
+				errorTriage: 'resolved',
+				triageNote: 'production cleanup',
+				limit,
+				dryRun: false,
+			}),
+		).resolves.toMatchObject({
+			updatedCount: limit,
+			hasMore: false,
+		})
+
+		const resolved = await listRunRecords({
+			env,
+			userId,
+			filter: { jobId, errorTriage: 'resolved' },
+			limit,
+		})
+		expect(resolved.runs).toHaveLength(limit)
+		expect(resolved.runs.every((run) => run.errorTriage === 'resolved')).toBe(
+			true,
+		)
+
+		await expect(
+			bulkUpdateRunErrorTriage({
+				env,
+				userId,
+				filter: { jobId, errorTriage: 'resolved' },
+				errorTriage: null,
+				limit,
+			}),
+		).resolves.toMatchObject({
+			updatedCount: limit,
+			hasMore: false,
+		})
+
+		await expect(
+			bulkUpdateRunErrorTriage({
+				env,
+				userId,
+				runIds,
+				errorTriage: 'ignored',
+				limit,
+			}),
+		).resolves.toMatchObject({
+			updatedCount: limit,
+			hasMore: false,
+		})
+		await expect(
+			bulkUpdateRunErrorTriage({
+				env,
+				userId,
+				runIds,
+				errorTriage: null,
+				limit,
+			}),
+		).resolves.toMatchObject({
+			updatedCount: limit,
+			hasMore: false,
+		})
+
+		const reopened = await listRunRecords({
+			env,
+			userId,
+			filter: { jobId, errorTriage: 'open' },
+			limit,
+		})
+		expect(reopened.runs).toHaveLength(limit)
+		expect(reopened.runs.every((run) => run.errorTriage === null)).toBe(true)
+	}
+
+	await runScenario(25)
+	await runScenario(100)
+})
+
+test('bulk triage rolls back earlier chunks when a later chunk fails', async () => {
+	const userId = uniqueUserId('bulk-triage-atomic')
+	const jobId = 'atomic-job'
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		const baseMs = Date.now()
+		for (let index = 0; index < 100; index += 1) {
+			const startedAt = new Date(baseMs - index).toISOString()
+			insertRunRow(state, {
+				id: `atomic-${index}`,
+				status: 'error',
+				startedAt,
+				finishedAt: startedAt,
+				jobId,
+				errorName: 'Error',
+				errorMessage: 'atomic failure fixture',
+			})
+		}
+		// Resolve chunks contain 94 ids. This sentinel is selected into the
+		// second chunk so the first UPDATE has already executed when it aborts.
+		state.storage.sql.exec(
+			`CREATE TRIGGER reject_atomic_sentinel
+			BEFORE UPDATE OF error_triage ON runs
+			WHEN OLD.id = 'atomic-99'
+			BEGIN
+				SELECT RAISE(ABORT, 'forced second chunk failure');
+			END`,
+		)
+	})
+
+	await expect(
+		bulkUpdateRunErrorTriage({
+			env,
+			userId,
+			filter: { jobId },
+			errorTriage: 'resolved',
+			limit: 100,
+		}),
+	).rejects.toThrow(/forced second chunk failure/)
+
+	const triagedCount = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) =>
+			state.storage.sql
+				.exec<{ count: number }>(
+					`SELECT COUNT(*) AS count FROM runs
+					WHERE error_triage IS NOT NULL`,
+				)
+				.one().count,
+	)
+	expect(triagedCount).toBe(0)
+})
+
 test('cap and stale retention journey', async () => {
-	// --- successes deleted before errors when over cap ---
+	// --- handled duplicate errors are deleted before successes and open errors ---
 	{
 		const userId = uniqueUserId('retention-priority')
 		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 		const baseMs = Date.now() - 3_600_000
-		const successCount = runRecordMaxRunsPerUser
-		const errorCount = 10
+		const triagedErrorCount = runRecordMaxRunsPerUser - 20
+		const successCount = 20
+		const openErrorCount = 10
 		await runInDurableObject(stub, async (instance: RunLog, state) => {
 			expect(instance).toBeInstanceOf(RunLog)
-			for (let index = 0; index < successCount; index += 1) {
+			for (let index = 0; index < triagedErrorCount; index += 1) {
 				const startedAt = new Date(baseMs + index).toISOString()
+				insertRunRow(state, {
+					id: `duplicate-error-${index}`,
+					status: 'error',
+					startedAt,
+					finishedAt: startedAt,
+					errorMessage: 'same recurring failure',
+					errorTriage: 'resolved',
+				})
+			}
+			for (let index = 0; index < successCount; index += 1) {
+				const startedAt = new Date(
+					baseMs + triagedErrorCount + index,
+				).toISOString()
 				insertRunRow(state, {
 					id: `success-${index}`,
 					status: 'success',
@@ -421,25 +724,27 @@ test('cap and stale retention journey', async () => {
 					finishedAt: startedAt,
 				})
 			}
-			for (let index = 0; index < errorCount; index += 1) {
-				const startedAt = new Date(baseMs + successCount + index).toISOString()
+			for (let index = 0; index < openErrorCount; index += 1) {
+				const startedAt = new Date(
+					baseMs + triagedErrorCount + successCount + index,
+				).toISOString()
 				insertRunRow(state, {
-					id: `error-${index}`,
+					id: `open-error-${index}`,
 					status: 'error',
 					startedAt,
 					finishedAt: startedAt,
+					errorMessage: 'still broken',
 				})
 			}
 		})
-		await armRetentionOnNextFinish(userId, successCount + errorCount)
+		const seeded = triagedErrorCount + successCount + openErrorCount
+		await armRetentionOnNextFinish(userId, seeded)
 		await finishRunRecord({
 			env,
 			handle: {
 				id: 'retention-trigger',
 				userId,
-				startedAt: new Date(
-					baseMs + runRecordMaxRunsPerUser + 20,
-				).toISOString(),
+				startedAt: new Date(baseMs + seeded + 20).toISOString(),
 				persistence: 'eager',
 				context: baseContext({ surface: 'job', name: 'trigger' }),
 			},
@@ -448,24 +753,37 @@ test('cap and stale retention journey', async () => {
 		const rpc = runLogRpc({ env, userId })
 		const summary = await rpc.summarize({ since: '1970-01-01T00:00:00.000Z' })
 		expect(summary.total).toBe(runRecordMaxRunsPerUser)
-		expect(summary.errors).toBe(10)
-		const remainingSuccess = await runInDurableObject(
+		expect(summary.errors).toBe(openErrorCount)
+		const retainedCounts = await runInDurableObject(
 			stub,
 			async (_instance: RunLog, state) =>
 				state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE status = 'success'`,
+					.exec<{
+						successes: number
+						triaged_errors: number
+						open_errors: number
+					}>(
+						`SELECT
+							SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successes,
+							SUM(CASE WHEN status = 'error' AND error_triage IS NOT NULL THEN 1 ELSE 0 END) AS triaged_errors,
+							SUM(CASE WHEN status = 'error' AND error_triage IS NULL THEN 1 ELSE 0 END) AS open_errors
+						FROM runs`,
 					)
-					.one().n,
+					.one(),
 		)
-		expect(remainingSuccess).toBe(runRecordMaxRunsPerUser - 10)
+		expect(retainedCounts).toEqual({
+			successes: successCount + 1,
+			triaged_errors:
+				runRecordMaxRunsPerUser - successCount - openErrorCount - 1,
+			open_errors: openErrorCount,
+		})
 		expect(
 			await runInDurableObject(
 				stub,
 				async (_instance: RunLog, state) =>
 					state.storage.sql
 						.exec<{ n: number }>(
-							`SELECT COUNT(*) AS n FROM runs WHERE id = 'success-0'`,
+							`SELECT COUNT(*) AS n FROM runs WHERE id = 'duplicate-error-0'`,
 						)
 						.one().n,
 			),
@@ -635,6 +953,55 @@ test('cap and stale retention journey', async () => {
 		expect(healed?.run.status).toBe('error')
 		expect(healed?.run.errorName).toBe('Interrupted')
 		expect(healed?.run.surface).toBe('execute')
+	}
+
+	// --- a real late finish replaces reconciled Interrupted (outcome is known) ---
+	{
+		const userId = uniqueUserId('late-finish-after-interrupted')
+		const staleStartedAt = new Date(
+			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+		).toISOString()
+		const handle = {
+			id: 'late-finish-after-interrupted',
+			userId,
+			startedAt: staleStartedAt,
+			persistence: 'eager' as const,
+			context: baseContext({ surface: 'export', name: './slow-export' }),
+		}
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			insertRunRow(state, {
+				id: handle.id,
+				status: 'running',
+				startedAt: staleStartedAt,
+				finishedAt: null,
+				surface: 'export',
+			})
+		})
+		const interrupted = await getRunRecord({
+			env,
+			userId,
+			runId: handle.id,
+		})
+		expect(interrupted?.run.errorName).toBe('Interrupted')
+
+		await finishRunRecord({
+			env,
+			handle,
+			status: 'success',
+			result: { completed: true },
+		})
+		const completed = await getRunRecord({
+			env,
+			userId,
+			runId: handle.id,
+		})
+		expect(completed?.run.status).toBe('success')
+		expect(completed?.run.errorName).toBeNull()
+		expect(completed?.run.metadata).toMatchObject({
+			result: { completed: true },
+		})
 	}
 
 	// --- stale rows become cap-evictable after reconcile ---

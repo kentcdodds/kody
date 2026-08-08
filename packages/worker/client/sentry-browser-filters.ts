@@ -221,15 +221,17 @@ export function filterBrowserInjectedGlobalNoiseSentryEvent<
  * Fathom Analytics (`cdn.usefathom.com/script.js`) tracks pageviews with a
  * temporary `<img>` beacon and removes it from `load`/`error` handlers via
  * `img.parentNode.removeChild(img)`. When the beacon was already detached
- * (SPA navigation / soft reload), `parentNode` is null and Chromium throws.
- * Signature from production issue 7653117289 / KODY-CLOUDFLARE-3Q.
+ * (SPA navigation / soft reload), `parentNode` is null and the browser throws.
+ * Chromium: issue 7653117289 / KODY-CLOUDFLARE-3Q. Mobile Safari/WebKit:
+ * issue 7661146106 / KODY-CLOUDFLARE-4C.
  *
  * Match is intentionally narrow: removeChild-on-null TypeError text AND a
- * stack frame from the Fathom CDN. Never blanket-drop removeChild errors from
- * app code.
+ * stack frame attributable to the Fathom script (CDN hostname or the
+ * cross-origin-sanitized `/script.js` path). Never blanket-drop removeChild
+ * errors from app code.
  */
 const fathomRemoveChildNullMessage =
-	/^(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)$/
+	/^(?:(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)|(?:TypeError:\s*)?null is not an object \(evaluating ['"][^'"]*\.removeChild[^'"]*['"]\))$/
 
 const fathomAnalyticsHostname = 'cdn.usefathom.com'
 
@@ -239,13 +241,18 @@ export function isFathomRemoveChildNullMessage(message: string) {
 
 export function isFathomAnalyticsStackFrameUrl(url: string) {
 	try {
-		return (
+		if (
 			new URL(url, 'https://sentry.invalid').hostname ===
 			fathomAnalyticsHostname
-		)
+		) {
+			return true
+		}
 	} catch {
-		return false
+		// fall through to sanitized cross-origin paths
 	}
+	// Cross-origin Fathom frames often sanitize to "/script.js" in Sentry.
+	const normalized = url.replace(/\\/g, '/')
+	return normalized === '/script.js'
 }
 
 export function isFathomRemoveChildNullSentryEvent(

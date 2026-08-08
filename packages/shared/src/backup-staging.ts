@@ -1,3 +1,5 @@
+import { isRecord } from './is-record.ts'
+
 /**
  * Contract between the production-side disaster-recovery exporter (runs inside
  * the primary worker's account) and the backup control plane (runs in the
@@ -202,10 +204,6 @@ export type LegacyStagingSummary = Omit<
 	'schemaVersion' | 'mailboxIndex' | 'runLogIndex'
 > & {
 	schemaVersion: typeof backupStagingLegacySchemaVersion
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isFileSummary(value: unknown): value is StagingFileSummary {

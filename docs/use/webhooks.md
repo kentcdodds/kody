@@ -76,8 +76,18 @@ delivery history also appears under [Activity](./activity.md)
   distinction).
 - Payload > **1 MB** → **413**.
 - About **60 requests/minute** per minted webhook → **429**.
-- `ack`: **202** `{ "ok": true }` immediately; export runs in the background.
+- `ack`: **202** `{ "ok": true }` after Kody durably queues the delivery; the
+  export runs in the background. A temporary queue failure returns **503** so
+  the provider can retry without Kody claiming acceptance. Ack deliveries must
+  fit the queue-safe serialized limit (about **120 KB**); larger authenticated
+  payloads return **413**.
 - `sync`: waits for the export JSON result (**502** on failure).
+
+Background delivery retries keep the same idempotency key, so a transient
+platform persistence failure does not duplicate a completed export. Package
+exports still have the normal execution limit (about 90 seconds); packages that
+exceed it receive an explicit timeout failure and should split or checkpoint
+their work.
 
 ## Payload shape seen by the package export
 

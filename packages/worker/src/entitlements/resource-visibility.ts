@@ -1,4 +1,4 @@
-import type { EntitlementResource } from '#universal/plans.ts'
+import { type EntitlementResource } from '#universal/plans.ts'
 
 export type EntitlementResourceGroup = 'daily' | 'counts' | 'storage' | 'limits'
 
@@ -110,7 +110,7 @@ export const entitlementResourceVisibility: Record<
 		group: 'storage',
 		kind: 'counter',
 		whatCounts:
-			'Durable payload bytes across D1-backed data (email bodies, values, secrets, jobs, package metadata, and similar).',
+			'Durable payload bytes across D1-backed data plus inventoried package, job, execute, service, and repo-session storage buckets.',
 		howToReduce: 'Delete stored content you no longer need.',
 	},
 	concurrent_workflows: {

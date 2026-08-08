@@ -5,6 +5,7 @@ import {
 	parseBackupManifest,
 	type BackupManifest,
 } from '@kody-internal/shared/backup-manifest.ts'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 import { canonicalJson, sha256 } from './canonical-json.ts'
 import {
@@ -19,10 +20,6 @@ const base64Pattern =
 const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/
 const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function exactKeys(
 	value: Record<string, unknown>,

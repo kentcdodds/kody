@@ -132,7 +132,9 @@ type FakeLedgerRow = {
  * ledger RPCs (the real DO semantics are covered by
  * run-records/invocation-ledger.workers.test.ts against the actual binding).
  */
-function createFakeRunLog(options: { failClaim?: boolean } = {}) {
+function createFakeRunLog(
+	options: { failClaim?: boolean; failFinish?: boolean } = {},
+) {
 	const ledgerRows: Array<FakeLedgerRow> = []
 	const runRows = new Map<string, Record<string, unknown>>()
 	const jobObservability = new Map<
@@ -242,6 +244,7 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 			run: Record<string, unknown> | null
 			logs: Array<unknown>
 		}) {
+			if (options.failFinish) throw new Error('RunLog finish unavailable')
 			const row =
 				ledgerRows.find((candidate) => candidate.id === input.invocationId) ??
 				null
@@ -452,7 +455,9 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
  * passing against this is the proof that no D1 ledger read or write remains
  * anywhere on the invoke path.
  */
-function createDatabase(options: { failClaim?: boolean } = {}) {
+function createDatabase(
+	options: { failClaim?: boolean; failFinish?: boolean } = {},
+) {
 	const runLog = createFakeRunLog(options)
 	const db = {
 		prepare(query: string) {
@@ -2107,6 +2112,59 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 	expect(consoleError).toHaveBeenCalledWith(
 		'package invocation idempotency persistence failed',
 		expect.any(Error),
+	)
+})
+
+test('completed keyed invocation reports terminal persistence failure instead of false success', async () => {
+	consoleError.mockImplementation(() => {})
+	const db = createDatabase({ failFinish: true })
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockReset()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { handled: true },
+		logs: ['completed'],
+	})
+	const request = {
+		packageIdOrKodyId: 'discord-gateway',
+		exportName: 'dispatch-message-created',
+		params: { content: 'hi' },
+		idempotencyKey: 'evt-finish-failure',
+		source: 'webhook',
+		topic: 'webhook:discord-gateway:message',
+	}
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({ sources: ['webhook'] }),
+		request,
+	})
+	const retry = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({ sources: ['webhook'] }),
+		request,
+	})
+
+	expect(first).toMatchObject({
+		status: 500,
+		body: {
+			ok: false,
+			error: { code: 'idempotency_persistence_failed' },
+		},
+	})
+	expect(retry).toMatchObject({
+		status: 409,
+		body: {
+			ok: false,
+			error: { code: 'invocation_in_progress' },
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	expect(db.runLog.ledgerRows[0]?.status).toBe('in_progress')
+	expect(consoleError).toHaveBeenCalledWith(
+		'package invocation completed-result persistence failed',
+		'RunLog finish unavailable',
 	)
 })
 

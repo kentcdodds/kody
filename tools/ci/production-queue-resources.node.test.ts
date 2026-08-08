@@ -23,6 +23,10 @@ function createProductionEnv() {
 					binding: 'PACKAGE_EVENTS_DISPATCH_QUEUE',
 					queue: 'kody-package-events-dispatch',
 				},
+				{
+					binding: 'WEBHOOK_DISPATCH_QUEUE',
+					queue: 'kody-webhook-dispatch',
+				},
 			],
 			consumers: [
 				{
@@ -69,6 +73,14 @@ function createProductionEnv() {
 					max_concurrency: 16,
 					dead_letter_queue: 'kody-package-events-dispatch-dlq',
 				},
+				{
+					queue: 'kody-webhook-dispatch',
+					max_batch_size: 1,
+					max_batch_timeout: 5,
+					max_retries: 10,
+					max_concurrency: 16,
+					dead_letter_queue: 'kody-webhook-dispatch-dlq',
+				},
 			],
 		},
 	}
@@ -104,6 +116,8 @@ test('production queue config requires all consumers and consistent producers', 
 		packageEventsDispatchQueueName: 'kody-package-events-dispatch',
 		packageEventsDispatchDeadLetterQueueName:
 			'kody-package-events-dispatch-dlq',
+		webhookDispatchQueueName: 'kody-webhook-dispatch',
+		webhookDispatchDeadLetterQueueName: 'kody-webhook-dispatch-dlq',
 	})
 
 	const missingFeedbackConsumer = createProductionEnv()
@@ -113,7 +127,7 @@ test('production queue config requires all consumers and consistent producers', 
 			productionEnv: missingFeedbackConsumer,
 			configPath: 'wrangler.jsonc',
 		}),
-	).toThrow('exactly 6 production Queue consumers')
+	).toThrow('exactly 7 production Queue consumers')
 
 	const mismatchedProducer = createProductionEnv()
 	mismatchedProducer.queues.producers[0] = {

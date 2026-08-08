@@ -329,15 +329,15 @@ export async function invokeSavedPackageModule(input: {
 							idempotencyKey: input.idempotencyKey,
 						})
 			} catch (error) {
-				// The module already succeeded; do not poison the key with a
-				// stored permanent failure. Return the result to the caller and
-				// leave the claim in progress so the stale-reclaim path decides
-				// what happens on a later retry.
-				console.warn(
+				// The module succeeded, but the atomic ledger + run terminal write
+				// did not. Do not report success: durable callers must retry the
+				// same key until the terminal response can be persisted. The live
+				// claim prevents that retry from duplicating the completed work.
+				console.error(
 					'package invocation completed-result persistence failed',
 					getErrorMessage(error),
 				)
-				return outcome.response
+				return buildPersistenceFailedResponse()
 			}
 		}
 		case 'failed': {

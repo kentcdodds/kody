@@ -26,13 +26,14 @@ import {
 	syncPackageJobsForPackage,
 	updateJob,
 } from './service.ts'
-import { listJobRowsByUserId } from './repo.ts'
+import { listJobRowsByUserId, refreshPackageJobRowIdentity } from './repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
 	type PersistedJobCallerContext,
 } from './types.ts'
+import { TransientJobExecutionError } from './execution-safety.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -54,6 +55,15 @@ const jobManagerMockModule = vi.hoisted(() => ({
 const storageRunnerMockModule = vi.hoisted(() => ({
 	clearStorage: vi.fn(async () => ({ ok: true as const })),
 	getEstimatedBytes: vi.fn(async () => ({ estimatedBytes: 0 })),
+}))
+
+const identityMockModule = vi.hoisted(() => ({
+	resolveBackgroundMcpUser: vi.fn(async (_db: D1Database, userId: string) => ({
+		userId,
+		email: `${userId}@example.com`,
+		username: userId,
+		displayName: userId,
+	})),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -93,12 +103,10 @@ vi.mock('./manager-client.ts', () => ({
 }))
 
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
-	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
-		userId,
-		email: `${userId}@example.com`,
-		username: userId,
-		displayName: userId,
-	}),
+	resolveBackgroundMcpUser: (...args: Array<unknown>) =>
+		identityMockModule.resolveBackgroundMcpUser(
+			...(args as [D1Database, string]),
+		),
 }))
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
@@ -173,6 +181,15 @@ afterEach(() => {
 	storageRunnerMockModule.getEstimatedBytes.mockResolvedValue({
 		estimatedBytes: 0,
 	})
+	identityMockModule.resolveBackgroundMcpUser.mockReset()
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, userId: string) => ({
+			userId,
+			email: `${userId}@example.com`,
+			username: userId,
+			displayName: userId,
+		}),
+	)
 })
 
 function mockRepoPersistence() {
@@ -433,9 +450,12 @@ function createDatabase(
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
-								return selectOne(
-									'users',
-									(row) => row['email'] === params[0],
+								const pairLookup = query.includes('email = ?')
+								return selectOne('users', (row) =>
+									pairLookup
+										? row['email'] === params[0] &&
+											row['stable_user_id'] === params[1]
+										: row['stable_user_id'] === params[0],
 								) as T | null
 							}
 							if (query.includes('SELECT COUNT(*) AS count FROM jobs')) {
@@ -580,7 +600,12 @@ function createDatabase(
 							// Cold bootstrap probes for a users row; none seeded here so
 							// null triggers synthetic-context free-plan allow.
 							if (query.includes('SELECT 1 AS present FROM users')) {
-								return null
+								return selectOne(
+									'users',
+									(row) => row['stable_user_id'] === params[0],
+								)
+									? ({ present: 1 } as T)
+									: null
 							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
@@ -859,6 +884,36 @@ function createDatabase(
 									changes += 1
 								}
 								return { meta: { changes, last_row_id: 0 } }
+							}
+							if (
+								query.startsWith('UPDATE jobs SET') &&
+								query.includes(
+									'source_id = ?, published_commit = ?, caller_context_json = ?, updated_at = ?',
+								)
+							) {
+								const existingJob = selectOne(
+									'jobs',
+									(existing) =>
+										existing['id'] === params[4] &&
+										existing['user_id'] === params[5],
+								)
+								if (!existingJob) {
+									return { meta: { changes: 0, last_row_id: 0 } }
+								}
+								upsert(
+									'jobs',
+									(existing) =>
+										existing['id'] === params[4] &&
+										existing['user_id'] === params[5],
+									{
+										...existingJob,
+										source_id: params[0],
+										published_commit: params[1],
+										caller_context_json: params[2],
+										updated_at: params[3],
+									},
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const existingJob = selectOne(
@@ -1252,6 +1307,15 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 				},
 			}),
 		})
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		entityKind: 'package',
+		entityId: input.packageId,
+		publishedCommit: 'package-published-commit',
+		manifestPath: 'package.json',
+	})
 
 	expect(
 		await syncPackageJobsForPackage({
@@ -1276,7 +1340,25 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	).toBe(true)
 	const rowsAfterAdd = await listJobRowsByUserId(env.APP_DB, input.userId)
 	expect(rowsAfterAdd).toHaveLength(1)
+	expect(rowsAfterAdd[0]?.record.publishedCommit).toBe(
+		'package-published-commit',
+	)
 	const nextRunAtAfterAdd = rowsAfterAdd[0]?.record.nextRunAt
+	await refreshPackageJobRowIdentity({
+		db: env.APP_DB,
+		userId: input.userId,
+		jobId: rowsAfterAdd[0]!.record.id,
+		sourceId: input.sourceId,
+		publishedCommit: null,
+		callerContextJson: JSON.stringify({
+			...rowsAfterAdd[0]!.callerContext,
+			user: {
+				...rowsAfterAdd[0]!.callerContext?.user,
+				email: '',
+			},
+		}),
+		updatedAt: rowsAfterAdd[0]!.record.updatedAt,
+	})
 
 	expect(
 		await syncPackageJobsForPackage({
@@ -1286,6 +1368,10 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	).toBe(false)
 	const rowsAfterNoOp = await listJobRowsByUserId(env.APP_DB, input.userId)
 	expect(rowsAfterNoOp[0]?.record.nextRunAt).toBe(nextRunAtAfterAdd)
+	expect(rowsAfterNoOp[0]?.record.publishedCommit).toBe(
+		'package-published-commit',
+	)
+	expect(rowsAfterNoOp[0]?.callerContext?.user.email).toBe('user-1@example.com')
 
 	expect(
 		await syncPackageJobsForPackage({
@@ -1311,6 +1397,90 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 		}),
 	).toBe(true)
 	expect(await listJobRowsByUserId(env.APP_DB, input.userId)).toEqual([])
+})
+
+test('package job sync preflights the full addition set without partial inserts', async () => {
+	const email = 'package-sync-free@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const now = '2026-08-08T12:00:00.000Z'
+	const existingJobCount = planLimits.free.maxScheduledJobs - 1
+	const db = createDatabase({
+		users: [{ email, plan: 'free', stable_user_id: userId }],
+		jobs: Array.from({ length: existingJobCount }, (_, index) => ({
+			id: `existing-${index}`,
+			user_id: userId,
+			name: `Existing ${index}`,
+			source_id: `existing-source-${index}`,
+			published_commit: 'existing-commit',
+			repo_check_policy_json: null,
+			storage_id: `job:existing-${index}`,
+			params_json: null,
+			schedule_json: JSON.stringify({ type: 'interval', every: '1h' }),
+			timezone: 'UTC',
+			enabled: 1,
+			kill_switch_enabled: 0,
+			preserved: 0,
+			expires_at: null,
+			caller_context_json: JSON.stringify(
+				createPlanUserCallerContext({ userId, email }),
+			),
+			created_at: now,
+			updated_at: now,
+			last_run_at: null,
+			last_run_status: null,
+			next_run_at: '2026-08-08T13:00:00.000Z',
+		})),
+	})
+	const env = createJobServiceTestEnv({ APP_DB: db })
+	await insertPublishedEntitySource({
+		db,
+		userId,
+		sourceId: 'new-package-source',
+		entityKind: 'package',
+		entityId: 'new-package',
+		publishedCommit: 'new-package-commit',
+		manifestPath: 'package.json',
+	})
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@owner/new-package',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'new-package',
+				description: 'Package entitlement test',
+				jobs: {
+					first: {
+						entry: './first.ts',
+						schedule: { type: 'interval', every: '1h' },
+					},
+					second: {
+						entry: './second.ts',
+						schedule: { type: 'interval', every: '1h' },
+					},
+				},
+			},
+		}),
+	})
+
+	const error = await syncPackageJobsForPackage({
+		env,
+		userId,
+		baseUrl: 'https://heykody.dev',
+		packageId: 'new-package',
+		sourceId: 'new-package-source',
+		manifest,
+	}).catch((caught: unknown) => caught)
+	expect(isEntitlementLimitError(error)).toBe(true)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected package sync to enforce the scheduled job limit.')
+	}
+	expect(error.details).toMatchObject({
+		resource: 'scheduled_jobs',
+		plan: 'free',
+		limit: planLimits.free.maxScheduledJobs,
+		current: existingJobCount,
+	})
+	expect(await listJobRowsByUserId(db, userId)).toHaveLength(existingJobCount)
 })
 
 test('create, update, and delete jobs sync the job manager alarm', async () => {
@@ -1460,7 +1630,13 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
 	const plannedEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
-			users: [{ email: plannedEmail, plan: 'free' }],
+			users: [
+				{
+					email: plannedEmail,
+					plan: 'free',
+					stable_user_id: plannedUserId,
+				},
+			],
 		}),
 	})
 	mockRepoPersistence()
@@ -1502,7 +1678,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	const maxLimit = planLimits.max.maxScheduledJobs
 	const belowMaxEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
-			users: [{ email: maxEmail, plan: 'max' }],
+			users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
 			jobs: Array.from(
 				{ length: planLimits.pro.maxScheduledJobs },
 				(_, index) => ({
@@ -1525,7 +1701,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 
 	const atCeilingEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
-			users: [{ email: maxEmail, plan: 'max' }],
+			users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
 			jobs: Array.from({ length: maxLimit }, (_, index) => ({
 				id: `max-job-${index}`,
 				user_id: maxUserId,
@@ -1550,6 +1726,62 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 		limit: maxLimit,
 		current: maxLimit,
 	})
+})
+
+test('blank-email package context uses the max plan for storage writes and nested job scheduling', async () => {
+	const email = 'package-owner@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const meter = createInMemoryUserMeterEnv()
+	const db = createDatabase({
+		users: [{ email, plan: 'max', stable_user_id: userId }],
+		jobs: Array.from(
+			{ length: planLimits.free.maxScheduledJobs },
+			(_, index) => ({
+				id: `existing-job-${index}`,
+				user_id: userId,
+			}),
+		),
+	})
+	const env = createJobServiceTestEnv({ APP_DB: db }, meter)
+	mockRepoPersistence()
+	await meter.seedStorageBytes({
+		userId,
+		bytes: planLimits.free.maxStorageBytes + 1,
+	})
+	const stalePackageContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		executionOrigin: 'background',
+		user: {
+			userId,
+			email: '',
+			displayName: 'Package Owner',
+		},
+		storageContext: {
+			sessionId: null,
+			appId: 'package-1',
+			packageId: 'package-1',
+			storageId: 'job:package-job:package-1:parent',
+		},
+	}) as PersistedJobCallerContext
+
+	await expect(
+		saveValue({
+			env,
+			userId,
+			userEmail: stalePackageContext.user.email,
+			scope: 'app',
+			name: 'checkpoint',
+			value: 'stored above the free-plan byte limit',
+			storageContext: stalePackageContext.storageContext,
+		}),
+	).resolves.toMatchObject({ name: 'checkpoint' })
+	await expect(
+		createJob({
+			env,
+			callerContext: stalePackageContext,
+			body: buildEntitlementTestJobBody(1),
+		}),
+	).resolves.toMatchObject({ name: 'Quota job 1' })
 })
 
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
@@ -2072,6 +2304,43 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	})
 })
 
+test('executeJobOnce retries transient background identity lookup failures', async () => {
+	const callerContext = createBaseCallerContext()
+	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
+	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+		new Error('D1_ERROR: Network connection lost.'),
+	)
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-identity-retry',
+		userId: callerContext.user.userId,
+		name: 'Identity retry',
+		sourceId: 'source-identity-retry',
+		publishedCommit: null,
+		storageId: 'job:job-identity-retry',
+		schedule: { type: 'interval', every: '1h' },
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: '2026-08-08T00:00:00.000Z',
+		updatedAt: '2026-08-08T00:00:00.000Z',
+		nextRunAt: '2026-08-08T01:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	}
+
+	await expect(
+		executeJobOnce({
+			env,
+			job,
+			callerContext,
+		}),
+	).rejects.toBeInstanceOf(TransientJobExecutionError)
+})
+
 test('executeJobOnce binds writable storage and overrides persisted interactive origin', async () => {
 	// Usage rollup writes are best-effort and fail against this fake env.
 	silenceIncidentalRuntimeWarnings()
@@ -2258,6 +2527,10 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 			env,
 			expect.objectContaining({
 				executionOrigin: 'background',
+				user: expect.objectContaining({
+					userId: callerContext.user.userId,
+					email: 'user-123@example.com',
+				}),
 			}),
 			expect.any(Object),
 			expect.any(Object),

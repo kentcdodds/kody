@@ -10,18 +10,24 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
-import { invokePackageExport } from '#worker/package-invocations/service.ts'
-import { recordRunRecord } from '#worker/run-records/service.ts'
 import {
 	webhookUrlSecretMatches,
 	verifyWebhookHmacSignature,
 } from './crypto.ts'
+import {
+	dispatchWebhookInvocation,
+	readWebhookInvocationResult,
+	recordWebhookDelivery,
+} from './delivery.ts'
+import {
+	enqueueWebhookDispatch,
+	getWebhookDispatchQueueMessageBytes,
+	webhookDispatchQueueMessageMaxBytes,
+	type WebhookDispatchQueueMessage,
+} from './dispatch-queue-producer.ts'
 import { collectSafeWebhookHeaders } from './headers.ts'
 import { getWebhookEndpointByKey } from './repo.ts'
 import {
-	type WebhookDeliveryOutcome,
-	type WebhookEndpointRecord,
 	type WebhookExportParams,
 	webhookMaxPayloadBytes,
 	webhookRateLimitConfig,
@@ -77,13 +83,27 @@ function formatPayloadLimitLabel(maxBytes: number) {
 	return `${maxBytes} bytes`
 }
 
-function tooLargeResponse() {
+function tooLargeResponse(maxBytes = webhookMaxPayloadBytes) {
 	return jsonResponse(
 		{
 			ok: false,
 			error: {
 				code: 'payload_too_large',
-				message: `Webhook payload exceeds the ${formatPayloadLimitLabel(webhookMaxPayloadBytes)} limit.`,
+				message: `Webhook payload exceeds the ${formatPayloadLimitLabel(maxBytes)} limit.`,
+			},
+		},
+		{ status: 413 },
+	)
+}
+
+function ackQueueMessageTooLargeResponse() {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'payload_too_large',
+				message:
+					'Webhook payload is too large for asynchronous delivery (120 KB serialized limit).',
 			},
 		},
 		{ status: 413 },
@@ -121,56 +141,21 @@ function unauthorizedSignatureResponse() {
 	)
 }
 
+function dispatchUnavailableResponse() {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'webhook_dispatch_unavailable',
+				message: 'Webhook dispatch is temporarily unavailable. Please retry.',
+			},
+		},
+		{ status: 503 },
+	)
+}
+
 function waitUntilFrom(ctx?: ExecutionContext) {
 	return ctx ? (promise: Promise<unknown>) => ctx.waitUntil(promise) : undefined
-}
-
-async function recordDelivery(input: {
-	env: Env
-	endpoint: WebhookEndpointRecord
-	kodyId: string
-	outcome: WebhookDeliveryOutcome
-	httpStatus: number
-	error?: string | null
-	payloadBytes: number
-	invocationId?: string
-	/** Handler return value from the bound package export (bounded on finish). */
-	result?: unknown
-	startedAt: string
-	waitUntil?: (promise: Promise<unknown>) => void
-}) {
-	try {
-		const status = input.outcome === 'delivered' ? 'success' : 'error'
-		await recordRunRecord({
-			env: input.env,
-			userId: input.endpoint.userId,
-			context: {
-				surface: 'webhook',
-				name: input.endpoint.webhookName,
-				packageId: input.endpoint.packageId,
-				kodyId: input.kodyId,
-				invocationId: input.invocationId ?? crypto.randomUUID(),
-				metadata: {
-					endpointId: input.endpoint.id,
-					httpStatus: input.httpStatus,
-					payloadBytes: input.payloadBytes,
-					outcome: input.outcome,
-				},
-			},
-			status,
-			error: input.error ?? undefined,
-			result: input.result,
-			startedAt: input.startedAt,
-			waitUntil: input.waitUntil,
-		})
-	} catch (error) {
-		console.error('[webhooks] failed to record delivery', error)
-	}
-}
-
-function readInvocationHandlerResult(body: unknown): unknown {
-	if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
-	return (body as Record<string, unknown>)['result']
 }
 
 async function readBodyWithCap(
@@ -234,42 +219,6 @@ function buildExportParams(input: {
 			json: parseJsonBody(input.bodyText),
 		},
 	}
-}
-
-async function dispatchWebhookInvocation(input: {
-	env: Env
-	baseUrl: string
-	endpoint: WebhookEndpointRecord
-	packageKodyId: string
-	exportName: string
-	params: WebhookExportParams
-	idempotencyKey: string
-}) {
-	const remoteConnectors = await listAttachedRemoteConnectorRefs({
-		env: input.env,
-		userId: input.endpoint.userId,
-	})
-	return invokePackageExport({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		token: {
-			tokenId: `internal:webhook:${input.endpoint.id}`,
-			userId: input.endpoint.userId,
-			packageIds: [input.endpoint.packageId],
-			packageKodyIds: [input.packageKodyId],
-			exportNames: [input.exportName],
-			sources: ['webhook'],
-			remoteConnectors,
-		},
-		request: {
-			packageIdOrKodyId: input.endpoint.packageId,
-			exportName: input.exportName,
-			params: input.params,
-			idempotencyKey: input.idempotencyKey,
-			source: 'webhook',
-			topic: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
-		},
-	})
 }
 
 async function runWithTimeout<T>(
@@ -373,7 +322,7 @@ export async function handleWebhookIngressRequest(
 	}
 	// Republished package removed/renamed the webhook → deactivate ingress.
 	if (!declared) {
-		await recordDelivery({
+		await recordWebhookDelivery({
 			env,
 			endpoint,
 			kodyId: savedPackage.kodyId,
@@ -391,7 +340,7 @@ export async function handleWebhookIngressRequest(
 		await assertAccountWritable(env, endpoint.userId)
 	} catch (error) {
 		if (!(error instanceof AccountDeletionInProgressError)) throw error
-		await recordDelivery({
+		await recordWebhookDelivery({
 			env,
 			endpoint,
 			kodyId: savedPackage.kodyId,
@@ -416,7 +365,7 @@ export async function handleWebhookIngressRequest(
 
 	const bodyResult = await readBodyWithCap(request, webhookMaxPayloadBytes)
 	if (!bodyResult.ok) {
-		await recordDelivery({
+		await recordWebhookDelivery({
 			env,
 			endpoint,
 			kodyId: savedPackage.kodyId,
@@ -440,7 +389,7 @@ export async function handleWebhookIngressRequest(
 		const headerName = declared.verification.header
 		const provided = request.headers.get(headerName)
 		if (!provided) {
-			await recordDelivery({
+			await recordWebhookDelivery({
 				env,
 				endpoint,
 				kodyId: savedPackage.kodyId,
@@ -464,7 +413,7 @@ export async function handleWebhookIngressRequest(
 			},
 		})
 		if (!resolved.found || !resolved.value) {
-			await recordDelivery({
+			await recordWebhookDelivery({
 				env,
 				endpoint,
 				kodyId: savedPackage.kodyId,
@@ -486,7 +435,7 @@ export async function handleWebhookIngressRequest(
 			provided,
 		})
 		if (!valid) {
-			await recordDelivery({
+			await recordWebhookDelivery({
 				env,
 				endpoint,
 				kodyId: savedPackage.kodyId,
@@ -517,53 +466,52 @@ export async function handleWebhookIngressRequest(
 	const idempotencyKey = `webhook:${endpoint.id}:${deliveryId}`
 
 	if (declared.responseMode === 'ack') {
-		const ackResponse = jsonResponse({ ok: true }, { status: 202 })
-		const invokePromise = (async () => {
-			try {
-				const response = await dispatchWebhookInvocation({
-					env,
-					baseUrl,
-					endpoint,
-					packageKodyId: savedPackage.kodyId,
-					exportName: declared.exportName,
-					params,
-					idempotencyKey,
-				})
-				const ok = response.status >= 200 && response.status < 300
-				await recordDelivery({
-					env,
-					endpoint,
-					kodyId: savedPackage.kodyId,
-					outcome: ok ? 'delivered' : 'failed',
-					httpStatus: ok ? 202 : 502,
-					error: ok ? null : `invocation_status_${response.status}`,
-					payloadBytes: bodyBytes.byteLength,
-					invocationId: deliveryId,
-					result: readInvocationHandlerResult(response.body),
-					startedAt: receivedAt,
-					waitUntil,
-				})
-			} catch (error) {
-				await recordDelivery({
-					env,
-					endpoint,
-					kodyId: savedPackage.kodyId,
-					outcome: 'failed',
-					httpStatus: 502,
-					error: error instanceof Error ? error.message : 'invocation_failed',
-					payloadBytes: bodyBytes.byteLength,
-					invocationId: deliveryId,
-					startedAt: receivedAt,
-					waitUntil,
-				})
-			}
-		})()
-		if (ctx) {
-			ctx.waitUntil(invokePromise)
-		} else {
-			void invokePromise
+		const message: WebhookDispatchQueueMessage = {
+			endpoint: {
+				id: endpoint.id,
+				userId: endpoint.userId,
+				packageId: endpoint.packageId,
+				webhookName: endpoint.webhookName,
+			},
+			packageKodyId: savedPackage.kodyId,
+			exportName: declared.exportName,
+			params,
+			idempotencyKey,
+			deliveryId,
+			payloadBytes: bodyBytes.byteLength,
+			receivedAt,
 		}
-		return ackResponse
+		if (
+			getWebhookDispatchQueueMessageBytes(message) >
+			webhookDispatchQueueMessageMaxBytes
+		) {
+			await recordWebhookDelivery({
+				env,
+				endpoint,
+				kodyId: savedPackage.kodyId,
+				outcome: 'rejected',
+				httpStatus: 413,
+				error: 'payload_too_large_for_ack_queue',
+				payloadBytes: bodyBytes.byteLength,
+				invocationId: deliveryId,
+				startedAt: receivedAt,
+				waitUntil,
+			})
+			return ackQueueMessageTooLargeResponse()
+		}
+		try {
+			await enqueueWebhookDispatch({
+				queue: env.WEBHOOK_DISPATCH_QUEUE,
+				message,
+			})
+		} catch (error) {
+			console.error('webhook-dispatch-enqueue-failed', {
+				endpointId: endpoint.id,
+				error,
+			})
+			return dispatchUnavailableResponse()
+		}
+		return jsonResponse({ ok: true }, { status: 202 })
 	}
 
 	try {
@@ -580,7 +528,7 @@ export async function handleWebhookIngressRequest(
 			webhookSyncInvocationTimeoutMs,
 		)
 		const ok = response.status >= 200 && response.status < 300
-		await recordDelivery({
+		await recordWebhookDelivery({
 			env,
 			endpoint,
 			kodyId: savedPackage.kodyId,
@@ -589,7 +537,7 @@ export async function handleWebhookIngressRequest(
 			error: ok ? null : `invocation_status_${response.status}`,
 			payloadBytes: bodyBytes.byteLength,
 			invocationId: deliveryId,
-			result: readInvocationHandlerResult(response.body),
+			result: readWebhookInvocationResult(response.body),
 			startedAt: receivedAt,
 			waitUntil,
 		})
@@ -607,7 +555,7 @@ export async function handleWebhookIngressRequest(
 		}
 		return jsonResponse(response.body, { status: response.status })
 	} catch (error) {
-		await recordDelivery({
+		await recordWebhookDelivery({
 			env,
 			endpoint,
 			kodyId: savedPackage.kodyId,

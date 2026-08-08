@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { type RunRecordHandle } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchRunErrorSubscriptionEvents: vi.fn(async () => []),
@@ -132,13 +133,25 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 		userId: 'user-1',
 		context: { surface: 'job', name: 'daily' },
 	})
-	await finishRunRecord({
-		env,
-		handle: rpcFailHandle,
-		status: 'error',
-		error: new Error('boom'),
-	})
+	await expect(
+		finishRunRecord({
+			env,
+			handle: rpcFailHandle,
+			status: 'error',
+			error: new Error('boom'),
+		}),
+	).resolves.toBe(false)
 	expect(mocks.dispatchRunErrorSubscriptionEvents).not.toHaveBeenCalled()
+
+	mocks.finishRun.mockRejectedValueOnce(new Error('do unavailable'))
+	await expect(
+		recordRunRecord({
+			env,
+			userId: 'user-1',
+			context: { surface: 'webhook', name: 'durable-hook' },
+			status: 'success',
+		}),
+	).resolves.toBeNull()
 
 	mocks.dispatchRunErrorSubscriptionEvents.mockRejectedValueOnce(
 		new Error('dispatch exploded'),
@@ -155,11 +168,54 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 			status: 'error',
 			error: new Error('boom'),
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBe(true)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-error-subscription-dispatch-failed',
 		expect.any(Error),
 	)
+})
+
+test('finishRunRecord awaits the terminal Durable Object write before scheduling side effects', async () => {
+	let releaseFinish!: () => void
+	const finishGate = new Promise<void>((resolve) => {
+		releaseFinish = resolve
+	})
+	const finishRun = vi.fn(async () => {
+		await finishGate
+		return { ok: true }
+	})
+	const env = createEnv({
+		RUN_LOG: {
+			idFromName: () => ({ toString: () => 'run-log-id' }),
+			get: () => ({ finishRun }),
+		} as unknown as Env['RUN_LOG'],
+	})
+	const waitUntil = vi.fn<(promise: Promise<unknown>) => void>()
+	const handle: RunRecordHandle = {
+		id: 'slow-export-run',
+		userId: 'user-1',
+		startedAt: new Date().toISOString(),
+		persistence: 'eager',
+		context: { surface: 'export', name: './slow-export' },
+	}
+
+	let settled = false
+	const finishing = finishRunRecord({
+		env,
+		handle,
+		status: 'success',
+		waitUntil,
+	}).then(() => {
+		settled = true
+	})
+	await Promise.resolve()
+	expect(settled).toBe(false)
+	expect(waitUntil).not.toHaveBeenCalled()
+
+	releaseFinish()
+	await finishing
+	expect(finishRun).toHaveBeenCalledTimes(1)
+	expect(waitUntil).toHaveBeenCalledTimes(1)
 })
 
 test('activation reads never throw when RunLog is missing or RPC fails', async () => {

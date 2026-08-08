@@ -20,6 +20,7 @@ import {
 	type RunLogIndex,
 	type StorageIndex,
 } from '@kody-internal/shared/backup-staging.ts'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 import {
 	BackupError,
@@ -51,10 +52,6 @@ function hex(buffer: ArrayBuffer): string {
 async function sha256Bytes(bytes: Uint8Array): Promise<string> {
 	const copy = Uint8Array.from(bytes)
 	return hex(await crypto.subtle.digest('SHA-256', copy))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function parseStorageIndex(value: unknown, day: string): StorageIndex {

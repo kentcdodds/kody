@@ -22,13 +22,18 @@ import {
 	scheduledDispatchQueueBinding,
 	scheduledDispatchQueueName,
 } from '../../packages/worker/src/scheduled/scheduled-dispatch-queue-names.ts'
+import {
+	webhookDispatchDeadLetterQueueName,
+	webhookDispatchQueueBinding,
+	webhookDispatchQueueName,
+} from '../../packages/worker/src/webhooks/dispatch-queue-names.ts'
 
 const emailDeliveryQueueName = 'kody-email-delivery'
 const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
 const expectedMaxBatchSize = 10
 const expectedMaxBatchTimeout = 5
 const expectedMaxRetries = 3
-const expectedConsumerCount = 6
+const expectedConsumerCount = 7
 
 function readQueueConsumer(input: {
 	consumers: Array<unknown>
@@ -38,6 +43,7 @@ function readQueueConsumer(input: {
 	maxBatchSize?: number
 	maxBatchTimeout?: number
 	maxConcurrency?: number
+	maxRetries?: number
 }) {
 	const value = input.consumers.find((entry) => {
 		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
@@ -55,7 +61,7 @@ function readQueueConsumer(input: {
 		consumer.max_batch_size !== (input.maxBatchSize ?? expectedMaxBatchSize) ||
 		consumer.max_batch_timeout !==
 			(input.maxBatchTimeout ?? expectedMaxBatchTimeout) ||
-		consumer.max_retries !== expectedMaxRetries ||
+		consumer.max_retries !== (input.maxRetries ?? expectedMaxRetries) ||
 		(input.maxConcurrency !== undefined &&
 			consumer.max_concurrency !== input.maxConcurrency)
 	) {
@@ -149,6 +155,15 @@ export function parseProductionQueueResources(input: {
 		configPath: input.configPath,
 		maxConcurrency: 16,
 	})
+	const webhookDispatch = readQueueConsumer({
+		consumers,
+		queueName: webhookDispatchQueueName,
+		deadLetterQueueName: webhookDispatchDeadLetterQueueName,
+		configPath: input.configPath,
+		maxBatchSize: 1,
+		maxConcurrency: 16,
+		maxRetries: 10,
+	})
 	const producers = queueConfig.producers
 	if (!Array.isArray(producers)) {
 		throw new Error(
@@ -179,6 +194,12 @@ export function parseProductionQueueResources(input: {
 		queueName: packageEventsDispatchQueueName,
 		configPath: input.configPath,
 	})
+	readQueueProducer({
+		producers,
+		binding: webhookDispatchQueueBinding,
+		queueName: webhookDispatchQueueName,
+		configPath: input.configPath,
+	})
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,
@@ -195,5 +216,7 @@ export function parseProductionQueueResources(input: {
 		packageEventsDispatchQueueName: packageEventsDispatch.queue,
 		packageEventsDispatchDeadLetterQueueName:
 			packageEventsDispatch.deadLetterQueue,
+		webhookDispatchQueueName: webhookDispatch.queue,
+		webhookDispatchDeadLetterQueueName: webhookDispatch.deadLetterQueue,
 	}
 }

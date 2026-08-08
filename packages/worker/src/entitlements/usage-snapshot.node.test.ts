@@ -26,6 +26,7 @@ function createUsageTestDb(input: {
 	email: string
 	repoCount?: number
 	packageCount?: number
+	storageBucketEstimates?: Array<number | null>
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	return {
@@ -55,8 +56,22 @@ function createUsageTestDb(input: {
 								void params
 								return null
 							},
-							async all() {
-								return { results: [] }
+							async all<T>() {
+								if (normalized.includes('from user_storage_buckets')) {
+									if (params[0] !== stableUserId) {
+										return { results: [] as Array<T> }
+									}
+									return {
+										results: (input.storageBucketEstimates ?? []).map(
+											(estimatedBytes, index) => ({
+												storageId: `package-${index}`,
+												kind: 'package',
+												estimatedBytes,
+											}),
+										),
+									} as { results: Array<T> }
+								}
+								return { results: [] as Array<T> }
 							},
 						}
 					},
@@ -73,6 +88,7 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 	const { stableUserId, db } = createUsageTestDb({
 		email,
 		packageCount: 9,
+		storageBucketEstimates: [2_000, null, 3_000],
 	})
 	const env = withUsageEnv({ APP_DB: db })
 	await env.meter.seed({
@@ -80,6 +96,10 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 		resource: 'email_sends_per_day',
 		day,
 		count: 9,
+	})
+	await env.meter.seedStorageBytes({
+		userId: stableUserId,
+		bytes: 1_000,
 	})
 	const snapshot = await readEntitlementUsageSnapshot({
 		db,
@@ -99,7 +119,22 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 		(row) => row.resource === 'saved_packages',
 	)
 	expect(packages?.overEightyPercent).toBe(false)
+	expect(
+		snapshot.resources.find((row) => row.resource === 'storage_bytes')?.current,
+	).toBe(6_000)
 	expect(snapshot.resources.map((row) => row.resource)).toEqual(
 		accountUsageEntitlementResources,
 	)
+
+	const otherUserSnapshot = await readEntitlementUsageSnapshot({
+		db,
+		env: env as Env,
+		usageUserId: testStableUserIdFromEmail('other-user@example.com'),
+		plan: 'free',
+		now,
+	})
+	expect(
+		otherUserSnapshot.resources.find((row) => row.resource === 'storage_bytes')
+			?.current,
+	).toBe(0)
 })
