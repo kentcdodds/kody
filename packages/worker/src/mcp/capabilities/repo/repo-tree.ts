@@ -1,4 +1,7 @@
-import { getErrorCauseChain, getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	getErrorCauseChain,
+	getErrorMessage,
+} from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'

@@ -27,12 +27,14 @@ function createContext() {
 }
 
 test('repo_tree maps missing-path ENOENT to McpCallerError', async () => {
-	const tree = vi.fn().mockRejectedValue(
-		Object.assign(
-			new Error('ENOENT: no such file or directory: /session/docs'),
-			{ code: 'ENOENT' },
-		),
-	)
+	const tree = vi
+		.fn()
+		.mockRejectedValue(
+			Object.assign(
+				new Error('ENOENT: no such file or directory: /session/docs'),
+				{ code: 'ENOENT' },
+			),
+		)
 	mocks.repoSessionRpc.mockReturnValue({ tree })
 
 	const error = await repoTreeCapability
