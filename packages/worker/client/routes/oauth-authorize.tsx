@@ -249,6 +249,16 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		return nextSession
 	}
 
+	function readEffectiveSession() {
+		const appSession = readAppSession(handle)
+		return {
+			session:
+				sessionOverride === undefined ? appSession.session : sessionOverride,
+			sessionStatus:
+				sessionOverride === undefined ? appSession.status : ('ready' as const),
+		}
+	}
+
 	async function handleContinueAfterVerify() {
 		const nextSession = await refreshSession()
 		activeInfoRequestId += 1
@@ -343,7 +353,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const hasSession = Boolean(readAppSession(handle).session?.email)
+		const hasSession = Boolean(readEffectiveSession().session?.email)
 		await submitDecision(
 			'approve',
 			hasSession ? undefined : event.currentTarget,
@@ -357,11 +367,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		if (typeof document !== 'undefined' && turnstileSiteKey) {
 			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
 		}
-		const appSession = readAppSession(handle)
-		const session =
-			sessionOverride === undefined ? appSession.session : sessionOverride
-		const sessionStatus =
-			sessionOverride === undefined ? appSession.status : 'ready'
+		const { session, sessionStatus } = readEffectiveSession()
 		const currentHref = readCurrentRouterHref(handle)
 		const currentSearch = readRouterSearch(handle)
 		// Consume on every render so same-path preload-then-commit refreshes
