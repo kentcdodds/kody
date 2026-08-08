@@ -668,7 +668,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
    `limit`, `current`). Build the test user's id with
    `createStableUserIdFromEmail(email)` (or any stored `stable_user_id`) and
    assert plan lookup against the email + stable-id pair; a mismatched pair must
-   resolve as `max`.
+   resolve as `free`.
 
 ## Enforcement points
 
