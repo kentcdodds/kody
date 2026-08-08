@@ -433,9 +433,12 @@ function createDatabase(
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
-								return selectOne(
-									'users',
-									(row) => row['email'] === params[0],
+								const pairLookup = query.includes('email = ?')
+								return selectOne('users', (row) =>
+									pairLookup
+										? row['email'] === params[0] &&
+											row['stable_user_id'] === params[1]
+										: row['stable_user_id'] === params[0],
 								) as T | null
 							}
 							if (query.includes('SELECT COUNT(*) AS count FROM jobs')) {
@@ -580,7 +583,12 @@ function createDatabase(
 							// Cold bootstrap probes for a users row; none seeded here so
 							// null triggers synthetic-context free-plan allow.
 							if (query.includes('SELECT 1 AS present FROM users')) {
-								return null
+								return selectOne(
+									'users',
+									(row) => row['stable_user_id'] === params[0],
+								)
+									? ({ present: 1 } as T)
+									: null
 							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
@@ -1521,7 +1529,13 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
 	const plannedEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
-			users: [{ email: plannedEmail, plan: 'free' }],
+			users: [
+				{
+					email: plannedEmail,
+					plan: 'free',
+					stable_user_id: plannedUserId,
+				},
+			],
 		}),
 	})
 	mockRepoPersistence()
@@ -1563,7 +1577,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	const maxLimit = planLimits.max.maxScheduledJobs
 	const belowMaxEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
-			users: [{ email: maxEmail, plan: 'max' }],
+			users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
 			jobs: Array.from(
 				{ length: planLimits.pro.maxScheduledJobs },
 				(_, index) => ({
@@ -1586,7 +1600,7 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 
 	const atCeilingEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
-			users: [{ email: maxEmail, plan: 'max' }],
+			users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
 			jobs: Array.from({ length: maxLimit }, (_, index) => ({
 				id: `max-job-${index}`,
 				user_id: maxUserId,
@@ -1611,6 +1625,62 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 		limit: maxLimit,
 		current: maxLimit,
 	})
+})
+
+test('blank-email package context uses the max plan for storage writes and nested job scheduling', async () => {
+	const email = 'package-owner@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const meter = createInMemoryUserMeterEnv()
+	const db = createDatabase({
+		users: [{ email, plan: 'max', stable_user_id: userId }],
+		jobs: Array.from(
+			{ length: planLimits.free.maxScheduledJobs },
+			(_, index) => ({
+				id: `existing-job-${index}`,
+				user_id: userId,
+			}),
+		),
+	})
+	const env = createJobServiceTestEnv({ APP_DB: db }, meter)
+	mockRepoPersistence()
+	await meter.seedStorageBytes({
+		userId,
+		bytes: planLimits.free.maxStorageBytes + 1,
+	})
+	const stalePackageContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		executionOrigin: 'background',
+		user: {
+			userId,
+			email: '',
+			displayName: 'Package Owner',
+		},
+		storageContext: {
+			sessionId: null,
+			appId: 'package-1',
+			packageId: 'package-1',
+			storageId: 'job:package-job:package-1:parent',
+		},
+	}) as PersistedJobCallerContext
+
+	await expect(
+		saveValue({
+			env,
+			userId,
+			userEmail: stalePackageContext.user.email,
+			scope: 'app',
+			name: 'checkpoint',
+			value: 'stored above the free-plan byte limit',
+			storageContext: stalePackageContext.storageContext,
+		}),
+	).resolves.toMatchObject({ name: 'checkpoint' })
+	await expect(
+		createJob({
+			env,
+			callerContext: stalePackageContext,
+			body: buildEntitlementTestJobBody(1),
+		}),
+	).resolves.toMatchObject({ name: 'Quota job 1' })
 })
 
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
@@ -2319,6 +2389,10 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 			env,
 			expect.objectContaining({
 				executionOrigin: 'background',
+				user: expect.objectContaining({
+					userId: callerContext.user.userId,
+					email: 'user-123@example.com',
+				}),
 			}),
 			expect.any(Object),
 			expect.any(Object),

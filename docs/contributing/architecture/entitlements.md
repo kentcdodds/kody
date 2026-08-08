@@ -443,6 +443,13 @@ Interactive surfaces still carry email (app sessions expose
 the stable userId do not need a separate email hydrate step for entitlement
 checks — `getUserPlan` reverse-resolves for them.
 
+Package-owned scheduled jobs also refresh their persisted caller identity and
+published commit on every package sync, including when schedule, timezone, and
+enabled state are unchanged. Execution rehydrates the account user from the job
+row's stable user ID before exposing storage or nested MCP capabilities. The
+stable-ID plan lookup remains a defense-in-depth fallback for legacy rows whose
+saved caller context predates that refresh behavior.
+
 Inbound email routing has no caller context and resolves the owning account via
 the indexed username lookup (`findPublicUserIdentityByUsername`) — it does not
 use stable-id reverse resolution. `findUserAccountByStableUserId` in
@@ -601,6 +608,17 @@ Rules:
      `email_messages.raw_size`, or Vectorize: those stores either lack reliable
      byte metadata or are derived from D1 and are documented in
      `data-storage.md`.
+
+**Account usage reporting:** `usage_get` and the account usage UI report the
+same two storage components: authoritative D1 payload bytes from UserMeter plus
+the latest non-null estimates in `user_storage_buckets`. A newly inventoried
+bucket with no estimate contributes zero until the estimate-backfill lane or a
+write-target probe records its first measurement. Enforcement remains more
+conservative: it live-probes the bucket being written and every unmeasured
+bucket, then adds those results to the D1 payload counter. Reporting can
+therefore lag enforcement briefly, but it no longer omits all StorageRunner
+bucket usage. The two values are not alternate D1 counters and this change does
+not alter storage-limit semantics.
 
 ### Concurrency
 

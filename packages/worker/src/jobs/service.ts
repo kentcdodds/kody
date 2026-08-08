@@ -1202,9 +1202,14 @@ export async function executeJobOnce(input: {
 					}
 					completedOccurrence = true
 				} else {
+					const backgroundUser = await resolveBackgroundMcpUser(
+						input.env.APP_DB,
+						input.job.userId,
+					)
 					const runtimeCallerContext: PersistedJobCallerContext = {
 						...input.callerContext,
 						executionOrigin: 'background',
+						user: backgroundUser,
 						storageContext: {
 							sessionId: input.callerContext.storageContext?.sessionId ?? null,
 							appId: input.callerContext.storageContext?.appId ?? null,
