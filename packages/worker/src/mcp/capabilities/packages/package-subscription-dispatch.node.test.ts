@@ -27,6 +27,7 @@ vi.mock('#worker/email/package-subscriptions.ts', () => ({
 			attachments: input.attachments,
 		}),
 	),
+	inboundEmailReceiptTopic: 'email.message.received',
 	inboundEmailQuarantinedTopic: 'email.message.quarantined',
 }))
 
