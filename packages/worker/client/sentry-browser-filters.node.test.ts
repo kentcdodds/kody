@@ -7,6 +7,7 @@ import {
 	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 	filterMetaMaskExtensionSentryEvent,
+	filterTwitterInAppBrowserConfigSentryEvent,
 } from './sentry-browser-filters.ts'
 
 test('browser Sentry filters drop AbortError and Firefox Xray noise and keep real errors', () => {
@@ -293,6 +294,74 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 								{
 									filename:
 										'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	// Twitter/X iOS in-app browser chrome CONFIG (issue 7659616372 /
+	// KODY-CLOUDFLARE-43). Requires both the CONFIG wording and a chrome
+	// stack function — bare CONFIG ReferenceErrors from app code stay.
+	expect(
+		filterTwitterInAppBrowserConfigSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: CONFIG",
+						stacktrace: {
+							frames: [
+								{
+									function: 'updateFooterPositions',
+									filename: 'https://heykody.app/',
+								},
+								{
+									function: 'updateGapFiller',
+									filename: 'https://heykody.app/',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterTwitterInAppBrowserConfigSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: CONFIG",
+						stacktrace: {
+							frames: [
+								{
+									function: 'boot',
+									filename: 'https://heykody.app/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: 'CONFIG is not defined',
+						stacktrace: {
+							frames: [
+								{
+									function: 'updateGapFiller',
+									abs_path: 'https://heykody.app/',
 								},
 							],
 						},

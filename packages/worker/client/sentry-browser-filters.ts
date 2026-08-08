@@ -7,6 +7,7 @@ type SentryStackFrame = {
 	filename?: string
 	abs_path?: string
 	absPath?: string
+	function?: string
 }
 
 type SentryExceptionValue = {
@@ -43,6 +44,18 @@ function sentryEventStackFrameUrls(event: SentryErrorEventLike) {
 		}
 	}
 	return urls
+}
+
+function sentryEventStackFrameFunctions(event: SentryErrorEventLike) {
+	const names: Array<string> = []
+	for (const value of event.exception?.values ?? []) {
+		for (const frame of value.stacktrace?.frames ?? []) {
+			if (typeof frame.function === 'string' && frame.function.length > 0) {
+				names.push(frame.function)
+			}
+		}
+	}
+	return names
 }
 
 /**
@@ -369,6 +382,68 @@ export function filterMetaMaskExtensionSentryEvent<
 	return event
 }
 
+/**
+ * Twitter/X iOS in-app browser chrome (`updateFooterPositions` /
+ * `updateGapFiller`) references a host-page `CONFIG` global that Kody never
+ * defines. WebKit reports it as an unhandled `ReferenceError` attributed to
+ * the document URL (no Twitter bundle frames). Signature from production
+ * issue 7659616372 / KODY-CLOUDFLARE-43 (browser tag "Twitter 11.82").
+ *
+ * Match is intentionally narrow: CONFIG ReferenceError wording AND a stack
+ * frame named `updateFooterPositions` or `updateGapFiller`. Never
+ * blanket-drop bare `CONFIG` ReferenceErrors from app code.
+ */
+const twitterInAppBrowserConfigMessage =
+	/^(?:ReferenceError:\s*)?(?:Can'?t find variable: CONFIG|Cannot find variable: CONFIG|CONFIG is not defined)\.?$/i
+
+const twitterInAppBrowserChromeFunctions = new Set([
+	'updateFooterPositions',
+	'updateGapFiller',
+])
+
+export function isTwitterInAppBrowserConfigMessage(message: string) {
+	return twitterInAppBrowserConfigMessage.test(message.trim())
+}
+
+export function isTwitterInAppBrowserChromeStackFunction(name: string) {
+	return twitterInAppBrowserChromeFunctions.has(name)
+}
+
+export function isTwitterInAppBrowserConfigError(error: unknown) {
+	if (typeof error === 'string') {
+		return isTwitterInAppBrowserConfigMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isTwitterInAppBrowserConfigMessage(error.message)
+}
+
+export function isTwitterInAppBrowserConfigSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasConfigMessage =
+		isTwitterInAppBrowserConfigError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isTwitterInAppBrowserConfigMessage(message),
+		)
+	if (!hasConfigMessage) return false
+	return sentryEventStackFrameFunctions(event).some(
+		isTwitterInAppBrowserChromeStackFunction,
+	)
+}
+
+export function filterTwitterInAppBrowserConfigSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isTwitterInAppBrowserConfigSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -399,6 +474,12 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (filterMetaMaskExtensionSentryEvent(event, originalException) === null) {
+		return null
+	}
+	if (
+		filterTwitterInAppBrowserConfigSentryEvent(event, originalException) ===
+		null
+	) {
 		return null
 	}
 	return event
