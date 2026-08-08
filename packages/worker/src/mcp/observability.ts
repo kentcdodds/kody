@@ -5,6 +5,7 @@ import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { isRemoteConnectorUnavailableMessage } from '#worker/remote-connector/status.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
+import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
@@ -123,6 +124,18 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 			(entry) =>
 				entry instanceof Error &&
 				isRemoteConnectorUnavailableMessage(entry.message),
+		)
+	) {
+		return true
+	}
+	// User-authored SQL against a storage bucket (missing tables/columns,
+	// constraints, read-only policy). storage_query wraps these as
+	// McpCallerError; this message match covers plain Errors that still
+	// arrive via RPC without subclass identity.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error && isUserStorageSqlCallerMessage(entry.message),
 		)
 	) {
 		return true

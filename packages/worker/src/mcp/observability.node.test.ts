@@ -227,9 +227,27 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
 			),
 		})
+
+		// User SQL against a storage bucket (KODY-CLOUDFLARE-44). Plain Error
+		// form — Durable Object RPC loses subclass identity.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'storage_query',
+			domain: 'storage',
+			capabilitySource: 'builtin',
+			conversationId: 'conv-storage-1',
+			storageId: 'storage-notes-1',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'no such table: notes: SQLITE_ERROR',
+			context: {
+				sqlPreview: 'SELECT * FROM notes LIMIT 1',
+			},
+			cause: new Error('no such table: notes: SQLITE_ERROR'),
+		})
 	})
 
-	expect(payloads).toHaveLength(12)
+	expect(payloads).toHaveLength(13)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
@@ -263,22 +281,6 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'storage_query',
-			domain: 'storage',
-			capabilitySource: 'builtin',
-			conversationId: 'conv-storage-1',
-			storageId: 'storage-notes-1',
-			failurePhase: 'handler',
-			errorName: 'Error',
-			errorMessage: 'no such table: notes: SQLITE_ERROR',
-			context: {
-				sqlPreview: 'SELECT * FROM notes LIMIT 1',
-			},
-			cause: new Error('no such table: notes: SQLITE_ERROR'),
-		})
-
-		logMcpEvent({
-			...callerFailureBase,
 			capabilityName: 'remote:home:bond_shade_set_position',
 			domain: 'remote:home',
 			capabilitySource: 'remote-connector',
@@ -292,7 +294,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 	})
 
-	expect(sentryMock.captureException).toHaveBeenCalledTimes(4)
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(3)
 	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
 		1,
 		expect.objectContaining({ message: 'platform handler blew up' }),
@@ -303,12 +305,6 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 	)
 	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
 		3,
-		expect.objectContaining({
-			message: 'no such table: notes: SQLITE_ERROR',
-		}),
-	)
-	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
-		4,
 		expect.objectContaining({
 			message:
 				'Remote capability "home:bond_shade_set_position" failed: timeout',
@@ -323,16 +319,6 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			hasUser: true,
 			errorMessage: 'platform handler blew up',
 			detail: undefined,
-		}),
-	)
-	expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
-		'mcp',
-		expect.objectContaining({
-			conversationId: 'conv-storage-1',
-			storageId: 'storage-notes-1',
-			detail: {
-				sqlPreview: 'SELECT * FROM notes LIMIT 1',
-			},
 		}),
 	)
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
