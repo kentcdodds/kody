@@ -215,35 +215,17 @@ export function deleteWorkerScript({
 	fail(`Failed to delete Worker script: ${name}`)
 }
 
-const ansiEscape = String.fromCharCode(27)
-
 /**
- * `wrangler r2 bucket list` has no JSON output; it prints labelled-value
- * blocks (`name: <bucket>` / `creation_date: ...`). Parse the bucket
- * names out of that listing. Piped wrangler output is normally
- * color-free, but ANSI sequences are stripped defensively.
+ * The Cloudflare API behind `wrangler r2 bucket list` returns a single
+ * unpaginated page, so once an account holds more buckets than one page the
+ * listing silently omits some of them. Never use the list as an existence
+ * oracle; rely on the create/delete outcome for the specific bucket instead.
  */
-export function parseR2BucketListOutput(output: string): Array<string> {
-	const names: Array<string> = []
-	for (const line of output.split('\n')) {
-		const plain = line
-			.split(ansiEscape)
-			.map((part, index) =>
-				index === 0 ? part : part.replace(/^\[[0-9;]*m/, ''),
-			)
-			.join('')
-		const match = /^name:\s*(\S+)\s*$/.exec(plain.trim())
-		if (match?.[1]) names.push(match[1])
-	}
-	return names
-}
-
-export function listR2BucketNames(): Array<string> {
-	const result = runWrangler(['r2', 'bucket', 'list'], { quiet: true })
-	if (result.status !== 0) {
-		fail('Failed to list R2 buckets (wrangler r2 bucket list).')
-	}
-	return parseR2BucketListOutput(result.stdout)
+export function isR2BucketAlreadyExistsOutput(output: string) {
+	return (
+		output.includes('[code: 10004]') ||
+		output.toLowerCase().includes('already exists')
+	)
 }
 
 export function ensureR2Bucket({
@@ -258,23 +240,24 @@ export function ensureR2Bucket({
 		return { name }
 	}
 
-	if (listR2BucketNames().includes(name)) {
+	const createResult = runWrangler(['r2', 'bucket', 'create', name], {
+		quiet: true,
+	})
+	if (createResult.status === 0) {
+		console.error(`Created R2 bucket: ${name}`)
+		return { name }
+	}
+
+	const output = `${createResult.stdout}${createResult.stderr}`.trim()
+	if (isR2BucketAlreadyExistsOutput(output)) {
 		console.error(`R2 bucket exists: ${name}`)
 		return { name }
 	}
 
-	const createResult = runWrangler(['r2', 'bucket', 'create', name], {
-		quiet: true,
-	})
-	if (createResult.status !== 0) {
-		fail(`Failed to create R2 bucket: ${name}`)
+	if (output) {
+		console.error(output)
 	}
-
-	if (!listR2BucketNames().includes(name)) {
-		fail(`Created R2 bucket "${name}" but could not find it via list.`)
-	}
-	console.error(`Created R2 bucket: ${name}`)
-	return { name }
+	fail(`Failed to create R2 bucket: ${name}`)
 }
 
 export function deleteR2Bucket({
@@ -289,22 +272,24 @@ export function deleteR2Bucket({
 		return
 	}
 
-	if (!listR2BucketNames().includes(name)) {
+	const result = runWrangler(['r2', 'bucket', 'delete', name], { quiet: true })
+	if (result.status === 0) {
+		console.error(`Deleted R2 bucket: ${name}`)
+		return
+	}
+
+	const output = `${result.stdout}${result.stderr}`.trim()
+	if (isWranglerNotFoundOutput(output)) {
 		console.error(`R2 bucket already deleted: ${name}`)
 		return
 	}
 
-	const result = runWrangler(['r2', 'bucket', 'delete', name], { quiet: true })
-	if (result.status !== 0) {
-		// R2 refuses to delete non-empty buckets and wrangler has no purge
-		// command; a leftover preview bucket is preferable to a failed
-		// cleanup run, so warn instead of failing the workflow.
-		console.error(
-			`Warning: failed to delete R2 bucket ${name} (it may not be empty); it must be cleaned up manually.`,
-		)
-		return
-	}
-	console.error(`Deleted R2 bucket: ${name}`)
+	// R2 refuses to delete non-empty buckets and wrangler has no purge
+	// command; a leftover preview bucket is preferable to a failed
+	// cleanup run, so warn instead of failing the workflow.
+	console.error(
+		`Warning: failed to delete R2 bucket ${name} (it may not be empty); it must be cleaned up manually.`,
+	)
 }
 
 type CloudflareApiRequestInput = {

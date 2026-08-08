@@ -12,10 +12,10 @@ import {
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
+	isR2BucketAlreadyExistsOutput,
 	isRetryableCloudflareApiError,
 	isWranglerNotFoundOutput,
 	parseJsonc,
-	parseR2BucketListOutput,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
 
@@ -362,20 +362,18 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 	}
 })
 
-test('parseR2BucketListOutput reads bucket names from labelled wrangler output', () => {
-	const output = [
-		'Listing buckets...',
-		'name:           kody-email-blobs',
-		'creation_date:  2026-07-01T00:00:00.000Z',
-		'',
-		'name:           kody-pr-42-email-blobs',
-		'creation_date:  2026-07-02T00:00:00.000Z',
-	].join('\n')
-	expect(parseR2BucketListOutput(output)).toEqual([
-		'kody-email-blobs',
-		'kody-pr-42-email-blobs',
-	])
-	expect(parseR2BucketListOutput('')).toEqual([])
+test('isR2BucketAlreadyExistsOutput recognizes Wrangler bucket-exists errors', () => {
+	expect(
+		isR2BucketAlreadyExistsOutput(
+			'✘ [ERROR] A request to the Cloudflare API (/accounts/abc/r2/buckets) failed.\n\n' +
+				'  The bucket you tried to create already exists, and you own it. [code: 10004]',
+		),
+	).toBe(true)
+	expect(isR2BucketAlreadyExistsOutput('[code: 10004]')).toBe(true)
+	expect(
+		isR2BucketAlreadyExistsOutput('Authentication error [code: 10000]'),
+	).toBe(false)
+	expect(isR2BucketAlreadyExistsOutput('')).toBe(false)
 })
 
 test('Queue and Email Sending subscription ensure creates and reconciles Cloudflare resources', async () => {
