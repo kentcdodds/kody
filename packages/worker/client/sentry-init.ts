@@ -32,12 +32,14 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// permission-denied from Replay/hydration on restricted nodes,
 		// injected wallet/`__firefox__` globals, Fathom beacon
 		// removeChild-on-null, Chrome extension IPC "Object Not Found
-		// Matching Id…", MetaMask inpage connect failures, and Twitter/X
-		// in-app browser chrome `CONFIG` ReferenceErrors) — see
-		// filterBrowserSentryEvent / KODY-CLOUDFLARE-23 /
+		// Matching Id…", MetaMask inpage connect failures, Twitter/X
+		// in-app browser chrome `CONFIG` ReferenceErrors, and injected
+		// unguarded `meta[property='og:type']` probes from `global code`) —
+		// see filterBrowserSentryEvent / KODY-CLOUDFLARE-23 /
 		// KODY-CLOUDFLARE-3Q / KODY-CLOUDFLARE-3S / KODY-CLOUDFLARE-3X /
-		// KODY-CLOUDFLARE-43 / issues 7639685398, 7648833360, 7648833403,
-		// 7653117289, 7655189301, 7658961865, 7659616372.
+		// KODY-CLOUDFLARE-43 / KODY-CLOUDFLARE-46 / issues 7639685398,
+		// 7648833360, 7648833403, 7653117289, 7655189301, 7658961865,
+		// 7659616372, 7660258027.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},

@@ -444,6 +444,62 @@ export function filterTwitterInAppBrowserConfigSentryEvent<
 	return event
 }
 
+/**
+ * Injected page scripts (Mobile Safari / in-app browsers / content scripts)
+ * sometimes probe Open Graph tags with an unguarded
+ * `document.querySelector("meta[property='og:type']").content`. When the page
+ * has no managed OG tags (guides and many authenticated routes), WebKit throws
+ * and attributes the frame to `global code` on the document URL — never a Kody
+ * bundle. Signature from production issue 7660258027 / KODY-CLOUDFLARE-46.
+ *
+ * Kody only writes `og:type` in document-head / SSR; it never reads it this
+ * way. Match is intentionally narrow: Safari "null is not an object
+ * (evaluating 'document.querySelector(…og:type…).content')" wording AND a
+ * `global code` stack function. Never blanket-drop bare `.content` TypeErrors
+ * from app code.
+ */
+const ogTypeMetaQuerySelectorContentMessage =
+	/^(?:TypeError:\s*)?null is not an object \(evaluating ['"]document\.querySelector\([^)]*meta\[property=['"]og:type['"]\][^)]*\)\.content['"]\)$/i
+
+export function isOgTypeMetaQuerySelectorContentMessage(message: string) {
+	return ogTypeMetaQuerySelectorContentMessage.test(message.trim())
+}
+
+export function isOgTypeMetaQuerySelectorContentError(error: unknown) {
+	if (typeof error === 'string') {
+		return isOgTypeMetaQuerySelectorContentMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isOgTypeMetaQuerySelectorContentMessage(error.message)
+}
+
+export function isOgTypeMetaQuerySelectorContentSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasOgTypeMessage =
+		isOgTypeMetaQuerySelectorContentError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isOgTypeMetaQuerySelectorContentMessage(message),
+		)
+	if (!hasOgTypeMessage) return false
+	return sentryEventStackFrameFunctions(event).some(
+		(name) => name === 'global code',
+	)
+}
+
+export function filterOgTypeMetaQuerySelectorContentSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isOgTypeMetaQuerySelectorContentSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -479,6 +535,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	if (
 		filterTwitterInAppBrowserConfigSentryEvent(event, originalException) ===
 		null
+	) {
+		return null
+	}
+	if (
+		filterOgTypeMetaQuerySelectorContentSentryEvent(
+			event,
+			originalException,
+		) === null
 	) {
 		return null
 	}

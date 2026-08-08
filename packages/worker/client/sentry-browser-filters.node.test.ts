@@ -7,6 +7,7 @@ import {
 	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 	filterMetaMaskExtensionSentryEvent,
+	filterOgTypeMetaQuerySelectorContentSentryEvent,
 	filterTwitterInAppBrowserConfigSentryEvent,
 } from './sentry-browser-filters.ts'
 
@@ -362,6 +363,74 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 								{
 									function: 'updateGapFiller',
 									abs_path: 'https://heykody.app/',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	// Injected unguarded og:type meta probe (issue 7660258027 /
+	// KODY-CLOUDFLARE-46). Requires both the Safari evaluating wording and a
+	// `global code` frame — same message from app bundles stays.
+	expect(
+		filterOgTypeMetaQuerySelectorContentSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'global code',
+									filename: '/guides/what-is-kody',
+									abs_path: 'https://heykody.app/guides/what-is-kody',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterOgTypeMetaQuerySelectorContentSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'applyDocumentHead',
+									filename: 'https://heykody.app/assets/document-head.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"TypeError: null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'global code',
+									absPath: 'https://heykody.app/guides/what-is-kody',
 								},
 							],
 						},
