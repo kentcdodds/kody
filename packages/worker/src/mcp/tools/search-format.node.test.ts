@@ -1035,6 +1035,21 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	)
 	expect(compact.definition.endsWith('...')).toBe(true)
 
+	const requiredFieldAtEnd = compactCapabilityInputTypeDefinition(
+		`type LongMemoryInput = { ${Array.from(
+			{ length: 40 },
+			(_, index) => `optional_field_${index}?: string`,
+		).join('; ')}; verified_by_agent: true }`,
+		{ requiredInputFields: ['verified_by_agent'] },
+	)
+	expect(requiredFieldAtEnd.truncated).toBe(true)
+	expect(requiredFieldAtEnd.definition.length).toBeLessThanOrEqual(
+		inlineCapabilityInputTypeMaxLength,
+	)
+	expect(requiredFieldAtEnd.definition).toContain(
+		'required fields: verified_by_agent',
+	)
+
 	const listMarkdown = formatSearchMarkdown({
 		matches: [
 			{
