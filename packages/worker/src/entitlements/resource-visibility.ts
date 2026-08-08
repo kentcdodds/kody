@@ -1,4 +1,4 @@
-import  { type EntitlementResource } from '#universal/plans.ts'
+import { type EntitlementResource } from '#universal/plans.ts'
 
 export type EntitlementResourceGroup = 'daily' | 'counts' | 'storage' | 'limits'
 
