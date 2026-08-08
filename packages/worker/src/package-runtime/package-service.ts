@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -950,12 +951,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
 			executionOrigin: 'background',
-			user: {
-				userId: binding.userId,
-				email: '',
-				username: undefined,
-				displayName: `package:${binding.packageId}`,
-			},
+			user: await resolveBackgroundMcpUser(this.env.APP_DB, binding.userId),
 			storageContext: {
 				sessionId: null,
 				appId: binding.packageId,

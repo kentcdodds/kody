@@ -228,7 +228,6 @@ export async function deliverPackageEventWithToolFactories(input: {
 				}),
 				source: `package:${message.source.kodyId}`,
 				actorTokenId: `${internalPackageEventSubscriptionTokenId}:${message.source.packageId}`,
-				actorDisplayName: `package:${message.source.kodyId}`,
 				runtimeInvokeDepth: message.invokeDepth,
 				toolFactories: input.toolFactories,
 				waitUntil: input.waitUntil,
@@ -420,7 +419,6 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	idempotencyKey: string
 	source?: string | null
 	actorTokenId?: string
-	actorDisplayName?: string
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -441,9 +439,6 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 		actor: {
 			tokenId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
 			userId: input.savedPackage.userId,
-			email: '',
-			displayName:
-				input.actorDisplayName ?? `package:${input.savedPackage.kodyId}`,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: buildPackageSubscriptionArtifactName(topic),

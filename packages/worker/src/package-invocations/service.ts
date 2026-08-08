@@ -138,7 +138,6 @@ export async function invokePackageSubscription(input: {
 	idempotencyKey: string
 	source?: string | null
 	actorTokenId?: string
-	actorDisplayName?: string
 	runtimeInvokeDepth?: number
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

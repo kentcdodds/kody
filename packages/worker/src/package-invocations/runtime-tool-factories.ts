@@ -114,8 +114,6 @@ function createPackageInvokeTools(input: {
 					baseUrl: input.baseUrl,
 					caller: {
 						userId: user.userId,
-						email: user.email ?? '',
-						displayName: user.displayName ?? '',
 						remoteConnectors: input.callerContext.remoteConnectors ?? null,
 						packageContext,
 					},
@@ -137,8 +135,6 @@ function createPackageInvokeTools(input: {
 					baseUrl: input.baseUrl,
 					caller: {
 						userId: user.userId,
-						email: user.email ?? '',
-						displayName: user.displayName ?? '',
 						remoteConnectors: input.callerContext.remoteConnectors ?? null,
 					},
 					request: {

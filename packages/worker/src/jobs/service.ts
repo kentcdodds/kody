@@ -58,6 +58,7 @@ import {
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -632,20 +633,16 @@ async function cleanupAdHocJobSource(input: {
 	})
 }
 
-function createPackageJobCallerContext(input: {
+async function createPackageJobCallerContext(input: {
+	db: D1Database
 	baseUrl: string
 	userId: string
 	packageId: string
-}): PersistedJobCallerContext {
+}): Promise<PersistedJobCallerContext> {
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
-		user: {
-			userId: input.userId,
-			email: '',
-			username: undefined,
-			displayName: `package:${input.packageId}`,
-		},
+		user: await resolveBackgroundMcpUser(input.db, input.userId),
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
@@ -714,7 +711,8 @@ export async function syncPackageJobsForPackage(input: {
 						userId: input.userId,
 						job: updated,
 						callerContextJson: serializeCallerContext(
-							createPackageJobCallerContext({
+							await createPackageJobCallerContext({
+								db: input.env.APP_DB,
 								baseUrl: input.baseUrl,
 								userId: input.userId,
 								packageId: input.packageId,
@@ -756,7 +754,8 @@ export async function syncPackageJobsForPackage(input: {
 					userId: input.userId,
 					job: created,
 					callerContextJson: serializeCallerContext(
-						createPackageJobCallerContext({
+						await createPackageJobCallerContext({
+							db: input.env.APP_DB,
 							baseUrl: input.baseUrl,
 							userId: input.userId,
 							packageId: input.packageId,

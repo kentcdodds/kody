@@ -13,6 +13,7 @@ import {
 	getEmailMessageWithAttachmentsById,
 } from '#worker/email/service.ts'
 import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
@@ -135,12 +136,10 @@ export async function runSavedPackageModuleOnce(
 		const callerContext = createMcpCallerContext({
 			baseUrl: input.baseUrl,
 			executionOrigin: 'background',
-			user: {
-				userId: input.actor.userId,
-				email: input.actor.email,
-				username: undefined,
-				displayName: input.actor.displayName,
-			},
+			user: await resolveBackgroundMcpUser(
+				input.env.APP_DB,
+				input.actor.userId,
+			),
 			storageContext: {
 				sessionId: null,
 				appId: input.savedPackage.id,

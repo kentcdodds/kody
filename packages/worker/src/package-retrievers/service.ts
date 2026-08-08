@@ -2,6 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
@@ -144,12 +145,7 @@ async function invokeRetriever(input: {
 	const callerContext = createMcpCallerContext({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
-		user: {
-			userId: input.userId,
-			email: '',
-			username: undefined,
-			displayName: '',
-		},
+		user: await resolveBackgroundMcpUser(input.env.APP_DB, input.userId),
 		storageContext: {
 			sessionId: null,
 			appId: input.entry.packageId,

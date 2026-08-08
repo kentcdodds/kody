@@ -276,7 +276,9 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 		],
 	})
 	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBe('free')
-	expect(await getUserPlan(db, { userId: 'user-1', email: '' })).toBe('free')
+	expect(await getUserPlan(db, { userId: 'user-1', email: undefined })).toBe(
+		'free',
+	)
 	expect(await getUserPlan(db, { userId: 'user-1', email: plannedEmail })).toBe(
 		'free',
 	)
@@ -289,13 +291,12 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
-	// Package-job / workflow contexts persist email: '' — reverse-resolve by
-	// stable userId so entitlement checks use the real plan (not free).
-	expect(await getUserPlan(db, { userId, email: null })).toBe('pro')
-	expect(await getUserPlan(db, { userId, email: '' })).toBe('pro')
-	expect(await getUserPlan(db, { userId, email: '   ' })).toBe('pro')
-	expect(queries.at(-1)?.sql).toContain('FROM users WHERE stable_user_id = ?')
-	expect(queries.at(-1)?.params).toEqual([userId])
+	// Missing account emails fail closed without reverse-resolving identity.
+	const queryCount = queries.length
+	expect(await getUserPlan(db, { userId, email: null })).toBe('free')
+	expect(await getUserPlan(db, { userId, email: undefined })).toBe('free')
+	expect(await getUserPlan(db, { userId, email: '   ' })).toBe('free')
+	expect(queries).toHaveLength(queryCount)
 
 	// Mismatched email/stable-id pairs fail closed without warning.
 	expect(
@@ -562,7 +563,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits without email 
 	await assertWithinEntitlement({
 		db: underMax.db,
 		userId,
-		email: '',
+		email: plannedEmail,
 		resource: 'concurrent_workflows',
 		getCurrent: async () => freeLimit,
 	})
@@ -573,7 +574,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits without email 
 	const maxDenial = await assertWithinEntitlement({
 		db: atMax.db,
 		userId,
-		email: null,
+		email: plannedEmail,
 		resource: 'concurrent_workflows',
 		getCurrent: async () => maxLimit,
 	}).then(

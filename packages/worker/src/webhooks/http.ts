@@ -255,8 +255,6 @@ async function dispatchWebhookInvocation(input: {
 		token: {
 			tokenId: `internal:webhook:${input.endpoint.id}`,
 			userId: input.endpoint.userId,
-			email: '',
-			displayName: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
 			packageIds: [input.endpoint.packageId],
 			packageKodyIds: [input.packageKodyId],
 			exportNames: [input.exportName],

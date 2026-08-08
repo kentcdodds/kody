@@ -2248,8 +2248,8 @@ test('createDynamicCallableWorkflow enforces concurrent workflow entitlements ac
 	})
 	expect(allowed.ok).toBe(true)
 
-	// Package jobs persist email: '' — reverse-resolve by stable userId so a
-	// max-plan account is not wrongly capped at the free concurrent limit.
+	// Background workflow callers carry the real account email, so a max-plan
+	// account is not wrongly capped at the free concurrent limit.
 	runRecordMocks.resetProjections()
 	await seedActiveWorkflowProjections({ userId, count: freeLimit })
 	const maxAllowed = await createDynamicCallableWorkflow({
@@ -2261,7 +2261,7 @@ test('createDynamicCallableWorkflow enforces concurrent workflow entitlements ac
 			RUN_LOG: {} as DurableObjectNamespace,
 		} as Env,
 		userId,
-		userEmail: '',
+		userEmail: email,
 		body: {
 			...body,
 			idempotencyKey: 'plan-limit-blank-email-max-key',

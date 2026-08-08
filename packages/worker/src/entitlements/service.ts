@@ -33,13 +33,11 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
  * strict {@link parseStoredPlanName} validation and throw if D1 violates the
  * plan CHECK constraint.
  *
- * The MCP `userId` is the account's stored `users.stable_user_id`. When an
- * email is provided, lookup requires the email + stable id pair so a
- * mismatched caller context cannot resolve another account's plan. When email
- * is absent (package-job / workflow / webhook contexts that persist
- * `email: ''`), reverse-resolve by stable userId alone so those paths enforce
- * the account's real plan instead of silently using `free`. Non-hex userIds
- * short-circuit without touching D1.
+ * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
+ * requires the real account email + stable id pair so a mismatched caller
+ * context cannot resolve another account's plan. Missing emails fail closed
+ * to `free` without a reverse lookup. Non-hex userIds short-circuit without
+ * touching D1.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan): the higher-ranked
  * of the manual grant and Stripe subscription plan is returned (`max` ranks
@@ -53,17 +51,13 @@ export async function getUserPlan(
 	const email = input.email?.trim().toLowerCase()
 	if (!input.userId) return 'free'
 	if (!stableUserIdPattern.test(input.userId)) return 'free'
-	const row = email
-		? await db
-				.prepare(
-					`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
-				)
-				.bind(email, input.userId)
-				.first<{ plan: string; stripe_plan: string | null }>()
-		: await db
-				.prepare(`SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?`)
-				.bind(input.userId)
-				.first<{ plan: string; stripe_plan: string | null }>()
+	if (!email) return 'free'
+	const row = await db
+		.prepare(
+			`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
+		)
+		.bind(email, input.userId)
+		.first<{ plan: string; stripe_plan: string | null }>()
 	if (!row) return 'free'
 	return resolveEffectivePlan(parseStoredPlanName(row.plan), row.stripe_plan)
 }
@@ -146,8 +140,6 @@ export async function getCachedUserPlan(
 	const email = input.email?.trim().toLowerCase()
 	if (!input.userId) return 'free'
 	if (!stableUserIdPattern.test(input.userId)) return 'free'
-	// Empty email is a distinct cache key from any concrete email; both paths
-	// share getUserPlan's reverse-resolve / pair-match semantics.
 	return await cachedUserPlans.getOrCreate(
 		db,
 		`${input.userId}\n${email ?? ''}`,
@@ -1025,11 +1017,8 @@ export type AssertWithinEntitlementInput = {
 	db: D1Database
 	userId: string
 	/**
-	 * Account email of the acting user when available. When present, plan
-	 * lookup requires the email + stable-id pair. When absent (package-job /
-	 * workflow contexts with `email: ''`), {@link getCachedUserPlan}
-	 * reverse-resolves by stable userId; unknown accounts still fail closed
-	 * to `free`.
+	 * Real account email of the acting user. Plan lookup requires the email +
+	 * stable-id pair; absent or unknown identities fail closed to `free`.
 	 */
 	email: string | null | undefined
 	resource: EntitlementResource
