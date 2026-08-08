@@ -245,9 +245,54 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			},
 			cause: new Error('no such table: notes: SQLITE_ERROR'),
 		})
+
+		// Published repo session (KODY-CLOUDFLARE-4A). Plain Error from DO RPC.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_status',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'Repo session "de72ddd6-e277-4f69-a5db-3d6ece06ca6b" is published; open a new session before continuing.',
+			cause: new Error(
+				'Repo session "de72ddd6-e277-4f69-a5db-3d6ece06ca6b" is published; open a new session before continuing.',
+			),
+		})
+
+		// Invalid repo_search regex (KODY-CLOUDFLARE-49). Plain Error from DO RPC.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_search',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'repo_search received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
+			cause: new Error(
+				'repo_search received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
+			),
+		})
+
+		// Downstream user-connected MCP server tool failure (KODY-CLOUDFLARE-4B).
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'mcp:supermemory:listMemories',
+			domain: 'mcp:supermemory',
+			capabilitySource: 'mcp-server',
+			failurePhase: 'handler',
+			errorName: 'McpCallerError',
+			errorMessage:
+				'MCP server capability "supermemory:listMemories" failed: ProtocolError: Structured content does not match the tool\'s output schema',
+			cause: new McpCallerError(
+				'MCP server capability "supermemory:listMemories" failed: ProtocolError: Structured content does not match the tool\'s output schema',
+			),
+		})
 	})
 
-	expect(payloads).toHaveLength(13)
+	expect(payloads).toHaveLength(16)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

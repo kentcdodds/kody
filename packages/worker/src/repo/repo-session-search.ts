@@ -1,3 +1,4 @@
+import { buildRepoSearchInvalidRegexCallerMessage } from './repo-session-caller-error.ts'
 import {
 	type RepoSearchFileMatch,
 	type RepoSearchMatch,
@@ -170,7 +171,10 @@ function searchInText(input: {
 			error instanceof Error
 				? error.message
 				: 'Unknown regex compilation error.'
-		throw new Error(`repo_search received an invalid regex: ${message}`)
+		// Caller-supplied pattern failed JS RegExp compilation (often Python/PCRE
+		// inline flags). Keep the stable prefix so MCP can classify this as a
+		// caller error after DO RPC loses Error subclass identity.
+		throw new Error(buildRepoSearchInvalidRegexCallerMessage(message))
 	}
 	const lines = source.split('\n')
 	const lineOffsets: number[] = []

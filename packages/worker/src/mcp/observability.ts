@@ -5,6 +5,10 @@ import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { isRemoteConnectorUnavailableMessage } from '#worker/remote-connector/status.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
+import {
+	isRepoSearchInvalidRegexMessage,
+	isRepoSessionInactiveMessage,
+} from '#worker/repo/repo-session-caller-error.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
@@ -136,6 +140,20 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 		getErrorCauseChain(cause).some(
 			(entry) =>
 				entry instanceof Error && isUserStorageSqlCallerMessage(entry.message),
+		)
+	) {
+		return true
+	}
+	// Published / inactive repo sessions and invalid repo_search regexes are
+	// thrown inside the RepoSession Durable Object as plain Errors. Match the
+	// stable phrases so they stay out of Sentry even when a capability forgets
+	// to re-wrap as McpCallerError.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				(isRepoSessionInactiveMessage(entry.message) ||
+					isRepoSearchInvalidRegexMessage(entry.message)),
 		)
 	) {
 		return true
