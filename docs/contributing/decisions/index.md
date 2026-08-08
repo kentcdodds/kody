@@ -32,3 +32,4 @@ behavior (see [documentation principles](../documentation.md)).
   ([supporting material](./0010-account-record-table/index.md))
 - [0011 — Workers-unit keeps per-file isolation; budget cold DO load in timeouts](./0011-workers-unit-pool-harness.md)
 - [0012 — Client-safe shared code lives in `#universal/*`](./0012-universal-layer.md)
+- [0013 — Synthetic package requests for post-publish verification](./0013-synthetic-package-requests.md)

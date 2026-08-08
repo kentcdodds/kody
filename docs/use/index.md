@@ -38,6 +38,10 @@ Read in order for a full tour, or jump to a topic.
   sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
   provider POSTs to a saved-package export
+- [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
+  `app_fetch` smoke tests after publish
+- [Synthetic event dispatch](./synthetic-event-dispatch.md) — platform-marked
+  real-surface subscription handler smoke tests
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
 - [Plans and pricing](https://heykody.app/pricing) — Free, Standard, and Pro
