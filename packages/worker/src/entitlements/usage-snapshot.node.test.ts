@@ -58,6 +58,9 @@ function createUsageTestDb(input: {
 							},
 							async all<T>() {
 								if (normalized.includes('from user_storage_buckets')) {
+									if (params[0] !== stableUserId) {
+										return { results: [] as Array<T> }
+									}
 									return {
 										results: (input.storageBucketEstimates ?? []).map(
 											(estimatedBytes, index) => ({
@@ -122,4 +125,16 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 	expect(snapshot.resources.map((row) => row.resource)).toEqual(
 		accountUsageEntitlementResources,
 	)
+
+	const otherUserSnapshot = await readEntitlementUsageSnapshot({
+		db,
+		env: env as Env,
+		usageUserId: testStableUserIdFromEmail('other-user@example.com'),
+		plan: 'free',
+		now,
+	})
+	expect(
+		otherUserSnapshot.resources.find((row) => row.resource === 'storage_bytes')
+			?.current,
+	).toBe(0)
 })
