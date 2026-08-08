@@ -71,6 +71,7 @@ function setupDefaultMocks() {
 		kodyId: 'demo-package',
 		name: '@kentcdodds/demo-package',
 		sourceId: 'source-1',
+		hasApp: false,
 	})
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
@@ -133,6 +134,7 @@ function createContext(
 				},
 			},
 			DYNAMIC_CALLABLE_WORKFLOWS: {},
+			PACKAGE_APP_BASE_URL: 'https://packages.kody.test',
 		} as unknown as Env,
 		callerContext: {
 			baseUrl: 'https://kody.test',
@@ -160,7 +162,9 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 		status: 'published',
 		previous_commit: 'commit-old',
 		published_commit: 'commit-new',
-		manifest: {},
+		manifest: {
+			kody: { app: { entry: './src/app.ts' } },
+		},
 		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
 	})
 
@@ -172,6 +176,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	expect(publishedResult.status).toBe('published')
 	expect(publishedResult).toEqual(
 		expect.objectContaining({
+			hosted_app_url: 'https://packages.kody.test/@user/packages/demo-package',
 			static_dependents: expect.objectContaining({
 				total: 0,
 				items: [],
@@ -252,6 +257,13 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 		},
 	]
 	setupDefaultMocks()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'demo-package',
+		name: '@kentcdodds/demo-package',
+		sourceId: 'source-1',
+		hasApp: true,
+	})
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-old',
@@ -269,6 +281,7 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 	expect(alreadyPublished).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-old',
+		hosted_app_url: 'https://packages.kody.test/@user/packages/demo-package',
 		static_dependents: expect.objectContaining({
 			total: 0,
 			stale: 0,
@@ -669,6 +682,7 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	expect(alreadyPublished).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-new',
+		hosted_app_url: null,
 		static_dependents: expect.objectContaining({
 			total: 0,
 			stale: 0,

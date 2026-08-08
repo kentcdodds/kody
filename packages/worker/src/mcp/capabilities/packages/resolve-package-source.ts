@@ -30,6 +30,7 @@ export async function resolveOwnedPackageSource(input: {
 	packageId: string
 	kodyId: string
 	name: string
+	hasApp: boolean
 	source: EntitySourceRow
 }> {
 	requireExactlyOnePackageSourceIdentity(input.args)
@@ -58,6 +59,7 @@ export async function resolveOwnedPackageSource(input: {
 		packageId: savedPackage.id,
 		kodyId: savedPackage.kodyId,
 		name: savedPackage.name,
+		hasApp: savedPackage.hasApp,
 		source,
 	}
 }
