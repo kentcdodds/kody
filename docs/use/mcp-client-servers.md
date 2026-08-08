@@ -4,12 +4,12 @@ Kody can act as an **MCP client**: you add a remote MCP server, and its tools
 become callable as `kody.mcp["server-name"].tool_name(...)`.
 
 This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
-(where Kody is the MCP *server*).
+(where Kody is the MCP _server_).
 
 ## Add a server
 
-1. Open [`/account/mcp-servers`](https://heykody.app/account/mcp-servers), or ask
-   your agent to use `mcp_server_add` with a short kebab-case `name` and the
+1. Open [`/account/mcp-servers`](https://heykody.app/account/mcp-servers), or
+   ask your agent to use `mcp_server_add` with a short kebab-case `name` and the
    server `url` (https required).
 2. If the server needs OAuth, Kody returns an authorization link. Open it, sign
    in at the provider, and approve access.
@@ -22,12 +22,11 @@ When Kody connects, it registers as an OAuth client using:
 
 - **Client origin:** the deployment's canonical app origin (for hosted Kody,
   `https://heykody.app`)
-- **Redirect URI:**
-  `{origin}/account/mcp-servers/oauth/callback`
+- **Redirect URI:** `{origin}/account/mcp-servers/oauth/callback`
 
-Many authorization servers (including FusionAuth "authorized origins" /
-redirect URI settings, and other providers with similar allowlists) reject the
-authorize step unless those values are permitted.
+Many authorization servers (including FusionAuth "authorized origins" / redirect
+URI settings, and other providers with similar allowlists) reject the authorize
+step unless those values are permitted.
 
 If authorization fails with a message like `Invalid origin uri https://…` or an
 invalid redirect URI error:

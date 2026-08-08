@@ -167,8 +167,7 @@ test('MCP servers API lists servers with live hub status', async () => {
 		email: 'user@example.com',
 		username: 'test-user',
 		oauthClientOrigin: 'https://example.com',
-		oauthCallbackUrl:
-			'https://example.com/account/mcp-servers/oauth/callback',
+		oauthCallbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
 		servers: [
 			{
 				id: 'server-1',

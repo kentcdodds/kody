@@ -26,8 +26,8 @@ test('enrichMcpOAuthProviderError explains redirect URI rejection', () => {
 })
 
 test('enrichMcpOAuthProviderError leaves unrelated errors unchanged', () => {
-	expect(
-		enrichMcpOAuthProviderError('Invalid state format', callback),
-	).toBe('Invalid state format')
+	expect(enrichMcpOAuthProviderError('Invalid state format', callback)).toBe(
+		'Invalid state format',
+	)
 	expect(enrichMcpOAuthProviderError('  ', callback)).toBe('')
 })

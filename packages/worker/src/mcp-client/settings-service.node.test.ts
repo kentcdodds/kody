@@ -120,7 +120,6 @@ test('resolveMcpServerOAuthClientUrls prefers APP_BASE_URL over the request host
 		}),
 	).toEqual({
 		clientOrigin: 'https://preview.example',
-		callbackUrl:
-			'https://preview.example/account/mcp-servers/oauth/callback',
+		callbackUrl: 'https://preview.example/account/mcp-servers/oauth/callback',
 	})
 })
