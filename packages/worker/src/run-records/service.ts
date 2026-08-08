@@ -373,11 +373,11 @@ export async function finishRunRecord(input: {
 	 */
 	result?: unknown
 	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<void> {
+}): Promise<boolean> {
 	const handle = input.handle
-	if (!handle) return
+	if (!handle) return false
 	if (handle.persistence === 'on-failure' && input.status === 'success') {
-		return
+		return true
 	}
 
 	let persistedRun: RunLogRowInput | null = null
@@ -421,7 +421,7 @@ export async function finishRunRecord(input: {
 		console.warn('run-record-finish-failed', error)
 	}
 
-	if (!persistedRun) return
+	if (!persistedRun) return false
 	const sideEffects = dispatchTerminalRunRecordSideEffects({
 		env: input.env,
 		handle,
@@ -434,6 +434,7 @@ export async function finishRunRecord(input: {
 	} else {
 		await sideEffects
 	}
+	return true
 }
 
 /**
@@ -472,7 +473,7 @@ export async function recordRunRecord(input: {
 		console.warn('run-record-begin-failed', error)
 		return null
 	}
-	await finishRunRecord({
+	const persisted = await finishRunRecord({
 		env: input.env,
 		handle,
 		status: input.status,
@@ -481,7 +482,7 @@ export async function recordRunRecord(input: {
 		result: input.result,
 		waitUntil: input.waitUntil,
 	})
-	return handle
+	return persisted ? handle : null
 }
 
 export async function listRunRecords(input: {

@@ -1,5 +1,9 @@
 import { type WebhookExportParams } from './types.ts'
 
+// Cloudflare Queues caps a message (body + metadata) at 128,000 bytes. Keep
+// enough headroom for transport metadata and structured-clone framing.
+export const webhookDispatchQueueMessageMaxBytes = 120_000
+
 export type WebhookDispatchQueueMessage = {
 	endpoint: {
 		id: string
@@ -79,6 +83,12 @@ export function parseWebhookDispatchQueueMessage(
 		payloadBytes,
 		receivedAt,
 	}
+}
+
+export function getWebhookDispatchQueueMessageBytes(
+	message: WebhookDispatchQueueMessage,
+) {
+	return new TextEncoder().encode(JSON.stringify(message)).byteLength
 }
 
 export async function enqueueWebhookDispatch(input: {

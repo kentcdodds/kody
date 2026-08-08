@@ -315,6 +315,16 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	})
 	expect(enqueueArgs.message.params.request.json).toEqual({ event: 'push' })
 
+	declareWebhook({ name: 'sentry' })
+	const oversizedAck = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+		urlSecret,
+		body: JSON.stringify({ payload: 'x'.repeat(70_000) }),
+	})
+	expect(oversizedAck.status).toBe(413)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 	mocks.invokePackageExport.mockClear()
 	const sync = await postWebhook({

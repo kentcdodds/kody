@@ -333,7 +333,7 @@ export async function invokeSavedPackageModule(input: {
 				// did not. Do not report success: durable callers must retry the
 				// same key until the terminal response can be persisted. The live
 				// claim prevents that retry from duplicating the completed work.
-				console.warn(
+				console.error(
 					'package invocation completed-result persistence failed',
 					getErrorMessage(error),
 				)

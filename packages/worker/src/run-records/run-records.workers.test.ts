@@ -195,7 +195,7 @@ test('write surfaces journey', async () => {
 			waitPending.push(promise)
 		},
 	})
-	await expect(finishReturn).resolves.toBeUndefined()
+	await expect(finishReturn).resolves.toBe(true)
 	expect(waitPending).toHaveLength(1)
 	await drainWaitUntil(waitPending)
 	const waitDetail = await getRunRecord({

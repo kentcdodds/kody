@@ -133,13 +133,25 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 		userId: 'user-1',
 		context: { surface: 'job', name: 'daily' },
 	})
-	await finishRunRecord({
-		env,
-		handle: rpcFailHandle,
-		status: 'error',
-		error: new Error('boom'),
-	})
+	await expect(
+		finishRunRecord({
+			env,
+			handle: rpcFailHandle,
+			status: 'error',
+			error: new Error('boom'),
+		}),
+	).resolves.toBe(false)
 	expect(mocks.dispatchRunErrorSubscriptionEvents).not.toHaveBeenCalled()
+
+	mocks.finishRun.mockRejectedValueOnce(new Error('do unavailable'))
+	await expect(
+		recordRunRecord({
+			env,
+			userId: 'user-1',
+			context: { surface: 'webhook', name: 'durable-hook' },
+			status: 'success',
+		}),
+	).resolves.toBeNull()
 
 	mocks.dispatchRunErrorSubscriptionEvents.mockRejectedValueOnce(
 		new Error('dispatch exploded'),
@@ -156,7 +168,7 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 			status: 'error',
 			error: new Error('boom'),
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBe(true)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-error-subscription-dispatch-failed',
 		expect.any(Error),

@@ -75,7 +75,7 @@ function createProductionEnv() {
 				},
 				{
 					queue: 'kody-webhook-dispatch',
-					max_batch_size: 10,
+					max_batch_size: 1,
 					max_batch_timeout: 5,
 					max_retries: 10,
 					max_concurrency: 16,

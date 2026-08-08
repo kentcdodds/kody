@@ -5,7 +5,9 @@ import {
 	processWebhookDispatch,
 } from './dispatch-queue.ts'
 import {
+	getWebhookDispatchQueueMessageBytes,
 	parseWebhookDispatchQueueMessage,
+	webhookDispatchQueueMessageMaxBytes,
 	type WebhookDispatchQueueMessage,
 } from './dispatch-queue-producer.ts'
 
@@ -128,12 +130,23 @@ test('queue retries incomplete terminal persistence and acks terminal outcomes',
 			status: 200,
 			body: { ok: true, result: { handled: true } },
 		})
+		.mockResolvedValueOnce({
+			status: 200,
+			body: { ok: true, result: { handled: true } },
+		})
+	mocks.recordWebhookDelivery
+		.mockResolvedValueOnce(undefined)
+		.mockRejectedValueOnce(new Error('RunLog unavailable'))
 	const retry = createQueueMessage('retry', createMessage())
 	const terminal = createQueueMessage('terminal', createMessage())
+	const persistenceFailure = createQueueMessage(
+		'persistence-failure',
+		createMessage(),
+	)
 	const invalid = createQueueMessage('invalid', { endpoint: null })
 
 	await handleWebhookDispatchQueue(
-		createBatch([retry, terminal, invalid]),
+		createBatch([retry, terminal, persistenceFailure, invalid]),
 		{} as Env,
 	)
 
@@ -141,8 +154,10 @@ test('queue retries incomplete terminal persistence and acks terminal outcomes',
 	expect(retry.ack).not.toHaveBeenCalled()
 	expect(terminal.ack).toHaveBeenCalledTimes(1)
 	expect(terminal.retry).not.toHaveBeenCalled()
+	expect(persistenceFailure.ack).not.toHaveBeenCalled()
+	expect(persistenceFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(invalid.ack).toHaveBeenCalledTimes(1)
-	expect(mocks.recordWebhookDelivery).toHaveBeenCalledTimes(1)
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledTimes(2)
 })
 
 test('webhook queue parser rejects malformed isolation and delivery fields', () => {
@@ -160,4 +175,7 @@ test('webhook queue parser rejects malformed isolation and delivery fields', () 
 	expect(
 		parseWebhookDispatchQueueMessage({ ...message, params: [] }),
 	).toBeNull()
+	expect(getWebhookDispatchQueueMessageBytes(message)).toBeLessThan(
+		webhookDispatchQueueMessageMaxBytes,
+	)
 })

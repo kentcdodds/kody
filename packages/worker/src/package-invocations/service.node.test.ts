@@ -1,9 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import {
-	consoleError,
-	consoleWarn,
-} from '#worker/test-support/console-spies.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	createExecutePackageInvokeTools,
 	createPackageRuntimeInvokeTools,
@@ -2119,7 +2116,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 })
 
 test('completed keyed invocation reports terminal persistence failure instead of false success', async () => {
-	consoleWarn.mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
 	const db = createDatabase({ failFinish: true })
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockReset()
@@ -2165,6 +2162,10 @@ test('completed keyed invocation reports terminal persistence failure instead of
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 	expect(db.runLog.ledgerRows[0]?.status).toBe('in_progress')
+	expect(consoleError).toHaveBeenCalledWith(
+		'package invocation completed-result persistence failed',
+		'RunLog finish unavailable',
+	)
 })
 
 test('oversized terminal responses are not stored so backups stay restorable', async () => {

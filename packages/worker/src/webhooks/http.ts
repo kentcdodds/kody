@@ -19,7 +19,12 @@ import {
 	readWebhookInvocationResult,
 	recordWebhookDelivery,
 } from './delivery.ts'
-import { enqueueWebhookDispatch } from './dispatch-queue-producer.ts'
+import {
+	enqueueWebhookDispatch,
+	getWebhookDispatchQueueMessageBytes,
+	webhookDispatchQueueMessageMaxBytes,
+	type WebhookDispatchQueueMessage,
+} from './dispatch-queue-producer.ts'
 import { collectSafeWebhookHeaders } from './headers.ts'
 import { getWebhookEndpointByKey } from './repo.ts'
 import {
@@ -78,13 +83,27 @@ function formatPayloadLimitLabel(maxBytes: number) {
 	return `${maxBytes} bytes`
 }
 
-function tooLargeResponse() {
+function tooLargeResponse(maxBytes = webhookMaxPayloadBytes) {
 	return jsonResponse(
 		{
 			ok: false,
 			error: {
 				code: 'payload_too_large',
-				message: `Webhook payload exceeds the ${formatPayloadLimitLabel(webhookMaxPayloadBytes)} limit.`,
+				message: `Webhook payload exceeds the ${formatPayloadLimitLabel(maxBytes)} limit.`,
+			},
+		},
+		{ status: 413 },
+	)
+}
+
+function ackQueueMessageTooLargeResponse() {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'payload_too_large',
+				message:
+					'Webhook payload is too large for asynchronous delivery (120 KB serialized limit).',
 			},
 		},
 		{ status: 413 },
@@ -447,24 +466,43 @@ export async function handleWebhookIngressRequest(
 	const idempotencyKey = `webhook:${endpoint.id}:${deliveryId}`
 
 	if (declared.responseMode === 'ack') {
+		const message: WebhookDispatchQueueMessage = {
+			endpoint: {
+				id: endpoint.id,
+				userId: endpoint.userId,
+				packageId: endpoint.packageId,
+				webhookName: endpoint.webhookName,
+			},
+			packageKodyId: savedPackage.kodyId,
+			exportName: declared.exportName,
+			params,
+			idempotencyKey,
+			deliveryId,
+			payloadBytes: bodyBytes.byteLength,
+			receivedAt,
+		}
+		if (
+			getWebhookDispatchQueueMessageBytes(message) >
+			webhookDispatchQueueMessageMaxBytes
+		) {
+			await recordWebhookDelivery({
+				env,
+				endpoint,
+				kodyId: savedPackage.kodyId,
+				outcome: 'rejected',
+				httpStatus: 413,
+				error: 'payload_too_large_for_ack_queue',
+				payloadBytes: bodyBytes.byteLength,
+				invocationId: deliveryId,
+				startedAt: receivedAt,
+				waitUntil,
+			})
+			return ackQueueMessageTooLargeResponse()
+		}
 		try {
 			await enqueueWebhookDispatch({
 				queue: env.WEBHOOK_DISPATCH_QUEUE,
-				message: {
-					endpoint: {
-						id: endpoint.id,
-						userId: endpoint.userId,
-						packageId: endpoint.packageId,
-						webhookName: endpoint.webhookName,
-					},
-					packageKodyId: savedPackage.kodyId,
-					exportName: declared.exportName,
-					params,
-					idempotencyKey,
-					deliveryId,
-					payloadBytes: bodyBytes.byteLength,
-					receivedAt,
-				},
+				message,
 			})
 		} catch (error) {
 			console.error('webhook-dispatch-enqueue-failed', {

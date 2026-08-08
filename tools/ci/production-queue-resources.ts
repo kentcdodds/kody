@@ -160,6 +160,7 @@ export function parseProductionQueueResources(input: {
 		queueName: webhookDispatchQueueName,
 		deadLetterQueueName: webhookDispatchDeadLetterQueueName,
 		configPath: input.configPath,
+		maxBatchSize: 1,
 		maxConcurrency: 16,
 		maxRetries: 10,
 	})

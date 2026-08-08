@@ -125,6 +125,8 @@ Rules:
   terminal row. That is why begin can stay off the request critical path.
 - **`on-failure` + `success` is a no-op** at finish (no DO write).
 - Finish **never throws into the observed path**. Sink failures log a warning.
+  It resolves `true` when the terminal write succeeds (or persistence is not
+  required by policy) and `false` when no terminal row was written.
 - Finish may accept an optional JSON-serializable **`result`**. When present it
   is stored under `metadata.result` after a bounded snapshot
   (`runRecordMaxResultSnapshotBytes`, currently 4 KiB). Oversized values become

@@ -24,34 +24,35 @@ export async function recordWebhookDelivery(input: {
 	result?: unknown
 	startedAt: string
 	waitUntil?: (promise: Promise<unknown>) => void
+	requirePersistence?: boolean
 }) {
-	try {
-		const status = input.outcome === 'delivered' ? 'success' : 'error'
-		await recordRunRecord({
-			env: input.env,
-			userId: input.endpoint.userId,
-			context: {
-				surface: 'webhook',
-				name: input.endpoint.webhookName,
-				packageId: input.endpoint.packageId,
-				kodyId: input.kodyId,
-				invocationId: input.invocationId ?? crypto.randomUUID(),
-				metadata: {
-					endpointId: input.endpoint.id,
-					httpStatus: input.httpStatus,
-					payloadBytes: input.payloadBytes,
-					outcome: input.outcome,
-				},
+	const status = input.outcome === 'delivered' ? 'success' : 'error'
+	const record = await recordRunRecord({
+		env: input.env,
+		userId: input.endpoint.userId,
+		context: {
+			surface: 'webhook',
+			name: input.endpoint.webhookName,
+			packageId: input.endpoint.packageId,
+			kodyId: input.kodyId,
+			invocationId: input.invocationId ?? crypto.randomUUID(),
+			metadata: {
+				endpointId: input.endpoint.id,
+				httpStatus: input.httpStatus,
+				payloadBytes: input.payloadBytes,
+				outcome: input.outcome,
 			},
-			status,
-			error: input.error ?? undefined,
-			result: input.result,
-			startedAt: input.startedAt,
-			waitUntil: input.waitUntil,
-		})
-	} catch (error) {
-		console.error('[webhooks] failed to record delivery', error)
+		},
+		status,
+		error: input.error ?? undefined,
+		result: input.result,
+		startedAt: input.startedAt,
+		waitUntil: input.waitUntil,
+	})
+	if (!record && input.requirePersistence) {
+		throw new Error('Webhook delivery record was not persisted.')
 	}
+	return record
 }
 
 export function readWebhookInvocationResult(body: unknown): unknown {

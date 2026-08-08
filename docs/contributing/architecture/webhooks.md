@@ -48,8 +48,10 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 8. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
    queue consumer owns the full invocation and its terminal writes, so work is
    not tied to the post-response `waitUntil` window. A failed enqueue returns
-   **503** so the provider can retry. `sync`: await (30s) and return export
-   JSON, **502** on failure.
+   **503** so the provider can retry. Ack queue messages have a conservative 120
+   KB serialized ceiling beneath Cloudflare Queues' 128 KB limit; larger
+   authenticated deliveries return **413**. `sync`: await (30s) and return
+   export JSON, **502** on failure.
 9. Authenticated deliveries (and post-auth rejects such as HMAC / size / missing
    declaration) record a `webhook` surface run record (no payload body). See
    [Run records](./run-records.md). URL-secret mismatches and pre-auth rate
@@ -62,6 +64,10 @@ failures and still-in-progress replays are retried; terminal package errors are
 recorded and acknowledged. The package export sandbox retains its normal ~90s
 budget, so genuinely longer package work ends as an explicit timeout rather than
 an unknown interrupted outcome.
+
+The Queue consumer batch size is one. Processing is sequential and one export
+can consume the full sandbox budget, so larger batches could exceed the Queue
+consumer's 15-minute wall-clock limit before later messages are acknowledged.
 
 ## Isolation
 

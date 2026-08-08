@@ -51,6 +51,7 @@ export async function processWebhookDispatch(
 		invocationId: message.deliveryId,
 		result: readWebhookInvocationResult(response.body),
 		startedAt: message.receivedAt,
+		requirePersistence: true,
 	})
 	return 'terminal'
 }
