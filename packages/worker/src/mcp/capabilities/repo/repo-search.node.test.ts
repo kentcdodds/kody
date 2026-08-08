@@ -57,27 +57,32 @@ test('repo_search maps invalid regex DO errors to McpCallerError', async () => {
 })
 
 test('repo_search maps nested invalid regex causes to McpCallerError', async () => {
+	const nestedMessage = buildRepoSearchInvalidRegexCallerMessage(
+		'Invalid regular expression: /(?i)foo/: Invalid group',
+	)
 	const search = vi.fn().mockRejectedValue(
 		new Error('Repo session search failed', {
-			cause: new Error(
-				buildRepoSearchInvalidRegexCallerMessage(
-					'Invalid regular expression: /(?i)foo/: Invalid group',
-				),
-			),
+			cause: new Error(nestedMessage),
 		}),
 	)
 	mocks.repoSessionRpc.mockReturnValue({ search })
 
-	await expect(
-		repoSearchCapability.handler(
+	const error = await repoSearchCapability
+		.handler(
 			{
 				session_id: 'session-1',
 				pattern: '(?i)foo',
 				mode: 'regex',
 			},
 			createContext(),
-		),
-	).rejects.toBeInstanceOf(McpCallerError)
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect((error as Error).message).toBe(nestedMessage)
 })
 
 test('repo_search rethrows non-regex failures unchanged', async () => {

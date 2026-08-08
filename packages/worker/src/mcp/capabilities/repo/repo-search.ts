@@ -1,7 +1,4 @@
-import {
-	getErrorCauseChain,
-	getErrorMessage,
-} from '@kody-internal/shared/error-message.ts'
+import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -43,8 +40,9 @@ export const repoSearchCapability = defineDomainCapability(
 			} catch (error) {
 				// Invalid regex is a caller-correctable input mistake. DO RPC may
 				// lose Error subclass identity, so match the stable message phrase.
-				if (isRepoSearchInvalidRegexError(error)) {
-					throw new McpCallerError(getErrorMessage(error), { cause: error })
+				const invalidRegexMessage = getRepoSearchInvalidRegexMessage(error)
+				if (invalidRegexMessage) {
+					throw new McpCallerError(invalidRegexMessage, { cause: error })
 				}
 				throw error
 			}
@@ -59,9 +57,10 @@ export const repoSearchCapability = defineDomainCapability(
 	},
 )
 
-function isRepoSearchInvalidRegexError(error: unknown) {
-	return getErrorCauseChain(error).some(
+function getRepoSearchInvalidRegexMessage(error: unknown) {
+	const match = getErrorCauseChain(error).find(
 		(entry) =>
 			entry instanceof Error && isRepoSearchInvalidRegexMessage(entry.message),
 	)
+	return match instanceof Error ? match.message : null
 }

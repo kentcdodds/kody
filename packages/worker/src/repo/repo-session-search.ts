@@ -144,28 +144,18 @@ function normalizeSearchQuery(input: {
 	}
 }
 
-function searchInText(input: {
-	content: string
+function compileSearchMatcher(input: {
 	query: string
 	regex: boolean
 	caseSensitive: boolean
-	contextBefore: number
-	contextAfter: number
-	maxMatches: number
 }) {
-	const inputTruncated = input.content.length > maxRepoSearchBytes
-	// Bound regex work so a single pathological search cannot monopolize the DO.
-	const source = inputTruncated
-		? input.content.slice(0, maxRepoSearchBytes)
-		: input.content
 	const flags = input.caseSensitive ? 'g' : 'gi'
 	const pattern = input.regex ? input.query : escapeRegex(input.query)
 	if (input.regex) {
 		assertSafeRepoSearchRegex(pattern)
 	}
-	let matcher: RegExp
 	try {
-		matcher = new RegExp(pattern, flags)
+		return new RegExp(pattern, flags)
 	} catch (error) {
 		const message =
 			error instanceof Error
@@ -176,6 +166,23 @@ function searchInText(input: {
 		// caller error after DO RPC loses Error subclass identity.
 		throw new Error(buildRepoSearchInvalidRegexCallerMessage(message))
 	}
+}
+
+function searchInText(input: {
+	content: string
+	matcher: RegExp
+	contextBefore: number
+	contextAfter: number
+	maxMatches: number
+}) {
+	const inputTruncated = input.content.length > maxRepoSearchBytes
+	// Bound regex work so a single pathological search cannot monopolize the DO.
+	const source = inputTruncated
+		? input.content.slice(0, maxRepoSearchBytes)
+		: input.content
+	const matcher = input.matcher
+	// Reused across files; early truncation can leave lastIndex mid-string.
+	matcher.lastIndex = 0
 	const lines = source.split('\n')
 	const lineOffsets: number[] = []
 	let offset = 0
@@ -245,6 +252,13 @@ export async function searchRepoWorkspace(input: {
 		pattern: input.pattern,
 		mode: input.mode,
 	})
+	// Validate/compile before scanning so invalid regex fails even when the
+	// workspace has no readable files.
+	const matcher = compileSearchMatcher({
+		query: search.query,
+		regex: search.regex,
+		caseSensitive: input.caseSensitive ?? false,
+	})
 	const globPattern =
 		input.glob?.trim() ||
 		`${input.root.replace(/\/+$/, '')}/**/*.{ts,tsx,js,jsx,json,md,css}`
@@ -264,9 +278,7 @@ export async function searchRepoWorkspace(input: {
 		if (content == null) continue
 		const result = searchInText({
 			content,
-			query: search.query,
-			regex: search.regex,
-			caseSensitive: input.caseSensitive ?? false,
+			matcher,
 			contextBefore: input.before ?? 0,
 			contextAfter: input.after ?? 0,
 			maxMatches: remaining,
