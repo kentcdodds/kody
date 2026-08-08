@@ -265,10 +265,11 @@ dynamic `import("kody:@...")` are not available. `packages.invoke` subsumes both
 helpers because checking is not optional or separate. Publish checks fail on all
 three unsupported forms with the replacement named
 (`deprecated-invocation-usage.ts`), and the bundler rewrites literal dynamic
-kody imports to a teaching error. The runtime `packages` helper exposes only
-`invoke`, so accessing `check` or `invokeChecked` throws a normal `TypeError`.
-The permanent `0002-static-first-invocation` repair codemod remains available.
-See
+kody imports to a teaching error. In the execute sandbox the `packages` helper
+exposes only `invoke`, so accessing `check` or `invokeChecked` throws a normal
+`TypeError`. Package-app runtimes reject those helpers with an error that names
+the supported replacement. The permanent `0002-static-first-invocation` repair
+codemod remains available. See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 

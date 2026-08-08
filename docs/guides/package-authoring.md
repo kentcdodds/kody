@@ -75,6 +75,19 @@ app.
 Import `packageContext` from `kody:runtime` and build every in-app link,
 redirect, share/email URL, and OAuth callback against its public base:
 
+```ts
+import { packageContext } from 'kody:runtime'
+
+if (!packageContext?.hostedUrl) {
+	throw new Error('This module must run as a package app.')
+}
+
+const audioUrl = new URL(
+	`${packageContext.appBasePath}/audio/123`,
+	packageContext.hostedUrl,
+)
+```
+
 - `packageContext.hostedUrl` is the full public URL of the app mount.
 - `packageContext.appBasePath` is the origin-relative mount path.
 

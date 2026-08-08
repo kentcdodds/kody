@@ -193,8 +193,8 @@ export const EnvSchema = object({
 	APP_LEGACY_HOSTS: optionalNonEmptyStringSchema,
 	// Exact string 'true' enables 308 redirects from legacy hosts to the
 	// canonical origin for safe browser GET/HEAD requests. Protocol surfaces
-	// (/mcp, OAuth, well-known, webhooks, email) are never redirected. Off by
-	// default so the first migration phase is purely dual-serve.
+	// (/mcp, OAuth, well-known, webhooks, email) are never redirected. Leave
+	// unset to dual-serve legacy hosts without redirecting browser navigation.
 	APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
 	// Public account creation posture. `invite` is the safe default; switching
 	// to `open` is an explicit deployment configuration change.

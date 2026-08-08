@@ -264,12 +264,13 @@ package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. Package publish checks reject
-all three with the supported replacement named. At runtime, the `packages`
-helper exposes only `invoke`, so accessing `check` or `invokeChecked` throws a
-normal `TypeError`. `packages.invoke` performs the contract check inline, and
-the static/dynamic rules above cover literal dynamic import cases. The
-`0002-static-first-invocation` package codemod remains available to repair
-`invokeChecked` call sites mechanically.
+all three with the supported replacement named. In the execute sandbox the
+`packages` helper exposes only `invoke`, so accessing `check` or `invokeChecked`
+throws a normal `TypeError`. Package-app runtimes reject those helpers with an
+error that names the supported replacement. `packages.invoke` performs the
+contract check inline, and the static/dynamic rules above cover literal dynamic
+import cases. The `0002-static-first-invocation` package codemod remains
+available to repair `invokeChecked` call sites mechanically.
 
 ## Package storage
 
@@ -361,31 +362,14 @@ session handoff to that origin. Package author JavaScript cannot use the
 first-party `kody_session` cookie or call authenticated Kody pages as the
 signed-in user.
 
-Package app URLs follow this mount contract:
-`/@username/packages/<kody-id>/<path>`. Kody removes the mount before forwarding
-the request, so an app sees `/<path>`. A root-relative browser URL such as
-`/audio/123` escapes the mount and is not dispatched to the app. Build in-app
-links, redirects, shared links, email links, and OAuth callback URLs against the
-public base exposed by `packageContext`:
-
-```ts
-import { packageContext } from 'kody:runtime'
-
-if (!packageContext?.hostedUrl) {
-	throw new Error('This module must run as a package app.')
-}
-
-const audioUrl = new URL(
-	`${packageContext.appBasePath}/audio/123`,
-	packageContext.hostedUrl,
-)
-```
-
-For package apps, `packageContext.hostedUrl` is the full public URL of the app
-mount and `packageContext.appBasePath` is its origin-relative mount path. Both
-are derived from the username and `kody.id` currently serving the package, so
-they remain correct after a rename or fork. Other saved-package runtime surfaces
-may omit these app-specific fields.
+Package app URLs follow the mount contract
+`/@username/packages/<kody-id>/<path>`: Kody strips the mount before forwarding,
+so root-relative links escape the app. Build in-app links, redirects, shared
+links, email links, and OAuth callbacks against `packageContext.hostedUrl` and
+`packageContext.appBasePath` (derived from the serving username and `kody.id`).
+See [Package app routing](../guides/package-authoring.md#package-app-routing)
+for the authoring example. Other saved-package runtime surfaces may omit these
+app-specific fields.
 
 Use the package app model when the package needs:
 

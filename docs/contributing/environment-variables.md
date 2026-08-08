@@ -97,16 +97,16 @@ Wrangler `vars` (public and non-secret; see
   The generated deploy `routes` list **replaces** the Worker's entire
   custom-domain set, so when `APP_BASE_URL` moves to a new domain the previous
   host must be listed here — otherwise the first deploy after the flip detaches
-  the old origin and deletes its DNS record (that once took production down).
-  Set as a GitHub Actions repository variable.
+  the old origin and deletes its DNS record. Set as a GitHub Actions repository
+  variable.
 - `APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-preserving
   `308` redirects from legacy hosts to the canonical origin for browser GET/HEAD
   navigation only. Protocol surfaces are never redirected: `/mcp` (clients POST
   and do not follow redirects), `/oauth/*` and `/.well-known/*` (origin-exact
   metadata, Tesla public key), `/auth/*` and `/webauthn/*` (per-origin callbacks
   and passkey `rpID`), `/connect/oauth`, `/health*`, `/__maintenance/*`,
-  webhooks, and package invocation APIs. Leave unset for the dual-serve
-  migration phase.
+  webhooks, and package invocation APIs. Leave unset to dual-serve legacy hosts
+  without redirecting browser navigation.
 
 ## Hosted package app origin
 

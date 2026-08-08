@@ -112,10 +112,9 @@ This project uses the following resources:
     single source of truth for both the hosts the Worker routes on and the
     domains the deploy attaches, so the two cannot drift.
   - **`routes` replaces the Worker's whole custom-domain set — it does not add
-    to it.** A deploy that listed only `kodyapps.dev` detached `heykody.dev` and
-    deleted its DNS record, taking production down until the following deploy
-    republished both. That is why the app origin is always listed alongside the
-    package-app origin, and why the generator fails the deploy when
+    to it.** Omitting a previously attached custom domain detaches that origin
+    and deletes its DNS record. The generator therefore always lists the app
+    origin alongside the package-app origin, and fails the deploy when
     `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than publishing
     a partial set. Any domain attached out-of-band must be added here before the
     next deploy, or that deploy will remove it. During a domain migration the
@@ -505,7 +504,7 @@ How to get/set each value:
   - `APP_LEGACY_HOSTS` lists previous app hostnames (comma-separated, e.g.
     `heykody.dev`) that stay attached to the Worker as custom domains and are
     dual-served.
-  - `APP_LEGACY_REDIRECT=true` later enables 308 redirects for browser GET/HEAD
+  - `APP_LEGACY_REDIRECT=true` enables 308 redirects for browser GET/HEAD
     navigation from those hosts to the canonical origin; protocol surfaces
     (`/mcp`, OAuth, well-known, auth callbacks, webhooks, health) always keep
     serving directly.
