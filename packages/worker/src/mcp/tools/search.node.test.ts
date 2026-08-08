@@ -1364,7 +1364,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		name: 'openapi:widgets:createwidget',
 		inputTypeDefinitionTruncated: true,
 	})
-	expect(topMatch?.inputTypeDefinition?.endsWith('...')).toBe(true)
+	expect(topMatch?.inputTypeDefinition).toContain('required fields: name')
 
 	const nonTruncatedTop = await searchUnified({
 		env: {} as Env,
