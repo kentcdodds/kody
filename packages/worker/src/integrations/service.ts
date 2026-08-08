@@ -357,18 +357,7 @@ export async function upsertPlatformIntegration(input: {
 	if (!accessTokenSecretName) {
 		throw new Error('Access token secret name is required.')
 	}
-	const allowedScopes = new Set(app.allowedScopes)
-	const scopes = Array.from(
-		new Set(input.scopes.map((scope) => scope.trim()).filter(Boolean)),
-	)
-	const disallowed = scopes.filter(
-		(scope) => allowedScopes.size > 0 && !allowedScopes.has(scope),
-	)
-	if (disallowed.length > 0) {
-		throw new Error(
-			`Scopes not allowed for platform integration "${app.slug}": ${disallowed.join(', ')}.`,
-		)
-	}
+	const scopes = assertScopesAllowedForPlatformApp(app, input.scopes)
 	const tokenHost = safeParseHost(app.tokenUrl)
 	const requiredHosts = normalizeAllowedHosts([
 		...app.requiredHosts,
@@ -430,6 +419,29 @@ export async function upsertPlatformIntegration(input: {
 		throw new Error(`Failed to save platform integration "${name}".`)
 	}
 	return saved
+}
+
+/**
+ * The allowed-scope menu is a strict allowlist: an empty menu permits only
+ * scope-less connections. Callers must run this before persisting anything
+ * (including token secrets), so a rejected scope set leaves no state behind.
+ * Returns the normalized requested scopes.
+ */
+export function assertScopesAllowedForPlatformApp(
+	app: PlatformOauthApp,
+	requestedScopes: Array<string>,
+): Array<string> {
+	const allowedScopes = new Set(app.allowedScopes)
+	const scopes = Array.from(
+		new Set(requestedScopes.map((scope) => scope.trim()).filter(Boolean)),
+	)
+	const disallowed = scopes.filter((scope) => !allowedScopes.has(scope))
+	if (disallowed.length > 0) {
+		throw new Error(
+			`Scopes not allowed for platform integration "${app.slug}": ${disallowed.join(', ')}.`,
+		)
+	}
+	return scopes
 }
 
 export async function listAvailablePlatformApps(input: {

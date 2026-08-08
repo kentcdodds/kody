@@ -40,6 +40,7 @@ import {
 	integrationConfigSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
+	assertScopesAllowedForPlatformApp,
 	getAvailablePlatformApp,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
@@ -394,6 +395,24 @@ async function handleConnectOauthAction(input: {
 			400,
 		)
 	}
+	// Scope validation must precede token persistence: a rejected scope set
+	// must not leave orphan token secrets behind.
+	if (platformApp) {
+		try {
+			assertScopesAllowedForPlatformApp(platformApp, scopes)
+		} catch (error) {
+			return jsonResponse(
+				{
+					ok: false,
+					error:
+						error instanceof Error
+							? error.message
+							: 'Requested scopes are not allowed.',
+				},
+				400,
+			)
+		}
+	}
 
 	const approvedHostsBySecretName = new Map(
 		(
@@ -696,7 +715,11 @@ async function handleOAuthExchangeAction(input: {
 
 	const params = new URLSearchParams(paramsRaw)
 	if (platformClientId) {
+		// Every credential in a platform exchange comes from the app row: pin
+		// the client id and drop any caller-supplied client_secret so it can
+		// never reach the provider.
 		params.set('client_id', platformClientId)
+		params.delete('client_secret')
 	}
 
 	let exchangeRequest: { headers: Record<string, string>; body: string }

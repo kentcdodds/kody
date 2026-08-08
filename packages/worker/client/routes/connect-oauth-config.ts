@@ -91,6 +91,8 @@ export type StoredIntegrationConfig = Omit<
 	authorization?: StoredIntegrationAuthorization | null
 	/** Platform (built-in) app slug when the record is a platform connection or prefill. */
 	platformAppSlug?: string | null
+	/** Operator-verified scope menu for platform apps; requested scopes are clamped to it. */
+	platformAllowedScopes?: Array<string>
 }
 
 export type ConnectOauthHostApprovalLink = {
@@ -177,7 +179,10 @@ export function toStoredIntegrationConfig(
 				}
 			: null,
 		...(integration.platform === true
-			? { platformAppSlug: integration.appSlug }
+			? {
+					platformAppSlug: integration.appSlug,
+					platformAllowedScopes: integration.platformAllowedScopes ?? [],
+				}
 			: {}),
 	}
 }
@@ -345,7 +350,18 @@ export function mergeConnectOauthConfig(input: {
 		input.queryConfig.usePkce ??
 		input.storedIntegration?.usePkce ??
 		defaultConnectOauthUsePkce({ flow, tokenUrl })
-	const scopes = resolveConnectOauthScopes(input)
+	const platformAllowedScopes = input.storedIntegration?.platformAppSlug
+		? (input.storedIntegration.platformAllowedScopes ?? [])
+		: null
+	// Platform apps clamp requested scopes to the operator-verified menu, so
+	// query-supplied scopes can never widen the authorize request. The server
+	// re-validates before persisting anything.
+	const scopes =
+		platformAllowedScopes === null
+			? resolveConnectOauthScopes(input)
+			: resolveConnectOauthScopes(input).filter((scope) =>
+					platformAllowedScopes.includes(scope),
+				)
 	const extraAuthorizeParams = resolveConnectOauthExtraAuthorizeParams(input)
 	const allowedHosts = normalizeHosts([
 		tokenHost,

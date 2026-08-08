@@ -106,6 +106,52 @@ test('upsert keeps the stored secret when clientSecret is omitted and clears it 
 	).toBeNull()
 })
 
+test('partial saves retain omitted fields instead of clearing them', async () => {
+	const { db, env } = createHarness()
+	await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+
+	const updated = await upsertPlatformOauthApp({
+		db,
+		env,
+		app: {
+			slug: 'github',
+			clientId: baseGithubApp.clientId,
+			tokenUrl: baseGithubApp.tokenUrl,
+			authorizeUrl: baseGithubApp.authorizeUrl,
+			flow: 'confidential',
+			enabled: false,
+		},
+	})
+	expect(updated).toMatchObject({
+		enabled: false,
+		allowedScopes: ['gist', 'read:user', 'repo'],
+		defaultScopes: ['read:user'],
+		requiredHosts: ['api.github.com', 'github.com'],
+		apiBaseUrl: 'https://api.github.com',
+	})
+	expect(
+		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
+	).toBe('platform-github-client-secret-value')
+
+	// Explicit empty values still clear.
+	const cleared = await upsertPlatformOauthApp({
+		db,
+		env,
+		app: {
+			slug: 'github',
+			clientId: baseGithubApp.clientId,
+			tokenUrl: baseGithubApp.tokenUrl,
+			authorizeUrl: baseGithubApp.authorizeUrl,
+			flow: 'confidential',
+			allowedScopes: [],
+			defaultScopes: [],
+			requiredHosts: [],
+		},
+	})
+	expect(cleared.allowedScopes).toEqual([])
+	expect(cleared.requiredHosts).toEqual([])
+})
+
 test('confidential flow requires a client secret', async () => {
 	const { db, env } = createHarness()
 	await expect(

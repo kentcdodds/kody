@@ -118,7 +118,14 @@ async function refreshPlatformIntegrationTokens(
 			'kody.integration_token_refresh is not available in this sandbox.',
 		)
 	}
-	await tokenRefresh({ name: providerName })
+	const result = (await tokenRefresh({ name: providerName })) as {
+		ok?: unknown
+	} | null
+	if (result?.ok !== true) {
+		throw new Error(
+			`Host-side token refresh for integration "${providerName}" did not succeed.`,
+		)
+	}
 }
 
 export async function createAuthenticatedFetch(
@@ -754,7 +761,12 @@ const __kodyRefreshPlatformIntegrationTokens = async (providerName) => {
       'kody.integration_token_refresh is not available in this sandbox.',
     );
   }
-  await tokenRefresh({ name: providerName });
+  const result = await tokenRefresh({ name: providerName });
+  if (result?.ok !== true) {
+    throw new Error(
+      \`Host-side token refresh for integration "\${providerName}" did not succeed.\`,
+    );
+  }
 };
 const __kodyRefreshAccessToken = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);

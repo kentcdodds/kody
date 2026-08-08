@@ -83,27 +83,30 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 				ctx,
 				'admin_platform_oauth_app_save',
 				async () => {
+					// Omitted optional fields stay `undefined` so the upsert's
+					// retain-on-omit semantics apply: a partial save never
+					// silently clears the scope menu, hosts, or stored secret.
 					const app = await upsertPlatformOauthApp({
 						db: ctx.env.APP_DB,
 						env: ctx.env,
 						app: {
 							slug: args.slug,
-							provider: args.provider ?? null,
-							label: args.label ?? null,
+							provider: args.provider,
+							label: args.label,
 							clientId: args.clientId,
 							clientSecret: args.clientSecret,
 							tokenUrl: args.tokenUrl,
 							authorizeUrl: args.authorizeUrl,
-							apiBaseUrl: args.apiBaseUrl ?? null,
+							apiBaseUrl: args.apiBaseUrl,
 							flow: args.flow,
-							usePkce: args.usePkce ?? null,
-							tokenExchangeStyle: args.tokenExchangeStyle ?? null,
-							scopeSeparator: args.scopeSeparator ?? null,
-							extraAuthorizeParams: args.extraAuthorizeParams ?? {},
-							allowedScopes: args.allowedScopes ?? [],
-							defaultScopes: args.defaultScopes ?? [],
-							requiredHosts: args.requiredHosts ?? [],
-							...(args.enabled === undefined ? {} : { enabled: args.enabled }),
+							usePkce: args.usePkce,
+							tokenExchangeStyle: args.tokenExchangeStyle,
+							scopeSeparator: args.scopeSeparator,
+							extraAuthorizeParams: args.extraAuthorizeParams,
+							allowedScopes: args.allowedScopes,
+							defaultScopes: args.defaultScopes,
+							requiredHosts: args.requiredHosts,
+							enabled: args.enabled,
 						},
 					})
 					return { app: toPlatformOauthAppPublic(app) }

@@ -35,7 +35,9 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 			'built-in',
 		],
 		readOnly: false,
-		idempotent: true,
+		// Not idempotent: providers may rotate the refresh token on each call,
+		// so an automatic retry could present an already-consumed token.
+		idempotent: false,
 		destructive: false,
 		inputSchema,
 		outputSchema,

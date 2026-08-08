@@ -160,10 +160,14 @@ export async function refreshIntegrationTokens(input: {
 		style,
 	})
 
+	// Bound the provider round trip: every integration_token_refresh caller
+	// (including createAuthenticatedFetch's automatic 401 retry) inherits this
+	// latency, so a stalled token endpoint must not hold the invocation open.
 	const response = await fetch(app.tokenUrl, {
 		method: 'POST',
 		headers: exchangeRequest.headers,
 		body: exchangeRequest.body,
+		signal: AbortSignal.timeout(30_000),
 	})
 	const payload = (await response.json().catch(() => null)) as Record<
 		string,

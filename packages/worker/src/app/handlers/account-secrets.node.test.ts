@@ -159,16 +159,23 @@ vi.mock('#mcp/values/service.ts', () => ({
 	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
 }))
 
-vi.mock('#worker/integrations/service.ts', () => ({
-	upsertIntegration: (...args: Array<unknown>) =>
-		mockModule.upsertIntegration(...args),
-	upsertOauthAppWithoutConnection: (...args: Array<unknown>) =>
-		mockModule.upsertOauthAppWithoutConnection(...args),
-	getAvailablePlatformApp: (...args: Array<unknown>) =>
-		mockModule.getAvailablePlatformApp(...args),
-	upsertPlatformIntegration: (...args: Array<unknown>) =>
-		mockModule.upsertPlatformIntegration(...args),
-}))
+vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/integrations/service.ts')>()
+	return {
+		upsertIntegration: (...args: Array<unknown>) =>
+			mockModule.upsertIntegration(...args),
+		upsertOauthAppWithoutConnection: (...args: Array<unknown>) =>
+			mockModule.upsertOauthAppWithoutConnection(...args),
+		getAvailablePlatformApp: (...args: Array<unknown>) =>
+			mockModule.getAvailablePlatformApp(...args),
+		upsertPlatformIntegration: (...args: Array<unknown>) =>
+			mockModule.upsertPlatformIntegration(...args),
+		// Real scope validation so handler ordering tests exercise the actual
+		// allowlist semantics.
+		assertScopesAllowedForPlatformApp: actual.assertScopesAllowedForPlatformApp,
+	}
+})
 
 vi.mock('#worker/integrations/platform-apps.ts', () => ({
 	getPlatformOauthAppClientSecret: (...args: Array<unknown>) =>
@@ -2045,4 +2052,35 @@ test('connect_oauth with platformAppSlug saves tokens and persists a platform-la
 			scope: 'user',
 		}),
 	)
+})
+
+test('connect_oauth rejects out-of-menu platform scopes before persisting any token secret', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
+	mockModule.saveSecret.mockClear()
+	mockModule.upsertPlatformIntegration.mockClear()
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'github',
+				platformAppSlug: 'github',
+				scopes: ['admin:org'],
+				accessTokenSecretName: 'githubAccessToken',
+				tokenPayload: { access_token: 'gh-access-token' },
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('Scopes not allowed'),
+	})
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	expect(mockModule.upsertPlatformIntegration).not.toHaveBeenCalled()
 })

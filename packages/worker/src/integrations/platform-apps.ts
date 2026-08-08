@@ -101,6 +101,12 @@ export async function getPlatformOauthAppBySlug(input: {
 	return row ? mapPlatformOauthAppRow(row) : null
 }
 
+/**
+ * Every optional field is retain-on-omit: `undefined` keeps the stored value
+ * on update, so a partial admin save can never silently clear the scope menu,
+ * required hosts, or the stored client secret. Pass `null` (or an empty
+ * array/record) to clear a field explicitly.
+ */
 export type PlatformOauthAppSaveInput = {
 	slug: string
 	provider?: string | null
@@ -158,11 +164,24 @@ export async function upsertPlatformOauthApp(input: {
 	}
 
 	const now = new Date().toISOString()
-	const defaultScopes = normalizeScopes(input.app.defaultScopes ?? [])
+	const defaultScopes =
+		input.app.defaultScopes === undefined
+			? parseJsonStringArray(existing?.default_scopes_json ?? '[]')
+			: normalizeScopes(input.app.defaultScopes)
 	const allowedScopes = normalizeScopes([
-		...(input.app.allowedScopes ?? []),
+		...(input.app.allowedScopes === undefined
+			? parseJsonStringArray(existing?.allowed_scopes_json ?? '[]')
+			: input.app.allowedScopes),
 		...defaultScopes,
 	])
+	const usePkce =
+		input.app.usePkce === undefined
+			? (existing?.use_pkce ?? null)
+			: input.app.usePkce == null
+				? null
+				: input.app.usePkce
+					? 1
+					: 0
 	await input.db
 		.prepare(
 			`INSERT INTO platform_oauth_apps (
@@ -194,22 +213,40 @@ export async function upsertPlatformOauthApp(input: {
 		)
 		.bind(
 			slug,
-			input.app.provider?.trim() || providerFromSlug(slug),
-			input.app.label?.trim() || null,
+			input.app.provider === undefined
+				? (existing?.provider ?? providerFromSlug(slug))
+				: input.app.provider?.trim() || providerFromSlug(slug),
+			input.app.label === undefined
+				? (existing?.label ?? null)
+				: input.app.label?.trim() || null,
 			clientId,
 			clientSecretEncrypted,
 			tokenUrl,
 			authorizeUrl,
-			input.app.apiBaseUrl?.trim() || null,
+			input.app.apiBaseUrl === undefined
+				? (existing?.api_base_url ?? null)
+				: input.app.apiBaseUrl?.trim() || null,
 			input.app.flow,
-			input.app.usePkce == null ? null : input.app.usePkce ? 1 : 0,
-			input.app.tokenExchangeStyle ?? null,
-			input.app.scopeSeparator ?? null,
-			JSON.stringify(input.app.extraAuthorizeParams ?? {}),
+			usePkce,
+			input.app.tokenExchangeStyle === undefined
+				? (existing?.token_exchange_style ?? null)
+				: (input.app.tokenExchangeStyle ?? null),
+			input.app.scopeSeparator === undefined
+				? (existing?.scope_separator ?? null)
+				: (input.app.scopeSeparator ?? null),
+			input.app.extraAuthorizeParams === undefined
+				? (existing?.extra_authorize_params_json ?? '{}')
+				: JSON.stringify(input.app.extraAuthorizeParams),
 			JSON.stringify(allowedScopes),
 			JSON.stringify(defaultScopes),
-			JSON.stringify(input.app.requiredHosts ?? []),
-			input.app.enabled === false ? 0 : 1,
+			input.app.requiredHosts === undefined
+				? (existing?.required_hosts_json ?? '[]')
+				: JSON.stringify(input.app.requiredHosts),
+			input.app.enabled === undefined
+				? (existing?.enabled ?? 1)
+				: input.app.enabled
+					? 1
+					: 0,
 			existing?.created_at ?? now,
 			now,
 		)

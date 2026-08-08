@@ -88,6 +88,11 @@ DROP TABLE user_integrations;
 
 ALTER TABLE user_integrations_next RENAME TO user_integrations;
 
+-- Recreate the 0001 index dropped with the old table, then index the new
+-- platform lane.
+CREATE INDEX idx_user_integrations_user_app_slug
+ON user_integrations(user_id, app_slug);
+
 CREATE INDEX idx_user_integrations_platform_app
 ON user_integrations(platform_app_slug)
 WHERE platform_app_slug IS NOT NULL;

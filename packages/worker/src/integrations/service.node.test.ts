@@ -1082,6 +1082,43 @@ test('upsertPlatformIntegration rejects scopes outside the allowed menu', async 
 	).rejects.toThrow('Scopes not allowed for platform integration "github"')
 })
 
+test('an empty allowed-scope menu is a strict allowlist: only scope-less connects pass', async () => {
+	const { env } = createPlatformEnv()
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			flow: 'confidential',
+			allowedScopes: [],
+			defaultScopes: [],
+		},
+	})
+
+	await expect(
+		upsertPlatformIntegration({
+			env,
+			userId: 'user-strict',
+			platformAppSlug: 'github',
+			scopes: ['repo'],
+			accessTokenSecretName: 'githubAccessToken',
+		}),
+	).rejects.toThrow('Scopes not allowed for platform integration "github"')
+
+	const saved = await upsertPlatformIntegration({
+		env,
+		userId: 'user-strict',
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	expect(saved.authorization?.scopes).toEqual([])
+})
+
 test('upsertPlatformIntegration defaults empty scopes to the app default scopes', async () => {
 	const { env } = createPlatformEnv()
 	await provisionGithubPlatformApp(env)

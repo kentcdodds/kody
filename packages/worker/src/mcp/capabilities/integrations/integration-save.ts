@@ -50,6 +50,14 @@ export const integrationSaveCapability = defineDomainCapability(
 				userId: user.userId,
 				name: args.name,
 			})
+			// A partial merge onto a platform (built-in) connection would
+			// silently convert it to a user-lane app and break host-side
+			// refresh; keep platform connections managed by the connect flow.
+			if (existing?.platform === true) {
+				throw new McpCallerError(
+					`Integration "${args.name}" is a platform (built-in) connection managed at /connect/oauth?provider=${encodeURIComponent(existing.name)}. Reconnect there to change scopes, or integration_delete it first to replace it with your own OAuth app.`,
+				)
+			}
 			const config = existing
 				? mergeIntegrationConfig(existing, args)
 				: createNewIntegrationConfig(args)
