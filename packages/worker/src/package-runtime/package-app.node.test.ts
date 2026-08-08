@@ -65,6 +65,27 @@ async function createWorkflowsProxyForTest(runtimeBridge: unknown) {
 	}
 }
 
+async function collectQueryParamNamesForTest(url: URL) {
+	const sourceText = await readFile(
+		new URL('./package-app.ts', import.meta.url),
+		'utf8',
+	)
+	const start = sourceText.indexOf('function collectQueryParamNames(url) {')
+	const end = sourceText.indexOf('\n\nasync function startRuntimeRun', start)
+	if (start < 0 || end < 0) {
+		throw new Error('collectQueryParamNames source was not found.')
+	}
+	const functionSource = sourceText
+		.slice(start, end)
+		.replaceAll('\\\\', '\\')
+		.replaceAll('\\`', '`')
+		.replaceAll('\\${', '${')
+	return new Function(
+		'url',
+		`${functionSource}; return collectQueryParamNames(url);`,
+	)(url) as Array<string>
+}
+
 test('package app kody proxy supports remote namespace calls', async () => {
 	const calls: Array<{ name: string; args: unknown }> = []
 	const kody = await createKodyProxyForTest({
@@ -653,8 +674,19 @@ test('package app worker exposes its public mount and records fetch query and re
 		hostedUrl: 'https://packages.kody.test/@serving-owner/packages/renamed-app',
 	})
 	const wrapperSource = workerOptions?.modules['package-app-entry.js']
-	expect(wrapperSource).toContain('queryString: requestUrl.search')
+	expect(wrapperSource).toContain(
+		'queryParamNames: collectQueryParamNames(requestUrl)',
+	)
 	expect(wrapperSource).toContain('httpStatus: response.status')
+
+	const queryParamNames = await collectQueryParamNamesForTest(
+		new URL(
+			'https://packages.kody.test/callback?audio=1&code=oauth-code-secret&state=oauth-state-secret&audio=2',
+		),
+	)
+	expect(queryParamNames).toEqual(['audio', 'code', 'state'])
+	expect(JSON.stringify(queryParamNames)).not.toContain('oauth-code-secret')
+	expect(JSON.stringify(queryParamNames)).not.toContain('oauth-state-secret')
 })
 
 test('createPackageAppWorkerId changes when compatibility settings change', async () => {
@@ -992,7 +1024,7 @@ test('package app runtime bridge adds response status to finish metadata', async
 			packageId: 'package-1',
 			metadata: {
 				method: 'GET',
-				queryString: '?audio=1',
+				queryParamNames: ['audio', 'code', 'state'],
 			},
 		},
 	}
@@ -1012,7 +1044,7 @@ test('package app runtime bridge adds response status to finish metadata', async
 				...runHandle.context,
 				metadata: {
 					method: 'GET',
-					queryString: '?audio=1',
+					queryParamNames: ['audio', 'code', 'state'],
 					httpStatus: 201,
 				},
 			},

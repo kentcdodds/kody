@@ -598,6 +598,10 @@ function createConsoleLogCapture() {
 	};
 }
 
+function collectQueryParamNames(url) {
+	return [...new Set(url.searchParams.keys())];
+}
+
 async function startRuntimeRun(runtimeBridge, input) {
 	return await runtimeBridge.packageRuntimeRunStart(input);
 }
@@ -645,7 +649,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			name: requestUrl.pathname,
 			metadata: {
 				method: request.method,
-				queryString: requestUrl.search,
+				queryParamNames: collectQueryParamNames(requestUrl),
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
