@@ -822,6 +822,10 @@ export type AccountMcpServersLoaderData = {
 	ok: true
 	email: string
 	username: string
+	/** Canonical origin Kody registers as the OAuth client_uri. */
+	oauthClientOrigin: string
+	/** Exact redirect URI remote authorization servers must allow. */
+	oauthCallbackUrl: string
 	servers: Array<AccountMcpServerListItem>
 }
 

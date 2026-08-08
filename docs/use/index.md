@@ -21,6 +21,8 @@ Read in order for a full tour, or jump to a topic.
   prompt for people (and agents) deciding whether Kody fits, before any setup
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
   OAuth, and use the setup prompt
+- [Connect remote MCP servers](./mcp-client-servers.md) — add external MCP
+  servers so Kody can call their tools (`kody.mcp[...]`)
 - [First steps — what to ask Kody to do](./first-steps.md)
 - [Search](./search.md)
 - [Execute and workflows](./execute.md) — includes per-user MCP instruction

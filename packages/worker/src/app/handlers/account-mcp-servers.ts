@@ -7,12 +7,13 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
 	addMcpServer,
 	deleteMcpServer,
 	getMcpServerSettingById,
+	resolveMcpServerOAuthClientUrls,
 	setMcpServerEnabled,
 } from '#worker/mcp-client/settings-service.ts'
 
@@ -29,7 +30,11 @@ export function createAccountMcpServersHandler(env: Env) {
 				return user
 			}
 
-			const accountMcpServers = await loadAccountMcpServersData({ env, user })
+			const accountMcpServers = await loadAccountMcpServersData({
+				env,
+				user,
+				requestUrl: request.url,
+			})
 			return renderAppPage({
 				request,
 				env,
@@ -54,7 +59,13 @@ export function createAccountMcpServersApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(await loadAccountMcpServersData({ env, user }))
+				return jsonResponse(
+					await loadAccountMcpServersData({
+						env,
+						user,
+						requestUrl: request.url,
+					}),
+				)
 			}
 
 			if (request.method !== 'POST') {
@@ -143,6 +154,14 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				authError = getErrorMessage(error)
 			}
 
+			const oauth = resolveMcpServerOAuthClientUrls({
+				env,
+				requestUrl: request.url,
+			})
+			if (authError) {
+				authError = enrichMcpOAuthProviderError(authError, oauth)
+			}
+
 			const target = serverId
 				? new URL(
 						`/account/mcp-servers/${encodeURIComponent(serverId)}`,
@@ -169,19 +188,21 @@ async function handleAddAction(input: {
 	body: object
 	request: Request
 }) {
+	const oauth = resolveMcpServerOAuthClientUrls({
+		env: input.env,
+		requestUrl: input.request.url,
+	})
 	const { setting } = await addMcpServer({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 		name: readTrimmedStringOrEmpty(input.body, 'name'),
 		url: readTrimmedStringOrEmpty(input.body, 'url'),
-		baseUrl: getAppBaseUrl({
-			env: input.env,
-			requestUrl: input.request.url,
-		}),
+		baseUrl: oauth.clientOrigin,
 	})
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
 		user: input.user,
+		requestUrl: input.request.url,
 	})
 	return jsonResponse({
 		...payload,

@@ -4,6 +4,8 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
+import { resolveMcpServerOAuthClientUrls } from '#worker/mcp-client/settings-service.ts'
 import { resolveMcpServerSetting } from './shared.ts'
 
 const outputSchema = z.object({
@@ -13,6 +15,8 @@ const outputSchema = z.object({
 	toolCount: z.number().int().nonnegative(),
 	authUrl: z.string().nullable(),
 	error: z.string().nullable(),
+	oauthClientOrigin: z.string(),
+	oauthCallbackUrl: z.string(),
 })
 
 export const mcpServerReconnectCapability = defineDomainCapability(
@@ -36,6 +40,10 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 				userId: user.userId,
 				server: args.server,
 			})
+			const oauth = resolveMcpServerOAuthClientUrls({
+				env: ctx.env,
+				requestUrl: ctx.callerContext.baseUrl,
+			})
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
 				userId: user.userId,
@@ -47,7 +55,11 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 				state: result.state,
 				toolCount: result.toolCount,
 				authUrl: result.authUrl,
-				error: result.error,
+				error: result.error
+					? enrichMcpOAuthProviderError(result.error, oauth)
+					: null,
+				oauthClientOrigin: oauth.clientOrigin,
+				oauthCallbackUrl: oauth.callbackUrl,
 			}
 		},
 	},
