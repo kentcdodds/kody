@@ -14,7 +14,7 @@ import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.
 import { listSystemEmailAttachments } from './system-email-graph-store.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
-const inboundEmailReceiptTopic = 'email.message.received'
+export const inboundEmailReceiptTopic = 'email.message.received'
 export const inboundEmailQuarantinedTopic = 'email.message.quarantined'
 const systemInboundEmailReceiptTopic = 'email.system-message.received'
 export const emailDeliveryUpdatedTopic = 'email.message.delivery.updated'

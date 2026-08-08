@@ -96,7 +96,7 @@ export function createPackageCodeRequest(
 	return packageCodeRequest
 }
 
-function applyTrustedPackageAppDispatch(
+export function applyTrustedPackageAppDispatch(
 	request: Request,
 	dispatch: PackageAppTrustedDispatch | undefined,
 ) {

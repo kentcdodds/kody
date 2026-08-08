@@ -89,6 +89,22 @@ function assertDirectMcpCaller(callerContext: {
 function normalizePackageAppFetchPath(path: string | undefined) {
 	const trimmed = path?.trim() ?? ''
 	if (!trimmed || trimmed === '/') return '/'
+	const pathOnly = trimmed.split(/[?#]/, 1)[0] ?? ''
+	for (const segment of pathOnly.split(/[\\/]/)) {
+		let decoded: string
+		try {
+			decoded = decodeURIComponent(segment)
+		} catch {
+			throw new McpCallerError(
+				'package_app_fetch path contains invalid percent encoding.',
+			)
+		}
+		if (decoded === '..') {
+			throw new McpCallerError(
+				'package_app_fetch path must not contain parent traversal segments.',
+			)
+		}
+	}
 	return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 }
 
@@ -165,10 +181,12 @@ function encodePackageAppFetchBody(response: Response, bytes: Uint8Array) {
 		isTextualResponse(response) === true ||
 		(!response.headers.has('Content-Type') && text !== null)
 	) {
-		if (text === null) return bytesToBase64(bytes)
-		return text
+		if (text === null) {
+			return { body: bytesToBase64(bytes), encoding: 'base64' as const }
+		}
+		return { body: text, encoding: 'text' as const }
 	}
-	return bytesToBase64(bytes)
+	return { body: bytesToBase64(bytes), encoding: 'base64' as const }
 }
 
 async function readResponseBodyWithTruncation(
@@ -271,7 +289,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 		],
 		readOnly: false,
 		idempotent: false,
-		destructive: false,
+		destructive: true,
 		inputSchema: z
 			.object({
 				package_id: z.string().min(1).optional(),
@@ -330,11 +348,17 @@ export const packageAppFetchCapability = defineDomainCapability(
 			}
 			if (
 				args.headers &&
-				(args.headers.Upgrade?.trim() ||
-					args.headers.upgrade?.trim() ||
-					Object.entries(args.headers).some(
-						([name]) => name.toLowerCase() === 'upgrade',
-					))
+				Object.entries(args.headers).some(([name, value]) => {
+					const normalizedName = name.toLowerCase()
+					return (
+						normalizedName === 'upgrade' ||
+						(normalizedName === 'connection' &&
+							value
+								.toLowerCase()
+								.split(',')
+								.some((token) => token.trim() === 'upgrade'))
+					)
+				})
 			) {
 				throw new McpCallerError(
 					'package_app_fetch does not support websocket Upgrade requests.',
@@ -418,16 +442,18 @@ export const packageAppFetchCapability = defineDomainCapability(
 				response,
 				packageAppFetchMaxBodyBytes,
 			)
-			const encodedBody = encodePackageAppFetchBody(response, bytes)
+			const encoded = encodePackageAppFetchBody(response, bytes)
+			const maxBase64SourceBytes =
+				Math.floor(packageAppFetchMaxBodyBytes / 4) * 3
 			const encodedBodyTooLarge =
-				new TextEncoder().encode(encodedBody).byteLength >
-				packageAppFetchMaxBodyBytes
+				encoded.encoding === 'base64' && bytes.byteLength > maxBase64SourceBytes
+			const body = encodedBodyTooLarge
+				? bytesToBase64(bytes.slice(0, maxBase64SourceBytes))
+				: encoded.body
 			return {
 				status: response.status,
 				headers: collectSafeResponseHeaders(response),
-				body: encodedBodyTooLarge
-					? encodedBody.slice(0, packageAppFetchMaxBodyBytes)
-					: encodedBody,
+				body,
 				truncated: truncated || encodedBodyTooLarge,
 			}
 		},

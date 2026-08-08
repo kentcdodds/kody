@@ -1,4 +1,4 @@
-import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -240,17 +240,37 @@ test('package_app_fetch rejects package runtime caller contexts', async () => {
 
 test('package_app_fetch rejects websocket upgrade requests', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
-	await expect(
-		packageAppFetchCapability.handler(
-			{
-				kody_id: 'demo-app',
-				headers: { Upgrade: 'websocket' },
-			},
-			createContext(),
-		),
-	).rejects.toThrow(
-		'package_app_fetch does not support websocket Upgrade requests.',
-	)
+	for (const headers of [
+		{ Upgrade: 'websocket' },
+		{ Connection: 'keep-alive, Upgrade' },
+	]) {
+		await expect(
+			packageAppFetchCapability.handler(
+				{
+					kody_id: 'demo-app',
+					headers,
+				},
+				createContext(),
+			),
+		).rejects.toThrow(
+			'package_app_fetch does not support websocket Upgrade requests.',
+		)
+	}
+})
+
+test('package_app_fetch rejects paths that can escape the selected package mount', async () => {
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
+	for (const path of ['/../other-package/probe', '/%2e%2e/other/probe']) {
+		await expect(
+			packageAppFetchCapability.handler(
+				{ kody_id: 'demo-app', path },
+				createContext(),
+			),
+		).rejects.toThrow(
+			'package_app_fetch path must not contain parent traversal segments.',
+		)
+	}
+	expect(mockModule.servePackageAppRequest).not.toHaveBeenCalled()
 })
 
 test('package_app_fetch returns 404 diagnostics for missing packages and packages without apps', async () => {
@@ -329,7 +349,9 @@ test('package_app_fetch returns binary responses as base64 in body', async () =>
 		{ kody_id: 'demo-app' },
 		createContext(),
 	)
-	expect(capped.body).toHaveLength(102_400)
+	const decoded = base64ToBytes(capped.body)
+	expect(decoded).toEqual(largeBinary.slice(0, decoded.byteLength))
+	expect(capped.body.length).toBeLessThanOrEqual(102_400)
 	expect(capped.truncated).toBe(true)
 })
 

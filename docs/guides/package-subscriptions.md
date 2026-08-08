@@ -78,6 +78,7 @@ waiting for production fan-out.
 ```json
 {
 	"kody_id": "email-automation",
+	"package_scope": "kody",
 	"topic": "email.message.received",
 	"params": {}
 }
@@ -88,6 +89,7 @@ For stored inbound mail, replay with `email_message_id` instead of `params`:
 ```json
 {
 	"kody_id": "email-automation",
+	"package_scope": "kody",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"
 }
@@ -96,8 +98,11 @@ For stored inbound mail, replay with `email_message_id` instead of `params`:
 Pass exactly one of `params` or `email_message_id`. There is no caller
 `idempotency_key` — the platform generates internal idempotency keys.
 
-`package_publish_external_push` responses include `test_hints.subscriptions[]`
-with a starter snippet per declared topic when subscriptions are present.
+Final `published` and `already_published` results from
+`package_publish_external_push` include `test_hints.subscriptions[]` with a
+starter snippet per declared topic when subscriptions are present. For a
+`dispatched` result, poll the workflow to completion before reading its final
+publish result. Failed and non-fast-forward results have no test hints.
 
 ### Handler guidance
 

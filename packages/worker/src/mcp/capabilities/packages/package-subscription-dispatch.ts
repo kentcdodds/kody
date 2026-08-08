@@ -1,10 +1,12 @@
 import { z } from 'zod'
+import { utf8ByteLength } from '@kody-internal/shared/backup-restore-safety.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	buildEmailReceiptSubscriptionEnvelope,
+	inboundEmailReceiptTopic,
 	inboundEmailQuarantinedTopic,
 } from '#worker/email/package-subscriptions.ts'
 import {
@@ -32,7 +34,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 
-const inboundEmailReceiptTopic = 'email.message.received'
+const maxSyntheticSubscriptionResultBytes = 102_400
 
 const packageRuntimeCallerErrorMessage = `${packageSubscriptionDispatchCapabilityName} is unavailable from package runtime contexts. Call it from an interactive MCP agent instead.`
 
@@ -85,6 +87,20 @@ function readInvocationError(response: {
 	}
 }
 
+function boundSyntheticSubscriptionResult(result: unknown) {
+	const serialized = JSON.stringify(result)
+	if (
+		serialized === undefined ||
+		utf8ByteLength(serialized) <= maxSyntheticSubscriptionResultBytes
+	) {
+		return result
+	}
+	return {
+		truncated: true,
+		message: `Subscription result exceeded ${maxSyntheticSubscriptionResultBytes} bytes and was omitted. Inspect the subscription run for details.`,
+	}
+}
+
 export const packageSubscriptionDispatchCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
@@ -107,7 +123,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 		],
 		readOnly: false,
 		idempotent: false,
-		destructive: false,
+		destructive: true,
 		inputSchema: z
 			.object({
 				package_id: z.string().min(1).optional(),
@@ -296,7 +312,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				status: response.status,
 				replayed,
 				...(succeeded
-					? { result: body['result'] }
+					? { result: boundSyntheticSubscriptionResult(body['result']) }
 					: { error: readInvocationError(response) }),
 			}
 		},

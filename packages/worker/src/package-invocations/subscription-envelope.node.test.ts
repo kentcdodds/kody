@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { isMissingPackageModuleError } from './module-artifacts.ts'
 import {
 	buildFreshSyntheticSubscriptionIdempotencyKey,
 	buildPackageSubscriptionNotFoundMessage,
@@ -38,6 +39,11 @@ test('buildPackageSubscriptionNotFoundMessage names package_subscription_dispatc
 			topic: 'email.message.received',
 		}),
 	).toContain(packageSubscriptionDispatchCapabilityName)
+	expect(
+		isMissingPackageModuleError(
+			new Error('Package "demo" does not declare subscription "repo.pushed".'),
+		),
+	).toBe(true)
 })
 
 test('buildFreshSyntheticSubscriptionIdempotencyKey uses synthetic prefix and unique values', () => {

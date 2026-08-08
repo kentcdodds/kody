@@ -63,14 +63,19 @@ function parsePackageEventDispatchInput(rawInput: PackageEventDispatchInput) {
 	if (!idempotencyKey) {
 		throw new Error('events.dispatch requires a non-empty idempotencyKey.')
 	}
-	const payload = stripUntrustedSubscriptionEnvelopeFields(
-		(input.payload ?? {}) as Record<string, unknown>,
-	)
-	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+	const rawPayload = input.payload ?? {}
+	if (
+		!rawPayload ||
+		typeof rawPayload !== 'object' ||
+		Array.isArray(rawPayload)
+	) {
 		throw new Error(
 			'events.dispatch payload must be a JSON object when provided.',
 		)
 	}
+	const payload = stripUntrustedSubscriptionEnvelopeFields(
+		rawPayload as Record<string, unknown>,
+	)
 	return {
 		topic,
 		idempotencyKey,

@@ -43,17 +43,22 @@ Search the `packages` domain, then call `package_subscription_dispatch`:
 
 Fields:
 
-| Field              | Required | Meaning                                                                |
-| ------------------ | -------- | ---------------------------------------------------------------------- |
-| `kody_id`          | yes      | Bare `kody.id` of the package whose handler should run                 |
-| `topic`            | yes      | Exact topic key from `kody.subscriptions`                              |
-| `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty |
-| `email_message_id` | one of   | Stored inbound message id; platform rebuilds the production envelope   |
+| Field              | Required | Meaning                                                                 |
+| ------------------ | -------- | ----------------------------------------------------------------------- |
+| `kody_id`          | yes      | Bare `kody.id` of the package whose handler should run                  |
+| `package_scope`    | no       | Owner scope for delegated packages; preserve it from publish test hints |
+| `topic`            | yes      | Exact topic key from `kody.subscriptions`                               |
+| `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty  |
+| `email_message_id` | one of   | Stored inbound message id; platform rebuilds the production envelope    |
 
-Pass exactly **one** of `params` or `email_message_id`, not both. There is **no
-caller `idempotency_key`** — the platform generates internal idempotency keys.
+Pass exactly **one** of `params` or `email_message_id`, not both. There is no
+top-level request `idempotency_key` — the platform generates it. A
+package-emitted event fixture can still include its production
+`params.idempotency_key` inside the nested event envelope.
 
-Pass the bare `kody.id`, not the npm-scoped package name.
+Pass the bare `kody.id`, not the npm-scoped package name. Preserve
+`package_scope` when it appears in a publish test hint so dispatch resolves the
+intended owner-scoped package.
 
 ### Fixture input (`params`)
 

@@ -169,6 +169,29 @@ test('package_subscription_dispatch sends synthetic params envelopes to one pack
 	)
 })
 
+test('package_subscription_dispatch bounds oversized handler results', async () => {
+	mockDeclaredSubscription('repo.pushed')
+	mocks.invokePackageSubscription.mockResolvedValue({
+		status: 200,
+		body: { result: { blob: 'x'.repeat(102_400) } },
+	})
+
+	const result = await packageSubscriptionDispatchCapability.handler(
+		{
+			kody_id: 'demo',
+			topic: 'repo.pushed',
+			params: { event: 'repo.pushed' },
+		},
+		createCtx() as never,
+	)
+
+	expect(result.result).toEqual({
+		truncated: true,
+		message:
+			'Subscription result exceeded 102400 bytes and was omitted. Inspect the subscription run for details.',
+	})
+})
+
 test('package_subscription_dispatch generates a fresh synthetic idempotency key per call', async () => {
 	mockDeclaredSubscription('repo.pushed')
 	const ctx = createCtx()
@@ -255,6 +278,42 @@ test('package_subscription_dispatch replays stored inbound email envelopes', asy
 			}),
 		}),
 	)
+})
+
+test('package_subscription_dispatch rejects replay when the stored message topic differs', async () => {
+	mockDeclaredSubscription()
+	mocks.getInternalEmailMessageById.mockResolvedValue({
+		id: 'message-quarantined',
+		inboxId: 'inbox-1',
+		fromAddress: 'sender@example.com',
+		envelopeFrom: 'sender@example.com',
+		toAddresses: ['user@inbox.example.com'],
+		ccAddresses: [],
+		replyToAddresses: [],
+		subject: 'Quarantined',
+		messageIdHeader: '<quarantined@example.com>',
+		inReplyToHeader: null,
+		references: [],
+		processingStatus: 'received',
+		classification: 'quarantined',
+		classificationReason: 'test',
+		receivedAt: '2026-01-01T00:00:00.000Z',
+		createdAt: '2026-01-01T00:00:00.000Z',
+	})
+
+	await expect(
+		packageSubscriptionDispatchCapability.handler(
+			{
+				kody_id: 'demo',
+				topic: inboundEmailReceiptTopic,
+				email_message_id: 'message-quarantined',
+			},
+			createCtx() as never,
+		),
+	).rejects.toThrow(
+		'would dispatch on topic "email.message.quarantined", not "email.message.received"',
+	)
+	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
 test('package_subscription_dispatch rejects package runtime caller contexts', async () => {

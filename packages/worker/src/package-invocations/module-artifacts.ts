@@ -275,7 +275,8 @@ export function isMissingPackageModuleError(error: unknown) {
 		error instanceof Error &&
 		(error.message.includes('does not define export') ||
 			error.message.includes('does not define a runtime target') ||
-			error.message.includes('does not define subscription'))
+			error.message.includes('does not define subscription') ||
+			error.message.includes('does not declare subscription'))
 	)
 }
 
