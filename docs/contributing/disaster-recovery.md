@@ -552,7 +552,9 @@ separate exact confirmation
 calls `purge` without both. Review that change to the request as a destructive
 restore step; keep the same fields on every resumed request. Before purging a
 non-empty target, the importer first replays and count-verifies the complete
-dump through a reserved scratch preflight object.
+dump through a reserved scratch preflight object. Preflight and drill writes do
+not arm normal Mailbox alarms; a verified production target is finalized only
+after count parity succeeds.
 
 For a drill, use explicit owner ids and add `"drill": true`. The importer
 derives reserved scratch owner ids under `__mailbox-drill__:` and rewrites only

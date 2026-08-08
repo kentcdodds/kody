@@ -158,7 +158,7 @@ function deliveryEvent(): MailboxDeliveryEventRecord {
 async function createBackup(
 	ownerId: string,
 	day: string,
-	options: { threadUpdatedAt?: string } = {},
+	options: { duplicateProviderEvent?: boolean } = {},
 ) {
 	const thread: MailboxThreadRecord = {
 		id: 'restore-thread',
@@ -167,7 +167,7 @@ async function createBackup(
 		rootMessageIdHeader: '<restore@example.com>',
 		lastMessageAt: '2026-08-01T01:02:03.000Z',
 		createdAt: '2026-08-01T01:02:03.000Z',
-		updatedAt: options.threadUpdatedAt ?? '2026-08-01T01:02:04.000Z',
+		updatedAt: '2026-08-01T01:02:04.000Z',
 	}
 	const rows: Array<MailboxExportRow> = [
 		{ kind: 'thread', row: thread },
@@ -193,6 +193,12 @@ async function createBackup(
 		},
 		{ kind: 'delivery_event', row: deliveryEvent() },
 	]
+	if (options.duplicateProviderEvent) {
+		rows.push({
+			kind: 'delivery_event',
+			row: { ...deliveryEvent(), id: 'restore-event-duplicate' },
+		})
+	}
 	const dump = rows.map((row) => `${JSON.stringify(row)}\n`).join('')
 	const stagingDumpKey = stagingMailboxDumpKey(day, ownerId)
 	const index: MailboxIndex = {
@@ -441,7 +447,7 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 
 	const invalidOwner = `workers-import-invalid-${crypto.randomUUID()}`
 	const invalidBackup = await createBackup(invalidOwner, day, {
-		threadUpdatedAt: 'not-a-timestamp',
+		duplicateProviderEvent: true,
 	})
 	const invalidTarget = mailboxRpc({
 		env: invalidBackup.env,
@@ -466,7 +472,7 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 			timeBudgetMs: 60_000,
 			s3: invalidBackup.s3.client,
 		}),
-	).rejects.toThrow(/canonical ISO-8601/)
+	).rejects.toThrow(/rejected restored delivery event/)
 	expect(
 		await invalidTarget.getMessage({ messageId: 'surviving-message' }),
 	).not.toBeNull()
