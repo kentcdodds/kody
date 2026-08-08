@@ -292,6 +292,15 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 		invocationMocks.runModuleWithRegistry(...args),
 }))
 
+vi.mock('#worker/identity/background-mcp-user.ts', () => ({
+	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
+		userId,
+		email: `${userId}@example.com`,
+		username: userId,
+		displayName: userId,
+	}),
+}))
+
 vi.mock('#worker/run-records/service.ts', () => ({
 	beginRunRecord: (...args: Array<unknown>) =>
 		runRecordMocks.beginRunRecord(...args),

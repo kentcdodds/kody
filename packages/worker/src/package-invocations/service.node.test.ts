@@ -102,6 +102,15 @@ vi.mock('#worker/run-records/package-subscriptions.ts', () => ({
 		repoMockModule.dispatchRunErrorSubscriptionEvents(...args),
 }))
 
+vi.mock('#worker/identity/background-mcp-user.ts', () => ({
+	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
+		userId,
+		email: 'owner@example.com',
+		username: 'owner',
+		displayName: 'Owner',
+	}),
+}))
+
 type FakeLedgerRow = {
 	id: string
 	tokenId: string
@@ -1679,8 +1688,8 @@ test('execute runtime invoke invokes target package with execute provenance', as
 	expect(runCall?.[1]).toMatchObject({
 		user: {
 			userId: 'user-123',
-			email: 'me@example.com',
-			displayName: 'Me',
+			email: 'owner@example.com',
+			displayName: 'Owner',
 		},
 		storageContext: {
 			appId: 'pkg-subscriber',
@@ -2571,7 +2580,8 @@ test('invokePackageSubscription uses the normal capability registry with package
 			baseUrl: 'https://kody.dev',
 			user: expect.objectContaining({
 				userId: 'user-123',
-				displayName: 'package:discord-gateway',
+				email: 'owner@example.com',
+				displayName: 'Owner',
 			}),
 			storageContext: {
 				sessionId: null,

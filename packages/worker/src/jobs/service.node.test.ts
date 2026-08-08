@@ -92,6 +92,15 @@ vi.mock('./manager-client.ts', () => ({
 		jobManagerMockModule.getJobManagerDebugState(...args),
 }))
 
+vi.mock('#worker/identity/background-mcp-user.ts', () => ({
+	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
+		userId,
+		email: `${userId}@example.com`,
+		username: userId,
+		displayName: userId,
+	}),
+}))
+
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
 	return {
