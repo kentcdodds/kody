@@ -1578,10 +1578,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 						env: this.env,
 					}),
 					executionOrigin: 'background',
-					user: await resolveBackgroundMcpUser(
-						this.env.APP_DB,
-						payload.userId,
-					),
+					user: await resolveBackgroundMcpUser(this.env.APP_DB, payload.userId),
 					storageContext: payload.packageContext
 						? {
 								sessionId: null,

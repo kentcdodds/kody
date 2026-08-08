@@ -34,7 +34,13 @@ test('subscription execution exposes the owner account identity to meta_get_curr
 			stable_user_id
 		) VALUES (?, ?, ?, ?, ?)`,
 	)
-		.bind('subscription-owner', email, displayName, 'test-password-hash', userId)
+		.bind(
+			'subscription-owner',
+			email,
+			displayName,
+			'test-password-hash',
+			userId,
+		)
 		.run()
 
 	mocks.ensureModuleArtifact.mockResolvedValue({
