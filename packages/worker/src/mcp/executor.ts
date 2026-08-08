@@ -121,6 +121,7 @@ const javascriptReservedWords = new Set([
 type DynamicWorkerExecutorInput = {
 	loader: Env['LOADER']
 	timeout: number
+	signal?: AbortSignal
 	globalOutbound: Fetcher | null
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
@@ -214,32 +215,54 @@ function throwIfEvaluationDeadlineAborted(signal?: AbortSignal) {
 export async function raceWithHostEvaluationDeadline<T>(
 	evaluate: (signal: AbortSignal) => Promise<T>,
 	timeoutMs: number,
+	externalSignal?: AbortSignal,
 ): Promise<T> {
 	if (
-		!Number.isFinite(timeoutMs) ||
-		timeoutMs >= maxSupportedExecutorTimeoutMs
+		!externalSignal &&
+		(!Number.isFinite(timeoutMs) || timeoutMs >= maxSupportedExecutorTimeoutMs)
 	) {
 		return await evaluate(new AbortController().signal)
 	}
 	const controller = new AbortController()
 	let timeoutId: ReturnType<typeof setTimeout> | undefined
-	const timeoutPromise = new Promise<never>((_resolve, reject) => {
-		timeoutId = setTimeout(
-			() => {
-				const error = new Error(executorSandboxTimeoutMessage)
-				controller.abort(error)
-				reject(error)
-			},
-			Math.max(1, timeoutMs),
+	let rejectDeadline: ((error: Error) => void) | undefined
+	const abortWith = (error: Error) => {
+		if (controller.signal.aborted) return
+		controller.abort(error)
+		rejectDeadline?.(error)
+	}
+	const onExternalAbort = () => {
+		const reason = externalSignal?.reason
+		abortWith(
+			reason instanceof Error
+				? reason
+				: new Error(executorSandboxTimeoutMessage),
 		)
+	}
+	const timeoutPromise = new Promise<never>((_resolve, reject) => {
+		rejectDeadline = reject
+		if (
+			Number.isFinite(timeoutMs) &&
+			timeoutMs < maxSupportedExecutorTimeoutMs
+		) {
+			timeoutId = setTimeout(
+				() => abortWith(new Error(executorSandboxTimeoutMessage)),
+				Math.max(1, timeoutMs),
+			)
+		}
+		if (externalSignal) {
+			externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+			if (externalSignal.aborted) onExternalAbort()
+		}
 	})
 	try {
-		throwIfEvaluationDeadlineAborted(controller.signal)
 		return await Promise.race([evaluate(controller.signal), timeoutPromise])
 	} finally {
 		if (timeoutId !== undefined) {
 			clearTimeout(timeoutId)
 		}
+		externalSignal?.removeEventListener('abort', onExternalAbort)
+		rejectDeadline = undefined
 	}
 }
 
@@ -411,6 +434,7 @@ export function createExecuteExecutor(input: {
 	gatewayProps: FetchGatewayProps
 	modules?: WorkerLoaderModules
 	timeoutMs?: number | null
+	signal?: AbortSignal
 	/**
 	 * Optional sink for literal hostnames observed on ad hoc execute raw
 	 * `fetch` traffic. Counting happens inside the sandbox (so LOADER keeps a
@@ -432,6 +456,7 @@ export function createExecuteExecutor(input: {
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
+		signal: input.signal,
 		globalOutbound: loopbackExports.KodyFetchGateway({
 			props: input.gatewayProps,
 		}),
@@ -481,7 +506,6 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				workerOptions,
 			})
 			const executionState = { active: true }
-			const dispatchers = createToolDispatchers(providers, executionState)
 			const startedAtMs = Date.now()
 			let outcome: 'success' | 'error' = 'success'
 			try {
@@ -494,9 +518,15 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 						async (signal) =>
 							await withDynamicWorkerEvaluationPermit(async () => {
 								throwIfEvaluationDeadlineAborted(signal)
+								const dispatchers = createToolDispatchers(
+									providers,
+									executionState,
+									signal,
+								)
 								return await entrypoint.evaluate(dispatchers)
 							}, signal),
 						input.timeout,
+						input.signal,
 					)
 				} catch (error) {
 					const message = getErrorMessage(error)
@@ -689,6 +719,7 @@ function createProviderProxySource(provider: ResolvedProvider) {
 export function createToolDispatchers(
 	providers: Array<ResolvedProvider>,
 	executionState: { active: boolean },
+	signal?: AbortSignal,
 ) {
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
@@ -697,6 +728,13 @@ export function createToolDispatchers(
 			(...args: Array<unknown>) => Promise<unknown>
 		> = {}
 		const rawNamesBySanitizedName = new Map<string, string>()
+		const abortSignalToolNames = new Set(
+			(
+				provider as ResolvedProvider & {
+					abortSignalToolNames?: Array<string>
+				}
+			).abortSignalToolNames ?? [],
+		)
 		for (const [name, fn] of Object.entries(provider.fns)) {
 			const sanitizedName = sanitizeToolName(name)
 			if (rawNamesBySanitizedName.has(sanitizedName)) {
@@ -710,7 +748,9 @@ export function createToolDispatchers(
 				if (!executionState.active) {
 					throw new Error('Execution has already completed.')
 				}
-				return await fn(...args)
+				return abortSignalToolNames.has(name)
+					? await fn(...args, signal)
+					: await fn(...args)
 			}
 		}
 		dispatchers[provider.name] = new ToolDispatcher(sanitizedFns)

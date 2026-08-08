@@ -101,7 +101,8 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
  * boundary; keep this in sync with `executorSandboxTimeoutMessage` in
  * `mcp/executor.ts`.
  */
-export const executorSandboxTimeoutMessage = 'Execution timed out'
+export const executorSandboxTimeoutMessage =
+	'Execution timed out: Kody stopped observing the sandbox. Nested work was asked to abort, but already-started remote work and side effects may still complete. Do not retry side-effecting work without an idempotencyKey; recover with run_get or replay the same idempotencyKey.'
 
 export function isExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 	return sentryEventMessages(event).some(

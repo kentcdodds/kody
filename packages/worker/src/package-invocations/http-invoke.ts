@@ -80,6 +80,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
 	preloads?: PackageInvokeCheckPreloads | null
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -140,6 +141,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
+		signal: input.signal,
 	} satisfies Omit<
 		Parameters<typeof invokeSavedPackageModule>[0],
 		'idempotencyKey'
@@ -166,6 +168,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
 	preloads?: PackageInvokeCheckPreloads | null
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -220,6 +223,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
+		signal: input.signal,
 	} satisfies Omit<
 		Parameters<typeof invokeSavedPackageModule>[0],
 		'idempotencyKey'

@@ -18,6 +18,7 @@ import {
 import {
 	buildKodyFns,
 	buildKodyProvider,
+	createAdHocExecuteSourceFiles,
 	createWorkflowTools,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
@@ -32,6 +33,37 @@ import {
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+
+test('ad hoc execute preserves the one-file source set without bare imports', () => {
+	const code = `import { kody } from 'kody:runtime'
+
+export default async function main() {
+	return await kody.coding_guide_get({ guide: 'testing' })
+}`
+	expect(createAdHocExecuteSourceFiles(code)).toEqual({
+		'entry.ts': code,
+	})
+})
+
+test('ad hoc execute synthesizes latest dependencies for bare package imports', () => {
+	const code = `import get from 'lodash/get.js'
+import kleur from 'kleur'
+import { kody } from 'kody:runtime'
+import other from 'lodash/map.js'
+
+export default function main() {
+	return [get, kleur, kody, other]
+}`
+	expect(createAdHocExecuteSourceFiles(code)).toEqual({
+		'entry.ts': code,
+		'package.json': JSON.stringify({
+			dependencies: {
+				kleur: 'latest',
+				lodash: 'latest',
+			},
+		}),
+	})
+})
 
 /**
  * User-scoped RunLog namespace stub (idFromName(userId) → per-user RPC), enough

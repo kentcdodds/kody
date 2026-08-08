@@ -300,6 +300,7 @@ test('generated kody provider source avoids bundle-scoped __name helpers', () =>
 		shadowGlobalThis: false,
 		timeoutMs: 1_000,
 	})
+	expect(moduleSource).toContain(JSON.stringify(executorSandboxTimeoutMessage))
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
 })
 
@@ -526,8 +527,59 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 		timeoutMs: 40,
 	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
 	expect(result.error).toBe(executorSandboxTimeoutMessage)
+	expect(result.error).toContain('stopped observing the sandbox')
+	expect(result.error).toContain('side effects may still complete')
+	expect(result.error).toContain('idempotencyKey')
+	expect(result.error).toContain('run_get')
 	expect(result.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
+})
+
+test('createExecuteExecutor aborts an in-flight abort-aware dispatcher on timeout', async () => {
+	let observedSignal: AbortSignal | undefined
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate(
+							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
+						) {
+							await dispatchers['packageBridge']?.call(
+								'invoke',
+								JSON.stringify([{}]),
+							)
+							return { result: 'unexpected', logs: [] }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	const invoke = async (_input: unknown, signal?: AbortSignal) => {
+		observedSignal = signal
+		await new Promise<never>((_resolve, reject) => {
+			signal?.addEventListener('abort', () => reject(signal.reason), {
+				once: true,
+			})
+		})
+	}
+	const result = await createExecuteExecutor({
+		env: createExecutorTestEnv(loader),
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('abort-user'),
+		timeoutMs: 40,
+	}).execute('async () => "never"', [
+		{
+			name: 'packageBridge',
+			fns: { invoke },
+			abortSignalToolNames: ['invoke'],
+		} as never,
+	])
+
+	expect(result.error).toBe(executorSandboxTimeoutMessage)
+	expect(observedSignal?.aborted).toBe(true)
 })
 
 test('createExecuteExecutor drops queued evaluations when the host deadline expires', async () => {

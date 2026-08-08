@@ -64,6 +64,10 @@ import {
 	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
 import {
+	collectLiteralImportSpecifiers,
+	getBarePackageNameFromSpecifier,
+} from '#worker/package-runtime/import-specifiers.ts'
+import {
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
@@ -111,6 +115,26 @@ export type PackageContextOptions = {
 	kodyId: string
 	sourceId?: string | null
 } | null
+
+export function createAdHocExecuteSourceFiles(code: string) {
+	const sourceFiles: Record<string, string> = { 'entry.ts': code }
+	// Most execute modules have no imports. Avoid parsing those entirely so the
+	// existing one-file fast path stays unchanged.
+	if (!code.includes('import') && !code.includes(' from ')) return sourceFiles
+	const packageNames = new Set<string>()
+	for (const specifier of collectLiteralImportSpecifiers(code)) {
+		const packageName = getBarePackageNameFromSpecifier(specifier)
+		if (packageName) packageNames.add(packageName)
+	}
+	if (packageNames.size === 0) return sourceFiles
+	const dependencies = Object.fromEntries(
+		[...packageNames]
+			.sort((left, right) => left.localeCompare(right))
+			.map((packageName) => [packageName, 'latest']),
+	)
+	sourceFiles['package.json'] = JSON.stringify({ dependencies })
+	return sourceFiles
+}
 
 /** Once per isolate: sample the first kody.* capability RPC wall time. */
 let firstCapabilityDispatchSampled = false
@@ -648,6 +672,7 @@ export async function runModuleWithRegistry(
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		executorTimeoutMs?: number | null
+		signal?: AbortSignal
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
@@ -680,11 +705,10 @@ export async function runModuleWithRegistry(
 		env,
 		baseUrl: callerContext.baseUrl,
 		userId,
-		sourceFiles: {
-			'entry.ts': code,
-		},
+		sourceFiles: createAdHocExecuteSourceFiles(code),
 		entryPoint: 'entry.ts',
 		reuseCachedBundle: true,
+		bundleContext: 'ad-hoc-execute',
 	})
 	serverTiming.push({
 		name: 'bundle',
@@ -795,6 +819,7 @@ export async function runBundledModuleWithRegistry(
 		packageEventTools?: PackageEventTools
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
+		signal?: AbortSignal
 		runRecord?: RunRecordContext | null
 		/**
 		 * Pre-claimed handle from {@link claimRunRecord} (keyed execute). When
@@ -947,6 +972,7 @@ export async function runBundledModuleWithRegistry(
 			env,
 			exports: options?.executorExports ?? workerExports,
 			timeoutMs: options?.executorTimeoutMs,
+			signal: options?.signal,
 			gatewayProps: {
 				baseUrl: callerContext.baseUrl,
 				userId: callerContext.user?.userId ?? null,

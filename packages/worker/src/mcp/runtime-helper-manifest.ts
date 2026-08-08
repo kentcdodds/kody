@@ -97,7 +97,7 @@ export type PackageInvokeCheckResult =
 	  }
 
 export type PackageInvokeTools = {
-	invoke: (input: PackageInvokeInput) => Promise<unknown>
+	invoke: (input: PackageInvokeInput, signal?: AbortSignal) => Promise<unknown>
 }
 
 export type PackageEventDispatchInput = {
@@ -247,26 +247,13 @@ const packageInvokeRuntimeBridgeProviderName =
 	'__kodyPackageInvokeRuntimeBridge'
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
 
-export const removedPackagesCheckMessage =
-	'packages.check was removed: packages.invoke always contract-checks before invoking, so call packages.invoke({ kodyId, exportName, params }) directly. A failing contract rejects with "packages.invoke contract check failed: ..." before any execution.'
-
-export const removedPackagesInvokeCheckedMessage =
-	'packages.invokeChecked was removed: call packages.invoke({ kodyId, exportName, params }) instead — it is always contract-checked (add idempotencyKey only when you need exactly-once) — or use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time.'
 const staticCallMeterRuntimeBridgeProviderName =
 	'__kodyStaticCallMeterRuntimeBridge'
 
 function createPackagesHelperPrelude() {
-	// Permanent teaching stubs keep unsupported helpers fail-closed and name
-	// the exact replacement for package authors.
 	return `
 const packages = {
-  check: () => {
-    throw new Error(${JSON.stringify(removedPackagesCheckMessage)});
-  },
   invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
-  invokeChecked: () => {
-    throw new Error(${JSON.stringify(removedPackagesInvokeCheckedMessage)});
-  },
 };
 	`.trim()
 }
@@ -422,12 +409,18 @@ function createPackageInvokeRuntimeBridgeProvider(
 		name: packageInvokeRuntimeBridgeProviderName,
 		tools: {
 			invoke: {
-				execute: async (args: unknown) =>
-					await packageInvokeTools.invoke((args ?? {}) as PackageInvokeInput),
+				execute: async (args: unknown, signal?: AbortSignal) =>
+					await packageInvokeTools.invoke(
+						(args ?? {}) as PackageInvokeInput,
+						signal,
+					),
 			},
 		},
 	}
-	return resolveProvider(provider)
+	return {
+		...resolveProvider(provider),
+		abortSignalToolNames: ['invoke'],
+	} as ResolvedProvider
 }
 
 function createPackageEventRuntimeBridgeProvider(

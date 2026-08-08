@@ -18,6 +18,13 @@ import {
 import { parsePackageInvokeInput } from './input-parsing.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 
+function throwIfPackageInvokeAborted(signal?: AbortSignal) {
+	if (!signal?.aborted) return
+	const reason = signal.reason
+	if (reason instanceof Error) throw reason
+	throw new DOMException('The package invocation was aborted.', 'AbortError')
+}
+
 export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
 	env: Env
 	baseUrl: string
@@ -82,7 +89,8 @@ function createPackageInvokeTools(input: {
 	 * key-less runs the lean/ephemeral path, keyed runs the exactly-once
 	 * ledger path.
 	 */
-	const invoke = async (rawInput: PackageInvokeInput) => {
+	const invoke = async (rawInput: PackageInvokeInput, signal?: AbortSignal) => {
+		throwIfPackageInvokeAborted(signal)
 		const { user, packageContext } = requireRuntimeCaller('packages.invoke')
 		const packageInvokeDepth = input.packageInvokeDepth ?? 0
 		if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
@@ -98,6 +106,7 @@ function createPackageInvokeTools(input: {
 			userId: user.userId,
 			rawInput,
 		})
+		throwIfPackageInvokeAborted(signal)
 		if (!check.result.ok || !check.preloads) {
 			const message = check.result.ok
 				? 'packages.invoke could not preload the package artifact.'
@@ -131,6 +140,7 @@ function createPackageInvokeTools(input: {
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
 					preloads: check.preloads,
+					signal,
 				})
 			: await invokePackageExportForExecuteRuntime({
 					env: input.env,
@@ -153,6 +163,7 @@ function createPackageInvokeTools(input: {
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
 					preloads: check.preloads,
+					signal,
 				})
 		if (response.status >= 200 && response.status < 400) {
 			return response.body['result']

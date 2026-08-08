@@ -97,6 +97,7 @@ export async function invokeSavedPackageModule(input: {
 		ReturnType<typeof ensureModuleArtifact>
 	> | null
 	executorTimeoutMs?: number | null
+	signal?: AbortSignal
 }) {
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
@@ -272,6 +273,7 @@ export async function invokeSavedPackageModule(input: {
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloadedModuleArtifact,
 		executorTimeoutMs: input.executorTimeoutMs,
+		signal: input.signal,
 		externalRunRecordHandle: claimed.handle,
 	})
 	switch (outcome.kind) {

@@ -114,6 +114,14 @@ compatible with the Cloudflare Workers runtime. Prefer existing packages over
 rewriting helpers; useful starting points include `p-retry`, `mailparser`,
 `remark` / `mdast-util-to-markdown`, and `googleapis`.
 
+For ad hoc execute, Kody scans literal bare import specifiers, synthesizes an
+ephemeral dependency manifest, and resolves each package at its current registry
+version during bundling. Relative and absolute imports and `kody:`,
+`cloudflare:`, and `node:` specifiers are not npm dependencies. Registry
+resolution failures and packages that cannot bundle for the Workers runtime are
+reported as bundle errors. Saved packages continue to declare dependency
+versions in their checked-in `package.json`.
+
 For runtime details, see Cloudflare's
 [Node.js compatibility](https://developers.cloudflare.com/workers/runtime-apis/nodejs/).
 
@@ -131,10 +139,11 @@ progress with `workflow_run_list` instead of chaining many MCP tool calls.
 
 ### Recovering from MCP client timeouts
 
-Some MCP clients abort the tool call (for example error `-32001` Request timed
-out) while Kody’s sandbox may still be running. Key-less successful execute
-calls are not written to Activity, so that timeout can leave you unsure whether
-side effects already happened.
+A timeout means Kody stopped observing the sandbox. Kody cooperatively aborts
+nested package work where the execution model allows it, but already-started
+remote work and side effects may still complete. Do not blindly retry a
+timed-out side-effecting call: key-less successful execute calls are not written
+to Activity, so the timeout can leave you unsure whether the effect happened.
 
 Pass an optional **`idempotencyKey`** (string, max 256 characters) when the call
 must be recoverable:

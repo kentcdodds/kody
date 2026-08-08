@@ -1,7 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import {
+	createAdHocExecuteSourceFiles,
+	runBundledModuleWithRegistry,
+} from '#mcp/run-kody-registry.ts'
 import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	buildKodyImportableModuleBundle,
@@ -201,7 +204,51 @@ test(
 	},
 )
 
-test('ad hoc execute runtime exposes packages.invoke and rejects unsupported helpers', async () => {
+test(
+	'ad hoc execute synthesizes and executes npm dependencies through the bundler',
+	{ timeout: 20_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const sourceFiles = createAdHocExecuteSourceFiles(
+			[
+				"import kleur from 'kleur'",
+				'export default function main() {',
+				"\treturn { formatted: kleur.green('ad-hoc-dependency-ok') }",
+				'}',
+			].join('\n'),
+		)
+		expect(JSON.parse(sourceFiles['package.json'] ?? '{}')).toEqual({
+			dependencies: { kleur: 'latest' },
+		})
+		const bundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-ad-hoc-npm-test',
+			sourceFiles,
+			entryPoint: 'entry.ts',
+			bundleContext: 'ad-hoc-execute',
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			createMcpCallerContext({
+				baseUrl: 'https://kody.dev',
+				user: {
+					userId: 'user-ad-hoc-npm-test',
+					email: 'worker@example.com',
+					displayName: 'Worker Test',
+				},
+			}),
+			bundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({ formatted: 'ad-hoc-dependency-ok' })
+	},
+)
+
+test('ad hoc execute runtime exposes only packages.invoke', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const bundle = await buildKodyModuleBundle({
 		env,
@@ -234,8 +281,8 @@ test('ad hoc execute runtime exposes packages.invoke and rejects unsupported hel
 				'\t}',
 				'\treturn {',
 				'\t\tpackageContextIsNull: packageContext === null,',
-				'\t\tremovedCheckError: captureError(() => packages?.check({})),',
-				'\t\tremovedInvokeCheckedError: captureError(() => packages?.invokeChecked({})),',
+				'\t\tmissingCheckError: captureError(() => packages?.check({})),',
+				'\t\tmissingInvokeCheckedError: captureError(() => packages?.invokeChecked({})),',
 				'\t\tdirectKodyInvokeChecked,',
 				'\t\tinvoked: await packages?.invoke({',
 				"\t\t\tkodyId: 'target-package',",
@@ -279,10 +326,8 @@ test('ad hoc execute runtime exposes packages.invoke and rejects unsupported hel
 	expect(result.error).toBeUndefined()
 	expect(result.result).toEqual({
 		packageContextIsNull: true,
-		removedCheckError: expect.stringContaining('packages.check was removed'),
-		removedInvokeCheckedError: expect.stringContaining(
-			'packages.invokeChecked was removed',
-		),
+		missingCheckError: expect.stringContaining('is not a function'),
+		missingInvokeCheckedError: expect.stringContaining('is not a function'),
 		directKodyInvokeChecked: expect.stringContaining('package_invoke_checked'),
 		invoked: {
 			ok: true,

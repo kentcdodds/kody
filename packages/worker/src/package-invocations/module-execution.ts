@@ -99,6 +99,8 @@ export type SavedPackageModuleRunInput = {
 	 * full Cloudflare Workflow step window.
 	 */
 	executorTimeoutMs?: number | null
+	/** Parent execute deadline for cooperative cancellation of nested invokes. */
+	signal?: AbortSignal
 	/**
 	 * Keyed path: the caller already claimed the run record together with the
 	 * idempotency-ledger row (one DO call) and finishes both together from
@@ -203,6 +205,7 @@ export async function runSavedPackageModuleOnce(
 			input.params,
 			{
 				executorTimeoutMs: input.executorTimeoutMs,
+				signal: input.signal,
 				// No ambient `storage` binding: package code reaches its bucket via
 				// `packageStorage()` (granted through packageContext below). Legacy
 				// ambient use gets the structured runtime_helper_unbound hint.
