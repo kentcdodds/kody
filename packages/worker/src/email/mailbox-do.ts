@@ -134,7 +134,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async upsertMessageGraph(input: {
 		ownerId: string
 		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput
+		message: MailboxMessageInput | null
 		attachments?: Array<MailboxAttachmentInput>
 	}): Promise<{ ok: true; accepted: boolean }> {
 		return await this.graphCommits.upsertMessageGraph(input)
@@ -326,11 +326,14 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async upsertDeliveryEvents(input: {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
+		restore?: true
 	}): Promise<MailboxUpsertDeliveryEventsResult> {
 		let result: MailboxUpsertDeliveryEventsResult | undefined
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			result = upsertMailboxDeliveryEvents(this.ctx.storage.sql, input.events)
+			result = upsertMailboxDeliveryEvents(this.ctx.storage.sql, input.events, {
+				restore: input.restore,
+			})
 		})
 		if (!result) throw new Error('Mailbox upsert transaction did not run.')
 		await this.maintenance.markDirtyAndEnsure()
@@ -825,8 +828,9 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return this.inbound.getInboundDueWorkHint(input)
 	}
 
-	async purge(): Promise<{ ok: true }> {
+	async purge(input: { ownerId: string }): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
+			this.store.assertOwner(input.ownerId)
 			await this.ctx.storage.deleteAlarm().catch(() => undefined)
 			await this.ctx.storage.deleteAll()
 			this.maintenance.resetAfterPurge()

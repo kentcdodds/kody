@@ -486,7 +486,11 @@ type MailboxCoreRpc = {
 	upsertMessageGraph: (input: {
 		ownerId: string
 		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput
+		/**
+		 * `null` is reserved for DR import of a standalone thread. Normal graph
+		 * writes always provide a message.
+		 */
+		message: MailboxMessageInput | null
 		attachments?: Array<MailboxAttachmentInput>
 	}) => Promise<{ ok: true; accepted: boolean }>
 	/**
@@ -549,6 +553,8 @@ type MailboxCoreRpc = {
 	upsertDeliveryEvents: (input: {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
+		/** DR restore only: admit authoritative inbound ledger snapshots. */
+		restore?: true
 	}) => Promise<MailboxUpsertDeliveryEventsResult>
 	touchThread: (
 		input: MailboxTouchThreadInput,
@@ -653,7 +659,7 @@ type MailboxCoreRpc = {
 		/** Optional clock for due-at clamping; defaults to wall clock. */
 		now?: string
 	}) => Promise<{ dueAt: string | null }>
-	purge: () => Promise<{ ok: true }>
+	purge: (input: { ownerId: string }) => Promise<{ ok: true }>
 }
 
 export type MailboxInboundLedgerRpc = MailboxInboundDeliveryLedgerRpc &

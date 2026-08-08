@@ -416,6 +416,9 @@ import init/ingest etag. Without that prelude, drills fail with errors like
    `POST {PRIMARY_WORKER_ORIGIN}/__maintenance/dr-restore` with
    `Authorization: Bearer {DR_RESTORE_SECRET}` until the production worker
    reports `done` (StorageRunner replace, R2 put, published snapshot KV put).
+3. **Mailbox re-import** — with ingress still disabled, run the automated
+   Mailbox importer below for the intended owners. Do not re-enable ingress
+   unless its final response has both `"done": true` and `"verified": true`.
 
 Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
@@ -497,22 +500,85 @@ values are `mailbox`, `run-log`, `user-meter`, and `storage-runner`;
    object's own historical storage contain the handle—the structured platform
    log and the operator response are the recovery record.
 
-### Manual Mailbox re-import
+### Automated Mailbox re-import
+
+`POST /__maintenance/dr-mailbox-import` is the normal recovery path after
+object/class/account loss. It is `DR_RESTORE_SECRET`-gated, verifies the sealed
+full-manifest signature, verifies the mailbox index bytes and SHA-256, and
+verifies each selected owner dump's bytes and SHA-256 before writing that owner.
+Each tick writes parent threads, then messages with attachments through
+`upsertMessageGraph`, then delivery events through `upsertDeliveryEvents`.
+Returned cursors are bound to the day, owner selection, conflict policy, and
+drill flag; repeat the same request with `cursor` until `done`.
+
+Keep ingress disabled and complete the signed D1 plus R2 restore first. Select
+specific stable owner ids with an array, or explicitly select every index owner
+with `"all-from-index"`:
+
+```sh
+DAY='YYYY-MM-DD'
+CURSOR=''
+while :; do
+  BODY="$(
+    DAY="$DAY" CURSOR="$CURSOR" node -e '
+      const body = {
+        day: process.env.DAY,
+        owners: "all-from-index",
+        conflictPolicy: "refuse",
+      }
+      if (process.env.CURSOR) body.cursor = process.env.CURSOR
+      process.stdout.write(JSON.stringify(body))
+    '
+  )"
+  RESPONSE="$(
+    curl --fail-with-body \
+      --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/dr-mailbox-import" \
+      --header "Authorization: Bearer $DR_RESTORE_SECRET" \
+      --header "Content-Type: application/json" \
+      --data "$BODY"
+  )"
+  printf '%s\n' "$RESPONSE"
+  DONE="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(String(x.done===true))' "$RESPONSE")"
+  [ "$DONE" = true ] && break
+  CURSOR="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.nextCursor)process.exit(1);process.stdout.write(x.nextCursor)' "$RESPONSE")"
+done
+```
+
+The default conflict policy refuses an owner whose target Mailbox is non-empty.
+Destructive replacement requires both `"conflictPolicy": "replace"` and the
+separate exact confirmation
+`"replaceConfirmation": "PURGE NON-EMPTY TARGET MAILBOXES"`. The importer never
+calls `purge` without both. Review that change to the request as a destructive
+restore step; keep the same fields on every resumed request.
+
+For a drill, use explicit owner ids and add `"drill": true`. The importer
+derives reserved scratch owner ids under `__mailbox-drill__:` and rewrites only
+owner-bound blob references for those scratch objects; it never opens the real
+owners' Mailbox objects. A successful drill still verifies the signed media,
+exercises every graph upsert, and requires per-kind `countMailbox` parity. Drill
+objects are inert test data and do not imply that their rewritten blob keys
+exist. Use the same separately confirmed replace policy only when intentionally
+reusing a non-empty scratch object.
+
+Every completed owner appears in `ownerResults` with expected and actual thread,
+message, attachment, and delivery-event counts. Any mismatch leaves
+`"verified": false` and is also reported in `warnings`; this operation never
+enables ingress. Preserve all responses in the incident record.
+
+### Manual Mailbox re-import (fallback)
 
 Prefer
 [Durable Object point-in-time recovery](#durable-object-point-in-time-recovery)
 when the Mailbox object survives and the target is still inside Cloudflare's
-30-day history. The sealed Mailbox lane is recovery media for object/class or
-account loss, but automated re-import is not yet part of
-`POST /__maintenance/dr-restore`. During an incident:
+30-day history. If the automated importer is unavailable, use this procedure as
+the correctness spec and incident-only fallback:
 
 1. Keep ingress disabled and complete the signed D1 plus R2 restore first, so
    every raw MIME and external-attachment key referenced by Mailbox rows exists.
 2. Verify the full-manifest signature and the sealed mailbox-index byte count
    and SHA-256. For every owner entry, verify the NDJSON object's byte count and
-   SHA-256 before reading any rows. A drill stops here: proving the index and
-   every referenced dump against their checksums is the required Mailbox drill
-   gate; do not mutate production during a drill.
+   SHA-256 before reading any rows. Do not mutate production during a manual
+   drill.
 3. Build and review an incident-only maintenance command from the restored
    commit. For each `ownerId`, stream that owner's dump into a new or confirmed
    empty `Mailbox` object. Recreate threads and messages with their attachments
@@ -523,10 +589,6 @@ account loss, but automated re-import is not yet part of
 4. Compare `countMailbox` with the dump's per-kind counts, then spot-check
    inbound raw MIME and external attachments through normal reads. Re-enable
    ingress only after every intended owner passes.
-
-An automated resumable importer, including conflict policy for non-empty
-objects, remains a tracked follow-up in
-[#1223](https://github.com/kentcdodds/kody/issues/1223).
 
 ## Schedules and freshness
 

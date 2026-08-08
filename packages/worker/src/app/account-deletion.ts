@@ -652,7 +652,9 @@ async function purgeMailbox(input: {
 	warnings: Array<string>
 }): Promise<number> {
 	try {
-		await mailboxRpc({ env: input.env, userId: input.userId }).purge()
+		await mailboxRpc({ env: input.env, userId: input.userId }).purge({
+			ownerId: input.userId,
+		})
 		return 1
 	} catch (error) {
 		const message = getErrorMessage(error)

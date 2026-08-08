@@ -111,6 +111,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			notConfiguredMessage: 'Durable Object PITR is not configured',
 			nonProductionForbidden: true,
 		},
+		{
+			path: '/__maintenance/dr-mailbox-import',
+			secret: env.DR_RESTORE_SECRET,
+			notConfiguredMessage: 'Mailbox import is not configured',
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {

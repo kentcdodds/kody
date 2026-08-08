@@ -35,14 +35,23 @@ export class MailboxGraphCommitCommands {
 	async upsertMessageGraph(input: {
 		ownerId: string
 		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput
+		message: MailboxMessageInput | null
 		attachments?: Array<MailboxAttachmentInput>
 	}): Promise<{ ok: true; accepted: boolean }> {
 		const message = input.message
-		assertMailboxNonEmptyString(message.id, 'message.id')
 		let accepted = false
 		this.ctx.storage.transactionSync(() => {
 			const ownerId = this.store.assertOwner(input.ownerId)
+			if (message === null) {
+				if (!input.thread || input.attachments !== undefined) {
+					throw new Error(
+						'Standalone Mailbox thread upsert requires thread and forbids attachments.',
+					)
+				}
+				accepted = this.store.upsertThreadRow(input.thread).accepted
+				return
+			}
+			assertMailboxNonEmptyString(message.id, 'message.id')
 			if (this.store.isMessageTombstoned(message.id)) return
 			this.store.validateMessageBlobKeys({
 				ownerId,

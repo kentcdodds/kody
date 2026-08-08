@@ -665,7 +665,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		emailAttachmentBlobKey(userId, message.id, attachment.id),
 	)
 
-	await mailbox.purge()
+	await mailbox.purge({ ownerId: userId })
 	expect(await mailbox.countMailbox()).toEqual({
 		threads: 0,
 		messages: 0,

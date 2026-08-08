@@ -311,10 +311,14 @@ See [Disaster recovery](./disaster-recovery.md).
   bucket name (S3 API endpoint host uses the account id).
 - `DR_BACKUP_ACCESS_KEY_ID` / `DR_BACKUP_SECRET_ACCESS_KEY` — Worker secrets; R2
   S3 credentials that can write `staging/` and `blobs/` in the DR bucket.
+- `BACKUP_MANIFEST_SIGNING_KEY_ID` /
+  `BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64` — public verification
+  material shared with the DR control plane. The Mailbox importer fails closed
+  when either differs from the signed full manifest.
 - `DR_RESTORE_SECRET` — Worker secret; bearer token for
-  `POST /__maintenance/dr-restore` and the operator-only
-  `POST /__maintenance/do-pitr`. Must match the control-plane secret of the same
-  name. Fail-closed when unset.
+  `POST /__maintenance/dr-restore`, `POST /__maintenance/dr-mailbox-import`, and
+  the operator-only `POST /__maintenance/do-pitr`. Must match the control-plane
+  secret of the same name. Fail-closed when unset.
 
 ## Backup control plane (DR account Worker)
 
