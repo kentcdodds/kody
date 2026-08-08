@@ -339,7 +339,6 @@ async function resolvePublishedHostedAppUrl(input: {
 	ownerScope: string
 	ownerEmail: string
 	kodyId: string
-	testHintPackageScope?: string
 	hasApp: boolean
 }) {
 	if (!input.hasApp) return null
@@ -480,6 +479,7 @@ async function runExternalPublishAttempt(input: {
 	expectedPackageScope: string
 	packageId: string
 	kodyId: string
+	testHintPackageScope?: string
 	hasApp: boolean
 	source: {
 		id: string

@@ -68,7 +68,7 @@ const allowedMethods = new Set([
 
 function assertDirectMcpCaller(callerContext: {
 	executionOrigin?: string
-	storageContext: {
+	storageContext?: {
 		packageId?: string | null
 		appId?: string | null
 		storageId?: string | null

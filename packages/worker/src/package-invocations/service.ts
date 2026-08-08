@@ -25,6 +25,7 @@ import {
 	deliverPackageEventWithToolFactories,
 	invokePackageSubscriptionWithToolFactories,
 } from './subscription-dispatch.ts'
+import { type TrustedSyntheticSubscriptionDispatch } from './subscription-envelope.ts'
 
 export {
 	normalizeExportName,
@@ -137,6 +138,7 @@ export async function invokePackageSubscription(input: {
 	params?: Record<string, unknown>
 	idempotencyKey: string
 	source?: string | null
+	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
 	runtimeInvokeDepth?: number
 	waitUntil?: (promise: Promise<unknown>) => void

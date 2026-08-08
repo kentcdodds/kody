@@ -19,7 +19,6 @@ import {
 	internalSyntheticSubscriptionTokenId,
 	packageSubscriptionDispatchCapabilityName,
 	stripUntrustedSubscriptionEnvelopeFields,
-	syntheticPackageSubscriptionSource,
 	trustedSyntheticSubscriptionDispatch,
 } from '#worker/package-invocations/subscription-envelope.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
@@ -39,7 +38,7 @@ const packageRuntimeCallerErrorMessage = `${packageSubscriptionDispatchCapabilit
 
 function assertDirectMcpCaller(callerContext: {
 	executionOrigin?: string
-	storageContext: {
+	storageContext?: {
 		packageId?: string | null
 		appId?: string | null
 		storageId?: string | null

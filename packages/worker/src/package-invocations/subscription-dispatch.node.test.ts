@@ -84,7 +84,7 @@ test('invokePackageSubscriptionWithToolFactories preserves synthetic markers onl
 			replay_of: 'message-1',
 		},
 		idempotencyKey: 'synthetic:00000000-0000-4000-8000-000000000001',
-		trustedSyntheticDispatch,
+		trustedSyntheticDispatch: trustedSyntheticSubscriptionDispatch,
 		toolFactories: {
 			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),
