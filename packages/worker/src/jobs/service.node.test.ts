@@ -1732,9 +1732,12 @@ test('executeJobOnce enforces job_runs_per_day before sandbox work', async () =>
 	// Usage rollup writes are best-effort and fail against this fake env.
 	silenceIncidentalRuntimeWarnings()
 	const { utcDayKey } = await import('@kody-internal/shared/date-keys.ts')
-	const { parseEntitlementLimitMessage } = await import(
-		'#worker/entitlements/errors.ts'
-	)
+	const { parseEntitlementLimitMessage } =
+		await import('#worker/entitlements/errors.ts')
+	const usageModule = await import('#worker/usage/record-usage.ts')
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
 	const callerContext = createBaseCallerContext()
 	const userId = callerContext.user.userId
 	// Matches the module-level resolveBackgroundMcpUser mock email.
@@ -1801,8 +1804,10 @@ test('executeJobOnce enforces job_runs_per_day before sandbox work', async () =>
 			current: limit,
 		})
 		expect(executeSpy).not.toHaveBeenCalled()
+		expect(recordUsageSpy).not.toHaveBeenCalled()
 	} finally {
 		executeSpy.mockRestore()
+		recordUsageSpy.mockRestore()
 	}
 })
 

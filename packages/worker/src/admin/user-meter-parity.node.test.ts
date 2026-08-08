@@ -142,6 +142,7 @@ test('loadAdminUserMeterParityReport verifies daily, storage, and deletion state
 		['email_receives_per_day', 5],
 		['execute_calls_per_day', 11],
 		['outbound_fetches_per_day', 7],
+		['job_runs_per_day', 0],
 	])
 	assertNoLeaseSecrets(report)
 })

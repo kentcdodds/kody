@@ -58,6 +58,7 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
@@ -1297,7 +1298,13 @@ export async function executeJobOnce(input: {
 					error: formatJobError(error),
 					logs: [],
 				}
-				completedOccurrence = true
+				// Daily job-run quota denials happen before sandbox work.
+				// Still return an error outcome so schedules advance, but do
+				// not emit job_run usage or else every post-limit tick
+				// inflates rollups while the UserMeter counter stays capped.
+				if (!isEntitlementLimitError(error)) {
+					completedOccurrence = true
+				}
 			} finally {
 				finished = new Date()
 				durationMs = Math.max(0, finished.valueOf() - started.valueOf())
