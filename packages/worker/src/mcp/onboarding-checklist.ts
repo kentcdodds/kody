@@ -34,6 +34,36 @@ export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> &
 	EntitlementUsageEnv & { MAILBOX: Env['MAILBOX'] }
 
 /**
+ * First-win Send sub-step: a successful `email_send` (UserMeter daily count)
+ * or any stored outbound mailbox copy. Meter covers the case where Hotmail
+ * already received the message but the mailbox mirror lagged; mailbox covers
+ * sends from a previous UTC day after the daily meter resets. Probe failures
+ * fail open to false so a Mailbox or UserMeter blip never marks Send done.
+ */
+export async function userHasSentWelcomeEmail(input: {
+	env: OnboardingChecklistEnv
+	userId: string
+	now?: Date
+}): Promise<boolean> {
+	const now = input.now ?? new Date()
+	const [outboundMail, emailSendsToday] = await Promise.all([
+		countInternalUserEmailMessages({
+			env: input.env,
+			ownerId: input.userId,
+			filters: { direction: 'outbound' },
+		}).catch(() => 0),
+		readCurrentEntitlementResourceUsage({
+			db: input.env.APP_DB,
+			env: input.env,
+			userId: input.userId,
+			resource: 'email_sends_per_day',
+			now,
+		}).catch(() => 0),
+	])
+	return outboundMail > 0 || emailSendsToday > 0
+}
+
+/**
  * Compute the checklist from existing signals: one Mailbox DO count (stored
  * INBOUND mail — the welcome email alone is outbound, so "exchange a first
  * email" only completes once the user's reply lands), and three cheap D1

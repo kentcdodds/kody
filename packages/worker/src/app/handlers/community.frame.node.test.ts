@@ -126,4 +126,9 @@ test('community page handler returns bare listings frame HTML for target header'
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)
 	expect(signedInHtml).toContain('Installed')
+	expect(
+		signedInHtml.indexOf(
+			'data-testid="community-listing-viewer-install-listing-1"',
+		),
+	).toBeGreaterThan(signedInHtml.indexOf('</h2>'))
 })

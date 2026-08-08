@@ -332,8 +332,9 @@ export function OnboardingRoute(handle: Handle) {
 			return (
 				<div mix={css(firstWinContentCss)}>
 					<p mix={css(firstWinGuidanceCss)}>
-						Paste this into your connected agent — Kody emails you from your own
-						Kody address within a minute.
+						Paste this into your connected agent. This step completes when Kody
+						records the send — usually within a minute, even if your personal
+						inbox already has the message.
 					</p>
 					<figure mix={css(promptBlockCss)}>
 						<blockquote>{introEmailPrompt}</blockquote>
@@ -350,8 +351,9 @@ export function OnboardingRoute(handle: Handle) {
 			return (
 				<div mix={css(firstWinContentCss)}>
 					<p mix={css(firstWinGuidanceCss)}>
-						Email sent. Open it and reply with your answers — about thirty
-						seconds. This page moves on when your reply lands.
+						Kody recorded the send. Open the welcome email and reply with your
+						answers — about thirty seconds. This page moves on when your reply
+						lands in Kody.
 					</p>
 					<p mix={css(firstWinGuidanceCss)}>
 						<a
@@ -371,7 +373,7 @@ export function OnboardingRoute(handle: Handle) {
 			<div mix={css(firstWinContentCss)}>
 				<p mix={css(firstWinGuidanceCss)}>
 					Reply received. Paste this so your agent reads it and saves what
-					matters.
+					matters as memories.
 				</p>
 				<figure mix={css(promptBlockCss)}>
 					<blockquote>{introEmailLookupPrompt}</blockquote>

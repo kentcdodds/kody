@@ -1,10 +1,10 @@
-import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	readOnboardingChecklistDismissed,
+	userHasSentWelcomeEmail,
 } from '#mcp/onboarding-checklist.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -40,20 +40,14 @@ export async function loadChecklist(
 }
 
 /**
- * First-win Send sub-step signal: any stored outbound mail means the welcome
- * email went out. Fails open to false so a Mailbox blip never breaks the
- * onboarding payload.
+ * First-win Send sub-step: successful `email_send` or stored outbound mail.
+ * Fails open to false so a Mailbox or UserMeter blip never breaks the payload.
  */
 async function loadHasSentWelcomeEmail(
 	env: Env,
 	userId: string,
 ): Promise<boolean> {
-	const outbound = await countInternalUserEmailMessages({
-		env,
-		ownerId: userId,
-		filters: { direction: 'outbound' },
-	}).catch(() => 0)
-	return outbound > 0
+	return await userHasSentWelcomeEmail({ env, userId })
 }
 
 function redirectUnverifiedToPending(request: Request) {

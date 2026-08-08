@@ -27,7 +27,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	).toContain('https://preview.example')
 
 	// After the welcome reply, the lookup prompt is the explicit second paste.
+	expect(buildIntroEmailPrompt().toLowerCase()).toContain(
+		'connected kody server',
+	)
+	expect(buildIntroEmailPrompt().toLowerCase()).not.toContain('hey kody')
 	expect(buildIntroEmailLookupPrompt().toLowerCase()).toContain('look up')
+	expect(buildIntroEmailLookupPrompt().toLowerCase()).toContain('memories')
+	expect(buildIntroEmailLookupPrompt().toLowerCase()).not.toContain('hey kody')
 
 	expect(
 		loadPublicOnboardingData({

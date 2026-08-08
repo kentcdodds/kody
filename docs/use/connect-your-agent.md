@@ -28,7 +28,10 @@ MCP URL and setup prompt.
 - **Cursor** — Add a remote MCP server from Customize, or merge a
   `mcpServers.kody.url` entry into `~/.cursor/mcp.json` / `.cursor/mcp.json`.
 - **Claude Desktop** — Use Settings → Connectors (custom connector + MCP URL).
-  Remote servers are not configured through `claude_desktop_config.json`.
+  Remote servers are not configured through `claude_desktop_config.json`. After
+  connecting, start a new chat and ask Claude to list Kody tools before the
+  first task — Claude Desktop often does not bind MCP tools until that next
+  turn.
 - **Grok** — On [grok.com/connectors](https://grok.com/connectors), click **New
   Connector**, select **Custom**, and paste the MCP URL. Complete OAuth when
   prompted. For Grok Business and Enterprise, a team admin must first add this

@@ -14,6 +14,7 @@ import {
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
+	claudeDesktopToolHint,
 	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
@@ -211,6 +212,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						copyLabel="Copy MCP URL"
 						variant="pill"
 					/>
+					<ClientNote>{claudeDesktopToolHint}</ClientNote>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)

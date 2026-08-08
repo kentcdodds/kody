@@ -68,6 +68,43 @@ export function CommunityDetailContent(
 				<CommunityListingIcon listing={listing} size="detail" />
 				<div mix={css(headTextCss)}>
 					<h1>{renderCommunityListingName(listing.name)}</h1>
+					{listing.trusted || listing.featured || listing.viewerInstall ? (
+						<span mix={css(detailBadgeGroupCss)}>
+							{listing.trusted ? (
+								<span
+									data-testid="community-detail-trusted-badge"
+									title="An admin reviewed this exact version and marked it trusted."
+									mix={css(badgeCss)}
+								>
+									Trusted
+								</span>
+							) : null}
+							{listing.featured ? (
+								<span
+									data-testid="community-detail-featured-badge"
+									title="An admin featured this package as an onboarding starter install."
+									mix={css(badgeCss)}
+								>
+									Featured
+								</span>
+							) : null}
+							{listing.viewerInstall ? (
+								<span
+									data-testid="community-detail-viewer-install-badge"
+									title={
+										listing.viewerInstall.status === 'installed'
+											? `Installed in your account as ${listing.viewerInstall.targetName}.`
+											: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+									}
+									mix={css(badgeCss)}
+								>
+									{listing.viewerInstall.status === 'installed'
+										? 'Installed'
+										: 'Forked'}
+								</span>
+							) : null}
+						</span>
+					) : null}
 					<p mix={css(ownerLineCss)}>
 						<span>
 							by{' '}
@@ -121,39 +158,6 @@ export function CommunityDetailContent(
 							: null}
 					</p>
 				</div>
-				{listing.trusted ? (
-					<span
-						data-testid="community-detail-trusted-badge"
-						title="An admin reviewed this exact version and marked it trusted."
-						mix={css(badgeCss)}
-					>
-						Trusted
-					</span>
-				) : null}
-				{listing.featured ? (
-					<span
-						data-testid="community-detail-featured-badge"
-						title="An admin featured this package as an onboarding starter install."
-						mix={css(badgeCss)}
-					>
-						Featured
-					</span>
-				) : null}
-				{listing.viewerInstall ? (
-					<span
-						data-testid="community-detail-viewer-install-badge"
-						title={
-							listing.viewerInstall.status === 'installed'
-								? `Installed in your account as ${listing.viewerInstall.targetName}.`
-								: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
-						}
-						mix={css(badgeCss)}
-					>
-						{listing.viewerInstall.status === 'installed'
-							? 'Installed'
-							: 'Forked'}
-					</span>
-				) : null}
 			</header>
 
 			<p data-rise style={{ '--rise': '2' }} mix={css(detailSubCss)}>
@@ -339,12 +343,16 @@ const backLinkCss = {
 const detailHeadCss = {
 	marginTop: '1.8rem',
 	display: 'flex',
-	alignItems: 'center',
+	alignItems: 'flex-start',
 	gap: '1.1rem',
 }
 
 const headTextCss = {
 	minWidth: 0,
+	flex: 1,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.45rem',
 	'& h1': {
 		margin: 0,
 		fontSize: 'clamp(1.7rem, 4vw, 2.4rem)',
@@ -355,11 +363,18 @@ const headTextCss = {
 	},
 }
 
+const detailBadgeGroupCss = {
+	display: 'flex',
+	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.35rem',
+}
+
 const ownerLineCss = {
 	display: 'flex',
 	alignItems: 'center',
 	gap: '0.45rem',
-	margin: '0.25rem 0 0',
+	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.95rem',
 }
@@ -420,7 +435,6 @@ const ownerFollowButtonCss = {
 
 const badgeCss = {
 	...communityBadgePillCss,
-	alignSelf: 'center',
 }
 
 const detailSubCss = {

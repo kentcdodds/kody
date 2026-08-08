@@ -62,21 +62,21 @@ export function buildDiscoveryPrompt(input: {
 /**
  * First-win mini-wizard, sub-step 1 (Send): one email carries both the
  * introduction and a thirty-second interview, so a single reply exercises
- * the storage-first email model and seeds durable memory. The "use Kody MCP
- * to" prefix routes the request explicitly — "Hey Kody" alone is not enough
- * for some models to pick the right tool.
+ * the storage-first email model and seeds durable memory. Address the
+ * connected Kody server rather than "Hey Kody" — some hosts treat that as
+ * impersonation / prompt injection and skip MCP tools.
  */
 export function buildIntroEmailPrompt() {
-	return 'Hey Kody, use Kody MCP to send me a welcome email introducing yourself and asking me my name, what I do for work, and what I do for fun. Invite me to reply.'
+	return 'Ask the connected Kody server to send me a welcome email introducing itself and asking my name, what I do for work, and what I do for fun. Invite me to reply.'
 }
 
 /**
  * First-win mini-wizard, sub-step 3 (Remember): after the reply lands, the
  * agent reads it out of Kody's stored mail and turns the answers into
- * durable memories in one paste.
+ * durable memories (not values) in one paste.
  */
 export function buildIntroEmailLookupPrompt() {
-	return 'Hey Kody, use Kody MCP to look up my reply to your welcome email and remember what matters about me.'
+	return 'Ask the connected Kody server to look up my reply to the welcome email and save what matters about me as memories.'
 }
 
 /**

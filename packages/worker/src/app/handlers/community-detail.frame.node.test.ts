@@ -171,6 +171,9 @@ test('community detail handler returns bare detail frame HTML for target header'
 		'data-testid="community-detail-viewer-install-badge"',
 	)
 	expect(signedInHtml).toContain('Installed')
+	expect(
+		signedInHtml.indexOf('data-testid="community-detail-viewer-install-badge"'),
+	).toBeGreaterThan(signedInHtml.indexOf('</h1>'))
 	expect(signedInHtml).toContain('name="follow"')
 	expect(signedInHtml).toContain('name="returnTo"')
 	expect(signedInHtml).toContain('/profiles/kentcdodds/follow.json')

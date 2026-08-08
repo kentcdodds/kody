@@ -55,44 +55,46 @@ export function CommunityListingsContent(
 						>
 							<div mix={css(listingHeadCss)}>
 								<CommunityListingIcon listing={listing} size="card" />
-								<h2 mix={css(listingNameCss)}>
-									<a
-										href={routes.communityDetail.href({
-											listingId: listing.id,
-										})}
-										mix={css(listingLinkCss)}
-									>
-										{renderCommunityListingName(listing.name)}
-									</a>
-								</h2>
-								{listing.trusted || listing.viewerInstall ? (
-									<span mix={css(listingBadgeGroupCss)}>
-										{listing.trusted ? (
-											<span
-												data-testid={`community-listing-trusted-${listing.id}`}
-												title="An admin reviewed this exact version and marked it trusted."
-												mix={css(communityBadgePillCss)}
-											>
-												Trusted
-											</span>
-										) : null}
-										{listing.viewerInstall ? (
-											<span
-												data-testid={`community-listing-viewer-install-${listing.id}`}
-												title={
-													listing.viewerInstall.status === 'installed'
-														? `Installed in your account as ${listing.viewerInstall.targetName}.`
-														: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
-												}
-												mix={css(communityBadgePillCss)}
-											>
-												{listing.viewerInstall.status === 'installed'
-													? 'Installed'
-													: 'Forked'}
-											</span>
-										) : null}
-									</span>
-								) : null}
+								<div mix={css(listingTitleBlockCss)}>
+									<h2 mix={css(listingNameCss)}>
+										<a
+											href={routes.communityDetail.href({
+												listingId: listing.id,
+											})}
+											mix={css(listingLinkCss)}
+										>
+											{renderCommunityListingName(listing.name)}
+										</a>
+									</h2>
+									{listing.trusted || listing.viewerInstall ? (
+										<span mix={css(listingBadgeGroupCss)}>
+											{listing.trusted ? (
+												<span
+													data-testid={`community-listing-trusted-${listing.id}`}
+													title="An admin reviewed this exact version and marked it trusted."
+													mix={css(communityBadgePillCss)}
+												>
+													Trusted
+												</span>
+											) : null}
+											{listing.viewerInstall ? (
+												<span
+													data-testid={`community-listing-viewer-install-${listing.id}`}
+													title={
+														listing.viewerInstall.status === 'installed'
+															? `Installed in your account as ${listing.viewerInstall.targetName}.`
+															: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+													}
+													mix={css(communityBadgePillCss)}
+												>
+													{listing.viewerInstall.status === 'installed'
+														? 'Installed'
+														: 'Forked'}
+												</span>
+											) : null}
+										</span>
+									) : null}
+								</div>
 							</div>
 							<p
 								mix={css(listingDescriptionCss)}
@@ -203,8 +205,16 @@ const listingCardCss = mergeCss(getSurfaceCardCss({ interactive: true }), {
 
 const listingHeadCss = {
 	display: 'flex',
-	alignItems: 'center',
+	alignItems: 'flex-start',
 	gap: '0.7rem',
+}
+
+const listingTitleBlockCss = {
+	minWidth: 0,
+	flex: 1,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.4rem',
 }
 
 const listingNameCss = {
@@ -249,9 +259,8 @@ export const communityBadgePillCss = {
 const listingBadgeGroupCss = {
 	display: 'flex',
 	alignItems: 'center',
+	flexWrap: 'wrap' as const,
 	gap: '0.35rem',
-	marginLeft: 'auto',
-	flex: 'none',
 }
 
 const listingDescriptionCss = {

@@ -672,7 +672,7 @@ export type OnboardingLoaderData = {
 	introEmailPrompt: string
 	/** First-win remember prompt: read the reply and save memories. */
 	introEmailLookupPrompt: string
-	/** True when any outbound mail exists (first-win Send sub-step done). */
+	/** True when a successful email_send or stored outbound mail exists (Send done). */
 	hasSentWelcomeEmail: boolean
 	hasMcpClient: boolean
 	emailVerified: boolean
