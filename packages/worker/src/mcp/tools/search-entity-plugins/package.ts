@@ -20,6 +20,7 @@ import {
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
+import { buildPackageTestHints } from '#worker/package-registry/package-test-hints.ts'
 
 import { maxFusedPackageCandidates } from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
@@ -516,6 +517,13 @@ export const packageSearchEntityPlugin = {
 			files: detail.files,
 		})
 		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
+		const testHints = buildPackageTestHints({
+			kodyId: detail.record.kodyId,
+			hasApp: Boolean(appEntry),
+			subscriptionTopics: exportProjection.subscriptions.map(
+				(subscription) => subscription.topic,
+			),
+		})
 		const invokeUsage = `packages.invoke({ kodyId: ${JSON.stringify(detail.record.kodyId)}, exportName, params })`
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const lines = [
@@ -538,6 +546,18 @@ export const packageSearchEntityPlugin = {
 			'',
 			`- Git lane: \`${maintain.gitLane}\` → clone → edit → push → \`${maintain.publish}\``,
 			'- Tool-only: `package_save` / repo sessions; full guide: `coding_guide_get({ guide: "package_authoring" })`',
+			...(testHints
+				? [
+						'',
+						'## Test',
+						'',
+						...(testHints.app ? [`- App probe: \`${testHints.app}\``] : []),
+						...(testHints.subscriptions ?? []).map(
+							(subscription) =>
+								`- Subscription \`${subscription.topic}\`: \`${subscription.snippet}\``,
+						),
+					]
+				: []),
 			'',
 			'## Import vs invoke',
 			'',
@@ -639,6 +659,7 @@ export const packageSearchEntityPlugin = {
 				hostedUrl: detail.hostedUrl,
 				appEntry,
 				maintain,
+				...(testHints ? { test: testHints } : {}),
 				exports: exportDetails,
 				jobs,
 				retrievers,
