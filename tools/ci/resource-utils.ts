@@ -473,6 +473,33 @@ export async function ensureCloudflareQueue(input: {
 	}
 }
 
+export async function deleteCloudflareQueue(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	if (input.dryRun) {
+		console.error(`[dry-run] delete Queue: ${input.name}`)
+		return
+	}
+	const queue = (await listCloudflareQueues(input)).find(
+		(candidate) => candidate.queue_name === input.name,
+	)
+	if (!queue) {
+		console.error(`Queue already deleted: ${input.name}`)
+		return
+	}
+	await cloudflareApiRequest({
+		...input,
+		pathname: `/queues/${queue.queue_id}`,
+		method: 'DELETE',
+	})
+	console.error(`Deleted Queue: ${input.name} (${queue.queue_id})`)
+}
+
 async function listCloudflareEventSubscriptions(input: {
 	accountId: string
 	apiToken: string
@@ -1029,6 +1056,7 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName,
 	emailBlobsBucketName,
 	workerVars,
+	queueBindings,
 	extraMigrations,
 }: {
 	baseConfigPath: string
@@ -1044,6 +1072,11 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 	workerVars?: Record<string, string | undefined>
+	queueBindings?: Array<{
+		binding: string
+		queue: string
+		deadLetterQueue: string
+	}>
 	extraMigrations?: Array<WranglerMigration>
 }) {
 	const baseText = await readFile(baseConfigPath, 'utf8')
@@ -1223,6 +1256,53 @@ export async function writeGeneratedWranglerConfig({
 		}
 	}
 	;(targetEnv as Record<string, unknown>).vars = resolvedVars
+
+	if (queueBindings && queueBindings.length > 0) {
+		const queues = (targetEnv as Record<string, unknown>).queues
+		if (!queues || typeof queues !== 'object' || Array.isArray(queues)) {
+			fail(
+				`wrangler config "${baseConfigPath}" is missing "env.${envName}.queues".`,
+			)
+		}
+		const queueConfig = queues as Record<string, unknown>
+		const producers = queueConfig.producers
+		const consumers = queueConfig.consumers
+		if (!Array.isArray(producers) || !Array.isArray(consumers)) {
+			fail(
+				`wrangler config "${baseConfigPath}" has invalid "env.${envName}.queues".`,
+			)
+		}
+		for (const binding of queueBindings) {
+			const producer = producers.find(
+				(entry) =>
+					entry &&
+					typeof entry === 'object' &&
+					!Array.isArray(entry) &&
+					(entry as Record<string, unknown>).binding === binding.binding,
+			) as Record<string, unknown> | undefined
+			if (!producer || typeof producer.queue !== 'string') {
+				fail(
+					`wrangler config "${baseConfigPath}" has no ${envName} Queue producer for "${binding.binding}".`,
+				)
+			}
+			const configuredQueue = producer.queue
+			const consumer = consumers.find(
+				(entry) =>
+					entry &&
+					typeof entry === 'object' &&
+					!Array.isArray(entry) &&
+					(entry as Record<string, unknown>).queue === configuredQueue,
+			) as Record<string, unknown> | undefined
+			if (!consumer) {
+				fail(
+					`wrangler config "${baseConfigPath}" has no ${envName} Queue consumer for "${configuredQueue}".`,
+				)
+			}
+			producer.queue = binding.queue
+			consumer.queue = binding.queue
+			consumer.dead_letter_queue = binding.deadLetterQueue
+		}
+	}
 
 	addPackageAppCustomDomainRoute({
 		targetEnv: targetEnv as Record<string, unknown>,
