@@ -540,6 +540,21 @@ test('bulk triage honors the public limit of 100 exact job matches', async () =>
 			}
 		})
 
+		await expect(
+			bulkUpdateRunErrorTriage({
+				env,
+				userId,
+				filter: { jobId },
+				errorTriage: 'resolved',
+				triageNote: 'production cleanup',
+				limit,
+				dryRun: true,
+			}),
+		).resolves.toMatchObject({
+			matchedRunIds: expect.arrayContaining([`bulk-${limit}-0`]),
+			updatedCount: 0,
+			hasMore: false,
+		})
 		return await bulkUpdateRunErrorTriage({
 			env,
 			userId,
