@@ -2885,53 +2885,56 @@ class RunLogBase extends DurableObject<Env> {
 		}
 
 		const now = new Date().toISOString()
-		if (input.errorTriage == null) {
-			for (const runIdChunk of chunkArray(
-				matchedRunIds,
-				maxD1BoundParameters - 1,
-			)) {
-				const placeholders = runIdChunk.map(() => '?').join(', ')
-				this.ctx.storage.sql.exec(
-					`UPDATE runs
-					SET error_triage = NULL,
-						triage_note = NULL,
-						triaged_at = NULL,
-						triaged_by = NULL,
-						updated_at = ?
-					WHERE id IN (${placeholders}) AND status = 'error'`,
-					now,
-					...runIdChunk,
-				)
+		this.ctx.storage.transactionSync(() => {
+			if (input.errorTriage == null) {
+				for (const runIdChunk of chunkArray(
+					matchedRunIds,
+					maxD1BoundParameters - 1,
+				)) {
+					const placeholders = runIdChunk.map(() => '?').join(', ')
+					this.ctx.storage.sql.exec(
+						`UPDATE runs
+						SET error_triage = NULL,
+							triage_note = NULL,
+							triaged_at = NULL,
+							triaged_by = NULL,
+							updated_at = ?
+						WHERE id IN (${placeholders}) AND status = 'error'`,
+						now,
+						...runIdChunk,
+					)
+				}
+			} else {
+				const triageNote =
+					input.triageNote == null
+						? null
+						: input.triageNote
+								.trim()
+								.slice(0, runErrorTriageMaxNoteLength) || null
+				for (const runIdChunk of chunkArray(
+					matchedRunIds,
+					maxD1BoundParameters - 6,
+				)) {
+					const placeholders = runIdChunk.map(() => '?').join(', ')
+					this.ctx.storage.sql.exec(
+						`UPDATE runs
+						SET error_triage = ?,
+							triage_note = CASE WHEN ? = 1 THEN triage_note ELSE ? END,
+							triaged_at = ?,
+							triaged_by = ?,
+							updated_at = ?
+						WHERE id IN (${placeholders}) AND status = 'error'`,
+						input.errorTriage,
+						input.preserveTriageNote ? 1 : 0,
+						triageNote,
+						now,
+						input.triagedBy.trim() || null,
+						now,
+						...runIdChunk,
+					)
+				}
 			}
-		} else {
-			const triageNote =
-				input.triageNote == null
-					? null
-					: input.triageNote.trim().slice(0, runErrorTriageMaxNoteLength) ||
-						null
-			for (const runIdChunk of chunkArray(
-				matchedRunIds,
-				maxD1BoundParameters - 6,
-			)) {
-				const placeholders = runIdChunk.map(() => '?').join(', ')
-				this.ctx.storage.sql.exec(
-					`UPDATE runs
-					SET error_triage = ?,
-						triage_note = CASE WHEN ? = 1 THEN triage_note ELSE ? END,
-						triaged_at = ?,
-						triaged_by = ?,
-						updated_at = ?
-					WHERE id IN (${placeholders}) AND status = 'error'`,
-					input.errorTriage,
-					input.preserveTriageNote ? 1 : 0,
-					triageNote,
-					now,
-					input.triagedBy.trim() || null,
-					now,
-					...runIdChunk,
-				)
-			}
-		}
+		})
 		return {
 			matchedRunIds,
 			updatedCount: matchedRunIds.length,

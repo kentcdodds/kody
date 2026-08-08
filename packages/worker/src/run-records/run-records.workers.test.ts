@@ -637,6 +637,59 @@ test('bulk triage honors the public limit of 100 across write paths', async () =
 	await runScenario(100)
 })
 
+test('bulk triage rolls back earlier chunks when a later chunk fails', async () => {
+	const userId = uniqueUserId('bulk-triage-atomic')
+	const jobId = 'atomic-job'
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		for (let index = 0; index < 100; index += 1) {
+			const startedAt = new Date(Date.now() - index).toISOString()
+			insertRunRow(state, {
+				id: `atomic-${index}`,
+				status: 'error',
+				startedAt,
+				finishedAt: startedAt,
+				jobId,
+				errorName: 'Error',
+				errorMessage: 'atomic failure fixture',
+			})
+		}
+		// Resolve chunks contain 94 ids. This sentinel is selected into the
+		// second chunk so the first UPDATE has already executed when it aborts.
+		state.storage.sql.exec(
+			`CREATE TRIGGER reject_atomic_sentinel
+			BEFORE UPDATE OF error_triage ON runs
+			WHEN OLD.id = 'atomic-99'
+			BEGIN
+				SELECT RAISE(ABORT, 'forced second chunk failure');
+			END`,
+		)
+	})
+
+	await expect(
+		bulkUpdateRunErrorTriage({
+			env,
+			userId,
+			filter: { jobId },
+			errorTriage: 'resolved',
+			limit: 100,
+		}),
+	).rejects.toThrow(/forced second chunk failure/)
+
+	const triagedCount = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) =>
+			state.storage.sql
+				.exec<{ count: number }>(
+					`SELECT COUNT(*) AS count FROM runs
+					WHERE error_triage IS NOT NULL`,
+				)
+				.one().count,
+	)
+	expect(triagedCount).toBe(0)
+})
+
 test('cap and stale retention journey', async () => {
 	// --- handled duplicate errors are deleted before successes and open errors ---
 	{
