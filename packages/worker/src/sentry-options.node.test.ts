@@ -12,7 +12,9 @@ import {
 	isDurableObjectIsolateResourceLimitResetMessage,
 } from './sentry-options.ts'
 
-test('isDurableObjectIsolateResourceLimitResetMessage is memory/CPU only', () => {
+test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
+	// Isolate resource-limit resets are the only DO resets that isolated
+	// artifact rebuild / check phases treat as retryable.
 	expect(
 		isDurableObjectIsolateResourceLimitResetMessage(
 			durableObjectIsolateMemoryResetMessage,
@@ -33,9 +35,7 @@ test('isDurableObjectIsolateResourceLimitResetMessage is memory/CPU only', () =>
 			durableObjectBlockConcurrencyWhileTimeoutResetMessage,
 		),
 	).toBe(false)
-})
 
-test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
 	expect(
 		filterSentryEvent({
 			exception: {

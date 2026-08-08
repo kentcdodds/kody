@@ -10,16 +10,14 @@ const migrationEnv = {
 	APP_LEGACY_REDIRECT: 'true',
 }
 
-test('parseLegacyHosts normalizes and dedupes the comma-separated list', () => {
+test('legacy host redirect rewrites listed GET/HEAD navigation and leaves protocol surfaces alone', () => {
 	expect(parseLegacyHosts('heykody.dev')).toEqual(['heykody.dev'])
 	expect(parseLegacyHosts(' HeyKody.DEV., other.example ,heykody.dev')).toEqual(
 		['heykody.dev', 'other.example'],
 	)
 	expect(parseLegacyHosts('')).toEqual([])
 	expect(parseLegacyHosts(null)).toEqual([])
-})
 
-test('legacy-host GET/HEAD navigation redirects 308 to the canonical origin', () => {
 	const response = getLegacyHostRedirectResponse({
 		request: new Request('https://heykody.dev/blog/some-post?utm=x'),
 		env: migrationEnv,
@@ -35,9 +33,7 @@ test('legacy-host GET/HEAD navigation redirects 308 to the canonical origin', ()
 	})
 	expect(headResponse?.status).toBe(308)
 	expect(headResponse?.headers.get('location')).toBe('https://heykody.app/')
-})
 
-test('redirects stay off unless APP_LEGACY_REDIRECT is exactly "true"', () => {
 	for (const flag of [undefined, '', 'false', '1', 'TRUE', 'yes']) {
 		expect(
 			getLegacyHostRedirectResponse({
@@ -46,9 +42,7 @@ test('redirects stay off unless APP_LEGACY_REDIRECT is exactly "true"', () => {
 			}),
 		).toBeNull()
 	}
-})
 
-test('non-GET methods are never redirected (MCP and webhook callers do not follow redirects)', () => {
 	for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
 		expect(
 			getLegacyHostRedirectResponse({
@@ -57,9 +51,7 @@ test('non-GET methods are never redirected (MCP and webhook callers do not follo
 			}),
 		).toBeNull()
 	}
-})
 
-test('protocol and auth surfaces stay served on the legacy host', () => {
 	for (const pathname of [
 		'/mcp',
 		'/oauth/token',
@@ -86,9 +78,7 @@ test('protocol and auth surfaces stay served on the legacy host', () => {
 			env: migrationEnv,
 		}),
 	).not.toBeNull()
-})
 
-test('only listed legacy hosts redirect, and never onto themselves', () => {
 	// The canonical host itself is not a legacy host.
 	expect(
 		getLegacyHostRedirectResponse({

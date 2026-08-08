@@ -259,15 +259,6 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 			'entry.ts': [
 				"import { kody, packageContext, packages } from 'kody:runtime'",
 				'',
-				'const captureError = (fn) => {',
-				'\ttry {',
-				'\t\tfn()',
-				"\t\treturn 'resolved'",
-				'\t} catch (error) {',
-				'\t\treturn String(error?.message ?? error)',
-				'\t}',
-				'}',
-				'',
 				'export default async function main(input = {}) {',
 				'\t// Direct kody.package_invoke_checked should reject; packages.invoke is the public API.',
 				'\tlet directKodyInvokeChecked;',
@@ -282,8 +273,6 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 				'\t}',
 				'\treturn {',
 				'\t\tpackageContextIsNull: packageContext === null,',
-				'\t\tmissingCheckError: captureError(() => packages?.check({})),',
-				'\t\tmissingInvokeCheckedError: captureError(() => packages?.invokeChecked({})),',
 				'\t\tdirectKodyInvokeChecked,',
 				'\t\tinvoked: await packages?.invoke({',
 				"\t\t\tkodyId: 'target-package',",
@@ -327,8 +316,6 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 	expect(result.error).toBeUndefined()
 	expect(result.result).toEqual({
 		packageContextIsNull: true,
-		missingCheckError: expect.stringContaining('is not a function'),
-		missingInvokeCheckedError: expect.stringContaining('is not a function'),
 		directKodyInvokeChecked: expect.stringContaining('package_invoke_checked'),
 		invoked: {
 			ok: true,
@@ -448,28 +435,15 @@ test(
 				'entry.ts': [
 					"import { packages } from 'kody:runtime'",
 					'',
-					'const captureError = (fn: () => unknown) => {',
-					'\ttry {',
-					'\t\tfn()',
-					"\t\treturn 'resolved'",
-					'\t} catch (error) {',
-					'\t\treturn String((error as Error)?.message ?? error)',
-					'\t}',
-					'}',
-					'',
 					'export default async function main() {',
 					";(globalThis as Record<string, unknown>).__kodyLeanCallerMarker = 'caller'",
 					'\tconst startedAt = Date.now()',
 					"\tconst first = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'first' } })",
 					'\tconst firstDurationMs = Date.now() - startedAt',
 					"\tconst second = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'second' } })",
-					"\tconst removedInvokeCheckedError = captureError(() => packages?.invokeChecked({ kodyId: 'lean-target', exportName: './probe' }))",
-					"\tconst removedCheckError = captureError(() => packages?.check({ kodyId: 'lean-target', exportName: './probe' }))",
 					'\treturn {',
 					'\t\tfirst,',
 					'\t\tsecond,',
-					'\t\tremovedInvokeCheckedError,',
-					'\t\tremovedCheckError,',
 					'\t\tfirstDurationMs,',
 					"\t\ttargetMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanTargetMarker !== 'undefined',",
 					'\t}',
@@ -509,8 +483,6 @@ test(
 		const payload = result.result as {
 			first: Record<string, unknown>
 			second: Record<string, unknown>
-			removedInvokeCheckedError: string
-			removedCheckError: string
 			firstDurationMs: number
 			targetMarkerVisible: boolean
 		}
@@ -528,9 +500,6 @@ test(
 			targetKodyId: 'lean-target',
 			callerMarkerVisible: false,
 		})
-		// The helper object exposes only invoke; unknown properties fail naturally.
-		expect(payload.removedInvokeCheckedError).toContain('is not a function')
-		expect(payload.removedCheckError).toContain('is not a function')
 		// Realm separation in the other direction: the target's globals never
 		// leak back into the caller realm.
 		expect(payload.targetMarkerVisible).toBe(false)

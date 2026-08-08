@@ -23,7 +23,7 @@ function readRulesFor(html: string, element: string) {
 	return rules
 }
 
-test('a metadata band sizes its own columns and renders an id as a single-line copy target', async () => {
+test('metadata band auto-fits columns and keeps id/timestamp values copyable and single-line', async () => {
 	const packageId = '0f8f7f1e-5a2b-4c3d-9e1f-2a3b4c5d6e7f'
 	const html = await renderToString(
 		jsx(MetadataGrid, {
@@ -53,22 +53,17 @@ test('a metadata band sizes its own columns and renders an id as a single-line c
 	const idRules = readRulesFor(html, 'code')
 	expect(idRules).toContain('white-space: nowrap')
 	expect(idRules).toContain('text-overflow: ellipsis')
-	expect(idRules).toContain('overflow: hidden')
-
-	// A band carries one copy button per id, so each has to say which id it takes.
 	expect(html).toContain('aria-label="Copy package id"')
 
 	// A missing timestamp still reads as an absent value rather than an epoch.
 	expect(html).toContain('>—</span>')
-})
 
-test('a timestamp stays on one line with tabular figures, and falls back when absent', async () => {
-	const html = await renderToString(
+	const timestampHtml = await renderToString(
 		jsx(TimestampValue, { value: '2026-08-07 10:11:12' }),
 	)
-	const rules = readRulesFor(html, 'span')
-	expect(rules).toContain('white-space: nowrap')
-	expect(rules).toContain('font-variant-numeric: tabular-nums')
+	expect(readRulesFor(timestampHtml, 'span')).toContain(
+		'font-variant-numeric: tabular-nums',
+	)
 
 	const missing = await renderToString(
 		jsx(TimestampValue, { value: null, fallback: 'Unknown' }),

@@ -32,7 +32,7 @@ function createCallerContext() {
 	})
 }
 
-test('storage_query wraps Durable Object SQL caller mistakes as McpCallerError', async () => {
+test('storage_query wraps Durable Object SQL caller mistakes and rethrows platform failures', async () => {
 	mockModule.sqlQuery.mockRejectedValueOnce(
 		new Error('no such table: articles: SQLITE_ERROR'),
 	)
@@ -53,9 +53,7 @@ test('storage_query wraps Durable Object SQL caller mistakes as McpCallerError',
 			error instanceof McpCallerError &&
 			error.message === 'no such table: articles: SQLITE_ERROR',
 	)
-})
 
-test('storage_query rethrows unrelated platform failures unchanged', async () => {
 	const platformError = new Error(
 		'Durable Object reset because its code was updated.',
 	)

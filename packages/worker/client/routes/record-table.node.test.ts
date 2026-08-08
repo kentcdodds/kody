@@ -21,25 +21,34 @@ const rows = [
 	{ id: 'b', href: '/account/packages/b', cells: { name: 'Beta', count: '7' } },
 ]
 
-test('a dropped column hides on the container, not the viewport', async () => {
-	const html = await renderToString(
+test('record table keeps container drops, row links, and expand/pane selection contracts', async () => {
+	const noneHtml = await renderToString(
 		jsx(RecordTable, { mode: 'none', ariaLabel: 'Packages', columns, rows }),
 	)
 
 	// These tables live inside a 200px-railed shell, so the viewport says very
 	// little about how much room the table actually has. A `@media` rule here
 	// would drop a column on a wide screen and keep one in a narrow pane.
-	expect(html).toContain('@container (max-width: 780px)')
-	expect(html).not.toMatch(/@media \(max-width: \d+px\)/)
+	expect(noneHtml).toContain('@container (max-width: 780px)')
+	expect(noneHtml).not.toMatch(/@media \(max-width: \d+px\)/)
+	expect(noneHtml).toContain('data-label="Kody id"')
+	expect(noneHtml).toContain('data-primary="true"')
 
-	// Every cell carries its own label so the sub-620px card fallback can
-	// render one without duplicating the row in the DOM.
-	expect(html).toContain('data-label="Kody id"')
-	expect(html).toContain('data-primary="true"')
-})
+	// none mode ignores selection even when an id and record are passed.
+	const noneWithSelection = await renderToString(
+		jsx(RecordTable, {
+			mode: 'none',
+			ariaLabel: 'Entitlements',
+			columns,
+			rows,
+			selectedId: 'a',
+			record: jsx('p', { children: 'should not render' }),
+		}),
+	)
+	expect(noneWithSelection).not.toContain('data-selected="true"')
+	expect(noneWithSelection).not.toContain('should not render')
 
-test('the primary cell is the row link and reports the expansion it controls', async () => {
-	const html = await renderToString(
+	const expandHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'expand',
 			ariaLabel: 'Packages',
@@ -52,24 +61,33 @@ test('the primary cell is the row link and reports the expansion it controls', a
 
 	// Rows stay real anchors, so the selected record is in the URL and the
 	// scroll-preserving navigation keeps working.
-	expect(html).toContain('href="/account/packages/b"')
-	expect(html).toContain('data-prevent-scroll-reset')
-	expect(html).toContain('aria-expanded="true"')
-	expect(html).toContain('aria-expanded="false"')
-
-	// `aria-controls` has to name the row that actually holds the record.
-	const controls = /aria-controls="([^"]+)"/.exec(html)?.[1]
+	expect(expandHtml).toContain('href="/account/packages/b"')
+	expect(expandHtml).toContain('data-prevent-scroll-reset')
+	expect(expandHtml).toContain('aria-expanded="true"')
+	expect(expandHtml).toContain('aria-expanded="false"')
+	const controls = /aria-controls="([^"]+)"/.exec(expandHtml)?.[1]
 	expect(controls).toBeTruthy()
-	expect(html).toContain(`id="${controls}"`)
-	expect(html).toContain('Beta record')
+	expect(expandHtml).toContain(`id="${controls}"`)
+	expect(expandHtml).toContain('Beta record')
+	expect(expandHtml.match(/data-selected="true"/g)).toHaveLength(1)
+	expect(expandHtml.match(/data-record-row="true"/g)).toHaveLength(1)
 
-	// Only the selected row is marked, and only it unfolds.
-	expect(html.match(/data-selected="true"/g)).toHaveLength(1)
-	expect(html.match(/data-record-row="true"/g)).toHaveLength(1)
-})
+	// Selected without a loaded record must not point assistive tech at a
+	// missing expanded region.
+	const expandPending = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Packages',
+			columns,
+			rows,
+			selectedId: 'b',
+		}),
+	)
+	expect(expandPending).not.toContain('aria-expanded="true"')
+	expect(expandPending).not.toContain('aria-controls')
+	expect(expandPending).not.toContain('data-record-row="true"')
 
-test('pane mode puts the record after the table instead of inside it', async () => {
-	const html = await renderToString(
+	const paneHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'pane',
 			ariaLabel: 'Secrets',
@@ -79,17 +97,32 @@ test('pane mode puts the record after the table instead of inside it', async () 
 			record: jsx('p', { children: 'Alpha editor' }),
 		}),
 	)
+	expect(paneHtml).not.toContain('data-record-row="true"')
+	expect(paneHtml.indexOf('Alpha editor')).toBeGreaterThan(
+		paneHtml.indexOf('</table>'),
+	)
+	expect(paneHtml).toContain('data-selected="true"')
 
-	// The attribute names also appear inside the emitted `@layer` selectors,
-	// so these assertions have to match the markup form, not the bare name.
-	expect(html).not.toContain('data-record-row="true"')
-	expect(html.indexOf('Alpha editor')).toBeGreaterThan(html.indexOf('</table>'))
-	// The row is still marked so the editor below has a visible anchor.
-	expect(html).toContain('data-selected="true"')
+	// Off-window expand selection falls back to a pane after the table.
+	const orphanHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Runs',
+			columns,
+			rows,
+			selectedId: 'not-in-this-window',
+			record: jsx('p', { children: 'Orphan record' }),
+		}),
+	)
+	expect(orphanHtml).toContain('Orphan record')
+	expect(orphanHtml).not.toContain('data-record-row="true"')
+	expect(orphanHtml.indexOf('Orphan record')).toBeGreaterThan(
+		orphanHtml.indexOf('</table>'),
+	)
 })
 
-test('a table with no rows shows its empty copy instead of a bare header', async () => {
-	const html = await renderToString(
+test('record table empty and busy states keep toolbar layout stable', async () => {
+	const emptyHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'pane',
 			ariaLabel: 'Secrets',
@@ -100,32 +133,12 @@ test('a table with no rows shows its empty copy instead of a bare header', async
 		}),
 	)
 
-	expect(html).toContain('No secrets yet.')
-	expect(html).toContain('0 of 0 shown')
-	expect(html).not.toContain('<table')
-	// An empty collection renders no table, so the region has to carry the
-	// name or the toolbar and count sit in an unnamed part of the page.
-	expect(html).toContain('<section aria-label="Secrets"')
-})
+	expect(emptyHtml).toContain('No secrets yet.')
+	expect(emptyHtml).toContain('0 of 0 shown')
+	expect(emptyHtml).not.toContain('<table')
+	expect(emptyHtml).toContain('<section aria-label="Secrets"')
 
-test('none mode renders no selection, even when an id is passed', async () => {
-	const html = await renderToString(
-		jsx(RecordTable, {
-			mode: 'none',
-			ariaLabel: 'Entitlements',
-			columns,
-			rows,
-			selectedId: 'a',
-			record: jsx('p', { children: 'should not render' }),
-		}),
-	)
-
-	expect(html).not.toContain('data-selected="true"')
-	expect(html).not.toContain('should not render')
-})
-
-test('a refetch reports itself in the toolbar instead of above the table', async () => {
-	const html = await renderToString(
+	const busyHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'pane',
 			ariaLabel: 'Packages',
@@ -138,55 +151,12 @@ test('a refetch reports itself in the toolbar instead of above the table', async
 
 	// A page-level "Loading…" line above the table reflowed everything below it
 	// on every keystroke of a search that refetches. The count dims in place
-	// instead — replacing its text would resize the search field beside it,
-	// which is the box the reader is typing into.
-	expect(html).toContain('aria-busy="true"')
-	expect(html).toContain('data-busy="true"')
-	expect(html).toContain('2 of 2 shown')
-	// The announcement is out of flow, so it costs no layout.
-	expect(html).toContain('aria-live="polite"')
-	expect(html).toContain('Updating…')
-	// The rows stay put while the refetch is in flight.
-	expect(html).toContain('<table')
-	expect(html).toContain('Alpha')
-})
-
-test('a selected row with no record yet claims no expanded region', async () => {
-	const html = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Packages',
-			columns,
-			rows,
-			selectedId: 'b',
-		}),
-	)
-
-	// The detail is still loading (or 404'd), so there is no record row —
-	// reporting one would point assistive tech at an id that is not in the DOM.
-	expect(html).not.toContain('aria-expanded="true"')
-	expect(html).not.toContain('aria-controls')
-	expect(html).not.toContain('data-record-row="true"')
-})
-
-test('expand mode falls back to a pane when the selected row is off the window', async () => {
-	const html = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Runs',
-			columns,
-			rows,
-			// A deep link, a filter change, or paging past the selection: the
-			// record is loaded but has no row to unfold under.
-			selectedId: 'not-in-this-window',
-			record: jsx('p', { children: 'Orphan record' }),
-		}),
-	)
-
-	expect(html).toContain('Orphan record')
-	expect(html).not.toContain('data-record-row="true"')
-	// It renders after the table rather than vanishing.
-	expect(html.indexOf('Orphan record')).toBeGreaterThan(
-		html.indexOf('</table>'),
-	)
+	// instead.
+	expect(busyHtml).toContain('aria-busy="true"')
+	expect(busyHtml).toContain('data-busy="true"')
+	expect(busyHtml).toContain('2 of 2 shown')
+	expect(busyHtml).toContain('aria-live="polite"')
+	expect(busyHtml).toContain('Updating…')
+	expect(busyHtml).toContain('<table')
+	expect(busyHtml).toContain('Alpha')
 })

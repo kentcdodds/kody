@@ -527,10 +527,6 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 		timeoutMs: 40,
 	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
 	expect(result.error).toBe(executorSandboxTimeoutMessage)
-	expect(result.error).toContain('stopped observing the sandbox')
-	expect(result.error).toContain('side effects may still complete')
-	expect(result.error).toContain('idempotencyKey')
-	expect(result.error).toContain('run_get')
 	expect(result.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
 })

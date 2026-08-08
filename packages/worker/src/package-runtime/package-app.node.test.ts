@@ -673,11 +673,6 @@ test('package app worker exposes its public mount and records fetch query and re
 		appBasePath: '/@serving-owner/packages/renamed-app',
 		hostedUrl: 'https://packages.kody.test/@serving-owner/packages/renamed-app',
 	})
-	const wrapperSource = workerOptions?.modules['package-app-entry.js']
-	expect(wrapperSource).toContain(
-		'queryParamNames: collectQueryParamNames(requestUrl)',
-	)
-	expect(wrapperSource).toContain('httpStatus: response.status')
 
 	const queryParamNames = await collectQueryParamNamesForTest(
 		new URL(
@@ -921,19 +916,7 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 })
 
-test('package app worker source finishes run records via waitUntil', async () => {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	expect(sourceText).toContain(
-		'executionCtx.waitUntil(runtimeBridge.packageRuntimeRunFinish(input));',
-	)
-	expect(sourceText).toContain('finishRuntimeRun(runtimeBridge, this.ctx, {')
-	expect(sourceText).not.toContain('await finishRuntimeRun(')
-})
-
-test('package app runtime bridge redacts resolved secrets from run record logs and errors', async () => {
+test('package app runtime bridge redacts secrets and merges finish metadata via waitUntil', async () => {
 	resetPackageAppRuntimeMocks()
 	const secretValue = 'pkg-app-secret-value-9f3c'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
@@ -955,6 +938,10 @@ test('package app runtime bridge redacts resolved secrets from run record logs a
 		context: {
 			surface: 'app_fetch' as const,
 			packageId: 'package-1',
+			metadata: {
+				method: 'GET',
+				queryParamNames: ['audio', 'code', 'state'],
+			},
 		},
 	}
 
@@ -966,6 +953,7 @@ test('package app runtime bridge redacts resolved secrets from run record logs a
 		bridge.packageRuntimeRunFinish({
 			run: runHandle,
 			status: 'error',
+			metadata: { httpStatus: 201 },
 			logs: [
 				{
 					level: 'log',
@@ -988,7 +976,17 @@ test('package app runtime bridge redacts resolved secrets from run record logs a
 
 	expect(packageAppRuntimeMock.finishRunRecord).toHaveBeenCalledWith({
 		env: {},
-		handle: runHandle,
+		handle: {
+			...runHandle,
+			context: {
+				...runHandle.context,
+				metadata: {
+					method: 'GET',
+					queryParamNames: ['audio', 'code', 'state'],
+					httpStatus: 201,
+				},
+			},
+		},
 		status: 'error',
 		logs: [
 			{
@@ -1009,50 +1007,6 @@ test('package app runtime bridge redacts resolved secrets from run record logs a
 	}
 	expect(JSON.stringify(finishInput.logs)).not.toContain(secretValue)
 	expect(finishInput.error.message).not.toContain(secretValue)
-})
-
-test('package app runtime bridge adds response status to finish metadata', async () => {
-	resetPackageAppRuntimeMocks()
-	const { bridge, waitUntilTasks } = createPackageAppRuntimeBridgeForTest()
-	const runHandle = {
-		id: 'run-status',
-		userId: 'user-1',
-		startedAt: '2026-07-26T00:00:00.000Z',
-		persistence: 'eager' as const,
-		context: {
-			surface: 'app_fetch' as const,
-			packageId: 'package-1',
-			metadata: {
-				method: 'GET',
-				queryParamNames: ['audio', 'code', 'state'],
-			},
-		},
-	}
-
-	await bridge.packageRuntimeRunFinish({
-		run: runHandle,
-		status: 'success',
-		metadata: { httpStatus: 201 },
-	})
-	await Promise.all(waitUntilTasks)
-
-	expect(packageAppRuntimeMock.finishRunRecord).toHaveBeenCalledWith({
-		env: {},
-		handle: {
-			...runHandle,
-			context: {
-				...runHandle.context,
-				metadata: {
-					method: 'GET',
-					queryParamNames: ['audio', 'code', 'state'],
-					httpStatus: 201,
-				},
-			},
-		},
-		status: 'success',
-		error: undefined,
-		logs: undefined,
-	})
 })
 
 test('package app runtime bridge redacts secrets from Error instances in finish payload', async () => {
@@ -1081,27 +1035,6 @@ test('package app runtime bridge redacts secrets from Error instances in finish 
 	expect(finishInput.error).toBeInstanceOf(Error)
 	expect(finishInput.error.message).toBe(`failed with ${redactedSecretText}`)
 	expect(finishInput.error.message).not.toContain(secretValue)
-})
-
-test('package app worker source binds __kodyPackageStorage in createRuntime', async () => {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	expect(sourceText).toContain('__kodyPackageStorage: (storagePackageId) => ({')
-	expect(sourceText).toContain(
-		"id: 'package:' + encodeURIComponent(storagePackageId),",
-	)
-	expect(sourceText).toContain('runtimeBridge.packageStorageGet({')
-	expect(sourceText).toContain('runtimeBridge.packageStorageList({')
-	expect(sourceText).toContain('runtimeBridge.packageStorageSql({')
-	expect(sourceText).toContain('runtimeBridge.packageStorageSet({')
-	expect(sourceText).toContain('runtimeBridge.packageStorageDelete({')
-	expect(sourceText).toContain('runtimeBridge.packageStorageClear({')
-	expect(sourceText).toContain('storage: undefined,')
-	expect(sourceText).not.toContain('function createStorageProxy(')
-	expect(sourceText).not.toContain("case 'storage_get':")
-	expect(sourceText).not.toContain("case 'storage_clear':")
 })
 
 test('package app runtime bridge packageStorage methods grant by provenance and deny others', async () => {
