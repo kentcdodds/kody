@@ -71,6 +71,11 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   browsers are already installed.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
   values for local secrets.
+- Specs import `test` from `e2e/playwright-utils.ts`, which probes `/health`
+  before each test and fails fast with `E2eWebServerDeadError` if Wrangler has
+  exited mid-suite (avoids burning retries on `ECONNREFUSED`). On CI, the
+  `🎭 E2E` job uploads `logs.local/` as the `e2e-wrangler-logs` artifact when
+  the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.

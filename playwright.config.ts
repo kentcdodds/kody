@@ -8,6 +8,9 @@ const webServerCommand = `npm run preview:e2e -- --port ${defaultPlaywrightPort}
 
 export default defineConfig({
 	testDir: './e2e',
+	// Vitest node-unit helpers live beside Playwright specs as
+	// `*.node.test.ts`; do not treat them as Playwright tests.
+	testIgnore: ['**/*.node.test.ts'],
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
@@ -34,6 +37,8 @@ export default defineConfig({
 		reuseExistingServer: hasExplicitBaseUrl,
 		env: {
 			CLOUDFLARE_ENV: 'test',
+			// Fatal wrangler exits land here; CI uploads this directory on E2E
+			// failure (see validate.yml + e2e/web-server-liveness.ts).
 			WRANGLER_LOG_PATH: './logs.local',
 			WRANGLER_DISABLE_REQUEST_BODY_DRAINING: 'true',
 			// Wrangler 4.118+ enables local observability capture by default in

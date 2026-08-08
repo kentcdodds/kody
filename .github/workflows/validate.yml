@@ -180,6 +180,18 @@ jobs:
       - name: 🎭 Playwright E2E
         run: npm run test:e2e:run
 
+      # Wrangler writes fatal mid-suite exits under WRANGLER_LOG_PATH
+      # (./logs.local). Upload on failure so empty `[WebServer] ERROR` lines
+      # in the job log are diagnosable (see e2e/web-server-liveness.ts).
+      - name: 📤 Upload Wrangler e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-wrangler-logs
+          path: logs.local/
+          if-no-files-found: ignore
+          retention-days: 14
+
   validate:
     runs-on: ubuntu-latest
     name: ✅ Validate

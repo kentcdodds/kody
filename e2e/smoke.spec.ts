@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './playwright-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
 
