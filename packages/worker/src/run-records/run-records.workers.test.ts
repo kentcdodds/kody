@@ -11,6 +11,7 @@ import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
 import {
 	abandonRunRecord,
 	beginRunRecord,
+	bulkUpdateRunErrorTriage,
 	claimRunRecord,
 	clearRunRecords,
 	finishRunRecord,
@@ -515,6 +516,48 @@ test('later job success soft-resolves prior open errors for only that job', asyn
 		errors: 1,
 		ignored: 1,
 		resolved: 1,
+	})
+})
+
+test('bulk triage honors the public limit of 100 exact job matches', async () => {
+	const runScenario = async (limit: number) => {
+		const userId = uniqueUserId(`bulk-triage-${limit}`)
+		const jobId = `exact-job-${limit}`
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			for (let index = 0; index < limit; index += 1) {
+				const startedAt = new Date(Date.now() - index).toISOString()
+				insertRunRow(state, {
+					id: `bulk-${limit}-${index}`,
+					status: 'error',
+					startedAt,
+					finishedAt: startedAt,
+					jobId,
+					errorName: 'Error',
+					errorMessage: 'reproducible failure',
+				})
+			}
+		})
+
+		return await bulkUpdateRunErrorTriage({
+			env,
+			userId,
+			filter: { jobId },
+			errorTriage: 'resolved',
+			triageNote: 'production cleanup',
+			limit,
+			dryRun: false,
+		})
+	}
+
+	await expect(runScenario(25)).resolves.toMatchObject({
+		updatedCount: 25,
+		hasMore: false,
+	})
+	await expect(runScenario(100)).resolves.toMatchObject({
+		updatedCount: 100,
+		hasMore: false,
 	})
 })
 
