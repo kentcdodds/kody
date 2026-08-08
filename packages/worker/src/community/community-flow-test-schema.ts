@@ -10,7 +10,6 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
 		columns: [
-			'display_name',
 			'bio',
 			'avatar_key',
 			'profile_visibility',

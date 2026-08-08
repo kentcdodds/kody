@@ -10,6 +10,7 @@ import {
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
@@ -314,6 +315,15 @@ test(
 		await ensureSavedPackageArtifactSchema()
 		const unique = crypto.randomUUID()
 		const userId = `user-${unique}`
+		await ensureUsersTestSchema({ db: env.APP_DB })
+		await runSql(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, ?, ?)`,
+			`worker-${unique}`,
+			`worker-${unique}@example.com`,
+			'test-password-hash',
+			userId,
+		)
 		const sourceId = `source-${unique}`
 		const packageId = `pkg-${unique}`
 		const publishedCommit = `commit-${unique}`

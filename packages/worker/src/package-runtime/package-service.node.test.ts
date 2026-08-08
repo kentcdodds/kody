@@ -64,6 +64,15 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 		mockModule.createPackageRuntimeInvokeTools(...args),
 }))
 
+vi.mock('#worker/identity/background-mcp-user.ts', () => ({
+	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
+		userId,
+		email: `${userId}@example.com`,
+		username: userId,
+		displayName: userId,
+	}),
+}))
+
 const usageModule = await import('#worker/usage/record-usage.ts')
 const recordUsageSpy = vi.spyOn(usageModule, 'recordUsage')
 

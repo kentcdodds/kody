@@ -20,7 +20,6 @@ export type UsersTestSchemaColumn =
 	| 'stripe_customer_id'
 	| 'stripe_plan'
 	| 'stripe_plan_refreshed_at'
-	| 'display_name'
 	| 'bio'
 	| 'avatar_key'
 	| 'profile_visibility'
@@ -57,9 +56,10 @@ const timestampColumns = [
 
 /**
  * Mirrors migrations 0052 + 0075 (`stable_user_id` NOT NULL + unique index),
- * 0081 + 0083 (`plan` NOT NULL DEFAULT `'free'`), account deletion/suspension
- * state, and the account write lease counters. Non-historical seeds may set
- * `'max'` or `'free'` explicitly when plan matters.
+ * 0081 + 0083 (`plan` NOT NULL DEFAULT `'free'`), account
+ * deletion/suspension state, profile display names, and the account write
+ * lease counters. Non-historical seeds may set `'max'` or `'free'` explicitly
+ * when plan matters.
  */
 const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	// Preexisting shared tables: ALTER ADD COLUMN cannot express NOT NULL
@@ -71,6 +71,7 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	email_outbound_paused_at: { create: 'TEXT' },
 	active_write_count: { create: 'INTEGER NOT NULL DEFAULT 0' },
 	active_write_expires_at: { create: 'TEXT' },
+	display_name: { create: 'TEXT' },
 }
 
 /**
@@ -88,7 +89,6 @@ const optionalColumns: Record<UsersTestSchemaColumn, UsersColumnDefinition> = {
 	stripe_customer_id: { create: 'TEXT' },
 	stripe_plan: { create: 'TEXT' },
 	stripe_plan_refreshed_at: { create: 'TEXT' },
-	display_name: { create: 'TEXT' },
 	bio: { create: 'TEXT' },
 	avatar_key: { create: 'TEXT' },
 	profile_visibility: {

@@ -24,7 +24,7 @@ test('subscription execution exposes the owner account identity to meta_get_curr
 	const userId = 'a'.repeat(64)
 	const email = 'subscription-owner@example.com'
 	const displayName = 'Subscription Owner'
-	await ensureUsersTestSchema({ db: env.APP_DB, columns: ['display_name'] })
+	await ensureUsersTestSchema({ db: env.APP_DB })
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username,
