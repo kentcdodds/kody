@@ -637,6 +637,55 @@ test('cap and stale retention journey', async () => {
 		expect(healed?.run.surface).toBe('execute')
 	}
 
+	// --- a real late finish replaces reconciled Interrupted (outcome is known) ---
+	{
+		const userId = uniqueUserId('late-finish-after-interrupted')
+		const staleStartedAt = new Date(
+			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+		).toISOString()
+		const handle = {
+			id: 'late-finish-after-interrupted',
+			userId,
+			startedAt: staleStartedAt,
+			persistence: 'eager' as const,
+			context: baseContext({ surface: 'export', name: './slow-export' }),
+		}
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			insertRunRow(state, {
+				id: handle.id,
+				status: 'running',
+				startedAt: staleStartedAt,
+				finishedAt: null,
+				surface: 'export',
+			})
+		})
+		const interrupted = await getRunRecord({
+			env,
+			userId,
+			runId: handle.id,
+		})
+		expect(interrupted?.run.errorName).toBe('Interrupted')
+
+		await finishRunRecord({
+			env,
+			handle,
+			status: 'success',
+			result: { completed: true },
+		})
+		const completed = await getRunRecord({
+			env,
+			userId,
+			runId: handle.id,
+		})
+		expect(completed?.run.status).toBe('success')
+		expect(completed?.run.errorName).toBeNull()
+		expect(completed?.run.metadata).toMatchObject({
+			result: { completed: true },
+		})
+	}
+
 	// --- stale rows become cap-evictable after reconcile ---
 	{
 		const userId = uniqueUserId('stale-cap-evict')

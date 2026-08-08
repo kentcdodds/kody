@@ -162,6 +162,42 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	)
 })
 
+test('finishRunRecord awaits the terminal Durable Object write before scheduling side effects', async () => {
+	let releaseFinish!: () => void
+	const finishGate = new Promise<void>((resolve) => {
+		releaseFinish = resolve
+	})
+	mocks.finishRun.mockReset()
+	mocks.finishRun.mockImplementationOnce(async () => {
+		await finishGate
+		return { ok: true }
+	})
+	const waitUntil = vi.fn<(promise: Promise<unknown>) => void>()
+	const handle = beginRunRecord({
+		env: createEnv(),
+		userId: 'user-1',
+		context: { surface: 'export', name: './slow-export' },
+	})
+
+	let settled = false
+	const finishing = finishRunRecord({
+		env: createEnv(),
+		handle,
+		status: 'success',
+		waitUntil,
+	}).then(() => {
+		settled = true
+	})
+	await Promise.resolve()
+	expect(settled).toBe(false)
+	expect(waitUntil).not.toHaveBeenCalled()
+
+	releaseFinish()
+	await finishing
+	expect(mocks.finishRun).toHaveBeenCalledTimes(1)
+	expect(waitUntil).toHaveBeenCalledTimes(1)
+})
+
 test('activation reads never throw when RunLog is missing or RPC fails', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const envWithoutBinding = {} as Env
