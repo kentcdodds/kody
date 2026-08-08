@@ -1,12 +1,11 @@
 import { type Handle, css } from 'remix/ui'
-import * as popover from 'remix/ui/popover'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import { colors, typography } from '#universal/styles/tokens.ts'
 import {
 	starterCardCss,
+	starterCopyPromptTooltipCss,
 	starterGhostButtonCss,
-	starterTooltipSurfaceCss,
 } from '#client/routes/onboarding-starter-card.tsx'
 
 type OnboardingDiyCardProps = {
@@ -24,17 +23,6 @@ const copyPromptTooltip =
 export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 	let copyState: 'idle' | 'copied' | 'error' = 'idle'
 	let copyResetTimerId: ReturnType<typeof setTimeout> | null = null
-	let tooltipOpen = false
-
-	function openTooltip() {
-		tooltipOpen = true
-		handle.update()
-	}
-
-	function closeTooltip() {
-		tooltipOpen = false
-		handle.update()
-	}
 
 	async function copyPrompt() {
 		try {
@@ -63,46 +51,22 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 					integration, explore, and build something custom.
 				</span>
 			</div>
-			<popover.Context>
-				<button
-					type="button"
-					aria-describedby="onboarding-diy-prompt-tip"
-					disabled={!handle.props.setupPrompt}
-					mix={[
-						css(starterGhostButtonCss),
-						popover.anchor({ placement: 'top' }),
-						popover.focusOnHide(),
-						on('click', () => void copyPrompt()),
-						on('pointerenter', openTooltip),
-						on('pointerleave', closeTooltip),
-						on('focus', openTooltip),
-						on('blur', closeTooltip),
-					]}
-					data-testid="onboarding-diy-copy"
-				>
-					{copyState === 'copied'
-						? 'Copied'
-						: copyState === 'error'
-							? 'Copy failed'
-							: 'Copy prompt'}
-				</button>
-				<div
-					id="onboarding-diy-prompt-tip"
-					role="tooltip"
-					mix={[
-						css(starterTooltipSurfaceCss),
-						popover.surface({
-							open: tooltipOpen,
-							closeOnAnchorClick: false,
-							onHide() {
-								closeTooltip()
-							},
-						}),
-					]}
-				>
+			<button
+				type="button"
+				aria-describedby="onboarding-diy-prompt-tip"
+				disabled={!handle.props.setupPrompt}
+				mix={[css(diyCopyButtonCss), on('click', () => void copyPrompt())]}
+				data-testid="onboarding-diy-copy"
+			>
+				{copyState === 'copied'
+					? 'Copied'
+					: copyState === 'error'
+						? 'Copy failed'
+						: 'Copy prompt'}
+				<span id="onboarding-diy-prompt-tip" role="tooltip">
 					{copyPromptTooltip}
-				</div>
-			</popover.Context>
+				</span>
+			</button>
 		</li>
 	)
 }
@@ -139,4 +103,9 @@ const diyDescriptionCss = {
 	color: colors.textMuted,
 	fontSize: '0.88rem',
 	lineHeight: 1.45,
+}
+
+const diyCopyButtonCss = {
+	...starterGhostButtonCss,
+	...starterCopyPromptTooltipCss,
 }

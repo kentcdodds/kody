@@ -33,6 +33,7 @@ import {
 import {
 	type PublicCommunityListing,
 	type PublicCommunityStargazer,
+	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
 import { type CommunityStargazersLoaderData } from '#universal/loader-data.ts'
 import { formatCommunityPublishedDate } from '#universal/community-display.ts'
@@ -56,6 +57,7 @@ type CommunityDetailApiPayload = {
 	viewerIsAdmin: boolean
 	forkPrompt: string
 	starredByViewer: boolean
+	viewerInstall: ViewerListingInstall | null
 }
 
 type CommunityInstallApiPayload = {
@@ -155,6 +157,7 @@ export async function communityDetailRouteLoader(
 			readmeContent: payload.listing.readmeContent,
 			starCount: payload.listing.starCount,
 			starredByViewer: payload.starredByViewer,
+			viewerInstall: payload.viewerInstall,
 		},
 	}
 }
@@ -176,6 +179,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installState: 'idle' | 'confirming' | 'submitting' | 'error' = 'idle'
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
+	let existingInstall: ViewerListingInstall | null = null
 	let readmeContent: string | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
@@ -252,6 +256,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
+			existingInstall = payload.viewerInstall
 			readmeContent = payload.listing.readmeContent
 			starCount = payload.listing.starCount
 			starredByViewer = payload.starredByViewer
@@ -582,6 +587,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		installState = 'idle'
 		installMessage = null
 		installOutcome = null
+		existingInstall = routeData.viewerInstall
 		readmeContent = routeData.readmeContent
 		starCount = routeData.starCount
 		starredByViewer = routeData.starredByViewer
@@ -657,6 +663,17 @@ export function CommunityDetailRoute(handle: Handle) {
 			: showShellReady
 				? ''
 				: 'Loading community package details…'
+		const shownInstall = installOutcome
+			? { ...installOutcome, existing: false }
+			: existingInstall
+				? {
+						status: existingInstall.status,
+						targetName: existingInstall.targetName,
+						agentPrompt: existingInstall.agentPrompt,
+						failedChecks: [] as Array<{ kind: string; message: string }>,
+						existing: true,
+					}
+				: null
 
 		return (
 			<article mix={css(detailArticleCss)}>
@@ -694,61 +711,74 @@ export function CommunityDetailRoute(handle: Handle) {
 							data-testid="community-install"
 						>
 							<h2 id="install-title">One-click install</h2>
-							{installOutcome ? (
-								<>
-									{installOutcome.status === 'installed' ? (
-										<>
-											<p data-testid="community-install-success" role="status">
-												Installed as {installOutcome.targetName}. Any jobs or
-												auto-start services the package declares are now active.
-											</p>
-											<p>
-												<a
-													href={routes.accountPackages.href()}
-													mix={css(inlineLinkCss)}
-												>
-													View it in your packages
-												</a>
-											</p>
-											<p>
-												Give this prompt to your agent to finish any remaining
-												setup (secrets, connections, a first test run):
-											</p>
-										</>
-									) : (
-										<>
-											<p
-												data-testid="community-install-adaptation"
-												role="status"
+							{shownInstall ? (
+								shownInstall.status === 'installed' ? (
+									<>
+										<p data-testid="community-install-success" role="status">
+											{shownInstall.existing
+												? 'Already installed as'
+												: 'Installed as'}{' '}
+											{shownInstall.targetName}.
+											{shownInstall.existing
+												? ''
+												: ' Any jobs or auto-start services the package declares are now active.'}
+										</p>
+										<p>
+											<a
+												href={routes.accountPackages.href()}
+												mix={css(inlineLinkCss)}
 											>
-												Forked as {installOutcome.targetName}, but it needs
-												adaptation before it can run in your account.
-											</p>
-											{installOutcome.failedChecks.length > 0 ? (
-												<ul mix={css(checkListCss)}>
-													{installOutcome.failedChecks.map((check) => (
-														<li key={check.kind}>
-															{check.kind}: {check.message}
-														</li>
-													))}
-												</ul>
-											) : null}
-											<p>
-												Give this prompt to your agent to adapt and publish it:
-											</p>
-										</>
-									)}
-									<div mix={css(promptGroupCss)}>
-										<blockquote mix={css(promptBlockCss)}>
-											{installOutcome.agentPrompt}
-										</blockquote>
-										<CopyTextButton
-											value={installOutcome.agentPrompt}
-											idleLabel="Copy prompt"
-											variant="pill"
-										/>
-									</div>
-								</>
+												View it in your packages
+											</a>
+										</p>
+										<p>
+											Give this prompt to your agent to finish any remaining
+											setup (secrets, connections, a first test run):
+										</p>
+										<div mix={css(promptGroupCss)}>
+											<blockquote mix={css(promptBlockCss)}>
+												{shownInstall.agentPrompt}
+											</blockquote>
+											<CopyTextButton
+												value={shownInstall.agentPrompt}
+												idleLabel="Copy prompt"
+												variant="pill"
+											/>
+										</div>
+									</>
+								) : (
+									<>
+										<p data-testid="community-install-adaptation" role="status">
+											{shownInstall.existing
+												? 'Already forked as'
+												: 'Forked as'}{' '}
+											{shownInstall.targetName}, but it needs adaptation before
+											it can run in your account.
+										</p>
+										{shownInstall.failedChecks.length > 0 ? (
+											<ul mix={css(checkListCss)}>
+												{shownInstall.failedChecks.map((check) => (
+													<li key={check.kind}>
+														{check.kind}: {check.message}
+													</li>
+												))}
+											</ul>
+										) : null}
+										<p>
+											Give this prompt to your agent to adapt and publish it:
+										</p>
+										<div mix={css(promptGroupCss)}>
+											<blockquote mix={css(promptBlockCss)}>
+												{shownInstall.agentPrompt}
+											</blockquote>
+											<CopyTextButton
+												value={shownInstall.agentPrompt}
+												idleLabel="Copy prompt"
+												variant="pill"
+											/>
+										</div>
+									</>
+								)
 							) : (
 								<>
 									<p>

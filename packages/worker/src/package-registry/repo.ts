@@ -1,6 +1,9 @@
+import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { type SavedPackageRecord, type SavedPackageRow } from './types.ts'
+
+const maxSqlBindingsPerChunk = 90
 
 export function savedPackageVectorId(packageId: string) {
 	return buildLengthSafeVectorId({ prefix: 'package', rawId: packageId })
@@ -215,6 +218,63 @@ export async function listSavedPackagesByUserId(
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapSavedPackageRow)
+}
+
+export async function listSavedPackagesByKodyIds(
+	db: D1Database,
+	input: {
+		userId: string
+		kodyIds: Array<string>
+	},
+): Promise<Array<SavedPackageRecord>> {
+	if (input.kodyIds.length === 0) return []
+	const uniqueKodyIds = [...new Set(input.kodyIds)]
+	const packages: Array<SavedPackageRecord> = []
+	for (const idChunk of chunkArray(uniqueKodyIds, maxSqlBindingsPerChunk - 1)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT ${savedPackageSelectColumns}
+				FROM saved_packages
+				WHERE user_id = ? AND kody_id IN (${placeholders})`,
+			)
+			.bind(input.userId, ...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of rows.results ?? []) {
+			packages.push(mapSavedPackageRow(row))
+		}
+	}
+	return packages
+}
+
+export async function listSavedPackagesByIds(
+	db: D1Database,
+	input: {
+		userId: string
+		packageIds: Array<string>
+	},
+): Promise<Array<SavedPackageRecord>> {
+	if (input.packageIds.length === 0) return []
+	const uniquePackageIds = [...new Set(input.packageIds)]
+	const packages: Array<SavedPackageRecord> = []
+	for (const idChunk of chunkArray(
+		uniquePackageIds,
+		maxSqlBindingsPerChunk - 1,
+	)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT ${savedPackageSelectColumns}
+				FROM saved_packages
+				WHERE user_id = ? AND id IN (${placeholders})`,
+			)
+			.bind(input.userId, ...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of rows.results ?? []) {
+			packages.push(mapSavedPackageRow(row))
+		}
+	}
+	return packages
 }
 
 export type SavedPackageSearchSort = 'updated' | 'created' | 'name'

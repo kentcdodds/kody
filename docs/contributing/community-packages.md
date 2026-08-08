@@ -106,9 +106,12 @@ badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
 `community_set_featured` capability, and the onboarding "Install a starter
 package" step (square-card grid with in-place Install, then Copy prompt for
-agent setup, plus a trailing Choose your own adventure card). `community_get`
-exposes the effective `featured` flag. Onboarding loads up to 12 featured
-listings.
+agent setup, plus a trailing Choose your own adventure card). Signed-in
+onboarding, `/community` cards, and listing detail overlay a per-request
+`viewerInstall` when the viewer already has a matching `kody_id` saved package
+or a `community_forks` row for that listing, so those surfaces show Copy prompt
+instead of Install. `community_get` exposes the effective `featured` flag.
+Onboarding loads up to 12 featured listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.

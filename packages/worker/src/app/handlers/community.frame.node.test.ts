@@ -5,6 +5,11 @@ import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 const mockModule = vi.hoisted(() => ({
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
+	readAuthenticatedAppUser: vi.fn(),
+	listCommunityForksByListingIdsAndUser: vi.fn(),
+	listSavedPackagesByKodyIds: vi.fn(),
+	listSavedPackagesByIds: vi.fn(),
+	getMcpUserPackageScope: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -12,6 +17,28 @@ vi.mock('#worker/community/service.ts', () => ({
 		mockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
 		mockModule.searchCommunityListings(...args),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: (...args: Array<unknown>) =>
+		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#worker/community/repo.ts', () => ({
+	listCommunityForksByListingIdsAndUser: (...args: Array<unknown>) =>
+		mockModule.listCommunityForksByListingIdsAndUser(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByKodyIds: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByKodyIds(...args),
+	listSavedPackagesByIds: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByIds(...args),
+}))
+
+vi.mock('#worker/package-registry/user-scope.ts', () => ({
+	getMcpUserPackageScope: (...args: Array<unknown>) =>
+		mockModule.getMcpUserPackageScope(...args),
 }))
 
 const sampleListing = {
@@ -47,6 +74,7 @@ const sampleListing = {
 const env = {} as Env
 
 test('community page handler returns bare listings frame HTML for target header', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
@@ -67,4 +95,35 @@ test('community page handler returns bare listings frame HTML for target header'
 	expect(html).toContain('data-testid="community-listing-icon-card"')
 	expect(html).toContain('/community/listing-1/icon/abc1234567890')
 	expect(html).not.toContain('<html')
+	expect(html).not.toContain(
+		'data-testid="community-listing-viewer-install-listing-1"',
+	)
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'viewer-1', username: 'burhan' },
+		roles: [],
+	})
+	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
+		{
+			id: 'pkg-github',
+			kodyId: 'github-triage',
+			name: '@burhan/github-triage',
+			sourceId: 'src-github',
+		},
+	])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	const signedInResponse = await handler.handler({
+		request: new Request('https://example.com/community', {
+			headers: { 'x-remix-target': 'community-listings' },
+		}),
+		params: {},
+		url: new URL('https://example.com/community'),
+	} as never)
+	const signedInHtml = await signedInResponse.text()
+	expect(signedInHtml).toContain(
+		'data-testid="community-listing-viewer-install-listing-1"',
+	)
+	expect(signedInHtml).toContain('Installed')
 })

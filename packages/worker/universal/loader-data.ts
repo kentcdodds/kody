@@ -6,6 +6,7 @@ import {
 	type PublicCommunityProfile,
 	type PublicCommunityStargazer,
 	type PublicProfilePackageItem,
+	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
@@ -86,6 +87,8 @@ export type CommunityDetailLoaderData = {
 	viewerIsAdmin: boolean
 	forkPrompt: string
 	starredByViewer: boolean
+	/** Existing fork/install for the signed-in viewer, when one exists. */
+	viewerInstall: ViewerListingInstall | null
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -102,6 +105,7 @@ export type CommunityDetailShellLoaderData = {
 	readmeContent: string | null
 	starCount: number
 	starredByViewer: boolean
+	viewerInstall: ViewerListingInstall | null
 }
 
 export type ProfileLoaderData = {

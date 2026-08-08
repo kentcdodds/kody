@@ -68,6 +68,7 @@ export function createCommunityDetailHandler(env: Env) {
 						readmeContent: detail.listing.readmeContent,
 						starCount: detail.listing.starCount,
 						starredByViewer: detail.starredByViewer,
+						viewerInstall: detail.viewerInstall,
 					},
 				},
 			})

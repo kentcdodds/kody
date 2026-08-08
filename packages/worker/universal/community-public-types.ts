@@ -1,4 +1,14 @@
 /**
+ * Signed-in viewer's existing fork/install of a community listing. Present
+ * only on viewer-specific payloads (never cached with public listing rows).
+ */
+export type ViewerListingInstall = {
+	status: 'installed' | 'adaptation_required'
+	targetName: string
+	agentPrompt: string
+}
+
+/**
  * Public listing shape shared by server loaders/handlers and client routes.
  * Keep this module dependency-free so it can live in the universal layer.
  */
@@ -23,6 +33,11 @@ export type PublicCommunityListing = {
 	averageAdaptationEffort: number | null
 	forkCount: number
 	starCount: number
+	/**
+	 * Set only for signed-in viewers after a per-request overlay. Public
+	 * listing cache rows omit this field.
+	 */
+	viewerInstall?: ViewerListingInstall | null
 }
 
 export type ProfileVisibility = 'public' | 'private'
@@ -84,4 +99,6 @@ export type OnboardingFeaturedListing = {
 	description: string
 	iconUrl: string
 	tags: Array<string>
+	/** Set only for signed-in viewers who already forked or installed this listing. */
+	viewerInstall?: ViewerListingInstall | null
 }

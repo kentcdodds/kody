@@ -7,6 +7,10 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
 	getUserFollow: vi.fn(),
+	listCommunityForksByListingIdsAndUser: vi.fn(),
+	listSavedPackagesByKodyIds: vi.fn(),
+	listSavedPackagesByIds: vi.fn(),
+	getMcpUserPackageScope: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -27,6 +31,23 @@ vi.mock('#worker/community/social-repo.ts', () => ({
 	getUserFollow: (...args: Array<unknown>) => mockModule.getUserFollow(...args),
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mockModule.getUserSocialRowByUsername(...args),
+}))
+
+vi.mock('#worker/community/repo.ts', () => ({
+	listCommunityForksByListingIdsAndUser: (...args: Array<unknown>) =>
+		mockModule.listCommunityForksByListingIdsAndUser(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByKodyIds: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByKodyIds(...args),
+	listSavedPackagesByIds: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByIds(...args),
+}))
+
+vi.mock('#worker/package-registry/user-scope.ts', () => ({
+	getMcpUserPackageScope: (...args: Array<unknown>) =>
+		mockModule.getMcpUserPackageScope(...args),
 }))
 
 const sampleListing = {
@@ -64,6 +85,10 @@ const env = {} as Env
 test('community detail handler returns bare detail frame HTML for target header', async () => {
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
 		profile_visibility: 'public',
 		stable_user_id: 'owner-mcp-id',
@@ -121,9 +146,18 @@ test('community detail handler returns bare detail frame HTML for target header'
 		stable_user_id: 'owner-mcp-id',
 	})
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'viewer-mcp-id' },
+		mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' },
 		roles: [],
 	})
+	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
+		{
+			id: 'pkg-github',
+			kodyId: 'github-triage',
+			name: '@burhan/github-triage',
+			sourceId: 'src-github',
+		},
+	])
 	const signedInResponse = await handler.handler({
 		request: new Request('https://example.com/community/listing-1', {
 			headers: { 'x-remix-target': 'community-detail' },
@@ -133,6 +167,10 @@ test('community detail handler returns bare detail frame HTML for target header'
 	} as never)
 	const signedInHtml = await signedInResponse.text()
 	expect(signedInHtml).toContain('data-testid="community-detail-owner-follow"')
+	expect(signedInHtml).toContain(
+		'data-testid="community-detail-viewer-install-badge"',
+	)
+	expect(signedInHtml).toContain('Installed')
 	expect(signedInHtml).toContain('name="follow"')
 	expect(signedInHtml).toContain('name="returnTo"')
 	expect(signedInHtml).toContain('/profiles/kentcdodds/follow.json')

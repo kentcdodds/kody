@@ -139,6 +139,21 @@ export function CommunityDetailContent(
 						Featured
 					</span>
 				) : null}
+				{listing.viewerInstall ? (
+					<span
+						data-testid="community-detail-viewer-install-badge"
+						title={
+							listing.viewerInstall.status === 'installed'
+								? `Installed in your account as ${listing.viewerInstall.targetName}.`
+								: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+						}
+						mix={css(badgeCss)}
+					>
+						{listing.viewerInstall.status === 'installed'
+							? 'Installed'
+							: 'Forked'}
+					</span>
+				) : null}
 			</header>
 
 			<p data-rise style={{ '--rise': '2' }} mix={css(detailSubCss)}>

@@ -65,13 +65,32 @@ export function CommunityListingsContent(
 										{renderCommunityListingName(listing.name)}
 									</a>
 								</h2>
-								{listing.trusted ? (
-									<span
-										data-testid={`community-listing-trusted-${listing.id}`}
-										title="An admin reviewed this exact version and marked it trusted."
-										mix={css(trustedBadgeCss)}
-									>
-										Trusted
+								{listing.trusted || listing.viewerInstall ? (
+									<span mix={css(listingBadgeGroupCss)}>
+										{listing.trusted ? (
+											<span
+												data-testid={`community-listing-trusted-${listing.id}`}
+												title="An admin reviewed this exact version and marked it trusted."
+												mix={css(communityBadgePillCss)}
+											>
+												Trusted
+											</span>
+										) : null}
+										{listing.viewerInstall ? (
+											<span
+												data-testid={`community-listing-viewer-install-${listing.id}`}
+												title={
+													listing.viewerInstall.status === 'installed'
+														? `Installed in your account as ${listing.viewerInstall.targetName}.`
+														: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+												}
+												mix={css(communityBadgePillCss)}
+											>
+												{listing.viewerInstall.status === 'installed'
+													? 'Installed'
+													: 'Forked'}
+											</span>
+										) : null}
 									</span>
 								) : null}
 							</div>
@@ -227,9 +246,12 @@ export const communityBadgePillCss = {
 	cursor: 'help',
 }
 
-const trustedBadgeCss = {
-	...communityBadgePillCss,
+const listingBadgeGroupCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.35rem',
 	marginLeft: 'auto',
+	flex: 'none',
 }
 
 const listingDescriptionCss = {
