@@ -291,6 +291,11 @@ const adminNavItems = [
 		paths: ['/admin/feature-flags'],
 	},
 	{
+		href: '/admin/platform-integrations',
+		label: 'Platform integrations',
+		paths: ['/admin/platform-integrations'],
+	},
+	{
 		href: '/admin/codemods',
 		label: 'Codemods',
 		paths: ['/admin/codemods'],

@@ -249,6 +249,39 @@ export type AdminFeatureFlagsLoaderData = {
 	featureFlags: Array<AdminFeatureFlag>
 }
 
+/**
+ * Operator view of one platform (built-in) OAuth app. Never carries secret
+ * values — `hasClientSecret` is the only trace of the encrypted credential.
+ */
+export type AdminPlatformIntegrationApp = {
+	slug: string
+	provider: string
+	label: string | null
+	clientId: string
+	hasClientSecret: boolean
+	tokenUrl: string
+	authorizeUrl: string
+	apiBaseUrl: string | null
+	flow: 'pkce' | 'confidential'
+	usePkce: boolean | null
+	tokenExchangeStyle: 'form' | 'basic-json' | 'basic-form' | null
+	scopeSeparator: string | null
+	extraAuthorizeParams: Record<string, string>
+	allowedScopes: Array<string>
+	defaultScopes: Array<string>
+	requiredHosts: Array<string>
+	enabled: boolean
+	logoPath: string | null
+	connectionCount: number
+	createdAt: string
+	updatedAt: string
+}
+
+export type AdminPlatformIntegrationsLoaderData = {
+	ok: true
+	apps: Array<AdminPlatformIntegrationApp>
+}
+
 export type AdminCodemodListItem = {
 	id: string
 	description: string
@@ -1347,6 +1380,7 @@ export type AppLoaderData = {
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
+	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminCodemods?: AdminCodemodsLoaderData
 	adminInsights?: AdminInsightsLoaderData
 	adminPlatformFeedback?: AdminPlatformFeedbackLoaderData

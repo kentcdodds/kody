@@ -18,6 +18,10 @@ import {
 	createAdminFeatureFlagsHandler,
 } from '#app/handlers/admin-feature-flags.ts'
 import {
+	createAdminPlatformIntegrationsApiHandler,
+	createAdminPlatformIntegrationsHandler,
+} from '#app/handlers/admin-platform-integrations.ts'
+import {
 	createAdminCodemodsApiHandler,
 	createAdminCodemodsHandler,
 	createAdminCodemodsRunApiHandler,
@@ -350,6 +354,11 @@ export function createAppRouter(env: Env) {
 			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
+			adminPlatformIntegrations: createAdminPlatformIntegrationsHandler(env),
+			adminPlatformIntegrationsApi:
+				createAdminPlatformIntegrationsApiHandler(env),
+			adminPlatformIntegrationsApiPost:
+				createAdminPlatformIntegrationsApiHandler(env),
 			adminCodemods: createAdminCodemodsHandler(env),
 			adminCodemodsApi: createAdminCodemodsApiHandler(env),
 			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),

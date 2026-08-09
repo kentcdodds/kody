@@ -223,6 +223,7 @@ registerPreloadPatterns(
 		routePattern(routes.adminUserDetail),
 		routePattern(routes.adminInvites),
 		routePattern(routes.adminFeatureFlags),
+		routePattern(routes.adminPlatformIntegrations),
 		routePattern(routes.adminCodemods),
 		routePattern(routes.adminRoles),
 		routePattern(routes.adminCommunityReports),
