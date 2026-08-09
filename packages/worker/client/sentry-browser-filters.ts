@@ -324,6 +324,59 @@ export function filterChromeExtensionObjectNotFoundSentryEvent<
 }
 
 /**
+ * Chrome/Firefox extension messaging noise: content scripts and page-injected
+ * extension code call `chrome.runtime.sendMessage` / `browser.runtime.sendMessage`
+ * when the extension's background/service worker (or another receiving end) is
+ * gone — unloaded, updated, or never registered for that tab. Chromium rejects
+ * with this exact IPC wording. The promise often surfaces on the host page with
+ * no app stack frames (Sentry attributes the culprit to the document URL).
+ *
+ * Signature from production issue 7662064169 / KODY-CLOUDFLARE-4F (Chrome on
+ * https://heykody.app/, zero frames, handled generic capture). Kody never uses
+ * `chrome.runtime` / `browser.runtime`. Match is intentionally narrow: only
+ * this exact "Could not establish connection. Receiving end does not exist"
+ * wording (optional `Error:` preface). Never blanket-drop connection errors.
+ */
+const chromeExtensionReceivingEndMissingMessage =
+	/^(?:Error:\s*)?Could not establish connection\. Receiving end does not exist\.?$/
+
+export function isChromeExtensionReceivingEndMissingMessage(message: string) {
+	return chromeExtensionReceivingEndMissingMessage.test(message.trim())
+}
+
+export function isChromeExtensionReceivingEndMissingError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionReceivingEndMissingMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionReceivingEndMissingMessage(error.message)
+}
+
+export function isChromeExtensionReceivingEndMissingSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isChromeExtensionReceivingEndMissingError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isChromeExtensionReceivingEndMissingMessage(message),
+	)
+}
+
+export function filterChromeExtensionReceivingEndMissingSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isChromeExtensionReceivingEndMissingSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
  * MetaMask (`chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/…`) injects
  * `inpage.js` into every page and tries to restore a wallet session on load.
  * When the extension's background/service worker is unavailable it rejects
@@ -533,6 +586,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	if (
 		filterChromeExtensionObjectNotFoundSentryEvent(event, originalException) ===
 		null
+	) {
+		return null
+	}
+	if (
+		filterChromeExtensionReceivingEndMissingSentryEvent(
+			event,
+			originalException,
+		) === null
 	) {
 		return null
 	}

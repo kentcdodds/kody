@@ -4,6 +4,7 @@ import {
 	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
 	filterChromeExtensionObjectNotFoundSentryEvent,
+	filterChromeExtensionReceivingEndMissingSentryEvent,
 	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 	filterMetaMaskExtensionSentryEvent,
@@ -215,6 +216,59 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
+
+	// Chrome extension receiving-end missing (issue 7662064169 / KODY-CLOUDFLARE-4F).
+	expect(
+		filterChromeExtensionReceivingEndMissingSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value:
+							'Could not establish connection. Receiving end does not exist.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterChromeExtensionReceivingEndMissingSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'something else' }],
+				},
+			},
+			new Error(
+				'Could not establish connection. Receiving end does not exist.',
+			),
+		),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value:
+							'Error: Could not establish connection. Receiving end does not exist.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	// Nearby connection wording from app code must not be dropped.
+	expect(
+		filterChromeExtensionReceivingEndMissingSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Could not establish connection to the MCP server.',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
 
 	// MetaMask inpage.js session restore (issue 7658961865 / KODY-CLOUDFLARE-3X).
 	expect(
