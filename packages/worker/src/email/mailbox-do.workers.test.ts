@@ -849,10 +849,13 @@ test('Mailbox restore state is owner-bound and gates normal reads and writes', a
 		threadId: null,
 	})
 	await mailbox.upsertMessageGraph({ ownerId, message })
+	const stub = stubFor(ownerId)
 
-	await assertMailboxThrows(/ownerId mismatch/, () =>
-		mailbox.inspectRestoreState({ ownerId: otherOwnerId }),
-	)
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.inspectRestoreState({ ownerId: otherOwnerId }),
+		)
+	})
 	await mailbox.beginRestore({ ownerId })
 	expect(await mailbox.inspectRestoreState({ ownerId })).toMatchObject({
 		restorePending: true,
@@ -861,15 +864,17 @@ test('Mailbox restore state is owner-bound and gates normal reads and writes', a
 	expect(await mailbox.countMailbox({ restore: true })).toMatchObject({
 		messages: 1,
 	})
-	await assertMailboxThrows(/restore is in progress/, () =>
-		mailbox.getMessage({ messageId: message.id }),
-	)
-	await assertMailboxThrows(/restore is in progress/, () =>
-		mailbox.upsertMessageGraph({
-			ownerId,
-			message: { ...message, updatedAt: '2026-07-01T12:00:01.000Z' },
-		}),
-	)
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/restore is in progress/, () =>
+			instance.getMessage({ messageId: message.id }),
+		)
+		await assertMailboxThrows(/restore is in progress/, () =>
+			instance.upsertMessageGraph({
+				ownerId,
+				message: { ...message, updatedAt: '2026-07-01T12:00:01.000Z' },
+			}),
+		)
+	})
 
 	await mailbox.finalizeRestore({ ownerId })
 	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
