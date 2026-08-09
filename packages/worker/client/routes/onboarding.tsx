@@ -856,10 +856,16 @@ export function OnboardingRoute(handle: Handle) {
 										</ul>
 										<p mix={css(builtInByoCss)}>
 											Want scopes or rate limits Kody's app does not offer?{' '}
-											<a href="/connect/oauth" mix={css(primaryLinkCss)}>
+											<a
+												href="/guides/oauth"
+												target="_blank"
+												rel="noreferrer noopener"
+												mix={css(primaryLinkCss)}
+											>
 												Bring your own OAuth app
 											</a>{' '}
-											for more power.
+											for more power — the guide explains how connections and
+											helper packages work.
 										</p>
 										<div mix={css(advancedSectionCss)}>
 											<p mix={css(advancedLabelCss)}>
