@@ -1198,6 +1198,16 @@ export function ConnectOauthRoute(handle: Handle) {
 									: '.'}
 							</p>
 						) : null}
+						<p mix={css(descriptionCss)}>
+							Connecting authorizes your agent — and any code you run or
+							install — to act as you on {config.provider} with the scopes you
+							grant. Kody does not control or supervise what your agent does
+							with this access; that responsibility is yours. See the{' '}
+							<a href="/terms" target="_blank" rel="noreferrer noopener">
+								Terms
+							</a>
+							.
+						</p>
 						<button
 							type="button"
 							disabled={submitting}
