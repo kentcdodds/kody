@@ -29,6 +29,7 @@ import { sha256Hex } from '#worker/dr/sha256.ts'
 const mailboxMocks = vi.hoisted(() => ({
 	countMailbox: vi.fn(),
 	inspectRestoreState: vi.fn(),
+	beginRestore: vi.fn(),
 	finalizeRestore: vi.fn(),
 	purge: vi.fn(),
 	upsertMessageGraph: vi.fn(),
@@ -56,6 +57,7 @@ function restoreStatus(counts: typeof emptyCounts, hiddenRows = 0) {
 	return {
 		counts,
 		hiddenRows,
+		restorePending: false,
 		empty:
 			hiddenRows === 0 && Object.values(counts).every((count) => count === 0),
 	}
@@ -97,7 +99,13 @@ function createMemoryS3(seed: Record<string, string | Uint8Array>) {
 	return { client, objects }
 }
 
-async function createBackup(options: { indexDumpOwnerId?: string } = {}) {
+async function createBackup(
+	options: {
+		indexDumpOwnerId?: string
+		sealedAt?: string
+		threadRowExtra?: Record<string, unknown>
+	} = {},
+) {
 	const day = '2026-08-01'
 	const ownerId = 'owner-a'
 	const dump = ['thread-a', 'thread-b']
@@ -112,6 +120,7 @@ async function createBackup(options: { indexDumpOwnerId?: string } = {}) {
 					lastMessageAt: '2026-08-01T00:00:00.000Z',
 					createdAt: '2026-08-01T00:00:00.000Z',
 					updatedAt: '2026-08-01T00:00:00.000Z',
+					...options.threadRowExtra,
 				},
 			}),
 		)
@@ -164,7 +173,7 @@ async function createBackup(options: { indexDumpOwnerId?: string } = {}) {
 			bytes: 0,
 			sha256: 'd'.repeat(64),
 		},
-		sealedAt: '2026-08-02T06:00:00.000Z',
+		sealedAt: options.sealedAt ?? '2026-08-02T06:00:00.000Z',
 		buildCommit: 'node-test',
 		signing: {
 			algorithm: backupFullManifestSignatureAlgorithm,
@@ -207,6 +216,7 @@ async function createBackup(options: { indexDumpOwnerId?: string } = {}) {
 function resetMailboxMocks() {
 	mailboxMocks.countMailbox.mockReset()
 	mailboxMocks.inspectRestoreState.mockReset()
+	mailboxMocks.beginRestore.mockReset()
 	mailboxMocks.finalizeRestore.mockReset()
 	mailboxMocks.purge.mockReset()
 	mailboxMocks.upsertMessageGraph.mockReset()
@@ -214,6 +224,7 @@ function resetMailboxMocks() {
 	mailboxMocks.purge.mockResolvedValue({ ok: true })
 	mailboxMocks.inspectRestoreState.mockResolvedValue(restoreStatus(emptyCounts))
 	mailboxMocks.finalizeRestore.mockResolvedValue({ ok: true })
+	mailboxMocks.beginRestore.mockResolvedValue({ ok: true })
 	mailboxMocks.upsertMessageGraph.mockResolvedValue({
 		ok: true,
 		accepted: true,
@@ -330,6 +341,51 @@ test('mailbox importer verifies sealed media before writes and refuses occupied 
 		}),
 	).rejects.toThrow(/invalid owner entry/)
 	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
+
+	resetMailboxMocks()
+	const unknownField = await createBackup({
+		threadRowExtra: { unexpected: true },
+	})
+	await expect(
+		runMailboxImportTick({
+			env: unknownField.env,
+			day: unknownField.day,
+			owners: [unknownField.ownerId],
+			s3: unknownField.s3.client,
+		}),
+	).rejects.toThrow(/missing or unknown fields/)
+	expect(mailboxMocks.inspectRestoreState).not.toHaveBeenCalled()
+})
+
+test('mailbox importer rejects a cursor from a different sealed generation', async () => {
+	resetMailboxMocks()
+	const original = await createBackup()
+	const first = await runMailboxImportTick({
+		env: original.env,
+		day: original.day,
+		owners: [original.ownerId],
+		timeBudgetMs: 0,
+		s3: original.s3.client,
+	})
+	expect(first.nextCursor).toBeTruthy()
+
+	const replacement = await createBackup({
+		sealedAt: '2026-08-02T07:00:00.000Z',
+	})
+	original.s3.objects.clear()
+	for (const [key, value] of replacement.s3.objects) {
+		original.s3.objects.set(key, value)
+	}
+	await expect(
+		runMailboxImportTick({
+			env: replacement.env,
+			day: replacement.day,
+			owners: [replacement.ownerId],
+			cursor: first.nextCursor,
+			timeBudgetMs: 60_000,
+			s3: original.s3.client,
+		}),
+	).rejects.toThrow(/cursor does not match this import request/)
 })
 
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {

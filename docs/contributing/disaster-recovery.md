@@ -517,6 +517,8 @@ specific stable owner ids with an array, or explicitly select every index owner
 with `"all-from-index"`:
 
 ```sh
+set -euo pipefail
+
 DAY='YYYY-MM-DD'
 CURSOR=''
 while :; do
@@ -531,17 +533,25 @@ while :; do
       process.stdout.write(JSON.stringify(body))
     '
   )"
-  RESPONSE="$(
-    curl --fail-with-body \
+  if ! RESPONSE="$(
+    curl --fail-with-body --silent --show-error \
       --request POST "$PRIMARY_WORKER_ORIGIN/__maintenance/dr-mailbox-import" \
       --header "Authorization: Bearer $DR_RESTORE_SECRET" \
       --header "Content-Type: application/json" \
       --data "$BODY"
-  )"
+  )"; then
+    printf 'mailbox import request failed; stopping\n%s\n' "$RESPONSE" >&2
+    exit 1
+  fi
   printf '%s\n' "$RESPONSE"
   DONE="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(String(x.done===true))' "$RESPONSE")"
-  [ "$DONE" = true ] && break
-  CURSOR="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.nextCursor)process.exit(1);process.stdout.write(x.nextCursor)' "$RESPONSE")"
+  if [ "$DONE" = true ]; then
+    break
+  fi
+  if ! CURSOR="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.nextCursor)process.exit(1);process.stdout.write(x.nextCursor)' "$RESPONSE")"; then
+    printf 'response is not done and has no nextCursor; stopping\n' >&2
+    exit 1
+  fi
 done
 ```
 
@@ -562,13 +572,18 @@ owner-bound blob references for those scratch objects; it never opens the real
 owners' Mailbox objects. A successful drill still verifies the signed media,
 exercises every graph upsert, and requires per-kind `countMailbox` parity. Drill
 objects are inert test data and do not imply that their rewritten blob keys
-exist. Use the same separately confirmed replace policy only when intentionally
-reusing a non-empty scratch object.
+exist. After collecting the per-kind count result, the importer purges each
+drill object before advancing; cleanup failure fails the operation so a full
+mail copy cannot be left silently. Use the same separately confirmed replace
+policy only when recovering a scratch object left by an interrupted older run.
 
 Every completed owner appears in `ownerResults` with expected and actual thread,
 message, attachment, and delivery-event counts. Any mismatch leaves
 `"verified": false` and is also reported in `warnings`; this operation never
-enables ingress. Preserve all responses in the incident record.
+enables ingress. Once target writes begin, normal Mailbox reads remain blocked
+until count parity finalizes that owner; a failed or mismatched owner stays
+blocked for safe operator recovery. Preserve all responses in the incident
+record.
 
 ### Manual Mailbox re-import (fallback)
 

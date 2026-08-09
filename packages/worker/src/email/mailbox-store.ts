@@ -65,6 +65,8 @@ export type MailboxUpsertResult = {
 	accepted: boolean
 }
 
+const mailboxRestorePendingMetaKey = 'restore_pending'
+
 function buildMailboxMessageFilterClauses(input: {
 	inboxId?: string | null
 	direction?: EmailDirection | null
@@ -168,6 +170,40 @@ export class MailboxStore {
 			)
 		}
 		return id
+	}
+
+	isRestorePending(): boolean {
+		const row = this.sql
+			.exec<{ value: number }>(
+				`SELECT value FROM mailbox_meta WHERE key = ? LIMIT 1`,
+				mailboxRestorePendingMetaKey,
+			)
+			.toArray()[0]
+		return Number(row?.value ?? 0) === 1
+	}
+
+	assertReadable(): void {
+		if (this.isRestorePending()) {
+			throw new Error('Mailbox restore is in progress.')
+		}
+	}
+
+	beginRestore(ownerId: string): void {
+		this.assertOwner(ownerId)
+		this.sql.exec(
+			`INSERT INTO mailbox_meta (key, value)
+			VALUES (?, 1)
+			ON CONFLICT(key) DO UPDATE SET value = 1`,
+			mailboxRestorePendingMetaKey,
+		)
+	}
+
+	finalizeRestore(ownerId: string): void {
+		this.assertOwner(ownerId)
+		this.sql.exec(
+			`DELETE FROM mailbox_meta WHERE key = ?`,
+			mailboxRestorePendingMetaKey,
+		)
 	}
 
 	validateMessageBlobKeys(input: {
@@ -719,6 +755,7 @@ export class MailboxStore {
 
 	inspectRestoreState(): MailboxRestoreStatus {
 		const counts = this.countMailbox()
+		const restorePending = this.isRestorePending()
 		const hiddenRows = this.sql
 			.exec<{ n: number }>(
 				`SELECT
@@ -732,7 +769,9 @@ export class MailboxStore {
 		return {
 			counts,
 			hiddenRows: hiddenCount,
+			restorePending,
 			empty:
+				!restorePending &&
 				hiddenCount === 0 &&
 				counts.threads === 0 &&
 				counts.messages === 0 &&

@@ -16,7 +16,6 @@ import {
 	type MailboxCountResult,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
-	type MailboxExportRow,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
 	type MailboxRpc,
@@ -36,6 +35,10 @@ import {
 	loadVerifiedMailboxDumpText,
 	loadVerifiedMailboxIndex,
 } from '#worker/dr/mailbox-import-media.ts'
+import {
+	parseMailboxDump,
+	type ParsedMailboxDump,
+} from '#worker/dr/mailbox-import-snapshot.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
 
 export const mailboxImportRunTimeBudgetMs = 20_000
@@ -100,14 +103,6 @@ export type MailboxImportTickResult = {
 	warnings: Array<string>
 }
 
-type ParsedMailboxDump = {
-	threads: Array<MailboxThreadRecord>
-	messages: Array<MailboxMessageRecord>
-	attachmentsByMessage: Map<string, Array<MailboxAttachmentRecord>>
-	deliveryEvents: Array<MailboxDeliveryEventRecord>
-	counts: MailboxCountResult
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -124,121 +119,6 @@ function requireNonNegativeInteger(value: unknown, field: string): number {
 		throw failure(`invalid cursor field ${field}`)
 	}
 	return value
-}
-
-function parseDumpRow(value: unknown): MailboxExportRow {
-	if (!isRecord(value) || !isRecord(value.row)) {
-		throw failure('mailbox dump contains an invalid row')
-	}
-	switch (value.kind) {
-		case 'thread':
-		case 'message':
-		case 'attachment':
-		case 'delivery_event':
-			return value as MailboxExportRow
-		default:
-			throw failure('mailbox dump contains an unknown row kind')
-	}
-}
-
-function parseMailboxDump(text: string, entryCount: number): ParsedMailboxDump {
-	const lines = text.length === 0 ? [] : text.split('\n')
-	if (lines.at(-1) === '') lines.pop()
-	const rows = lines.map((line) => {
-		try {
-			return parseDumpRow(JSON.parse(line) as unknown)
-		} catch (error) {
-			if (error instanceof MaintenanceFailureError) throw error
-			throw failure(
-				`mailbox dump contains invalid NDJSON: ${getErrorMessage(error)}`,
-			)
-		}
-	})
-	if (rows.length !== entryCount) {
-		throw failure(
-			`mailbox dump entry count mismatch: expected ${entryCount}, got ${rows.length}`,
-		)
-	}
-
-	const threads: Array<MailboxThreadRecord> = []
-	const messages: Array<MailboxMessageRecord> = []
-	const attachments: Array<MailboxAttachmentRecord> = []
-	const deliveryEvents: Array<MailboxDeliveryEventRecord> = []
-	const idsByKind = {
-		thread: new Set<string>(),
-		message: new Set<string>(),
-		attachment: new Set<string>(),
-		delivery_event: new Set<string>(),
-	}
-	for (const row of rows) {
-		const id = row.row.id
-		if (
-			typeof id !== 'string' ||
-			id.length === 0 ||
-			idsByKind[row.kind].has(id)
-		) {
-			throw failure(
-				`mailbox dump contains an invalid or duplicate ${row.kind} id`,
-			)
-		}
-		idsByKind[row.kind].add(id)
-		switch (row.kind) {
-			case 'thread':
-				threads.push(row.row)
-				break
-			case 'message':
-				messages.push(row.row)
-				break
-			case 'attachment':
-				attachments.push(row.row)
-				break
-			case 'delivery_event':
-				deliveryEvents.push(row.row)
-				break
-			default: {
-				const exhaustive: never = row
-				throw failure(`unhandled mailbox dump row: ${String(exhaustive)}`)
-			}
-		}
-	}
-
-	const threadIds = new Set(threads.map((thread) => thread.id))
-	const messageIds = new Set(messages.map((message) => message.id))
-	for (const message of messages) {
-		if (message.threadId !== null && !threadIds.has(message.threadId)) {
-			throw failure(`mailbox message ${message.id} references a missing thread`)
-		}
-	}
-	const attachmentsByMessage = new Map<string, Array<MailboxAttachmentRecord>>()
-	for (const attachment of attachments) {
-		if (!messageIds.has(attachment.messageId)) {
-			throw failure(
-				`mailbox attachment ${attachment.id} references a missing message`,
-			)
-		}
-		const grouped = attachmentsByMessage.get(attachment.messageId) ?? []
-		grouped.push(attachment)
-		attachmentsByMessage.set(attachment.messageId, grouped)
-	}
-	for (const event of deliveryEvents) {
-		if (event.messageId !== null && !messageIds.has(event.messageId)) {
-			throw failure(
-				`mailbox delivery event ${event.id} references a missing message`,
-			)
-		}
-	}
-	return {
-		threads,
-		messages,
-		attachmentsByMessage,
-		deliveryEvents,
-		counts: {
-			threads: threads.length,
-			messages: messages.length,
-			attachments: attachments.length,
-			deliveryEvents: deliveryEvents.length,
-		},
-	}
 }
 
 async function loadVerifiedMailboxDump(
@@ -620,6 +500,7 @@ function validateCursorRowIndex(
 
 async function requestFingerprint(input: {
 	day: string
+	mediaIdentity: string
 	owners: MailboxImportOwnerSelection
 	conflictPolicy: MailboxImportConflictPolicy
 	replaceConfirmation: string | null
@@ -677,8 +558,19 @@ export async function runMailboxImportTick(input: {
 	}
 	const drill = input.drill ?? false
 	const signingSecret = cursorSecret(input.env)
+	const config = readDrBackupS3Config(input.env)
+	if (!input.s3 && !config) {
+		throw failure('DR backup credentials are not configured')
+	}
+	const s3 = input.s3 ?? createDrBackupS3Client(config!)
+	const { index, mediaIdentity } = await loadVerifiedMailboxIndex({
+		s3,
+		env: input.env,
+		day: input.day,
+	})
 	const fingerprint = await requestFingerprint({
 		day: input.day,
+		mediaIdentity,
 		owners: input.owners,
 		conflictPolicy,
 		replaceConfirmation,
@@ -690,16 +582,6 @@ export async function runMailboxImportTick(input: {
 		fingerprint,
 		signingSecret,
 	)
-	const config = readDrBackupS3Config(input.env)
-	if (!input.s3 && !config) {
-		throw failure('DR backup credentials are not configured')
-	}
-	const s3 = input.s3 ?? createDrBackupS3Client(config!)
-	const index = await loadVerifiedMailboxIndex({
-		s3,
-		env: input.env,
-		day: input.day,
-	})
 	const owners = selectOwners(index, input.owners)
 	validateCursorProgress(cursor, owners.length)
 
@@ -724,7 +606,7 @@ export async function runMailboxImportTick(input: {
 		})
 
 		if (cursor.phase === 'prepare') {
-			const current = await mailbox.inspectRestoreState()
+			const current = await mailbox.inspectRestoreState({ ownerId: target })
 			const nonEmpty = !current.empty
 			if (nonEmpty && conflictPolicy === 'refuse') {
 				throw failure(
@@ -733,12 +615,15 @@ export async function runMailboxImportTick(input: {
 				)
 			}
 			if (nonEmpty) {
-				const preflightState = await preflightMailbox.inspectRestoreState()
+				const preflightState = await preflightMailbox.inspectRestoreState({
+					ownerId: preflightId,
+				})
 				if (!preflightState.empty) {
 					await preflightMailbox.purge({ ownerId: preflightId })
 				}
 				cursor.phase = 'preflight-threads'
 			} else {
+				await mailbox.beginRestore({ ownerId: target })
 				cursor.phase = 'threads'
 			}
 			cursor.rowIndex = 0
@@ -848,24 +733,27 @@ export async function runMailboxImportTick(input: {
 		}
 
 		if (cursor.phase === 'preflight-verify' && !budgetExhausted()) {
-			const preflightCounts = await preflightMailbox.countMailbox()
+			const preflightCounts = await preflightMailbox.countMailbox({
+				restore: true,
+			})
 			if (!mailboxCountsEqual(preflightCounts, dump.counts)) {
 				throw failure(
 					`Mailbox restore preflight count mismatch for ${owner.ownerId}`,
 					progressFor(cursor, owners.length, rowsProcessed),
 				)
 			}
-			const current = await mailbox.inspectRestoreState()
+			const current = await mailbox.inspectRestoreState({ ownerId: target })
 			if (!current.empty) {
 				await mailbox.purge({ ownerId: target })
 			}
+			await mailbox.beginRestore({ ownerId: target })
 			cursor.ownersReplaced += 1
 			cursor.phase = 'threads'
 			cursor.rowIndex = 0
 		}
 
 		if (cursor.phase === 'verify' && !budgetExhausted()) {
-			const actual = await mailbox.countMailbox()
+			const actual = await mailbox.countMailbox({ restore: true })
 			const matches = mailboxCountsEqual(actual, dump.counts)
 			ownerResults.push({
 				sourceOwnerId: owner.ownerId,
@@ -875,6 +763,9 @@ export async function runMailboxImportTick(input: {
 				matches,
 				drill,
 			})
+			if (drill) {
+				await mailbox.purge({ ownerId: target })
+			}
 			if (matches) {
 				cursor.ownersPassed += 1
 				if (!drill) await mailbox.finalizeRestore({ ownerId: target })
@@ -883,7 +774,9 @@ export async function runMailboxImportTick(input: {
 				warnings.push(`Mailbox count mismatch for ${owner.ownerId}`)
 			}
 			if (conflictPolicy === 'replace') {
-				const preflightState = await preflightMailbox.inspectRestoreState()
+				const preflightState = await preflightMailbox.inspectRestoreState({
+					ownerId: preflightId,
+				})
 				if (!preflightState.empty) {
 					await preflightMailbox.purge({ ownerId: preflightId })
 				}

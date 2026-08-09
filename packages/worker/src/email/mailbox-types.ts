@@ -339,6 +339,7 @@ export type MailboxCountResult = {
 export type MailboxRestoreStatus = {
 	counts: MailboxCountResult
 	hiddenRows: number
+	restorePending: boolean
 	empty: boolean
 }
 
@@ -655,8 +656,11 @@ type MailboxCoreRpc = {
 	getDeliveryEventByProviderEventId: (input: {
 		providerEventId: string
 	}) => Promise<MailboxDeliveryEventRecord | null>
-	countMailbox: () => Promise<MailboxCountResult>
-	inspectRestoreState: () => Promise<MailboxRestoreStatus>
+	countMailbox: (input?: { restore?: true }) => Promise<MailboxCountResult>
+	inspectRestoreState: (input: {
+		ownerId: string
+	}) => Promise<MailboxRestoreStatus>
+	beginRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
 	finalizeRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
 	exportMailbox: (input: {
 		pageSize?: number

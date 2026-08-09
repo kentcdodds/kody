@@ -172,7 +172,7 @@ export async function loadVerifiedMailboxIndex(input: {
 	s3: DrBackupS3Client
 	env: Env
 	day: string
-}): Promise<MailboxIndex> {
+}): Promise<{ index: MailboxIndex; mediaIdentity: string }> {
 	const manifestBytes = await getRequiredBytes(
 		input.s3,
 		sealedFullManifestKey(input.day),
@@ -219,10 +219,14 @@ export async function loadVerifiedMailboxIndex(input: {
 		'sealed mailbox index',
 	)
 	try {
-		return parseMailboxIndex(
+		const index = parseMailboxIndex(
 			JSON.parse(decodeUtf8(indexBytes, 'sealed mailbox index')) as unknown,
 			input.day,
 		)
+		return {
+			index,
+			mediaIdentity: await sha256Hex(manifestBytes),
+		}
 	} catch (error) {
 		if (error instanceof MaintenanceFailureError) throw error
 		throw failure(`sealed mailbox index is invalid: ${getErrorMessage(error)}`)

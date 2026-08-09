@@ -101,6 +101,10 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		})
 	}
 
+	private assertReadable(): void {
+		this.store.assertReadable()
+	}
+
 	async alarm(): Promise<void> {
 		await this.maintenance.alarm()
 	}
@@ -164,6 +168,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async getOutboundProviderIndexRepairStatus(input: { ownerId: string }) {
+		this.assertReadable()
 		return this.graphCommits.getOutboundProviderIndexRepairStatus(input.ownerId)
 	}
 
@@ -326,6 +331,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		events: Array<MailboxDeliveryEventInput>
 		restore?: true
 	}): Promise<MailboxUpsertDeliveryEventsResult> {
+		if (!input.restore) this.assertReadable()
 		let result: MailboxUpsertDeliveryEventsResult | undefined
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -510,6 +516,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async getThread(input: {
 		threadId: string
 	}): Promise<MailboxThreadRecord | null> {
+		this.assertReadable()
 		return this.store.getThread(input.threadId)
 	}
 
@@ -518,24 +525,28 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		references: Array<string>
 		inReplyToHeader?: string | null
 	}): Promise<MailboxThreadRecord | null> {
+		this.assertReadable()
 		return this.store.findThreadForInboundMessage(input)
 	}
 
 	async getMessage(input: {
 		messageId: string
 	}): Promise<MailboxMessageRecord | null> {
+		this.assertReadable()
 		return this.store.getMessage(input.messageId)
 	}
 
 	async getMessageByMessageIdHeader(input: {
 		messageIdHeader: string
 	}): Promise<MailboxMessageRecord | null> {
+		this.assertReadable()
 		return this.store.getMessageByMessageIdHeader(input.messageIdHeader)
 	}
 
 	async getOutboundMessageByProviderMessageId(input: {
 		providerMessageId: string
 	}): Promise<MailboxMessageRecord | null> {
+		this.assertReadable()
 		return this.store.getOutboundMessageByProviderMessageId(
 			input.providerMessageId,
 		)
@@ -545,30 +556,35 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		messages: Array<MailboxMessageRecord>
 		nextCursor: string | null
 	}> {
+		this.assertReadable()
 		return this.store.listMessages(input)
 	}
 
 	async searchMessages(input: MailboxSearchMessagesInput): Promise<{
 		messages: Array<MailboxMessageRecord>
 	}> {
+		this.assertReadable()
 		return this.store.searchMessages(input)
 	}
 
 	async countMessages(
 		input: MailboxCountMessagesInput,
 	): Promise<{ total: number }> {
+		this.assertReadable()
 		return this.store.countMessages(input)
 	}
 
 	async getAttachment(input: {
 		attachmentId: string
 	}): Promise<MailboxAttachmentRecord | null> {
+		this.assertReadable()
 		return this.store.getAttachment(input.attachmentId)
 	}
 
 	async listAttachmentsForMessage(input: {
 		messageId: string
 	}): Promise<Array<MailboxAttachmentRecord>> {
+		this.assertReadable()
 		return this.store.listAttachmentsForMessage(input.messageId)
 	}
 
@@ -577,6 +593,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		eventType?: EmailDeliveryEventType | null
 		limit?: number
 	}): Promise<Array<MailboxDeliveryEventRecord>> {
+		this.assertReadable()
 		return this.store.listDeliveryEvents(input)
 	}
 
@@ -587,6 +604,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		createdAtGte: string
 	}): Promise<{ count: number }> {
 		this.store.assertOwner(input.ownerId)
+		this.assertReadable()
 		const row = this.ctx.storage.sql
 			.exec<{ count: number }>(
 				`SELECT COUNT(*) AS count
@@ -605,22 +623,30 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async getDeliveryEventByProviderEventId(input: {
 		providerEventId: string
 	}): Promise<MailboxDeliveryEventRecord | null> {
+		this.assertReadable()
 		return findDeliveryEventByProviderEventId(
 			this.ctx.storage.sql,
 			input.providerEventId,
 		)
 	}
 
-	async countMailbox(): Promise<MailboxCountResult> {
+	async countMailbox(input?: { restore?: true }): Promise<MailboxCountResult> {
+		if (!input?.restore) this.assertReadable()
 		return this.store.countMailbox()
 	}
 
-	async inspectRestoreState() {
+	async inspectRestoreState(input: { ownerId: string }) {
+		this.store.assertOwner(input.ownerId)
 		return this.store.inspectRestoreState()
 	}
 
+	async beginRestore(input: { ownerId: string }): Promise<{ ok: true }> {
+		this.store.beginRestore(input.ownerId)
+		return { ok: true }
+	}
+
 	async finalizeRestore(input: { ownerId: string }): Promise<{ ok: true }> {
-		this.store.assertOwner(input.ownerId)
+		this.store.finalizeRestore(input.ownerId)
 		await this.maintenance.markDirtyAndEnsure()
 		return { ok: true }
 	}
@@ -629,6 +655,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		pageSize?: number
 		startAfter?: string | null
 	}): Promise<MailboxExportResult> {
+		this.assertReadable()
 		return this.store.exportMailbox(input)
 	}
 
@@ -636,6 +663,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		pageSize?: number
 		startAfter?: string | null
 	}): Promise<MailboxBlobReferencePage> {
+		this.assertReadable()
 		return this.store.listBlobReferences(input)
 	}
 
@@ -643,6 +671,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		deliveryId: string
 	}): Promise<MailboxInboundDeliverySnapshot | null> {
+		this.assertReadable()
 		return this.inbound.getInboundDelivery(input)
 	}
 
@@ -651,6 +680,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		fingerprint: string
 		now?: string
 	}): Promise<MailboxInboundDeliverySnapshot | null> {
+		this.assertReadable()
 		return this.inbound.getInboundDeliveryWindow(input)
 	}
 
@@ -818,6 +848,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		now?: string
 		limit?: number
 	}) {
+		this.assertReadable()
 		return this.inbound.listDueStaleInboundDeliveries(input)
 	}
 
@@ -826,6 +857,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		now?: string
 		limit?: number
 	}) {
+		this.assertReadable()
 		return this.inbound.listDueInboundEffectWork(input)
 	}
 
@@ -833,6 +865,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		now?: string
 	}): Promise<{ dueAt: string | null }> {
+		this.assertReadable()
 		return this.inbound.getInboundDueWorkHint(input)
 	}
 

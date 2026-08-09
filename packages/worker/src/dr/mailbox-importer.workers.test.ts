@@ -329,27 +329,12 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 	const drillOwnerId = `${mailboxImportDrillOwnerPrefix}${day}:${encodeURIComponent(ownerId)}`
 	const scratch = mailboxRpc({ env: backup.env, userId: drillOwnerId })
 	expect(await scratch.countMailbox()).toEqual({
-		threads: 1,
-		messages: 1,
-		attachments: 1,
-		deliveryEvents: 1,
+		threads: 0,
+		messages: 0,
+		attachments: 0,
+		deliveryEvents: 0,
 	})
-	expect(
-		await scratch.getMessage({ messageId: 'restore-message' }),
-	).toMatchObject({
-		id: 'restore-message',
-		createdAt: '2026-08-01T01:02:03.000Z',
-		rawMimeKey: emailRawMimeKey(drillOwnerId, 'restore-message'),
-	})
-	expect(
-		await scratch.getAttachment({ attachmentId: 'restore-attachment' }),
-	).toMatchObject({
-		storageKey: emailAttachmentBlobKey(
-			drillOwnerId,
-			'restore-message',
-			'restore-attachment',
-		),
-	})
+	expect(await scratch.getMessage({ messageId: 'restore-message' })).toBeNull()
 	expect(
 		await mailboxRpc({ env: backup.env, userId: ownerId }).countMailbox(),
 	).toEqual({

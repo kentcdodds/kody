@@ -36,6 +36,7 @@ export class MailboxGraphCommitCommands {
 	async upsertMessageGraph(
 		input: MailboxUpsertMessageGraphInput,
 	): Promise<{ ok: true; accepted: boolean }> {
+		if (!input.restore) this.store.assertReadable()
 		const message = input.message
 		let accepted = false
 		this.ctx.storage.transactionSync(() => {
