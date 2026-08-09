@@ -9,47 +9,39 @@ import {
 } from '#worker/test-support/workers-seed.ts'
 import { resolveBackgroundMcpUser } from './background-mcp-user.ts'
 
-test('resolveBackgroundMcpUser includes admin role for package job capability filtering', async () => {
+test('resolveBackgroundMcpUser loads admin roles only for assigned accounts', async () => {
 	await ensureUsersTestSchema({ db: env.APP_DB })
 	await ensureRbacTestSchema(env.APP_DB)
 
-	const email = `bg-admin-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
-	const accountId = await seedAccount({
+	const adminEmail = `bg-admin-${crypto.randomUUID()}@example.com`
+	const adminStableUserId = await createStableUserIdFromEmail(adminEmail)
+	const adminAccountId = await seedAccount({
 		db: env.APP_DB,
-		email,
+		email: adminEmail,
 		username: `bgadmin-${crypto.randomUUID().slice(0, 8)}`,
-		stableUserId,
+		stableUserId: adminStableUserId,
 		plan: 'max',
 	})
-	await assignAdminRole({ db: env.APP_DB, userId: accountId })
+	await assignAdminRole({ db: env.APP_DB, userId: adminAccountId })
 
-	const resolved = await resolveBackgroundMcpUser(env.APP_DB, stableUserId)
-
-	expect(resolved).toMatchObject({
-		userId: stableUserId,
-		email,
+	const admin = await resolveBackgroundMcpUser(env.APP_DB, adminStableUserId)
+	expect(admin).toMatchObject({
+		userId: adminStableUserId,
+		email: adminEmail,
 		roles: expect.arrayContaining(['admin']),
 	})
-	expect(resolved.roles).toContain('admin')
-})
 
-test('resolveBackgroundMcpUser returns empty roles for non-admin accounts', async () => {
-	await ensureUsersTestSchema({ db: env.APP_DB })
-	await ensureRbacTestSchema(env.APP_DB)
-
-	const email = `bg-user-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const userEmail = `bg-user-${crypto.randomUUID()}@example.com`
+	const userStableUserId = await createStableUserIdFromEmail(userEmail)
 	await seedAccount({
 		db: env.APP_DB,
-		email,
+		email: userEmail,
 		username: `bguser-${crypto.randomUUID().slice(0, 8)}`,
-		stableUserId,
+		stableUserId: userStableUserId,
 		plan: 'max',
 	})
 
-	const resolved = await resolveBackgroundMcpUser(env.APP_DB, stableUserId)
-
-	expect(resolved.userId).toBe(stableUserId)
-	expect(resolved.roles ?? []).not.toContain('admin')
+	const user = await resolveBackgroundMcpUser(env.APP_DB, userStableUserId)
+	expect(user.userId).toBe(userStableUserId)
+	expect(user.roles ?? []).not.toContain('admin')
 })

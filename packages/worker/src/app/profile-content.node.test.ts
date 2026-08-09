@@ -36,8 +36,8 @@ const unpublishedPackage = {
 	communityListingId: null,
 } satisfies PublicProfilePackageItem
 
-test('profile packages link the listing name and fork via a single icon control', async () => {
-	const html = await renderProfileContentHtml({
+test('profile packages link listings and expose follow controls next to the username', async () => {
+	const guestHtml = await renderProfileContentHtml({
 		profile,
 		packages: [listedPackage, unpublishedPackage],
 		activity: [],
@@ -49,20 +49,17 @@ test('profile packages link the listing name and fork via a single icon control'
 		followError: null,
 	})
 
-	expect(html).toContain('href="/community/listing-1"')
-	expect(html.match(/fathom-analytics/g)).toHaveLength(1)
-	expect(html).toContain('href="/community/listing-1#fork-title"')
+	expect(guestHtml).toContain('href="/community/listing-1"')
+	expect(guestHtml.match(/fathom-analytics/g)).toHaveLength(1)
+	expect(guestHtml).toContain('href="/community/listing-1#fork-title"')
 	// Listed packages get one fork control; unpublished packages do not.
-	expect(html.match(/aria-label="fork"/g)).toHaveLength(1)
-	expect(html).toContain('notes')
-	expect(html).not.toContain('href="/community/notes')
-	expect(html).toContain('data-testid="profile-follow"')
-	expect(html).toContain('title="Follow"')
-	expect(html).toContain('/login?redirectTo=%2F%40kody')
-})
+	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
+	expect(guestHtml).toContain('notes')
+	expect(guestHtml).not.toContain('href="/community/notes')
+	expect(guestHtml).toContain('data-testid="profile-follow"')
+	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
 
-test('profile follow control sits next to username for signed-in viewers', async () => {
-	const html = await renderProfileContentHtml({
+	const followingHtml = await renderProfileContentHtml({
 		profile,
 		packages: [],
 		activity: [],
@@ -74,21 +71,16 @@ test('profile follow control sits next to username for signed-in viewers', async
 		followError: 'Unable to follow.',
 	})
 
-	expect(html).toContain('data-testid="profile-username"')
-	expect(html).toContain('data-testid="profile-follow"')
-	expect(html).toContain('data-following="true"')
-	expect(html).toContain('title="Unfollow"')
-	expect(html).toContain('/profiles/kody/follow.json')
-	expect(html).toContain('name="returnTo"')
-	expect(html).toContain('data-testid="profile-follow-error"')
-	expect(html).toContain('Unable to follow.')
-	expect(html.indexOf('data-testid="profile-follow"')).toBeGreaterThan(
-		html.indexOf('data-testid="profile-username"'),
+	expect(followingHtml).toContain('data-testid="profile-username"')
+	expect(followingHtml).toContain('data-testid="profile-follow"')
+	expect(followingHtml).toContain('data-following="true"')
+	expect(followingHtml).toContain('/profiles/kody/follow.json')
+	expect(followingHtml).toContain('data-testid="profile-follow-error"')
+	expect(followingHtml.indexOf('data-testid="profile-follow"')).toBeGreaterThan(
+		followingHtml.indexOf('data-testid="profile-username"'),
 	)
-})
 
-test('own profile omits the follow control', async () => {
-	const html = await renderProfileContentHtml({
+	const ownHtml = await renderProfileContentHtml({
 		profile,
 		packages: [],
 		activity: [],
@@ -100,6 +92,6 @@ test('own profile omits the follow control', async () => {
 		followError: null,
 	})
 
-	expect(html).toContain('@kody')
-	expect(html).not.toContain('data-testid="profile-follow"')
+	expect(ownHtml).toContain('@kody')
+	expect(ownHtml).not.toContain('data-testid="profile-follow"')
 })

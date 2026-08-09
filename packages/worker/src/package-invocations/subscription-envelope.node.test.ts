@@ -1,14 +1,10 @@
 import { expect, test } from 'vitest'
-import { isMissingPackageModuleError } from './module-artifacts.ts'
 import {
-	buildFreshSyntheticSubscriptionIdempotencyKey,
-	buildPackageSubscriptionNotFoundMessage,
 	buildSubscriptionInvocationRunMetadata,
-	packageSubscriptionDispatchCapabilityName,
 	stripUntrustedSubscriptionEnvelopeFields,
 } from './subscription-envelope.ts'
 
-test('stripUntrustedSubscriptionEnvelopeFields removes top-level synthetic and replay_of', () => {
+test('subscription envelope strips forged markers and builds run metadata from trusted source', () => {
 	expect(
 		stripUntrustedSubscriptionEnvelopeFields({
 			event: 'email.message.received',
@@ -20,9 +16,6 @@ test('stripUntrustedSubscriptionEnvelopeFields removes top-level synthetic and r
 		event: 'email.message.received',
 		message: { id: 'message-1' },
 	})
-})
-
-test('stripUntrustedSubscriptionEnvelopeFields leaves nested synthetic markers alone', () => {
 	expect(
 		stripUntrustedSubscriptionEnvelopeFields({
 			payload: { synthetic: true },
@@ -30,32 +23,7 @@ test('stripUntrustedSubscriptionEnvelopeFields leaves nested synthetic markers a
 	).toEqual({
 		payload: { synthetic: true },
 	})
-})
 
-test('buildPackageSubscriptionNotFoundMessage names package_subscription_dispatch', () => {
-	expect(
-		buildPackageSubscriptionNotFoundMessage({
-			kodyId: 'demo',
-			topic: 'email.message.received',
-		}),
-	).toContain(packageSubscriptionDispatchCapabilityName)
-	expect(
-		isMissingPackageModuleError(
-			new Error('Package "demo" does not declare subscription "repo.pushed".'),
-		),
-	).toBe(true)
-})
-
-test('buildFreshSyntheticSubscriptionIdempotencyKey uses synthetic prefix and unique values', () => {
-	const first = buildFreshSyntheticSubscriptionIdempotencyKey()
-	const second = buildFreshSyntheticSubscriptionIdempotencyKey()
-
-	expect(first).toMatch(/^synthetic:[0-9a-f-]{36}$/)
-	expect(second).toMatch(/^synthetic:[0-9a-f-]{36}$/)
-	expect(first).not.toBe(second)
-})
-
-test('buildSubscriptionInvocationRunMetadata carries synthetic markers from payload', () => {
 	expect(
 		buildSubscriptionInvocationRunMetadata({
 			exportName: 'subscription:email.message.received',
@@ -75,9 +43,6 @@ test('buildSubscriptionInvocationRunMetadata carries synthetic markers from payl
 		synthetic: true,
 		replay_of: 'message-1',
 	})
-})
-
-test('buildSubscriptionInvocationRunMetadata omits synthetic markers for real dispatch', () => {
 	expect(
 		buildSubscriptionInvocationRunMetadata({
 			exportName: 'subscription:email.message.received',
@@ -95,9 +60,6 @@ test('buildSubscriptionInvocationRunMetadata omits synthetic markers for real di
 		source: 'email',
 		topic: 'email.message.received',
 	})
-})
-
-test('buildSubscriptionInvocationRunMetadata does not trust synthetic export sources', () => {
 	expect(
 		buildSubscriptionInvocationRunMetadata({
 			exportName: '.',

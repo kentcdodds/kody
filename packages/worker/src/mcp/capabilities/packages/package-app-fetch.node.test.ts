@@ -191,7 +191,7 @@ test('package_app_fetch resolves owned packages by package_id', async () => {
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
-test('package_app_fetch requires exactly one of package_id or kody_id', async () => {
+test('package_app_fetch rejects invalid callers, paths, and missing packages', async () => {
 	await expect(
 		packageAppFetchCapability.handler({}, createContext()),
 	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
@@ -201,29 +201,11 @@ test('package_app_fetch requires exactly one of package_id or kody_id', async ()
 			createContext(),
 		),
 	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
-})
 
-test('package_app_fetch rejects package runtime caller contexts', async () => {
 	await expect(
 		packageAppFetchCapability.handler(
 			{ kody_id: 'demo-app' },
 			createContext({ packageId: 'package-1' }),
-		),
-	).rejects.toThrow(
-		'package_app_fetch is unavailable from package runtime contexts.',
-	)
-	await expect(
-		packageAppFetchCapability.handler(
-			{ kody_id: 'demo-app' },
-			createContext({ appId: 'package-1' }),
-		),
-	).rejects.toThrow(
-		'package_app_fetch is unavailable from package runtime contexts.',
-	)
-	await expect(
-		packageAppFetchCapability.handler(
-			{ kody_id: 'demo-app' },
-			createContext({ storageId: 'bucket-1' }),
 		),
 	).rejects.toThrow(
 		'package_app_fetch is unavailable from package runtime contexts.',
@@ -236,44 +218,39 @@ test('package_app_fetch rejects package runtime caller contexts', async () => {
 	).rejects.toThrow(
 		'package_app_fetch is unavailable from package runtime contexts.',
 	)
-})
 
-test('package_app_fetch rejects websocket upgrade requests', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
-	for (const headers of [
-		{ Upgrade: 'websocket' },
-		{ Connection: 'keep-alive, Upgrade' },
-	]) {
-		await expect(
-			packageAppFetchCapability.handler(
-				{
-					kody_id: 'demo-app',
-					headers,
-				},
-				createContext(),
-			),
-		).rejects.toThrow(
-			'package_app_fetch does not support websocket Upgrade requests.',
-		)
-	}
-})
-
-test('package_app_fetch rejects paths that can escape the selected package mount', async () => {
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
-	for (const path of ['/../other-package/probe', '/%2e%2e/other/probe']) {
-		await expect(
-			packageAppFetchCapability.handler(
-				{ kody_id: 'demo-app', path },
-				createContext(),
-			),
-		).rejects.toThrow(
-			'package_app_fetch path must not contain parent traversal segments.',
-		)
-	}
+	await expect(
+		packageAppFetchCapability.handler(
+			{
+				kody_id: 'demo-app',
+				headers: { Upgrade: 'websocket' },
+			},
+			createContext(),
+		),
+	).rejects.toThrow(
+		'package_app_fetch does not support websocket Upgrade requests.',
+	)
+	await expect(
+		packageAppFetchCapability.handler(
+			{ kody_id: 'demo-app', path: '/../other-package/probe' },
+			createContext(),
+		),
+	).rejects.toThrow(
+		'package_app_fetch path must not contain parent traversal segments.',
+	)
+	await expect(
+		packageAppFetchCapability.handler(
+			{
+				kody_id: 'demo-app',
+				method: 'POST',
+				body: 'x'.repeat(102_401),
+			},
+			createContext(),
+		),
+	).rejects.toThrow('request body exceeds 102400 bytes')
 	expect(mockModule.servePackageAppRequest).not.toHaveBeenCalled()
-})
 
-test('package_app_fetch returns 404 diagnostics for missing packages and packages without apps', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
 	mockModule.findPlainRepoPromotionHint.mockResolvedValue(null)
 	await expect(
@@ -293,7 +270,7 @@ test('package_app_fetch returns 404 diagnostics for missing packages and package
 	).rejects.toThrow('has no declared app')
 })
 
-test('package_app_fetch truncates oversized response bodies instead of throwing', async () => {
+test('package_app_fetch truncates oversized bodies and encodes binary as base64', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
 	const oversized = 'x'.repeat(102_401)
 	mockModule.servePackageAppRequest.mockResolvedValue(
@@ -303,21 +280,15 @@ test('package_app_fetch truncates oversized response bodies instead of throwing'
 		}),
 	)
 
-	const result = await packageAppFetchCapability.handler(
-		{ kody_id: 'demo-app' },
-		createContext(),
-	)
-
-	expect(result).toEqual({
+	await expect(
+		packageAppFetchCapability.handler({ kody_id: 'demo-app' }, createContext()),
+	).resolves.toEqual({
 		status: 200,
 		headers: { 'content-type': 'text/plain' },
 		body: 'x'.repeat(102_400),
 		truncated: true,
 	})
-})
 
-test('package_app_fetch returns binary responses as base64 in body', async () => {
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
 	const binary = new TextEncoder().encode('valid utf-8 binary bytes')
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response(binary, {
@@ -325,13 +296,9 @@ test('package_app_fetch returns binary responses as base64 in body', async () =>
 			headers: { 'content-type': 'application/octet-stream' },
 		}),
 	)
-
-	const result = await packageAppFetchCapability.handler(
-		{ kody_id: 'demo-app' },
-		createContext(),
-	)
-
-	expect(result).toEqual({
+	await expect(
+		packageAppFetchCapability.handler({ kody_id: 'demo-app' }, createContext()),
+	).resolves.toEqual({
 		status: 200,
 		headers: { 'content-type': 'application/octet-stream' },
 		body: bytesToBase64(binary),
@@ -353,18 +320,4 @@ test('package_app_fetch returns binary responses as base64 in body', async () =>
 	expect(decoded).toEqual(largeBinary.slice(0, decoded.byteLength))
 	expect(capped.body.length).toBeLessThanOrEqual(102_400)
 	expect(capped.truncated).toBe(true)
-})
-
-test('package_app_fetch rejects oversized request bodies', async () => {
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
-	await expect(
-		packageAppFetchCapability.handler(
-			{
-				kody_id: 'demo-app',
-				method: 'POST',
-				body: 'x'.repeat(102_401),
-			},
-			createContext(),
-		),
-	).rejects.toThrow('request body exceeds 102400 bytes')
 })

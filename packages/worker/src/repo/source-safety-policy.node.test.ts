@@ -91,19 +91,8 @@ test('published commit HEAD mismatch messages are detected for caller-error clas
 	)
 })
 
-test('package source overwrite requires explicit destructive confirmation before snapshot verification', async () => {
-	await expect(
-		assertPackageSourceOverwriteAllowed({
-			env: createEnvWithSnapshot({ 'package.json': '{}' }),
-			userId: 'user-1',
-			source: packageSource(),
-			operation: 'package_save',
-		}),
-	).rejects.toThrow(destructiveOverwriteConfirmationField)
-})
-
-test('destructive overwrite confirmation messages are detected for caller-error classification', async () => {
-	let message = ''
+test('package source overwrite and private-visibility changes require explicit confirmation', async () => {
+	let overwriteMessage = ''
 	try {
 		await assertPackageSourceOverwriteAllowed({
 			env: createEnvWithSnapshot({ 'package.json': '{}' }),
@@ -112,18 +101,17 @@ test('destructive overwrite confirmation messages are detected for caller-error 
 			operation: 'package_save',
 		})
 	} catch (error) {
-		message = error instanceof Error ? error.message : String(error)
+		overwriteMessage = error instanceof Error ? error.message : String(error)
 	}
-	expect(isDestructiveOverwriteConfirmationMessage(message)).toBe(true)
+	expect(overwriteMessage).toContain(destructiveOverwriteConfirmationField)
+	expect(isDestructiveOverwriteConfirmationMessage(overwriteMessage)).toBe(true)
 	expect(
 		isDestructiveOverwriteConfirmationMessage(
 			'package_save stopped by the production package source safety policy.',
 		),
 	).toBe(false)
-})
 
-test('private visibility confirmation messages are detected for caller-error classification', () => {
-	let message = ''
+	let visibilityMessage = ''
 	try {
 		assertPackagePrivateVisibilityChangeAllowed({
 			beforeContent: '{"name":"@x/y","private":true}',
@@ -132,10 +120,12 @@ test('private visibility confirmation messages are detected for caller-error cla
 			operation: 'package_save',
 		})
 	} catch (error) {
-		message = error instanceof Error ? error.message : String(error)
+		visibilityMessage = error instanceof Error ? error.message : String(error)
 	}
-	expect(message).toContain(privateVisibilityChangeConfirmationField)
-	expect(isPrivateVisibilityChangeConfirmationMessage(message)).toBe(true)
+	expect(visibilityMessage).toContain(privateVisibilityChangeConfirmationField)
+	expect(isPrivateVisibilityChangeConfirmationMessage(visibilityMessage)).toBe(
+		true,
+	)
 	expect(
 		isPrivateVisibilityChangeConfirmationMessage(
 			'package_save would overwrite existing package source "source-1".',

@@ -27,17 +27,17 @@ function createContext() {
 	}
 }
 
-test('repo_search maps invalid regex DO errors to McpCallerError', async () => {
+test('repo_search maps invalid regex failures to McpCallerError and rethrows other errors', async () => {
 	const compileMessage =
 		'Invalid regular expression: /(?s).|^$/gi: Invalid group'
-	const search = vi
+	const topLevel = vi
 		.fn()
 		.mockRejectedValue(
 			new Error(buildRepoSearchInvalidRegexCallerMessage(compileMessage)),
 		)
-	mocks.repoSessionRpc.mockReturnValue({ search })
+	mocks.repoSessionRpc.mockReturnValue({ search: topLevel })
 
-	const error = await repoSearchCapability
+	const topLevelError = await repoSearchCapability
 		.handler(
 			{
 				session_id: 'session-1',
@@ -51,23 +51,21 @@ test('repo_search maps invalid regex DO errors to McpCallerError', async () => {
 			(thrown: unknown) => thrown,
 		)
 
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect((error as Error).message).toContain('invalid regex')
-	expect((error as Error).message).toContain('JavaScript RegExp')
-})
+	expect(topLevelError).toBeInstanceOf(McpCallerError)
+	expect((topLevelError as Error).message).toContain('invalid regex')
+	expect((topLevelError as Error).message).toContain('JavaScript RegExp')
 
-test('repo_search maps nested invalid regex causes to McpCallerError', async () => {
 	const nestedMessage = buildRepoSearchInvalidRegexCallerMessage(
 		'Invalid regular expression: /(?i)foo/: Invalid group',
 	)
-	const search = vi.fn().mockRejectedValue(
+	const nested = vi.fn().mockRejectedValue(
 		new Error('Repo session search failed', {
 			cause: new Error(nestedMessage),
 		}),
 	)
-	mocks.repoSessionRpc.mockReturnValue({ search })
+	mocks.repoSessionRpc.mockReturnValue({ search: nested })
 
-	const error = await repoSearchCapability
+	const nestedError = await repoSearchCapability
 		.handler(
 			{
 				session_id: 'session-1',
@@ -81,11 +79,9 @@ test('repo_search maps nested invalid regex causes to McpCallerError', async () 
 			(thrown: unknown) => thrown,
 		)
 
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect((error as Error).message).toBe(nestedMessage)
-})
+	expect(nestedError).toBeInstanceOf(McpCallerError)
+	expect((nestedError as Error).message).toBe(nestedMessage)
 
-test('repo_search rethrows non-regex failures unchanged', async () => {
 	const boom = new Error('Durable Object storage unavailable')
 	const search = vi.fn().mockRejectedValue(boom)
 	mocks.repoSessionRpc.mockReturnValue({ search })

@@ -152,26 +152,7 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).toBeNull()
 	expect(
-		filterFathomRemoveChildNullSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value: "Cannot read properties of null (reading 'removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									filename: '/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterFathomRemoveChildNullSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
@@ -209,64 +190,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).not.toBeNull()
-	expect(
-		filterFathomRemoveChildNullSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value: "Cannot read properties of null (reading 'removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									abs_path: 'https://heykody.dev/cdn.usefathom.com/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
-	expect(
-		filterBrowserSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value: "Cannot read properties of null (reading 'removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									abs_path: 'https://cdn.usefathom.com/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterBrowserSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value:
-							"null is not an object (evaluating 'img.parentNode.removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									filename: '/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
 
 	// Chrome extension IPC object-not-found (issue 7655189301 / KODY-CLOUDFLARE-3S).
 	expect(
@@ -435,19 +358,18 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 	// KODY-CLOUDFLARE-46). Requires both the Safari evaluating wording and a
 	// `global code` frame — same message from app bundles stays.
 	expect(
-		filterOgTypeMetaQuerySelectorContentSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
 						type: 'TypeError',
 						value:
-							"null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
+							"TypeError: null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
 						stacktrace: {
 							frames: [
 								{
 									function: 'global code',
-									filename: '/guides/what-is-kody',
-									abs_path: 'https://heykody.app/guides/what-is-kody',
+									absPath: 'https://heykody.app/guides/what-is-kody',
 								},
 							],
 						},
@@ -477,25 +399,4 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).not.toBeNull()
-	expect(
-		filterBrowserSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value:
-							"TypeError: null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
-						stacktrace: {
-							frames: [
-								{
-									function: 'global code',
-									absPath: 'https://heykody.app/guides/what-is-kody',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
 })

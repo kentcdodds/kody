@@ -31,17 +31,15 @@ function createContext() {
 test('community_get throws McpCallerError when the listing is missing', async () => {
 	mocks.getCommunityListingWithAggregates.mockResolvedValue(null)
 
-	await expect(
-		communityGetCapability.handler(
-			{ listing_id: 'missing-listing' },
-			createContext(),
-		),
-	).rejects.toBeInstanceOf(McpCallerError)
+	const error = await communityGetCapability
+		.handler({ listing_id: 'missing-listing' }, createContext())
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
 
-	await expect(
-		communityGetCapability.handler(
-			{ listing_id: 'missing-listing' },
-			createContext(),
-		),
-	).rejects.toThrow('Community listing not found.')
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: 'Community listing not found.',
+	})
 })

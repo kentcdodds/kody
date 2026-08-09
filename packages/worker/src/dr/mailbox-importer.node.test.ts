@@ -281,40 +281,9 @@ test('mailbox import endpoint is secret-gated and replace needs exact confirmati
 	})
 })
 
-test('mailbox importer verifies sealed media before writes and refuses occupied targets', async () => {
-	resetMailboxMocks()
-	const backup = await createBackup()
-	mailboxMocks.inspectRestoreState.mockResolvedValue(
-		restoreStatus(threadCounts),
-	)
-	await expect(
-		runMailboxImportTick({
-			env: backup.env,
-			day: backup.day,
-			owners: [backup.ownerId],
-			s3: backup.s3.client,
-		}),
-	).rejects.toThrow(/non-empty/)
-	expect(mailboxMocks.purge).not.toHaveBeenCalled()
-	expect(mailboxMocks.upsertMessageGraph).not.toHaveBeenCalled()
-
-	resetMailboxMocks()
-	mailboxMocks.countMailbox.mockResolvedValue(emptyCounts)
-	backup.s3.objects.set(
-		`${sealedFullPrefix(backup.day)}mailbox/${encodeURIComponent(backup.ownerId)}.ndjson`,
-		new TextEncoder().encode('tampered\n'),
-	)
-	await expect(
-		runMailboxImportTick({
-			env: backup.env,
-			day: backup.day,
-			owners: [backup.ownerId],
-			s3: backup.s3.client,
-		}),
-	).rejects.toThrow(/byte count mismatch|sha256 mismatch/)
-	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
-	expect(mailboxMocks.upsertMessageGraph).not.toHaveBeenCalled()
-
+test('mailbox importer verifies sealed media before writes', async () => {
+	// Occupied-target and tampered-dump fail-closed paths are covered by the
+	// workers DO workflow; keep node-only signature/schema guards here.
 	const invalidSignature = await createBackup()
 	const manifest = {
 		...invalidSignature.manifest,
@@ -394,7 +363,7 @@ test('mailbox importer rejects a cursor from a different sealed generation', asy
 	).rejects.toThrow(/cursor does not match this import request/)
 })
 
-test('drill cleanup remains idempotent when its response is lost', async () => {
+test('drill cleanup stays idempotent across lost responses for success and mismatch', async () => {
 	resetMailboxMocks()
 	const backup = await createBackup()
 	const now = vi
@@ -428,7 +397,7 @@ test('drill cleanup remains idempotent when its response is lost', async () => {
 	const cleanupCalls = mailboxMocks.completeDrill.mock.calls.length
 
 	mailboxMocks.readDrillResult.mockResolvedValueOnce(threadCounts)
-	const replayed = await runMailboxImportTick({
+	const replayedSuccess = await runMailboxImportTick({
 		env: backup.env,
 		day: backup.day,
 		owners: [backup.ownerId],
@@ -437,52 +406,50 @@ test('drill cleanup remains idempotent when its response is lost', async () => {
 		timeBudgetMs: 60_000,
 		s3: backup.s3.client,
 	})
-	expect(replayed.verified).toBe(true)
+	expect(replayedSuccess.verified).toBe(true)
 	expect(mailboxMocks.completeDrill.mock.calls.length).toBe(cleanupCalls)
-})
 
-test('drill cleanup preserves a mismatch across a lost response', async () => {
 	resetMailboxMocks()
-	const backup = await createBackup()
-	const now = vi
+	const mismatchBackup = await createBackup()
+	const mismatchNow = vi
 		.spyOn(Date, 'now')
 		.mockReturnValueOnce(0)
 		.mockReturnValueOnce(0)
 		.mockReturnValueOnce(0)
 		.mockReturnValue(2)
-	const beforeVerify = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
+	const mismatchBeforeVerify = await runMailboxImportTick({
+		env: mismatchBackup.env,
+		day: mismatchBackup.day,
+		owners: [mismatchBackup.ownerId],
 		drill: true,
 		timeBudgetMs: 1,
-		s3: backup.s3.client,
+		s3: mismatchBackup.s3.client,
 	})
-	now.mockRestore()
+	mismatchNow.mockRestore()
 
 	mailboxMocks.countMailbox.mockResolvedValueOnce(emptyCounts)
 	const mismatch = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
+		env: mismatchBackup.env,
+		day: mismatchBackup.day,
+		owners: [mismatchBackup.ownerId],
 		drill: true,
-		cursor: beforeVerify.nextCursor,
+		cursor: mismatchBeforeVerify.nextCursor,
 		timeBudgetMs: 60_000,
-		s3: backup.s3.client,
+		s3: mismatchBackup.s3.client,
 	})
 	expect(mismatch.verified).toBe(false)
 
 	mailboxMocks.readDrillResult.mockResolvedValueOnce(emptyCounts)
-	const replayed = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
+	const replayedMismatch = await runMailboxImportTick({
+		env: mismatchBackup.env,
+		day: mismatchBackup.day,
+		owners: [mismatchBackup.ownerId],
 		drill: true,
-		cursor: beforeVerify.nextCursor,
+		cursor: mismatchBeforeVerify.nextCursor,
 		timeBudgetMs: 60_000,
-		s3: backup.s3.client,
+		s3: mismatchBackup.s3.client,
 	})
-	expect(replayed.verified).toBe(false)
+	expect(replayedMismatch.verified).toBe(false)
 })
 
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {

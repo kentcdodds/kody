@@ -168,6 +168,17 @@ test('package_subscription_dispatch sends synthetic params envelopes to one pack
 			idempotencyKey: result.idempotency_key,
 		}),
 	)
+
+	const second = await packageSubscriptionDispatchCapability.handler(
+		{
+			kody_id: 'demo',
+			topic: 'repo.pushed',
+			params: { event: 'repo.pushed' },
+		},
+		ctx as never,
+	)
+	expect(second.idempotency_key).toMatch(/^synthetic:[0-9a-f-]{36}$/)
+	expect(second.idempotency_key).not.toBe(result.idempotency_key)
 })
 
 test('package_subscription_dispatch bounds oversized handler results', async () => {
@@ -191,29 +202,6 @@ test('package_subscription_dispatch bounds oversized handler results', async () 
 		message:
 			'Subscription result exceeded 102400 bytes and was omitted. Inspect the subscription run for details.',
 	})
-})
-
-test('package_subscription_dispatch generates a fresh synthetic idempotency key per call', async () => {
-	mockDeclaredSubscription('repo.pushed')
-	const ctx = createCtx()
-	const input = {
-		kody_id: 'demo',
-		topic: 'repo.pushed',
-		params: { event: 'repo.pushed' },
-	}
-
-	const first = await packageSubscriptionDispatchCapability.handler(
-		input,
-		ctx as never,
-	)
-	const second = await packageSubscriptionDispatchCapability.handler(
-		input,
-		ctx as never,
-	)
-
-	expect(first.idempotency_key).toMatch(/^synthetic:[0-9a-f-]{36}$/)
-	expect(second.idempotency_key).toMatch(/^synthetic:[0-9a-f-]{36}$/)
-	expect(first.idempotency_key).not.toBe(second.idempotency_key)
 })
 
 test('package_subscription_dispatch replays stored inbound email envelopes', async () => {
@@ -317,7 +305,7 @@ test('package_subscription_dispatch rejects replay when the stored message topic
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
-test('package_subscription_dispatch rejects package runtime caller contexts', async () => {
+test('package_subscription_dispatch rejects runtime callers and undeclared topics', async () => {
 	mockDeclaredSubscription('repo.pushed')
 
 	await expect(
@@ -350,12 +338,8 @@ test('package_subscription_dispatch rejects package runtime caller contexts', as
 	).rejects.toThrow(
 		'package_subscription_dispatch is unavailable from package runtime contexts.',
 	)
-})
 
-test('package_subscription_dispatch rejects undeclared topics', async () => {
 	mockDeclaredSubscription()
-	const ctx = createCtx()
-
 	await expect(
 		packageSubscriptionDispatchCapability.handler(
 			{
@@ -363,7 +347,7 @@ test('package_subscription_dispatch rejects undeclared topics', async () => {
 				topic: 'repo.pushed',
 				params: { event: 'repo.pushed' },
 			},
-			ctx as never,
+			createCtx() as never,
 		),
 	).rejects.toThrow(/package_subscription_dispatch/)
 })

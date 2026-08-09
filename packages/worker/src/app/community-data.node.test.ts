@@ -1,15 +1,12 @@
 import { expect, test, vi } from 'vitest'
-import { type PublicCommunityListing } from '#universal/community-public-types.ts'
 import { resetDataCacheForTests } from './data-cache.ts'
 import {
-	composeCommunityDetailLoaderData,
 	loadCommunityIndexData,
 	loadOnboardingFeaturedListings,
 } from './community-data.ts'
 import {
 	buildExistingAdaptPrompt,
 	buildExistingInstallPrompt,
-	toPublicCommunityListing,
 } from './community-public.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
@@ -86,40 +83,12 @@ const sampleListing = {
 	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
-const publicListing = toPublicCommunityListing(sampleListing)
-
 function signedInUser() {
 	return {
 		mcpUser: { userId: 'viewer-1', username: 'burhan' },
 		roles: [],
 	}
 }
-
-test('composeCommunityDetailLoaderData includes viewerInstall when present', () => {
-	resetDataCacheForTests()
-	const viewerInstall = {
-		status: 'installed' as const,
-		targetName: '@burhan/github',
-		agentPrompt: buildExistingInstallPrompt({ targetName: '@burhan/github' }),
-	}
-	const listing: PublicCommunityListing = { ...publicListing, viewerInstall }
-	expect(
-		composeCommunityDetailLoaderData({
-			listing,
-			loggedIn: true,
-			viewerInstall,
-		}),
-	).toMatchObject({
-		ok: true,
-		loggedIn: true,
-		starredByViewer: false,
-		viewerInstall,
-		listing: expect.objectContaining({
-			id: 'listing-github',
-			viewerInstall,
-		}),
-	})
-})
 
 test('community index overlays matching kody_id installs for signed-in viewers', async () => {
 	resetDataCacheForTests()
@@ -194,7 +163,7 @@ test('onboarding featured listings overlay inert forks as adaptation_required', 
 	})
 })
 
-test('anonymous community index omits viewerInstall', async () => {
+test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {
 	resetDataCacheForTests()
 	mockModule.listSavedPackagesByKodyIds.mockReset()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -202,33 +171,27 @@ test('anonymous community index omits viewerInstall', async () => {
 		sampleListing,
 	])
 
-	const data = await loadCommunityIndexData(
+	const anonymous = await loadCommunityIndexData(
 		{} as Env,
 		new Request('https://example.com/community'),
 	)
-	expect(data.listings[0]?.viewerInstall).toBeUndefined()
+	expect(anonymous.listings[0]?.viewerInstall).toBeUndefined()
 	expect(mockModule.listSavedPackagesByKodyIds).not.toHaveBeenCalled()
-})
 
-test('community index stays public when viewer auth lookup fails', async () => {
-	resetDataCacheForTests()
 	mockModule.listSavedPackagesByKodyIds.mockReset()
 	mockModule.readAuthenticatedAppUser.mockRejectedValue(
 		new Error('Missing COOKIE_SECRET for session signing.'),
 	)
-	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
-		sampleListing,
-	])
 	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-	const data = await loadCommunityIndexData(
+	const failedAuth = await loadCommunityIndexData(
 		{} as Env,
 		new Request('https://example.com/community'),
 	)
-	expect(data.ok).toBe(true)
-	expect(data.listings).toHaveLength(1)
-	expect(data.listings[0]?.id).toBe('listing-github')
-	expect(data.listings[0]?.viewerInstall).toBeUndefined()
+	expect(failedAuth.ok).toBe(true)
+	expect(failedAuth.listings).toHaveLength(1)
+	expect(failedAuth.listings[0]?.id).toBe('listing-github')
+	expect(failedAuth.listings[0]?.viewerInstall).toBeUndefined()
 	expect(mockModule.listSavedPackagesByKodyIds).not.toHaveBeenCalled()
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()

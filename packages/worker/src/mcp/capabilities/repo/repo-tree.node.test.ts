@@ -26,8 +26,8 @@ function createContext() {
 	}
 }
 
-test('repo_tree maps missing-path ENOENT to McpCallerError', async () => {
-	const tree = vi
+test('repo_tree maps missing-path ENOENT to McpCallerError and summarizes existing trees', async () => {
+	const missing = vi
 		.fn()
 		.mockRejectedValue(
 			Object.assign(
@@ -35,9 +35,9 @@ test('repo_tree maps missing-path ENOENT to McpCallerError', async () => {
 				{ code: 'ENOENT' },
 			),
 		)
-	mocks.repoSessionRpc.mockReturnValue({ tree })
+	mocks.repoSessionRpc.mockReturnValue({ tree: missing })
 
-	const error = await repoTreeCapability
+	const missingError = await repoTreeCapability
 		.handler(
 			{
 				session_id: 'session-1',
@@ -50,31 +50,29 @@ test('repo_tree maps missing-path ENOENT to McpCallerError', async () => {
 			(thrown: unknown) => thrown,
 		)
 
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect(error).toMatchObject({
+	expect(missingError).toBeInstanceOf(McpCallerError)
+	expect(missingError).toMatchObject({
 		message: 'Path "docs" was not found in the repo session workspace.',
 	})
-	expect(tree).toHaveBeenCalledWith({
+	expect(missing).toHaveBeenCalledWith({
 		sessionId: 'session-1',
 		userId: 'user-alice',
 		path: 'docs',
 		maxDepth: undefined,
 	})
-})
 
-test('repo_tree maps ENOENT errors in a cause chain to McpCallerError', async () => {
-	const missingPathError = Object.assign(
+	const nestedMissing = Object.assign(
 		new Error('ENOENT: no such file or directory: /session/tests'),
 		{ code: 'ENOENT' },
 	)
-	const tree = vi.fn().mockRejectedValue(
+	const nested = vi.fn().mockRejectedValue(
 		Object.assign(new Error('Repository tree RPC failed.'), {
-			cause: missingPathError,
+			cause: nestedMissing,
 		}),
 	)
-	mocks.repoSessionRpc.mockReturnValue({ tree })
+	mocks.repoSessionRpc.mockReturnValue({ tree: nested })
 
-	const error = await repoTreeCapability
+	const nestedError = await repoTreeCapability
 		.handler(
 			{
 				session_id: 'session-1',
@@ -87,39 +85,29 @@ test('repo_tree maps ENOENT errors in a cause chain to McpCallerError', async ()
 			(thrown: unknown) => thrown,
 		)
 
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect(error).toMatchObject({
+	expect(nestedError).toBeInstanceOf(McpCallerError)
+	expect(nestedError).toMatchObject({
 		message: 'Path "tests" was not found in the repo session workspace.',
 	})
-	expect(tree).toHaveBeenCalledWith({
-		sessionId: 'session-1',
-		userId: 'user-alice',
-		path: 'tests',
-		maxDepth: undefined,
-	})
-})
 
-test('repo_tree still surfaces non-ENOENT failures as plain errors', async () => {
-	const tree = vi
+	const notFound = vi
 		.fn()
 		.mockRejectedValue(new Error('Repo session "session-1" was not found.'))
-	mocks.repoSessionRpc.mockReturnValue({ tree })
+	mocks.repoSessionRpc.mockReturnValue({ tree: notFound })
 
-	const error = await repoTreeCapability
+	const plainError = await repoTreeCapability
 		.handler({ session_id: 'session-1' }, createContext())
 		.then(
 			() => null,
 			(thrown: unknown) => thrown,
 		)
 
-	expect(error).toBeInstanceOf(Error)
-	expect(error).not.toBeInstanceOf(McpCallerError)
-	expect(error).toMatchObject({
+	expect(plainError).toBeInstanceOf(Error)
+	expect(plainError).not.toBeInstanceOf(McpCallerError)
+	expect(plainError).toMatchObject({
 		message: 'Repo session "session-1" was not found.',
 	})
-})
 
-test('repo_tree summarizes an existing subtree', async () => {
 	const tree = vi.fn().mockResolvedValue({
 		path: '',
 		name: 'session',

@@ -62,7 +62,7 @@ function createContext() {
 	}
 }
 
-test('mcp-server tool failures throw McpCallerError for downstream ProtocolError', async () => {
+test('mcp-server tool and availability failures throw McpCallerError', async () => {
 	mocks.callTool.mockRejectedValueOnce(
 		new Error(
 			"ProtocolError: Structured content does not match the tool's output schema",
@@ -85,19 +85,17 @@ test('mcp-server tool failures throw McpCallerError for downstream ProtocolError
 	const capability = synthesized?.domain.capabilities[0]
 	expect(capability).toBeDefined()
 
-	const error = await capability!.handler({}, createContext()).then(
+	const protocolError = await capability!.handler({}, createContext()).then(
 		() => null,
 		(thrown: unknown) => thrown,
 	)
 
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect((error as Error).message).toContain(
+	expect(protocolError).toBeInstanceOf(McpCallerError)
+	expect((protocolError as Error).message).toContain(
 		'MCP server capability "supermemory:listMemories" failed:',
 	)
-	expect((error as Error).message).toContain('Structured content')
-})
+	expect((protocolError as Error).message).toContain('Structured content')
 
-test('mcp-server unavailable servers throw McpCallerError', async () => {
 	mocks.callTool.mockRejectedValueOnce(new Error('fetch failed'))
 	mocks.getMcpServerStatus.mockResolvedValueOnce({
 		state: 'disconnected',
@@ -109,18 +107,11 @@ test('mcp-server unavailable servers throw McpCallerError', async () => {
 		error: null,
 	})
 
-	const synthesized = synthesizeMcpServerToolDomain({
-		ref,
-		snapshot: createSnapshot(),
-	})
-	const capability = synthesized?.domain.capabilities[0]
-	expect(capability).toBeDefined()
-
-	const error = await capability!.handler({}, createContext()).then(
+	const disconnected = await capability!.handler({}, createContext()).then(
 		() => null,
 		(thrown: unknown) => thrown,
 	)
 
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect((error as Error).message).toMatch(/not connected/)
+	expect(disconnected).toBeInstanceOf(McpCallerError)
+	expect((disconnected as Error).message).toMatch(/not connected/)
 })

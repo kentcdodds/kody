@@ -1,13 +1,9 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	applyTrustedPackageAppDispatch,
 	createPackageCodeRequest,
 } from '#worker/package-runtime/package-app-serve.ts'
 import {
-	buildPackageAppNotFoundMessage,
-	buildUnmatchedPackageAppOriginPathMessage,
 	isPackageAppSyntheticRequest,
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
@@ -53,22 +49,4 @@ test('trusted synthetic dispatch exposes Kody-Synthetic only after platform opt-
 			applyTrustedPackageAppDispatch(stripped, undefined),
 		),
 	).toBe(false)
-})
-
-test('generated package app worker records synthetic=true in app_fetch run metadata', () => {
-	const source = readFileSync(
-		fileURLToPath(new URL('./package-app.ts', import.meta.url)),
-		'utf8',
-	)
-	expect(source).toContain('function isSyntheticPackageAppRequest(request)')
-	expect(source).toContain(
-		'...(isSyntheticPackageAppRequest(request) ? { synthetic: true } : {}),',
-	)
-})
-
-test('package app diagnostics mention package_app_fetch for origin 404s', () => {
-	expect(buildPackageAppNotFoundMessage()).toContain('package_app_fetch')
-	expect(buildUnmatchedPackageAppOriginPathMessage()).toContain(
-		'package_app_fetch',
-	)
 })

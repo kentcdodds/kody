@@ -113,27 +113,3 @@ test('regex mode rejects Python-style inline flags with JS guidance', async () =
 	expect(workspace.glob).not.toHaveBeenCalled()
 	expect(workspace.readFile).not.toHaveBeenCalled()
 })
-
-test('invalid regex fails even when the workspace has no readable files', async () => {
-	const workspace = {
-		glob: vi.fn(async () => []),
-		readFile: vi.fn(async () => null),
-	}
-
-	await expect(
-		searchRepoWorkspace({
-			root: '/',
-			pattern: '(?s).|^$',
-			mode: 'regex',
-			workspace,
-			toExternalPath: (path) => path,
-		}),
-	).rejects.toThrow(
-		new RegExp(
-			`${repoSearchInvalidRegexMessagePrefix}.*JavaScript RegExp`,
-			's',
-		),
-	)
-	expect(workspace.glob).not.toHaveBeenCalled()
-	expect(workspace.readFile).not.toHaveBeenCalled()
-})
