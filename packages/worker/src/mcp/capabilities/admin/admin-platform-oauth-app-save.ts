@@ -31,7 +31,7 @@ const inputSchema = z
 			.nullable()
 			.optional()
 			.describe(
-				'Plaintext client secret; stored encrypted and never returned by any capability. Omit to keep the stored value, pass null to clear it (public PKCE apps).',
+				'Plaintext client secret; stored encrypted and never returned by any capability. Omit to keep the stored value, pass null to clear it (public PKCE apps). Confidential apps may stage without a secret while enabled is false — the operator pastes credentials in /admin/platform-integrations before enabling.',
 			),
 		tokenUrl: z.string().url(),
 		authorizeUrl: z.string().url(),
@@ -53,7 +53,9 @@ const inputSchema = z
 		enabled: z
 			.boolean()
 			.optional()
-			.describe('Disabled apps are hidden from users and reject new connects.'),
+			.describe(
+				'Disabled apps are hidden from users and reject new connects. Defaults to enabled on create; pass false to stage a confidential app before its client secret exists.',
+			),
 		logoBase64: z
 			.string()
 			.nullable()

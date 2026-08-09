@@ -165,8 +165,20 @@ export async function upsertPlatformOauthApp(input: {
 						input.env,
 						input.app.clientSecret.trim(),
 					)
-	if (input.app.flow === 'confidential' && !clientSecretEncrypted) {
-		throw new Error('Confidential flow requires a client secret.')
+	const enabled =
+		input.app.enabled === undefined
+			? (existing?.enabled ?? 1)
+			: input.app.enabled
+				? 1
+				: 0
+	// Disabled apps may omit the secret so an agent can stage the full
+	// provider config through MCP and an operator pastes credentials (and
+	// enables) later; the secret becomes mandatory the moment the app is
+	// reachable by users.
+	if (enabled && input.app.flow === 'confidential' && !clientSecretEncrypted) {
+		throw new Error(
+			'Confidential flow requires a client secret before the app can be enabled. Save it with enabled: false to stage the config first.',
+		)
 	}
 
 	const now = new Date().toISOString()
@@ -248,11 +260,7 @@ export async function upsertPlatformOauthApp(input: {
 			input.app.requiredHosts === undefined
 				? (existing?.required_hosts_json ?? '[]')
 				: JSON.stringify(input.app.requiredHosts),
-			input.app.enabled === undefined
-				? (existing?.enabled ?? 1)
-				: input.app.enabled
-					? 1
-					: 0,
+			enabled,
 			existing?.created_at ?? now,
 			now,
 		)

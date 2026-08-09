@@ -152,15 +152,61 @@ test('partial saves retain omitted fields instead of clearing them', async () =>
 	expect(cleared.requiredHosts).toEqual([])
 })
 
-test('confidential flow requires a client secret', async () => {
+test('confidential flow requires a client secret only while enabled', async () => {
 	const { db, env } = createHarness()
+	// Enabled (default) without a secret is rejected.
 	await expect(
 		upsertPlatformOauthApp({
 			db,
 			env,
 			app: { ...baseGithubApp, clientSecret: null },
 		}),
-	).rejects.toThrow('Confidential flow requires a client secret.')
+	).rejects.toThrow('Confidential flow requires a client secret')
+
+	// Staged provisioning: a disabled app saves without a secret so an
+	// operator can paste credentials later.
+	const staged = await upsertPlatformOauthApp({
+		db,
+		env,
+		app: { ...baseGithubApp, clientSecret: null, enabled: false },
+	})
+	expect(staged.enabled).toBe(false)
+	expect(staged.hasClientSecret).toBe(false)
+
+	// Enabling it while the secret is still missing is rejected, including
+	// through a partial save that omits clientSecret (retain-on-omit keeps
+	// the absent secret).
+	await expect(
+		upsertPlatformOauthApp({
+			db,
+			env,
+			app: {
+				slug: baseGithubApp.slug,
+				clientId: baseGithubApp.clientId,
+				tokenUrl: baseGithubApp.tokenUrl,
+				authorizeUrl: baseGithubApp.authorizeUrl,
+				flow: 'confidential',
+				enabled: true,
+			},
+		}),
+	).rejects.toThrow('Confidential flow requires a client secret')
+
+	// Once the secret lands, enabling works.
+	const live = await upsertPlatformOauthApp({
+		db,
+		env,
+		app: {
+			slug: baseGithubApp.slug,
+			clientId: baseGithubApp.clientId,
+			tokenUrl: baseGithubApp.tokenUrl,
+			authorizeUrl: baseGithubApp.authorizeUrl,
+			flow: 'confidential',
+			clientSecret: 'late-pasted-secret',
+			enabled: true,
+		},
+	})
+	expect(live.enabled).toBe(true)
+	expect(live.hasClientSecret).toBe(true)
 })
 
 test('allowedScopes always contains defaultScopes and disabled apps hide from the default list', async () => {

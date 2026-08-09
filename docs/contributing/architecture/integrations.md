@@ -147,6 +147,13 @@ domain, all audited via `auditAdminCapabilityInvocation`:
 | `admin_platform_oauth_app_list`   | Includes `hasClientSecret` and per-app user connection counts                            |
 | `admin_platform_oauth_app_delete` | Fails while user connections reference the app — disable (`enabled = 0`) instead         |
 
+Confidential apps require a stored client secret only while `enabled`. An agent
+can therefore stage a complete provider config through `save` with
+`enabled: false` and a placeholder client id; the operator pastes the real
+client id and secret in `/admin/platform-integrations` and enables it. The
+enable transition re-validates, so a secretless confidential app can never
+become reachable.
+
 ## Where credentials live
 
 | Field                         | Storage                                       | Notes                                      |
