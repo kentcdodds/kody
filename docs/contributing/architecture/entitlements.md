@@ -525,13 +525,14 @@ Rules:
   `readCurrentEntitlementResourceUsage`. D1 has no `workflow_runs` table. See
   [Run records](./run-records.md).
 - **Rate-style limits** (email sends/receives per day, execute calls per day,
-  outbound fetches per day) are **authoritative in the per-user UserMeter
-  Durable Object** (UTC day keys). Call `consumeDailyEntitlement` on every
-  attempt: it resolves the plan limit, atomically checks and increments inside
-  the DO, and throws `EntitlementLimitError` when over limit. Every resolved
-  plan has a finite numeric limit. Counting attempts rather than successes keeps
-  the limit abuse-resistant for permanent rejects (parse failures,
-  entitlement/quota rejects).
+  outbound fetches per day, job runs per day) are **authoritative in the
+  per-user UserMeter Durable Object** (UTC day keys). Call
+  `consumeDailyEntitlement` on every attempt: it resolves the plan limit,
+  atomically checks and increments inside the DO, and throws
+  `EntitlementLimitError` when over limit. Every resolved plan has a finite
+  numeric limit. Counting attempts rather than successes keeps the limit
+  abuse-resistant for permanent rejects (parse failures, entitlement/quota
+  rejects).
 
   **Cold bootstrap:** missing `(resource, day)` rows trigger
   `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the
@@ -622,9 +623,9 @@ bucket with no estimate contributes zero until the estimate-backfill lane or a
 write-target probe records its first measurement. Enforcement remains more
 conservative: it live-probes the bucket being written and every unmeasured
 bucket, then adds those results to the D1 payload counter. Reporting can
-therefore lag enforcement briefly, but it no longer omits all StorageRunner
-bucket usage. The two values are not alternate D1 counters and this change does
-not alter storage-limit semantics.
+therefore lag enforcement briefly. Account usage reporting includes
+StorageRunner bucket estimates with the D1 payload counter. The two values are
+not alternate D1 counters and do not change storage-limit semantics.
 
 ### Concurrency
 

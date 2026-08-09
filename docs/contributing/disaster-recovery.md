@@ -53,8 +53,9 @@ recent evidence.
 | 2026-07-26 | First verified nightly D1 export (signed manifest, stored-object digest verified; ~118 MB).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Still unproven live: graduated production restore into the production database
-(drill-level evidence only; it shares the `FixedLengthStream` upload path), and
-`weekly/` retention aging through its lifecycle.
+(drill-level evidence only; it shares the `FixedLengthStream` upload path),
+automated Mailbox re-import against a sealed day, and `weekly/` retention aging
+through its lifecycle.
 
 ## Objectives
 
@@ -285,11 +286,13 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
   `BUNDLE_ARTIFACTS_KV` are staged. Full repo history is not restorable from
   backup media.
 - **Unpublished / in-progress repo-session work** is not exported.
-- **Mailbox restore is manual.** Staging and sealing protect the authoritative
-  graph and verify every owner dump against the mailbox index, but the normal
-  production restore handler does not yet import Mailbox rows. Automated,
-  resumable Mailbox re-import is tracked as a follow-up under
-  [#1223](https://github.com/kentcdodds/kody/issues/1223).
+- **Mailbox restore is a separate post-D1 step.** Staging and sealing protect
+  the authoritative graph and verify every owner dump against the mailbox index.
+  Graduated D1/StorageRunner/R2/artifact restore does not import Mailbox rows;
+  with ingress disabled, run
+  [Automated Mailbox re-import](#automated-mailbox-re-import) (or the
+  [manual fallback](#manual-mailbox-re-import-fallback)) and require
+  `"done": true` plus `"verified": true` before re-enabling ingress.
 - **StorageRunner restore is replace-per-bucket** (`importStorage` mode
   `replace`): each inventoried storage id is cleared and rewritten from the
   sealed dump. Storage ids absent from the inventory are not deleted by restore.
@@ -789,7 +792,6 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - Backup of `RunLog` run records and logs (observability; ~30 day DO
   self-retention), invocation idempotency ledger, and workflow projections;
   never-pruned job observability and activation state are backed up
-- Automated Mailbox re-import (sealed dumps are manually recoverable)
 - Backup of UserMeter (reconciliation/restart is the accepted recovery path)
 - Backup of `AUDIT_DB` hashed audit events (180-day evidence;
   accepted-unprotected 2026-08-07 — operator confirmed no backup lane for now)

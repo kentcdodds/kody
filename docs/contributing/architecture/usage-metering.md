@@ -1,13 +1,13 @@
 # Usage metering
 
-Kody records per-user usage events at runtime chokepoints so that cost
-attribution, future quotas, and abuse detection can be built on real data. This
-document describes the event schema, the `recordUsage()` helper contract, which
-chokepoints are instrumented, and the recipe for instrumenting a new chokepoint.
+Kody records per-user usage events at runtime chokepoints for cost attribution,
+admin cohort views, and abuse detection. This document describes the event
+schema, the `recordUsage()` helper contract, which chokepoints are instrumented,
+and the recipe for instrumenting a new chokepoint.
 
 Deliberately out of scope: quotas, plans, billing, enforcement, and admin
-dashboards. Metering builds the data; policy is a separate effort that reads the
-rollup table.
+dashboards (see [Entitlements](./entitlements.md) for plan limits). This
+document covers event capture and rollups only.
 
 ## Per-user isolation
 
@@ -178,8 +178,8 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
    tests), `recordUsage` upserts `usage_rollups` directly per event, so local
    admin pages and workers-unit tests work without Analytics Engine access.
 
-   The rollup is the cheap read path a future quota/entitlements layer will
-   consume: one point lookup per user, metric, and month.
+   The rollup is the cheap read path for month-to-date admin and cohort views:
+   one point lookup per user, metric, and month.
 
 ## Agent package popularity (MCP instructions hint)
 

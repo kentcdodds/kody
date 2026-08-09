@@ -24,9 +24,7 @@ to become.
   `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
   finite ceiling), finite per-plan resource limits, and the shared
   `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
-  strict `parsePlanName` for untrusted admin/API input). Emergency admin-only
-  `unlimited` is intentionally deferred until a follow-up deployment after
-  `0083-plan-default-free.sql`'s residual sweep.
+  strict `parsePlanName` for untrusted admin/API input).
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.
