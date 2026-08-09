@@ -1,5 +1,8 @@
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
-import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
+import {
+	type OnboardingBuiltInProvider,
+	type OnboardingChecklistLoaderData,
+} from '#universal/loader-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
 /**
@@ -20,6 +23,7 @@ export type OnboardingPayload = {
 	emailVerified: boolean
 	needsOnboarding: boolean
 	featuredListings: Array<OnboardingFeaturedListing>
+	builtInProviders: Array<OnboardingBuiltInProvider>
 	checklist: OnboardingChecklistLoaderData | null
 }
 

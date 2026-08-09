@@ -8,6 +8,7 @@ import {
 	getPlatformOauthAppBySlug,
 	getPlatformOauthAppClientSecret,
 	listPlatformOauthApps,
+	listTopPlatformAppsByUse,
 	upsertPlatformOauthApp,
 } from './platform-apps.ts'
 
@@ -256,6 +257,39 @@ test('deletePlatformOauthApp refuses while user connections reference the app', 
 		.prepare('DELETE FROM user_integrations WHERE user_id = ?')
 		.run('user-1')
 	expect(await deletePlatformOauthApp({ db, slug: 'github' })).toBe(true)
+})
+
+test('listTopPlatformAppsByUse orders enabled apps by connection count and hides disabled', async () => {
+	const { sqlite, db, env } = createHarness()
+	for (const slug of ['github', 'google', 'notion', 'slack']) {
+		await upsertPlatformOauthApp({
+			db,
+			env,
+			app: {
+				...baseGithubApp,
+				slug,
+				enabled: slug !== 'slack',
+			},
+		})
+	}
+	const insertConnection = sqlite.prepare(
+		`INSERT INTO user_integrations (
+			user_id, name, app_slug, platform_app_slug, access_token_secret_name
+		) VALUES (?, ?, NULL, ?, ?)`,
+	)
+	// google: 2 connections, notion: 1, github: 0, slack (disabled): 3.
+	insertConnection.run('user-1', 'google', 'google', 'googleAccessToken')
+	insertConnection.run('user-2', 'google', 'google', 'googleAccessToken')
+	insertConnection.run('user-1', 'notion', 'notion', 'notionAccessToken')
+	insertConnection.run('user-1', 'slack', 'slack', 'slackAccessToken')
+	insertConnection.run('user-2', 'slack', 'slack', 'slackAccessToken')
+	insertConnection.run('user-3', 'slack', 'slack', 'slackAccessToken')
+
+	const top = await listTopPlatformAppsByUse({ db, limit: 3 })
+	expect(top.map((app) => app.slug)).toEqual(['google', 'notion', 'github'])
+
+	const topTwo = await listTopPlatformAppsByUse({ db, limit: 2 })
+	expect(topTwo.map((app) => app.slug)).toEqual(['google', 'notion'])
 })
 
 test('user_integrations enforces exactly one of app_slug / platform_app_slug', async () => {

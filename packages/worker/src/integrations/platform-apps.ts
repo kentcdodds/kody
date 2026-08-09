@@ -88,6 +88,32 @@ export async function listPlatformOauthApps(input: {
 	return (result.results ?? []).map(mapPlatformOauthAppRow)
 }
 
+/**
+ * Enabled platform apps ordered by adoption (user connection count), for
+ * surfaces that highlight the most-used built-ins first. Ties fall back to
+ * creation order so a fresh deployment shows a stable list.
+ */
+export async function listTopPlatformAppsByUse(input: {
+	db: D1Database
+	limit: number
+}): Promise<Array<PlatformOauthApp>> {
+	const result = await input.db
+		.prepare(
+			`SELECT ${platformAppSelectColumns},
+				(
+					SELECT count(*) FROM user_integrations
+					WHERE user_integrations.platform_app_slug = platform_oauth_apps.slug
+				) AS connection_count
+			FROM platform_oauth_apps
+			WHERE enabled = 1
+			ORDER BY connection_count DESC, created_at ASC, slug ASC
+			LIMIT ?`,
+		)
+		.bind(input.limit)
+		.all<PlatformOauthAppRow>()
+	return (result.results ?? []).map(mapPlatformOauthAppRow)
+}
+
 export async function getPlatformOauthAppBySlug(input: {
 	db: D1Database
 	slug: string

@@ -695,6 +695,13 @@ export type AccountConnectionsLoaderData = {
 	availableProviders: Array<{ id: string; label: string }>
 }
 
+/** One-click built-in integration offered during onboarding. */
+export type OnboardingBuiltInProvider = {
+	slug: string
+	label: string
+	logoPath: string | null
+}
+
 export type OnboardingLoaderData = {
 	ok: true
 	loggedIn: boolean
@@ -713,6 +720,8 @@ export type OnboardingLoaderData = {
 	needsOnboarding: boolean
 	/** Admin-featured trusted listings offered as one-click starter installs. */
 	featuredListings: Array<OnboardingFeaturedListing>
+	/** Top enabled platform (built-in) integrations by use, for one-click connect. */
+	builtInProviders: Array<OnboardingBuiltInProvider>
 	/** Derived progress checklist; null when logged out. */
 	checklist: OnboardingChecklistLoaderData | null
 }

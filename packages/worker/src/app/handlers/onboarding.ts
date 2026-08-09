@@ -9,7 +9,12 @@ import {
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingFeaturedListings } from '#app/community-data.ts'
-import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
+import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
+import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
+import {
+	type OnboardingBuiltInProvider,
+	type OnboardingChecklistLoaderData,
+} from '#universal/loader-data.ts'
 import {
 	loadOnboardingData,
 	loadPublicOnboardingData,
@@ -50,6 +55,31 @@ async function loadHasSentWelcomeEmail(
 	return await userHasSentWelcomeEmail({ env, userId })
 }
 
+const onboardingBuiltInProviderLimit = 3
+
+/**
+ * Top enabled built-in integrations by adoption, offered as one-click
+ * connects in the wizard. Fails open to an empty list so a D1 blip (or a
+ * deployment with no platform apps) never breaks the onboarding payload.
+ */
+export async function loadOnboardingBuiltInProviders(
+	env: Env,
+): Promise<Array<OnboardingBuiltInProvider>> {
+	try {
+		const apps = await listTopPlatformAppsByUse({
+			db: env.APP_DB,
+			limit: onboardingBuiltInProviderLimit,
+		})
+		return apps.map((app) => ({
+			slug: app.slug,
+			label: app.label ?? app.slug,
+			logoPath: buildPlatformOauthAppLogoPath(app),
+		}))
+	} catch {
+		return []
+	}
+}
+
 function redirectUnverifiedToPending(request: Request) {
 	const requestUrl = new URL(request.url)
 	const redirectTo = normalizeRedirectTo(
@@ -74,6 +104,7 @@ export function createOnboardingHandler(env: Env) {
 						requestUrl: request.url,
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
+					builtInProviders: await loadOnboardingBuiltInProviders(env),
 				}
 				return renderAppPage({
 					request,
@@ -92,6 +123,7 @@ export function createOnboardingHandler(env: Env) {
 				stableUserId: user.mcpUser.userId,
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
+				builtInProviders: await loadOnboardingBuiltInProviders(env),
 			})
 			;[onboarding.checklist, onboarding.hasSentWelcomeEmail] =
 				await Promise.all([
@@ -123,6 +155,7 @@ export function createOnboardingApiHandler(env: Env) {
 						requestUrl: request.url,
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
+					builtInProviders: await loadOnboardingBuiltInProviders(env),
 				})
 			}
 
@@ -136,6 +169,9 @@ export function createOnboardingApiHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				featuredListings: user.emailVerified
 					? await loadOnboardingFeaturedListings(env, request)
+					: [],
+				builtInProviders: user.emailVerified
+					? await loadOnboardingBuiltInProviders(env)
 					: [],
 			})
 			if (user.emailVerified) {

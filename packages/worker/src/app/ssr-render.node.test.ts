@@ -331,6 +331,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		builtInProviders: [],
 		checklist: null,
 	})
 	expect(accountHtml).toContain('Verify your email')

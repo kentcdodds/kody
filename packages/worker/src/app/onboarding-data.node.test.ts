@@ -56,6 +56,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		builtInProviders: [],
 		checklist: null,
 	})
 
@@ -85,6 +86,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		emailVerified: true,
 		needsOnboarding: true,
 		featuredListings: [],
+		builtInProviders: [],
 		checklist: null,
 	})
 

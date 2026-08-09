@@ -1,6 +1,7 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import {
+	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
 	type OnboardingLoaderData,
 } from '#universal/loader-data.ts'
@@ -121,6 +122,7 @@ export function loadPublicOnboardingData(input: {
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		builtInProviders: [],
 		checklist: null,
 	}
 }
@@ -135,6 +137,8 @@ export async function loadOnboardingData(input: {
 	 * worker Env); this module stays narrow so it is trivially testable.
 	 */
 	featuredListings?: Array<OnboardingFeaturedListing>
+	/** Top enabled built-in integrations, loaded by the handler. */
+	builtInProviders?: Array<OnboardingBuiltInProvider>
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
 }): Promise<OnboardingLoaderData> {
@@ -174,6 +178,9 @@ export async function loadOnboardingData(input: {
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
+		builtInProviders: input.emailVerified
+			? (input.builtInProviders ?? [])
+			: [],
 		// Computed by the handler alongside the checklist probes.
 		hasSentWelcomeEmail: false,
 		checklist: input.checklist ?? null,

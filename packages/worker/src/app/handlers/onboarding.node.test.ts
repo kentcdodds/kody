@@ -61,6 +61,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		builtInProviders: [],
 		checklist: null,
 	})
 })
