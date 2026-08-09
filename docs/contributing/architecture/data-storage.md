@@ -1328,8 +1328,13 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 1. `packages/worker/src/package-runtime/package-import-resolution.ts` parses the
    `kody:@` prefix, the `@scope/name` package name, and an optional export
    subpath (default `.`).
-2. Resolution is scoped to the caller's `userId`; community package scopes do
-   not grant cross-user imports.
+2. Resolution is scoped to the caller's `userId`, with one structural exception:
+   scopes whose username belongs to a **platform account**
+   (`users.account_type = 'platform'`, e.g. `@kody`) resolve live from the
+   platform account's current published version when the caller has no copy of
+   their own (see decision record
+   [0014 — Platform scopes resolve live](../decisions/0014-platform-live-packages.md)).
+   Person-account and community package scopes never grant cross-user imports.
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.
 4. Static imports are pinned into bundle dependencies at publish time. Literal

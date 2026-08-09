@@ -51,8 +51,23 @@ export function rewritePackageManifestForFork(input: {
 export function scanCrossScopeReferences(input: {
 	files: Record<string, string>
 	expectedPackageScope: string
+	/**
+	 * Scopes that remain valid in any account — platform (built-in) scopes
+	 * such as `@kody`, whose packages resolve live for every caller — so
+	 * forks keep referencing them instead of being told to rewrite.
+	 */
+	allowedForeignScopes?: ReadonlyArray<string>
 }): Array<CrossScopeReference> {
 	const expectedScope = normalizePackageScope(input.expectedPackageScope)
+	const allowedScopes = new Set(
+		(input.allowedForeignScopes ?? []).map((scope) =>
+			normalizePackageScope(scope),
+		),
+	)
+	const isForeign = (scope: string) => {
+		const normalized = normalizePackageScope(scope)
+		return normalized !== expectedScope && !allowedScopes.has(normalized)
+	}
 	const seen = new Set<string>()
 	const results: Array<CrossScopeReference> = []
 
@@ -64,10 +79,7 @@ export function scanCrossScopeReferences(input: {
 				}
 				for (const dependency of parsed.kody?.dependencies ?? []) {
 					const dependencyScope = getScopeFromScopedName(dependency)
-					if (
-						dependencyScope != null &&
-						normalizePackageScope(dependencyScope) !== expectedScope
-					) {
+					if (dependencyScope != null && isForeign(dependencyScope)) {
 						addCrossScopeReference(seen, results, {
 							file,
 							specifier: dependency,
@@ -81,10 +93,7 @@ export function scanCrossScopeReferences(input: {
 
 		for (const match of content.matchAll(kodyImportPattern)) {
 			const importScope = match[1]
-			if (
-				importScope != null &&
-				normalizePackageScope(importScope) !== expectedScope
-			) {
+			if (importScope != null && isForeign(importScope)) {
 				addCrossScopeReference(seen, results, {
 					file,
 					specifier: `kody:@${importScope}/`,

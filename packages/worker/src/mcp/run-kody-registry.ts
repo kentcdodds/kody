@@ -779,7 +779,11 @@ export function collectPackageStorageGrantIds(input: {
 		grantedPackageIds.add(input.packageContext.packageId)
 	}
 	for (const dependency of input.dependencies) {
-		if (dependency.packageId) {
+		// Platform-scope (built-in) dependencies run in the caller's runtime
+		// but stay stateless there: granting the platform package UUID would
+		// open an empty caller-local bucket, never the platform account's
+		// data, so `packageStorage()` fails closed inside live platform code.
+		if (dependency.packageId && dependency.platformOwned !== true) {
 			grantedPackageIds.add(dependency.packageId)
 		}
 	}

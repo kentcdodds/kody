@@ -60,6 +60,7 @@ import {
 	deleteCommunityStarsByListingId,
 	insertCommunityActivityEvent,
 } from './social-repo.ts'
+import { listPlatformAccountUsernames } from '#worker/package-registry/scope-grants.ts'
 import {
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
@@ -971,6 +972,9 @@ export async function forkCommunityListing(input: {
 	const crossScopeReferences = scanCrossScopeReferences({
 		files: rewrittenFiles,
 		expectedPackageScope: input.expectedPackageScope,
+		// Platform scopes (e.g. @kody) resolve live for every caller; forks
+		// keep those references instead of rewriting them.
+		allowedForeignScopes: await listPlatformAccountUsernames(input.env.APP_DB),
 	})
 
 	const packageId = crypto.randomUUID()

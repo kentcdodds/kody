@@ -144,6 +144,14 @@ exhaustive.
   package's name is known when the code is written. Static imports are typed,
   publish-verified, dependency-graph-visible, and add zero per-call platform
   cost.
+- **Platform (built-in) scopes resolve live without forking.** When a scope's
+  username belongs to a platform account (for example `@kody`), a static import
+  such as `import gh from 'kody:@kody/github/issues'` resolves the platform
+  account's current published version even though you do not own a copy. The
+  code runs in **your** runtime against your secrets and grants; your own copy
+  of the same name always wins, so forking to customize keeps working. Platform
+  package code cannot use `packageStorage()` in your account, and dynamic
+  `import("kody:@kody/…")` is unsupported — use the static form.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published

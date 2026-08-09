@@ -110,3 +110,38 @@ import 'kody:@owner/a/y'`,
 
 	expect(sameScopeOnly).toEqual([])
 })
+
+test('scanCrossScopeReferences allows platform scopes to remain in forked packages', () => {
+	const files = {
+		'package.json': `{
+	"name": "@jane/pkg",
+	"kody": {
+		"id": "pkg",
+		"description": "Pkg",
+		"dependencies": ["@kody/github", "@owner/shared-utils"]
+	},
+	"exports": { ".": "./src/index.ts" }
+}
+`,
+		'src/index.ts': `import gh from 'kody:@kody/github/issues'
+import util from 'kody:@owner/util/helper'`,
+	}
+
+	const withAllowlist = scanCrossScopeReferences({
+		files,
+		expectedPackageScope: 'jane',
+		allowedForeignScopes: ['kody'],
+	})
+	expect(withAllowlist).toEqual([
+		{ file: 'package.json', specifier: '@owner/shared-utils' },
+		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
+	])
+
+	const withoutAllowlist = scanCrossScopeReferences({
+		files,
+		expectedPackageScope: 'jane',
+	})
+	expect(
+		withoutAllowlist.some((entry) => entry.specifier === 'kody:@kody/'),
+	).toBe(true)
+})

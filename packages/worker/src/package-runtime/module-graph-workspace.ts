@@ -154,7 +154,12 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 	entryPoint: string
 	loadedPackages?: Map<
 		string,
-		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
+		LoadedPackageSource & {
+			row: SavedPackageRecord
+			prefix: string
+			sourceOwnerUserId: string
+			platformScope: string | null
+		}
 	>
 }) {
 	const rootPackage = readRootPackage(input.sourceFiles)
@@ -187,14 +192,18 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 		sortedSpecifiers.map(async (specifier) => {
 			const parsed = parseKodyPackageSpecifier(specifier)
 			const cached = input.loadedPackages?.get(parsed.packageName)
-			const row =
-				cached?.row ??
-				(await resolveSavedPackageImport({
-					db: input.env.APP_DB,
-					userId: input.userId,
-					specifier: parsed,
-				}))
-			if (!row) {
+			const resolution = cached
+				? {
+						row: cached.row,
+						sourceOwnerUserId: cached.sourceOwnerUserId,
+						platformScope: cached.platformScope,
+					}
+				: await resolveSavedPackageImport({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						specifier: parsed,
+					})
+			if (!resolution) {
 				const plainRepo = await findPlainRepoPromotionHint(input.env.APP_DB, {
 					userId: input.userId,
 					packageIdOrKodyId: parsed.packageName,
@@ -205,12 +214,13 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 						: `Saved package "${parsed.packageName}" was not found for this user.`,
 				)
 			}
+			const { row } = resolution
 			const loaded =
 				cached ??
 				(await loadPackageSourceBySourceId({
 					env: input.env,
 					baseUrl: input.baseUrl,
-					userId: input.userId,
+					userId: resolution.sourceOwnerUserId,
 					sourceId: row.sourceId,
 				}))
 			if (!loaded.source.published_commit) {
@@ -224,6 +234,9 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 				kodyId: row.kodyId,
 				packageName: row.name,
 				packageId: row.id,
+				// Platform-owned dependency ids never become caller-side
+				// packageStorage grants; see collectPackageStorageGrantIds.
+				...(resolution.platformScope ? { platformOwned: true } : {}),
 			}
 		}),
 	)

@@ -22,6 +22,16 @@ export type BundleArtifactDependency = {
 	kodyId: string
 	packageName?: string
 	/**
+	 * True when the dependency resolved live from a platform (built-in)
+	 * scope such as `@kody`. Platform-owned ids are excluded from
+	 * `packageStorage()` grants: the code runs in the caller's runtime, but a
+	 * grant would open an empty caller-local bucket under the platform
+	 * package's UUID, which is misleading at best. Absent on older artifacts,
+	 * which predate platform imports and therefore only carry caller-owned
+	 * dependencies.
+	 */
+	platformOwned?: boolean
+	/**
 	 * Immutable saved-package UUID of the dependency, recorded at bundle time
 	 * from the resolved saved-package row. This is bundler-controlled
 	 * provenance: `packageStorage()` grants (see `createPackageStorageKodyTools`
