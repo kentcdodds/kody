@@ -32,7 +32,11 @@ import {
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
-import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
+import {
+	OnboardingStarterCard,
+	starterCardCss,
+} from '#client/routes/onboarding-starter-card.tsx'
+import { ProviderIcon } from '#client/provider-icons.tsx'
 import {
 	onboardingPath,
 	resolveOnboardingPendingVerificationPath,
@@ -55,11 +59,16 @@ import {
 /**
  * Onboarding wizard, ported from the redesign prototype
  * (`landing/onboarding.html`): shirt-pattern head, four-step stepper
- * (Connect your agent · See it work · Install a starter package), one surface
+ * (Connect your agent · See it work · Connect your tools), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
  * behind a disclosure. All server state (prompts, MCP URL, featured
  * listings, hasMcpClient / first-win polling) stays in the route state —
  * this is a restyle, not a rearchitecture.
+ *
+ * Step 3 leads with built-in integration cards (the path of least
+ * resistance) when the deployment has any enabled; starter packages demote
+ * to a compact "Advanced" list. With no built-ins, packages keep the card
+ * grid.
  */
 
 type OnboardingStep = 1 | 2 | 3
@@ -70,7 +79,7 @@ type FirstWinSubStep = 1 | 2 | 3
 const onboardingSteps = [
 	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
 	{ number: 2, label: 'See it work', hash: 'first-win' },
-	{ number: 3, label: 'Install a starter package', hash: 'starter-packages' },
+	{ number: 3, label: 'Connect your tools', hash: 'starter-packages' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
 	label: string
@@ -788,7 +797,7 @@ export function OnboardingRoute(handle: Handle) {
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											Install a starter package
+											Connect your tools
 										</h2>
 									</div>
 									<img
@@ -803,33 +812,44 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								{builtInProviders.length > 0 ? (
-									<div
-										data-testid="onboarding-built-in-integrations"
-										mix={css(builtInCalloutCss)}
-									>
-										<p mix={css(builtInLabelCss)}>Use a built-in integration</p>
-										<p mix={css(builtInLedeCss)}>
-											Connect in one click — Kody hosts the provider app, so
-											there is nothing to register.
+									<>
+										<p mix={css(panelLedeCss)}>
+											Connect a built-in integration in one click — Kody hosts
+											the provider app, so there is nothing to register.
 										</p>
-										<ul mix={css(builtInListCss)}>
+										<ul
+											mix={css(starterGridCss)}
+											data-testid="onboarding-built-in-integrations"
+										>
 											{builtInProviders.map((provider) => (
-												<li key={provider.slug}>
+												<li key={provider.slug} mix={css(providerCardCss)}>
 													<a
 														href={`/connect/oauth?provider=${encodeURIComponent(provider.slug)}`}
-														mix={css(builtInLinkCss)}
+														mix={css(providerCardLinkCss)}
 													>
-														{provider.logoPath ? (
-															<img
-																src={provider.logoPath}
-																alt=""
-																width={20}
-																height={20}
-																loading="lazy"
-																mix={css(builtInLogoCss)}
-															/>
-														) : null}
-														{provider.label}
+														<span mix={css(providerIconWellCss)}>
+															{provider.logoPath ? (
+																<img
+																	src={provider.logoPath}
+																	alt=""
+																	width={30}
+																	height={30}
+																	loading="lazy"
+																	mix={css(providerLogoCss)}
+																/>
+															) : (
+																<ProviderIcon
+																	providerId={provider.slug}
+																	size="30"
+																/>
+															)}
+														</span>
+														<strong mix={css(providerCardNameCss)}>
+															{provider.label}
+														</strong>
+														<span mix={css(providerConnectPillCss)}>
+															Connect
+														</span>
 													</a>
 												</li>
 											))}
@@ -841,33 +861,71 @@ export function OnboardingRoute(handle: Handle) {
 											</a>{' '}
 											for more power.
 										</p>
-									</div>
-								) : null}
-								<p mix={css(panelLedeCss)}>
-									{featuredListings.length > 0
-										? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
-										: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
-								</p>
-								<ul mix={css(starterGridCss)}>
-									{featuredListings.map((listing) => (
-										<OnboardingStarterCard
-											key={listing.id}
-											listing={listing}
-											loggedIn={loggedIn}
-										/>
-									))}
-									<OnboardingDiyCard setupPrompt={setupPrompt} />
-								</ul>
-								<p mix={css({ margin: '0.2rem 0 0' })}>
-									<a
-										href="/community"
-										target="_blank"
-										rel="noreferrer noopener"
-										mix={css(primaryLinkCss)}
-									>
-										Browse all community packages
-									</a>
-								</p>
+										<div mix={css(advancedSectionCss)}>
+											<p mix={css(advancedLabelCss)}>
+												Starter packages
+												<span mix={css(advancedBadgeCss)}>Advanced</span>
+											</p>
+											<p mix={css(advancedLedeCss)}>
+												{featuredListings.length > 0
+													? 'Admin-reviewed packages with one-click install. After install, use Copy prompt so your agent can finish any remaining setup.'
+													: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+											</p>
+											<ul mix={css(starterListCss)}>
+												{featuredListings.map((listing) => (
+													<OnboardingStarterCard
+														key={listing.id}
+														listing={listing}
+														loggedIn={loggedIn}
+														variant="row"
+													/>
+												))}
+												<OnboardingDiyCard
+													setupPrompt={setupPrompt}
+													variant="row"
+												/>
+											</ul>
+											<p mix={css({ margin: '0.2rem 0 0' })}>
+												<a
+													href="/community"
+													target="_blank"
+													rel="noreferrer noopener"
+													mix={css(primaryLinkCss)}
+												>
+													Browse all community packages
+												</a>
+											</p>
+										</div>
+									</>
+								) : (
+									<>
+										<p mix={css(panelLedeCss)}>
+											{featuredListings.length > 0
+												? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
+												: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+										</p>
+										<ul mix={css(starterGridCss)}>
+											{featuredListings.map((listing) => (
+												<OnboardingStarterCard
+													key={listing.id}
+													listing={listing}
+													loggedIn={loggedIn}
+												/>
+											))}
+											<OnboardingDiyCard setupPrompt={setupPrompt} />
+										</ul>
+										<p mix={css({ margin: '0.2rem 0 0' })}>
+											<a
+												href="/community"
+												target="_blank"
+												rel="noreferrer noopener"
+												mix={css(primaryLinkCss)}
+											>
+												Browse all community packages
+											</a>
+										</p>
+									</>
+								)}
 								{/* The last step doubles as the "what's left" recap, so the
 								    derived checklist lives here instead of distracting from
 								    the earlier steps. */}
@@ -1476,67 +1534,106 @@ function connectStatusContent(input: {
 	]
 }
 
-/* Built-in integrations: an accent well above the starter grid so the
-   one-click path reads first, with BYO as the power-user footnote. */
-const builtInCalloutCss = {
-	...getAccentCalloutCss(),
-	display: 'grid',
-	gap: '0.55rem',
+/* Built-in integrations lead step 3 as full cards — the path of least
+   resistance reads first, with BYO as the power-user footnote. */
+const providerCardCss = {
+	...starterCardCss,
 }
 
-const builtInLabelCss = {
-	margin: 0,
-	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
-	letterSpacing: '0.06em',
-	textTransform: 'uppercase' as const,
-	color: colors.primaryText,
-}
-
-const builtInLedeCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.94rem',
-	lineHeight: 1.55,
-}
-
-const builtInListCss = {
-	listStyle: 'none',
-	margin: 0,
-	padding: 0,
+const providerCardLinkCss = {
+	flex: 1,
 	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: '0.6rem',
-}
-
-const builtInLinkCss = {
-	display: 'inline-flex',
+	flexDirection: 'column' as const,
 	alignItems: 'center',
-	gap: '0.45rem',
-	padding: '0.5rem 0.95rem',
-	borderRadius: radius.full,
-	backgroundColor: colors.surface,
-	boxShadow: `inset 0 0 0 1.5px ${colors.border}`,
-	color: colors.text,
-	fontWeight: 600,
+	gap: '0.65rem',
 	textDecoration: 'none',
-	transition: `box-shadow ${transitions.fast}, transform ${transitions.fast}`,
-	[hoverMq]: {
-		'&:hover': {
-			boxShadow: `inset 0 0 0 1.5px ${colors.primary}`,
-			transform: 'translateY(-1px)',
-		},
-	},
+	color: 'inherit',
+	minWidth: 0,
 }
 
-const builtInLogoCss = {
+/* Same rounded well as CommunityListingIcon size="starter". */
+const providerIconWellCss = {
+	display: 'grid',
+	placeItems: 'center',
+	width: '3.2rem',
+	height: '3.2rem',
+	borderRadius: '12px',
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	marginBottom: '0.2rem',
+	transition: `border-color 160ms ${transitions.easeOut}`,
+}
+
+const providerLogoCss = {
 	display: 'block',
 	borderRadius: '4px',
+}
+
+const providerCardNameCss = {
+	color: colors.text,
+	fontWeight: 650,
+	fontSize: '0.98rem',
+}
+
+const providerConnectPillCss = {
+	...getPillButtonCss(),
+	marginTop: 'auto',
+	width: '100%',
+	fontSize: '0.95rem',
+	textAlign: 'center' as const,
 }
 
 const builtInByoCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.9rem',
+}
+
+/* Starter packages demote to a labeled "Advanced" list under the cards. */
+const advancedSectionCss = {
+	display: 'grid',
+	gap: '0.55rem',
+	marginTop: '0.6rem',
+	paddingTop: '1.1rem',
+	borderTop: `1px solid ${colors.border}`,
+}
+
+const advancedLabelCss = {
+	margin: 0,
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.5rem',
+	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
+	letterSpacing: '0.06em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const advancedBadgeCss = {
+	display: 'inline-block',
+	padding: '0.18rem 0.5rem',
+	borderRadius: radius.full,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	font: `700 0.68rem/1 ${typography.fontFamilyBody}`,
+	letterSpacing: '0.06em',
+	color: colors.textMuted,
+}
+
+const advancedLedeCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.92rem',
+	lineHeight: 1.55,
+	maxWidth: '68ch',
+}
+
+const starterListCss = {
+	listStyle: 'none',
+	margin: '0.2rem 0 0',
+	padding: 0,
+	display: 'grid',
+	gap: '0.6rem',
 }
 
 /* Starter packages: compact centered cards; the DIY card breaks the grid

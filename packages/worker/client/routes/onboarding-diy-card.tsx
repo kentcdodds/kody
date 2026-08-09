@@ -6,10 +6,13 @@ import {
 	starterCardCss,
 	starterCopyPromptTooltipCss,
 	starterGhostButtonCss,
+	starterRowCss,
 } from '#client/routes/onboarding-starter-card.tsx'
 
 type OnboardingDiyCardProps = {
 	setupPrompt: string
+	/** `row` matches the compact "Advanced" starter list. */
+	variant?: 'card' | 'row'
 }
 
 const copyPromptTooltip =
@@ -41,34 +44,43 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 		}, 2000)
 	}
 
-	return () => (
-		<li mix={css(diyCardCss)} data-testid="onboarding-diy-card">
-			<div mix={css(diyBodyCss)}>
-				<em mix={css(diyEyebrowCss)}>Build it yourself</em>
-				<strong mix={css(diyTitleCss)}>Choose your own adventure</strong>
-				<span mix={css(diyDescriptionCss)}>
-					Skip the starters and ask your agent what Kody can do — connect an
-					integration, explore, and build something custom.
-				</span>
-			</div>
-			<button
-				type="button"
-				aria-describedby="onboarding-diy-prompt-tip"
-				disabled={!handle.props.setupPrompt}
-				mix={[css(diyCopyButtonCss), on('click', () => void copyPrompt())]}
-				data-testid="onboarding-diy-copy"
+	return () => {
+		const isRow = handle.props.variant === 'row'
+		return (
+			<li
+				mix={css(isRow ? diyRowCss : diyCardCss)}
+				data-testid="onboarding-diy-card"
 			>
-				{copyState === 'copied'
-					? 'Copied'
-					: copyState === 'error'
-						? 'Copy failed'
-						: 'Copy prompt'}
-				<span id="onboarding-diy-prompt-tip" role="tooltip">
-					{copyPromptTooltip}
-				</span>
-			</button>
-		</li>
-	)
+				<div mix={css(isRow ? diyRowBodyCss : diyBodyCss)}>
+					<em mix={css(diyEyebrowCss)}>Build it yourself</em>
+					<strong mix={css(diyTitleCss)}>Choose your own adventure</strong>
+					<span mix={css(diyDescriptionCss)}>
+						Skip the starters and ask your agent what Kody can do — connect an
+						integration, explore, and build something custom.
+					</span>
+				</div>
+				<button
+					type="button"
+					aria-describedby="onboarding-diy-prompt-tip"
+					disabled={!handle.props.setupPrompt}
+					mix={[
+						css(isRow ? diyRowCopyButtonCss : diyCopyButtonCss),
+						on('click', () => void copyPrompt()),
+					]}
+					data-testid="onboarding-diy-copy"
+				>
+					{copyState === 'copied'
+						? 'Copied'
+						: copyState === 'error'
+							? 'Copy failed'
+							: 'Copy prompt'}
+					<span id="onboarding-diy-prompt-tip" role="tooltip">
+						{copyPromptTooltip}
+					</span>
+				</button>
+			</li>
+		)
+	}
 }
 
 const diyCardCss = {
@@ -108,4 +120,27 @@ const diyDescriptionCss = {
 const diyCopyButtonCss = {
 	...starterGhostButtonCss,
 	...starterCopyPromptTooltipCss,
+}
+
+const diyRowCss = {
+	...starterRowCss,
+	borderStyle: 'dashed' as const,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.07)`,
+}
+
+const diyRowBodyCss = {
+	flex: 1,
+	display: 'grid',
+	gap: '0.1rem',
+	minWidth: 'min(16rem, 100%)',
+	textAlign: 'left' as const,
+	justifyItems: 'start',
+}
+
+const diyRowCopyButtonCss = {
+	...starterGhostButtonCss,
+	...starterCopyPromptTooltipCss,
+	width: 'auto',
+	flex: 'none',
+	fontSize: '0.9rem',
 }

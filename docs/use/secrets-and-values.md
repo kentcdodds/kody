@@ -33,7 +33,7 @@ as your own secrets, the same as any other integration.
 Built-in or not, a connection authorizes _your_ agent — and any code you run or
 install — to act as you on that provider. Kody does not control or supervise
 what your agent does with the access you grant; scope connections deliberately
-and revoke ones you no longer use. See the [Terms](/terms).
+and revoke unused ones. See the [Terms](/terms).
 
 ## Placeholders in `fetch` and capability inputs
 

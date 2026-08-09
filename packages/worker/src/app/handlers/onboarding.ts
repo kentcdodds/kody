@@ -55,7 +55,7 @@ async function loadHasSentWelcomeEmail(
 	return await userHasSentWelcomeEmail({ env, userId })
 }
 
-const onboardingBuiltInProviderLimit = 3
+const onboardingBuiltInProviderLimit = 6
 
 /**
  * Top enabled built-in integrations by adoption, offered as one-click

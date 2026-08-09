@@ -22,6 +22,12 @@ import {
 type OnboardingStarterCardProps = {
 	listing: OnboardingFeaturedListing
 	loggedIn: boolean
+	/**
+	 * `card`: the centered grid tile (default). `row`: the compact list item
+	 * used when built-in integrations own the step-3 spotlight and starter
+	 * packages demote to an "Advanced" list.
+	 */
+	variant?: 'card' | 'row'
 }
 
 type InstallApiPayload = {
@@ -135,6 +141,7 @@ export function OnboardingStarterCard(
 
 	return () => {
 		const { listing } = handle.props
+		const isRow = handle.props.variant === 'row'
 		const detailHref = routes.communityDetail.href({ listingId: listing.id })
 		const existingInstall = listing.viewerInstall ?? null
 		const readyPrompt = agentPrompt ?? existingInstall?.agentPrompt ?? null
@@ -149,27 +156,41 @@ export function OnboardingStarterCard(
 
 		return (
 			<li
-				mix={css(starterCardCss)}
+				mix={css(isRow ? starterRowCss : starterCardCss)}
 				data-testid={`onboarding-starter-${listing.id}`}
 			>
 				<a
 					href={detailHref}
 					target="_blank"
 					rel="noreferrer noopener"
-					mix={css(starterCardLinkCss)}
+					mix={css(isRow ? starterRowLinkCss : starterCardLinkCss)}
 				>
-					<CommunityListingIcon listing={listing} size="starter" />
-					<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
-					<span mix={css(starterCardDescriptionCss)}>
-						{listing.description}
-					</span>
+					<CommunityListingIcon
+						listing={listing}
+						size={isRow ? 'card' : 'starter'}
+					/>
+					{isRow ? (
+						<span mix={css(starterRowTextCss)}>
+							<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
+							<span mix={css(starterCardDescriptionCss)}>
+								{listing.description}
+							</span>
+						</span>
+					) : (
+						<>
+							<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
+							<span mix={css(starterCardDescriptionCss)}>
+								{listing.description}
+							</span>
+						</>
+					)}
 				</a>
 				{showCopyPrompt ? (
 					<button
 						type="button"
 						aria-describedby={`onboarding-starter-prompt-tip-${listing.id}`}
 						mix={[
-							css(copyPromptButtonCss),
+							css(isRow ? rowCopyPromptButtonCss : copyPromptButtonCss),
 							on('click', () => void copyPrompt(readyPrompt)),
 						]}
 						data-testid={`onboarding-starter-copy-${listing.id}`}
@@ -191,7 +212,7 @@ export function OnboardingStarterCard(
 						type="button"
 						disabled={phase === 'installing'}
 						mix={[
-							css(installButtonCss),
+							css(isRow ? rowInstallButtonCss : installButtonCss),
 							on('click', () => void submitInstall()),
 						]}
 						data-testid={`onboarding-starter-install-${listing.id}`}
@@ -201,7 +222,7 @@ export function OnboardingStarterCard(
 				)}
 				{readyStatus ? (
 					<p
-						mix={css(starterStatusCss)}
+						mix={css(isRow ? starterRowStatusCss : starterStatusCss)}
 						role="status"
 						data-testid={`onboarding-starter-status-${listing.id}`}
 					>
@@ -210,7 +231,7 @@ export function OnboardingStarterCard(
 				) : null}
 				{errorMessage ? (
 					<p
-						mix={css(starterErrorCss)}
+						mix={css(isRow ? starterRowErrorCss : starterErrorCss)}
 						role="alert"
 						data-testid={`onboarding-starter-error-${listing.id}`}
 					>
@@ -354,6 +375,57 @@ const copyPromptButtonCss = {
 	...starterCopyPromptTooltipCss,
 }
 
+/* Compact "Advanced" list row: icon + text left, action right, status wraps
+   to a full-width line beneath. */
+export const starterRowCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.7rem 0.9rem',
+	backgroundColor: colors.background,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
+	padding: '0.7rem 0.9rem',
+	minWidth: 0,
+	transition: `border-color 160ms ${transitions.easeOut}`,
+	[hoverMq]: {
+		'&:hover': {
+			borderColor: colors.primary,
+		},
+		'&:hover a strong': {
+			color: colors.primaryText,
+		},
+	},
+}
+
+const starterRowLinkCss = {
+	flex: 1,
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.7rem',
+	textDecoration: 'none',
+	color: 'inherit',
+	minWidth: 'min(16rem, 100%)',
+}
+
+const starterRowTextCss = {
+	display: 'grid',
+	gap: '0.1rem',
+	minWidth: 0,
+	textAlign: 'left' as const,
+}
+
+const rowActionButtonSizeCss = {
+	width: 'auto',
+	flex: 'none',
+	fontSize: '0.9rem',
+}
+
+const rowInstallButtonCss = {
+	...getPillButtonCss(),
+	...rowActionButtonSizeCss,
+}
+
 /* Install confirmation pops in like the wizard checks. */
 const starterStatusCss = {
 	margin: 0,
@@ -369,4 +441,22 @@ const starterErrorCss = {
 	...starterStatusCss,
 	color: colors.error,
 	textWrap: 'pretty' as const,
+}
+
+const rowCopyPromptButtonCss = {
+	...getPillButtonCss(),
+	...rowActionButtonSizeCss,
+	...starterCopyPromptTooltipCss,
+}
+
+const starterRowStatusCss = {
+	...starterStatusCss,
+	flexBasis: '100%',
+	textAlign: 'left' as const,
+}
+
+const starterRowErrorCss = {
+	...starterErrorCss,
+	flexBasis: '100%',
+	textAlign: 'left' as const,
 }
