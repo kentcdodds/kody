@@ -148,6 +148,60 @@ function formUrlEncodeBasicCredential(value: string) {
 	return encodeURIComponent(value).replace(/%20/g, '+')
 }
 
+const hoistedAuthedUserFields = [
+	'access_token',
+	'refresh_token',
+	'expires_in',
+	'token_type',
+	'scope',
+] as const
+
+/**
+ * Normalizes provider-specific success payload shapes to the standard OAuth
+ * top-level fields. Slack's `oauth.v2.access` nests user tokens under
+ * `authed_user` (top-level `access_token` is the bot token, absent for
+ * user-scope-only apps); hoisting the nested fields keeps token persistence
+ * provider-agnostic. Present top-level fields are never overwritten.
+ */
+export function normalizeOAuthTokenExchangePayload(
+	payload: Record<string, unknown>,
+): Record<string, unknown> {
+	const topLevelToken = payload.access_token
+	if (typeof topLevelToken === 'string' && topLevelToken.trim()) {
+		return payload
+	}
+	const authedUser = payload.authed_user
+	if (
+		!authedUser ||
+		typeof authedUser !== 'object' ||
+		Array.isArray(authedUser)
+	) {
+		return payload
+	}
+	const nested = authedUser as Record<string, unknown>
+	const nestedToken = nested.access_token
+	if (typeof nestedToken !== 'string' || !nestedToken.trim()) {
+		return payload
+	}
+	const hoisted: Record<string, unknown> = { ...payload }
+	for (const field of hoistedAuthedUserFields) {
+		if (hoisted[field] === undefined && nested[field] !== undefined) {
+			hoisted[field] = nested[field]
+		}
+	}
+	return hoisted
+}
+
+/**
+ * Slack reports token-endpoint failures as `{ ok: false, error }` with
+ * HTTP 200, so a status check alone misses them.
+ */
+export function isOAuthTokenExchangeSoftFailure(
+	payload: Record<string, unknown>,
+): boolean {
+	return payload.ok === false
+}
+
 /**
  * Provider token-endpoint failures must not reuse HTTP 401 — the connect UI
  * treats 401 from `/account/secrets.json` as an expired Kody session.

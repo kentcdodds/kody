@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import {
 	buildOAuthTokenExchangeFailurePayload,
 	buildOAuthTokenExchangeRequest,
+	isOAuthTokenExchangeSoftFailure,
+	normalizeOAuthTokenExchangePayload,
 	oauthTokenExchangeFailureHttpStatus,
 	resolveTokenExchangeStyle,
 } from './oauth-token-exchange.ts'
@@ -195,4 +197,51 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 			style: 'basic-form',
 		}),
 	).toThrow('basic-form token exchange requires client_id in params.')
+})
+
+test('normalizeOAuthTokenExchangePayload hoists Slack authed_user tokens', () => {
+	// Slack user-scope-only apps: no top-level access_token at all.
+	const userOnly = normalizeOAuthTokenExchangePayload({
+		ok: true,
+		app_id: 'A0123',
+		authed_user: {
+			id: 'U0123',
+			scope: 'channels:history,chat:write',
+			access_token: 'xoxp-user-token',
+			token_type: 'user',
+		},
+		team: { id: 'T0123', name: 'Acme' },
+	})
+	expect(userOnly.access_token).toBe('xoxp-user-token')
+	expect(userOnly.token_type).toBe('user')
+	expect(userOnly.scope).toBe('channels:history,chat:write')
+	// The original nested record survives for callers that want it.
+	expect(userOnly.authed_user).toMatchObject({ id: 'U0123' })
+
+	// A present top-level token (Slack bot token, standard providers) is
+	// never overwritten by the nested user token.
+	const botAndUser = normalizeOAuthTokenExchangePayload({
+		ok: true,
+		access_token: 'xoxb-bot-token',
+		token_type: 'bot',
+		authed_user: { id: 'U0123', access_token: 'xoxp-user-token' },
+	})
+	expect(botAndUser.access_token).toBe('xoxb-bot-token')
+	expect(botAndUser.token_type).toBe('bot')
+
+	// Standard OAuth payloads pass through untouched.
+	const standard = { access_token: 'token', refresh_token: 'refresh' }
+	expect(normalizeOAuthTokenExchangePayload(standard)).toBe(standard)
+	const noToken = { error: 'invalid_grant' }
+	expect(normalizeOAuthTokenExchangePayload(noToken)).toBe(noToken)
+})
+
+test('isOAuthTokenExchangeSoftFailure detects Slack ok:false payloads', () => {
+	expect(
+		isOAuthTokenExchangeSoftFailure({ ok: false, error: 'invalid_code' }),
+	).toBe(true)
+	expect(
+		isOAuthTokenExchangeSoftFailure({ ok: true, access_token: 'xoxp-token' }),
+	).toBe(false)
+	expect(isOAuthTokenExchangeSoftFailure({ access_token: 'token' })).toBe(false)
 })

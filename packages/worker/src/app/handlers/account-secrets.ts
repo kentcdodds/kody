@@ -51,6 +51,8 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
 	buildOAuthTokenExchangeRequest,
+	isOAuthTokenExchangeSoftFailure,
+	normalizeOAuthTokenExchangePayload,
 	oauthTokenExchangeFailureHttpStatus,
 	resolveTokenExchangeStyle,
 	type TokenExchangeStyle,
@@ -777,7 +779,19 @@ async function handleOAuthExchangeAction(input: {
 			oauthTokenExchangeFailureHttpStatus(),
 		)
 	}
-	return jsonResponse(payloadRecord, response.status)
+	if (isOAuthTokenExchangeSoftFailure(payloadRecord)) {
+		return jsonResponse(
+			buildOAuthTokenExchangeFailurePayload({
+				providerStatus: response.status,
+				payload: payloadRecord,
+			}),
+			oauthTokenExchangeFailureHttpStatus(),
+		)
+	}
+	return jsonResponse(
+		normalizeOAuthTokenExchangePayload(payloadRecord),
+		response.status,
+	)
 }
 
 async function saveIntegrationConfig(input: {
