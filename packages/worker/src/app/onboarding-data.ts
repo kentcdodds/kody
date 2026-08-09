@@ -178,9 +178,7 @@ export async function loadOnboardingData(input: {
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
-		builtInProviders: input.emailVerified
-			? (input.builtInProviders ?? [])
-			: [],
+		builtInProviders: input.emailVerified ? (input.builtInProviders ?? []) : [],
 		// Computed by the handler alongside the checklist probes.
 		hasSentWelcomeEmail: false,
 		checklist: input.checklist ?? null,

@@ -807,9 +807,7 @@ export function OnboardingRoute(handle: Handle) {
 										data-testid="onboarding-built-in-integrations"
 										mix={css(builtInCalloutCss)}
 									>
-										<p mix={css(builtInLabelCss)}>
-											Use a built-in integration
-										</p>
+										<p mix={css(builtInLabelCss)}>Use a built-in integration</p>
 										<p mix={css(builtInLedeCss)}>
 											Connect in one click — Kody hosts the provider app, so
 											there is nothing to register.
@@ -892,7 +890,7 @@ export function OnboardingRoute(handle: Handle) {
 
 						{/* Outside the wizard panels on purpose: the prototype keeps the
 					    BYOK disclosure visible on every step. */}
-						{renderByokDetails()}
+						{renderByokDetails(builtInProviders.length > 0)}
 
 						{loggedIn ? null : (
 							<p mix={css(authLinksCss)}>
@@ -975,7 +973,7 @@ function WizardNavigation(
  * prototype's onboarding-specific framing ("Why there's no one-click
  * connect"); the integrations page keeps its own `byok-explainer` copy.
  */
-function renderByokDetails() {
+function renderByokDetails(hasBuiltIns: boolean) {
 	return (
 		<details mix={css(byokDetailsCss)}>
 			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
@@ -993,12 +991,14 @@ function renderByokDetails() {
 				/>
 				<div>
 					<h2 id="byok-note-title" mix={css(byokTitleCss)}>
-						Why there&apos;s no one-click connect
+						{hasBuiltIns
+							? 'Why bring your own keys?'
+							: "Why there's no one-click connect"}
 					</h2>
 					<p mix={css(byokCopyCss)}>
-						Kody never asks a company for access on your behalf. You create the
-						connection yourself, and your agent walks you through it, so it is
-						completely yours: your app, your scopes, no middleman.
+						{hasBuiltIns
+							? 'Built-in integrations run on an app Kody hosts, for a fast start. For everything else — or for full control — you create the connection yourself, and your agent walks you through it, so it is completely yours: your app, your scopes, no middleman.'
+							: 'Kody never asks a company for access on your behalf. You create the connection yourself, and your agent walks you through it, so it is completely yours: your app, your scopes, no middleman.'}
 					</p>
 					<dl mix={css(byokCompareCss)}>
 						<div>
