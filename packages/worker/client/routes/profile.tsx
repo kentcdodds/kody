@@ -10,7 +10,6 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { on } from '#client/event-mixin.ts'
 import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -23,7 +22,6 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getPrimaryButtonCss,
-	getSecondaryButtonCss,
 	inputCss,
 	layoutMaxWidths,
 	mutedLinkCss,
@@ -105,8 +103,6 @@ export async function profileRouteLoader(
 export function ProfileRoute(handle: Handle) {
 	let shell: ProfileShellLoaderData | ProfileUnavailableLoaderData | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
-	let followState: 'idle' | 'submitting' | 'error' = 'idle'
-	let followMessage: string | null = null
 	let shellLoadedForUsername: string | null = null
 	let shellRequestedForUsername: string | null = null
 	let shellLoadRequestId = 0
@@ -153,8 +149,6 @@ export function ProfileRoute(handle: Handle) {
 				isFollowing: payload.isFollowing,
 				visibility: payload.profile.visibility,
 			}
-			followState = 'idle'
-			followMessage = null
 			shellLoadedForUsername = username
 			shellStatus = 'ready'
 			handle.update()
@@ -162,48 +156,6 @@ export function ProfileRoute(handle: Handle) {
 			if (requestId !== shellLoadRequestId) return
 			shellLoadedForUsername = username
 			shellStatus = 'error'
-			handle.update()
-		}
-	}
-
-	async function submitFollow(nextFollow: boolean) {
-		if (!shell || !shell.ok || followState === 'submitting') return
-		followState = 'submitting'
-		followMessage = null
-		handle.update()
-
-		try {
-			const response = await fetch(
-				routes.profileFollowApiPost.href({ username: shell.username }),
-				{
-					method: 'POST',
-					headers: {
-						Accept: 'application/json',
-						'Content-Type': 'application/json',
-					},
-					credentials: 'include',
-					body: JSON.stringify({ follow: nextFollow }),
-				},
-			)
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<{ ok: boolean; error?: string }>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error ?? 'Unable to update follow status.')
-			}
-			shell = { ...shell, isFollowing: nextFollow }
-			followState = 'idle'
-			handle.update()
-			const frame = handle.frames.get(PROFILE_TARGET)
-			if (frame) void frame.reload()
-		} catch (error) {
-			followState = 'error'
-			followMessage =
-				error instanceof Error
-					? error.message
-					: 'Unable to update follow status.'
 			handle.update()
 		}
 	}
@@ -221,9 +173,6 @@ export function ProfileRoute(handle: Handle) {
 		}
 		void frame.reload()
 	})
-
-	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
 
 	return () => {
 		const username = getCurrentUsername(handle)
@@ -280,45 +229,13 @@ export function ProfileRoute(handle: Handle) {
 
 		return (
 			<section mix={css(pageCss)}>
-				{readyShell ? (
+				{readyShell?.isSelf ? (
 					<div mix={css(actionsCss)} data-testid="profile-actions">
-						{readyShell.isSelf ? (
-							<>
-								<a href={routes.account.href()} mix={css(mutedLinkCss)}>
-									Edit profile
-								</a>
-								{readyShell.visibility === 'private' ? (
-									<span mix={css(badgeCss)}>Private</span>
-								) : null}
-							</>
-						) : readyShell.loggedIn ? (
-							<button
-								type="button"
-								disabled={followState === 'submitting'}
-								mix={[
-									on('click', () => void submitFollow(!readyShell.isFollowing)),
-									css(
-										readyShell.isFollowing
-											? secondaryButtonCss
-											: primaryButtonCss,
-									),
-								]}
-							>
-								{followState === 'submitting'
-									? 'Saving…'
-									: readyShell.isFollowing
-										? 'Unfollow'
-										: 'Follow'}
-							</button>
-						) : (
-							<a href="/login" mix={css(mutedLinkCss)}>
-								Log in to follow
-							</a>
-						)}
-						{followMessage ? (
-							<p mix={css({ color: colors.danger, margin: 0 })} role="status">
-								{followMessage}
-							</p>
+						<a href={routes.account.href()} mix={css(mutedLinkCss)}>
+							Edit profile
+						</a>
+						{readyShell.visibility === 'private' ? (
+							<span mix={css(badgeCss)}>Private</span>
 						) : null}
 					</div>
 				) : null}

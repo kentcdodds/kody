@@ -24,6 +24,10 @@ registerFrame(PROFILE_TARGET, {
 			activity: data.activity,
 			query: data.query,
 			isSelf: data.isSelf,
+			loggedIn: data.loggedIn,
+			isFollowing: data.isFollowing,
+			returnTo: routes.profile.href({ username }),
+			followError: new URL(request.url).searchParams.get('followError'),
 		})
 	},
 })
