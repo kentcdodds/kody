@@ -77,6 +77,21 @@ function buildDestructiveOverwriteConfirmationMessage(input: {
 	].join(' ')
 }
 
+/**
+ * Stable phrase from the package source overwrite confirmation gate. Agents
+ * must re-call with `confirm_destructive_overwrite: true` after explicit user
+ * approval — caller-correctable, not a platform defect. Matched by MCP
+ * observability so plain Errors from shared policy helpers stay off Sentry.
+ */
+export const destructiveOverwriteConfirmationMessagePhrase = `Set ${destructiveOverwriteConfirmationField}: true only after the user explicitly approves destructive overwrite`
+
+export function isDestructiveOverwriteConfirmationMessage(message: string) {
+	return (
+		message.includes('would overwrite existing package source') &&
+		message.includes(destructiveOverwriteConfirmationMessagePhrase)
+	)
+}
+
 export async function assertRestorablePackageSourceSnapshot(input: {
 	env: Env
 	userId: string
@@ -329,6 +344,16 @@ function buildPrivateVisibilityChangeConfirmationMessage(input: {
 		`${input.operation} would change package.json private visibility from ${describePackagePrivateField(beforeValue)} to ${describePackagePrivateField(afterValue)}.`,
 		`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves the visibility change.`,
 	].join(' ')
+}
+
+/**
+ * Stable phrase from the package.json `"private"` confirmation gate. Same
+ * caller-correctable class as destructive overwrite confirmation.
+ */
+export const privateVisibilityChangeConfirmationMessagePhrase = `Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves`
+
+export function isPrivateVisibilityChangeConfirmationMessage(message: string) {
+	return message.includes(privateVisibilityChangeConfirmationMessagePhrase)
 }
 
 export function assertPackagePrivateVisibilityChangeAllowed(input: {

@@ -276,6 +276,22 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			),
 		})
 
+		// package_save destructive overwrite confirmation (issue 7661329778).
+		// Plain Error from shared source-safety-policy helpers.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'package_save',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'package_save would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
+			cause: new Error(
+				'package_save would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
+			),
+		})
+
 		// Downstream user-connected MCP server tool failure (KODY-CLOUDFLARE-4B).
 		logMcpEvent({
 			...callerFailureBase,
@@ -292,7 +308,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 	})
 
-	expect(payloads).toHaveLength(16)
+	expect(payloads).toHaveLength(17)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

@@ -9,6 +9,10 @@ import {
 	isRepoSearchInvalidRegexMessage,
 	isRepoSessionInactiveMessage,
 } from '#worker/repo/repo-session-caller-error.ts'
+import {
+	isDestructiveOverwriteConfirmationMessage,
+	isPrivateVisibilityChangeConfirmationMessage,
+} from '#worker/repo/source-safety-policy.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
@@ -154,6 +158,20 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error &&
 				(isRepoSessionInactiveMessage(entry.message) ||
 					isRepoSearchInvalidRegexMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// Package source safety confirmation gates (confirm_destructive_overwrite /
+	// confirm_private_visibility_change) throw plain Errors from shared policy
+	// helpers used by MCP capabilities and Durable Object paths. Agents re-call
+	// with the flag after explicit user approval — keep them off Sentry.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				(isDestructiveOverwriteConfirmationMessage(entry.message) ||
+					isPrivateVisibilityChangeConfirmationMessage(entry.message)),
 		)
 	) {
 		return true

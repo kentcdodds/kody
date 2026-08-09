@@ -1,11 +1,15 @@
 import { expect, test } from 'vitest'
 import {
+	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
 	assertRestorablePackageSourceSnapshot,
 	buildPublishedCommitHeadMismatchCallerMessage,
 	buildSourceRecoveryProblemMessage,
 	destructiveOverwriteConfirmationField,
+	isDestructiveOverwriteConfirmationMessage,
+	isPrivateVisibilityChangeConfirmationMessage,
 	isPublishedCommitHeadMismatchMessage,
+	privateVisibilityChangeConfirmationField,
 } from './source-safety-policy.ts'
 import { type EntitySourceRow } from './types.ts'
 
@@ -96,6 +100,47 @@ test('package source overwrite requires explicit destructive confirmation before
 			operation: 'package_save',
 		}),
 	).rejects.toThrow(destructiveOverwriteConfirmationField)
+})
+
+test('destructive overwrite confirmation messages are detected for caller-error classification', async () => {
+	let message = ''
+	try {
+		await assertPackageSourceOverwriteAllowed({
+			env: createEnvWithSnapshot({ 'package.json': '{}' }),
+			userId: 'user-1',
+			source: packageSource(),
+			operation: 'package_save',
+		})
+	} catch (error) {
+		message = error instanceof Error ? error.message : String(error)
+	}
+	expect(isDestructiveOverwriteConfirmationMessage(message)).toBe(true)
+	expect(
+		isDestructiveOverwriteConfirmationMessage(
+			'package_save stopped by the production package source safety policy.',
+		),
+	).toBe(false)
+})
+
+test('private visibility confirmation messages are detected for caller-error classification', () => {
+	let message = ''
+	try {
+		assertPackagePrivateVisibilityChangeAllowed({
+			beforeContent: '{"name":"@x/y","private":true}',
+			afterContent: '{"name":"@x/y","private":false}',
+			isNewPackage: false,
+			operation: 'package_save',
+		})
+	} catch (error) {
+		message = error instanceof Error ? error.message : String(error)
+	}
+	expect(message).toContain(privateVisibilityChangeConfirmationField)
+	expect(isPrivateVisibilityChangeConfirmationMessage(message)).toBe(true)
+	expect(
+		isPrivateVisibilityChangeConfirmationMessage(
+			'package_save would overwrite existing package source "source-1".',
+		),
+	).toBe(false)
 })
 
 test('restorable package source snapshot verification rejects corrupt snapshots and accepts manifest-bearing backups', async () => {
