@@ -388,6 +388,53 @@ test('mailbox importer rejects a cursor from a different sealed generation', asy
 	).rejects.toThrow(/cursor does not match this import request/)
 })
 
+test('drill cleanup remains idempotent when its response is lost', async () => {
+	resetMailboxMocks()
+	const backup = await createBackup()
+	const now = vi
+		.spyOn(Date, 'now')
+		.mockReturnValueOnce(0)
+		.mockReturnValueOnce(0)
+		.mockReturnValueOnce(0)
+		.mockReturnValue(2)
+	const beforeVerify = await runMailboxImportTick({
+		env: backup.env,
+		day: backup.day,
+		owners: [backup.ownerId],
+		drill: true,
+		timeBudgetMs: 1,
+		s3: backup.s3.client,
+	})
+	now.mockRestore()
+	expect(beforeVerify.progress.phase).toBe('verify')
+
+	mailboxMocks.countMailbox.mockResolvedValueOnce(threadCounts)
+	const completed = await runMailboxImportTick({
+		env: backup.env,
+		day: backup.day,
+		owners: [backup.ownerId],
+		drill: true,
+		cursor: beforeVerify.nextCursor,
+		timeBudgetMs: 60_000,
+		s3: backup.s3.client,
+	})
+	expect(completed.verified).toBe(true)
+	const purgeCallsAfterCleanup = mailboxMocks.purge.mock.calls.length
+
+	mailboxMocks.countMailbox.mockResolvedValueOnce(emptyCounts)
+	const replayed = await runMailboxImportTick({
+		env: backup.env,
+		day: backup.day,
+		owners: [backup.ownerId],
+		drill: true,
+		cursor: beforeVerify.nextCursor,
+		timeBudgetMs: 60_000,
+		s3: backup.s3.client,
+	})
+	expect(replayed.verified).toBe(true)
+	expect(mailboxMocks.purge.mock.calls.length).toBe(purgeCallsAfterCleanup)
+})
+
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {
 	resetMailboxMocks()
 	const backup = await createBackup()

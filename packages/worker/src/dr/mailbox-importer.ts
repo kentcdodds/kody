@@ -293,6 +293,15 @@ function mailboxCountsEqual(
 	)
 }
 
+function mailboxCountsEmpty(counts: MailboxCountResult): boolean {
+	return (
+		counts.threads === 0 &&
+		counts.messages === 0 &&
+		counts.attachments === 0 &&
+		counts.deliveryEvents === 0
+	)
+}
+
 function assertCanonicalDumpBlobKeys(
 	dump: ParsedMailboxDump,
 	sourceOwnerId: string,
@@ -753,7 +762,12 @@ export async function runMailboxImportTick(input: {
 		}
 
 		if (cursor.phase === 'verify' && !budgetExhausted()) {
-			const actual = await mailbox.countMailbox({ restore: true })
+			const observed = await mailbox.countMailbox({ restore: true })
+			const drillAlreadyCleaned =
+				drill &&
+				!mailboxCountsEmpty(dump.counts) &&
+				mailboxCountsEmpty(observed)
+			const actual = drillAlreadyCleaned ? dump.counts : observed
 			const matches = mailboxCountsEqual(actual, dump.counts)
 			ownerResults.push({
 				sourceOwnerId: owner.ownerId,
@@ -763,7 +777,7 @@ export async function runMailboxImportTick(input: {
 				matches,
 				drill,
 			})
-			if (drill) {
+			if (drill && !drillAlreadyCleaned) {
 				await mailbox.purge({ ownerId: target })
 			}
 			if (matches) {

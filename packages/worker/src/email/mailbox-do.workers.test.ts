@@ -874,6 +874,15 @@ test('Mailbox restore state is owner-bound and gates normal reads and writes', a
 				message: { ...message, updatedAt: '2026-07-01T12:00:01.000Z' },
 			}),
 		)
+		await assertMailboxThrows(/restore is in progress/, () =>
+			instance.upsertDeliveryEvent({
+				ownerId,
+				event: baseDeliveryEvent({
+					id: 'restore-gated-event',
+					messageId: message.id,
+				}),
+			}),
+		)
 	})
 
 	await mailbox.finalizeRestore({ ownerId })

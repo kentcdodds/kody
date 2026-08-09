@@ -106,6 +106,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async alarm(): Promise<void> {
+		if (this.store.isRestorePending()) return
 		await this.maintenance.alarm()
 	}
 
@@ -133,6 +134,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async runRetentionNow(input: {
 		ownerId: string
 	}): Promise<MailboxRunRetentionNowResult> {
+		this.assertReadable()
 		return await this.maintenance.runRetentionNow(input.ownerId)
 	}
 
@@ -150,12 +152,14 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		message: MailboxMessageInput
 		attachments: Array<MailboxAttachmentInput>
 	}): Promise<MailboxCommitInboundMessageGraphResult> {
+		this.assertReadable()
 		return await this.graphCommits.commitInboundMessageGraph(input)
 	}
 
 	async commitOutboundTerminal(
 		input: MailboxCommitOutboundTerminalInput,
 	): Promise<{ message: MailboxMessageRecord; eventInserted: boolean }> {
+		this.assertReadable()
 		return await this.graphCommits.commitOutboundTerminal(input)
 	}
 
@@ -164,6 +168,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		provider: string
 		providerMessageId: string
 	}): Promise<{ cleared: boolean }> {
+		this.assertReadable()
 		return await this.graphCommits.completeOutboundProviderIndexRepair(input)
 	}
 
@@ -183,6 +188,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		detailLimit: number
 		detailEventId: string
 	}): Promise<{ count: number; detailed: boolean }> {
+		this.assertReadable()
 		let count = 0
 		let detailed = false
 		this.ctx.storage.transactionSync(() => {
@@ -294,6 +300,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		accepted: boolean
 		updatedLatestStatus: boolean
 	}> {
+		this.assertReadable()
 		let inserted = false
 		let accepted = false
 		let updatedLatestStatus = false
@@ -351,6 +358,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async touchThread(
 		input: MailboxTouchThreadInput,
 	): Promise<MailboxPartialMutationResult> {
+		this.assertReadable()
 		let result: MailboxPartialMutationResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -367,6 +375,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async updateMessageDelivery(
 		input: MailboxUpdateMessageDeliveryInput,
 	): Promise<MailboxPartialMutationResult> {
+		this.assertReadable()
 		let result: MailboxPartialMutationResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -382,6 +391,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async setMessageClassification(
 		input: MailboxSetMessageClassificationInput,
 	): Promise<MailboxPartialMutationResult> {
+		this.assertReadable()
 		let result: MailboxPartialMutationResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -401,6 +411,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async deleteMessageMetadata(
 		input: MailboxDeleteMessageMetadataInput,
 	): Promise<MailboxDeleteResult> {
+		this.assertReadable()
 		let result: MailboxDeleteResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -422,6 +433,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		ownerId: string
 		messageId: string
 	}): Promise<MailboxDeleteMessageWithBlobsResult> {
+		this.assertReadable()
 		return await this.maintenance.blockConcurrencySafely(async () => {
 			const ownerId = this.store.assertOwner(input.ownerId)
 			const messageId = assertMailboxNonEmptyString(
@@ -472,6 +484,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		messageId: string
 		deletedAt: string
 	}): Promise<MailboxTombstoneMissingMessageResult> {
+		this.assertReadable()
 		let result: MailboxTombstoneMissingMessageResult = {
 			status: 'message-present',
 		}
@@ -489,6 +502,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async deleteDeliveryEvent(
 		input: MailboxDeleteDeliveryEventInput,
 	): Promise<MailboxDeleteResult> {
+		this.assertReadable()
 		let result: MailboxDeleteResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -504,6 +518,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async deleteThreadIfEmpty(
 		input: MailboxDeleteThreadIfEmptyInput,
 	): Promise<MailboxDeleteResult> {
+		this.assertReadable()
 		let result: MailboxDeleteResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
@@ -689,6 +704,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	}): Promise<MailboxInboundDeliverySnapshot> {
+		this.assertReadable()
 		return await this.inbound.claimInboundDeliveryWindow(input)
 	}
 
@@ -697,6 +713,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	}) {
+		this.assertReadable()
 		return await this.inbound.insertChargedPendingInboundDelivery(input)
 	}
 
@@ -707,6 +724,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		usageStartedAt?: string | null
 		now?: string
 	}) {
+		this.assertReadable()
 		return await this.inbound.claimInboundDeliveryStorage(input)
 	}
 
@@ -716,6 +734,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		storageLease: string
 		now?: string
 	}) {
+		this.assertReadable()
 		return await this.inbound.releaseInboundDeliveryStorage(input)
 	}
 
@@ -727,6 +746,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		expectedState?: MailboxInboundDeliveryState
 		now?: string
 	}) {
+		this.assertReadable()
 		return await this.inbound.markInboundDeliveryRejected(input)
 	}
 
@@ -739,6 +759,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		usageBytes: number
 		now?: string
 	}) {
+		this.assertReadable()
 		return await this.inbound.markInboundDeliveryReceived(input)
 	}
 
@@ -747,6 +768,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		now?: string
 		limit?: number
 	}) {
+		this.assertReadable()
 		return await this.inbound.pruneExpiredInboundDedupePointers(input)
 	}
 
@@ -755,6 +777,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		deliveryId: string
 		now?: string
 	}) {
+		this.assertReadable()
 		return await this.inbound.deferInboundDeliveryReconciliation(input)
 	}
 
@@ -766,6 +789,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		staleBefore: string
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.claimInboundDeliveryCleanup(input)
 	}
 
@@ -775,6 +799,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		cleanupLease: string
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.releaseInboundDeliveryCleanup(input)
 	}
 
@@ -785,6 +810,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		outcome: 'deleted' | 'delete-failed'
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.markInboundDeliveryOrphanCleaned(input)
 	}
 
@@ -794,6 +820,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		expectedFinalizationToken?: string | null
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.claimInboundUsageEffect(input)
 	}
 
@@ -808,6 +835,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		usageDurationMs: number
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.completeInboundUsageEffect(input)
 	}
 
@@ -817,6 +845,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		expectedFinalizationToken?: string | null
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.claimInboundSubscriptionEffect(input)
 	}
 
@@ -829,6 +858,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		suppressionReason?: string | null
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.completeInboundSubscriptionEffect(input)
 	}
 
@@ -840,6 +870,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		error: string
 		now?: string
 	}) {
+		this.assertReadable()
 		return this.inbound.failInboundSubscriptionEffect(input)
 	}
 
