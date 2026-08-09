@@ -691,11 +691,22 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 									name="flow"
 									required
 									disabled={isMutating}
-									defaultValue={editingApp?.flow ?? 'pkce'}
 									mix={css(selectCss)}
 								>
-									<option value="pkce">pkce</option>
-									<option value="confidential">confidential</option>
+									{/* Explicit per-option selection: this renderer applies
+									    defaultValue as an attribute, which selects ignore. */}
+									<option
+										value="pkce"
+										selected={(editingApp?.flow ?? 'pkce') === 'pkce'}
+									>
+										pkce
+									</option>
+									<option
+										value="confidential"
+										selected={editingApp?.flow === 'confidential'}
+									>
+										confidential
+									</option>
 								</select>
 							</label>
 							<label mix={css(fieldCss)}>
@@ -704,15 +715,23 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 									data-field-ring
 									name="tokenExchangeStyle"
 									disabled={isMutating}
-									defaultValue={formatTokenExchangeStyle(
-										editingApp?.tokenExchangeStyle ?? null,
-									)}
 									mix={css(selectCss)}
 								>
-									<option value="default">default</option>
-									<option value="form">form</option>
-									<option value="basic-json">basic-json</option>
-									<option value="basic-form">basic-form</option>
+									{(
+										['default', 'form', 'basic-json', 'basic-form'] as const
+									).map((style) => (
+										<option
+											key={style}
+											value={style}
+											selected={
+												formatTokenExchangeStyle(
+													editingApp?.tokenExchangeStyle ?? null,
+												) === style
+											}
+										>
+											{style}
+										</option>
+									))}
 								</select>
 							</label>
 							<label mix={css(fieldCss)}>
