@@ -16,6 +16,7 @@ import {
 	isRetryableCloudflareApiError,
 	isWranglerNotFoundOutput,
 	parseJsonc,
+	removeCloudflareQueueConsumers,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
 
@@ -583,6 +584,95 @@ test('deleteCloudflareQueue removes an existing queue by id', async () => {
 		'https://api.cloudflare.com/client/v4/accounts/account-1/queues/queue-preview',
 		expect.objectContaining({ method: 'DELETE' }),
 	)
+})
+
+test('removeCloudflareQueueConsumers deregisters each consumer by id', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						queue_id: 'queue-preview',
+						queue_name: 'kody-pr-123-webhook-dispatch',
+					},
+				],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{ consumer_id: 'consumer-1', script: 'kody-pr-123', type: 'worker' },
+				],
+			}),
+		)
+		.mockResolvedValueOnce(Response.json({ success: true, result: null }))
+
+	await removeCloudflareQueueConsumers({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-pr-123-webhook-dispatch',
+		dryRun: false,
+		fetcher,
+	})
+
+	expect(fetcher).toHaveBeenNthCalledWith(
+		2,
+		'https://api.cloudflare.com/client/v4/accounts/account-1/queues/queue-preview/consumers',
+		expect.objectContaining({ method: 'GET' }),
+	)
+	expect(fetcher).toHaveBeenNthCalledWith(
+		3,
+		'https://api.cloudflare.com/client/v4/accounts/account-1/queues/queue-preview/consumers/consumer-1',
+		expect.objectContaining({ method: 'DELETE' }),
+	)
+})
+
+test('removeCloudflareQueueConsumers is a no-op for a missing queue or empty consumer list', async () => {
+	consoleError.mockImplementation(() => {})
+	const missingQueueFetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+		Response.json({
+			success: true,
+			result: [],
+			result_info: { total_pages: 1 },
+		}),
+	)
+	await removeCloudflareQueueConsumers({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-pr-123-webhook-dispatch',
+		dryRun: false,
+		fetcher: missingQueueFetcher,
+	})
+	expect(missingQueueFetcher).toHaveBeenCalledTimes(1)
+
+	const emptyConsumersFetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						queue_id: 'queue-preview',
+						queue_name: 'kody-pr-123-webhook-dispatch',
+					},
+				],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockResolvedValueOnce(Response.json({ success: true, result: [] }))
+	await removeCloudflareQueueConsumers({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-pr-123-webhook-dispatch',
+		dryRun: false,
+		fetcher: emptyConsumersFetcher,
+	})
+	expect(emptyConsumersFetcher).toHaveBeenCalledTimes(2)
 })
 
 const queueStillReferencedResponse = () =>

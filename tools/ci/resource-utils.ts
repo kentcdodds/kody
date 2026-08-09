@@ -458,6 +458,59 @@ export async function ensureCloudflareQueue(input: {
 	}
 }
 
+type CloudflareQueueConsumer = {
+	consumer_id: string
+	script?: string
+}
+
+/**
+ * Deregister every consumer of a queue. Cloudflare refuses to delete a
+ * Worker while it is registered as a queue consumer (code 10064), so
+ * preview cleanup must remove the consumers before the Worker scripts.
+ */
+export async function removeCloudflareQueueConsumers(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+}) {
+	if (input.dryRun) {
+		console.error(`[dry-run] remove Queue consumers: ${input.name}`)
+		return
+	}
+	const queue = (await listCloudflareQueues(input)).find(
+		(candidate) => candidate.queue_name === input.name,
+	)
+	if (!queue) {
+		console.error(
+			`Queue already deleted (no consumers to remove): ${input.name}`,
+		)
+		return
+	}
+	const payload = await cloudflareApiRequest<Array<CloudflareQueueConsumer>>({
+		...input,
+		pathname: `/queues/${queue.queue_id}/consumers`,
+	})
+	const consumers = payload.result ?? []
+	if (consumers.length === 0) {
+		console.error(`Queue has no consumers: ${input.name}`)
+		return
+	}
+	for (const consumer of consumers) {
+		await cloudflareApiRequest({
+			...input,
+			pathname: `/queues/${queue.queue_id}/consumers/${consumer.consumer_id}`,
+			method: 'DELETE',
+		})
+		console.error(
+			`Removed Queue consumer: ${input.name} <- ${consumer.script ?? consumer.consumer_id}`,
+		)
+	}
+}
+
 /**
  * Cloudflare returns this 400 while a Worker still binds the queue. Deleting
  * the Worker first is required, but the binding release propagates

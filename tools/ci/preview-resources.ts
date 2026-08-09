@@ -11,6 +11,7 @@ import {
 	listD1Databases,
 	listCloudflareQueues,
 	listKvNamespaces,
+	removeCloudflareQueueConsumers,
 	runWrangler,
 	truncateWithSuffix,
 	writeGeneratedWranglerConfig,
@@ -438,9 +439,18 @@ async function cleanupPreviewResources(options: CliOptions) {
 		apiToken: apiToken ?? 'dry-run-token',
 		dryRun: options.dryRun,
 	}
-	// Workers must go first: Cloudflare refuses to delete a queue that is
-	// still referenced by a Worker binding (400 "Cannot delete queue ...
-	// still referenced by a binding in a Worker").
+	// Order matters, both directions: a Worker cannot be deleted while it is
+	// registered as a queue consumer (code 10064), and a queue cannot be
+	// deleted while a Worker still binds it as a producer (400 "still
+	// referenced by a binding in a Worker"). So: consumers → Workers → queues.
+	await removeCloudflareQueueConsumers({
+		...queueClient,
+		name: webhookDispatchQueueName,
+	})
+	await removeCloudflareQueueConsumers({
+		...queueClient,
+		name: webhookDispatchDeadLetterQueueName,
+	})
 	deletePreviewWorkers(options.workerName, options.dryRun)
 	await deleteCloudflareQueue({
 		...queueClient,
