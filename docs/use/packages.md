@@ -265,7 +265,9 @@ Static package imports from ad hoc MCP `execute` code, such as
 `kody:@scope/package/export`, do not get a package runtime context. They run as
 library imports in the execute caller's runtime, where `packageStorage()` still
 reaches the declaring package's own storage bucket (see
-[Package storage](#package-storage)), and `{{secret:...}}` placeholders for
+[Package storage](#package-storage)) — for **caller-owned** packages only:
+platform (built-in) dependencies receive no `packageStorage()` grant and the
+call fails closed inside live platform code. `{{secret:...}}` placeholders for
 user-scope secrets still resolve at the fetch gateway under the calling user —
 so secret-backed packages such as `github` work fully via plain static import.
 Use keyless `packages.invoke` from execute when you need to enter a saved

@@ -31,6 +31,7 @@ async function seedPackage(
 		name: string
 		kodyId: string
 		hidden?: boolean
+		isPrivate?: boolean
 	},
 ) {
 	const id = crypto.randomUUID()
@@ -45,7 +46,7 @@ async function seedPackage(
 		source_id: `source-${id}`,
 		has_app: 0,
 		hidden: input.hidden ? 1 : 0,
-		is_private: 0,
+		is_private: input.isPrivate ? 1 : 0,
 	})
 	return id
 }
@@ -95,13 +96,19 @@ test('the caller-owned copy always wins over the platform scope (fork to customi
 	expect(resolved?.row.id).toBe(ownCopyId)
 })
 
-test('hidden platform packages and non-platform foreign scopes do not resolve', async () => {
+test('hidden/private platform packages and non-platform foreign scopes do not resolve', async () => {
 	const { db, platformUserId } = await createHarness()
 	await seedPackage(db, {
 		userId: platformUserId,
 		name: '@kody/wip-package',
 		kodyId: 'wip-package',
 		hidden: true,
+	})
+	await seedPackage(db, {
+		userId: platformUserId,
+		name: '@kody/internal-package',
+		kodyId: 'internal-package',
+		isPrivate: true,
 	})
 	await seedPackage(db, {
 		userId: 'someone-else',
@@ -114,6 +121,13 @@ test('hidden platform packages and non-platform foreign scopes do not resolve', 
 			db,
 			userId: 'caller-user',
 			specifier: 'kody:@kody/wip-package',
+		}),
+	).resolves.toBeNull()
+	await expect(
+		resolveSavedPackageImport({
+			db,
+			userId: 'caller-user',
+			specifier: 'kody:@kody/internal-package',
 		}),
 	).resolves.toBeNull()
 	// Person-account scopes never resolve cross-user: structural, not policy.

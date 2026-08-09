@@ -224,6 +224,11 @@ export const packageSearchEntityPlugin = {
 	async buildCandidates(input) {
 		const rows = input.optionalRows.packageRows
 		if (rows.length === 0) return []
+		// Platform rows rank lexically in every mode: the Vectorize index is
+		// per-user (no vectors exist for them in the caller's namespace), and
+		// the offline deterministic-embedding fallback is skipped too so
+		// online and offline ranking stay consistent with that contract.
+		const vectorEligibleRows = rows.filter((row) => !row.platformScope)
 		// Fail closed in every mode: no userId, and foreign rows never enter
 		// ranking unless the loader explicitly marked them as platform
 		// (built-in) scope rows — the one lane that resolves live for every
@@ -244,12 +249,12 @@ export const packageSearchEntityPlugin = {
 		}
 		const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
 		let vectorScoresByRecordId: Map<string, number> | null = null
-		if (!input.offline && input.userId) {
+		if (!input.offline && input.userId && vectorEligibleRows.length > 0) {
 			try {
 				vectorScoresByRecordId = await queryPackageVectorScores({
 					env: input.env,
 					query: input.query,
-					rows,
+					rows: vectorEligibleRows,
 					userId: input.userId,
 					limit: input.limit,
 					...(input.sharedQueryVector
@@ -299,8 +304,9 @@ export const packageSearchEntityPlugin = {
 					(actionMatches[0]?.score ?? 0) * 0.8,
 				)
 				const vectorHit = vectorScoresByRecordId?.get(entry.record.id)
-				const scoreComponents =
-					vectorScoresByRecordId != null
+				const scoreComponents = entry.platformScope
+					? buildCandidateBaseScore({ lexical })
+					: vectorScoresByRecordId != null
 						? buildCandidateBaseScore({
 								lexical,
 								...(vectorHit !== undefined ? { vector: vectorHit } : {}),
@@ -470,10 +476,14 @@ export const packageSearchEntityPlugin = {
 			hasApp: match.hasApp,
 			hidden: match.hidden,
 			platformScope: match.platformScope ?? null,
-			hostedUrl:
-				match.hasApp && username
-					? buildPackageHostedUrl(hostedAppOrigin, username, match.kodyId)
-					: null,
+			// Platform package apps are hosted under the platform account's
+			// username, not the caller's.
+			hostedUrl: (() => {
+				const hostedUsername = match.platformScope ?? username
+				return match.hasApp && hostedUsername
+					? buildPackageHostedUrl(hostedAppOrigin, hostedUsername, match.kodyId)
+					: null
+			})(),
 			readmeSnippet: match.readmeSnippet
 				? {
 						path: match.readmeSnippet.path,

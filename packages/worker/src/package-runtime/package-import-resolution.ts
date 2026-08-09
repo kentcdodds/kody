@@ -122,9 +122,10 @@ export async function resolvePlatformScopedPackageImport(input: {
 		userId: platformAccount.stableUserId,
 		name: input.packageName,
 	})
-	// Hidden platform packages are the operator's "not ready" switch; they
-	// stay resolvable only to the owner (who resolves via the own-copy lane).
-	if (!row || row.hidden) return null
+	// Hidden and private platform packages are the operator's "not ready" /
+	// "not for everyone" switches; they stay resolvable only to the owner
+	// (who resolves via the own-copy lane).
+	if (!row || row.hidden || row.isPrivate) return null
 	return {
 		row,
 		sourceOwnerUserId: platformAccount.stableUserId,

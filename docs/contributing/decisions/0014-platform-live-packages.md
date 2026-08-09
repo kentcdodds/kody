@@ -49,8 +49,8 @@ Bounds that keep the isolation story intact:
   artifacts under the caller's identity, which must never happen for
   platform-owned sources; dynamic `import("kody:@kody/…")` reports a teaching
   error pointing at static imports.
-- **Hidden means unresolvable.** A hidden platform package resolves only for its
-  owner.
+- **Hidden or private means unresolvable.** A hidden or private platform package
+  resolves only for its owner.
 - **Versioning is unchanged.** Ad hoc execute rebundles per call and always sees
   the platform scope's current published version. Saved packages that import a
   platform package pin its snapshot at their own publish, exactly like
