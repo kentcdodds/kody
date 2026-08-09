@@ -128,6 +128,8 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let actionState: ActionState = 'idle'
+	/** Slug of the card an action is running against, for per-card labels. */
+	let pendingSlug: string | null = null
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
@@ -201,6 +203,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		successMessage: string,
 	): Promise<boolean> {
 		actionState = nextActionState
+		pendingSlug = typeof body.slug === 'string' ? body.slug : null
 		message = null
 		messageTone = 'info'
 		handle.update()
@@ -242,6 +245,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			return false
 		} finally {
 			actionState = 'idle'
+			pendingSlug = null
 			handle.update()
 		}
 	}
@@ -272,13 +276,25 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const form = event.currentTarget
 		const formData = new FormData(form)
-		const slug = String(formData.get('slug') ?? '').trim()
+		// FormData excludes disabled controls, so the locked slug input must
+		// come from the editing state when editing.
+		const slug = (editingApp?.slug ?? String(formData.get('slug') ?? '')).trim()
 		const clientId = String(formData.get('clientId') ?? '').trim()
 		const tokenUrl = String(formData.get('tokenUrl') ?? '').trim()
 		const authorizeUrl = String(formData.get('authorizeUrl') ?? '').trim()
 		const flow = String(formData.get('flow') ?? '').trim()
-		if (!slug || !clientId || !tokenUrl || !authorizeUrl) return
-		if (flow !== 'pkce' && flow !== 'confidential') return
+		if (!slug || !clientId || !tokenUrl || !authorizeUrl) {
+			message = 'Slug, client id, token URL, and authorize URL are required.'
+			messageTone = 'error'
+			handle.update()
+			return
+		}
+		if (flow !== 'pkce' && flow !== 'confidential') {
+			message = 'Choose a valid OAuth flow.'
+			messageTone = 'error'
+			handle.update()
+			return
+		}
 
 		const body: Record<string, unknown> = {
 			action: 'save',
@@ -307,12 +323,12 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			),
 		}
 
-		const tokenExchangeStyle = String(
+		// Always include the key: the handler maps non-literal values (the
+		// "default" option) to null, which clears a stored style — omitting
+		// the key would retain it instead.
+		body.tokenExchangeStyle = String(
 			formData.get('tokenExchangeStyle') ?? 'default',
-		) as TokenExchangeStyleOption
-		if (tokenExchangeStyle !== 'default') {
-			body.tokenExchangeStyle = tokenExchangeStyle
-		}
+		)
 
 		const clientSecret = String(formData.get('clientSecret') ?? '').trim()
 		if (clientSecret) {
@@ -530,7 +546,8 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 											css(secondaryButtonCss),
 										]}
 									>
-										{actionState === 'toggling-enabled'
+										{actionState === 'toggling-enabled' &&
+										pendingSlug === app.slug
 											? 'Saving…'
 											: app.enabled
 												? 'Disable'
@@ -554,7 +571,9 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 											css(dangerButtonCss),
 										]}
 									>
-										{actionState === 'deleting' ? 'Deleting…' : 'Delete'}
+										{actionState === 'deleting' && pendingSlug === app.slug
+											? 'Deleting…'
+											: 'Delete'}
 									</button>
 								</div>
 							</div>

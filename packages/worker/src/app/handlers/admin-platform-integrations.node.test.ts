@@ -7,7 +7,7 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(),
+	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
