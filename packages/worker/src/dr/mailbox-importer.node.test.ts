@@ -31,6 +31,8 @@ const mailboxMocks = vi.hoisted(() => ({
 	inspectRestoreState: vi.fn(),
 	beginRestore: vi.fn(),
 	finalizeRestore: vi.fn(),
+	readDrillResult: vi.fn(),
+	completeDrill: vi.fn(),
 	purge: vi.fn(),
 	upsertMessageGraph: vi.fn(),
 	upsertDeliveryEvents: vi.fn(),
@@ -218,6 +220,8 @@ function resetMailboxMocks() {
 	mailboxMocks.inspectRestoreState.mockReset()
 	mailboxMocks.beginRestore.mockReset()
 	mailboxMocks.finalizeRestore.mockReset()
+	mailboxMocks.readDrillResult.mockReset()
+	mailboxMocks.completeDrill.mockReset()
 	mailboxMocks.purge.mockReset()
 	mailboxMocks.upsertMessageGraph.mockReset()
 	mailboxMocks.upsertDeliveryEvents.mockReset()
@@ -225,6 +229,8 @@ function resetMailboxMocks() {
 	mailboxMocks.inspectRestoreState.mockResolvedValue(restoreStatus(emptyCounts))
 	mailboxMocks.finalizeRestore.mockResolvedValue({ ok: true })
 	mailboxMocks.beginRestore.mockResolvedValue({ ok: true })
+	mailboxMocks.readDrillResult.mockResolvedValue(null)
+	mailboxMocks.completeDrill.mockResolvedValue({ ok: true })
 	mailboxMocks.upsertMessageGraph.mockResolvedValue({
 		ok: true,
 		accepted: true,
@@ -419,9 +425,9 @@ test('drill cleanup remains idempotent when its response is lost', async () => {
 		s3: backup.s3.client,
 	})
 	expect(completed.verified).toBe(true)
-	const purgeCallsAfterCleanup = mailboxMocks.purge.mock.calls.length
+	const cleanupCalls = mailboxMocks.completeDrill.mock.calls.length
 
-	mailboxMocks.countMailbox.mockResolvedValueOnce(emptyCounts)
+	mailboxMocks.readDrillResult.mockResolvedValueOnce(threadCounts)
 	const replayed = await runMailboxImportTick({
 		env: backup.env,
 		day: backup.day,
@@ -432,7 +438,51 @@ test('drill cleanup remains idempotent when its response is lost', async () => {
 		s3: backup.s3.client,
 	})
 	expect(replayed.verified).toBe(true)
-	expect(mailboxMocks.purge.mock.calls.length).toBe(purgeCallsAfterCleanup)
+	expect(mailboxMocks.completeDrill.mock.calls.length).toBe(cleanupCalls)
+})
+
+test('drill cleanup preserves a mismatch across a lost response', async () => {
+	resetMailboxMocks()
+	const backup = await createBackup()
+	const now = vi
+		.spyOn(Date, 'now')
+		.mockReturnValueOnce(0)
+		.mockReturnValueOnce(0)
+		.mockReturnValueOnce(0)
+		.mockReturnValue(2)
+	const beforeVerify = await runMailboxImportTick({
+		env: backup.env,
+		day: backup.day,
+		owners: [backup.ownerId],
+		drill: true,
+		timeBudgetMs: 1,
+		s3: backup.s3.client,
+	})
+	now.mockRestore()
+
+	mailboxMocks.countMailbox.mockResolvedValueOnce(emptyCounts)
+	const mismatch = await runMailboxImportTick({
+		env: backup.env,
+		day: backup.day,
+		owners: [backup.ownerId],
+		drill: true,
+		cursor: beforeVerify.nextCursor,
+		timeBudgetMs: 60_000,
+		s3: backup.s3.client,
+	})
+	expect(mismatch.verified).toBe(false)
+
+	mailboxMocks.readDrillResult.mockResolvedValueOnce(emptyCounts)
+	const replayed = await runMailboxImportTick({
+		env: backup.env,
+		day: backup.day,
+		owners: [backup.ownerId],
+		drill: true,
+		cursor: beforeVerify.nextCursor,
+		timeBudgetMs: 60_000,
+		s3: backup.s3.client,
+	})
+	expect(replayed.verified).toBe(false)
 })
 
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {

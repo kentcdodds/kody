@@ -572,10 +572,11 @@ owner-bound blob references for those scratch objects; it never opens the real
 owners' Mailbox objects. A successful drill still verifies the signed media,
 exercises every graph upsert, and requires per-kind `countMailbox` parity. Drill
 objects are inert test data and do not imply that their rewritten blob keys
-exist. After collecting the per-kind count result, the importer purges each
-drill object before advancing; cleanup failure fails the operation so a full
-mail copy cannot be left silently. Use the same separately confirmed replace
-policy only when recovering a scratch object left by an interrupted older run.
+exist. After collecting the per-kind count result, the importer atomically
+purges all imported mail rows and retains only a non-sensitive count marker for
+idempotent replay; cleanup failure fails the operation so a full mail copy
+cannot be left silently. Use the same separately confirmed replace policy only
+when recovering a scratch object left by an interrupted older run.
 
 Every completed owner appears in `ownerResults` with expected and actual thread,
 message, attachment, and delivery-event counts. Any mismatch leaves

@@ -335,6 +335,12 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 		deliveryEvents: 0,
 	})
 	expect(await scratch.getMessage({ messageId: 'restore-message' })).toBeNull()
+	expect(await scratch.readDrillResult({ ownerId: drillOwnerId })).toEqual({
+		threads: 1,
+		messages: 1,
+		attachments: 1,
+		deliveryEvents: 1,
+	})
 	expect(
 		await mailboxRpc({ env: backup.env, userId: ownerId }).countMailbox(),
 	).toEqual({

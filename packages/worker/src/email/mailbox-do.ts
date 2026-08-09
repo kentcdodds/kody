@@ -106,8 +106,10 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async alarm(): Promise<void> {
-		if (this.store.isRestorePending()) return
-		await this.maintenance.alarm()
+		await this.maintenance.blockConcurrencySafely(async () => {
+			if (this.store.isRestorePending()) return
+			await this.maintenance.alarm()
+		})
 	}
 
 	async getRecoveryBookmark(input: {
@@ -663,6 +665,24 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	async finalizeRestore(input: { ownerId: string }): Promise<{ ok: true }> {
 		this.store.finalizeRestore(input.ownerId)
 		await this.maintenance.markDirtyAndEnsure()
+		return { ok: true }
+	}
+
+	async readDrillResult(input: {
+		ownerId: string
+	}): Promise<MailboxCountResult | null> {
+		this.store.assertOwner(input.ownerId)
+		return this.store.readDrillResult()
+	}
+
+	async completeDrill(input: {
+		ownerId: string
+		result: MailboxCountResult
+	}): Promise<{ ok: true }> {
+		await this.maintenance.blockConcurrencySafely(async () => {
+			await this.ctx.storage.deleteAlarm().catch(() => undefined)
+			this.store.completeDrill(input.ownerId, input.result)
+		})
 		return { ok: true }
 	}
 

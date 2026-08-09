@@ -662,6 +662,13 @@ type MailboxCoreRpc = {
 	}) => Promise<MailboxRestoreStatus>
 	beginRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
 	finalizeRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
+	readDrillResult: (input: {
+		ownerId: string
+	}) => Promise<MailboxCountResult | null>
+	completeDrill: (input: {
+		ownerId: string
+		result: MailboxCountResult
+	}) => Promise<{ ok: true }>
 	exportMailbox: (input: {
 		pageSize?: number
 		startAfter?: string | null

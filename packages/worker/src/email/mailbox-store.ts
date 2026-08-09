@@ -9,6 +9,7 @@ import {
 	assertOptionalMailboxCanonicalIsoTimestamp,
 	decodeMailboxListCursor,
 	encodeMailboxListCursor,
+	mailboxMetaSchemaVersionKey,
 	mailboxNowIso,
 	normalizeMailboxOffset,
 	normalizeMailboxPageSize,
@@ -66,6 +67,13 @@ export type MailboxUpsertResult = {
 }
 
 const mailboxRestorePendingMetaKey = 'restore_pending'
+const mailboxDrillResultMetaKeys = {
+	present: 'drill_result_present',
+	threads: 'drill_result_threads',
+	messages: 'drill_result_messages',
+	attachments: 'drill_result_attachments',
+	deliveryEvents: 'drill_result_delivery_events',
+} as const
 
 function buildMailboxMessageFilterClauses(input: {
 	inboxId?: string | null
@@ -190,6 +198,7 @@ export class MailboxStore {
 
 	beginRestore(ownerId: string): void {
 		this.assertOwner(ownerId)
+		this.clearDrillResult()
 		this.sql.exec(
 			`INSERT INTO mailbox_meta (key, value)
 			VALUES (?, 1)
@@ -204,6 +213,70 @@ export class MailboxStore {
 			`DELETE FROM mailbox_meta WHERE key = ?`,
 			mailboxRestorePendingMetaKey,
 		)
+	}
+
+	private clearDrillResult(): void {
+		this.sql.exec(
+			`DELETE FROM mailbox_meta WHERE key IN (?, ?, ?, ?, ?)`,
+			mailboxDrillResultMetaKeys.present,
+			mailboxDrillResultMetaKeys.threads,
+			mailboxDrillResultMetaKeys.messages,
+			mailboxDrillResultMetaKeys.attachments,
+			mailboxDrillResultMetaKeys.deliveryEvents,
+		)
+	}
+
+	readDrillResult(): MailboxCountResult | null {
+		const rows = this.sql
+			.exec<{ key: string; value: number }>(
+				`SELECT key, value FROM mailbox_meta
+				WHERE key IN (?, ?, ?, ?, ?)`,
+				mailboxDrillResultMetaKeys.present,
+				mailboxDrillResultMetaKeys.threads,
+				mailboxDrillResultMetaKeys.messages,
+				mailboxDrillResultMetaKeys.attachments,
+				mailboxDrillResultMetaKeys.deliveryEvents,
+			)
+			.toArray()
+		const values = new Map(rows.map((row) => [row.key, Number(row.value)]))
+		if (values.get(mailboxDrillResultMetaKeys.present) !== 1) return null
+		return {
+			threads: values.get(mailboxDrillResultMetaKeys.threads) ?? 0,
+			messages: values.get(mailboxDrillResultMetaKeys.messages) ?? 0,
+			attachments: values.get(mailboxDrillResultMetaKeys.attachments) ?? 0,
+			deliveryEvents:
+				values.get(mailboxDrillResultMetaKeys.deliveryEvents) ?? 0,
+		}
+	}
+
+	completeDrill(ownerId: string, result: MailboxCountResult): void {
+		this.assertOwner(ownerId)
+		this.storage.transactionSync(() => {
+			this.sql.exec(`DELETE FROM email_delivery_events`)
+			this.sql.exec(`DELETE FROM email_attachments`)
+			this.sql.exec(`DELETE FROM email_message_retention_retries`)
+			this.sql.exec(`DELETE FROM email_messages`)
+			this.sql.exec(`DELETE FROM email_threads`)
+			this.sql.exec(`DELETE FROM email_outbound_provider_index_repairs`)
+			this.sql.exec(`DELETE FROM email_message_deletion_tombstones`)
+			this.sql.exec(
+				`DELETE FROM mailbox_meta WHERE key <> ?`,
+				mailboxMetaSchemaVersionKey,
+			)
+			for (const [key, value] of [
+				[mailboxDrillResultMetaKeys.present, 1],
+				[mailboxDrillResultMetaKeys.threads, result.threads],
+				[mailboxDrillResultMetaKeys.messages, result.messages],
+				[mailboxDrillResultMetaKeys.attachments, result.attachments],
+				[mailboxDrillResultMetaKeys.deliveryEvents, result.deliveryEvents],
+			] as const) {
+				this.sql.exec(
+					`INSERT INTO mailbox_meta (key, value) VALUES (?, ?)`,
+					key,
+					value,
+				)
+			}
+		})
 	}
 
 	validateMessageBlobKeys(input: {
