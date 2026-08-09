@@ -767,6 +767,8 @@ export type AccountIntegrationListItem = {
 	platform?: boolean
 	/** Scope menu for platform apps: the superset an operator verified. */
 	platformAllowedScopes?: Array<string>
+	/** Relative serving path of the operator-uploaded provider logo. */
+	platformLogoPath?: string | null
 	createdAt: string
 	updatedAt: string
 }

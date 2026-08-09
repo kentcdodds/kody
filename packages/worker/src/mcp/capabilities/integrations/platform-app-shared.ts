@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { type PlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import {
 	integrationFlowValues,
@@ -28,6 +29,8 @@ export const platformOauthAppPublicSchema = z.object({
 	defaultScopes: z.array(z.string()),
 	requiredHosts: z.array(z.string()),
 	enabled: z.boolean(),
+	/** Relative serving path of the operator-uploaded logo, or null. */
+	logoPath: z.string().nullable(),
 	createdAt: z.string().min(1),
 	updatedAt: z.string().min(1),
 })
@@ -56,6 +59,7 @@ export function toPlatformOauthAppPublic(
 		defaultScopes: app.defaultScopes,
 		requiredHosts: app.requiredHosts,
 		enabled: app.enabled,
+		logoPath: buildPlatformOauthAppLogoPath(app),
 		createdAt: app.createdAt,
 		updatedAt: app.updatedAt,
 	}

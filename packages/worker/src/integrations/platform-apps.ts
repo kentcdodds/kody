@@ -38,6 +38,9 @@ export type PlatformOauthApp = {
 	defaultScopes: Array<string>
 	requiredHosts: Array<string>
 	enabled: boolean
+	/** R2 key of the operator-uploaded logo asset, or null. */
+	logoKey: string | null
+	logoContentType: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -60,6 +63,8 @@ export type PlatformOauthAppRow = {
 	default_scopes_json: string
 	required_hosts_json: string
 	enabled: number
+	logo_key: string | null
+	logo_content_type: string | null
 	created_at: string
 	updated_at: string
 }
@@ -68,7 +73,8 @@ const platformAppSelectColumns = `
 	slug, provider, label, client_id, client_secret_encrypted, token_url,
 	authorize_url, api_base_url, flow, use_pkce, token_exchange_style,
 	scope_separator, extra_authorize_params_json, allowed_scopes_json,
-	default_scopes_json, required_hosts_json, enabled, created_at, updated_at
+	default_scopes_json, required_hosts_json, enabled, logo_key,
+	logo_content_type, created_at, updated_at
 `
 
 export async function listPlatformOauthApps(input: {
@@ -358,6 +364,8 @@ export function mapPlatformOauthAppRow(
 		defaultScopes: parseJsonStringArray(row.default_scopes_json),
 		requiredHosts: parseJsonStringArray(row.required_hosts_json),
 		enabled: row.enabled === 1,
+		logoKey: row.logo_key ?? null,
+		logoContentType: row.logo_content_type ?? null,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}

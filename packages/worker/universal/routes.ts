@@ -3,6 +3,7 @@ import { post, route } from 'remix/routes'
 export const routes = route({
 	home: '/',
 	connectOauth: '/connect/oauth',
+	integrationLogo: '/integrations/logos/:integrationSlug',
 	accountIntegrations: '/account/integrations',
 	// More specific than `:integrationName` so a connection named `apps` still
 	// resolves at `/account/integrations/apps` while OAuth apps live under

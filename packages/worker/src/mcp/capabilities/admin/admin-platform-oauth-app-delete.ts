@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { deletePlatformOauthApp } from '#worker/integrations/platform-apps.ts'
+import { deletePlatformOauthAppLogoAsset } from '#worker/integrations/platform-app-logo.ts'
+import {
+	deletePlatformOauthApp,
+	getPlatformOauthAppBySlug,
+} from '#worker/integrations/platform-apps.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
@@ -39,12 +43,24 @@ export const adminPlatformOauthAppDeleteCapability = defineDomainCapability(
 			return auditAdminCapabilityInvocation(
 				ctx,
 				'admin_platform_oauth_app_delete',
-				async () => ({
-					deleted: await deletePlatformOauthApp({
+				async () => {
+					const existing = await getPlatformOauthAppBySlug({
 						db: ctx.env.APP_DB,
 						slug: args.slug,
-					}),
-				}),
+						includeDisabled: true,
+					})
+					const deleted = await deletePlatformOauthApp({
+						db: ctx.env.APP_DB,
+						slug: args.slug,
+					})
+					if (deleted) {
+						await deletePlatformOauthAppLogoAsset({
+							env: ctx.env,
+							logoKey: existing?.logoKey ?? null,
+						})
+					}
+					return { deleted }
+				},
 				{
 					successReason: () => `platform_oauth_app=${args.slug.trim()}`,
 				},

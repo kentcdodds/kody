@@ -60,6 +60,8 @@ export type ConnectOauthConfig = {
 	 * with the shared secret, and the client-credential setup step is skipped.
 	 */
 	platformAppSlug: string | null
+	/** Relative path of the operator-uploaded provider logo, when present. */
+	platformLogoPath: string | null
 }
 
 export type StoredIntegrationAuthorization = NonNullable<
@@ -93,6 +95,8 @@ export type StoredIntegrationConfig = Omit<
 	platformAppSlug?: string | null
 	/** Operator-verified scope menu for platform apps; requested scopes are clamped to it. */
 	platformAllowedScopes?: Array<string>
+	/** Relative path of the operator-uploaded provider logo. */
+	platformLogoPath?: string | null
 }
 
 export type ConnectOauthHostApprovalLink = {
@@ -182,6 +186,7 @@ export function toStoredIntegrationConfig(
 			? {
 					platformAppSlug: integration.appSlug,
 					platformAllowedScopes: integration.platformAllowedScopes ?? [],
+					platformLogoPath: integration.platformLogoPath ?? null,
 				}
 			: {}),
 	}
@@ -378,6 +383,9 @@ export function mergeConnectOauthConfig(input: {
 	const platformAppSlug = input.storedIntegration?.platformAppSlug ?? null
 	return {
 		platformAppSlug,
+		platformLogoPath: platformAppSlug
+			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
+			: null,
 		provider,
 		providerKey,
 		authorizeHost,
@@ -483,7 +491,17 @@ export function parseSessionConnectOauthConfig(
 			typeof record.platformAppSlug === 'string'
 				? record.platformAppSlug
 				: null,
+		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
 	}
+}
+
+/**
+ * Logo paths render as <img src>; only same-origin serving paths from the
+ * integration-logo route are accepted.
+ */
+export function parsePlatformLogoPath(raw: unknown): string | null {
+	if (typeof raw !== 'string') return null
+	return raw.startsWith('/integrations/logos/') ? raw : null
 }
 
 export function summarizeStoredSetupState(input: {

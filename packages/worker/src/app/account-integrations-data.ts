@@ -16,6 +16,7 @@ import {
 	type OauthAppSetupPrefill,
 	type PlatformOauthApp,
 } from '#worker/integrations/service.ts'
+import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -36,7 +37,10 @@ function toAccountIntegrationRecord(
 		appLabel: entry.app.label,
 		accountLabel: entry.connection.accountLabel,
 		...(entry.lane === 'platform'
-			? { platformAllowedScopes: entry.app.allowedScopes }
+			? {
+					platformAllowedScopes: entry.app.allowedScopes,
+					platformLogoPath: buildPlatformOauthAppLogoPath(entry.app),
+				}
 			: {}),
 		createdAt: entry.connection.createdAt,
 		updatedAt: entry.connection.updatedAt,
@@ -79,6 +83,7 @@ function toPlatformAppPrefillRecord(
 		},
 		platform: true,
 		platformAllowedScopes: app.allowedScopes,
+		platformLogoPath: buildPlatformOauthAppLogoPath(app),
 		createdAt: app.createdAt,
 		updatedAt: app.updatedAt,
 	}

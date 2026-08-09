@@ -135,6 +135,7 @@ import {
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
+import { createIntegrationLogoHandler } from '#app/handlers/integration-logo.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
 import {
@@ -370,6 +371,7 @@ export function createAppRouter(env: Env) {
 			communityDetail: createCommunityDetailHandler(env),
 			communityDetailApi: createCommunityDetailApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
+			integrationLogo: createIntegrationLogoHandler(env),
 			communityDetailOgImage: createCommunityDetailOgImageHandler(env),
 			communityReportApiPost: createCommunityReportApiPostHandler(env),
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),

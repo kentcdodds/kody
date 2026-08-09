@@ -369,7 +369,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   dedicated purpose, so no `{{secret:…}}` placeholder can name it);
   `getPlatformOauthAppClientSecret` in
   `packages/worker/src/integrations/platform-apps.ts` is its only decrypt
-  accessor. See
+  accessor. `logo_key` / `logo_content_type`
+  (`0005-platform-oauth-app-logos.sql`) point at an operator-owned provider logo
+  asset in the `COMMUNITY_ASSETS` R2 bucket (content-hashed
+  `platform-oauth-app-logos/{slug}/` keys; SVG uploads are rasterized to PNG
+  before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
 - `user_integrations` (`0101-user-oauth-apps-and-integrations.sql`, rebuilt by
   `0004-platform-oauth-apps.sql`): per-user OAuth connections keyed by

@@ -999,7 +999,25 @@ export function ConnectOauthRoute(handle: Handle) {
 			<section mix={css(pageCss)}>
 				<header mix={css(headerCss)}>
 					<span mix={css(eyebrowCss)}>Kody secure connection</span>
-					<h1 mix={css(pageTitleCss)}>Connect {config.provider}</h1>
+					<h1
+						mix={css({
+							...pageTitleCss,
+							display: 'flex',
+							alignItems: 'center',
+							gap: spacing.sm,
+						})}
+					>
+						{config.platformLogoPath ? (
+							<img
+								src={config.platformLogoPath}
+								alt=""
+								width={36}
+								height={36}
+								mix={css({ borderRadius: radius.sm })}
+							/>
+						) : null}
+						Connect {config.provider}
+					</h1>
 					<p mix={css(pageDescriptionCss)}>
 						Follow the steps below to connect your account using OAuth.
 					</p>

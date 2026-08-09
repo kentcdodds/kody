@@ -9,6 +9,8 @@ import {
 	platformOauthAppPublicSchema,
 	toPlatformOauthAppPublic,
 } from '#mcp/capabilities/integrations/platform-app-shared.ts'
+import { base64ToBytes } from '@kody-internal/shared/base64.ts'
+import { setPlatformOauthAppLogo } from '#worker/integrations/platform-app-logo.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import {
 	adminMutationCapabilityAccess,
@@ -52,6 +54,13 @@ const inputSchema = z
 			.boolean()
 			.optional()
 			.describe('Disabled apps are hidden from users and reject new connects.'),
+		logoBase64: z
+			.string()
+			.nullable()
+			.optional()
+			.describe(
+				'Base64-encoded provider logo (SVG, PNG, JPEG, or WebP; SVG is rasterized to PNG before storage). Omit to keep the current logo, pass null to remove it.',
+			),
 	})
 	.strict()
 
@@ -86,7 +95,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 					// Omitted optional fields stay `undefined` so the upsert's
 					// retain-on-omit semantics apply: a partial save never
 					// silently clears the scope menu, hosts, or stored secret.
-					const app = await upsertPlatformOauthApp({
+					let app = await upsertPlatformOauthApp({
 						db: ctx.env.APP_DB,
 						env: ctx.env,
 						app: {
@@ -109,6 +118,17 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 							enabled: args.enabled,
 						},
 					})
+					if (args.logoBase64 !== undefined) {
+						app = await setPlatformOauthAppLogo({
+							db: ctx.env.APP_DB,
+							env: ctx.env,
+							slug: app.slug,
+							sourceBytes:
+								args.logoBase64 === null
+									? null
+									: base64ToBytes(args.logoBase64),
+						})
+					}
 					return { app: toPlatformOauthAppPublic(app) }
 				},
 				{

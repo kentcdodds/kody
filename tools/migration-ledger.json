@@ -19,6 +19,10 @@
 		{
 			"filename": "0004-platform-oauth-apps.sql",
 			"sha256": "2898bfe6d718ac8146d58b2d109517021fb34c04cd8b5d90f2a9c5638f74c34d"
+		},
+		{
+			"filename": "0005-platform-oauth-app-logos.sql",
+			"sha256": "9157434ded9a281e43da71d64a6490bbfe1abd4e952dc6f25835cee99bf23fc9"
 		}
 	]
 }

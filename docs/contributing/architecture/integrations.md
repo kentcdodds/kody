@@ -123,6 +123,19 @@ integrations and throws for platform ones (`integration_get` carries
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
 capability use it within the import boundaries.
 
+### Provider logos
+
+Operators may attach a logo per platform app (`admin_platform_oauth_app_save`
+`logoBase64`; `null` clears). Uploads accept SVG, PNG, JPEG, or WebP; SVG is
+sanitized and rasterized to PNG through the community-icon pipeline, so an
+active image format is never stored or served. Assets live in the
+`COMMUNITY_ASSETS` R2 bucket under content-hashed
+`platform-oauth-app-logos/{slug}/` keys (operator-owned, like the app row);
+`platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
+Serving is the public `/integrations/logos/:integrationSlug` route with
+immutable caching; projections expose the relative `logoPath` and the connect
+page renders it, falling back to the built-in `ProviderIcon` set.
+
 ### Admin provisioning
 
 Operators manage platform apps through role-gated capabilities in the `admin`
