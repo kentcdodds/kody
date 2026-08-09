@@ -16,6 +16,7 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
+import { findPlatformPackageByRef } from '#worker/package-registry/platform-packages.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 
 import { collectIntegrationPackageSuggestions } from './integration-package-suggestions.ts'
@@ -58,27 +59,35 @@ export async function resolveEntityDetail(input: {
 	}
 
 	if (ref.type === 'package') {
-		const record =
-			(await getSavedPackageById(input.agent.getEnv().APP_DB, {
+		const env = input.agent.getEnv()
+		const ownRecord =
+			(await getSavedPackageById(env.APP_DB, {
 				userId: input.userId,
 				packageId: ref.id,
 			})) ??
-			(await getSavedPackageByKodyId(input.agent.getEnv().APP_DB, {
+			(await getSavedPackageByKodyId(env.APP_DB, {
 				userId: input.userId,
 				kodyId: ref.id,
 			}))
+		// Platform (built-in) packages resolve live for every caller, so
+		// their detail is readable without a fork; the caller's own copy
+		// wins, mirroring import resolution.
+		const platformFallback = ownRecord
+			? null
+			: await findPlatformPackageByRef(env.APP_DB, { idOrKodyId: ref.id })
+		const record = ownRecord ?? platformFallback?.record
 		if (!record) {
 			throw new McpCallerError('Saved package not found for this user.')
 		}
-		const env = input.agent.getEnv()
 		const loaded = await loadPackageSourceBySourceId({
 			env,
 			baseUrl: input.callerContext.baseUrl,
-			userId: input.userId,
+			userId: platformFallback?.ownerUserId ?? input.userId,
 			sourceId: record.sourceId,
 		})
 		const packageAppOrigin =
 			getPackageAppBaseUrl({ env }) ?? input.callerContext.baseUrl
+		const ownerUsername = platformFallback?.platformScope ?? input.username
 		return {
 			type: 'package' as const,
 			id: record.kodyId,
@@ -88,12 +97,13 @@ export async function resolveEntityDetail(input: {
 			manifest: loaded.manifest,
 			files: loaded.files,
 			baseUrl: input.callerContext.baseUrl,
-			ownerUsername: input.username,
+			ownerUsername,
+			platformScope: platformFallback?.platformScope ?? null,
 			hostedUrl:
-				record.hasApp && input.username
+				record.hasApp && ownerUsername
 					? buildPackageAppUrl({
 							origin: packageAppOrigin,
-							username: input.username,
+							username: ownerUsername,
 							kodyId: record.kodyId,
 						})
 					: null,

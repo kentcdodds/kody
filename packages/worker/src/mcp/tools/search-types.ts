@@ -15,6 +15,13 @@ export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
 	projection: PackageSearchProjection
 	readmeSnippet?: PackageReadmeSnippet | null
+	/**
+	 * Platform (built-in) scope username when the row belongs to a platform
+	 * account rather than the caller. Host-set by the search loader only —
+	 * the package plugin's ownership check admits exactly these rows and
+	 * fails closed for any other foreign row.
+	 */
+	platformScope?: string | null
 	hydrate?: () => Promise<{
 		projection: PackageSearchProjection
 		readmeSnippet: PackageReadmeSnippet | null

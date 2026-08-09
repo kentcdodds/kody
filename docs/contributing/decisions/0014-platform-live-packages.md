@@ -67,10 +67,14 @@ scopes as always-valid references (`allowedForeignScopes`), so forks keep
 - The operator's platform packages become load-bearing supply chain for every
   user, which is the same trust users already extend to the worker itself on a
   hosted deployment; users who want insulation fork.
-- Deferred (phase 2): surfacing platform packages in ranked `search`. The
-  package search plugin asserts caller ownership of every row and vector scoring
-  uses per-user vector ids, so surfacing needs its own design rather than a
-  row-injection shortcut. Until then, discovery is by documented name and
-  connect-flow suggestions.
+- Platform packages surface in ranked `search` alongside the caller's own
+  packages: the search loader injects platform rows with a host-set
+  `platformScope` marker, the package plugin's ownership tripwire admits exactly
+  those marked rows (anything else foreign still fails the lane closed), and
+  entity detail falls back to platform accounts when the caller owns no matching
+  package. The caller's own copy of a name or kody id wins and replaces the
+  platform row. Platform rows rank lexically only — the vector index is
+  per-user, so platform packages have no vectors in the caller's namespace;
+  revisit if lexical ranking proves too weak.
 - Deferred: an optional pairing column linking a platform OAuth app to its
   recommended platform package.

@@ -40,6 +40,8 @@ export async function buildSavedPackageSearchRows(input: {
 	baseUrl: string
 	userId: string
 	records: Array<Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]>
+	/** Set for platform (built-in) package rows; see PackageSearchRow. */
+	platformScope?: string | null
 }): Promise<BuildSavedPackageSearchRowsResult> {
 	const rows = input.records.map((record) => {
 		let hydration: Promise<{
@@ -50,11 +52,15 @@ export async function buildSavedPackageSearchRows(input: {
 			record,
 			projection: buildLeanPackageSearchProjection(record),
 			readmeSnippet: null,
+			...(input.platformScope ? { platformScope: input.platformScope } : {}),
 			hydrate: () => {
+				// Source loads are owner-keyed: the record's own userId is the
+				// caller for caller rows and the platform account for
+				// platform-scope rows.
 				hydration ??= loadPackageSourceBySourceId({
 					env: input.env,
 					baseUrl: input.baseUrl,
-					userId: input.userId,
+					userId: record.userId,
 					sourceId: record.sourceId,
 				}).then((loaded) => ({
 					projection: buildPackageSearchProjection(

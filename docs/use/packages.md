@@ -151,7 +151,9 @@ exhaustive.
   code runs in **your** runtime against your secrets and grants; your own copy
   of the same name always wins, so forking to customize keeps working. Platform
   package code cannot use `packageStorage()` in your account, and dynamic
-  `import("kody:@kody/…")` is unsupported — use the static form.
+  `import("kody:@kody/…")` is unsupported — use the static form. Platform
+  packages appear in `search` results alongside your own (marked with their
+  platform scope), so agents discover them without knowing the name in advance.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published

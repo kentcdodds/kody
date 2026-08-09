@@ -224,9 +224,16 @@ export const packageSearchEntityPlugin = {
 	async buildCandidates(input) {
 		const rows = input.optionalRows.packageRows
 		if (rows.length === 0) return []
-		// Fail closed in every mode: no userId or foreign rows never enter ranking.
+		// Fail closed in every mode: no userId, and foreign rows never enter
+		// ranking unless the loader explicitly marked them as platform
+		// (built-in) scope rows — the one lane that resolves live for every
+		// caller (decision record 0014).
 		if (!input.userId) return []
-		if (rows.some((row) => row.record.userId !== input.userId)) {
+		if (
+			rows.some(
+				(row) => row.record.userId !== input.userId && !row.platformScope,
+			)
+		) {
 			console.warn(
 				JSON.stringify({
 					message: 'package candidates skipped: row userId mismatch',
@@ -316,6 +323,7 @@ export const packageSearchEntityPlugin = {
 						tags: entry.record.tags,
 						hasApp: entry.record.hasApp,
 						hidden: entry.record.hidden,
+						platformScope: entry.platformScope ?? null,
 						readmeSnippet: entry.readmeSnippet ?? null,
 						actionMatches,
 					},
@@ -439,12 +447,15 @@ export const packageSearchEntityPlugin = {
 		const primaryActionFunction = primaryAction
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
+		const platformSuffix = match.platformScope
+			? ` This is a platform (built-in) package: the import resolves live from @${match.platformScope} — no fork needed, and it runs in your runtime against your secrets.`
+			: ''
 		const nextStep =
 			primaryAction && primaryActionFunction
-				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.`
+				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.${platformSuffix}`
 				: match.hasApp
-					? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.`
-					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
+					? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.${platformSuffix}`
+					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}`
 		return {
 			type: 'package',
 			id: match.kodyId,
@@ -458,6 +469,7 @@ export const packageSearchEntityPlugin = {
 			tags: match.tags,
 			hasApp: match.hasApp,
 			hidden: match.hidden,
+			platformScope: match.platformScope ?? null,
 			hostedUrl:
 				match.hasApp && username
 					? buildPackageHostedUrl(hostedAppOrigin, username, match.kodyId)
@@ -656,6 +668,7 @@ export const packageSearchEntityPlugin = {
 				tags: detail.record.tags,
 				hasApp: detail.record.hasApp,
 				hidden: detail.record.hidden,
+				platformScope: detail.platformScope ?? null,
 				hostedUrl: detail.hostedUrl,
 				appEntry,
 				maintain,

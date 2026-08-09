@@ -7,6 +7,10 @@ import { listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
+import {
+	listPlatformPackagesForSearch,
+	type PlatformPackageForSearch,
+} from '#worker/package-registry/platform-packages.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	getRemoteConnectorStatus,
@@ -21,6 +25,24 @@ import {
 
 function shouldIncludeRemoteConnectorStatus(status: RemoteConnectorStatus) {
 	return status.state !== 'connected' || status.toolCount === 0
+}
+
+function groupPlatformPackagesByScope(
+	platformPackages: Array<PlatformPackageForSearch>,
+): Array<{
+	platformScope: string
+	records: Array<PlatformPackageForSearch['record']>
+}> {
+	const byScope = new Map<string, Array<PlatformPackageForSearch['record']>>()
+	for (const entry of platformPackages) {
+		const records = byScope.get(entry.platformScope) ?? []
+		records.push(entry.record)
+		byScope.set(entry.platformScope, records)
+	}
+	return [...byScope.entries()].map(([platformScope, records]) => ({
+		platformScope,
+		records,
+	}))
 }
 
 export function serializeRemoteConnectorStatus(status: RemoteConnectorStatus): {
@@ -109,21 +131,49 @@ export async function loadSearchRowsAndRegistry(input: {
 		loadOptionalSearchRows({
 			userId: input.userId,
 			loadPackages: async () => {
-				const savedPackages = await listSavedPackagesByUserId(
-					input.env.APP_DB,
-					{
+				const [savedPackages, platformPackages] = await Promise.all([
+					listSavedPackagesByUserId(input.env.APP_DB, {
 						userId: input.userId!,
-					},
+					}),
+					listPlatformPackagesForSearch(input.env.APP_DB),
+				])
+				const ownRecords = savedPackages.filter((pkg) =>
+					input.includeHiddenPackages ? true : !pkg.hidden,
 				)
 				const packageRows = await buildSavedPackageSearchRows({
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
 					userId: input.userId!,
-					records: savedPackages.filter((pkg) =>
-						input.includeHiddenPackages ? true : !pkg.hidden,
-					),
+					records: ownRecords,
 				})
-				return packageRows
+				// Platform (built-in) packages are discoverable for everyone;
+				// the caller's own copy of the same name or kody id wins
+				// (fork-to-customize replaces the platform row in results).
+				const ownNames = new Set(savedPackages.map((pkg) => pkg.name))
+				const ownKodyIds = new Set(savedPackages.map((pkg) => pkg.kodyId))
+				const platformRowGroups = await Promise.all(
+					groupPlatformPackagesByScope(platformPackages).map(
+						async ({ platformScope, records }) =>
+							buildSavedPackageSearchRows({
+								env: input.env,
+								baseUrl: input.callerContext.baseUrl,
+								userId: input.userId!,
+								records: records.filter(
+									(record) =>
+										!ownNames.has(record.name) &&
+										!ownKodyIds.has(record.kodyId),
+								),
+								platformScope,
+							}),
+					),
+				)
+				return {
+					rows: [
+						...packageRows.rows,
+						...platformRowGroups.flatMap((group) => group.rows),
+					],
+					warnings: packageRows.warnings,
+				}
 			},
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
