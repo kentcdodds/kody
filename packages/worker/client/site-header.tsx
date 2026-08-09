@@ -70,7 +70,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 		// nothing would otherwise dismiss the panel.
 		listenToRouterNavigation(handle, () => {
 			const panel = document.getElementById(menuPanelId)
-			if (panel instanceof HTMLElement && panel.matches(':popover-open')) {
+			if (panel instanceof HTMLElement && typeof panel.hidePopover === 'function' && panel.matches(':popover-open')) {
 				panel.hidePopover()
 			}
 		})
