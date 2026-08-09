@@ -585,6 +585,92 @@ test('deleteCloudflareQueue removes an existing queue by id', async () => {
 	)
 })
 
+const queueStillReferencedResponse = () =>
+	Response.json(
+		{
+			success: false,
+			errors: [
+				{
+					code: 11004,
+					message:
+						"Cannot delete queue 'kody-pr-123-webhook-dispatch' that is still referenced by a binding in a Worker. Unbind queue 'kody-pr-123-webhook-dispatch' from the Workers 'kody-pr-123'; then try again.",
+				},
+			],
+		},
+		{ status: 400 },
+	)
+
+test('deleteCloudflareQueue waits out the Worker binding release then deletes', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						queue_id: 'queue-preview',
+						queue_name: 'kody-pr-123-webhook-dispatch',
+					},
+				],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockResolvedValueOnce(queueStillReferencedResponse())
+		.mockResolvedValueOnce(Response.json({ success: true, result: null }))
+	const sleep = vi.fn(async () => {})
+
+	await deleteCloudflareQueue({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-pr-123-webhook-dispatch',
+		dryRun: false,
+		fetcher,
+		sleep,
+	})
+
+	expect(fetcher).toHaveBeenCalledTimes(3)
+	expect(sleep).toHaveBeenCalledTimes(1)
+	expect(fetcher).toHaveBeenNthCalledWith(
+		3,
+		'https://api.cloudflare.com/client/v4/accounts/account-1/queues/queue-preview',
+		expect.objectContaining({ method: 'DELETE' }),
+	)
+})
+
+test('deleteCloudflareQueue gives up when the binding is never released', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						queue_id: 'queue-preview',
+						queue_name: 'kody-pr-123-webhook-dispatch',
+					},
+				],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockImplementation(async () => queueStillReferencedResponse())
+
+	await expect(
+		deleteCloudflareQueue({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			name: 'kody-pr-123-webhook-dispatch',
+			dryRun: false,
+			fetcher,
+			sleep: async () => {},
+		}),
+	).rejects.toThrow('still referenced by a binding in a Worker')
+
+	// One list call plus five delete attempts.
+	expect(fetcher).toHaveBeenCalledTimes(6)
+})
+
 test('Cloudflare API requests retry gateway HTML/text blips then succeed', async () => {
 	consoleError.mockImplementation(() => {})
 	const fetcher = vi

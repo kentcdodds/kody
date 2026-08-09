@@ -177,8 +177,28 @@ jobs:
           playwright: 'true'
           worker-env: 'true'
 
+      # Wrangler's local workerd occasionally crashes mid-suite ("Broken
+      # pipe" → "Network connection lost"), which kills the Playwright
+      # webServer and fails every remaining test with ECONNREFUSED /
+      # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Retry the
+      # whole suite once with a fresh server, but only when the failure
+      # matches that crash signature — genuine test failures never retry.
       - name: 🎭 Playwright E2E
-        run: npm run test:e2e:run
+        run: |
+          # No pipefail: the runner's implicit `bash -e` would abort on the
+          # failing pipeline before the flake check; PIPESTATUS captures the
+          # suite's exit code instead.
+          set -u
+          npm run test:e2e:run 2>&1 | tee e2e-attempt-1.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if ! grep -qE 'E2eWebServerDeadError|ERR_CONNECTION_REFUSED|ECONNREFUSED' e2e-attempt-1.log; then
+            exit "$status"
+          fi
+          echo "::warning::Playwright webServer (wrangler) died mid-suite; retrying the E2E suite once with a fresh server."
+          npm run test:e2e:run
 
       # Wrangler writes fatal mid-suite exits under WRANGLER_LOG_PATH
       # (./logs.local). Upload on failure so empty `[WebServer] ERROR` lines

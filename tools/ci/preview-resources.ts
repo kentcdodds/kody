@@ -438,6 +438,10 @@ async function cleanupPreviewResources(options: CliOptions) {
 		apiToken: apiToken ?? 'dry-run-token',
 		dryRun: options.dryRun,
 	}
+	// Workers must go first: Cloudflare refuses to delete a queue that is
+	// still referenced by a Worker binding (400 "Cannot delete queue ...
+	// still referenced by a binding in a Worker").
+	deletePreviewWorkers(options.workerName, options.dryRun)
 	await deleteCloudflareQueue({
 		...queueClient,
 		name: webhookDispatchQueueName,
@@ -446,7 +450,6 @@ async function cleanupPreviewResources(options: CliOptions) {
 		...queueClient,
 		name: webhookDispatchDeadLetterQueueName,
 	})
-	deletePreviewWorkers(options.workerName, options.dryRun)
 	deleteR2Bucket({ name: communityAssetsBucketName, dryRun: options.dryRun })
 	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
 	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })

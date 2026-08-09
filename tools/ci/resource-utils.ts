@@ -458,6 +458,22 @@ export async function ensureCloudflareQueue(input: {
 	}
 }
 
+/**
+ * Cloudflare returns this 400 while a Worker still binds the queue. Deleting
+ * the Worker first is required, but the binding release propagates
+ * asynchronously, so a just-deleted Worker can briefly keep the queue
+ * undeletable.
+ */
+export function isQueueStillReferencedError(error: unknown) {
+	return (
+		error instanceof Error &&
+		error.message.includes('still referenced by a binding in a Worker')
+	)
+}
+
+const queueBindingReleaseMaxAttempts = 5
+const queueBindingReleaseBaseDelayMs = 2_000
+
 export async function deleteCloudflareQueue(input: {
 	accountId: string
 	apiToken: string
@@ -465,6 +481,7 @@ export async function deleteCloudflareQueue(input: {
 	dryRun: boolean
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
 }) {
 	if (input.dryRun) {
 		console.error(`[dry-run] delete Queue: ${input.name}`)
@@ -477,11 +494,28 @@ export async function deleteCloudflareQueue(input: {
 		console.error(`Queue already deleted: ${input.name}`)
 		return
 	}
-	await cloudflareApiRequest({
-		...input,
-		pathname: `/queues/${queue.queue_id}`,
-		method: 'DELETE',
-	})
+	const wait = input.sleep ?? sleep
+	for (let attempt = 1; ; attempt += 1) {
+		try {
+			await cloudflareApiRequest({
+				...input,
+				pathname: `/queues/${queue.queue_id}`,
+				method: 'DELETE',
+			})
+			break
+		} catch (error) {
+			if (
+				!isQueueStillReferencedError(error) ||
+				attempt === queueBindingReleaseMaxAttempts
+			) {
+				throw error
+			}
+			console.error(
+				`Queue ${input.name} is still bound to a Worker; waiting for the binding release (attempt ${attempt + 1}/${queueBindingReleaseMaxAttempts})`,
+			)
+			await wait(queueBindingReleaseBaseDelayMs * 2 ** (attempt - 1))
+		}
+	}
 	console.error(`Deleted Queue: ${input.name} (${queue.queue_id})`)
 }
 
