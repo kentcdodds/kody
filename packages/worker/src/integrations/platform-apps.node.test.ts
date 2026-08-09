@@ -9,6 +9,7 @@ import {
 	getPlatformOauthAppClientSecret,
 	listPlatformOauthApps,
 	listTopPlatformAppsByUse,
+	PlatformOauthAppValidationError,
 	upsertPlatformOauthApp,
 } from './platform-apps.ts'
 
@@ -155,14 +156,15 @@ test('partial saves retain omitted fields instead of clearing them', async () =>
 
 test('confidential flow requires a client secret only while enabled', async () => {
 	const { db, env } = createHarness()
-	// Enabled (default) without a secret is rejected.
+	// Enabled (default) without a secret is rejected as a validation error
+	// (MCP re-wraps this as McpCallerError so it stays off Sentry).
 	await expect(
 		upsertPlatformOauthApp({
 			db,
 			env,
 			app: { ...baseGithubApp, clientSecret: null },
 		}),
-	).rejects.toThrow('Confidential flow requires a client secret')
+	).rejects.toBeInstanceOf(PlatformOauthAppValidationError)
 
 	// Staged provisioning: a disabled app saves without a secret so an
 	// operator can paste credentials later.
@@ -190,7 +192,7 @@ test('confidential flow requires a client secret only while enabled', async () =
 				enabled: true,
 			},
 		}),
-	).rejects.toThrow('Confidential flow requires a client secret')
+	).rejects.toBeInstanceOf(PlatformOauthAppValidationError)
 
 	// Once the secret lands, enabling works.
 	const live = await upsertPlatformOauthApp({

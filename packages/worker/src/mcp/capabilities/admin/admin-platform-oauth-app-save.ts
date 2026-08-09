@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -11,7 +12,10 @@ import {
 } from '#mcp/capabilities/integrations/platform-app-shared.ts'
 import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { setPlatformOauthAppLogo } from '#worker/integrations/platform-app-logo.ts'
-import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
+import {
+	PlatformOauthAppValidationError,
+	upsertPlatformOauthApp,
+} from '#worker/integrations/platform-apps.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
@@ -94,44 +98,54 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 				ctx,
 				'admin_platform_oauth_app_save',
 				async () => {
-					// Omitted optional fields stay `undefined` so the upsert's
-					// retain-on-omit semantics apply: a partial save never
-					// silently clears the scope menu, hosts, or stored secret.
-					let app = await upsertPlatformOauthApp({
-						db: ctx.env.APP_DB,
-						env: ctx.env,
-						app: {
-							slug: args.slug,
-							provider: args.provider,
-							label: args.label,
-							clientId: args.clientId,
-							clientSecret: args.clientSecret,
-							tokenUrl: args.tokenUrl,
-							authorizeUrl: args.authorizeUrl,
-							apiBaseUrl: args.apiBaseUrl,
-							flow: args.flow,
-							usePkce: args.usePkce,
-							tokenExchangeStyle: args.tokenExchangeStyle,
-							scopeSeparator: args.scopeSeparator,
-							extraAuthorizeParams: args.extraAuthorizeParams,
-							allowedScopes: args.allowedScopes,
-							defaultScopes: args.defaultScopes,
-							requiredHosts: args.requiredHosts,
-							enabled: args.enabled,
-						},
-					})
-					if (args.logoBase64 !== undefined) {
-						app = await setPlatformOauthAppLogo({
+					try {
+						// Omitted optional fields stay `undefined` so the upsert's
+						// retain-on-omit semantics apply: a partial save never
+						// silently clears the scope menu, hosts, or stored secret.
+						let app = await upsertPlatformOauthApp({
 							db: ctx.env.APP_DB,
 							env: ctx.env,
-							slug: app.slug,
-							sourceBytes:
-								args.logoBase64 === null
-									? null
-									: base64ToBytes(args.logoBase64),
+							app: {
+								slug: args.slug,
+								provider: args.provider,
+								label: args.label,
+								clientId: args.clientId,
+								clientSecret: args.clientSecret,
+								tokenUrl: args.tokenUrl,
+								authorizeUrl: args.authorizeUrl,
+								apiBaseUrl: args.apiBaseUrl,
+								flow: args.flow,
+								usePkce: args.usePkce,
+								tokenExchangeStyle: args.tokenExchangeStyle,
+								scopeSeparator: args.scopeSeparator,
+								extraAuthorizeParams: args.extraAuthorizeParams,
+								allowedScopes: args.allowedScopes,
+								defaultScopes: args.defaultScopes,
+								requiredHosts: args.requiredHosts,
+								enabled: args.enabled,
+							},
 						})
+						if (args.logoBase64 !== undefined) {
+							app = await setPlatformOauthAppLogo({
+								db: ctx.env.APP_DB,
+								env: ctx.env,
+								slug: app.slug,
+								sourceBytes:
+									args.logoBase64 === null
+										? null
+										: base64ToBytes(args.logoBase64),
+							})
+						}
+						return { app: toPlatformOauthAppPublic(app) }
+					} catch (error) {
+						// Staging/enable mistakes (secretless confidential while
+						// enabled, empty required fields) are caller-clearable —
+						// keep them off Sentry via McpCallerError.
+						if (error instanceof PlatformOauthAppValidationError) {
+							throw new McpCallerError(error.message, { cause: error })
+						}
+						throw error
 					}
-					return { app: toPlatformOauthAppPublic(app) }
 				},
 				{
 					successReason: ({ app }) => `platform_oauth_app=${app.slug}`,

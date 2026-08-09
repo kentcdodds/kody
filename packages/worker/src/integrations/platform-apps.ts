@@ -10,6 +10,19 @@ import {
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 
 /**
+ * Operator-fixable input rejection while saving a platform OAuth app
+ * (missing required fields, enabling a confidential app without a secret).
+ * MCP capabilities re-wrap this as `McpCallerError` so agent staging mistakes
+ * stay on `mcp-event` lines and out of Sentry.
+ */
+export class PlatformOauthAppValidationError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'PlatformOauthAppValidationError'
+	}
+}
+
+/**
  * Operator-provisioned built-in OAuth apps shared across every user.
  *
  * The client secret is stored encrypted in `platform_oauth_apps` and is
@@ -170,16 +183,22 @@ export async function upsertPlatformOauthApp(input: {
 }): Promise<PlatformOauthApp> {
 	const slug = canonicalIntegrationName(input.app.slug)
 	if (!slug) {
-		throw new Error('Platform app slug must contain letters or numbers.')
+		throw new PlatformOauthAppValidationError(
+			'Platform app slug must contain letters or numbers.',
+		)
 	}
 	const clientId = input.app.clientId.trim()
 	if (!clientId) {
-		throw new Error('Client id is required.')
+		throw new PlatformOauthAppValidationError('Client id is required.')
 	}
 	const tokenUrl = input.app.tokenUrl.trim()
 	const authorizeUrl = input.app.authorizeUrl.trim()
-	if (!tokenUrl) throw new Error('Token URL is required.')
-	if (!authorizeUrl) throw new Error('Authorize URL is required.')
+	if (!tokenUrl) {
+		throw new PlatformOauthAppValidationError('Token URL is required.')
+	}
+	if (!authorizeUrl) {
+		throw new PlatformOauthAppValidationError('Authorize URL is required.')
+	}
 
 	const existing = await getPlatformOauthAppRowBySlug({ db: input.db, slug })
 	const clientSecretEncrypted =
@@ -202,7 +221,7 @@ export async function upsertPlatformOauthApp(input: {
 	// enables) later; the secret becomes mandatory the moment the app is
 	// reachable by users.
 	if (enabled && input.app.flow === 'confidential' && !clientSecretEncrypted) {
-		throw new Error(
+		throw new PlatformOauthAppValidationError(
 			'Confidential flow requires a client secret before the app can be enabled. Save it with enabled: false to stage the config first.',
 		)
 	}

@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 // These tests assert real `audit_events` rows written through the actual
@@ -151,4 +152,59 @@ test('save keeps the stored secret on update and can disable an app', async () =
 			slug: 'github',
 		}),
 	).resolves.toBe('platform-github-client-secret-value')
+})
+
+test('enabling a confidential app without a client secret is an McpCallerError', async () => {
+	const { ctx, auditSqlite } = createHarness()
+	await expect(
+		adminPlatformOauthAppSaveCapability.handler(
+			{
+				slug: 'github',
+				clientId: saveInput.clientId,
+				clientSecret: null,
+				tokenUrl: saveInput.tokenUrl,
+				authorizeUrl: saveInput.authorizeUrl,
+				flow: 'confidential',
+			},
+			ctx,
+		),
+	).rejects.toBeInstanceOf(McpCallerError)
+
+	const staged = await adminPlatformOauthAppSaveCapability.handler(
+		{
+			slug: 'github',
+			clientId: saveInput.clientId,
+			clientSecret: null,
+			tokenUrl: saveInput.tokenUrl,
+			authorizeUrl: saveInput.authorizeUrl,
+			flow: 'confidential',
+			enabled: false,
+		},
+		ctx,
+	)
+	expect(staged.app.enabled).toBe(false)
+
+	await expect(
+		adminPlatformOauthAppSaveCapability.handler(
+			{
+				slug: 'github',
+				clientId: saveInput.clientId,
+				tokenUrl: saveInput.tokenUrl,
+				authorizeUrl: saveInput.authorizeUrl,
+				flow: 'confidential',
+				enabled: true,
+			},
+			ctx,
+		),
+	).rejects.toBeInstanceOf(McpCallerError)
+
+	const failures = auditSqlite
+		.prepare(
+			`SELECT action, result FROM audit_events WHERE result = 'failure' ORDER BY id ASC`,
+		)
+		.all() as Array<{ action: string; result: string }>
+	expect(failures).toEqual([
+		{ action: 'admin_platform_oauth_app_save', result: 'failure' },
+		{ action: 'admin_platform_oauth_app_save', result: 'failure' },
+	])
 })
