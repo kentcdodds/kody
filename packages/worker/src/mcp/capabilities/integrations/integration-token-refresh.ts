@@ -23,7 +23,7 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 	{
 		name: 'integration_token_refresh',
 		description:
-			'Refresh the OAuth access token for a saved integration host-side and persist the new tokens to the user secret store. Returns metadata only — token values never appear in the output. This is the only refresh path for platform (built-in) integrations, whose shared client secret stays server-side.',
+			'Refresh the OAuth access token for a saved integration host-side and persist the new tokens to the user secret store. Returns metadata only — token values never appear in the output. createAuthenticatedFetch refreshes through this path for every integration; it is the only refresh path for platform (built-in) integrations, whose shared client secret stays server-side.',
 		keywords: [
 			'integration',
 			'oauth',

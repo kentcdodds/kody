@@ -88,12 +88,17 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
  * @internal
  * Refreshes and returns the raw OAuth access token for the named integration.
  *
+ * **Legacy raw-token path**: kept only for auth patterns that cannot use an
+ * `Authorization` header (WebSockets, SDK constructors, query-param tokens).
+ * `createAuthenticatedFetch` refreshes host-side via
+ * `integration_token_refresh` and never materializes tokens in the sandbox —
+ * prefer it everywhere a fetch wrapper works.
+ *
  * **Security boundary**: The returned value is a materialized credential. Once
  * in caller hands, the fetch gateway's host-allowlist check is bypassed because
  * the gateway can only inspect secret *placeholders*. Callers that forward this
  * token in outbound requests MUST enforce the integration's host allowlist
- * themselves (see `assertIntegrationHostAllowed`). Prefer
- * `createAuthenticatedFetch` which performs this enforcement automatically.
+ * themselves (see `assertIntegrationHostAllowed`).
  */
 export async function refreshAccessToken(
 	kody: KodyNamespace,
@@ -108,7 +113,7 @@ export async function refreshAccessToken(
 	return refreshAccessTokenWithIntegration(kody, providerName, integration)
 }
 
-async function refreshPlatformIntegrationTokens(
+async function refreshIntegrationTokensHostSide(
 	kody: KodyNamespace,
 	providerName: string,
 ) {
@@ -136,21 +141,14 @@ export async function createAuthenticatedFetch(
 > {
 	const integration = await readIntegrationConfig(kody, providerName)
 
-	// Platform connections refresh host-side and retry with a placeholder
-	// header (the placeholder resolves to the fresh token at the gateway), so
-	// the raw token never enters the sandbox. User-lane connections keep the
-	// in-sandbox refresh flow.
+	// Both lanes refresh host-side (integration_token_refresh) and retry with
+	// a placeholder header the gateway resolves to the fresh token, so the
+	// raw token never enters the sandbox. The user lane enforces each
+	// secret's allowed_hosts against the token URL host-side — the same
+	// containment the gateway applied when this refresh ran in-sandbox.
 	const retryAuthorizationHeader = async () => {
-		if (integration.platform === true) {
-			await refreshPlatformIntegrationTokens(kody, providerName)
-			return buildAccessTokenAuthorizationHeader(providerName, integration)
-		}
-		const refreshedAccessToken = await refreshAccessTokenWithIntegration(
-			kody,
-			providerName,
-			integration,
-		)
-		return `Bearer ${refreshedAccessToken}`
+		await refreshIntegrationTokensHostSide(kody, providerName)
+		return buildAccessTokenAuthorizationHeader(providerName, integration)
 	}
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
@@ -754,7 +752,7 @@ const __kodyResolveRequestUrl = (input, integration) => {
   }
   return input;
 };
-const __kodyRefreshPlatformIntegrationTokens = async (providerName) => {
+const __kodyRefreshIntegrationTokensHostSide = async (providerName) => {
   const tokenRefresh = kody.integration_token_refresh;
   if (typeof tokenRefresh !== 'function') {
     throw new Error(
@@ -856,19 +854,12 @@ const __kodyRefreshAccessTokenWithIntegration = async (providerName, integration
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
-  // Platform connections refresh host-side and retry with a placeholder
-  // header (resolved to the fresh token at the gateway), so the raw token
-  // never enters the sandbox.
+  // Both lanes refresh host-side and retry with a placeholder header the
+  // gateway resolves to the fresh token, so the raw token never enters the
+  // sandbox.
   const retryAuthorizationHeader = async () => {
-    if (integration.platform === true) {
-      await __kodyRefreshPlatformIntegrationTokens(providerName);
-      return __kodyBuildAccessTokenAuthorizationHeader(providerName, integration);
-    }
-    const refreshedAccessToken = await __kodyRefreshAccessTokenWithIntegration(
-      providerName,
-      integration,
-    );
-    return \`Bearer \${refreshedAccessToken}\`;
+    await __kodyRefreshIntegrationTokensHostSide(providerName);
+    return __kodyBuildAccessTokenAuthorizationHeader(providerName, integration);
   };
   return async (input, init) => {
     const resolvedUrl = __kodyResolveRequestUrl(input, integration);

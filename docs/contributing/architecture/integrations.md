@@ -95,24 +95,30 @@ during onboarding. Saves fold default scopes into the allowed set.
 
 ### Host-side token refresh
 
-Platform connections cannot refresh inside the sandbox — the shared client
-secret has no user-facing secret name by design. `integration_token_refresh`
-(implemented by `refreshIntegrationTokens` in
+Both lanes refresh host-side by default through `createAuthenticatedFetch`.
+`integration_token_refresh` (implemented by `refreshIntegrationTokens` in
 `packages/worker/src/integrations/token-refresh.ts`) resolves the refresh token
 and client secret server-side, POSTs to the provider token URL, persists rotated
 tokens back to the user secret store, and returns only
-`{ ok, refreshedAt, refreshTokenRotated }` — never token values. User-lane
-connections may also refresh through it; because their `tokenUrl` is
-user-configurable, the user lane enforces each materialized secret's
-`allowed_hosts` against the token host before the request — the same containment
-the fetch gateway applies to placeholder resolution. Platform-lane destinations
-are operator-pinned rows, so no user-secret allowlist applies.
+`{ ok, refreshedAt, refreshTokenRotated }` — never token values. Platform
+connections require this path — the shared client secret has no user-facing
+secret name by design. User-lane connections may also refresh through it;
+because their `tokenUrl` is user-configurable, the user lane enforces each
+materialized secret's `allowed_hosts` against the token host before the request
+— the same containment the fetch gateway applied when refresh ran in-sandbox via
+placeholder resolution. Platform-lane destinations are operator-pinned rows, so
+no user-secret allowlist applies.
 
-In the sandbox, `refreshAccessToken` throws for platform integrations (their
-`integration_get` config carries `platform: true`), and
-`createAuthenticatedFetch` calls `integration_token_refresh` then retries with a
-`{{secret:…}}` placeholder `Authorization` header, so raw tokens never enter the
-sandbox heap. Token-exchange request building is shared:
+On 401, `createAuthenticatedFetch` calls `integration_token_refresh` then
+retries with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens
+never enter the sandbox heap. Package code that triggers refresh through
+`createAuthenticatedFetch` no longer needs a secret-write (`allowed_packages`)
+grant — the system persists rotated tokens host-side and the package never sees
+or writes token values. `refreshAccessToken` remains the legacy raw-token helper
+for auth patterns that cannot use an Authorization header (WebSockets, SDK
+constructors, query-param tokens); it still runs in-sandbox for user-lane
+integrations and throws for platform ones (`integration_get` carries
+`platform: true`). Token-exchange request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
 capability use it within the import boundaries.
