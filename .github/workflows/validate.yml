@@ -194,7 +194,10 @@ jobs:
           if [ "$status" -eq 0 ]; then
             exit 0
           fi
-          if ! grep -qE 'E2eWebServerDeadError|ERR_CONNECTION_REFUSED|ECONNREFUSED' e2e-attempt-1.log; then
+          # Anchor connection-refused matches to the e2e webServer origin
+          # (port 3847, see playwright.config.ts) so an unrelated test
+          # failure that merely mentions a refused connection never retries.
+          if ! grep -qE 'E2eWebServerDeadError|ECONNREFUSED (127\.0\.0\.1|localhost):3847|ERR_CONNECTION_REFUSED at https?://(127\.0\.0\.1|localhost):3847' e2e-attempt-1.log; then
             exit "$status"
           fi
           echo "::warning::Playwright webServer (wrangler) died mid-suite; retrying the E2E suite once with a fresh server."
