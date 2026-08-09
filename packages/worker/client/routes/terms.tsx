@@ -79,21 +79,21 @@ export function TermsRoute(_handle: Handle) {
 				</p>
 				<p mix={css(descriptionCss)}>
 					When you connect an integration — whether a built-in one that Kody
-					hosts the provider registration for, or one you register yourself —
-					or store a secret, you are authorizing your agent and any code you
-					run to act as you with that access. Actions taken with your tokens,
-					keys, and connections are your actions: messages sent, data read,
-					changed, or deleted, purchases made, and anything else your agent
-					does on a third-party service. Those services also have their own
-					terms, which you are responsible for honoring.
+					hosts the provider registration for, or one you register yourself — or
+					store a secret, you are authorizing your agent and any code you run to
+					act as you with that access. Actions taken with your tokens, keys, and
+					connections are your actions: messages sent, data read, changed, or
+					deleted, purchases made, and anything else your agent does on a
+					third-party service. Those services also have their own terms, which
+					you are responsible for honoring.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Scope access deliberately: grant only the scopes you need, review
-					packages before installing them, and revoke connections you no
-					longer use (from Account settings and from the provider&apos;s
-					side). To the fullest extent the law permits, Kody and its operator
-					are not liable for what your agent, or code you run or install, does
-					with the access you grant it.
+					packages before installing them, and revoke connections you no longer
+					use (from Account settings and from the provider&apos;s side). To the
+					fullest extent the law permits, Kody and its operator are not liable
+					for what your agent, or code you run or install, does with the access
+					you grant it.
 				</p>
 			</section>
 
@@ -157,12 +157,12 @@ export function TermsRoute(_handle: Handle) {
 					To the fullest extent the law permits, Kody and its operator will not
 					be liable for indirect, incidental, special, consequential, exemplary,
 					or punitive damages, or for lost profits, data, goodwill, or business.
-					This includes damages arising from actions your agent, or code you
-					run or install, takes with integrations, secrets, or other access
-					you grant it — on Kody or on third-party services. Our total
-					liability for any claim is limited to the amount you paid Kody
-					during the 12 months before the event giving rise to the claim.
-					These limits do not apply where the law does not allow them.
+					This includes damages arising from actions your agent, or code you run
+					or install, takes with integrations, secrets, or other access you
+					grant it — on Kody or on third-party services. Our total liability for
+					any claim is limited to the amount you paid Kody during the 12 months
+					before the event giving rise to the claim. These limits do not apply
+					where the law does not allow them.
 				</p>
 			</section>
 
