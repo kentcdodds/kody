@@ -4,7 +4,8 @@
 -- the user secret store, so it never enters the {{secret:...}} placeholder
 -- namespace that sandboxed code can reference.
 CREATE TABLE platform_oauth_apps (
-	slug TEXT PRIMARY KEY,
+	-- SQLite quirk: plain TEXT PRIMARY KEY still allows NULL; be explicit.
+	slug TEXT PRIMARY KEY NOT NULL,
 	provider TEXT NOT NULL,
 	label TEXT,
 	client_id TEXT NOT NULL,

@@ -252,11 +252,14 @@ export function parseStoredIntegrationConfig(
 						typeof value === 'string' && Boolean(value),
 				)
 			: []
+		const platformLogoPath = parsePlatformLogoPath(parsed.platformLogoPath)
 		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
 			return null
 		}
 		return {
-			...(platformAppSlug ? { platformAppSlug, platformAllowedScopes } : {}),
+			...(platformAppSlug
+				? { platformAppSlug, platformAllowedScopes, platformLogoPath }
+				: {}),
 			name,
 			tokenUrl,
 			apiBaseUrl:
@@ -497,11 +500,17 @@ export function parseSessionConnectOauthConfig(
 
 /**
  * Logo paths render as <img src>; only same-origin serving paths from the
- * integration-logo route are accepted.
+ * integration-logo route are accepted — one clean slug segment plus an
+ * optional cache tag, so tampered session snapshots cannot point the img at
+ * other same-origin paths via `..` or extra segments.
  */
 export function parsePlatformLogoPath(raw: unknown): string | null {
 	if (typeof raw !== 'string') return null
-	return raw.startsWith('/integrations/logos/') ? raw : null
+	return /^\/integrations\/logos\/[A-Za-z0-9._~%-]+(?:\?v=[0-9a-f]{1,64})?$/.test(
+		raw,
+	)
+		? raw
+		: null
 }
 
 export function summarizeStoredSetupState(input: {
