@@ -90,6 +90,20 @@ type OAuthCallback =
 export function ConnectOauthRoute(handle: Handle) {
 	type StatusTone = 'info' | 'warn' | 'error'
 
+	// Mirrors the server-side bare-visit redirect for SPA-internal
+	// navigations: no provider, no callback code, and no provider error
+	// means there is no flow to set up or resume here.
+	if (typeof window !== 'undefined') {
+		const params = new URLSearchParams(window.location.search)
+		if (
+			!params.get('provider') &&
+			!params.get('code') &&
+			!params.get('error')
+		) {
+			window.location.replace('/guides/oauth')
+		}
+	}
+
 	let statusMessage = 'Ready to connect.'
 	let statusTone: StatusTone = 'info'
 	let currentStep: 'setup' | 'connect' | 'callback' | 'success' = 'setup'
