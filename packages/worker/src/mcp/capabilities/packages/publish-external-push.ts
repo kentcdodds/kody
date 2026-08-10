@@ -38,6 +38,10 @@ import {
 import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
 import { pendingPackageSecretApprovalsSchema } from './shared.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
+import {
+	reportCapabilityProgress,
+	type McpReportProgress,
+} from '#mcp/progress.ts'
 
 const inputSchema = z.object({
 	package_id: z.string().min(1).optional(),
@@ -489,6 +493,7 @@ async function runExternalPublishAttempt(input: {
 	allowForce: boolean
 	destructiveOverwriteConfirmed: boolean
 	signal?: AbortSignal
+	reportProgress?: McpReportProgress
 }): Promise<Exclude<PublishExternalPushResult, { status: 'dispatched' }>> {
 	const maxAttempts = externalPublishRetryDelaysMs.length + 1
 	let lastTransientError: unknown = null
@@ -500,6 +505,14 @@ async function runExternalPublishAttempt(input: {
 				? `external-publish-${input.source.id}`
 				: `external-publish-${input.source.id}-retry-${attempt}`
 		try {
+			await reportCapabilityProgress(input.reportProgress, {
+				progress: attempt,
+				total: maxAttempts + 1,
+				message:
+					attempt === 1
+						? 'Publishing from Artifacts HEAD — running checks and promoting the commit…'
+						: `Publish attempt ${attempt}/${maxAttempts} — giving the repo another nudge…`,
+			})
 			const result = await repoSessionRpc(
 				input.env,
 				sessionId,
@@ -522,6 +535,12 @@ async function runExternalPublishAttempt(input: {
 						`Package "${input.packageId}" is already published, but no published commit is available to rebuild artifacts.`,
 					)
 				}
+				await reportCapabilityProgress(input.reportProgress, {
+					progress: maxAttempts + 1,
+					total: maxAttempts + 1,
+					message:
+						'Already published — rebuilding artifacts so invoke stays fresh…',
+				})
 				await rebuildPublishedPackageArtifactsViaRepoSession({
 					env: input.env,
 					rpcSessionId: sessionId,
@@ -570,6 +589,12 @@ async function runExternalPublishAttempt(input: {
 			if (result.status !== 'published') {
 				return result
 			}
+			await reportCapabilityProgress(input.reportProgress, {
+				progress: maxAttempts + 1,
+				total: maxAttempts + 1,
+				message:
+					'Checks passed — rebuilding published artifacts and indexing dependents…',
+			})
 			await rebuildPublishedPackageArtifactsViaRepoSession({
 				env: input.env,
 				rpcSessionId: sessionId,
@@ -698,6 +723,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				newCommit,
 				allowForce: args.allow_force,
 				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+				reportProgress: ctx.reportProgress,
 			}
 
 			if (!shouldEscalateExternalPublish(ctx.callerContext.executionOrigin)) {

@@ -910,3 +910,55 @@ test('execute tool claims a keyed run, passes the handle, and returns runId', as
 		result: { spawned: true },
 	})
 })
+
+test('execute tool threads a progress reporter when the client sends progressToken', async () => {
+	const [, , handler] = await getExecuteRegistration()
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	const notify = vi.fn().mockResolvedValue(undefined)
+	await (
+		handler as (
+			input: { code: string },
+			extra?: {
+				mcpReq?: {
+					_meta?: { progressToken?: string }
+					notify?: (notification: unknown) => Promise<void>
+				}
+			},
+		) => Promise<unknown>
+	)(
+		{ code: 'export default async () => ({ ok: true })' },
+		{
+			mcpReq: {
+				_meta: { progressToken: 'progress-1' },
+				notify,
+			},
+		},
+	)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.anything(),
+		'export default async () => ({ ok: true })',
+		undefined,
+		expect.objectContaining({
+			reportProgress: expect.any(Function),
+		}),
+	)
+	const options = mockModule.runModuleWithRegistry.mock.calls.at(-1)?.[4] as {
+		reportProgress?: (update: {
+			progress: number
+			message?: string
+		}) => Promise<void>
+	}
+	await options.reportProgress?.({ progress: 1, message: 'bundle time' })
+	expect(notify).toHaveBeenCalledWith({
+		method: 'notifications/progress',
+		params: {
+			progressToken: 'progress-1',
+			progress: 1,
+			message: 'bundle time',
+		},
+	})
+})

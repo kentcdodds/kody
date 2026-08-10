@@ -4,6 +4,24 @@ import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
 import { forkCommunityListing } from './service.ts'
 import { type CommunityForkActor, type CrossScopeReference } from './types.ts'
 
+type InstallProgressUpdate = {
+	progress: number
+	total?: number
+	message?: string
+}
+
+type ReportInstallProgress = (
+	update: InstallProgressUpdate,
+) => void | Promise<void>
+
+async function reportInstallProgress(
+	reportProgress: ReportInstallProgress | null | undefined,
+	update: InstallProgressUpdate,
+) {
+	if (!reportProgress) return
+	await reportProgress(update)
+}
+
 type InstallForkSummary = {
 	forkId: string
 	packageId: string
@@ -66,7 +84,14 @@ export async function installCommunityListing(input: {
 	 * The MCP capability passes `agent` when it drives an install itself.
 	 */
 	actor?: CommunityForkActor | null
+	waitUntil?: (promise: Promise<unknown>) => void
+	reportProgress?: ReportInstallProgress
 }): Promise<InstallCommunityListingResult> {
+	await reportInstallProgress(input.reportProgress, {
+		progress: 1,
+		total: 4,
+		message: 'Forking the listing into your account — source sync inbound…',
+	})
 	const fork = await forkCommunityListing({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -90,6 +115,12 @@ export async function installCommunityListing(input: {
 	// reads the owner package's source root), and forked entity sources are
 	// created with the default manifest path and root — see ensureEntitySource
 	// in forkCommunityListing.
+	await reportInstallProgress(input.reportProgress, {
+		progress: 2,
+		total: 4,
+		message:
+			'Typechecking and bundling npm deps — the same gates a publish would run…',
+	})
 	const checks = await runRepoChecks({
 		workspace: createSnapshotFilesWorkspace(fork.files),
 		manifestPath: 'package.json',
@@ -100,6 +131,12 @@ export async function installCommunityListing(input: {
 		expectedPackageScope: input.expectedPackageScope,
 	})
 	if (!checks.ok) {
+		await reportInstallProgress(input.reportProgress, {
+			progress: 4,
+			total: 4,
+			message:
+				'Checks need a human/agent touch — keeping the fork inert for adaptation.',
+		})
 		return {
 			...summary,
 			status: 'adaptation_required',
@@ -108,6 +145,11 @@ export async function installCommunityListing(input: {
 		}
 	}
 
+	await reportInstallProgress(input.reportProgress, {
+		progress: 3,
+		total: 4,
+		message: 'Publishing and indexing — almost ready to invoke…',
+	})
 	await refreshSavedPackageProjection({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -115,6 +157,12 @@ export async function installCommunityListing(input: {
 		userEmail: input.userEmail,
 		packageId: fork.packageId,
 		sourceId: fork.sourceId,
+		waitUntil: input.waitUntil,
+	})
+	await reportInstallProgress(input.reportProgress, {
+		progress: 4,
+		total: 4,
+		message: 'Installed. Your new package is live.',
 	})
 	return {
 		...summary,

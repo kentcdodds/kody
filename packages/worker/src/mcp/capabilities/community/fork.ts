@@ -9,6 +9,7 @@ import {
 	communityForkNextSteps,
 	crossScopeReferenceSchema,
 } from './shared.ts'
+import { reportCapabilityProgress } from '#mcp/progress.ts'
 
 export const communityForkCapability = defineDomainCapability(
 	capabilityDomainNames.community,
@@ -48,6 +49,12 @@ export const communityForkCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user,
 			)
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 1,
+				total: 2,
+				message:
+					'Forking the community listing into your scope — photocopy whirring…',
+			})
 			const result = await forkCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -56,6 +63,12 @@ export const communityForkCapability = defineDomainCapability(
 				listingId: args.listing_id,
 				kodyId: args.kody_id,
 				actor: 'agent',
+			})
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 2,
+				total: 2,
+				message:
+					'Fork ready as an inert source — review, then publish when it looks good.',
 			})
 			return {
 				fork_id: result.forkId,

@@ -13,6 +13,7 @@ import {
 	repoPublishSessionOutputSchema,
 } from './repo-shared.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
+import { reportCapabilityProgress } from '#mcp/progress.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -33,6 +34,12 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				sessionId: args.session_id,
 				userId: user.userId,
 			})
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 1,
+				total: 3,
+				message:
+					'Running publish checks on the session tree — lint, typecheck, the works…',
+			})
 			const result = await session.publishSession({
 				sessionId: args.session_id,
 				userId: user.userId,
@@ -46,6 +53,12 @@ export const repoPublishSessionCapability = defineDomainCapability(
 			})
 			if (result.status === 'ok') {
 				if (sessionInfo.entity_type === 'package') {
+					await reportCapabilityProgress(ctx.reportProgress, {
+						progress: 2,
+						total: 3,
+						message:
+							'Rebuilding published package artifacts — bundling for the big leagues…',
+					})
 					await rebuildPublishedPackageArtifactsViaRepoSession({
 						env: ctx.env,
 						rpcSessionId: args.session_id,
@@ -54,6 +67,11 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						userId: user.userId,
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
+					})
+					await reportCapabilityProgress(ctx.reportProgress, {
+						progress: 3,
+						total: 3,
+						message: 'Repo session published. Ship it.',
 					})
 					return {
 						status: 'ok' as const,

@@ -19,10 +19,8 @@ import {
 	type SavedPackageRecord,
 	type SavedPackageRow,
 } from './types.ts'
-import {
-	deleteSavedPackageVector,
-	upsertSavedPackageVector,
-} from './vectorize.ts'
+import { deleteSavedPackageVector } from './vectorize.ts'
+import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
 import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
@@ -302,11 +300,6 @@ export async function refreshSavedPackageProjection(input: {
 				})
 				await insertSavedPackage(input.env.APP_DB, row)
 			}
-			await upsertSavedPackageVector(input.env, {
-				packageId: input.packageId,
-				userId: input.userId,
-				embedText: buildSavedPackageEmbedText(loaded.manifest),
-			})
 			const refreshedAt = new Date().toISOString()
 			const savedPackage = {
 				id: input.packageId,
@@ -330,6 +323,8 @@ export async function refreshSavedPackageProjection(input: {
 					? (loaded.files as Record<string, string>)
 					: null
 			if (loadedFiles) {
+				// Artifacts stay on the hot path: invoke needs them immediately
+				// and there is no safe cold-build substitute for a fresh publish.
 				await rebuildPublishedPackageArtifacts({
 					env: input.env,
 					userId: input.userId,
@@ -375,21 +370,37 @@ export async function refreshSavedPackageProjection(input: {
 					},
 				})
 			}
-			try {
-				await refreshPackageRetrieverManifestCache({
-					env: input.env,
-					userId: input.userId,
-					source: loaded.source,
-					savedPackage,
-					manifest: loaded.manifest,
-				})
-			} catch (error) {
+			// Vector upsert is searchable but not needed for the publish
+			// response. Defer via waitUntil with durable debt + Sentry so a
+			// failure cannot leave search silently stale.
+			await scheduleSavedPackageSearchIndexUpsert({
+				env: input.env,
+				packageId: input.packageId,
+				userId: input.userId,
+				embedText: buildSavedPackageEmbedText(loaded.manifest),
+				waitUntil: input.waitUntil,
+			})
+			const retrieverCacheTask = refreshPackageRetrieverManifestCache({
+				env: input.env,
+				userId: input.userId,
+				source: loaded.source,
+				savedPackage,
+				manifest: loaded.manifest,
+			}).catch((error: unknown) => {
 				logPackageRetrieverProjectionError({
 					action: 'refresh',
 					packageId: input.packageId,
 					error,
 				})
+			})
+			if (input.waitUntil) {
+				input.waitUntil(retrieverCacheTask)
+			} else {
+				await retrieverCacheTask
 			}
+			// Jobs + auto-start stay on the hot path: a deferred failure would
+			// leave schedules/services silently inactive until the next publish,
+			// and there is no dedicated reconcile for that yet.
 			const { syncPackageJobsForPackage } =
 				await import('#worker/jobs/service.ts')
 			const schedulerStateChanged = await syncPackageJobsForPackage({

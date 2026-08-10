@@ -93,6 +93,10 @@ import {
 } from '#worker/mcp-client/status.ts'
 import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
 import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+import {
+	reportExecutePhaseProgress,
+	type McpReportProgress,
+} from '#mcp/progress.ts'
 
 type ExecuteServerTimingEntry = {
 	name: string
@@ -246,6 +250,8 @@ async function buildKodyToolContext(
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
 		capabilityRegistry?: BuiltCapabilityRegistry
+		reportProgress?: McpReportProgress
+		waitUntil?: (promise: Promise<unknown>) => void
 	},
 ): Promise<{
 	tools: AdditionalKodyTools
@@ -319,6 +325,10 @@ async function buildKodyToolContext(
 						{
 							env,
 							callerContext,
+							...(options?.reportProgress
+								? { reportProgress: options.reportProgress }
+								: {}),
+							...(options?.waitUntil ? { waitUntil: options.waitUntil } : {}),
 						},
 					)
 				} finally {
@@ -585,6 +595,8 @@ export async function buildKodyProvider(
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
 		capabilityRegistry?: BuiltCapabilityRegistry
+		reportProgress?: McpReportProgress
+		waitUntil?: (promise: Promise<unknown>) => void
 	},
 ): Promise<ResolvedProvider> {
 	const { tools, remoteConnectors, mcpServers, openApiProviders } =
@@ -691,6 +703,11 @@ export async function runModuleWithRegistry(
 		 * `running`.
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
+		/**
+		 * Optional MCP progress reporter (from `_meta.progressToken`). Emits
+		 * human-friendly phase messages aligned with `serverTiming` names.
+		 */
+		reportProgress?: McpReportProgress
 	},
 ): Promise<
 	ExecuteResult & {
@@ -700,6 +717,8 @@ export async function runModuleWithRegistry(
 > {
 	const userId = callerContext.user?.userId ?? ''
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
+	const reportProgress = options?.reportProgress
+	await reportExecutePhaseProgress(reportProgress, 'bundle')
 	const bundleStartedAtMs = Date.now()
 	const bundled = await buildKodyModuleBundle({
 		env,
@@ -727,6 +746,7 @@ export async function runModuleWithRegistry(
 			})
 		}
 	}
+	await reportExecutePhaseProgress(reportProgress, 'run')
 	const runStartedAtMs = Date.now()
 	const result = await runBundledModuleWithRegistry(
 		env,
@@ -750,6 +770,8 @@ export async function runModuleWithRegistry(
 			packageInvokeTools: options?.packageInvokeTools,
 			packageEventTools: options?.packageEventTools,
 			conversationId: options?.conversationId ?? null,
+			reportProgress,
+			waitUntil: options?.waitUntil,
 		},
 	)
 	// The bundled run reports its own sub-phases (hydrate, provider-assembly,
@@ -839,6 +861,7 @@ export async function runBundledModuleWithRegistry(
 		 * itself is always awaited.
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
+		reportProgress?: McpReportProgress
 	},
 ): Promise<
 	ExecuteResult & {
@@ -848,6 +871,7 @@ export async function runBundledModuleWithRegistry(
 > {
 	const runServerTiming: Array<ExecuteServerTimingEntry> = []
 	const secretRedactor = createExecutionSecretRedactor()
+	const reportProgress = options?.reportProgress
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
 	)
@@ -924,6 +948,7 @@ export async function runBundledModuleWithRegistry(
 		// Hydration can install additional published-package sources (literal
 		// dynamic `import("kody:@...")` targets); keep a reference so error
 		// rewriting below scans the same module graph the sandbox executed.
+		await reportExecutePhaseProgress(reportProgress, 'hydrate')
 		const hydrateStartedAtMs = Date.now()
 		const { modules: hydratedModules, dynamicDependencyPackageIds } =
 			await hydrateKodyRuntimeModules({
@@ -949,6 +974,7 @@ export async function runBundledModuleWithRegistry(
 				conversationId: agentConversationId,
 			})
 		}
+		await reportExecutePhaseProgress(reportProgress, 'provider-assembly')
 		const providerAssemblyStartedAtMs = Date.now()
 		const grantedPackageStorageIds = collectPackageStorageGrantIds({
 			packageContext: options?.packageContext ?? null,
@@ -1022,6 +1048,8 @@ export async function runBundledModuleWithRegistry(
 			workflowTools,
 			skipCapabilityRegistry: options?.skipCapabilityRegistry,
 			capabilityRegistry: options?.capabilityRegistry,
+			reportProgress,
+			waitUntil: options?.waitUntil,
 		})
 		runServerTiming.push({
 			name: 'provider-assembly',
@@ -1105,6 +1133,7 @@ ${runtimeHelperRuntimePropertySource}
 				provider,
 				...createRuntimeHelperExtraProviders(runtimeHelperContext),
 			]
+			await reportExecutePhaseProgress(reportProgress, 'sandbox')
 			const sandboxStartedAtMs = Date.now()
 			const result = await executor.execute(wrapped, providers)
 			runServerTiming.push({

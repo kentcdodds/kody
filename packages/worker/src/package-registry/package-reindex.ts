@@ -14,6 +14,7 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { listSavedPackagesPage, savedPackageVectorId } from './repo.ts'
+import { clearSavedPackageSearchIndexDebt } from './search-index-debt.ts'
 import { loadPackageManifestBySourceId } from './source.ts'
 
 // Saved packages are reindexed in keyset-paged batches so memory stays
@@ -86,14 +87,27 @@ export async function reindexSavedPackageVectors(
 			})
 		}
 		if (candidates.length > 0) {
-			pageResults.push(
-				await reindexVectorCandidates({
-					env,
-					index,
-					kind: 'saved package',
-					candidates,
-				}),
+			const pageResult = await reindexVectorCandidates({
+				env,
+				index,
+				kind: 'saved package',
+				candidates,
+			})
+			pageResults.push(pageResult)
+			const failedIds = new Set(
+				(pageResult.failures ?? []).map((failure) => failure.id),
 			)
+			// Self-heal deferred upsert debt: a successful reindex means search
+			// is current again, so drop the durable failure marker.
+			for (const row of rows) {
+				const vectorId = savedPackageVectorId(row.id)
+				if (failedIds.has(vectorId)) continue
+				if (loadFailures.some((failure) => failure.id === vectorId)) continue
+				await clearSavedPackageSearchIndexDebt({
+					db: env.APP_DB,
+					packageId: row.id,
+				})
+			}
 		}
 		if (rows.length < reindexPageSize) break
 		afterId = rows[rows.length - 1]!.id

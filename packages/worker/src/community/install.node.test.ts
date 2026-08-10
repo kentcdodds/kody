@@ -106,6 +106,7 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 		userEmail: 'userb@example.com',
 		packageId: 'package-1',
 		sourceId: 'source-1',
+		waitUntil: undefined,
 	})
 
 	mockModule.forkCommunityListing.mockResolvedValue({

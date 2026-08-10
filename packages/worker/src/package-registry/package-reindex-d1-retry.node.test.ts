@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	isCapabilitySearchOffline: vi.fn(),
 	listSavedPackagesPage: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
+	clearSavedPackageSearchIndexDebt: vi.fn(),
 }))
 
 vi.mock('#worker/vectorize/embedding.ts', () => ({
@@ -47,6 +48,11 @@ vi.mock('./repo.ts', () => ({
 	savedPackageVectorId: (packageId: string) => `package_${packageId}`,
 }))
 
+vi.mock('./search-index-debt.ts', () => ({
+	clearSavedPackageSearchIndexDebt: (...args: Array<unknown>) =>
+		mockModule.clearSavedPackageSearchIndexDebt(...args),
+}))
+
 const { reindexSavedPackageVectors } = await import('./package-reindex.ts')
 
 const exportError = () => new Error(`D1_ERROR: ${d1LongRunningExportMessage}.`)
@@ -58,6 +64,8 @@ function resetMocks() {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.isCapabilitySearchOffline.mockReset()
 	mockModule.listSavedPackagesPage.mockReset()
+	mockModule.clearSavedPackageSearchIndexDebt.mockReset()
+	mockModule.clearSavedPackageSearchIndexDebt.mockResolvedValue(undefined)
 	mockModule.loadPublishedEntityManifest.mockReset()
 }
 

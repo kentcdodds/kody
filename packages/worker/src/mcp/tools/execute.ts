@@ -22,6 +22,7 @@ import {
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
+import { createProgressReporter, type McpToolCallExtra } from '#mcp/progress.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -217,31 +218,35 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			},
 			annotations: executeTool.annotations,
 		},
-		async ({
-			code,
-			params,
-			storageId,
-			writable,
-			responseLimit,
-			conversationId,
-			memoryContext,
-			idempotencyKey,
-		}: {
-			code: string
-			params?: Record<string, unknown>
-			storageId?: string
-			writable?: boolean
-			responseLimit?: number
-			conversationId?: string
-			memoryContext?: z.infer<typeof memoryContextInputField>
-			idempotencyKey?: string
-		}) => {
+		async (
+			{
+				code,
+				params,
+				storageId,
+				writable,
+				responseLimit,
+				conversationId,
+				memoryContext,
+				idempotencyKey,
+			}: {
+				code: string
+				params?: Record<string, unknown>
+				storageId?: string
+				writable?: boolean
+				responseLimit?: number
+				conversationId?: string
+				memoryContext?: z.infer<typeof memoryContextInputField>
+				idempotencyKey?: string
+			},
+			toolExtra?: McpToolCallExtra,
+		) => {
 			const timingStart = startToolTiming()
 			const env = agent.getEnv()
 			// Hand terminal run-record writes and nested-invocation
 			// observability to the Durable Object's waitUntil so they stop
 			// serializing the execute response they observe.
 			const waitUntil = agent.waitUntil?.bind(agent)
+			const reportProgress = createProgressReporter(toolExtra)
 			const baseCallerContext = agent.getCallerContext()
 			const resolvedStorageId = storageId?.trim() || null
 			const callerContext = {
@@ -439,6 +444,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									conversationId: resolvedConversationId,
 									runRecordHandle: claimedRunHandle,
 									waitUntil,
+									reportProgress: reportProgress ?? undefined,
 									runRecord: {
 										surface: 'execute',
 										name: null,
@@ -867,7 +873,7 @@ async function resolveRawFetchHostNudges(input: {
 	})
 	if (typeof statefulAgent.setState === 'function') {
 		statefulAgent.setState({
-			...(statefulAgent.state ?? {}),
+			...statefulAgent.state,
 			rawFetchHostNudges: applied.state,
 		})
 	}

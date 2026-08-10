@@ -4,6 +4,7 @@ import {
 	createTestDatabase,
 	startDevServer,
 } from '../../../../tools/mcp-test-support.ts'
+import { executeProgressPhaseMessages } from './progress.ts'
 
 /**
  * One smoke journey for the stateless 2026-07-28 lane: a real SDK v2 client
@@ -36,4 +37,56 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 	expect(searchResult.structuredContent).toMatchObject({
 		conversationId: expect.any(String),
 	})
+})
+
+test('stateless lane lists onboarding prompts and emits execute progress', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using modern = await createModernMcpClient(
+		server.origin,
+		database.user,
+		{ persistDir: database.persistDir },
+	)
+
+	const prompts = await modern.client.listPrompts()
+	const promptNames = prompts.prompts.map((prompt) => prompt.name).sort()
+	expect(promptNames).toEqual([
+		'onboarding_discovery',
+		'onboarding_first_win',
+		'onboarding_setup',
+	])
+
+	const setupPrompt = await modern.client.getPrompt({
+		name: 'onboarding_setup',
+	})
+	expect(setupPrompt.messages[0]?.content).toMatchObject({
+		type: 'text',
+		text: expect.stringContaining('Help me get started with Kody.'),
+	})
+
+	const progressMessages: Array<string> = []
+	const executeResult = await modern.client.callTool(
+		{
+			name: 'execute',
+			arguments: {
+				code: `export default async function main() { return { ok: true } }`,
+			},
+		},
+		{
+			onprogress: (progress) => {
+				if (typeof progress.message === 'string') {
+					progressMessages.push(progress.message)
+				}
+			},
+		},
+	)
+	expect(executeResult.isError ?? false).toBe(false)
+	expect(progressMessages.length).toBeGreaterThan(0)
+	expect(progressMessages).toContain(executeProgressPhaseMessages.bundle)
+	expect(progressMessages).toEqual(
+		expect.arrayContaining([
+			executeProgressPhaseMessages.hydrate,
+			executeProgressPhaseMessages.sandbox,
+		]),
+	)
 })

@@ -12,6 +12,7 @@ const mockModule = vi.hoisted(() => ({
 	isCapabilitySearchOffline: vi.fn(),
 	listSavedPackagesPage: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
+	clearSavedPackageSearchIndexDebt: vi.fn(),
 }))
 
 vi.mock('#worker/vectorize/embedding.ts', () => ({
@@ -39,6 +40,11 @@ vi.mock('./source.ts', () => ({
 		mockModule.loadPackageManifestBySourceId(...args),
 }))
 
+vi.mock('./search-index-debt.ts', () => ({
+	clearSavedPackageSearchIndexDebt: (...args: Array<unknown>) =>
+		mockModule.clearSavedPackageSearchIndexDebt(...args),
+}))
+
 const { reindexSavedPackageVectors } = await import('./package-reindex.ts')
 
 function resetMocks() {
@@ -48,6 +54,8 @@ function resetMocks() {
 	mockModule.isCapabilitySearchOffline.mockReset()
 	mockModule.listSavedPackagesPage.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
+	mockModule.clearSavedPackageSearchIndexDebt.mockReset()
+	mockModule.clearSavedPackageSearchIndexDebt.mockResolvedValue(undefined)
 }
 
 function buildSavedPackage(id: string) {

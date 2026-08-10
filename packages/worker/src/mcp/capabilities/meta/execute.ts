@@ -276,6 +276,8 @@ export const executeCapability = defineDomainCapability(
 								}
 							: undefined,
 						runRecordHandle: claimedRunHandle,
+						waitUntil: ctx.waitUntil,
+						reportProgress: ctx.reportProgress,
 						runRecord: {
 							surface: 'execute',
 							name: null,

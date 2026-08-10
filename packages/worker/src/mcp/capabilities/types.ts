@@ -4,12 +4,24 @@ import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
 import { type CapabilityDomain } from './domain-metadata.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type McpReportProgress } from '#mcp/progress.ts'
 
 export const emptyCapabilityInputSchema = z.object({})
 
 export type CapabilityContext = {
 	env: Env
 	callerContext: McpCallerContext
+	/**
+	 * Best-effort MCP `notifications/progress` reporter when the client sent
+	 * `_meta.progressToken`. Absent for non-MCP callers and when the client
+	 * did not request progress.
+	 */
+	reportProgress?: McpReportProgress
+	/**
+	 * Prefer scheduling non-critical post-response work here (typically
+	 * `ctx.waitUntil`) so publish/install responses stay snappy.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 export type CapabilityResult = unknown

@@ -34,9 +34,8 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
-import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import {
 	buildPendingPackageSecretApprovalsSummary,
@@ -280,6 +279,11 @@ export const savePackageCapability = defineDomainCapability(
 					throw error
 				}
 			}
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 1,
+				total: 4,
+				message: 'Syncing your package source — filing bits into the vault…',
+			})
 			await syncArtifactSourceSnapshot({
 				env: ctx.env,
 				userId: owner.ownerUserId,
@@ -308,20 +312,27 @@ export const savePackageCapability = defineDomainCapability(
 					created_at: now,
 					updated_at: now,
 				})
-				await upsertSavedPackageVector(ctx.env, {
-					packageId,
-					userId: owner.ownerUserId,
-					embedText: buildSavedPackageEmbedText(manifest),
-				})
 			}
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 2,
+				total: 4,
+				message:
+					'Publishing the saved-package projection — jobs, artifacts, and a tidy D1 row…',
+			})
 			const refreshed = await refreshSavedPackageProjection({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
 				packageId,
 				sourceId: ensuredSource.id,
+				waitUntil: ctx.waitUntil,
 			})
 			const saved = refreshed.record
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 3,
+				total: 4,
+				message: 'Checking pending secret approvals — no spoilers, just gates…',
+			})
 			const pendingSecretApprovals =
 				await buildPendingPackageSecretApprovalsSummary({
 					env: ctx.env,
@@ -338,6 +349,11 @@ export const savePackageCapability = defineDomainCapability(
 						storageId: null,
 					},
 				})
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: 4,
+				total: 4,
+				message: 'Package save complete — ready when you are.',
+			})
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,

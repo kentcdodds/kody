@@ -2,10 +2,12 @@ import { type McpServer as McpServerV1 } from '@modelcontextprotocol/sdk/server/
 import { type McpServer as McpServerV2 } from '@modelcontextprotocol/server'
 import {
 	type CallToolResult,
+	type GetPromptResult,
 	type ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js'
 import { type z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type McpToolCallExtra } from './progress.ts'
 
 /**
  * Tool icon metadata (protocol revision 2025-11-25, SEP-973). Advertised by
@@ -28,31 +30,53 @@ export type McpToolConfig = {
 	icons?: Array<McpToolIcon>
 }
 
+export type McpPromptConfig = {
+	title?: string
+	description?: string
+	argsSchema?: Record<string, z.ZodType>
+}
+
 /**
- * The registration surface kody's tools use, satisfied by both MCP server
- * generations: `@modelcontextprotocol/sdk` v1 (`McpAgent` Durable Object
- * lane, 2025-era protocol revisions) and `@modelcontextprotocol/server` v2
- * (stateless lane, 2026-07-28). Both accept the raw-shape config form with
- * a callback returning content + structured content, so one registration
+ * The registration surface kody's tools and prompts use, satisfied by both
+ * MCP server generations: `@modelcontextprotocol/sdk` v1 (`McpAgent`
+ * Durable Object lane, 2025-era protocol revisions) and
+ * `@modelcontextprotocol/server` v2 (stateless lane, 2026-07-28). Both
+ * accept the raw-shape config form with a callback returning content +
+ * structured content (tools) or prompt messages, so one registration
  * definition backs both lanes and they can never drift apart.
  *
- * The callback parameter is typed `never` so any concrete argument type is
- * accepted; call sites annotate their args explicitly and the concrete
- * server validates inputs against `inputSchema` at runtime.
+ * Tool callbacks accept an optional second argument so handlers can read
+ * `_meta.progressToken` and emit `notifications/progress` (SDK v1
+ * `RequestHandlerExtra` / SDK v2 `ServerContext`). The args parameter is
+ * typed `never` so any concrete argument type is accepted; call sites
+ * annotate their args explicitly and the concrete server validates inputs
+ * against `inputSchema` at runtime.
  */
 export type McpToolServer = {
 	registerTool(
 		name: string,
 		config: McpToolConfig,
-		cb: (args: never) => CallToolResult | Promise<CallToolResult>,
+		cb: (
+			args: never,
+			extra?: McpToolCallExtra,
+		) => CallToolResult | Promise<CallToolResult>,
+	): unknown
+	registerPrompt(
+		name: string,
+		config: McpPromptConfig,
+		cb: (
+			args: never,
+			extra?: McpToolCallExtra,
+		) => GetPromptResult | Promise<GetPromptResult>,
 	): unknown
 }
 
 /**
  * Bridge one concrete server generation onto the shared registration
  * surface. Runtime-compatible by construction (both generations implement
- * the raw-shape `registerTool` form); the cast only bridges the two SDKs'
- * incompatible generic signatures, which TypeScript cannot relate directly.
+ * the raw-shape `registerTool` / `registerPrompt` forms); the cast only
+ * bridges the two SDKs' incompatible generic signatures, which TypeScript
+ * cannot relate directly.
  */
 export function asMcpToolServer(server: McpServerV1 | McpServerV2) {
 	return server as unknown as McpToolServer
