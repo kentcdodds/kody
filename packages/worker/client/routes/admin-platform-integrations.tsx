@@ -65,6 +65,18 @@ function readSearchFilter(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
 }
 
+/**
+ * Search is client-side over the already-loaded apps list. Loading keys on
+ * pathname only so typing in `q` does not refetch or unmount the table.
+ */
+function getDataKey(href: string) {
+	return new URL(href, 'http://localhost').pathname
+}
+
+function getCurrentSearch(href: string) {
+	return new URL(href, 'http://localhost').search
+}
+
 function buildHrefWithUpdatedSearch(href: string, search: string) {
 	const nextUrl = new URL(href, 'http://localhost')
 	if (search) nextUrl.searchParams.set('q', search)
@@ -148,12 +160,14 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 	let actionState: ActionState = 'idle'
 	/** Slug of the row an action is running against, for per-row labels. */
 	let pendingSlug: string | null = null
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
+	let lastLoadedDataKey = ''
+	let loadingDataKey: string | null = null
+	let lastFailedDataKey: string | null = null
 	let loadRequestId = 0
 	let pendingLogoBase64: string | undefined = undefined
 	let removeLogoChecked = false
+	/** Bumped after a successful edit save so uncontrolled fields remount. */
+	let formRevision = 0
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
@@ -179,7 +193,8 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 
 	async function loadPlatformIntegrations() {
 		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
+		const dataKey = getDataKey(href)
+		loadingDataKey = dataKey
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(adminPlatformIntegrationsApiPath, {
@@ -195,7 +210,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 				status = 'error'
 				message = 'You do not have permission to view platform integrations.'
 				messageTone = 'error'
-				lastFailedHref = href
+				lastFailedDataKey = dataKey
 				handle.update()
 				return
 			}
@@ -205,8 +220,8 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 				throw new Error('Unable to load platform integrations.')
 			}
 			applyData(payload)
-			lastLoadedHref = href
-			lastFailedHref = null
+			lastLoadedDataKey = dataKey
+			lastFailedDataKey = null
 			handle.update()
 		} catch (error) {
 			if (requestId !== loadRequestId) return
@@ -216,10 +231,10 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 					? error.message
 					: 'Unable to load platform integrations.'
 			messageTone = 'error'
-			lastFailedHref = href
+			lastFailedDataKey = dataKey
 			handle.update()
 		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
+			if (requestId === loadRequestId) loadingDataKey = null
 		}
 	}
 
@@ -383,13 +398,14 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 				: `Created platform integration ${slug}.`,
 		).then((ok) => {
 			if (!ok) return
-			form.reset()
 			resetFormState()
+			const search = getCurrentSearch(readCurrentRouterHref(handle))
 			if (isEditing) {
+				formRevision += 1
 				handle.update()
 				return
 			}
-			replaceLocation(platformIntegrationsRoute.buildDetailHref(slug))
+			replaceLocation(platformIntegrationsRoute.buildDetailHref(slug, search))
 			handle.update()
 		})
 	}
@@ -420,27 +436,29 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			`Deleted platform integration ${app.slug}.`,
 		).then((ok) => {
 			if (!ok) return
-			const selection = platformIntegrationsRoute.getSelection(
-				readCurrentRouterHref(handle),
-			)
+			const href = readCurrentRouterHref(handle)
+			const selection = platformIntegrationsRoute.getSelection(href)
+			const search = getCurrentSearch(href)
 			resetFormState()
 			if (selection.selectedId === app.slug || selection.isCreating) {
-				replaceLocation(platformIntegrationsRoute.buildListHref())
+				replaceLocation(platformIntegrationsRoute.buildListHref(search))
 			}
 			handle.update()
 		})
 	}
 
 	function cancelEditor() {
+		const search = getCurrentSearch(readCurrentRouterHref(handle))
 		resetSelectionState()
-		replaceLocation(platformIntegrationsRoute.buildListHref())
+		replaceLocation(platformIntegrationsRoute.buildListHref(search))
 		handle.update()
 	}
 
 	function startCreateIntegration() {
 		if (actionState !== 'idle') return
+		const search = getCurrentSearch(readCurrentRouterHref(handle))
 		resetSelectionState()
-		replaceLocation(platformIntegrationsRoute.buildNewHref())
+		replaceLocation(platformIntegrationsRoute.buildNewHref(search))
 		handle.update()
 	}
 
@@ -449,7 +467,9 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 	) {
 		const isEditing = editingApp != null
 		const formKey =
-			isEditing && editingApp ? `edit-${editingApp.slug}` : 'create'
+			isEditing && editingApp
+				? `edit-${editingApp.slug}:${formRevision}`
+				: `create:${formRevision}`
 
 		return (
 			<form
@@ -842,6 +862,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		const currentDataKey = getDataKey(currentHref)
 		const routeData = isAdminPlatformIntegrationsPath(currentHref)
 			? (tryConsumeRouteLoaderData(
 					handle,
@@ -851,20 +872,24 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			: undefined
 		if (routeData) {
 			applyData(routeData)
-			lastLoadedHref = currentHref
-			lastFailedHref = null
+			lastLoadedDataKey = currentDataKey
+			lastFailedDataKey = null
 		}
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !routeData
 		const needsLoad =
 			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
+				currentDataKey !== lastLoadedDataKey ||
 				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
+			currentDataKey !== lastFailedDataKey &&
+			loadingDataKey !== currentDataKey
 		if (!routeData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
+			// Keep the table mounted during search/selection navigations; only
+			// show the page-level loading line on the first fetch.
+			if (lastLoadedDataKey === '') {
+				status = 'loading'
+			}
+			loadingDataKey = currentDataKey
 			handle.queueTask(loadPlatformIntegrations)
 		}
 
@@ -892,7 +917,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 					description="Manage operator-provisioned OAuth apps stored in the platform_oauth_apps table."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' ? (
+				{status === 'loading' && lastLoadedDataKey === '' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading platform integrations…
 					</p>
@@ -902,9 +927,10 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				{status === 'ready' ? (
+				{status === 'ready' || lastLoadedDataKey !== '' ? (
 					<RecordTable
 						mode="expand"
+						busy={status === 'loading'}
 						ariaLabel="Platform integrations"
 						selectedId={tableSelectedId}
 						onNavigate={() => {
