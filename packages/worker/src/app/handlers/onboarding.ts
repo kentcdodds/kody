@@ -9,7 +9,10 @@ import {
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingFeaturedListings } from '#app/community-data.ts'
-import { listOwnerEmailMessages } from '#worker/email/owner-email-reader.ts'
+import {
+	listOwnerEmailMessages,
+	searchOwnerEmailMessages,
+} from '#worker/email/owner-email-reader.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
 import {
@@ -58,22 +61,42 @@ async function loadHasSentWelcomeEmail(
 }
 
 /**
- * Subject and sender of the most recent stored outbound message, so the Reply
- * sub-step can name exactly what to search a personal inbox for. Fails open to
- * null — the sub-step reads fine without it, and a Mailbox blip must not break
+ * Subject fragment the `first-win` guide tells agents to use. Matching on it
+ * first means a mailbox that already holds other outbound mail still surfaces
+ * the welcome message instead of whatever was sent most recently.
+ */
+const welcomeEmailSubjectMatch = 'Welcome to Kody'
+
+/**
+ * Subject and sender of the stored welcome email, so the Reply sub-step can
+ * name exactly what to search a personal inbox for. Agents write their own
+ * subject line, so a mailbox with no match falls back to the newest outbound
+ * message — during the first win that is the mail to reply to. Fails open to
+ * null: the sub-step reads fine without it, and a Mailbox blip must not break
  * the payload.
  */
-async function loadWelcomeEmail(
+export async function loadWelcomeEmail(
 	env: Env,
 	userId: string,
 ): Promise<OnboardingWelcomeEmail | null> {
 	try {
-		const [message] = await listOwnerEmailMessages({
+		const [matched] = await searchOwnerEmailMessages({
 			env,
 			ownerId: userId,
 			direction: 'outbound',
+			query: welcomeEmailSubjectMatch,
 			limit: 1,
 		})
+		const message =
+			matched ??
+			(
+				await listOwnerEmailMessages({
+					env,
+					ownerId: userId,
+					direction: 'outbound',
+					limit: 1,
+				})
+			)[0]
 		if (!message?.subject) return null
 		return { subject: message.subject, fromAddress: message.fromAddress }
 	} catch {

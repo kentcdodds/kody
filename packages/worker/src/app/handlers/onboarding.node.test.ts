@@ -4,6 +4,7 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
+	loadWelcomeEmail,
 } from '#app/handlers/onboarding.ts'
 import {
 	buildDiscoveryPrompt,
@@ -15,6 +16,8 @@ const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
+	listOwnerEmailMessages: vi.fn(),
+	searchOwnerEmailMessages: vi.fn(),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -28,6 +31,13 @@ vi.mock('#app/authenticated-user.ts', () => ({
 
 vi.mock('#worker/community/service.ts', () => ({
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
+}))
+
+vi.mock('#worker/email/owner-email-reader.ts', () => ({
+	listOwnerEmailMessages: (...args: Array<unknown>) =>
+		mockModule.listOwnerEmailMessages(...args),
+	searchOwnerEmailMessages: (...args: Array<unknown>) =>
+		mockModule.searchOwnerEmailMessages(...args),
 }))
 
 test('onboarding serves public setup content to anonymous visitors', async () => {
@@ -66,4 +76,39 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		builtInProviders: [],
 		checklist: null,
 	})
+})
+
+test('the Reply sub-step names the welcome email, not merely the newest outbound', async () => {
+	const env = {} as Env
+
+	// A mailbox holding other outbound mail still surfaces the welcome message.
+	mockModule.searchOwnerEmailMessages.mockResolvedValue([
+		{
+			subject: 'Welcome to Kody — reply to introduce yourself',
+			fromAddress: 'kody@heykody.app',
+		},
+	])
+	mockModule.listOwnerEmailMessages.mockResolvedValue([
+		{ subject: 'Your morning digest', fromAddress: 'kody@heykody.app' },
+	])
+	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toEqual({
+		subject: 'Welcome to Kody — reply to introduce yourself',
+		fromAddress: 'kody@heykody.app',
+	})
+
+	// Agents write their own subject, so an unmatched mailbox falls back to the
+	// newest outbound message.
+	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
+	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toEqual({
+		subject: 'Your morning digest',
+		fromAddress: 'kody@heykody.app',
+	})
+
+	// An empty mailbox and a Mailbox blip both fail open.
+	mockModule.listOwnerEmailMessages.mockResolvedValue([])
+	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toBeNull()
+	mockModule.searchOwnerEmailMessages.mockRejectedValue(
+		new Error('mailbox unavailable'),
+	)
+	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toBeNull()
 })
