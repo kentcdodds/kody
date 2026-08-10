@@ -3,6 +3,7 @@ import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import {
 	hasAlternativeBuiltInApp,
 	loadAccountIntegrationByName,
+	loadExistingConnectionSummary,
 } from '#app/account-integrations-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requirePageSession } from '#app/page-auth.ts'
@@ -42,22 +43,31 @@ async function loadConnectOauthLoaderData(
 	if (!providerKey) return null
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) return null
-	const preferPlatform = requestUrl.searchParams.get('platform') === '1'
+	// `platform=1` forces the built-in of the same name; `platform=<slug>`
+	// connects that built-in under a different connection name.
+	const platformParam = requestUrl.searchParams.get('platform')?.trim()
 	const integration = await loadAccountIntegrationByName(
 		env,
 		user,
 		providerKey,
-		{ preferPlatform },
+		{
+			preferPlatform: platformParam === '1',
+			platformSlug:
+				platformParam && platformParam !== '1'
+					? (normalizeProviderKey(platformParam) ?? undefined)
+					: undefined,
+		},
 	)
+	const [builtInAvailable, existingConnection] = await Promise.all([
+		hasAlternativeBuiltInApp(env, providerKey, integration),
+		loadExistingConnectionSummary(env, user, providerKey),
+	])
 	return {
 		ok: true,
 		provider: providerKey,
 		integration,
-		builtInAvailable: await hasAlternativeBuiltInApp(
-			env,
-			providerKey,
-			integration,
-		),
+		builtInAvailable,
+		existingConnection,
 	}
 }
 

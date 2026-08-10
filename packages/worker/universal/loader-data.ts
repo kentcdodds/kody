@@ -257,6 +257,7 @@ export type AdminPlatformIntegrationApp = {
 	slug: string
 	provider: string
 	label: string | null
+	description: string | null
 	clientId: string
 	hasClientSecret: boolean
 	tokenUrl: string
@@ -811,6 +812,8 @@ export type AccountIntegrationListItem = {
 	platformAllowedScopes?: Array<string>
 	/** Relative serving path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
+	/** Operator-authored provider note for platform apps (limitations, caveats). */
+	platformDescription?: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -861,6 +864,17 @@ export type AccountIntegrationDetailLoaderData = {
 	 * the lookup). The connect page offers the built-in as an alternative.
 	 */
 	builtInAvailable?: boolean
+	/** See {@link ConnectOauthExistingConnection}. */
+	existingConnection?: ConnectOauthExistingConnection | null
+}
+
+/**
+ * The connection currently stored under a requested name — enough for the
+ * connect page to warn before an OAuth flow replaces it with a different app.
+ */
+export type ConnectOauthExistingConnection = {
+	lane: 'user' | 'platform'
+	appSlug: string
 }
 
 /**
@@ -875,6 +889,8 @@ export type ConnectOauthLoaderData = {
 	integration: AccountIntegrationListItem | null
 	/** See {@link AccountIntegrationDetailLoaderData.builtInAvailable}. */
 	builtInAvailable?: boolean
+	/** See {@link ConnectOauthExistingConnection}. */
+	existingConnection?: ConnectOauthExistingConnection | null
 }
 
 export type AccountMcpServerListItem = {

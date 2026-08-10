@@ -355,6 +355,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			flow,
 			provider: String(formData.get('provider') ?? '').trim() || null,
 			label: String(formData.get('label') ?? '').trim() || null,
+			description: String(formData.get('description') ?? '').trim() || null,
 			apiBaseUrl: String(formData.get('apiBaseUrl') ?? '').trim() || null,
 			scopeSeparator:
 				String(formData.get('scopeSeparator') ?? '').trim() || null,
@@ -578,6 +579,19 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 								type="text"
 								disabled={actionState !== 'idle'}
 								defaultValue={editingApp?.label ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>
+								Description (shown to users before they connect)
+							</span>
+							<textarea
+								data-field-ring
+								name="description"
+								rows={3}
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.description ?? ''}
 								mix={css(accountInputCss)}
 							/>
 						</label>

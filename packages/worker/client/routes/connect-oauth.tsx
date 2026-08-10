@@ -5,6 +5,7 @@ import {
 import {
 	type AccountIntegrationDetailLoaderData,
 	type AccountSecretsLoaderData,
+	type ConnectOauthExistingConnection,
 	type ConnectOauthLoaderData,
 } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
@@ -121,9 +122,9 @@ export async function connectOauthRouteLoader(
 	if (!providerKey) {
 		return { connectOauth: emptyConnectOauthLoaderData }
 	}
-	const preferPlatform = params.get('platform') === '1'
+	const platformParam = params.get('platform')?.trim()
 	const response = await fetch(
-		`/account/integrations.json?name=${encodeURIComponent(providerKey)}${preferPlatform ? '&platform=1' : ''}`,
+		`/account/integrations.json?name=${encodeURIComponent(providerKey)}${platformParam ? `&platform=${encodeURIComponent(platformParam)}` : ''}`,
 		{
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
@@ -144,6 +145,10 @@ export async function connectOauthRouteLoader(
 				response.ok && payload?.ok
 					? (payload.builtInAvailable ?? false)
 					: false,
+			existingConnection:
+				response.ok && payload?.ok
+					? (payload.existingConnection ?? null)
+					: null,
 		},
 	}
 }
@@ -180,6 +185,27 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
 	/** An enabled built-in exists that this user-lane connection is not using. */
 	let builtInAvailable = false
+	/** The connection currently stored under the target name, when any. */
+	let existingConnection: ConnectOauthExistingConnection | null = null
+	/** The user explicitly confirmed replacing a different-app connection. */
+	let replaceConfirmed = false
+	let renameInput = ''
+
+	/**
+	 * True when finishing this flow would overwrite a connection that runs on
+	 * a different app or lane — never silently: the user confirms (or renames)
+	 * first. Reconnecting the same app under the same name stays free.
+	 */
+	const wouldReplaceDifferentApp = () => {
+		if (!config || !existingConnection) return false
+		if (config.platformAppSlug) {
+			return (
+				existingConnection.lane !== 'platform' ||
+				existingConnection.appSlug !== config.platformAppSlug
+			)
+		}
+		return existingConnection.lane === 'platform'
+	}
 	let nextSteps: ConnectOauthNextSteps | null = null
 	let approvingAllHosts = false
 	let submitting = false
@@ -461,11 +487,14 @@ export function ConnectOauthRoute(handle: Handle) {
 	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
 	): Promise<StoredIntegrationConfig | null> => {
-		const preferPlatform =
-			typeof window !== 'undefined' &&
-			new URLSearchParams(window.location.search).get('platform') === '1'
+		const platformParam =
+			typeof window !== 'undefined'
+				? (new URLSearchParams(window.location.search)
+						.get('platform')
+						?.trim() ?? '')
+				: ''
 		const response = await fetch(
-			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}${preferPlatform ? '&platform=1' : ''}`,
+			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}${platformParam ? `&platform=${encodeURIComponent(platformParam)}` : ''}`,
 			{
 				method: 'GET',
 				headers: { Accept: 'application/json' },
@@ -478,6 +507,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			.catch(() => null)) as AccountIntegrationDetailLoaderData | null
 		if (!response.ok || payload?.ok !== true) return null
 		builtInAvailable = payload.builtInAvailable ?? false
+		existingConnection = payload.existingConnection ?? null
 		if (!payload.integration) return null
 		return toStoredIntegrationConfig(payload.integration)
 	}
@@ -726,6 +756,95 @@ export function ConnectOauthRoute(handle: Handle) {
 			submitting = false
 			update()
 		}
+	}
+
+	/**
+	 * Interposed before a flow that would overwrite a connection running on
+	 * a different app or lane: the user explicitly replaces, or connects the
+	 * built-in under a new name so the existing connection stays intact.
+	 */
+	const renderReplaceConfirmation = () => {
+		if (!config || !wouldReplaceDifferentApp() || replaceConfirmed) {
+			return null
+		}
+		const existingLabel =
+			existingConnection?.lane === 'platform'
+				? `the built-in ${existingConnection.appSlug} integration`
+				: 'your own OAuth app'
+		const renameSuggestion = `${config.providerKey}-2`
+		return (
+			<div mix={css(insetCardCss)}>
+				<p mix={css({ margin: 0, color: colors.text, fontWeight: 600 })}>
+					You already have a {config.providerKey} connection using{' '}
+					{existingLabel}.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Continuing replaces its tokens and scopes. You can also keep it and
+					connect under a different name.
+				</p>
+				<div
+					mix={css({
+						display: 'flex',
+						flexWrap: 'wrap',
+						gap: spacing.sm,
+						alignItems: 'center',
+					})}
+				>
+					<button
+						type="button"
+						disabled={submitting}
+						mix={[
+							on('click', () => {
+								replaceConfirmed = true
+								update()
+								void handleConnect()
+							}),
+							css(getSecondaryButtonCss()),
+						]}
+						data-testid="connect-replace-confirm"
+					>
+						Replace {config.providerKey}
+					</button>
+					{config.platformAppSlug ? (
+						<>
+							<span mix={css(descriptionCss)}>or connect as</span>
+							<input
+								type="text"
+								placeholder={renameSuggestion}
+								value={renameInput}
+								{...passwordManagerIgnoreProps}
+								mix={[
+									on('input', (event) => {
+										renameInput = event.currentTarget.value
+										update()
+									}),
+									css({ ...inputCss, maxWidth: '12rem' }),
+								]}
+								data-testid="connect-rename-input"
+							/>
+							<button
+								type="button"
+								disabled={submitting}
+								mix={[
+									on('click', () => {
+										const name = renameInput.trim() || renameSuggestion
+										// Full document load: the connect flow
+										// initializes per document load.
+										window.location.assign(
+											`/connect/oauth?provider=${encodeURIComponent(name)}&platform=${encodeURIComponent(config!.platformAppSlug!)}`,
+										)
+									}),
+									css(getPrimaryButtonCss()),
+								]}
+								data-testid="connect-rename-submit"
+							>
+								Connect
+							</button>
+						</>
+					) : null}
+				</div>
+			</div>
+		)
 	}
 
 	/**
@@ -1052,6 +1171,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			)
 			if (routeData) {
 				builtInAvailable = routeData.builtInAvailable ?? false
+				existingConnection = routeData.existingConnection ?? null
 			}
 			const preloadedIntegrationFor = (providerKey: string) =>
 				routeData && routeData.provider === providerKey
@@ -1113,8 +1233,14 @@ export function ConnectOauthRoute(handle: Handle) {
 			// cards, docs links) goes straight into the provider's authorize
 			// flow. Callback returns never reach this branch — code and
 			// error visits take the callback path — so a denial cannot
-			// loop back into an auto-start.
-			if (nextConfig.platformAppSlug && currentStep === 'connect') {
+			// loop back into an auto-start. A flow that would replace a
+			// different-app connection never auto-starts: the user confirms
+			// or renames first.
+			if (
+				nextConfig.platformAppSlug &&
+				currentStep === 'connect' &&
+				!wouldReplaceDifferentApp()
+			) {
 				setStatus(`Redirecting to ${nextConfig.provider} to authorize…`)
 				await handleConnect()
 			}
@@ -1167,9 +1293,13 @@ export function ConnectOauthRoute(handle: Handle) {
 						) : null}
 						Connect {config.provider}
 					</h1>
-					<p mix={css(pageDescriptionCss)}>
-						Follow the steps below to connect your account using OAuth.
-					</p>
+					{config.platformDescription ? (
+						<p mix={css(pageDescriptionCss)}>{config.platformDescription}</p>
+					) : (
+						<p mix={css(pageDescriptionCss)}>
+							Follow the steps below to connect your account using OAuth.
+						</p>
+					)}
 				</header>
 				<section mix={css(getStatusCardCss(statusTone))}>
 					<div
@@ -1340,6 +1470,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.text })}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
+						{renderReplaceConfirmation()}
 						{renderBuiltInAlternative()}
 						{existingIntegrationConfig && hasStoredClientId ? (
 							<p mix={css(descriptionCss)}>
@@ -1359,16 +1490,20 @@ export function ConnectOauthRoute(handle: Handle) {
 							</a>
 							.
 						</p>
-						<button
-							type="button"
-							disabled={submitting}
-							mix={[
-								on('click', () => void handleConnect()),
-								css(primaryButtonCss),
-							]}
-						>
-							Connect {config.provider}
-						</button>
+						{/* The primary button yields to the replace confirmation so a
+						    different-app overwrite is never one ambient click away. */}
+						{wouldReplaceDifferentApp() && !replaceConfirmed ? null : (
+							<button
+								type="button"
+								disabled={submitting}
+								mix={[
+									on('click', () => void handleConnect()),
+									css(primaryButtonCss),
+								]}
+							>
+								Connect {config.provider}
+							</button>
+						)}
 					</section>
 				) : null}
 				{currentStep === 'success' ? (

@@ -122,6 +122,7 @@ async function handleSaveAction(input: {
 				slug,
 				provider: readOptionalString(record, 'provider'),
 				label: readOptionalString(record, 'label'),
+				description: readOptionalString(record, 'description'),
 				clientId,
 				clientSecret: readWriteOnlyString(record, 'clientSecret'),
 				tokenUrl,

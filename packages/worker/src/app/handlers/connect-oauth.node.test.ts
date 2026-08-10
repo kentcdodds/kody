@@ -10,6 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	requirePageSession: vi.fn<() => Promise<Response | null>>(),
 	loadAccountIntegrationByName: vi.fn<() => Promise<unknown>>(),
 	hasAlternativeBuiltInApp: vi.fn<() => Promise<boolean>>(),
+	loadExistingConnectionSummary: vi.fn<() => Promise<unknown>>(),
 	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(),
 }))
 
@@ -28,6 +29,8 @@ vi.mock('#app/account-integrations-data.ts', () => ({
 		mockModule.loadAccountIntegrationByName(...args),
 	hasAlternativeBuiltInApp: (...args: Array<unknown>) =>
 		mockModule.hasAlternativeBuiltInApp(...args),
+	loadExistingConnectionSummary: (...args: Array<unknown>) =>
+		mockModule.loadExistingConnectionSummary(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -86,6 +89,7 @@ test('provider visits embed the integration record as SSR loader data', async ()
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 
 	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
+	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
 
 	await createConnectOauthHandler(env).handler(
 		new RequestContext(
@@ -97,7 +101,7 @@ test('provider visits embed the integration record as SSR loader data', async ()
 		env,
 		expect.anything(),
 		'github',
-		{ preferPlatform: false },
+		{ preferPlatform: false, platformSlug: undefined },
 	)
 	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -107,6 +111,7 @@ test('provider visits embed the integration record as SSR loader data', async ()
 					provider: 'github',
 					integration: record,
 					builtInAvailable: false,
+					existingConnection: null,
 				},
 			},
 		}),
@@ -124,6 +129,7 @@ test('platform=1 forces the built-in lookup', async () => {
 		platform: true,
 	})
 	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
+	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 
 	await createConnectOauthHandler(env).handler(
@@ -137,7 +143,22 @@ test('platform=1 forces the built-in lookup', async () => {
 		env,
 		expect.anything(),
 		'google',
-		{ preferPlatform: true },
+		{ preferPlatform: true, platformSlug: undefined },
+	)
+
+	// platform=<slug> connects that built-in under a different name.
+	await createConnectOauthHandler(env).handler(
+		new RequestContext(
+			new Request(
+				'https://example.com/connect/oauth?provider=google-2&platform=google',
+			),
+		),
+	)
+	expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
+		env,
+		expect.anything(),
+		'google-2',
+		{ preferPlatform: false, platformSlug: 'google' },
 	)
 })
 

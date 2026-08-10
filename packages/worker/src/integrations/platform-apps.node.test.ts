@@ -60,6 +60,23 @@ test('upsertPlatformOauthApp stores the client secret encrypted, never in plaint
 	expect(decrypted).toBe('platform-github-client-secret-value')
 })
 
+test('description saves, retains on omit, and clears on null', async () => {
+	const { db, env } = createHarness()
+	await upsertPlatformOauthApp({
+		db,
+		env,
+		app: { ...baseGithubApp, description: 'Send-only Gmail, no inbox.' },
+	})
+	const retained = await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+	expect(retained.description).toBe('Send-only Gmail, no inbox.')
+	const cleared = await upsertPlatformOauthApp({
+		db,
+		env,
+		app: { ...baseGithubApp, description: null },
+	})
+	expect(cleared.description).toBeNull()
+})
+
 test('platform app public shape exposes hasClientSecret but no ciphertext or value', async () => {
 	const { db, env } = createHarness()
 	await upsertPlatformOauthApp({ db, env, app: baseGithubApp })

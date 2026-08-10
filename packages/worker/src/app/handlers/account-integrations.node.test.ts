@@ -490,6 +490,7 @@ test('integrations API returns one connection by name for the connect OAuth flow
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		builtInAvailable: false,
+		existingConnection: { lane: 'user', appSlug: 'github' },
 		integration: {
 			name: 'github',
 			appSlug: 'github',
@@ -517,6 +518,8 @@ test('integrations API returns one connection by name for the connect OAuth flow
 })
 
 test('integrations API returns null when a named connection is missing', async () => {
+	// Two reads: the record lookup and the existing-connection summary.
+	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
 	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce(null)
 	const handler = createAccountIntegrationsApiHandler(createEnv())
@@ -530,6 +533,7 @@ test('integrations API returns null when a named connection is missing', async (
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		builtInAvailable: false,
+		existingConnection: null,
 		integration: null,
 	})
 })

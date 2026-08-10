@@ -17,6 +17,7 @@ export async function loadAdminPlatformIntegrationsData(
 			slug: app.slug,
 			provider: app.provider,
 			label: app.label,
+			description: app.description,
 			clientId: app.clientId,
 			hasClientSecret: app.hasClientSecret,
 			tokenUrl: app.tokenUrl,

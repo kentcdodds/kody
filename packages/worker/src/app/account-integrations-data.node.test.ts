@@ -12,6 +12,7 @@ import {
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
 	loadAccountOauthAppBySlug,
+	loadExistingConnectionSummary,
 } from './account-integrations-data.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -343,6 +344,29 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 	expect(forced?.platform).toBe(true)
 	expect(forced?.clientId).toBe('platform-github-client')
 	expect(await hasAlternativeBuiltInApp(env, 'github', forced)).toBe(false)
+
+	// platform=<slug>: the built-in connects under a different name so the
+	// existing connection survives (rename-instead-of-replace).
+	const renamed = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github-2',
+		{ platformSlug: 'github' },
+	)
+	expect(renamed).toMatchObject({
+		name: 'github-2',
+		appSlug: 'github',
+		platform: true,
+		accessTokenSecretName: 'github-2AccessToken',
+	})
+
+	// The existing-connection summary powers the replace confirmation.
+	expect(
+		await loadExistingConnectionSummary(env, fakeUser(userId), 'github'),
+	).toEqual({ lane: 'user', appSlug: 'github' })
+	expect(
+		await loadExistingConnectionSummary(env, fakeUser(userId), 'github-2'),
+	).toBeNull()
 
 	// No built-in for the slug: the incomplete record still returns so the
 	// setup form can prefill what exists.

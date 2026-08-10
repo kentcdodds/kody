@@ -1,11 +1,15 @@
 import { z } from 'zod'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
+import {
+	normalizeProviderKey,
+	safeParseHost,
+} from '@kody-internal/shared/url-hosts.ts'
 import {
 	hasAlternativeBuiltInApp,
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
+	loadExistingConnectionSummary,
 	loadAccountOauthAppBySlug,
 } from '#app/account-integrations-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -76,21 +80,31 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 				const searchParams = new URL(request.url).searchParams
 				const name = searchParams.get('name')?.trim()
 				if (name) {
-					const preferPlatform = searchParams.get('platform') === '1'
+					// `platform=1` forces the built-in of the same name;
+					// `platform=<slug>` connects that built-in under a
+					// different connection name (rename-instead-of-replace).
+					const platformParam = searchParams.get('platform')?.trim()
 					const integration = await loadAccountIntegrationByName(
 						env,
 						user,
 						name,
-						{ preferPlatform },
+						{
+							preferPlatform: platformParam === '1',
+							platformSlug:
+								platformParam && platformParam !== '1'
+									? (normalizeProviderKey(platformParam) ?? undefined)
+									: undefined,
+						},
 					)
+					const [builtInAvailable, existingConnection] = await Promise.all([
+						hasAlternativeBuiltInApp(env, name, integration),
+						loadExistingConnectionSummary(env, user, name),
+					])
 					return jsonResponse({
 						ok: true,
 						integration,
-						builtInAvailable: await hasAlternativeBuiltInApp(
-							env,
-							name,
-							integration,
-						),
+						builtInAvailable,
+						existingConnection,
 					})
 				}
 				const appSlug = searchParams.get('appSlug')?.trim()

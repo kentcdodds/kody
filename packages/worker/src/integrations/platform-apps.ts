@@ -37,6 +37,8 @@ export type PlatformOauthApp = {
 	slug: string
 	provider: string
 	label: string | null
+	/** Operator-authored note (limitations, scope caveats) shown pre-connect. */
+	description: string | null
 	clientId: string
 	hasClientSecret: boolean
 	tokenUrl: string
@@ -62,6 +64,7 @@ export type PlatformOauthAppRow = {
 	slug: string
 	provider: string
 	label: string | null
+	description: string | null
 	client_id: string
 	client_secret_encrypted: string | null
 	token_url: string
@@ -83,11 +86,11 @@ export type PlatformOauthAppRow = {
 }
 
 const platformAppSelectColumns = `
-	slug, provider, label, client_id, client_secret_encrypted, token_url,
-	authorize_url, api_base_url, flow, use_pkce, token_exchange_style,
-	scope_separator, extra_authorize_params_json, allowed_scopes_json,
-	default_scopes_json, required_hosts_json, enabled, logo_key,
-	logo_content_type, created_at, updated_at
+	slug, provider, label, description, client_id, client_secret_encrypted,
+	token_url, authorize_url, api_base_url, flow, use_pkce,
+	token_exchange_style, scope_separator, extra_authorize_params_json,
+	allowed_scopes_json, default_scopes_json, required_hosts_json, enabled,
+	logo_key, logo_content_type, created_at, updated_at
 `
 
 export async function listPlatformOauthApps(input: {
@@ -156,6 +159,7 @@ export type PlatformOauthAppSaveInput = {
 	slug: string
 	provider?: string | null
 	label?: string | null
+	description?: string | null
 	clientId: string
 	/**
 	 * Plaintext client secret to encrypt and store. `undefined` keeps the
@@ -248,16 +252,18 @@ export async function upsertPlatformOauthApp(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO platform_oauth_apps (
-				slug, provider, label, client_id, client_secret_encrypted, token_url,
-				authorize_url, api_base_url, flow, use_pkce, token_exchange_style,
-				scope_separator, extra_authorize_params_json, allowed_scopes_json,
+				slug, provider, label, description, client_id,
+				client_secret_encrypted, token_url, authorize_url, api_base_url,
+				flow, use_pkce, token_exchange_style, scope_separator,
+				extra_authorize_params_json, allowed_scopes_json,
 				default_scopes_json, required_hosts_json, enabled, created_at,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(slug)
 			DO UPDATE SET
 				provider = excluded.provider,
 				label = excluded.label,
+				description = excluded.description,
 				client_id = excluded.client_id,
 				client_secret_encrypted = excluded.client_secret_encrypted,
 				token_url = excluded.token_url,
@@ -282,6 +288,9 @@ export async function upsertPlatformOauthApp(input: {
 			input.app.label === undefined
 				? (existing?.label ?? null)
 				: input.app.label?.trim() || null,
+			input.app.description === undefined
+				? (existing?.description ?? null)
+				: input.app.description?.trim() || null,
 			clientId,
 			clientSecretEncrypted,
 			tokenUrl,
@@ -403,6 +412,7 @@ export function mapPlatformOauthAppRow(
 		slug: row.slug,
 		provider: row.provider,
 		label: row.label,
+		description: row.description ?? null,
 		clientId: row.client_id,
 		hasClientSecret: row.client_secret_encrypted != null,
 		tokenUrl: row.token_url,

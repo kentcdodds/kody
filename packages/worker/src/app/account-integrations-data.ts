@@ -1,6 +1,7 @@
 import {
 	type AccountIntegrationListItem,
 	type AccountOauthAppListItem,
+	type ConnectOauthExistingConnection,
 } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
@@ -40,6 +41,7 @@ function toAccountIntegrationRecord(
 			? {
 					platformAllowedScopes: entry.app.allowedScopes,
 					platformLogoPath: buildPlatformOauthAppLogoPath(entry.app),
+					platformDescription: entry.app.description,
 				}
 			: {}),
 		createdAt: entry.connection.createdAt,
@@ -84,6 +86,7 @@ function toPlatformAppPrefillRecord(
 		platform: true,
 		platformAllowedScopes: app.allowedScopes,
 		platformLogoPath: buildPlatformOauthAppLogoPath(app),
+		platformDescription: app.description,
 		createdAt: app.createdAt,
 		updatedAt: app.updatedAt,
 	}
@@ -238,18 +241,24 @@ export async function loadAccountIntegrationByName(
 		 * no built-in exists for the name.
 		 */
 		preferPlatform?: boolean
+		/**
+		 * Built-in slug to resolve when it differs from the connection name
+		 * (`platform=<slug>`): connecting the google built-in under the name
+		 * google-2 keeps an existing bring-your-own google connection intact.
+		 */
+		platformSlug?: string
 	},
 ): Promise<AccountIntegrationRecord | null> {
 	// A user-lane record still wins when it can actually drive the flow (the
 	// bring-your-own override); an endpoint-incomplete one defers to an
 	// enabled built-in of the same name instead of dead-ending the page.
-	const platformFallback = async () => {
-		const platformApp = await getAvailablePlatformApp({ env, slug: name })
+	const platformFallback = async (slug: string = name) => {
+		const platformApp = await getAvailablePlatformApp({ env, slug })
 		return platformApp ? toPlatformAppPrefillRecord(platformApp, name) : null
 	}
 
-	if (options?.preferPlatform) {
-		const platformRecord = await platformFallback()
+	if (options?.preferPlatform || options?.platformSlug) {
+		const platformRecord = await platformFallback(options.platformSlug ?? name)
 		if (platformRecord) return platformRecord
 	}
 
@@ -281,6 +290,24 @@ export async function loadAccountIntegrationByName(
 	// 4. Platform (built-in) app: the user needs no OAuth app of their own, so
 	// the connect flow can skip client-credential setup entirely.
 	return platformFallback()
+}
+
+/**
+ * The connection currently stored under `name`, summarized so the connect
+ * page can warn before an OAuth flow would replace it with a different app.
+ */
+export async function loadExistingConnectionSummary(
+	env: Env,
+	user: AuthenticatedUser,
+	name: string,
+): Promise<ConnectOauthExistingConnection | null> {
+	const joined = await getJoinedIntegration({
+		env,
+		userId: user.mcpUser.userId,
+		name,
+	})
+	if (!joined) return null
+	return { lane: joined.lane, appSlug: joined.app.slug }
 }
 
 /**

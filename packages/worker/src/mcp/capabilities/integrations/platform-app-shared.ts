@@ -16,6 +16,8 @@ export const platformOauthAppPublicSchema = z.object({
 	slug: z.string().min(1),
 	provider: z.string().min(1),
 	label: z.string().nullable(),
+	/** Operator-authored note (limitations, scope caveats) shown pre-connect. */
+	description: z.string().nullable(),
 	clientId: z.string().min(1),
 	tokenUrl: z.string().url(),
 	authorizeUrl: z.string().url(),
@@ -46,6 +48,7 @@ export function toPlatformOauthAppPublic(
 		slug: app.slug,
 		provider: app.provider,
 		label: app.label,
+		description: app.description,
 		clientId: app.clientId,
 		tokenUrl: app.tokenUrl,
 		authorizeUrl: app.authorizeUrl,

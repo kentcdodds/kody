@@ -62,6 +62,8 @@ export type ConnectOauthConfig = {
 	platformAppSlug: string | null
 	/** Relative path of the operator-uploaded provider logo, when present. */
 	platformLogoPath: string | null
+	/** Operator-authored provider note (limitations, caveats), when present. */
+	platformDescription: string | null
 }
 
 export type StoredIntegrationAuthorization = NonNullable<
@@ -97,6 +99,8 @@ export type StoredIntegrationConfig = Omit<
 	platformAllowedScopes?: Array<string>
 	/** Relative path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
+	/** Operator-authored provider note (limitations, caveats). */
+	platformDescription?: string | null
 }
 
 export type ConnectOauthHostApprovalLink = {
@@ -187,6 +191,7 @@ export function toStoredIntegrationConfig(
 					platformAppSlug: integration.appSlug,
 					platformAllowedScopes: integration.platformAllowedScopes ?? [],
 					platformLogoPath: integration.platformLogoPath ?? null,
+					platformDescription: integration.platformDescription ?? null,
 				}
 			: {}),
 	}
@@ -253,12 +258,22 @@ export function parseStoredIntegrationConfig(
 				)
 			: []
 		const platformLogoPath = parsePlatformLogoPath(parsed.platformLogoPath)
+		const platformDescription =
+			typeof parsed.platformDescription === 'string' &&
+			parsed.platformDescription.trim()
+				? parsed.platformDescription.trim()
+				: null
 		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
 			return null
 		}
 		return {
 			...(platformAppSlug
-				? { platformAppSlug, platformAllowedScopes, platformLogoPath }
+				? {
+						platformAppSlug,
+						platformAllowedScopes,
+						platformLogoPath,
+						platformDescription,
+					}
 				: {}),
 			name,
 			tokenUrl,
@@ -389,6 +404,9 @@ export function mergeConnectOauthConfig(input: {
 		platformLogoPath: platformAppSlug
 			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
 			: null,
+		platformDescription: platformAppSlug
+			? input.storedIntegration?.platformDescription?.trim() || null
+			: null,
 		provider,
 		providerKey,
 		authorizeHost,
@@ -495,6 +513,11 @@ export function parseSessionConnectOauthConfig(
 				? record.platformAppSlug
 				: null,
 		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
+		platformDescription:
+			typeof record.platformDescription === 'string' &&
+			record.platformDescription.trim()
+				? record.platformDescription.trim()
+				: null,
 	}
 }
 

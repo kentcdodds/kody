@@ -29,6 +29,14 @@ const inputSchema = z
 			.describe('Stable slug users connect with (for example "github").'),
 		provider: z.string().min(1).optional().describe('Provider family key.'),
 		label: z.string().min(1).nullable().optional(),
+		description: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe(
+				'Operator-authored note shown to users and agents before they connect — provider-specific limitations, scope caveats, and the like. Omit to keep the stored value, pass null to clear.',
+			),
 		clientId: z.string().min(1).describe('Provider OAuth client id.'),
 		clientSecret: z
 			.string()
@@ -109,6 +117,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 								slug: args.slug,
 								provider: args.provider,
 								label: args.label,
+								description: args.description,
 								clientId: args.clientId,
 								clientSecret: args.clientSecret,
 								tokenUrl: args.tokenUrl,
