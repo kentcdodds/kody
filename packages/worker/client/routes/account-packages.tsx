@@ -35,6 +35,7 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
 import {
@@ -406,19 +407,19 @@ export function AccountPackagesRoute(handle: Handle) {
 						{ key: 'kodyId', label: 'Kody id', drop: 2 },
 						{ key: 'hasApp', label: 'App' },
 						{ key: 'tags', label: 'Tags', drop: 1 },
-						{ key: 'updated', label: 'Updated' },
+						{ key: 'updated', label: 'Updated', drop: 3 },
 					]}
 					rows={packages.map((pkg) => ({
 						id: pkg.id,
 						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
 						cells: {
-							name: pkg.name,
+							name: <span mix={css(recordCellClamp(36))}>{pkg.name}</span>,
 							kodyId: (
 								<code
 									mix={css({
 										fontSize: '0.8rem',
 										color: colors.textMuted,
-										whiteSpace: 'nowrap',
+										...recordCellClamp(28),
 									})}
 								>
 									{pkg.kodyId}

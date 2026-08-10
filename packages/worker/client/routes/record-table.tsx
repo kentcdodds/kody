@@ -60,9 +60,10 @@ export type RecordTableRow = {
 
 type RecordTableProps = {
 	/**
-	 * `expand` unfolds the record inside the table under its own row (read-only
-	 * records), `pane` renders it below the table (records with an editor),
-	 * `none` is a table with no selection at all.
+	 * `expand` unfolds the record inside the table under its own row,
+	 * `pane` renders it below the table, `none` is a table with no selection.
+	 * Prefer `pane` for large editors (decision 0010); `expand` may still host
+	 * an editor when the screen deliberately keeps the form under its row.
 	 */
 	mode: 'expand' | 'pane' | 'none'
 	/**
@@ -137,7 +138,16 @@ const paneCss = {
 	...getSurfaceCardCss(),
 	padding: 0,
 	minWidth: 0,
-	overflow: 'hidden',
+	// Clip only the corners; the table scroller owns overflow so wide rows
+	// scroll instead of disappearing under the rounded card edge.
+	overflow: 'clip',
+}
+
+const tableScrollerCss = {
+	width: '100%',
+	minWidth: 0,
+	overflowX: 'auto' as const,
+	WebkitOverflowScrolling: 'touch' as const,
 }
 
 const toolbarCss = {
@@ -168,6 +178,7 @@ const countCss = {
 
 const tableCss = {
 	width: '100%',
+	minWidth: '100%',
 	borderCollapse: 'collapse' as const,
 	fontSize: typography.fontSize.sm,
 }
@@ -198,8 +209,9 @@ const cellCss = {
 /**
  * Below 620px the same `<table>` becomes a list of cards — no duplicate DOM.
  * Cells carry their own label from `data-label`; the primary cell is the
- * card's heading and keeps none. A five-column table cannot survive a phone,
- * and one that scrolls sideways is worse than no table at all.
+ * card's heading and keeps none. Column `drop` priorities shed fields first;
+ * when nowrap content still overflows the pane, the table scroller takes over
+ * with horizontal overflow rather than clipping under `overflow: hidden`.
  */
 const cardFallbackCss = {
 	'@container (max-width: 620px)': {
@@ -252,7 +264,13 @@ const primaryCellCss = {
 	...cellCss,
 	fontWeight: 620,
 	whiteSpace: 'nowrap' as const,
-	'@container (max-width: 620px)': { whiteSpace: 'normal' },
+	// Let the cell shrink so sibling columns and the scroller can claim width
+	// instead of the primary name forcing the whole table past the pane.
+	maxWidth: '28rem',
+	'@container (max-width: 620px)': {
+		whiteSpace: 'normal',
+		maxWidth: 'none',
+	},
 }
 
 const rowLinkCss = {
@@ -636,17 +654,21 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 						<p mix={css(emptyCss)}>
 							{handle.props.emptyLabel ?? 'Nothing to show yet.'}
 						</p>
-					) : capped ? (
+					) : (
 						<div
 							mix={css({
-								maxHeight: handle.props.scrollHeight ?? defaultScrollHeight,
-								overflowY: 'auto',
+								...tableScrollerCss,
+								...(capped
+									? {
+											maxHeight:
+												handle.props.scrollHeight ?? defaultScrollHeight,
+											overflowY: 'auto' as const,
+										}
+									: null),
 							})}
 						>
 							{table}
 						</div>
-					) : (
-						table
 					)}
 					{handle.props.footer ? (
 						<div mix={css(footerCss)}>{handle.props.footer}</div>

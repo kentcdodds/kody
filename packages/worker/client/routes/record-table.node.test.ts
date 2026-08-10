@@ -160,3 +160,18 @@ test('record table empty and busy states keep toolbar layout stable', async () =
 	expect(busyHtml).toContain('<table')
 	expect(busyHtml).toContain('Alpha')
 })
+
+test('record table keeps wide rows reachable via horizontal overflow', async () => {
+	const html = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Packages',
+			columns,
+			rows,
+		}),
+	)
+
+	// Remix serializes longhands with a space after the colon.
+	expect(html).toContain('overflow-x: auto')
+	expect(html).toContain('overflow: clip')
+})

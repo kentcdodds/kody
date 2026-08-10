@@ -203,6 +203,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		adminArea,
 		(m) => m.adminPlatformIntegrationsRouteLoader,
 	),
+	[routePattern(routes.adminPlatformIntegrationNew)]: lazyRouteLoader(
+		adminArea,
+		(m) => m.adminPlatformIntegrationsRouteLoader,
+	),
+	[routePattern(routes.adminPlatformIntegrationDetail)]: lazyRouteLoader(
+		adminArea,
+		(m) => m.adminPlatformIntegrationsRouteLoader,
+	),
 	[routePattern(routes.adminCodemods)]: lazyRouteLoader(
 		adminArea,
 		(m) => m.adminCodemodsRouteLoader,
@@ -407,6 +415,12 @@ export const clientRoutes = {
 		<LazyAdminRoute render={(m) => <m.AdminFeatureFlagsRoute />} />
 	),
 	[routePattern(routes.adminPlatformIntegrations)]: (
+		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
+	),
+	[routePattern(routes.adminPlatformIntegrationNew)]: (
+		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
+	),
+	[routePattern(routes.adminPlatformIntegrationDetail)]: (
 		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
 	),
 	[routePattern(routes.adminCodemods)]: (

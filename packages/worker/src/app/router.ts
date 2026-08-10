@@ -355,6 +355,9 @@ export function createAppRouter(env: Env) {
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
 			adminPlatformIntegrations: createAdminPlatformIntegrationsHandler(env),
+			adminPlatformIntegrationNew: createAdminPlatformIntegrationsHandler(env),
+			adminPlatformIntegrationDetail:
+				createAdminPlatformIntegrationsHandler(env),
 			adminPlatformIntegrationsApi:
 				createAdminPlatformIntegrationsApiHandler(env),
 			adminPlatformIntegrationsApiPost:

@@ -96,6 +96,8 @@ export const routes = route({
 	adminFeatureFlagsApi: '/admin/feature-flags.json',
 	adminFeatureFlagsApiPost: post('/admin/feature-flags.json'),
 	adminPlatformIntegrations: '/admin/platform-integrations',
+	adminPlatformIntegrationNew: '/admin/platform-integrations/new',
+	adminPlatformIntegrationDetail: '/admin/platform-integrations/:slug',
 	adminPlatformIntegrationsApi: '/admin/platform-integrations.json',
 	adminPlatformIntegrationsApiPost: post('/admin/platform-integrations.json'),
 	adminCodemods: '/admin/codemods',
