@@ -269,6 +269,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.onboardingRouteLoader,
 	),
+	[routePattern(routes.connectOauth)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.connectOauthRouteLoader,
+	),
 	[routePattern(routes.pendingVerification)]: pendingVerificationRouteLoader,
 }
 

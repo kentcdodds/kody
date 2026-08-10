@@ -1,6 +1,10 @@
 import { type Action } from 'remix/router'
+import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
+import { loadAccountIntegrationByName } from '#app/account-integrations-data.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requirePageSession } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { type ConnectOauthLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 
 /**
@@ -17,6 +21,31 @@ export function isBareConnectOauthVisit(url: URL): boolean {
 	return !params.get('provider') && !params.get('code') && !params.get('error')
 }
 
+/**
+ * SSR prefill for `?provider=` visits: the same record the
+ * `/account/integrations.json?name=` endpoint serves, embedded so a direct
+ * navigation renders (and auto-starts built-ins) without a client fetch.
+ * Callback returns (`code`/`error`) restore config from sessionStorage, so
+ * their query carries no provider and nothing is loaded.
+ */
+async function loadConnectOauthLoaderData(
+	env: Env,
+	request: Request,
+	requestUrl: URL,
+): Promise<ConnectOauthLoaderData | null> {
+	const provider = requestUrl.searchParams.get('provider')?.trim()
+	if (!provider) return null
+	const providerKey = normalizeProviderKey(provider)
+	if (!providerKey) return null
+	const user = await readAuthenticatedAppUser(request, env)
+	if (!user) return null
+	return {
+		ok: true,
+		provider: providerKey,
+		integration: await loadAccountIntegrationByName(env, user, providerKey),
+	}
+}
+
 export function createConnectOauthHandler(env: Env) {
 	return {
 		middleware: [],
@@ -29,10 +58,16 @@ export function createConnectOauthHandler(env: Env) {
 			if (sessionRedirect) {
 				return sessionRedirect
 			}
+			const connectOauth = await loadConnectOauthLoaderData(
+				env,
+				request,
+				requestUrl,
+			)
 			return renderAppPage({
 				request,
 				env,
 				title: 'Connect OAuth',
+				...(connectOauth ? { loaderData: { connectOauth } } : {}),
 			})
 		},
 	} satisfies Action<typeof routes.connectOauth>

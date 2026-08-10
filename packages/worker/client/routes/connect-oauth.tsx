@@ -5,10 +5,18 @@ import {
 import {
 	type AccountIntegrationDetailLoaderData,
 	type AccountSecretsLoaderData,
+	type ConnectOauthLoaderData,
 } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { readJson } from '#client/routes/account-approval-shared.ts'
+import {
+	type RouteLoaderResult,
+	routeLoaderRedirect,
+} from '#client/route-loader.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import {
 	buildHostApprovalRequestUrl,
@@ -86,6 +94,54 @@ type OAuthCallback =
 	| { kind: 'none' }
 	| { kind: 'error'; error: string; description: string | null }
 	| { kind: 'success'; code: string; state: string | null }
+
+const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
+	ok: true,
+	provider: null,
+	integration: null,
+}
+
+/**
+ * SPA-navigation prefetch mirroring the server handler's SSR embed: the
+ * stored or built-in record for `?provider=` visits, resolved before the
+ * route renders. Callback returns (`code`/`error`) restore config from
+ * sessionStorage and bare visits redirect server-side, so both prefetch
+ * nothing.
+ */
+export async function connectOauthRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const params = url.searchParams
+	const provider = params.get('provider')?.trim()
+	if (!provider || params.get('code') || params.get('error')) {
+		return { connectOauth: emptyConnectOauthLoaderData }
+	}
+	const providerKey = normalizeProviderKey(provider)
+	if (!providerKey) {
+		return { connectOauth: emptyConnectOauthLoaderData }
+	}
+	const response = await fetch(
+		`/account/integrations.json?name=${encodeURIComponent(providerKey)}`,
+		{
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		},
+	)
+	if (response.status === 401) {
+		return routeLoaderRedirect('/login')
+	}
+	const payload = await readJson<AccountIntegrationDetailLoaderData>(response)
+	return {
+		connectOauth: {
+			ok: true,
+			provider: providerKey,
+			integration:
+				response.ok && payload?.ok ? (payload.integration ?? null) : null,
+		},
+	}
+}
 
 export function ConnectOauthRoute(handle: Handle) {
 	type StatusTone = 'info' | 'warn' | 'error'
@@ -943,6 +999,27 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (initialLoadStarted) return
 		initialLoadStarted = true
 		try {
+			// SSR-embedded on direct visits, loader-prefetched on SPA
+			// navigations; the integrations fetch below only runs as a
+			// fallback (e.g. callback returns that lost sessionStorage).
+			const routeData = tryConsumeRouteLoaderData(
+				handle,
+				'connectOauth',
+				readCurrentRouterHref(handle),
+			)
+			const preloadedIntegrationFor = (providerKey: string) =>
+				routeData && routeData.provider === providerKey
+					? routeData.integration
+					: undefined
+			const resolveExistingIntegration = async (
+				queryConfig: ConnectOauthQueryConfig,
+			): Promise<StoredIntegrationConfig | null> => {
+				const preloaded = preloadedIntegrationFor(queryConfig.providerKey)
+				if (preloaded !== undefined) {
+					return preloaded ? toStoredIntegrationConfig(preloaded) : null
+				}
+				return readExistingIntegrationConfig(queryConfig)
+			}
 			const callback = readCallback()
 			if (callback.kind === 'success' || callback.kind === 'error') {
 				const storedConfig = readStoredConfig()
@@ -953,7 +1030,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						? mergeConnectOauthConfig({
 								queryConfig,
 								storedIntegration:
-									await readExistingIntegrationConfig(queryConfig),
+									await resolveExistingIntegration(queryConfig),
 							})
 						: null)
 				if (!nextConfig) {
@@ -972,8 +1049,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				setStatus('Missing required OAuth configuration parameters.', 'error')
 				return
 			}
-			const existingIntegration =
-				await readExistingIntegrationConfig(queryConfig)
+			const existingIntegration = await resolveExistingIntegration(queryConfig)
 			existingIntegrationConfig = existingIntegration
 			const nextConfig = mergeConnectOauthConfig({
 				queryConfig,

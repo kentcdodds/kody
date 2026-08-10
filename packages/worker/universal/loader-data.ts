@@ -857,6 +857,18 @@ export type AccountIntegrationDetailLoaderData = {
 	integration: AccountIntegrationListItem | null
 }
 
+/**
+ * /connect/oauth prefill for `?provider=` visits: the stored or built-in
+ * record the page merges into its config. `provider` is the normalized key
+ * the record was resolved for; null on callback and bare visits, which have
+ * nothing to prefetch.
+ */
+export type ConnectOauthLoaderData = {
+	ok: true
+	provider: string | null
+	integration: AccountIntegrationListItem | null
+}
+
 export type AccountMcpServerListItem = {
 	id: string
 	name: string
@@ -1397,6 +1409,7 @@ export type AppLoaderData = {
 	accountProfile?: AccountProfileLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	onboarding?: OnboardingLoaderData
+	connectOauth?: ConnectOauthLoaderData
 	pendingVerification?: PendingVerificationLoaderData
 	accountTwoFactor?: AccountTwoFactorLoaderData
 	accountPasskeys?: AccountPasskeysLoaderData
