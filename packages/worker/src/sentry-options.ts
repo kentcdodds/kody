@@ -90,12 +90,26 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
 }
 
 /**
- * Prefix of the message emitted by the execute sandbox when caller code
- * exceeds `timeoutMs` (`packages/worker/src/mcp/executor.ts`); the executor
- * appends the budget (`Execution timed out after 90s`) so consumers can tell
- * a 90s ad hoc execute cut from a 270s workflow-step cut. Inline workflows
- * rethrow that string as `UserCodeError`; `instrumentWorkflowWithSentry` then
- * auto-captures it. MCP execute already skips sandbox failures via
+ * Leading phrase of the message emitted by the execute sandbox when caller
+ * code exceeds `timeoutMs` (`packages/worker/src/mcp/executor.ts`). The
+ * executor injects the enforced budget after this phrase (`Execution timed
+ * out after 90s: …` via `createExecutorSandboxTimeoutMessage`) so consumers
+ * can tell a 90s ad hoc execute cut from a 270s workflow-step cut.
+ */
+export const executorSandboxTimeoutMessagePrefix = 'Execution timed out'
+
+/**
+ * Abort-semantics explanation carried by every sandbox timeout message:
+ * nested work is asked to abort, but already-started side effects may still
+ * complete, so retries need idempotency.
+ */
+export const executorSandboxTimeoutMessageExplanation =
+	': Kody stopped observing the sandbox. Nested work was asked to abort, but already-started remote work and side effects may still complete. Do not retry side-effecting work without an idempotencyKey; recover with run_get or replay the same idempotencyKey.'
+
+/**
+ * Budget-less form of the sandbox timeout message. Inline workflows rethrow
+ * timeout strings as `UserCodeError`; `instrumentWorkflowWithSentry` then
+ * auto-captures them. MCP execute already skips sandbox failures via
  * `sandboxError`, but workflow instrumentation still reports the rethrow.
  * Other platform timeouts use different wording (Kit, webhook, snapshot, …).
  *
@@ -103,15 +117,20 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
  * boundary; keep this in sync with `createExecutorSandboxTimeoutMessage` in
  * `mcp/executor.ts`.
  */
-export const executorSandboxTimeoutMessage =
-	'Execution timed out: Kody stopped observing the sandbox. Nested work was asked to abort, but already-started remote work and side effects may still complete. Do not retry side-effecting work without an idempotencyKey; recover with run_get or replay the same idempotencyKey.'
+export const executorSandboxTimeoutMessage = `${executorSandboxTimeoutMessagePrefix}${executorSandboxTimeoutMessageExplanation}`
+
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 /**
  * Anchored on purpose: wrapped forms (for example `Error: Execution timed
- * out`) are rethrows from other layers and must keep reaching Sentry.
+ * out`) are rethrows from other layers and must keep reaching Sentry. The
+ * budget and the explanation are each optional so timeout messages from
+ * older deployments (bare `Execution timed out`) stay filtered too.
  */
 const executorSandboxTimeoutMessagePattern = new RegExp(
-	`^${executorSandboxTimeoutMessage}(?: after \\d+(?:\\.\\d+)?m?s)?$`,
+	`^${executorSandboxTimeoutMessagePrefix}(?: after \\d+(?:\\.\\d+)?m?s)?(?:${escapeRegExp(executorSandboxTimeoutMessageExplanation)})?$`,
 )
 
 export function isExecutorSandboxTimeoutMessage(message: string | undefined) {

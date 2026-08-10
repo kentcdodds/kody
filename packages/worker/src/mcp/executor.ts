@@ -46,6 +46,8 @@ import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unboun
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import {
 	executorSandboxTimeoutMessage,
+	executorSandboxTimeoutMessageExplanation,
+	executorSandboxTimeoutMessagePrefix,
 	isExecutorSandboxTimeoutMessage,
 } from '#worker/sentry-options.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
@@ -201,13 +203,13 @@ async function withDynamicWorkerEvaluationPermit<T>(
 /**
  * The executor is the only component that knows the enforced budget at the
  * moment a timeout fires, so it bakes the budget into the message
- * (`Execution timed out after 90s`). The string is the part of the result
+ * (`Execution timed out after 90s: …`). The string is the part of the result
  * that survives every boundary the error crosses (dynamic worker RPC,
  * persisted invocation responses, `UserCodeError` rethrows), so downstream
  * consumers can report the actual budget without guessing the run context.
  */
 export function createExecutorSandboxTimeoutMessage(timeoutMs: number) {
-	return `${executorSandboxTimeoutMessage} after ${formatTimeoutBudget(timeoutMs)}`
+	return `${executorSandboxTimeoutMessagePrefix} after ${formatTimeoutBudget(timeoutMs)}${executorSandboxTimeoutMessageExplanation}`
 }
 
 function throwIfEvaluationDeadlineAborted(signal?: AbortSignal) {
@@ -261,7 +263,8 @@ export async function raceWithHostEvaluationDeadline<T>(
 			timeoutMs < maxSupportedExecutorTimeoutMs
 		) {
 			timeoutId = setTimeout(
-				() => abortWith(new Error(createExecutorSandboxTimeoutMessage(timeoutMs))),
+				() =>
+					abortWith(new Error(createExecutorSandboxTimeoutMessage(timeoutMs))),
 				Math.max(1, timeoutMs),
 			)
 		}
@@ -1381,15 +1384,19 @@ function isDisposedRpcStubMessage(message: string) {
 }
 
 /**
- * Recognize `createExecutorSandboxTimeoutMessage` output (and the legacy
- * budget-less form) at the end of an error message, tolerating wrapper
- * prefixes such as `[execution_failed] ` from package invocation responses.
- * The captured budget lets the structured hint report the actual enforced
- * limit instead of assuming the ad hoc execute default.
+ * Recognize `createExecutorSandboxTimeoutMessage` output (and legacy forms:
+ * budget-less, explanation-less, or both) at the end of an error message,
+ * tolerating wrapper prefixes such as `[execution_failed] ` from package
+ * invocation responses. The captured budget lets the structured hint report
+ * the actual enforced limit instead of assuming the ad hoc execute default.
  */
 const executorSandboxTimeoutDetailsPattern = new RegExp(
-	`(?:^|\\s)${executorSandboxTimeoutMessage}(?: after (\\d+(?:\\.\\d+)?)(m?s))?$`,
+	`(?:^|\\s)${executorSandboxTimeoutMessagePrefix}(?: after (\\d+(?:\\.\\d+)?)(m?s))?(?:${escapeRegExp(executorSandboxTimeoutMessageExplanation)})?$`,
 )
+
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 function parseExecutorSandboxTimeoutErrorMessage(message: string) {
 	const match = executorSandboxTimeoutDetailsPattern.exec(message)

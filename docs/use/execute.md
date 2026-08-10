@@ -136,6 +136,9 @@ Plain **execute** has a hard timeout (~90s by default). For multi-step or
 long-running work (>~60s, batch sweeps, migrations, polling loops), use one
 **execute** call to submit `workflows.create({ code, params })`, then inspect
 progress with `workflow_run_list` instead of chaining many MCP tool calls.
+Sandbox timeout errors state the enforced budget (for example
+`Execution timed out after 90s: …`) and carry a structured next step pointing at
+workflows.
 
 ### Recovering from MCP client timeouts
 

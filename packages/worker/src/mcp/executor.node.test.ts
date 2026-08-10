@@ -301,7 +301,9 @@ test('generated kody provider source avoids bundle-scoped __name helpers', () =>
 		shadowGlobalThis: false,
 		timeoutMs: 1_000,
 	})
-	expect(moduleSource).toContain(JSON.stringify(executorSandboxTimeoutMessage))
+	expect(moduleSource).toContain(
+		JSON.stringify(createExecutorSandboxTimeoutMessage(1_000)),
+	)
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
 })
 
@@ -528,7 +530,7 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 		timeoutMs: 40,
 	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
 	expect(result.error).toBe(createExecutorSandboxTimeoutMessage(40))
-	expect(result.error).toBe(`${executorSandboxTimeoutMessage} after 40ms`)
+	expect(result.error).toContain('Execution timed out after 40ms:')
 	expect(result.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
 })
@@ -576,7 +578,7 @@ test('createExecuteExecutor aborts an in-flight abort-aware dispatcher on timeou
 		} as never,
 	])
 
-	expect(result.error).toBe(executorSandboxTimeoutMessage)
+	expect(result.error).toBe(createExecutorSandboxTimeoutMessage(40))
 	expect(observedSignal?.aborted).toBe(true)
 })
 
@@ -1570,10 +1572,15 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		)?.nextStep,
 	).toContain('270s')
 	// Legacy budget-less messages (older stored responses, non-Error abort
-	// reasons) still classify, without a parsed budget.
+	// reasons) still classify, without a parsed budget — both the current
+	// explanation-carrying form and the bare pre-explanation form.
 	expect(getExecutionErrorDetails(executorSandboxTimeoutMessage)).toMatchObject(
 		{ kind: 'execution_timed_out', timedOutAfterMs: null },
 	)
+	expect(getExecutionErrorDetails('Execution timed out')).toMatchObject({
+		kind: 'execution_timed_out',
+		timedOutAfterMs: null,
+	})
 	// Nested package invocations wrap the message with an
 	// `[execution_failed]` prefix in a cause.
 	expect(
