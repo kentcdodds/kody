@@ -142,6 +142,37 @@ test('save creates an app, never echoes the secret, and partial saves retain fie
 	})
 })
 
+test('description saves through the handler, retains on omit, and clears on empty', async () => {
+	const { env } = createHarness()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
+	const handler = createAdminPlatformIntegrationsApiHandler(env)
+	const post = (body: Record<string, unknown>) =>
+		handler.handler({
+			request: postRequest(body),
+			url: new URL('https://example.com/admin/platform-integrations.json'),
+			params: {},
+		} as never)
+
+	const created = await post({
+		...saveGithubBody,
+		description: 'Kody-hosted GitHub app.',
+	})
+	expect((await created.json()).apps[0].description).toBe(
+		'Kody-hosted GitHub app.',
+	)
+
+	// Omitted property (API callers): the stored description is retained.
+	const omitted = await post(saveGithubBody)
+	expect((await omitted.json()).apps[0].description).toBe(
+		'Kody-hosted GitHub app.',
+	)
+
+	// Explicit empty string (the admin form's cleared textarea) clears it;
+	// null behaves the same.
+	const cleared = await post({ ...saveGithubBody, description: '' })
+	expect((await cleared.json()).apps[0].description).toBeNull()
+})
+
 test('delete refuses while connections reference the app and succeeds after cleanup', async () => {
 	const { sqlite, env } = createHarness()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
