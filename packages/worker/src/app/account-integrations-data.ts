@@ -284,6 +284,17 @@ export async function loadAccountIntegrationByName(
 		name,
 	})
 	if (prefill) {
+		// Exact beats fuzzy across lanes: a *family* prefill (slug differs
+		// from the requested name) must not shadow a built-in whose slug
+		// matches the name exactly — otherwise a user with any github app
+		// could never reach a github-platform built-in. An exact BYO slug
+		// match still wins (the bring-your-own override).
+		const exactByoSlug =
+			canonicalIntegrationName(prefill.slug) === canonicalIntegrationName(name)
+		if (!exactByoSlug) {
+			const platformExact = await platformFallback()
+			if (platformExact) return platformExact
+		}
 		const record = toAppOnlyIntegrationRecord(prefill, name)
 		if (recordCanDriveConnectFlow(record)) return record
 		return (await platformFallback()) ?? record

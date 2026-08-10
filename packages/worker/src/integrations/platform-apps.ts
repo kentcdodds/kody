@@ -331,6 +331,94 @@ export async function upsertPlatformOauthApp(input: {
 	return saved
 }
 
+/**
+ * Renames a platform app slug in place, carrying every column (including the
+ * encrypted client secret and logo key — both write-only through every other
+ * surface) and moving user connections atomically. Connection *names* stay
+ * untouched: only the `platform_app_slug` reference moves, so tokens keep
+ * working without any user action. The insert → move children → delete-old
+ * sequence keeps the `user_integrations.platform_app_slug` foreign key
+ * satisfied at every statement, and `db.batch` makes it atomic.
+ */
+export async function renamePlatformOauthApp(input: {
+	db: D1Database
+	slug: string
+	newSlug: string
+}): Promise<PlatformOauthApp> {
+	const slug = canonicalIntegrationName(input.slug)
+	const newSlug = canonicalIntegrationName(input.newSlug)
+	if (!slug || !newSlug) {
+		throw new PlatformOauthAppValidationError(
+			'Platform app slugs must contain letters or numbers.',
+		)
+	}
+	if (slug === newSlug) {
+		throw new PlatformOauthAppValidationError(
+			'New slug matches the current slug.',
+		)
+	}
+	const existing = await getPlatformOauthAppBySlug({
+		db: input.db,
+		slug,
+		includeDisabled: true,
+	})
+	if (!existing) {
+		throw new PlatformOauthAppValidationError(
+			`Platform OAuth app "${slug}" was not found.`,
+		)
+	}
+	const collision = await getPlatformOauthAppBySlug({
+		db: input.db,
+		slug: newSlug,
+		includeDisabled: true,
+	})
+	if (collision) {
+		throw new PlatformOauthAppValidationError(
+			`Platform OAuth app "${newSlug}" already exists.`,
+		)
+	}
+	await input.db.batch([
+		input.db
+			.prepare(
+				`INSERT INTO platform_oauth_apps (
+					slug, provider, label, description, client_id,
+					client_secret_encrypted, token_url, authorize_url, api_base_url,
+					flow, use_pkce, token_exchange_style, scope_separator,
+					extra_authorize_params_json, allowed_scopes_json,
+					default_scopes_json, required_hosts_json, enabled, logo_key,
+					logo_content_type, created_at, updated_at
+				)
+				SELECT
+					?, provider, label, description, client_id,
+					client_secret_encrypted, token_url, authorize_url, api_base_url,
+					flow, use_pkce, token_exchange_style, scope_separator,
+					extra_authorize_params_json, allowed_scopes_json,
+					default_scopes_json, required_hosts_json, enabled, logo_key,
+					logo_content_type, created_at, ?
+				FROM platform_oauth_apps WHERE slug = ?`,
+			)
+			.bind(newSlug, new Date().toISOString(), slug),
+		input.db
+			.prepare(
+				`UPDATE user_integrations SET platform_app_slug = ?
+				WHERE platform_app_slug = ?`,
+			)
+			.bind(newSlug, slug),
+		input.db
+			.prepare(`DELETE FROM platform_oauth_apps WHERE slug = ?`)
+			.bind(slug),
+	])
+	const renamed = await getPlatformOauthAppBySlug({
+		db: input.db,
+		slug: newSlug,
+		includeDisabled: true,
+	})
+	if (!renamed) {
+		throw new Error(`Failed to rename platform OAuth app "${slug}".`)
+	}
+	return renamed
+}
+
 export async function deletePlatformOauthApp(input: {
 	db: D1Database
 	slug: string

@@ -141,11 +141,12 @@ page renders it, falling back to the built-in `ProviderIcon` set.
 Operators manage platform apps through role-gated capabilities in the `admin`
 domain, all audited via `auditAdminCapabilityInvocation`:
 
-| Capability                        | Role                                                                                     |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| `admin_platform_oauth_app_save`   | Create/update; accepts a plaintext `clientSecret`, stores it encrypted, never returns it |
-| `admin_platform_oauth_app_list`   | Includes `hasClientSecret` and per-app user connection counts                            |
-| `admin_platform_oauth_app_delete` | Fails while user connections reference the app — disable (`enabled = 0`) instead         |
+| Capability                        | Role                                                                                                                                                            |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin_platform_oauth_app_save`   | Create/update; plaintext `clientSecret` stored encrypted, never returned; `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
+| `admin_platform_oauth_app_list`   | Includes `hasClientSecret` and per-app user connection counts                                                                                                   |
+| `admin_platform_oauth_app_delete` | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                |
+| `admin_platform_oauth_app_rename` | Moves the slug in place: secret, logo, and connections carry over atomically                                                                                    |
 
 Confidential apps require a stored client secret only while `enabled`. An agent
 can therefore stage a complete provider config through `save` with

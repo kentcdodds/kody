@@ -269,6 +269,33 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 		await loadExistingConnectionSummary(env, fakeUser(userId), 'github-2'),
 	).toBeNull()
 
+	// Exact platform slug beats the fuzzy provider-family prefill: with a
+	// built-in named github-platform, a user who owns a github app must
+	// still land on the built-in (the family matcher would otherwise treat
+	// github-platform as a github multi-account name).
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: {
+			slug: 'github-platform',
+			clientId: 'platform-suffixed-client',
+			clientSecret: 'platform-suffixed-secret',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			flow: 'confidential',
+		},
+	})
+	const suffixed = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github-platform',
+	)
+	expect(suffixed).toMatchObject({
+		name: 'github-platform',
+		platform: true,
+		clientId: 'platform-suffixed-client',
+	})
+
 	// No built-in for the slug: the incomplete record still returns so the
 	// setup form can prefill what exists.
 	await upsertIntegration({

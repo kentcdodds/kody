@@ -10,6 +10,7 @@ import {
 	listPlatformOauthApps,
 	listTopPlatformAppsByUse,
 	PlatformOauthAppValidationError,
+	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
 } from './platform-apps.ts'
 
@@ -293,6 +294,94 @@ test('listTopPlatformAppsByUse orders enabled apps by connection count and hides
 
 	const topTwo = await listTopPlatformAppsByUse({ db, limit: 2 })
 	expect(topTwo.map((app) => app.slug)).toEqual(['google', 'notion'])
+})
+
+test('renamePlatformOauthApp carries the secret and moves connections atomically', async () => {
+	const { sqlite, db, env } = createHarness()
+	await upsertPlatformOauthApp({
+		db,
+		env,
+		app: { ...baseGithubApp, description: 'Kody-hosted GitHub app.' },
+	})
+	sqlite
+		.prepare(
+			`UPDATE platform_oauth_apps SET logo_key = ?, logo_content_type = ?
+			WHERE slug = ?`,
+		)
+		.run('platform-logos/github/abc123.png', 'image/png', 'github')
+	sqlite
+		.prepare(
+			`INSERT INTO user_integrations (
+				user_id, name, app_slug, platform_app_slug, access_token_secret_name
+			) VALUES (?, ?, NULL, ?, ?)`,
+		)
+		.run('user-1', 'github', 'github', 'githubAccessToken')
+
+	const renamed = await renamePlatformOauthApp({
+		db,
+		slug: 'github',
+		newSlug: 'github-platform',
+	})
+	expect(renamed).toMatchObject({
+		slug: 'github-platform',
+		provider: 'github',
+		description: 'Kody-hosted GitHub app.',
+		hasClientSecret: true,
+		logoKey: 'platform-logos/github/abc123.png',
+	})
+	// The write-only encrypted secret decrypts under the new slug.
+	expect(
+		await getPlatformOauthAppClientSecret({
+			db,
+			env,
+			slug: 'github-platform',
+		}),
+	).toBe('platform-github-client-secret-value')
+	// The old slug is gone; the connection moved but kept its name.
+	expect(
+		await getPlatformOauthAppBySlug({
+			db,
+			slug: 'github',
+			includeDisabled: true,
+		}),
+	).toBeNull()
+	expect(
+		await countConnectionsForPlatformApp({ db, slug: 'github-platform' }),
+	).toBe(1)
+	const movedConnection = sqlite
+		.prepare(
+			`SELECT name, platform_app_slug FROM user_integrations
+			WHERE user_id = ?`,
+		)
+		.get('user-1') as { name: string; platform_app_slug: string }
+	expect(movedConnection).toEqual({
+		name: 'github',
+		platform_app_slug: 'github-platform',
+	})
+
+	// Guards: missing source, same slug, and collisions all reject.
+	await expect(
+		renamePlatformOauthApp({ db, slug: 'missing', newSlug: 'other' }),
+	).rejects.toThrow('was not found')
+	await expect(
+		renamePlatformOauthApp({
+			db,
+			slug: 'github-platform',
+			newSlug: 'github-platform',
+		}),
+	).rejects.toThrow('matches the current slug')
+	await upsertPlatformOauthApp({
+		db,
+		env,
+		app: { ...baseGithubApp, slug: 'occupied' },
+	})
+	await expect(
+		renamePlatformOauthApp({
+			db,
+			slug: 'github-platform',
+			newSlug: 'occupied',
+		}),
+	).rejects.toThrow('already exists')
 })
 
 test('user_integrations enforces exactly one of app_slug / platform_app_slug', async () => {

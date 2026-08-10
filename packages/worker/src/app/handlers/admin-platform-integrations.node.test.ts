@@ -139,6 +139,74 @@ test('admin save and delete return HTTP shapes without echoing secrets', async (
 	await expect(deleted.json()).resolves.toMatchObject({ apps: [] })
 })
 
+test('save with newSlug renames in place, keeping the secret and connections', async () => {
+	const { sqlite, env } = createHarness()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
+	const handler = createAdminPlatformIntegrationsApiHandler(env)
+	const url = new URL('https://example.com/admin/platform-integrations.json')
+	const invoke = (body: Record<string, unknown>) =>
+		handler.handler({
+			request: postRequest(body),
+			url,
+			params: {},
+		} as never)
+
+	await invoke(saveGithubBody)
+	sqlite
+		.prepare(
+			`INSERT INTO user_integrations (
+				user_id, name, app_slug, platform_app_slug, access_token_secret_name
+			) VALUES (?, ?, NULL, ?, ?)`,
+		)
+		.run('user-1', 'github', 'github', 'githubAccessToken')
+
+	// Rename plus a same-call edit; clientSecret omitted → retained.
+	const renamed = await invoke({
+		action: 'save',
+		slug: 'github',
+		newSlug: 'github-platform',
+		clientId: saveGithubBody.clientId,
+		tokenUrl: saveGithubBody.tokenUrl,
+		authorizeUrl: saveGithubBody.authorizeUrl,
+		flow: 'confidential',
+		label: 'GitHub',
+	})
+	expect(renamed.status).toBe(200)
+	const payload = await renamed.json()
+	expect(payload.apps.map((app: { slug: string }) => app.slug)).toEqual([
+		'github-platform',
+	])
+	expect(payload.apps[0]).toMatchObject({
+		slug: 'github-platform',
+		label: 'GitHub',
+		hasClientSecret: true,
+		connectionCount: 1,
+	})
+	// The connection moved lanes-intact: same name, new app reference.
+	expect(
+		sqlite
+			.prepare(`SELECT name, platform_app_slug FROM user_integrations`)
+			.get(),
+	).toEqual({ name: 'github', platform_app_slug: 'github-platform' })
+
+	// Renaming onto an occupied slug is a clean 400.
+	await invoke({ ...saveGithubBody, slug: 'occupied' })
+	const collision = await invoke({
+		action: 'save',
+		slug: 'github-platform',
+		newSlug: 'occupied',
+		clientId: saveGithubBody.clientId,
+		tokenUrl: saveGithubBody.tokenUrl,
+		authorizeUrl: saveGithubBody.authorizeUrl,
+		flow: 'confidential',
+	})
+	expect(collision.status).toBe(400)
+	await expect(collision.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('already exists'),
+	})
+})
+
 test('non-admin callers are rejected', async () => {
 	const { env } = createHarness()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['user']))

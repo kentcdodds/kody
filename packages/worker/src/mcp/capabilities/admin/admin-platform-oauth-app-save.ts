@@ -14,6 +14,7 @@ import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { setPlatformOauthAppLogo } from '#worker/integrations/platform-app-logo.ts'
 import {
 	PlatformOauthAppValidationError,
+	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
 } from '#worker/integrations/platform-apps.ts'
 import {
@@ -27,6 +28,13 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.describe('Stable slug users connect with (for example "github").'),
+		newSlug: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Renames the app in place before applying the rest of the save: the encrypted client secret, logo, and existing user connections all carry over to the new slug (connection names are untouched). Users then connect at /connect/oauth?provider=<newSlug>.',
+			),
 		provider: z.string().min(1).optional().describe('Provider family key.'),
 		label: z.string().min(1).nullable().optional(),
 		description: z
@@ -107,6 +115,18 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 				'admin_platform_oauth_app_save',
 				async () => {
 					try {
+						// A changed slug renames in place first (carrying the
+						// write-only secret, logo, and user connections), then
+						// the upsert applies the rest of the edit to it.
+						let targetSlug = args.slug
+						if (args.newSlug && args.newSlug !== args.slug) {
+							const renamed = await renamePlatformOauthApp({
+								db: ctx.env.APP_DB,
+								slug: args.slug,
+								newSlug: args.newSlug,
+							})
+							targetSlug = renamed.slug
+						}
 						// Omitted optional fields stay `undefined` so the upsert's
 						// retain-on-omit semantics apply: a partial save never
 						// silently clears the scope menu, hosts, or stored secret.
@@ -114,7 +134,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 							db: ctx.env.APP_DB,
 							env: ctx.env,
 							app: {
-								slug: args.slug,
+								slug: targetSlug,
 								provider: args.provider,
 								label: args.label,
 								description: args.description,

@@ -322,13 +322,14 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			readCurrentRouterHref(handle),
 		)
 		const isEditing = !selection.isCreating && selection.selectedId != null
-		// FormData excludes disabled controls, so the locked slug input must
-		// come from the URL selection when editing.
+		// When editing, the URL selection is the row identity; an edited slug
+		// input becomes a rename-in-place (newSlug) rather than a new row.
+		const inputSlug = String(formData.get('slug') ?? '').trim()
 		const slug = (
-			isEditing && selection.selectedId
-				? selection.selectedId
-				: String(formData.get('slug') ?? '')
+			isEditing && selection.selectedId ? selection.selectedId : inputSlug
 		).trim()
+		const newSlug =
+			isEditing && inputSlug && inputSlug !== slug ? inputSlug : null
 		const clientId = String(formData.get('clientId') ?? '').trim()
 		const tokenUrl = String(formData.get('tokenUrl') ?? '').trim()
 		const authorizeUrl = String(formData.get('authorizeUrl') ?? '').trim()
@@ -349,6 +350,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		const body: Record<string, unknown> = {
 			action: 'save',
 			slug,
+			...(newSlug ? { newSlug } : {}),
 			clientId,
 			tokenUrl,
 			authorizeUrl,
@@ -395,19 +397,24 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		void submitAdminAction(
 			body,
 			'saving-form',
-			isEditing
-				? `Saved platform integration ${slug}.`
-				: `Created platform integration ${slug}.`,
+			newSlug
+				? `Renamed platform integration ${slug} to ${newSlug}.`
+				: isEditing
+					? `Saved platform integration ${slug}.`
+					: `Created platform integration ${slug}.`,
 		).then((ok) => {
 			if (!ok) return
 			resetFormState()
 			const search = getCurrentSearch(readCurrentRouterHref(handle))
-			if (isEditing) {
+			if (isEditing && !newSlug) {
 				formRevision += 1
 				handle.update()
 				return
 			}
-			replaceLocation(platformIntegrationsRoute.buildDetailHref(slug, search))
+			// Creation and rename both land on the row's (new) detail URL.
+			replaceLocation(
+				platformIntegrationsRoute.buildDetailHref(newSlug ?? slug, search),
+			)
 			handle.update()
 		})
 	}
@@ -549,13 +556,18 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 						})}
 					>
 						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Slug</span>
+							<span mix={css(fieldLabelCss)}>
+								Slug
+								{isEditing
+									? ' (changing it renames in place — secret, logo, and connections carry over)'
+									: ''}
+							</span>
 							<input
 								data-field-ring
 								name="slug"
 								type="text"
 								required
-								disabled={actionState !== 'idle' || isEditing}
+								disabled={actionState !== 'idle'}
 								defaultValue={editingApp?.slug ?? ''}
 								mix={css(accountInputCss)}
 							/>

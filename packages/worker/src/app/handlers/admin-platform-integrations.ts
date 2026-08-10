@@ -14,6 +14,7 @@ import {
 import {
 	deletePlatformOauthApp,
 	getPlatformOauthAppBySlug,
+	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
 } from '#worker/integrations/platform-apps.ts'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -115,11 +116,24 @@ async function handleSaveAction(input: {
 	}
 
 	try {
+		// A changed slug renames in place first — carrying the write-only
+		// client secret, logo, and user connections — then the normal upsert
+		// applies the rest of the edit against the new slug.
+		const newSlug = readOptionalString(record, 'newSlug')
+		let targetSlug = slug
+		if (newSlug && newSlug !== slug) {
+			const renamed = await renamePlatformOauthApp({
+				db: input.env.APP_DB,
+				slug,
+				newSlug,
+			})
+			targetSlug = renamed.slug
+		}
 		const app = await upsertPlatformOauthApp({
 			db: input.env.APP_DB,
 			env: input.env,
 			app: {
-				slug,
+				slug: targetSlug,
 				provider: readOptionalString(record, 'provider'),
 				label: readOptionalString(record, 'label'),
 				description: readOptionalString(record, 'description'),
