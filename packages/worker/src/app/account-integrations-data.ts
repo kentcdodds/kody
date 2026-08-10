@@ -214,18 +214,42 @@ export async function loadAccountOauthAppBySlug(
 	)
 }
 
+/**
+ * True when the record carries the endpoints the connect page needs to run
+ * an authorize → token exchange flow. Records created for API use only
+ * (agents typically save tokenUrl and apiBaseUrl but no authorize URL)
+ * cannot, and would dead-end the page on "missing configuration".
+ */
+function recordCanDriveConnectFlow(record: AccountIntegrationRecord): boolean {
+	return Boolean(
+		record.authorization?.authorizeUrl?.trim() && record.tokenUrl?.trim(),
+	)
+}
+
 export async function loadAccountIntegrationByName(
 	env: Env,
 	user: AuthenticatedUser,
 	name: string,
 ): Promise<AccountIntegrationRecord | null> {
+	// A user-lane record still wins when it can actually drive the flow (the
+	// bring-your-own override); an endpoint-incomplete one defers to an
+	// enabled built-in of the same name instead of dead-ending the page.
+	const platformFallback = async () => {
+		const platformApp = await getAvailablePlatformApp({ env, slug: name })
+		return platformApp ? toPlatformAppPrefillRecord(platformApp, name) : null
+	}
+
 	// 1. Existing connection (reconnect) — connection name, not app slug.
 	const joined = await getJoinedIntegration({
 		env,
 		userId: user.mcpUser.userId,
 		name,
 	})
-	if (joined) return toAccountIntegrationRecord(joined)
+	if (joined) {
+		const record = toAccountIntegrationRecord(joined)
+		if (recordCanDriveConnectFlow(record)) return record
+		return (await platformFallback()) ?? record
+	}
 
 	// 2–3. Exact app slug, else field-wise provider-family prefill (shared
 	// client id across github/github-kent, shared google app, etc.).
@@ -234,11 +258,13 @@ export async function loadAccountIntegrationByName(
 		userId: user.mcpUser.userId,
 		name,
 	})
-	if (prefill) return toAppOnlyIntegrationRecord(prefill, name)
+	if (prefill) {
+		const record = toAppOnlyIntegrationRecord(prefill, name)
+		if (recordCanDriveConnectFlow(record)) return record
+		return (await platformFallback()) ?? record
+	}
 
 	// 4. Platform (built-in) app: the user needs no OAuth app of their own, so
 	// the connect flow can skip client-credential setup entirely.
-	const platformApp = await getAvailablePlatformApp({ env, slug: name })
-	if (!platformApp) return null
-	return toPlatformAppPrefillRecord(platformApp, name)
+	return platformFallback()
 }

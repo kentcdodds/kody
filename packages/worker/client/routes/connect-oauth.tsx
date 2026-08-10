@@ -104,7 +104,10 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 	}
 
-	let statusMessage = 'Ready to connect.'
+	// The real status arrives once the query config and any stored/built-in
+	// provider config resolve; starting on "Ready to connect." flashed a
+	// misleading state on slow connections.
+	let statusMessage = 'Loading provider configuration…'
 	let statusTone: StatusTone = 'info'
 	let currentStep: 'setup' | 'connect' | 'callback' | 'success' = 'setup'
 	let config: ConnectOauthConfig | null = null
@@ -983,6 +986,16 @@ export function ConnectOauthRoute(handle: Handle) {
 			}
 			config = nextConfig
 			await initializeSetupState(nextConfig)
+			// Built-in integrations have nothing for the user to review or
+			// fill in, so a plain ?provider=<slug> visit (the onboarding
+			// cards, docs links) goes straight into the provider's authorize
+			// flow. Callback returns never reach this branch — code and
+			// error visits take the callback path — so a denial cannot
+			// loop back into an auto-start.
+			if (nextConfig.platformAppSlug && currentStep === 'connect') {
+				setStatus(`Redirecting to ${nextConfig.provider} to authorize…`)
+				await handleConnect()
+			}
 		} catch (error) {
 			// Initial integration/secrets reads use fetch(); a transient network
 			// failure must not escape queueTask as unhandledrejection.

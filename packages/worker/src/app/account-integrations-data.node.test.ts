@@ -6,6 +6,7 @@ import {
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
 } from '#worker/integrations/service.ts'
+import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import {
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
@@ -242,6 +243,113 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 		appSlug: 'notion',
 		clientId: 'notion-client-from-setup',
 	})
+})
+
+test('endpoint-incomplete user records defer to an enabled built-in of the same name', async () => {
+	const { env } = createEnv()
+	const userId = 'user-platform-priority'
+	const platformEnv = {
+		...env,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as Env
+
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client',
+			clientSecret: 'platform-github-secret',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			flow: 'confidential',
+			defaultScopes: ['read:user'],
+		},
+	})
+
+	// API-use-only connection (the shape agents save: token endpoint and API
+	// base, no authorize URL). It cannot drive the connect page, so the
+	// built-in wins.
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientId: 'user-github-client',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.github.com'],
+		},
+	})
+	const deferred = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github',
+	)
+	expect(deferred).toMatchObject({
+		name: 'github',
+		platform: true,
+		clientId: 'platform-github-client',
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+		},
+	})
+
+	// A complete bring-your-own record still wins over the built-in.
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientId: 'user-github-client',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+				scopeSeparator: null,
+				extraAuthorizeParams: {},
+			},
+		},
+	})
+	const byoWins = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github',
+	)
+	expect(byoWins?.clientId).toBe('user-github-client')
+	expect(byoWins?.platform ?? false).toBe(false)
+
+	// No built-in for the slug: the incomplete record still returns so the
+	// setup form can prefill what exists.
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'linear',
+			tokenUrl: 'https://api.linear.app/oauth/token',
+			flow: 'confidential',
+			clientId: 'user-linear-client',
+			accessTokenSecretName: 'linearAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	const noFallback = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'linear',
+	)
+	expect(noFallback?.clientId).toBe('user-linear-client')
+	expect(noFallback?.platform ?? false).toBe(false)
 })
 
 test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
