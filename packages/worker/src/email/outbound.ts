@@ -39,10 +39,8 @@ import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
-import {
-	emailAttachmentBlobKey,
-	ensurePlatformSenderIdentity,
-} from './service.ts'
+import { emailAttachmentBlobKey } from './blob-keys.ts'
+import { ensurePlatformSenderIdentity } from './repo.ts'
 import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
 
 type SendEmailEnv = Pick<
