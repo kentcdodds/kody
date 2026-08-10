@@ -9,7 +9,10 @@ import { communityReportCapability } from '#mcp/capabilities/community/report.ts
 import { communitySearchCapability } from '#mcp/capabilities/community/search.ts'
 import { communitySetFeaturedCapability } from '#mcp/capabilities/community/set-featured.ts'
 import { communitySetTrustedCapability } from '#mcp/capabilities/community/set-trusted.ts'
+import { communityUnpublishCapability } from '#mcp/capabilities/community/unpublish.ts'
 import { communityContentWarning } from '#mcp/capabilities/community/shared.ts'
+import { getPackageCapability } from '#mcp/capabilities/packages/get-package.ts'
+import { listPackagesCapability } from '#mcp/capabilities/packages/list-packages.ts'
 import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
@@ -664,6 +667,29 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		kody_id: cleanKodyId,
 		source_id: installed.sourceId,
 	})
+	const installedPackage = await getPackageCapability.handler(
+		{ package_id: installed.packageId },
+		createCapabilityContext(testEnv, installer),
+	)
+	expect(installedPackage).toMatchObject({
+		source_listing_id: cleanListing.listing_id,
+		listing_current: true,
+		listing_kody_id: cleanKodyId,
+	})
+	const installerPackages = await listPackagesCapability.handler(
+		{},
+		createCapabilityContext(testEnv, installer),
+	)
+	expect(installerPackages.packages).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				package_id: installed.packageId,
+				source_listing_id: cleanListing.listing_id,
+				listing_current: true,
+				listing_kody_id: cleanKodyId,
+			}),
+		]),
+	)
 
 	// A listing whose code imports another user's scope cannot auto-publish:
 	// the fork stays inert with the failing checks reported for follow-up.
@@ -710,5 +736,53 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 	expect(inertSource).toEqual({
 		id: adaptationRequired.sourceId,
 		user_id: installer.userId,
+	})
+
+	await communityUnpublishCapability.handler(
+		{ listing_id: cleanListing.listing_id },
+		ownerCtx,
+	)
+	const packageAfterUnpublish = await getPackageCapability.handler(
+		{ package_id: installed.packageId },
+		createCapabilityContext(testEnv, installer),
+	)
+	expect(packageAfterUnpublish).toMatchObject({
+		source_listing_id: cleanListing.listing_id,
+		listing_current: false,
+		listing_kody_id: cleanKodyId,
+	})
+
+	const republishedListing = await communityPublishCapability.handler(
+		{ package_id: `package-clean-${unique}` },
+		ownerCtx,
+	)
+	expect(republishedListing.listing_id).not.toBe(cleanListing.listing_id)
+
+	const packageAfterRepublish = await getPackageCapability.handler(
+		{ package_id: installed.packageId },
+		createCapabilityContext(testEnv, installer),
+	)
+	expect(packageAfterRepublish).toMatchObject({
+		source_listing_id: republishedListing.listing_id,
+		listing_current: true,
+		listing_kody_id: cleanKodyId,
+	})
+	await communityRateCapability.handler(
+		{
+			listing_id: republishedListing.listing_id,
+			stars: 5,
+			adaptation_effort: 1,
+			note: 'Still useful after republishing',
+		},
+		createCapabilityContext(testEnv, installer),
+	)
+	const republishedDetail = await communityGetCapability.handler(
+		{ listing_id: republishedListing.listing_id },
+		createCapabilityContext(testEnv, installer),
+	)
+	expect(republishedDetail).toMatchObject({
+		rating_count: 1,
+		average_stars: 5,
+		fork_count: 1,
 	})
 }, 120_000)

@@ -280,3 +280,12 @@ export type SavedPackageRecord = {
 	createdAt: string
 	updatedAt: string
 }
+
+export type SavedPackageCommunityProvenance = {
+	sourceListingId: string | null
+	listingCurrent: boolean | null
+	listingKodyId: string | null
+}
+
+export type SavedPackageWithCommunityProvenanceRecord = SavedPackageRecord &
+	SavedPackageCommunityProvenance

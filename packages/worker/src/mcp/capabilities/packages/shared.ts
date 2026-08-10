@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	type SavedPackageRecord,
+	type SavedPackageWithCommunityProvenanceRecord,
+} from '#worker/package-registry/types.ts'
 
 export const packageFileSchema = z.object({
 	path: z
@@ -27,6 +30,28 @@ export const packageSummarySchema = z.object({
 	created_at: z.string(),
 	updated_at: z.string(),
 })
+
+export const packageSummaryWithCommunityProvenanceSchema =
+	packageSummarySchema.extend({
+		source_listing_id: z
+			.string()
+			.nullable()
+			.describe(
+				'Community listing id this package was forked from, or null for a self-authored package.',
+			),
+		listing_current: z
+			.boolean()
+			.nullable()
+			.describe(
+				'Whether the source community listing id currently resolves to an active listing, or null for a self-authored package.',
+			),
+		listing_kody_id: z
+			.string()
+			.nullable()
+			.describe(
+				'Original community listing kody.id recorded when this package was forked, or null for a self-authored package.',
+			),
+	})
 
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
@@ -66,6 +91,17 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 		source_id: savedPackage.sourceId,
 		created_at: savedPackage.createdAt,
 		updated_at: savedPackage.updatedAt,
+	}
+}
+
+export function toPackageSummaryWithCommunityProvenance(
+	savedPackage: SavedPackageWithCommunityProvenanceRecord,
+) {
+	return {
+		...toPackageSummary(savedPackage),
+		source_listing_id: savedPackage.sourceListingId,
+		listing_current: savedPackage.listingCurrent,
+		listing_kody_id: savedPackage.listingKodyId,
 	}
 }
 
@@ -132,9 +168,10 @@ export const packageExportSurfaceSchema = z.object({
 		),
 })
 
-export const packageDetailSchema = packageSummarySchema.extend({
-	exports: z.array(packageExportSurfaceSchema),
-})
+export const packageDetailSchema =
+	packageSummaryWithCommunityProvenanceSchema.extend({
+		exports: z.array(packageExportSurfaceSchema),
+	})
 
 export const packageInvocationTokenMetadataSchema = z.object({
 	token_id: z

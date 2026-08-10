@@ -1,14 +1,14 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	getSavedPackageById: vi.fn(),
+	getSavedPackageWithCommunityProvenanceById: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
+	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -69,9 +69,9 @@ function createCallerContext(input?: {
 }
 
 test('getPackageCapability returns export metadata for owner and delegated package scopes', async () => {
-	mockModule.getSavedPackageById.mockReset()
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
-	mockModule.getSavedPackageById.mockResolvedValue({
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'user-1',
 		name: '@kentcdodds/discord-gateway',
@@ -83,6 +83,9 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		hasApp: true,
 		hidden: false,
 		isPrivate: false,
+		sourceListingId: 'listing-1',
+		listingCurrent: true,
+		listingKodyId: 'upstream-discord-gateway',
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -121,6 +124,9 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		tags: ['discord'],
 		has_app: true,
 		source_id: 'source-1',
+		source_listing_id: 'listing-1',
+		listing_current: true,
+		listing_kody_id: 'upstream-discord-gateway',
 		created_at: '2026-04-25T00:00:00.000Z',
 		updated_at: '2026-04-26T00:00:00.000Z',
 		exports: [
@@ -161,7 +167,9 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 			},
 		],
 	})
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+	expect(
+		mockModule.getSavedPackageWithCommunityProvenanceById,
+	).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({ userId: 'user-1', packageId: 'package-1' }),
 	)
@@ -173,10 +181,10 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 	})
 
 	// Delegated package_scope loads and builds invocation URLs for the owner.
-	mockModule.getSavedPackageById.mockReset()
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.resolvePackageOwnerContext.mockClear()
-	mockModule.getSavedPackageById.mockResolvedValue({
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'platform-owner',
 		name: '@kody/discord-gateway',
@@ -188,6 +196,9 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		sourceListingId: null,
+		listingCurrent: null,
+		listingKodyId: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -220,7 +231,9 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		expect.objectContaining({ userId: 'user-1' }),
 		'kody',
 	)
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+	expect(
+		mockModule.getSavedPackageWithCommunityProvenanceById,
+	).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			userId: 'platform-owner',

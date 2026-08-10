@@ -46,6 +46,7 @@ import {
 	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
 	listFeaturedCommunityListings as listFeaturedCommunityListingsFromDb,
+	repointOrphanedCommunityForksToListing,
 	resolveCommunityReportRow,
 	setCommunityListingFeaturedAt,
 	setCommunityListingStatus,
@@ -480,6 +481,16 @@ export async function publishCommunityListing(input: {
 			published_at: now,
 		})
 	}
+
+	// Unpublish intentionally deletes the listing row while preserving fork
+	// provenance. The surviving row does not retain owner/package ids, so the
+	// narrowest historical lineage key available is an orphaned listing id plus
+	// the exact scoped package name and kody.id captured at fork time.
+	await repointOrphanedCommunityForksToListing(input.env.APP_DB, {
+		listingId,
+		listingName: savedPackage.name,
+		listingKodyId: savedPackage.kodyId,
+	})
 
 	try {
 		await writeCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, snapshot)

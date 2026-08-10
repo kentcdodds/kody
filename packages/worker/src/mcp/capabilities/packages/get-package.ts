@@ -11,7 +11,7 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { getSavedPackageWithCommunityProvenanceById } from '#worker/package-registry/repo.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
 	findPlainRepoPromotionHint,
@@ -24,7 +24,7 @@ export const getPackageCapability = defineDomainCapability(
 	{
 		name: 'package_get',
 		description:
-			'Load one saved package metadata record for the signed-in user, including ready-to-import export specifiers and canonical owner-scoped external invocation URLs for each export.',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, and canonical owner-scoped external invocation URLs for each export.',
 		keywords: [
 			'package',
 			'get',
@@ -54,10 +54,13 @@ export const getPackageCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const saved = await getSavedPackageById(ctx.env.APP_DB, {
-				userId: owner.ownerUserId,
-				packageId: args.package_id,
-			})
+			const saved = await getSavedPackageWithCommunityProvenanceById(
+				ctx.env.APP_DB,
+				{
+					userId: owner.ownerUserId,
+					packageId: args.package_id,
+				},
+			)
 			if (!saved) {
 				const plainRepo = await findPlainRepoPromotionHint(ctx.env.APP_DB, {
 					userId: owner.ownerUserId,
@@ -91,6 +94,9 @@ export const getPackageCapability = defineDomainCapability(
 				has_app: saved.hasApp,
 				hidden: saved.hidden,
 				source_id: saved.sourceId,
+				source_listing_id: saved.sourceListingId,
+				listing_current: saved.listingCurrent,
+				listing_kody_id: saved.listingKodyId,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
 				exports: (projection.exports ?? []).map((exportDetail) => ({

@@ -6,15 +6,18 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { packageSummarySchema, toPackageSummary } from './shared.ts'
+import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
+import {
+	packageSummaryWithCommunityProvenanceSchema,
+	toPackageSummaryWithCommunityProvenance,
+} from './shared.ts'
 
 export const listPackagesCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_list',
 		description:
-			'List saved packages for the signed-in user so agents can discover package ids and kody ids for later execution, editing, or UI opening.',
+			'List saved packages for the signed-in user, including community-fork source listing provenance, so agents can discover package ids and kody ids for later execution, editing, or UI opening.',
 		keywords: ['package', 'list', 'saved packages'],
 		readOnly: true,
 		idempotent: true,
@@ -27,7 +30,7 @@ export const listPackagesCapability = defineDomainCapability(
 				.describe(packageScopeInputDescription),
 		}),
 		outputSchema: z.object({
-			packages: z.array(packageSummarySchema),
+			packages: z.array(packageSummaryWithCommunityProvenanceSchema),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -36,11 +39,14 @@ export const listPackagesCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const packages = await listSavedPackagesByUserId(ctx.env.APP_DB, {
-				userId: owner.ownerUserId,
-			})
+			const packages = await listSavedPackagesWithCommunityProvenanceByUserId(
+				ctx.env.APP_DB,
+				{
+					userId: owner.ownerUserId,
+				},
+			)
 			return {
-				packages: packages.map(toPackageSummary),
+				packages: packages.map(toPackageSummaryWithCommunityProvenance),
 			}
 		},
 	},

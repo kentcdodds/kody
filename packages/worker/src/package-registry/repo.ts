@@ -1,7 +1,11 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
-import { type SavedPackageRecord, type SavedPackageRow } from './types.ts'
+import {
+	type SavedPackageRecord,
+	type SavedPackageRow,
+	type SavedPackageWithCommunityProvenanceRecord,
+} from './types.ts'
 
 const maxSqlBindingsPerChunk = 90
 
@@ -9,8 +13,27 @@ export function savedPackageVectorId(packageId: string) {
 	return buildLengthSafeVectorId({ prefix: 'package', rawId: packageId })
 }
 
-const savedPackageSelectColumns = `id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, is_private, created_at, updated_at`
+const savedPackageSelectColumns = `saved_packages.id, saved_packages.user_id, saved_packages.name,
+				saved_packages.kody_id, saved_packages.description, saved_packages.tags_json,
+				saved_packages.search_text, saved_packages.source_id, saved_packages.has_app,
+				saved_packages.hidden, saved_packages.is_private, saved_packages.created_at,
+				saved_packages.updated_at`
+
+const savedPackageCommunityProvenanceSelectColumns = `${savedPackageSelectColumns},
+				community_forks.listing_id AS source_listing_id,
+				CASE
+					WHEN community_forks.id IS NULL THEN NULL
+					WHEN community_listings.id IS NULL THEN 0
+					ELSE 1
+				END AS listing_current,
+				community_forks.listing_kody_id AS listing_kody_id`
+
+const savedPackageCommunityProvenanceJoins = `LEFT JOIN community_forks
+				ON community_forks.forked_package_id = saved_packages.id
+				AND community_forks.forker_user_id = saved_packages.user_id
+			LEFT JOIN community_listings
+				ON community_listings.id = community_forks.listing_id
+				AND community_listings.status = 'active'`
 
 function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 	return {
@@ -33,6 +56,30 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 			row['is_private'] === true,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapSavedPackageWithCommunityProvenanceRow(
+	row: Record<string, unknown>,
+): SavedPackageWithCommunityProvenanceRecord {
+	const savedPackage = mapSavedPackageRow(row)
+	if (row['source_listing_id'] == null) {
+		return {
+			...savedPackage,
+			sourceListingId: null,
+			listingCurrent: null,
+			listingKodyId: null,
+		}
+	}
+	return {
+		...savedPackage,
+		sourceListingId: String(row['source_listing_id']),
+		listingCurrent:
+			row['listing_current'] === 1 ||
+			row['listing_current'] === '1' ||
+			row['listing_current'] === true,
+		listingKodyId:
+			row['listing_kody_id'] == null ? null : String(row['listing_kody_id']),
 	}
 }
 export async function insertSavedPackage(
@@ -166,6 +213,25 @@ export async function getSavedPackageById(
 	return row ? mapSavedPackageRow(row) : null
 }
 
+export async function getSavedPackageWithCommunityProvenanceById(
+	db: D1Database,
+	input: {
+		userId: string
+		packageId: string
+	},
+): Promise<SavedPackageWithCommunityProvenanceRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${savedPackageCommunityProvenanceSelectColumns}
+			FROM saved_packages
+			${savedPackageCommunityProvenanceJoins}
+			WHERE saved_packages.id = ? AND saved_packages.user_id = ?`,
+		)
+		.bind(input.packageId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageWithCommunityProvenanceRow(row) : null
+}
+
 export async function getSavedPackageByKodyId(
 	db: D1Database,
 	input: {
@@ -218,6 +284,25 @@ export async function listSavedPackagesByUserId(
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapSavedPackageRow)
+}
+
+export async function listSavedPackagesWithCommunityProvenanceByUserId(
+	db: D1Database,
+	input: {
+		userId: string
+	},
+): Promise<Array<SavedPackageWithCommunityProvenanceRecord>> {
+	const rows = await db
+		.prepare(
+			`SELECT ${savedPackageCommunityProvenanceSelectColumns}
+			FROM saved_packages
+			${savedPackageCommunityProvenanceJoins}
+			WHERE saved_packages.user_id = ?
+			ORDER BY saved_packages.updated_at DESC`,
+		)
+		.bind(input.userId)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapSavedPackageWithCommunityProvenanceRow)
 }
 
 export async function listSavedPackagesByKodyIds(

@@ -641,6 +641,37 @@ export async function insertCommunityFork(
 		.run()
 }
 
+export async function repointOrphanedCommunityForksToListing(
+	db: D1Database,
+	input: {
+		listingId: string
+		listingName: string
+		listingKodyId: string
+	},
+): Promise<number> {
+	const result = await db
+		.prepare(
+			`UPDATE community_forks
+			SET listing_id = ?
+			WHERE listing_id != ?
+				AND listing_name = ?
+				AND listing_kody_id = ?
+				AND NOT EXISTS (
+					SELECT 1
+					FROM community_listings
+					WHERE community_listings.id = community_forks.listing_id
+				)`,
+		)
+		.bind(
+			input.listingId,
+			input.listingId,
+			input.listingName,
+			input.listingKodyId,
+		)
+		.run()
+	return result.meta.changes ?? 0
+}
+
 export async function getCommunityForkByListingAndUser(
 	db: D1Database,
 	input: {
