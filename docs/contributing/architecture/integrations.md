@@ -112,13 +112,13 @@ no user-secret allowlist applies.
 On 401, `createAuthenticatedFetch` calls `integration_token_refresh` then
 retries with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens
 never enter the sandbox heap. Package code that triggers refresh through
-`createAuthenticatedFetch` no longer needs a secret-write (`allowed_packages`)
+`createAuthenticatedFetch` does not need a secret-write (`allowed_packages`)
 grant — the system persists rotated tokens host-side and the package never sees
-or writes token values. `refreshAccessToken` remains the legacy raw-token helper
-for auth patterns that cannot use an Authorization header (WebSockets, SDK
-constructors, query-param tokens); it still runs in-sandbox for user-lane
-integrations and throws for platform ones (`integration_get` carries
-`platform: true`). Token-exchange request building is shared:
+or writes token values. `refreshAccessToken` is the raw-token helper for auth
+patterns that cannot use an Authorization header (WebSockets, SDK constructors,
+query-param tokens); it runs in-sandbox for user-lane integrations and throws
+for platform ones (`integration_get` carries `platform: true`). Token-exchange
+request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
 capability use it within the import boundaries.

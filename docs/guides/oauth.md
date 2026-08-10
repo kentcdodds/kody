@@ -144,20 +144,24 @@ and the current client credentials.
 Integration identity is the canonical provider key: names are normalized to
 lowercase kebab (letters, numbers, `.`, `_`, `-`) on every save and lookup, so
 `GitHub`, `github`, and `Git Hub` all resolve to the same `github` connection.
-Each connection is a D1 row in `user_integrations` keyed by `(user_id, name)`.
-Connections share one `user_oauth_apps` row only when their entire app-level
-configuration matches: client credentials, provider endpoints, flow and PKCE,
-token exchange style, scope separator, and extra authorize params. Anything that
-differs gets its own app. Rotating an app's client credentials updates every
-connection sharing it.
+Each connection is a D1 row in `user_integrations` keyed by `(user_id, name)`. A
+connection points at either a **platform** app (`platform_app_slug` →
+`platform_oauth_apps`) or a **user-lane** app (`app_slug` → `user_oauth_apps`).
+User-lane connections share one `user_oauth_apps` row only when their entire
+app-level configuration matches: client credentials, provider endpoints, flow
+and PKCE, token exchange style, scope separator, and extra authorize params.
+Anything that differs gets its own app. Rotating a user-lane app's client
+credentials updates every connection sharing it. Platform connections share the
+operator-provisioned app; users do not rotate that client secret.
 
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
 `integration_list` up front when a provider may have multiple accounts
-connected.
+connected, and `integration_platform_app_list` before building a BYO connect
+URL.
 
-Manage shared OAuth apps from `/account/integrations/apps/<app-slug>` (also
+Manage user-lane OAuth apps from `/account/integrations/apps/<app-slug>` (also
 linked from the grouped app headers on `/account/integrations`). That page shows
 app metadata, every connection that shares the credentials, and a form to rotate
 the client secret (and optionally the client id) with an explicit confirmation
@@ -198,13 +202,17 @@ create a thin helpers package.
 ## Agent checklist
 
 1. Confirm OAuth is the right auth shape.
-2. Build the connect URL with the required params:
+2. Call `integration_platform_app_list`. When an enabled built-in matches the
+   provider and its scope menu covers the task, send
+   `https://heykody.app/connect/oauth?provider=<slug>` and skip provider-console
+   setup.
+3. Otherwise build the BYO connect URL with the required params:
    `https://heykody.app/connect/oauth?...`.
-3. Tell the user the exact redirect URI to register:
+4. For BYO only, tell the user the exact redirect URI to register:
    `https://heykody.app/connect/oauth`. The page shows it with a copy button.
-4. Have the user open the URL while signed in and wait for success.
-5. Run the authenticated smoke test from `integration_bootstrap`.
-6. Use the connect success `nextSteps` (or `community_search`, preferring
+5. Have the user open the URL while signed in and wait for success.
+6. Run the authenticated smoke test from `integration_bootstrap`.
+7. Use the connect success `nextSteps` (or `community_search`, preferring
    `trusted`) to fork/adapt a helpers package, or create a thin helpers package
    when none fits. Continue with dependent package apps only after that surface
    exists and the smoke test passes.

@@ -39,4 +39,5 @@ slug.
 | [providers/github.md](./providers/github.md)   | `provider_github`  | `github`  |
 | [providers/google.md](./providers/google.md)   | `provider_google`  | `google`  |
 | [providers/notion.md](./providers/notion.md)   | `provider_notion`  | `notion`  |
+| [providers/slack.md](./providers/slack.md)     | `provider_slack`   | `slack`   |
 | [providers/spotify.md](./providers/spotify.md) | `provider_spotify` | `spotify` |

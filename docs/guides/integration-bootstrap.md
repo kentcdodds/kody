@@ -84,11 +84,17 @@ If those conditions are not met, stop and fix the integration first.
 2. Inspect current integration state before building downstream artifacts.
    - Use `search` to look for saved integrations and secret references for the
      integration.
+   - For OAuth, call `integration_platform_app_list` and prefer an enabled
+     built-in whose allowed scopes cover the task before building a BYO
+     `/connect/oauth` URL or asking the user to register a provider app.
    - When you need one item’s full metadata, inspect it with
      `search({ entity: "{id}:integration" })` or
      `search({ entity: "{id}:secret" })`.
 3. If the required integration or secret is missing, **stop**.
-   - Surface the exact `/connect/oauth` or `/account/secrets/new` URL in chat.
+   - For a matching built-in, surface
+     `https://heykody.app/connect/oauth?provider=<slug>`.
+   - Otherwise surface the exact BYO `/connect/oauth` or `/account/secrets/new`
+     URL in chat.
    - Wait for the user to confirm they completed the connect flow.
    - Do not save a downstream auth-dependent package or package app until
      integration setup is complete.
