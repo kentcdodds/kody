@@ -60,15 +60,17 @@ test('Zod capability validation failures identify the capability, fields, and re
 		.catch((error: unknown) => error)
 
 	expect(outputHandler).toHaveBeenCalledOnce()
-	expect(outputError).toBeInstanceOf(McpCallerError)
+	expect(outputError).toBeInstanceOf(Error)
+	expect(outputError).not.toBeInstanceOf(McpCallerError)
 	expect(outputError).toMatchObject({
 		message: expect.stringContaining(
-			'Invalid output from capability "package_save".',
+			'Capability "package_save" returned an invalid output shape.',
 		),
 		cause: expect.any(z.ZodError),
 	})
 	expect(outputError.message).toContain('package_id')
 	expect(outputError.message).toContain(
-		'Call search({ entity: "package_save:capability" }) for the exact input shape.',
+		'This is a capability implementation error; changing the input shape will not repair it.',
 	)
+	expect(outputError.message).not.toContain('Call search')
 })

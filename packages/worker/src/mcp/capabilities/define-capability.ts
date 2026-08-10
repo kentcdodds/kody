@@ -178,12 +178,12 @@ export function defineCapability<
 				})
 				return finalized
 			} catch (error) {
-				const callerError = createCapabilityValidationError(
+				const validationError = createCapabilityValidationError(
 					error,
 					definition.name,
 					'output',
 				)
-				const { errorName, errorMessage } = errorFields(callerError)
+				const { errorName, errorMessage } = errorFields(validationError)
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'capability',
@@ -196,9 +196,9 @@ export function defineCapability<
 					failurePhase: 'parse_output',
 					errorName,
 					errorMessage,
-					cause: callerError,
+					cause: validationError,
 				})
-				throw callerError
+				throw validationError
 			}
 		},
 	}
@@ -211,12 +211,22 @@ function createCapabilityValidationError(
 ) {
 	if (!(error instanceof z.ZodError)) return error
 
-	const direction = valueKind === 'input' ? 'for' : 'from'
-	return new McpCallerError(
+	if (valueKind === 'input') {
+		return new McpCallerError(
+			[
+				`Invalid input for capability "${capabilityName}".`,
+				z.prettifyError(error),
+				`Repair: Call search({ entity: "${capabilityName}:capability" }) for the exact input shape.`,
+			].join('\n'),
+			{ cause: error },
+		)
+	}
+
+	return new Error(
 		[
-			`Invalid ${valueKind} ${direction} capability "${capabilityName}".`,
+			`Capability "${capabilityName}" returned an invalid output shape.`,
 			z.prettifyError(error),
-			`Repair: Call search({ entity: "${capabilityName}:capability" }) for the exact input shape.`,
+			'This is a capability implementation error; changing the input shape will not repair it.',
 		].join('\n'),
 		{ cause: error },
 	)
