@@ -19,6 +19,7 @@ const mockModule = vi.hoisted(() => ({
 	deleteCommunityStarsByListingId: vi.fn(),
 	writeCommunitySnapshot: vi.fn(),
 	insertCommunityListing: vi.fn(),
+	repointOrphanedCommunityForksToListing: vi.fn(),
 	updateCommunityListing: vi.fn(),
 	getCommunityForkByListingAndUser: vi.fn(),
 	getCommunityForkByForkedPackageId: vi.fn(),
@@ -106,6 +107,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.countCommunityForksByListingIds(...args),
 		insertCommunityListing: (...args: Array<unknown>) =>
 			mockModule.insertCommunityListing(...args),
+		repointOrphanedCommunityForksToListing: (...args: Array<unknown>) =>
+			mockModule.repointOrphanedCommunityForksToListing(...args),
 		updateCommunityListing: (...args: Array<unknown>) =>
 			mockModule.updateCommunityListing(...args),
 		getCommunityForkByListingAndUser: (...args: Array<unknown>) =>
