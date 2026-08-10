@@ -52,8 +52,6 @@ import {
 } from '#worker/sentry-options.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
 
-export { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
-
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
 export const defaultExecutionResponseLimitBytes = 102_400

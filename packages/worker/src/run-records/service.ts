@@ -1180,7 +1180,6 @@ export type {
 	ActivationMilestoneRecord,
 	PackageRunSuccessRecord,
 } from './package-activation-state.ts'
-export { countsTowardPackageActivation } from './package-activation-state.ts'
 export type {
 	JobRunObservabilityRecord,
 	JobRunObservabilityStatus,

@@ -23,6 +23,7 @@ import {
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
+import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import { type KodyResolvedProvider } from '#mcp/kody-remote-types.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
@@ -1444,7 +1445,7 @@ test('remote connector calls round-trip through sanitized ToolDispatcher names',
 	const dispatchers = mcpExecutor.createToolDispatchers([provider], {
 		active: true,
 	})
-	const source = mcpExecutor.createKodyProviderProxySource({
+	const source = createKodyProviderProxySource({
 		providerName: provider.name,
 		remoteConnectors,
 	})

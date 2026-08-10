@@ -21,14 +21,16 @@ import {
 	drExportMaxStorageDumpBufferBytes,
 	__testOnlyCreateInitialProgress,
 	__testOnlyParseProgress,
-	listPlatformStorageInventory,
 	runDrExportTick,
 	runDrExportWatchdogTick,
 	shouldRunDrExportCatchUpCron,
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
-import { listPlatformOwnerInventory } from '#worker/dr/exporter-inventory.ts'
+import {
+	listPlatformOwnerInventory,
+	listPlatformStorageInventory,
+} from '#worker/dr/exporter-inventory.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 import {
 	DrBackupPreconditionFailedError,

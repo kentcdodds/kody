@@ -66,7 +66,6 @@ import {
 	shouldRunDrExportCron,
 } from '#worker/dr/exporter-schedule.ts'
 
-export { listPlatformStorageInventory } from '#worker/dr/exporter-inventory.ts'
 export {
 	drExportCatchUpLookbackDays,
 	isDrExportConfigured,

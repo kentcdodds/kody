@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
+import { userScopedConnectorIngressPath } from '@kody-internal/shared/remote-connectors.ts'
 import {
 	parseUserScopedConnectorRoutePath,
-	userScopedConnectorIngressPath,
 	userScopedConnectorSessionKey,
 } from './connector-session-key.ts'
 

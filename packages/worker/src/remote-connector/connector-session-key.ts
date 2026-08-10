@@ -4,8 +4,6 @@ import {
 } from '@kody-internal/shared/remote-connectors.ts'
 import { durableObjectNameFromParts } from '#worker/user-scoped-durable-object-name.ts'
 
-export { userScopedConnectorIngressPath } from '@kody-internal/shared/remote-connectors.ts'
-
 export type UserScopedConnectorRouteMatch = {
 	username: string
 	instanceId: string

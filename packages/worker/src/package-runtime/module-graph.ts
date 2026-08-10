@@ -6,7 +6,6 @@ export {
 	parsePackageRuntimeModulePathPackageId,
 	refreshKodyRuntimeModules,
 } from './runtime-source-modules.ts'
-export { createPublishedBundleArtifact } from './module-graph-artifacts.ts'
 export {
 	buildKodyAppBundle,
 	buildKodyImportableModuleBundle,

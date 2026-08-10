@@ -2,7 +2,6 @@ import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import {
-	EmailRawMimeStorageError,
 	putEmailRawMime,
 	RetryableInboundStorageError,
 } from './email-raw-mime-store.ts'
@@ -35,10 +34,7 @@ import {
 	type ParsedInboundEmail,
 } from './types.ts'
 
-export { EmailRawMimeStorageError, RetryableInboundStorageError }
-
-export { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
-export { ensurePlatformSenderIdentity } from './repo.ts'
+export { RetryableInboundStorageError }
 
 function nowIso() {
 	return new Date().toISOString()

@@ -17,9 +17,6 @@ import {
 	extractSearchTokens,
 } from './understand-search-query.ts'
 
-export { buildIntegrationSearchDocument } from './search-entity-plugins/integration.ts'
-export { flattenReferencedTypeFields } from './search-entity-plugins/package.ts'
-
 function buildPackageRelationTokens(
 	match: Extract<SearchMatch, { type: 'package' }>,
 ) {

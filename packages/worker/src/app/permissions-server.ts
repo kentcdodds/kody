@@ -17,7 +17,6 @@ export {
 	removeAdminRolePreservingLastAdmin,
 	removeUserRole,
 } from '#worker/identity/permissions-db.ts'
-export { userHasPermission, userHasRole } from '#universal/permissions.ts'
 
 function unauthorizedResponse(request: Request) {
 	if (wantsJson(request)) {
