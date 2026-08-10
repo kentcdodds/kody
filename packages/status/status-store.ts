@@ -31,6 +31,7 @@ import {
 } from './status-types.ts'
 
 const providerIncidentsMetaKey = 'provider_incidents_cache'
+const productionCommitMetaKey = 'production_commit_sha'
 
 export type StatusWorkerEnv = {
 	STATUS_STORE: DurableObjectNamespace<StatusStore>
@@ -385,11 +386,14 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 	}
 
 	async runProbes(): Promise<void> {
-		const outcomes = await runAllProbes({
+		const { outcomes, productionCommitSha } = await runAllProbes({
 			primaryOrigin: this.env.PRIMARY_ORIGIN,
 			packageAppOrigin: this.env.PACKAGE_APP_ORIGIN,
 		})
 		const now = Date.now()
+		if (productionCommitSha) {
+			this.setMeta(productionCommitMetaKey, productionCommitSha)
+		}
 		for (const outcome of outcomes) {
 			this.recordOutcome(outcome, now)
 		}
@@ -417,7 +421,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			openIncidents: this.listIncidents('open'),
 			recentIncidents: this.listIncidents('resolved'),
 			providerIncidents: this.readProviderIncidents(now),
-			buildCommit: this.env.BUILD_COMMIT ?? null,
+			productionCommit: this.getMeta(productionCommitMetaKey),
 		}
 	}
 

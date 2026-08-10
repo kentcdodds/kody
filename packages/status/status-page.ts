@@ -221,6 +221,20 @@ function renderProviderIncident(incident: ProviderIncident): string {
 </div>`
 }
 
+/** Public GitHub repository for the main kody worker (production deploys). */
+const productionRepo = 'kentcdodds/kody'
+
+function productionCommitLink(commitSha: string): string {
+	const shortSha = commitSha.slice(0, 7)
+	const href = `https://github.com/${productionRepo}/commit/${escapeHtml(commitSha)}`
+	return `<a href="${href}">${escapeHtml(shortSha)}</a>`
+}
+
+function renderProductionCommit(commitSha: string | null): string {
+	if (!commitSha) return ''
+	return `Production commit ${productionCommitLink(commitSha)} · `
+}
+
 function renderProviderIncidentsSection(
 	incidents: Array<ProviderIncident> | null | undefined,
 ): string {
@@ -267,7 +281,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 	${providerIncidents}
 	${recentIncidents}
 	<footer>
-		Probes run every minute from an independently deployed worker.
+		${renderProductionCommit(snapshot.productionCommit)}Probes run every minute from an independently deployed worker.
 		<a href="https://heykody.app">heykody.app</a> ·
 		<a href="/status.json">JSON</a>
 	</footer>

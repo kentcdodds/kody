@@ -27,7 +27,9 @@ const packageAppOrigin = 'https://kodyapps.dev'
 
 function healthyRoutes(): Record<string, FakeRoute> {
 	return {
-		[`${primaryOrigin}/health`]: { body: { ok: true, commitSha: 'abc' } },
+		[`${primaryOrigin}/health`]: {
+			body: { ok: true, commitSha: 'abc123def4567890abcdef1234567890abcdef12' },
+		},
 		[`${primaryOrigin}/mcp`]: {
 			status: 401,
 			headers: { 'WWW-Authenticate': 'Bearer resource_metadata="..."' },
@@ -56,21 +58,24 @@ async function probe(routes: Record<string, FakeRoute>) {
 }
 
 function outcome(
-	outcomes: Awaited<ReturnType<typeof runAllProbes>>,
+	result: Awaited<ReturnType<typeof runAllProbes>>,
 	component: string,
 ) {
-	return outcomes.find((entry) => entry.component === component)
+	return result.outcomes.find((entry) => entry.component === component)
 }
 
 test('a fully healthy pass reports every component ok', async () => {
-	const outcomes = await probe(healthyRoutes())
-	expect(outcomes.map((entry) => entry.component).toSorted()).toEqual(
+	const result = await probe(healthyRoutes())
+	expect(result.outcomes.map((entry) => entry.component).toSorted()).toEqual(
 		[...statusComponentIds].toSorted(),
 	)
-	for (const entry of outcomes) {
+	for (const entry of result.outcomes) {
 		expect(entry.ok, `${entry.component} should be ok`).toBe(true)
 	}
-	expect(outcome(outcomes, 'app_db')?.latencyMs).toBe(4)
+	expect(outcome(result, 'app_db')?.latencyMs).toBe(4)
+	expect(result.productionCommitSha).toBe(
+		'abc123def4567890abcdef1234567890abcdef12',
+	)
 })
 
 test('probe failures isolate to the affected component and map error details', async () => {

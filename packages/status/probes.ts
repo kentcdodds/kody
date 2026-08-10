@@ -65,32 +65,51 @@ async function timedFetch(
 	}
 }
 
+type AppHealthBody = {
+	ok?: boolean
+	commitSha?: string
+}
+
+function readProductionCommitSha(body: AppHealthBody | null): string | null {
+	const commitSha = body?.commitSha?.trim()
+	if (!commitSha || !/^[0-9a-f]{7,40}$/i.test(commitSha)) return null
+	return commitSha.toLowerCase()
+}
+
 async function probeApp(
 	fetcher: typeof fetch,
 	primaryOrigin: string,
-): Promise<ProbeOutcome> {
+): Promise<{ outcome: ProbeOutcome; productionCommitSha: string | null }> {
 	const result = await timedFetch(fetcher, `${primaryOrigin}/health`)
 	if (!result.response) {
 		return {
-			component: 'app',
-			ok: false,
-			latencyMs: result.latencyMs,
-			detail: result.error,
+			outcome: {
+				component: 'app',
+				ok: false,
+				latencyMs: result.latencyMs,
+				detail: result.error,
+			},
+			productionCommitSha: null,
 		}
 	}
+	let body: AppHealthBody | null = null
 	let bodyOk = false
 	try {
-		const body = (await result.response.json()) as { ok?: boolean }
+		body = (await result.response.json()) as AppHealthBody
 		bodyOk = body.ok === true
 	} catch {
+		body = null
 		bodyOk = false
 	}
 	const ok = result.response.ok && bodyOk
 	return {
-		component: 'app',
-		ok,
-		latencyMs: result.latencyMs,
-		detail: ok ? null : `HTTP ${result.response.status}`,
+		outcome: {
+			component: 'app',
+			ok,
+			latencyMs: result.latencyMs,
+			detail: ok ? null : `HTTP ${result.response.status}`,
+		},
+		productionCommitSha: readProductionCommitSha(body),
 	}
 }
 
@@ -184,9 +203,14 @@ async function probeStorageComponents(
 	})
 }
 
+export type ProbeRunResult = {
+	outcomes: Array<ProbeOutcome>
+	productionCommitSha: string | null
+}
+
 export async function runAllProbes(
 	config: ProbeConfig,
-): Promise<Array<ProbeOutcome>> {
+): Promise<ProbeRunResult> {
 	const fetcher = config.fetcher ?? fetch
 	const [app, mcp, packageApps, storage] = await Promise.all([
 		probeApp(fetcher, config.primaryOrigin),
@@ -194,7 +218,7 @@ export async function runAllProbes(
 		probePackageApps(fetcher, config.packageAppOrigin),
 		probeStorageComponents(fetcher, config.primaryOrigin),
 	])
-	const outcomes = [app, mcp, packageApps, ...storage]
+	const outcomes = [app.outcome, mcp, packageApps, ...storage]
 	const covered = new Set(outcomes.map((outcome) => outcome.component))
 	for (const component of statusComponentIds) {
 		if (!covered.has(component)) {
@@ -206,5 +230,5 @@ export async function runAllProbes(
 			})
 		}
 	}
-	return outcomes
+	return { outcomes, productionCommitSha: app.productionCommitSha }
 }

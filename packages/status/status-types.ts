@@ -73,5 +73,6 @@ export type StatusSnapshot = {
 	 * omits the provider section in that case (fail-soft).
 	 */
 	providerIncidents: Array<ProviderIncident> | null
-	buildCommit: string | null
+	/** Latest `commitSha` reported by production `GET /health` (main worker). */
+	productionCommit: string | null
 }

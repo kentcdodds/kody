@@ -33,7 +33,7 @@ function snapshot(overrides: Partial<StatusSnapshot> = {}): StatusSnapshot {
 		openIncidents: [],
 		recentIncidents: [],
 		providerIncidents: null,
-		buildCommit: 'abc123',
+		productionCommit: 'abc123def4567890abcdef1234567890abcdef12',
 		...overrides,
 	}
 }
@@ -44,6 +44,11 @@ test('status page renders components, incidents, unknown state, and escapes deta
 		expect(healthy).toContain(component.name.replaceAll('&', '&amp;'))
 	}
 	expect(healthy).toContain('99.98% uptime')
+	expect(healthy).toContain('Production commit')
+	expect(healthy).toContain(
+		'https://github.com/kentcdodds/kody/commit/abc123def4567890abcdef1234567890abcdef12',
+	)
+	expect(healthy).toContain('>abc123d<')
 	expect(healthy).toContain('http-equiv="refresh"')
 	expect(healthy).toMatch(/operational|All systems/i)
 
@@ -132,6 +137,9 @@ test('status page renders provider incidents separately and omits them when abse
 	expect(withProvider).toContain('updated 2026-08-07T19:00:00.000Z')
 	expect(withProvider).toContain('for context only')
 	expect(withProvider).toContain('All systems operational')
+
+	const withoutCommit = renderStatusPage(snapshot({ productionCommit: null }))
+	expect(withoutCommit).not.toContain('Production commit')
 
 	const unsafeLink = renderStatusPage(
 		snapshot({
