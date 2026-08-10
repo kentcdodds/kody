@@ -7,7 +7,11 @@ import {
 	prefetchRouteOnIntent,
 	takePrefetchedRouteResult,
 } from './intent-prefetch.ts'
-import { preloadClientRouteModules } from './lazy-route.tsx'
+import {
+	isClientRouteModuleCached,
+	listenToLazyRouteLoads,
+	preloadClientRouteModules,
+} from './lazy-route.tsx'
 import {
 	markNavigationDataStale,
 	setPreloadedNavigationData,
@@ -58,6 +62,7 @@ type NavigationRunOptions = {
 } & RouterNavigateOptions
 
 const clientRouteOrigin = 'https://kody.local'
+export const navigationTimeoutMs = 10_000
 const routeMatchers = new WeakMap<
 	Record<string, JSX.Element>,
 	ReturnType<typeof createRouteMatcher>
@@ -565,6 +570,17 @@ async function runNavigationWithLoader(
 	const navigationEndDetail = createNavigationEventDetail(nextPath, options)
 	const loader = matchRouteLoader(destination)
 	activeNavigationPath = nextPath
+	const timeoutId = globalThis.setTimeout(() => {
+		// A newer navigation aborts this one and owns recovery. Only the active
+		// navigation may force the browser away from the current document.
+		if (signal.aborted || navigationAbortController !== abortController) return
+		abortController.abort()
+		dispatchNavigationEnd({
+			...navigationEndDetail,
+			preventScrollReset: true,
+		})
+		window.location.assign(nextPath)
+	}, navigationTimeoutMs)
 
 	// Adopt an intent prefetch when one is pending or fresh for this
 	// destination; otherwise run the loader now. Tying the prefetch to this
@@ -673,6 +689,7 @@ async function runNavigationWithLoader(
 			commitNavigation(nextPath, finish)
 		}
 	} finally {
+		globalThis.clearTimeout(timeoutId)
 		// A superseding navigation owns the marker now; only clear our own.
 		if (navigationAbortController === abortController) {
 			activeNavigationPath = null
@@ -953,8 +970,13 @@ type RouterHandle = Pick<Handle, 'signal' | 'update' | 'context'> & {
 }
 
 export function Router(handle: RouterHandle) {
+	let renderedRouteElement: JSX.Element | null = null
+
 	if (typeof document !== 'undefined') {
 		listenToRouterNavigation(handle, () => {
+			void handle.update()
+		})
+		listenToLazyRouteLoads(handle, () => {
 			void handle.update()
 		})
 	}
@@ -968,7 +990,20 @@ export function Router(handle: RouterHandle) {
 
 		const path = readRouterPathname(handle)
 		const routeElement = matchRoute(path, handle.props.routes)
-		if (routeElement) return routeElement
+		if (routeElement) {
+			// Navigation normally preloads lazy areas before commit. If a loader
+			// fails early or another edge case commits first, keep the previous
+			// route mounted until the destination chunk reports that it is ready.
+			if (
+				renderedRouteElement &&
+				!isClientRouteModuleCached(readRouterUrl(handle))
+			) {
+				return renderedRouteElement
+			}
+			renderedRouteElement = routeElement
+			return routeElement
+		}
+		renderedRouteElement = null
 		return handle.props.fallback ?? null
 	}
 }

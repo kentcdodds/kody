@@ -120,7 +120,15 @@ export function CommunityRoute(handle: Handle) {
 					/>
 				</header>
 
-				<Frame name={COMMUNITY_LISTINGS_TARGET} src={frameSrc} />
+				<Frame
+					name={COMMUNITY_LISTINGS_TARGET}
+					src={frameSrc}
+					fallback={
+						<p role="status" mix={css(communityFrameFallbackCss)}>
+							Loading community packages…
+						</p>
+					}
+				/>
 
 				<div mix={css(communityCloseCss)}>
 					<p>
@@ -265,6 +273,14 @@ const communityCloseCss = {
 		color: colors.textMuted,
 		fontSize: '0.98rem',
 	},
+}
+
+const communityFrameFallbackCss = {
+	minHeight: '16rem',
+	display: 'grid',
+	placeItems: 'center',
+	margin: 0,
+	color: colors.textMuted,
 }
 
 const closeButtonCss = mergeCss(getGhostButtonCss(), {

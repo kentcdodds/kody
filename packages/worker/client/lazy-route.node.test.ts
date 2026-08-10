@@ -1,5 +1,9 @@
-import { expect, test } from 'vitest'
-import { clientRouteAreaNameForPath } from '#client/lazy-route.tsx'
+import { expect, test, vi } from 'vitest'
+import {
+	clientRouteAreaNameForPath,
+	createLazyRoute,
+	createLazyRouteArea,
+} from '#client/lazy-route.tsx'
 import { clientRouteLoaders, clientRoutes } from '#client/routes/index.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -52,5 +56,50 @@ test('every non-eager route pattern resolves to a registered lazy area', () => {
 				`lazy pattern ${pattern} must be registered`,
 			).not.toBeNull()
 		}
+	}
+})
+
+test('a cold lazy route renders a fallback and retries once before full navigation recovery', async () => {
+	vi.useFakeTimers()
+	const previousWindow = globalThis.window
+	const assign = vi.fn()
+	globalThis.window = {
+		location: {
+			pathname: '/community',
+			search: '?q=tools',
+			hash: '#results',
+			assign,
+		},
+	} as unknown as Window & typeof globalThis
+
+	try {
+		const loadModule = vi.fn<() => Promise<{ value: JSX.Element }>>()
+		loadModule.mockRejectedValue(new Error('chunk unavailable'))
+		const area = createLazyRouteArea(loadModule)
+		let queuedTask: ((signal: AbortSignal) => Promise<void> | void) | undefined
+		const update = vi.fn()
+		const LazyRoute = createLazyRoute(area)
+		const render = LazyRoute({
+			props: {
+				render: (module) => module.value,
+			},
+			queueTask(task) {
+				queuedTask = task
+			},
+			update,
+		} as never)
+
+		expect(render()).not.toBeNull()
+		expect(queuedTask).toBeTypeOf('function')
+
+		await queuedTask?.(new AbortController().signal)
+
+		expect(loadModule).toHaveBeenCalledTimes(2)
+		expect(assign).toHaveBeenCalledWith('/community?q=tools#results')
+		expect(update).not.toHaveBeenCalled()
+	} finally {
+		vi.clearAllTimers()
+		vi.useRealTimers()
+		globalThis.window = previousWindow
 	}
 })

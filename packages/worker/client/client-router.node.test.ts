@@ -1,11 +1,16 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	isSameShellAreaNavigation,
 	matchRoute,
 	matchRouteLoader,
+	navigate,
+	navigationTimeoutMs,
+	registerRouteLoaders,
+	Router,
 	shouldRouterHandleClick,
 	type RouteLoader,
 } from './client-router.tsx'
+import { communityArea } from './lazy-route.tsx'
 
 test('client route and loader matching prefer specific static routes over dynamic parents', () => {
 	const tokenDetailRoute = 'token-detail-route' as unknown as JSX.Element
@@ -137,6 +142,63 @@ test('same-origin hash links are intercepted so scroll restoration can reach the
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, externalAnchor)).toBe(false)
 	} finally {
+		globalThis.window = previousWindow
+	}
+})
+
+test('the router holds the previous route until a cold destination module is cached', async () => {
+	let url = '/pricing'
+	const pricingRoute = 'pricing-route' as unknown as JSX.Element
+	const communityRoute = 'community-route' as unknown as JSX.Element
+	const render = Router({
+		props: {
+			routes: {
+				'/pricing': pricingRoute,
+				'/community': communityRoute,
+			},
+		},
+		signal: new AbortController().signal,
+		update: vi.fn(),
+		context: {
+			get: () => ({ url, ssrUrl: '/pricing' }),
+		},
+	} as never)
+
+	expect(render()).toBe(pricingRoute)
+	url = '/community'
+	expect(render()).toBe(pricingRoute)
+
+	await communityArea.load()
+	expect(render()).toBe(communityRoute)
+})
+
+test('a navigation that exceeds the timeout falls back to a full document navigation', async () => {
+	vi.useFakeTimers()
+	const previousWindow = globalThis.window
+	const assign = vi.fn()
+	globalThis.window = {
+		location: {
+			href: 'https://kody.local/',
+			origin: 'https://kody.local',
+			pathname: '/',
+			search: '',
+			hash: '',
+			assign,
+		},
+	} as unknown as Window & typeof globalThis
+	registerRouteLoaders({
+		'/stuck': () => new Promise(() => {}),
+	})
+
+	try {
+		navigate('/stuck')
+		await vi.advanceTimersByTimeAsync(navigationTimeoutMs)
+
+		expect(assign).toHaveBeenCalledWith('/stuck')
+	} finally {
+		registerRouteLoaders({})
+		vi.clearAllTimers()
+		vi.useRealTimers()
 		globalThis.window = previousWindow
 	}
 })

@@ -1,9 +1,11 @@
-import { type Handle } from 'remix/ui'
+import { addEventListeners, css, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
+import { colors, spacing } from '#universal/styles/tokens.ts'
 import { type RouteLoader } from './route-loader.ts'
+import { createSpinDelay } from './spin-delay.ts'
 import type * as accountAreaExports from './routes/account-area.ts'
 import type * as adminAreaExports from './routes/admin-area.ts'
 import type * as blogAreaExports from './routes/blog-area.ts'
@@ -14,6 +16,8 @@ export type LazyRouteArea<TModule> = {
 	load: () => Promise<TModule>
 	getCached: () => TModule | null
 }
+
+const lazyRouteEvents = new EventTarget()
 
 export function createLazyRouteArea<TModule>(
 	loadModule: () => Promise<TModule>,
@@ -28,6 +32,7 @@ export function createLazyRouteArea<TModule>(
 				pending = loadModule()
 					.then((module) => {
 						cached = module
+						lazyRouteEvents.dispatchEvent(new Event('load'))
 						return module
 					})
 					.finally(() => {
@@ -95,40 +100,70 @@ type LazyRouteRenderProps<TModule> = {
  * keeps `TModule` in the `render` callback (JSX generics on `Handle` props
  * do not infer through `<LazyRoute area={...} />`).
  *
- * Reads the module-level cache synchronously; when cold, kicks off `load()`
- * and returns null until the chunk arrives. SSR, hydration, and SPA
- * navigation preload the matching area before commit, so the async path is a
- * safety net.
+ * Reads the module-level cache synchronously; when cold, kicks off `load()` and
+ * renders a delayed content-area fallback until the chunk arrives. SSR,
+ * hydration, and SPA navigation preload the matching area before commit, so
+ * the async path is a safety net.
  */
 type LazyRouteComponent<TModule> = (
 	handle: Handle<LazyRouteRenderProps<TModule>>,
-) => () => JSX.Element | null
+) => () => JSX.Element
 
 export function createLazyRoute<TModule>(
 	area: LazyRouteArea<TModule>,
 ): LazyRouteComponent<TModule> {
 	return function LazyRoute(handle: Handle<LazyRouteRenderProps<TModule>>) {
 		let loadStarted = false
+		const spinDelay = createSpinDelay(handle)
 
 		return () => {
 			const { render } = handle.props
 			const module = area.getCached()
-			if (module) return render(module)
+			if (module) {
+				spinDelay.setLoading(false)
+				return render(module)
+			}
 
 			if (!loadStarted) {
 				loadStarted = true
+				spinDelay.setLoading(true)
 				handle.queueTask(async (signal) => {
 					try {
 						await area.load()
 					} catch {
-						return
+						try {
+							await area.load()
+						} catch {
+							if (signal.aborted || typeof window === 'undefined') return
+							window.location.assign(
+								`${window.location.pathname}${window.location.search}${window.location.hash}`,
+							)
+							return
+						}
 					}
 					if (signal.aborted) return
 					handle.update()
 				})
 			}
 
-			return null
+			return (
+				<section
+					aria-busy="true"
+					aria-label="Loading page"
+					mix={css({
+						minHeight: '12rem',
+						display: 'grid',
+						placeItems: 'center',
+						color: colors.textMuted,
+					})}
+				>
+					{spinDelay.isShowing ? (
+						<p role="status" mix={css({ margin: 0, padding: spacing.lg })}>
+							Loading page…
+						</p>
+					) : null}
+				</section>
+			)
 		}
 	}
 }
@@ -160,6 +195,7 @@ type PreloadArea = {
 	/** Chunk name of the area barrel (matches the built `assets/<name>-<hash>.js`). */
 	name: string
 	load: () => Promise<unknown>
+	getCached: () => unknown | null
 }
 
 const preloadMatcher = createMultiMatcher<PreloadArea>()
@@ -213,7 +249,11 @@ registerPreloadPatterns(
 		routePattern(routes.accountEmailDetail),
 		routePattern(routes.accountTwoFactor),
 	],
-	{ name: 'account-area', load: accountArea.load },
+	{
+		name: 'account-area',
+		load: accountArea.load,
+		getCached: accountArea.getCached,
+	},
 )
 
 registerPreloadPatterns(
@@ -233,7 +273,7 @@ registerPreloadPatterns(
 		routePattern(routes.adminPlatformFeedback),
 		routePattern(routes.adminSystemEmail),
 	],
-	{ name: 'admin-area', load: adminArea.load },
+	{ name: 'admin-area', load: adminArea.load, getCached: adminArea.getCached },
 )
 
 registerPreloadPatterns(
@@ -243,7 +283,11 @@ registerPreloadPatterns(
 		routePattern(routes.profile),
 		routePattern(routes.timeline),
 	],
-	{ name: 'community-area', load: communityArea.load },
+	{
+		name: 'community-area',
+		load: communityArea.load,
+		getCached: communityArea.getCached,
+	},
 )
 
 registerPreloadPatterns(
@@ -253,7 +297,7 @@ registerPreloadPatterns(
 		routePattern(routes.guides),
 		routePattern(routes.guideDetail),
 	],
-	{ name: 'blog-area', load: blogArea.load },
+	{ name: 'blog-area', load: blogArea.load, getCached: blogArea.getCached },
 )
 
 registerPreloadPatterns(
@@ -262,8 +306,26 @@ registerPreloadPatterns(
 		routePattern(routes.connectOauth),
 		oauthPaths.authorize,
 	],
-	{ name: 'onboarding-area', load: onboardingArea.load },
+	{
+		name: 'onboarding-area',
+		load: onboardingArea.load,
+		getCached: onboardingArea.getCached,
+	},
 )
+
+export function isClientRouteModuleCached(pathnameWithSearch: string) {
+	const url = new URL(pathnameWithSearch, clientRouteOrigin)
+	const match = preloadMatcher.match(url)
+	return match ? match.data.getCached() !== null : true
+}
+
+export function listenToLazyRouteLoads(
+	handle: Pick<Handle, 'signal'>,
+	listener: () => void,
+) {
+	if (typeof document === 'undefined') return
+	addEventListeners(lazyRouteEvents, handle.signal, { load: listener })
+}
 
 /**
  * Warms the lazy route chunk for `pathnameWithSearch` (pathname + search).
