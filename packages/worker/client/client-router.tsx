@@ -665,6 +665,12 @@ async function runNavigationWithLoader(
 			commitNavigation(nextPath, finish)
 		}
 	} catch {
+		// Promise.all rejects as soon as the loader fails, even if the lazy chunk
+		// retry is still pending. Do not commit under the destination URL until
+		// that retry settles: Router intentionally keeps the previous route
+		// mounted while the chunk is cold, so committing early would also prevent
+		// the destination LazyRoute from mounting and running its own recovery.
+		await preloadPromise
 		if (signal.aborted) return
 		if (chunkLoadFailed) {
 			// The loader also failed, but the missing chunk is what makes SPA
