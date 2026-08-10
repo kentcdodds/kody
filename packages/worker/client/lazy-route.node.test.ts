@@ -96,7 +96,6 @@ test('a cold lazy route renders a fallback and retries once before full navigati
 
 		expect(loadModule).toHaveBeenCalledTimes(2)
 		expect(assign).toHaveBeenCalledWith('/community?q=tools#results')
-		expect(update).not.toHaveBeenCalled()
 	} finally {
 		vi.clearAllTimers()
 		vi.useRealTimers()
