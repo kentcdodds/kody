@@ -855,6 +855,12 @@ export type AccountIntegrationsLoaderData = {
 export type AccountIntegrationDetailLoaderData = {
 	ok: true
 	integration: AccountIntegrationListItem | null
+	/**
+	 * True when an enabled built-in app exists for the requested name and the
+	 * returned record is not already using it (the bring-your-own record won
+	 * the lookup). The connect page offers the built-in as an alternative.
+	 */
+	builtInAvailable?: boolean
 }
 
 /**
@@ -867,6 +873,8 @@ export type ConnectOauthLoaderData = {
 	ok: true
 	provider: string | null
 	integration: AccountIntegrationListItem | null
+	/** See {@link AccountIntegrationDetailLoaderData.builtInAvailable}. */
+	builtInAvailable?: boolean
 }
 
 export type AccountMcpServerListItem = {

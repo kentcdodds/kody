@@ -8,6 +8,7 @@ import {
 } from '#worker/integrations/service.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import {
+	hasAlternativeBuiltInApp,
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
 	loadAccountOauthAppBySlug,
@@ -328,6 +329,20 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 	)
 	expect(byoWins?.clientId).toBe('user-github-client')
 	expect(byoWins?.platform ?? false).toBe(false)
+	// The winning BYO record shadows an enabled built-in — the connect page
+	// surfaces the alternative lane instead of hiding it.
+	expect(await hasAlternativeBuiltInApp(env, 'github', byoWins)).toBe(true)
+
+	// Explicit built-in intent overrides the BYO win.
+	const forced = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github',
+		{ preferPlatform: true },
+	)
+	expect(forced?.platform).toBe(true)
+	expect(forced?.clientId).toBe('platform-github-client')
+	expect(await hasAlternativeBuiltInApp(env, 'github', forced)).toBe(false)
 
 	// No built-in for the slug: the incomplete record still returns so the
 	// setup form can prefill what exists.

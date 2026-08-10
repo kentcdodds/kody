@@ -121,8 +121,9 @@ export async function connectOauthRouteLoader(
 	if (!providerKey) {
 		return { connectOauth: emptyConnectOauthLoaderData }
 	}
+	const preferPlatform = params.get('platform') === '1'
 	const response = await fetch(
-		`/account/integrations.json?name=${encodeURIComponent(providerKey)}`,
+		`/account/integrations.json?name=${encodeURIComponent(providerKey)}${preferPlatform ? '&platform=1' : ''}`,
 		{
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
@@ -139,6 +140,10 @@ export async function connectOauthRouteLoader(
 			provider: providerKey,
 			integration:
 				response.ok && payload?.ok ? (payload.integration ?? null) : null,
+			builtInAvailable:
+				response.ok && payload?.ok
+					? (payload.builtInAvailable ?? false)
+					: false,
 		},
 	}
 }
@@ -173,6 +178,8 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hasConfigError = false
 	let connectOauthHandled = false
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
+	/** An enabled built-in exists that this user-lane connection is not using. */
+	let builtInAvailable = false
 	let nextSteps: ConnectOauthNextSteps | null = null
 	let approvingAllHosts = false
 	let submitting = false
@@ -454,8 +461,11 @@ export function ConnectOauthRoute(handle: Handle) {
 	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
 	): Promise<StoredIntegrationConfig | null> => {
+		const preferPlatform =
+			typeof window !== 'undefined' &&
+			new URLSearchParams(window.location.search).get('platform') === '1'
 		const response = await fetch(
-			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}`,
+			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}${preferPlatform ? '&platform=1' : ''}`,
 			{
 				method: 'GET',
 				headers: { Accept: 'application/json' },
@@ -466,9 +476,9 @@ export function ConnectOauthRoute(handle: Handle) {
 		const payload = (await response
 			.json()
 			.catch(() => null)) as AccountIntegrationDetailLoaderData | null
-		if (!response.ok || payload?.ok !== true || !payload.integration) {
-			return null
-		}
+		if (!response.ok || payload?.ok !== true) return null
+		builtInAvailable = payload.builtInAvailable ?? false
+		if (!payload.integration) return null
 		return toStoredIntegrationConfig(payload.integration)
 	}
 
@@ -716,6 +726,39 @@ export function ConnectOauthRoute(handle: Handle) {
 			submitting = false
 			update()
 		}
+	}
+
+	/**
+	 * Shown when the current (or prospective) connection runs on the user's
+	 * own OAuth app while an enabled built-in exists for the same name. A
+	 * complete bring-your-own record wins the lookup by design, so without
+	 * this the built-in lane is invisible from the connect page.
+	 */
+	const renderBuiltInAlternative = () => {
+		if (!builtInAvailable || !config || config.platformAppSlug) return null
+		return (
+			<p mix={css(descriptionCss)}>
+				This uses your own OAuth app for {config.provider}. Prefer the hosted
+				one?{' '}
+				<a
+					href={`/connect/oauth?provider=${encodeURIComponent(config.providerKey)}&platform=1`}
+					mix={[
+						css(primaryLinkCss),
+						// Full document load on purpose: this page's init
+						// (config resolution, built-in auto-start) runs per
+						// document load, and a same-route SPA swap reuses the
+						// mounted instance without re-running it.
+						on('click', (event) => {
+							event.preventDefault()
+							window.location.assign(event.currentTarget.href)
+						}),
+					]}
+				>
+					Use the built-in {config.provider} integration instead
+				</a>{' '}
+				— connecting it replaces this connection&apos;s tokens and scopes.
+			</p>
+		)
 	}
 
 	const handleConnect = async () => {
@@ -1007,6 +1050,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				'connectOauth',
 				readCurrentRouterHref(handle),
 			)
+			if (routeData) {
+				builtInAvailable = routeData.builtInAvailable ?? false
+			}
 			const preloadedIntegrationFor = (providerKey: string) =>
 				routeData && routeData.provider === providerKey
 					? routeData.integration
@@ -1187,6 +1233,7 @@ export function ConnectOauthRoute(handle: Handle) {
 							1. {existingIntegrationConfig ? 'Review' : 'Save'} OAuth client
 							configuration
 						</h2>
+						{renderBuiltInAlternative()}
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
@@ -1293,6 +1340,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.text })}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
+						{renderBuiltInAlternative()}
 						{existingIntegrationConfig && hasStoredClientId ? (
 							<p mix={css(descriptionCss)}>
 								Using stored client ID

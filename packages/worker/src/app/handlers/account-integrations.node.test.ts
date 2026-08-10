@@ -489,6 +489,7 @@ test('integrations API returns one connection by name for the connect OAuth flow
 	})
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
+		builtInAvailable: false,
 		integration: {
 			name: 'github',
 			appSlug: 'github',
@@ -528,6 +529,7 @@ test('integrations API returns null when a named connection is missing', async (
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
+		builtInAvailable: false,
 		integration: null,
 	})
 })

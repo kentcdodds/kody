@@ -588,6 +588,36 @@ test('fetch gateway resolves path-only URLs against baseUrl', async () => {
 	expect(nested.url).toBe('https://example.com/core/log')
 })
 
+test('outbound requests get a default User-Agent; caller values win', async () => {
+	// GitHub rejects UA-less requests with an opaque 403, and workerd sends
+	// no UA by default.
+	const bare = await expandSecretPlaceholders({
+		request: new Request('https://api.github.com/user'),
+		props,
+		env,
+	})
+	expect(bare.headers.get('user-agent')).toBe('kody-agent/1.0')
+
+	const custom = await expandSecretPlaceholders({
+		request: new Request('https://api.github.com/user', {
+			headers: { 'User-Agent': 'my-package/2.0' },
+		}),
+		props,
+		env,
+	})
+	expect(custom.headers.get('user-agent')).toBe('my-package/2.0')
+
+	// The resolution-off fast path applies the same default.
+	const modeOff = await expandSecretPlaceholders({
+		request: new Request('https://api.github.com/user', {
+			headers: { 'x-kody-secret-resolution': 'off' },
+		}),
+		props,
+		env,
+	})
+	expect(modeOff.headers.get('user-agent')).toBe('kody-agent/1.0')
+})
+
 test('gateway fetch records outbound_fetch usage metering', async () => {
 	const usageModule = await import('#worker/usage/record-usage.ts')
 	const recordUsageSpy = vi

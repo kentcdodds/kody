@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
 	requirePageSession: vi.fn<() => Promise<Response | null>>(),
 	loadAccountIntegrationByName: vi.fn<() => Promise<unknown>>(),
+	hasAlternativeBuiltInApp: vi.fn<() => Promise<boolean>>(),
 	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(),
 }))
 
@@ -25,6 +26,8 @@ vi.mock('#app/page-auth.ts', () => ({
 vi.mock('#app/account-integrations-data.ts', () => ({
 	loadAccountIntegrationByName: (...args: Array<unknown>) =>
 		mockModule.loadAccountIntegrationByName(...args),
+	hasAlternativeBuiltInApp: (...args: Array<unknown>) =>
+		mockModule.hasAlternativeBuiltInApp(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -82,6 +85,8 @@ test('provider visits embed the integration record as SSR loader data', async ()
 	mockModule.loadAccountIntegrationByName.mockResolvedValue(record)
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 
+	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
+
 	await createConnectOauthHandler(env).handler(
 		new RequestContext(
 			new Request('https://example.com/connect/oauth?provider=GitHub'),
@@ -92,13 +97,47 @@ test('provider visits embed the integration record as SSR loader data', async ()
 		env,
 		expect.anything(),
 		'github',
+		{ preferPlatform: false },
 	)
 	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			loaderData: {
-				connectOauth: { ok: true, provider: 'github', integration: record },
+				connectOauth: {
+					ok: true,
+					provider: 'github',
+					integration: record,
+					builtInAvailable: false,
+				},
 			},
 		}),
+	)
+})
+
+test('platform=1 forces the built-in lookup', async () => {
+	const env = {} as Env
+	mockModule.requirePageSession.mockResolvedValue(null)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'user-1' },
+	})
+	mockModule.loadAccountIntegrationByName.mockResolvedValue({
+		name: 'google',
+		platform: true,
+	})
+	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
+	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
+
+	await createConnectOauthHandler(env).handler(
+		new RequestContext(
+			new Request(
+				'https://example.com/connect/oauth?provider=google&platform=1',
+			),
+		),
+	)
+	expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
+		env,
+		expect.anything(),
+		'google',
+		{ preferPlatform: true },
 	)
 })
 

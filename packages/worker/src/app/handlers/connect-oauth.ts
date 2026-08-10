@@ -1,6 +1,9 @@
 import { type Action } from 'remix/router'
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
-import { loadAccountIntegrationByName } from '#app/account-integrations-data.ts'
+import {
+	hasAlternativeBuiltInApp,
+	loadAccountIntegrationByName,
+} from '#app/account-integrations-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requirePageSession } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -39,10 +42,22 @@ async function loadConnectOauthLoaderData(
 	if (!providerKey) return null
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) return null
+	const preferPlatform = requestUrl.searchParams.get('platform') === '1'
+	const integration = await loadAccountIntegrationByName(
+		env,
+		user,
+		providerKey,
+		{ preferPlatform },
+	)
 	return {
 		ok: true,
 		provider: providerKey,
-		integration: await loadAccountIntegrationByName(env, user, providerKey),
+		integration,
+		builtInAvailable: await hasAlternativeBuiltInApp(
+			env,
+			providerKey,
+			integration,
+		),
 	}
 }
 

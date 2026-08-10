@@ -223,6 +223,12 @@ export async function expandSecretPlaceholders(input: {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 }) {
 	const headers = new Headers(input.request.headers)
+	// Several APIs (GitHub most prominently) reject requests without a
+	// User-Agent outright, and workerd sends none by default — bare sandbox
+	// fetches hit opaque 403s. Callers that set their own keep it.
+	if (!headers.has('user-agent')) {
+		headers.set('user-agent', 'kody-agent/1.0')
+	}
 	const baseUrl = input.props.baseUrl.trim()
 	if (!baseUrl) {
 		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')

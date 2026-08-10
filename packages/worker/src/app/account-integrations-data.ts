@@ -230,6 +230,15 @@ export async function loadAccountIntegrationByName(
 	env: Env,
 	user: AuthenticatedUser,
 	name: string,
+	options?: {
+		/**
+		 * Explicit built-in intent (`platform=1` on /connect/oauth): resolve
+		 * the enabled platform app directly instead of letting a complete
+		 * bring-your-own record win. Falls back to the normal priority when
+		 * no built-in exists for the name.
+		 */
+		preferPlatform?: boolean
+	},
 ): Promise<AccountIntegrationRecord | null> {
 	// A user-lane record still wins when it can actually drive the flow (the
 	// bring-your-own override); an endpoint-incomplete one defers to an
@@ -237,6 +246,11 @@ export async function loadAccountIntegrationByName(
 	const platformFallback = async () => {
 		const platformApp = await getAvailablePlatformApp({ env, slug: name })
 		return platformApp ? toPlatformAppPrefillRecord(platformApp, name) : null
+	}
+
+	if (options?.preferPlatform) {
+		const platformRecord = await platformFallback()
+		if (platformRecord) return platformRecord
 	}
 
 	// 1. Existing connection (reconnect) — connection name, not app slug.
@@ -267,4 +281,18 @@ export async function loadAccountIntegrationByName(
 	// 4. Platform (built-in) app: the user needs no OAuth app of their own, so
 	// the connect flow can skip client-credential setup entirely.
 	return platformFallback()
+}
+
+/**
+ * True when an enabled built-in exists for `name` that the resolved record
+ * is not already using — the connect page offers it as an alternative lane.
+ */
+export async function hasAlternativeBuiltInApp(
+	env: Env,
+	name: string,
+	record: AccountIntegrationRecord | null,
+): Promise<boolean> {
+	if (record?.platform) return false
+	const platformApp = await getAvailablePlatformApp({ env, slug: name })
+	return platformApp != null
 }
