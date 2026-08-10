@@ -34,3 +34,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0012 — Client-safe shared code lives in `#universal/*`](./0012-universal-layer.md)
 - [0013 — Synthetic package requests for post-publish verification](./0013-synthetic-package-requests.md)
 - [0014 — Platform scopes resolve live in package imports](./0014-platform-live-packages.md)
+- [0015 — Wait on Skills over MCP (SEP-2640); serve skill content via packages](./0015-skills-over-mcp-wait.md)
