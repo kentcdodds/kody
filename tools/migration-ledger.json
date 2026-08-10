@@ -31,6 +31,10 @@
 		{
 			"filename": "0007-saved-package-search-index-debt.sql",
 			"sha256": "62922faee72e96170009bd0410649a9404fc1678f571438d78f62aaaba89ac07"
+		},
+		{
+			"filename": "0008-refresh-google-platform-hosts.sql",
+			"sha256": "0fcb55e9e026bd33be47aceb728e31fbb79cb5b3a9a7c9f007a5209a48f0ac12"
 		}
 	]
 }

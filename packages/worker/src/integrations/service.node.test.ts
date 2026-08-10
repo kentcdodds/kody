@@ -824,10 +824,11 @@ test('findOauthAppForProviderSetup prefers an exact-slug setup app over family p
 })
 
 function createPlatformEnv() {
-	const { env } = createEnv()
+	const base = createEnv()
 	return {
+		...base,
 		env: {
-			...env,
+			...base.env,
 			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>,
 	}
@@ -982,4 +983,67 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			accessTokenSecretName: 'githubAccessToken',
 		}),
 	).rejects.toThrow('Platform integration "github" is not available.')
+})
+
+test('loading a platform integration adds current app hosts without removing connection hosts', async () => {
+	const { env, sqlite } = createPlatformEnv()
+	const app = await provisionGithubPlatformApp(env)
+	await upsertPlatformIntegration({
+		env,
+		userId: 'user-stale-platform-hosts',
+		platformAppSlug: app.slug,
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	sqlite
+		.prepare(
+			`UPDATE user_integrations
+			SET required_hosts_json = ?
+			WHERE user_id = ? AND name = ?`,
+		)
+		.run(
+			JSON.stringify(['api.github.com', 'user-added.example.com']),
+			'user-stale-platform-hosts',
+			'github',
+		)
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: app.slug,
+			clientId: app.clientId,
+			tokenUrl: app.tokenUrl,
+			authorizeUrl: app.authorizeUrl,
+			apiBaseUrl: app.apiBaseUrl,
+			flow: app.flow,
+			requiredHosts: ['api.github.com', 'uploads.github.com'],
+		},
+	})
+
+	const loaded = await getIntegration({
+		env,
+		userId: 'user-stale-platform-hosts',
+		name: 'github',
+	})
+
+	expect(loaded?.requiredHosts).toEqual([
+		'api.github.com',
+		'uploads.github.com',
+		'user-added.example.com',
+	])
+	expect(
+		JSON.parse(
+			(
+				sqlite
+					.prepare(
+						`SELECT required_hosts_json
+						FROM user_integrations
+						WHERE user_id = ? AND name = ?`,
+					)
+					.get('user-stale-platform-hosts', 'github') as {
+					required_hosts_json: string
+				}
+			).required_hosts_json,
+		),
+	).toEqual(['api.github.com', 'uploads.github.com', 'user-added.example.com'])
 })

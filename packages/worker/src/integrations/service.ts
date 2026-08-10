@@ -13,6 +13,7 @@ import {
 	type PlatformOauthApp,
 } from './platform-apps.ts'
 import {
+	addPlatformIntegrationRequiredHosts,
 	countConnectionsForApp,
 	deleteIntegrationConnection,
 	deleteOauthApp,
@@ -116,7 +117,10 @@ export function toPlatformIntegrationConfig(
 			clientSecretSecretName: null,
 			accessTokenSecretName: connection.accessTokenSecretName,
 			refreshTokenSecretName: connection.refreshTokenSecretName,
-			requiredHosts: connection.requiredHosts,
+			requiredHosts: normalizeAllowedHosts([
+				...connection.requiredHosts,
+				...app.requiredHosts,
+			]),
 			tokenExchangeStyle: app.tokenExchangeStyle,
 			authorization: {
 				authorizeUrl: app.authorizeUrl,
@@ -148,10 +152,7 @@ export async function listIntegrations(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }): Promise<Array<IntegrationConfig>> {
-	const rows = await listJoinedIntegrationsForUser({
-		db: input.env.APP_DB,
-		userId: input.userId,
-	})
+	const rows = await listJoinedIntegrations(input)
 	return rows.map(toJoinedIntegrationConfig)
 }
 
@@ -159,10 +160,15 @@ export async function listJoinedIntegrations(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }): Promise<Array<JoinedIntegration>> {
-	return listJoinedIntegrationsForUser({
+	const joined = await listJoinedIntegrationsForUser({
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
+	return Promise.all(
+		joined.map((entry) =>
+			refreshPlatformIntegrationRequiredHosts(input.env.APP_DB, entry),
+		),
+	)
 }
 
 export async function getIntegration(input: {
@@ -186,11 +192,45 @@ export async function getJoinedIntegration(input: {
 }): Promise<JoinedIntegration | null> {
 	const name = canonicalIntegrationName(input.name)
 	if (!name) return null
-	return getJoinedIntegrationByName({
+	const joined = await getJoinedIntegrationByName({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		name,
 	})
+	if (!joined) return null
+	return refreshPlatformIntegrationRequiredHosts(input.env.APP_DB, joined)
+}
+
+async function refreshPlatformIntegrationRequiredHosts(
+	db: D1Database,
+	joined: JoinedIntegration,
+): Promise<JoinedIntegration> {
+	if (joined.lane === 'user') return joined
+	const requiredHosts = normalizeAllowedHosts([
+		...joined.connection.requiredHosts,
+		...joined.app.requiredHosts,
+	])
+	if (
+		requiredHosts.length === joined.connection.requiredHosts.length &&
+		requiredHosts.every(
+			(host, index) => host === joined.connection.requiredHosts[index],
+		)
+	) {
+		return joined
+	}
+	await addPlatformIntegrationRequiredHosts({
+		db,
+		userId: joined.connection.userId,
+		name: joined.connection.name,
+		hosts: joined.app.requiredHosts,
+	})
+	return {
+		...joined,
+		connection: {
+			...joined.connection,
+			requiredHosts,
+		},
+	}
 }
 
 export async function upsertIntegration(input: {

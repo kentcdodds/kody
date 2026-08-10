@@ -445,6 +445,32 @@ export async function upsertIntegrationConnection(input: {
 		.run()
 }
 
+export async function addPlatformIntegrationRequiredHosts(input: {
+	db: D1Database
+	userId: string
+	name: string
+	hosts: Array<string>
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET required_hosts_json = (
+				SELECT json_group_array(host)
+				FROM (
+					SELECT value AS host
+					FROM json_each(user_integrations.required_hosts_json)
+					UNION
+					SELECT value AS host
+					FROM json_each(?)
+					ORDER BY host
+				)
+			)
+			WHERE user_id = ? AND name = ? AND platform_app_slug IS NOT NULL`,
+		)
+		.bind(JSON.stringify(input.hosts), input.userId, input.name)
+		.run()
+}
+
 export async function deleteIntegrationConnection(input: {
 	db: D1Database
 	userId: string
