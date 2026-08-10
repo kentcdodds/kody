@@ -216,6 +216,13 @@ export function ConnectOauthRoute(handle: Handle) {
 	let submitting = false
 	let initialLoadStarted = false
 	let routeDataApplied = false
+	/**
+	 * Normalized pathname+search the current resolution state belongs to.
+	 * SPA navigations to a different connect URL (another provider, a
+	 * platform lane switch) reset and re-resolve instead of keeping the
+	 * previous provider's config on screen.
+	 */
+	let resolvedHref: string | null = null
 	/** Server-computed redirect URI so SSR renders the card `window` builds. */
 	let ssrRedirectUri: string | null = null
 	let clientIdInput = ''
@@ -223,6 +230,34 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hasStoredClientId = false
 	let hasStoredClientSecret = false
 	let revealStoredClientSecretField = false
+
+	const normalizeConnectHref = (href: string) => {
+		const url = new URL(href, 'https://kody.local')
+		return `${url.pathname}${url.search}`
+	}
+
+	// Back to the pre-resolution defaults so a new connect URL resolves from
+	// scratch (loader data first, fallback fetch otherwise).
+	const resetResolutionState = () => {
+		routeDataApplied = false
+		initialLoadStarted = false
+		resolvedHref = null
+		config = null
+		existingIntegrationConfig = null
+		existingConnection = null
+		builtInAvailable = false
+		hasStoredClientSecret = false
+		hasConfigError = false
+		replaceConfirmed = false
+		renameInput = ''
+		hostApprovalLinks = []
+		nextSteps = null
+		accessTokenSaved = false
+		refreshTokenSaved = false
+		currentStep = 'setup'
+		statusMessage = 'Loading provider configuration…'
+		statusTone = 'info'
+	}
 
 	const update = () => handle.update()
 
@@ -816,8 +851,9 @@ export function ConnectOauthRoute(handle: Handle) {
 								mix={[
 									on('click', () => {
 										const name = renameInput.trim() || renameSuggestion
-										// Full document load: the connect flow
-										// initializes per document load.
+										// Full document load: the renamed connect
+										// auto-starts the provider redirect, which is
+										// simplest from a fresh document.
 										window.location.assign(
 											`/connect/oauth?provider=${encodeURIComponent(name)}&platform=${encodeURIComponent(config!.platformAppSlug!)}`,
 										)
@@ -851,10 +887,9 @@ export function ConnectOauthRoute(handle: Handle) {
 					href={`/connect/oauth?provider=${encodeURIComponent(config.providerKey)}&platform=1`}
 					mix={[
 						css(primaryLinkCss),
-						// Full document load on purpose: this page's init
-						// (config resolution, built-in auto-start) runs per
-						// document load, and a same-route SPA swap reuses the
-						// mounted instance without re-running it.
+						// Full document load on purpose: switching lanes may
+						// auto-start the provider redirect, and that is
+						// simplest to reason about from a fresh document.
 						on('click', (event) => {
 							event.preventDefault()
 							window.location.assign(event.currentTarget.href)
@@ -1197,9 +1232,16 @@ export function ConnectOauthRoute(handle: Handle) {
 		applySetupState(nextConfig)
 	}
 
-	handle.queueTask(async () => {
+	// Queued from render (once per resolved href): callback handling, the
+	// loader-failure fallback refetch, and the built-in auto-start.
+	const initializeVisit = async () => {
 		if (initialLoadStarted) return
 		initialLoadStarted = true
+		// Bail after awaits when the user has SPA-navigated to a different
+		// connect URL mid-flight: the reset re-queues a fresh task for it.
+		const taskHref = resolvedHref
+		const hrefStillCurrent = () =>
+			taskHref === normalizeConnectHref(readCurrentRouterHref(handle))
 		try {
 			const callback = readCallback()
 			if (callback.kind === 'success' || callback.kind === 'error') {
@@ -1243,6 +1285,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				const existingIntegration = await readExistingIntegrationConfig(
 					parsed.value,
 				)
+				if (!hrefStillCurrent()) return
 				existingIntegrationConfig = existingIntegration
 				const nextConfig = mergeConnectOauthConfig({
 					queryConfig: parsed.value,
@@ -1266,6 +1309,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			// different-app connection never auto-starts: the user confirms
 			// or renames first.
 			if (
+				hrefStillCurrent() &&
 				config?.platformAppSlug &&
 				currentStep === 'connect' &&
 				!wouldReplaceDifferentApp()
@@ -1284,10 +1328,29 @@ export function ConnectOauthRoute(handle: Handle) {
 				'error',
 			)
 		}
-	})
+	}
 
 	return () => {
-		applyRouteLoaderData(readCurrentRouterHref(handle))
+		const currentHref = readCurrentRouterHref(handle)
+		const normalizedHref = normalizeConnectHref(currentHref)
+		// An in-app navigation to a different connect URL (another provider,
+		// a platform lane switch) re-resolves from scratch instead of keeping
+		// the previous provider's page. Callback flows are terminal — their
+		// URL is rewritten via history.replaceState — and never reset.
+		if (
+			resolvedHref !== null &&
+			resolvedHref !== normalizedHref &&
+			!connectOauthHandled
+		) {
+			resetResolutionState()
+		}
+		if (resolvedHref === null) {
+			resolvedHref = normalizedHref
+		}
+		applyRouteLoaderData(currentHref)
+		if (!initialLoadStarted && typeof document !== 'undefined') {
+			handle.queueTask(initializeVisit)
+		}
 		if (!config) {
 			return (
 				<section mix={css(pageCss)}>
