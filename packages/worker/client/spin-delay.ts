@@ -1,5 +1,3 @@
-import { type Handle } from 'remix/ui'
-
 type SpinDelayState = 'IDLE' | 'DELAY' | 'DISPLAY' | 'EXPIRE'
 
 type SpinDelayOptions = {
@@ -14,7 +12,10 @@ const defaultOptions = {
 	ssr: true,
 } as const satisfies Required<SpinDelayOptions>
 
-export function createSpinDelay(handle: Handle, options?: SpinDelayOptions) {
+export function createSpinDelay(
+	handle: { update: () => unknown },
+	options?: SpinDelayOptions,
+) {
 	const resolvedOptions = {
 		...defaultOptions,
 		...options,
