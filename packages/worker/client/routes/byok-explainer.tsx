@@ -82,9 +82,10 @@ function renderDiagramChip(
 }
 
 /**
- * "Bring your own keys" pitch: why Kody has no built-in integrations.
- * Shared between onboarding and the integrations page so the story stays
- * consistent everywhere people expect a built-in integration catalog.
+ * "Bring your own keys" pitch for surfaces that also offer built-ins.
+ * Matches onboarding's hasBuiltIns framing: built-ins = fast start on an app
+ * Kody hosts; BYO = full control / custom scopes. Shared with the
+ * integrations page so the story stays consistent.
  */
 export function renderByokExplainer(options?: {
 	image?: keyof typeof kodyImages
@@ -122,9 +123,10 @@ export function renderByokExplainer(options?: {
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<h2 mix={css(cardTitleCss)}>Bring your own keys</h2>
 						<p mix={css(descriptionCss)}>
-							Kody never asks a company for access on your behalf. You create
-							the connection yourself — your agent walks you through it — so it
-							is completely yours: your app, your scopes, no middleman.
+							Built-in integrations run on an app Kody hosts, for a fast start.
+							For everything else — or for full control — you create the
+							connection yourself, and your agent walks you through it, so it is
+							completely yours: your app, your scopes, no middleman.
 						</p>
 					</div>
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -141,7 +143,7 @@ export function renderByokExplainer(options?: {
 							{renderDiagramChip('GitHub')}
 						</p>
 						<p mix={css(diagramRowCss)}>
-							<span mix={css(diagramLabelCss)}>Kody</span>
+							<span mix={css(diagramLabelCss)}>Kody (BYO)</span>
 							{renderDiagramChip('You')}
 							<span aria-hidden="true" mix={css(diagramArrowCss)}>
 								→
@@ -167,8 +169,9 @@ export function renderByokExplainer(options?: {
 							Kody can touch, and you can revoke it anytime.
 						</li>
 						<li>
-							<strong>No middleman.</strong> Nothing sits between you and the
-							provider — no shared app to trust or get breached.
+							<strong>Full control when you want it.</strong> Bring-your-own
+							keeps nothing between you and the provider — your app, your scopes
+							(including custom scopes outside a built-in allowlist).
 						</li>
 						<li>
 							<strong>No fixed list.</strong> If it has an API, your Kody can
@@ -176,8 +179,8 @@ export function renderByokExplainer(options?: {
 						</li>
 					</ul>
 					<p mix={css(descriptionCss)}>
-						The trade-off: a few minutes of setup instead of one click. Your
-						agent does the tedious parts.
+						Built-ins are one click. Bring-your-own takes a few minutes of
+						setup; your agent does the tedious parts.
 					</p>
 				</div>
 			</div>

@@ -64,13 +64,17 @@ request so cookie signing and verification are available to handlers.
 
 ### Signup posture and invites
 
-Production signup is invite-gated. The auth handler uses
-`packages/worker/src/app/deployment-env.ts` (`isNonProductionRuntime`) to decide
-whether an invite is required. Production wrangler env sets
-`SENTRY_ENVIRONMENT: 'production'`; `npm run dev` sets
-`WRANGLER_IS_LOCAL_DEV=true`; preview/test set `SENTRY_ENVIRONMENT` to
-`'preview'` / `'test'`. The predicate fails closed: if the runtime cannot be
-positively identified as non-production, signup requires a valid invite code.
+Signup gating is controlled by the `SIGNUP_MODE` Worker var
+(`packages/worker/universal/signup-mode.ts`), read through `getSignupMode`.
+Password and social signup require a valid invite whenever the mode is not
+`open` (`invite` and `waitlist` both gate). Wrangler sets
+`SIGNUP_MODE: 'invite'` for `production` and `preview`, and `'open'` for `test`
+(Playwright / `CLOUDFLARE_ENV=test`). Local `npm run dev` defaults to the
+`production` Wrangler env (`CLOUDFLARE_ENV` defaults to `production` in
+`wrangler-env.ts`), so invite gating applies unless you point at `test`.
+`isNonProductionRuntime` is unrelated to invite gating (it still gates Kit
+waitlist soft-fail, email-send skip when no sender is configured, and similar
+non-production shortcuts).
 
 The public `/signup` page defaults to a waiting-list form (first name + email)
 backed by `POST /waiting-list`, which upserts a Kit subscriber and tags them
@@ -117,11 +121,11 @@ The `invites` table stores operator-created invite codes:
   invite creation validates plan names with strict `parsePlanName`. See
   [Entitlements](./entitlements.md).
 
-Production signup atomically consumes an invite with a single conditional
-`UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent
-requests cannot over-use a code. Local dev, preview, and test runtimes remain
-open when no invite is supplied, but they still consume and validate an invite
-when a code is provided so E2E coverage can exercise the same path.
+When invite gating is on, signup atomically consumes an invite with a single
+conditional `UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`;
+concurrent requests cannot over-use a code. The open `test` env skips the invite
+requirement when no code is supplied, but still consumes and validates a code
+when one is provided so E2E coverage can exercise the same path.
 
 Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
 guard, not an owner-scoped content bypass. Invite creation (including optional
@@ -458,8 +462,8 @@ definitions in `packages/worker/src/app/oauth-providers.ts`.
   `/account/connections.json` (disconnect is refused when the connection is the
   only sign-in method); a provider-verified email matching an existing account
   auto-links and signs in; otherwise account creation follows the signup posture
-  (production requires a valid invite code carried from the invite signup panel;
-  non-production remains open without one)
+  (`SIGNUP_MODE !== 'open'` requires a valid invite code carried from the invite
+  signup panel; the `test` env remains open without one)
 - Buttons only render for providers whose client id/secret env vars are set;
   `MOCK_`-prefixed client ids activate an in-worker mock flow on non-production
   runtimes for dev and E2E tests
