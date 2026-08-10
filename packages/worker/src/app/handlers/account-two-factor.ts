@@ -5,6 +5,7 @@ import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { type AccountTwoFactorLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 import {
 	cancelTwoFactorSetup,
@@ -27,10 +28,16 @@ export function createAccountTwoFactorHandler(env: Env) {
 				return user
 			}
 
+			// Embed the same payload the .json endpoint serves so the page
+			// server-renders its real state instead of "Loading two-factor
+			// status…" plus a client fetch.
 			return renderAppPage({
 				request,
 				env,
 				title: 'Two-factor authentication',
+				loaderData: {
+					accountTwoFactor: await loadTwoFactorStatus(env.APP_DB, user.userId),
+				},
 			})
 		},
 	} satisfies Action<typeof routes.accountTwoFactor>
@@ -221,7 +228,10 @@ export function createAccountTwoFactorApiHandler(env: Env) {
 	} satisfies Action<typeof routes.accountTwoFactorApi>
 }
 
-async function loadTwoFactorStatus(db: D1Database, userId: number) {
+async function loadTwoFactorStatus(
+	db: D1Database,
+	userId: number,
+): Promise<AccountTwoFactorLoaderData> {
 	return {
 		ok: true,
 		enabled: await isTwoFactorEnabled(db, userId),

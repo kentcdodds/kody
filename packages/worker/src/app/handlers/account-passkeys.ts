@@ -15,6 +15,7 @@ import {
 	type PasskeyRow,
 } from '#app/passkeys.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { type AccountPasskeysLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 
 export function createAccountPasskeysHandler(env: Env) {
@@ -26,10 +27,16 @@ export function createAccountPasskeysHandler(env: Env) {
 				return user
 			}
 
+			// Embed the same payload the .json endpoint serves so the page
+			// server-renders its real state instead of "Loading passkeys…"
+			// plus a client fetch.
 			return renderAppPage({
 				request,
 				env,
 				title: 'Passkeys',
+				loaderData: {
+					accountPasskeys: await loadPasskeysPayload(env.APP_DB, user.userId),
+				},
 			})
 		},
 	} satisfies Action<typeof routes.accountPasskeys>
@@ -140,7 +147,10 @@ function displayPasskeyName(passkey: PasskeyRow) {
 	})
 }
 
-async function loadPasskeysPayload(db: D1Database, userId: number) {
+async function loadPasskeysPayload(
+	db: D1Database,
+	userId: number,
+): Promise<AccountPasskeysLoaderData> {
 	const passkeys = await listPasskeysForUser(db, userId)
 	return {
 		ok: true,

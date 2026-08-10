@@ -7,6 +7,9 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
+import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
+import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
+import { createHomeHandler } from '#app/handlers/home.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import { createCommunityDetailHandler } from '#app/handlers/community-detail.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
@@ -340,6 +343,31 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountHtml).not.toContain('Connect your AI agent')
 	expect(accountHtml).toContain('/pending-verification')
 
+	// Two-factor and passkeys embed the same payload their .json endpoints
+	// serve, so the page server-renders its real state instead of a loading
+	// placeholder plus a client fetch.
+	const twoFactorResponse = await runHtmlHandler(
+		createAccountTwoFactorHandler(env),
+		new Request('https://example.com/account/two-factor', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(twoFactorResponse.status).toBe(200)
+	const twoFactorHtml = await readResponseText(twoFactorResponse)
+	expect(twoFactorHtml).toContain('Two-factor authentication is disabled')
+	expect(twoFactorHtml).not.toContain('Loading two-factor status')
+
+	const passkeysResponse = await runHtmlHandler(
+		createAccountPasskeysHandler(env),
+		new Request('https://example.com/account/passkeys', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(passkeysResponse.status).toBe(200)
+	const passkeysHtml = await readResponseText(passkeysResponse)
+	expect(passkeysHtml).toContain('No passkeys yet')
+	expect(passkeysHtml).not.toContain('Loading passkeys')
+
 	const accountLinkedResponse = await runHtmlHandler(
 		createAccountHandler(env),
 		new Request('https://example.com/account?oauthLinked=google', {
@@ -662,6 +690,18 @@ test('renderAppPage renders the redesigned landing page shell', async () => {
 	expect(html).toContain('aria-label="Footer"')
 	expect(html).toContain('aria-label="Dark mode"')
 	expect(html).toContain('id="invite"')
+
+	// The anonymous home handler embeds the public onboarding payload, so
+	// the hero's discovery-prompt copy renders server-side instead of
+	// popping in after a client /onboarding.json fetch.
+	const anonymousHomeResponse = await runHtmlHandler(
+		createHomeHandler(env),
+		new Request('https://example.com/'),
+	)
+	expect(anonymousHomeResponse.status).toBe(200)
+	const anonymousHomeHtml = await readResponseText(anonymousHomeResponse)
+	expect(anonymousHomeHtml).toContain('Copy the discovery prompt')
+	expect(anonymousHomeHtml).toContain('Join the waiting list')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {

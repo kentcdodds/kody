@@ -491,6 +491,9 @@ test('integrations API returns one connection by name for the connect OAuth flow
 		ok: true,
 		builtInAvailable: false,
 		existingConnection: { lane: 'user', appSlug: 'github' },
+		// The mocked secrets list is empty, so the stored `githubClientSecret`
+		// name resolves to "not stored yet".
+		hasStoredClientSecret: false,
 		integration: {
 			name: 'github',
 			appSlug: 'github',
@@ -534,6 +537,7 @@ test('integrations API returns null when a named connection is missing', async (
 		ok: true,
 		builtInAvailable: false,
 		existingConnection: null,
+		hasStoredClientSecret: false,
 		integration: null,
 	})
 })
