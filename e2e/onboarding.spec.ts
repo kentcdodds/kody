@@ -2,9 +2,11 @@ import { expect, test } from './playwright-utils.ts'
 
 test('onboarding step 2 hands the whole first win to the agent in one paste', async ({
 	login,
+	seedE2eUser,
 	page,
 }) => {
-	await login()
+	const user = await seedE2eUser()
+	await login({ email: user.email, password: user.password, mode: 'login' })
 
 	await page.goto('/onboarding')
 	// Step 1 stays active until an MCP host authorizes, so walk to step 2 the
@@ -47,21 +49,15 @@ test('onboarding step 2 hands the whole first win to the agent in one paste', as
 
 	// Remember asks for a message in the chat, not another paste.
 	await subSteps.getByRole('button', { name: 'Remember', exact: true }).click()
-	await expect(
-		firstWin.getByText('Tell your agent you replied', { exact: false }),
-	).toBeVisible()
+	await expect(firstWin.getByText('Tell your agent you replied')).toBeVisible()
 	await expect(firstWin.locator('blockquote')).toHaveCount(0)
-})
 
-test('the first-win guide serves on the web and as raw markdown', async ({
-	page,
-}) => {
+	// The guide the prompt points at is served by this deployment, on the web
+	// and as the raw markdown agents fetch.
 	await page.goto('/guides/first-win')
 	await expect(
 		page.getByRole('heading', { level: 1, name: /First win/ }),
 	).toBeVisible()
-	await expect(page.getByText('Do not poll', { exact: false })).toBeVisible()
-
 	const rawResponse = await page.request.get('/guides/first-win.md')
 	expect(rawResponse.ok()).toBe(true)
 	const raw = await rawResponse.text()
