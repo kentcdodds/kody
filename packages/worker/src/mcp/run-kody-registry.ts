@@ -1158,8 +1158,8 @@ ${runtimeHelperRuntimePropertySource}
 					}
 				}
 			}
-			capturedLogs = result.logs
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
+			capturedLogs = sanitizedResult.logs
 			if (!result.error) {
 				await finishObservedRun({
 					status: 'success',
