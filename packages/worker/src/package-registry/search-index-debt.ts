@@ -66,17 +66,8 @@ export async function markSavedPackageSearchIndexDebt(input: {
 export async function clearSavedPackageSearchIndexDebt(input: {
 	db: D1Database
 	packageId: string
-	generation?: number
+	generation: number
 }) {
-	if (input.generation === undefined) {
-		await input.db
-			.prepare(
-				`DELETE FROM saved_package_search_index_debt WHERE package_id = ?`,
-			)
-			.bind(input.packageId)
-			.run()
-		return
-	}
 	await input.db
 		.prepare(
 			`DELETE FROM saved_package_search_index_debt
@@ -84,6 +75,20 @@ export async function clearSavedPackageSearchIndexDebt(input: {
 		)
 		.bind(input.packageId, input.generation)
 		.run()
+}
+
+/** Read current debt generation, or null when no debt row exists. */
+export async function getSavedPackageSearchIndexDebtGeneration(input: {
+	db: D1Database
+	packageId: string
+}): Promise<number | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT generation FROM saved_package_search_index_debt WHERE package_id = ?`,
+		)
+		.bind(input.packageId)
+		.first<{ generation: number }>()
+	return row?.generation ?? null
 }
 
 async function readSavedPackageSearchIndexDebt(input: {
@@ -176,9 +181,9 @@ function logSavedPackageSearchIndexError(input: {
 async function reconcileSavedPackageSearchIndex(input: {
 	env: Env
 	packageId: string
-	userId: string
 }) {
 	let failureGeneration: number | null = null
+	let failureUserId: string | null = null
 	try {
 		for (;;) {
 			const row = await readSavedPackageSearchIndexDebt({
@@ -187,9 +192,13 @@ async function reconcileSavedPackageSearchIndex(input: {
 			})
 			if (!row) return
 			failureGeneration = row.generation
+			failureUserId = row.userId
+			// Always upsert under the debt row owner — never the scheduling
+			// caller's userId — so a coalesced reconcile cannot write one
+			// user's embed text into another namespace if ownership changed.
 			await upsertSavedPackageVector(input.env, {
 				packageId: input.packageId,
-				userId: input.userId,
+				userId: row.userId,
 				embedText: row.embedText,
 			})
 			const latest = await readSavedPackageSearchIndexDebt({
@@ -233,7 +242,7 @@ async function reconcileSavedPackageSearchIndex(input: {
 		}
 		logSavedPackageSearchIndexError({
 			packageId: input.packageId,
-			userId: input.userId,
+			userId: failureUserId ?? 'unknown',
 			error,
 		})
 	}
@@ -271,7 +280,6 @@ export async function scheduleSavedPackageSearchIndexUpsert(input: {
 	const task = reconcileSavedPackageSearchIndex({
 		env: input.env,
 		packageId: input.packageId,
-		userId: input.userId,
 	}).finally(() => {
 		inFlightReconciles.delete(input.packageId)
 	})

@@ -246,6 +246,65 @@ test('mark and clear debt helpers round-trip', async () => {
 	})
 	expect(generation).toBe(1)
 	expect(rows.get('pkg-3')?.lastError).toBe('pending')
-	await clearSavedPackageSearchIndexDebt({ db, packageId: 'pkg-3' })
+	await clearSavedPackageSearchIndexDebt({
+		db,
+		packageId: 'pkg-3',
+		generation,
+	})
 	expect(rows.has('pkg-3')).toBe(false)
+})
+
+test('reconcile upserts under the debt row owner, not the scheduler userId', async () => {
+	let resolveFirstUpsert: (() => void) | undefined
+	let upsertCalls = 0
+	mockModule.upsertSavedPackageVector.mockReset()
+	mockModule.upsertSavedPackageVector.mockImplementation(async () => {
+		upsertCalls += 1
+		if (upsertCalls === 1) {
+			await new Promise<void>((resolve) => {
+				resolveFirstUpsert = resolve
+			})
+		}
+	})
+	const { db, rows } = createDebtDb()
+	const waitUntilPromises: Array<Promise<unknown>> = []
+	const waitUntil = (promise: Promise<unknown>) => {
+		waitUntilPromises.push(promise)
+	}
+
+	await scheduleSavedPackageSearchIndexUpsert({
+		env: { APP_DB: db } as Env,
+		packageId: 'pkg-owner',
+		userId: 'user-a',
+		embedText: 'from-a',
+		waitUntil,
+	})
+	await scheduleSavedPackageSearchIndexUpsert({
+		env: { APP_DB: db } as Env,
+		packageId: 'pkg-owner',
+		userId: 'user-b',
+		embedText: 'from-b',
+		waitUntil,
+	})
+	expect(rows.get('pkg-owner')).toMatchObject({
+		userId: 'user-b',
+		embedText: 'from-b',
+		generation: 2,
+	})
+
+	resolveFirstUpsert?.()
+	await waitUntilPromises[0]
+	await waitUntilPromises[1]
+
+	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledTimes(2)
+	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		expect.objectContaining({ userId: 'user-a', embedText: 'from-a' }),
+	)
+	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		expect.objectContaining({ userId: 'user-b', embedText: 'from-b' }),
+	)
 })

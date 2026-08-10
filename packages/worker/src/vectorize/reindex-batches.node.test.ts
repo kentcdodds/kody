@@ -108,8 +108,9 @@ test('reindexVectorCandidates keeps uncapped failedIds beyond the failure sample
 		})
 		expect(result.failed).toBe(25)
 		expect(result.failures).toHaveLength(20)
-		expect(result.failedIds).toHaveLength(25)
-		expect(result.failedIds?.[24]).toBe('bad-24')
+		expect(result.failedIds).toEqual(
+			candidates.map((candidate) => candidate.id),
+		)
 	} finally {
 		consoleError.mockRestore()
 	}
