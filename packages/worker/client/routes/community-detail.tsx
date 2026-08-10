@@ -11,6 +11,10 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
+import {
+	ActionButtonLoader,
+	installProgressWords,
+} from '#client/action-button-loader.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -828,6 +832,9 @@ export function CommunityDetailRoute(handle: Handle) {
 											<div mix={css(sectionActionCss)}>
 												<button
 													disabled={installState === 'submitting'}
+													aria-busy={
+														installState === 'submitting' ? 'true' : undefined
+													}
 													mix={[
 														on('click', () => {
 															if (trusted) {
@@ -841,9 +848,14 @@ export function CommunityDetailRoute(handle: Handle) {
 														css(pillButtonCss),
 													]}
 												>
-													{installState === 'submitting'
-														? 'Installing…'
-														: 'Install'}
+													{installState === 'submitting' ? (
+														<ActionButtonLoader
+															label="Installing"
+															words={installProgressWords}
+														/>
+													) : (
+														'Install'
+													)}
 												</button>
 											</div>
 										)

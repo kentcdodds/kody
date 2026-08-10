@@ -4,6 +4,10 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
+import {
+	ActionButtonLoader,
+	installProgressWords,
+} from '#client/action-button-loader.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	colors,
@@ -211,13 +215,21 @@ export function OnboardingStarterCard(
 					<button
 						type="button"
 						disabled={phase === 'installing'}
+						aria-busy={phase === 'installing' ? 'true' : undefined}
 						mix={[
 							css(isRow ? rowInstallButtonCss : installButtonCss),
 							on('click', () => void submitInstall()),
 						]}
 						data-testid={`onboarding-starter-install-${listing.id}`}
 					>
-						{phase === 'installing' ? 'Installing…' : 'Install'}
+						{phase === 'installing' ? (
+							<ActionButtonLoader
+								label="Installing"
+								words={installProgressWords}
+							/>
+						) : (
+							'Install'
+						)}
 					</button>
 				)}
 				{readyStatus ? (
