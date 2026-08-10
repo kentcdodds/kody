@@ -10,7 +10,10 @@ import {
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
-import { createExecuteExecutor } from '#mcp/executor.ts'
+import {
+	createExecuteExecutor,
+	createNamedExecutionError,
+} from '#mcp/executor.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import {
 	getAdditionalPropertiesSchema,
@@ -896,6 +899,7 @@ export async function runBundledModuleWithRegistry(
 		})
 	let runRecordFinished = false
 	let exposeRunId = runRecordHandle?.persistence === 'eager'
+	let capturedLogs: Array<string> | undefined
 	// The metering span covers the whole bundled run (module hydration,
 	// provider assembly, and sandbox execution) so pre-executor failures are
 	// still counted as failed package runs.
@@ -1135,11 +1139,26 @@ ${runtimeHelperRuntimePropertySource}
 			]
 			await reportExecutePhaseProgress(reportProgress, 'sandbox')
 			const sandboxStartedAtMs = Date.now()
-			const result = await executor.execute(wrapped, providers)
-			runServerTiming.push({
-				name: 'sandbox',
-				durationMs: Date.now() - sandboxStartedAtMs,
-			})
+			let result: ExecuteResult
+			try {
+				result = await executor.execute(wrapped, providers)
+			} finally {
+				const sandboxMs = Date.now() - sandboxStartedAtMs
+				runServerTiming.push({
+					name: 'sandbox',
+					durationMs: sandboxMs,
+				})
+				if (runRecordHandle) {
+					runRecordHandle.context = {
+						...runRecordHandle.context,
+						metadata: {
+							...runRecordHandle.context.metadata,
+							sandboxMs,
+						},
+					}
+				}
+			}
+			capturedLogs = result.logs
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
 				await finishObservedRun({
@@ -1170,7 +1189,7 @@ ${runtimeHelperRuntimePropertySource}
 			await finishObservedRun({
 				status: 'error',
 				logs: finalResult.logs ?? [],
-				error: finalResult.error,
+				error: createNamedExecutionError(finalResult.error),
 			})
 			await recordPackageExportUsage('error')
 			return withRunId(finalResult)
@@ -1178,6 +1197,7 @@ ${runtimeHelperRuntimePropertySource}
 			if (!runRecordFinished) {
 				await finishObservedRun({
 					status: 'error',
+					logs: capturedLogs,
 					error,
 				})
 			}
@@ -1187,6 +1207,7 @@ ${runtimeHelperRuntimePropertySource}
 		if (!runRecordFinished) {
 			await finishObservedRun({
 				status: 'error',
+				logs: capturedLogs,
 				error,
 			})
 		}

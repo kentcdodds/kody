@@ -61,11 +61,14 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 		context: { surface: 'job', name: 'daily', jobId: 'job-1' },
 	})
 	expect(errorHandle).not.toBeNull()
+	const timeoutError = new Error('Execution timed out after 2.5s')
+	timeoutError.name = 'TimeoutError'
 	await finishRunRecord({
 		env,
 		handle: errorHandle,
 		status: 'error',
-		error: new Error('boom'),
+		logs: ['started context lookup'],
+		error: timeoutError,
 	})
 	expect(mocks.finishRun).toHaveBeenCalledTimes(1)
 	expect(mocks.dispatchRunErrorSubscriptionEvents).toHaveBeenCalledWith(
@@ -75,11 +78,22 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 				id: errorHandle!.id,
 				status: 'error',
 				surface: 'job',
-				errorName: 'Error',
-				errorMessage: 'boom',
+				errorName: 'TimeoutError',
+				errorMessage: 'Execution timed out after 2.5s',
 			}),
 		}),
 	)
+	expect(mocks.finishRun).toHaveBeenCalledWith({
+		run: expect.objectContaining({
+			errorName: 'TimeoutError',
+		}),
+		logs: [
+			expect.objectContaining({
+				level: 'log',
+				message: 'started context lookup',
+			}),
+		],
+	})
 
 	mocks.dispatchRunErrorSubscriptionEvents.mockClear()
 	const successHandle = beginRunRecord({

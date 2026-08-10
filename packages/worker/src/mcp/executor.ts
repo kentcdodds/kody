@@ -63,6 +63,7 @@ const dynamicWorkerCacheKeyVersion = 3
 // Async-local state shares that budget with nested evaluations while keeping
 // unrelated requests out of the same queue.
 const maxConcurrentDynamicWorkerEvaluationsPerRequest = 4
+const hostEvaluationDrainGraceMs = 100
 const dynamicWorkerCapacityErrorMessages = [
 	'Too many concurrent dynamic workers',
 	'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
@@ -165,6 +166,11 @@ type DynamicWorkerEvaluationContext = {
 	depth: number
 }
 
+class HostEvaluationTimeoutError<T> extends Error {
+	name = 'TimeoutError'
+	evaluationResult?: T
+}
+
 const dynamicWorkerEvaluationGateStorage =
 	new AsyncLocalStorage<DynamicWorkerEvaluationContext>()
 
@@ -262,7 +268,11 @@ export async function raceWithHostEvaluationDeadline<T>(
 		) {
 			timeoutId = setTimeout(
 				() =>
-					abortWith(new Error(createExecutorSandboxTimeoutMessage(timeoutMs))),
+					abortWith(
+						new HostEvaluationTimeoutError<T>(
+							createExecutorSandboxTimeoutMessage(timeoutMs),
+						),
+					),
 				Math.max(1, timeoutMs),
 			)
 		}
@@ -271,8 +281,22 @@ export async function raceWithHostEvaluationDeadline<T>(
 			if (externalSignal.aborted) onExternalAbort()
 		}
 	})
+	const evaluationPromise = Promise.resolve().then(
+		async () => await evaluate(controller.signal),
+	)
 	try {
-		return await Promise.race([evaluate(controller.signal), timeoutPromise])
+		return await Promise.race([evaluationPromise, timeoutPromise])
+	} catch (error) {
+		if (error instanceof HostEvaluationTimeoutError) {
+			const drained = await settleWithin(
+				evaluationPromise,
+				hostEvaluationDrainGraceMs,
+			)
+			if (drained.status === 'fulfilled') {
+				error.evaluationResult = drained.value
+			}
+		}
+		throw error
 	} finally {
 		if (timeoutId !== undefined) {
 			clearTimeout(timeoutId)
@@ -280,6 +304,44 @@ export async function raceWithHostEvaluationDeadline<T>(
 		externalSignal?.removeEventListener('abort', onExternalAbort)
 		rejectDeadline = undefined
 	}
+}
+
+async function settleWithin<T>(
+	promise: Promise<T>,
+	timeoutMs: number,
+): Promise<PromiseSettledResult<T> | { status: 'timed-out' }> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			promise.then(
+				(value): PromiseFulfilledResult<T> => ({
+					status: 'fulfilled',
+					value,
+				}),
+				(reason): PromiseRejectedResult => ({
+					status: 'rejected',
+					reason,
+				}),
+			),
+			new Promise<{ status: 'timed-out' }>((resolve) => {
+				timeoutId = setTimeout(
+					() => resolve({ status: 'timed-out' }),
+					timeoutMs,
+				)
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId)
+	}
+}
+
+export function createNamedExecutionError(error: unknown) {
+	const message = getErrorMessage(error)
+	const namedError = new Error(message)
+	if (isExecutorSandboxTimeoutMessage(message)) {
+		namedError.name = 'TimeoutError'
+	}
+	return namedError
 }
 
 async function runWithDynamicWorkerEvaluationPermit<T>(
@@ -554,10 +616,16 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					const message = getErrorMessage(error)
 					if (isExecutorSandboxTimeoutMessage(message)) {
 						outcome = 'error'
+						const drainedResponse =
+							error instanceof HostEvaluationTimeoutError
+								? (error.evaluationResult as
+										| Awaited<ReturnType<DynamicWorkerEntrypoint['evaluate']>>
+										| undefined)
+								: undefined
 						return {
 							result: undefined,
-							error: message,
-							logs: [],
+							error: drainedResponse?.error ?? message,
+							logs: drainedResponse?.logs ?? [],
 						}
 					}
 					throw error

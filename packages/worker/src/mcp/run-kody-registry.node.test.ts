@@ -2706,13 +2706,19 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 				logs: ['success log'],
 			}),
 		)
+		expect(handle.context.metadata).toEqual(
+			expect.objectContaining({
+				conversationId: 'conv-1',
+				sandboxMs: expect.any(Number),
+			}),
+		)
 		expect(persistedStatuses).toEqual([])
 
 		beginSpy.mockClear()
 		finishSpy.mockClear()
 		executeResult = {
 			result: undefined,
-			error: 'boom',
+			error: mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
 			logs: ['failure log'],
 		}
 		const failure = await runBundledModuleWithRegistry(
@@ -2730,13 +2736,18 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 				},
 			},
 		)
-		expect(failure.error).toBe('boom')
+		expect(failure.error).toBe(
+			mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
+		)
 		expect(finishSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				handle,
 				status: 'error',
 				logs: ['failure log'],
-				error: 'boom',
+				error: expect.objectContaining({
+					name: 'TimeoutError',
+					message: mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
+				}),
 			}),
 		)
 		expect(persistedStatuses).toEqual(['error'])

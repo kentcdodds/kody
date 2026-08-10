@@ -16,6 +16,7 @@ import {
 	createExecuteExecutor,
 	createExecutorModuleSource,
 	createExecutorSandboxTimeoutMessage,
+	createNamedExecutionError,
 	createToolDispatchers,
 	extractRawContent,
 	formatExecutionOutput,
@@ -518,6 +519,43 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 	expect(result.error).toContain('Execution timed out after 40ms:')
 	expect(result.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
+})
+
+test('createExecuteExecutor drains logs from an evaluation that settles just after the host timeout', async () => {
+	const timeoutMessage = createExecutorSandboxTimeoutMessage(20)
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							await new Promise((resolve) => setTimeout(resolve, 40))
+							return {
+								result: undefined,
+								error: timeoutMessage,
+								logs: ['started context lookup'],
+							}
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+
+	const result = await createExecuteExecutor({
+		env: createExecutorTestEnv(loader),
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('drain-user'),
+		timeoutMs: 20,
+	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
+
+	expect(result).toEqual({
+		result: undefined,
+		error: timeoutMessage,
+		logs: ['started context lookup'],
+	})
+	expect(createNamedExecutionError(result.error).name).toBe('TimeoutError')
 })
 
 test('createExecuteExecutor aborts an in-flight abort-aware dispatcher on timeout', async () => {

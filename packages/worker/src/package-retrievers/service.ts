@@ -20,11 +20,12 @@ const defaultSearchLimit = 5
 const defaultContextLimit = 2
 const maxSearchLimit = 20
 const maxContextLimit = 3
-// Retrievers are optional enrichment. Keep budgets short so a slow package
-// cannot dominate search/execute wall time, but leave enough headroom for cold
-// isolate + packageStorage work. Individual failures must not fail the tool.
+// Retrievers are optional enrichment. Keep budgets bounded so a slow package
+// cannot dominate search/execute wall time, while leaving context retrievers
+// enough headroom for cold isolate + packageStorage work. Individual failures
+// must not fail the tool.
 const defaultSearchTimeoutMs = 3_000
-const defaultContextTimeoutMs = 1_000
+const defaultContextTimeoutMs = 2_500
 const maxSearchTimeoutMs = 5_000
 const maxContextTimeoutMs = 3_000
 const maxResultSummaryLength = 1_000

@@ -107,11 +107,13 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 		packageId: 'pkg-healthy',
 		kodyId: 'healthy-pkg',
 		retrieverKey: 'notes',
+		scopes: ['context'],
 	})
 	const stalled = createRetrieverEntry({
 		packageId: 'pkg-stalled',
 		kodyId: 'stalled-pkg',
 		retrieverKey: 'inbox',
+		scopes: ['context'],
 	})
 	mockFns.listPackageRetrieversForScope.mockResolvedValue([healthy, stalled])
 	mockFns.getSavedPackageById.mockImplementation(
@@ -169,7 +171,7 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env,
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
-		scope: 'search',
+		scope: 'context',
 		query: 'notes',
 	})
 
@@ -185,4 +187,12 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 	expect(run.warnings[0]).toMatch(/stalled-pkg\/inbox/)
 	expect(run.warnings[0]).toMatch(/timed out/i)
 	expect(consoleError).toHaveBeenCalledTimes(1)
+	expect(mockFns.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+	for (const call of mockFns.runBundledModuleWithRegistry.mock.calls) {
+		expect(call[4]).toEqual(
+			expect.objectContaining({
+				executorTimeoutMs: 2_500,
+			}),
+		)
+	}
 })
