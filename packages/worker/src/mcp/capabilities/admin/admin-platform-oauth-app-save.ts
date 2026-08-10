@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
+	canonicalIntegrationName,
 	integrationFlowValues,
 	tokenExchangeStyleValues,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
@@ -114,19 +115,27 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 				ctx,
 				'admin_platform_oauth_app_save',
 				async () => {
+					// A changed slug renames in place first (carrying the
+					// write-only secret, logo, and user connections), then the
+					// upsert applies the rest of the edit to it. Case-only
+					// changes canonicalize equal and are not renames.
+					const renameTo =
+						args.newSlug &&
+						canonicalIntegrationName(args.newSlug) !==
+							canonicalIntegrationName(args.slug)
+							? args.newSlug
+							: null
+					let renamedSlug: string | null = null
 					try {
-						// A changed slug renames in place first (carrying the
-						// write-only secret, logo, and user connections), then
-						// the upsert applies the rest of the edit to it.
-						let targetSlug = args.slug
-						if (args.newSlug && args.newSlug !== args.slug) {
+						if (renameTo) {
 							const renamed = await renamePlatformOauthApp({
 								db: ctx.env.APP_DB,
 								slug: args.slug,
-								newSlug: args.newSlug,
+								newSlug: renameTo,
 							})
-							targetSlug = renamed.slug
+							renamedSlug = renamed.slug
 						}
+						const targetSlug = renamedSlug ?? args.slug
 						// Omitted optional fields stay `undefined` so the upsert's
 						// retain-on-omit semantics apply: a partial save never
 						// silently clears the scope menu, hosts, or stored secret.
@@ -167,6 +176,16 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 						}
 						return { app: toPlatformOauthAppPublic(app) }
 					} catch (error) {
+						// The rename committed before the failing step; undo it
+						// (best effort) so a rejected edit never leaves the row
+						// under a half-applied slug.
+						if (renamedSlug) {
+							await renamePlatformOauthApp({
+								db: ctx.env.APP_DB,
+								slug: renamedSlug,
+								newSlug: args.slug,
+							}).catch(() => {})
+						}
 						// Staging/enable mistakes (secretless confidential while
 						// enabled, empty required fields) are caller-clearable —
 						// keep them off Sentry via McpCallerError.

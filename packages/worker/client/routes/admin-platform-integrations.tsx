@@ -1,4 +1,5 @@
 import { formatTimestampDate } from '#client/format-timestamp.ts'
+import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -324,12 +325,18 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		const isEditing = !selection.isCreating && selection.selectedId != null
 		// When editing, the URL selection is the row identity; an edited slug
 		// input becomes a rename-in-place (newSlug) rather than a new row.
+		// Compare canonicalized (the server does): a case-only edit is not a
+		// rename.
 		const inputSlug = String(formData.get('slug') ?? '').trim()
 		const slug = (
 			isEditing && selection.selectedId ? selection.selectedId : inputSlug
 		).trim()
 		const newSlug =
-			isEditing && inputSlug && inputSlug !== slug ? inputSlug : null
+			isEditing &&
+			inputSlug &&
+			normalizeProviderKey(inputSlug) !== normalizeProviderKey(slug)
+				? inputSlug
+				: null
 		const clientId = String(formData.get('clientId') ?? '').trim()
 		const tokenUrl = String(formData.get('tokenUrl') ?? '').trim()
 		const authorizeUrl = String(formData.get('authorizeUrl') ?? '').trim()

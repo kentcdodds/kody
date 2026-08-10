@@ -1,5 +1,6 @@
 import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { type Action } from 'remix/router'
+import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { loadAdminPlatformIntegrationsData } from '#app/admin-platform-integrations-data.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
@@ -115,20 +116,27 @@ async function handleSaveAction(input: {
 		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
 	}
 
+	// A changed slug renames in place first — carrying the write-only client
+	// secret, logo, and user connections — then the normal upsert applies the
+	// rest of the edit against the new slug. Case-only edits canonicalize to
+	// the same slug and are not renames.
+	const newSlug = readOptionalString(record, 'newSlug')
+	const renameTo =
+		newSlug &&
+		canonicalIntegrationName(newSlug) !== canonicalIntegrationName(slug)
+			? newSlug
+			: null
+	let renamedSlug: string | null = null
 	try {
-		// A changed slug renames in place first — carrying the write-only
-		// client secret, logo, and user connections — then the normal upsert
-		// applies the rest of the edit against the new slug.
-		const newSlug = readOptionalString(record, 'newSlug')
-		let targetSlug = slug
-		if (newSlug && newSlug !== slug) {
+		if (renameTo) {
 			const renamed = await renamePlatformOauthApp({
 				db: input.env.APP_DB,
 				slug,
-				newSlug,
+				newSlug: renameTo,
 			})
-			targetSlug = renamed.slug
+			renamedSlug = renamed.slug
 		}
+		const targetSlug = renamedSlug ?? slug
 		const app = await upsertPlatformOauthApp({
 			db: input.env.APP_DB,
 			env: input.env,
@@ -169,6 +177,15 @@ async function handleSaveAction(input: {
 			})
 		}
 	} catch (error) {
+		// The rename committed before the failing step; undo it (best effort)
+		// so a rejected edit never leaves the row under a half-applied slug.
+		if (renamedSlug) {
+			await renamePlatformOauthApp({
+				db: input.env.APP_DB,
+				slug: renamedSlug,
+				newSlug: slug,
+			}).catch(() => {})
+		}
 		return jsonResponse(
 			{
 				ok: false,

@@ -205,6 +205,54 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 		ok: false,
 		error: expect.stringContaining('already exists'),
 	})
+
+	// A case-only slug edit is not a rename: the save applies normally.
+	const caseOnly = await invoke({
+		action: 'save',
+		slug: 'github-platform',
+		newSlug: 'GitHub-Platform',
+		clientId: saveGithubBody.clientId,
+		tokenUrl: saveGithubBody.tokenUrl,
+		authorizeUrl: saveGithubBody.authorizeUrl,
+		flow: 'confidential',
+		label: 'GitHub (case-only edit)',
+	})
+	expect(caseOnly.status).toBe(200)
+	const caseOnlyPayload = await caseOnly.json()
+	expect(
+		caseOnlyPayload.apps.find(
+			(app: { slug: string }) => app.slug === 'github-platform',
+		)?.label,
+	).toBe('GitHub (case-only edit)')
+
+	// When the post-rename upsert rejects, the rename rolls back so the row
+	// never sticks under a half-applied slug.
+	const failedEdit = await invoke({
+		action: 'save',
+		slug: 'github-platform',
+		newSlug: 'github-hosted',
+		clientId: saveGithubBody.clientId,
+		tokenUrl: saveGithubBody.tokenUrl,
+		authorizeUrl: saveGithubBody.authorizeUrl,
+		flow: 'confidential',
+		// Explicit null clears the stored secret while enabled → rejected.
+		clientSecret: null,
+		enabled: true,
+	})
+	expect(failedEdit.status).toBe(400)
+	const after = await invoke({
+		action: 'save',
+		slug: 'github-platform',
+		clientId: saveGithubBody.clientId,
+		tokenUrl: saveGithubBody.tokenUrl,
+		authorizeUrl: saveGithubBody.authorizeUrl,
+		flow: 'confidential',
+	})
+	const slugs = (await after.json()).apps.map(
+		(app: { slug: string }) => app.slug,
+	)
+	expect(slugs).toContain('github-platform')
+	expect(slugs).not.toContain('github-hosted')
 })
 
 test('non-admin callers are rejected', async () => {
