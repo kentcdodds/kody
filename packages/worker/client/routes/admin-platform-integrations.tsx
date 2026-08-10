@@ -1,13 +1,17 @@
-import { formatNullableTimestamp } from '#client/format-timestamp.ts'
+import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { replaceLocation } from '#client/replace-location.ts'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
-	cardCss,
+	cardTitleCss,
+	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
 	getDangerPillCss,
@@ -17,14 +21,19 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
-	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
-	MetadataGrid,
 	accountInputCss,
 	accountTextareaCss,
-	verifiedPillCss,
 } from './account-management-components.tsx'
+import {
+	RecordDot,
+	RecordTable,
+	RecordTableSearch,
+	recordBodyCss,
+	recordCellClamp,
+	recordStampCss,
+} from './record-table.tsx'
 import {
 	type AdminPlatformIntegrationApp,
 	type AdminPlatformIntegrationsLoaderData,
@@ -36,17 +45,36 @@ import {
 } from '#client/route-loader.ts'
 
 const selectCss = getSelectCss()
+const clampedCellCss = css(recordCellClamp(28))
+
+const adminPlatformIntegrationsApiPath = '/admin/platform-integrations.json'
+const platformIntegrationsRoute = createListDetailRoute(
+	'/admin/platform-integrations',
+)
+const createRecordId = '__new__'
 
 type PageStatus = 'loading' | 'ready' | 'error'
 type ActionState = 'idle' | 'saving-form' | 'toggling-enabled' | 'deleting'
 type TokenExchangeStyleOption = 'default' | 'form' | 'basic-json' | 'basic-form'
 
-const adminPlatformIntegrationsApiPath = '/admin/platform-integrations.json'
-
 function isAdminPlatformIntegrationsPath(href: string) {
-	return (
-		new URL(href, 'http://localhost').pathname ===
-		'/admin/platform-integrations'
+	return platformIntegrationsRoute.isRoutePath(href)
+}
+
+function readSearchFilter(href: string) {
+	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
+}
+
+function buildHrefWithUpdatedSearch(href: string, search: string) {
+	const nextUrl = new URL(href, 'http://localhost')
+	if (search) nextUrl.searchParams.set('q', search)
+	else nextUrl.searchParams.delete('q')
+	return `${nextUrl.pathname}${nextUrl.search}`
+}
+
+function filterApps(apps: Array<AdminPlatformIntegrationApp>, search: string) {
+	return apps.filter((app) =>
+		matchesSearchQuery(search, [app.slug, app.provider, app.label]),
 	)
 }
 
@@ -90,16 +118,6 @@ function formatTokenExchangeStyle(
 	return 'default'
 }
 
-function enabledPillCss(enabled: boolean) {
-	return enabled
-		? verifiedPillCss
-		: {
-				...verifiedPillCss,
-				color: colors.textMuted,
-				backgroundColor: colors.border,
-			}
-}
-
 export async function adminPlatformIntegrationsRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
@@ -128,15 +146,18 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let actionState: ActionState = 'idle'
-	/** Slug of the card an action is running against, for per-card labels. */
+	/** Slug of the row an action is running against, for per-row labels. */
 	let pendingSlug: string | null = null
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
 	let loadRequestId = 0
-	let editingApp: AdminPlatformIntegrationApp | null = null
 	let pendingLogoBase64: string | undefined = undefined
 	let removeLogoChecked = false
+
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
+	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	function applyData(payload: AdminPlatformIntegrationsLoaderData) {
 		apps = payload.apps
@@ -146,9 +167,14 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 	}
 
 	function resetFormState() {
-		editingApp = null
 		pendingLogoBase64 = undefined
 		removeLogoChecked = false
+	}
+
+	function resetSelectionState() {
+		resetFormState()
+		message = null
+		messageTone = 'info'
 	}
 
 	async function loadPlatformIntegrations() {
@@ -276,9 +302,17 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const form = event.currentTarget
 		const formData = new FormData(form)
+		const selection = platformIntegrationsRoute.getSelection(
+			readCurrentRouterHref(handle),
+		)
+		const isEditing = !selection.isCreating && selection.selectedId != null
 		// FormData excludes disabled controls, so the locked slug input must
-		// come from the editing state when editing.
-		const slug = (editingApp?.slug ?? String(formData.get('slug') ?? '')).trim()
+		// come from the URL selection when editing.
+		const slug = (
+			isEditing && selection.selectedId
+				? selection.selectedId
+				: String(formData.get('slug') ?? '')
+		).trim()
 		const clientId = String(formData.get('clientId') ?? '').trim()
 		const tokenUrl = String(formData.get('tokenUrl') ?? '').trim()
 		const authorizeUrl = String(formData.get('authorizeUrl') ?? '').trim()
@@ -341,7 +375,6 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			body.logoBase64 = pendingLogoBase64
 		}
 
-		const isEditing = editingApp !== null
 		void submitAdminAction(
 			body,
 			'saving-form',
@@ -352,6 +385,11 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			if (!ok) return
 			form.reset()
 			resetFormState()
+			if (isEditing) {
+				handle.update()
+				return
+			}
+			replaceLocation(platformIntegrationsRoute.buildDetailHref(slug))
 			handle.update()
 		})
 	}
@@ -382,23 +420,425 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			`Deleted platform integration ${app.slug}.`,
 		).then((ok) => {
 			if (!ok) return
-			if (editingApp?.slug === app.slug) {
-				resetFormState()
-				handle.update()
+			const selection = platformIntegrationsRoute.getSelection(
+				readCurrentRouterHref(handle),
+			)
+			resetFormState()
+			if (selection.selectedId === app.slug || selection.isCreating) {
+				replaceLocation(platformIntegrationsRoute.buildListHref())
 			}
+			handle.update()
 		})
 	}
 
-	function handleEdit(app: AdminPlatformIntegrationApp) {
-		editingApp = app
-		pendingLogoBase64 = undefined
-		removeLogoChecked = false
+	function cancelEditor() {
+		resetSelectionState()
+		replaceLocation(platformIntegrationsRoute.buildListHref())
 		handle.update()
 	}
 
-	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
-	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
+	function startCreateIntegration() {
+		if (actionState !== 'idle') return
+		resetSelectionState()
+		replaceLocation(platformIntegrationsRoute.buildNewHref())
+		handle.update()
+	}
+
+	function renderIntegrationForm(
+		editingApp: AdminPlatformIntegrationApp | null,
+	) {
+		const isEditing = editingApp != null
+		const formKey =
+			isEditing && editingApp ? `edit-${editingApp.slug}` : 'create'
+
+		return (
+			<form
+				key={formKey}
+				method="post"
+				noValidate
+				mix={[on('submit', handleSaveFormSubmit), css(recordBodyCss)]}
+			>
+				<div
+					mix={css({
+						display: 'flex',
+						justifyContent: 'space-between',
+						gap: spacing.md,
+						flexWrap: 'wrap',
+						alignItems: 'flex-start',
+					})}
+				>
+					<div mix={css({ display: 'grid', gap: spacing.xs, minWidth: 0 })}>
+						<h2 mix={css(cardTitleCss)}>
+							{isEditing ? 'Edit integration' : 'Create integration'}
+						</h2>
+						<p mix={css(descriptionCss)}>
+							Save creates or updates a platform OAuth app. Omitted write-only
+							fields retain stored values.
+						</p>
+					</div>
+					{isEditing && editingApp ? (
+						<div
+							mix={css({
+								display: 'flex',
+								flexWrap: 'wrap',
+								gap: spacing.sm,
+							})}
+						>
+							<button
+								type="button"
+								disabled={actionState !== 'idle'}
+								mix={[
+									on('click', () => handleToggleEnabled(editingApp)),
+									css(secondaryButtonCss),
+								]}
+							>
+								{actionState === 'toggling-enabled' &&
+								pendingSlug === editingApp.slug
+									? 'Saving…'
+									: editingApp.enabled
+										? 'Disable'
+										: 'Enable'}
+							</button>
+							<button
+								type="button"
+								disabled={actionState !== 'idle'}
+								mix={[
+									on('click', () => handleDelete(editingApp)),
+									css(dangerButtonCss),
+								]}
+							>
+								{actionState === 'deleting' && pendingSlug === editingApp.slug
+									? 'Deleting…'
+									: 'Delete'}
+							</button>
+						</div>
+					) : null}
+				</div>
+
+				<div mix={css({ display: 'grid', gap: spacing.md })}>
+					<div
+						mix={css({
+							display: 'grid',
+							gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+							gap: spacing.md,
+							[mq.mobile]: {
+								gridTemplateColumns: 'minmax(0, 1fr)',
+							},
+						})}
+					>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Slug</span>
+							<input
+								data-field-ring
+								name="slug"
+								type="text"
+								required
+								disabled={actionState !== 'idle' || isEditing}
+								defaultValue={editingApp?.slug ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Provider</span>
+							<input
+								data-field-ring
+								name="provider"
+								type="text"
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.provider ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Label</span>
+							<input
+								data-field-ring
+								name="label"
+								type="text"
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.label ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Client id</span>
+							<input
+								data-field-ring
+								name="clientId"
+								type="text"
+								required
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.clientId ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Client secret</span>
+							<input
+								data-field-ring
+								name="clientSecret"
+								type="password"
+								autoComplete="new-password"
+								placeholder="unchanged when empty"
+								disabled={actionState !== 'idle'}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Flow</span>
+							<select
+								data-field-ring
+								name="flow"
+								required
+								disabled={actionState !== 'idle'}
+								mix={css(selectCss)}
+							>
+								{/* Explicit per-option selection: this renderer applies
+								    defaultValue as an attribute, which selects ignore. */}
+								<option
+									value="pkce"
+									selected={(editingApp?.flow ?? 'pkce') === 'pkce'}
+								>
+									pkce
+								</option>
+								<option
+									value="confidential"
+									selected={editingApp?.flow === 'confidential'}
+								>
+									confidential
+								</option>
+							</select>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Token exchange style</span>
+							<select
+								data-field-ring
+								name="tokenExchangeStyle"
+								disabled={actionState !== 'idle'}
+								mix={css(selectCss)}
+							>
+								{(['default', 'form', 'basic-json', 'basic-form'] as const).map(
+									(style) => (
+										<option
+											key={style}
+											value={style}
+											selected={
+												formatTokenExchangeStyle(
+													editingApp?.tokenExchangeStyle ?? null,
+												) === style
+											}
+										>
+											{style}
+										</option>
+									),
+								)}
+							</select>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Scope separator</span>
+							<input
+								data-field-ring
+								name="scopeSeparator"
+								type="text"
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.scopeSeparator ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Token URL</span>
+							<input
+								data-field-ring
+								name="tokenUrl"
+								type="url"
+								required
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.tokenUrl ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Authorize URL</span>
+							<input
+								data-field-ring
+								name="authorizeUrl"
+								type="url"
+								required
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.authorizeUrl ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>API base URL</span>
+							<input
+								data-field-ring
+								name="apiBaseUrl"
+								type="url"
+								disabled={actionState !== 'idle'}
+								defaultValue={editingApp?.apiBaseUrl ?? ''}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+					</div>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Allowed scopes</span>
+						<input
+							data-field-ring
+							name="allowedScopes"
+							type="text"
+							disabled={actionState !== 'idle'}
+							placeholder="Comma or whitespace separated"
+							defaultValue={joinList(editingApp?.allowedScopes ?? [])}
+							mix={css(accountInputCss)}
+						/>
+					</label>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Default scopes</span>
+						<input
+							data-field-ring
+							name="defaultScopes"
+							type="text"
+							disabled={actionState !== 'idle'}
+							placeholder="Comma or whitespace separated"
+							defaultValue={joinList(editingApp?.defaultScopes ?? [])}
+							mix={css(accountInputCss)}
+						/>
+					</label>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Required hosts</span>
+						<input
+							data-field-ring
+							name="requiredHosts"
+							type="text"
+							disabled={actionState !== 'idle'}
+							placeholder="Comma or whitespace separated"
+							defaultValue={joinList(editingApp?.requiredHosts ?? [])}
+							mix={css(accountInputCss)}
+						/>
+					</label>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Extra authorize params</span>
+						<textarea
+							data-field-ring
+							name="extraAuthorizeParams"
+							disabled={actionState !== 'idle'}
+							placeholder="key=value (one per line)"
+							defaultValue={formatExtraAuthorizeParams(
+								editingApp?.extraAuthorizeParams ?? {},
+							)}
+							mix={css(accountTextareaCss)}
+						/>
+					</label>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Logo</span>
+						<input
+							data-field-ring
+							name="logo"
+							type="file"
+							accept="image/svg+xml,image/png,image/jpeg,image/webp"
+							disabled={actionState !== 'idle'}
+							mix={[on('change', handleLogoFileChange), css(accountInputCss)]}
+						/>
+					</label>
+					{isEditing && editingApp?.logoPath ? (
+						<label
+							mix={css({
+								...fieldCss,
+								display: 'flex',
+								flexDirection: 'row',
+								alignItems: 'center',
+								gap: spacing.sm,
+							})}
+						>
+							<input
+								name="removeLogo"
+								type="checkbox"
+								checked={removeLogoChecked}
+								disabled={actionState !== 'idle'}
+								mix={[
+									css({
+										width: '1.25rem',
+										height: '1.25rem',
+										accentColor: colors.primary,
+									}),
+									on('change', (event) => {
+										const input = event.currentTarget
+										if (!(input instanceof HTMLInputElement)) return
+										removeLogoChecked = input.checked
+										if (removeLogoChecked) {
+											pendingLogoBase64 = undefined
+										}
+										handle.update()
+									}),
+								]}
+							/>
+							<span mix={css(fieldLabelCss)}>Remove logo</span>
+						</label>
+					) : null}
+					<label
+						mix={css({
+							...fieldCss,
+							display: 'flex',
+							flexDirection: 'row',
+							alignItems: 'center',
+							gap: spacing.sm,
+						})}
+					>
+						<input
+							name="enabled"
+							type="checkbox"
+							defaultChecked={editingApp?.enabled ?? true}
+							disabled={actionState !== 'idle'}
+							mix={css({
+								width: '1.25rem',
+								height: '1.25rem',
+								accentColor: colors.primary,
+							})}
+						/>
+						<span mix={css(fieldLabelCss)}>Enabled</span>
+					</label>
+					<div
+						mix={css({
+							display: 'flex',
+							flexWrap: 'wrap',
+							gap: spacing.sm,
+							alignItems: 'center',
+						})}
+					>
+						<button
+							type="submit"
+							disabled={actionState !== 'idle'}
+							mix={css(primaryButtonCss)}
+						>
+							{actionState === 'saving-form'
+								? 'Saving…'
+								: isEditing
+									? 'Save changes'
+									: 'Create integration'}
+						</button>
+						{isEditing ? (
+							<button
+								type="button"
+								disabled={actionState !== 'idle'}
+								mix={[on('click', cancelEditor), css(secondaryButtonCss)]}
+							>
+								Cancel edit
+							</button>
+						) : (
+							<button
+								type="button"
+								disabled={actionState !== 'idle'}
+								mix={[on('click', cancelEditor), css(secondaryButtonCss)]}
+							>
+								Cancel
+							</button>
+						)}
+					</div>
+				</div>
+			</form>
+		)
+	}
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -427,10 +867,23 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			loadingForHref = currentHref
 			handle.queueTask(loadPlatformIntegrations)
 		}
+
+		const selection = platformIntegrationsRoute.getSelection(currentHref)
+		const search = readSearchFilter(currentHref)
+		const filteredApps = filterApps(apps, search)
+		const editingApp = selection.isCreating
+			? null
+			: (apps.find((app) => app.slug === selection.selectedId) ?? null)
 		const isMutating = actionState !== 'idle'
-		const isEditing = editingApp !== null
-		const formKey =
-			isEditing && editingApp ? `edit-${editingApp.slug}` : 'create'
+		const showEditor = selection.isCreating || editingApp != null
+		const showNotFound =
+			selection.selectedId != null &&
+			!selection.isCreating &&
+			editingApp == null &&
+			status === 'ready'
+		const tableSelectedId = selection.isCreating
+			? createRecordId
+			: selection.selectedId
 
 		return (
 			<AccountManagementShell>
@@ -449,511 +902,105 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				<div mix={css({ display: 'grid', gap: spacing.lg })}>
-					{apps.map((app) => (
-						<section
-							key={`${app.slug}:${app.updatedAt}:${app.connectionCount}`}
-							mix={css(cardCss)}
-						>
-							<div
-								mix={css({
-									display: 'flex',
-									justifyContent: 'space-between',
-									gap: spacing.md,
-									flexWrap: 'wrap',
-									alignItems: 'flex-start',
-									marginBottom: spacing.md,
-								})}
-							>
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.md,
-										alignItems: 'flex-start',
-										minWidth: 0,
-									})}
-								>
-									{app.logoPath ? (
-										<img
-											src={app.logoPath}
-											alt=""
-											width={32}
-											height={32}
-											mix={css({
-												width: '32px',
-												height: '32px',
-												borderRadius: '0.5rem',
-												objectFit: 'contain',
-												flexShrink: 0,
-											})}
-										/>
-									) : (
-										<div
-											aria-hidden="true"
-											mix={css({
-												width: '32px',
-												height: '32px',
-												borderRadius: '0.5rem',
-												background: colors.border,
-												flexShrink: 0,
-											})}
-										/>
-									)}
-									<div mix={css({ minWidth: 0 })}>
-										<div
-											mix={css({
-												display: 'flex',
-												flexWrap: 'wrap',
-												gap: spacing.sm,
-												alignItems: 'center',
-											})}
-										>
-											<h2
-												mix={css({
-													fontSize: typography.fontSize.lg,
-													fontWeight: typography.fontWeight.semibold,
-													margin: 0,
-												})}
-											>
-												<code mix={css({ fontSize: typography.fontSize.base })}>
-													{app.slug}
-												</code>
-											</h2>
-											<span mix={css(enabledPillCss(app.enabled))}>
-												{app.enabled ? 'Enabled' : 'Disabled'}
-											</span>
-										</div>
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											{app.provider}
-											{app.label ? ` · ${app.label}` : ''} ·{' '}
-											{app.connectionCount} connection
-											{app.connectionCount === 1 ? '' : 's'}
-										</p>
-									</div>
-								</div>
-								<div
-									mix={css({
-										display: 'flex',
-										flexWrap: 'wrap',
-										gap: spacing.sm,
-									})}
-								>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => handleToggleEnabled(app)),
-											css(secondaryButtonCss),
-										]}
-									>
-										{actionState === 'toggling-enabled' &&
-										pendingSlug === app.slug
-											? 'Saving…'
-											: app.enabled
-												? 'Disable'
-												: 'Enable'}
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => handleEdit(app)),
-											css(secondaryButtonCss),
-										]}
-									>
-										Edit
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => handleDelete(app)),
-											css(dangerButtonCss),
-										]}
-									>
-										{actionState === 'deleting' && pendingSlug === app.slug
-											? 'Deleting…'
-											: 'Delete'}
-									</button>
-								</div>
-							</div>
-							<MetadataGrid
-								items={[
-									{
-										label: 'Client id',
-										value: app.clientId,
-									},
-									{
-										label: 'Client secret',
-										value: app.hasClientSecret ? 'secret stored' : 'no secret',
-									},
-									{
-										label: 'Flow',
-										value: app.flow,
-									},
-									{
-										label: 'Token exchange',
-										value: app.tokenExchangeStyle ?? 'default',
-									},
-									{
-										label: 'Token URL',
-										value: app.tokenUrl,
-									},
-									{
-										label: 'Authorize URL',
-										value: app.authorizeUrl,
-									},
-									{
-										label: 'API base URL',
-										value: app.apiBaseUrl ?? 'None',
-									},
-									{
-										label: 'Allowed scopes',
-										value: joinList(app.allowedScopes) || 'None',
-									},
-									{
-										label: 'Default scopes',
-										value: joinList(app.defaultScopes) || 'None',
-									},
-									{
-										label: 'Required hosts',
-										value: joinList(app.requiredHosts) || 'None',
-									},
-									{
-										label: 'Updated',
-										value: formatNullableTimestamp(app.updatedAt),
-									},
-								]}
-							/>
-						</section>
-					))}
-				</div>
-				<AccountManagementPanel
-					title={isEditing ? 'Edit integration' : 'Create integration'}
-					description="Save creates or updates a platform OAuth app. Omitted write-only fields retain stored values."
-					asForm
-					onSubmit={handleSaveFormSubmit}
-				>
-					<div key={formKey} mix={css({ display: 'grid', gap: spacing.md })}>
-						<div
-							mix={css({
-								display: 'grid',
-								gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-								gap: spacing.md,
-								[mq.mobile]: {
-									gridTemplateColumns: 'minmax(0, 1fr)',
-								},
-							})}
-						>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Slug</span>
-								<input
-									data-field-ring
-									name="slug"
-									type="text"
-									required
-									disabled={isMutating || isEditing}
-									defaultValue={editingApp?.slug ?? ''}
-									mix={css(accountInputCss)}
+				{status === 'ready' ? (
+					<RecordTable
+						mode="expand"
+						ariaLabel="Platform integrations"
+						selectedId={tableSelectedId}
+						onNavigate={() => {
+							resetSelectionState()
+						}}
+						countLabel={`${filteredApps.length} of ${apps.length} integrations`}
+						emptyLabel={
+							apps.length === 0
+								? 'No platform integrations yet. Create one to get started.'
+								: 'No integrations match the current search.'
+						}
+						toolbar={
+							<>
+								<RecordTableSearch
+									label="Search integrations"
+									placeholder="Search slug, provider, or label"
+									value={search}
+									onInput={(value) => {
+										replaceLocation(
+											buildHrefWithUpdatedSearch(currentHref, value),
+										)
+									}}
 								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Provider</span>
-								<input
-									data-field-ring
-									name="provider"
-									type="text"
-									disabled={isMutating}
-									defaultValue={editingApp?.provider ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Label</span>
-								<input
-									data-field-ring
-									name="label"
-									type="text"
-									disabled={isMutating}
-									defaultValue={editingApp?.label ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Client id</span>
-								<input
-									data-field-ring
-									name="clientId"
-									type="text"
-									required
-									disabled={isMutating}
-									defaultValue={editingApp?.clientId ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Client secret</span>
-								<input
-									data-field-ring
-									name="clientSecret"
-									type="password"
-									autoComplete="new-password"
-									placeholder="unchanged when empty"
-									disabled={isMutating}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Flow</span>
-								<select
-									data-field-ring
-									name="flow"
-									required
-									disabled={isMutating}
-									mix={css(selectCss)}
-								>
-									{/* Explicit per-option selection: this renderer applies
-									    defaultValue as an attribute, which selects ignore. */}
-									<option
-										value="pkce"
-										selected={(editingApp?.flow ?? 'pkce') === 'pkce'}
-									>
-										pkce
-									</option>
-									<option
-										value="confidential"
-										selected={editingApp?.flow === 'confidential'}
-									>
-										confidential
-									</option>
-								</select>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Token exchange style</span>
-								<select
-									data-field-ring
-									name="tokenExchangeStyle"
-									disabled={isMutating}
-									mix={css(selectCss)}
-								>
-									{(
-										['default', 'form', 'basic-json', 'basic-form'] as const
-									).map((style) => (
-										<option
-											key={style}
-											value={style}
-											selected={
-												formatTokenExchangeStyle(
-													editingApp?.tokenExchangeStyle ?? null,
-												) === style
-											}
-										>
-											{style}
-										</option>
-									))}
-								</select>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Scope separator</span>
-								<input
-									data-field-ring
-									name="scopeSeparator"
-									type="text"
-									disabled={isMutating}
-									defaultValue={editingApp?.scopeSeparator ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Token URL</span>
-								<input
-									data-field-ring
-									name="tokenUrl"
-									type="url"
-									required
-									disabled={isMutating}
-									defaultValue={editingApp?.tokenUrl ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Authorize URL</span>
-								<input
-									data-field-ring
-									name="authorizeUrl"
-									type="url"
-									required
-									disabled={isMutating}
-									defaultValue={editingApp?.authorizeUrl ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>API base URL</span>
-								<input
-									data-field-ring
-									name="apiBaseUrl"
-									type="url"
-									disabled={isMutating}
-									defaultValue={editingApp?.apiBaseUrl ?? ''}
-									mix={css(accountInputCss)}
-								/>
-							</label>
-						</div>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Allowed scopes</span>
-							<input
-								data-field-ring
-								name="allowedScopes"
-								type="text"
-								disabled={isMutating}
-								placeholder="Comma or whitespace separated"
-								defaultValue={joinList(editingApp?.allowedScopes ?? [])}
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Default scopes</span>
-							<input
-								data-field-ring
-								name="defaultScopes"
-								type="text"
-								disabled={isMutating}
-								placeholder="Comma or whitespace separated"
-								defaultValue={joinList(editingApp?.defaultScopes ?? [])}
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Required hosts</span>
-							<input
-								data-field-ring
-								name="requiredHosts"
-								type="text"
-								disabled={isMutating}
-								placeholder="Comma or whitespace separated"
-								defaultValue={joinList(editingApp?.requiredHosts ?? [])}
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Extra authorize params</span>
-							<textarea
-								data-field-ring
-								name="extraAuthorizeParams"
-								disabled={isMutating}
-								placeholder="key=value (one per line)"
-								defaultValue={formatExtraAuthorizeParams(
-									editingApp?.extraAuthorizeParams ?? {},
-								)}
-								mix={css(accountTextareaCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Logo</span>
-							<input
-								data-field-ring
-								name="logo"
-								type="file"
-								accept="image/svg+xml,image/png,image/jpeg,image/webp"
-								disabled={isMutating}
-								mix={[on('change', handleLogoFileChange), css(accountInputCss)]}
-							/>
-						</label>
-						{isEditing && editingApp?.logoPath ? (
-							<label
-								mix={css({
-									...fieldCss,
-									display: 'flex',
-									flexDirection: 'row',
-									alignItems: 'center',
-									gap: spacing.sm,
-								})}
-							>
-								<input
-									name="removeLogo"
-									type="checkbox"
-									checked={removeLogoChecked}
-									disabled={isMutating}
-									mix={[
-										css({
-											width: '1.25rem',
-											height: '1.25rem',
-											accentColor: colors.primary,
-										}),
-										on('change', (event) => {
-											const input = event.currentTarget
-											if (!(input instanceof HTMLInputElement)) return
-											removeLogoChecked = input.checked
-											if (removeLogoChecked) {
-												pendingLogoBase64 = undefined
-											}
-											handle.update()
-										}),
-									]}
-								/>
-								<span mix={css(fieldLabelCss)}>Remove logo</span>
-							</label>
-						) : null}
-						<label
-							mix={css({
-								...fieldCss,
-								display: 'flex',
-								flexDirection: 'row',
-								alignItems: 'center',
-								gap: spacing.sm,
-							})}
-						>
-							<input
-								name="enabled"
-								type="checkbox"
-								defaultChecked={editingApp?.enabled ?? true}
-								disabled={isMutating}
-								mix={css({
-									width: '1.25rem',
-									height: '1.25rem',
-									accentColor: colors.primary,
-								})}
-							/>
-							<span mix={css(fieldLabelCss)}>Enabled</span>
-						</label>
-						<div
-							mix={css({
-								display: 'flex',
-								flexWrap: 'wrap',
-								gap: spacing.sm,
-								alignItems: 'center',
-							})}
-						>
-							<button
-								type="submit"
-								disabled={isMutating}
-								mix={css(primaryButtonCss)}
-							>
-								{actionState === 'saving-form'
-									? 'Saving…'
-									: isEditing
-										? 'Save changes'
-										: 'Create integration'}
-							</button>
-							{isEditing ? (
 								<button
 									type="button"
 									disabled={isMutating}
 									mix={[
-										on('click', () => {
-											resetFormState()
-											handle.update()
-										}),
-										css(secondaryButtonCss),
+										on('click', startCreateIntegration),
+										css(primaryButtonCss),
 									]}
 								>
-									Cancel edit
+									Create integration
 								</button>
-							) : null}
-						</div>
-					</div>
-				</AccountManagementPanel>
+							</>
+						}
+						columns={[
+							{ key: 'slug', label: 'Slug', primary: true },
+							{ key: 'provider', label: 'Provider' },
+							{ key: 'label', label: 'Label', drop: 1 },
+							{ key: 'enabled', label: 'Enabled' },
+							{
+								key: 'connections',
+								label: 'Connections',
+								align: 'end',
+								drop: 2,
+							},
+							{ key: 'updated', label: 'Updated', drop: 3 },
+						]}
+						rows={filteredApps.map((app) => ({
+							id: app.slug,
+							href: isMutating
+								? undefined
+								: platformIntegrationsRoute.buildDetailHref(
+										app.slug,
+										new URL(currentHref, 'http://localhost').search,
+									),
+							cells: {
+								slug: (
+									<code
+										mix={css({
+											fontSize: typography.fontSize.sm,
+											...recordCellClamp(24),
+										})}
+									>
+										{app.slug}
+									</code>
+								),
+								provider: (
+									<span mix={clampedCellCss}>{app.provider || '—'}</span>
+								),
+								label: <span mix={clampedCellCss}>{app.label || '—'}</span>,
+								enabled: (
+									<RecordDot
+										active={app.enabled}
+										title={app.enabled ? 'Enabled' : 'Disabled'}
+									/>
+								),
+								connections: String(app.connectionCount),
+								updated: (
+									<span mix={css(recordStampCss)}>
+										{formatTimestampDate(app.updatedAt)}
+									</span>
+								),
+							},
+						}))}
+						record={
+							showEditor ? (
+								renderIntegrationForm(editingApp)
+							) : showNotFound ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Platform integration not found.
+								</p>
+							) : null
+						}
+					/>
+				) : null}
 			</AccountManagementShell>
 		)
 	}

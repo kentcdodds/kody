@@ -12,17 +12,22 @@ content-layer change whether or not their layout moves).
 The record unfolds inside the table under its own row. Buttons and short control
 clusters are fine here; forms are not.
 
-| Screen                    | Record content                                             |
-| ------------------------- | ---------------------------------------------------------- |
-| `account/packages`        | 6 metadata fields, tags, search index                      |
-| `account/activity`        | metadata only                                              |
-| `account/email`           | metadata plus action buttons                               |
-| `admin/users`             | 9 metadata fields, a role cluster, two destructive actions |
-| `admin/platform-feedback` | metadata only                                              |
+| Screen                        | Record content                                             |
+| ----------------------------- | ---------------------------------------------------------- |
+| `account/packages`            | 6 metadata fields, tags, search index                      |
+| `account/activity`            | metadata only                                              |
+| `account/email`               | metadata plus action buttons                               |
+| `admin/users`                 | 9 metadata fields, a role cluster, two destructive actions |
+| `admin/platform-feedback`     | metadata only                                              |
+| `admin/platform-integrations` | edit/create form (exception: editor in expanded row)       |
 
 `admin/users` is the boundary case: the only one here with live controls, and it
 also hand-rolls a table today, so it is a replacement rather than an addition.
 If the role cluster feels wrong in use it moves to `pane`.
+
+`admin/platform-integrations` is a deliberate exception to the forms-in-pane
+rule: the expanded record is the full create/edit form rather than metadata
+below a separate card list.
 
 ## `mode: 'pane'` — record has an editor
 
