@@ -112,8 +112,10 @@ const executorSandboxTimeoutMessagePattern = new RegExp(
 	`^${executorSandboxTimeoutMessage}(?: after \\d+(?:\\.\\d+)?m?s)?$`,
 )
 
-export function isExecutorSandboxTimeoutMessage(message: string) {
-	return executorSandboxTimeoutMessagePattern.test(message)
+export function isExecutorSandboxTimeoutMessage(message: string | undefined) {
+	return (
+		message !== undefined && executorSandboxTimeoutMessagePattern.test(message)
+	)
 }
 
 export function isExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
