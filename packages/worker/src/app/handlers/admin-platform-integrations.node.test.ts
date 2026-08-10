@@ -167,10 +167,14 @@ test('description saves through the handler, retains on omit, and clears on empt
 		'Kody-hosted GitHub app.',
 	)
 
-	// Explicit empty string (the admin form's cleared textarea) clears it;
-	// null behaves the same.
+	// Explicit empty string (the admin form's cleared textarea) clears it.
 	const cleared = await post({ ...saveGithubBody, description: '' })
 	expect((await cleared.json()).apps[0].description).toBeNull()
+
+	// Explicit null (API callers) also clears after a re-set.
+	await post({ ...saveGithubBody, description: 'Set again.' })
+	const nulled = await post({ ...saveGithubBody, description: null })
+	expect((await nulled.json()).apps[0].description).toBeNull()
 })
 
 test('delete refuses while connections reference the app and succeeds after cleanup', async () => {
