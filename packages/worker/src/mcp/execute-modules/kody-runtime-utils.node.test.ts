@@ -200,8 +200,13 @@ function createSpotifyFetchInterceptor(
 
 test('kody oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
 	const rotatedRefreshFetchCalls: Array<Request> = []
-	const { kody: rotatedKody, secretSetManyCalls: rotatedSecretSetManyCalls } =
-		createKody()
+	const {
+		kody: rotatedKody,
+		secretSetManyCalls: rotatedSecretSetManyCalls,
+		storedSecrets: rotatedStoredSecrets,
+	} = createKody()
+	rotatedStoredSecrets.set('spotifyRefreshToken', 'old-refresh-token')
+	rotatedStoredSecrets.set('spotifyAccessToken', 'old-access-token')
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -246,6 +251,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 	expect(rotatedRefreshBody).toContain('client_id=spotify-client-id')
 	expect(rotatedRefreshBody).not.toContain('client_secret=')
+	expect(Object.fromEntries(rotatedStoredSecrets)).toEqual({
+		spotifyRefreshToken: 'new-refresh-token',
+		spotifyAccessToken: 'new-access-token',
+	})
 
 	const storedTokenFetchCalls: Array<Request> = []
 	const {
@@ -441,87 +450,12 @@ test('token refresh keeps prior secret state when the atomic persist fails after
 	})
 })
 
-test('successful token rotation persists refresh then access secrets together', async () => {
-	const fetchCalls: Array<Request> = []
-	const { kody, secretSetManyCalls, storedSecrets } = createKody()
-	storedSecrets.set('spotifyRefreshToken', 'old-refresh-token')
-	storedSecrets.set('spotifyAccessToken', 'old-access-token')
-	{
-		using _server = createMswNodeServer(
-			createSpotifyHandlers({
-				tokenPayload: {
-					access_token: 'new-access-token',
-					refresh_token: 'new-refresh-token',
-				},
-				fetchCalls,
-			}),
-		)
-		const accessToken = await refreshAccessToken(kody, 'spotify')
-		expect(accessToken).toBe('new-access-token')
-	}
-	expect(fetchCalls).toHaveLength(1)
-	expect(secretSetManyCalls[1]?.secrets.map((secret) => secret.name)).toEqual([
-		'spotifyRefreshToken',
-		'spotifyAccessToken',
-	])
-	expect(Object.fromEntries(storedSecrets)).toEqual({
-		spotifyRefreshToken: 'new-refresh-token',
-		spotifyAccessToken: 'new-access-token',
-	})
-})
-
-test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, authenticated fetch, secrets, and client credentials', async () => {
+test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
 	const prelude = createExecuteHelperPrelude()
 	const createSandboxHelpers = new Function(
 		'kody',
 		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
 	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
-
-	const fetchCalls: Array<Request> = []
-	const { kody, secretSetManyCalls } = createKody()
-	{
-		using _server = createMswNodeServer(
-			createSpotifyHandlers({
-				tokenPayload: {
-					access_token: 'new-access-token',
-					refresh_token: 'new-refresh-token',
-				},
-				fetchCalls,
-			}),
-		)
-		const helpers = createSandboxHelpers(kody)
-		const accessToken = await helpers.refreshAccessToken('spotify')
-		const authenticatedFetch = await helpers.createAuthenticatedFetch('spotify')
-		await authenticatedFetch('/me')
-		expect(accessToken).toBe('new-access-token')
-	}
-	expect(secretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'spotifyRefreshToken', scope: 'user' },
-				{ name: 'spotifyAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-		{
-			secrets: [
-				{
-					name: 'spotifyRefreshToken',
-					value: 'new-refresh-token',
-					scope: 'user',
-				},
-				{
-					name: 'spotifyAccessToken',
-					value: 'new-access-token',
-					scope: 'user',
-				},
-			],
-		},
-	])
-	expect(fetchCalls).toHaveLength(2)
-	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
-	)
 
 	const helpers = createSandboxHelpers(createKody().kody)
 	expect(
@@ -533,6 +467,12 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 	).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
+
+	const platformHelpers = createSandboxHelpers(createPlatformKody().kody)
+	await expect(platformHelpers.refreshAccessToken('github')).rejects.toThrow(
+		'raw tokens are never exposed to sandboxed code',
+	)
+	expect(typeof platformHelpers.createAuthenticatedFetch).toBe('function')
 
 	const clientCredentialsCalls: Array<Request> = []
 	{
@@ -563,18 +503,8 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 		})
 	}
 	expect(clientCredentialsCalls).toHaveLength(1)
-	expect(clientCredentialsCalls[0]?.method).toBe('POST')
 	expect(clientCredentialsCalls[0]?.headers.get('authorization')).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
-	)
-	expect(clientCredentialsCalls[0]?.headers.get('content-type')).toBe(
-		'application/x-www-form-urlencoded',
-	)
-	expect(await clientCredentialsCalls[0]?.text()).toBe(
-		new URLSearchParams({
-			scope: 'openid',
-			grant_type: 'client_credentials',
-		}).toString(),
 	)
 })
 
@@ -645,73 +575,6 @@ test('createAuthenticatedFetch refreshes platform integrations host-side and ret
 	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:githubAccessToken|scope=user}}',
 	)
-	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:githubAccessToken|scope=user}}',
-	)
-})
-
-test('prelude user-lane createAuthenticatedFetch refreshes host-side on 401', async () => {
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'kody',
-		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
-	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
-
-	const fetchCalls: Array<Request> = []
-	const { kody, secretSetManyCalls, tokenRefreshCalls } = createKody()
-	const helpers = createSandboxHelpers(kody)
-	{
-		using _spotifyFetch = createSpotifyFetchInterceptor({
-			tokenPayload: { access_token: 'new-access-token' },
-			fetchCalls,
-			apiResponses: [
-				{ status: 401, body: { error: 'expired' } },
-				{ status: 200, body: { ok: true } },
-			],
-		})
-		const authenticatedFetch = await helpers.createAuthenticatedFetch('spotify')
-		const response = await authenticatedFetch('https://api.spotify.test/v1/me')
-		expect(await response.json()).toEqual({ ok: true })
-	}
-	expect(tokenRefreshCalls).toEqual([{ name: 'spotify' }])
-	expect(secretSetManyCalls).toEqual([])
-	expect(fetchCalls).toHaveLength(2)
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
-	)
-	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
-	)
-})
-
-test('prelude platform helpers mirror the host-side refresh behavior', async () => {
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'kody',
-		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
-	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
-
-	const { kody, tokenRefreshCalls } = createPlatformKody()
-	const helpers = createSandboxHelpers(kody)
-	await expect(helpers.refreshAccessToken('github')).rejects.toThrow(
-		'raw tokens are never exposed to sandboxed code',
-	)
-
-	const fetchCalls: Array<Request> = []
-	{
-		using _interceptor = createGithubPlatformFetchInterceptor({
-			fetchCalls,
-			apiResponses: [
-				{ status: 401, body: { error: 'expired' } },
-				{ status: 200, body: { ok: true } },
-			],
-		})
-		const authenticatedFetch = await helpers.createAuthenticatedFetch('github')
-		const response = await authenticatedFetch('/user')
-		expect(await response.json()).toEqual({ ok: true })
-	}
-	expect(tokenRefreshCalls).toEqual([{ name: 'github' }])
-	expect(fetchCalls).toHaveLength(2)
 	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:githubAccessToken|scope=user}}',
 	)

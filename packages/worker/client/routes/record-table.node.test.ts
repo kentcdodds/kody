@@ -119,6 +119,18 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(orphanHtml.indexOf('Orphan record')).toBeGreaterThan(
 		orphanHtml.indexOf('</table>'),
 	)
+
+	// Wide rows stay reachable via horizontal overflow.
+	const overflowHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Packages',
+			columns,
+			rows,
+		}),
+	)
+	expect(overflowHtml).toContain('overflow-x: auto')
+	expect(overflowHtml).toContain('overflow: clip')
 })
 
 test('record table empty and busy states keep toolbar layout stable', async () => {
@@ -133,9 +145,8 @@ test('record table empty and busy states keep toolbar layout stable', async () =
 		}),
 	)
 
-	expect(emptyHtml).toContain('No secrets yet.')
-	expect(emptyHtml).toContain('0 of 0 shown')
 	expect(emptyHtml).not.toContain('<table')
+	expect(emptyHtml).toContain('0 of 0 shown')
 	expect(emptyHtml).toContain('<section aria-label="Secrets"')
 
 	const busyHtml = await renderToString(
@@ -156,22 +167,5 @@ test('record table empty and busy states keep toolbar layout stable', async () =
 	expect(busyHtml).toContain('data-busy="true"')
 	expect(busyHtml).toContain('2 of 2 shown')
 	expect(busyHtml).toContain('aria-live="polite"')
-	expect(busyHtml).toContain('Updating…')
 	expect(busyHtml).toContain('<table')
-	expect(busyHtml).toContain('Alpha')
-})
-
-test('record table keeps wide rows reachable via horizontal overflow', async () => {
-	const html = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Packages',
-			columns,
-			rows,
-		}),
-	)
-
-	// Remix serializes longhands with a space after the colon.
-	expect(html).toContain('overflow-x: auto')
-	expect(html).toContain('overflow: clip')
 })

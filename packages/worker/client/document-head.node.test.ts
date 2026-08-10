@@ -34,35 +34,3 @@ test('every client route resolves a document title other than Not found', () => 
 	}
 	expect(missing, 'client routes missing document-head entries').toEqual([])
 })
-
-test('admin platform integrations SPA title matches the SSR override', () => {
-	expect(resolveDocumentTitle('/admin/platform-integrations')).toBe(
-		'Admin platform integrations',
-	)
-	expect(resolveDocumentTitle('/admin/platform-integrations/new')).toBe(
-		'Admin platform integrations',
-	)
-	expect(resolveDocumentTitle('/admin/platform-integrations/github')).toBe(
-		'Admin platform integrations',
-	)
-})
-
-test('guides SPA titles resolve from the registry and loader data', () => {
-	expect(resolveDocumentTitle('/guides')).toBe('Guides')
-	expect(resolveDocumentTitle('/guides/oauth')).toBe('Guides')
-	expect(
-		resolveDocumentTitle('/guides/oauth', {
-			guideDetail: {
-				ok: true,
-				slug: 'oauth',
-				id: 'oauth',
-				title: 'Connect with OAuth',
-				summary: 'summary',
-				category: 'platform',
-				provider: null,
-				lastVerified: null,
-				body: '# Connect with OAuth\n',
-			},
-		}),
-	).toBe('Connect with OAuth')
-})

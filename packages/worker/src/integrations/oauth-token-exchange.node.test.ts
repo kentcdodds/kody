@@ -85,21 +85,20 @@ test('token exchange style resolves Notion basic-json and builds both request sh
 	expect(formPkceConfidentialBody.get('client_secret')).toBe('client-secret')
 	expect(formPkceConfidentialBody.get('code_verifier')).toBe('pkce-verifier')
 
-	expect(oauthTokenExchangeFailureHttpStatus()).toBe(502)
-	expect(
-		buildOAuthTokenExchangeFailurePayload({
-			providerStatus: 401,
-			payload: {
-				error: 'invalid_client',
-				error_description: 'Client authentication failed',
-			},
-		}),
-	).toEqual({
+	const failurePayload = buildOAuthTokenExchangeFailurePayload({
+		providerStatus: 401,
+		payload: {
+			error: 'invalid_client',
+			error_description: 'Client authentication failed',
+		},
+	})
+	expect(failurePayload).toEqual({
 		ok: false,
 		error: 'invalid_client',
 		error_description: 'Client authentication failed',
 		providerStatus: 401,
 	})
+	expect(oauthTokenExchangeFailureHttpStatus()).toBe(502)
 })
 
 test('token exchange style resolves Canva basic-form and keeps PKCE code_verifier alongside Basic client auth', () => {
@@ -140,8 +139,6 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 	expect(canvaBody.get('client_id')).toBeNull()
 	expect(canvaBody.get('client_secret')).toBeNull()
 
-	// Basic-auth credentials are form-urlencoded per RFC 6749 §2.3.1, so
-	// reserved characters like ":" and "%" survive the Basic header.
 	const reservedCharacterRequest = buildOAuthTokenExchangeRequest({
 		params: new URLSearchParams({
 			grant_type: 'authorization_code',
@@ -156,8 +153,6 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 		`Basic ${btoa('client%3Aid:secret%25value')}`,
 	)
 
-	// Each validation condition fails independently: PKCE-only flow, missing
-	// secret with confidential flow, and missing client_id.
 	expect(() =>
 		buildOAuthTokenExchangeRequest({
 			params: new URLSearchParams({
@@ -199,8 +194,7 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 	).toThrow('basic-form token exchange requires client_id in params.')
 })
 
-test('normalizeOAuthTokenExchangePayload hoists Slack authed_user tokens', () => {
-	// Slack user-scope-only apps: no top-level access_token at all.
+test('normalizeOAuthTokenExchangePayload hoists Slack authed_user tokens and detects ok:false soft failures', () => {
 	const userOnly = normalizeOAuthTokenExchangePayload({
 		ok: true,
 		app_id: 'A0123',
@@ -215,11 +209,8 @@ test('normalizeOAuthTokenExchangePayload hoists Slack authed_user tokens', () =>
 	expect(userOnly.access_token).toBe('xoxp-user-token')
 	expect(userOnly.token_type).toBe('user')
 	expect(userOnly.scope).toBe('channels:history,chat:write')
-	// The original nested record survives for callers that want it.
 	expect(userOnly.authed_user).toMatchObject({ id: 'U0123' })
 
-	// A present top-level token (Slack bot token, standard providers) is
-	// never overwritten by the nested user token.
 	const botAndUser = normalizeOAuthTokenExchangePayload({
 		ok: true,
 		access_token: 'xoxb-bot-token',
@@ -229,14 +220,11 @@ test('normalizeOAuthTokenExchangePayload hoists Slack authed_user tokens', () =>
 	expect(botAndUser.access_token).toBe('xoxb-bot-token')
 	expect(botAndUser.token_type).toBe('bot')
 
-	// Standard OAuth payloads pass through untouched.
 	const standard = { access_token: 'token', refresh_token: 'refresh' }
 	expect(normalizeOAuthTokenExchangePayload(standard)).toBe(standard)
 	const noToken = { error: 'invalid_grant' }
 	expect(normalizeOAuthTokenExchangePayload(noToken)).toBe(noToken)
-})
 
-test('isOAuthTokenExchangeSoftFailure detects Slack ok:false payloads', () => {
 	expect(
 		isOAuthTokenExchangeSoftFailure({ ok: false, error: 'invalid_code' }),
 	).toBe(true)

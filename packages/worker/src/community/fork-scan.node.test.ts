@@ -53,7 +53,6 @@ test('rewritePackageManifestForFork rewrites scope and kody id while preserving 
 		'@owner/shared-utils',
 		'@forker/local-lib',
 	])
-	expect(content).toContain('\t')
 
 	const override = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,

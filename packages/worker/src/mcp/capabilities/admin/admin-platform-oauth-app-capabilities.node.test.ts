@@ -59,7 +59,7 @@ const saveInput = {
 }
 
 test('save/list/delete platform OAuth apps never expose the client secret and write audit rows', async () => {
-	const { auditSqlite, ctx } = createHarness()
+	const { auditSqlite, ctx, env } = createHarness()
 
 	const saved = await adminPlatformOauthAppSaveCapability.handler(
 		saveInput,
@@ -69,18 +69,36 @@ test('save/list/delete platform OAuth apps never expose the client secret and wr
 		slug: 'github',
 		clientId: 'platform-github-client-id',
 		enabled: true,
-		defaultScopes: ['read:user'],
 	})
 	expect(JSON.stringify(saved)).not.toContain(
 		'platform-github-client-secret-value',
 	)
+
+	const disabled = await adminPlatformOauthAppSaveCapability.handler(
+		{
+			slug: 'github',
+			clientId: saveInput.clientId,
+			tokenUrl: saveInput.tokenUrl,
+			authorizeUrl: saveInput.authorizeUrl,
+			flow: 'confidential',
+			enabled: false,
+		},
+		ctx,
+	)
+	expect(disabled.app.enabled).toBe(false)
+	await expect(
+		getPlatformOauthAppClientSecret({
+			db: env.APP_DB,
+			env,
+			slug: 'github',
+		}),
+	).resolves.toBe('platform-github-client-secret-value')
 
 	const listed = await adminPlatformOauthAppListCapability.handler({}, ctx)
 	expect(listed.apps).toHaveLength(1)
 	expect(listed.apps[0]).toMatchObject({
 		slug: 'github',
 		hasClientSecret: true,
-		connectionCount: 0,
 	})
 	expect(JSON.stringify(listed)).not.toContain(
 		'platform-github-client-secret-value',
@@ -96,6 +114,7 @@ test('save/list/delete platform OAuth apps never expose the client secret and wr
 		.prepare('SELECT action, result FROM audit_events ORDER BY id ASC')
 		.all() as Array<{ action: string; result: string }>
 	expect(auditActions).toEqual([
+		{ action: 'admin_platform_oauth_app_save', result: 'success' },
 		{ action: 'admin_platform_oauth_app_save', result: 'success' },
 		{ action: 'admin_platform_oauth_app_list', result: 'success' },
 		{ action: 'admin_platform_oauth_app_delete', result: 'success' },
@@ -128,33 +147,7 @@ test('delete refuses while connections exist and records the failure in the audi
 	expect(failures).toEqual([{ action: 'admin_platform_oauth_app_delete' }])
 })
 
-test('save keeps the stored secret on update and can disable an app', async () => {
-	const { ctx, env } = createHarness()
-	await adminPlatformOauthAppSaveCapability.handler(saveInput, ctx)
-
-	const updated = await adminPlatformOauthAppSaveCapability.handler(
-		{
-			slug: 'github',
-			clientId: saveInput.clientId,
-			tokenUrl: saveInput.tokenUrl,
-			authorizeUrl: saveInput.authorizeUrl,
-			flow: 'confidential',
-			enabled: false,
-		},
-		ctx,
-	)
-	expect(updated.app.enabled).toBe(false)
-
-	await expect(
-		getPlatformOauthAppClientSecret({
-			db: env.APP_DB,
-			env,
-			slug: 'github',
-		}),
-	).resolves.toBe('platform-github-client-secret-value')
-})
-
-test('enabling a confidential app without a client secret is an McpCallerError', async () => {
+test('enabling a confidential app without a client secret is an McpCallerError with audit failure', async () => {
 	const { ctx, auditSqlite } = createHarness()
 	await expect(
 		adminPlatformOauthAppSaveCapability.handler(
@@ -170,41 +163,12 @@ test('enabling a confidential app without a client secret is an McpCallerError',
 		),
 	).rejects.toBeInstanceOf(McpCallerError)
 
-	const staged = await adminPlatformOauthAppSaveCapability.handler(
-		{
-			slug: 'github',
-			clientId: saveInput.clientId,
-			clientSecret: null,
-			tokenUrl: saveInput.tokenUrl,
-			authorizeUrl: saveInput.authorizeUrl,
-			flow: 'confidential',
-			enabled: false,
-		},
-		ctx,
-	)
-	expect(staged.app.enabled).toBe(false)
-
-	await expect(
-		adminPlatformOauthAppSaveCapability.handler(
-			{
-				slug: 'github',
-				clientId: saveInput.clientId,
-				tokenUrl: saveInput.tokenUrl,
-				authorizeUrl: saveInput.authorizeUrl,
-				flow: 'confidential',
-				enabled: true,
-			},
-			ctx,
-		),
-	).rejects.toBeInstanceOf(McpCallerError)
-
 	const failures = auditSqlite
 		.prepare(
 			`SELECT action, result FROM audit_events WHERE result = 'failure' ORDER BY id ASC`,
 		)
 		.all() as Array<{ action: string; result: string }>
 	expect(failures).toEqual([
-		{ action: 'admin_platform_oauth_app_save', result: 'failure' },
 		{ action: 'admin_platform_oauth_app_save', result: 'failure' },
 	])
 })

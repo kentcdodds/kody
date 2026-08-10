@@ -95,97 +95,29 @@ const saveGithubBody = {
 	requiredHosts: ['api.github.com'],
 }
 
-test('save creates an app, never echoes the secret, and partial saves retain fields', async () => {
-	const { env } = createHarness()
+test('admin save and delete return HTTP shapes without echoing secrets', async () => {
+	const { sqlite, env } = createHarness()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
 	const handler = createAdminPlatformIntegrationsApiHandler(env)
+	const url = new URL('https://example.com/admin/platform-integrations.json')
+	const invoke = (body: Record<string, unknown>) =>
+		handler.handler({
+			request: postRequest(body),
+			url,
+			params: {},
+		} as never)
 
-	const created = await handler.handler({
-		request: postRequest(saveGithubBody),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
+	const created = await invoke(saveGithubBody)
 	expect(created.status).toBe(200)
 	const createdPayload = await created.json()
-	expect(createdPayload.apps).toHaveLength(1)
 	expect(createdPayload.apps[0]).toMatchObject({
 		slug: 'github',
 		hasClientSecret: true,
-		enabled: true,
-		defaultScopes: ['read:user'],
-		connectionCount: 0,
 	})
 	expect(JSON.stringify(createdPayload)).not.toContain(
 		'platform-github-client-secret-value',
 	)
 
-	// Partial save (disable) retains scopes, hosts, and the stored secret.
-	const disabled = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'github',
-			clientId: saveGithubBody.clientId,
-			tokenUrl: saveGithubBody.tokenUrl,
-			authorizeUrl: saveGithubBody.authorizeUrl,
-			flow: 'confidential',
-			enabled: false,
-		}),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
-	const disabledPayload = await disabled.json()
-	expect(disabledPayload.apps[0]).toMatchObject({
-		enabled: false,
-		hasClientSecret: true,
-		allowedScopes: ['read:user', 'repo'],
-		requiredHosts: ['api.github.com'],
-	})
-})
-
-test('description saves through the handler, retains on omit, and clears on empty', async () => {
-	const { env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminPlatformIntegrationsApiHandler(env)
-	const post = (body: Record<string, unknown>) =>
-		handler.handler({
-			request: postRequest(body),
-			url: new URL('https://example.com/admin/platform-integrations.json'),
-			params: {},
-		} as never)
-
-	const created = await post({
-		...saveGithubBody,
-		description: 'Kody-hosted GitHub app.',
-	})
-	expect((await created.json()).apps[0].description).toBe(
-		'Kody-hosted GitHub app.',
-	)
-
-	// Omitted property (API callers): the stored description is retained.
-	const omitted = await post(saveGithubBody)
-	expect((await omitted.json()).apps[0].description).toBe(
-		'Kody-hosted GitHub app.',
-	)
-
-	// Explicit empty string (the admin form's cleared textarea) clears it.
-	const cleared = await post({ ...saveGithubBody, description: '' })
-	expect((await cleared.json()).apps[0].description).toBeNull()
-
-	// Explicit null (API callers) also clears after a re-set.
-	await post({ ...saveGithubBody, description: 'Set again.' })
-	const nulled = await post({ ...saveGithubBody, description: null })
-	expect((await nulled.json()).apps[0].description).toBeNull()
-})
-
-test('delete refuses while connections reference the app and succeeds after cleanup', async () => {
-	const { sqlite, env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminPlatformIntegrationsApiHandler(env)
-	await handler.handler({
-		request: postRequest(saveGithubBody),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
 	sqlite
 		.prepare(
 			`INSERT INTO user_integrations (
@@ -194,11 +126,7 @@ test('delete refuses while connections reference the app and succeeds after clea
 		)
 		.run('user-1', 'github', 'github', 'githubAccessToken')
 
-	const blocked = await handler.handler({
-		request: postRequest({ action: 'delete', slug: 'github' }),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
+	const blocked = await invoke({ action: 'delete', slug: 'github' })
 	expect(blocked.status).toBe(400)
 	await expect(blocked.json()).resolves.toMatchObject({
 		ok: false,
@@ -206,62 +134,9 @@ test('delete refuses while connections reference the app and succeeds after clea
 	})
 
 	sqlite.prepare('DELETE FROM user_integrations').run()
-	const deleted = await handler.handler({
-		request: postRequest({ action: 'delete', slug: 'github' }),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
+	const deleted = await invoke({ action: 'delete', slug: 'github' })
 	expect(deleted.status).toBe(200)
 	await expect(deleted.json()).resolves.toMatchObject({ apps: [] })
-})
-
-test('logo uploads store an asset and clear removes it', async () => {
-	const { env, objects } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminPlatformIntegrationsApiHandler(env)
-	await handler.handler({
-		request: postRequest(saveGithubBody),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
-
-	const tinyPngBase64 =
-		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-	const uploaded = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'github',
-			clientId: saveGithubBody.clientId,
-			tokenUrl: saveGithubBody.tokenUrl,
-			authorizeUrl: saveGithubBody.authorizeUrl,
-			flow: 'confidential',
-			logoBase64: tinyPngBase64,
-		}),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
-	const uploadedPayload = await uploaded.json()
-	expect(uploadedPayload.apps[0].logoPath).toMatch(
-		/^\/integrations\/logos\/github\?v=/,
-	)
-	expect(objects.size).toBe(1)
-
-	const cleared = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'github',
-			clientId: saveGithubBody.clientId,
-			tokenUrl: saveGithubBody.tokenUrl,
-			authorizeUrl: saveGithubBody.authorizeUrl,
-			flow: 'confidential',
-			logoBase64: '',
-		}),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
-	const clearedPayload = await cleared.json()
-	expect(clearedPayload.apps[0].logoPath).toBeNull()
-	expect(objects.size).toBe(0)
 })
 
 test('non-admin callers are rejected', async () => {

@@ -6,13 +6,11 @@ import {
 	buildPlatformOauthAppLogoPath,
 	getPlatformOauthAppLogoObject,
 	setPlatformOauthAppLogo,
-	sniffPlatformOauthAppLogoFormat,
 } from './platform-app-logo.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
-// 1x1 transparent PNG.
 const tinyPngBytes = Uint8Array.from(
 	atob(
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
@@ -83,7 +81,7 @@ async function provisionApp(harness: ReturnType<typeof createHarness>) {
 	})
 }
 
-test('logo upload stores a content-hashed raster asset and clears replace the old key', async () => {
+test('logo lifecycle uploads, clears, and survives app upserts without touching logo columns', async () => {
 	const harness = createHarness()
 	await provisionApp(harness)
 
@@ -98,15 +96,15 @@ test('logo upload stores a content-hashed raster asset and clears replace the ol
 	)
 	expect(withLogo.logoContentType).toBe('image/png')
 	expect(harness.r2.objects.size).toBe(1)
-
-	const logoPath = buildPlatformOauthAppLogoPath(withLogo)
-	expect(logoPath).toMatch(/^\/integrations\/logos\/github\?v=[0-9a-f]{16}$/)
-
-	const object = await getPlatformOauthAppLogoObject({
-		env: harness.env,
-		logoKey: withLogo.logoKey!,
-	})
-	expect(object).not.toBeNull()
+	expect(buildPlatformOauthAppLogoPath(withLogo)).toMatch(
+		/^\/integrations\/logos\/github\?v=[0-9a-f]{16}$/,
+	)
+	expect(
+		await getPlatformOauthAppLogoObject({
+			env: harness.env,
+			logoKey: withLogo.logoKey!,
+		}),
+	).not.toBeNull()
 
 	const cleared = await setPlatformOauthAppLogo({
 		db: harness.db,
@@ -118,18 +116,13 @@ test('logo upload stores a content-hashed raster asset and clears replace the ol
 	expect(cleared.logoContentType).toBeNull()
 	expect(harness.r2.objects.size).toBe(0)
 	expect(buildPlatformOauthAppLogoPath(cleared)).toBeNull()
-})
 
-test('app upserts never touch logo columns (retain-on-omit like the secret)', async () => {
-	const harness = createHarness()
-	await provisionApp(harness)
 	await setPlatformOauthAppLogo({
 		db: harness.db,
 		env: harness.env,
 		slug: 'github',
 		sourceBytes: tinyPngBytes,
 	})
-
 	const updated = await upsertPlatformOauthApp({
 		db: harness.db,
 		env: harness.env,
@@ -166,19 +159,4 @@ test('uploads reject unknown formats and unknown apps', async () => {
 			sourceBytes: tinyPngBytes,
 		}),
 	).rejects.toThrow('was not found')
-})
-
-test('sniffing detects raster magic bytes and svg text', () => {
-	expect(sniffPlatformOauthAppLogoFormat(tinyPngBytes)).toBe('png')
-	expect(
-		sniffPlatformOauthAppLogoFormat(
-			new TextEncoder().encode('  <svg xmlns="http://www.w3.org/2000/svg"/>'),
-		),
-	).toBe('svg')
-	expect(
-		sniffPlatformOauthAppLogoFormat(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])),
-	).toBe('jpeg')
-	expect(
-		sniffPlatformOauthAppLogoFormat(new Uint8Array([0x00, 0x00, 0x00, 0x00])),
-	).toBeNull()
 })

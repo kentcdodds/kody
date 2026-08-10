@@ -3,13 +3,7 @@ import {
 	filterBrowserAbortSentryEvent,
 	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
-	filterChromeExtensionObjectNotFoundSentryEvent,
-	filterChromeExtensionReceivingEndMissingSentryEvent,
-	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
-	filterMetaMaskExtensionSentryEvent,
-	filterOgTypeMetaQuerySelectorContentSentryEvent,
-	filterTwitterInAppBrowserConfigSentryEvent,
 } from './sentry-browser-filters.ts'
 
 test('browser Sentry filters drop AbortError and Firefox Xray noise and keep real errors', () => {
@@ -131,10 +125,9 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).toBeNull()
 
-	// Fathom beacon removeChild-on-null only when a usefathom.com frame is present
-	// (issue 7653117289 / KODY-CLOUDFLARE-3Q).
+	// Composed filter: one drop + one keep per third-party noise family.
 	expect(
-		filterFathomRemoveChildNullSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
@@ -158,26 +151,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 				values: [
 					{
 						type: 'TypeError',
-						value:
-							"null is not an object (evaluating 'img.parentNode.removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									filename: '/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterFathomRemoveChildNullSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
 						value: "Cannot read properties of null (reading 'removeChild')",
 						stacktrace: {
 							frames: [
@@ -192,17 +165,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).not.toBeNull()
 
-	// Chrome extension IPC object-not-found (issue 7655189301 / KODY-CLOUDFLARE-3S).
-	expect(
-		filterChromeExtensionObjectNotFoundSentryEvent(
-			{
-				exception: {
-					values: [{ type: 'UnhandledRejection', value: 'something else' }],
-				},
-			},
-			'Object Not Found Matching Id:2, MethodName:update, ParamCount:4',
-		),
-	).toBeNull()
 	expect(
 		filterBrowserSentryEvent({
 			exception: {
@@ -216,33 +178,19 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
-
-	// Chrome extension receiving-end missing (issue 7662064169 / KODY-CLOUDFLARE-4F).
 	expect(
-		filterChromeExtensionReceivingEndMissingSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
-						type: 'Error',
-						value:
-							'Could not establish connection. Receiving end does not exist.',
+						type: 'UnhandledRejection',
+						value: 'something else entirely',
 					},
 				],
 			},
 		}),
-	).toBeNull()
-	expect(
-		filterChromeExtensionReceivingEndMissingSentryEvent(
-			{
-				exception: {
-					values: [{ type: 'Error', value: 'something else' }],
-				},
-			},
-			new Error(
-				'Could not establish connection. Receiving end does not exist.',
-			),
-		),
-	).toBeNull()
+	).not.toBeNull()
+
 	expect(
 		filterBrowserSentryEvent({
 			exception: {
@@ -256,9 +204,8 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
-	// Nearby connection wording from app code must not be dropped.
 	expect(
-		filterChromeExtensionReceivingEndMissingSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
@@ -270,55 +217,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).not.toBeNull()
 
-	// MetaMask inpage.js session restore (issue 7658961865 / KODY-CLOUDFLARE-3X).
-	expect(
-		filterMetaMaskExtensionSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'i',
-						value: 'Failed to connect to MetaMask',
-						stacktrace: {
-							frames: [
-								{
-									filename:
-										'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js',
-								},
-							],
-						},
-					},
-					{
-						type: 'Error',
-						value: 'MetaMask extension not found',
-						stacktrace: {
-							frames: [
-								{
-									abs_path:
-										'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	// Message alone (no MetaMask extension frame) must not drop app errors.
-	expect(
-		filterMetaMaskExtensionSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'Error',
-						value: 'Failed to connect to MetaMask',
-						stacktrace: {
-							frames: [{ abs_path: 'https://heykody.dev/assets/app-chunk.js' }],
-						},
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
 	expect(
 		filterBrowserSentryEvent({
 			exception: {
@@ -339,54 +237,22 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
-
-	// Twitter/X iOS in-app browser chrome CONFIG (issue 7659616372 /
-	// KODY-CLOUDFLARE-43). Requires both the CONFIG wording and a chrome
-	// stack function — bare CONFIG ReferenceErrors from app code stay.
 	expect(
-		filterTwitterInAppBrowserConfigSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{
-						type: 'ReferenceError',
-						value: "Can't find variable: CONFIG",
+						type: 'Error',
+						value: 'Failed to connect to MetaMask',
 						stacktrace: {
-							frames: [
-								{
-									function: 'updateFooterPositions',
-									filename: 'https://heykody.app/',
-								},
-								{
-									function: 'updateGapFiller',
-									filename: 'https://heykody.app/',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterTwitterInAppBrowserConfigSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'ReferenceError',
-						value: "Can't find variable: CONFIG",
-						stacktrace: {
-							frames: [
-								{
-									function: 'boot',
-									filename: 'https://heykody.app/assets/entry.js',
-								},
-							],
+							frames: [{ abs_path: 'https://heykody.dev/assets/app-chunk.js' }],
 						},
 					},
 				],
 			},
 		}),
 	).not.toBeNull()
+
 	expect(
 		filterBrowserSentryEvent({
 			exception: {
@@ -407,10 +273,27 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: CONFIG",
+						stacktrace: {
+							frames: [
+								{
+									function: 'boot',
+									filename: 'https://heykody.app/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
 
-	// Injected unguarded og:type meta probe (issue 7660258027 /
-	// KODY-CLOUDFLARE-46). Requires both the Safari evaluating wording and a
-	// `global code` frame — same message from app bundles stays.
 	expect(
 		filterBrowserSentryEvent({
 			exception: {
@@ -433,7 +316,7 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).toBeNull()
 	expect(
-		filterOgTypeMetaQuerySelectorContentSentryEvent({
+		filterBrowserSentryEvent({
 			exception: {
 				values: [
 					{

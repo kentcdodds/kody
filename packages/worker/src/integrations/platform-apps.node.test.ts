@@ -38,9 +38,16 @@ const baseGithubApp = {
 	requiredHosts: ['api.github.com', 'github.com'],
 }
 
-test('upsertPlatformOauthApp stores the client secret encrypted, never in plaintext', async () => {
+test('upsert lifecycle encrypts secrets, omits retain fields, null clears, and partial disable preserves data', async () => {
 	const { sqlite, db, env } = createHarness()
-	await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+	await upsertPlatformOauthApp({
+		db,
+		env,
+		app: {
+			...baseGithubApp,
+			description: 'Send-only Gmail, no inbox.',
+		},
+	})
 
 	const row = sqlite
 		.prepare(
@@ -51,35 +58,9 @@ test('upsertPlatformOauthApp stores the client secret encrypted, never in plaint
 	expect(row.client_secret_encrypted).not.toContain(
 		'platform-github-client-secret-value',
 	)
-
-	const decrypted = await getPlatformOauthAppClientSecret({
-		db,
-		env,
-		slug: 'github',
-	})
-	expect(decrypted).toBe('platform-github-client-secret-value')
-})
-
-test('description saves, retains on omit, and clears on null', async () => {
-	const { db, env } = createHarness()
-	await upsertPlatformOauthApp({
-		db,
-		env,
-		app: { ...baseGithubApp, description: 'Send-only Gmail, no inbox.' },
-	})
-	const retained = await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
-	expect(retained.description).toBe('Send-only Gmail, no inbox.')
-	const cleared = await upsertPlatformOauthApp({
-		db,
-		env,
-		app: { ...baseGithubApp, description: null },
-	})
-	expect(cleared.description).toBeNull()
-})
-
-test('platform app public shape exposes hasClientSecret but no ciphertext or value', async () => {
-	const { db, env } = createHarness()
-	await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+	expect(
+		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
+	).toBe('platform-github-client-secret-value')
 
 	const app = await getPlatformOauthAppBySlug({ db, slug: 'github' })
 	expect(app).toMatchObject({
@@ -87,16 +68,18 @@ test('platform app public shape exposes hasClientSecret but no ciphertext or val
 		provider: 'github',
 		hasClientSecret: true,
 		enabled: true,
+		description: 'Send-only Gmail, no inbox.',
 	})
 	expect(JSON.stringify(app)).not.toContain(
 		'platform-github-client-secret-value',
 	)
 	expect(Object.keys(app ?? {})).not.toContain('client_secret_encrypted')
-})
 
-test('upsert keeps the stored secret when clientSecret is omitted and clears it on null', async () => {
-	const { db, env } = createHarness()
-	await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+	const retained = await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+	expect(retained.description).toBe('Send-only Gmail, no inbox.')
+	expect(
+		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
+	).toBe('platform-github-client-secret-value')
 
 	await upsertPlatformOauthApp({
 		db,
@@ -111,7 +94,7 @@ test('upsert keeps the stored secret when clientSecret is omitted and clears it 
 		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
 	).toBe('platform-github-client-secret-value')
 
-	await upsertPlatformOauthApp({
+	const clearedSecret = await upsertPlatformOauthApp({
 		db,
 		env,
 		app: {
@@ -123,13 +106,24 @@ test('upsert keeps the stored secret when clientSecret is omitted and clears it 
 	expect(
 		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
 	).toBeNull()
-})
 
-test('partial saves retain omitted fields instead of clearing them', async () => {
-	const { db, env } = createHarness()
-	await upsertPlatformOauthApp({ db, env, app: baseGithubApp })
+	await upsertPlatformOauthApp({
+		db,
+		env,
+		app: {
+			...baseGithubApp,
+			clientSecret: 'platform-github-client-secret-value',
+			description: 'Set again.',
+		},
+	})
+	const clearedDescription = await upsertPlatformOauthApp({
+		db,
+		env,
+		app: { ...baseGithubApp, description: null },
+	})
+	expect(clearedDescription.description).toBeNull()
 
-	const updated = await upsertPlatformOauthApp({
+	const disabled = await upsertPlatformOauthApp({
 		db,
 		env,
 		app: {
@@ -141,7 +135,7 @@ test('partial saves retain omitted fields instead of clearing them', async () =>
 			enabled: false,
 		},
 	})
-	expect(updated).toMatchObject({
+	expect(disabled).toMatchObject({
 		enabled: false,
 		allowedScopes: ['gist', 'read:user', 'repo'],
 		defaultScopes: ['read:user'],
@@ -152,8 +146,7 @@ test('partial saves retain omitted fields instead of clearing them', async () =>
 		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
 	).toBe('platform-github-client-secret-value')
 
-	// Explicit empty values still clear.
-	const cleared = await upsertPlatformOauthApp({
+	const clearedFields = await upsertPlatformOauthApp({
 		db,
 		env,
 		app: {
@@ -167,14 +160,12 @@ test('partial saves retain omitted fields instead of clearing them', async () =>
 			requiredHosts: [],
 		},
 	})
-	expect(cleared.allowedScopes).toEqual([])
-	expect(cleared.requiredHosts).toEqual([])
+	expect(clearedFields.allowedScopes).toEqual([])
+	expect(clearedFields.requiredHosts).toEqual([])
 })
 
 test('confidential flow requires a client secret only while enabled', async () => {
 	const { db, env } = createHarness()
-	// Enabled (default) without a secret is rejected as a validation error
-	// (MCP re-wraps this as McpCallerError so it stays off Sentry).
 	await expect(
 		upsertPlatformOauthApp({
 			db,
@@ -183,8 +174,6 @@ test('confidential flow requires a client secret only while enabled', async () =
 		}),
 	).rejects.toBeInstanceOf(PlatformOauthAppValidationError)
 
-	// Staged provisioning: a disabled app saves without a secret so an
-	// operator can paste credentials later.
 	const staged = await upsertPlatformOauthApp({
 		db,
 		env,
@@ -193,9 +182,6 @@ test('confidential flow requires a client secret only while enabled', async () =
 	expect(staged.enabled).toBe(false)
 	expect(staged.hasClientSecret).toBe(false)
 
-	// Enabling it while the secret is still missing is rejected, including
-	// through a partial save that omits clientSecret (retain-on-omit keeps
-	// the absent secret).
 	await expect(
 		upsertPlatformOauthApp({
 			db,
@@ -211,7 +197,6 @@ test('confidential flow requires a client secret only while enabled', async () =
 		}),
 	).rejects.toBeInstanceOf(PlatformOauthAppValidationError)
 
-	// Once the secret lands, enabling works.
 	const live = await upsertPlatformOauthApp({
 		db,
 		env,
@@ -296,7 +281,6 @@ test('listTopPlatformAppsByUse orders enabled apps by connection count and hides
 			user_id, name, app_slug, platform_app_slug, access_token_secret_name
 		) VALUES (?, ?, NULL, ?, ?)`,
 	)
-	// google: 2 connections, notion: 1, github: 0, slack (disabled): 3.
 	insertConnection.run('user-1', 'google', 'google', 'googleAccessToken')
 	insertConnection.run('user-2', 'google', 'google', 'googleAccessToken')
 	insertConnection.run('user-1', 'notion', 'notion', 'notionAccessToken')

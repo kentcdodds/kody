@@ -212,43 +212,44 @@ test('fetch gateway requires package approval before resolving user secrets', as
 	}
 })
 
-test('opt-out header sends placeholders literally, strips itself, and never resolves secrets', async () => {
+test('opt-out header controls secret resolution and strips itself from forwarded requests', async () => {
 	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
-	const request = new Request('https://discord.com/api/channels/1/messages', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			[secretResolutionHeaderName]: 'off',
-		},
-		body: JSON.stringify({
-			content: 'Use {{secret:name}} in your fetch call.',
-		}),
-	})
 
+	const offRequest = new Request(
+		'https://discord.com/api/channels/1/messages',
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				[secretResolutionHeaderName]: 'off',
+			},
+			body: JSON.stringify({
+				content: 'Use {{secret:name}} in your fetch call.',
+			}),
+		},
+	)
 	try {
-		const transformed = await expandSecretPlaceholders({ request, props, env })
-		expect(transformed.headers.get(secretResolutionHeaderName)).toBeNull()
-		expect(await transformed.text()).toBe(
+		const offTransformed = await expandSecretPlaceholders({
+			request: offRequest,
+			props,
+			env,
+		})
+		expect(offTransformed.headers.get(secretResolutionHeaderName)).toBeNull()
+		expect(await offTransformed.text()).toBe(
 			JSON.stringify({ content: 'Use {{secret:name}} in your fetch call.' }),
 		)
-		expect(transformed.url).toBe('https://discord.com/api/channels/1/messages')
+		expect(offTransformed.url).toBe(
+			'https://discord.com/api/channels/1/messages',
+		)
 		expect(resolveSpy).not.toHaveBeenCalled()
-	} finally {
-		resolveSpy.mockRestore()
-	}
-})
 
-test('opt-out header value "on" resolves normally and is stripped; unknown values fail loudly', async () => {
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+		resolveSpy.mockResolvedValue({
 			found: true,
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: ['example.com'],
 			allowedCapabilities: [],
 		})
-	try {
 		const onRequest = new Request('https://example.com/api', {
 			method: 'POST',
 			headers: {
@@ -257,13 +258,15 @@ test('opt-out header value "on" resolves normally and is stripped; unknown value
 			},
 			body: '{}',
 		})
-		const transformed = await expandSecretPlaceholders({
+		const onTransformed = await expandSecretPlaceholders({
 			request: onRequest,
 			props,
 			env,
 		})
-		expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
-		expect(transformed.headers.get(secretResolutionHeaderName)).toBeNull()
+		expect(onTransformed.headers.get('Authorization')).toBe(
+			'Bearer secret-value',
+		)
+		expect(onTransformed.headers.get(secretResolutionHeaderName)).toBeNull()
 
 		const invalidRequest = new Request('https://example.com/api', {
 			headers: { [secretResolutionHeaderName]: 'of' },

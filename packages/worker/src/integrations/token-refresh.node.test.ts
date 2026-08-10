@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	saveSecret,
 	resolveSecret,
@@ -26,10 +26,6 @@ function createHarness() {
 }
 
 const storageContext = { sessionId: null, appId: null, packageId: null }
-
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
 
 async function seedUserTokens(env: Env, userId: string, provider: string) {
 	await saveSecret({
@@ -94,43 +90,61 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		access_token: 'fresh-access-token',
 		refresh_token: 'rotated-refresh-token',
 	})
+	try {
+		const result = await refreshIntegrationTokens({
+			env,
+			userId,
+			name: 'github',
+		})
+		expect(result.refreshTokenRotated).toBe(true)
+		expect(JSON.stringify(result)).not.toContain('fresh-access-token')
 
-	const result = await refreshIntegrationTokens({
-		env,
-		userId,
-		name: 'github',
-	})
-	expect(result.refreshTokenRotated).toBe(true)
-	expect(JSON.stringify(result)).not.toContain('fresh-access-token')
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		const [tokenUrl, init] = fetchMock.mock.calls[0] as unknown as [
+			string,
+			RequestInit,
+		]
+		expect(tokenUrl).toBe('https://github.com/login/oauth/access_token')
+		const body = String(init.body)
+		expect(body).toContain('grant_type=refresh_token')
+		expect(body).toContain('refresh_token=current-refresh-token')
+		expect(body).toContain('client_id=platform-github-client-id')
+		expect(body).toContain('client_secret=platform-github-client-secret-value')
 
-	expect(fetchMock).toHaveBeenCalledTimes(1)
-	const [tokenUrl, init] = fetchMock.mock.calls[0] as unknown as [
-		string,
-		RequestInit,
-	]
-	expect(tokenUrl).toBe('https://github.com/login/oauth/access_token')
-	const body = String(init.body)
-	expect(body).toContain('grant_type=refresh_token')
-	expect(body).toContain('refresh_token=current-refresh-token')
-	expect(body).toContain('client_id=platform-github-client-id')
-	expect(body).toContain('client_secret=platform-github-client-secret-value')
+		const access = await resolveSecret({
+			env,
+			userId,
+			name: 'githubAccessToken',
+			scope: 'user',
+			storageContext,
+		})
+		expect(access.found && access.value).toBe('fresh-access-token')
+		const refresh = await resolveSecret({
+			env,
+			userId,
+			name: 'githubRefreshToken',
+			scope: 'user',
+			storageContext,
+		})
+		expect(refresh.found && refresh.value).toBe('rotated-refresh-token')
+	} finally {
+		vi.unstubAllGlobals()
+	}
 
-	const access = await resolveSecret({
+	await upsertPlatformIntegration({
 		env,
-		userId,
-		name: 'githubAccessToken',
-		scope: 'user',
-		storageContext,
+		userId: 'user-no-refresh',
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
 	})
-	expect(access.found && access.value).toBe('fresh-access-token')
-	const refresh = await resolveSecret({
-		env,
-		userId,
-		name: 'githubRefreshToken',
-		scope: 'user',
-		storageContext,
-	})
-	expect(refresh.found && refresh.value).toBe('rotated-refresh-token')
+	await expect(
+		refreshIntegrationTokens({
+			env,
+			userId: 'user-no-refresh',
+			name: 'github',
+		}),
+	).rejects.toThrow('does not define a refresh token secret name')
 })
 
 async function approveSecretHosts(
@@ -183,67 +197,42 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 	})
 	await seedUserTokens(env, userId, 'google')
 
-	// User-lane refresh honors the same per-secret host allowlist the fetch
-	// gateway enforces: unapproved token hosts fail closed...
 	const fetchMock = stubTokenEndpoint({ access_token: 'fresh-google-token' })
-	await expect(
-		refreshIntegrationTokens({ env, userId, name: 'google' }),
-	).rejects.toThrow(
-		'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
-	)
-	expect(fetchMock).not.toHaveBeenCalled()
+	try {
+		await expect(
+			refreshIntegrationTokens({ env, userId, name: 'google' }),
+		).rejects.toThrow(
+			'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+		)
+		expect(fetchMock).not.toHaveBeenCalled()
 
-	// ...and approved hosts refresh normally.
-	await approveSecretHosts(env, userId, 'googleRefreshToken', [
-		'oauth2.googleapis.com',
-	])
-	await approveSecretHosts(env, userId, 'googleClientSecret', [
-		'oauth2.googleapis.com',
-	])
-	const result = await refreshIntegrationTokens({
-		env,
-		userId,
-		name: 'google',
-	})
-	expect(result.refreshTokenRotated).toBe(false)
+		await approveSecretHosts(env, userId, 'googleRefreshToken', [
+			'oauth2.googleapis.com',
+		])
+		await approveSecretHosts(env, userId, 'googleClientSecret', [
+			'oauth2.googleapis.com',
+		])
+		const result = await refreshIntegrationTokens({
+			env,
+			userId,
+			name: 'google',
+		})
+		expect(result.refreshTokenRotated).toBe(false)
 
-	const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-	expect(String(init.body)).toContain('client_secret=user-google-client-secret')
+		const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+		expect(String(init.body)).toContain(
+			'client_secret=user-google-client-secret',
+		)
 
-	const access = await resolveSecret({
-		env,
-		userId,
-		name: 'googleAccessToken',
-		scope: 'user',
-		storageContext,
-	})
-	expect(access.found && access.value).toBe('fresh-google-token')
-})
-
-test('refresh fails cleanly without a refresh token secret name', async () => {
-	const { env } = createHarness()
-	const userId = 'user-no-refresh'
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
-		app: {
-			slug: 'github',
-			clientId: 'platform-github-client-id',
-			clientSecret: 'platform-github-client-secret-value',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			flow: 'confidential',
-		},
-	})
-	await upsertPlatformIntegration({
-		env,
-		userId,
-		platformAppSlug: 'github',
-		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
-	})
-
-	await expect(
-		refreshIntegrationTokens({ env, userId, name: 'github' }),
-	).rejects.toThrow('does not define a refresh token secret name')
+		const access = await resolveSecret({
+			env,
+			userId,
+			name: 'googleAccessToken',
+			scope: 'user',
+			storageContext,
+		})
+		expect(access.found && access.value).toBe('fresh-google-token')
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })

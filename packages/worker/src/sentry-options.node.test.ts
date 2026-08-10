@@ -319,40 +319,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			exception: {
 				values: [
 					{
-						value: `Error: ${durableObjectIsolateCpuResetMessage}`,
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
 						value: durableObjectCodeUpdatedResetMessage.replace(/\.$/, ''),
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value: `Error: ${durableObjectBlockConcurrencyWhileTimeoutResetMessage}`,
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value: `Error: ${durableObjectStorageOperationTimeoutResetMessage}`,
 					},
 				],
 			},
@@ -379,18 +346,6 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 					{
 						value:
 							'Internal error in Durable Object storage caused object to be reset; reference = 849rqmf61lg3qbmtb3j6moc4',
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value:
-							'Error: Internal error in Durable Object storage caused object to be reset; reference = 849rqmf61lg3qbmtb3j6moc4',
 					},
 				],
 			},

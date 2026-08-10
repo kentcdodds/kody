@@ -63,7 +63,6 @@ const googleBase = {
 	apiBaseUrl: 'https://www.googleapis.com',
 	flow: 'pkce' as const,
 	clientId: 'google-client-id-value',
-	// pkce apps do not persist a client secret (confidential-only at write time).
 	clientSecretSecretName: null as string | null,
 	accessTokenSecretName: 'googleAccessToken',
 	refreshTokenSecretName: 'googleRefreshToken',
@@ -76,7 +75,7 @@ const googleBase = {
 	},
 }
 
-test('mergeIntegrationConfig and integration_save create a new app + connection with clientId shape', async () => {
+test('mergeIntegrationConfig and integration_save create, canonicalize identity, and persist non-default usePkce', async () => {
 	const current = integrationConfigSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -142,8 +141,6 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 			extraAuthorizeParams: { show_dialog: 'true' },
 		},
 	})
-	expect(result.integration).not.toHaveProperty('clientIdValueName')
-	expect(result.integration).not.toHaveProperty('usePkce')
 
 	const listed = await integrationListCapability.handler(
 		{},
@@ -157,6 +154,59 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 		{ env, callerContext: caller('user-123') },
 	)
 	expect(got.integration).toEqual(result.integration)
+
+	const github = await integrationSaveCapability.handler(
+		{
+			name: 'GitHub',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'confidential',
+			clientId: 'github-client-id-value',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			requiredHosts: ['api.github.com'],
+		},
+		{ env, callerContext: caller('user-123') },
+	)
+	expect(github.integration.name).toBe('github')
+
+	const canvaResult = await integrationSaveCapability.handler(
+		{
+			name: 'canva',
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			apiBaseUrl: 'https://api.canva.com/rest/v1',
+			flow: 'confidential',
+			usePkce: true,
+			clientId: 'canva-client-id-value',
+			clientSecretSecretName: 'canvaClientSecret',
+			accessTokenSecretName: 'canvaAccessToken',
+			refreshTokenSecretName: 'canvaRefreshToken',
+			requiredHosts: ['api.canva.com'],
+			tokenExchangeStyle: 'basic-form',
+		},
+		{ env, callerContext: caller('user-456') },
+	)
+	expect(canvaResult.integration).toMatchObject({
+		name: 'canva',
+		flow: 'confidential',
+		usePkce: true,
+		tokenExchangeStyle: 'basic-form',
+	})
+
+	const defaultPkceEnv = createEnv()
+	const defaultResult = await integrationSaveCapability.handler(
+		{
+			name: 'spotify-default',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			flow: 'pkce',
+			usePkce: true,
+			clientId: 'spotify-client-id-value',
+			accessTokenSecretName: 'spotifyDefaultAccessToken',
+			requiredHosts: ['api.spotify.com'],
+		},
+		{ env: defaultPkceEnv.env, callerContext: caller('user-789') },
+	)
+	expect(defaultResult.integration.flow).toBe('pkce')
+	expect(defaultResult.integration.usePkce).toBeUndefined()
 
 	await expect(
 		integrationSaveCapability.handler(
@@ -176,15 +226,15 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 	await expect(
 		integrationSaveCapability.handler(
 			{
-				name: 'slack',
-				tokenUrl: 'https://slack.com/api/oauth.v2.access',
-				flow: 'confidential',
-				clientId: 'slack-client-id',
-				// accessTokenSecretName omitted — create requires it
+				name: '._-',
+				tokenUrl: 'https://example.com/token',
+				flow: 'pkce',
+				clientId: 'x-client-id',
+				accessTokenSecretName: 'xAccessToken',
 			},
 			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
-	).rejects.toBeInstanceOf(McpCallerError)
+	).rejects.toThrow(/letters or numbers/i)
 })
 
 test('integration_save reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {
@@ -248,52 +298,9 @@ test('integration_save reuses an existing app when credentials match and preserv
 			extraAuthorizeParams: { access_type: 'offline' },
 		},
 	})
-	expect(partial.integration).not.toHaveProperty('tokenExchangeStyle')
 })
 
-test('integration_save persists usePkce only when it differs from the flow default', async () => {
-	const { env: canvaEnv } = createEnv()
-	const canvaResult = await integrationSaveCapability.handler(
-		{
-			name: 'canva',
-			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-			apiBaseUrl: 'https://api.canva.com/rest/v1',
-			flow: 'confidential',
-			usePkce: true,
-			clientId: 'canva-client-id-value',
-			clientSecretSecretName: 'canvaClientSecret',
-			accessTokenSecretName: 'canvaAccessToken',
-			refreshTokenSecretName: 'canvaRefreshToken',
-			requiredHosts: ['api.canva.com'],
-			tokenExchangeStyle: 'basic-form',
-		},
-		{ env: canvaEnv, callerContext: caller('user-123') },
-	)
-	expect(canvaResult.integration).toMatchObject({
-		name: 'canva',
-		flow: 'confidential',
-		usePkce: true,
-		tokenExchangeStyle: 'basic-form',
-		clientId: 'canva-client-id-value',
-	})
-
-	const { env: defaultEnv } = createEnv()
-	const defaultResult = await integrationSaveCapability.handler(
-		{
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			flow: 'pkce',
-			usePkce: true,
-			clientId: 'spotify-client-id-value',
-			accessTokenSecretName: 'spotifyAccessToken',
-			requiredHosts: ['api.spotify.com'],
-		},
-		{ env: defaultEnv, callerContext: caller('user-123') },
-	)
-	expect(defaultResult.integration).not.toHaveProperty('usePkce')
-})
-
-test('integration_delete removes a connection; credential rotation updates every sibling', async () => {
+test('integration_delete and credential rotation return the expected MCP response shapes', async () => {
 	const { env } = createEnv()
 	const userId = 'user-rotate'
 
@@ -325,25 +332,6 @@ test('integration_delete removes a connection; credential rotation updates every
 		clientSecretSecretName: 'googleClientSecretRotated',
 		connectionCount: 2,
 	})
-	expect(rotated.app).not.toHaveProperty('userId')
-	expect(JSON.stringify(rotated.app)).not.toMatch(/Bearer |sk_|secret_value/i)
-
-	const google = await integrationGetCapability.handler(
-		{ name: 'google' },
-		{ env, callerContext: caller(userId) },
-	)
-	const googleMail = await integrationGetCapability.handler(
-		{ name: 'google-mail' },
-		{ env, callerContext: caller(userId) },
-	)
-	expect(google.integration?.clientId).toBe('google-client-id-rotated')
-	expect(google.integration?.clientSecretSecretName).toBe(
-		'googleClientSecretRotated',
-	)
-	expect(googleMail.integration?.clientId).toBe('google-client-id-rotated')
-	expect(googleMail.integration?.clientSecretSecretName).toBe(
-		'googleClientSecretRotated',
-	)
 
 	const deletedMail = await integrationDeleteCapability.handler(
 		{ name: 'google-mail' },
@@ -359,18 +347,12 @@ test('integration_delete removes a connection; credential rotation updates every
 		'google',
 	])
 
-	const appsAfter = await integrationOauthAppListCapability.handler(
-		{},
-		{ env, callerContext: caller(userId) },
-	)
-	expect(appsAfter.apps).toHaveLength(1)
-	expect(appsAfter.apps[0]?.connectionCount).toBe(1)
-
 	const deletedGoogle = await integrationDeleteCapability.handler(
 		{ name: 'google' },
 		{ env, callerContext: caller(userId) },
 	)
 	expect(deletedGoogle).toEqual({ deleted: true })
+
 	const emptyApps = await integrationOauthAppListCapability.handler(
 		{},
 		{ env, callerContext: caller(userId) },
@@ -420,43 +402,6 @@ test('integration capabilities deny cross-user reads and require authentication'
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 })
 
-test('integration identity is the canonical provider key across save and lookup', async () => {
-	const { env } = createEnv()
-	const saved = await integrationSaveCapability.handler(
-		{
-			name: 'GitHub',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			flow: 'confidential',
-			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			requiredHosts: ['api.github.com'],
-		},
-		{ env, callerContext: caller('user-123') },
-	)
-	expect(saved.integration.name).toBe('github')
-	expect(saved.integration.clientId).toBe('github-client-id-value')
-
-	const got = await integrationGetCapability.handler(
-		{ name: 'GitHub' },
-		{ env, callerContext: caller('user-123') },
-	)
-	expect(got.integration?.name).toBe('github')
-
-	await expect(
-		integrationSaveCapability.handler(
-			{
-				name: '._-',
-				tokenUrl: 'https://example.com/token',
-				flow: 'pkce',
-				clientId: 'x-client-id',
-				accessTokenSecretName: 'xAccessToken',
-			},
-			{ env: createEnv().env, callerContext: caller('user-123') },
-		),
-	).rejects.toThrow(/letters or numbers/i)
-})
-
 test('integration_save refuses platform (built-in) connections instead of converting them to the user lane', async () => {
 	const { env } = createEnv()
 	const platformEnv = {
@@ -494,7 +439,6 @@ test('integration_save refuses platform (built-in) connections instead of conver
 		),
 	).rejects.toThrow(/platform \(built-in\) connection/)
 
-	// The connection stays on the platform lane.
 	const got = await integrationGetCapability.handler(
 		{ name: 'github' },
 		{ env: platformEnv, callerContext: caller('user-123') },

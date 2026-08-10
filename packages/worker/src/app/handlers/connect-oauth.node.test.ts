@@ -40,48 +40,39 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: (input: unknown) => mockModule.renderAppPage(input),
 }))
 
-test('bare /connect/oauth visits redirect to the OAuth guide', async () => {
+test('bare visits redirect to the OAuth guide and provider visits require a session', async () => {
 	const env = {} as Env
-	const response = await createConnectOauthHandler(env).handler(
-		new RequestContext(new Request('https://example.com/connect/oauth')),
-	)
-	expect(response.status).toBe(302)
-	expect(response.headers.get('location')).toBe(
-		'https://example.com/guides/oauth',
-	)
-})
-
-test('provider, callback, and denial visits are not bare', () => {
 	const bare = (search: string) =>
 		isBareConnectOauthVisit(
 			new URL(`https://example.com/connect/oauth${search}`),
 		)
 	expect(bare('')).toBe(true)
 	expect(bare('?state=abc')).toBe(true)
-	// Agent-built setup URLs and built-in connects.
 	expect(bare('?provider=github')).toBe(false)
-	// The provider's success redirect strips the config query; sessionStorage
-	// restores it client-side.
 	expect(bare('?code=auth-code&state=abc')).toBe(false)
-	// The provider's denial redirect carries error instead of code.
 	expect(bare('?error=access_denied&state=abc')).toBe(false)
-})
 
-test('anonymous visits with a provider still hit the session gate', async () => {
-	const env = {} as Env
+	const bareResponse = await createConnectOauthHandler(env).handler(
+		new RequestContext(new Request('https://example.com/connect/oauth')),
+	)
+	expect(bareResponse.status).toBe(302)
+	expect(bareResponse.headers.get('location')).toBe(
+		'https://example.com/guides/oauth',
+	)
+
 	mockModule.requirePageSession.mockResolvedValue(
 		Response.redirect('https://example.com/login', 302),
 	)
-	const response = await createConnectOauthHandler(env).handler(
+	const gatedResponse = await createConnectOauthHandler(env).handler(
 		new RequestContext(
 			new Request('https://example.com/connect/oauth?provider=github'),
 		),
 	)
-	expect(response.status).toBe(302)
-	expect(response.headers.get('location')).toContain('/login')
+	expect(gatedResponse.status).toBe(302)
+	expect(gatedResponse.headers.get('location')).toContain('/login')
 })
 
-test('provider visits embed the integration record as SSR loader data', async () => {
+test('provider visits embed SSR loader data and honor platform lookup flags', async () => {
 	const env = {} as Env
 	const record = { name: 'github', platform: true }
 	mockModule.requirePageSession.mockResolvedValue(null)
@@ -90,7 +81,6 @@ test('provider visits embed the integration record as SSR loader data', async ()
 	})
 	mockModule.loadAccountIntegrationByName.mockResolvedValue(record)
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
-
 	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
 	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
 	mockModule.hasStoredConnectClientSecret.mockResolvedValue(true)
@@ -100,7 +90,6 @@ test('provider visits embed the integration record as SSR loader data', async ()
 			new Request('https://example.com/connect/oauth?provider=GitHub'),
 		),
 	)
-	// The provider param normalizes before the lookup, matching the client.
 	expect(mockModule.loadAccountIntegrationByName).toHaveBeenCalledWith(
 		env,
 		expect.anything(),
@@ -117,29 +106,17 @@ test('provider visits embed the integration record as SSR loader data', async ()
 					builtInAvailable: false,
 					existingConnection: null,
 					hasStoredClientSecret: true,
-					// Server-computed so SSR renders the Redirect URI card
-					// before `window` exists.
 					redirectUri: 'https://example.com/connect/oauth',
 				},
 			},
 		}),
 	)
-})
 
-test('platform=1 forces the built-in lookup', async () => {
-	const env = {} as Env
-	mockModule.requirePageSession.mockResolvedValue(null)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
-	})
 	mockModule.loadAccountIntegrationByName.mockResolvedValue({
 		name: 'google',
 		platform: true,
 	})
-	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
-	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
 	mockModule.hasStoredConnectClientSecret.mockResolvedValue(false)
-	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 
 	await createConnectOauthHandler(env).handler(
 		new RequestContext(
@@ -155,7 +132,6 @@ test('platform=1 forces the built-in lookup', async () => {
 		{ preferPlatform: true, platformSlug: undefined },
 	)
 
-	// platform=<slug> connects that built-in under a different name.
 	await createConnectOauthHandler(env).handler(
 		new RequestContext(
 			new Request(
@@ -171,7 +147,7 @@ test('platform=1 forces the built-in lookup', async () => {
 	)
 })
 
-test('callback returns embed only the redirect URI, not an integration lookup', async () => {
+test('callback embeds only the redirect URI without an integration lookup', async () => {
 	const env = {} as Env
 	mockModule.requirePageSession.mockResolvedValue(null)
 	mockModule.loadAccountIntegrationByName.mockClear()
@@ -183,8 +159,6 @@ test('callback returns embed only the redirect URI, not an integration lookup', 
 		),
 	)
 	expect(mockModule.loadAccountIntegrationByName).not.toHaveBeenCalled()
-	// Config is restored from sessionStorage client-side; the redirect URI
-	// still embeds so the SSR shell renders the Redirect URI card.
 	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			loaderData: {

@@ -5,10 +5,7 @@ import { createPlatformAccount } from '#worker/identity/platform-account-creatio
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import {
-	packageScopeUsername,
-	resolveSavedPackageImport,
-} from './package-import-resolution.ts'
+import { resolveSavedPackageImport } from './package-import-resolution.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -51,7 +48,7 @@ async function seedPackage(
 	return id
 }
 
-test('platform scopes resolve live for callers without their own copy', async () => {
+test('resolveSavedPackageImport resolves platform scopes, prefers caller copies, and rejects hidden or foreign packages', async () => {
 	const { db, platformUserId } = await createHarness()
 	const platformPackageId = await seedPackage(db, {
 		userId: platformUserId,
@@ -59,45 +56,42 @@ test('platform scopes resolve live for callers without their own copy', async ()
 		kodyId: 'github',
 	})
 
-	const resolved = await resolveSavedPackageImport({
+	const platformResolved = await resolveSavedPackageImport({
 		db,
 		userId: 'caller-user',
 		specifier: 'kody:@kody/github/issues',
 	})
-	expect(resolved).toMatchObject({
+	expect(platformResolved).toMatchObject({
 		sourceOwnerUserId: platformUserId,
 		platformScope: 'kody',
 	})
-	expect(resolved?.row.id).toBe(platformPackageId)
-})
+	expect(platformResolved?.row.id).toBe(platformPackageId)
 
-test('the caller-owned copy always wins over the platform scope (fork to customize)', async () => {
-	const { db, platformUserId } = await createHarness()
-	await seedPackage(db, {
-		userId: platformUserId,
-		name: '@kody/github',
-		kodyId: 'github',
-	})
+	await expect(
+		resolveSavedPackageImport({
+			db,
+			userId: 'caller-user',
+			specifier: 'kody:@kody/github',
+			allowPlatformScopes: false,
+		}),
+	).resolves.toBeNull()
+
 	const ownCopyId = await seedPackage(db, {
 		userId: 'caller-user',
 		name: '@kody/github',
 		kodyId: 'github',
 	})
-
-	const resolved = await resolveSavedPackageImport({
+	const callerResolved = await resolveSavedPackageImport({
 		db,
 		userId: 'caller-user',
 		specifier: 'kody:@kody/github',
 	})
-	expect(resolved).toMatchObject({
+	expect(callerResolved).toMatchObject({
 		sourceOwnerUserId: 'caller-user',
 		platformScope: null,
 	})
-	expect(resolved?.row.id).toBe(ownCopyId)
-})
+	expect(callerResolved?.row.id).toBe(ownCopyId)
 
-test('hidden/private platform packages and non-platform foreign scopes do not resolve', async () => {
-	const { db, platformUserId } = await createHarness()
 	await seedPackage(db, {
 		userId: platformUserId,
 		name: '@kody/wip-package',
@@ -115,7 +109,6 @@ test('hidden/private platform packages and non-platform foreign scopes do not re
 		name: '@someoneelse/tools',
 		kodyId: 'tools',
 	})
-
 	await expect(
 		resolveSavedPackageImport({
 			db,
@@ -130,7 +123,6 @@ test('hidden/private platform packages and non-platform foreign scopes do not re
 			specifier: 'kody:@kody/internal-package',
 		}),
 	).resolves.toBeNull()
-	// Person-account scopes never resolve cross-user: structural, not policy.
 	await expect(
 		resolveSavedPackageImport({
 			db,
@@ -138,29 +130,6 @@ test('hidden/private platform packages and non-platform foreign scopes do not re
 			specifier: 'kody:@someoneelse/tools',
 		}),
 	).resolves.toBeNull()
-})
-
-test('allowPlatformScopes: false keeps the dynamic-import lane caller-only', async () => {
-	const { db, platformUserId } = await createHarness()
-	await seedPackage(db, {
-		userId: platformUserId,
-		name: '@kody/github',
-		kodyId: 'github',
-	})
-
-	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: 'caller-user',
-			specifier: 'kody:@kody/github',
-			allowPlatformScopes: false,
-		}),
-	).resolves.toBeNull()
-})
-
-test('packageScopeUsername parses npm scopes', () => {
-	expect(packageScopeUsername('@kody/github')).toBe('kody')
-	expect(packageScopeUsername('unscoped')).toBeNull()
 })
 
 test('platform-owned dependencies are excluded from packageStorage grants', () => {

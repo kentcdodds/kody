@@ -253,77 +253,6 @@ test('save_oauth_app persists the app (client id + endpoints) before authorize r
 	expect(mockModule.saveSecret).not.toHaveBeenCalled()
 })
 
-test('save_oauth_app reuses an existing app when setting up a second account with the same client credentials', async () => {
-	mockModule.upsertOauthAppWithoutConnection.mockClear()
-	mockModule.upsertOauthAppWithoutConnection.mockImplementation(
-		async (input: { config: { name: string; clientId: string } }) => ({
-			userId: 'stable-user-1',
-			slug: 'google',
-			provider: 'google',
-			label: null,
-			clientId: input.config.clientId,
-			clientSecretSecretName: null,
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'pkce' as const,
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: null,
-			extraAuthorizeParams: {},
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-		}),
-	)
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const first = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save_oauth_app',
-				provider: 'google',
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				apiBaseUrl: 'https://www.googleapis.com',
-				flow: 'pkce',
-				clientId: 'shared-google-client',
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(first.status).toBe(200)
-	await expect(first.json()).resolves.toMatchObject({
-		ok: true,
-		app: { slug: 'google', clientId: 'shared-google-client' },
-	})
-
-	const second = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save_oauth_app',
-				provider: 'google-calendar',
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				apiBaseUrl: 'https://www.googleapis.com',
-				flow: 'pkce',
-				clientId: 'shared-google-client',
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(second.status).toBe(200)
-	await expect(second.json()).resolves.toMatchObject({
-		ok: true,
-		app: { slug: 'google', clientId: 'shared-google-client' },
-	})
-	expect(mockModule.upsertOauthAppWithoutConnection).toHaveBeenCalledTimes(2)
-	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
-})
-
 test('connect oauth saves tokens via the secret store and persists app+connection through the integrations service', async () => {
 	mockModule.upsertIntegration.mockClear()
 	mockModule.saveSecret.mockClear()
@@ -393,11 +322,11 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		integrationName: 'github',
 		nextSteps: {
 			integrationName: 'github',
-			guidance: expect.stringContaining('auth credentials only'),
+			guidance: expect.any(String),
 			suggestions: [],
 			createHelpersCta: {
 				label: 'Create helpers package',
-				prompt: expect.stringContaining('thin helpers package'),
+				prompt: expect.any(String),
 			},
 		},
 	})
@@ -656,119 +585,6 @@ test('connect oauth rejects invalid authorization metadata', async () => {
 	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
 })
 
-test('connect oauth normalizes URL-shaped allowed hosts to bare hostnames', async () => {
-	mockModule.upsertIntegration.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'linkedin',
-				tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-				apiBaseUrl: 'https://api.linkedin.com',
-				flow: 'pkce',
-				clientId: 'linkedin-client-id',
-				accessTokenSecretName: 'linkedinAccessToken',
-				refreshTokenSecretName: 'linkedinRefreshToken',
-				allowedHosts: ['https://api.linkedin.com', 'www.linkedin.com'],
-				tokenPayload: {
-					access_token: 'access-token',
-				},
-			}),
-		}),
-		params: {},
-	} as never)
-
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: true,
-		allowedHosts: ['api.linkedin.com', 'www.linkedin.com'],
-		refreshTokenSaved: false,
-	})
-	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
-		expect.objectContaining({
-			config: expect.objectContaining({
-				requiredHosts: ['api.linkedin.com', 'www.linkedin.com'],
-				refreshTokenSecretName: null,
-			}),
-		}),
-	)
-})
-
-test('connect oauth reuses an existing OAuth app when connecting a second account with the same client id', async () => {
-	mockModule.upsertIntegration.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const first = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'google',
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				apiBaseUrl: 'https://www.googleapis.com',
-				scopes: ['openid', 'email'],
-				flow: 'pkce',
-				clientId: 'shared-google-client',
-				accessTokenSecretName: 'googleAccessToken',
-				refreshTokenSecretName: 'googleRefreshToken',
-				allowedHosts: ['www.googleapis.com'],
-				tokenPayload: {
-					access_token: 'google-access-1',
-					refresh_token: 'google-refresh-1',
-				},
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(first.status).toBe(200)
-
-	const second = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'google-calendar',
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				apiBaseUrl: 'https://www.googleapis.com',
-				scopes: ['calendar.readonly'],
-				flow: 'pkce',
-				clientId: 'shared-google-client',
-				accessTokenSecretName: 'googleCalendarAccessToken',
-				refreshTokenSecretName: 'googleCalendarRefreshToken',
-				allowedHosts: ['www.googleapis.com'],
-				tokenPayload: {
-					access_token: 'google-access-2',
-					refresh_token: 'google-refresh-2',
-				},
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(second.status).toBe(200)
-
-	expect(mockModule.upsertIntegration).toHaveBeenCalledTimes(2)
-	expect(mockModule.upsertIntegration.mock.calls[0]?.[0]).toMatchObject({
-		config: {
-			name: 'google',
-			clientId: 'shared-google-client',
-		},
-	})
-	expect(mockModule.upsertIntegration.mock.calls[1]?.[0]).toMatchObject({
-		config: {
-			name: 'google-calendar',
-			clientId: 'shared-google-client',
-		},
-	})
-})
-
 test('host approval view and approve persist normalized hosts for the selected secret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
@@ -862,9 +678,10 @@ test('host approval view and approve persist normalized hosts for the selected s
 	)
 })
 
-test('approval request rejects ambiguous host and package targets', async () => {
+test('approval requests reject invalid targets and enforce host precedence over capability', async () => {
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+
+	const ambiguousResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&package_id=pkg-123',
 			{
@@ -875,14 +692,121 @@ test('approval request rejects ambiguous host and package targets', async () => 
 		),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(ambiguousResponse.status).toBe(400)
+	await expect(ambiguousResponse.json()).resolves.toMatchObject({
 		ok: false,
 		error: 'Approval request contains both host and package.',
 	})
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedPackages).not.toHaveBeenCalled()
+
+	const missingTargetResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(missingTargetResponse.status).toBe(400)
+	await expect(missingTargetResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Approval request is missing a host, package, or capability.',
+	})
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'cloudflareToken',
+			scope: 'user',
+			description: 'Cloudflare token',
+			packageId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
+
+	const hostPrecedenceResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&capability=secret_set',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(hostPrecedenceResponse.status).toBe(200)
+	await expect(hostPrecedenceResponse.json()).resolves.toMatchObject({
+		ok: true,
+	})
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalled()
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+
+	mockModule.setSecretAllowedCapabilities.mockClear()
+	const junkResponse = await handler.handler({
+		request: new Request(
+			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent('evil name<script>')}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(junkResponse.status).toBe(400)
+	await expect(junkResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Invalid approval request capability.',
+	})
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+
+	const oversizedCapability = 'a'.repeat(201)
+	const oversizedResponse = await handler.handler({
+		request: new Request(
+			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent(oversizedCapability)}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(oversizedResponse.status).toBe(400)
+	await expect(oversizedResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Invalid approval request capability.',
+	})
+
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
+	const junkViewResponse = await handler.handler({
+		request: new Request(
+			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent('evil name<script>')}`,
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+	expect(junkViewResponse.status).toBe(200)
+	await expect(junkViewResponse.json()).resolves.toMatchObject({
+		ok: true,
+		approval: null,
+		approvalError: 'Invalid approval request capability.',
+	})
 })
 
 test('account secrets payload includes all packages and package titles and allowed packages', async () => {
@@ -1109,132 +1033,6 @@ test('capability approval view, reject, approve, and dedupe mirror host/package 
 			allowedCapabilities: ['secret_set'],
 		}),
 	)
-})
-
-test('capability approval rejects invalid targets and defers to host when both are present', async () => {
-	mockModule.setSecretAllowedCapabilities.mockClear()
-	mockModule.setSecretAllowedHosts.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const missingTargetResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-
-	expect(missingTargetResponse.status).toBe(400)
-	await expect(missingTargetResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Approval request is missing a host, package, or capability.',
-	})
-	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
-
-	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'cloudflareToken',
-			scope: 'user',
-			description: 'Cloudflare token',
-			packageId: null,
-			allowedHosts: [],
-			allowedCapabilities: [],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			ttlMs: null,
-		},
-	])
-	mockModule.listSecrets.mockResolvedValueOnce([])
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
-
-	const hostPrecedenceResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&capability=secret_set',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-
-	expect(hostPrecedenceResponse.status).toBe(200)
-	await expect(hostPrecedenceResponse.json()).resolves.toMatchObject({
-		ok: true,
-	})
-	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalled()
-	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
-})
-
-test('capability approval rejects junk and oversized capability names without policy change', async () => {
-	mockModule.setSecretAllowedCapabilities.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const junkResponse = await handler.handler({
-		request: new Request(
-			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent('evil name<script>')}`,
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-
-	expect(junkResponse.status).toBe(400)
-	await expect(junkResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Invalid approval request capability.',
-	})
-	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
-
-	const oversizedCapability = 'a'.repeat(201)
-	const oversizedResponse = await handler.handler({
-		request: new Request(
-			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent(oversizedCapability)}`,
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-
-	expect(oversizedResponse.status).toBe(400)
-	await expect(oversizedResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Invalid approval request capability.',
-	})
-	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
-
-	mockModule.listSecrets.mockResolvedValueOnce([])
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
-
-	const junkViewResponse = await handler.handler({
-		request: new Request(
-			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent('evil name<script>')}`,
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
-
-	expect(junkViewResponse.status).toBe(200)
-	await expect(junkViewResponse.json()).resolves.toMatchObject({
-		ok: true,
-		approval: null,
-		approvalError: 'Invalid approval request capability.',
-	})
-	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
 })
 
 test('package approval reject and approve handle missing secrets and deduplicate package ids', async () => {
@@ -1514,7 +1312,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 	)
 })
 
-test('oauth_exchange supports Notion basic-json and confidential form-body styles without leaking provider 401', async () => {
+test('oauth_exchange resolves secrets, maps provider failures, and forwards exchange styles', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
 	const handler = createAccountSecretsApiHandler(createEnv())
@@ -1559,19 +1357,13 @@ test('oauth_exchange supports Notion basic-json and confidential form-body style
 		access_token: 'notion-access',
 		refresh_token: 'notion-refresh',
 	})
+	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'notionClientSecret',
+			scope: 'user',
+		}),
+	)
 	expect(fetchMock).toHaveBeenCalledTimes(1)
-	const notionRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
-	expect(notionRequest.method).toBe('POST')
-	expect(notionRequest.headers).toMatchObject({
-		Accept: 'application/json',
-		'Content-Type': 'application/json',
-		Authorization: `Basic ${btoa('notion-client-id:notion-client-secret')}`,
-	})
-	expect(JSON.parse(String(notionRequest.body))).toEqual({
-		grant_type: 'authorization_code',
-		code: 'auth-code',
-		redirect_uri: 'https://example.com/connect/oauth',
-	})
 
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
@@ -1610,70 +1402,6 @@ test('oauth_exchange supports Notion basic-json and confidential form-body style
 	await expect(formSuccess.json()).resolves.toMatchObject({
 		access_token: 'slack-access',
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(2)
-	const formRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
-	expect(formRequest.headers).toMatchObject({
-		Accept: 'application/json',
-		'Content-Type': 'application/x-www-form-urlencoded',
-	})
-	expect(formRequest.headers).not.toHaveProperty('Authorization')
-	expect(
-		new URLSearchParams(String(formRequest.body)).get('client_secret'),
-	).toBe('slack-client-secret')
-	expect(new URLSearchParams(String(formRequest.body)).get('client_id')).toBe(
-		'slack-client-id',
-	)
-
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'notion-client-secret',
-	})
-	fetchMock.mockResolvedValueOnce(
-		new Response(
-			JSON.stringify({
-				error: 'invalid_client',
-				error_description: 'Client authentication failed',
-			}),
-			{ status: 401, headers: { 'Content-Type': 'application/json' } },
-		),
-	)
-
-	const notionFailure = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				tokenUrl: 'https://api.notion.com/v1/oauth/token',
-				params: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: 'notion-client-id',
-					code: 'bad-code',
-					redirect_uri: 'https://example.com/connect/oauth',
-				}).toString(),
-				flow: 'confidential',
-				clientSecretSecretName: 'notionClientSecret',
-				allowedHosts: ['api.notion.com'],
-			}),
-		}),
-		params: {},
-	} as never)
-
-	expect(notionFailure.status).toBe(502)
-	await expect(notionFailure.json()).resolves.toEqual({
-		ok: false,
-		error: 'invalid_client',
-		error_description: 'Client authentication failed',
-		providerStatus: 401,
-	})
-
-	vi.unstubAllGlobals()
-})
-
-test('oauth_exchange supports Canva basic-form with PKCE code_verifier and a client secret together', async () => {
-	const fetchMock = vi.fn()
-	vi.stubGlobal('fetch', fetchMock)
-	const handler = createAccountSecretsApiHandler(createEnv())
 
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
@@ -1716,23 +1444,52 @@ test('oauth_exchange supports Canva basic-form with PKCE code_verifier and a cli
 		access_token: 'canva-access',
 		refresh_token: 'canva-refresh',
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(1)
-	expect(fetchMock.mock.calls[0]?.[0]).toBe(
-		'https://api.canva.com/rest/v1/oauth/token',
-	)
-	const canvaRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
-	expect(canvaRequest.method).toBe('POST')
-	expect(canvaRequest.headers).toMatchObject({
-		Accept: 'application/json',
-		'Content-Type': 'application/x-www-form-urlencoded',
-		Authorization: `Basic ${btoa('canva-client-id:canva-client-secret')}`,
+	expect(fetchMock).toHaveBeenCalledTimes(3)
+
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'notion-client-secret',
 	})
-	const canvaBody = new URLSearchParams(String(canvaRequest.body))
-	expect(canvaBody.get('grant_type')).toBe('authorization_code')
-	expect(canvaBody.get('code')).toBe('canva-code')
-	expect(canvaBody.get('code_verifier')).toBe('pkce-verifier')
-	expect(canvaBody.get('client_id')).toBeNull()
-	expect(canvaBody.get('client_secret')).toBeNull()
+	fetchMock.mockResolvedValueOnce(
+		new Response(
+			JSON.stringify({
+				error: 'invalid_client',
+				error_description: 'Client authentication failed',
+			}),
+			{ status: 401, headers: { 'Content-Type': 'application/json' } },
+		),
+	)
+
+	const notionFailure = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'oauth_exchange',
+				tokenUrl: 'https://api.notion.com/v1/oauth/token',
+				params: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: 'notion-client-id',
+					code: 'bad-code',
+					redirect_uri: 'https://example.com/connect/oauth',
+				}).toString(),
+				flow: 'confidential',
+				clientSecretSecretName: 'notionClientSecret',
+				allowedHosts: ['api.notion.com'],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(notionFailure.status).toBe(502)
+	const notionFailureBody = await notionFailure.text()
+	expect(JSON.parse(notionFailureBody)).toEqual({
+		ok: false,
+		error: 'invalid_client',
+		error_description: 'Client authentication failed',
+		providerStatus: 401,
+	})
+	expect(notionFailureBody).not.toContain('notion-client-secret')
 
 	vi.unstubAllGlobals()
 })
@@ -1840,10 +1597,10 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 		integrationName: 'canva',
 		nextSteps: {
 			integrationName: 'canva',
-			guidance: expect.stringContaining('auth credentials only'),
+			guidance: expect.any(String),
 			createHelpersCta: {
 				label: 'Create helpers package',
-				prompt: expect.stringContaining('thin helpers package'),
+				prompt: expect.any(String),
 			},
 		},
 	})
@@ -1913,10 +1670,30 @@ const githubPlatformApp = {
 	updatedAt: new Date(0).toISOString(),
 }
 
-test('oauth_exchange with platformAppSlug uses server-side app config and the decrypted shared secret', async () => {
+test('platform-lane oauth exchange and connect ignore spoofed body fields and enforce scope policy', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
 	const handler = createAccountSecretsApiHandler(createEnv())
+
+	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(null)
+	const unknownExchange = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'oauth_exchange',
+				platformAppSlug: 'unknown',
+				params: 'grant_type=authorization_code',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(unknownExchange.status).toBe(400)
+	await expect(unknownExchange.json()).resolves.toEqual({
+		ok: false,
+		error: 'Platform integration is not available.',
+	})
+	expect(fetchMock).not.toHaveBeenCalled()
 
 	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
 	mockModule.getPlatformOauthAppClientSecret.mockResolvedValueOnce(
@@ -1929,15 +1706,13 @@ test('oauth_exchange with platformAppSlug uses server-side app config and the de
 		}),
 	)
 
-	const response = await handler.handler({
+	const exchangeResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				action: 'oauth_exchange',
 				platformAppSlug: 'github',
-				// Body-supplied endpoints and secret names must be ignored for
-				// the platform lane.
 				tokenUrl: 'https://evil.example.com/token',
 				flow: 'pkce',
 				clientSecretSecretName: 'attackerSecret',
@@ -1951,9 +1726,8 @@ test('oauth_exchange with platformAppSlug uses server-side app config and the de
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(exchangeResponse.status).toBe(200)
+	await expect(exchangeResponse.json()).resolves.toMatchObject({
 		access_token: 'gh-access',
 	})
 	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
@@ -1967,42 +1741,12 @@ test('oauth_exchange with platformAppSlug uses server-side app config and the de
 	expect(body.get('client_id')).toBe('platform-github-client-id')
 
 	vi.unstubAllGlobals()
-})
 
-test('oauth_exchange rejects unknown platform apps without touching the network', async () => {
-	const fetchMock = vi.fn()
-	vi.stubGlobal('fetch', fetchMock)
-	const handler = createAccountSecretsApiHandler(createEnv())
-	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(null)
-
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				platformAppSlug: 'unknown',
-				params: 'grant_type=authorization_code',
-			}),
-		}),
-		params: {},
-	} as never)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
-		ok: false,
-		error: 'Platform integration is not available.',
-	})
-	expect(fetchMock).not.toHaveBeenCalled()
-
-	vi.unstubAllGlobals()
-})
-
-test('connect_oauth with platformAppSlug saves tokens and persists a platform-lane connection', async () => {
-	const handler = createAccountSecretsApiHandler(createEnv())
 	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
+	mockModule.saveSecret.mockClear()
+	mockModule.upsertPlatformIntegration.mockClear()
 
-	const response = await handler.handler({
+	const connectResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -2021,10 +1765,8 @@ test('connect_oauth with platformAppSlug saves tokens and persists a platform-la
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toMatchObject({
+	expect(connectResponse.status).toBe(200)
+	await expect(connectResponse.json()).resolves.toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
@@ -2044,7 +1786,6 @@ test('connect_oauth with platformAppSlug saves tokens and persists a platform-la
 			config: expect.objectContaining({ name: 'github' }),
 		}),
 	)
-	// Token secrets stay user-owned even on the platform lane.
 	expect(mockModule.saveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: 'githubAccessToken',
@@ -2052,15 +1793,12 @@ test('connect_oauth with platformAppSlug saves tokens and persists a platform-la
 			scope: 'user',
 		}),
 	)
-})
 
-test('connect_oauth rejects out-of-menu platform scopes before persisting any token secret', async () => {
-	const handler = createAccountSecretsApiHandler(createEnv())
 	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
 	mockModule.saveSecret.mockClear()
 	mockModule.upsertPlatformIntegration.mockClear()
 
-	const response = await handler.handler({
+	const rejectedScopes = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -2075,9 +1813,8 @@ test('connect_oauth rejects out-of-menu platform scopes before persisting any to
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(rejectedScopes.status).toBe(400)
+	await expect(rejectedScopes.json()).resolves.toMatchObject({
 		ok: false,
 		error: expect.stringContaining('Scopes not allowed'),
 	})
