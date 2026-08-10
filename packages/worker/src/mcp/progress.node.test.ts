@@ -76,7 +76,7 @@ test('reportExecutePhaseProgress maps serverTiming phase names', async () => {
 	await reportExecutePhaseProgress(reportProgress, 'hydrate')
 	expect(reportProgress).toHaveBeenCalledWith({
 		progress: 2,
-		total: 5,
+		total: 4,
 		message: executeProgressPhaseMessages.hydrate,
 	})
 })

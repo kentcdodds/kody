@@ -21,7 +21,10 @@ export type VectorReindexResult = {
 	failed?: number
 	warning?: string
 	error?: string
+	/** Capped sample of failures for operator-facing messages. */
 	failures?: Array<VectorReindexFailure>
+	/** Uncapped failed candidate ids for reconciliation (e.g. debt cleanup). */
+	failedIds?: Array<string>
 }
 
 const upsertBatchSize = 16
@@ -36,11 +39,18 @@ export function mergeVectorReindexResults(
 	let upserted = 0
 	let failed = 0
 	const failures: Array<VectorReindexFailure> = []
+	const failedIds: Array<string> = []
+	const seenFailedIds = new Set<string>()
 	for (const result of results) {
 		upserted += result.upserted
 		failed += result.failed ?? 0
 		for (const failure of result.failures ?? []) {
 			if (failures.length < maxReportedFailures) failures.push(failure)
+		}
+		for (const failedId of result.failedIds ?? []) {
+			if (seenFailedIds.has(failedId)) continue
+			seenFailedIds.add(failedId)
+			failedIds.push(failedId)
 		}
 	}
 	if (failed === 0) return { upserted }
@@ -49,6 +59,7 @@ export function mergeVectorReindexResults(
 		upserted,
 		failed,
 		failures,
+		...(failedIds.length > 0 ? { failedIds } : {}),
 		...(upserted === 0 ? { error: message } : { warning: message }),
 	}
 }
@@ -62,6 +73,7 @@ export async function reindexVectorCandidates(input: {
 	let upserted = 0
 	let failed = 0
 	const failures: Array<VectorReindexFailure> = []
+	const failedIds: Array<string> = []
 
 	function recordFailure(input_: {
 		candidate: VectorReindexCandidate
@@ -69,6 +81,7 @@ export async function reindexVectorCandidates(input: {
 		error: unknown
 	}) {
 		failed += 1
+		failedIds.push(input_.candidate.id)
 		const failure = {
 			id: input_.candidate.id,
 			phase: input_.phase,
@@ -141,6 +154,7 @@ export async function reindexVectorCandidates(input: {
 		upserted,
 		failed,
 		failures,
+		failedIds,
 	}
 	const message = `${failed} ${input.kind} vector(s) failed to reindex`
 	if (upserted === 0 && input.candidates.length > 0) {

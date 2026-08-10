@@ -8,36 +8,124 @@ import { upsertSavedPackageVector } from './vectorize.ts'
  * (with the error) on failure and report to Sentry. Capability reindex also
  * clears debt after a successful upsert so search converges even if the
  * original waitUntil never ran.
+ *
+ * Each schedule bumps a per-package `generation` and stores the latest
+ * `embed_text`. An in-flight reconcile (coalesced per isolate) re-reads the
+ * debt row after every upsert so a newer publish wins; stale completions
+ * cannot clear newer debt.
  */
+
+type SearchIndexDebtRow = {
+	packageId: string
+	userId: string
+	generation: number
+	embedText: string
+}
+
+/** Coalesce concurrent schedules for the same package in one isolate. */
+const inFlightReconciles = new Map<string, Promise<void>>()
 
 export async function markSavedPackageSearchIndexDebt(input: {
 	db: D1Database
 	packageId: string
 	userId: string
+	embedText: string
 	lastError?: string | null
-}) {
+}): Promise<number> {
 	const now = new Date().toISOString()
 	await input.db
 		.prepare(
 			`INSERT INTO saved_package_search_index_debt (
-				package_id, user_id, last_error, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?)
+				package_id, user_id, generation, embed_text, last_error, created_at, updated_at
+			) VALUES (?, ?, 1, ?, ?, ?, ?)
 			ON CONFLICT(package_id) DO UPDATE SET
 				user_id = excluded.user_id,
+				generation = saved_package_search_index_debt.generation + 1,
+				embed_text = excluded.embed_text,
 				last_error = excluded.last_error,
 				updated_at = excluded.updated_at`,
 		)
-		.bind(input.packageId, input.userId, input.lastError ?? null, now, now)
+		.bind(
+			input.packageId,
+			input.userId,
+			input.embedText,
+			input.lastError ?? null,
+			now,
+			now,
+		)
 		.run()
+	const row = await input.db
+		.prepare(
+			`SELECT generation FROM saved_package_search_index_debt WHERE package_id = ?`,
+		)
+		.bind(input.packageId)
+		.first<{ generation: number }>()
+	return row?.generation ?? 1
 }
 
 export async function clearSavedPackageSearchIndexDebt(input: {
 	db: D1Database
 	packageId: string
+	generation?: number
 }) {
+	if (input.generation === undefined) {
+		await input.db
+			.prepare(
+				`DELETE FROM saved_package_search_index_debt WHERE package_id = ?`,
+			)
+			.bind(input.packageId)
+			.run()
+		return
+	}
 	await input.db
-		.prepare(`DELETE FROM saved_package_search_index_debt WHERE package_id = ?`)
+		.prepare(
+			`DELETE FROM saved_package_search_index_debt
+			WHERE package_id = ? AND generation = ?`,
+		)
+		.bind(input.packageId, input.generation)
+		.run()
+}
+
+async function readSavedPackageSearchIndexDebt(input: {
+	db: D1Database
+	packageId: string
+}): Promise<SearchIndexDebtRow | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT package_id, user_id, generation, embed_text
+			FROM saved_package_search_index_debt
+			WHERE package_id = ?`,
+		)
 		.bind(input.packageId)
+		.first<{
+			package_id: string
+			user_id: string
+			generation: number
+			embed_text: string
+		}>()
+	if (!row) return null
+	return {
+		packageId: row.package_id,
+		userId: row.user_id,
+		generation: row.generation,
+		embedText: row.embed_text,
+	}
+}
+
+async function recordSavedPackageSearchIndexDebtFailure(input: {
+	db: D1Database
+	packageId: string
+	generation: number
+	lastError: string
+}) {
+	const now = new Date().toISOString()
+	await input.db
+		.prepare(
+			`UPDATE saved_package_search_index_debt
+			SET last_error = ?, updated_at = ?
+			WHERE package_id = ? AND generation = ?`,
+		)
+		.bind(input.lastError, now, input.packageId, input.generation)
 		.run()
 }
 
@@ -85,6 +173,72 @@ function logSavedPackageSearchIndexError(input: {
 	})
 }
 
+async function reconcileSavedPackageSearchIndex(input: {
+	env: Env
+	packageId: string
+	userId: string
+}) {
+	let failureGeneration: number | null = null
+	try {
+		for (;;) {
+			const row = await readSavedPackageSearchIndexDebt({
+				db: input.env.APP_DB,
+				packageId: input.packageId,
+			})
+			if (!row) return
+			failureGeneration = row.generation
+			await upsertSavedPackageVector(input.env, {
+				packageId: input.packageId,
+				userId: input.userId,
+				embedText: row.embedText,
+			})
+			const latest = await readSavedPackageSearchIndexDebt({
+				db: input.env.APP_DB,
+				packageId: input.packageId,
+			})
+			if (!latest) return
+			if (latest.generation !== row.generation) {
+				// A newer publish queued fresher embed text; loop.
+				continue
+			}
+			await clearSavedPackageSearchIndexDebt({
+				db: input.env.APP_DB,
+				packageId: input.packageId,
+				generation: row.generation,
+			})
+			const remaining = await readSavedPackageSearchIndexDebt({
+				db: input.env.APP_DB,
+				packageId: input.packageId,
+			})
+			if (!remaining) return
+		}
+	} catch (error: unknown) {
+		try {
+			if (failureGeneration !== null) {
+				await recordSavedPackageSearchIndexDebtFailure({
+					db: input.env.APP_DB,
+					packageId: input.packageId,
+					generation: failureGeneration,
+					lastError: getErrorMessage(error),
+				})
+			}
+		} catch (debtError) {
+			console.error(
+				JSON.stringify({
+					message: 'failed to persist search index debt after upsert failure',
+					packageId: input.packageId,
+					error: getErrorMessage(debtError),
+				}),
+			)
+		}
+		logSavedPackageSearchIndexError({
+			packageId: input.packageId,
+			userId: input.userId,
+			error,
+		})
+	}
+}
+
 /**
  * Upsert the package vector after the response when `waitUntil` is available;
  * otherwise await (same observability either way). Debt is marked before the
@@ -101,41 +255,27 @@ export async function scheduleSavedPackageSearchIndexUpsert(input: {
 		db: input.env.APP_DB,
 		packageId: input.packageId,
 		userId: input.userId,
+		embedText: input.embedText,
 	})
 
-	const task = (async () => {
-		await upsertSavedPackageVector(input.env, {
-			packageId: input.packageId,
-			userId: input.userId,
-			embedText: input.embedText,
-		})
-		await clearSavedPackageSearchIndexDebt({
-			db: input.env.APP_DB,
-			packageId: input.packageId,
-		})
-	})().catch(async (error: unknown) => {
-		try {
-			await markSavedPackageSearchIndexDebt({
-				db: input.env.APP_DB,
-				packageId: input.packageId,
-				userId: input.userId,
-				lastError: getErrorMessage(error),
-			})
-		} catch (debtError) {
-			console.error(
-				JSON.stringify({
-					message: 'failed to persist search index debt after upsert failure',
-					packageId: input.packageId,
-					error: getErrorMessage(debtError),
-				}),
-			)
+	const existing = inFlightReconciles.get(input.packageId)
+	if (existing) {
+		if (input.waitUntil) {
+			input.waitUntil(existing)
+			return
 		}
-		logSavedPackageSearchIndexError({
-			packageId: input.packageId,
-			userId: input.userId,
-			error,
-		})
+		await existing
+		return
+	}
+
+	const task = reconcileSavedPackageSearchIndex({
+		env: input.env,
+		packageId: input.packageId,
+		userId: input.userId,
+	}).finally(() => {
+		inFlightReconciles.delete(input.packageId)
 	})
+	inFlightReconciles.set(input.packageId, task)
 
 	if (input.waitUntil) {
 		input.waitUntil(task)

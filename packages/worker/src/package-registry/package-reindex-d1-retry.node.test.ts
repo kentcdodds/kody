@@ -175,6 +175,7 @@ test('saved package reindex retries transient D1 export errors then reports exha
 					error: `D1_ERROR: ${d1LongRunningExportMessage}.`,
 				},
 			],
+			failedIds: ['package_pkg-1'],
 			error: '1 saved package vector(s) failed to reindex',
 		})
 		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {

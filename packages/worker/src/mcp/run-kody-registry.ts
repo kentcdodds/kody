@@ -746,7 +746,6 @@ export async function runModuleWithRegistry(
 			})
 		}
 	}
-	await reportExecutePhaseProgress(reportProgress, 'run')
 	const runStartedAtMs = Date.now()
 	const result = await runBundledModuleWithRegistry(
 		env,
@@ -774,8 +773,9 @@ export async function runModuleWithRegistry(
 			waitUntil: options?.waitUntil,
 		},
 	)
-	// The bundled run reports its own sub-phases (hydrate, provider-assembly,
-	// sandbox); `run` is their enclosing wall-clock span.
+	// Sub-phases (hydrate → provider-assembly → sandbox) report inside the
+	// bundled run so progress stays monotonic. `run` is only the enclosing
+	// serverTiming wall-clock span, not a client progress step.
 	serverTiming.push(...(result.serverTiming ?? []), {
 		name: 'run',
 		durationMs: Date.now() - runStartedAtMs,

@@ -60,6 +60,7 @@ test('reindexVectorCandidates isolates failed embedding items and upserts the re
 					error: 'embedding input rejected',
 				},
 			],
+			failedIds: ['bad-1'],
 			warning: '1 test vector(s) failed to reindex',
 		})
 
@@ -82,6 +83,33 @@ test('reindexVectorCandidates isolates failed embedding items and upserts the re
 		expect(consoleError).toHaveBeenCalledWith(
 			expect.stringContaining('capability vector reindex skipped vector'),
 		)
+	} finally {
+		consoleError.mockRestore()
+	}
+})
+
+test('reindexVectorCandidates keeps uncapped failedIds beyond the failure sample cap', async () => {
+	mockModule.embedTextsForVectorize.mockReset()
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	mockModule.embedTextsForVectorize.mockRejectedValue(new Error('ai down'))
+	const candidates = Array.from({ length: 25 }, (_, index) => ({
+		id: `bad-${index}`,
+		text: `text-${index}`,
+		namespace: 'user-a',
+		metadata: { kind: 'test' as const },
+	}))
+
+	try {
+		const result = await reindexVectorCandidates({
+			env: {} as Env,
+			index: { upsert: vi.fn() } as unknown as VectorizeIndex,
+			kind: 'test',
+			candidates,
+		})
+		expect(result.failed).toBe(25)
+		expect(result.failures).toHaveLength(20)
+		expect(result.failedIds).toHaveLength(25)
+		expect(result.failedIds?.[24]).toBe('bad-24')
 	} finally {
 		consoleError.mockRestore()
 	}

@@ -34,9 +34,11 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				sessionId: args.session_id,
 				userId: user.userId,
 			})
+			const isPackageSession = sessionInfo.entity_type === 'package'
+			const progressTotal = isPackageSession ? 3 : 2
 			await reportCapabilityProgress(ctx.reportProgress, {
 				progress: 1,
-				total: 3,
+				total: progressTotal,
 				message:
 					'Running publish checks on the session tree — lint, typecheck, the works…',
 			})
@@ -52,10 +54,10 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					args.confirm_private_visibility_change,
 			})
 			if (result.status === 'ok') {
-				if (sessionInfo.entity_type === 'package') {
+				if (isPackageSession) {
 					await reportCapabilityProgress(ctx.reportProgress, {
 						progress: 2,
-						total: 3,
+						total: progressTotal,
 						message:
 							'Rebuilding published package artifacts — bundling for the big leagues…',
 					})
@@ -70,7 +72,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					})
 					await reportCapabilityProgress(ctx.reportProgress, {
 						progress: 3,
-						total: 3,
+						total: progressTotal,
 						message: 'Repo session published. Ship it.',
 					})
 					return {
@@ -94,6 +96,11 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				const shapedFields = buildPlainRepoPackageShapedFields({
 					packageShaped,
 				})
+				await reportCapabilityProgress(ctx.reportProgress, {
+					progress: progressTotal,
+					total: progressTotal,
+					message: 'Repo session published. Ship it.',
+				})
 				return {
 					status: 'ok' as const,
 					session_id: result.sessionId,
@@ -103,6 +110,12 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				}
 			}
 			if (result.status === 'checks_outdated') {
+				await reportCapabilityProgress(ctx.reportProgress, {
+					progress: progressTotal,
+					total: progressTotal,
+					message:
+						'Publish checks are stale — refresh the session tree and try again.',
+				})
 				return {
 					status: 'checks_outdated' as const,
 					session_id: result.sessionId,
@@ -110,6 +123,12 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					message: result.message,
 				}
 			}
+			await reportCapabilityProgress(ctx.reportProgress, {
+				progress: progressTotal,
+				total: progressTotal,
+				message:
+					'The published base moved out from under this session — rebase, then retry.',
+			})
 			return {
 				status: 'base_moved' as const,
 				session_id: result.sessionId,

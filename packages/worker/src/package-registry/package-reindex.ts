@@ -84,6 +84,7 @@ export async function reindexSavedPackageVectors(
 				upserted: 0,
 				failed: loadFailures.length,
 				failures: loadFailures,
+				failedIds: loadFailures.map((failure) => failure.id),
 			})
 		}
 		if (candidates.length > 0) {
@@ -94,8 +95,10 @@ export async function reindexSavedPackageVectors(
 				candidates,
 			})
 			pageResults.push(pageResult)
+			// Prefer uncapped failedIds (failures is a capped sample for messages).
 			const failedIds = new Set(
-				(pageResult.failures ?? []).map((failure) => failure.id),
+				pageResult.failedIds ??
+					(pageResult.failures ?? []).map((failure) => failure.id),
 			)
 			// Self-heal deferred upsert debt: a successful reindex means search
 			// is current again, so drop the durable failure marker.

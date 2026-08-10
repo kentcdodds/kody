@@ -106,17 +106,16 @@ export const executeProgressPhaseMessages = {
 	'provider-assembly':
 		'Laying out the toolbox so capabilities are within reach…',
 	sandbox: 'Stepping into the sandbox — shoes off, code on…',
-	run: 'Running your module — fingers crossed, coffee nearby…',
 } as const
 
 export type ExecuteProgressPhase = keyof typeof executeProgressPhaseMessages
 
+/** Client progress order must match emission order (never move backward). */
 const executeProgressPhaseOrder = [
 	'bundle',
 	'hydrate',
 	'provider-assembly',
 	'sandbox',
-	'run',
 ] as const satisfies ReadonlyArray<ExecuteProgressPhase>
 
 export async function reportExecutePhaseProgress(
