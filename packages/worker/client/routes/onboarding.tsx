@@ -553,7 +553,12 @@ export function OnboardingRoute(handle: Handle) {
 				nextHasMcpClient === hasMcpClient &&
 				nextHasSentWelcomeEmail === hasSentWelcomeEmail &&
 				nextHasFirstHello === hasFirstHello &&
-				nextHasSavedMemory === hasSavedMemory
+				nextHasSavedMemory === hasSavedMemory &&
+				// The meter can mark Send done before the mailbox mirror stores the
+				// message, so the subject and sender can arrive a poll or two after
+				// the progress signals settle.
+				payload.welcomeEmail?.subject === welcomeEmail?.subject &&
+				payload.welcomeEmail?.fromAddress === welcomeEmail?.fromAddress
 			) {
 				return
 			}

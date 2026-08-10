@@ -25,6 +25,9 @@ Agent notes — for AI agents driving a new user's first win from this page:
   calls while they are away are the single worst failure mode here: they burn
   tokens, they look broken, and they add nothing that one lookup after "replied"
   does not.
+- Every Kody path below (`/onboarding`, `/connect/oauth`, `/account/email`) is
+  relative to the origin you fetched this guide from. Resolve them against that
+  origin; never send someone to a different Kody deployment.
 - Use the exact subject from step 1 whenever you refer to the email, so the
   person can search their inbox for it.
 - Save memories only after the reply is in hand, and say what you saved.
@@ -38,9 +41,10 @@ email client, and the answers become durable memories that follow them into
 every agent they connect later. It exercises the parts of Kody that are hard to
 describe and easy to feel — stored mail, durable memory, and per-user isolation.
 
-The person reading along may have arrived here from the
-[onboarding page](https://heykody.app/onboarding); everything below happens in
-their agent, not on the web page.
+The person reading along may have arrived here from the onboarding page
+(`/onboarding` on the same origin this guide was fetched from — every path below
+is relative to that same deployment); everything after this happens in their
+agent, not on the web page.
 
 ## Before you start
 
@@ -54,7 +58,7 @@ it.
 Call `email_send` on your own account address with a subject the person can find
 by searching their inbox:
 
-```
+```text
 Welcome to Kody — reply to introduce yourself
 ```
 
@@ -123,10 +127,10 @@ moment the whole loop pays off, so make it visible rather than silent.
 The first win is done. Offer one concrete next step and let them choose:
 
 - **Connect a built-in integration in one click.** Kody hosts the provider app,
-  so there is nothing to register. Send them to
-  `https://heykody.app/connect/oauth?provider=<slug>` on the same origin this
-  guide came from (for example `provider=github` or `provider=google`), then
-  verify the connection with a small ad hoc `execute` call.
+  so there is nothing to register. Send them to `/connect/oauth?provider=<slug>`
+  on the same origin this guide came from (for example `provider=github` or
+  `provider=google`), then verify the connection with a small ad hoc `execute`
+  call.
 - **Bring their own OAuth app or API key** when they need scopes or rate limits
   the built-in app does not offer — load `coding_guide_get` with
   `guide: "oauth"`, or the matching `provider_*` guide.
@@ -138,10 +142,9 @@ The first win is done. Offer one concrete next step and let them choose:
 
 **The email never arrived.** Have them check spam and promotions first, and
 confirm the address on their Kody account is the inbox they are looking at. Kody
-also keeps its own copy: `https://heykody.app/account/email` shows the stored
-outbound message, so the subject is recoverable even when the personal copy is
-lost. Sending again is fine — say that you are resending so a duplicate is not a
-surprise.
+also keeps its own copy: `/account/email` shows the stored outbound message, so
+the subject is recoverable even when the personal copy is lost. Sending again is
+fine — say that you are resending so a duplicate is not a surprise.
 
 **Their reply is not in Kody.** Confirm they replied to the welcome message
 rather than composing a new mail to a different address, and confirm the from
@@ -152,8 +155,8 @@ account is not stored as theirs.
 hosts) bind MCP tools when a conversation starts, so a host that authorized
 mid-conversation often needs a **brand new chat** before the Kody tools appear.
 Have them start a fresh chat and paste the prompt again. If tools still do not
-appear, the authorization did not finish — send them back to
-[the onboarding page](https://heykody.app/onboarding) to reconnect.
+appear, the authorization did not finish — send them back to `/onboarding` to
+reconnect.
 
 **Nothing seems to happen on its own.** That is by design. Kody stores mail,
 memories, credentials, and code; it makes no inference calls of its own. Every
@@ -161,7 +164,9 @@ step in this loop happens because an agent asked for it.
 
 ## Try it
 
-Paste this into the agent connected to your Kody account:
+Paste this into the agent connected to your Kody account, swapping in your
+deployment's origin if it is not heykody.app (the `/onboarding` page copies this
+prompt with the right origin already filled in):
 
 > Ask the connected Kody server to read https://heykody.app/guides/first-win and
 > then walk me through my first win with Kody, one step at a time.
