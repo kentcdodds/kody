@@ -63,6 +63,7 @@ import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
+import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
@@ -335,11 +336,20 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				return fail('provider-error', 'provider_exchange_failed')
 			}
 
-			async function issueLogin(user: {
-				id: number
-				stable_user_id: string | null
-				email: string
-			}) {
+			async function issueLogin(
+				user: {
+					id: number
+					stable_user_id: string | null
+					email: string
+				},
+				/**
+				 * Where to land when the request carried no explicit `redirectTo`.
+				 * Returning users go to their account; a freshly created account
+				 * gets the same onboarding destination password signups reach
+				 * after verification, since the provider already proved the email.
+				 */
+				defaultRedirectTo = '/account',
+			) {
 				const stableUserId = resolveUserStableId(user)
 				// Two-factor accounts get the same pending-verification gate as
 				// password and passkey logins; the session cookie is only
@@ -382,7 +392,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason: `provider=${provider}`,
 				})
-				return redirect(redirectTo ?? '/account', [
+				return redirect(redirectTo ?? defaultRedirectTo, [
 					sessionCookie,
 					clearStateCookie,
 				])
@@ -635,7 +645,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					reason: `invite_code=${consumedInviteCode};stable_user_id=${stableUserId};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 				})
 			}
-			return issueLogin(newUser)
+			return issueLogin(newUser, defaultPostVerificationRedirect)
 		},
 	} satisfies Action<typeof routes.authProviderCallback>
 }

@@ -19,7 +19,14 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	await page.goto('/login')
 	await page.getByRole('button', { name: 'Continue with GitHub' }).click()
 
-	await expect(page).toHaveURL(/\/account$/)
+	// A brand-new social account lands on onboarding rather than the account
+	// page, matching where password signups go after verification.
+	await expect(page).toHaveURL(/\/onboarding$/)
+	await expect(
+		page.getByRole('heading', { name: /Get started with\s*Kody/i }),
+	).toBeVisible()
+
+	await page.goto('/account')
 	await expect(
 		page.getByRole('heading', { name: 'Account', exact: true }),
 	).toBeVisible()

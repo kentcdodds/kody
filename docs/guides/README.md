@@ -15,6 +15,8 @@ content:
 
 | File                                                                                     | Topic                                                                                                                          |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| [what-is-kody.md](./what-is-kody.md)                                                     | Pre-account capability tour and discovery-interview notes; needs no account or MCP connection                                  |
+| [first-win.md](./first-win.md)                                                           | **Start here** after a host authorizes: welcome email → reply from the personal inbox → memories → one-click integration       |
 | [package-authoring.md](./package-authoring.md)                                           | General package-authoring guidance, including the README Intent section                                                        |
 | [package-lifecycle.md](./package-lifecycle.md)                                           | Choose reuse, one-off execute, community fork when close, direct job schedules, or a new durable package                       |
 | [integration-bootstrap.md](./integration-bootstrap.md)                                   | **Start here** for third-party integrations; after the smoke test, prefer a trusted community fork before building             |

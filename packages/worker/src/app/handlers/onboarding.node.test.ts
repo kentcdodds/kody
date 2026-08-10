@@ -7,8 +7,7 @@ import {
 } from '#app/handlers/onboarding.ts'
 import {
 	buildDiscoveryPrompt,
-	buildIntroEmailLookupPrompt,
-	buildIntroEmailPrompt,
+	buildFirstWinPrompt,
 	buildOnboardingSetupPrompt,
 } from '#app/onboarding-data.ts'
 
@@ -54,9 +53,12 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			env,
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
-		introEmailPrompt: buildIntroEmailPrompt(),
-		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
+		firstWinPrompt: buildFirstWinPrompt({
+			env,
+			requestUrl: 'https://example.com/onboarding.json',
+		}),
 		hasSentWelcomeEmail: false,
+		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,

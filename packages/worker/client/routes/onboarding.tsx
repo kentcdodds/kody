@@ -18,6 +18,7 @@ import {
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import {
@@ -132,10 +133,10 @@ export function OnboardingRoute(handle: Handle) {
 	let loggedIn = false
 	let mcpServerUrl = ''
 	let setupPrompt = ''
-	let introEmailPrompt = ''
-	let introEmailLookupPrompt = ''
+	let firstWinPrompt = ''
 	let hasMcpClient = false
 	let hasSentWelcomeEmail = false
+	let welcomeEmail: OnboardingWelcomeEmail | null = null
 	let hasFirstHello = false
 	let hasSavedMemory = false
 	let hasFirstWin = false
@@ -181,10 +182,10 @@ export function OnboardingRoute(handle: Handle) {
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
-		introEmailPrompt = payload.introEmailPrompt
-		introEmailLookupPrompt = payload.introEmailLookupPrompt
+		firstWinPrompt = payload.firstWinPrompt
 		hasMcpClient = payload.hasMcpClient
 		hasSentWelcomeEmail = payload.hasSentWelcomeEmail
+		welcomeEmail = payload.welcomeEmail
 		hasFirstHello = isOnboardingChecklistItemDone(
 			payload.checklist,
 			'first-hello',
@@ -332,7 +333,12 @@ export function OnboardingRoute(handle: Handle) {
 		)
 	}
 
-	/** The shown sub-step's instructions — the "do" half, unlabeled. */
+	/**
+	 * The shown sub-step's instructions — the "do" half, unlabeled. Only the
+	 * first sub-step asks for a paste; after that the agent owns the loop and
+	 * the pills are read-only progress, so the later sub-steps say what to do
+	 * in the inbox and in the chat instead of handing out more prompts.
+	 */
 	function renderFirstWinContent() {
 		if (hasFirstWin && viewedFirstWinStep === null) {
 			return (
@@ -347,18 +353,33 @@ export function OnboardingRoute(handle: Handle) {
 			return (
 				<div mix={css(firstWinContentCss)}>
 					<p mix={css(firstWinGuidanceCss)}>
-						Paste this into your connected agent. This step completes when Kody
-						records the send — usually within a minute, even if your personal
-						inbox already has the message.
+						Paste this into your connected agent once. Your agent reads the
+						first-win guide and takes it from there — it sends the welcome
+						email, tells you what to do in your own inbox, and saves what
+						matters when you come back to it.
 					</p>
 					<figure mix={css(promptBlockCss)}>
-						<blockquote>{introEmailPrompt}</blockquote>
+						<blockquote data-testid="onboarding-first-win-prompt">
+							{firstWinPrompt}
+						</blockquote>
 					</figure>
 					<CopyTextButton
-						value={introEmailPrompt}
-						idleLabel="Copy send prompt"
+						value={firstWinPrompt}
+						idleLabel="Copy the prompt"
 						variant="pill"
 					/>
+					<p mix={css(firstWinGuidanceCss)}>
+						Curious what your agent is following?{' '}
+						<a
+							href="/guides/first-win"
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(primaryLinkCss)}
+						>
+							Read the first-win guide
+						</a>
+						.
+					</p>
 				</div>
 			)
 		}
@@ -366,20 +387,26 @@ export function OnboardingRoute(handle: Handle) {
 			return (
 				<div mix={css(firstWinContentCss)}>
 					<p mix={css(firstWinGuidanceCss)}>
-						Kody recorded the send. Open the welcome email and reply with your
-						answers — about thirty seconds. This page moves on when your reply
-						lands in Kody.
+						Kody recorded the send. Open your own inbox — the address on your
+						Kody account — and reply with your answers. About thirty seconds.
+					</p>
+					{renderWelcomeEmailFacts()}
+					<p mix={css(firstWinGuidanceCss)}>
+						Then go back to your agent and tell it you replied. It looks the
+						message up and saves what matters — you do not need to come back
+						here.
 					</p>
 					<p mix={css(firstWinGuidanceCss)}>
+						Not in your inbox? Check spam or promotions, or{' '}
 						<a
 							href="/account/email"
 							target="_blank"
 							rel="noreferrer noopener"
 							mix={css(primaryLinkCss)}
 						>
-							Open your Kody inbox
+							open your Kody inbox
 						</a>{' '}
-						to see the stored copy.
+						for the stored copy.
 					</p>
 				</div>
 			)
@@ -387,18 +414,37 @@ export function OnboardingRoute(handle: Handle) {
 		return (
 			<div mix={css(firstWinContentCss)}>
 				<p mix={css(firstWinGuidanceCss)}>
-					Reply received. Paste this so your agent reads it and saves what
-					matters as memories.
+					Your reply landed in Kody. Tell your agent you replied — it reads the
+					message and saves what matters about you as memories, then confirms
+					what it saved.
 				</p>
-				<figure mix={css(promptBlockCss)}>
-					<blockquote>{introEmailLookupPrompt}</blockquote>
-				</figure>
-				<CopyTextButton
-					value={introEmailLookupPrompt}
-					idleLabel="Copy remember prompt"
-					variant="pill"
-				/>
 			</div>
+		)
+	}
+
+	/**
+	 * The real subject and sender of the stored welcome email. A person who
+	 * cannot find the message needs the exact string to search for, so this
+	 * quotes what Kody actually sent rather than the copy the prompt suggests.
+	 */
+	function renderWelcomeEmailFacts() {
+		if (!welcomeEmail) return null
+		return (
+			<dl
+				mix={css(welcomeEmailFactsCss)}
+				data-testid="onboarding-welcome-email-facts"
+			>
+				<div>
+					<dt>Subject</dt>
+					<dd>{welcomeEmail.subject}</dd>
+				</div>
+				{welcomeEmail.fromAddress ? (
+					<div>
+						<dt>From</dt>
+						<dd>{welcomeEmail.fromAddress}</dd>
+					</div>
+				) : null}
+			</dl>
 		)
 	}
 
@@ -742,8 +788,10 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								<p mix={css(panelLedeCss)}>
-									One quick loop — Kody emails you, you reply, your agent
-									remembers. About a minute end to end.
+									One quick loop — Kody emails you, you reply from your own
+									inbox, your agent remembers. Paste one prompt and your agent
+									will take it from here; these three markers just show how far
+									along you are.
 								</p>
 								{renderFirstWinSteps()}
 								{renderFirstWinContent()}
@@ -757,7 +805,9 @@ export function OnboardingRoute(handle: Handle) {
 										Kody stores mail and memories on your account. Nothing
 										answers by itself — your agent reads the inbox and writes
 										memories when you ask, and what it saves follows you into
-										every agent you connect.
+										every agent you connect. That is also why your agent should
+										not sit and wait for your reply: tell it when you have sent
+										one.
 									</p>
 								</aside>
 								<WizardNavigation
@@ -1427,6 +1477,43 @@ const firstWinDoneCss = {
 	margin: 0,
 	color: colors.primaryText,
 	fontWeight: 600,
+}
+
+/* The exact strings to search a personal inbox for, in a quiet well so they
+   read as data rather than more instructions. */
+const welcomeEmailFactsCss = {
+	margin: 0,
+	width: '100%',
+	display: 'grid',
+	gap: '0.4rem',
+	padding: '0.85rem 1.05rem',
+	backgroundColor: colors.background,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
+	fontSize: '0.94rem',
+	lineHeight: 1.5,
+	'& > div': {
+		display: 'flex',
+		flexWrap: 'wrap' as const,
+		gap: '0.2rem 0.6rem',
+	},
+	'& dt': {
+		flex: 'none',
+		minWidth: '4.5rem',
+		color: colors.textMuted,
+		font: `700 0.78rem/1.6 ${typography.fontFamilyBody}`,
+		letterSpacing: '0.06em',
+		textTransform: 'uppercase' as const,
+	},
+	'& dd': {
+		margin: 0,
+		minWidth: 0,
+		/* Subjects and addresses are unbreakable words often enough to widen
+		   the whole panel; let them wrap instead. */
+		overflowWrap: 'anywhere' as const,
+		color: colors.text,
+		fontWeight: 600,
+	},
 }
 
 /* The "learn" half lives here, labeled and out of the instructions' way. */

@@ -703,6 +703,16 @@ export type OnboardingBuiltInProvider = {
 	logoPath: string | null
 }
 
+/**
+ * Subject and sender of the welcome email Kody actually stored, so the Reply
+ * sub-step can name what to search a personal inbox for. Null until an
+ * outbound message exists.
+ */
+export type OnboardingWelcomeEmail = {
+	subject: string
+	fromAddress: string | null
+}
+
 export type OnboardingLoaderData = {
 	ok: true
 	loggedIn: boolean
@@ -710,12 +720,12 @@ export type OnboardingLoaderData = {
 	setupPrompt: string
 	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */
 	discoveryPrompt: string
-	/** First-win send prompt: welcome email that carries the interview. */
-	introEmailPrompt: string
-	/** First-win remember prompt: read the reply and save memories. */
-	introEmailLookupPrompt: string
+	/** Single first-win paste: routes the agent through the first-win guide. */
+	firstWinPrompt: string
 	/** True when a successful email_send or stored outbound mail exists (Send done). */
 	hasSentWelcomeEmail: boolean
+	/** The stored welcome email's subject and sender; null before the send. */
+	welcomeEmail: OnboardingWelcomeEmail | null
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean

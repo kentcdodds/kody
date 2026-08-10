@@ -4,6 +4,7 @@ import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
 	type OnboardingLoaderData,
+	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 
 const mcpServerPath = '/mcp'
@@ -61,23 +62,29 @@ export function buildDiscoveryPrompt(input: {
 }
 
 /**
- * First-win mini-wizard, sub-step 1 (Send): one email carries both the
- * introduction and a thirty-second interview, so a single reply exercises
- * the storage-first email model and seeds durable memory. Address the
- * connected Kody server rather than "Hey Kody" — some hosts treat that as
- * impersonation / prompt injection and skip MCP tools.
+ * The whole first win in one paste: the agent owns the loop (send the welcome
+ * email, hand off to the person's own inbox, look the reply up when they say
+ * so, save memories), and the steering for each part lives in the `first-win`
+ * guide as embedded notes for agents rather than in the prompt.
+ *
+ * Address the connected Kody server rather than "Hey Kody" — some hosts treat
+ * that as impersonation / prompt injection and skip MCP tools. The no-polling
+ * sentence stays in the prompt too, because an agent that busy-waits for the
+ * reply is the failure people notice first.
  */
-export function buildIntroEmailPrompt() {
-	return 'Ask the connected Kody server to send me a welcome email introducing itself and asking my name, what I do for work, and what I do for fun. Invite me to reply.'
-}
-
-/**
- * First-win mini-wizard, sub-step 3 (Remember): after the reply lands, the
- * agent reads it out of Kody's stored mail and turns the answers into
- * durable memories (not values) in one paste.
- */
-export function buildIntroEmailLookupPrompt() {
-	return 'Ask the connected Kody server to look up my reply to the welcome email and save what matters about me as memories.'
+export function buildFirstWinPrompt(input: {
+	env: Pick<OnboardingEnv, 'APP_BASE_URL'>
+	requestUrl: string | URL
+}) {
+	const origin = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	return [
+		`Ask the connected Kody server to read ${origin}/guides/first-win and then walk me through my first win with Kody, one step at a time.`,
+		'Start by sending the welcome email, then tell me exactly what to do in my own inbox.',
+		"Do not poll or wait for my reply — I'll come back to this chat and tell you when I have replied.",
+	].join(' ')
 }
 
 /**
@@ -115,9 +122,12 @@ export function loadPublicOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
-		introEmailPrompt: buildIntroEmailPrompt(),
-		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
+		firstWinPrompt: buildFirstWinPrompt({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}),
 		hasSentWelcomeEmail: false,
+		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -141,6 +151,8 @@ export async function loadOnboardingData(input: {
 	builtInProviders?: Array<OnboardingBuiltInProvider>
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
+	/** Stored welcome email metadata, loaded by the handler. */
+	welcomeEmail?: OnboardingWelcomeEmail | null
 }): Promise<OnboardingLoaderData> {
 	const hasMcpClient = await userHasMcpOAuthGrants(
 		input.env,
@@ -170,9 +182,11 @@ export async function loadOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
-		introEmailPrompt: input.emailVerified ? buildIntroEmailPrompt() : '',
-		introEmailLookupPrompt: input.emailVerified
-			? buildIntroEmailLookupPrompt()
+		firstWinPrompt: input.emailVerified
+			? buildFirstWinPrompt({
+					env: input.env,
+					requestUrl: input.requestUrl,
+				})
 			: '',
 		hasMcpClient,
 		emailVerified: input.emailVerified,
@@ -181,6 +195,7 @@ export async function loadOnboardingData(input: {
 		builtInProviders: input.emailVerified ? (input.builtInProviders ?? []) : [],
 		// Computed by the handler alongside the checklist probes.
 		hasSentWelcomeEmail: false,
+		welcomeEmail: input.welcomeEmail ?? null,
 		checklist: input.checklist ?? null,
 	}
 }

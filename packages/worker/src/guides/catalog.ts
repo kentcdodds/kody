@@ -5,6 +5,7 @@ import {
 } from './rewrite-relative-links.ts'
 import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
+import firstWin from '../../../../docs/guides/first-win.md'
 import integrationBackedAppHappyPath from '../../../../docs/guides/integration-backed-app-happy-path.md'
 import integrationBootstrap from '../../../../docs/guides/integration-bootstrap.md'
 import oauth from '../../../../docs/guides/oauth.md'
@@ -33,6 +34,7 @@ import whatIsKody from '../../../../docs/guides/what-is-kody.md'
  */
 const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'what-is-kody', raw: whatIsKody },
+	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },

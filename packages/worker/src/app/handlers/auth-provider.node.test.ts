@@ -272,6 +272,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		{ provider: 'github' },
 	)
 	expect(callbackResponse.status).toBe(302)
+	// An explicit redirectTo still wins over the new-account onboarding default.
 	expect(callbackResponse.headers.get('Location')).toBe('/community')
 	const setCookies = callbackResponse.headers.getSetCookie()
 	expect(setCookies.some((cookie) => cookie.startsWith('kody_session='))).toBe(
@@ -758,7 +759,9 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 		{ provider: 'github' },
 	)
 	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe('/account')
+	// A brand-new social account lands on onboarding, the same place password
+	// signups reach after verification.
+	expect(callbackResponse.headers.get('Location')).toBe('/onboarding')
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
 		.get('mock-github-user@example.com') as Record<string, unknown>
@@ -865,7 +868,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 		{ provider: 'github' },
 	)
 	expect(invitedCallback.status).toBe(302)
-	expect(invitedCallback.headers.get('Location')).toBe('/account')
+	expect(invitedCallback.headers.get('Location')).toBe('/onboarding')
 	const user = invitedSignup.sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
 		.get('social-invited@example.com') as Record<string, unknown>

@@ -9,11 +9,13 @@ import {
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingFeaturedListings } from '#app/community-data.ts'
+import { listOwnerEmailMessages } from '#worker/email/owner-email-reader.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import {
 	loadOnboardingData,
@@ -53,6 +55,30 @@ async function loadHasSentWelcomeEmail(
 	userId: string,
 ): Promise<boolean> {
 	return await userHasSentWelcomeEmail({ env, userId })
+}
+
+/**
+ * Subject and sender of the most recent stored outbound message, so the Reply
+ * sub-step can name exactly what to search a personal inbox for. Fails open to
+ * null — the sub-step reads fine without it, and a Mailbox blip must not break
+ * the payload.
+ */
+async function loadWelcomeEmail(
+	env: Env,
+	userId: string,
+): Promise<OnboardingWelcomeEmail | null> {
+	try {
+		const [message] = await listOwnerEmailMessages({
+			env,
+			ownerId: userId,
+			direction: 'outbound',
+			limit: 1,
+		})
+		if (!message?.subject) return null
+		return { subject: message.subject, fromAddress: message.fromAddress }
+	} catch {
+		return null
+	}
 }
 
 const onboardingBuiltInProviderLimit = 6
@@ -125,11 +151,15 @@ export function createOnboardingHandler(env: Env) {
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
 				builtInProviders: await loadOnboardingBuiltInProviders(env),
 			})
-			;[onboarding.checklist, onboarding.hasSentWelcomeEmail] =
-				await Promise.all([
-					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
-					loadHasSentWelcomeEmail(env, user.mcpUser.userId),
-				])
+			;[
+				onboarding.checklist,
+				onboarding.hasSentWelcomeEmail,
+				onboarding.welcomeEmail,
+			] = await Promise.all([
+				loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+				loadHasSentWelcomeEmail(env, user.mcpUser.userId),
+				loadWelcomeEmail(env, user.mcpUser.userId),
+			])
 			return renderAppPage({
 				request,
 				env,
@@ -175,11 +205,15 @@ export function createOnboardingApiHandler(env: Env) {
 					: [],
 			})
 			if (user.emailVerified) {
-				;[onboarding.checklist, onboarding.hasSentWelcomeEmail] =
-					await Promise.all([
-						loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
-						loadHasSentWelcomeEmail(env, user.mcpUser.userId),
-					])
+				;[
+					onboarding.checklist,
+					onboarding.hasSentWelcomeEmail,
+					onboarding.welcomeEmail,
+				] = await Promise.all([
+					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+					loadHasSentWelcomeEmail(env, user.mcpUser.userId),
+					loadWelcomeEmail(env, user.mcpUser.userId),
+				])
 			}
 			return jsonResponse(onboarding)
 		},

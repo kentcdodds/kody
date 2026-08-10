@@ -2,6 +2,7 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
@@ -16,9 +17,9 @@ export type OnboardingPayload = {
 	mcpServerUrl: string
 	setupPrompt: string
 	discoveryPrompt: string
-	introEmailPrompt: string
-	introEmailLookupPrompt: string
+	firstWinPrompt: string
 	hasSentWelcomeEmail: boolean
+	welcomeEmail: OnboardingWelcomeEmail | null
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean

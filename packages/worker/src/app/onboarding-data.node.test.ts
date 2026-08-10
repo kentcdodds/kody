@@ -1,8 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	buildDiscoveryPrompt,
-	buildIntroEmailLookupPrompt,
-	buildIntroEmailPrompt,
+	buildFirstWinPrompt,
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
 	loadOnboardingData,
@@ -26,14 +25,18 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toContain('https://preview.example')
 
-	// After the welcome reply, the lookup prompt is the explicit second paste.
-	expect(buildIntroEmailPrompt().toLowerCase()).toContain(
-		'connected kody server',
-	)
-	expect(buildIntroEmailPrompt().toLowerCase()).not.toContain('hey kody')
-	expect(buildIntroEmailLookupPrompt().toLowerCase()).toContain('look up')
-	expect(buildIntroEmailLookupPrompt().toLowerCase()).toContain('memories')
-	expect(buildIntroEmailLookupPrompt().toLowerCase()).not.toContain('hey kody')
+	// The whole first win is one paste, and it routes through the guide rather
+	// than restating the loop. "Ask the connected Kody server" is deliberate:
+	// some hosts read "Hey Kody" as impersonation and skip MCP tools.
+	const firstWinPrompt = buildFirstWinPrompt({
+		env: {},
+		requestUrl: 'https://preview.example/onboarding',
+	})
+	expect(firstWinPrompt).toContain('https://preview.example/guides/first-win')
+	expect(firstWinPrompt.toLowerCase()).toContain('connected kody server')
+	expect(firstWinPrompt.toLowerCase()).not.toContain('hey kody')
+	// The agent must hand back to the person instead of busy-waiting.
+	expect(firstWinPrompt.toLowerCase()).toContain('do not poll')
 
 	expect(
 		loadPublicOnboardingData({
@@ -49,9 +52,12 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		introEmailPrompt: buildIntroEmailPrompt(),
-		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
+		firstWinPrompt: buildFirstWinPrompt({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
 		hasSentWelcomeEmail: false,
+		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -79,9 +85,12 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		introEmailPrompt: buildIntroEmailPrompt(),
-		introEmailLookupPrompt: buildIntroEmailLookupPrompt(),
+		firstWinPrompt: buildFirstWinPrompt({
+			env: {},
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
 		hasSentWelcomeEmail: false,
+		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
@@ -101,12 +110,22 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		requestUrl: 'http://localhost:3742/onboarding',
 		stableUserId: 'user-1',
 		emailVerified: true,
+		welcomeEmail: {
+			subject: 'Welcome to Kody — reply to introduce yourself',
+			fromAddress: 'kody@heykody.app',
+		},
 	})
 	expect(withClient).toMatchObject({
 		hasMcpClient: true,
 		emailVerified: true,
 		needsOnboarding: false,
 		mcpServerUrl: 'http://localhost:3742/mcp',
+		// Passed straight through so the Reply sub-step can name the real
+		// subject and sender instead of the copy the prompt suggests.
+		welcomeEmail: {
+			subject: 'Welcome to Kody — reply to introduce yourself',
+			fromAddress: 'kody@heykody.app',
+		},
 	})
 
 	const unverifiedWithGrant = await loadOnboardingData({
@@ -127,9 +146,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		mcpServerUrl: '',
 		setupPrompt: '',
-		// First-win prompts need a verified email (they send/store real data).
-		introEmailPrompt: '',
-		introEmailLookupPrompt: '',
+		// The first-win prompt needs a verified email (it sends real mail).
+		firstWinPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({
 			env: {},
