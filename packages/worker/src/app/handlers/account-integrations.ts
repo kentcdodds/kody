@@ -7,6 +7,7 @@ import {
 } from '@kody-internal/shared/url-hosts.ts'
 import {
 	hasAlternativeBuiltInApp,
+	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
 	loadExistingConnectionSummary,
@@ -96,15 +97,18 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 									: undefined,
 						},
 					)
-					const [builtInAvailable, existingConnection] = await Promise.all([
-						hasAlternativeBuiltInApp(env, name, integration),
-						loadExistingConnectionSummary(env, user, name),
-					])
+					const [builtInAvailable, existingConnection, hasStoredClientSecret] =
+						await Promise.all([
+							hasAlternativeBuiltInApp(env, name, integration),
+							loadExistingConnectionSummary(env, user, name),
+							hasStoredConnectClientSecret(env, user, name, integration),
+						])
 					return jsonResponse({
 						ok: true,
 						integration,
 						builtInAvailable,
 						existingConnection,
+						hasStoredClientSecret,
 					})
 				}
 				const appSlug = searchParams.get('appSlug')?.trim()

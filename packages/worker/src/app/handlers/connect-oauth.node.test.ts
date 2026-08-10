@@ -11,6 +11,7 @@ const mockModule = vi.hoisted(() => ({
 	loadAccountIntegrationByName: vi.fn<() => Promise<unknown>>(),
 	hasAlternativeBuiltInApp: vi.fn<() => Promise<boolean>>(),
 	loadExistingConnectionSummary: vi.fn<() => Promise<unknown>>(),
+	hasStoredConnectClientSecret: vi.fn<() => Promise<boolean>>(),
 	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(),
 }))
 
@@ -31,6 +32,8 @@ vi.mock('#app/account-integrations-data.ts', () => ({
 		mockModule.hasAlternativeBuiltInApp(...args),
 	loadExistingConnectionSummary: (...args: Array<unknown>) =>
 		mockModule.loadExistingConnectionSummary(...args),
+	hasStoredConnectClientSecret: (...args: Array<unknown>) =>
+		mockModule.hasStoredConnectClientSecret(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -90,6 +93,7 @@ test('provider visits embed the integration record as SSR loader data', async ()
 
 	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
 	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
+	mockModule.hasStoredConnectClientSecret.mockResolvedValue(true)
 
 	await createConnectOauthHandler(env).handler(
 		new RequestContext(
@@ -112,6 +116,10 @@ test('provider visits embed the integration record as SSR loader data', async ()
 					integration: record,
 					builtInAvailable: false,
 					existingConnection: null,
+					hasStoredClientSecret: true,
+					// Server-computed so SSR renders the Redirect URI card
+					// before `window` exists.
+					redirectUri: 'https://example.com/connect/oauth',
 				},
 			},
 		}),
@@ -130,6 +138,7 @@ test('platform=1 forces the built-in lookup', async () => {
 	})
 	mockModule.hasAlternativeBuiltInApp.mockResolvedValue(false)
 	mockModule.loadExistingConnectionSummary.mockResolvedValue(null)
+	mockModule.hasStoredConnectClientSecret.mockResolvedValue(false)
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 
 	await createConnectOauthHandler(env).handler(
@@ -162,7 +171,7 @@ test('platform=1 forces the built-in lookup', async () => {
 	)
 })
 
-test('callback returns render without loader data', async () => {
+test('callback returns embed only the redirect URI, not an integration lookup', async () => {
 	const env = {} as Env
 	mockModule.requirePageSession.mockResolvedValue(null)
 	mockModule.loadAccountIntegrationByName.mockClear()
@@ -174,7 +183,18 @@ test('callback returns render without loader data', async () => {
 		),
 	)
 	expect(mockModule.loadAccountIntegrationByName).not.toHaveBeenCalled()
+	// Config is restored from sessionStorage client-side; the redirect URI
+	// still embeds so the SSR shell renders the Redirect URI card.
 	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
-		expect.not.objectContaining({ loaderData: expect.anything() }),
+		expect.objectContaining({
+			loaderData: {
+				connectOauth: {
+					ok: true,
+					provider: null,
+					integration: null,
+					redirectUri: 'https://example.com/connect/oauth',
+				},
+			},
+		}),
 	)
 })

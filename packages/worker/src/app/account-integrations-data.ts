@@ -3,9 +3,11 @@ import {
 	type AccountOauthAppListItem,
 	type ConnectOauthExistingConnection,
 } from '#universal/loader-data.ts'
+import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { listSecrets } from '#mcp/secrets/service.ts'
 import {
 	findOauthAppForProviderSetup,
 	getAvailablePlatformApp,
@@ -308,6 +310,32 @@ export async function loadExistingConnectionSummary(
 	})
 	if (!joined) return null
 	return { lane: joined.lane, appSlug: joined.app.slug }
+}
+
+/**
+ * True when the user already stores the client-secret secret the connect
+ * page would use for `name`: the stored integration's secret name when
+ * present, else the page's default `<providerKey>ClientSecret`. Embedded in
+ * loader data so the page renders its setup / ready state without a
+ * follow-up secrets fetch.
+ */
+export async function hasStoredConnectClientSecret(
+	env: Env,
+	user: AuthenticatedUser,
+	name: string,
+	record: AccountIntegrationRecord | null,
+): Promise<boolean> {
+	const secretName =
+		record?.clientSecretSecretName?.trim() ||
+		`${normalizeProviderKey(name)}ClientSecret`
+	const secrets = await listSecrets({
+		env,
+		userId: user.mcpUser.userId,
+		scope: 'user',
+	})
+	return secrets.some(
+		(secret) => secret.scope === 'user' && secret.name === secretName,
+	)
 }
 
 /**

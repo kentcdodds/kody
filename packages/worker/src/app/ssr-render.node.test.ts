@@ -586,6 +586,63 @@ test('renderAppPage server-renders signed-in oauth authorize without a session c
 	expect(html).not.toContain('Loading authorization details')
 })
 
+test('renderAppPage server-renders connect-oauth provider visits without a loading flash', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	// A stored user-lane confidential google connection whose client secret
+	// already exists: the page must SSR straight into "ready to connect"
+	// with the Redirect URI card, not "Loading provider configuration…".
+	const response = await renderAppPage({
+		request: new Request('https://example.com/connect/oauth?provider=google'),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: 'google',
+				integration: {
+					name: 'google',
+					appSlug: 'google',
+					provider: 'google',
+					appLabel: 'Google',
+					accountLabel: null,
+					tokenUrl: 'https://oauth2.googleapis.com/token',
+					apiBaseUrl: 'https://www.googleapis.com',
+					flow: 'confidential',
+					usePkce: false,
+					clientId: 'google-client-id-value',
+					clientSecretSecretName: 'googleClientSecret',
+					accessTokenSecretName: 'googleAccessToken',
+					refreshTokenSecretName: 'googleRefreshToken',
+					requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+					authorization: {
+						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+						scopes: ['openid', 'email', 'profile'],
+						scopeSeparator: null,
+						extraAuthorizeParams: { access_type: 'offline' },
+					},
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				builtInAvailable: false,
+				hasStoredClientSecret: true,
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('Connect google')
+	expect(html).toContain(
+		'Loaded your existing integration config and client credentials. Ready to connect.',
+	)
+	expect(html).toContain('https://example.com/connect/oauth')
+	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
+	expect(html).not.toContain('Loading provider configuration')
+})
+
 test('renderAppPage renders the redesigned landing page shell', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)

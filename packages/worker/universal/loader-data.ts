@@ -866,6 +866,13 @@ export type AccountIntegrationDetailLoaderData = {
 	builtInAvailable?: boolean
 	/** See {@link ConnectOauthExistingConnection}. */
 	existingConnection?: ConnectOauthExistingConnection | null
+	/**
+	 * True when the user already stores the client-secret secret the connect
+	 * page would use for this name (the stored integration's secret name,
+	 * else `<providerKey>ClientSecret`). Lets the page render its setup /
+	 * ready state without a follow-up secrets fetch.
+	 */
+	hasStoredClientSecret?: boolean
 }
 
 /**
@@ -880,8 +887,8 @@ export type ConnectOauthExistingConnection = {
 /**
  * /connect/oauth prefill for `?provider=` visits: the stored or built-in
  * record the page merges into its config. `provider` is the normalized key
- * the record was resolved for; null on callback and bare visits, which have
- * nothing to prefetch.
+ * the record was resolved for; null on callback visits, which restore config
+ * from sessionStorage instead.
  */
 export type ConnectOauthLoaderData = {
 	ok: true
@@ -891,6 +898,14 @@ export type ConnectOauthLoaderData = {
 	builtInAvailable?: boolean
 	/** See {@link ConnectOauthExistingConnection}. */
 	existingConnection?: ConnectOauthExistingConnection | null
+	/** See {@link AccountIntegrationDetailLoaderData.hasStoredClientSecret}. */
+	hasStoredClientSecret?: boolean
+	/**
+	 * Absolute redirect (callback) URI for this deployment — the page URL
+	 * without query — so SSR can render the Redirect URI card before the
+	 * browser can compute it from `window.location`.
+	 */
+	redirectUri?: string
 }
 
 export type AccountMcpServerListItem = {
