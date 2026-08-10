@@ -72,9 +72,6 @@ The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised
 end-to-end (`e2e/admin-feature-flags.spec.ts`).
 
-`mailbox-read-cutover` is a tombstoned key: it is absent from both the registry
-and persisted flag state.
-
 ## Success metrics
 
 Every flag exists to move something; the `successMetric` field on a registry

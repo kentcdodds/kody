@@ -80,6 +80,7 @@
     "@cloudflare/workers-types": "^5.20260801.1",
     "@epic-web/config": "^3.2.1",
     "@kody-internal/shared": "file:packages/shared",
+    "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@playwright/test": "^1.62.1",
     "@sentry/cli": "^3.6.2",

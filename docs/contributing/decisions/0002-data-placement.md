@@ -15,7 +15,7 @@ D1 writes on all of them:
 - account-write-lease fencing — 2–5 statements on every guarded mutation via
   `withAccountWriteLease`;
 - per-run activation milestone upserts
-  (`packages/worker/src/usage/activation.ts`);
+  (`packages/worker/src/run-records/package-activation-state.ts`);
 - per-lifecycle `workflow_runs` projection writes;
 - an uncached per-call plan read in `assertWithinEntitlement`.
 

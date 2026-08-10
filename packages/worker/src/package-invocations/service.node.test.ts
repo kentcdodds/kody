@@ -40,7 +40,6 @@ const repoMockModule = vi.hoisted(() => {
 		typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
 		runBundledModuleWithRegistry: vi.fn(),
 		recordAgentPackageConversationUse: vi.fn(),
-		recordSuccessfulPackageRun: vi.fn(),
 		dispatchRunErrorSubscriptionEvents: vi.fn(),
 	}
 })
@@ -90,11 +89,6 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 vi.mock('#worker/usage/agent-package-conversation-uses.ts', () => ({
 	recordAgentPackageConversationUse: (...args: Array<unknown>) =>
 		repoMockModule.recordAgentPackageConversationUse(...args),
-}))
-
-vi.mock('#worker/usage/activation.ts', () => ({
-	recordSuccessfulPackageRun: (...args: Array<unknown>) =>
-		repoMockModule.recordSuccessfulPackageRun(...args),
 }))
 
 vi.mock('#worker/run-records/package-subscriptions.ts', () => ({

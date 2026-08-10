@@ -398,7 +398,8 @@ FORMAT JSON
  * Signup, verification, agent connection, and forking live in durable tables.
  * Run-derived steps (`package_run_succeeded` / `package_activated`) and
  * activation latency come from per-user RunLog snapshots — see
- * `aggregateRunLogInsights` and `packages/worker/src/usage/activation.ts`.
+ * `aggregateRunLogInsights` and
+ * `packages/worker/src/run-records/package-activation-state.ts`.
  */
 async function queryActivationBase(db: D1Database): Promise<{
 	steps: Array<AdminInsightsActivationStep>

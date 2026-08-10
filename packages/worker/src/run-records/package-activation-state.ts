@@ -1,10 +1,9 @@
 /**
  * Per-user package-activation counters and milestones stored in the RunLog DO.
  *
- * Same semantics as `#worker/usage/activation.ts`, but without `user_id` —
- * the Durable Object identity is the user scope. High-frequency HTTP surfaces
- * do not count; activation means an unattended capability succeeded twice for
- * the same package.
+ * The Durable Object identity provides the user scope, so records do not need
+ * a `user_id`. High-frequency HTTP surfaces do not count; activation means an
+ * unattended capability succeeded twice for the same package.
  */
 
 import { type RunSurface } from './types.ts'
