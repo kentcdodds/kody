@@ -669,6 +669,64 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(html).toContain('https://example.com/connect/oauth')
 	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
 	expect(html).not.toContain('Loading provider configuration')
+	// Ready state renders the plain Connect button (also proves the
+	// replace-state assertion below is not vacuous about serialization).
+	expect(html).toContain('>Connect google</button>')
+
+	// A built-in connect that would replace a user-lane connection under the
+	// same name server-renders the replace confirmation and withholds the
+	// plain Connect button (the client also skips auto-start in this state).
+	const replaceResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/connect/oauth?provider=google&platform=1',
+		),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: 'google',
+				integration: {
+					name: 'google',
+					appSlug: 'google',
+					provider: 'google',
+					appLabel: 'Google',
+					accountLabel: null,
+					tokenUrl: 'https://oauth2.googleapis.com/token',
+					apiBaseUrl: 'https://www.googleapis.com',
+					flow: 'pkce',
+					usePkce: true,
+					clientId: 'platform-google-client',
+					clientSecretSecretName: null,
+					accessTokenSecretName: 'googleAccessToken',
+					refreshTokenSecretName: 'googleRefreshToken',
+					requiredHosts: ['oauth2.googleapis.com'],
+					authorization: {
+						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+						scopes: ['openid'],
+						scopeSeparator: null,
+						extraAuthorizeParams: {},
+					},
+					platform: true,
+					platformAllowedScopes: ['openid'],
+					platformDescription: 'Send-only Gmail access.',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				builtInAvailable: false,
+				existingConnection: { lane: 'user', appSlug: 'google' },
+				hasStoredClientSecret: false,
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(replaceResponse.status).toBe(200)
+	const replaceHtml = await readResponseText(replaceResponse)
+	expect(replaceHtml).toContain('data-testid="connect-replace-confirm"')
+	expect(replaceHtml).toContain('your own OAuth app')
+	// Operator-authored description renders under the provider name.
+	expect(replaceHtml).toContain('Send-only Gmail access.')
+	expect(replaceHtml).not.toContain('Loading provider configuration')
+	expect(replaceHtml).not.toContain('>Connect google</button>')
 })
 
 test('renderAppPage renders the redesigned landing page shell', async () => {
