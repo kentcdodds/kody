@@ -32,6 +32,7 @@ function snapshot(overrides: Partial<StatusSnapshot> = {}): StatusSnapshot {
 		),
 		openIncidents: [],
 		recentIncidents: [],
+		providerIncidents: null,
 		buildCommit: 'abc123',
 		...overrides,
 	}
@@ -97,4 +98,56 @@ test('status page renders components, incidents, unknown state, and escapes deta
 		}),
 	)
 	expect(unknown).toMatch(/not available|no data/i)
+})
+
+test('status page renders provider incidents separately and omits them when absent', () => {
+	const without = renderStatusPage(snapshot({ providerIncidents: null }))
+	expect(without).not.toContain('Provider incidents (Cloudflare)')
+
+	const empty = renderStatusPage(snapshot({ providerIncidents: [] }))
+	expect(empty).not.toContain('Provider incidents (Cloudflare)')
+
+	const withProvider = renderStatusPage(
+		snapshot({
+			overallStatus: 'operational',
+			providerIncidents: [
+				{
+					id: 'inc-r2',
+					name: 'R2 Availability Issues',
+					status: 'investigating',
+					impact: 'minor',
+					shortlink: 'https://stspg.io/r2',
+					updatedAt: '2026-08-07T19:00:00.000Z',
+					affectedComponents: ['R2'],
+				},
+			],
+		}),
+	)
+	expect(withProvider).toContain('Provider incidents (Cloudflare)')
+	expect(withProvider).toContain('R2 Availability Issues')
+	expect(withProvider).toContain('investigating')
+	expect(withProvider).toContain('minor')
+	expect(withProvider).toContain('https://stspg.io/r2')
+	expect(withProvider).toContain('affects R2')
+	expect(withProvider).toContain('updated 2026-08-07T19:00:00.000Z')
+	expect(withProvider).toContain('for context only')
+	expect(withProvider).toContain('All systems operational')
+
+	const unsafeLink = renderStatusPage(
+		snapshot({
+			providerIncidents: [
+				{
+					id: 'inc-r2',
+					name: 'R2 Availability Issues',
+					status: 'investigating',
+					impact: 'minor',
+					shortlink: 'javascript:alert(1)',
+					updatedAt: '2026-08-07T19:00:00.000Z',
+					affectedComponents: ['R2'],
+				},
+			],
+		}),
+	)
+	expect(unsafeLink).not.toContain('javascript:alert')
+	expect(unsafeLink).toContain('https://www.cloudflarestatus.com')
 })

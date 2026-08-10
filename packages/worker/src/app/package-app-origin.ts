@@ -23,6 +23,7 @@ import {
 	parsePackageAppPath,
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
+import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 /**
@@ -75,6 +76,16 @@ function redirectResponse(input: {
 function createPackageAppOriginConfigurationErrorResponse(message: string) {
 	return new Response(`Hosted package apps are unavailable. ${message}`, {
 		status: 500,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+		},
+	})
+}
+
+function createUnmatchedPackageAppPathResponse() {
+	return new Response(buildUnmatchedPackageAppOriginPathMessage(), {
+		status: 404,
 		headers: {
 			'Cache-Control': 'no-store',
 			'Content-Type': 'text/plain; charset=utf-8',
@@ -211,7 +222,7 @@ async function handleRequestOnPackageAppOrigin(input: {
 		if (url.pathname === '/') {
 			return redirectResponse({ location: `${appBaseUrl}/`, status: 302 })
 		}
-		return new Response('Not Found', { status: 404 })
+		return createUnmatchedPackageAppPathResponse()
 	}
 
 	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)

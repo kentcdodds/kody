@@ -2,9 +2,9 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountActivityData } from '#app/account-activity-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { type AccountActivityLoaderData as AppAccountActivityLoaderData } from '#app/loader-data.ts'
+import { type AccountActivityLoaderData as AppAccountActivityLoaderData } from '#universal/loader-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 
 function readPathRunId(params: unknown) {

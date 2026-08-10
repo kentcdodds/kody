@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
+import { maxPlanEmailLimits, planLimits } from '#universal/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'

@@ -336,6 +336,13 @@ export type MailboxCountResult = {
 	deliveryEvents: number
 }
 
+export type MailboxRestoreStatus = {
+	counts: MailboxCountResult
+	hiddenRows: number
+	restorePending: boolean
+	empty: boolean
+}
+
 /**
  * Aggregate result from {@link MailboxRpc.runRetentionNow} (and the shared
  * private retention turn used by `alarm`). Each invocation processes at most
@@ -474,6 +481,24 @@ export type MailboxUpsertDeliveryEventsResult = {
 	results: Array<MailboxUpsertDeliveryEventBatchItemResult>
 }
 
+export type MailboxUpsertMessageGraphInput =
+	| {
+			ownerId: string
+			thread?: MailboxThreadInput | null
+			message: MailboxMessageInput
+			attachments?: Array<MailboxAttachmentInput>
+			/** DR restore writes stay inert until finalizeRestore. */
+			restore?: true
+	  }
+	| {
+			ownerId: string
+			/** DR import affordance for a parent thread with no surviving message. */
+			thread: MailboxThreadInput
+			message: null
+			attachments?: never
+			restore: true
+	  }
+
 /**
  * Mirror / read / retention / purge surface. Authoritative USER inbound ledger
  * CAS RPCs are intersected below; `system:email` remains D1-only.
@@ -483,12 +508,9 @@ type MailboxCoreRpc = {
 	 * Authoritative USER graph write. The entire thread/message/attachment
 	 * graph commits in one owner-local SQLite transaction.
 	 */
-	upsertMessageGraph: (input: {
-		ownerId: string
-		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput
-		attachments?: Array<MailboxAttachmentInput>
-	}) => Promise<{ ok: true; accepted: boolean }>
+	upsertMessageGraph: (
+		input: MailboxUpsertMessageGraphInput,
+	) => Promise<{ ok: true; accepted: boolean }>
 	/**
 	 * Authoritative USER inbound graph commit. The active `storing` lease and
 	 * graph identity are checked in the same SQLite transaction as all graph
@@ -549,6 +571,8 @@ type MailboxCoreRpc = {
 	upsertDeliveryEvents: (input: {
 		ownerId: string
 		events: Array<MailboxDeliveryEventInput>
+		/** DR restore only: admit authoritative inbound ledger snapshots. */
+		restore?: true
 	}) => Promise<MailboxUpsertDeliveryEventsResult>
 	touchThread: (
 		input: MailboxTouchThreadInput,
@@ -632,7 +656,19 @@ type MailboxCoreRpc = {
 	getDeliveryEventByProviderEventId: (input: {
 		providerEventId: string
 	}) => Promise<MailboxDeliveryEventRecord | null>
-	countMailbox: () => Promise<MailboxCountResult>
+	countMailbox: (input?: { restore?: true }) => Promise<MailboxCountResult>
+	inspectRestoreState: (input: {
+		ownerId: string
+	}) => Promise<MailboxRestoreStatus>
+	beginRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
+	finalizeRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
+	readDrillResult: (input: {
+		ownerId: string
+	}) => Promise<MailboxCountResult | null>
+	completeDrill: (input: {
+		ownerId: string
+		result: MailboxCountResult
+	}) => Promise<{ ok: true }>
 	exportMailbox: (input: {
 		pageSize?: number
 		startAfter?: string | null
@@ -653,7 +689,7 @@ type MailboxCoreRpc = {
 		/** Optional clock for due-at clamping; defaults to wall clock. */
 		now?: string
 	}) => Promise<{ dueAt: string | null }>
-	purge: () => Promise<{ ok: true }>
+	purge: (input: { ownerId: string }) => Promise<{ ok: true }>
 }
 
 export type MailboxInboundLedgerRpc = MailboxInboundDeliveryLedgerRpc &

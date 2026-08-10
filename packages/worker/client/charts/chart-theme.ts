@@ -1,4 +1,4 @@
-import { colors, typography } from '#client/styles/tokens.ts'
+import { colors, typography } from '#universal/styles/tokens.ts'
 
 /**
  * Chart series palette. Mid-lightness hues chosen to stay legible on both

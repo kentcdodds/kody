@@ -1,5 +1,5 @@
 import { run } from 'remix/ui'
-import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
+import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {

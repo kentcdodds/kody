@@ -18,6 +18,10 @@ import {
 	createAdminFeatureFlagsHandler,
 } from '#app/handlers/admin-feature-flags.ts'
 import {
+	createAdminPlatformIntegrationsApiHandler,
+	createAdminPlatformIntegrationsHandler,
+} from '#app/handlers/admin-platform-integrations.ts'
+import {
 	createAdminCodemodsApiHandler,
 	createAdminCodemodsHandler,
 	createAdminCodemodsRunApiHandler,
@@ -135,6 +139,7 @@ import {
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
+import { createIntegrationLogoHandler } from '#app/handlers/integration-logo.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
 import {
@@ -205,7 +210,7 @@ import { createSessionHandler } from '#app/handlers/session.ts'
 import { createSignupHandler } from '#app/handlers/signup.ts'
 import { createWaitingListHandler } from '#app/handlers/waiting-list.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { routes } from '#app/routes.ts'
+import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
@@ -349,6 +354,14 @@ export function createAppRouter(env: Env) {
 			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
+			adminPlatformIntegrations: createAdminPlatformIntegrationsHandler(env),
+			adminPlatformIntegrationNew: createAdminPlatformIntegrationsHandler(env),
+			adminPlatformIntegrationDetail:
+				createAdminPlatformIntegrationsHandler(env),
+			adminPlatformIntegrationsApi:
+				createAdminPlatformIntegrationsApiHandler(env),
+			adminPlatformIntegrationsApiPost:
+				createAdminPlatformIntegrationsApiHandler(env),
 			adminCodemods: createAdminCodemodsHandler(env),
 			adminCodemodsApi: createAdminCodemodsApiHandler(env),
 			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),
@@ -370,6 +383,7 @@ export function createAppRouter(env: Env) {
 			communityDetail: createCommunityDetailHandler(env),
 			communityDetailApi: createCommunityDetailApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
+			integrationLogo: createIntegrationLogoHandler(env),
 			communityDetailOgImage: createCommunityDetailOgImageHandler(env),
 			communityReportApiPost: createCommunityReportApiPostHandler(env),
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),

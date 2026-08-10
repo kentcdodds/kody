@@ -5,7 +5,7 @@ import {
 	toPublicCommunityProfile,
 	toPublicProfilePackageItem,
 } from '#app/community-public.ts'
-import { type ProfileLoaderData } from '#app/loader-data.ts'
+import { type ProfileLoaderData } from '#universal/loader-data.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getUserFollow } from '#worker/community/social-repo.ts'
 import {

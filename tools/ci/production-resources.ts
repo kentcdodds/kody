@@ -50,6 +50,8 @@ type ResolvedProductionBindings = {
 	scheduledDispatchDeadLetterQueueName: string
 	packageEventsDispatchQueueName: string
 	packageEventsDispatchDeadLetterQueueName: string
+	webhookDispatchQueueName: string
+	webhookDispatchDeadLetterQueueName: string
 	committedUserEmailDomain: string | null
 }
 
@@ -481,7 +483,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName}, Package Events Queue: ${bindings.packageEventsDispatchQueueName}, Package Events DLQ: ${bindings.packageEventsDispatchDeadLetterQueueName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName}, Package Events Queue: ${bindings.packageEventsDispatchQueueName}, Package Events DLQ: ${bindings.packageEventsDispatchDeadLetterQueueName}, Webhook Dispatch Queue: ${bindings.webhookDispatchQueueName}, Webhook Dispatch DLQ: ${bindings.webhookDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -590,6 +592,16 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.packageEventsDispatchDeadLetterQueueName,
 		existingQueues,
 	})
+	await ensureCloudflareQueue({
+		...queueClient,
+		name: bindings.webhookDispatchQueueName,
+		existingQueues,
+	})
+	await ensureCloudflareQueue({
+		...queueClient,
+		name: bindings.webhookDispatchDeadLetterQueueName,
+		existingQueues,
+	})
 	const emailSendingDomain = resolveEmailSendingDomain({
 		dryRun: options.dryRun,
 		committedUserEmailDomain: bindings.committedUserEmailDomain,
@@ -635,6 +647,9 @@ async function ensureProductionResources(options: CliOptions) {
 			APP_LEGACY_REDIRECT: process.env.APP_LEGACY_REDIRECT,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 			USER_EMAIL_DOMAIN: process.env.USER_EMAIL_DOMAIN,
+			SYSTEM_EMAIL_DOMAIN: process.env.SYSTEM_EMAIL_DOMAIN,
+			LEGACY_USER_EMAIL_DOMAINS: process.env.LEGACY_USER_EMAIL_DOMAINS,
+			LEGACY_SYSTEM_EMAIL_DOMAINS: process.env.LEGACY_SYSTEM_EMAIL_DOMAINS,
 		},
 	})
 

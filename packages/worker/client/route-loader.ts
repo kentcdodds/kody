@@ -1,4 +1,4 @@
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 
 /**
  * Loader result asking the router to leave the SPA with a full-document

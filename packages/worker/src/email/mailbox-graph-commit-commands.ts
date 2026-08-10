@@ -15,6 +15,7 @@ import {
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
 	type MailboxThreadInput,
+	type MailboxUpsertMessageGraphInput,
 } from './mailbox-types.ts'
 
 export class MailboxGraphCommitCommands {
@@ -32,17 +33,19 @@ export class MailboxGraphCommitCommands {
 		this.maintenance = maintenance
 	}
 
-	async upsertMessageGraph(input: {
-		ownerId: string
-		thread?: MailboxThreadInput | null
-		message: MailboxMessageInput
-		attachments?: Array<MailboxAttachmentInput>
-	}): Promise<{ ok: true; accepted: boolean }> {
+	async upsertMessageGraph(
+		input: MailboxUpsertMessageGraphInput,
+	): Promise<{ ok: true; accepted: boolean }> {
+		if (!input.restore) this.store.assertReadable()
 		const message = input.message
-		assertMailboxNonEmptyString(message.id, 'message.id')
 		let accepted = false
 		this.ctx.storage.transactionSync(() => {
 			const ownerId = this.store.assertOwner(input.ownerId)
+			if (message === null) {
+				accepted = this.store.upsertThreadRow(input.thread).accepted
+				return
+			}
+			assertMailboxNonEmptyString(message.id, 'message.id')
 			if (this.store.isMessageTombstoned(message.id)) return
 			this.store.validateMessageBlobKeys({
 				ownerId,
@@ -56,7 +59,7 @@ export class MailboxGraphCommitCommands {
 				this.store.replaceAttachmentsForMessage(message.id, input.attachments)
 			}
 		})
-		await this.maintenance.markDirtyAndEnsure()
+		if (!input.restore) await this.maintenance.markDirtyAndEnsure()
 		return { ok: true, accepted }
 	}
 

@@ -3,6 +3,7 @@ import {
 	integrationFlowValues,
 	tokenExchangeStyleValues,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { type PlatformOauthApp } from './platform-apps.ts'
 export const oauthAppFlowSchema = z.enum(integrationFlowValues)
 export const oauthTokenExchangeStyleSchema = z.enum(tokenExchangeStyleValues)
 
@@ -30,7 +31,10 @@ export type UserOauthApp = z.infer<typeof userOauthAppSchema>
 export const userIntegrationConnectionSchema = z.object({
 	userId: z.string().min(1),
 	name: z.string().min(1),
-	appSlug: z.string().min(1),
+	/** User-owned OAuth app slug; null for platform-app connections. */
+	appSlug: z.string().min(1).nullable(),
+	/** Platform (built-in) app slug; null for user-owned app connections. */
+	platformAppSlug: z.string().min(1).nullable(),
 	accountLabel: z.string().min(1).nullable(),
 	description: z.string(),
 	scopes: z.array(z.string()),
@@ -51,10 +55,22 @@ export type UserOauthAppWithConnectionCount = UserOauthApp & {
 	connectionCount: number
 }
 
-export type JoinedIntegration = {
-	app: UserOauthApp
-	connection: UserIntegrationConnection
-}
+/**
+ * A connection joined to the app that owns its client credentials. The lane
+ * discriminant matches which of `connection.appSlug` /
+ * `connection.platformAppSlug` is set.
+ */
+export type JoinedIntegration =
+	| {
+			lane: 'user'
+			app: UserOauthApp
+			connection: UserIntegrationConnection
+	  }
+	| {
+			lane: 'platform'
+			app: PlatformOauthApp
+			connection: UserIntegrationConnection
+	  }
 
 export type UserOauthAppRow = {
 	user_id: string
@@ -78,7 +94,8 @@ export type UserOauthAppRow = {
 export type UserIntegrationRow = {
 	user_id: string
 	name: string
-	app_slug: string
+	app_slug: string | null
+	platform_app_slug: string | null
 	account_label: string | null
 	description: string
 	scopes_json: string

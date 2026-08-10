@@ -3,6 +3,7 @@ import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
+import { isRemoteConnectorUnavailableMessage } from './remote-connector/status.ts'
 import { isUserCodeError } from './user-code-error.ts'
 
 function sentryEventMessages(event: ErrorEvent) {
@@ -102,7 +103,8 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
  * boundary; keep this in sync with `createExecutorSandboxTimeoutMessage` in
  * `mcp/executor.ts`.
  */
-export const executorSandboxTimeoutMessage = 'Execution timed out'
+export const executorSandboxTimeoutMessage =
+	'Execution timed out: Kody stopped observing the sandbox. Nested work was asked to abort, but already-started remote work and side effects may still complete. Do not retry side-effecting work without an idempotencyKey; recover with run_get or replay the same idempotencyKey.'
 
 /**
  * Anchored on purpose: wrapped forms (for example `Error: Execution timed
@@ -124,6 +126,25 @@ export function isExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 
 export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 	if (!isExecutorSandboxTimeoutSentryEvent(event)) return event
+	return null
+}
+
+/**
+ * Offline / empty / session-unavailable remote connectors are caller-clearable
+ * user state (reconnect the connector). MCP observability already skips them
+ * via `isCallerFailure`; this `beforeSend` gate is the backstop for any other
+ * capture path that still forwards the plain Error message.
+ */
+export function isRemoteConnectorUnavailableSentryEvent(event: ErrorEvent) {
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isRemoteConnectorUnavailableMessage(message),
+	)
+}
+
+export function filterRemoteConnectorUnavailableSentryEvent(event: ErrorEvent) {
+	if (!isRemoteConnectorUnavailableSentryEvent(event)) return event
 	return null
 }
 
@@ -187,11 +208,26 @@ export function isDurableObjectStorageObjectResetMessage(message: string) {
 	return durableObjectStorageObjectResetPattern.test(withoutErrorPrefix)
 }
 
-export function isDurableObjectIsolateResetMessage(message: string) {
+/**
+ * Memory/CPU isolate resets only. Isolated throwaway runners remap these to
+ * actionable "package too large" outcomes; deploy resets ("code was updated")
+ * and other platform resets must keep propagating so idempotent callers can
+ * retry on a fresh isolate.
+ */
+export function isDurableObjectIsolateResourceLimitResetMessage(
+	message: string,
+) {
 	const normalized = normalizeDurableObjectIsolateResetMessage(message)
 	return (
 		normalized === durableObjectIsolateMemoryResetMessage ||
-		normalized === durableObjectIsolateCpuResetMessage ||
+		normalized === durableObjectIsolateCpuResetMessage
+	)
+}
+
+export function isDurableObjectIsolateResetMessage(message: string) {
+	const normalized = normalizeDurableObjectIsolateResetMessage(message)
+	return (
+		isDurableObjectIsolateResourceLimitResetMessage(message) ||
 		normalized === durableObjectCodeUpdatedResetMessage ||
 		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage ||
 		normalized === durableObjectStorageOperationTimeoutResetMessage ||
@@ -225,6 +261,7 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// String-match backstops for paths that cannot yet be marked.
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
 	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
+	if (filterRemoteConnectorUnavailableSentryEvent(event) === null) return null
 	if (filterDurableObjectIsolateResetSentryEvent(event) === null) return null
 	return event
 }
@@ -262,7 +299,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// account policy, still visible on structured `mcp-event` logs. Bundler
 		// / sandbox-timeout string matches remain as backstops for unmarked
 		// paths; see filterUserModuleBundlerFailureSentryEvent and
-		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
+		// filterExecutorSandboxTimeoutSentryEvent. Offline remote-connector
+		// guidance messages are dropped the same way — see
+		// filterRemoteConnectorUnavailableSentryEvent. Bare Cloudflare Durable
 		// Object platform reset strings (memory/CPU limits, deploy-time code
 		// updates, blockConcurrencyWhile timeouts, DO storage operation
 		// timeouts, and DO storage object-reset with a support reference) are

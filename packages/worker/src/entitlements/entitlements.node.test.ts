@@ -6,7 +6,7 @@ import {
 	buildEntitlementUpgradeHint,
 	parseEntitlementLimitMessage,
 } from './errors.ts'
-import { parseStripePlanName, planLimits } from './plans.ts'
+import { parseStripePlanName, planLimits } from '#universal/plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -177,6 +177,7 @@ async function readMeterDailyCount(input: {
 		| 'email_receives_per_day'
 		| 'execute_calls_per_day'
 		| 'outbound_fetches_per_day'
+		| 'job_runs_per_day'
 	now: Date
 }) {
 	const result = await userMeterRpc({
@@ -276,7 +277,9 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 		],
 	})
 	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBe('free')
-	expect(await getUserPlan(db, { userId: 'user-1', email: '' })).toBe('free')
+	expect(await getUserPlan(db, { userId: 'user-1', email: undefined })).toBe(
+		'free',
+	)
 	expect(await getUserPlan(db, { userId: 'user-1', email: plannedEmail })).toBe(
 		'free',
 	)
@@ -289,13 +292,13 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
-	// Package-job / workflow contexts persist email: '' — reverse-resolve by
-	// stable userId so entitlement checks use the real plan (not free).
-	expect(await getUserPlan(db, { userId, email: null })).toBe('pro')
-	expect(await getUserPlan(db, { userId, email: '' })).toBe('pro')
-	expect(await getUserPlan(db, { userId, email: '   ' })).toBe('pro')
-	expect(queries.at(-1)?.sql).toContain('FROM users WHERE stable_user_id = ?')
-	expect(queries.at(-1)?.params).toEqual([userId])
+	// Background contexts reverse-resolve valid stable ids when their persisted
+	// email is blank or missing.
+	for (const email of [null, undefined, '   ']) {
+		expect(await getUserPlan(db, { userId, email })).toBe('pro')
+		expect(queries.at(-1)?.sql).toContain('WHERE stable_user_id = ?')
+		expect(queries.at(-1)?.params).toEqual([userId])
+	}
 
 	// Mismatched email/stable-id pairs fail closed without warning.
 	expect(
@@ -346,7 +349,8 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 		await getCachedUserPlan(second.db, { userId, email: plannedEmail }),
 	).toBe('free')
 
-	// Anonymous / invalid ids short-circuit without touching the cache or D1.
+	// Blank-email background contexts use their own cache entry and resolve by
+	// stable id. Invalid ids still short-circuit without touching D1.
 	expect(await getCachedUserPlan(db, { userId, email: null })).toBe('free')
 	expect(
 		await getCachedUserPlan(db, { userId: 'user-1', email: plannedEmail }),
@@ -530,7 +534,7 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 	expect(usageQueries()).toHaveLength(3)
 })
 
-test('assertWithinEntitlement enforces concurrent workflow limits without email and reverse-resolves blank emails', async () => {
+test('assertWithinEntitlement enforces concurrent workflow limits for unresolved and max-plan callers', async () => {
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const { db } = createEntitlementsTestDb()
 	// concurrent_workflows occupancy is RunLog-backed; create path passes

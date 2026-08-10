@@ -33,7 +33,7 @@ import {
 	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardTitleCss,
 	descriptionCss,
@@ -42,14 +42,14 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
-} from '#client/styles/style-primitives.ts'
-
-const clampedCellCss = css(recordCellClamp(28))
+} from '#universal/styles/style-primitives.ts'
 import {
 	type AccountValueDetail,
 	type AccountValueListItem,
 	type AccountValuesLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
+
+const clampedCellCss = css(recordCellClamp(28))
 
 type EditorState = {
 	name: string

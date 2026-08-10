@@ -3,8 +3,8 @@ import {
 	type AccountIntegrationListItem,
 	type AccountIntegrationsLoaderData,
 	type AccountOauthAppListItem,
-} from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+} from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
@@ -47,7 +47,13 @@ import {
 	integrationDisplayName,
 } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	transitions,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -63,7 +69,7 @@ import {
 	insetCardCss,
 	primaryLinkCss,
 	sectionTitleCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const accountIntegrationsApiPath = routes.accountIntegrationsApi.href()
 const integrationsRoute = createListDetailRoute('/account/integrations')

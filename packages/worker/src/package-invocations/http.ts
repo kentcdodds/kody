@@ -149,7 +149,6 @@ async function resolveTokenScope(input: {
 		tokenId: record.id,
 		userId: record.user_id,
 		email: record.email,
-		displayName: record.display_name,
 		packageIds: record.packageIds,
 		packageKodyIds: record.packageKodyIds,
 		exportNames: record.exportNames,

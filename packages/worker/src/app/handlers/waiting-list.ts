@@ -14,7 +14,7 @@ import {
 } from '#app/kit-waitlist.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 

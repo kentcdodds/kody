@@ -6,7 +6,7 @@ import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
@@ -14,7 +14,7 @@ import {
 	fieldLabelCss,
 	getDangerPillCss,
 	getGhostButtonCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementLinkNav,
 	AccountManagementMessage,
@@ -23,7 +23,7 @@ import {
 	IdValue,
 	accountInputCss,
 } from './account-management-components.tsx'
-import { type AdminCommunityReportsLoaderData } from '#app/loader-data.ts'
+import { type AdminCommunityReportsLoaderData } from '#universal/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,

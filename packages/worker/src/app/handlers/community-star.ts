@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toPublicCommunityStargazer } from '#app/community-public.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	listCommunityStargazersForListing,

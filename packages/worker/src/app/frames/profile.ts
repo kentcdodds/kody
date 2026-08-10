@@ -1,8 +1,8 @@
-import { PROFILE_TARGET } from '#app/profile-frame-constants.ts'
+import { PROFILE_TARGET } from '#universal/profile-frame-constants.ts'
 import { loadProfileData } from '#app/profile-data.ts'
 import { renderProfileContentHtml } from '#app/profile-content.tsx'
 import { registerFrame } from '#app/frame-registry.ts'
-import { routes } from '#app/routes.ts'
+import { routes } from '#universal/routes.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 
 const profileMatcher = createMatcher(routes.profile.pattern)
@@ -24,6 +24,10 @@ registerFrame(PROFILE_TARGET, {
 			activity: data.activity,
 			query: data.query,
 			isSelf: data.isSelf,
+			loggedIn: data.loggedIn,
+			isFollowing: data.isFollowing,
+			returnTo: routes.profile.href({ username }),
+			followError: new URL(request.url).searchParams.get('followError'),
 		})
 	},
 })

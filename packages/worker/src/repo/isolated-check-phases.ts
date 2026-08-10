@@ -1,4 +1,5 @@
 import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
+import { isDurableObjectIsolateResourceLimitResetMessage } from '#worker/sentry-options.ts'
 import {
 	type PackageBundleTarget,
 	type PackageCallableTypecheckTarget,
@@ -86,13 +87,11 @@ export type IsolatedCheckPhaseRunner = {
 	discard(stagingKey: string): Promise<void>
 }
 
-function isDurableObjectResetError(error: unknown) {
+function isDurableObjectResourceLimitResetError(error: unknown) {
+	// Remap only memory/CPU limits. Deploy resets must keep propagating.
 	return errorCauseChainIncludes(
 		error,
-		(message) =>
-			message.includes('Durable Object exceeded its CPU time limit') ||
-			message.includes("Durable Object's isolate exceeded its memory limit") ||
-			message.includes('Durable Object was reset'),
+		isDurableObjectIsolateResourceLimitResetMessage,
 	)
 }
 
@@ -143,7 +142,7 @@ export function createIsolatedCheckPhaseRunner(
 			try {
 				return await stub.runIsolatedCheckPhase(request)
 			} catch (error) {
-				if (isDurableObjectResetError(error)) {
+				if (isDurableObjectResourceLimitResetError(error)) {
 					return {
 						ok: false,
 						message:

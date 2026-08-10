@@ -27,7 +27,7 @@ import {
 	type EmailMessageRecord,
 	type EmailProcessingStatus,
 } from '#worker/email/types.ts'
-import { resolvePlanLimit, type PlanName } from '#worker/entitlements/plans.ts'
+import { resolvePlanLimit, type PlanName } from '#universal/plans.ts'
 import {
 	getUserPlan,
 	readCurrentEntitlementResourceUsage,

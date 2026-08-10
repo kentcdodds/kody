@@ -117,6 +117,19 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 		mockModule.setMcpServerEnabled(...args),
 	deleteMcpServer: (...args: Array<unknown>) =>
 		mockModule.deleteMcpServer(...args),
+	resolveMcpServerOAuthClientUrls: (input: {
+		env: { APP_BASE_URL?: string | null }
+		requestUrl?: string | URL | null
+	}) => {
+		const configured = input.env.APP_BASE_URL?.trim()
+		const clientOrigin = configured
+			? new URL(configured).origin
+			: new URL(String(input.requestUrl ?? 'https://heykody.app')).origin
+		return {
+			clientOrigin,
+			callbackUrl: `${clientOrigin}/account/mcp-servers/oauth/callback`,
+		}
+	},
 }))
 
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
@@ -153,6 +166,8 @@ test('MCP servers API lists servers with live hub status', async () => {
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',
+		oauthClientOrigin: 'https://example.com',
+		oauthCallbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
 		servers: [
 			{
 				id: 'server-1',
@@ -172,7 +187,7 @@ test('MCP servers API lists servers with live hub status', async () => {
 	})
 })
 
-test('MCP servers API add action forwards the request-derived callback origin', async () => {
+test('MCP servers API add action uses the canonical OAuth callback origin', async () => {
 	const handler = createAccountMcpServersApiHandler(createEnv())
 
 	const addResponse = await handler.handler({
@@ -278,6 +293,30 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(failureLocation.pathname).toBe('/account/mcp-servers')
 	expect(failureLocation.searchParams.get('auth')).toBe('error')
 	expect(failureLocation.searchParams.get('reason')).toBe('Invalid state.')
+
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: 'server-1',
+		authSuccess: false,
+		authError: 'Invalid origin uri https://example.com',
+		serverName: 'linear',
+	})
+	const originFailureResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?error=invalid_origin',
+		),
+		params: {},
+	} as never)
+	expect(originFailureResponse.status).toBe(303)
+	const originFailureLocation = new URL(
+		originFailureResponse.headers.get('Location') ?? '',
+	)
+	expect(originFailureLocation.searchParams.get('auth')).toBe('error')
+	expect(originFailureLocation.searchParams.get('reason')).toContain(
+		'Invalid origin uri https://example.com',
+	)
+	expect(originFailureLocation.searchParams.get('reason')).toContain(
+		'/account/mcp-servers/oauth/callback',
+	)
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',

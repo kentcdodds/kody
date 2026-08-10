@@ -3,6 +3,10 @@
  * state, and the snapshot shape the public page renders.
  */
 
+import { type ProviderIncident } from './provider-incidents.ts'
+
+export type { ProviderIncident }
+
 export const statusComponents = [
 	{ id: 'app', name: 'App & API' },
 	{ id: 'mcp', name: 'MCP endpoint' },
@@ -63,5 +67,11 @@ export type StatusSnapshot = {
 	components: Array<ComponentSnapshot>
 	openIncidents: Array<IncidentView>
 	recentIncidents: Array<IncidentView>
+	/**
+	 * Cloudflare Statuspage incidents that affect products kody runs on.
+	 * Null when the feed is unavailable or the cache is too stale — the page
+	 * omits the provider section in that case (fail-soft).
+	 */
+	providerIncidents: Array<ProviderIncident> | null
 	buildCommit: string | null
 }

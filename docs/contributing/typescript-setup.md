@@ -13,9 +13,12 @@ of truth.
 ### Client
 
 - **Config**: `packages/worker/tsconfig-client.json`
-- **Files**: `packages/worker/client/**/*.ts(x)` plus a set of shared worker
-  modules the client bundle imports (see the config's `include` list)
+- **Files**: `packages/worker/client/**` and `packages/worker/universal/**`
 - **Environment**: browser (`DOM`, `DOM.Iterable`) + JSX (`remix/ui`)
+
+Put any module the browser bundle imports under `packages/worker/universal/`
+(`#universal/*`). Do not append individual worker files to the client `include`
+list.
 
 ### Tools
 
@@ -34,6 +37,7 @@ of truth.
   `packages/worker/tsconfig.json` is a thin `extends` wrapper for the editor.
 - **Files**:
   - `packages/worker/src/**/*.ts`
+  - `packages/worker/universal/**`
   - `packages/worker/env.d.ts`, `packages/worker/src/env-schema.ts`
   - generated `packages/worker/worker-configuration.d.ts` (via
     `npm run generate-types`)
@@ -78,6 +82,9 @@ edited by hand.
 
 - **Missing editor types** usually means the file isn't included by any of the
   environment configs. Add it to the appropriate `tsconfig.*.json`.
+- **Client/worker shared code** belongs in `packages/worker/universal/`, not in
+  a one-off `tsconfig-client.json` `include` entry. See
+  [import boundaries](./import-boundaries.md).
 - **Worker types** depend on the generated
   `packages/worker/worker-configuration.d.ts`; run `npm run generate-types` if
   bindings/types drift.

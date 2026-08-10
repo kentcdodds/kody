@@ -1,3 +1,4 @@
+import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
 	canonicalIntegrationName,
 	integrationConfigSchema,
@@ -6,6 +7,11 @@ import {
 	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
+import {
+	getPlatformOauthAppBySlug,
+	listPlatformOauthApps,
+	type PlatformOauthApp,
+} from './platform-apps.ts'
 import {
 	countConnectionsForApp,
 	deleteIntegrationConnection,
@@ -28,7 +34,7 @@ import {
 	type UserOauthAppWithConnectionCount,
 } from './types.ts'
 
-export type { IntegrationConfig }
+export type { IntegrationConfig, PlatformOauthApp }
 
 /**
  * App-level OAuth config (no connection / token secret fields). Used by
@@ -92,6 +98,52 @@ export function toIntegrationConfig(
 	})
 }
 
+export function toPlatformIntegrationConfig(
+	app: PlatformOauthApp,
+	connection: UserIntegrationConnection,
+): IntegrationConfig {
+	// The shared client secret never has a user-facing secret name; the
+	// `platform` marker routes sandbox token refresh through the host-side
+	// `integration_token_refresh` capability instead.
+	return {
+		...normalizeIntegrationConfig({
+			name: connection.name,
+			tokenUrl: app.tokenUrl,
+			apiBaseUrl: app.apiBaseUrl,
+			flow: app.flow,
+			usePkce: app.usePkce,
+			clientId: app.clientId,
+			clientSecretSecretName: null,
+			accessTokenSecretName: connection.accessTokenSecretName,
+			refreshTokenSecretName: connection.refreshTokenSecretName,
+			requiredHosts: connection.requiredHosts,
+			tokenExchangeStyle: app.tokenExchangeStyle,
+			authorization: {
+				authorizeUrl: app.authorizeUrl,
+				scopes: connection.scopes,
+				scopeSeparator: app.scopeSeparator,
+				extraAuthorizeParams: app.extraAuthorizeParams,
+			},
+		}),
+		platform: true,
+	}
+}
+
+export function toJoinedIntegrationConfig(
+	joined: JoinedIntegration,
+): IntegrationConfig {
+	switch (joined.lane) {
+		case 'user':
+			return toIntegrationConfig(joined.app, joined.connection)
+		case 'platform':
+			return toPlatformIntegrationConfig(joined.app, joined.connection)
+		default: {
+			const exhaustiveCheck: never = joined
+			throw new Error(`Unhandled integration lane: ${String(exhaustiveCheck)}`)
+		}
+	}
+}
+
 export async function listIntegrations(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
@@ -100,7 +152,7 @@ export async function listIntegrations(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
-	return rows.map(({ app, connection }) => toIntegrationConfig(app, connection))
+	return rows.map(toJoinedIntegrationConfig)
 }
 
 export async function listJoinedIntegrations(input: {
@@ -124,7 +176,7 @@ export async function getIntegration(input: {
 		name: input.name,
 	})
 	if (!joined) return null
-	return toIntegrationConfig(joined.app, joined.connection)
+	return toJoinedIntegrationConfig(joined)
 }
 
 export async function getJoinedIntegration(input: {
@@ -161,7 +213,7 @@ export async function upsertIntegration(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		config: oauthAppWriteConfigFromIntegration(config),
-		existingConnectionApp: existing?.app ?? null,
+		existingConnectionApp: existing?.lane === 'user' ? existing.app : null,
 	})
 
 	await upsertIntegrationConnection({
@@ -170,6 +222,7 @@ export async function upsertIntegration(input: {
 			user_id: input.userId,
 			name: config.name,
 			app_slug: appSlug,
+			platform_app_slug: null,
 			account_label:
 				input.accountLabel === undefined
 					? (existing?.connection.accountLabel ?? null)
@@ -191,7 +244,7 @@ export async function upsertIntegration(input: {
 		},
 	})
 
-	if (existing && existing.app.slug !== appSlug) {
+	if (existing && existing.lane === 'user' && existing.app.slug !== appSlug) {
 		await deleteOauthAppIfNoConnections({
 			db: input.env.APP_DB,
 			userId: input.userId,
@@ -261,12 +314,150 @@ export async function deleteIntegration(input: {
 		name,
 	})
 	if (!deleted) return false
-	await deleteOauthAppIfNoConnections({
+	// Platform apps are operator-owned; deleting a built-in connection never
+	// cleans up the shared app row.
+	if (existing.lane === 'user') {
+		await deleteOauthAppIfNoConnections({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			appSlug: existing.app.slug,
+		})
+	}
+	return true
+}
+
+/**
+ * Connect a user to a platform (built-in) OAuth app. Token secrets are the
+ * user's own; only the app registration (client id + endpoints + shared
+ * secret) is operator-owned.
+ */
+export async function upsertPlatformIntegration(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	platformAppSlug: string
+	name?: string | null
+	scopes: Array<string>
+	accessTokenSecretName: string
+	refreshTokenSecretName?: string | null
+	accountLabel?: string | null
+	description?: string | null
+}): Promise<IntegrationConfig> {
+	const app = await getPlatformOauthAppBySlug({
+		db: input.env.APP_DB,
+		slug: input.platformAppSlug,
+	})
+	if (!app) {
+		throw new Error(
+			`Platform integration "${input.platformAppSlug}" is not available.`,
+		)
+	}
+	const name =
+		canonicalIntegrationName(input.name?.trim() || app.slug) || app.slug
+	const accessTokenSecretName = input.accessTokenSecretName.trim()
+	if (!accessTokenSecretName) {
+		throw new Error('Access token secret name is required.')
+	}
+	const scopes = assertScopesAllowedForPlatformApp(app, input.scopes)
+	const tokenHost = safeParseHost(app.tokenUrl)
+	const requiredHosts = normalizeAllowedHosts([
+		...app.requiredHosts,
+		...(tokenHost ? [tokenHost] : []),
+		...(app.apiBaseUrl ? [safeParseHost(app.apiBaseUrl) ?? ''] : []),
+	])
+
+	const existing = await getJoinedIntegrationByName({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		appSlug: existing.app.slug,
+		name,
 	})
-	return true
+	const now = new Date().toISOString()
+	await upsertIntegrationConnection({
+		db: input.env.APP_DB,
+		row: {
+			user_id: input.userId,
+			name,
+			app_slug: null,
+			platform_app_slug: app.slug,
+			account_label:
+				input.accountLabel === undefined
+					? (existing?.connection.accountLabel ?? null)
+					: input.accountLabel?.trim() || null,
+			description:
+				input.description === undefined
+					? (existing?.connection.description ?? '')
+					: (input.description?.trim() ?? ''),
+			scopes_json: JSON.stringify(
+				scopes.length > 0 ? scopes : app.defaultScopes,
+			),
+			required_hosts_json: JSON.stringify(requiredHosts),
+			access_token_secret_name: accessTokenSecretName,
+			refresh_token_secret_name: input.refreshTokenSecretName?.trim() || null,
+			connected_at: now,
+			token_refreshed_at: existing?.connection.tokenRefreshedAt ?? null,
+			created_at: existing?.connection.createdAt ?? now,
+			updated_at: now,
+		},
+	})
+
+	// Converting an existing user-lane connection to the platform lane leaves
+	// its old app row behind when it was the sole connection; clean it up the
+	// same way a user-lane app switch does.
+	if (existing?.lane === 'user') {
+		await deleteOauthAppIfNoConnections({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			appSlug: existing.app.slug,
+		})
+	}
+
+	const saved = await getIntegration({
+		env: input.env,
+		userId: input.userId,
+		name,
+	})
+	if (!saved) {
+		throw new Error(`Failed to save platform integration "${name}".`)
+	}
+	return saved
+}
+
+/**
+ * The allowed-scope menu is a strict allowlist: an empty menu permits only
+ * scope-less connections. Callers must run this before persisting anything
+ * (including token secrets), so a rejected scope set leaves no state behind.
+ * Returns the normalized requested scopes.
+ */
+export function assertScopesAllowedForPlatformApp(
+	app: PlatformOauthApp,
+	requestedScopes: Array<string>,
+): Array<string> {
+	const allowedScopes = new Set(app.allowedScopes)
+	const scopes = Array.from(
+		new Set(requestedScopes.map((scope) => scope.trim()).filter(Boolean)),
+	)
+	const disallowed = scopes.filter((scope) => !allowedScopes.has(scope))
+	if (disallowed.length > 0) {
+		throw new Error(
+			`Scopes not allowed for platform integration "${app.slug}": ${disallowed.join(', ')}.`,
+		)
+	}
+	return scopes
+}
+
+export async function listAvailablePlatformApps(input: {
+	env: Pick<Env, 'APP_DB'>
+}): Promise<Array<PlatformOauthApp>> {
+	return listPlatformOauthApps({ db: input.env.APP_DB })
+}
+
+export async function getAvailablePlatformApp(input: {
+	env: Pick<Env, 'APP_DB'>
+	slug: string
+}): Promise<PlatformOauthApp | null> {
+	return getPlatformOauthAppBySlug({
+		db: input.env.APP_DB,
+		slug: input.slug,
+	})
 }
 
 async function deleteOauthAppIfNoConnections(input: {

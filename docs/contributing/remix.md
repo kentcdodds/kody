@@ -47,7 +47,7 @@ trusted reverse-proxy boundary. Do not copy it into Worker request handling.
 For a typical authenticated HTML page, start with the route contract and wire
 the narrowest owners. The core route-wiring path is five files:
 
-1. `packages/worker/src/app/routes.ts` — add the route identity. Treat
+1. `packages/worker/universal/routes.ts` — add the route identity. Treat
    `routes.<name>` as the canonical source of the pathname.
 2. `packages/worker/src/app/router.ts` — map the route to its handler in
    `router.map(...)`.
@@ -57,7 +57,7 @@ the narrowest owners. The core route-wiring path is five files:
    `#app/request-body.ts` helpers when the page reads structured request bodies.
 4. `packages/worker/client/routes/<page>.tsx` — add the route component and,
    when the page participates in SPA preload navigation, its route loader.
-   Import shared loader payload types from `#app/loader-data.ts`
+   Import shared loader payload types from `#universal/loader-data.ts`
    (`kody-custom/prefer-loader-data-types` enforces this). Keep UI-only state
    types local.
 5. `packages/worker/client/routes/index.tsx` — register the component in
@@ -65,7 +65,7 @@ the narrowest owners. The core route-wiring path is five files:
    `routePattern(routes.<name>)` instead of a duplicated literal pathname.
 
 That covers the server contract, page handler, client route, and client
-registries in five edits. Treat `packages/worker/src/app/document-head.ts` as
+registries in five edits. Treat `packages/worker/universal/document-head.ts` as
 the 5-vs-6 check: the count stays at five when the page can reuse existing head
 behavior, and it becomes six when the new pathname needs its own title,
 canonical URL, or Open Graph metadata. A brand-new standalone route commonly
@@ -74,5 +74,5 @@ title.
 
 OAuth authorize/callback shells are the exception to the `routes.ts` rule. Those
 pathnames are owned by the Cloudflare OAuth provider wrapper, so client
-registries and document head use `#app/oauth-paths.ts` (`oauthPaths.authorize`
-and `oauthPaths.callback`) instead of `routes.ts`.
+registries and document head use `#universal/oauth-paths.ts`
+(`oauthPaths.authorize` and `oauthPaths.callback`) instead of `routes.ts`.

@@ -1,6 +1,6 @@
 import { createMatcher } from 'remix/route-pattern/match'
-import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
-import { type routes } from '#app/routes.ts'
+import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
+import { type routes } from '#universal/routes.ts'
 
 export type FrameRenderContext = {
 	request: Request

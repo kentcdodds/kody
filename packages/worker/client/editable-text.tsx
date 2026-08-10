@@ -1,6 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { focusRingCss } from '#client/styles/style-primitives.ts'
+import { focusRingCss } from '#universal/styles/style-primitives.ts'
 
 type EditableTextProps = {
 	id: string

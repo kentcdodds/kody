@@ -5,7 +5,7 @@ import {
 	silenceExpectedConsoleErrors,
 } from '#worker/test-support/console-spies.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { planLimits } from '#worker/entitlements/plans.ts'
+import { planLimits } from '#universal/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createInMemoryUserMeterEnv,

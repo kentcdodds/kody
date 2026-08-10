@@ -17,7 +17,7 @@ import {
 	parsePlanName,
 	resolvePlanWrite,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
@@ -26,9 +26,9 @@ import {
 	removeUserRole,
 	requireUserWithPermission,
 } from '#app/permissions-server.ts'
-import { type RoleName, roleNames } from '#worker/identity/permissions.ts'
+import { type RoleName, roleNames } from '#universal/permissions.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export { adminUserListItemFieldNames, type AdminUserListItem }

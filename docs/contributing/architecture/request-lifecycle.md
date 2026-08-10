@@ -58,8 +58,7 @@ Requests are handled in this order:
      `packages/worker/src/mcp/stateless-lane.ts` (MCP SDK v2, no Durable
      Object). Both lanes share one tool registration; every authenticated
      request records a lane data point to the `MCP_PROTOCOL_EVENTS` Analytics
-     Engine dataset so the legacy lane can be retired once its traffic stops
-     (see
+     Engine dataset for dual-lane traffic measurement (see
      [decision 0005](../decisions/0005-mcp-dual-lane-stateless-migration.md)).
 6. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
@@ -123,7 +122,7 @@ configures session cookie signing (`COOKIE_SECRET`) before creating the app
 router.
 
 `packages/worker/src/app/router.ts` maps route patterns from
-`packages/worker/src/app/routes.ts` to handler modules (home, auth, account,
+`packages/worker/universal/routes.ts` to handler modules (home, auth, account,
 session, logout, password reset, health).
 
 ## Syntax highlighting
@@ -165,7 +164,7 @@ ordering contract.
 Route loaders are registered in `packages/worker/client/routes/index.tsx` under
 `clientRouteLoaders`, keyed by `routePattern(routes.<name>)`. The same keying
 scheme is used by `clientRoutes` and `document-head.ts`, so pathname renames
-flow from `packages/worker/src/app/routes.ts` instead of duplicated literal
+flow from `packages/worker/universal/routes.ts` instead of duplicated literal
 strings. OAuth authorize/callback are the exception: those shells use
 `oauthPaths.authorize` and `oauthPaths.callback` because the Cloudflare OAuth
 provider wrapper, not `routes.ts`, owns those pathnames. Loaders still match

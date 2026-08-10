@@ -16,6 +16,8 @@ import {
 	assertPackagePrivateVisibilityChangeAllowed,
 	defaultPackagePrivateGuidance,
 	destructiveOverwriteConfirmationDescription,
+	isDestructiveOverwriteConfirmationMessage,
+	isPrivateVisibilityChangeConfirmationMessage,
 	loadPriorPackageManifestContent,
 	privateVisibilityChangeConfirmationDescription,
 	productionPackageSourceSafetyPolicy,
@@ -240,24 +242,43 @@ export const savePackageCapability = defineDomainCapability(
 									? canonicalExistingSource
 									: ensuredSource,
 						})
-			assertPackagePrivateVisibilityChangeAllowed({
-				beforeContent: priorManifestContent,
-				afterContent: packageJsonContent,
-				isNewPackage: existing == null,
-				operation: 'package_save',
-				confirmed: args.confirm_private_visibility_change,
-			})
-			if (existing) {
-				await assertPackageSourceOverwriteAllowed({
-					env: ctx.env,
-					userId: owner.ownerUserId,
-					source:
-						canonicalExistingSource?.id === ensuredSource.id
-							? canonicalExistingSource
-							: ensuredSource,
+			try {
+				assertPackagePrivateVisibilityChangeAllowed({
+					beforeContent: priorManifestContent,
+					afterContent: packageJsonContent,
+					isNewPackage: existing == null,
 					operation: 'package_save',
-					confirmed: args.confirm_destructive_overwrite,
+					confirmed: args.confirm_private_visibility_change,
 				})
+			} catch (error) {
+				const message = getErrorMessage(error)
+				if (isPrivateVisibilityChangeConfirmationMessage(message)) {
+					throw new McpCallerError(message, { cause: error })
+				}
+				throw error
+			}
+			if (existing) {
+				try {
+					await assertPackageSourceOverwriteAllowed({
+						env: ctx.env,
+						userId: owner.ownerUserId,
+						source:
+							canonicalExistingSource?.id === ensuredSource.id
+								? canonicalExistingSource
+								: ensuredSource,
+						operation: 'package_save',
+						confirmed: args.confirm_destructive_overwrite,
+					})
+				} catch (error) {
+					const message = getErrorMessage(error)
+					// Shared policy helpers throw plain Errors; reclassify the
+					// confirmation gate so agents see McpCallerError and Sentry
+					// does not open platform-bug issues (KODY issue 7661329778).
+					if (isDestructiveOverwriteConfirmationMessage(message)) {
+						throw new McpCallerError(message, { cause: error })
+					}
+					throw error
+				}
 			}
 			await syncArtifactSourceSnapshot({
 				env: ctx.env,

@@ -71,6 +71,11 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   browsers are already installed.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
   values for local secrets.
+- Specs import `test` from `e2e/playwright-utils.ts`, which probes `/health`
+  before each test and fails fast with `E2eWebServerDeadError` if Wrangler has
+  exited mid-suite (avoids burning retries on `ECONNREFUSED`). On CI, the
+  `🎭 E2E` job uploads `logs.local/` as the `e2e-wrangler-logs` artifact when
+  the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.
@@ -78,8 +83,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   sessions.
 - Client routes live in `packages/worker/client/app.tsx` and
   `packages/worker/client/routes/index.tsx`.
-- API endpoints are defined in `packages/worker/src/app/routes.ts` and mapped in
-  `packages/worker/src/app/router.ts`.
+- API endpoints are defined in `packages/worker/universal/routes.ts` and mapped
+  in `packages/worker/src/app/router.ts`.
 
 When adding endpoints that accept bodies, ensure POST/PUT requests are not
 handled by the static asset fetcher in `packages/worker/src/index.ts`.

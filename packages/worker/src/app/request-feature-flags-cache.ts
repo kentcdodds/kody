@@ -20,7 +20,7 @@ import {
 	featureFlagDefinitions,
 	featureFlagKeys,
 	type FeatureFlagKey,
-} from '#worker/feature-flags/registry.ts'
+} from '#universal/feature-flags/registry.ts'
 import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
 
 export type EvaluatedFeatureFlags = Record<FeatureFlagKey, boolean>

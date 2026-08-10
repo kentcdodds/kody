@@ -27,6 +27,7 @@ import {
 import { type ensureModuleArtifact } from './module-artifacts.ts'
 import { runSavedPackageModuleOnce } from './module-execution.ts'
 import { buildJsonErrorResponse } from './responses.ts'
+import { buildSubscriptionInvocationRunMetadata } from './subscription-envelope.ts'
 import { boundedResponseJson, parseStoredResponse } from './repo.ts'
 
 export const packageInvocationStaleAfterMs = 15 * 60 * 1000
@@ -97,6 +98,7 @@ export async function invokeSavedPackageModule(input: {
 		ReturnType<typeof ensureModuleArtifact>
 	> | null
 	executorTimeoutMs?: number | null
+	signal?: AbortSignal
 }) {
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
@@ -159,11 +161,13 @@ export async function invokeSavedPackageModule(input: {
 			}),
 			invocationId: null,
 			idempotencyKey: input.idempotencyKey,
-			metadata: {
+			metadata: buildSubscriptionInvocationRunMetadata({
 				exportName: input.invocationName,
+				isSubscription: input.moduleSelector.kind === 'subscription',
 				source: input.source,
 				topic: input.topic,
-			},
+				params: input.params,
+			}),
 		}
 	}
 
@@ -272,6 +276,7 @@ export async function invokeSavedPackageModule(input: {
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloadedModuleArtifact,
 		executorTimeoutMs: input.executorTimeoutMs,
+		signal: input.signal,
 		externalRunRecordHandle: claimed.handle,
 	})
 	switch (outcome.kind) {
@@ -324,15 +329,15 @@ export async function invokeSavedPackageModule(input: {
 							idempotencyKey: input.idempotencyKey,
 						})
 			} catch (error) {
-				// The module already succeeded; do not poison the key with a
-				// stored permanent failure. Return the result to the caller and
-				// leave the claim in progress so the stale-reclaim path decides
-				// what happens on a later retry.
-				console.warn(
+				// The module succeeded, but the atomic ledger + run terminal write
+				// did not. Do not report success: durable callers must retry the
+				// same key until the terminal response can be persisted. The live
+				// claim prevents that retry from duplicating the completed work.
+				console.error(
 					'package invocation completed-result persistence failed',
 					getErrorMessage(error),
 				)
-				return outcome.response
+				return buildPersistenceFailedResponse()
 			}
 		}
 		case 'failed': {

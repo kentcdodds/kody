@@ -3,14 +3,14 @@ import { readPagination } from '#worker/query-params.ts'
 // Type-only: the admin payload envelopes are the app/client wire contract and
 // are erased at build time, so this does not pull the app layer into the
 // worker's runtime graph.
-import { type AdminUsersLoaderData } from '#app/loader-data.ts'
-import { type RoleName, roleNames } from '#worker/identity/permissions.ts'
+import { type AdminUsersLoaderData } from '#universal/loader-data.ts'
+import { type RoleName, roleNames } from '#universal/permissions.ts'
 import {
 	parseStoredPlanName,
 	planNames,
 	resolvePlanWrite,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import {
 	chunkArray,
 	maxD1BoundParameters,

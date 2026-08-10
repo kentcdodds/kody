@@ -10,7 +10,7 @@ import {
 	prefersMarkdown,
 	withVaryAccept,
 } from '#app/markdown-negotiation.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 

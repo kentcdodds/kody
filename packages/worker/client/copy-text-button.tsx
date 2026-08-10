@@ -9,7 +9,7 @@ import {
 	getSecondaryButtonCss,
 	getSwapLabelCss,
 	mergeCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 type CopyTextButtonProps = {
 	value: string

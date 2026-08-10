@@ -1,14 +1,17 @@
 import { z } from 'zod'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
 	isReadOnlyStorageSqlQuery,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
+import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import { storageIdSchema } from './shared.ts'
 
 const outputSchema = z.object({
@@ -64,25 +67,35 @@ export const storageQueryCapability = defineDomainCapability(
 					}),
 				})
 			}
-			const result = await storageRunnerRpc({
-				env: ctx.env,
-				userId: user.userId,
-				storageId: args.storage_id,
-			}).sqlQuery({
-				query: args.query,
-				params: args.params,
-				writable,
-			})
-			return {
-				ok: true as const,
-				storage_id: args.storage_id,
-				query: args.query,
-				columns: result.columns,
-				rows: result.rows,
-				row_count: result.rowCount,
-				rows_read: result.rowsRead,
-				rows_written: result.rowsWritten,
-				writable,
+			try {
+				const result = await storageRunnerRpc({
+					env: ctx.env,
+					userId: user.userId,
+					storageId: args.storage_id,
+				}).sqlQuery({
+					query: args.query,
+					params: args.params,
+					writable,
+				})
+				return {
+					ok: true as const,
+					storage_id: args.storage_id,
+					query: args.query,
+					columns: result.columns,
+					rows: result.rows,
+					row_count: result.rowCount,
+					rows_read: result.rowsRead,
+					rows_written: result.rowsWritten,
+					writable,
+				}
+			} catch (error) {
+				// User SQL / policy mistakes against their bucket — keep them on
+				// mcp-event and out of Sentry (KODY-CLOUDFLARE-44).
+				const message = getErrorMessage(error)
+				if (isUserStorageSqlCallerMessage(message)) {
+					throw new McpCallerError(message, { cause: error })
+				}
+				throw error
 			}
 		},
 	},

@@ -59,9 +59,9 @@ module variables.
 
 ## Client typed routes
 
-Client code imports `routes` from `#app/routes.ts` (included in
-`tsconfig-client.json`). The route table is isomorphic plain data from
-`remix/routes`; esbuild bundles it via the root `package.json` `imports` map.
+Client code imports `routes` from `#universal/routes.ts`. The route table is
+plain data from `remix/routes`; esbuild bundles it via the root `package.json`
+`imports` map.
 
 Example (`client/routes/community.tsx`):
 

@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	getUserAvatarObject,
 	parseUserAvatarCacheKey,

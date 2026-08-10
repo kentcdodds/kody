@@ -1,9 +1,6 @@
 import { cachified, type Cache } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
-import {
-	parseStoredPlanName,
-	resolveEffectivePlan,
-} from '#worker/entitlements/plans.ts'
+import { parseStoredPlanName, resolveEffectivePlan } from '#universal/plans.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -12,7 +9,7 @@ import {
 	type AdminUsageMonthRollup,
 	type AdminUsageRollup,
 	type AdminUserUsageLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 
 export const adminUsageMetrics = [
 	'execute',

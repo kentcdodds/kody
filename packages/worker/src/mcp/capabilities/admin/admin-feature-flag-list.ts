@@ -5,7 +5,7 @@ import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
-import { missingSuccessMetricNotice } from '#worker/feature-flags/registry.ts'
+import { missingSuccessMetricNotice } from '#universal/feature-flags/registry.ts'
 import { listFeatureFlagsForAdmin } from '#worker/feature-flags/service.ts'
 import { attachFeatureFlagMetricReadouts } from '#worker/feature-flags/success-metric-readout.ts'
 import {

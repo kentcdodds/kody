@@ -5,7 +5,7 @@ import { loadAdminCommunityReportsData } from '#app/admin-community-reports-data
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { requireUserWithRole } from '#app/permissions-server.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	banCommunityUser,

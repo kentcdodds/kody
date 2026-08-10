@@ -1,4 +1,4 @@
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 import { type EntryComponent } from 'remix/ui'
 
 export type AppRootProps = {

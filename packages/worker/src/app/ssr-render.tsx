@@ -12,9 +12,9 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	absolutizeDocumentHead,
 	resolveDocumentHead,
-} from '#app/document-head.ts'
+} from '#universal/document-head.ts'
 import { getEnv } from '#app/env.ts'
-import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
@@ -25,7 +25,7 @@ import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
 	SENTRY_TUNNEL_PATH,
 	type SentryClientConfig,
-} from '#client/sentry-config.ts'
+} from '#universal/sentry-config.ts'
 import '#app/frame-registrations.ts'
 import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
 
@@ -77,7 +77,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	setAuthSessionSecret(getEnv(env).COOKIE_SECRET)
 	const { session, setCookie } = await loadSessionInfo(request, env)
 	const requestUrl = new URL(request.url)
-	const url = getRequestUrl(request)
+	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
 	// Canonical/OG head URLs use the configured canonical origin so pages

@@ -23,7 +23,10 @@
  * recording must not break session loading or MCP request handling.
  */
 
-import { measuredFeatureFlagKeys, type FeatureFlagKey } from './registry.ts'
+import {
+	measuredFeatureFlagKeys,
+	type FeatureFlagKey,
+} from '#universal/feature-flags/registry.ts'
 import { type FeatureFlagEvaluation } from './service.ts'
 
 export type FeatureFlagExposureEnv = {

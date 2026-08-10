@@ -5,12 +5,12 @@ import {
 	radius,
 	spacing,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const kodyImages = {
 	keys: {

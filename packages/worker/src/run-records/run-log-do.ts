@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import {
 	type DurableObjectPitrRpc,
@@ -212,6 +216,33 @@ export type UpdateRunErrorTriageResult =
 	| { ok: true; run: RunRecord }
 	| { ok: false; reason: 'not_found' }
 	| { ok: false; reason: 'not_error'; status: RunStatus; runId: string }
+
+export type BulkUpdateRunErrorTriageFilter = {
+	surface?: RunSurface | null
+	packageId?: string | null
+	jobId?: string | null
+	name?: string | null
+	errorName?: string | null
+	errorMessage?: string | null
+	errorTriage?: RunErrorTriageFilter | null
+}
+
+export type BulkUpdateRunErrorTriageInput = {
+	runIds?: Array<string> | null
+	filter?: BulkUpdateRunErrorTriageFilter | null
+	errorTriage: RunErrorTriage | null
+	preserveTriageNote?: boolean
+	triageNote?: string | null
+	triagedBy: string
+	limit: number
+	dryRun?: boolean
+}
+
+export type BulkUpdateRunErrorTriageResult = {
+	matchedRunIds: Array<string>
+	updatedCount: number
+	hasMore: boolean
+}
 
 type ExportRunsInput = {
 	pageSize: number
@@ -1156,12 +1187,22 @@ class RunLogBase extends DurableObject<Env> {
 		return mapRunRow(healed, Number(healed['log_count'] ?? 0) || 0)
 	}
 
-	private deleteOldestWithStatus(status: RunStatus, limit: number) {
+	private deleteOldestMatching(
+		status: RunStatus,
+		triage: 'triaged' | 'open' | null,
+		limit: number,
+	) {
 		if (limit <= 0) return [] as Array<string>
+		const triageClause =
+			triage === 'triaged'
+				? 'AND error_triage IS NOT NULL'
+				: triage === 'open'
+					? 'AND error_triage IS NULL'
+					: ''
 		return this.ctx.storage.sql
 			.exec<{ id: string }>(
 				`SELECT id FROM runs
-				WHERE status = ?
+				WHERE status = ? ${triageClause}
 				ORDER BY started_at ASC
 				LIMIT ?`,
 				status,
@@ -1305,17 +1346,32 @@ class RunLogBase extends DurableObject<Env> {
 		const excess = total - runRecordMaxRunsPerUser
 		if (excess > 0) {
 			const deleteCount = Math.min(excess, maxExcessDeletesPerFinish)
-			// In-flight rows are never cap-evicted (same as age prune). Order is
-			// oldest success, then oldest error. Stale `running` becomes
-			// evictable only after reconcile demotes it to `error` above.
+			// In-flight rows are never cap-evicted (same as age prune). Handled
+			// errors go first, then successes, with open errors retained last.
+			// This makes soft triage relieve saturation without sacrificing
+			// useful successful history. Stale `running` becomes evictable only
+			// after reconcile demotes it to an open `error` above.
 			// Genuinely in-flight rows can therefore push the stored count
 			// briefly above runRecordMaxRunsPerUser until they finish or go
 			// stale — that is intentional, not a broken cap.
 			const ids: Array<string> = []
-			ids.push(...this.deleteOldestWithStatus('success', deleteCount))
+			ids.push(...this.deleteOldestMatching('error', 'triaged', deleteCount))
 			if (ids.length < deleteCount) {
 				ids.push(
-					...this.deleteOldestWithStatus('error', deleteCount - ids.length),
+					...this.deleteOldestMatching(
+						'success',
+						null,
+						deleteCount - ids.length,
+					),
+				)
+			}
+			if (ids.length < deleteCount) {
+				ids.push(
+					...this.deleteOldestMatching(
+						'error',
+						'open',
+						deleteCount - ids.length,
+					),
 				)
 			}
 			this.deleteRunsByIds(ids)
@@ -1771,6 +1827,51 @@ class RunLogBase extends DurableObject<Env> {
 	}) {
 		this.maybeRecordActivationForTerminalRun(input)
 		this.maybeRecordJobRunObservabilityForTerminalRun(input)
+		this.maybeAutoResolvePriorJobErrors(input)
+	}
+
+	/**
+	 * A later successful attempt is strong evidence that earlier open failures
+	 * of the same scheduled job are no longer active. Soft-resolve those rows
+	 * without changing their execution status or error details. User-ignored
+	 * and already-resolved rows are deliberately left untouched.
+	 *
+	 * Only job_id is used: other surfaces do not all have an equally strong,
+	 * immutable identity, so name-based auto-triage would risk hiding unrelated
+	 * failures. The per-user count cap bounds this single UPDATE to 2,000 rows.
+	 */
+	private maybeAutoResolvePriorJobErrors(input: {
+		previousStatus: RunStatus | null
+		run: RunLogRowInput
+	}) {
+		if (
+			input.run.status !== 'success' ||
+			input.previousStatus === 'success' ||
+			input.run.surface !== 'job'
+		) {
+			return
+		}
+		const jobId = input.run.jobId?.trim()
+		if (!jobId) return
+		const triagedAt =
+			input.run.finishedAt ?? input.run.updatedAt ?? new Date().toISOString()
+		this.ctx.storage.sql.exec(
+			`UPDATE runs
+			SET error_triage = 'resolved',
+				triage_note = 'auto-resolved: later success of the same job',
+				triaged_at = ?,
+				triaged_by = 'system:auto-resolve',
+				updated_at = ?
+			WHERE status = 'error'
+				AND error_triage IS NULL
+				AND surface = 'job'
+				AND job_id = ?
+				AND id != ?`,
+			triagedAt,
+			triagedAt,
+			jobId,
+			input.run.id,
+		)
 	}
 
 	async finishRun(input: {
@@ -2697,6 +2798,149 @@ class RunLogBase extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * Bounded soft triage for explicit run ids or an exact-match filter. The
+	 * caller validates that one selector is present; this layer still forces
+	 * status=error so successes can never be triaged accidentally.
+	 */
+	async bulkUpdateRunErrorTriage(
+		input: BulkUpdateRunErrorTriageInput,
+	): Promise<BulkUpdateRunErrorTriageResult> {
+		const limit = normalizePageSize(input.limit, runRecordMaxPageSize)
+		const clauses = [`status = 'error'`]
+		const params: Array<SqlStorageValue> = []
+		// Reopening already-open rows is a no-op and must not inflate matched or
+		// updated counts, regardless of selector type.
+		if (input.errorTriage == null) {
+			clauses.push('error_triage IS NOT NULL')
+		}
+		const runIds = (input.runIds ?? [])
+			.map((id) => id.trim())
+			.filter(Boolean)
+			.slice(0, runRecordMaxPageSize)
+		if (runIds.length > 0) {
+			clauses.push(`id IN (${runIds.map(() => '?').join(', ')})`)
+			params.push(...runIds)
+		} else {
+			const filter = input.filter
+			if (!filter) {
+				return { matchedRunIds: [], updatedCount: 0, hasMore: false }
+			}
+			if (filter.surface) {
+				clauses.push('surface = ?')
+				params.push(filter.surface)
+			}
+			if (filter.packageId) {
+				clauses.push('package_id = ?')
+				params.push(filter.packageId)
+			}
+			if (filter.jobId) {
+				clauses.push('job_id = ?')
+				params.push(filter.jobId)
+			}
+			if (filter.name) {
+				clauses.push('name = ?')
+				params.push(filter.name)
+			}
+			if (filter.errorName) {
+				clauses.push('error_name = ?')
+				params.push(filter.errorName)
+			}
+			if (filter.errorMessage) {
+				clauses.push('error_message = ?')
+				params.push(filter.errorMessage)
+			}
+			const filterTriage =
+				filter.errorTriage ??
+				(input.errorTriage == null ? null : ('open' as const))
+			if (filterTriage === 'open') {
+				clauses.push('error_triage IS NULL')
+			} else if (filterTriage === 'ignored') {
+				clauses.push(`error_triage = 'ignored'`)
+			} else if (filterTriage === 'resolved') {
+				clauses.push(`error_triage = 'resolved'`)
+			} else if (filterTriage === 'all' || filterTriage == null) {
+				// No triage filter.
+			} else {
+				const exhaustive: never = filterTriage
+				throw new Error(
+					`Unhandled bulk error triage filter: ${String(exhaustive)}`,
+				)
+			}
+		}
+
+		const rows = this.ctx.storage.sql
+			.exec<{ id: string }>(
+				`SELECT id FROM runs
+				WHERE ${clauses.join(' AND ')}
+				ORDER BY started_at DESC, id DESC
+				LIMIT ${limit + 1}`,
+				...params,
+			)
+			.toArray()
+		const hasMore = rows.length > limit
+		const matchedRunIds = rows.slice(0, limit).map((row) => row.id)
+		if (input.dryRun || matchedRunIds.length === 0) {
+			return { matchedRunIds, updatedCount: 0, hasMore }
+		}
+
+		const now = new Date().toISOString()
+		this.ctx.storage.transactionSync(() => {
+			if (input.errorTriage == null) {
+				for (const runIdChunk of chunkArray(
+					matchedRunIds,
+					maxD1BoundParameters - 1,
+				)) {
+					const placeholders = runIdChunk.map(() => '?').join(', ')
+					this.ctx.storage.sql.exec(
+						`UPDATE runs
+						SET error_triage = NULL,
+							triage_note = NULL,
+							triaged_at = NULL,
+							triaged_by = NULL,
+							updated_at = ?
+						WHERE id IN (${placeholders}) AND status = 'error'`,
+						now,
+						...runIdChunk,
+					)
+				}
+			} else {
+				const triageNote =
+					input.triageNote == null
+						? null
+						: input.triageNote.trim().slice(0, runErrorTriageMaxNoteLength) ||
+							null
+				for (const runIdChunk of chunkArray(
+					matchedRunIds,
+					maxD1BoundParameters - 6,
+				)) {
+					const placeholders = runIdChunk.map(() => '?').join(', ')
+					this.ctx.storage.sql.exec(
+						`UPDATE runs
+						SET error_triage = ?,
+							triage_note = CASE WHEN ? = 1 THEN triage_note ELSE ? END,
+							triaged_at = ?,
+							triaged_by = ?,
+							updated_at = ?
+						WHERE id IN (${placeholders}) AND status = 'error'`,
+						input.errorTriage,
+						input.preserveTriageNote ? 1 : 0,
+						triageNote,
+						now,
+						input.triagedBy.trim() || null,
+						now,
+						...runIdChunk,
+					)
+				}
+			}
+		})
+		return {
+			matchedRunIds,
+			updatedCount: matchedRunIds.length,
+			hasMore,
+		}
+	}
+
 	async listStorageIds(): Promise<Array<string>> {
 		return this.ctx.storage.sql
 			.exec<{ storage_id: string }>(
@@ -3171,6 +3415,9 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 	updateRunErrorTriage: (
 		input: UpdateRunErrorTriageInput,
 	) => Promise<UpdateRunErrorTriageResult>
+	bulkUpdateRunErrorTriage: (
+		input: BulkUpdateRunErrorTriageInput,
+	) => Promise<BulkUpdateRunErrorTriageResult>
 	getRun: (input: {
 		runId: string
 	}) => Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null>

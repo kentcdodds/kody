@@ -1,3 +1,5 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
+
 export type RouterHistoryAction = 'push' | 'pop' | 'replace'
 
 export type RouterNavigateOptions = {
@@ -23,10 +25,6 @@ export type ScrollRestorationTarget =
 
 const historyStateScrollKey = 'kodyScrollRestorationKey'
 let scrollRestorationKeyCount = 0
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 export function createScrollRestorationKey() {
 	scrollRestorationKeyCount += 1

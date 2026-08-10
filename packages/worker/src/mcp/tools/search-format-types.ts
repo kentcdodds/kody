@@ -169,6 +169,8 @@ export type SlimSearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
+			/** Platform (built-in) scope username; import without forking. */
+			platformScope?: string | null
 			hostedUrl: string | null
 			readmeSnippet: {
 				path: string
@@ -280,6 +282,8 @@ export type SearchEntityDetailStructured =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
+			/** Platform (built-in) scope username; import without forking. */
+			platformScope?: string | null
 			hostedUrl: string | null
 			appEntry: string | null
 			maintain: {
@@ -398,6 +402,8 @@ export type SearchEntityDetail =
 			baseUrl: string
 			hostedUrl: string | null
 			ownerUsername?: string | null
+			/** Platform (built-in) scope username when owned by a platform account. */
+			platformScope?: string | null
 	  }
 	| {
 			type: 'secret'
@@ -453,6 +459,8 @@ export type SearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
+			/** Platform (built-in) scope username when owned by a platform account. */
+			platformScope?: string | null
 			readmeSnippet?: {
 				path: string
 				snippet: string

@@ -1,21 +1,26 @@
-import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	readOnboardingChecklistDismissed,
+	userHasSentWelcomeEmail,
 } from '#mcp/onboarding-checklist.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingFeaturedListings } from '#app/community-data.ts'
-import { type OnboardingChecklistLoaderData } from '#app/loader-data.ts'
+import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
+import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
+import {
+	type OnboardingBuiltInProvider,
+	type OnboardingChecklistLoaderData,
+} from '#universal/loader-data.ts'
 import {
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 /**
  * The checklist derives from existing signals (mailbox, memories,
@@ -40,20 +45,39 @@ export async function loadChecklist(
 }
 
 /**
- * First-win Send sub-step signal: any stored outbound mail means the welcome
- * email went out. Fails open to false so a Mailbox blip never breaks the
- * onboarding payload.
+ * First-win Send sub-step: successful `email_send` or stored outbound mail.
+ * Fails open to false so a Mailbox or UserMeter blip never breaks the payload.
  */
 async function loadHasSentWelcomeEmail(
 	env: Env,
 	userId: string,
 ): Promise<boolean> {
-	const outbound = await countInternalUserEmailMessages({
-		env,
-		ownerId: userId,
-		filters: { direction: 'outbound' },
-	}).catch(() => 0)
-	return outbound > 0
+	return await userHasSentWelcomeEmail({ env, userId })
+}
+
+const onboardingBuiltInProviderLimit = 6
+
+/**
+ * Top enabled built-in integrations by adoption, offered as one-click
+ * connects in the wizard. Fails open to an empty list so a D1 blip (or a
+ * deployment with no platform apps) never breaks the onboarding payload.
+ */
+export async function loadOnboardingBuiltInProviders(
+	env: Env,
+): Promise<Array<OnboardingBuiltInProvider>> {
+	try {
+		const apps = await listTopPlatformAppsByUse({
+			db: env.APP_DB,
+			limit: onboardingBuiltInProviderLimit,
+		})
+		return apps.map((app) => ({
+			slug: app.slug,
+			label: app.label ?? app.slug,
+			logoPath: buildPlatformOauthAppLogoPath(app),
+		}))
+	} catch {
+		return []
+	}
 }
 
 function redirectUnverifiedToPending(request: Request) {
@@ -80,6 +104,7 @@ export function createOnboardingHandler(env: Env) {
 						requestUrl: request.url,
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
+					builtInProviders: await loadOnboardingBuiltInProviders(env),
 				}
 				return renderAppPage({
 					request,
@@ -98,6 +123,7 @@ export function createOnboardingHandler(env: Env) {
 				stableUserId: user.mcpUser.userId,
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
+				builtInProviders: await loadOnboardingBuiltInProviders(env),
 			})
 			;[onboarding.checklist, onboarding.hasSentWelcomeEmail] =
 				await Promise.all([
@@ -129,6 +155,7 @@ export function createOnboardingApiHandler(env: Env) {
 						requestUrl: request.url,
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
+					builtInProviders: await loadOnboardingBuiltInProviders(env),
 				})
 			}
 
@@ -142,6 +169,9 @@ export function createOnboardingApiHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				featuredListings: user.emailVerified
 					? await loadOnboardingFeaturedListings(env, request)
+					: [],
+				builtInProviders: user.emailVerified
+					? await loadOnboardingBuiltInProviders(env)
 					: [],
 			})
 			if (user.emailVerified) {

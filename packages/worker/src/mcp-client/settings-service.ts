@@ -5,6 +5,7 @@ import {
 	validateMcpServerUrl,
 	type McpServerRef,
 } from '@kody-internal/shared/mcp-servers.ts'
+import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { createMcpClientHubClient } from './hub-client.ts'
 import {
@@ -27,6 +28,27 @@ export const mcpServerOAuthCallbackPath = '/account/mcp-servers/oauth/callback'
 export function buildMcpServerOAuthCallbackUrl(baseUrl: string) {
 	const origin = baseUrl.trim().replace(/\/+$/, '')
 	return `${origin}${mcpServerOAuthCallbackPath}`
+}
+
+/**
+ * Stable OAuth client origin + callback for user-added MCP servers.
+ *
+ * Prefer the configured canonical `APP_BASE_URL` (not the request host) so
+ * dynamic client registration always advertises one allowlistable redirect URI
+ * during dual-host domain migrations.
+ */
+export function resolveMcpServerOAuthClientUrls(input: {
+	env: { APP_BASE_URL?: string | null; PACKAGE_APP_BASE_URL?: string | null }
+	requestUrl?: string | URL | null
+}) {
+	const clientOrigin = getCanonicalAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	return {
+		clientOrigin,
+		callbackUrl: buildMcpServerOAuthCallbackUrl(clientOrigin),
+	}
 }
 
 function toMetadata(row: McpServerSettingRow): McpServerSettingMetadata {

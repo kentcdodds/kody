@@ -59,6 +59,10 @@ export function buildKodyAppIconUrl(mcpServerUrl: string) {
 export const nonCodingAgentNote =
 	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Copilot, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
 
+/** Claude Desktop often does not bind MCP tools until the next turn. */
+export const claudeDesktopToolHint =
+	'After connecting, start a new chat and ask Claude to list Kody tools before the first task. Claude Desktop often does not bind MCP tools until that next turn.'
+
 export const codingAgentPackageHint =
 	'Coding agents are the best fit when you want to create or edit Kody packages. Once a package exists, non-coding agents can use it just fine.'
 

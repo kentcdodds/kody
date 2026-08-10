@@ -10,11 +10,11 @@ import {
 	CANONICAL_ORIGIN_META_NAME,
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
-} from '#app/document-head.ts'
+} from '#universal/document-head.ts'
 import {
 	SENTRY_CONFIG_META_NAME,
 	type SentryClientConfig,
-} from '#client/sentry-config.ts'
+} from '#universal/sentry-config.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
 export const STYLESHEET_HREF = '/styles.css'

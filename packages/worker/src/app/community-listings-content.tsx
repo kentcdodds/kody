@@ -3,16 +3,16 @@
 import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
-import { formatCommunityAdaptationEffort } from '#app/community-display.ts'
-import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
-import { renderCommunityListingName } from '#app/community-listing-name.tsx'
-import { routes } from '#app/routes.ts'
-import { colors, transitions } from '#client/styles/tokens.ts'
+import { formatCommunityAdaptationEffort } from '#universal/community-display.ts'
+import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
+import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
+import { routes } from '#universal/routes.ts'
+import { colors, transitions } from '#universal/styles/tokens.ts'
 import {
 	getSurfaceCardCss,
 	mergeCss,
 	visuallyHiddenCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 /**
  * Server-rendered community listings (the `community-listings` frame),
@@ -55,25 +55,46 @@ export function CommunityListingsContent(
 						>
 							<div mix={css(listingHeadCss)}>
 								<CommunityListingIcon listing={listing} size="card" />
-								<h2 mix={css(listingNameCss)}>
-									<a
-										href={routes.communityDetail.href({
-											listingId: listing.id,
-										})}
-										mix={css(listingLinkCss)}
-									>
-										{renderCommunityListingName(listing.name)}
-									</a>
-								</h2>
-								{listing.trusted ? (
-									<span
-										data-testid={`community-listing-trusted-${listing.id}`}
-										title="An admin reviewed this exact version and marked it trusted."
-										mix={css(trustedBadgeCss)}
-									>
-										Trusted
-									</span>
-								) : null}
+								<div mix={css(listingTitleBlockCss)}>
+									<h2 mix={css(listingNameCss)}>
+										<a
+											href={routes.communityDetail.href({
+												listingId: listing.id,
+											})}
+											mix={css(listingLinkCss)}
+										>
+											{renderCommunityListingName(listing.name)}
+										</a>
+									</h2>
+									{listing.trusted || listing.viewerInstall ? (
+										<span mix={css(listingBadgeGroupCss)}>
+											{listing.trusted ? (
+												<span
+													data-testid={`community-listing-trusted-${listing.id}`}
+													title="An admin reviewed this exact version and marked it trusted."
+													mix={css(communityBadgePillCss)}
+												>
+													Trusted
+												</span>
+											) : null}
+											{listing.viewerInstall ? (
+												<span
+													data-testid={`community-listing-viewer-install-${listing.id}`}
+													title={
+														listing.viewerInstall.status === 'installed'
+															? `Installed in your account as ${listing.viewerInstall.targetName}.`
+															: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+													}
+													mix={css(communityBadgePillCss)}
+												>
+													{listing.viewerInstall.status === 'installed'
+														? 'Installed'
+														: 'Forked'}
+												</span>
+											) : null}
+										</span>
+									) : null}
+								</div>
 							</div>
 							<p
 								mix={css(listingDescriptionCss)}
@@ -184,8 +205,16 @@ const listingCardCss = mergeCss(getSurfaceCardCss({ interactive: true }), {
 
 const listingHeadCss = {
 	display: 'flex',
-	alignItems: 'center',
+	alignItems: 'flex-start',
 	gap: '0.7rem',
+}
+
+const listingTitleBlockCss = {
+	minWidth: 0,
+	flex: 1,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.4rem',
 }
 
 const listingNameCss = {
@@ -227,9 +256,11 @@ export const communityBadgePillCss = {
 	cursor: 'help',
 }
 
-const trustedBadgeCss = {
-	...communityBadgePillCss,
-	marginLeft: 'auto',
+const listingBadgeGroupCss = {
+	display: 'flex',
+	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.35rem',
 }
 
 const listingDescriptionCss = {

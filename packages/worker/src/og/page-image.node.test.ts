@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { publicOgPages } from './pages.ts'
+import { publicOgPages } from '#universal/og-pages.ts'
 import { renderPageOgImage } from './page-image.ts'
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47] as const

@@ -5,7 +5,7 @@ import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	cancelTwoFactorSetup,
 	confirmTwoFactorSetup,

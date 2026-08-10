@@ -1,10 +1,13 @@
+import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { readPositiveInt } from '#worker/query-params.ts'
 import {
 	buildForkPrompt,
 	toOnboardingFeaturedListing,
 	toPublicCommunityListing,
+	toViewerListingInstall,
 	type OnboardingFeaturedListing,
 	type PublicCommunityListing,
+	type ViewerListingInstall,
 } from '#app/community-public.ts'
 import {
 	buildCommunityDetailListingCacheKey,
@@ -15,9 +18,10 @@ import {
 import {
 	type CommunityDetailLoaderData,
 	type CommunityIndexLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
+import { listCommunityForksByListingIdsAndUser } from '#worker/community/repo.ts'
 import {
 	listCommunityListingsWithAggregates,
 	listFeaturedCommunityListingsWithAggregates,
@@ -29,6 +33,12 @@ import {
 	getUserFollow,
 	getUserSocialRowByUsername,
 } from '#worker/community/social-repo.ts'
+import { resolveViewerListingInstalls } from '#worker/community/viewer-install.ts'
+import {
+	listSavedPackagesByIds,
+	listSavedPackagesByKodyIds,
+} from '#worker/package-registry/repo.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 
 const defaultCommunityListLimit = 50
@@ -89,9 +99,14 @@ export async function loadCommunityIndexData(
 		},
 	)
 
+	const user = await readOptionalAuthenticatedViewer(request, env)
 	return {
 		ok: true,
-		listings,
+		listings: await overlayViewerInstallsOnListings({
+			env,
+			user,
+			listings,
+		}),
 		query: query || null,
 	}
 }
@@ -108,12 +123,23 @@ export async function loadOnboardingFeaturedListings(
 		onboardingFeaturedListingLimit,
 	)
 	try {
-		return await loadWithCommunityCache(env, request, cacheKey, async () => {
-			const rows = await listFeaturedCommunityListingsWithAggregates({
-				env,
-				limit: onboardingFeaturedListingLimit,
-			})
-			return rows.map(toOnboardingFeaturedListing)
+		const listings = await loadWithCommunityCache(
+			env,
+			request,
+			cacheKey,
+			async () => {
+				const rows = await listFeaturedCommunityListingsWithAggregates({
+					env,
+					limit: onboardingFeaturedListingLimit,
+				})
+				return rows.map(toOnboardingFeaturedListing)
+			},
+		)
+		const user = await readOptionalAuthenticatedViewer(request, env)
+		return overlayViewerInstallsOnListings({
+			env,
+			user,
+			listings,
 		})
 	} catch (error) {
 		console.error('Failed to load onboarding featured listings:', error)
@@ -177,32 +203,43 @@ async function loadCommunityDetailDataUncached(
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
 	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
 
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readOptionalAuthenticatedAppUser(request, env)
 	const viewerUserId = user?.mcpUser.userId ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
-	const [starredByViewer, viewerFollowsOwner] = await Promise.all([
-		user != null
-			? getCommunityStar(env.APP_DB, {
-					listingId,
-					userId: user.mcpUser.userId,
-				})
-			: false,
-		user != null && ownerUserId != null && ownerProfilePublic && !viewerIsOwner
-			? getUserFollow(env.APP_DB, {
-					followerUserId: user.mcpUser.userId,
-					followeeUserId: ownerUserId,
-				})
-			: false,
-	])
+	const [starredByViewer, viewerFollowsOwner, viewerInstalls] =
+		await Promise.all([
+			user != null
+				? getCommunityStar(env.APP_DB, {
+						listingId,
+						userId: user.mcpUser.userId,
+					})
+				: false,
+			user != null &&
+			ownerUserId != null &&
+			ownerProfilePublic &&
+			!viewerIsOwner
+				? getUserFollow(env.APP_DB, {
+						followerUserId: user.mcpUser.userId,
+						followeeUserId: ownerUserId,
+					})
+				: false,
+			loadViewerListingInstalls({
+				env,
+				user: user?.mcpUser ?? null,
+				listings: [{ id: listing.id, kodyId: listing.kodyId }],
+			}),
+		])
+	const viewerInstall = viewerInstalls.get(listing.id) ?? null
 	return composeCommunityDetailLoaderData({
-		listing,
+		listing: viewerInstall ? { ...listing, viewerInstall } : listing,
 		loggedIn: Boolean(user),
 		viewerIsAdmin: user?.roles.includes('admin') ?? false,
 		starredByViewer,
 		ownerProfilePublic,
 		viewerFollowsOwner,
 		viewerIsOwner,
+		viewerInstall,
 	})
 }
 
@@ -214,6 +251,7 @@ export function composeCommunityDetailLoaderData(input: {
 	ownerProfilePublic?: boolean
 	viewerFollowsOwner?: boolean
 	viewerIsOwner?: boolean
+	viewerInstall?: ViewerListingInstall | null
 }): CommunityDetailLoaderData {
 	return {
 		ok: true,
@@ -228,5 +266,108 @@ export function composeCommunityDetailLoaderData(input: {
 			listingId: input.listing.id,
 		}),
 		starredByViewer: input.starredByViewer ?? false,
+		viewerInstall: input.viewerInstall ?? null,
+	}
+}
+
+/**
+ * Public listing pages stay up when session parsing or user lookup fails.
+ * Viewer overlays are optional; anonymous listings are the safe fallback.
+ */
+async function readOptionalAuthenticatedAppUser(request: Request, env: Env) {
+	try {
+		return await readAuthenticatedAppUser(request, env)
+	} catch (error) {
+		console.error('Failed to resolve authenticated viewer for listings:', error)
+		return null
+	}
+}
+
+async function readOptionalAuthenticatedViewer(request: Request, env: Env) {
+	return (await readOptionalAuthenticatedAppUser(request, env))?.mcpUser ?? null
+}
+
+async function overlayViewerInstallsOnListings<
+	T extends { id: string; kodyId: string },
+>(input: {
+	env: Env
+	user: McpUserContext | null
+	listings: Array<T>
+}): Promise<Array<T>> {
+	if (input.user == null || input.listings.length === 0) {
+		return input.listings
+	}
+	const viewerInstalls = await loadViewerListingInstalls({
+		env: input.env,
+		user: input.user,
+		listings: input.listings,
+	})
+	if (viewerInstalls.size === 0) return input.listings
+	return input.listings.map((listing) => {
+		const viewerInstall = viewerInstalls.get(listing.id)
+		return viewerInstall ? { ...listing, viewerInstall } : listing
+	})
+}
+
+/**
+ * Viewer overlay is per-request and never written into the public listing
+ * cache. Failures stay empty so a fork/package lookup blip cannot take down
+ * onboarding or community browse.
+ */
+async function loadViewerListingInstalls(input: {
+	env: Env
+	user: McpUserContext | null
+	listings: Array<{ id: string; kodyId: string }>
+}): Promise<Map<string, ViewerListingInstall>> {
+	if (input.user == null || input.listings.length === 0) {
+		return new Map()
+	}
+	try {
+		const listingIds = input.listings.map((listing) => listing.id)
+		const kodyIds = input.listings.map((listing) => listing.kodyId)
+		const [packageScope, forks, savedByKody] = await Promise.all([
+			getMcpUserPackageScope(input.env.APP_DB, input.user),
+			listCommunityForksByListingIdsAndUser(input.env.APP_DB, {
+				listingIds,
+				userId: input.user.userId,
+			}),
+			listSavedPackagesByKodyIds(input.env.APP_DB, {
+				userId: input.user.userId,
+				kodyIds,
+			}),
+		])
+		const missingPackageIds = [
+			...new Set(
+				forks
+					.map((fork) => fork.forkedPackageId)
+					.filter(
+						(packageId) =>
+							!savedByKody.some(
+								(savedPackage) => savedPackage.id === packageId,
+							),
+					),
+			),
+		]
+		const savedByForkId =
+			missingPackageIds.length === 0
+				? []
+				: await listSavedPackagesByIds(input.env.APP_DB, {
+						userId: input.user.userId,
+						packageIds: missingPackageIds,
+					})
+		const resolved = resolveViewerListingInstalls({
+			listings: input.listings,
+			packageScope,
+			savedPackages: [...savedByKody, ...savedByForkId],
+			forks,
+		})
+		const viewerInstalls = new Map<string, ViewerListingInstall>()
+		for (const [listingId, install] of resolved) {
+			viewerInstalls.set(listingId, toViewerListingInstall(install))
+		}
+		return viewerInstalls
+	} catch (error) {
+		console.error('Failed to load viewer listing installs:', error)
+		return new Map()
 	}
 }

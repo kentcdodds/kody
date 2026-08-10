@@ -113,3 +113,48 @@ test('composed emails carry component names, status page link, and escape html',
 	})
 	expect(opened.subject).toContain('App & API')
 })
+
+test('outage emails annotate active relevant Cloudflare incidents', () => {
+	const providerIncidents = [
+		{
+			id: 'inc-r2',
+			name: 'R2 Availability Issues',
+			status: 'investigating',
+			impact: 'minor',
+			shortlink: 'https://stspg.io/r2',
+			updatedAt: '2026-08-07T19:00:00.000Z',
+			affectedComponents: ['R2'],
+		},
+	]
+	const opened = composeStatusEmail({
+		kind: 'incident_opened',
+		openIncidents: [openIncident()],
+		statusPageUrl: 'https://status.heykody.dev',
+		now: baseNow,
+		providerIncidents,
+	})
+	expect(opened.text).toContain(
+		'Possibly related Cloudflare incident: R2 Availability Issues (investigating)',
+	)
+	expect(opened.html).toContain('Possibly related Cloudflare incident')
+
+	const reminder = composeStatusEmail({
+		kind: 'daily_reminder',
+		openIncidents: [openIncident()],
+		statusPageUrl: 'https://status.heykody.dev',
+		now: baseNow,
+		providerIncidents,
+	})
+	expect(reminder.text).toContain(
+		'Possibly related Cloudflare incident: R2 Availability Issues (investigating)',
+	)
+
+	const allClear = composeStatusEmail({
+		kind: 'all_clear',
+		openIncidents: [],
+		statusPageUrl: 'https://status.heykody.dev',
+		now: baseNow,
+		providerIncidents,
+	})
+	expect(allClear.text).not.toContain('Possibly related Cloudflare incident')
+})

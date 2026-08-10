@@ -31,6 +31,22 @@ export type PlatformAccountRow = {
 	stableUserId: string
 }
 
+/**
+ * Usernames of every platform account. Platform scopes resolve live in
+ * `kody:@scope/...` imports for all callers, so cross-scope policy checks
+ * treat them as always-valid references.
+ */
+export async function listPlatformAccountUsernames(
+	db: D1Database,
+): Promise<Array<string>> {
+	const result = await db
+		.prepare(
+			`SELECT username FROM users WHERE account_type = 'platform' ORDER BY username ASC`,
+		)
+		.all<{ username: string }>()
+	return (result.results ?? []).map((row) => row.username)
+}
+
 export async function getPlatformAccountByUsername(
 	db: D1Database,
 	username: string,

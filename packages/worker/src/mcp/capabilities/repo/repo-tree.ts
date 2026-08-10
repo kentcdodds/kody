@@ -1,7 +1,12 @@
+import {
+	getErrorCauseChain,
+	getErrorMessage,
+} from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { repoSessionIdSchema } from './repo-shared.ts'
 
@@ -46,17 +51,46 @@ export const repoTreeCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const result = await repoSessionRpc(ctx.env, args.session_id).tree({
-				sessionId: args.session_id,
-				userId: user.userId,
-				path: args.path ?? null,
-				maxDepth: args.max_depth,
-			})
-			const summary = summarizeTree(result)
-			return summary
+			let result
+			try {
+				result = await repoSessionRpc(ctx.env, args.session_id).tree({
+					sessionId: args.session_id,
+					userId: user.userId,
+					path: args.path ?? null,
+					maxDepth: args.max_depth,
+				})
+			} catch (error) {
+				// Agents often probe common subpaths (docs/, tests/, …) that are
+				// absent. Missing-path ENOENT is a caller-correctable miss, not a
+				// platform defect — keep it on mcp-event and out of Sentry.
+				if (isRepoTreeMissingPathError(error)) {
+					const pathLabel = args.path?.trim() || '.'
+					throw new McpCallerError(
+						`Path "${pathLabel}" was not found in the repo session workspace.`,
+						{ cause: error },
+					)
+				}
+				throw error
+			}
+			return summarizeTree(result)
 		},
 	},
 )
+
+function isRepoTreeMissingPathError(error: unknown) {
+	return getErrorCauseChain(error).some((entry) => {
+		if (!(entry instanceof Error)) return false
+		if (
+			'code' in entry &&
+			typeof entry.code === 'string' &&
+			entry.code === 'ENOENT'
+		) {
+			return true
+		}
+		const message = getErrorMessage(entry)
+		return /^ENOENT\b/i.test(message)
+	})
+}
 
 function summarizeTree(node: {
 	path: string

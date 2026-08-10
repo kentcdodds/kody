@@ -15,7 +15,7 @@ import {
 	type PasskeyRow,
 } from '#app/passkeys.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createAccountPasskeysHandler(env: Env) {
 	return {

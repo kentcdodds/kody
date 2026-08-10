@@ -2,7 +2,7 @@ import {
 	buildEntitlementUpgradeHint,
 	EntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
-import { type PlanName } from '#worker/entitlements/plans.ts'
+import { type PlanName } from '#universal/plans.ts'
 import {
 	userMeterRpc,
 	type UserMeterEnv,

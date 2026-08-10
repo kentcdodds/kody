@@ -23,7 +23,7 @@ import {
 	listPasskeysForUser,
 	updatePasskeyCounter,
 } from '#app/passkeys.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	createWebAuthnChallengeCookie,
 	destroyWebAuthnChallengeCookie,

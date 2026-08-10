@@ -13,7 +13,7 @@ import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { planLimits } from '#worker/entitlements/plans.ts'
+import { planLimits } from '#universal/plans.ts'
 import { formatLimitBytes } from '#client/routes/pricing.tsx'
 import {
 	getReadNextBlogPost,
@@ -23,7 +23,7 @@ import {
 import {
 	BLOG_PLACEHOLDER_CALLOUT,
 	formatBlogPostDate,
-} from '#app/blog-display.ts'
+} from '#universal/blog-display.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -331,6 +331,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
+		builtInProviders: [],
 		checklist: null,
 	})
 	expect(accountHtml).toContain('Verify your email')

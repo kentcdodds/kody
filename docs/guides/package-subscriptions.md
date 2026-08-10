@@ -3,9 +3,10 @@ id: package_subscriptions
 title: Package subscription guide
 summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
-  subscribers with package_subscriptions_list and follow metadata-first email,
-  run.error.recorded activity notifiers, plus consent-gated admin-only
-  platform.feedback.submitted notification guidance.
+  subscribers with package_subscriptions_list; smoke-test handlers with
+  package_subscription_dispatch; follow metadata-first email, run.error.recorded
+  activity notifiers, plus consent-gated admin-only platform.feedback.submitted
+  notification guidance.
 category: platform
 ---
 
@@ -66,6 +67,70 @@ subscriptions:
 The result lists package id, `kody.id`, package name, topic, handler,
 description, and filters. Use this before debugging event dispatch, building
 fan-out, or deciding whether a package already subscribes to a topic.
+
+## Synthetic dispatch
+
+`package_subscription_dispatch` invokes **one** subscription handler on **one**
+saved package over MCP. It is a platform-marked real-surface run with real side
+effects. Use it immediately after publish to verify handler wiring without
+waiting for production fan-out.
+
+```json
+{
+	"kody_id": "email-automation",
+	"package_scope": "kody",
+	"topic": "email.message.received",
+	"params": {}
+}
+```
+
+For stored inbound mail, replay with `email_message_id` instead of `params`:
+
+```json
+{
+	"kody_id": "email-automation",
+	"package_scope": "kody",
+	"topic": "email.message.received",
+	"email_message_id": "00000000000000000000000000000001"
+}
+```
+
+Pass exactly one of `params` or `email_message_id`. There is no caller
+`idempotency_key` — the platform generates internal idempotency keys.
+
+Final `published` and `already_published` results from
+`package_publish_external_push` include `test_hints.subscriptions[]` with a
+starter snippet per declared topic when subscriptions are present. For a
+`dispatched` result, poll the workflow to completion before reading its final
+publish result. Failed and non-fast-forward results have no test hints.
+
+### Handler guidance
+
+- **Platform markers.** The platform sets top-level `synthetic: true` and, for
+  stored-mail replay, `replay_of`. Real event dispatch strips caller-supplied
+  `synthetic` and `replay_of` from handler envelopes. Run records agree with the
+  handler payload.
+- **`params` or `email_message_id`.** Fixture `params` merge into the handler
+  envelope before markers are added. `email_message_id` rebuilds the stored
+  inbound email envelope from D1.
+- **Treat synthetic identically to production.** Handlers run the same code path
+  unless a deliberately visible irreversible-side-effect guard says otherwise.
+- **Start minimal.** Begin with `{}` or the smallest object your handler
+  accepts, then add fields until the smoke test covers the branches you care
+  about.
+- **Filters are not applied.** Production dispatch for package-emitted topics
+  skips subscribers when `filters` do not match the payload; synthetic dispatch
+  always runs the named package. Put filter-matching fields inside `params` when
+  testing filter-dependent code paths.
+- **Admin-only topics** (`email.system-message.received`,
+  `platform.feedback.submitted`, `community.activity.recorded`) gate
+  **production** fan-out on admin role; synthetic dispatch still runs your
+  handler directly for smoke testing.
+- **Activity.** Synthetic runs appear on the `subscription` surface. Handler
+  failures do not emit `run.error.recorded` (recursion guard).
+
+Full call semantics and examples:
+[Synthetic event dispatch](../use/synthetic-event-dispatch.md).
 
 ## Package-emitted topics (`@scope/...`)
 

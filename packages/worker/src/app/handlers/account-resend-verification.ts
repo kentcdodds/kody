@@ -4,8 +4,8 @@ import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
-import { type routes } from '#app/routes.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
+import { type routes } from '#universal/routes.ts'
 
 export const resendVerificationRateLimitConfig = {
 	maxRequests: 3,

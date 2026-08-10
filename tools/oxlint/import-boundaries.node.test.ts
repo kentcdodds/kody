@@ -55,6 +55,9 @@ test('the layer boundaries forbid upward imports and never allow handler imports
 	expect(findImportBoundaryViolation(appFile, '#mcp/secrets/service.ts')).toBe(
 		null,
 	)
+	expect(
+		findImportBoundaryViolation(appFile, '#universal/loader-data.ts'),
+	).toBe(null)
 
 	// Windows-style paths resolve to the same boundaries.
 	expect(
@@ -62,6 +65,48 @@ test('the layer boundaries forbid upward imports and never allow handler imports
 			(boundary: { id: string }) => boundary.id,
 		),
 	).toEqual(['mcp-to-app'])
+})
+
+test('client and universal modules cannot import server layers', () => {
+	const clientFile = 'packages/worker/client/routes/account.tsx'
+	const universalFile = 'packages/worker/universal/loader-data.ts'
+	const clientTestFile =
+		'packages/worker/client/routes/secret-normalization.node.test.ts'
+
+	expect(findImportBoundaryViolation(clientFile, '#app/routes.ts')).toMatch(
+		/Client and universal modules must not import/,
+	)
+	expect(
+		findImportBoundaryViolation(clientFile, '#worker/identity/permissions.ts'),
+	).toMatch(/Client and universal modules must not import/)
+	expect(
+		findImportBoundaryViolation(clientFile, '#mcp/secrets/service.ts'),
+	).toMatch(/Client and universal modules must not import/)
+	expect(findImportBoundaryViolation(clientFile, '#universal/routes.ts')).toBe(
+		null,
+	)
+
+	expect(
+		findImportBoundaryViolation(universalFile, '#app/handlers/home.ts'),
+	).toMatch(/Client and universal modules must not import/)
+	expect(
+		findImportBoundaryViolation(universalFile, '#client/app-root.tsx'),
+	).toMatch(/#universal\/\* must not import #client\/\*/)
+	expect(
+		findImportBoundaryViolation(
+			universalFile,
+			'#universal/community-public-types.ts',
+		),
+	).toBe(null)
+
+	// Client tests may import server modules to assert parity.
+	expect(getImportBoundariesForFile(clientTestFile)).toEqual([])
+	expect(
+		findImportBoundaryViolation(
+			clientTestFile,
+			'#mcp/secrets/allowed-hosts.ts',
+		),
+	).toBe(null)
 })
 
 test('import boundaries have no legacy exceptions', () => {

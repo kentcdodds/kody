@@ -1,4 +1,4 @@
-import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
+import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 
 type FrameCacheKey = string
 

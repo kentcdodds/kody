@@ -1,5 +1,5 @@
 import { css, type Handle } from 'remix/ui'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import { buildDonutSegments, describeArc } from './chart-geometry.ts'
 import {
 	chartEmptyFill,

@@ -3,14 +3,35 @@ import {
 	type PackageInvokeNormalizedInput,
 } from '#mcp/run-kody-registry.ts'
 
+const packageInvokeInputKeys = [
+	'kodyId',
+	'packageId',
+	'exportName',
+	'params',
+	'idempotencyKey',
+	'topic',
+] as const
+const packageInvokeInputKeySet = new Set<string>(packageInvokeInputKeys)
+
+function assertKnownPackageInvokeInputKeys(
+	input: PackageInvokeInput,
+	operationName: string,
+) {
+	const unknownKeys = Object.keys(input).filter(
+		(key) => !packageInvokeInputKeySet.has(key),
+	)
+	if (unknownKeys.length === 0) return
+	throw new Error(
+		`${operationName} received unknown input ${unknownKeys.length === 1 ? 'key' : 'keys'} ${unknownKeys.map((key) => JSON.stringify(key)).join(', ')}. Accepted keys: ${packageInvokeInputKeys.join(', ')}.`,
+	)
+}
+
 function readOptionalString(
 	input: PackageInvokeInput,
-	fieldNames: Array<string>,
+	fieldName: (typeof packageInvokeInputKeys)[number],
 ) {
-	for (const fieldName of fieldNames) {
-		const value = input[fieldName]
-		if (typeof value === 'string' && value.trim()) return value.trim()
-	}
+	const value = input[fieldName]
+	if (typeof value === 'string' && value.trim()) return value.trim()
 	return null
 }
 
@@ -21,11 +42,11 @@ function readSinglePackageIdentifier(
 	const candidates = [
 		{
 			kind: 'kodyId' as const,
-			value: readOptionalString(input, ['kodyId', 'kody_id']),
+			value: readOptionalString(input, 'kodyId'),
 		},
 		{
 			kind: 'packageId' as const,
-			value: readOptionalString(input, ['packageId', 'package_id']),
+			value: readOptionalString(input, 'packageId'),
 		},
 	].filter(
 		(candidate): candidate is { kind: 'kodyId' | 'packageId'; value: string } =>
@@ -64,8 +85,9 @@ export function parsePackageInvokeInput(
 	input: PackageInvokeInput,
 	operationName = 'packages.invoke',
 ) {
+	assertKnownPackageInvokeInputKeys(input, operationName)
 	const packageIdentifier = readSinglePackageIdentifier(input, operationName)
-	const exportName = readOptionalString(input, ['exportName', 'export_name'])
+	const exportName = readOptionalString(input, 'exportName')
 	if (!exportName) {
 		throw new Error(`${operationName} requires exportName.`)
 	}
@@ -74,11 +96,8 @@ export function parsePackageInvokeInput(
 		packageIdOrKodyId: packageIdentifier.value,
 		exportName,
 		params: readPackageInvokeParams(input, operationName),
-		idempotencyKey: readOptionalString(input, [
-			'idempotencyKey',
-			'idempotency_key',
-		]),
-		topic: readOptionalString(input, ['topic']),
+		idempotencyKey: readOptionalString(input, 'idempotencyKey'),
+		topic: readOptionalString(input, 'topic'),
 	}
 }
 

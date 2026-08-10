@@ -102,7 +102,9 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 	})
 
 	runIsolatedArtifactRebuild.mockRejectedValueOnce(
-		new Error("Durable Object's isolate exceeded its memory limit"),
+		new Error(
+			"Durable Object's isolate exceeded its memory limit and was reset.",
+		),
 	)
 	const resetOutcome = await runner.run({
 		stagingKey,
@@ -114,6 +116,20 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 	expect(resetOutcome.ok).toBe(false)
 	expect(resetOutcome.message).toContain('memory or CPU limits')
 	expect(resetOutcome.target).toEqual(target)
+
+	// Deploy resets must not be remapped to "package too large" — callers retry.
+	runIsolatedArtifactRebuild.mockRejectedValueOnce(
+		new Error('Durable Object reset because its code was updated.'),
+	)
+	await expect(
+		runner.run({
+			stagingKey,
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).rejects.toThrow('Durable Object reset because its code was updated.')
 
 	await runner.discard(stagingKey)
 	expect(del).toHaveBeenCalledWith(stagingKey)

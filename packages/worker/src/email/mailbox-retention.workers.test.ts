@@ -966,7 +966,7 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 		}),
 	).toEqual({ ok: true, accepted: false })
 
-	await mailbox.purge()
+	await mailbox.purge({ ownerId: userId })
 	await runInDurableObject(stub, async (_instance: Mailbox, state) => {
 		const retries = state.storage.sql
 			.exec<{ count: number }>(

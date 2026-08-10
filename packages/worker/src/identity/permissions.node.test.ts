@@ -12,7 +12,7 @@ import {
 	type PermissionAction,
 	type PermissionEntity,
 	type PermissionString,
-} from './permissions.ts'
+} from '#universal/permissions.ts'
 
 test('parsePermissionString splits action, entity, and access', () => {
 	expect(parsePermissionString('read:user:own')).toEqual({

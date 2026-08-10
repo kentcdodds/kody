@@ -21,7 +21,7 @@ import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	oauthLoginErrorMessages,
 	type OauthLoginErrorCode,
-} from '#app/oauth-login-errors.ts'
+} from '#universal/oauth-login-errors.ts'
 import {
 	createOauthLoginStateCookie,
 	destroyOauthLoginStateCookie,
@@ -40,7 +40,7 @@ import {
 	type OauthProviderId,
 } from '#app/oauth-providers.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import { usernameFromEmail } from '#worker/identity/username.ts'
 import {
@@ -54,7 +54,7 @@ import {
 	parseStoredPlanName,
 	resolvePlanWrite,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import {
 	createStableUserIdFromEmail,
 	resolveUserStableId,
@@ -63,7 +63,7 @@ import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
-import { getSignupMode } from '#app/signup-mode.ts'
+import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 

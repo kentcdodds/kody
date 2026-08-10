@@ -1,8 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import {
-	type PermissionString,
-	type RoleName,
-} from '#worker/identity/permissions.ts'
+import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 

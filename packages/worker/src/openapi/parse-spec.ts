@@ -1,3 +1,4 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { parse as parseYaml } from 'yaml'
 import {
 	type OpenApiHttpMethod,
@@ -34,10 +35,6 @@ const OAUTH_FLOW_KEYS = [
 	'implicit',
 	'password',
 ] as const
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value != null && typeof value === 'object' && !Array.isArray(value)
-}
 
 function asString(value: unknown): string | null {
 	return typeof value === 'string' ? value : null

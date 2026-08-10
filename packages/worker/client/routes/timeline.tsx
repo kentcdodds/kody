@@ -1,20 +1,20 @@
 import { type Handle, css, on } from 'remix/ui'
-import { communityActivityVerb } from '#app/community-activity-display.ts'
-import { renderCommunityListingName } from '#app/community-listing-name.tsx'
+import { communityActivityVerb } from '#universal/community-activity-display.ts'
+import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import {
 	type CommunityActivityEventType,
 	type PublicCommunityActivityItem,
-} from '#app/community-public-types.ts'
-import { type TimelineLoaderData } from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+} from '#universal/community-public-types.ts'
+import { type TimelineLoaderData } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	type TimelineDay,
 	type TimelineRun,
 	formatTimelineEventTime,
 	groupTimelineItems,
 	timelineEventLimit,
-} from '#app/timeline-display.ts'
-import { UserAvatar } from '#app/user-avatar.tsx'
+} from '#universal/timeline-display.ts'
+import { UserAvatar } from '#universal/user-avatar.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -29,7 +29,7 @@ import {
 	radius,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -38,7 +38,7 @@ import {
 	layoutMaxWidths,
 	pageGutter,
 	pageHeadCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 /**
  * Timeline, ported from the redesign prototype (`landing/timeline.html`).
@@ -49,7 +49,7 @@ import {
  * read as one person working rather than eleven stamped copies of their face.
  * Each event row is threaded onto a drawn spine by its type glyph and carries
  * the time, which is what actually tells four updates to the same package
- * apart. Grouping and formatting live in `#app/timeline-display.ts`.
+ * apart. Grouping and formatting live in `#universal/timeline-display.ts`.
  */
 
 const timelineApiPath = routes.timelineApi.href()

@@ -15,6 +15,14 @@
 		{
 			"filename": "0003-repo-session-storage-buckets.sql",
 			"sha256": "063e3f053785e41a7edbd4272311e8f2198cb1905b93089fd0dfa3054f97b925"
+		},
+		{
+			"filename": "0004-platform-oauth-apps.sql",
+			"sha256": "6da79068c7d2d3f30eaa8fd7ba0e549c1bb59141ad0866d0914e84ee17caa0f0"
+		},
+		{
+			"filename": "0005-platform-oauth-app-logos.sql",
+			"sha256": "9157434ded9a281e43da71d64a6490bbfe1abd4e952dc6f25835cee99bf23fc9"
 		}
 	]
 }

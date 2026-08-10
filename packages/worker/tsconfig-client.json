@@ -11,6 +11,7 @@
 		"paths": {
 			"#app/*": ["./src/app/*"],
 			"#client/*": ["./client/*"],
+			"#universal/*": ["./universal/*"],
 			"#worker/*": ["./src/*"],
 			"#mcp/*": ["./src/mcp/*"]
 		}
@@ -19,34 +20,14 @@
 		"./client/**/*.ts",
 		"./client/**/*.tsx",
 		"./client/**/*.d.ts",
-		"./src/app/oauth-login-errors.ts",
-		"./src/app/routes.ts",
-		"./src/app/route-pattern.ts",
-		"./src/app/oauth-paths.ts",
-		"./src/app/frame-constants.ts",
-		"./src/app/community-frame-constants.ts",
-		"./src/app/profile-frame-constants.ts",
-		"./src/app/community-listing-icon.tsx",
-		"./src/app/user-avatar.tsx",
-		"./src/app/community-public-types.ts",
-		"./src/app/community-activity-display.ts",
-		"./src/app/community-listing-name.tsx",
-		"./src/app/timeline-display.ts",
-		"./src/app/community-display.ts",
-		"./src/app/blog-display.ts",
-		"./src/app/document-head.ts",
-		"./src/app/account-plan-display.ts",
-		"./src/app/loader-data.ts",
-		"./src/app/account-plan-display.ts",
-		"./src/app/safe-redirect.ts",
-		"./src/app/signup-mode.ts",
-		"./src/identity/permissions.ts",
-		"./src/onboarding-checklist-types.ts",
-		"./src/feature-flags/registry.ts",
-		"./src/feature-flags/types.ts",
-		"./src/entitlements/plans.ts",
-		"./src/usage/event-types.ts",
-		"./src/og/pages.ts"
+		"./universal/**/*.ts",
+		"./universal/**/*.tsx"
 	],
-	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
+	"exclude": [
+		"./client/**/*.test.ts",
+		"./client/**/*.spec.ts",
+		"./universal/**/*.test.ts",
+		"./universal/**/*.spec.ts",
+		"./universal/**/*.node.test.ts"
+	]
 }

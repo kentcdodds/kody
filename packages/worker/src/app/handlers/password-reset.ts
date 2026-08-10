@@ -13,7 +13,7 @@ import {
 	hashPasswordResetToken,
 	passwordResetTokenExpiryMs,
 } from '#worker/identity/password-reset-tokens.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'

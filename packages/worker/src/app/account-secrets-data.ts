@@ -3,7 +3,7 @@ import {
 	parseAccountSecretId,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
-import { type AccountSecretsLoaderData } from '#app/loader-data.ts'
+import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {

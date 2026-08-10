@@ -6,13 +6,14 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { type routes } from '#universal/routes.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
 	addMcpServer,
 	deleteMcpServer,
 	getMcpServerSettingById,
+	resolveMcpServerOAuthClientUrls,
 	setMcpServerEnabled,
 } from '#worker/mcp-client/settings-service.ts'
 
@@ -29,7 +30,11 @@ export function createAccountMcpServersHandler(env: Env) {
 				return user
 			}
 
-			const accountMcpServers = await loadAccountMcpServersData({ env, user })
+			const accountMcpServers = await loadAccountMcpServersData({
+				env,
+				user,
+				requestUrl: request.url,
+			})
 			return renderAppPage({
 				request,
 				env,
@@ -54,7 +59,13 @@ export function createAccountMcpServersApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(await loadAccountMcpServersData({ env, user }))
+				return jsonResponse(
+					await loadAccountMcpServersData({
+						env,
+						user,
+						requestUrl: request.url,
+					}),
+				)
 			}
 
 			if (request.method !== 'POST') {
@@ -76,6 +87,7 @@ export function createAccountMcpServersApiHandler(env: Env) {
 						env,
 						user,
 						body,
+						request,
 						kind: 'reconnect',
 					})
 				}
@@ -84,14 +96,15 @@ export function createAccountMcpServersApiHandler(env: Env) {
 						env,
 						user,
 						body,
+						request,
 						kind: 'refresh',
 					})
 				}
 				if (action === 'set-enabled') {
-					return await handleSetEnabledAction({ env, user, body })
+					return await handleSetEnabledAction({ env, user, body, request })
 				}
 				if (action === 'delete') {
-					return await handleDeleteAction({ env, user, body })
+					return await handleDeleteAction({ env, user, body, request })
 				}
 			} catch (error) {
 				return jsonResponse(
@@ -143,6 +156,14 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				authError = getErrorMessage(error)
 			}
 
+			const oauth = resolveMcpServerOAuthClientUrls({
+				env,
+				requestUrl: request.url,
+			})
+			if (authError) {
+				authError = enrichMcpOAuthProviderError(authError, oauth)
+			}
+
 			const target = serverId
 				? new URL(
 						`/account/mcp-servers/${encodeURIComponent(serverId)}`,
@@ -169,19 +190,21 @@ async function handleAddAction(input: {
 	body: object
 	request: Request
 }) {
+	const oauth = resolveMcpServerOAuthClientUrls({
+		env: input.env,
+		requestUrl: input.request.url,
+	})
 	const { setting } = await addMcpServer({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 		name: readTrimmedStringOrEmpty(input.body, 'name'),
 		url: readTrimmedStringOrEmpty(input.body, 'url'),
-		baseUrl: getAppBaseUrl({
-			env: input.env,
-			requestUrl: input.request.url,
-		}),
+		baseUrl: oauth.clientOrigin,
 	})
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
 		user: input.user,
+		requestUrl: input.request.url,
 	})
 	return jsonResponse({
 		...payload,
@@ -193,6 +216,7 @@ async function handleConnectionAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
+	request: Request
 	kind: 'reconnect' | 'refresh'
 }) {
 	const setting = await requireSetting(input)
@@ -208,6 +232,7 @@ async function handleConnectionAction(input: {
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
 		user: input.user,
+		requestUrl: input.request.url,
 	})
 	return jsonResponse({
 		...payload,
@@ -219,6 +244,7 @@ async function handleSetEnabledAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
+	request: Request
 }) {
 	const setting = await requireSetting(input)
 	const updated = await setMcpServerEnabled({
@@ -230,6 +256,7 @@ async function handleSetEnabledAction(input: {
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
 		user: input.user,
+		requestUrl: input.request.url,
 	})
 	return jsonResponse({
 		...payload,
@@ -241,6 +268,7 @@ async function handleDeleteAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
+	request: Request
 }) {
 	const setting = await requireSetting(input)
 	const deleted = await deleteMcpServer({
@@ -255,6 +283,7 @@ async function handleDeleteAction(input: {
 		await loadAccountMcpServersData({
 			env: input.env,
 			user: input.user,
+			requestUrl: input.request.url,
 		}),
 	)
 }

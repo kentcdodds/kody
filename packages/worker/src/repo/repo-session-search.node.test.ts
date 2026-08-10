@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { repoSearchInvalidRegexMessagePrefix } from './repo-session-caller-error.ts'
 import { expandBraceGlobs, searchRepoWorkspace } from './repo-session-search.ts'
 
 test('brace globs expand for Workspace.glob and reject pathological nesting', async () => {
@@ -86,4 +87,29 @@ test('brace globs expand for Workspace.glob and reject pathological nesting', as
 		}),
 	).rejects.toThrow(/expands to more than 64 patterns/)
 	expect(workspace.glob).not.toHaveBeenCalled()
+})
+
+test('regex mode rejects Python-style inline flags with JS guidance', async () => {
+	const workspace = {
+		glob: vi.fn(async () => [{ path: '/src/a.ts', type: 'file' }]),
+		readFile: vi.fn(async () => 'hello world'),
+	}
+
+	await expect(
+		searchRepoWorkspace({
+			root: '/',
+			pattern: '(?s).|^$',
+			mode: 'regex',
+			workspace,
+			toExternalPath: (path) => path,
+		}),
+	).rejects.toThrow(
+		new RegExp(
+			`${repoSearchInvalidRegexMessagePrefix}.*JavaScript RegExp`,
+			's',
+		),
+	)
+	// Invalid patterns fail before scanning files.
+	expect(workspace.glob).not.toHaveBeenCalled()
+	expect(workspace.readFile).not.toHaveBeenCalled()
 })

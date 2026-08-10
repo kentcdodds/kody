@@ -204,10 +204,11 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	).toBe(true)
 })
 
-test('dedicated system email tables are explicit operator-owned exclusions', () => {
+test('operator-owned tables are explicit deletion/export exclusions', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrations(db)
 	const expectedTables = [
+		'platform_oauth_apps',
 		'system_email_attachments',
 		'system_email_delivery_events',
 		'system_email_messages',
@@ -232,7 +233,11 @@ test('dedicated system email tables are explicit operator-owned exclusions', () 
 			expectedTables.map((table) =>
 				expect.objectContaining({
 					name: table,
-					reason: expect.stringContaining('operator-owned system email'),
+					reason: expect.stringContaining(
+						table === 'platform_oauth_apps'
+							? 'Operator-provisioned built-in OAuth app'
+							: 'operator-owned system email',
+					),
 				}),
 			),
 		),

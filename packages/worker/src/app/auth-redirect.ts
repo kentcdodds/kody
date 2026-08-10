@@ -1,5 +1,5 @@
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 
 export { normalizeRedirectTo }
 

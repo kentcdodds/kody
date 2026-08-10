@@ -14,6 +14,7 @@ import {
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
+	claudeDesktopToolHint,
 	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
@@ -28,8 +29,11 @@ import {
 	radius,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
-import { getPillButtonCss, hoverMq } from '#client/styles/style-primitives.ts'
+} from '#universal/styles/tokens.ts'
+import {
+	getPillButtonCss,
+	hoverMq,
+} from '#universal/styles/style-primitives.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 
 type OnboardingMcpClientTabsProps = {
@@ -208,6 +212,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						copyLabel="Copy MCP URL"
 						variant="pill"
 					/>
+					<ClientNote>{claudeDesktopToolHint}</ClientNote>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)

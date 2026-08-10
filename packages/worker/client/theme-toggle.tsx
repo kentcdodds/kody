@@ -1,6 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { colors, transitions } from '#client/styles/tokens.ts'
+import { colors, transitions } from '#universal/styles/tokens.ts'
 
 const THEME_STORAGE_KEY = 'kody-theme'
 

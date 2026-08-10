@@ -1,8 +1,7 @@
 import { type Handle, css } from 'remix/ui'
-import * as popover from 'remix/ui/popover'
-import { routes } from '#app/routes.ts'
-import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
-import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
+import { routes } from '#universal/routes.ts'
+import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
+import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -13,16 +12,22 @@ import {
 	spacing,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	hoverMq,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 type OnboardingStarterCardProps = {
 	listing: OnboardingFeaturedListing
 	loggedIn: boolean
+	/**
+	 * `card`: the centered grid tile (default). `row`: the compact list item
+	 * used when built-in integrations own the step-3 spotlight and starter
+	 * packages demote to an "Advanced" list.
+	 */
+	variant?: 'card' | 'row'
 }
 
 type InstallApiPayload = {
@@ -53,18 +58,6 @@ export function OnboardingStarterCard(
 	let errorMessage: string | null = null
 	let copyState: 'idle' | 'copied' | 'error' = 'idle'
 	let copyResetTimerId: ReturnType<typeof setTimeout> | null = null
-	let tooltipOpen = false
-
-	function openTooltip() {
-		if (!agentPrompt) return
-		tooltipOpen = true
-		handle.update()
-	}
-
-	function closeTooltip() {
-		tooltipOpen = false
-		handle.update()
-	}
 
 	async function submitInstall() {
 		const { listing, loggedIn } = handle.props
@@ -129,10 +122,9 @@ export function OnboardingStarterCard(
 		}
 	}
 
-	async function copyPrompt() {
-		if (!agentPrompt) return
+	async function copyPrompt(prompt: string) {
 		try {
-			await writeClipboardText(agentPrompt)
+			await writeClipboardText(prompt)
 			copyState = 'copied'
 		} catch {
 			copyState = 'error'
@@ -149,66 +141,78 @@ export function OnboardingStarterCard(
 
 	return () => {
 		const { listing } = handle.props
+		const isRow = handle.props.variant === 'row'
 		const detailHref = routes.communityDetail.href({ listingId: listing.id })
+		const existingInstall = listing.viewerInstall ?? null
+		const readyPrompt = agentPrompt ?? existingInstall?.agentPrompt ?? null
+		const readyStatus =
+			statusMessage ??
+			(existingInstall
+				? existingInstall.status === 'installed'
+					? `Installed as ${existingInstall.targetName}.`
+					: `Forked as ${existingInstall.targetName}; needs adaptation before it can run.`
+				: null)
+		const showCopyPrompt = readyPrompt != null
 
 		return (
 			<li
-				mix={css(starterCardCss)}
+				mix={css(isRow ? starterRowCss : starterCardCss)}
 				data-testid={`onboarding-starter-${listing.id}`}
 			>
-				<a href={detailHref} mix={css(starterCardLinkCss)}>
-					<CommunityListingIcon listing={listing} size="starter" />
-					<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
-					<span mix={css(starterCardDescriptionCss)}>
-						{listing.description}
-					</span>
+				<a
+					href={detailHref}
+					target="_blank"
+					rel="noreferrer noopener"
+					mix={css(isRow ? starterRowLinkCss : starterCardLinkCss)}
+				>
+					<CommunityListingIcon
+						listing={listing}
+						size={isRow ? 'card' : 'starter'}
+					/>
+					{isRow ? (
+						<span mix={css(starterRowTextCss)}>
+							<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
+							<span mix={css(starterCardDescriptionCss)}>
+								{listing.description}
+							</span>
+						</span>
+					) : (
+						<>
+							<strong mix={css(starterCardNameCss)}>{listing.name}</strong>
+							<span mix={css(starterCardDescriptionCss)}>
+								{listing.description}
+							</span>
+						</>
+					)}
 				</a>
-				{phase === 'ready' && agentPrompt ? (
-					<popover.Context>
-						<button
-							type="button"
-							aria-describedby={`onboarding-starter-prompt-tip-${listing.id}`}
-							mix={[
-								css(copyPromptButtonCss),
-								popover.anchor({ placement: 'top' }),
-								popover.focusOnHide(),
-								on('click', () => void copyPrompt()),
-								on('pointerenter', openTooltip),
-								on('pointerleave', closeTooltip),
-								on('focus', openTooltip),
-								on('blur', closeTooltip),
-							]}
-							data-testid={`onboarding-starter-copy-${listing.id}`}
-						>
-							{copyState === 'copied'
-								? 'Copied'
-								: copyState === 'error'
-									? 'Copy failed'
-									: 'Copy prompt'}
-						</button>
-						<div
+				{showCopyPrompt ? (
+					<button
+						type="button"
+						aria-describedby={`onboarding-starter-prompt-tip-${listing.id}`}
+						mix={[
+							css(isRow ? rowCopyPromptButtonCss : copyPromptButtonCss),
+							on('click', () => void copyPrompt(readyPrompt)),
+						]}
+						data-testid={`onboarding-starter-copy-${listing.id}`}
+					>
+						{copyState === 'copied'
+							? 'Copied'
+							: copyState === 'error'
+								? 'Copy failed'
+								: 'Copy prompt'}
+						<span
 							id={`onboarding-starter-prompt-tip-${listing.id}`}
 							role="tooltip"
-							mix={[
-								css(tooltipSurfaceCss),
-								popover.surface({
-									open: tooltipOpen,
-									closeOnAnchorClick: false,
-									onHide() {
-										closeTooltip()
-									},
-								}),
-							]}
 						>
 							{copyPromptTooltip}
-						</div>
-					</popover.Context>
+						</span>
+					</button>
 				) : (
 					<button
 						type="button"
 						disabled={phase === 'installing'}
 						mix={[
-							css(installButtonCss),
+							css(isRow ? rowInstallButtonCss : installButtonCss),
 							on('click', () => void submitInstall()),
 						]}
 						data-testid={`onboarding-starter-install-${listing.id}`}
@@ -216,18 +220,18 @@ export function OnboardingStarterCard(
 						{phase === 'installing' ? 'Installing…' : 'Install'}
 					</button>
 				)}
-				{statusMessage ? (
+				{readyStatus ? (
 					<p
-						mix={css(starterStatusCss)}
+						mix={css(isRow ? starterRowStatusCss : starterStatusCss)}
 						role="status"
 						data-testid={`onboarding-starter-status-${listing.id}`}
 					>
-						{statusMessage}
+						{readyStatus}
 					</p>
 				) : null}
 				{errorMessage ? (
 					<p
-						mix={css(starterErrorCss)}
+						mix={css(isRow ? starterRowErrorCss : starterErrorCss)}
 						role="alert"
 						data-testid={`onboarding-starter-error-${listing.id}`}
 					>
@@ -316,9 +320,110 @@ export const starterGhostButtonCss = {
 	...starterActionButtonSizeCss,
 }
 
+/*
+ * CSS hover/focus tooltip instead of remix/ui popover: a top-layer popover
+ * that flips into another card's Copy prompt steals pointer events and
+ * jitters between vertically stacked starters. The tip is
+ * `pointer-events: none` so it never becomes a hover target.
+ */
+export const starterCopyPromptTooltipCss = {
+	position: 'relative' as const,
+	'& [role="tooltip"]': {
+		position: 'absolute' as const,
+		left: '50%',
+		bottom: 'calc(100% + 0.45rem)',
+		transform: 'translateX(-50%)',
+		width: 'max-content',
+		maxWidth: 'min(16rem, calc(100vw - 2rem))',
+		padding: `${spacing.xs} ${spacing.sm}`,
+		borderRadius: radius.md,
+		backgroundColor: colors.surface,
+		color: colors.text,
+		fontSize: typography.fontSize.sm,
+		fontWeight: 400,
+		lineHeight: 1.4,
+		textAlign: 'left' as const,
+		boxShadow: shadows.md,
+		border: `1px solid ${colors.border}`,
+		pointerEvents: 'none' as const,
+		opacity: 0,
+		visibility: 'hidden' as const,
+		zIndex: 2,
+	},
+	'& [role="tooltip"]::after': {
+		content: '""',
+		position: 'absolute' as const,
+		top: '100%',
+		left: '50%',
+		transform: 'translateX(-50%)',
+		border: '6px solid transparent',
+		borderTopColor: colors.surface,
+	},
+	[`${hoverMq} &:hover [role="tooltip"]`]: {
+		opacity: 1,
+		visibility: 'visible' as const,
+	},
+	'&:focus-visible [role="tooltip"]': {
+		opacity: 1,
+		visibility: 'visible' as const,
+	},
+}
+
 const copyPromptButtonCss = {
 	...getPillButtonCss(),
 	...starterActionButtonSizeCss,
+	...starterCopyPromptTooltipCss,
+}
+
+/* Compact "Advanced" list row: icon + text left, action right, status wraps
+   to a full-width line beneath. */
+export const starterRowCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.7rem 0.9rem',
+	backgroundColor: colors.background,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: radius.card,
+	padding: '0.7rem 0.9rem',
+	minWidth: 0,
+	transition: `border-color 160ms ${transitions.easeOut}`,
+	[hoverMq]: {
+		'&:hover': {
+			borderColor: colors.primary,
+		},
+		'&:hover a strong': {
+			color: colors.primaryText,
+		},
+	},
+}
+
+const starterRowLinkCss = {
+	flex: 1,
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.7rem',
+	textDecoration: 'none',
+	color: 'inherit',
+	minWidth: 'min(16rem, 100%)',
+}
+
+const starterRowTextCss = {
+	display: 'grid',
+	gap: '0.1rem',
+	minWidth: 0,
+	textAlign: 'left' as const,
+}
+
+const rowActionButtonSizeCss = {
+	width: 'auto',
+	flex: 'none',
+	fontSize: '0.9rem',
+}
+
+const rowInstallButtonCss = {
+	...getPillButtonCss(),
+	...rowActionButtonSizeCss,
 }
 
 /* Install confirmation pops in like the wizard checks. */
@@ -338,16 +443,20 @@ const starterErrorCss = {
 	textWrap: 'pretty' as const,
 }
 
-export const starterTooltipSurfaceCss = {
-	maxWidth: '16rem',
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.md,
-	backgroundColor: colors.surface,
-	color: colors.text,
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.4,
-	boxShadow: shadows.md,
-	border: `1px solid ${colors.border}`,
+const rowCopyPromptButtonCss = {
+	...getPillButtonCss(),
+	...rowActionButtonSizeCss,
+	...starterCopyPromptTooltipCss,
 }
 
-const tooltipSurfaceCss = starterTooltipSurfaceCss
+const starterRowStatusCss = {
+	...starterStatusCss,
+	flexBasis: '100%',
+	textAlign: 'left' as const,
+}
+
+const starterRowErrorCss = {
+	...starterErrorCss,
+	flexBasis: '100%',
+	textAlign: 'left' as const,
+}

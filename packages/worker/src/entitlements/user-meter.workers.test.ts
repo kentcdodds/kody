@@ -7,7 +7,7 @@ import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { EntitlementLimitError } from './errors.ts'
-import { planLimits } from './plans.ts'
+import { planLimits } from '#universal/plans.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
@@ -204,7 +204,11 @@ test('cold daily consume initializes at zero without D1 prepare/run and first un
 		now,
 	})
 	expect(
-		await meter.read({ resource: 'email_sends_per_day', day }),
+		await meter.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({
 		outcome: 'ready',
 		count: 1,
@@ -213,7 +217,7 @@ test('cold daily consume initializes at zero without D1 prepare/run and first un
 }, 30_000)
 
 test('warm daily consume/read never prepares entitlement_daily_counters', async () => {
-	const now = new Date('2026-07-31T15:00:00.000Z')
+	const now = new Date()
 	const day = utcDayKey(now)
 	const user = await seedFreeUser('meter-warm-no-d1')
 	const meter = userMeterRpc({ env, userId: user.userId })
@@ -271,6 +275,7 @@ test('next UTC day cold consume starts at zero independently', async () => {
 		await meter.read({
 			resource: 'email_sends_per_day',
 			day: utcDayKey(dayOne),
+			now: dayOne.toISOString(),
 		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 
@@ -302,6 +307,7 @@ test('next UTC day cold consume starts at zero independently', async () => {
 		await meter.read({
 			resource: 'email_sends_per_day',
 			day: utcDayKey(dayTwo),
+			now: dayTwo.toISOString(),
 		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 	expect(dailyPrepareCalls).toBe(0)
@@ -335,7 +341,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		now,
 	})
 	expect(
-		await meterA.read({ resource: 'email_sends_per_day', day }),
+		await meterA.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 
 	for (let index = 1; index < sendLimit; index += 1) {
@@ -378,10 +388,18 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		now,
 	})
 	expect(
-		await meterB.read({ resource: 'email_sends_per_day', day }),
+		await meterB.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 	expect(
-		await meterA.read({ resource: 'email_sends_per_day', day }),
+		await meterA.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: sendLimit })
 
 	await refundDailyEntitlement({
@@ -392,7 +410,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		now,
 	})
 	expect(
-		await meterA.read({ resource: 'email_sends_per_day', day }),
+		await meterA.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: sendLimit - 1 })
 	for (let index = 0; index < sendLimit; index += 1) {
 		await refundDailyEntitlement({
@@ -404,7 +426,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		})
 	}
 	expect(
-		await meterA.read({ resource: 'email_sends_per_day', day }),
+		await meterA.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: 0 })
 
 	await consumeDailyEntitlement({
@@ -469,7 +495,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		truncated: false,
 	})
 	expect(
-		await meterB.read({ resource: 'email_sends_per_day', day }),
+		await meterB.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 
 	await expect(
@@ -483,7 +513,11 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 		}),
 	).resolves.toBeUndefined()
 	expect(
-		await meterA.read({ resource: 'email_sends_per_day', day }),
+		await meterA.read({
+			resource: 'email_sends_per_day',
+			day,
+			now: now.toISOString(),
+		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 	expect(dailyPrepareCalls).toBe(0)
 
@@ -704,6 +738,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		'email_receives_per_day',
 		'email_sends_per_day',
 		'execute_calls_per_day',
+		'job_runs_per_day',
 		'outbound_fetches_per_day',
 	] as const) {
 		await meter.initialize({
@@ -736,11 +771,19 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		startAfter: firstPage.nextStartAfter,
 	})
 	expect(secondPage.counters).toHaveLength(2)
-	expect(secondPage.truncated).toBe(false)
-	expect(secondPage.nextStartAfter).toBeNull()
+	expect(secondPage.truncated).toBe(true)
+	expect(secondPage.nextStartAfter).toEqual(expect.any(String))
 	expect(secondPage.storageBytesState).toBeNull()
 	expect(secondPage.packageServiceStates).toBeNull()
 	expect(secondPage.deletionState).toBeNull()
+
+	const thirdPage = await meter.exportCounters({
+		pageSize: 2,
+		startAfter: secondPage.nextStartAfter,
+	})
+	expect(thirdPage.counters).toHaveLength(1)
+	expect(thirdPage.truncated).toBe(false)
+	expect(thirdPage.nextStartAfter).toBeNull()
 
 	await expect(meter.purge()).resolves.toEqual({ ok: true })
 	expect(await meter.readStorageBytes()).toEqual({

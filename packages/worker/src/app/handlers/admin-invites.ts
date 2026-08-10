@@ -20,12 +20,12 @@ import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	parsePlanName,
 	resolvePlanWrite,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 
 export function createAdminInvitesHandler(env: Env) {
 	return {

@@ -1,7 +1,12 @@
 import { type Handle, css } from 'remix/ui'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 
 export type CopyCodeBlockProps = { code: string; lang?: string | null }

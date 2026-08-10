@@ -2,6 +2,7 @@ import {
 	utf8ToBase64Url,
 	base64UrlToBytes,
 } from '@kody-internal/shared/base64.ts'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 import { BackupError } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
@@ -25,10 +26,6 @@ type CachedJwks = {
 
 let jwksCache: CachedJwks | null = null
 let lastForcedJwksRefreshAt = 0
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function decodeJwtPart(part: string): unknown {
 	const text = new TextDecoder().decode(base64UrlToBytes(part))

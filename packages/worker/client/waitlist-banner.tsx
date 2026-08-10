@@ -6,8 +6,8 @@ import {
 	layoutMaxWidths,
 	mergeCss,
 	pageGutter,
-} from '#client/styles/style-primitives.ts'
-import { colors, transitions, typography } from '#client/styles/tokens.ts'
+} from '#universal/styles/style-primitives.ts'
+import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
 	honeypotFieldName,

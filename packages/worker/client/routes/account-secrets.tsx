@@ -3,7 +3,7 @@ import {
 	type AccountSecretDetail,
 	type AccountSecretListItem,
 	type AccountSecretsLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -41,7 +41,7 @@ import {
 	radius,
 	spacing,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
 	fieldLabelCss,
@@ -49,7 +49,7 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	getSelectCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
 	normalizeAllowedCapabilities,

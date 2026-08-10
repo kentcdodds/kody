@@ -3,10 +3,7 @@ import {
 	loadRequestFeatureFlags,
 	type EvaluatedFeatureFlags,
 } from '#app/request-feature-flags-cache.ts'
-import {
-	type PermissionString,
-	type RoleName,
-} from '#worker/identity/permissions.ts'
+import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 
 export type SessionInfo = {
 	email: string

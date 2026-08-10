@@ -1,8 +1,8 @@
 import { type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
-import { oauthPaths } from '#app/oauth-paths.ts'
-import { routePattern } from '#app/route-pattern.ts'
-import { routes } from '#app/routes.ts'
+import { oauthPaths } from '#universal/oauth-paths.ts'
+import { routePattern } from '#universal/route-pattern.ts'
+import { routes } from '#universal/routes.ts'
 import { type RouteLoader } from './route-loader.ts'
 import type * as accountAreaExports from './routes/account-area.ts'
 import type * as adminAreaExports from './routes/admin-area.ts'
@@ -223,6 +223,9 @@ registerPreloadPatterns(
 		routePattern(routes.adminUserDetail),
 		routePattern(routes.adminInvites),
 		routePattern(routes.adminFeatureFlags),
+		routePattern(routes.adminPlatformIntegrations),
+		routePattern(routes.adminPlatformIntegrationNew),
+		routePattern(routes.adminPlatformIntegrationDetail),
 		routePattern(routes.adminCodemods),
 		routePattern(routes.adminRoles),
 		routePattern(routes.adminCommunityReports),

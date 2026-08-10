@@ -27,6 +27,10 @@ type AppStorageResponse = {
 	bucketId: string
 	read: unknown
 	sqlRows: Array<Record<string, unknown>>
+	packageContext: {
+		appBasePath: string
+		hostedUrl: string
+	}
 }
 
 function readExecuteResult<T>(toolResult: CallToolResult): T {
@@ -67,7 +71,7 @@ function buildPackageFiles(username: string) {
 		},
 		{
 			path: 'src/app.ts',
-			content: `import { packageStorage } from 'kody:runtime'
+			content: `import { packageContext, packageStorage } from 'kody:runtime'
 
 export default {
 	async fetch() {
@@ -87,7 +91,8 @@ export default {
 			bucketId: storage.id,
 			read,
 			sqlRows: sqlResult.rows,
-		})
+			packageContext,
+		}, { status: 201 })
 	},
 }
 `,
@@ -128,7 +133,8 @@ export default async function main(input) {
 		const expectedBucketId = `package:${encodeURIComponent(packageId)}`
 
 		const cookie = await createAppSessionCookie(server.origin, database.user)
-		const appUrl = `${server.origin}/@${username}/packages/${kodyId}`
+		const appBasePath = `/@${username}/packages/${kodyId}`
+		const appUrl = `${server.origin}${appBasePath}?audio=1`
 
 		const firstResponse = await fetch(appUrl, {
 			headers: { Cookie: cookie, Accept: 'application/json' },
@@ -138,11 +144,15 @@ export default async function main(input) {
 		expect(
 			firstResponse.status,
 			`first app fetch failed: ${firstBodyText}`,
-		).toBe(200)
+		).toBe(201)
 		const firstBody = JSON.parse(firstBodyText) as AppStorageResponse
 		expect(firstBody.bucketId).toBe(expectedBucketId)
 		expect(firstBody.read).toBe(markerValue)
 		expect(firstBody.sqlRows).toEqual([{ id: 1, note: markerValue }])
+		expect(firstBody.packageContext).toMatchObject({
+			appBasePath,
+			hostedUrl: `${server.origin}${appBasePath}`,
+		})
 
 		const secondResponse = await fetch(appUrl, {
 			headers: { Cookie: cookie, Accept: 'application/json' },
@@ -152,7 +162,7 @@ export default async function main(input) {
 		expect(
 			secondResponse.status,
 			`second app fetch failed: ${secondBodyText}`,
-		).toBe(200)
+		).toBe(201)
 		const secondBody = JSON.parse(secondBodyText) as AppStorageResponse
 		expect(secondBody.bucketId).toBe(expectedBucketId)
 		expect(secondBody.read).toBe(markerValue)

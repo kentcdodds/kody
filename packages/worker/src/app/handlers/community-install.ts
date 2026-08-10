@@ -6,7 +6,7 @@ import {
 	buildInstallAdaptPrompt,
 	buildInstallSuccessPrompt,
 } from '#app/community-public.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'

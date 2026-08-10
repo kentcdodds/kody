@@ -35,14 +35,25 @@ export const inlineCapabilityInputTypeMaxLength = 500
 
 export function compactCapabilityInputTypeDefinition(
 	inputTypeDefinition: string,
-	maxLength = inlineCapabilityInputTypeMaxLength,
+	options: {
+		maxLength?: number
+		requiredInputFields?: ReadonlyArray<string>
+	} = {},
 ): { definition: string; truncated: boolean } {
+	const maxLength = options.maxLength ?? inlineCapabilityInputTypeMaxLength
 	const collapsed = formatInlineTypeDefinition(inputTypeDefinition)
 	if (collapsed.length <= maxLength) {
 		return { definition: collapsed, truncated: false }
 	}
+	const requiredFields = options.requiredInputFields ?? []
+	const requiredFieldsMarker =
+		requiredFields.length > 0
+			? ` /* required fields: ${requiredFields.join(', ')} */`
+			: ''
+	const suffix = `...${requiredFieldsMarker}`
+	const prefixLength = Math.max(0, maxLength - suffix.length)
 	return {
-		definition: `${collapsed.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`,
+		definition: `${collapsed.slice(0, prefixLength).trimEnd()}${suffix}`,
 		truncated: true,
 	}
 }

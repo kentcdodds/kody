@@ -23,7 +23,7 @@ import {
 	AccountPageHeader,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -33,7 +33,7 @@ import {
 	getPillButtonCss,
 	layoutMaxWidths,
 	primaryLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 type PasskeyListItem = {
 	id: string

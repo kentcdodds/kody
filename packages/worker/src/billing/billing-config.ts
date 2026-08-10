@@ -3,7 +3,7 @@ import {
 	getPlanRank,
 	parseStripePlanName,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import { type StripeSubscription } from './stripe-client.ts'
 
 type BillingEnv = {

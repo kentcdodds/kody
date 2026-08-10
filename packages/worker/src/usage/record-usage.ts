@@ -31,12 +31,12 @@
  */
 
 import * as cloudflareWorkers from 'cloudflare:workers'
-import { type UsageEventType } from '#worker/usage/event-types.ts'
+import { type UsageEventType } from '#universal/usage-event-types.ts'
 
 export {
 	usageEventTypes,
 	type UsageEventType,
-} from '#worker/usage/event-types.ts'
+} from '#universal/usage-event-types.ts'
 
 // Older local runtimes (and the node test stub) may not expose `tracing`;
 // treat it as optional so metering keeps its never-throws contract.

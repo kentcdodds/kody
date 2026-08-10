@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { updateAdminUserPlan } from '#worker/admin/users-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { resolvePlanWrite } from '#worker/entitlements/plans.ts'
+import { resolvePlanWrite } from '#universal/plans.ts'
 import {
 	adminMutationCapabilityAccess,
 	adminUserMetadataSchema,

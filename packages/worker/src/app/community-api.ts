@@ -1,7 +1,7 @@
 import { type Action } from 'remix/router'
 import { loadCommunityIndexData } from '#app/community-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createCommunityApiHandler(env: Env) {
 	return {

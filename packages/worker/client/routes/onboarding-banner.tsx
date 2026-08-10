@@ -1,8 +1,8 @@
 import { css } from 'remix/ui'
-import { type OnboardingChecklistLoaderData } from '#app/loader-data.ts'
-import { getPillButtonCss } from '#client/styles/style-primitives.ts'
+import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
+import { getPillButtonCss } from '#universal/styles/style-primitives.ts'
 import { noticeCardCss } from '#client/routes/account-management-components.tsx'
-import { colors } from '#client/styles/tokens.ts'
+import { colors } from '#universal/styles/tokens.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import {
 	getFirstUndoneChecklistItemLabel,

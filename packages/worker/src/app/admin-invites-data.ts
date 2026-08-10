@@ -1,5 +1,5 @@
-import { type AdminInvitesLoaderData } from '#app/loader-data.ts'
-import { parseStoredPlanName, planNames } from '#worker/entitlements/plans.ts'
+import { type AdminInvitesLoaderData } from '#universal/loader-data.ts'
+import { parseStoredPlanName, planNames } from '#universal/plans.ts'
 
 type InviteRow = {
 	code: string

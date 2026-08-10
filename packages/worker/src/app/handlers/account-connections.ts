@@ -5,7 +5,7 @@ import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { isOauthProviderId } from '#app/oauth-providers.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 const disconnectSchema = object({
 	intent: string(),

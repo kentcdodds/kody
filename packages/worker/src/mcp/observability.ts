@@ -3,7 +3,17 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { isRemoteConnectorUnavailableMessage } from '#worker/remote-connector/status.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
+import {
+	isRepoSearchInvalidRegexMessage,
+	isRepoSessionInactiveMessage,
+} from '#worker/repo/repo-session-caller-error.ts'
+import {
+	isDestructiveOverwriteConfirmationMessage,
+	isPrivateVisibilityChangeConfirmationMessage,
+} from '#worker/repo/source-safety-policy.ts'
+import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
@@ -110,6 +120,58 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 		getErrorCauseChain(cause).some(
 			(entry) =>
 				entry instanceof Error && isRepoLargeFileMessage(entry.message),
+		)
+	) {
+		return true
+	}
+	// Offline / empty / session-unavailable remote connectors throw a plain
+	// Error with a stable guidance message. Agents reconnect; keep volume on
+	// mcp-event lines.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				isRemoteConnectorUnavailableMessage(entry.message),
+		)
+	) {
+		return true
+	}
+	// User-authored SQL against a storage bucket (missing tables/columns,
+	// constraints, read-only policy). storage_query wraps these as
+	// McpCallerError; this message match covers plain Errors that still
+	// arrive via RPC without subclass identity.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error && isUserStorageSqlCallerMessage(entry.message),
+		)
+	) {
+		return true
+	}
+	// Published / inactive repo sessions and invalid repo_search regexes are
+	// thrown inside the RepoSession Durable Object as plain Errors. Match the
+	// stable phrases so they stay out of Sentry even when a capability forgets
+	// to re-wrap as McpCallerError.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				(isRepoSessionInactiveMessage(entry.message) ||
+					isRepoSearchInvalidRegexMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// Package source safety confirmation gates (confirm_destructive_overwrite /
+	// confirm_private_visibility_change) throw plain Errors from shared policy
+	// helpers used by MCP capabilities and Durable Object paths. Agents re-call
+	// with the flag after explicit user approval — keep them off Sentry.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				(isDestructiveOverwriteConfirmationMessage(entry.message) ||
+					isPrivateVisibilityChangeConfirmationMessage(entry.message)),
 		)
 	) {
 		return true

@@ -1,6 +1,6 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
-import { type GuideDetailLoaderData } from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -13,8 +13,8 @@ import {
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { formatLastVerified } from '#client/routes/guides.tsx'
-import { colors } from '#client/styles/tokens.ts'
-import { pageHeadCss, proseCss } from '#client/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
+import { pageHeadCss, proseCss } from '#universal/styles/style-primitives.ts'
 
 /**
  * Guide detail: back link → guide head (title, verified month) → `.prose`

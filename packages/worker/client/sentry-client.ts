@@ -7,7 +7,7 @@ import {
 	parseSentryClientConfig,
 	SENTRY_CONFIG_META_NAME,
 	type SentryClientConfig,
-} from '#client/sentry-config.ts'
+} from '#universal/sentry-config.ts'
 
 /**
  * Browser-side Sentry bootstrap: schedules a lazy load of `@sentry/browser`

@@ -13,6 +13,9 @@ import { adminPackageScopeGrantCreateCapability } from './admin-package-scope-gr
 import { adminPackageScopeGrantListCapability } from './admin-package-scope-grant-list.ts'
 import { adminPackageScopeGrantRevokeCapability } from './admin-package-scope-grant-revoke.ts'
 import { adminPlatformAccountCreateCapability } from './admin-platform-account-create.ts'
+import { adminPlatformOauthAppDeleteCapability } from './admin-platform-oauth-app-delete.ts'
+import { adminPlatformOauthAppListCapability } from './admin-platform-oauth-app-list.ts'
+import { adminPlatformOauthAppSaveCapability } from './admin-platform-oauth-app-save.ts'
 import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
@@ -49,6 +52,8 @@ export const adminDomain = defineDomain({
 		'platform feedback',
 		'community activity',
 		'platform accounts',
+		'platform oauth apps',
+		'built-in integrations',
 		'package scope grants',
 		'codemod',
 		'package codemod',
@@ -74,6 +79,9 @@ export const adminDomain = defineDomain({
 		adminAccountWriteLeaseListCapability,
 		adminAccountWriteLeaseRepairCapability,
 		adminPlatformAccountCreateCapability,
+		adminPlatformOauthAppSaveCapability,
+		adminPlatformOauthAppListCapability,
+		adminPlatformOauthAppDeleteCapability,
 		adminPackageScopeGrantCreateCapability,
 		adminPackageScopeGrantRevokeCapability,
 		adminPackageScopeGrantListCapability,

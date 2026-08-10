@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 function resolvePostVerificationRedirect(request: Request) {
 	const redirectTo = normalizeRedirectTo(

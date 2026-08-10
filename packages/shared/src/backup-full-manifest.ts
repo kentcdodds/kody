@@ -1,5 +1,6 @@
 import { type BackupR2BucketLabel } from './backup-staging.ts'
 import { canonicalJsonStringify } from './canonical-json.ts'
+import { isRecord } from './is-record.ts'
 
 export const backupFullManifestSchemaVersion = 2 as const
 export const backupFullManifestLegacySchemaVersion = 1 as const
@@ -56,10 +57,6 @@ const dayPattern = /^\d{4}-\d{2}-\d{2}$/
 const sha256Pattern = /^[0-9a-f]{64}$/
 const keyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const knownR2Labels = new Set<string>(['email-blobs', 'community-assets'])
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function hasExactKeys(
 	value: Record<string, unknown>,

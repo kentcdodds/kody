@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 import {
 	clearPreloadedNavigationData,
 	consumeStaleNavigationData,

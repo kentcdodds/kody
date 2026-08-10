@@ -7,8 +7,8 @@ import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { type ProfileVisibility } from '#app/loader-data.ts'
-import { type routes } from '#app/routes.ts'
+import { type ProfileVisibility } from '#universal/loader-data.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	getUsernameValidationError,
 	normalizeUsername,

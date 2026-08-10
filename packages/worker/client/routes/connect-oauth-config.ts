@@ -6,7 +6,7 @@ import {
 	normalizeProviderKey,
 	safeParseHost,
 } from '@kody-internal/shared/url-hosts.ts'
-import { type AccountIntegrationListItem } from '#app/loader-data.ts'
+import { type AccountIntegrationListItem } from '#universal/loader-data.ts'
 
 export type OAuthFlow = 'pkce' | 'confidential'
 export type TokenExchangeStyle = 'form' | 'basic-json' | 'basic-form'
@@ -54,6 +54,14 @@ export type ConnectOauthConfig = {
 	accessTokenSecretName: string
 	refreshTokenSecretName: string
 	allowedHosts: Array<string>
+	/**
+	 * Set when connecting through a platform (built-in) OAuth app: the
+	 * operator owns the client registration, token exchange runs host-side
+	 * with the shared secret, and the client-credential setup step is skipped.
+	 */
+	platformAppSlug: string | null
+	/** Relative path of the operator-uploaded provider logo, when present. */
+	platformLogoPath: string | null
 }
 
 export type StoredIntegrationAuthorization = NonNullable<
@@ -83,6 +91,12 @@ export type StoredIntegrationConfig = Omit<
 	/** Omitted when unset so persisted JSON stays sparse (matches pre-import shape). */
 	tokenExchangeStyle?: TokenExchangeStyle | null
 	authorization?: StoredIntegrationAuthorization | null
+	/** Platform (built-in) app slug when the record is a platform connection or prefill. */
+	platformAppSlug?: string | null
+	/** Operator-verified scope menu for platform apps; requested scopes are clamped to it. */
+	platformAllowedScopes?: Array<string>
+	/** Relative path of the operator-uploaded provider logo. */
+	platformLogoPath?: string | null
 }
 
 export type ConnectOauthHostApprovalLink = {
@@ -168,6 +182,13 @@ export function toStoredIntegrationConfig(
 						integration.authorization.extraAuthorizeParams ?? {},
 				}
 			: null,
+		...(integration.platform === true
+			? {
+					platformAppSlug: integration.appSlug,
+					platformAllowedScopes: integration.platformAllowedScopes ?? [],
+					platformLogoPath: integration.platformLogoPath ?? null,
+				}
+			: {}),
 	}
 }
 
@@ -220,10 +241,25 @@ export function parseStoredIntegrationConfig(
 		const authorization = parseStoredIntegrationAuthorization(
 			parsed.authorization,
 		)
+		const platformAppSlug =
+			typeof parsed.platformAppSlug === 'string' &&
+			parsed.platformAppSlug.trim()
+				? parsed.platformAppSlug.trim()
+				: null
+		const platformAllowedScopes = Array.isArray(parsed.platformAllowedScopes)
+			? parsed.platformAllowedScopes.filter(
+					(value): value is string =>
+						typeof value === 'string' && Boolean(value),
+				)
+			: []
+		const platformLogoPath = parsePlatformLogoPath(parsed.platformLogoPath)
 		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
 			return null
 		}
 		return {
+			...(platformAppSlug
+				? { platformAppSlug, platformAllowedScopes, platformLogoPath }
+				: {}),
 			name,
 			tokenUrl,
 			apiBaseUrl:
@@ -328,7 +364,18 @@ export function mergeConnectOauthConfig(input: {
 		input.queryConfig.usePkce ??
 		input.storedIntegration?.usePkce ??
 		defaultConnectOauthUsePkce({ flow, tokenUrl })
-	const scopes = resolveConnectOauthScopes(input)
+	const platformAllowedScopes = input.storedIntegration?.platformAppSlug
+		? (input.storedIntegration.platformAllowedScopes ?? [])
+		: null
+	// Platform apps clamp requested scopes to the operator-verified menu, so
+	// query-supplied scopes can never widen the authorize request. The server
+	// re-validates before persisting anything.
+	const scopes =
+		platformAllowedScopes === null
+			? resolveConnectOauthScopes(input)
+			: resolveConnectOauthScopes(input).filter((scope) =>
+					platformAllowedScopes.includes(scope),
+				)
 	const extraAuthorizeParams = resolveConnectOauthExtraAuthorizeParams(input)
 	const allowedHosts = normalizeHosts([
 		tokenHost,
@@ -336,7 +383,12 @@ export function mergeConnectOauthConfig(input: {
 		...(input.storedIntegration?.requiredHosts ?? []),
 	])
 	if (allowedHosts.length === 0) return null
+	const platformAppSlug = input.storedIntegration?.platformAppSlug ?? null
 	return {
+		platformAppSlug,
+		platformLogoPath: platformAppSlug
+			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
+			: null,
 		provider,
 		providerKey,
 		authorizeHost,
@@ -361,8 +413,10 @@ export function mergeConnectOauthConfig(input: {
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
 		clientId: input.storedIntegration?.clientId?.trim() || '',
+		// Platform apps keep the shared client secret server-side: there is
+		// never a user secret name for it, whatever the flow.
 		clientSecretSecretName:
-			flow === 'confidential'
+			flow === 'confidential' && !platformAppSlug
 				? (input.storedIntegration?.clientSecretSecretName ??
 					`${providerKey}ClientSecret`)
 				: null,
@@ -430,16 +484,46 @@ export function parseSessionConnectOauthConfig(
 		Array.isArray(record.scopes) &&
 		Array.isArray(record.allowedHosts) &&
 		record.scopes.every((value) => typeof value === 'string') &&
-		record.allowedHosts.every((value) => typeof value === 'string')
+		record.allowedHosts.every((value) => typeof value === 'string') &&
+		(record.platformAppSlug == null ||
+			typeof record.platformAppSlug === 'string')
 	if (!isValid) return null
-	return record as unknown as ConnectOauthConfig
+	return {
+		...(record as unknown as ConnectOauthConfig),
+		platformAppSlug:
+			typeof record.platformAppSlug === 'string'
+				? record.platformAppSlug
+				: null,
+		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
+	}
+}
+
+/**
+ * Logo paths render as <img src>; only same-origin serving paths from the
+ * integration-logo route are accepted — one clean slug segment plus an
+ * optional cache tag, so tampered session snapshots cannot point the img at
+ * other same-origin paths via `..` or extra segments.
+ */
+export function parsePlatformLogoPath(raw: unknown): string | null {
+	if (typeof raw !== 'string') return null
+	return /^\/integrations\/logos\/[A-Za-z0-9._~%-]+(?:\?v=[0-9a-f]{1,64})?$/.test(
+		raw,
+	)
+		? raw
+		: null
 }
 
 export function summarizeStoredSetupState(input: {
 	flow: OAuthFlow
 	clientId: string | null
 	hasStoredClientSecret: boolean
+	platform?: boolean
 }) {
+	// Platform (built-in) apps need no user-provided credentials: the
+	// operator registered the app and the shared secret stays server-side.
+	if (input.platform === true) {
+		return { missingFields: [], isReady: true }
+	}
 	const missingFields: Array<string> = []
 	if (!input.clientId?.trim()) missingFields.push('client ID')
 	if (input.flow === 'confidential' && !input.hasStoredClientSecret) {

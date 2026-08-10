@@ -97,16 +97,16 @@ Wrangler `vars` (public and non-secret; see
   The generated deploy `routes` list **replaces** the Worker's entire
   custom-domain set, so when `APP_BASE_URL` moves to a new domain the previous
   host must be listed here — otherwise the first deploy after the flip detaches
-  the old origin and deletes its DNS record (that once took production down).
-  Set as a GitHub Actions repository variable.
+  the old origin and deletes its DNS record. Set as a GitHub Actions repository
+  variable.
 - `APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-preserving
   `308` redirects from legacy hosts to the canonical origin for browser GET/HEAD
   navigation only. Protocol surfaces are never redirected: `/mcp` (clients POST
   and do not follow redirects), `/oauth/*` and `/.well-known/*` (origin-exact
   metadata, Tesla public key), `/auth/*` and `/webauthn/*` (per-origin callbacks
   and passkey `rpID`), `/connect/oauth`, `/health*`, `/__maintenance/*`,
-  webhooks, and package invocation APIs. Leave unset for the dual-serve
-  migration phase.
+  webhooks, and package invocation APIs. Leave unset to dual-serve legacy hosts
+  without redirecting browser navigation.
 
 ## Hosted package app origin
 
@@ -276,16 +276,22 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   (`kody@<apex>`). The deployment's Cloudflare zone needs Email Routing enabled
   for this subdomain (Email > Email Routing > Settings > Add subdomain) with its
   catch-all routed to the Worker. Production commits
-  `USER_EMAIL_DOMAIN=inbox.heykody.dev` in `packages/worker/wrangler.jsonc` so
-  the web origin's move to `heykody.app` can never rederive user addresses onto
-  the new domain; the deploy tooling (`tools/ci/production-resources.ts`) reads
-  the same committed pin when configuring the Email Sending event subscription.
+  `USER_EMAIL_DOMAIN=inbox.heykody.app` in `packages/worker/wrangler.jsonc` so
+  the domain can never silently rederive from `APP_BASE_URL`; the deploy tooling
+  (`tools/ci/production-resources.ts`) reads the same committed pin when
+  configuring the Email Sending event subscription.
 - `SYSTEM_EMAIL_DOMAIN` — optional override for the system email domain (the
   `kody@<domain>` transactional sender and operator system inboxes). Defaults to
   the `APP_BASE_URL` hostname. Production commits
-  `SYSTEM_EMAIL_DOMAIN=heykody.dev` in `packages/worker/wrangler.jsonc` because
-  MX/SPF/DKIM and Cloudflare Email Sending verification live on the
-  `heykody.dev` zone and must not follow the web origin to `heykody.app`.
+  `SYSTEM_EMAIL_DOMAIN=heykody.app`.
+- `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` — optional
+  comma-separated previous email domains that inbound mail is still accepted on
+  during a domain migration (see
+  `packages/worker/src/email/platform-address.ts`). Delivery resolves to the
+  same inboxes; outbound always sends from the canonical domains. Production
+  commits `inbox.heykody.dev` / `heykody.dev` for the heykody.app migration
+  window (through end of August 2026), after which the lists can be emptied and
+  the `heykody.dev` email DNS retired.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
   Defaults to `default` when unset (local dev and tests). Wrangler sets
   `production` and `preview` per environment in
@@ -305,10 +311,14 @@ See [Disaster recovery](./disaster-recovery.md).
   bucket name (S3 API endpoint host uses the account id).
 - `DR_BACKUP_ACCESS_KEY_ID` / `DR_BACKUP_SECRET_ACCESS_KEY` — Worker secrets; R2
   S3 credentials that can write `staging/` and `blobs/` in the DR bucket.
+- `BACKUP_MANIFEST_SIGNING_KEY_ID` /
+  `BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64` — public verification
+  material shared with the DR control plane. The Mailbox importer fails closed
+  when either differs from the signed full manifest.
 - `DR_RESTORE_SECRET` — Worker secret; bearer token for
-  `POST /__maintenance/dr-restore` and the operator-only
-  `POST /__maintenance/do-pitr`. Must match the control-plane secret of the same
-  name. Fail-closed when unset.
+  `POST /__maintenance/dr-restore`, `POST /__maintenance/dr-mailbox-import`, and
+  the operator-only `POST /__maintenance/do-pitr`. Must match the control-plane
+  secret of the same name. Fail-closed when unset.
 
 ## Backup control plane (DR account Worker)
 

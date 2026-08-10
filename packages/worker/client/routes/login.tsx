@@ -2,7 +2,7 @@ import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import {
 	getPathname,
 	listenToRouterNavigation,
@@ -16,7 +16,7 @@ import {
 	readRouterPathname,
 	readRouterSearch,
 } from '#client/router-location.tsx'
-import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
+import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
 import {
 	fetchPublicAuthConfig,
@@ -30,9 +30,9 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
-import { type SignupMode } from '#app/signup-mode.ts'
+import { type SignupMode } from '#universal/signup-mode.ts'
 import { ThemeToggle } from '#client/theme-toggle.tsx'
-import { colors, transitions, typography } from '#client/styles/tokens.ts'
+import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import {
 	authFieldCss,
@@ -46,7 +46,7 @@ import {
 	hoverMq,
 	mergeCss,
 	visuallyHiddenCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'

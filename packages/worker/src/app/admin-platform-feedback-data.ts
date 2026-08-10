@@ -3,7 +3,7 @@ import {
 	type AdminPlatformFeedbackDetail,
 	type AdminPlatformFeedbackListItem,
 	type AdminPlatformFeedbackLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 import {
 	getPlatformFeedbackForAdmin,

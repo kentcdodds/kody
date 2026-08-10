@@ -2,13 +2,13 @@ import {
 	parseStoredPlanName,
 	parseStripePlanName,
 	resolveEffectivePlan,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
-} from './loader-data.ts'
+} from '#universal/loader-data.ts'
 
 type UsageUserRow = {
 	id: number

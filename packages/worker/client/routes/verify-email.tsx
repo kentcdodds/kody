@@ -8,9 +8,9 @@ import {
 	pageHeaderCss,
 	pageTitleCss,
 	stackedPageCss,
-} from '#client/styles/style-primitives.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
-import { type EmailVerificationLoaderData } from '#app/loader-data.ts'
+} from '#universal/styles/style-primitives.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import { type EmailVerificationLoaderData } from '#universal/loader-data.ts'
 
 export function VerifyEmailRoute(handle: Handle) {
 	return () => {

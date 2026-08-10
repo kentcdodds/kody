@@ -44,7 +44,8 @@ accidentally linting normal production code.
 
 Another live example is `kody-custom/prefer-loader-data-types`, which scopes
 itself to `packages/worker/client/routes/**` and reports route-local TypeScript
-payload declarations that should instead be imported from `#app/loader-data.ts`.
+payload declarations that should instead be imported from
+`#universal/loader-data.ts`.
 
 `kody-custom/enforce-import-boundaries` shows the pattern for a data-driven
 rule: the boundaries and their allowlists are plain objects at the top of the

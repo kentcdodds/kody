@@ -2,7 +2,7 @@ import { clientEntry, type EntryComponent, type Handle } from 'remix/ui'
 import { App } from './app.tsx'
 import { RouterLocationProvider } from './router-location.tsx'
 import { type SessionInfo } from './session.ts'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 
 export const APP_ROOT_ENTRY_ID = '/client-entry.js#AppRoot'
 

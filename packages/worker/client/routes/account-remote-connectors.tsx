@@ -38,7 +38,7 @@ import {
 	spacing,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	cardTitleCss,
 	descriptionCss,
@@ -48,7 +48,7 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(26))
 import { writeClipboardText } from '#client/clipboard.ts'

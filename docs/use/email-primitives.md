@@ -4,7 +4,7 @@ Kody has a storage-first email surface for Cloudflare Email Service and Email
 Routing. Every user gets an automatic inbox address at
 `{username}@<platform domain>`, where the platform domain is the deployment's
 user email domain: the `USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.`
-plus the hostname of `APP_BASE_URL` (for example `you@inbox.heykody.dev`). Kody
+plus the hostname of `APP_BASE_URL` (for example `you@inbox.heykody.app`). Kody
 receives routed mail for that address, stores parsed messages for later
 automation, and can send notify-self mail and replies from the matching
 platform-assigned sender address.

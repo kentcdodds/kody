@@ -11,6 +11,7 @@ import {
 export function upsertMailboxDeliveryEvents(
 	sql: SqlStorage,
 	events: Array<MailboxDeliveryEventInput>,
+	options: { restore?: true } = {},
 ): MailboxUpsertDeliveryEventsResult {
 	if (!Array.isArray(events) || events.length === 0) {
 		throw new Error('Mailbox upsertDeliveryEvents events must be non-empty.')
@@ -23,7 +24,10 @@ export function upsertMailboxDeliveryEvents(
 	const results: MailboxUpsertDeliveryEventsResult['results'] = []
 	for (const event of events) {
 		const eventId = assertMailboxNonEmptyString(event.id, 'event.id')
-		if (shouldSkipMailboxDeliveryEventWrite(sql, { event })) {
+		if (
+			!options.restore &&
+			shouldSkipMailboxDeliveryEventWrite(sql, { event })
+		) {
 			results.push({ eventId, inserted: false, accepted: false })
 			continue
 		}

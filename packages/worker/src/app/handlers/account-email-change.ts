@@ -7,7 +7,7 @@ import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { createEmailChangeVerification } from '#app/email-change.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 

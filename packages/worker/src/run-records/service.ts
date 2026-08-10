@@ -10,6 +10,8 @@ import {
 	type JobRunObservabilityUpsertInput,
 } from './job-run-observability.ts'
 import {
+	type BulkUpdateRunErrorTriageFilter,
+	type BulkUpdateRunErrorTriageResult,
 	type PackageInvocationClaimInput,
 	type PackageInvocationLedgerKey,
 	type PackageInvocationLedgerRecord,
@@ -373,84 +375,68 @@ export async function finishRunRecord(input: {
 	 */
 	result?: unknown
 	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<void> {
+}): Promise<boolean> {
 	const handle = input.handle
-	if (!handle) return
+	if (!handle) return false
 	if (handle.persistence === 'on-failure' && input.status === 'success') {
-		return
+		return true
 	}
 
-	const work = (async () => {
-		let persistedRun: RunLogRowInput | null = null
-		try {
-			if (runLogBinding(input.env)) {
-				const finishedAt = new Date().toISOString()
-				const durationMs = Math.max(
-					0,
-					Date.parse(finishedAt) - Date.parse(handle.startedAt),
-				)
-				const { errorName, errorMessage } = getErrorFields(input.error)
-				const metadata =
-					input.result === undefined
-						? handle.context.metadata
-						: {
-								...handle.context.metadata,
-								result: snapshotRunRecordResult(input.result),
-							}
-				const run = buildRunRow({
-					handle: {
-						...handle,
-						context: {
-							...handle.context,
-							metadata,
-						},
+	let persistedRun: RunLogRowInput | null = null
+	try {
+		if (runLogBinding(input.env)) {
+			const finishedAt = new Date().toISOString()
+			const durationMs = Math.max(
+				0,
+				Date.parse(finishedAt) - Date.parse(handle.startedAt),
+			)
+			const { errorName, errorMessage } = getErrorFields(input.error)
+			const metadata =
+				input.result === undefined
+					? handle.context.metadata
+					: {
+							...handle.context.metadata,
+							result: snapshotRunRecordResult(input.result),
+						}
+			const run = buildRunRow({
+				handle: {
+					...handle,
+					context: {
+						...handle.context,
+						metadata,
 					},
-					status: input.status,
-					finishedAt,
-					durationMs,
-					errorName,
-					errorMessage,
-					updatedAt: finishedAt,
-				})
-				await runLogRpc({ env: input.env, userId: handle.userId }).finishRun({
-					run,
-					logs: normalizeLogs(input.logs),
-				})
-				persistedRun = run
-			}
-		} catch (error) {
-			console.warn('run-record-finish-failed', error)
+				},
+				status: input.status,
+				finishedAt,
+				durationMs,
+				errorName,
+				errorMessage,
+				updatedAt: finishedAt,
+			})
+			await runLogRpc({ env: input.env, userId: handle.userId }).finishRun({
+				run,
+				logs: normalizeLogs(input.logs),
+			})
+			persistedRun = run
 		}
-
-		if (
-			persistedRun &&
-			input.status === 'error' &&
-			handle.context.surface !== 'subscription'
-		) {
-			try {
-				// Dynamic import: a static edge to package-subscriptions pulls
-				// package-invocations and deepens the account-export cycle
-				// (account-export → … → account-export-shared → account-export),
-				// leaving z.enum(accountExportSectionNames) undefined at module load.
-				const { dispatchRunErrorSubscriptionEvents } =
-					await import('./package-subscriptions.ts')
-				await dispatchRunErrorSubscriptionEvents({
-					env: input.env,
-					userId: handle.userId,
-					run: persistedRun,
-					waitUntil: input.waitUntil,
-				})
-			} catch (error) {
-				console.warn('run-error-subscription-dispatch-failed', error)
-			}
-		}
-	})()
-
-	if (input.waitUntil) {
-		input.waitUntil(work)
-		return
+	} catch (error) {
+		console.warn('run-record-finish-failed', error)
 	}
-	await work
+
+	if (!persistedRun) return false
+	const sideEffects = dispatchTerminalRunRecordSideEffects({
+		env: input.env,
+		handle,
+		persistedRun,
+		status: input.status,
+		waitUntil: input.waitUntil,
+	})
+	if (input.waitUntil) {
+		input.waitUntil(sideEffects)
+	} else {
+		await sideEffects
+	}
+	return true
 }
 
 /**
@@ -489,7 +475,7 @@ export async function recordRunRecord(input: {
 		console.warn('run-record-begin-failed', error)
 		return null
 	}
-	await finishRunRecord({
+	const persisted = await finishRunRecord({
 		env: input.env,
 		handle,
 		status: input.status,
@@ -498,7 +484,7 @@ export async function recordRunRecord(input: {
 		result: input.result,
 		waitUntil: input.waitUntil,
 	})
-	return handle
+	return persisted ? handle : null
 }
 
 export async function listRunRecords(input: {
@@ -558,6 +544,44 @@ export async function updateRunErrorTriage(input: {
 		preserveTriageNote,
 		triageNote: preserveTriageNote ? null : (input.triageNote ?? null),
 		triagedBy: input.userId,
+	})
+}
+
+export type BulkUpdateRunErrorTriageOutcome =
+	| BulkUpdateRunErrorTriageResult
+	| { reason: 'unavailable' }
+
+/**
+ * Soft-triage a bounded set of retained errors selected by ids or exact-match
+ * filters. Execution outcomes and error details are never rewritten.
+ */
+export async function bulkUpdateRunErrorTriage(input: {
+	env: Env
+	userId: string
+	runIds?: Array<string> | null
+	filter?: BulkUpdateRunErrorTriageFilter | null
+	errorTriage: RunErrorTriage | null
+	triageNote?: string | null
+	limit?: number | null
+	dryRun?: boolean
+}): Promise<BulkUpdateRunErrorTriageOutcome> {
+	if (!runLogBinding(input.env)) return { reason: 'unavailable' }
+	const preserveTriageNote = input.triageNote === undefined
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).bulkUpdateRunErrorTriage({
+		runIds: input.runIds ?? null,
+		filter: input.filter ?? null,
+		errorTriage: input.errorTriage,
+		preserveTriageNote,
+		triageNote: preserveTriageNote ? null : (input.triageNote ?? null),
+		triagedBy: input.userId,
+		limit: Math.min(
+			Math.max(input.limit ?? runRecordMaxPageSize, 1),
+			runRecordMaxPageSize,
+		),
+		dryRun: input.dryRun ?? false,
 	})
 }
 

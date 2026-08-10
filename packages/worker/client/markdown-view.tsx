@@ -27,7 +27,12 @@
 import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])

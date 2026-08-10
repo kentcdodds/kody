@@ -22,7 +22,8 @@ file style first, then run the formatter.
 ## Imports
 
 - Prefer repo-root `#...` imports (configured via `package.json` `"imports"`)
-  over parent-relative `../...` paths.
+  over parent-relative `../...` paths. Shared browser/server contracts use
+  `#universal/*`.
 - Keep `./...` imports for same-folder files.
 - Generated files (for example `packages/worker/worker-configuration.d.ts`) are
   allowed to be exceptions; do not edit them by hand.

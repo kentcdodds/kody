@@ -64,6 +64,7 @@ function collectUnresolvedBareImports(modules: WorkerLoaderModules) {
 export function assertBundleHasNoUnresolvedBareImports(input: {
 	modules: WorkerLoaderModules
 	bundleLabel: string
+	resolutionHint?: string
 }) {
 	const unresolved = collectUnresolvedBareImports(input.modules)
 	if (unresolved.length === 0) return
@@ -76,7 +77,7 @@ export function assertBundleHasNoUnresolvedBareImports(input: {
 		)
 		.join('; ')
 	throw new Error(
-		`${input.bundleLabel} still contains unresolved bare package imports after bundling (${details}). Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.`,
+		`${input.bundleLabel} still contains unresolved bare package imports after bundling (${details}). ${input.resolutionHint ?? 'Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.'}`,
 	)
 }
 

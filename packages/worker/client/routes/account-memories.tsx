@@ -18,7 +18,7 @@ import {
 	type AccountMemoryDetail,
 	type AccountMemoryListItem,
 	type AccountMemoriesLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	AccountManagementMessage,
@@ -34,7 +34,12 @@ import {
 	recordBodyCss,
 	recordCellClamp,
 } from '#client/routes/record-table.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	cardTitleCss,
 	descriptionCss,
@@ -42,7 +47,7 @@ import {
 	fieldLabelCss,
 	getDangerPillCss,
 	getGhostButtonCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(30))
 

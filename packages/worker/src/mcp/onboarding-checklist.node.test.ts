@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -10,6 +11,7 @@ import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	readOnboardingChecklistDismissed,
+	userHasSentWelcomeEmail,
 } from './onboarding-checklist.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -17,10 +19,11 @@ const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 function createEnv() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
+	const { env: meterEnv, seed } = createInMemoryUserMeterEnv()
 	// MAILBOX is deliberately absent: the mailbox probe must fail open.
 	return {
 		env: { APP_DB: createD1FromSqlite(sqlite), ...meterEnv } as Env,
+		seed,
 	}
 }
 
@@ -120,4 +123,24 @@ test('search onboarding notice points at /onboarding and goes quiet after dismis
 			baseUrl: 'https://kody.example',
 		}),
 	).toBe(null)
+})
+
+test('first-win Send is done when email_send meter counts even without mailbox', async () => {
+	const now = new Date('2026-08-08T15:00:00.000Z')
+	const fresh = createEnv()
+	expect(await userHasSentWelcomeEmail({ env: fresh.env, userId, now })).toBe(
+		false,
+	)
+
+	const { env, seed } = createEnv()
+	await seed({
+		userId,
+		resource: 'email_sends_per_day',
+		day: utcDayKey(now),
+		count: 1,
+	})
+	expect(await userHasSentWelcomeEmail({ env, userId, now })).toBe(true)
+	expect(
+		await userHasSentWelcomeEmail({ env, userId: 'b'.repeat(64), now }),
+	).toBe(false)
 })

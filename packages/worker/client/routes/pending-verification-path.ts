@@ -1,7 +1,7 @@
 import {
 	normalizeRedirectTo,
 	resolvePostVerificationRedirect,
-} from '#app/safe-redirect.ts'
+} from '#universal/safe-redirect.ts'
 
 export { resolvePostVerificationRedirect }
 

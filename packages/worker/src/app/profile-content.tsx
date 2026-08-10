@@ -5,23 +5,24 @@ import { renderToString } from 'remix/ui/server'
 import {
 	communityActivityVerb,
 	formatCommunityActivityDate,
-} from '#app/community-activity-display.ts'
-import { formatCommunityPublishedDate } from '#app/community-display.ts'
-import { renderCommunityListingName } from '#app/community-listing-name.tsx'
+} from '#universal/community-activity-display.ts'
+import { formatCommunityPublishedDate } from '#universal/community-display.ts'
+import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import {
 	type PublicCommunityActivityItem,
 	type PublicCommunityProfile,
 	type PublicProfilePackageItem,
-} from '#app/community-public-types.ts'
-import { routes } from '#app/routes.ts'
-import { UserAvatar } from '#app/user-avatar.tsx'
+} from '#universal/community-public-types.ts'
+import { routes } from '#universal/routes.ts'
+import { UserAvatar } from '#universal/user-avatar.tsx'
+import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
 import {
 	colors,
 	radius,
 	spacing,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
@@ -30,7 +31,7 @@ import {
 	pageDescriptionCss,
 	pageHeaderCss,
 	pageTitleCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 export type ProfileContentProps = {
 	profile: PublicCommunityProfile
@@ -38,6 +39,10 @@ export type ProfileContentProps = {
 	activity: Array<PublicCommunityActivityItem>
 	query: string | null
 	isSelf: boolean
+	loggedIn: boolean
+	isFollowing: boolean
+	returnTo: string
+	followError: string | null
 }
 
 function renderForkIcon() {
@@ -64,7 +69,17 @@ function renderForkIcon() {
 }
 
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
-	const { profile, packages, activity, query, isSelf } = handle.props
+	const {
+		profile,
+		packages,
+		activity,
+		query,
+		isSelf,
+		loggedIn,
+		isFollowing,
+		returnTo,
+		followError,
+	} = handle.props
 
 	return () => (
 		<div data-testid="profile-frame">
@@ -80,8 +95,19 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 						<h1 mix={css(pageTitleCss)} data-testid="profile-display-name">
 							{profile.displayName}
 						</h1>
-						<p mix={css(pageDescriptionCss)} data-testid="profile-username">
-							@{profile.username}
+						<p mix={css(profileUsernameLineCss)} data-testid="profile-username">
+							<span>@{profile.username}</span>
+							{!isSelf
+								? renderProfileFollowControl({
+										username: profile.username,
+										loggedIn,
+										isFollowing,
+										returnTo,
+										followError,
+										testId: 'profile-follow',
+										errorTestId: 'profile-follow-error',
+									})
+								: null}
 						</p>
 					</div>
 				</div>
@@ -238,6 +264,14 @@ const profileHeadingCss = {
 	display: 'flex',
 	alignItems: 'center',
 	gap: spacing.md,
+}
+
+const profileUsernameLineCss = {
+	...pageDescriptionCss,
+	display: 'inline-flex',
+	alignItems: 'center',
+	flexWrap: 'nowrap' as const,
+	gap: '0.45rem',
 }
 
 const activityActorCss = {

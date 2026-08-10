@@ -20,9 +20,9 @@ import {
 	releaseInviteUse,
 } from '#app/invites.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	getUsernameValidationError,
 	normalizeUsername,
@@ -32,7 +32,7 @@ import {
 	parseStoredPlanName,
 	resolvePlanWrite,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import {
@@ -46,7 +46,7 @@ import {
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
-import { getSignupMode } from '#app/signup-mode.ts'
+import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 
 const authModes = ['login', 'signup'] as const

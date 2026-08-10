@@ -26,12 +26,12 @@ import {
 	queryAnalyticsEngineSql,
 	resolveUsageEventsDataset,
 } from '#worker/usage/aggregate-rollups.ts'
-import { type FeatureFlagSuccessMetric } from './registry.ts'
+import { type FeatureFlagSuccessMetric } from '#universal/feature-flags/registry.ts'
 import {
 	type AdminFeatureFlag,
 	type AdminFeatureFlagMetricReadout,
 	type FeatureFlagMetricCohort,
-} from './types.ts'
+} from '#universal/feature-flags/types.ts'
 
 export type FeatureFlagReadoutEnv = {
 	APP_DB: D1Database

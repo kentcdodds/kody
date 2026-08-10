@@ -33,11 +33,14 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
 ## OAuth flow
 
 1. `addServer` registers the server with a callback URL of
-   `<app-origin>/account/mcp-servers/oauth/callback` and starts connecting.
+   `<canonical-app-origin>/account/mcp-servers/oauth/callback` (from
+   `APP_BASE_URL`, not the request host) and starts connecting.
 2. If the server requires OAuth, the SDK performs dynamic client registration
    and the connection parks in state `authenticating` with an `authUrl`.
 3. The user opens `authUrl` in the browser (surfaced in the account UI and by
-   the `mcp_server_add` / `mcp_server_list` capabilities).
+   the `mcp_server_add` / `mcp_server_list` capabilities). The authorize link
+   uses `rel="noopener noreferrer"` so browser Referer does not send Kody's
+   origin to providers that enforce authorized-origin allowlists on Referer.
 4. The provider redirects back to the callback route. The worker authenticates
    the browser session cookie, forwards the full callback URL to that user's hub
    DO, and the SDK exchanges the code (matching the `state` parameter to the
@@ -46,8 +49,10 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
    `ready`. If the Agents SDK reports `authSuccess` but the connection stays in
    `authenticating` (including the stuck case with no stored auth URL after the
    SDK clears it), the route redirects with `auth=error` and a concrete reason.
-   Reconnect also recovers that stuck state by invalidating unusable tokens and
-   requesting a fresh authorization URL.
+   Origin and redirect-URI rejection messages are enriched with Kody's
+   `oauthClientOrigin` and `oauthCallbackUrl`. Reconnect also recovers that
+   stuck state by invalidating unusable tokens and requesting a fresh
+   authorization URL.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens
@@ -56,6 +61,10 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
 Because the callback is resolved through the session cookie, the OAuth state is
 always looked up in the hub belonging to the signed-in user — cross-user
 callback replay finds no matching state.
+
+Providers that allowlist client origins or redirect URIs must permit the
+canonical app origin and the callback path above. See
+[Connect remote MCP servers](../../use/mcp-client-servers.md).
 
 ## Capability synthesis and invocation
 

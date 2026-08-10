@@ -10,6 +10,9 @@ import {
 	toCommunityListingAggregatesOutput,
 } from './shared.ts'
 
+const communitySearchNoMatchGuidance =
+	'No community packages met the relevance floor for this query. Rephrase with the provider, data source, or concrete workflow you need; if nothing close exists, create a new package instead of adapting an unrelated result.'
+
 export const communitySearchCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
@@ -41,6 +44,7 @@ export const communitySearchCapability = defineDomainCapability(
 				.describe('Maximum number of matches to return (default 10, max 50).'),
 		}),
 		outputSchema: z.object({
+			outcome: z.enum(['matches', 'no_matches']),
 			guidance: z.string(),
 			matches: z.array(communitySearchMatchSchema),
 		}),
@@ -51,8 +55,12 @@ export const communitySearchCapability = defineDomainCapability(
 				query: args.query,
 				limit: args.limit ?? 10,
 			})
+			const noMatches = Boolean(args.query.trim()) && listings.length === 0
 			return {
-				guidance: communitySearchGuidance,
+				outcome: noMatches ? ('no_matches' as const) : ('matches' as const),
+				guidance: noMatches
+					? `${communitySearchNoMatchGuidance} ${communitySearchGuidance}`
+					: communitySearchGuidance,
 				matches: listings.map((listing) => ({
 					listing_id: listing.id,
 					name: listing.name,
@@ -61,6 +69,7 @@ export const communitySearchCapability = defineDomainCapability(
 					tags: listing.tags,
 					owner_anonymous: true as const,
 					trusted: listing.trusted,
+					relevance: listing.relevance,
 					...toCommunityListingAggregatesOutput(listing),
 					public_url: buildCommunityPublicUrl(
 						ctx.callerContext.baseUrl,

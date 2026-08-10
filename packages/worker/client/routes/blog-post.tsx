@@ -3,9 +3,9 @@ import {
 	BLOG_AUTHOR_NAME,
 	BLOG_PLACEHOLDER_CALLOUT,
 	formatBlogPostDate,
-} from '#app/blog-display.ts'
-import { type BlogPostLoaderData } from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+} from '#universal/blog-display.ts'
+import { type BlogPostLoaderData } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -22,12 +22,12 @@ import {
 	radius,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	getPillButtonCss,
 	pageHeadCss,
 	proseCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 /**
  * Blog post, ported from the redesign prototype (`landing/blog-post.html`).

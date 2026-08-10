@@ -3,7 +3,7 @@ import {
 	parseStoredPlanName,
 	resolveEffectivePlan,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
@@ -13,7 +13,7 @@ import {
 	type AdminInsightsMetricDurationConsumers,
 	type AdminPlanName,
 	type AdminUsageMetric,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 
 export const adminFleetTopConsumersLimit = 10
 

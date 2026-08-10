@@ -1,4 +1,4 @@
-import { type AdminCommunityReportsLoaderData } from '#app/loader-data.ts'
+import { type AdminCommunityReportsLoaderData } from '#universal/loader-data.ts'
 import { listCommunityReports } from '#worker/community/service.ts'
 import { type CommunityReportRecord } from '#worker/community/types.ts'
 

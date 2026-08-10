@@ -65,6 +65,13 @@ export const integrationConfigSchema = z.object({
 	requiredHosts: z.array(z.string()).optional(),
 	tokenExchangeStyle: z.enum(tokenExchangeStyleValues).optional().nullable(),
 	authorization: integrationAuthorizationSchema.optional().nullable(),
+	/**
+	 * True when the connection uses a platform (built-in) OAuth app. Platform
+	 * connections never expose a client secret name: the shared secret lives
+	 * encrypted outside the user secret store and token exchange runs
+	 * host-side (`integration_token_refresh`).
+	 */
+	platform: z.boolean().optional(),
 })
 
 export type IntegrationConfig = z.infer<typeof integrationConfigSchema>

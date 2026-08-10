@@ -1,7 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { ThemeToggle } from '#client/theme-toggle.tsx'
-import { colors, transitions, typography } from '#client/styles/tokens.ts'
-import { layoutMaxWidths } from '#client/styles/style-primitives.ts'
+import { colors, transitions, typography } from '#universal/styles/tokens.ts'
+import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 
 export type SiteFooterProps = {
 	loggedIn: boolean

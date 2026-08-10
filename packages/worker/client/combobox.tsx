@@ -4,8 +4,8 @@ import {
 	ComboboxOption as RemixComboboxOption,
 } from 'remix/ui/combobox'
 import { onComboboxChange } from 'remix/ui/combobox/primitives'
-import { colors, radius, shadows, spacing } from '#client/styles/tokens.ts'
-import { fieldLabelCss, inputCss } from '#client/styles/style-primitives.ts'
+import { colors, radius, shadows, spacing } from '#universal/styles/tokens.ts'
+import { fieldLabelCss, inputCss } from '#universal/styles/style-primitives.ts'
 
 export type ComboboxOption = {
 	id: string

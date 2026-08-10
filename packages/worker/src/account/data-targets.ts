@@ -101,6 +101,12 @@ export const accountOperatorOwnedD1Surfaces = [
 		reason:
 			'Dedicated operator-owned system email delivery events are permanently stored in D1 and excluded from user account deletion/export.',
 	},
+	{
+		table: 'platform_oauth_apps',
+		surface: 'platform_oauth_apps',
+		reason:
+			'Operator-provisioned built-in OAuth app registrations (global config like feature flags; no user data). Per-user connections and token secrets remain user-scoped and covered by their own targets.',
+	},
 ] as const
 
 /** Targets that account export should skip (deletion still covers them). */

@@ -69,8 +69,6 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	baseUrl: string
 	caller: {
 		userId: string
-		email: string
-		displayName: string
 		remoteConnectors?: Array<RemoteConnectorRef> | null
 	}
 	request: PackageInvocationRequest
@@ -80,6 +78,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
 	preloads?: PackageInvokeCheckPreloads | null
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -118,8 +117,6 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	const actor = {
 		tokenId: internalExecuteRuntimeInvokeTokenId,
 		userId: input.caller.userId,
-		email: input.caller.email,
-		displayName: input.caller.displayName || input.caller.email || 'execute',
 		remoteConnectors: input.caller.remoteConnectors ?? null,
 	}
 	const shared = {
@@ -140,6 +137,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
+		signal: input.signal,
 	} satisfies Omit<
 		Parameters<typeof invokeSavedPackageModule>[0],
 		'idempotencyKey'
@@ -155,8 +153,6 @@ export async function invokePackageExportForPackageRuntime(input: {
 	baseUrl: string
 	caller: {
 		userId: string
-		email: string
-		displayName: string
 		remoteConnectors?: Array<RemoteConnectorRef> | null
 		packageContext: PackageRuntimeContext
 	}
@@ -166,6 +162,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
 	preloads?: PackageInvokeCheckPreloads | null
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -198,10 +195,6 @@ export async function invokePackageExportForPackageRuntime(input: {
 		actor: {
 			tokenId: `${internalPackageRuntimeInvokeTokenId}:${input.caller.packageContext.packageId}`,
 			userId: input.caller.userId,
-			email: input.caller.email,
-			displayName:
-				input.caller.displayName ||
-				`package:${input.caller.packageContext.kodyId}`,
 			remoteConnectors: input.caller.remoteConnectors ?? null,
 		},
 		savedPackage,
@@ -220,6 +213,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
+		signal: input.signal,
 	} satisfies Omit<
 		Parameters<typeof invokeSavedPackageModule>[0],
 		'idempotencyKey'
@@ -313,8 +307,6 @@ export async function invokePackageExportWithToolFactories(input: {
 		actor: {
 			tokenId: input.token.tokenId,
 			userId: input.token.userId,
-			email: input.token.email,
-			displayName: input.token.displayName,
 			remoteConnectors: input.token.remoteConnectors ?? null,
 		},
 		savedPackage,

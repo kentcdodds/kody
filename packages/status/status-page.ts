@@ -1,6 +1,11 @@
 import {
+	cloudflareStatusPageUrl,
+	sanitizeProviderIncidentShortlink,
+} from './provider-incidents.ts'
+import {
 	type ComponentSnapshot,
 	type IncidentView,
+	type ProviderIncident,
 	type StatusSnapshot,
 } from './status-types.ts'
 
@@ -107,6 +112,25 @@ h1 { font-size: 1.5rem; margin: 0; }
 .incident.resolved { border-left-color: var(--ok); }
 .incident-title { font-weight: 600; }
 .incident-meta { color: var(--muted); font-size: 0.85rem; }
+.provider-section {
+	margin: 2rem 0 1rem;
+	padding: 1rem 1.25rem;
+	border: 1px dashed var(--border);
+	border-radius: 0.75rem;
+	background: color-mix(in srgb, var(--card) 85%, var(--partial));
+}
+.provider-section h2 { margin: 0 0 0.35rem; }
+.provider-lead { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem; }
+.provider-incident {
+	border-left: 3px solid var(--partial);
+	border-radius: 0 0.5rem 0.5rem 0;
+	padding: 0.5rem 0.75rem;
+	margin: 0.75rem 0 0;
+	background: var(--card);
+}
+.provider-incident-title { font-weight: 600; }
+.provider-incident-meta { color: var(--muted); font-size: 0.85rem; }
+.provider-incident a { color: inherit; }
 h2 { font-size: 1.1rem; margin: 2rem 0 0.75rem; }
 footer { margin-top: 2.5rem; color: var(--muted); font-size: 0.85rem; }
 footer a { color: inherit; }
@@ -184,6 +208,30 @@ function renderIncident(incident: IncidentView): string {
 </div>`
 }
 
+function renderProviderIncident(incident: ProviderIncident): string {
+	const components =
+		incident.affectedComponents.length > 0
+			? ` · affects ${escapeHtml(incident.affectedComponents.join(', '))}`
+			: ''
+	const href = sanitizeProviderIncidentShortlink(incident.shortlink)
+	return `<div class="provider-incident">
+	<div class="provider-incident-title">${escapeHtml(incident.name)}</div>
+	<div class="provider-incident-meta">${escapeHtml(incident.status)} · ${escapeHtml(incident.impact)} impact${components}</div>
+	<div class="provider-incident-meta"><a href="${escapeHtml(href)}">Cloudflare status</a> · updated ${escapeHtml(incident.updatedAt)}</div>
+</div>`
+}
+
+function renderProviderIncidentsSection(
+	incidents: Array<ProviderIncident> | null | undefined,
+): string {
+	if (incidents == null || incidents.length === 0) return ''
+	return `<section class="provider-section" aria-label="Provider incidents from Cloudflare">
+	<h2>Provider incidents (Cloudflare)</h2>
+	<p class="provider-lead">Declared by Cloudflare on <a href="${escapeHtml(cloudflareStatusPageUrl)}">cloudflarestatus.com</a>. Separate from kody's measured component health — for context only.</p>
+	${incidents.map(renderProviderIncident).join('\n')}
+</section>`
+}
+
 export function renderStatusPage(snapshot: StatusSnapshot): string {
 	const banner = bannerFor(snapshot)
 	const components = snapshot.components.map(renderComponent).join('\n')
@@ -191,6 +239,9 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 		snapshot.openIncidents.length > 0
 			? `<h2>Open incidents</h2>${snapshot.openIncidents.map(renderIncident).join('\n')}`
 			: ''
+	const providerIncidents = renderProviderIncidentsSection(
+		snapshot.providerIncidents,
+	)
 	const recentIncidents =
 		snapshot.recentIncidents.length > 0
 			? `<h2>Past incidents</h2>${snapshot.recentIncidents.map(renderIncident).join('\n')}`
@@ -213,6 +264,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 	<div class="banner ${banner.kind}">${escapeHtml(banner.label)}</div>
 	${components}
 	${openIncidents}
+	${providerIncidents}
 	${recentIncidents}
 	<footer>
 		Probes run every minute from an independently deployed worker.

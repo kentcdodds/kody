@@ -1,9 +1,9 @@
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { verifyEmailToken } from '#app/email-verification.ts'
-import { resolveVerifyEmailSuccessCta } from '#app/safe-redirect.ts'
+import { resolveVerifyEmailSuccessCta } from '#universal/safe-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 function getVerifyEmailError(
 	reason: 'missing_token' | 'invalid_token' | 'expired_token',

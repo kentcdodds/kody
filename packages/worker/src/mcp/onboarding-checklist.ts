@@ -9,7 +9,7 @@ import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
 	type OnboardingChecklistItem,
 	type OnboardingChecklistItemId,
-} from '#worker/onboarding-checklist-types.ts'
+} from '#universal/onboarding-checklist-types.ts'
 
 /**
  * Derived onboarding progress. Every item is computed from data the platform
@@ -32,6 +32,38 @@ const userScopedStorageContext = { sessionId: null, appId: null }
 
 export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> &
 	EntitlementUsageEnv & { MAILBOX: Env['MAILBOX'] }
+
+/**
+ * First-win Send sub-step: a successful `email_send` (UserMeter daily count)
+ * or any stored outbound mailbox copy. Meter covers the case where Hotmail
+ * already received the message but the mailbox mirror lagged; mailbox covers
+ * sends from a previous UTC day after the daily meter resets. Failed mailbox
+ * stores refund the meter before throwing, so a rejected send cannot mark
+ * Send done. Probe failures fail open to false so a Mailbox or UserMeter
+ * blip never marks Send done.
+ */
+export async function userHasSentWelcomeEmail(input: {
+	env: OnboardingChecklistEnv
+	userId: string
+	now?: Date
+}): Promise<boolean> {
+	const now = input.now ?? new Date()
+	const [outboundMail, emailSendsToday] = await Promise.all([
+		countInternalUserEmailMessages({
+			env: input.env,
+			ownerId: input.userId,
+			filters: { direction: 'outbound' },
+		}).catch(() => 0),
+		readCurrentEntitlementResourceUsage({
+			db: input.env.APP_DB,
+			env: input.env,
+			userId: input.userId,
+			resource: 'email_sends_per_day',
+			now,
+		}).catch(() => 0),
+	])
+	return outboundMail > 0 || emailSendsToday > 0
+}
 
 /**
  * Compute the checklist from existing signals: one Mailbox DO count (stored

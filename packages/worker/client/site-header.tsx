@@ -7,12 +7,12 @@ import {
 	spacing,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	hoverMq,
 	layoutMaxWidths,
 	pageGutter,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 export type SiteHeaderProps = {
 	loggedIn: boolean
@@ -49,6 +49,18 @@ function ariaCurrent(currentPathname: string, href: string) {
 /** One id: the invoker points at the panel with `popovertarget`. */
 const menuPanelId = 'site-menu'
 
+/**
+ * Dismiss an open popover panel on client-side navigation. Older browsers
+ * throw from `matches(':popover-open')` when the Popover API is unavailable.
+ */
+export function dismissOpenPopoverPanel(panel: Element | null) {
+	if (!panel || typeof (panel as HTMLElement).hidePopover !== 'function') return
+	const element = panel as HTMLElement
+	if (element.matches(':popover-open')) {
+		element.hidePopover()
+	}
+}
+
 export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 	let scrolled = false
 	let menuOpen = false
@@ -69,10 +81,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 		// Following a link inside the menu is a client-side navigation, so
 		// nothing would otherwise dismiss the panel.
 		listenToRouterNavigation(handle, () => {
-			const panel = document.getElementById(menuPanelId)
-			if (panel instanceof HTMLElement && panel.matches(':popover-open')) {
-				panel.hidePopover()
-			}
+			dismissOpenPopoverPanel(document.getElementById(menuPanelId))
 		})
 	}
 

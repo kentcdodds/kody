@@ -6,8 +6,8 @@ import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
-import { isFeatureFlagKey } from '#worker/feature-flags/registry.ts'
+import { type routes } from '#universal/routes.ts'
+import { isFeatureFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	clearFeatureFlagUserOverride,
 	deleteStaleFeatureFlag,

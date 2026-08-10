@@ -1,4 +1,4 @@
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 
 const routerHrefOrigin = 'https://kody.local'
 

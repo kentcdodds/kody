@@ -3,7 +3,7 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { type AdminUsageRollup } from '#app/loader-data.ts'
+import { type AdminUsageRollup } from '#universal/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
 
 const resourceCountsByDb = new WeakMap<

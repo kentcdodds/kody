@@ -1,4 +1,4 @@
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { buildPendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 
 /**

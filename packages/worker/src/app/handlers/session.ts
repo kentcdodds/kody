@@ -6,7 +6,7 @@ import {
 	readAuthSessionResult,
 } from '#app/auth-session.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createSessionHandler(env: Env) {
 	return {

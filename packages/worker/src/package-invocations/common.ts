@@ -19,8 +19,7 @@ import { type PackageInvocationStoredResponse } from './repo.ts'
 export type PackageInvocationTokenScope = {
 	tokenId: string
 	userId: string
-	email: string
-	displayName: string
+	email?: string
 	packageIds?: Array<string>
 	packageKodyIds?: Array<string>
 	exportNames?: Array<string>
@@ -47,8 +46,6 @@ export type PackageInvocationResponse = PackageInvocationStoredResponse
 export type PackageInvocationActor = {
 	tokenId: string
 	userId: string
-	email: string
-	displayName: string
 	remoteConnectors?: Array<RemoteConnectorRef> | null
 }
 
@@ -106,6 +103,10 @@ export type PackageRuntimeToolFactories = {
 }
 
 export const internalEmailSubscriptionTokenId = 'internal:email-subscriptions'
+export {
+	internalSyntheticSubscriptionTokenId,
+	syntheticPackageSubscriptionSource,
+} from './subscription-envelope.ts'
 export const internalPackageEventSubscriptionTokenId = 'internal:package-events'
 export const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
 export const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'

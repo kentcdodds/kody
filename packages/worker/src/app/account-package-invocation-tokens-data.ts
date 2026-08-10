@@ -1,5 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { type AccountPackageInvocationTokensLoaderData } from '#app/loader-data.ts'
+import { type AccountPackageInvocationTokensLoaderData } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	listPackageInvocationTokensByUserId,

@@ -1,6 +1,6 @@
 import { addEventListeners, type Handle, css } from 'remix/ui'
 import { routerEvents } from './client-router.tsx'
-import { colors, transitions } from './styles/tokens.ts'
+import { colors, transitions } from '#universal/styles/tokens.ts'
 
 // Spin-delay semantics (https://npm.im/spin-delay): the bar only appears if a
 // navigation is still pending after `showDelayMs`, and once shown it stays

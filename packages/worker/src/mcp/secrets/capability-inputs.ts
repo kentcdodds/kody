@@ -1,3 +1,4 @@
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { secretInputSchemaFlag } from '@kody-internal/shared/secret-input-schema.ts'
 import {
 	buildSecretPlaceholder,
@@ -116,8 +117,4 @@ export function getAdditionalPropertiesSchema(
 	if (!isRecord(schema)) return null
 	const additionalProperties = schema.additionalProperties
 	return isRecord(additionalProperties) ? additionalProperties : null
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

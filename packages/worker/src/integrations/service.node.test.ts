@@ -2,17 +2,22 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { upsertPlatformOauthApp } from './platform-apps.ts'
 import {
+	deleteIntegration,
 	deleteOauthAppIfUnused,
 	findOauthAppForProviderSetup,
+	getAvailablePlatformApp,
 	getIntegration,
 	getOauthApp,
+	listAvailablePlatformApps,
 	listIntegrations,
 	listOauthApps,
 	listJoinedIntegrations,
 	rotateOauthAppClientCredentials,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
+	upsertPlatformIntegration,
 } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -991,4 +996,225 @@ test('findOauthAppForProviderSetup covers family prefill, exact slug, and disagr
 		clientId: 'notion-client-from-setup',
 		clientSecretSecretName: 'notionClientSecret',
 	})
+})
+
+function createPlatformEnv() {
+	const { env } = createEnv()
+	return {
+		env: {
+			...env,
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>,
+	}
+}
+
+async function provisionGithubPlatformApp(
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>,
+) {
+	return upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			allowedScopes: ['repo', 'read:user', 'gist'],
+			defaultScopes: ['read:user'],
+			requiredHosts: ['api.github.com'],
+		},
+	})
+}
+
+test('upsertPlatformIntegration connects a user to a platform app with no client secret exposure', async () => {
+	const { env } = createPlatformEnv()
+	await provisionGithubPlatformApp(env)
+
+	const saved = await upsertPlatformIntegration({
+		env,
+		userId: 'user-platform',
+		platformAppSlug: 'github',
+		scopes: ['read:user', 'repo'],
+		accessTokenSecretName: 'githubAccessToken',
+		refreshTokenSecretName: 'githubRefreshToken',
+	})
+	expect(saved).toMatchObject({
+		name: 'github',
+		platform: true,
+		clientId: 'platform-github-client-id',
+		clientSecretSecretName: null,
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	expect(saved.requiredHosts).toEqual(['api.github.com', 'github.com'])
+	expect(saved.authorization?.scopes).toEqual(['read:user', 'repo'])
+
+	const listed = await listIntegrations({ env, userId: 'user-platform' })
+	expect(listed).toHaveLength(1)
+	expect(listed[0]?.platform).toBe(true)
+	expect(JSON.stringify(listed)).not.toContain(
+		'platform-github-client-secret-value',
+	)
+
+	const joined = await listJoinedIntegrations({
+		env,
+		userId: 'user-platform',
+	})
+	expect(joined[0]?.lane).toBe('platform')
+	expect(joined[0]?.connection.platformAppSlug).toBe('github')
+	expect(joined[0]?.connection.appSlug).toBeNull()
+})
+
+test('upsertPlatformIntegration rejects scopes outside the allowed menu', async () => {
+	const { env } = createPlatformEnv()
+	await provisionGithubPlatformApp(env)
+
+	await expect(
+		upsertPlatformIntegration({
+			env,
+			userId: 'user-platform',
+			platformAppSlug: 'github',
+			scopes: ['admin:org'],
+			accessTokenSecretName: 'githubAccessToken',
+		}),
+	).rejects.toThrow('Scopes not allowed for platform integration "github"')
+})
+
+test('an empty allowed-scope menu is a strict allowlist: only scope-less connects pass', async () => {
+	const { env } = createPlatformEnv()
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			flow: 'confidential',
+			allowedScopes: [],
+			defaultScopes: [],
+		},
+	})
+
+	await expect(
+		upsertPlatformIntegration({
+			env,
+			userId: 'user-strict',
+			platformAppSlug: 'github',
+			scopes: ['repo'],
+			accessTokenSecretName: 'githubAccessToken',
+		}),
+	).rejects.toThrow('Scopes not allowed for platform integration "github"')
+
+	const saved = await upsertPlatformIntegration({
+		env,
+		userId: 'user-strict',
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	expect(saved.authorization?.scopes).toEqual([])
+})
+
+test('upsertPlatformIntegration defaults empty scopes to the app default scopes', async () => {
+	const { env } = createPlatformEnv()
+	await provisionGithubPlatformApp(env)
+
+	const saved = await upsertPlatformIntegration({
+		env,
+		userId: 'user-platform',
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	expect(saved.authorization?.scopes).toEqual(['read:user'])
+})
+
+test('converting a sole-connection user app to the platform lane cleans up the orphan app', async () => {
+	const { env } = createPlatformEnv()
+	await provisionGithubPlatformApp(env)
+	const userId = 'user-converts'
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'confidential',
+			clientId: 'personal-github-client-id',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+				scopeSeparator: null,
+				extraAuthorizeParams: {},
+			},
+		},
+	})
+	expect(await listOauthApps({ env, userId })).toHaveLength(1)
+
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'github',
+		scopes: ['read:user'],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	expect(await listOauthApps({ env, userId })).toHaveLength(0)
+	const joined = await listJoinedIntegrations({ env, userId })
+	expect(joined).toHaveLength(1)
+	expect(joined[0]?.lane).toBe('platform')
+})
+
+test('deleteIntegration removes a platform connection without touching the shared app', async () => {
+	const { env } = createPlatformEnv()
+	await provisionGithubPlatformApp(env)
+
+	await upsertPlatformIntegration({
+		env,
+		userId: 'user-deletes',
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+	expect(
+		await deleteIntegration({ env, userId: 'user-deletes', name: 'github' }),
+	).toBe(true)
+	expect(await listIntegrations({ env, userId: 'user-deletes' })).toEqual([])
+	expect(await getAvailablePlatformApp({ env, slug: 'github' })).not.toBeNull()
+})
+
+test('disabled platform apps reject new connections and hide from availability', async () => {
+	const { env } = createPlatformEnv()
+	const app = await provisionGithubPlatformApp(env)
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: app.slug,
+			clientId: app.clientId,
+			tokenUrl: app.tokenUrl,
+			authorizeUrl: app.authorizeUrl,
+			flow: app.flow,
+			enabled: false,
+		},
+	})
+
+	expect(await listAvailablePlatformApps({ env })).toEqual([])
+	await expect(
+		upsertPlatformIntegration({
+			env,
+			userId: 'user-blocked',
+			platformAppSlug: 'github',
+			scopes: [],
+			accessTokenSecretName: 'githubAccessToken',
+		}),
+	).rejects.toThrow('Platform integration "github" is not available.')
 })

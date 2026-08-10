@@ -10,13 +10,19 @@ import {
 } from '#client/route-loader.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
-import { cardCss, getGhostButtonCss } from '#client/styles/style-primitives.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import {
+	cardCss,
+	fieldCss,
+	fieldLabelCss,
+	getGhostButtonCss,
+	getSelectCss,
+} from '#universal/styles/style-primitives.ts'
 import {
 	type AdminPlatformFeedbackLoaderData,
 	type AdminPlatformFeedbackListItem,
-} from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+} from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import { type Handle, css } from 'remix/ui'
 import {
 	AccountManagementMessage,

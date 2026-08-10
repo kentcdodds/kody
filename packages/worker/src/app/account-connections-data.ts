@@ -1,4 +1,4 @@
-import { type AccountConnectionsLoaderData } from '#app/loader-data.ts'
+import { type AccountConnectionsLoaderData } from '#universal/loader-data.ts'
 import {
 	getEnabledOauthProviders,
 	isOauthProviderId,

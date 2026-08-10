@@ -46,7 +46,7 @@ state:
 - **Values and durable storage.** Configuration and data your packages read and
   write.
 - **An email inbox.** Your assistant gets its own address (like
-  you@inbox.heykody.dev) so services can reach it.
+  you@inbox.heykody.app) so services can reach it.
   ([Email docs](https://github.com/kentcdodds/kody/blob/main/docs/use/email-primitives.md))
 - **OAuth integrations and remote connectors.** Authenticated access to the
   services you actually use.

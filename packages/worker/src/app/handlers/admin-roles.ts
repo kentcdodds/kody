@@ -4,7 +4,7 @@ import { loadAdminRolesData } from '#app/admin-roles-data.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { requireUserWithPermission } from '#app/permissions-server.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createAdminRolesHandler(env: Env) {
 	return {

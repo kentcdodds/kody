@@ -3,7 +3,7 @@ import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
-import { getSignupMode } from '#app/signup-mode.ts'
+import { getSignupMode } from '#universal/signup-mode.ts'
 
 test('public form protection defaults closed, rejects honeypots, and verifies Turnstile', async () => {
 	expect(getSignupMode({} as Pick<Env, 'SIGNUP_MODE'>)).toBe('invite')

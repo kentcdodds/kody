@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
-import { type routes } from '#app/routes.ts'
-import { getPublicOgPage } from '#worker/og/pages.ts'
+import { type routes } from '#universal/routes.ts'
+import { getPublicOgPage } from '#universal/og-pages.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 
 export function createOgPageImageHandler(env: Env) {

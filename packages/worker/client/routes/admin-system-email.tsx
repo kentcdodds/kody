@@ -7,8 +7,8 @@ import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, radius, typography } from '#client/styles/tokens.ts'
-import { cardCss } from '#client/styles/style-primitives.ts'
+import { colors, radius, typography } from '#universal/styles/tokens.ts'
+import { cardCss } from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
@@ -22,13 +22,13 @@ import {
 	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
-import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
-
-const clampedCellCss = css(recordCellClamp(30))
+import { type AdminSystemEmailLoaderData } from '#universal/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+const clampedCellCss = css(recordCellClamp(30))
 
 type PageStatus = 'loading' | 'ready' | 'error'
 

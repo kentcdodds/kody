@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { planLimits } from '#worker/entitlements/plans.ts'
+import { planLimits } from '#universal/plans.ts'
 import { estimateEntitlementStorageEntryBytes } from '#worker/entitlements/service.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'

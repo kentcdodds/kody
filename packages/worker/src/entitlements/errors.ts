@@ -3,7 +3,7 @@ import {
 	parsePlanName,
 	type EntitlementResource,
 	type PlanName,
-} from './plans.ts'
+} from '#universal/plans.ts'
 
 export const entitlementLimitErrorCode = 'entitlement_limit_exceeded' as const
 

@@ -665,7 +665,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		emailAttachmentBlobKey(userId, message.id, attachment.id),
 	)
 
-	await mailbox.purge()
+	await mailbox.purge({ ownerId: userId })
 	expect(await mailbox.countMailbox()).toEqual({
 		threads: 0,
 		messages: 0,
@@ -837,6 +837,58 @@ test('Mailbox upsertDeliveryEvents validates bounds, owns batch, and arms retent
 			await mailbox.listDeliveryEvents({ messageId: message.id, limit: 20 })
 		).some((event) => event.id === 'batch-txn-ok'),
 	).toBe(false)
+})
+
+test('Mailbox restore state is owner-bound and gates normal reads and writes', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const ownerId = uniqueUserId('restore-gate')
+	const otherOwnerId = uniqueUserId('restore-gate-other')
+	const mailbox = rpcFor(ownerId)
+	const message = baseMessage(ownerId, {
+		id: 'restore-gated-message',
+		threadId: null,
+	})
+	await mailbox.upsertMessageGraph({ ownerId, message })
+	const stub = stubFor(ownerId)
+
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.inspectRestoreState({ ownerId: otherOwnerId }),
+		)
+	})
+	await mailbox.beginRestore({ ownerId })
+	expect(await mailbox.inspectRestoreState({ ownerId })).toMatchObject({
+		restorePending: true,
+		empty: false,
+	})
+	expect(await mailbox.countMailbox({ restore: true })).toMatchObject({
+		messages: 1,
+	})
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/restore is in progress/, () =>
+			instance.getMessage({ messageId: message.id }),
+		)
+		await assertMailboxThrows(/restore is in progress/, () =>
+			instance.upsertMessageGraph({
+				ownerId,
+				message: { ...message, updatedAt: '2026-07-01T12:00:01.000Z' },
+			}),
+		)
+		await assertMailboxThrows(/restore is in progress/, () =>
+			instance.upsertDeliveryEvent({
+				ownerId,
+				event: baseDeliveryEvent({
+					id: 'restore-gated-event',
+					messageId: message.id,
+				}),
+			}),
+		)
+	})
+
+	await mailbox.finalizeRestore({ ownerId })
+	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
+		id: message.id,
+	})
 })
 
 test('Mailbox direct and batch delivery-event writes detach tombstoned messages', async () => {

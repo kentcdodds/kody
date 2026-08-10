@@ -387,7 +387,12 @@ declare const secretHeaders: KodySecretHeadersRuntime;
 declare function oauthClientCredentials(
   input: KodyOauthClientCredentialsInput,
 ): Promise<Record<string, unknown>>;
-declare const packageContext: { packageId: string; kodyId: string } | null;
+declare const packageContext: {
+  packageId: string;
+  kodyId: string;
+  appBasePath?: string;
+  hostedUrl?: string;
+} | null;
 declare const serviceContext: { serviceName: string } | null;
 declare const packages: KodyPackagesRuntime | null;
 declare const email: KodyEmailRuntime;
@@ -421,7 +426,12 @@ declare module "kody:runtime" {
   export function oauthClientCredentials(
     input: KodyOauthClientCredentialsInput,
   ): Promise<Record<string, unknown>>;
-  export const packageContext: { packageId: string; kodyId: string } | null;
+  export const packageContext: {
+    packageId: string;
+    kodyId: string;
+    appBasePath?: string;
+    hostedUrl?: string;
+  } | null;
   export const serviceContext: { serviceName: string } | null;
   export const packages: KodyPackagesRuntime | null;
   export const storage: ${

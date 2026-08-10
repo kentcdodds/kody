@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
@@ -31,7 +32,12 @@ import {
 	recordBodyCss,
 	recordCellClamp,
 } from '#client/routes/record-table.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	cardTitleCss,
 	descriptionCss,
@@ -40,7 +46,7 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(26))
 
@@ -63,6 +69,8 @@ type AccountMcpServersPayload = {
 	ok: true
 	email: string
 	username: string
+	oauthClientOrigin: string
+	oauthCallbackUrl: string
 	servers: Array<McpServerListItem>
 	selectedServerId?: string
 }
@@ -179,6 +187,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let servers: Array<McpServerListItem> = []
+	let oauthClientOrigin = ''
+	let oauthCallbackUrl = ''
 	let addName = ''
 	let addUrl = ''
 	let message: string | null = null
@@ -221,6 +231,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountMcpServersPayload) {
 		servers = payload.servers
+		oauthClientOrigin = payload.oauthClientOrigin
+		oauthCallbackUrl = payload.oauthCallbackUrl
 		deleteServerCheck.reset()
 	}
 
@@ -420,6 +432,51 @@ export function AccountMcpServersRoute(handle: Handle) {
 						</button>
 					}
 				/>
+
+				{oauthCallbackUrl ? (
+					<section
+						mix={css({
+							display: 'grid',
+							gap: spacing.sm,
+							padding: spacing.md,
+							borderRadius: radius.md,
+							border: `1px solid ${colors.border}`,
+							backgroundColor: colors.background,
+						})}
+					>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<span mix={css(fieldLabelCss)}>OAuth redirect URI</span>
+							<p mix={css({ ...descriptionCss, margin: 0 })}>
+								If a remote MCP server&apos;s identity provider allowlists
+								client origins or redirect URIs (for example FusionAuth), add
+								{oauthClientOrigin ? ` ${oauthClientOrigin} and` : ''} this
+								exact callback before authorizing.
+							</p>
+						</div>
+						<code
+							mix={css({
+								padding: spacing.sm,
+								borderRadius: radius.md,
+								border: `1px solid ${colors.border}`,
+								backgroundColor: colors.background,
+								color: colors.text,
+								fontFamily: 'monospace',
+								fontSize: typography.fontSize.sm,
+								overflowWrap: 'anywhere',
+							})}
+						>
+							{oauthCallbackUrl}
+						</code>
+						<div>
+							<CopyTextButton
+								value={oauthCallbackUrl}
+								idleLabel="Copy redirect URI"
+								variant="secondary"
+								size="sm"
+							/>
+						</div>
+					</section>
+				) : null}
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -657,6 +714,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 											<div>
 												<a
 													href={server.authUrl}
+													rel="noopener noreferrer"
 													mix={css({
 														...primaryButtonCss,
 														display: 'inline-block',

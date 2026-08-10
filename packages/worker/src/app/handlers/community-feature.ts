@@ -6,7 +6,7 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { setCommunityListingFeatured } from '#worker/community/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'

@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest'
 import { clientRouteAreaNameForPath } from '#client/lazy-route.tsx'
 import { clientRouteLoaders, clientRoutes } from '#client/routes/index.tsx'
-import { oauthPaths } from '#app/oauth-paths.ts'
-import { routePattern } from '#app/route-pattern.ts'
-import { routes } from '#app/routes.ts'
+import { oauthPaths } from '#universal/oauth-paths.ts'
+import { routePattern } from '#universal/route-pattern.ts'
+import { routes } from '#universal/routes.ts'
 
 /**
  * A LazyRoute pattern missing from the preload matcher renders `null` into

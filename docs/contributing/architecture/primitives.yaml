@@ -41,6 +41,7 @@ primitives:
     code:
       - packages/worker/client/
       - packages/worker/src/app/
+      - packages/worker/universal/
     docs:
       - docs/contributing/architecture/request-lifecycle.md
 
@@ -140,6 +141,7 @@ primitives:
     summary: Permissions, roles, admin route guards, and admin MCP metadata.
     code:
       - packages/worker/src/identity/permissions
+      - packages/worker/universal/permissions
       - packages/worker/src/app/handlers/admin-
       - packages/worker/src/mcp/capabilities/admin/
       - packages/worker/src/mcp/capabilities/meta/require-permission.ts
@@ -152,6 +154,7 @@ primitives:
     summary: Per-user plans and assertWithinEntitlement enforcement.
     code:
       - packages/worker/src/entitlements/
+      - packages/worker/universal/plans.ts
     docs:
       - docs/contributing/architecture/entitlements.md
 
@@ -173,6 +176,7 @@ primitives:
     summary: Code-registry flags with D1 state, rollouts, and user overrides.
     code:
       - packages/worker/src/feature-flags/
+      - packages/worker/universal/feature-flags/
     docs:
       - docs/contributing/architecture/feature-flags.md
 
@@ -304,7 +308,8 @@ primitives:
     group: assistant
     name: OAuth integrations
     summary:
-      Per-user OAuth apps and connections; credentials stay in the secret store.
+      Per-user connections over user-owned or platform (built-in) OAuth apps;
+      token secrets stay in the user secret store.
     code:
       - packages/worker/src/integrations/
       - packages/worker/src/mcp/capabilities/integrations/
@@ -525,6 +530,7 @@ primitives:
     summary: recordUsage() events and derived D1 usage_rollups.
     code:
       - packages/worker/src/usage/
+      - packages/worker/universal/usage-event-types.ts
     docs:
       - docs/contributing/architecture/usage-metering.md
 

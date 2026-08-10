@@ -2,16 +2,16 @@ import { type Handle, css } from 'remix/ui'
 import {
 	type GuidesLoaderData,
 	type GuideSummaryLoaderData,
-} from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+} from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, transitions } from '#client/styles/tokens.ts'
-import { hoverMq, pageHeadCss } from '#client/styles/style-primitives.ts'
+import { colors, transitions } from '#universal/styles/tokens.ts'
+import { hoverMq, pageHeadCss } from '#universal/styles/style-primitives.ts'
 
 /**
  * Guides index: the same editorial column as the blog, grouped into

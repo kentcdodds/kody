@@ -72,6 +72,56 @@ export async function decryptStringWithPurpose(
 
 const secretStorePurpose = 'mcp-secret-store'
 
+/**
+ * Platform OAuth client secrets share the SECRET_STORE_KEY KEK but use a
+ * dedicated purpose so their ciphertext is never interchangeable with
+ * `secret_entries` payloads. They live outside the user secret store on
+ * purpose: nothing in the `{{secret:...}}` placeholder namespace can name
+ * them, so sandboxed code has no resolution path to the shared credential.
+ */
+const platformOauthClientSecretPurpose = 'platform-oauth-client-secret'
+
+export async function encryptPlatformOauthClientSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+) {
+	const key = await deriveEncryptionKey(
+		env.SECRET_STORE_KEY,
+		platformOauthClientSecretPurpose,
+	)
+	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
+	const ciphertext = await crypto.subtle.encrypt(
+		{ name: 'AES-GCM', iv },
+		key,
+		textEncoder.encode(value),
+	)
+	return `${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(ciphertext))}`
+}
+
+export async function decryptPlatformOauthClientSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+) {
+	const [ivPart, ciphertextPart] = payload.split('.')
+	if (!ivPart || !ciphertextPart) {
+		throw new Error('Invalid encrypted platform client secret payload.')
+	}
+	try {
+		const key = await deriveEncryptionKey(
+			env.SECRET_STORE_KEY,
+			platformOauthClientSecretPurpose,
+		)
+		const plaintext = await crypto.subtle.decrypt(
+			{ name: 'AES-GCM', iv: base64UrlToBytes(ivPart) },
+			key,
+			base64UrlToBytes(ciphertextPart),
+		)
+		return textDecoder.decode(plaintext)
+	} catch {
+		throw new Error('Unable to decrypt platform client secret.')
+	}
+}
+
 export async function encryptSecretValue(
 	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	value: string,

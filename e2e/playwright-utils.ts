@@ -1,4 +1,4 @@
-import { test as base, expect, type APIRequestContext } from '@playwright/test'
+import { test as base, type APIRequestContext } from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
 import {
 	assignRoleInE2eDatabase,
@@ -7,10 +7,22 @@ import {
 } from './d1-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
+import {
+	assertE2eWebServerAlive,
+	throwIfE2eWebServerDead,
+} from './web-server-liveness.ts'
 
 export * from '@playwright/test'
 
+const authRetryBudgetMs = 15_000
+const authRetryPauseMs = 250
+
 export const test = base.extend<{
+	/**
+	 * Auto fixture: abort immediately when Wrangler has exited mid-suite so
+	 * we do not burn CI retries on ECONNREFUSED for every remaining test.
+	 */
+	ensureE2eWebServerAlive: void
 	insertNewUser(options?: {
 		email?: string
 		username?: string
@@ -30,6 +42,13 @@ export const test = base.extend<{
 		mode?: 'login' | 'signup'
 	}): Promise<{ email: string; username: string; password: string }>
 }>({
+	ensureE2eWebServerAlive: [
+		async ({ baseURL }, use) => {
+			await assertE2eWebServerAlive(baseURL)
+			await use()
+		},
+		{ auto: true },
+	],
 	insertNewUser: async ({ page }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
@@ -77,7 +96,7 @@ export const test = base.extend<{
 			return { email, username, password }
 		})
 	},
-	login: async ({ page }, use) => {
+	login: async ({ page, baseURL }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
 			const username =
@@ -87,29 +106,51 @@ export const test = base.extend<{
 					: usernameFromEmail(email))
 			const password = options?.password ?? primaryTestUser.password
 			const preferredMode = options?.mode
+			const origin = new URL(baseURL ?? 'http://127.0.0.1:3847').origin
 
+			// Manual retry loop (not expect().toPass): connection-refused must
+			// abort immediately instead of polling for the full auth budget
+			// after wrangler has already exited. Cap each request timeout to the
+			// remaining budget so Playwright's 30s API default cannot overrun it.
+			const deadline = Date.now() + authRetryBudgetMs
 			let response!: Awaited<ReturnType<typeof page.request.post>>
-			await expect(async () => {
-				clearAuthRateLimitsInE2eDatabase()
-				if (preferredMode === 'login') {
-					response = await page.request.post('/auth', {
-						data: { email, password, mode: 'login' },
-						headers: { 'Content-Type': 'application/json' },
-					})
-					if (!response.ok()) {
-						throw new Error(
-							`Failed to login user (${response.status()}): ${await readResponseDetail(response)}`,
+			let lastError: unknown
+			for (;;) {
+				const remainingMs = Math.max(0, deadline - Date.now())
+				if (remainingMs === 0) break
+				try {
+					clearAuthRateLimitsInE2eDatabase()
+					if (preferredMode === 'login') {
+						response = await page.request.post('/auth', {
+							data: { email, password, mode: 'login' },
+							headers: { 'Content-Type': 'application/json' },
+							timeout: remainingMs,
+						})
+						if (!response.ok()) {
+							throw new Error(
+								`Failed to login user (${response.status()}): ${await readResponseDetail(response)}`,
+							)
+						}
+					} else {
+						response = await signupOrLoginViaAuth(
+							page.request,
+							{ email, username, password },
+							remainingMs,
 						)
 					}
-					return
+					lastError = undefined
+					break
+				} catch (error) {
+					throwIfE2eWebServerDead(error, origin)
+					lastError = error
+					if (Date.now() >= deadline) break
+					await new Promise((resolve) => setTimeout(resolve, authRetryPauseMs))
 				}
-
-				response = await signupOrLoginViaAuth(page.request, {
-					email,
-					username,
-					password,
-				})
-			}).toPass({ timeout: 15_000 })
+			}
+			if (lastError) throw lastError
+			if (!response) {
+				throw new Error('Failed to authenticate within the auth retry budget.')
+			}
 
 			// `page.request` already shares the browser context's cookie jar, so
 			// the session cookie is registered for the 127.0.0.1 base URL by the
@@ -144,11 +185,15 @@ export const test = base.extend<{
 async function signupOrLoginViaAuth(
 	request: APIRequestContext,
 	credentials: { email: string; username: string; password: string },
+	timeoutMs?: number,
 ) {
 	const { email, username, password } = credentials
+	const requestTimeout =
+		timeoutMs === undefined ? undefined : { timeout: timeoutMs }
 	const signupResponse = await request.post('/auth', {
 		data: { email, username, password, mode: 'signup' },
 		headers: { 'Content-Type': 'application/json' },
+		...requestTimeout,
 	})
 
 	if (signupResponse.status() === 409) {
@@ -161,6 +206,7 @@ async function signupOrLoginViaAuth(
 		const loginResponse = await request.post('/auth', {
 			data: { email, password, mode: 'login' },
 			headers: { 'Content-Type': 'application/json' },
+			...requestTimeout,
 		})
 		if (!loginResponse.ok()) {
 			throw new Error(

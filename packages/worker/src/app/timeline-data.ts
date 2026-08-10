@@ -1,6 +1,6 @@
 import { toPublicCommunityActivityItem } from '#app/community-public.ts'
-import { type TimelineLoaderData } from '#app/loader-data.ts'
-import { timelineEventLimit } from '#app/timeline-display.ts'
+import { type TimelineLoaderData } from '#universal/loader-data.ts'
+import { timelineEventLimit } from '#universal/timeline-display.ts'
 import { getCommunityTimeline } from '#worker/community/social-service.ts'
 
 export async function loadTimelineData(input: {

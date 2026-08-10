@@ -14,10 +14,7 @@ import {
 	userHasPermission,
 	userHasRole,
 } from '#app/permissions-server.ts'
-import {
-	type PermissionString,
-	type RoleName,
-} from '#worker/identity/permissions.ts'
+import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -241,6 +238,23 @@ test('getUserRolesAndPermissions returns empty arrays for users with no roles', 
 	const { db } = createRbacTestDb()
 	const result = await getUserRolesAndPermissions(db, 99)
 	expect(result).toEqual({ roles: [], permissions: [] })
+})
+
+test('getUserRolesAndPermissions still returns roles when permission columns are null', async () => {
+	const { db } = createRbacTestDb([
+		{
+			user_id: 1,
+			role_id: 2,
+			role_name: 'admin',
+			action: null as unknown as string,
+			entity: null as unknown as string,
+			access: null as unknown as string,
+		},
+	])
+
+	const result = await getUserRolesAndPermissions(db, 1)
+	expect(result.roles).toEqual(['admin'])
+	expect(result.permissions).toEqual([])
 })
 
 test('userHasPermission and userHasRole perform pure membership checks', () => {

@@ -1,4 +1,4 @@
-import { type AccountBillingLoaderData } from '#app/loader-data.ts'
+import { type AccountBillingLoaderData } from '#universal/loader-data.ts'
 import {
 	getPurchasablePlans,
 	isBillingConfigured,
@@ -10,7 +10,7 @@ import {
 	parseStripePlanName,
 	resolveEffectivePlan,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 
 const billingErrorMessages: Record<string, string> = {
 	billing_not_configured: 'Billing is not configured on this deployment.',

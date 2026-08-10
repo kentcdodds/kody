@@ -5,6 +5,7 @@ import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 const mockModule = vi.hoisted(() => ({
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
+	readAuthenticatedAppUser: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -12,6 +13,11 @@ vi.mock('#worker/community/service.ts', () => ({
 		mockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
 		mockModule.searchCommunityListings(...args),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: (...args: Array<unknown>) =>
+		mockModule.readAuthenticatedAppUser(...args),
 }))
 
 const sampleListing = {
@@ -47,6 +53,7 @@ const sampleListing = {
 const env = {} as Env
 
 test('community API lists active listings and searches when q is provided', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])

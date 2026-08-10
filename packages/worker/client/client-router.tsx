@@ -1,6 +1,6 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 import { applyDocumentHead } from './document-head.ts'
 import {
 	abortIntentPrefetch,

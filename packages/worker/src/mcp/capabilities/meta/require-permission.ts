@@ -2,7 +2,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	type PermissionString,
 	userHasPermission,
-} from '#worker/identity/permissions.ts'
+} from '#universal/permissions.ts'
 import { requireMcpUser } from './require-user.ts'
 
 export function requireMcpUserWithPermission(

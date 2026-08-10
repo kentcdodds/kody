@@ -1,16 +1,18 @@
 import { type Handle, css } from 'remix/ui'
-import * as popover from 'remix/ui/popover'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
-import { colors, typography } from '#client/styles/tokens.ts'
+import { colors, typography } from '#universal/styles/tokens.ts'
 import {
 	starterCardCss,
+	starterCopyPromptTooltipCss,
 	starterGhostButtonCss,
-	starterTooltipSurfaceCss,
+	starterRowCss,
 } from '#client/routes/onboarding-starter-card.tsx'
 
 type OnboardingDiyCardProps = {
 	setupPrompt: string
+	/** `row` matches the compact "Advanced" starter list. */
+	variant?: 'card' | 'row'
 }
 
 const copyPromptTooltip =
@@ -24,17 +26,6 @@ const copyPromptTooltip =
 export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 	let copyState: 'idle' | 'copied' | 'error' = 'idle'
 	let copyResetTimerId: ReturnType<typeof setTimeout> | null = null
-	let tooltipOpen = false
-
-	function openTooltip() {
-		tooltipOpen = true
-		handle.update()
-	}
-
-	function closeTooltip() {
-		tooltipOpen = false
-		handle.update()
-	}
 
 	async function copyPrompt() {
 		try {
@@ -53,30 +44,28 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 		}, 2000)
 	}
 
-	return () => (
-		<li mix={css(diyCardCss)} data-testid="onboarding-diy-card">
-			<div mix={css(diyBodyCss)}>
-				<em mix={css(diyEyebrowCss)}>Build it yourself</em>
-				<strong mix={css(diyTitleCss)}>Choose your own adventure</strong>
-				<span mix={css(diyDescriptionCss)}>
-					Skip the starters and ask your agent what Kody can do — connect an
-					integration, explore, and build something custom.
-				</span>
-			</div>
-			<popover.Context>
+	return () => {
+		const isRow = handle.props.variant === 'row'
+		return (
+			<li
+				mix={css(isRow ? diyRowCss : diyCardCss)}
+				data-testid="onboarding-diy-card"
+			>
+				<div mix={css(isRow ? diyRowBodyCss : diyBodyCss)}>
+					<em mix={css(diyEyebrowCss)}>Build it yourself</em>
+					<strong mix={css(diyTitleCss)}>Choose your own adventure</strong>
+					<span mix={css(diyDescriptionCss)}>
+						Skip the starters and ask your agent what Kody can do — connect an
+						integration, explore, and build something custom.
+					</span>
+				</div>
 				<button
 					type="button"
 					aria-describedby="onboarding-diy-prompt-tip"
 					disabled={!handle.props.setupPrompt}
 					mix={[
-						css(starterGhostButtonCss),
-						popover.anchor({ placement: 'top' }),
-						popover.focusOnHide(),
+						css(isRow ? diyRowCopyButtonCss : diyCopyButtonCss),
 						on('click', () => void copyPrompt()),
-						on('pointerenter', openTooltip),
-						on('pointerleave', closeTooltip),
-						on('focus', openTooltip),
-						on('blur', closeTooltip),
 					]}
 					data-testid="onboarding-diy-copy"
 				>
@@ -85,26 +74,13 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 						: copyState === 'error'
 							? 'Copy failed'
 							: 'Copy prompt'}
+					<span id="onboarding-diy-prompt-tip" role="tooltip">
+						{copyPromptTooltip}
+					</span>
 				</button>
-				<div
-					id="onboarding-diy-prompt-tip"
-					role="tooltip"
-					mix={[
-						css(starterTooltipSurfaceCss),
-						popover.surface({
-							open: tooltipOpen,
-							closeOnAnchorClick: false,
-							onHide() {
-								closeTooltip()
-							},
-						}),
-					]}
-				>
-					{copyPromptTooltip}
-				</div>
-			</popover.Context>
-		</li>
-	)
+			</li>
+		)
+	}
 }
 
 const diyCardCss = {
@@ -139,4 +115,32 @@ const diyDescriptionCss = {
 	color: colors.textMuted,
 	fontSize: '0.88rem',
 	lineHeight: 1.45,
+}
+
+const diyCopyButtonCss = {
+	...starterGhostButtonCss,
+	...starterCopyPromptTooltipCss,
+}
+
+const diyRowCss = {
+	...starterRowCss,
+	borderStyle: 'dashed' as const,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.07)`,
+}
+
+const diyRowBodyCss = {
+	flex: 1,
+	display: 'grid',
+	gap: '0.1rem',
+	minWidth: 'min(16rem, 100%)',
+	textAlign: 'left' as const,
+	justifyItems: 'start',
+}
+
+const diyRowCopyButtonCss = {
+	...starterGhostButtonCss,
+	...starterCopyPromptTooltipCss,
+	width: 'auto',
+	flex: 'none',
+	fontSize: '0.9rem',
 }

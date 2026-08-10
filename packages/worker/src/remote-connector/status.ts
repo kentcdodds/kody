@@ -72,6 +72,24 @@ function createErrorStatus(
 	}
 }
 
+/**
+ * Stable phrases from `formatRemoteConnectorUnavailableMessage`. MCP
+ * observability and Sentry `beforeSend` depend on them so offline / empty /
+ * unauthenticated connector states stay on structured `mcp-event` logs and
+ * out of Sentry (caller-clearable user state, not platform defects).
+ */
+const remoteConnectorUnavailablePhrases = [
+	'Kody cannot use this connector until it reconnects',
+	'Capabilities from this connector cannot be searched or used until it exposes tools',
+	'Kody cannot use this connector from this session',
+] as const
+
+export function isRemoteConnectorUnavailableMessage(message: string) {
+	return remoteConnectorUnavailablePhrases.some((phrase) =>
+		message.includes(phrase),
+	)
+}
+
 export function formatRemoteConnectorUnavailableMessage(
 	status: RemoteConnectorStatus,
 ) {

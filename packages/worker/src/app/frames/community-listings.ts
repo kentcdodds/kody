@@ -1,8 +1,8 @@
 import { loadCommunityIndexData } from '#app/community-data.ts'
 import { renderCommunityListingsContentHtml } from '#app/community-listings-content.tsx'
-import { COMMUNITY_LISTINGS_TARGET } from '#app/community-frame-constants.ts'
+import { COMMUNITY_LISTINGS_TARGET } from '#universal/community-frame-constants.ts'
 import { registerFrame } from '#app/frame-registry.ts'
-import { routes } from '#app/routes.ts'
+import { routes } from '#universal/routes.ts'
 
 registerFrame(COMMUNITY_LISTINGS_TARGET, {
 	route: routes.community,

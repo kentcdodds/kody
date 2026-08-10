@@ -1,6 +1,6 @@
 import { type Handle, css } from 'remix/ui'
-import { type AccountStarsLoaderData } from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
+import { type AccountStarsLoaderData } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -16,14 +16,14 @@ import {
 	AccountManagementShell,
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
-import { type PublicCommunityListing } from '#app/community-public-types.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { type PublicCommunityListing } from '#universal/community-public-types.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
 	getDangerPillCss,
 	mutedLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const accountStarsApiPath = routes.accountStarsApi.href()
 

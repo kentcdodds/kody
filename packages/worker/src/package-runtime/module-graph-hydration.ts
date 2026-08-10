@@ -39,16 +39,28 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		)
 	}
 	const parsed = parseKodyPackageSpecifier(input.specifier)
-	const row = await resolveSavedPackageImport({
+	// This lane rebuilds and persists artifacts under the caller's identity,
+	// which must never happen for platform-owned sources — platform packages
+	// resolve through static imports only.
+	const resolution = await resolveSavedPackageImport({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		specifier: parsed,
+		allowPlatformScopes: false,
 	})
-	if (!row) {
+	if (!resolution) {
+		const platformResolution = await resolveSavedPackageImport({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			specifier: parsed,
+		})
 		throw new Error(
-			`Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
+			platformResolution?.platformScope
+				? `Dynamic import of platform package "${parsed.packageName}" is unsupported. Use a static import (import x from "${input.specifier}") — it resolves live from the platform scope.`
+				: `Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
 		)
 	}
+	const { row } = resolution
 	const loaded = await loadPackageSourceBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,

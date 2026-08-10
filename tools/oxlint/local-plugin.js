@@ -1,6 +1,7 @@
 const EXAMPLE_IDENTIFIER = '__oxlint_plugin_example__'
 const CLIENT_ROUTE_FILE_PATTERN =
 	/(^|\/)packages\/worker\/client\/routes\/.+\.(ts|tsx)$/
+const TEST_FILE_PATTERN = /\.(?:test|spec)\.[^.]+$/
 const SHARED_LOADER_DATA_TYPE_NAMES = new Set([
 	'AccountSecretListItem',
 	'AccountSecretDetail',
@@ -51,6 +52,10 @@ function normalizeFilePath(filename) {
 
 function isClientRouteFile(filename) {
 	return CLIENT_ROUTE_FILE_PATTERN.test(normalizeFilePath(filename))
+}
+
+function isTestFile(filename) {
+	return TEST_FILE_PATTERN.test(normalizeFilePath(filename))
 }
 
 function shouldImportSharedLoaderDataType(typeName) {
@@ -112,7 +117,7 @@ const preferLoaderDataTypesRule = {
 		schema: [],
 		messages: {
 			importFromLoaderData:
-				'Import shared payload types from #app/loader-data.ts instead of redeclaring this type in a client route.',
+				'Import shared payload types from #universal/loader-data.ts instead of redeclaring this type in a client route.',
 		},
 	},
 	createOnce(context) {
@@ -141,10 +146,11 @@ const preferLoaderDataTypesRule = {
 
 /**
  * Enforced import direction between worker layers. `#app/*` is the HTTP/UI
- * layer, `#mcp/*` is the capability layer beneath it, and the rest of
- * `#worker/*` holds primitives both layers build on. Imports may only point
- * downward, so shared code has to be extracted into a neutral `#worker/*`
- * module instead of growing a cycle.
+ * layer, `#mcp/*` is the capability layer beneath it, `#universal/*` is the
+ * client-safe contract layer both the browser bundle and the worker may
+ * import, and the rest of `#worker/*` holds server primitives. Imports may
+ * only point downward, so shared code has to be extracted into a neutral
+ * `#worker/*` or `#universal/*` module instead of growing a cycle.
  *
  * Each boundary lists the `allowedSpecifiers` that still cross it. Add to a
  * list only with a `reason` explaining why the edge cannot be extracted yet —
@@ -154,9 +160,9 @@ export const importBoundaries = [
 	{
 		id: 'mcp-to-app',
 		filePattern: /(^|\/)packages\/worker\/src\/mcp\/.+$/,
-		forbiddenPrefix: '#app/',
+		forbiddenPrefixes: ['#app/'],
 		message:
-			'#mcp/* must not import from #app/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
+			'#mcp/* must not import from #app/*. Extract the shared code into a neutral #worker/* or #universal/* module (see docs/contributing/import-boundaries.md).',
 		allowedSpecifiers: [],
 		/**
 		 * Never allowlisted: request handlers are the top of the app layer, so
@@ -164,19 +170,47 @@ export const importBoundaries = [
 		 */
 		neverAllowedPrefix: '#app/handlers/',
 		neverAllowedMessage:
-			'#mcp/* must never import an #app/handlers/* request handler. Move the shared logic into a neutral #worker/* module.',
+			'#mcp/* must never import an #app/handlers/* request handler. Move the shared logic into a neutral #worker/* or #universal/* module.',
 	},
 	{
 		id: 'package-registry-to-mcp',
 		filePattern: /(^|\/)packages\/worker\/src\/package-registry\/.+$/,
-		forbiddenPrefix: '#mcp/',
+		forbiddenPrefixes: ['#mcp/'],
 		message:
-			'#worker/package-registry/* must not import from #mcp/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
+			'#worker/package-registry/* must not import from #mcp/*. Extract the shared code into a neutral #worker/* or #universal/* module (see docs/contributing/import-boundaries.md).',
+		allowedSpecifiers: [],
+		neverAllowedPrefix: null,
+		neverAllowedMessage: null,
+	},
+	{
+		id: 'client-to-server',
+		filePattern: /(^|\/)packages\/worker\/(client|universal)\/.+$/,
+		forbiddenPrefixes: ['#app/', '#worker/', '#mcp/'],
+		message:
+			'Client and universal modules must not import #app/*, #worker/*, or #mcp/*. Put the shared contract in #universal/* (see docs/contributing/import-boundaries.md).',
+		allowedSpecifiers: [],
+		neverAllowedPrefix: null,
+		neverAllowedMessage: null,
+		skipTestFiles: true,
+	},
+	{
+		id: 'universal-to-client',
+		filePattern: /(^|\/)packages\/worker\/universal\/.+$/,
+		forbiddenPrefixes: ['#client/'],
+		message:
+			'#universal/* must not import #client/*. Shared UI tokens and components belong in #universal/* so SSR and the client bundle can both use them.',
 		allowedSpecifiers: [],
 		neverAllowedPrefix: null,
 		neverAllowedMessage: null,
 	},
 ]
+
+function getForbiddenPrefixes(boundary) {
+	if (Array.isArray(boundary.forbiddenPrefixes)) {
+		return boundary.forbiddenPrefixes
+	}
+	return boundary.forbiddenPrefix ? [boundary.forbiddenPrefix] : []
+}
 
 function findBoundaryViolation(boundary, specifier) {
 	if (
@@ -185,7 +219,10 @@ function findBoundaryViolation(boundary, specifier) {
 	) {
 		return boundary.neverAllowedMessage
 	}
-	if (!specifier.startsWith(boundary.forbiddenPrefix)) return null
+	const matchesForbidden = getForbiddenPrefixes(boundary).some((prefix) =>
+		specifier.startsWith(prefix),
+	)
+	if (!matchesForbidden) return null
 	const allowed = boundary.allowedSpecifiers.some(
 		(entry) => entry.specifier === specifier,
 	)
@@ -198,9 +235,10 @@ function findBoundaryViolation(boundary, specifier) {
  */
 export function getImportBoundariesForFile(filename) {
 	const normalized = normalizeFilePath(filename)
-	return importBoundaries.filter((boundary) =>
-		boundary.filePattern.test(normalized),
-	)
+	return importBoundaries.filter((boundary) => {
+		if (boundary.skipTestFiles && isTestFile(normalized)) return false
+		return boundary.filePattern.test(normalized)
+	})
 }
 
 /**
@@ -220,7 +258,7 @@ const enforceImportBoundariesRule = {
 		type: 'problem',
 		docs: {
 			description:
-				'Enforce the worker layer import direction so the mcp/app and package-registry/mcp cycles cannot grow.',
+				'Enforce worker layer import direction so mcp/app, package-registry/mcp, and client/server cycles cannot grow.',
 		},
 		schema: [],
 		messages: {

@@ -213,9 +213,102 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				}),
 			}),
 		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'remote:home:bond_shade_set_position',
+			domain: 'remote:home',
+			capabilitySource: 'remote-connector',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
+			cause: new Error(
+				'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
+			),
+		})
+
+		// User SQL against a storage bucket (KODY-CLOUDFLARE-44). Plain Error
+		// form — Durable Object RPC loses subclass identity.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'storage_query',
+			domain: 'storage',
+			capabilitySource: 'builtin',
+			conversationId: 'conv-storage-1',
+			storageId: 'storage-notes-1',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'no such table: notes: SQLITE_ERROR',
+			context: {
+				sqlPreview: 'SELECT * FROM notes LIMIT 1',
+			},
+			cause: new Error('no such table: notes: SQLITE_ERROR'),
+		})
+
+		// Published repo session (KODY-CLOUDFLARE-4A). Plain Error from DO RPC.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_status',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'Repo session "de72ddd6-e277-4f69-a5db-3d6ece06ca6b" is published; open a new session before continuing.',
+			cause: new Error(
+				'Repo session "de72ddd6-e277-4f69-a5db-3d6ece06ca6b" is published; open a new session before continuing.',
+			),
+		})
+
+		// Invalid repo_search regex (KODY-CLOUDFLARE-49). Plain Error from DO RPC.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_search',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'repo_search received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
+			cause: new Error(
+				'repo_search received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
+			),
+		})
+
+		// package_save destructive overwrite confirmation (issue 7661329778).
+		// Plain Error from shared source-safety-policy helpers.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'package_save',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'package_save would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
+			cause: new Error(
+				'package_save would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
+			),
+		})
+
+		// Downstream user-connected MCP server tool failure (KODY-CLOUDFLARE-4B).
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'mcp:supermemory:listMemories',
+			domain: 'mcp:supermemory',
+			capabilitySource: 'mcp-server',
+			failurePhase: 'handler',
+			errorName: 'McpCallerError',
+			errorMessage:
+				'MCP server capability "supermemory:listMemories" failed: ProtocolError: Structured content does not match the tool\'s output schema',
+			cause: new McpCallerError(
+				'MCP server capability "supermemory:listMemories" failed: ProtocolError: Structured content does not match the tool\'s output schema',
+			),
+		})
 	})
 
-	expect(payloads).toHaveLength(11)
+	expect(payloads).toHaveLength(17)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
@@ -249,18 +342,16 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'storage_query',
-			domain: 'storage',
-			capabilitySource: 'builtin',
-			conversationId: 'conv-storage-1',
-			storageId: 'storage-notes-1',
+			capabilityName: 'remote:home:bond_shade_set_position',
+			domain: 'remote:home',
+			capabilitySource: 'remote-connector',
 			failurePhase: 'handler',
 			errorName: 'Error',
-			errorMessage: 'no such table: notes: SQLITE_ERROR',
-			context: {
-				sqlPreview: 'SELECT * FROM notes LIMIT 1',
-			},
-			cause: new Error('no such table: notes: SQLITE_ERROR'),
+			errorMessage:
+				'Remote capability "home:bond_shade_set_position" failed: timeout',
+			cause: new Error(
+				'Remote capability "home:bond_shade_set_position" failed: timeout',
+			),
 		})
 	})
 
@@ -276,7 +367,8 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
 		3,
 		expect.objectContaining({
-			message: 'no such table: notes: SQLITE_ERROR',
+			message:
+				'Remote capability "home:bond_shade_set_position" failed: timeout',
 		}),
 	)
 	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')
@@ -288,16 +380,6 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			hasUser: true,
 			errorMessage: 'platform handler blew up',
 			detail: undefined,
-		}),
-	)
-	expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
-		'mcp',
-		expect.objectContaining({
-			conversationId: 'conv-storage-1',
-			storageId: 'storage-notes-1',
-			detail: {
-				sqlPreview: 'SELECT * FROM notes LIMIT 1',
-			},
 		}),
 	)
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()

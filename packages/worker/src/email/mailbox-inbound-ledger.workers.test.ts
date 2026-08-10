@@ -527,7 +527,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 				row.row.provider === mailboxInboundProvider,
 		),
 	).toBe(true)
-	await mailboxA.purge()
+	await mailboxA.purge({ ownerId: ownerA })
 	expect(
 		await mailboxA.getInboundDelivery({
 			ownerId: ownerA,

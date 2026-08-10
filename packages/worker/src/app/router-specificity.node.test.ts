@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { createRouter } from 'remix/router'
-import { routePattern } from '#app/route-pattern.ts'
-import { routes } from '#app/routes.ts'
+import { routePattern } from '#universal/route-pattern.ts'
+import { routes } from '#universal/routes.ts'
 
 function createStubHandler(name: string) {
 	return {

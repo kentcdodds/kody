@@ -1,5 +1,5 @@
 import { type Handle, css } from 'remix/ui'
-import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
+import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -14,16 +14,16 @@ import {
 	type AccountConnectionsLoaderData,
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
-} from '#app/loader-data.ts'
-import { routes } from '#app/routes.ts'
-import { UserAvatar } from '#app/user-avatar.tsx'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+} from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
+import { UserAvatar } from '#universal/user-avatar.tsx'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 	mutedLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import {
 	type AccountStatus,

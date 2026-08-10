@@ -12,8 +12,13 @@ import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
-import { getGhostButtonCss } from '#client/styles/style-primitives.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	accountDisclosureCss,
 	AccountManagementMessage,
@@ -30,6 +35,7 @@ import {
 	RecordTableSearch,
 	RecordTableSelect,
 	recordBodyCss,
+	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
 import {
@@ -38,7 +44,7 @@ import {
 	type AccountPackagesAppFilter,
 	type AccountPackagesLoaderData,
 	type AccountPackagesSort,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -401,19 +407,19 @@ export function AccountPackagesRoute(handle: Handle) {
 						{ key: 'kodyId', label: 'Kody id', drop: 2 },
 						{ key: 'hasApp', label: 'App' },
 						{ key: 'tags', label: 'Tags', drop: 1 },
-						{ key: 'updated', label: 'Updated' },
+						{ key: 'updated', label: 'Updated', drop: 3 },
 					]}
 					rows={packages.map((pkg) => ({
 						id: pkg.id,
 						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
 						cells: {
-							name: pkg.name,
+							name: <span mix={css(recordCellClamp(36))}>{pkg.name}</span>,
 							kodyId: (
 								<code
 									mix={css({
 										fontSize: '0.8rem',
 										color: colors.textMuted,
-										whiteSpace: 'nowrap',
+										...recordCellClamp(28),
 									})}
 								>
 									{pkg.kodyId}

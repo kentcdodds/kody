@@ -1,17 +1,26 @@
 # Import boundaries
 
-`packages/worker/src` has three layers, and imports may only point downward:
+`packages/worker` has four layers, and imports may only point downward:
 
-| Layer                                       | Path                       | Holds                                                                                     |
-| ------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
-| App (`#app/*`)                              | `packages/worker/src/app/` | Request handlers, loader payload types, the typed route table, SSR and client-facing code |
-| MCP capabilities (`#mcp/*`)                 | `packages/worker/src/mcp/` | The MCP server, capability registry, capability implementations                           |
-| Shared primitives (the rest of `#worker/*`) | `packages/worker/src/`     | Domain services, repositories, and infrastructure both layers build on                    |
+| Layer                                       | Path                         | Holds                                                                                                 |
+| ------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
+| App (`#app/*`)                              | `packages/worker/src/app/`   | Request handlers, SSR, and other server-only HTTP/UI code                                             |
+| MCP capabilities (`#mcp/*`)                 | `packages/worker/src/mcp/`   | The MCP server, capability registry, capability implementations                                       |
+| Shared primitives (the rest of `#worker/*`) | `packages/worker/src/`       | Domain services, repositories, and infrastructure both server layers build on                         |
+| Universal (`#universal/*`)                  | `packages/worker/universal/` | Client-safe contracts, registries, display helpers, and UI primitives the browser bundle also imports |
 
-The app layer may import MCP capabilities and shared primitives. MCP
-capabilities may import shared primitives. Nothing may import upward. When two
-layers need the same code, extract it into a neutral `#worker/*` module rather
-than reaching sideways or upward.
+The app layer may import MCP capabilities, shared primitives, and universal
+modules. MCP capabilities may import shared primitives and universal modules.
+Shared primitives may import universal modules. The browser client (`#client/*`)
+may import universal modules and other client modules. Nothing may import
+upward.
+
+When two layers need the same code, extract it into `#universal/*` if the
+browser must import it, or into a neutral `#worker/*` module if it is
+server-only.
+
+Do not grow `packages/worker/tsconfig-client.json` with individual worker files.
+That config includes `client/**` and `universal/**` only.
 
 ## What is enforced
 
@@ -20,14 +29,18 @@ than reaching sideways or upward.
 
 - any `#app/*` import from a file under `packages/worker/src/mcp/`
 - any `#mcp/*` import from a file under `packages/worker/src/package-registry/`
+- any `#app/*`, `#worker/*`, or `#mcp/*` import from `packages/worker/client/**`
+  or `packages/worker/universal/**` (except client test files that assert
+  server/client parity)
+- any `#client/*` import from `packages/worker/universal/**`
 
 The rule covers static imports, re-exports (`export … from`), dynamic
 `import()`, and `vi.mock` / `vi.unmock` specifiers, so tests cannot route around
 it.
 
 `#app/handlers/*` is never allowlistable from `#mcp/*`. A capability that needs
-handler logic is the wrong shape — the shared part belongs in a `#worker/*`
-module that both the handler and the capability call.
+handler logic is the wrong shape — the shared part belongs in a `#worker/*` or
+`#universal/*` module that both the handler and the capability call.
 
 ## Adding to the allowlist
 
@@ -48,7 +61,3 @@ These are not covered by the rule yet:
 - Several non-MCP subsystems (`#worker/community/*`, `#worker/email/*`,
   `#worker/webhooks/*`) still import `#app/*` data modules. Extending the rule
   to all of `#worker/*` would need those extracted first.
-- The admin data readers under `#worker/admin/*` take their payload envelope
-  types from `#app/loader-data.ts`. The import is type-only and erased at build
-  time, but relocating the shared loader payload contract out of the app layer
-  would remove it.

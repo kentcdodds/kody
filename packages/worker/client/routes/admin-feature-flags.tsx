@@ -5,7 +5,7 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
@@ -15,7 +15,7 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	getSelectCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
@@ -29,12 +29,12 @@ import {
 import {
 	type AdminFeatureFlag,
 	type AdminFeatureFlagsLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import {
 	missingSuccessMetricNotice,
 	type FeatureFlagSuccessMetricMeasure,
-} from '#worker/feature-flags/registry.ts'
-import { type FeatureFlagMetricCohort } from '#worker/feature-flags/types.ts'
+} from '#universal/feature-flags/registry.ts'
+import { type FeatureFlagMetricCohort } from '#universal/feature-flags/types.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,

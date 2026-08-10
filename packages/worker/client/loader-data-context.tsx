@@ -1,7 +1,7 @@
 import { type Handle, type RemixNode } from 'remix/ui'
 import { tryConsumePreloadedLoaderData } from '#client/navigation-data.ts'
 import { readSsrRouterUrl } from '#client/router-location.tsx'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 
 export type AppLoaderDataContextValue = {
 	loaderData?: AppLoaderData

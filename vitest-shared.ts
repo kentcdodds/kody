@@ -29,6 +29,10 @@ export const sharedProjectConfig = {
 				replacement: `${resolve(rootDir, 'packages/worker/client')}/`,
 			},
 			{
+				find: /^#universal\//,
+				replacement: `${resolve(rootDir, 'packages/worker/universal')}/`,
+			},
+			{
 				find: /^#worker\//,
 				replacement: `${resolve(rootDir, 'packages/worker/src')}/`,
 			},

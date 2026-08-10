@@ -9,6 +9,7 @@ import {
 import { runGetCapability } from './run-get.ts'
 import { runListCapability } from './run-list.ts'
 import { runSummaryCapability } from './run-summary.ts'
+import { runUpdateBulkCapability } from './run-update-bulk.ts'
 import { runUpdateCapability } from './run-update.ts'
 
 // The first Durable Object class load in a workers-unit file costs ~10s in the
@@ -92,6 +93,195 @@ test(
 				{ env, callerContext },
 			),
 		).rejects.toThrow(/Authenticated MCP user/)
+		await expect(
+			runUpdateBulkCapability.handler(
+				{ run_ids: ['missing'], triage: 'ignored' },
+				{ env, callerContext },
+			),
+		).rejects.toThrow(/Authenticated MCP user/)
+	},
+	runLogSuiteTimeoutMs,
+)
+
+test(
+	'run_update_bulk previews and exactly scopes bounded non-destructive triage',
+	async () => {
+		const ownerId = uniqueUserId('bulk-triage')
+		const ownerContext = buildCallerContext({
+			userId: ownerId,
+			email: `${ownerId}@example.com`,
+		})
+		const baseMs = Date.now() - 60_000
+		const cases = [
+			{
+				id: 'job-a-duplicate-1',
+				jobId: 'job-a',
+				message: 'free plan limit reached',
+			},
+			{
+				id: 'job-a-duplicate-2',
+				jobId: 'job-a',
+				message: 'free plan limit reached',
+			},
+			{
+				id: 'job-b-same-message',
+				jobId: 'job-b',
+				message: 'free plan limit reached',
+			},
+			{
+				id: 'job-a-other-error',
+				jobId: 'job-a',
+				message: 'different failure',
+			},
+		] as const
+		for (const [index, entry] of cases.entries()) {
+			await finishRun({
+				userId: ownerId,
+				id: entry.id,
+				startedAt: new Date(baseMs + index).toISOString(),
+				context: baseContext({
+					surface: 'job',
+					jobId: entry.jobId,
+					name: 'recurring-job',
+				}),
+				status: 'error',
+				error: new Error(entry.message),
+			})
+		}
+		await finishRun({
+			userId: ownerId,
+			id: 'successful-run',
+			startedAt: new Date(baseMs + 10).toISOString(),
+			context: baseContext({
+				surface: 'webhook',
+				name: 'successful-webhook',
+			}),
+			status: 'success',
+		})
+
+		const preview = await runUpdateBulkCapability.handler(
+			{
+				filter: {
+					job_id: 'job-a',
+					error_message: 'free plan limit reached',
+				},
+				triage: 'resolved',
+				note: 'entitlements fix deployed',
+				limit: 1,
+				dry_run: true,
+			},
+			{ env, callerContext: ownerContext },
+		)
+		expect(preview).toMatchObject({
+			updated_count: 0,
+			has_more: true,
+			dry_run: true,
+		})
+		expect(preview.matched_run_ids).toHaveLength(1)
+
+		const first = await runUpdateBulkCapability.handler(
+			{
+				filter: {
+					job_id: 'job-a',
+					error_message: 'free plan limit reached',
+				},
+				triage: 'resolved',
+				note: 'entitlements fix deployed',
+				limit: 1,
+			},
+			{ env, callerContext: ownerContext },
+		)
+		expect(first.updated_count).toBe(1)
+		expect(first.has_more).toBe(true)
+		const second = await runUpdateBulkCapability.handler(
+			{
+				filter: {
+					job_id: 'job-a',
+					error_message: 'free plan limit reached',
+				},
+				triage: 'resolved',
+				note: 'entitlements fix deployed',
+				limit: 1,
+			},
+			{ env, callerContext: ownerContext },
+		)
+		expect(second.updated_count).toBe(1)
+		expect(second.has_more).toBe(false)
+
+		const allErrors = await runListCapability.handler(
+			{ status: 'error', error_triage: 'all', limit: 10 },
+			{ env, callerContext: ownerContext },
+		)
+		const byId = new Map(allErrors.runs.map((run) => [run.id, run]))
+		for (const id of ['job-a-duplicate-1', 'job-a-duplicate-2']) {
+			expect(byId.get(id)).toMatchObject({
+				status: 'error',
+				error_message: 'free plan limit reached',
+				error_triage: 'resolved',
+				triage_note: 'entitlements fix deployed',
+				triaged_by: ownerId,
+			})
+		}
+		expect(byId.get('job-b-same-message')?.error_triage).toBeNull()
+		expect(byId.get('job-a-other-error')?.error_triage).toBeNull()
+
+		const explicitIds = await runUpdateBulkCapability.handler(
+			{
+				run_ids: ['job-b-same-message', 'successful-run'],
+				triage: 'ignored',
+				note: 'known duplicate',
+			},
+			{ env, callerContext: ownerContext },
+		)
+		expect(explicitIds).toMatchObject({
+			matched_run_ids: ['job-b-same-message'],
+			updated_count: 1,
+			has_more: false,
+		})
+		const successful = await runGetCapability.handler(
+			{ run_id: 'successful-run' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(successful.run).toMatchObject({
+			status: 'success',
+			error_triage: null,
+		})
+
+		const summary = await runSummaryCapability.handler(
+			{},
+			{ env, callerContext: ownerContext },
+		)
+		expect(summary).toMatchObject({
+			total: 5,
+			errors: 1,
+			ignored: 1,
+			resolved: 2,
+		})
+
+		// Reopening explicit ids updates only triaged rows; an already-open
+		// error is not counted as a match or update.
+		const reopened = await runUpdateBulkCapability.handler(
+			{
+				run_ids: ['job-b-same-message', 'job-a-other-error'],
+				triage: 'open',
+			},
+			{ env, callerContext: ownerContext },
+		)
+		expect(reopened).toMatchObject({
+			matched_run_ids: ['job-b-same-message'],
+			updated_count: 1,
+			has_more: false,
+		})
+		const afterReopen = await runSummaryCapability.handler(
+			{},
+			{ env, callerContext: ownerContext },
+		)
+		expect(afterReopen).toMatchObject({
+			total: 5,
+			errors: 2,
+			ignored: 0,
+			resolved: 2,
+		})
 	},
 	runLogSuiteTimeoutMs,
 )

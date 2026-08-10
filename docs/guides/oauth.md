@@ -30,6 +30,21 @@ Example shape:
 
 `https://heykody.app/connect/oauth?provider=...&authorizeUrl=...&tokenUrl=...`
 
+## Built-in (platform) integrations skip provider setup
+
+Some providers ship as built-in integrations registered by the deployment
+operator. For those, `https://heykody.app/connect/oauth?provider=<slug>` is the
+whole flow: the setup step below (developer console, redirect-URI registration,
+client ID / client secret form) is skipped and token exchange runs server-side
+with the operator's credentials. List the available built-in apps with
+`integration_platform_app_list`. All integrations refresh host-side through
+`createAuthenticatedFetch`, which calls `integration_token_refresh` on 401 and
+retries with a secret placeholder — raw tokens never enter the sandbox. Use
+`refreshAccessToken` only for auth that cannot use an Authorization header
+(WebSockets, SDK constructors, query-param tokens); it still runs in-sandbox for
+user-owned apps and throws for built-ins. The rest of this guide applies to
+providers without a built-in app.
+
 ## Redirect URI
 
 The redirect URI is:

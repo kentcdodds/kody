@@ -14,6 +14,8 @@ import {
 	integrationConfigSchema,
 	mergeIntegrationConfig,
 } from './integration-shared.ts'
+import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
+import { upsertPlatformIntegration } from '#worker/integrations/service.ts'
 
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
@@ -453,4 +455,49 @@ test('integration identity is the canonical provider key across save and lookup'
 			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
 	).rejects.toThrow(/letters or numbers/i)
+})
+
+test('integration_save refuses platform (built-in) connections instead of converting them to the user lane', async () => {
+	const { env } = createEnv()
+	const platformEnv = {
+		...env,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as Env
+	await upsertPlatformOauthApp({
+		db: platformEnv.APP_DB,
+		env: platformEnv,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			flow: 'confidential',
+			allowedScopes: ['read:user'],
+		},
+	})
+	await upsertPlatformIntegration({
+		env: platformEnv,
+		userId: 'user-123',
+		platformAppSlug: 'github',
+		scopes: ['read:user'],
+		accessTokenSecretName: 'githubAccessToken',
+	})
+
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: 'github',
+				requiredHosts: ['api.github.com'],
+			},
+			{ env: platformEnv, callerContext: caller('user-123') },
+		),
+	).rejects.toThrow(/platform \(built-in\) connection/)
+
+	// The connection stays on the platform lane.
+	const got = await integrationGetCapability.handler(
+		{ name: 'github' },
+		{ env: platformEnv, callerContext: caller('user-123') },
+	)
+	expect(got.integration?.platform).toBe(true)
 })

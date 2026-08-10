@@ -5,12 +5,16 @@ exactly one question — "is this feature shipped for this user yet?" — and
 deliberately overlap with nothing else: RBAC answers "who may do what" and
 entitlements answer "who is allowed how much".
 
-Module: `packages/worker/src/feature-flags/`
+Modules: `packages/worker/universal/feature-flags/` (registry and transport
+types) and `packages/worker/src/feature-flags/` (D1 evaluation and admin
+mutations).
 
-- `registry.ts` — the typed flag registry (`featureFlagDefinitions`,
-  `FeatureFlagKey`). Flags are created and removed only via code review by
-  editing this array; every gate site is compile-checked against it. Flags
-  should also declare a `successMetric` (see below).
+- `universal/feature-flags/registry.ts` — the typed flag registry
+  (`featureFlagDefinitions`, `FeatureFlagKey`). Flags are created and removed
+  only via code review by editing this array; every gate site is compile-checked
+  against it. Flags should also declare a `successMetric` (see below).
+- `universal/feature-flags/types.ts` — dependency-free transport types shared
+  with the client bundle.
 - `service.ts` — evaluation (`isFeatureEnabled`, `getFeatureFlagsForUser`,
   `getFeatureFlagEvaluationsForUser` with assignment sources) and admin
   mutations (global state, per-user overrides, stale cleanup).
@@ -18,7 +22,6 @@ Module: `packages/worker/src/feature-flags/`
   and how it was assigned).
 - `success-metric-readout.ts` — the on/off cohort metric readout for the admin
   surfaces.
-- `types.ts` — dependency-free transport types shared with the client tsconfig.
 
 ## The registry-owns-existence invariant
 
@@ -87,7 +90,7 @@ successMetric: {
 ```
 
 The field is compile-checked against the closed `UsageEventType` union
-(`packages/worker/src/usage/event-types.ts`), so a flag can only be judged
+(`packages/worker/universal/usage-event-types.ts`), so a flag can only be judged
 against a metric the usage-metering pipeline already collects. It stays optional
 for genuinely unmeasurable flags (like the permanent `demo-indicator`), but the
 admin UI and the `admin_feature_flag_list` capability render a notice strongly

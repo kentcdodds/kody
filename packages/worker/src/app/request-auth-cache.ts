@@ -16,10 +16,7 @@ import {
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
 import { getUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
-import {
-	type PermissionString,
-	type RoleName,
-} from '#worker/identity/permissions.ts'
+import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'

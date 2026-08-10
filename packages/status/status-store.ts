@@ -13,6 +13,12 @@ import {
 } from './incidents.ts'
 import { runAllProbes } from './probes.ts'
 import {
+	fetchRelevantProviderIncidents,
+	parseProviderIncidentCache,
+	serializeProviderIncidentCache,
+	type ProviderIncident,
+} from './provider-incidents.ts'
+import {
 	statusComponentName,
 	statusComponents,
 	type ComponentDayStat,
@@ -23,6 +29,8 @@ import {
 	type StatusComponentId,
 	type StatusSnapshot,
 } from './status-types.ts'
+
+const providerIncidentsMetaKey = 'provider_incidents_cache'
 
 export type StatusWorkerEnv = {
 	STATUS_STORE: DurableObjectNamespace<StatusStore>
@@ -288,6 +296,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			openIncidents,
 			statusPageUrl: this.env.STATUS_PAGE_URL,
 			now,
+			providerIncidents: this.readProviderIncidents(now),
 		})
 		const result = await sendAlertEmail(
 			{
@@ -351,6 +360,30 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		)
 	}
 
+	private readProviderIncidents(now: number): Array<ProviderIncident> | null {
+		return parseProviderIncidentCache(
+			this.getMeta(providerIncidentsMetaKey),
+			now,
+		)
+	}
+
+	private async refreshProviderIncidents(now: number): Promise<void> {
+		const result = await fetchRelevantProviderIncidents()
+		if (!result.ok) {
+			// Keep any still-fresh cache so a hammered Statuspage API does not
+			// blank the section mid-incident. Stale entries age out via
+			// parseProviderIncidentCache.
+			return
+		}
+		this.setMeta(
+			providerIncidentsMetaKey,
+			serializeProviderIncidentCache({
+				fetchedAt: now,
+				incidents: result.incidents,
+			}),
+		)
+	}
+
 	async runProbes(): Promise<void> {
 		const outcomes = await runAllProbes({
 			primaryOrigin: this.env.PRIMARY_ORIGIN,
@@ -360,6 +393,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		for (const outcome of outcomes) {
 			this.recordOutcome(outcome, now)
 		}
+		await this.refreshProviderIncidents(now)
 		await this.maybeSendAlert(now)
 		this.prune(now)
 	}
@@ -382,6 +416,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			components,
 			openIncidents: this.listIncidents('open'),
 			recentIncidents: this.listIncidents('resolved'),
+			providerIncidents: this.readProviderIncidents(now),
 			buildCommit: this.env.BUILD_COMMIT ?? null,
 		}
 	}

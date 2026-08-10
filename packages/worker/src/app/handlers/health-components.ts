@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 

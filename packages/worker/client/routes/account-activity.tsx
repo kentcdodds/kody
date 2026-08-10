@@ -40,8 +40,13 @@ import {
 	type AccountActivitySurfaceFilter,
 	type AccountActivitySummary,
 	type AccountActivityTriageFilter,
-} from '#app/loader-data.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+} from '#universal/loader-data.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
 	cardTitleCss,
@@ -49,7 +54,8 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getGhostButtonCss,
-} from '#client/styles/style-primitives.ts'
+	getSelectCss,
+} from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(30))
 

@@ -308,6 +308,10 @@
 						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
 						"queue": "kody-package-events-dispatch",
 					},
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-webhook-dispatch",
+					},
 				],
 				"consumers": [
 					{
@@ -356,6 +360,14 @@
 						// cannot multiply into unbounded isolate loads.
 						"max_concurrency": 16,
 						"dead_letter_queue": "kody-package-events-dispatch-dlq",
+					},
+					{
+						"queue": "kody-webhook-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 5,
+						"max_retries": 10,
+						"max_concurrency": 16,
+						"dead_letter_queue": "kody-webhook-dispatch-dlq",
 					},
 				],
 			},
@@ -432,16 +444,19 @@
 				// https://kodyapps.dev/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
-				// Email domains are pinned to heykody.dev regardless of the web
-				// origin: MX/SPF/DKIM and Cloudflare Email Sending verification
-				// live on the heykody.dev zone, and every existing user inbox is
-				// {username}@inbox.heykody.dev. Without these pins, flipping
-				// APP_BASE_URL to https://heykody.app would silently rederive
-				// both domains onto heykody.app and break all existing
-				// addresses. Committed here (not just GitHub Actions vars) so
-				// the lock can never be lost to a missing repository variable.
-				"USER_EMAIL_DOMAIN": "inbox.heykody.dev",
-				"SYSTEM_EMAIL_DOMAIN": "heykody.dev",
+				// Email domains are committed (not just GitHub Actions vars) so
+				// they can never silently rederive from APP_BASE_URL. Canonical
+				// email lives on heykody.app; the LEGACY_* lists keep inbound
+				// mail to the previous heykody.dev addresses resolving to the
+				// same inboxes during the migration window (through end of
+				// August 2026), after which they can be emptied. Outbound
+				// always sends from the canonical domains, which requires
+				// Email Routing + Email Sending verification on the
+				// heykody.app zone before this deploys.
+				"USER_EMAIL_DOMAIN": "inbox.heykody.app",
+				"SYSTEM_EMAIL_DOMAIN": "heykody.app",
+				"LEGACY_USER_EMAIL_DOMAINS": "inbox.heykody.dev",
+				"LEGACY_SYSTEM_EMAIL_DOMAINS": "heykody.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",
@@ -462,6 +477,10 @@
 				"DR_EXPORT_ENABLED": "true",
 				"DR_BACKUP_ACCOUNT_ID": "a41d50ecaf0ae0f86dd1824ef6729cb2",
 				"DR_BACKUP_BUCKET_NAME": "kody-production-backups",
+				// Public verification material shared with the DR control plane.
+				// The matching signing private key remains control-plane-only.
+				"BACKUP_MANIFEST_SIGNING_KEY_ID": "kody-dr-2026-07",
+				"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "MCowBQYDK2VwAyEA3jqjPcGTzWefE5PGyRBdUQKAEj7FFGtFIz+223sbt9A=",
 			},
 		},
 		"preview": {
@@ -576,6 +595,24 @@
 					"name": "EMAIL",
 				},
 			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-preview-webhook-dispatch",
+					},
+				],
+				"consumers": [
+					{
+						"queue": "kody-preview-webhook-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 5,
+						"max_retries": 10,
+						"max_concurrency": 16,
+						"dead_letter_queue": "kody-preview-webhook-dispatch-dlq",
+					},
+				],
+			},
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
@@ -628,6 +665,8 @@
 				"DR_EXPORT_ENABLED": "",
 				"DR_BACKUP_ACCOUNT_ID": "",
 				"DR_BACKUP_BUCKET_NAME": "",
+				"BACKUP_MANIFEST_SIGNING_KEY_ID": "",
+				"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "",
 			},
 		},
 		"test": {
@@ -732,6 +771,23 @@
 					"name": "EMAIL",
 				},
 			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-test-webhook-dispatch",
+					},
+				],
+				"consumers": [
+					{
+						"queue": "kody-test-webhook-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 0,
+						"max_retries": 10,
+						"dead_letter_queue": "kody-test-webhook-dispatch-dlq",
+					},
+				],
+			},
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
@@ -774,6 +830,8 @@
 				"DR_EXPORT_ENABLED": "",
 				"DR_BACKUP_ACCOUNT_ID": "",
 				"DR_BACKUP_BUCKET_NAME": "",
+				"BACKUP_MANIFEST_SIGNING_KEY_ID": "",
+				"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "",
 			},
 		},
 	},

@@ -1,7 +1,7 @@
 import { css } from 'remix/ui'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { on } from '#client/event-mixin.ts'
-import { colors, spacing } from '#client/styles/tokens.ts'
+import { colors, spacing } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -9,7 +9,7 @@ import {
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	mutedLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 export {
 	buildPendingVerificationPath,

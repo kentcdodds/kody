@@ -24,9 +24,7 @@ to become.
   `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
   finite ceiling), finite per-plan resource limits, and the shared
   `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
-  strict `parsePlanName` for untrusted admin/API input). Emergency admin-only
-  `unlimited` is intentionally deferred until a follow-up deployment after
-  `0083-plan-default-free.sql`'s residual sweep.
+  strict `parsePlanName` for untrusted admin/API input).
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.
@@ -66,8 +64,9 @@ to become.
   OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
   via `kody.openapi[...]` (host approval never widened by untrusted specs).
 - [OAuth integrations](./integrations.md): first-class OAuth apps and
-  connections in D1 (`user_oauth_apps` / `user_integrations`), secret-store
-  credential references, dual host gates, `/connect/oauth`, and
+  connections in D1 (`user_oauth_apps` / `user_integrations`), including
+  operator-provisioned platform (built-in) apps (`platform_oauth_apps`),
+  secret-store credential references, dual host gates, `/connect/oauth`, and
   `createAuthenticatedFetch`.
 
 ## OAuth integration host allowlist
@@ -89,14 +88,16 @@ arbitrary hosts:
   (`assertIntegrationHostAllowed`, `getIntegrationAllowedHosts`).
 
 This invariant must hold for any code path that materializes an integration
-token and then attaches it to an outbound request.
+token and then attaches it to an outbound request. Host-side refresh via
+`integration_token_refresh` materializes tokens only server-side and returns
+metadata, so no new sandbox-visible token path is introduced.
 
 ## Source of truth in code
 
 - Worker entrypoint: `packages/worker/src/index.ts`
 - App request handler: `packages/worker/src/app/handler.ts`
 - Router and HTTP route mapping: `packages/worker/src/app/router.ts` and
-  `packages/worker/src/app/routes.ts`
+  `packages/worker/universal/routes.ts`
 - OAuth handlers: `packages/worker/src/oauth-handlers.ts`
 - MCP auth checks: `packages/worker/src/mcp-auth.ts`
 - MCP capability catalog: domain modules under

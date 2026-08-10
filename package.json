@@ -7,6 +7,7 @@
   "imports": {
     "#app/*": "./packages/worker/src/app/*",
     "#client/*": "./packages/worker/client/*",
+    "#universal/*": "./packages/worker/universal/*",
     "#worker/*": "./packages/worker/src/*",
     "#*": "./*",
     "#mcp/*": "./packages/worker/src/mcp/*"

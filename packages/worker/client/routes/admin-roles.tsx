@@ -3,14 +3,14 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
 } from './account-management-components.tsx'
-import { type AdminRolesLoaderData } from '#app/loader-data.ts'
+import { type AdminRolesLoaderData } from '#universal/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,

@@ -6,7 +6,10 @@ import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
-import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import {
+	listMcpServerSettings,
+	resolveMcpServerOAuthClientUrls,
+} from '#worker/mcp-client/settings-service.ts'
 import {
 	buildMcpServerStatusView,
 	loadMcpClientHubSnapshotOrNull,
@@ -14,6 +17,8 @@ import {
 } from './shared.ts'
 
 const outputSchema = z.object({
+	oauthClientOrigin: z.string(),
+	oauthCallbackUrl: z.string(),
 	servers: z.array(mcpServerStatusSchema),
 })
 
@@ -39,11 +44,17 @@ export const mcpServerListCapability = defineDomainCapability(
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const oauth = resolveMcpServerOAuthClientUrls({
+				env: ctx.env,
+				requestUrl: ctx.callerContext.baseUrl,
+			})
 			const [settings, hubSnapshot] = await Promise.all([
 				listMcpServerSettings({ env: ctx.env, userId: user.userId }),
 				loadMcpClientHubSnapshotOrNull({ env: ctx.env, userId: user.userId }),
 			])
 			return {
+				oauthClientOrigin: oauth.clientOrigin,
+				oauthCallbackUrl: oauth.callbackUrl,
 				servers: settings.map((setting) =>
 					buildMcpServerStatusView({
 						setting,
@@ -51,6 +62,8 @@ export const mcpServerListCapability = defineDomainCapability(
 							hubSnapshot?.servers.find(
 								(server) => server.serverId === setting.id,
 							) ?? null,
+						oauthCallbackUrl: oauth.callbackUrl,
+						oauthClientOrigin: oauth.clientOrigin,
 					}),
 				),
 			}

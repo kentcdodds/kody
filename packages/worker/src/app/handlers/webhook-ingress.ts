@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { handleWebhookIngressRequest } from '#worker/webhooks/http.ts'
 
 /**

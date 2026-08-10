@@ -1,4 +1,5 @@
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineCapability } from '#mcp/capabilities/define-capability.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -7,6 +8,7 @@ import {
 	tokenizeCapabilityKeywords,
 } from '#mcp/capabilities/synthesized-domain.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
+import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import {
 	mcpServerCapabilityId,
@@ -22,7 +24,6 @@ import {
 	type McpServerSnapshot,
 	type McpServerToolDescriptor,
 } from '#worker/mcp-client/types.ts'
-import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 
 type McpServerToolCapabilityBinding = {
 	capabilityName: string
@@ -88,7 +89,7 @@ function createCapabilityFromTool(input: {
 		async handler(args, ctx) {
 			const userId = ctx.callerContext.user?.userId
 			if (!userId) {
-				throw new Error(
+				throw new McpCallerError(
 					`MCP server capability "${ref.name}:${tool.name}" requires an authenticated user.`,
 				)
 			}
@@ -104,20 +105,24 @@ function createCapabilityFromTool(input: {
 					args: (args ?? {}) as Record<string, unknown>,
 				})
 			} catch (error) {
-				// The status check adds context for disconnected servers, but it
-				// must never mask the original tool-call error if it fails itself.
+				// Downstream / user-connected MCP servers fail for many
+				// caller-clearable reasons (auth, schema drift, provider 5xx).
+				// Keep those on mcp-event; they are not Kody platform defects.
 				const status = await getMcpServerStatus({
 					env: ctx.env,
 					userId,
 					ref,
 				}).catch(() => null)
 				if (status && (!status.ready || status.toolCount === 0)) {
-					throw new Error(formatMcpServerUnavailableMessage(status))
+					throw new McpCallerError(formatMcpServerUnavailableMessage(status), {
+						cause: error,
+					})
 				}
 				const message =
 					error instanceof Error ? error.message : 'Unknown MCP server error.'
-				throw new Error(
+				throw new McpCallerError(
 					`MCP server capability "${ref.name}:${tool.name}" failed: ${message}`,
+					{ cause: error },
 				)
 			}
 			return wrapDownstreamMcpToolResult(result, {

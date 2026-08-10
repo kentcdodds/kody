@@ -39,6 +39,7 @@ const {
 	clearEnabledMcpServerRefsCacheForTests,
 	enabledMcpServerRefsCacheTtlMs,
 	listEnabledMcpServerRefsCached,
+	resolveMcpServerOAuthClientUrls,
 	setMcpServerEnabled,
 } = await import('./settings-service.ts')
 
@@ -99,4 +100,26 @@ test('listEnabledMcpServerRefsCached warms per user, expires, and invalidates on
 	})
 	expect(afterDisable).toEqual([])
 	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(4)
+})
+
+test('resolveMcpServerOAuthClientUrls prefers APP_BASE_URL over the request host', () => {
+	expect(
+		resolveMcpServerOAuthClientUrls({
+			env: { APP_BASE_URL: 'https://heykody.app/' },
+			requestUrl: 'https://heykody.dev/account/mcp-servers',
+		}),
+	).toEqual({
+		clientOrigin: 'https://heykody.app',
+		callbackUrl: 'https://heykody.app/account/mcp-servers/oauth/callback',
+	})
+
+	expect(
+		resolveMcpServerOAuthClientUrls({
+			env: {},
+			requestUrl: 'https://preview.example/account/mcp-servers',
+		}),
+	).toEqual({
+		clientOrigin: 'https://preview.example',
+		callbackUrl: 'https://preview.example/account/mcp-servers/oauth/callback',
+	})
 })

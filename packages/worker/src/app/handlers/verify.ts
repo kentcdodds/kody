@@ -9,7 +9,7 @@ import {
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	twoFactorVerificationType,
 	verifyTwoFactorCode,

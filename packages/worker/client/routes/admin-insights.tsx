@@ -3,8 +3,8 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
-import { cardCss } from '#client/styles/style-primitives.ts'
+import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { cardCss } from '#universal/styles/style-primitives.ts'
 import { AreaChart } from '#client/charts/area-chart.tsx'
 import { ChartLegend } from '#client/charts/chart-legend.tsx'
 import { DonutChart } from '#client/charts/donut-chart.tsx'
@@ -37,7 +37,7 @@ import {
 	type AdminInsightsMetricDurationConsumers,
 	type AdminInsightsRunLogCompleteness,
 	type AdminUsageMetric,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,

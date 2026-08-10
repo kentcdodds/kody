@@ -4,7 +4,7 @@ import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import {
 	type AccountPackageInvocationTokenListItem,
 	type AccountPackageInvocationTokensLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -31,7 +31,7 @@ import {
 	radius,
 	spacing,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -41,7 +41,7 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,

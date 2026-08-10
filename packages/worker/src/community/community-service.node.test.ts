@@ -47,6 +47,11 @@ vi.mock('./activity-dispatch-queue-producer.ts', () => ({
 		mockModule.enqueueCommunityActivityDispatch(...args),
 }))
 
+vi.mock('#worker/package-registry/scope-grants.ts', () => ({
+	getPlatformAccountByUsername: async () => null,
+	listPlatformAccountUsernames: async () => [],
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),

@@ -4,7 +4,7 @@ import { normalizeStableUserId } from '#worker/user-id.ts'
 
 /**
  * The label prepended to the app hostname to form the default user email
- * domain (`inbox.heykody.dev` for `APP_BASE_URL` `https://heykody.dev`).
+ * domain (`inbox.heykody.app` for `APP_BASE_URL` `https://heykody.app`).
  */
 export const defaultUserEmailSubdomainLabel = 'inbox'
 
@@ -17,11 +17,11 @@ const bareHostnamePattern = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
  * operator system inboxes both use this domain, keeping them structurally
  * separate from the user subdomain.
  *
- * The override exists because email is pinned to `heykody.dev` (MX, SPF,
- * DKIM, and Cloudflare Email Sending verification live on that zone) while
- * the web origin moves to `heykody.app`: production sets
- * `SYSTEM_EMAIL_DOMAIN=heykody.dev` so flipping `APP_BASE_URL` never moves
- * system mail off the verified domain.
+ * The override decouples email from the web origin so the two can move
+ * independently: production pins the committed value and inbound
+ * additionally accepts `LEGACY_SYSTEM_EMAIL_DOMAINS` during a domain
+ * migration, so mail addressed to the previous domain keeps arriving while
+ * outbound already sends from the canonical one.
  */
 export function getSystemEmailDomain(env: {
 	APP_BASE_URL?: string | null
@@ -48,7 +48,7 @@ export function getSystemEmailDomain(env: {
 /**
  * The email domain every user inbox and user outbound sender lives on: the
  * `USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.` plus the
- * hostname of `APP_BASE_URL` (for example `inbox.heykody.dev`).
+ * hostname of `APP_BASE_URL` (for example `inbox.heykody.app`).
  *
  * User mail deliberately lives on a dedicated subdomain, not the apex: the
  * user-controlled address namespace stays structurally separate from system
@@ -81,6 +81,55 @@ export function getPlatformEmailDomain(env: {
 	} catch {
 		return null
 	}
+}
+
+function parseEmailDomainList(configured: string | null | undefined) {
+	if (!configured) return []
+	const domains: Array<string> = []
+	for (const entry of configured.split(',')) {
+		const domain = entry.trim().toLowerCase().replace(/\.$/, '')
+		if (!domain || !bareHostnamePattern.test(domain)) continue
+		if (!domains.includes(domain)) domains.push(domain)
+	}
+	return domains
+}
+
+/**
+ * Every domain inbound user mail is accepted on: the canonical platform
+ * domain first, then `LEGACY_USER_EMAIL_DOMAINS` (comma-separated). During
+ * a domain migration mail sent to `{username}@<old domain>` keeps resolving
+ * to the same user inbox until the legacy list is emptied.
+ */
+export function getAcceptedUserEmailDomains(env: {
+	APP_BASE_URL?: string | null
+	USER_EMAIL_DOMAIN?: string | null
+	LEGACY_USER_EMAIL_DOMAINS?: string | null
+}): Array<string> {
+	const canonical = getPlatformEmailDomain(env)
+	const domains = canonical ? [canonical] : []
+	for (const domain of parseEmailDomainList(env.LEGACY_USER_EMAIL_DOMAINS)) {
+		if (!domains.includes(domain)) domains.push(domain)
+	}
+	return domains
+}
+
+/**
+ * Every domain inbound system mail is accepted on: the canonical system
+ * domain first, then `LEGACY_SYSTEM_EMAIL_DOMAINS` (comma-separated), so
+ * operator inboxes (`kody@`, `support@`, ...) keep receiving on the old
+ * apex during a domain migration.
+ */
+export function getAcceptedSystemEmailDomains(env: {
+	APP_BASE_URL?: string | null
+	SYSTEM_EMAIL_DOMAIN?: string | null
+	LEGACY_SYSTEM_EMAIL_DOMAINS?: string | null
+}): Array<string> {
+	const canonical = getSystemEmailDomain(env)
+	const domains = canonical ? [canonical] : []
+	for (const domain of parseEmailDomainList(env.LEGACY_SYSTEM_EMAIL_DOMAINS)) {
+		if (!domains.includes(domain)) domains.push(domain)
+	}
+	return domains
 }
 
 export function buildPlatformEmailAddress(input: {

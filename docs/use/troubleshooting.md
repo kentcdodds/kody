@@ -3,7 +3,7 @@
 ## Contact support
 
 For help with the hosted Kody service at `heykody.app`, email
-[`support@heykody.dev`](mailto:support@heykody.dev). Operators of other Kody
+[`support@heykody.app`](mailto:support@heykody.app). Operators of other Kody
 deployments receive support mail at `support@<apex>`, where `<apex>` is the
 deployment's `APP_BASE_URL` hostname.
 
@@ -14,6 +14,15 @@ authorization. Open the verification link sent at signup, or sign in and use
 **Resend verification email** on `/pending-verification`, `/account`, or the
 authorize page. Keep an open `/oauth/authorize` tab so you can continue the same
 OAuth request after verifying in another tab, then reconnect or approve again.
+
+## Adding a remote MCP server fails with `Invalid origin uri` or redirect URI errors
+
+That message comes from the **remote** authorization server, not from Kody being
+unreachable. Kody registers as an OAuth client from the deployment origin and
+redirects to `{origin}/account/mcp-servers/oauth/callback`. Allow those values
+in the MCP server's identity provider (authorized origins / redirect URIs), then
+remove and re-add the server. See
+[Connect remote MCP servers](./mcp-client-servers.md).
 
 ## Search returns no good matches
 

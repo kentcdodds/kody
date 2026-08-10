@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './playwright-utils.ts'
 import {
 	clearAuthRateLimitsInE2eDatabase,
 	executeE2eD1Command,

@@ -1,14 +1,14 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
-import { colors, mq, spacing } from '#client/styles/tokens.ts'
+import { colors, mq, spacing } from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
 	fieldLabelCss,
 	getSecondaryButtonCss,
 	inputCss,
 	textareaCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 type SecretEditorFieldsProps = {
 	description: string

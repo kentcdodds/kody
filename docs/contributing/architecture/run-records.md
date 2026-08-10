@@ -118,12 +118,15 @@ Rules:
   that already carries a minted run id, `startedAt`, persistence mode, and the
   full context — or `null` when there is no user / no `RUN_LOG` binding /
   missing context.
-- **`finishRunRecord` upserts the complete row in one RPC** (`finishRun`), then
-  replaces logs and enforces retention. A dropped `running` insert is harmless:
-  finish still writes the terminal row. That is why begin can stay off the
-  request critical path.
+- **`finishRunRecord` awaits the complete-row upsert in one RPC** (`finishRun`),
+  then replaces logs and enforces retention. A supplied `waitUntil` applies only
+  to post-terminal observers such as `run.error.recorded`, never to the terminal
+  write itself. A dropped `running` insert is harmless: finish still writes the
+  terminal row. That is why begin can stay off the request critical path.
 - **`on-failure` + `success` is a no-op** at finish (no DO write).
 - Finish **never throws into the observed path**. Sink failures log a warning.
+  It resolves `true` when the terminal write succeeds (or persistence is not
+  required by policy) and `false` when no terminal row was written.
 - Finish may accept an optional JSON-serializable **`result`**. When present it
   is stored under `metadata.result` after a bounded snapshot
   (`runRecordMaxResultSnapshotBytes`, currently 4 KiB). Oversized values become
@@ -189,10 +192,12 @@ a shared D1 table:
 | Stale `running` (long)     | ~24 hours for service/workflow                  |
 
 Age prune deletes finished runs older than the cutoff (rows still `running` are
-kept). Count prune deletes the oldest excess rows **failure-last**: successes
-are removed before errors (`ORDER BY (status = 'error') ASC, started_at ASC`).
-Orphan log lines are cleaned in the same pass. Caps are applied in small batches
-per finish so a single RPC stays bounded.
+kept). Count prune deletes the oldest excess rows in three lanes: handled
+(`ignored` / `resolved`) errors first, then successes, then open errors. This
+makes soft triage relieve duplicate-error saturation while preserving useful
+success history and keeping active failures strongest. Orphan log lines are
+cleaned in the same pass. Caps are applied in small batches per finish so a
+single RPC stays bounded.
 
 Stranded `running` rows (isolate reset, lost `waitUntil` finish, hung Worker
 Loader `evaluate`) are reconciled to `status=error` with `errorName=Interrupted`
@@ -218,7 +223,11 @@ of replaying.
 - **Terminal response + run-record finish are one awaited DO RPC**
   (`finishPackageInvocation`): the bounded replay response (restore-safe byte
   ceiling) and the terminal run row land together; the ledger update is fenced
-  on the claim timestamp so a competing reclaim cannot be overwritten.
+  on the claim timestamp so a competing reclaim cannot be overwritten. If that
+  RPC fails after package code completed, the caller receives
+  `idempotency_persistence_failed` rather than a false success. Durable callers
+  retry the same key; the live claim prevents duplicate execution while the
+  terminal result is unresolved.
 - **Ledger retention is DO-local**: terminal rows keep replay responses for 90
   days (`packageInvocationLedgerRetentionDays`), pruned by the same retention
   passes and alarm as run rows; `in_progress` rows are never pruned. There is no
@@ -365,15 +374,29 @@ error name/message/logs stay put; Activity and `run_list` default to
 `error_triage=open` so handled noise drops out of the default view;
 `run_summary.errors` counts only open errors and exposes separate `ignored` /
 `resolved` totals. Terminal `finishRun` upserts preserve triage on error
-finishes and clear it if a row somehow finishes non-error. Schema version 10 on
-the RunLog DO.
+finishes and clear it if a row somehow finishes non-error. A later successful
+run for the same immutable `job_id` automatically soft-resolves prior open
+errors for that job with `triaged_by=system:auto-resolve`; ignored errors are
+not overwritten, and every resolved row keeps `status=error` plus its original
+error details. Auto-resolution is intentionally job-only: names on other
+surfaces are not uniformly immutable identities.
+
+`run_update_bulk` is the bounded operational relief valve. It selects up to 100
+error rows either by explicit run ids or exact-match filters (`surface`,
+`package_id`, `job_id`, `name`, `error_name`, `error_message`, and current
+triage). Filters must contain at least one identity/error field; filtered reopen
+requires an explicit ignored/resolved source state. `dry_run` previews ids, and
+`has_more` tells operators to repeat the same bounded call. Like single-run
+triage, it never deletes a row or changes execution status, errors, or logs.
+Schema version 10 on the RunLog DO.
 
 ## Reading the data
 
 - UI: `/account/activity` (open failures first by default; status / triage /
   surface filters, 7-day summary with ignored/resolved counts, log viewer,
   cursor pagination). `/account/jobs` recent runs link into it.
-- MCP domain `runs`: `run_list`, `run_get`, `run_summary`, `run_update`.
+- MCP domain `runs`: `run_list`, `run_get`, `run_summary`, `run_update`,
+  `run_update_bulk`.
 - Account export: section `run_records` pages through the user’s `RunLog`.
 - Account deletion: `clearAll` on the user’s `RunLog` stub (deletes every DO
   table — runs, ledger, and dedicated state — then reinitializes schema).

@@ -1,9 +1,9 @@
 import { type Handle, css, on } from 'remix/ui'
-import { adminGrantDiffersFromSubscription } from '#app/account-plan-display.ts'
+import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -29,7 +29,7 @@ import {
 	radius,
 	spacing,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
 	getGhostButtonCss,
@@ -37,7 +37,7 @@ import {
 	layoutMaxWidths,
 	mutedLinkCss,
 	primaryLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 const billingApiPath = '/account/billing.json'
 const billingCheckoutApiPath = '/account/billing/checkout.json'

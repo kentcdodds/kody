@@ -6,7 +6,7 @@ import { loadCommunityDetailData } from '#app/community-data.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
@@ -68,6 +68,7 @@ export function createCommunityDetailHandler(env: Env) {
 						readmeContent: detail.listing.readmeContent,
 						starCount: detail.listing.starCount,
 						starredByViewer: detail.starredByViewer,
+						viewerInstall: detail.viewerInstall,
 					},
 				},
 			})

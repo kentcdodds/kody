@@ -23,7 +23,7 @@ import {
 	type AdminInsightsUsageMonth,
 	type AdminInsightsWorkflowStatus,
 	type AdminUsageMetric,
-} from './loader-data.ts'
+} from '#universal/loader-data.ts'
 
 export const adminInsightsSignupWeeks = 12
 export const adminInsightsUsageMonths = 12

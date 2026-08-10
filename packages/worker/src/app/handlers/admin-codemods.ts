@@ -3,14 +3,14 @@ import { type Action } from 'remix/router'
 import {
 	type AdminCodemodRunItemsLoaderData,
 	type AdminCodemodsLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import {
 	readNonEmptyTrimmedString,
 	readNonEmptyTrimmedStringOrNumber,
 } from '#app/request-body.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { jsonResponse } from '#worker/json-response.ts'

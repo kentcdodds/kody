@@ -15,6 +15,7 @@ import {
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 	estimateEntitlementStorageEntryBytes,
+	refundDailyEntitlement,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
@@ -656,94 +657,97 @@ export async function sendOutboundEmail(
 		})
 
 		// Atomic check-and-increment via UserMeter (sole daily authority).
+		const entitlementNow = new Date()
 		await consumeDailyEntitlement({
 			db: input.env.APP_DB,
 			env: input.env,
 			userId: input.userId,
 			email: sender.accountEmail,
 			resource: 'email_sends_per_day',
-		})
-		recordEmailReportingEvent(input.env, {
-			userId: input.userId,
-			eventType: 'email_send',
+			now: entitlementNow,
 		})
 
-		const now = new Date().toISOString()
+		const now = entitlementNow.toISOString()
 		const inboxId = original?.inboxId ?? input.inboxId ?? null
 		const existingThreadId = original?.threadId ?? input.threadId ?? null
-		const existingThread = existingThreadId
-			? await mailbox.getThread({ threadId: existingThreadId })
-			: null
-		if (existingThreadId && !existingThread) {
-			throw new Error(`Email thread was not found: ${existingThreadId}`)
-		}
-		const thread: MailboxThreadInput = existingThread
-			? {
-					...existingThread,
-					subjectNormalized: existingThread.subjectNormalized ?? '',
-					lastMessageAt:
-						existingThread.lastMessageAt > now
-							? existingThread.lastMessageAt
-							: now,
-					updatedAt: now,
-				}
-			: {
-					id: crypto.randomUUID(),
-					inboxId,
-					subjectNormalized: subject.toLowerCase(),
-					rootMessageIdHeader: input.inReplyToHeader ?? null,
-					lastMessageAt: now,
-					createdAt: now,
-					updatedAt: now,
-				}
+		let storedAttachments: Awaited<
+			ReturnType<typeof storeOutboundAttachments>
+		> = []
 		const messageId = crypto.randomUUID()
 		const providerHeaders = buildProviderHeaders(storedHeaders)
-		const message: MailboxMessageInput = {
-			id: messageId,
-			direction: 'outbound',
-			inboxId,
-			threadId: thread.id,
-			senderIdentityId: senderIdentity.id,
-			fromAddress: from,
-			envelopeFrom: from,
-			toAddresses: to,
-			ccAddresses: [],
-			bccAddresses: [],
-			replyToAddresses: input.replyTo
-				? [normalizeEmailAddress(input.replyTo)].filter(
-						(value): value is string => typeof value === 'string',
-					)
-				: [],
-			subject,
-			messageIdHeader,
-			inReplyToHeader: input.inReplyToHeader ?? null,
-			references: input.references ?? [],
-			headers: storedHeaders,
-			authResults: null,
-			textBody: text,
-			htmlBody: html,
-			rawMimeKey: null,
-			rawSize: 0,
-			processingStatus: 'stored',
-			classification: 'accepted',
-			classificationReason: null,
-			providerMessageId: null,
-			deliveryStatus: null,
-			deliveryStatusAt: null,
-			error: null,
-			receivedAt: null,
-			sentAt: null,
-			createdAt: now,
-			updatedAt: now,
-		}
-		const storedAttachments = await storeOutboundAttachments({
-			blobs: input.env.EMAIL_BLOBS,
-			userId: input.userId,
-			messageId: message.id,
-			attachments,
-			now,
-		})
+		let thread: MailboxThreadInput
+		let message: MailboxMessageInput
 		try {
+			const existingThread = existingThreadId
+				? await mailbox.getThread({ threadId: existingThreadId })
+				: null
+			if (existingThreadId && !existingThread) {
+				throw new Error(`Email thread was not found: ${existingThreadId}`)
+			}
+			thread = existingThread
+				? {
+						...existingThread,
+						subjectNormalized: existingThread.subjectNormalized ?? '',
+						lastMessageAt:
+							existingThread.lastMessageAt > now
+								? existingThread.lastMessageAt
+								: now,
+						updatedAt: now,
+					}
+				: {
+						id: crypto.randomUUID(),
+						inboxId,
+						subjectNormalized: subject.toLowerCase(),
+						rootMessageIdHeader: input.inReplyToHeader ?? null,
+						lastMessageAt: now,
+						createdAt: now,
+						updatedAt: now,
+					}
+			message = {
+				id: messageId,
+				direction: 'outbound',
+				inboxId,
+				threadId: thread.id,
+				senderIdentityId: senderIdentity.id,
+				fromAddress: from,
+				envelopeFrom: from,
+				toAddresses: to,
+				ccAddresses: [],
+				bccAddresses: [],
+				replyToAddresses: input.replyTo
+					? [normalizeEmailAddress(input.replyTo)].filter(
+							(value): value is string => typeof value === 'string',
+						)
+					: [],
+				subject,
+				messageIdHeader,
+				inReplyToHeader: input.inReplyToHeader ?? null,
+				references: input.references ?? [],
+				headers: storedHeaders,
+				authResults: null,
+				textBody: text,
+				htmlBody: html,
+				rawMimeKey: null,
+				rawSize: 0,
+				processingStatus: 'stored',
+				classification: 'accepted',
+				classificationReason: null,
+				providerMessageId: null,
+				deliveryStatus: null,
+				deliveryStatusAt: null,
+				error: null,
+				receivedAt: null,
+				sentAt: null,
+				createdAt: now,
+				updatedAt: now,
+			}
+			storedAttachments = await storeOutboundAttachments({
+				blobs: input.env.EMAIL_BLOBS,
+				userId: input.userId,
+				messageId: message.id,
+				attachments,
+				now,
+			})
 			const graph = await mailbox.upsertMessageGraph({
 				ownerId: input.userId,
 				thread,
@@ -754,6 +758,18 @@ export async function sendOutboundEmail(
 				throw new Error('Outbound Mailbox graph rejected the message.')
 			}
 		} catch (error) {
+			await refundDailyEntitlement({
+				db: input.env.APP_DB,
+				env: input.env,
+				userId: input.userId,
+				resource: 'email_sends_per_day',
+				now: entitlementNow,
+			}).catch((refundError: unknown) => {
+				console.warn(
+					'email-outbound-send-entitlement-refund-failed',
+					refundError,
+				)
+			})
 			await Promise.all(
 				storedAttachments
 					.filter((attachment) => attachment.storageKey != null)
@@ -771,6 +787,10 @@ export async function sendOutboundEmail(
 			)
 			throw error
 		}
+		recordEmailReportingEvent(input.env, {
+			userId: input.userId,
+			eventType: 'email_send',
+		})
 		await mailbox.upsertDeliveryEvent({
 			ownerId: input.userId,
 			event: outboundDeliveryEvent({

@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
-import { type AdminPlatformFeedbackLoaderData } from '#app/loader-data.ts'
+import { type AdminPlatformFeedbackLoaderData } from '#universal/loader-data.ts'
 import type * as AdminPlatformFeedbackData from '#app/admin-platform-feedback-data.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 

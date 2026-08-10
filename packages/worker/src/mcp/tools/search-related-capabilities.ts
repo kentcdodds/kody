@@ -24,6 +24,7 @@ export function attachTopCapabilityCallShapes(input: {
 		if (!spec?.inputTypeDefinition) continue
 		const compact = compactCapabilityInputTypeDefinition(
 			spec.inputTypeDefinition,
+			{ requiredInputFields: spec.requiredInputFields },
 		)
 		match.inputTypeDefinition = compact.definition
 		if (compact.truncated) {

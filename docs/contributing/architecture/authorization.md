@@ -44,8 +44,8 @@ Examples: `read:user:own`, `update:user:any`, `read:role:any`.
   `requireMcpUserWithPermission(ctx, '<action>:<entity>:any')`. No general query
   helper infers `any` from context.
 
-The typed registry in `packages/worker/src/identity/permissions.ts` is the
-source of truth for valid permission strings. Call sites pass literal
+The typed registry in `packages/worker/universal/permissions.ts` is the source
+of truth for valid permission strings. Call sites pass literal
 `PermissionString` values so typos and undeclared entities are compile errors.
 
 ### Baseline roles
@@ -85,7 +85,7 @@ Four D1 tables. The one account-scoped table, `user_roles`, is keyed on integer
 
 ## Typed registry and extending it
 
-`packages/worker/src/identity/permissions.ts` exports:
+`packages/worker/universal/permissions.ts` exports:
 
 - `permissionActions`, `permissionEntities`, `permissionAccesses` — const arrays
 - `PermissionString` — template literal type
@@ -95,7 +95,8 @@ Four D1 tables. The one account-scoped table, `user_roles`, is keyed on integer
 
 To add a new entity:
 
-1. Add the entity name to `permissionEntities` in `permissions.ts`.
+1. Add the entity name to `permissionEntities` in
+   `packages/worker/universal/permissions.ts`.
 2. Write a migration (next free prefix under `packages/worker/migrations/`)
    inserting the new permission rows and attaching them to roles via
    `role_permissions`.
@@ -426,7 +427,7 @@ assignment happens through the admin UI.
 
 ## What to read when changing authorization
 
-- `packages/worker/src/identity/permissions.ts` — typed registry
+- `packages/worker/universal/permissions.ts` — typed registry
 - `packages/worker/src/identity/permissions-db.ts` — D1 queries
 - `packages/worker/src/app/permissions-server.ts` — request guards
 - `packages/worker/migrations/0043-rbac.sql` — schema and seed data

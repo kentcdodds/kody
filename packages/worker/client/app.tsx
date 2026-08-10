@@ -23,13 +23,13 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
-import { visuallyHiddenUntilFocusedCss } from './styles/style-primitives.ts'
+import { visuallyHiddenUntilFocusedCss } from '#universal/styles/style-primitives.ts'
 import { SiteFooter } from './site-footer.tsx'
 import { SiteHeader } from './site-header.tsx'
-import { type AppLoaderData } from '#app/loader-data.ts'
-import { userHasRole } from '#worker/identity/permissions.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
+import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
-import { colors, mq, spacing, typography } from './styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { WaitlistBanner } from './waitlist-banner.tsx'
 
 registerRouteLoaders(clientRouteLoaders)

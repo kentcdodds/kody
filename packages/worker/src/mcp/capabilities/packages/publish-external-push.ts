@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -10,6 +11,9 @@ import {
 	errorCauseChainIncludes,
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
+import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
+import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	getStaticPackageDependentsSummary,
@@ -19,6 +23,10 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import {
+	buildPackageTestHints,
+	type PackageTestHints,
+} from '#worker/package-registry/package-test-hints.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
@@ -55,13 +63,10 @@ export default async function main(params = {}) {
 }`
 
 function isTransientDurableObjectResetError(error: unknown) {
-	return errorCauseChainIncludes(
-		error,
-		(message) =>
-			message.includes('Durable Object exceeded its CPU time limit') ||
-			message.includes("Durable Object's isolate exceeded its memory limit") ||
-			message.includes('Durable Object was reset'),
-	)
+	// Exact platform reset strings (including deploy "code was updated").
+	// Substring matching on "Durable Object was reset" misses that form —
+	// Cloudflare says "Durable Object reset because…" with no "was".
+	return errorCauseChainIncludes(error, isDurableObjectIsolateResetMessage)
 }
 
 function logExternalPublishRetry(input: {
@@ -217,10 +222,24 @@ const staticDependentsSchema = z
 		'Bounded summary of saved packages whose published bundles statically captured this package through kody:@ imports.',
 	)
 
+const packageTestHintsSchema = z.object({
+	app: z.string().optional(),
+	subscriptions: z
+		.array(
+			z.object({
+				topic: z.string(),
+				snippet: z.string(),
+			}),
+		)
+		.optional(),
+})
+
 const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('already_published'),
 		published_commit: z.string().nullable(),
+		hosted_app_url: z.string().nullable(),
+		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
@@ -247,6 +266,8 @@ const outputSchema = z.discriminatedUnion('status', [
 		published_commit: z.string(),
 		manifest: z.unknown(),
 		checks: z.array(checkSchema),
+		hosted_app_url: z.string().nullable(),
+		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
@@ -261,6 +282,78 @@ const outputSchema = z.discriminatedUnion('status', [
 ])
 
 type PublishExternalPushResult = z.infer<typeof outputSchema>
+
+function readPackageTestHintsFromManifest(input: {
+	manifest: unknown
+	kodyId: string
+	packageScope?: string
+}): PackageTestHints | undefined {
+	const { manifest } = input
+	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+		return undefined
+	}
+	const kody = Reflect.get(manifest, 'kody')
+	if (!kody || typeof kody !== 'object' || Array.isArray(kody)) return undefined
+	const subscriptions = Reflect.get(kody, 'subscriptions')
+	return buildPackageTestHints({
+		kodyId: input.kodyId,
+		...(input.packageScope ? { packageScope: input.packageScope } : {}),
+		hasApp: Reflect.get(kody, 'app') !== undefined,
+		subscriptionTopics:
+			subscriptions &&
+			typeof subscriptions === 'object' &&
+			!Array.isArray(subscriptions)
+				? Object.keys(subscriptions)
+				: [],
+	})
+}
+
+async function getPublishedPackageTestHints(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	kodyId: string
+	packageScope?: string
+}) {
+	try {
+		const published = await loadPublishedEntitySource({
+			env: input.env,
+			userId: input.userId,
+			sourceId: input.sourceId,
+		})
+		const packageJson = published.files['package.json']
+		if (!packageJson) return undefined
+		return readPackageTestHintsFromManifest({
+			manifest: JSON.parse(packageJson),
+			kodyId: input.kodyId,
+			...(input.packageScope ? { packageScope: input.packageScope } : {}),
+		})
+	} catch {
+		return undefined
+	}
+}
+
+async function resolvePublishedHostedAppUrl(input: {
+	env: Env
+	baseUrl: string
+	ownerScope: string
+	ownerEmail: string
+	kodyId: string
+	hasApp: boolean
+}) {
+	if (!input.hasApp) return null
+	const username = await resolvePublicUsername({
+		db: input.env.APP_DB,
+		username: input.ownerScope,
+		email: input.ownerEmail,
+	})
+	if (!username) return null
+	return buildPackageAppUrl({
+		origin: getPackageAppBaseUrl({ env: input.env }) ?? input.baseUrl,
+		username,
+		kodyId: input.kodyId,
+	})
+}
 
 function readSecretMountsFromPackageJson(content: string | undefined) {
 	if (!content) return null
@@ -381,9 +474,13 @@ async function runExternalPublishAttempt(input: {
 	env: Env
 	baseUrl: string
 	ownerUserId: string
+	ownerScope: string
+	ownerEmail: string
 	expectedPackageScope: string
 	packageId: string
 	kodyId: string
+	testHintPackageScope?: string
+	hasApp: boolean
 	source: {
 		id: string
 		repo_id: string
@@ -433,8 +530,26 @@ async function runExternalPublishAttempt(input: {
 					publishedCommit: result.published_commit,
 					baseUrl: input.baseUrl,
 				})
+				const testHints = await getPublishedPackageTestHints({
+					env: input.env,
+					userId: input.ownerUserId,
+					sourceId: input.source.id,
+					kodyId: input.kodyId,
+					...(input.testHintPackageScope
+						? { packageScope: input.testHintPackageScope }
+						: {}),
+				})
 				return {
 					...result,
+					hosted_app_url: await resolvePublishedHostedAppUrl({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						ownerScope: input.ownerScope,
+						ownerEmail: input.ownerEmail,
+						kodyId: input.kodyId,
+						hasApp: input.hasApp,
+					}),
+					...(testHints ? { test_hints: testHints } : {}),
 					static_dependents: await getPublishStaticDependents({
 						db: input.env.APP_DB,
 						userId: input.ownerUserId,
@@ -463,8 +578,24 @@ async function runExternalPublishAttempt(input: {
 				publishedCommit: result.published_commit,
 				baseUrl: input.baseUrl,
 			})
+			const testHints = readPackageTestHintsFromManifest({
+				manifest: result.manifest,
+				kodyId: input.kodyId,
+				...(input.testHintPackageScope
+					? { packageScope: input.testHintPackageScope }
+					: {}),
+			})
 			return {
 				...result,
+				hosted_app_url: await resolvePublishedHostedAppUrl({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					ownerScope: input.ownerScope,
+					ownerEmail: input.ownerEmail,
+					kodyId: input.kodyId,
+					hasApp: Boolean(testHints?.app),
+				}),
+				...(testHints ? { test_hints: testHints } : {}),
 				static_dependents: await getPublishStaticDependents({
 					db: input.env.APP_DB,
 					userId: input.ownerUserId,
@@ -518,7 +649,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 	{
 		name: 'package_publish_external_push',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflow_run_list instead of hanging until an opaque execute timeout.',
+			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflow_run_list instead of hanging until an opaque execute timeout.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
@@ -533,14 +664,15 @@ export const publishExternalPushCapability = defineDomainCapability(
 				args.package_scope,
 			)
 			const expectedPackageScope = owner.ownerScope
-			const { packageId, kodyId, source } = await resolveOwnedPackageSource({
-				db: ctx.env.APP_DB,
-				userId: owner.ownerUserId,
-				args: {
-					package_id: args.package_id,
-					kody_id: args.kody_id,
-				},
-			})
+			const { packageId, kodyId, hasApp, source } =
+				await resolveOwnedPackageSource({
+					db: ctx.env.APP_DB,
+					userId: owner.ownerUserId,
+					args: {
+						package_id: args.package_id,
+						kody_id: args.kody_id,
+					},
+				})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
 			const newCommit = head.commit
 			if (!newCommit) {
@@ -553,9 +685,15 @@ export const publishExternalPushCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				ownerUserId: owner.ownerUserId,
+				ownerScope: owner.ownerScope,
+				ownerEmail: owner.ownerEmail,
 				expectedPackageScope,
 				packageId,
 				kodyId,
+				...(args.package_scope
+					? { testHintPackageScope: args.package_scope }
+					: {}),
+				hasApp,
 				source: { id: source.id, repo_id: source.repo_id },
 				newCommit,
 				allowForce: args.allow_force,

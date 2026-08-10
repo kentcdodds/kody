@@ -6,7 +6,7 @@ import {
 	maxPlanEmailLimits,
 	planLimits,
 	type PlanName,
-} from '#worker/entitlements/plans.ts'
+} from '#universal/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'

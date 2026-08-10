@@ -5,10 +5,10 @@ import {
 	getFeatureFlagDefinition,
 	isFeatureFlagKey,
 	type FeatureFlagKey,
-} from './registry.ts'
-import { type AdminFeatureFlag } from './types.ts'
+} from '#universal/feature-flags/registry.ts'
+import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 
-export type { AdminFeatureFlag } from './types.ts'
+export type { AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 
 const maxFeatureFlagNoteLength = 500
 

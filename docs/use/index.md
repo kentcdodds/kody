@@ -21,6 +21,8 @@ Read in order for a full tour, or jump to a topic.
   prompt for people (and agents) deciding whether Kody fits, before any setup
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
   OAuth, and use the setup prompt
+- [Connect remote MCP servers](./mcp-client-servers.md) — add external MCP
+  servers so Kody can call their tools (`kody.mcp[...]`)
 - [First steps — what to ask Kody to do](./first-steps.md)
 - [Search](./search.md)
 - [Execute and workflows](./execute.md) — includes per-user MCP instruction
@@ -38,6 +40,10 @@ Read in order for a full tour, or jump to a topic.
   sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
   provider POSTs to a saved-package export
+- [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
+  `app_fetch` smoke tests after publish
+- [Synthetic event dispatch](./synthetic-event-dispatch.md) — platform-marked
+  real-surface subscription handler smoke tests
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
 - [Plans and pricing](https://heykody.app/pricing) — Free, Standard, and Pro

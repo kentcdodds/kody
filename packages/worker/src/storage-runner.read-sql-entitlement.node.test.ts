@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { planLimits } from '#worker/entitlements/plans.ts'
+import { planLimits } from '#universal/plans.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 const mockModule = vi.hoisted(() => ({

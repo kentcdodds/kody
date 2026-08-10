@@ -110,9 +110,9 @@ Optional fields:
 - `requiredPermission`: RBAC permission string required to see or execute the
   capability
 - `featureFlag`: optional feature-flag key from
-  `#worker/feature-flags/registry.ts`; when set, the capability is hidden from
-  search and denied at execute time unless the flag evaluates enabled for the
-  calling user
+  `#universal/feature-flags/registry.ts`; when set, the capability is hidden
+  from search and denied at execute time unless the flag evaluates enabled for
+  the calling user
 
 `defineDomainCapability` delegates to `defineCapability()`, which:
 
@@ -164,7 +164,7 @@ must take effect on the next request.
 
 When a capability should only appear while a typed feature flag is enabled for
 the caller, set `featureFlag` to a key from
-`packages/worker/src/feature-flags/registry.ts`:
+`packages/worker/universal/feature-flags/registry.ts`:
 
 ```ts
 export const exampleFlaggedCapability = defineDomainCapability(

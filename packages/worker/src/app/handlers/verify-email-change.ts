@@ -8,7 +8,7 @@ import {
 } from '#app/auth-session.ts'
 import { verifyEmailChangeToken } from '#app/email-change.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 function getVerifyEmailChangeError(
 	reason:

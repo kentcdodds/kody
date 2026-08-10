@@ -1,4 +1,4 @@
-import { type FeatureFlagKey } from '#worker/feature-flags/registry.ts'
+import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
 import { type SessionInfo } from './session.ts'
 
 /**

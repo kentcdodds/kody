@@ -5,16 +5,29 @@ import {
 import {
 	type AccountIntegrationDetailLoaderData,
 	type AccountSecretsLoaderData,
-} from '#app/loader-data.ts'
+	type ConnectOauthLoaderData,
+} from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { readJson } from '#client/routes/account-approval-shared.ts'
+import {
+	type RouteLoaderResult,
+	routeLoaderRedirect,
+} from '#client/route-loader.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import {
 	buildHostApprovalRequestUrl,
 	submitApprovalRequest,
 } from '#client/routes/account-approval-shared.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -37,7 +50,7 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 	inputCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import {
 	type ConnectOauthConfig,
 	type ConnectOauthHostApprovalLink,
@@ -82,10 +95,80 @@ type OAuthCallback =
 	| { kind: 'error'; error: string; description: string | null }
 	| { kind: 'success'; code: string; state: string | null }
 
+const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
+	ok: true,
+	provider: null,
+	integration: null,
+}
+
+/**
+ * SPA-navigation prefetch mirroring the server handler's SSR embed: the
+ * stored or built-in record for `?provider=` visits, resolved before the
+ * route renders. Callback returns (`code`/`error`) restore config from
+ * sessionStorage and bare visits redirect server-side, so both prefetch
+ * nothing.
+ */
+export async function connectOauthRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const params = url.searchParams
+	const provider = params.get('provider')?.trim()
+	if (!provider || params.get('code') || params.get('error')) {
+		return { connectOauth: emptyConnectOauthLoaderData }
+	}
+	const providerKey = normalizeProviderKey(provider)
+	if (!providerKey) {
+		return { connectOauth: emptyConnectOauthLoaderData }
+	}
+	const preferPlatform = params.get('platform') === '1'
+	const response = await fetch(
+		`/account/integrations.json?name=${encodeURIComponent(providerKey)}${preferPlatform ? '&platform=1' : ''}`,
+		{
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		},
+	)
+	if (response.status === 401) {
+		return routeLoaderRedirect('/login')
+	}
+	const payload = await readJson<AccountIntegrationDetailLoaderData>(response)
+	return {
+		connectOauth: {
+			ok: true,
+			provider: providerKey,
+			integration:
+				response.ok && payload?.ok ? (payload.integration ?? null) : null,
+			builtInAvailable:
+				response.ok && payload?.ok
+					? (payload.builtInAvailable ?? false)
+					: false,
+		},
+	}
+}
+
 export function ConnectOauthRoute(handle: Handle) {
 	type StatusTone = 'info' | 'warn' | 'error'
 
-	let statusMessage = 'Ready to connect.'
+	// Mirrors the server-side bare-visit redirect for SPA-internal
+	// navigations: no provider, no callback code, and no provider error
+	// means there is no flow to set up or resume here.
+	if (typeof window !== 'undefined') {
+		const params = new URLSearchParams(window.location.search)
+		if (
+			!params.get('provider') &&
+			!params.get('code') &&
+			!params.get('error')
+		) {
+			window.location.replace('/guides/oauth')
+		}
+	}
+
+	// The real status arrives once the query config and any stored/built-in
+	// provider config resolve; starting on "Ready to connect." flashed a
+	// misleading state on slow connections.
+	let statusMessage = 'Loading provider configuration…'
 	let statusTone: StatusTone = 'info'
 	let currentStep: 'setup' | 'connect' | 'callback' | 'success' = 'setup'
 	let config: ConnectOauthConfig | null = null
@@ -95,6 +178,8 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hasConfigError = false
 	let connectOauthHandled = false
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
+	/** An enabled built-in exists that this user-lane connection is not using. */
+	let builtInAvailable = false
 	let nextSteps: ConnectOauthNextSteps | null = null
 	let approvingAllHosts = false
 	let submitting = false
@@ -376,8 +461,11 @@ export function ConnectOauthRoute(handle: Handle) {
 	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
 	): Promise<StoredIntegrationConfig | null> => {
+		const preferPlatform =
+			typeof window !== 'undefined' &&
+			new URLSearchParams(window.location.search).get('platform') === '1'
 		const response = await fetch(
-			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}`,
+			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}${preferPlatform ? '&platform=1' : ''}`,
 			{
 				method: 'GET',
 				headers: { Accept: 'application/json' },
@@ -388,9 +476,9 @@ export function ConnectOauthRoute(handle: Handle) {
 		const payload = (await response
 			.json()
 			.catch(() => null)) as AccountIntegrationDetailLoaderData | null
-		if (!response.ok || payload?.ok !== true || !payload.integration) {
-			return null
-		}
+		if (!response.ok || payload?.ok !== true) return null
+		builtInAvailable = payload.builtInAvailable ?? false
+		if (!payload.integration) return null
 		return toStoredIntegrationConfig(payload.integration)
 	}
 
@@ -414,12 +502,15 @@ export function ConnectOauthRoute(handle: Handle) {
 			flow: nextConfig.flow,
 			clientId: nextConfig.clientId,
 			hasStoredClientSecret,
+			platform: Boolean(nextConfig.platformAppSlug),
 		})
 		if (setupStatus.isReady) {
 			setStatus(
-				existingIntegrationConfig
-					? 'Loaded your existing integration config and client credentials. Ready to connect.'
-					: 'Loaded your existing OAuth client configuration. Ready to connect.',
+				nextConfig.platformAppSlug
+					? 'Built-in integration — no OAuth app setup needed. Ready to connect.'
+					: existingIntegrationConfig
+						? 'Loaded your existing integration config and client credentials. Ready to connect.'
+						: 'Loaded your existing OAuth client configuration. Ready to connect.',
 			)
 			setStep('connect')
 			return
@@ -503,6 +594,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				tokenExchangeStyle: nextConfig.tokenExchangeStyle,
 				clientSecretSecretName: nextConfig.clientSecretSecretName,
 				allowedHosts: nextConfig.allowedHosts,
+				...(nextConfig.platformAppSlug
+					? { platformAppSlug: nextConfig.platformAppSlug }
+					: {}),
 			}),
 		})
 		const text = await response.text()
@@ -634,6 +728,39 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 	}
 
+	/**
+	 * Shown when the current (or prospective) connection runs on the user's
+	 * own OAuth app while an enabled built-in exists for the same name. A
+	 * complete bring-your-own record wins the lookup by design, so without
+	 * this the built-in lane is invisible from the connect page.
+	 */
+	const renderBuiltInAlternative = () => {
+		if (!builtInAvailable || !config || config.platformAppSlug) return null
+		return (
+			<p mix={css(descriptionCss)}>
+				This uses your own OAuth app for {config.provider}. Prefer the hosted
+				one?{' '}
+				<a
+					href={`/connect/oauth?provider=${encodeURIComponent(config.providerKey)}&platform=1`}
+					mix={[
+						css(primaryLinkCss),
+						// Full document load on purpose: this page's init
+						// (config resolution, built-in auto-start) runs per
+						// document load, and a same-route SPA swap reuses the
+						// mounted instance without re-running it.
+						on('click', (event) => {
+							event.preventDefault()
+							window.location.assign(event.currentTarget.href)
+						}),
+					]}
+				>
+					Use the built-in {config.provider} integration instead
+				</a>{' '}
+				— connecting it replaces this connection&apos;s tokens and scopes.
+			</p>
+		)
+	}
+
 	const handleConnect = async () => {
 		if (!config || submitting) return
 		submitting = true
@@ -701,6 +828,9 @@ export function ConnectOauthRoute(handle: Handle) {
 					action: 'connect_oauth',
 					provider: config.provider,
 					callbackUrl,
+					...(config.platformAppSlug
+						? { platformAppSlug: config.platformAppSlug }
+						: {}),
 					authorizeUrl: config.authorizeUrl,
 					tokenUrl: config.tokenUrl,
 					apiBaseUrl: config.apiBaseUrl,
@@ -746,6 +876,9 @@ export function ConnectOauthRoute(handle: Handle) {
 	}
 
 	const renderRedirectUriCard = () => {
+		// Built-in apps are registered by the operator; users have nothing to
+		// paste into a provider console.
+		if (config?.platformAppSlug) return null
 		const redirectUri = getRedirectUri()
 		if (!redirectUri) return null
 		return (
@@ -909,6 +1042,30 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (initialLoadStarted) return
 		initialLoadStarted = true
 		try {
+			// SSR-embedded on direct visits, loader-prefetched on SPA
+			// navigations; the integrations fetch below only runs as a
+			// fallback (e.g. callback returns that lost sessionStorage).
+			const routeData = tryConsumeRouteLoaderData(
+				handle,
+				'connectOauth',
+				readCurrentRouterHref(handle),
+			)
+			if (routeData) {
+				builtInAvailable = routeData.builtInAvailable ?? false
+			}
+			const preloadedIntegrationFor = (providerKey: string) =>
+				routeData && routeData.provider === providerKey
+					? routeData.integration
+					: undefined
+			const resolveExistingIntegration = async (
+				queryConfig: ConnectOauthQueryConfig,
+			): Promise<StoredIntegrationConfig | null> => {
+				const preloaded = preloadedIntegrationFor(queryConfig.providerKey)
+				if (preloaded !== undefined) {
+					return preloaded ? toStoredIntegrationConfig(preloaded) : null
+				}
+				return readExistingIntegrationConfig(queryConfig)
+			}
 			const callback = readCallback()
 			if (callback.kind === 'success' || callback.kind === 'error') {
 				const storedConfig = readStoredConfig()
@@ -919,7 +1076,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						? mergeConnectOauthConfig({
 								queryConfig,
 								storedIntegration:
-									await readExistingIntegrationConfig(queryConfig),
+									await resolveExistingIntegration(queryConfig),
 							})
 						: null)
 				if (!nextConfig) {
@@ -938,8 +1095,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				setStatus('Missing required OAuth configuration parameters.', 'error')
 				return
 			}
-			const existingIntegration =
-				await readExistingIntegrationConfig(queryConfig)
+			const existingIntegration = await resolveExistingIntegration(queryConfig)
 			existingIntegrationConfig = existingIntegration
 			const nextConfig = mergeConnectOauthConfig({
 				queryConfig,
@@ -952,6 +1108,16 @@ export function ConnectOauthRoute(handle: Handle) {
 			}
 			config = nextConfig
 			await initializeSetupState(nextConfig)
+			// Built-in integrations have nothing for the user to review or
+			// fill in, so a plain ?provider=<slug> visit (the onboarding
+			// cards, docs links) goes straight into the provider's authorize
+			// flow. Callback returns never reach this branch — code and
+			// error visits take the callback path — so a denial cannot
+			// loop back into an auto-start.
+			if (nextConfig.platformAppSlug && currentStep === 'connect') {
+				setStatus(`Redirecting to ${nextConfig.provider} to authorize…`)
+				await handleConnect()
+			}
 		} catch (error) {
 			// Initial integration/secrets reads use fetch(); a transient network
 			// failure must not escape queueTask as unhandledrejection.
@@ -982,7 +1148,25 @@ export function ConnectOauthRoute(handle: Handle) {
 			<section mix={css(pageCss)}>
 				<header mix={css(headerCss)}>
 					<span mix={css(eyebrowCss)}>Kody secure connection</span>
-					<h1 mix={css(pageTitleCss)}>Connect {config.provider}</h1>
+					<h1
+						mix={css({
+							...pageTitleCss,
+							display: 'flex',
+							alignItems: 'center',
+							gap: spacing.sm,
+						})}
+					>
+						{config.platformLogoPath ? (
+							<img
+								src={config.platformLogoPath}
+								alt=""
+								width={36}
+								height={36}
+								mix={css({ borderRadius: radius.sm })}
+							/>
+						) : null}
+						Connect {config.provider}
+					</h1>
 					<p mix={css(pageDescriptionCss)}>
 						Follow the steps below to connect your account using OAuth.
 					</p>
@@ -1049,6 +1233,7 @@ export function ConnectOauthRoute(handle: Handle) {
 							1. {existingIntegrationConfig ? 'Review' : 'Save'} OAuth client
 							configuration
 						</h2>
+						{renderBuiltInAlternative()}
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
@@ -1155,6 +1340,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.text })}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
+						{renderBuiltInAlternative()}
 						{existingIntegrationConfig && hasStoredClientId ? (
 							<p mix={css(descriptionCss)}>
 								Using stored client ID
@@ -1163,6 +1349,16 @@ export function ConnectOauthRoute(handle: Handle) {
 									: '.'}
 							</p>
 						) : null}
+						<p mix={css(descriptionCss)}>
+							Connecting authorizes your agent — and any code you run or install
+							— to act as you on {config.provider} with the scopes you grant.
+							Kody does not control or supervise what your agent does with this
+							access; that responsibility is yours. See the{' '}
+							<a href="/terms" target="_blank" rel="noreferrer noopener">
+								Terms
+							</a>
+							.
+						</p>
 						<button
 							type="button"
 							disabled={submitting}

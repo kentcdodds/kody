@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { normalizeMcpServerName } from '@kody-internal/shared/mcp-servers.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
+import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
 	getMcpServerSettingById,
 	listMcpServerSettings,
@@ -29,9 +30,19 @@ export type McpServerStatusView = z.infer<typeof mcpServerStatusSchema>
 export function buildMcpServerStatusView(input: {
 	setting: McpServerSettingMetadata
 	snapshot: McpServerSnapshot | null
+	oauthCallbackUrl?: string
+	oauthClientOrigin?: string
 }): McpServerStatusView {
 	const { setting, snapshot } = input
 	const connected = snapshot?.state === 'ready'
+	const rawError = snapshot?.error ?? null
+	const error =
+		rawError && input.oauthCallbackUrl && input.oauthClientOrigin
+			? enrichMcpOAuthProviderError(rawError, {
+					callbackUrl: input.oauthCallbackUrl,
+					clientOrigin: input.oauthClientOrigin,
+				})
+			: rawError
 	return {
 		id: setting.id,
 		name: setting.name,
@@ -41,7 +52,7 @@ export function buildMcpServerStatusView(input: {
 		connected,
 		toolCount: connected ? (snapshot?.tools.length ?? 0) : 0,
 		authUrl: snapshot?.authUrl ?? null,
-		error: snapshot?.error ?? null,
+		error,
 		tools: connected ? (snapshot?.tools.map((tool) => tool.name) ?? []) : [],
 		createdAt: setting.createdAt,
 		updatedAt: setting.updatedAt,

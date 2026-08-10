@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createCommunityHandler(env: Env) {
 	return {

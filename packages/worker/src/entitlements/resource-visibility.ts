@@ -1,4 +1,4 @@
-import type { EntitlementResource } from './plans.ts'
+import { type EntitlementResource } from '#universal/plans.ts'
 
 export type EntitlementResourceGroup = 'daily' | 'counts' | 'storage' | 'limits'
 
@@ -110,7 +110,7 @@ export const entitlementResourceVisibility: Record<
 		group: 'storage',
 		kind: 'counter',
 		whatCounts:
-			'Durable payload bytes across D1-backed data (email bodies, values, secrets, jobs, package metadata, and similar).',
+			'Durable payload bytes across D1-backed data plus inventoried package, job, execute, service, and repo-session storage buckets.',
 		howToReduce: 'Delete stored content you no longer need.',
 	},
 	concurrent_workflows: {
@@ -133,6 +133,13 @@ export const entitlementResourceVisibility: Record<
 			'Sandbox outbound HTTP fetches through the fetch gateway today (UTC).',
 		howToReduce: 'Fetch less from user code today, or upgrade your plan.',
 	},
+	job_runs_per_day: {
+		group: 'daily',
+		kind: 'counter',
+		whatCounts:
+			'Scheduled job executions today (UTC), including failed attempts and run-now.',
+		howToReduce: 'Run fewer jobs today, space them out, or upgrade your plan.',
+	},
 }
 
 /** All entitlement resources in display order (grouped). */
@@ -141,6 +148,7 @@ export const accountUsageEntitlementResources = [
 	'email_receives_per_day',
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
+	'job_runs_per_day',
 	'repos',
 	'saved_packages',
 	'scheduled_jobs',

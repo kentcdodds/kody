@@ -93,6 +93,7 @@ export async function buildKodyModuleBundle(input: {
 	rootPackageId?: string | null
 	// Opt-in: cache createWorkerBundle by prepared-files digest (see createModuleBundleCacheKey).
 	reuseCachedBundle?: boolean
+	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
 }) {
 	const { files, packages } = await prepareKodyGraphFiles({
 		env: input.env,
@@ -129,7 +130,16 @@ export async function buildKodyModuleBundle(input: {
 		}
 		assertBundleHasNoUnresolvedBareImports({
 			modules,
-			bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+			bundleLabel:
+				input.bundleContext === 'ad-hoc-execute'
+					? 'Ad hoc execute module bundle'
+					: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+			...(input.bundleContext === 'ad-hoc-execute'
+				? {
+						resolutionHint:
+							'Use a registry package that can be bundled for the Cloudflare Workers runtime, or remove the import.',
+					}
+				: {}),
 		})
 		return {
 			mainModule: bundle.mainModule,

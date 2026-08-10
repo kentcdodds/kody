@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createHomeHandler(env: Env) {
 	return {

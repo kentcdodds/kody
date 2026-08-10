@@ -1,5 +1,10 @@
 import { css, type Handle } from 'remix/ui'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	buildSmoothAreaPath,
 	buildSmoothLinePath,

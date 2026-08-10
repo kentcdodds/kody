@@ -3,7 +3,7 @@ import { renderProfileContentHtml } from '#app/profile-content.tsx'
 import {
 	type PublicCommunityProfile,
 	type PublicProfilePackageItem,
-} from '#app/community-public-types.ts'
+} from '#universal/community-public-types.ts'
 
 const profile = {
 	username: 'kody',
@@ -36,20 +36,62 @@ const unpublishedPackage = {
 	communityListingId: null,
 } satisfies PublicProfilePackageItem
 
-test('profile packages link the listing name and fork via a single icon control', async () => {
-	const html = await renderProfileContentHtml({
+test('profile packages link listings and expose follow controls next to the username', async () => {
+	const guestHtml = await renderProfileContentHtml({
 		profile,
 		packages: [listedPackage, unpublishedPackage],
 		activity: [],
 		query: null,
 		isSelf: false,
+		loggedIn: false,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
 	})
 
-	expect(html).toContain('href="/community/listing-1"')
-	expect(html.match(/fathom-analytics/g)).toHaveLength(1)
-	expect(html).toContain('href="/community/listing-1#fork-title"')
+	expect(guestHtml).toContain('href="/community/listing-1"')
+	expect(guestHtml.match(/fathom-analytics/g)).toHaveLength(1)
+	expect(guestHtml).toContain('href="/community/listing-1#fork-title"')
 	// Listed packages get one fork control; unpublished packages do not.
-	expect(html.match(/aria-label="fork"/g)).toHaveLength(1)
-	expect(html).toContain('notes')
-	expect(html).not.toContain('href="/community/notes')
+	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
+	expect(guestHtml).toContain('notes')
+	expect(guestHtml).not.toContain('href="/community/notes')
+	expect(guestHtml).toContain('data-testid="profile-follow"')
+	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
+
+	const followingHtml = await renderProfileContentHtml({
+		profile,
+		packages: [],
+		activity: [],
+		query: null,
+		isSelf: false,
+		loggedIn: true,
+		isFollowing: true,
+		returnTo: '/@kody',
+		followError: 'Unable to follow.',
+	})
+
+	expect(followingHtml).toContain('data-testid="profile-username"')
+	expect(followingHtml).toContain('data-testid="profile-follow"')
+	expect(followingHtml).toContain('data-following="true"')
+	expect(followingHtml).toContain('/profiles/kody/follow.json')
+	expect(followingHtml).toContain('data-testid="profile-follow-error"')
+	expect(followingHtml.indexOf('data-testid="profile-follow"')).toBeGreaterThan(
+		followingHtml.indexOf('data-testid="profile-username"'),
+	)
+
+	const ownHtml = await renderProfileContentHtml({
+		profile,
+		packages: [],
+		activity: [],
+		query: null,
+		isSelf: true,
+		loggedIn: true,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
+	})
+
+	expect(ownHtml).toContain('@kody')
+	expect(ownHtml).not.toContain('data-testid="profile-follow"')
 })

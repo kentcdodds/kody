@@ -6,6 +6,7 @@ import { listCommunityStargazersForListing } from '#worker/community/social-serv
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { callerContextFields } from '#mcp/observability.ts'
 import {
 	buildCommunityOwnerProfileUrl,
@@ -77,7 +78,9 @@ export const communityGetCapability = defineDomainCapability(
 				includeDelisted: false,
 			})
 			if (!listing) {
-				throw new Error('Community listing not found.')
+				// Missing / delisted listing ids are routine agent turns, not
+				// platform defects — keep them on mcp-event and out of Sentry.
+				throw new McpCallerError('Community listing not found.')
 			}
 			const ownerUsername = resolveCommunityOwnerUsername(listing.name)
 			const ownerRow = await getUserSocialRowByUsername(

@@ -2,7 +2,7 @@ import { buildUserAvatarUrl } from '#app/community-public.ts'
 import {
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 

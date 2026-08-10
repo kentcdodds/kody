@@ -2,6 +2,7 @@ import {
 	ContentBlockSchema,
 	type ContentBlock,
 } from '@modelcontextprotocol/sdk/types.js'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 /**
  * Explicit markers used at the synthesized MCP-server / remote-connector
@@ -59,10 +60,6 @@ export type PersistedRawContentBound = {
 		returnedBytes: number
 		blockCount: number
 	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isReservedMarkerKey(key: string) {
@@ -239,16 +236,11 @@ export function wrapDownstreamMcpToolResult(
 	result: DownstreamMcpToolResult,
 	source: DownstreamMcpResultSource,
 ): Record<string, unknown> {
-	const hasStructured =
-		result.structuredContent !== undefined &&
-		result.structuredContent !== null &&
-		typeof result.structuredContent === 'object' &&
-		!Array.isArray(result.structuredContent)
+	const structuredContent = result.structuredContent
+	const hasStructured = isRecord(structuredContent)
 
 	const structuredRecord = hasStructured
-		? sanitizeStructuredContentRecord(
-				result.structuredContent as Record<string, unknown>,
-			)
+		? sanitizeStructuredContentRecord(structuredContent)
 		: null
 
 	const contentBlocks =
@@ -263,7 +255,7 @@ export function wrapDownstreamMcpToolResult(
 
 	if (needsContentPassthrough) {
 		return {
-			...(structuredRecord ?? {}),
+			...structuredRecord,
 			[mcpContentMarker]: contentBlocks,
 			...(structuredRecord
 				? { [mcpStructuredContentMarker]: structuredRecord }

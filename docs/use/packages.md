@@ -144,6 +144,16 @@ exhaustive.
   package's name is known when the code is written. Static imports are typed,
   publish-verified, dependency-graph-visible, and add zero per-call platform
   cost.
+- **Platform (built-in) scopes resolve live without forking.** When a scope's
+  username belongs to a platform account (for example `@kody`), a static import
+  such as `import gh from 'kody:@kody/github/issues'` resolves the platform
+  account's current published version even though you do not own a copy. The
+  code runs in **your** runtime against your secrets and grants; your own copy
+  of the same name always wins, so forking to customize keeps working. Platform
+  package code cannot use `packageStorage()` in your account, and dynamic
+  `import("kody:@kody/…")` is unsupported — use the static form. Platform
+  packages appear in `search` results alongside your own (marked with their
+  platform scope), so agents discover them without knowing the name in advance.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
@@ -255,7 +265,9 @@ Static package imports from ad hoc MCP `execute` code, such as
 `kody:@scope/package/export`, do not get a package runtime context. They run as
 library imports in the execute caller's runtime, where `packageStorage()` still
 reaches the declaring package's own storage bucket (see
-[Package storage](#package-storage)), and `{{secret:...}}` placeholders for
+[Package storage](#package-storage)) — for **caller-owned** packages only:
+platform (built-in) dependencies receive no `packageStorage()` grant and the
+call fails closed inside live platform code. `{{secret:...}}` placeholders for
 user-scope secrets still resolve at the fetch gateway under the calling user —
 so secret-backed packages such as `github` work fully via plain static import.
 Use keyless `packages.invoke` from execute when you need to enter a saved
@@ -264,11 +276,13 @@ package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. Package publish checks reject
-them permanently, and runtime teaching errors name the supported replacement.
-`packages.invoke` performs the contract check inline, and the static/dynamic
-rules above cover literal dynamic import cases. The
-`0002-static-first-invocation` package codemod remains available to repair
-`invokeChecked` call sites mechanically.
+all three with the supported replacement named. In the execute sandbox the
+`packages` helper exposes only `invoke`, so accessing `check` or `invokeChecked`
+throws a normal `TypeError`. Package-app runtimes reject those helpers with an
+error that names the supported replacement. `packages.invoke` performs the
+contract check inline, and the static/dynamic rules above cover literal dynamic
+import cases. The `0002-static-first-invocation` package codemod remains
+available to repair `invokeChecked` call sites mechanically.
 
 ## Package storage
 
@@ -359,6 +373,15 @@ on the signed-in app origin. Opening an app from Kody performs a short-lived
 session handoff to that origin. Package author JavaScript cannot use the
 first-party `kody_session` cookie or call authenticated Kody pages as the
 signed-in user.
+
+Package app URLs follow the mount contract
+`/@username/packages/<kody-id>/<path>`: Kody strips the mount before forwarding,
+so root-relative links escape the app. Build in-app links, redirects, shared
+links, email links, and OAuth callbacks against `packageContext.hostedUrl` and
+`packageContext.appBasePath` (derived from the serving username and `kody.id`).
+See [Package app routing](../guides/package-authoring.md#package-app-routing)
+for the authoring example. Other saved-package runtime surfaces may omit these
+app-specific fields.
 
 Use the package app model when the package needs:
 

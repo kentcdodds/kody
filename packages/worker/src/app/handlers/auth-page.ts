@@ -6,7 +6,7 @@ import {
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { getTurnstileSiteKey } from '#app/public-form-protection.ts'
-import { getSignupMode } from '#app/signup-mode.ts'
+import { getSignupMode } from '#universal/signup-mode.ts'
 
 export function createAuthPageHandler(
 	env: Env,

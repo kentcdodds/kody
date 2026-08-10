@@ -21,6 +21,11 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 	}),
 }))
 
+vi.mock('#worker/package-registry/scope-grants.ts', () => ({
+	getPlatformAccountByUsername: async () => null,
+	listPlatformAccountUsernames: async () => [],
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),

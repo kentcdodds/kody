@@ -13,6 +13,7 @@ import {
 	getEmailMessageWithAttachmentsById,
 } from '#worker/email/service.ts'
 import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
@@ -28,6 +29,7 @@ import {
 	isMissingPackageModuleError,
 	isTransientModuleArtifactError,
 } from './module-artifacts.ts'
+import { buildSubscriptionInvocationRunMetadata } from './subscription-envelope.ts'
 import {
 	buildExecutionErrorResponse,
 	buildExecutionSuccessResponse,
@@ -99,6 +101,8 @@ export type SavedPackageModuleRunInput = {
 	 * full Cloudflare Workflow step window.
 	 */
 	executorTimeoutMs?: number | null
+	/** Parent execute deadline for cooperative cancellation of nested invokes. */
+	signal?: AbortSignal
 	/**
 	 * Keyed path: the caller already claimed the run record together with the
 	 * idempotency-ledger row (one DO call) and finishes both together from
@@ -135,12 +139,10 @@ export async function runSavedPackageModuleOnce(
 		const callerContext = createMcpCallerContext({
 			baseUrl: input.baseUrl,
 			executionOrigin: 'background',
-			user: {
-				userId: input.actor.userId,
-				email: input.actor.email,
-				username: undefined,
-				displayName: input.actor.displayName,
-			},
+			user: await resolveBackgroundMcpUser(
+				input.env.APP_DB,
+				input.actor.userId,
+			),
 			storageContext: {
 				sessionId: null,
 				appId: input.savedPackage.id,
@@ -185,11 +187,13 @@ export async function runSavedPackageModuleOnce(
 						}),
 						invocationId: input.invocationId,
 						idempotencyKey: input.idempotencyKey,
-						metadata: {
+						metadata: buildSubscriptionInvocationRunMetadata({
 							exportName: input.invocationName,
+							isSubscription: input.moduleSelector.kind === 'subscription',
 							source: input.source,
 							topic: input.topic,
-						},
+							params: input.params,
+						}),
 					}
 		executionStarted = true
 		const executionResult = await runBundledModuleWithRegistry(
@@ -203,6 +207,7 @@ export async function runSavedPackageModuleOnce(
 			input.params,
 			{
 				executorTimeoutMs: input.executorTimeoutMs,
+				signal: input.signal,
 				// No ambient `storage` binding: package code reaches its bucket via
 				// `packageStorage()` (granted through packageContext below). Legacy
 				// ambient use gets the structured runtime_helper_unbound hint.

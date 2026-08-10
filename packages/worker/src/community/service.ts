@@ -60,6 +60,7 @@ import {
 	deleteCommunityStarsByListingId,
 	insertCommunityActivityEvent,
 } from './social-repo.ts'
+import { listPlatformAccountUsernames } from '#worker/package-registry/scope-grants.ts'
 import {
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
@@ -77,6 +78,7 @@ import {
 import {
 	type CommunityForkActor,
 	type CommunityListingRecord,
+	type CommunityListingSearchResult,
 	type CommunityListingWithAggregates,
 	type CommunityActivityKind,
 	type CommunityRatingRecord,
@@ -96,6 +98,11 @@ const intentHeadingPattern = /^##\s+intent\b/im
 // unrelated text (~0.10). Related lexical hits use lexical > 0; vector-only
 // semantic matches on listing documents tend to land above ~0.12.
 export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
+
+// The vector threshold is only a broad candidate gate. Deterministic embeddings
+// can put unrelated documents above it, so require stronger blended query fit
+// before returning a ranked search result.
+export const COMMUNITY_SEARCH_MIN_RELEVANCE = 0.2
 
 // Community search/browse never scores more than this many listings in
 // memory; candidates are pre-filtered and recency-ordered in SQL. This is
@@ -735,7 +742,7 @@ export async function searchCommunityListings(input: {
 	limit: number
 	trustedFirst?: boolean
 	resultFilter?: (listing: CommunityListingWithAggregates) => boolean
-}): Promise<Array<CommunityListingWithAggregates>> {
+}): Promise<Array<CommunityListingSearchResult>> {
 	const trimmedQuery = input.query.trim()
 	let listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: false,
@@ -750,7 +757,10 @@ export async function searchCommunityListings(input: {
 		const relevanceOrdered = withAggregates.sort(
 			compareCommunityListingsByBayesianAndPublishedAt,
 		)
-		return finalizeCommunitySearchResults(relevanceOrdered, input)
+		return finalizeCommunitySearchResults(
+			relevanceOrdered.map((listing) => ({ ...listing, relevance: null })),
+			input,
+		)
 	}
 	const matchesQuery = (listing: CommunityListingRecord) =>
 		isCommunityListingSearchMatch({
@@ -790,25 +800,28 @@ export async function searchCommunityListings(input: {
 			ratingCount: listing.ratingCount,
 		})
 		return {
-			listing,
-			score: blended * bayesian,
+			listing: { ...listing, relevance: blended },
+			rankScore: blended * bayesian,
 		}
 	})
 
 	const relevanceOrdered = scored
-		.sort((left, right) => right.score - left.score)
+		.filter(
+			(entry) => entry.listing.relevance >= COMMUNITY_SEARCH_MIN_RELEVANCE,
+		)
+		.sort((left, right) => right.rankScore - left.rankScore)
 		.map((entry) => entry.listing)
 	return finalizeCommunitySearchResults(relevanceOrdered, input)
 }
 
 function finalizeCommunitySearchResults(
-	relevanceOrdered: Array<CommunityListingWithAggregates>,
+	relevanceOrdered: Array<CommunityListingSearchResult>,
 	input: {
 		limit: number
 		trustedFirst?: boolean
 		resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 	},
-): Array<CommunityListingWithAggregates> {
+): Array<CommunityListingSearchResult> {
 	const filtered = input.resultFilter
 		? relevanceOrdered.filter(input.resultFilter)
 		: relevanceOrdered
@@ -959,6 +972,9 @@ export async function forkCommunityListing(input: {
 	const crossScopeReferences = scanCrossScopeReferences({
 		files: rewrittenFiles,
 		expectedPackageScope: input.expectedPackageScope,
+		// Platform scopes (e.g. @kody) resolve live for every caller; forks
+		// keep those references instead of rewriting them.
+		allowedForeignScopes: await listPlatformAccountUsernames(input.env.APP_DB),
 	})
 
 	const packageId = crypto.randomUUID()

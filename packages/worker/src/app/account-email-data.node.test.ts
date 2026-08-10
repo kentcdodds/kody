@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import type * as EntitlementPlans from '#worker/entitlements/plans.ts'
+import type * as EntitlementPlans from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -61,7 +61,7 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/entitlements/plans.ts', async (importOriginal) => {
+vi.mock('#universal/plans.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementPlans>()
 	return {
 		...actual,

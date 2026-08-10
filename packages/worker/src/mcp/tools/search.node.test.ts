@@ -48,6 +48,7 @@ function createJoinedIntegration(input: {
 	const appSlug = input.appSlug ?? input.name
 	const now = '2026-04-20T00:00:00.000Z'
 	return {
+		lane: 'user',
 		app: {
 			userId,
 			slug: appSlug,
@@ -79,6 +80,7 @@ function createJoinedIntegration(input: {
 			userId,
 			name: input.name,
 			appSlug,
+			platformAppSlug: null,
 			accountLabel: null,
 			description: input.description ?? `${input.name} integration`,
 			scopes: input.scopes ?? [],
@@ -1364,7 +1366,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		name: 'openapi:widgets:createwidget',
 		inputTypeDefinitionTruncated: true,
 	})
-	expect(topMatch?.inputTypeDefinition?.endsWith('...')).toBe(true)
+	expect(topMatch?.inputTypeDefinition).toContain('required fields: name')
 
 	const nonTruncatedTop = await searchUnified({
 		env: {} as Env,
@@ -2304,4 +2306,72 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 			(match) => match.type === 'capability' && match.name === 'email_send',
 		),
 	).toBe(true)
+})
+
+test('searchUnified ranks platform (built-in) package rows and drops unmarked foreign rows', async () => {
+	const registry = buildCapabilityRegistry([])
+	const platformRow = {
+		...leanPackageRow('platform-pkg-1', 'platform-user', {
+			name: '@kody/github',
+			kodyId: 'github',
+			description: 'Official GitHub helpers',
+			tags: ['github'],
+		}),
+		platformScope: 'kody',
+	}
+	const withPlatform = await searchUnified({
+		env: {} as Env,
+		query: 'github helpers',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows: {
+			...emptyOptionalSearchRows,
+			packageRows: [
+				leanPackageRow('pkg-own', 'user-1', {
+					name: '@user/notes',
+					kodyId: 'notes',
+					description: 'Notes helper',
+				}),
+				platformRow,
+			],
+			warnings: [],
+		},
+	})
+	const platformMatch = withPlatform.matches.find(
+		(match) => match.type === 'package' && match.kodyId === 'github',
+	)
+	expect(platformMatch).toMatchObject({
+		type: 'package',
+		name: '@kody/github',
+		platformScope: 'kody',
+	})
+
+	// An unmarked foreign row still fails the package lane closed (and logs
+	// the tripwire warning).
+	consoleWarn.mockImplementation(() => {})
+	const withForeign = await searchUnified({
+		env: {} as Env,
+		query: 'github helpers',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows: {
+			...emptyOptionalSearchRows,
+			packageRows: [
+				leanPackageRow('foreign-pkg', 'someone-else', {
+					name: '@someoneelse/github',
+					kodyId: 'github',
+					description: 'Official GitHub helpers',
+				}),
+			],
+			warnings: [],
+		},
+	})
+	expect(withForeign.matches.some((match) => match.type === 'package')).toBe(
+		false,
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('row userId mismatch'),
+	)
 })

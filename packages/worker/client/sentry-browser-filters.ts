@@ -7,6 +7,7 @@ type SentryStackFrame = {
 	filename?: string
 	abs_path?: string
 	absPath?: string
+	function?: string
 }
 
 type SentryExceptionValue = {
@@ -43,6 +44,18 @@ function sentryEventStackFrameUrls(event: SentryErrorEventLike) {
 		}
 	}
 	return urls
+}
+
+function sentryEventStackFrameFunctions(event: SentryErrorEventLike) {
+	const names: Array<string> = []
+	for (const value of event.exception?.values ?? []) {
+		for (const frame of value.stacktrace?.frames ?? []) {
+			if (typeof frame.function === 'string' && frame.function.length > 0) {
+				names.push(frame.function)
+			}
+		}
+	}
+	return names
 }
 
 /**
@@ -208,15 +221,17 @@ export function filterBrowserInjectedGlobalNoiseSentryEvent<
  * Fathom Analytics (`cdn.usefathom.com/script.js`) tracks pageviews with a
  * temporary `<img>` beacon and removes it from `load`/`error` handlers via
  * `img.parentNode.removeChild(img)`. When the beacon was already detached
- * (SPA navigation / soft reload), `parentNode` is null and Chromium throws.
- * Signature from production issue 7653117289 / KODY-CLOUDFLARE-3Q.
+ * (SPA navigation / soft reload), `parentNode` is null and the browser throws.
+ * Chromium: issue 7653117289 / KODY-CLOUDFLARE-3Q. Mobile Safari/WebKit:
+ * issue 7661146106 / KODY-CLOUDFLARE-4C.
  *
  * Match is intentionally narrow: removeChild-on-null TypeError text AND a
- * stack frame from the Fathom CDN. Never blanket-drop removeChild errors from
- * app code.
+ * stack frame attributable to the Fathom script (CDN hostname or the
+ * cross-origin-sanitized `/script.js` path). Never blanket-drop removeChild
+ * errors from app code.
  */
 const fathomRemoveChildNullMessage =
-	/^(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)$/
+	/^(?:(?:TypeError:\s*)?Cannot read propert(?:y|ies) of null \(reading ['"]removeChild['"]\)|(?:TypeError:\s*)?null is not an object \(evaluating ['"][^'"]*\.removeChild[^'"]*['"]\))$/
 
 const fathomAnalyticsHostname = 'cdn.usefathom.com'
 
@@ -226,13 +241,18 @@ export function isFathomRemoveChildNullMessage(message: string) {
 
 export function isFathomAnalyticsStackFrameUrl(url: string) {
 	try {
-		return (
+		if (
 			new URL(url, 'https://sentry.invalid').hostname ===
 			fathomAnalyticsHostname
-		)
+		) {
+			return true
+		}
 	} catch {
-		return false
+		// fall through to sanitized cross-origin paths
 	}
+	// Cross-origin Fathom frames often sanitize to "/script.js" in Sentry.
+	const normalized = url.replace(/\\/g, '/')
+	return normalized === '/script.js'
 }
 
 export function isFathomRemoveChildNullSentryEvent(
@@ -304,6 +324,59 @@ export function filterChromeExtensionObjectNotFoundSentryEvent<
 }
 
 /**
+ * Chrome/Firefox extension messaging noise: content scripts and page-injected
+ * extension code call `chrome.runtime.sendMessage` / `browser.runtime.sendMessage`
+ * when the extension's background/service worker (or another receiving end) is
+ * gone — unloaded, updated, or never registered for that tab. Chromium rejects
+ * with this exact IPC wording. The promise often surfaces on the host page with
+ * no app stack frames (Sentry attributes the culprit to the document URL).
+ *
+ * Signature from production issue 7662064169 / KODY-CLOUDFLARE-4F (Chrome on
+ * https://heykody.app/, zero frames, handled generic capture). Kody never uses
+ * `chrome.runtime` / `browser.runtime`. Match is intentionally narrow: only
+ * this exact "Could not establish connection. Receiving end does not exist"
+ * wording (optional `Error:` preface). Never blanket-drop connection errors.
+ */
+const chromeExtensionReceivingEndMissingMessage =
+	/^(?:Error:\s*)?Could not establish connection\. Receiving end does not exist\.?$/
+
+export function isChromeExtensionReceivingEndMissingMessage(message: string) {
+	return chromeExtensionReceivingEndMissingMessage.test(message.trim())
+}
+
+export function isChromeExtensionReceivingEndMissingError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionReceivingEndMissingMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionReceivingEndMissingMessage(error.message)
+}
+
+export function isChromeExtensionReceivingEndMissingSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isChromeExtensionReceivingEndMissingError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isChromeExtensionReceivingEndMissingMessage(message),
+	)
+}
+
+export function filterChromeExtensionReceivingEndMissingSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isChromeExtensionReceivingEndMissingSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
  * MetaMask (`chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/…`) injects
  * `inpage.js` into every page and tries to restore a wallet session on load.
  * When the extension's background/service worker is unavailable it rejects
@@ -369,6 +442,124 @@ export function filterMetaMaskExtensionSentryEvent<
 	return event
 }
 
+/**
+ * Twitter/X iOS in-app browser chrome (`updateFooterPositions` /
+ * `updateGapFiller`) references a host-page `CONFIG` global that Kody never
+ * defines. WebKit reports it as an unhandled `ReferenceError` attributed to
+ * the document URL (no Twitter bundle frames). Signature from production
+ * issue 7659616372 / KODY-CLOUDFLARE-43 (browser tag "Twitter 11.82").
+ *
+ * Match is intentionally narrow: CONFIG ReferenceError wording AND a stack
+ * frame named `updateFooterPositions` or `updateGapFiller`. Never
+ * blanket-drop bare `CONFIG` ReferenceErrors from app code.
+ */
+const twitterInAppBrowserConfigMessage =
+	/^(?:ReferenceError:\s*)?(?:Can'?t find variable: CONFIG|Cannot find variable: CONFIG|CONFIG is not defined)\.?$/i
+
+const twitterInAppBrowserChromeFunctions = new Set([
+	'updateFooterPositions',
+	'updateGapFiller',
+])
+
+export function isTwitterInAppBrowserConfigMessage(message: string) {
+	return twitterInAppBrowserConfigMessage.test(message.trim())
+}
+
+export function isTwitterInAppBrowserChromeStackFunction(name: string) {
+	return twitterInAppBrowserChromeFunctions.has(name)
+}
+
+export function isTwitterInAppBrowserConfigError(error: unknown) {
+	if (typeof error === 'string') {
+		return isTwitterInAppBrowserConfigMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isTwitterInAppBrowserConfigMessage(error.message)
+}
+
+export function isTwitterInAppBrowserConfigSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasConfigMessage =
+		isTwitterInAppBrowserConfigError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isTwitterInAppBrowserConfigMessage(message),
+		)
+	if (!hasConfigMessage) return false
+	return sentryEventStackFrameFunctions(event).some(
+		isTwitterInAppBrowserChromeStackFunction,
+	)
+}
+
+export function filterTwitterInAppBrowserConfigSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isTwitterInAppBrowserConfigSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/**
+ * Injected page scripts (Mobile Safari / in-app browsers / content scripts)
+ * sometimes probe Open Graph tags with an unguarded
+ * `document.querySelector("meta[property='og:type']").content`. When the page
+ * has no managed OG tags (guides and many authenticated routes), WebKit throws
+ * and attributes the frame to `global code` on the document URL — never a Kody
+ * bundle. Signature from production issue 7660258027 / KODY-CLOUDFLARE-46.
+ *
+ * Kody only writes `og:type` in document-head / SSR; it never reads it this
+ * way. Match is intentionally narrow: Safari "null is not an object
+ * (evaluating 'document.querySelector(…og:type…).content')" wording AND a
+ * `global code` stack function. Never blanket-drop bare `.content` TypeErrors
+ * from app code.
+ */
+const ogTypeMetaQuerySelectorContentMessage =
+	/^(?:TypeError:\s*)?null is not an object \(evaluating ['"]document\.querySelector\([^)]*meta\[property=['"]og:type['"]\][^)]*\)\.content['"]\)$/i
+
+export function isOgTypeMetaQuerySelectorContentMessage(message: string) {
+	return ogTypeMetaQuerySelectorContentMessage.test(message.trim())
+}
+
+export function isOgTypeMetaQuerySelectorContentError(error: unknown) {
+	if (typeof error === 'string') {
+		return isOgTypeMetaQuerySelectorContentMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isOgTypeMetaQuerySelectorContentMessage(error.message)
+}
+
+export function isOgTypeMetaQuerySelectorContentSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasOgTypeMessage =
+		isOgTypeMetaQuerySelectorContentError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isOgTypeMetaQuerySelectorContentMessage(message),
+		)
+	if (!hasOgTypeMessage) return false
+	return sentryEventStackFrameFunctions(event).some(
+		(name) => name === 'global code',
+	)
+}
+
+export function filterOgTypeMetaQuerySelectorContentSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isOgTypeMetaQuerySelectorContentSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -398,7 +589,29 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	) {
 		return null
 	}
+	if (
+		filterChromeExtensionReceivingEndMissingSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
 	if (filterMetaMaskExtensionSentryEvent(event, originalException) === null) {
+		return null
+	}
+	if (
+		filterTwitterInAppBrowserConfigSentryEvent(event, originalException) ===
+		null
+	) {
+		return null
+	}
+	if (
+		filterOgTypeMetaQuerySelectorContentSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
 		return null
 	}
 	return event

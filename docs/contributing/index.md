@@ -18,8 +18,8 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Code and tooling
 
 - [Code style](./code-style.md), [TypeScript setup](./typescript-setup.md)
-- [Import boundaries](./import-boundaries.md) (enforced app / MCP / shared
-  primitive layering)
+- [Import boundaries](./import-boundaries.md) (enforced app / MCP / worker /
+  universal layering)
 - [Oxlint JS plugins](./oxlint-js-plugins.md),
   [dependency overrides](./dependency-overrides.md)
 - [Remix skills and page checklist](./remix.md), [frames](./frames.md)

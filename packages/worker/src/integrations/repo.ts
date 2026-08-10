@@ -1,5 +1,10 @@
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
+	mapPlatformOauthAppRow,
+	type PlatformOauthAppRow,
+} from './platform-apps.ts'
+import {
+	type JoinedIntegration,
 	type UserIntegrationConnection,
 	type UserIntegrationRow,
 	type UserOauthApp,
@@ -7,20 +12,27 @@ import {
 	type UserOauthAppWithConnectionCount,
 } from './types.ts'
 
-type JoinedIntegrationRow = UserOauthAppRow & {
-	connection_name: string
-	app_slug: string
-	account_label: string | null
-	description: string
-	scopes_json: string
-	required_hosts_json: string
-	access_token_secret_name: string
-	refresh_token_secret_name: string | null
-	connected_at: string | null
-	token_refreshed_at: string | null
-	connection_created_at: string
-	connection_updated_at: string
+type NullablePrefixed<TRow, TPrefix extends string> = {
+	[Key in keyof TRow & string as `${TPrefix}${Key}`]: TRow[Key] | null
 }
+
+type JoinedIntegrationRow = NullablePrefixed<UserOauthAppRow, 'a_'> &
+	NullablePrefixed<PlatformOauthAppRow, 'p_'> & {
+		user_id: string
+		connection_name: string
+		app_slug: string | null
+		platform_app_slug: string | null
+		account_label: string | null
+		description: string
+		scopes_json: string
+		required_hosts_json: string
+		access_token_secret_name: string
+		refresh_token_secret_name: string | null
+		connected_at: string | null
+		token_refreshed_at: string | null
+		connection_created_at: string
+		connection_updated_at: string
+	}
 
 type UserOauthAppWithCountRow = UserOauthAppRow & {
 	connection_count: number
@@ -33,24 +45,47 @@ const appSelectColumns = `
 `
 
 const joinedSelectColumns = `
-	a.user_id AS user_id,
-	a.slug AS slug,
-	a.provider AS provider,
-	a.label AS label,
-	a.client_id AS client_id,
-	a.client_secret_secret_name AS client_secret_secret_name,
-	a.token_url AS token_url,
-	a.authorize_url AS authorize_url,
-	a.api_base_url AS api_base_url,
-	a.flow AS flow,
-	a.use_pkce AS use_pkce,
-	a.token_exchange_style AS token_exchange_style,
-	a.scope_separator AS scope_separator,
-	a.extra_authorize_params_json AS extra_authorize_params_json,
-	a.created_at AS created_at,
-	a.updated_at AS updated_at,
+	i.user_id AS user_id,
+	a.user_id AS a_user_id,
+	a.slug AS a_slug,
+	a.provider AS a_provider,
+	a.label AS a_label,
+	a.client_id AS a_client_id,
+	a.client_secret_secret_name AS a_client_secret_secret_name,
+	a.token_url AS a_token_url,
+	a.authorize_url AS a_authorize_url,
+	a.api_base_url AS a_api_base_url,
+	a.flow AS a_flow,
+	a.use_pkce AS a_use_pkce,
+	a.token_exchange_style AS a_token_exchange_style,
+	a.scope_separator AS a_scope_separator,
+	a.extra_authorize_params_json AS a_extra_authorize_params_json,
+	a.created_at AS a_created_at,
+	a.updated_at AS a_updated_at,
+	p.slug AS p_slug,
+	p.provider AS p_provider,
+	p.label AS p_label,
+	p.client_id AS p_client_id,
+	p.client_secret_encrypted AS p_client_secret_encrypted,
+	p.token_url AS p_token_url,
+	p.authorize_url AS p_authorize_url,
+	p.api_base_url AS p_api_base_url,
+	p.flow AS p_flow,
+	p.use_pkce AS p_use_pkce,
+	p.token_exchange_style AS p_token_exchange_style,
+	p.scope_separator AS p_scope_separator,
+	p.extra_authorize_params_json AS p_extra_authorize_params_json,
+	p.allowed_scopes_json AS p_allowed_scopes_json,
+	p.default_scopes_json AS p_default_scopes_json,
+	p.required_hosts_json AS p_required_hosts_json,
+	p.enabled AS p_enabled,
+	p.logo_key AS p_logo_key,
+	p.logo_content_type AS p_logo_content_type,
+	p.created_at AS p_created_at,
+	p.updated_at AS p_updated_at,
 	i.name AS connection_name,
 	i.app_slug AS app_slug,
+	i.platform_app_slug AS platform_app_slug,
 	i.account_label AS account_label,
 	i.description AS description,
 	i.scopes_json AS scopes_json,
@@ -63,18 +98,22 @@ const joinedSelectColumns = `
 	i.updated_at AS connection_updated_at
 `
 
+const joinedFromClause = `
+	FROM user_integrations i
+	LEFT JOIN user_oauth_apps a
+		ON a.user_id = i.user_id AND a.slug = i.app_slug
+	LEFT JOIN platform_oauth_apps p
+		ON p.slug = i.platform_app_slug
+`
+
 export async function listJoinedIntegrationsForUser(input: {
 	db: D1Database
 	userId: string
-}): Promise<
-	Array<{ app: UserOauthApp; connection: UserIntegrationConnection }>
-> {
+}): Promise<Array<JoinedIntegration>> {
 	const result = await input.db
 		.prepare(
 			`SELECT ${joinedSelectColumns}
-			FROM user_integrations i
-			INNER JOIN user_oauth_apps a
-				ON a.user_id = i.user_id AND a.slug = i.app_slug
+			${joinedFromClause}
 			WHERE i.user_id = ?
 			ORDER BY i.name ASC`,
 		)
@@ -87,16 +126,11 @@ export async function getJoinedIntegrationByName(input: {
 	db: D1Database
 	userId: string
 	name: string
-}): Promise<{
-	app: UserOauthApp
-	connection: UserIntegrationConnection
-} | null> {
+}): Promise<JoinedIntegration | null> {
 	const row = await input.db
 		.prepare(
 			`SELECT ${joinedSelectColumns}
-			FROM user_integrations i
-			INNER JOIN user_oauth_apps a
-				ON a.user_id = i.user_id AND a.slug = i.app_slug
+			${joinedFromClause}
 			WHERE i.user_id = ? AND i.name = ?
 			LIMIT 1`,
 		)
@@ -372,13 +406,15 @@ export async function upsertIntegrationConnection(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO user_integrations (
-				user_id, name, app_slug, account_label, description, scopes_json,
-				required_hosts_json, access_token_secret_name, refresh_token_secret_name,
-				connected_at, token_refreshed_at, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				user_id, name, app_slug, platform_app_slug, account_label, description,
+				scopes_json, required_hosts_json, access_token_secret_name,
+				refresh_token_secret_name, connected_at, token_refreshed_at,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(user_id, name)
 			DO UPDATE SET
 				app_slug = excluded.app_slug,
+				platform_app_slug = excluded.platform_app_slug,
 				account_label = excluded.account_label,
 				description = excluded.description,
 				scopes_json = excluded.scopes_json,
@@ -393,6 +429,7 @@ export async function upsertIntegrationConnection(input: {
 			input.row.user_id,
 			input.row.name,
 			input.row.app_slug,
+			input.row.platform_app_slug,
 			input.row.account_label,
 			input.row.description,
 			input.row.scopes_json,
@@ -450,6 +487,7 @@ export function mapIntegrationRow(
 		userId: row.user_id,
 		name: row.name,
 		appSlug: row.app_slug,
+		platformAppSlug: row.platform_app_slug,
 		accountLabel: row.account_label,
 		description: row.description,
 		scopes: parseJsonStringArray(row.scopes_json),
@@ -463,27 +501,78 @@ export function mapIntegrationRow(
 	}
 }
 
-function mapJoinedRow(row: JoinedIntegrationRow): {
-	app: UserOauthApp
-	connection: UserIntegrationConnection
-} {
+function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
+	const connection = mapIntegrationRow({
+		user_id: row.user_id,
+		name: row.connection_name,
+		app_slug: row.app_slug,
+		platform_app_slug: row.platform_app_slug,
+		account_label: row.account_label,
+		description: row.description,
+		scopes_json: row.scopes_json,
+		required_hosts_json: row.required_hosts_json,
+		access_token_secret_name: row.access_token_secret_name,
+		refresh_token_secret_name: row.refresh_token_secret_name,
+		connected_at: row.connected_at,
+		token_refreshed_at: row.token_refreshed_at,
+		created_at: row.connection_created_at,
+		updated_at: row.connection_updated_at,
+	})
+	if (row.platform_app_slug != null && row.p_slug != null) {
+		return {
+			lane: 'platform',
+			app: mapPlatformOauthAppRow({
+				slug: row.p_slug,
+				provider: row.p_provider ?? row.p_slug,
+				label: row.p_label,
+				client_id: row.p_client_id ?? '',
+				client_secret_encrypted: row.p_client_secret_encrypted,
+				token_url: row.p_token_url ?? '',
+				authorize_url: row.p_authorize_url ?? '',
+				api_base_url: row.p_api_base_url,
+				flow: row.p_flow ?? 'pkce',
+				use_pkce: row.p_use_pkce,
+				token_exchange_style: row.p_token_exchange_style,
+				scope_separator: row.p_scope_separator,
+				extra_authorize_params_json: row.p_extra_authorize_params_json ?? '{}',
+				allowed_scopes_json: row.p_allowed_scopes_json ?? '[]',
+				default_scopes_json: row.p_default_scopes_json ?? '[]',
+				required_hosts_json: row.p_required_hosts_json ?? '[]',
+				enabled: row.p_enabled ?? 0,
+				logo_key: row.p_logo_key ?? null,
+				logo_content_type: row.p_logo_content_type ?? null,
+				created_at: row.p_created_at ?? '',
+				updated_at: row.p_updated_at ?? '',
+			}),
+			connection,
+		}
+	}
+	if (row.app_slug == null || row.a_slug == null) {
+		throw new Error(
+			`Integration "${row.connection_name}" references a missing OAuth app.`,
+		)
+	}
 	return {
-		app: mapOauthAppRow(row),
-		connection: mapIntegrationRow({
-			user_id: row.user_id,
-			name: row.connection_name,
-			app_slug: row.app_slug,
-			account_label: row.account_label,
-			description: row.description,
-			scopes_json: row.scopes_json,
-			required_hosts_json: row.required_hosts_json,
-			access_token_secret_name: row.access_token_secret_name,
-			refresh_token_secret_name: row.refresh_token_secret_name,
-			connected_at: row.connected_at,
-			token_refreshed_at: row.token_refreshed_at,
-			created_at: row.connection_created_at,
-			updated_at: row.connection_updated_at,
+		lane: 'user',
+		app: mapOauthAppRow({
+			user_id: row.a_user_id ?? row.user_id,
+			slug: row.a_slug,
+			provider: row.a_provider ?? row.a_slug,
+			label: row.a_label,
+			client_id: row.a_client_id ?? '',
+			client_secret_secret_name: row.a_client_secret_secret_name,
+			token_url: row.a_token_url ?? '',
+			authorize_url: row.a_authorize_url,
+			api_base_url: row.a_api_base_url,
+			flow: row.a_flow ?? 'pkce',
+			use_pkce: row.a_use_pkce,
+			token_exchange_style: row.a_token_exchange_style,
+			scope_separator: row.a_scope_separator,
+			extra_authorize_params_json: row.a_extra_authorize_params_json ?? '{}',
+			created_at: row.a_created_at ?? '',
+			updated_at: row.a_updated_at ?? '',
 		}),
+		connection,
 	}
 }
 

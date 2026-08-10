@@ -3,6 +3,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
+	hasAlternativeBuiltInApp,
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
 	loadAccountOauthAppBySlug,
@@ -23,7 +24,7 @@ import {
 	listJoinedIntegrations,
 	rotateOauthAppClientCredentials,
 } from '#worker/integrations/service.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 const rotateOauthAppCredentialsSchema = z
 	.object({
@@ -75,9 +76,21 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 				const searchParams = new URL(request.url).searchParams
 				const name = searchParams.get('name')?.trim()
 				if (name) {
+					const preferPlatform = searchParams.get('platform') === '1'
+					const integration = await loadAccountIntegrationByName(
+						env,
+						user,
+						name,
+						{ preferPlatform },
+					)
 					return jsonResponse({
 						ok: true,
-						integration: await loadAccountIntegrationByName(env, user, name),
+						integration,
+						builtInAvailable: await hasAlternativeBuiltInApp(
+							env,
+							name,
+							integration,
+						),
 					})
 				}
 				const appSlug = searchParams.get('appSlug')?.trim()

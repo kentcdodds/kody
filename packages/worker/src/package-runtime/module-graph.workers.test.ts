@@ -1,7 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import {
+	createAdHocExecuteSourceFiles,
+	runBundledModuleWithRegistry,
+} from '#mcp/run-kody-registry.ts'
 import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	buildKodyImportableModuleBundle,
@@ -10,6 +13,7 @@ import {
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
@@ -201,7 +205,51 @@ test(
 	},
 )
 
-test('ad hoc execute runtime exposes packages.invoke and rejects unsupported helpers', async () => {
+test(
+	'ad hoc execute synthesizes and executes npm dependencies through the bundler',
+	{ timeout: 20_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const sourceFiles = createAdHocExecuteSourceFiles(
+			[
+				"import kleur from 'kleur'",
+				'export default function main() {',
+				"\treturn { formatted: kleur.green('ad-hoc-dependency-ok') }",
+				'}',
+			].join('\n'),
+		)
+		expect(JSON.parse(sourceFiles['package.json'] ?? '{}')).toEqual({
+			dependencies: { kleur: 'latest' },
+		})
+		const bundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId: 'user-ad-hoc-npm-test',
+			sourceFiles,
+			entryPoint: 'entry.ts',
+			bundleContext: 'ad-hoc-execute',
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			createMcpCallerContext({
+				baseUrl: 'https://kody.dev',
+				user: {
+					userId: 'user-ad-hoc-npm-test',
+					email: 'worker@example.com',
+					displayName: 'Worker Test',
+				},
+			}),
+			bundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({ formatted: 'ad-hoc-dependency-ok' })
+	},
+)
+
+test('ad hoc execute runtime exposes only packages.invoke', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const bundle = await buildKodyModuleBundle({
 		env,
@@ -210,15 +258,6 @@ test('ad hoc execute runtime exposes packages.invoke and rejects unsupported hel
 		sourceFiles: {
 			'entry.ts': [
 				"import { kody, packageContext, packages } from 'kody:runtime'",
-				'',
-				'const captureError = (fn) => {',
-				'\ttry {',
-				'\t\tfn()',
-				"\t\treturn 'resolved'",
-				'\t} catch (error) {',
-				'\t\treturn String(error?.message ?? error)',
-				'\t}',
-				'}',
 				'',
 				'export default async function main(input = {}) {',
 				'\t// Direct kody.package_invoke_checked should reject; packages.invoke is the public API.',
@@ -234,8 +273,6 @@ test('ad hoc execute runtime exposes packages.invoke and rejects unsupported hel
 				'\t}',
 				'\treturn {',
 				'\t\tpackageContextIsNull: packageContext === null,',
-				'\t\tremovedCheckError: captureError(() => packages?.check({})),',
-				'\t\tremovedInvokeCheckedError: captureError(() => packages?.invokeChecked({})),',
 				'\t\tdirectKodyInvokeChecked,',
 				'\t\tinvoked: await packages?.invoke({',
 				"\t\t\tkodyId: 'target-package',",
@@ -279,10 +316,6 @@ test('ad hoc execute runtime exposes packages.invoke and rejects unsupported hel
 	expect(result.error).toBeUndefined()
 	expect(result.result).toEqual({
 		packageContextIsNull: true,
-		removedCheckError: expect.stringContaining('packages.check was removed'),
-		removedInvokeCheckedError: expect.stringContaining(
-			'packages.invokeChecked was removed',
-		),
 		directKodyInvokeChecked: expect.stringContaining('package_invoke_checked'),
 		invoked: {
 			ok: true,
@@ -314,6 +347,15 @@ test(
 		await ensureSavedPackageArtifactSchema()
 		const unique = crypto.randomUUID()
 		const userId = `user-${unique}`
+		await ensureUsersTestSchema({ db: env.APP_DB })
+		await runSql(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, ?, ?)`,
+			`worker-${unique}`,
+			`worker-${unique}@example.com`,
+			'test-password-hash',
+			userId,
+		)
 		const sourceId = `source-${unique}`
 		const packageId = `pkg-${unique}`
 		const publishedCommit = `commit-${unique}`
@@ -393,28 +435,15 @@ test(
 				'entry.ts': [
 					"import { packages } from 'kody:runtime'",
 					'',
-					'const captureError = (fn: () => unknown) => {',
-					'\ttry {',
-					'\t\tfn()',
-					"\t\treturn 'resolved'",
-					'\t} catch (error) {',
-					'\t\treturn String((error as Error)?.message ?? error)',
-					'\t}',
-					'}',
-					'',
 					'export default async function main() {',
 					";(globalThis as Record<string, unknown>).__kodyLeanCallerMarker = 'caller'",
 					'\tconst startedAt = Date.now()',
 					"\tconst first = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'first' } })",
 					'\tconst firstDurationMs = Date.now() - startedAt',
 					"\tconst second = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'second' } })",
-					"\tconst removedInvokeCheckedError = captureError(() => packages?.invokeChecked({ kodyId: 'lean-target', exportName: './probe' }))",
-					"\tconst removedCheckError = captureError(() => packages?.check({ kodyId: 'lean-target', exportName: './probe' }))",
 					'\treturn {',
 					'\t\tfirst,',
 					'\t\tsecond,',
-					'\t\tremovedInvokeCheckedError,',
-					'\t\tremovedCheckError,',
 					'\t\tfirstDurationMs,',
 					"\t\ttargetMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanTargetMarker !== 'undefined',",
 					'\t}',
@@ -454,8 +483,6 @@ test(
 		const payload = result.result as {
 			first: Record<string, unknown>
 			second: Record<string, unknown>
-			removedInvokeCheckedError: string
-			removedCheckError: string
 			firstDurationMs: number
 			targetMarkerVisible: boolean
 		}
@@ -473,11 +500,6 @@ test(
 			targetKodyId: 'lean-target',
 			callerMarkerVisible: false,
 		})
-		// Unsupported helpers throw teaching errors naming the replacement.
-		expect(payload.removedInvokeCheckedError).toContain(
-			'packages.invokeChecked was removed',
-		)
-		expect(payload.removedCheckError).toContain('packages.check was removed')
 		// Realm separation in the other direction: the target's globals never
 		// leak back into the caller realm.
 		expect(payload.targetMarkerVisible).toBe(false)

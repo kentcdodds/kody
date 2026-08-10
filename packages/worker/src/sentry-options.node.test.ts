@@ -9,9 +9,33 @@ import {
 	durableObjectStorageOperationTimeoutResetMessage,
 	executorSandboxTimeoutMessage,
 	filterSentryEvent,
+	isDurableObjectIsolateResourceLimitResetMessage,
 } from './sentry-options.ts'
 
 test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
+	// Isolate resource-limit resets are the only DO resets that isolated
+	// artifact rebuild / check phases treat as retryable.
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectIsolateMemoryResetMessage,
+		),
+	).toBe(true)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectIsolateCpuResetMessage,
+		),
+	).toBe(true)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectCodeUpdatedResetMessage,
+		),
+	).toBe(false)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectBlockConcurrencyWhileTimeoutResetMessage,
+		),
+	).toBe(false)
+
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -129,6 +153,31 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			message: `${executorSandboxTimeoutMessage} after 40ms`,
 		}),
 	).toBeNull()
+
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Remote capability "home:bond_shade_set_position" failed: timeout',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
 
 	const platformBuildFailure = {
 		exception: {

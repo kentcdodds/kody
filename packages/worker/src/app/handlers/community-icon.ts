@@ -5,7 +5,7 @@ import {
 	renderCommunityIconFallbackPng,
 } from '#worker/community/community-icon.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 const communityIconCacheControl = 'public, max-age=3600'
 

@@ -1,18 +1,18 @@
 import { type Handle, css } from 'remix/ui'
-import { routes } from '#app/routes.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	type OnboardingChecklistItemId,
 	type OnboardingChecklistLoaderData,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { on } from '#client/event-mixin.ts'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
-import { colors, radius, typography } from '#client/styles/tokens.ts'
+import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
 	primaryLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 export const onboardingChecklistItemLabels: Record<
 	OnboardingChecklistItemId,
@@ -171,7 +171,20 @@ export function OnboardingChecklistCard(
 									{item.done || !href ? (
 										<span mix={css(checklistLabelCss)}>{label}</span>
 									) : (
-										<a href={href} mix={css(checklistLinkCss)}>
+										<a
+											href={href}
+											// Hash links move within onboarding itself; everything
+											// else opens elsewhere and must not eat this tab.
+											target={
+												href.startsWith(onboardingPath) ? undefined : '_blank'
+											}
+											rel={
+												href.startsWith(onboardingPath)
+													? undefined
+													: 'noreferrer noopener'
+											}
+											mix={css(checklistLinkCss)}
+										>
 											{label}
 										</a>
 									)}
@@ -182,6 +195,8 @@ export function OnboardingChecklistCard(
 												<span key={provider.id} mix={css(providerEntryCss)}>
 													<a
 														href={provider.href}
+														target="_blank"
+														rel="noreferrer noopener"
 														mix={css(integrationProviderLinkCss)}
 													>
 														<ProviderIcon providerId={provider.id} size="1em" />

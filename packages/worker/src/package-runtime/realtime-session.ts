@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
@@ -313,12 +314,10 @@ async function resolvePackageAppWorkerBuildInput(input: {
 	const callerContext = createMcpCallerContext({
 		baseUrl: input.binding.baseUrl,
 		executionOrigin: 'background',
-		user: {
-			userId: input.binding.userId,
-			email: '',
-			username: undefined,
-			displayName: `package:${input.binding.packageId}`,
-		},
+		user: await resolveBackgroundMcpUser(
+			input.env.APP_DB,
+			input.binding.userId,
+		),
 		storageContext: {
 			sessionId: null,
 			appId: input.binding.packageId,

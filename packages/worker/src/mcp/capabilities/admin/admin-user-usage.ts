@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { planNames } from '#worker/entitlements/plans.ts'
+import { planNames } from '#universal/plans.ts'
 import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -36,6 +36,7 @@ const entitlementResourceSchema = z.enum([
 	'storage_bytes',
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
+	'job_runs_per_day',
 ])
 
 const planSchema = z.enum(planNames)

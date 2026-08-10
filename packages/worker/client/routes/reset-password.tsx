@@ -2,7 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	fieldCss,
@@ -15,7 +15,7 @@ import {
 	pageTitleCss,
 	primaryLinkCss,
 	stackedPageCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
 	honeypotFieldName,

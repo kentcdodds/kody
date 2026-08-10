@@ -1,19 +1,23 @@
 import {
 	type AccountIntegrationListItem,
 	type AccountOauthAppListItem,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
 	findOauthAppForProviderSetup,
+	getAvailablePlatformApp,
 	getJoinedIntegration,
 	getOauthApp,
 	listJoinedIntegrations,
 	listOauthApps,
-	toIntegrationConfig,
+	toJoinedIntegrationConfig,
 	type OauthAppSetupPrefill,
+	type PlatformOauthApp,
 } from '#worker/integrations/service.ts'
+import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
+import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -22,19 +26,66 @@ type AuthenticatedUser = NonNullable<
 export type AccountIntegrationRecord = AccountIntegrationListItem
 export type AccountOauthAppRecord = AccountOauthAppListItem
 
-function toAccountIntegrationRecord(input: {
-	app: Parameters<typeof toIntegrationConfig>[0]
-	connection: Parameters<typeof toIntegrationConfig>[1]
-}): AccountIntegrationRecord {
-	const config = toIntegrationConfig(input.app, input.connection)
+function toAccountIntegrationRecord(
+	entry: JoinedIntegration,
+): AccountIntegrationRecord {
+	const config = toJoinedIntegrationConfig(entry)
 	return {
 		...config,
-		appSlug: input.app.slug,
-		provider: input.app.provider,
-		appLabel: input.app.label,
-		accountLabel: input.connection.accountLabel,
-		createdAt: input.connection.createdAt,
-		updatedAt: input.connection.updatedAt,
+		appSlug: entry.app.slug,
+		provider: entry.app.provider,
+		appLabel: entry.app.label,
+		accountLabel: entry.connection.accountLabel,
+		...(entry.lane === 'platform'
+			? {
+					platformAllowedScopes: entry.app.allowedScopes,
+					platformLogoPath: buildPlatformOauthAppLogoPath(entry.app),
+				}
+			: {}),
+		createdAt: entry.connection.createdAt,
+		updatedAt: entry.connection.updatedAt,
+	}
+}
+
+/**
+ * Connect-flow payload for a platform (built-in) app the user has not
+ * connected yet. No client credentials appear: the operator owns the app
+ * registration and token exchange runs host-side.
+ */
+function toPlatformAppPrefillRecord(
+	app: PlatformOauthApp,
+	requestedName: string,
+): AccountIntegrationRecord {
+	const providerKey = canonicalIntegrationName(requestedName) || app.slug
+	return {
+		name: providerKey,
+		appSlug: app.slug,
+		provider: app.provider,
+		appLabel: app.label,
+		accountLabel: null,
+		tokenUrl: app.tokenUrl,
+		apiBaseUrl: app.apiBaseUrl,
+		flow: app.flow,
+		...(typeof app.usePkce === 'boolean' ? { usePkce: app.usePkce } : {}),
+		clientId: app.clientId,
+		clientSecretSecretName: null,
+		accessTokenSecretName: `${providerKey}AccessToken`,
+		refreshTokenSecretName: `${providerKey}RefreshToken`,
+		requiredHosts: app.requiredHosts,
+		...(app.tokenExchangeStyle
+			? { tokenExchangeStyle: app.tokenExchangeStyle }
+			: {}),
+		authorization: {
+			authorizeUrl: app.authorizeUrl,
+			scopes: app.defaultScopes,
+			scopeSeparator: app.scopeSeparator,
+			extraAuthorizeParams: app.extraAuthorizeParams,
+		},
+		platform: true,
+		platformAllowedScopes: app.allowedScopes,
+		platformLogoPath: buildPlatformOauthAppLogoPath(app),
+		createdAt: app.createdAt,
+		updatedAt: app.updatedAt,
 	}
 }
 
@@ -94,13 +145,14 @@ function buildOauthAppRecords(
 		string,
 		Array<{ name: string; accountLabel: string | null }>
 	>()
-	for (const { app, connection } of joined) {
-		const existing = connectionsByAppSlug.get(app.slug) ?? []
+	for (const entry of joined) {
+		if (entry.lane !== 'user') continue
+		const existing = connectionsByAppSlug.get(entry.app.slug) ?? []
 		existing.push({
-			name: connection.name,
-			accountLabel: connection.accountLabel,
+			name: entry.connection.name,
+			accountLabel: entry.connection.accountLabel,
 		})
-		connectionsByAppSlug.set(app.slug, existing)
+		connectionsByAppSlug.set(entry.app.slug, existing)
 	}
 	return apps
 		.map((app) =>
@@ -151,7 +203,7 @@ export async function loadAccountOauthAppBySlug(
 	if (!app) return null
 	const joined = await listJoinedIntegrations({ env, userId })
 	const connections = joined
-		.filter((entry) => entry.app.slug === app.slug)
+		.filter((entry) => entry.lane === 'user' && entry.app.slug === app.slug)
 		.map(({ connection }) => ({
 			name: connection.name,
 			accountLabel: connection.accountLabel,
@@ -162,18 +214,56 @@ export async function loadAccountOauthAppBySlug(
 	)
 }
 
+/**
+ * True when the record carries the endpoints the connect page needs to run
+ * an authorize → token exchange flow. Records created for API use only
+ * (agents typically save tokenUrl and apiBaseUrl but no authorize URL)
+ * cannot, and would dead-end the page on "missing configuration".
+ */
+function recordCanDriveConnectFlow(record: AccountIntegrationRecord): boolean {
+	return Boolean(
+		record.authorization?.authorizeUrl?.trim() && record.tokenUrl?.trim(),
+	)
+}
+
 export async function loadAccountIntegrationByName(
 	env: Env,
 	user: AuthenticatedUser,
 	name: string,
+	options?: {
+		/**
+		 * Explicit built-in intent (`platform=1` on /connect/oauth): resolve
+		 * the enabled platform app directly instead of letting a complete
+		 * bring-your-own record win. Falls back to the normal priority when
+		 * no built-in exists for the name.
+		 */
+		preferPlatform?: boolean
+	},
 ): Promise<AccountIntegrationRecord | null> {
+	// A user-lane record still wins when it can actually drive the flow (the
+	// bring-your-own override); an endpoint-incomplete one defers to an
+	// enabled built-in of the same name instead of dead-ending the page.
+	const platformFallback = async () => {
+		const platformApp = await getAvailablePlatformApp({ env, slug: name })
+		return platformApp ? toPlatformAppPrefillRecord(platformApp, name) : null
+	}
+
+	if (options?.preferPlatform) {
+		const platformRecord = await platformFallback()
+		if (platformRecord) return platformRecord
+	}
+
 	// 1. Existing connection (reconnect) — connection name, not app slug.
 	const joined = await getJoinedIntegration({
 		env,
 		userId: user.mcpUser.userId,
 		name,
 	})
-	if (joined) return toAccountIntegrationRecord(joined)
+	if (joined) {
+		const record = toAccountIntegrationRecord(joined)
+		if (recordCanDriveConnectFlow(record)) return record
+		return (await platformFallback()) ?? record
+	}
 
 	// 2–3. Exact app slug, else field-wise provider-family prefill (shared
 	// client id across github/github-kent, shared google app, etc.).
@@ -182,6 +272,27 @@ export async function loadAccountIntegrationByName(
 		userId: user.mcpUser.userId,
 		name,
 	})
-	if (!prefill) return null
-	return toAppOnlyIntegrationRecord(prefill, name)
+	if (prefill) {
+		const record = toAppOnlyIntegrationRecord(prefill, name)
+		if (recordCanDriveConnectFlow(record)) return record
+		return (await platformFallback()) ?? record
+	}
+
+	// 4. Platform (built-in) app: the user needs no OAuth app of their own, so
+	// the connect flow can skip client-credential setup entirely.
+	return platformFallback()
+}
+
+/**
+ * True when an enabled built-in exists for `name` that the resolved record
+ * is not already using — the connect page offers it as an alternative lane.
+ */
+export async function hasAlternativeBuiltInApp(
+	env: Env,
+	name: string,
+	record: AccountIntegrationRecord | null,
+): Promise<boolean> {
+	if (record?.platform) return false
+	const platformApp = await getAvailablePlatformApp({ env, slug: name })
+	return platformApp != null
 }

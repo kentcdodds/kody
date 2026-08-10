@@ -5,8 +5,8 @@ import {
 	featureFlagKeys,
 	isFeatureFlagKey,
 	type FeatureFlagKey,
-} from '#worker/feature-flags/registry.ts'
-import { usageEventTypes } from '#worker/usage/event-types.ts'
+} from '#universal/feature-flags/registry.ts'
+import { usageEventTypes } from '#universal/usage-event-types.ts'
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 import { stableUserIdSchema } from './admin-shared.ts'
 

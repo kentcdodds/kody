@@ -3,8 +3,11 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { addMcpServer } from '#worker/mcp-client/settings-service.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
+import {
+	addMcpServer,
+	resolveMcpServerOAuthClientUrls,
+} from '#worker/mcp-client/settings-service.ts'
 
 const outputSchema = z.object({
 	id: z.string(),
@@ -14,6 +17,8 @@ const outputSchema = z.object({
 	toolCount: z.number().int().nonnegative(),
 	authUrl: z.string().nullable(),
 	error: z.string().nullable(),
+	oauthClientOrigin: z.string(),
+	oauthCallbackUrl: z.string(),
 	nextStep: z.string(),
 })
 
@@ -22,7 +27,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 	{
 		name: 'mcp_server_add',
 		description:
-			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities.',
+			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin and oauthCallbackUrl.',
 		keywords: [
 			'mcp',
 			'server',
@@ -54,21 +59,28 @@ export const mcpServerAddCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args: { name: string; url: string }, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const baseUrl =
-				ctx.callerContext.baseUrl || getAppBaseUrl({ env: ctx.env })
+			const oauth = resolveMcpServerOAuthClientUrls({
+				env: ctx.env,
+				requestUrl: ctx.callerContext.baseUrl,
+			})
 			const { setting, connection } = await addMcpServer({
 				env: ctx.env,
 				userId: user.userId,
 				name: args.name,
 				url: args.url,
-				baseUrl,
+				baseUrl: oauth.clientOrigin,
 			})
+			const error = connection.error
+				? enrichMcpOAuthProviderError(connection.error, oauth)
+				: null
 			const nextStep =
 				connection.state === 'authenticating' && connection.authUrl
-					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${baseUrl}/account/mcp-servers) to authorize Kody, then check mcp_server_list.`
+					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin or redirect URI, they must allow ${oauth.clientOrigin} and ${oauth.callbackUrl}, then remove and re-add the server. After authorizing, check mcp_server_list.`
 					: connection.state === 'ready'
 						? `Connected with ${connection.toolCount} tool(s). Use search or meta_list_capabilities to discover kody.mcp["${setting.name}"] capabilities.`
-						: `Connection state is "${connection.state}". Check mcp_server_list and use mcp_server_reconnect if it does not become ready.`
+						: error
+							? `Connection state is "${connection.state}": ${error}`
+							: `Connection state is "${connection.state}". Check mcp_server_list and use mcp_server_reconnect if it does not become ready.`
 			return {
 				id: setting.id,
 				name: setting.name,
@@ -76,7 +88,9 @@ export const mcpServerAddCapability = defineDomainCapability(
 				state: connection.state,
 				toolCount: connection.toolCount,
 				authUrl: connection.authUrl,
-				error: connection.error,
+				error,
+				oauthClientOrigin: oauth.clientOrigin,
+				oauthCallbackUrl: oauth.callbackUrl,
 				nextStep,
 			}
 		},

@@ -8,7 +8,7 @@ import {
 	pageHeaderCss,
 	pageTitleCss,
 	stackedPageCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 export function OAuthCallbackRoute(handle: Handle) {
 	return () => {

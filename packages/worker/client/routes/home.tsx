@@ -22,7 +22,7 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
-import { colors, transitions, typography } from '#client/styles/tokens.ts'
+import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getBrandChipCss,
 	getLanternGlowCss,
@@ -33,7 +33,7 @@ import {
 	mergeCss,
 	sectionHeadingCss,
 	visuallyHiddenCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 /**
  * heykody.dev landing page, ported from the redesign prototype

@@ -27,6 +27,7 @@ import {
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	beginRunRecord,
@@ -1494,8 +1495,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				token: {
 					tokenId: packageWorkflowTokenId,
 					userId: payload.userId,
-					email: '',
-					displayName: `package:${payload.packageId}`,
 					packageIds: [payload.packageId],
 					packageKodyIds: [payload.kodyId],
 					exportNames: [payload.exportName],
@@ -1579,12 +1578,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 						env: this.env,
 					}),
 					executionOrigin: 'background',
-					user: {
-						userId: payload.userId,
-						email: '',
-						username: undefined,
-						displayName: `workflow:${payload.workflowName}`,
-					},
+					user: await resolveBackgroundMcpUser(this.env.APP_DB, payload.userId),
 					storageContext: payload.packageContext
 						? {
 								sessionId: null,

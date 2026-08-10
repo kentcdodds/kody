@@ -1,5 +1,5 @@
 import { type Handle, css } from 'remix/ui'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -25,10 +25,10 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import { fetchSessionInfo } from '#client/session.ts'
-import { colors } from '#client/styles/tokens.ts'
-import { layoutMaxWidths } from '#client/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
+import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { type PendingVerificationLoaderData } from '#app/loader-data.ts'
+import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 
 function isPendingVerificationPath(href: string) {

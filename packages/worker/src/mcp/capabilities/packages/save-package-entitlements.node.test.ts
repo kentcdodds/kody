@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import type * as sourceSafetyPolicyModule from '#worker/repo/source-safety-policy.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { planLimits } from '#worker/entitlements/plans.ts'
+import { planLimits } from '#universal/plans.ts'
 import { maxRepoSourceFileBytes } from '#worker/repo/large-file-policy.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'

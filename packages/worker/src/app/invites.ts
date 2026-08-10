@@ -1,4 +1,4 @@
-import { resolvePlanWrite, type PlanName } from '#worker/entitlements/plans.ts'
+import { resolvePlanWrite, type PlanName } from '#universal/plans.ts'
 
 export type InviteRecord = {
 	code: string

@@ -5,8 +5,9 @@ import {
 	type PublicCommunityProfile,
 	type PublicCommunityStargazer,
 	type PublicProfilePackageItem,
-} from '#app/community-public-types.ts'
-import { routes } from '#app/routes.ts'
+	type ViewerListingInstall,
+} from '#universal/community-public-types.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	buildUserAvatarUrl,
 	getOwnerUsernameFromListingName,
@@ -22,7 +23,8 @@ import {
 export {
 	type OnboardingFeaturedListing,
 	type PublicCommunityListing,
-} from '#app/community-public-types.ts'
+	type ViewerListingInstall,
+} from '#universal/community-public-types.ts'
 export {
 	buildUserAvatarUrl,
 	getOwnerUsernameFromListingName,
@@ -169,4 +171,39 @@ export function buildInstallAdaptPrompt(input: {
 	sourceId: string
 }) {
 	return `I one-click installed the community package "${input.targetName}" on Kody, but it needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repo_open_session, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repo_publish_session.`
+}
+
+export function buildExistingInstallPrompt(input: { targetName: string }) {
+	return `I already have the community package "${input.targetName}" in my Kody account. Call package_get for it and read its README, then walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
+}
+
+export function buildExistingAdaptPrompt(input: {
+	targetName: string
+	sourceId: string
+}) {
+	return `I already forked the community package "${input.targetName}" on Kody, but it still needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repo_open_session, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repo_publish_session.`
+}
+
+export function toViewerListingInstall(input: {
+	status: 'installed' | 'adaptation_required'
+	targetName: string
+	sourceId: string
+}): ViewerListingInstall {
+	if (input.status === 'installed') {
+		return {
+			status: input.status,
+			targetName: input.targetName,
+			agentPrompt: buildExistingInstallPrompt({
+				targetName: input.targetName,
+			}),
+		}
+	}
+	return {
+		status: input.status,
+		targetName: input.targetName,
+		agentPrompt: buildExistingAdaptPrompt({
+			targetName: input.targetName,
+			sourceId: input.sourceId,
+		}),
+	}
 }

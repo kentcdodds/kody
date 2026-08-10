@@ -5,11 +5,11 @@ import {
 	roleNames,
 	type PermissionString,
 	type RoleName,
-} from '#worker/identity/permissions.ts'
+} from '#universal/permissions.ts'
 import {
 	featureFlagKeys,
 	type FeatureFlagKey,
-} from '#worker/feature-flags/registry.ts'
+} from '#universal/feature-flags/registry.ts'
 
 export type SessionInfo = {
 	email: string

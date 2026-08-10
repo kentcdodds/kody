@@ -1,5 +1,5 @@
 import { type Handle, css } from 'remix/ui'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -24,7 +24,7 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from '#client/session.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
@@ -43,7 +43,7 @@ import {
 	pageTitleCss,
 	sectionTitleCss,
 	stackedPageCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }

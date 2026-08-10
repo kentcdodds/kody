@@ -4,9 +4,12 @@ import {
 	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
 	filterChromeExtensionObjectNotFoundSentryEvent,
+	filterChromeExtensionReceivingEndMissingSentryEvent,
 	filterFathomRemoveChildNullSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
 	filterMetaMaskExtensionSentryEvent,
+	filterOgTypeMetaQuerySelectorContentSentryEvent,
+	filterTwitterInAppBrowserConfigSentryEvent,
 } from './sentry-browser-filters.ts'
 
 test('browser Sentry filters drop AbortError and Firefox Xray noise and keep real errors', () => {
@@ -150,6 +153,26 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).toBeNull()
 	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"null is not an object (evaluating 'img.parentNode.removeChild')",
+						stacktrace: {
+							frames: [
+								{
+									filename: '/script.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
 		filterFathomRemoveChildNullSentryEvent({
 			exception: {
 				values: [
@@ -168,44 +191,6 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).not.toBeNull()
-	expect(
-		filterFathomRemoveChildNullSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value: "Cannot read properties of null (reading 'removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									abs_path: 'https://heykody.dev/cdn.usefathom.com/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
-	expect(
-		filterBrowserSentryEvent({
-			exception: {
-				values: [
-					{
-						type: 'TypeError',
-						value: "Cannot read properties of null (reading 'removeChild')",
-						stacktrace: {
-							frames: [
-								{
-									abs_path: 'https://cdn.usefathom.com/script.js',
-								},
-							],
-						},
-					},
-				],
-			},
-		}),
-	).toBeNull()
 
 	// Chrome extension IPC object-not-found (issue 7655189301 / KODY-CLOUDFLARE-3S).
 	expect(
@@ -231,6 +216,59 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
+
+	// Chrome extension receiving-end missing (issue 7662064169 / KODY-CLOUDFLARE-4F).
+	expect(
+		filterChromeExtensionReceivingEndMissingSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value:
+							'Could not establish connection. Receiving end does not exist.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterChromeExtensionReceivingEndMissingSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'something else' }],
+				},
+			},
+			new Error(
+				'Could not establish connection. Receiving end does not exist.',
+			),
+		),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value:
+							'Error: Could not establish connection. Receiving end does not exist.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	// Nearby connection wording from app code must not be dropped.
+	expect(
+		filterChromeExtensionReceivingEndMissingSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Could not establish connection to the MCP server.',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
 
 	// MetaMask inpage.js session restore (issue 7658961865 / KODY-CLOUDFLARE-3X).
 	expect(
@@ -301,4 +339,118 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			},
 		}),
 	).toBeNull()
+
+	// Twitter/X iOS in-app browser chrome CONFIG (issue 7659616372 /
+	// KODY-CLOUDFLARE-43). Requires both the CONFIG wording and a chrome
+	// stack function — bare CONFIG ReferenceErrors from app code stay.
+	expect(
+		filterTwitterInAppBrowserConfigSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: CONFIG",
+						stacktrace: {
+							frames: [
+								{
+									function: 'updateFooterPositions',
+									filename: 'https://heykody.app/',
+								},
+								{
+									function: 'updateGapFiller',
+									filename: 'https://heykody.app/',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterTwitterInAppBrowserConfigSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: "Can't find variable: CONFIG",
+						stacktrace: {
+							frames: [
+								{
+									function: 'boot',
+									filename: 'https://heykody.app/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'ReferenceError',
+						value: 'CONFIG is not defined',
+						stacktrace: {
+							frames: [
+								{
+									function: 'updateGapFiller',
+									abs_path: 'https://heykody.app/',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	// Injected unguarded og:type meta probe (issue 7660258027 /
+	// KODY-CLOUDFLARE-46). Requires both the Safari evaluating wording and a
+	// `global code` frame — same message from app bundles stays.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"TypeError: null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'global code',
+									absPath: 'https://heykody.app/guides/what-is-kody',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterOgTypeMetaQuerySelectorContentSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'applyDocumentHead',
+									filename: 'https://heykody.app/assets/document-head.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
 })

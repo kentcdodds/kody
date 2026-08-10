@@ -69,12 +69,21 @@ function createKody(
 	} = {},
 ) {
 	const secretSetManyCalls: Array<SecretSetManyCall> = []
+	const tokenRefreshCalls: Array<CapabilityArgs> = []
 	const storedSecrets = new Map<string, string>()
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe(integration.name)
 			return { integration }
+		},
+		async integration_token_refresh(args: CapabilityArgs) {
+			tokenRefreshCalls.push(args)
+			return {
+				ok: true,
+				refreshedAt: new Date().toISOString(),
+				refreshTokenRotated: false,
+			}
 		},
 		async secret_set_many(args: CapabilityArgs) {
 			const call = args as SecretSetManyCall
@@ -100,7 +109,7 @@ function createKody(
 		},
 	} satisfies KodyNamespace
 
-	return { kody, secretSetManyCalls, storedSecrets }
+	return { kody, secretSetManyCalls, tokenRefreshCalls, storedSecrets }
 }
 
 function createSpotifyHandlers(options: {
@@ -272,6 +281,7 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	const {
 		kody: missingTokenKody,
 		secretSetManyCalls: missingSecretSetManyCalls,
+		tokenRefreshCalls: missingTokenRefreshCalls,
 	} = createKody()
 	{
 		using _spotifyFetch = createSpotifyFetchInterceptor({
@@ -286,39 +296,21 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const missingTokenResponse = await missingTokenFetch('/me?market=US')
 		expect(await missingTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(missingSecretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'spotifyRefreshToken', scope: 'user' },
-				{ name: 'spotifyAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-		{
-			secrets: [
-				{
-					name: 'spotifyAccessToken',
-					value: 'new-access-token',
-					scope: 'user',
-				},
-			],
-		},
-	])
-	expect(missingTokenFetchCalls).toHaveLength(3)
+	expect(missingSecretSetManyCalls).toEqual([])
+	expect(missingTokenRefreshCalls).toEqual([{ name: 'spotify' }])
+	expect(missingTokenFetchCalls).toHaveLength(2)
 	expect(missingTokenFetchCalls[0]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-	expect(missingTokenFetchCalls[1]?.url).toBe(
-		'https://accounts.spotify.test/api/token',
-	)
-	expect(missingTokenFetchCalls[2]?.headers.get('authorization')).toBe(
-		'Bearer new-access-token',
+	expect(missingTokenFetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
 
 	const expiredTokenFetchCalls: Array<Request> = []
 	const {
 		kody: expiredTokenKody,
 		secretSetManyCalls: expiredSecretSetManyCalls,
+		tokenRefreshCalls: expiredTokenRefreshCalls,
 	} = createKody()
 	{
 		using _spotifyFetch = createSpotifyFetchInterceptor({
@@ -336,33 +328,17 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const expiredTokenResponse = await expiredTokenFetch('/me?market=US')
 		expect(await expiredTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(expiredSecretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'spotifyRefreshToken', scope: 'user' },
-				{ name: 'spotifyAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-		{
-			secrets: [
-				{
-					name: 'spotifyAccessToken',
-					value: 'new-access-token',
-					scope: 'user',
-				},
-			],
-		},
-	])
-	expect(expiredTokenFetchCalls).toHaveLength(3)
+	expect(expiredSecretSetManyCalls).toEqual([])
+	expect(expiredTokenRefreshCalls).toEqual([{ name: 'spotify' }])
+	expect(expiredTokenFetchCalls).toHaveLength(2)
 	expect(expiredTokenFetchCalls[0]?.url).toBe(
 		'https://api.spotify.test/v1/me?market=US',
 	)
-	expect(expiredTokenFetchCalls[1]?.url).toBe(
-		'https://accounts.spotify.test/api/token',
+	expect(expiredTokenFetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-	expect(expiredTokenFetchCalls[2]?.headers.get('authorization')).toBe(
-		'Bearer new-access-token',
+	expect(expiredTokenFetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
 })
 
@@ -601,6 +577,175 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 		}).toString(),
 	)
 })
+
+const githubPlatformIntegration = {
+	name: 'github',
+	tokenUrl: 'https://github.test/login/oauth/access_token',
+	apiBaseUrl: 'https://api.github.test',
+	flow: 'confidential' as const,
+	clientId: 'platform-github-client-id',
+	clientSecretSecretName: null,
+	accessTokenSecretName: 'githubAccessToken',
+	refreshTokenSecretName: 'githubRefreshToken',
+	requiredHosts: ['api.github.test'],
+	platform: true,
+}
+
+function createPlatformKody() {
+	const tokenRefreshCalls: Array<CapabilityArgs> = []
+	const kody = {
+		async integration_get(args: CapabilityArgs) {
+			expect(args.name).toBe(githubPlatformIntegration.name)
+			return { integration: githubPlatformIntegration }
+		},
+		async integration_token_refresh(args: CapabilityArgs) {
+			tokenRefreshCalls.push(args)
+			return {
+				ok: true,
+				refreshedAt: new Date().toISOString(),
+				refreshTokenRotated: false,
+			}
+		},
+		async secret_set_many() {
+			throw new Error(
+				'platform refresh must never persist secrets from the sandbox',
+			)
+		},
+	} satisfies KodyNamespace
+	return { kody, tokenRefreshCalls }
+}
+
+test('refreshAccessToken refuses platform integrations instead of exposing a raw token', async () => {
+	const { kody, tokenRefreshCalls } = createPlatformKody()
+	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
+		'raw tokens are never exposed to sandboxed code',
+	)
+	expect(tokenRefreshCalls).toEqual([])
+})
+
+test('createAuthenticatedFetch refreshes platform integrations host-side and retries with a placeholder header', async () => {
+	const fetchCalls: Array<Request> = []
+	const { kody, tokenRefreshCalls } = createPlatformKody()
+	{
+		using _interceptor = createGithubPlatformFetchInterceptor({
+			fetchCalls,
+			apiResponses: [
+				{ status: 401, body: { error: 'expired' } },
+				{ status: 200, body: { ok: true } },
+			],
+		})
+		const authenticatedFetch = await createAuthenticatedFetch(kody, 'github')
+		const response = await authenticatedFetch('/user')
+		expect(await response.json()).toEqual({ ok: true })
+	}
+	expect(tokenRefreshCalls).toEqual([{ name: 'github' }])
+	expect(fetchCalls).toHaveLength(2)
+	// Both attempts use the placeholder header: the raw token never enters
+	// the sandbox even on the post-refresh retry.
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:githubAccessToken|scope=user}}',
+	)
+	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:githubAccessToken|scope=user}}',
+	)
+})
+
+test('prelude user-lane createAuthenticatedFetch refreshes host-side on 401', async () => {
+	const prelude = createExecuteHelperPrelude()
+	const createSandboxHelpers = new Function(
+		'kody',
+		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
+	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
+
+	const fetchCalls: Array<Request> = []
+	const { kody, secretSetManyCalls, tokenRefreshCalls } = createKody()
+	const helpers = createSandboxHelpers(kody)
+	{
+		using _spotifyFetch = createSpotifyFetchInterceptor({
+			tokenPayload: { access_token: 'new-access-token' },
+			fetchCalls,
+			apiResponses: [
+				{ status: 401, body: { error: 'expired' } },
+				{ status: 200, body: { ok: true } },
+			],
+		})
+		const authenticatedFetch = await helpers.createAuthenticatedFetch('spotify')
+		const response = await authenticatedFetch('https://api.spotify.test/v1/me')
+		expect(await response.json()).toEqual({ ok: true })
+	}
+	expect(tokenRefreshCalls).toEqual([{ name: 'spotify' }])
+	expect(secretSetManyCalls).toEqual([])
+	expect(fetchCalls).toHaveLength(2)
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+	)
+	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+	)
+})
+
+test('prelude platform helpers mirror the host-side refresh behavior', async () => {
+	const prelude = createExecuteHelperPrelude()
+	const createSandboxHelpers = new Function(
+		'kody',
+		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
+	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
+
+	const { kody, tokenRefreshCalls } = createPlatformKody()
+	const helpers = createSandboxHelpers(kody)
+	await expect(helpers.refreshAccessToken('github')).rejects.toThrow(
+		'raw tokens are never exposed to sandboxed code',
+	)
+
+	const fetchCalls: Array<Request> = []
+	{
+		using _interceptor = createGithubPlatformFetchInterceptor({
+			fetchCalls,
+			apiResponses: [
+				{ status: 401, body: { error: 'expired' } },
+				{ status: 200, body: { ok: true } },
+			],
+		})
+		const authenticatedFetch = await helpers.createAuthenticatedFetch('github')
+		const response = await authenticatedFetch('/user')
+		expect(await response.json()).toEqual({ ok: true })
+	}
+	expect(tokenRefreshCalls).toEqual([{ name: 'github' }])
+	expect(fetchCalls).toHaveLength(2)
+	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:githubAccessToken|scope=user}}',
+	)
+})
+
+function createGithubPlatformFetchInterceptor(options: {
+	fetchCalls: Array<Request>
+	apiResponses: Array<ApiResponseSpec>
+}) {
+	const apiResponses = [...options.apiResponses]
+	const interceptor = new FetchInterceptor()
+	interceptor.on('request', ({ request, controller }) => {
+		void (async () => {
+			try {
+				options.fetchCalls.push(request.clone())
+				const apiResponse = apiResponses.shift()
+				await controller.respondWith(
+					Response.json(apiResponse?.body ?? { ok: true }, {
+						status: apiResponse?.status ?? 200,
+						headers: { 'content-type': 'application/json' },
+					}),
+				)
+			} catch (error) {
+				controller.errorWith(error)
+			}
+		})()
+	})
+	interceptor.apply()
+	return {
+		[Symbol.dispose]() {
+			interceptor.dispose()
+		},
+	}
+}
 
 test('confidential-flow token refresh includes inline client id and client secret placeholder', async () => {
 	const fetchCalls: Array<Request> = []

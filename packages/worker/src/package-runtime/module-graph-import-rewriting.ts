@@ -68,6 +68,13 @@ type RewriteReplacement = {
 export type LoadedKodyGraphPackage = LoadedPackageSource & {
 	row: SavedPackageRecord
 	prefix: string
+	/**
+	 * User id the source was loaded under: the caller for own packages, the
+	 * platform account's stable id for live platform-scope imports.
+	 */
+	sourceOwnerUserId: string
+	/** Platform scope username when resolved live (e.g. "kody"), else null. */
+	platformScope: string | null
 }
 
 export type LoadedKodyGraphPackages = Map<string, LoadedKodyGraphPackage>
@@ -109,9 +116,11 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 		manifest: input.loaded.manifest,
 		exportName,
 	})
+	// Published artifacts are persisted by the owner at publish time, so
+	// platform-scope imports read them under the platform account's id.
 	const artifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.state.env,
-		userId: input.state.userId,
+		userId: input.loaded.sourceOwnerUserId,
 		sourceId: input.loaded.row.sourceId,
 		kind: 'importable-module',
 		artifactName: exportName,
@@ -173,26 +182,29 @@ async function ensurePackageLoaded(
 	const packageKey = parsed.packageName
 	const existing = state.packages.get(packageKey)
 	if (existing) return existing
-	const row = await resolveSavedPackageImport({
+	const resolution = await resolveSavedPackageImport({
 		db: state.env.APP_DB,
 		userId: state.userId,
 		specifier: parsed,
 	})
-	if (!row) {
+	if (!resolution) {
 		throw new Error(
 			`Saved package "${parsed.packageName}" was not found for this user.`,
 		)
 	}
+	const { row } = resolution
 	const loaded = await loadPackageSourceBySourceId({
 		env: state.env,
 		baseUrl: state.baseUrl,
-		userId: state.userId,
+		userId: resolution.sourceOwnerUserId,
 		sourceId: row.sourceId,
 	})
 	const entry = {
 		...loaded,
 		row,
 		prefix: joinPath(packageSourcePrefix, packageKey),
+		sourceOwnerUserId: resolution.sourceOwnerUserId,
+		platformScope: resolution.platformScope,
 	}
 	state.packages.set(packageKey, entry)
 	for (const [filePath, content] of Object.entries(loaded.files)) {

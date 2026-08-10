@@ -5,12 +5,12 @@ import {
 	type RoleName,
 	userHasPermission,
 	userHasRole,
-} from '#worker/identity/permissions.ts'
+} from '#universal/permissions.ts'
 import { recordFeatureFlagExposures } from '#worker/feature-flags/exposure.ts'
 import {
 	type FeatureFlagKey,
 	featureFlagKeys,
-} from '#worker/feature-flags/registry.ts'
+} from '#universal/feature-flags/registry.ts'
 import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import {

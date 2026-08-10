@@ -8,7 +8,7 @@ import {
 } from '#app/authenticated-user.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
-import { type RoleName } from '#worker/identity/permissions.ts'
+import { type RoleName } from '#universal/permissions.ts'
 
 export async function requirePageSession(
 	request: Request,

@@ -1,8 +1,8 @@
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { renderCommunityDetailContentHtml } from '#app/community-detail-content.tsx'
-import { COMMUNITY_DETAIL_TARGET } from '#app/community-frame-constants.ts'
+import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { registerFrame } from '#app/frame-registry.ts'
-import { routes } from '#app/routes.ts'
+import { routes } from '#universal/routes.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 
 const communityDetailMatcher = createMatcher(routes.communityDetail.pattern)

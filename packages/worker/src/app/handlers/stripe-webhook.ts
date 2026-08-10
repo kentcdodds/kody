@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { handleStripeWebhookRequest } from '#worker/billing/stripe-webhooks.ts'
 

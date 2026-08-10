@@ -1,19 +1,19 @@
 import { Frame, type Handle, css } from 'remix/ui'
-import { routes } from '#app/routes.ts'
-import { COMMUNITY_LISTINGS_TARGET } from '#app/community-frame-constants.ts'
+import { routes } from '#universal/routes.ts'
+import { COMMUNITY_LISTINGS_TARGET } from '#universal/community-frame-constants.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
 import { prefetchFrame } from '#client/frame-prefetch.ts'
-import { colors, transitions, typography } from '#client/styles/tokens.ts'
+import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	mergeCss,
 	visuallyHiddenCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import { readCommunitySearchQueryFromHref } from '#client/routes/community-search.ts'
 
 /**

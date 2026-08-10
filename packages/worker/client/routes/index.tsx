@@ -12,9 +12,9 @@ import {
 	lazyRouteLoader,
 	onboardingArea,
 } from '#client/lazy-route.tsx'
-import { oauthPaths } from '#app/oauth-paths.ts'
-import { routePattern } from '#app/route-pattern.ts'
-import { routes } from '#app/routes.ts'
+import { oauthPaths } from '#universal/oauth-paths.ts'
+import { routePattern } from '#universal/route-pattern.ts'
+import { routes } from '#universal/routes.ts'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { LoginRoute, authProvidersRouteLoader } from './login.tsx'
 import {
@@ -199,6 +199,18 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		adminArea,
 		(m) => m.adminFeatureFlagsRouteLoader,
 	),
+	[routePattern(routes.adminPlatformIntegrations)]: lazyRouteLoader(
+		adminArea,
+		(m) => m.adminPlatformIntegrationsRouteLoader,
+	),
+	[routePattern(routes.adminPlatformIntegrationNew)]: lazyRouteLoader(
+		adminArea,
+		(m) => m.adminPlatformIntegrationsRouteLoader,
+	),
+	[routePattern(routes.adminPlatformIntegrationDetail)]: lazyRouteLoader(
+		adminArea,
+		(m) => m.adminPlatformIntegrationsRouteLoader,
+	),
 	[routePattern(routes.adminCodemods)]: lazyRouteLoader(
 		adminArea,
 		(m) => m.adminCodemodsRouteLoader,
@@ -264,6 +276,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.onboarding)]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.onboardingRouteLoader,
+	),
+	[routePattern(routes.connectOauth)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.connectOauthRouteLoader,
 	),
 	[routePattern(routes.pendingVerification)]: pendingVerificationRouteLoader,
 }
@@ -401,6 +417,15 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.adminFeatureFlags)]: (
 		<LazyAdminRoute render={(m) => <m.AdminFeatureFlagsRoute />} />
+	),
+	[routePattern(routes.adminPlatformIntegrations)]: (
+		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
+	),
+	[routePattern(routes.adminPlatformIntegrationNew)]: (
+		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
+	),
+	[routePattern(routes.adminPlatformIntegrationDetail)]: (
+		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
 	),
 	[routePattern(routes.adminCodemods)]: (
 		<LazyAdminRoute render={(m) => <m.AdminCodemodsRoute />} />

@@ -8,17 +8,18 @@ import {
 	formatCommunityPublishedDate,
 	formatCommunityStars,
 	shortCommunityCommit,
-} from '#app/community-display.ts'
-import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
-import { renderCommunityListingName } from '#app/community-listing-name.tsx'
+} from '#universal/community-display.ts'
+import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
+import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import {
 	communityBadgePillCss,
 	communityTagListCss,
 	communityTagPillCss,
 } from '#app/community-listings-content.tsx'
-import { routes } from '#app/routes.ts'
-import { visuallyHiddenCss } from '#client/styles/style-primitives.ts'
-import { colors } from '#client/styles/tokens.ts'
+import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
+import { routes } from '#universal/routes.ts'
+import { visuallyHiddenCss } from '#universal/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
 
 /**
  * Server-rendered community detail head (the `community-detail` frame),
@@ -68,8 +69,45 @@ export function CommunityDetailContent(
 				<CommunityListingIcon listing={listing} size="detail" />
 				<div mix={css(headTextCss)}>
 					<h1>{renderCommunityListingName(listing.name)}</h1>
+					{listing.trusted || listing.featured || listing.viewerInstall ? (
+						<span mix={css(detailBadgeGroupCss)}>
+							{listing.trusted ? (
+								<span
+									data-testid="community-detail-trusted-badge"
+									title="An admin reviewed this exact version and marked it trusted."
+									mix={css(badgeCss)}
+								>
+									Trusted
+								</span>
+							) : null}
+							{listing.featured ? (
+								<span
+									data-testid="community-detail-featured-badge"
+									title="An admin featured this package as an onboarding starter install."
+									mix={css(badgeCss)}
+								>
+									Featured
+								</span>
+							) : null}
+							{listing.viewerInstall ? (
+								<span
+									data-testid="community-detail-viewer-install-badge"
+									title={
+										listing.viewerInstall.status === 'installed'
+											? `Installed in your account as ${listing.viewerInstall.targetName}.`
+											: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+									}
+									mix={css(badgeCss)}
+								>
+									{listing.viewerInstall.status === 'installed'
+										? 'Installed'
+										: 'Forked'}
+								</span>
+							) : null}
+						</span>
+					) : null}
 					<p mix={css(ownerLineCss)}>
-						<span>
+						<span mix={css(ownerUsernameCss)}>
 							by{' '}
 							{ownerProfilePublic ? (
 								<a
@@ -111,34 +149,18 @@ export function CommunityDetailContent(
 							)}
 						</span>
 						{ownerProfilePublic && !viewerIsOwner
-							? renderOwnerFollowControl({
+							? renderProfileFollowControl({
 									username: listing.ownerUsername,
 									loggedIn,
-									viewerFollowsOwner,
+									isFollowing: viewerFollowsOwner,
 									returnTo,
 									followError,
+									testId: 'community-detail-owner-follow',
+									errorTestId: 'community-detail-owner-follow-error',
 								})
 							: null}
 					</p>
 				</div>
-				{listing.trusted ? (
-					<span
-						data-testid="community-detail-trusted-badge"
-						title="An admin reviewed this exact version and marked it trusted."
-						mix={css(badgeCss)}
-					>
-						Trusted
-					</span>
-				) : null}
-				{listing.featured ? (
-					<span
-						data-testid="community-detail-featured-badge"
-						title="An admin featured this package as an onboarding starter install."
-						mix={css(badgeCss)}
-					>
-						Featured
-					</span>
-				) : null}
 			</header>
 
 			<p data-rise style={{ '--rise': '2' }} mix={css(detailSubCss)}>
@@ -201,105 +223,6 @@ export function CommunityDetailContent(
 	)
 }
 
-function renderOwnerFollowControl(input: {
-	username: string
-	loggedIn: boolean
-	viewerFollowsOwner: boolean
-	returnTo: string
-	followError: string | null
-}) {
-	if (!input.loggedIn) {
-		const loginHref = `${routes.login.href()}?redirectTo=${encodeURIComponent(input.returnTo)}`
-		return (
-			<a
-				href={loginHref}
-				title="Follow"
-				data-testid="community-detail-owner-follow"
-				mix={css(ownerFollowButtonCss)}
-			>
-				{renderFollowGlyph(false)}
-				<span mix={css(visuallyHiddenCss)}>Follow @{input.username}</span>
-			</a>
-		)
-	}
-
-	return (
-		<span mix={css(ownerFollowControlCss)}>
-			<form
-				method="post"
-				action={routes.profileFollowApiPost.href({ username: input.username })}
-				mix={css(ownerFollowFormCss)}
-			>
-				<input
-					type="hidden"
-					name="follow"
-					value={String(!input.viewerFollowsOwner)}
-				/>
-				<input type="hidden" name="returnTo" value={input.returnTo} />
-				<button
-					type="submit"
-					title={input.viewerFollowsOwner ? 'Unfollow' : 'Follow'}
-					data-testid="community-detail-owner-follow"
-					data-following={input.viewerFollowsOwner ? 'true' : 'false'}
-					mix={css(ownerFollowButtonCss)}
-				>
-					{renderFollowGlyph(input.viewerFollowsOwner)}
-					<span mix={css(visuallyHiddenCss)}>
-						{input.viewerFollowsOwner
-							? `Unfollow @${input.username}`
-							: `Follow @${input.username}`}
-					</span>
-				</button>
-			</form>
-			{input.followError ? (
-				<span
-					role="alert"
-					data-testid="community-detail-owner-follow-error"
-					mix={css(ownerFollowErrorCss)}
-				>
-					{input.followError}
-				</span>
-			) : null}
-		</span>
-	)
-}
-
-function renderFollowGlyph(following: boolean) {
-	return following ? (
-		<svg
-			viewBox="0 0 16 16"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			focusable={false}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<circle cx="8" cy="8" r="5.4" />
-			<path d="M5.3 8.1 7.1 9.9 10.8 6.1" />
-		</svg>
-	) : (
-		<svg
-			viewBox="0 0 16 16"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			focusable={false}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<circle cx="8" cy="8" r="5.4" />
-			<path d="M8 5.2v5.6M5.2 8h5.6" />
-		</svg>
-	)
-}
-
 export async function renderCommunityDetailContentHtml(
 	props: CommunityDetailContentProps,
 ) {
@@ -324,12 +247,16 @@ const backLinkCss = {
 const detailHeadCss = {
 	marginTop: '1.8rem',
 	display: 'flex',
-	alignItems: 'center',
+	alignItems: 'flex-start',
 	gap: '1.1rem',
 }
 
 const headTextCss = {
 	minWidth: 0,
+	flex: 1,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.45rem',
 	'& h1': {
 		margin: 0,
 		fontSize: 'clamp(1.7rem, 4vw, 2.4rem)',
@@ -340,13 +267,28 @@ const headTextCss = {
 	},
 }
 
-const ownerLineCss = {
+const detailBadgeGroupCss = {
 	display: 'flex',
 	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.35rem',
+}
+
+const ownerLineCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	flexWrap: 'nowrap' as const,
 	gap: '0.45rem',
-	margin: '0.25rem 0 0',
+	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.95rem',
+}
+
+const ownerUsernameCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	flexWrap: 'nowrap' as const,
+	minWidth: 0,
 }
 
 const ownerLinkCss = {
@@ -365,47 +307,11 @@ const ownerPrivateLockCss = {
 	color: colors.textMuted,
 	verticalAlign: 'middle',
 	cursor: 'help',
-}
-
-const ownerFollowControlCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.45rem',
-	minWidth: 0,
-}
-
-const ownerFollowFormCss = {
-	display: 'inline-flex',
-	margin: 0,
-}
-
-const ownerFollowErrorCss = {
-	color: colors.danger,
-	fontSize: '0.85rem',
-}
-
-const ownerFollowButtonCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	width: '1.55rem',
-	height: '1.55rem',
-	padding: 0,
-	border: `1px solid ${colors.border}`,
-	borderRadius: '999px',
-	backgroundColor: 'transparent',
-	color: colors.textMuted,
-	textDecoration: 'none',
-	cursor: 'pointer',
-	'&:hover': {
-		color: colors.primaryText,
-		borderColor: colors.primaryText,
-	},
+	flexShrink: 0,
 }
 
 const badgeCss = {
 	...communityBadgePillCss,
-	alignSelf: 'center',
 }
 
 const detailSubCss = {

@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 import {
 	deleteUserAvatar,
 	processUserAvatar,

@@ -4,8 +4,8 @@ import {
 	logAuditEvent,
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
-import { roleNames } from '#worker/identity/permissions.ts'
-import { planNames } from '#worker/entitlements/plans.ts'
+import { roleNames } from '#universal/permissions.ts'
+import { planNames } from '#universal/plans.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 
 export const adminCapabilityAccess = {

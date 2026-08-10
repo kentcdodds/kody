@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import {
 	resolveProvider,
 	sanitizeToolName,
@@ -15,7 +16,6 @@ import {
 	getAdditionalPropertiesSchema,
 	getArrayItemSchema,
 	getSchemaProperties,
-	isRecord,
 	isSecretInputSchema,
 	resolveCapabilityInputSecrets,
 } from '#mcp/secrets/capability-inputs.ts'
@@ -64,6 +64,10 @@ import {
 	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
 import {
+	collectLiteralImportSpecifiers,
+	getBarePackageNameFromSpecifier,
+} from '#worker/package-runtime/import-specifiers.ts'
+import {
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
@@ -111,6 +115,26 @@ export type PackageContextOptions = {
 	kodyId: string
 	sourceId?: string | null
 } | null
+
+export function createAdHocExecuteSourceFiles(code: string) {
+	const sourceFiles: Record<string, string> = { 'entry.ts': code }
+	// Most execute modules have no imports. Avoid parsing those entirely so the
+	// existing one-file fast path stays unchanged.
+	if (!code.includes('import') && !code.includes(' from ')) return sourceFiles
+	const packageNames = new Set<string>()
+	for (const specifier of collectLiteralImportSpecifiers(code)) {
+		const packageName = getBarePackageNameFromSpecifier(specifier)
+		if (packageName) packageNames.add(packageName)
+	}
+	if (packageNames.size === 0) return sourceFiles
+	const dependencies = Object.fromEntries(
+		[...packageNames]
+			.sort((left, right) => left.localeCompare(right))
+			.map((packageName) => [packageName, 'latest']),
+	)
+	sourceFiles['package.json'] = JSON.stringify({ dependencies })
+	return sourceFiles
+}
 
 /** Once per isolate: sample the first kody.* capability RPC wall time. */
 let firstCapabilityDispatchSampled = false
@@ -648,6 +672,7 @@ export async function runModuleWithRegistry(
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		executorTimeoutMs?: number | null
+		signal?: AbortSignal
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
@@ -660,10 +685,10 @@ export async function runModuleWithRegistry(
 		runRecord?: RunRecordContext | null
 		runRecordHandle?: RunRecordHandle | null
 		/**
-		 * When set, terminal run-record writes are scheduled on this callback
-		 * (typically `ctx.waitUntil`) instead of being awaited. Observability
-		 * must not serialize the path it observes — same never-block contract
-		 * as `recordUsage`.
+		 * When set, post-terminal run-record side effects are scheduled on this
+		 * callback (typically `ctx.waitUntil`). The terminal Durable Object write
+		 * itself is always awaited so a completed invocation is not stranded as
+		 * `running`.
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
@@ -680,11 +705,10 @@ export async function runModuleWithRegistry(
 		env,
 		baseUrl: callerContext.baseUrl,
 		userId,
-		sourceFiles: {
-			'entry.ts': code,
-		},
+		sourceFiles: createAdHocExecuteSourceFiles(code),
 		entryPoint: 'entry.ts',
 		reuseCachedBundle: true,
+		bundleContext: 'ad-hoc-execute',
 	})
 	serverTiming.push({
 		name: 'bundle',
@@ -755,7 +779,11 @@ export function collectPackageStorageGrantIds(input: {
 		grantedPackageIds.add(input.packageContext.packageId)
 	}
 	for (const dependency of input.dependencies) {
-		if (dependency.packageId) {
+		// Platform-scope (built-in) dependencies run in the caller's runtime
+		// but stay stateless there: granting the platform package UUID would
+		// open an empty caller-local bucket, never the platform account's
+		// data, so `packageStorage()` fails closed inside live platform code.
+		if (dependency.packageId && dependency.platformOwned !== true) {
 			grantedPackageIds.add(dependency.packageId)
 		}
 	}
@@ -795,6 +823,7 @@ export async function runBundledModuleWithRegistry(
 		packageEventTools?: PackageEventTools
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
+		signal?: AbortSignal
 		runRecord?: RunRecordContext | null
 		/**
 		 * Pre-claimed handle from {@link claimRunRecord} (keyed execute). When
@@ -805,10 +834,9 @@ export async function runBundledModuleWithRegistry(
 		rawFetchHostSink?: RawFetchHostSink
 		conversationId?: string | null
 		/**
-		 * When set, terminal run-record writes are scheduled on this callback
-		 * (typically `ctx.waitUntil`) instead of being awaited. Observability
-		 * must not serialize the path it observes — same never-block contract
-		 * as `recordUsage`.
+		 * When set, post-terminal run-record side effects are scheduled on this
+		 * callback (typically `ctx.waitUntil`). The terminal Durable Object write
+		 * itself is always awaited.
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
@@ -947,6 +975,7 @@ export async function runBundledModuleWithRegistry(
 			env,
 			exports: options?.executorExports ?? workerExports,
 			timeoutMs: options?.executorTimeoutMs,
+			signal: options?.signal,
 			gatewayProps: {
 				baseUrl: callerContext.baseUrl,
 				userId: callerContext.user?.userId ?? null,

@@ -1,5 +1,5 @@
 import { css, type Handle } from 'remix/ui'
-import { routes } from '#app/routes.ts'
+import { routes } from '#universal/routes.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
@@ -9,13 +9,13 @@ import {
 	spacing,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	getAuthInputCss,
 	hoverMq,
 	layoutMaxWidths,
 	pageGutter,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 /*
  * Account-area visual language, ported from the redesign prototype
@@ -289,6 +289,11 @@ const adminNavItems = [
 		href: '/admin/feature-flags',
 		label: 'Feature flags',
 		paths: ['/admin/feature-flags'],
+	},
+	{
+		href: '/admin/platform-integrations',
+		label: 'Platform integrations',
+		paths: ['/admin/platform-integrations'],
 	},
 	{
 		href: '/admin/codemods',

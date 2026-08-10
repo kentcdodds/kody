@@ -438,10 +438,17 @@ export const repoTreeNodeSchema: z.ZodType<unknown> = z.lazy(() =>
 )
 
 export const repoSearchInputSchema = repoSessionIdSchema.extend({
-	pattern: z.string().min(1).describe('Literal text or regex to search for.'),
+	pattern: z
+		.string()
+		.min(1)
+		.describe(
+			'Literal text or regex to search for. In regex mode this must be valid JavaScript RegExp syntax (no Python/PCRE inline flags such as (?s) or (?i)).',
+		),
 	mode: repoSearchModeSchema
 		.optional()
-		.describe('Search mode. Defaults to literal.'),
+		.describe(
+			'Search mode. Defaults to literal. regex uses JavaScript RegExp syntax.',
+		),
 	glob: z
 		.string()
 		.min(1)

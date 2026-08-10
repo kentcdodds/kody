@@ -1,8 +1,5 @@
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import {
-	parseStripePlanName,
-	type PlanName,
-} from '#worker/entitlements/plans.ts'
+import { parseStripePlanName, type PlanName } from '#universal/plans.ts'
 import {
 	createBillingLinkReference,
 	isBillingConfigured,

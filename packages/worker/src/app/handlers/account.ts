@@ -5,7 +5,7 @@ import { loadChecklist } from '#app/handlers/onboarding.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#app/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 export function createAccountHandler(env: Env) {
 	return {

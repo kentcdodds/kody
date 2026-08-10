@@ -28,17 +28,22 @@ import {
 	recordCellClamp,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	getDangerPillCss,
 	getGhostButtonCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 import {
 	type AccountEmailLoaderData,
 	type AccountEmailMessageDetail,
 	type AccountEmailMessageListItem,
-} from '#app/loader-data.ts'
+} from '#universal/loader-data.ts'
 
 type PageStatus = 'loading' | 'ready' | 'error'
 type ClassifyState = 'idle' | 'saving'

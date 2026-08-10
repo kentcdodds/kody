@@ -1,5 +1,5 @@
 import { type Handle, css, ref } from 'remix/ui'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -15,8 +15,11 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-import { type OnboardingChecklistLoaderData } from '#app/loader-data.ts'
-import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
+import {
+	type OnboardingBuiltInProvider,
+	type OnboardingChecklistLoaderData,
+} from '#universal/loader-data.ts'
+import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import {
 	fetchOnboardingPayload,
 	onboardingApiPath,
@@ -29,7 +32,11 @@ import {
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
-import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
+import {
+	OnboardingStarterCard,
+	starterCardCss,
+} from '#client/routes/onboarding-starter-card.tsx'
+import { ProviderIcon } from '#client/provider-icons.tsx'
 import {
 	onboardingPath,
 	resolveOnboardingPendingVerificationPath,
@@ -39,7 +46,7 @@ import {
 	radius,
 	transitions,
 	typography,
-} from '#client/styles/tokens.ts'
+} from '#universal/styles/tokens.ts'
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
@@ -47,16 +54,21 @@ import {
 	hoverMq,
 	inlineSpinnerCss,
 	primaryLinkCss,
-} from '#client/styles/style-primitives.ts'
+} from '#universal/styles/style-primitives.ts'
 
 /**
  * Onboarding wizard, ported from the redesign prototype
  * (`landing/onboarding.html`): shirt-pattern head, four-step stepper
- * (Connect your agent · See it work · Install a starter package), one surface
+ * (Connect your agent · See it work · Connect your tools), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
  * behind a disclosure. All server state (prompts, MCP URL, featured
  * listings, hasMcpClient / first-win polling) stays in the route state —
  * this is a restyle, not a rearchitecture.
+ *
+ * Step 3 leads with built-in integration cards (the path of least
+ * resistance) when the deployment has any enabled; starter packages demote
+ * to a compact "Advanced" list. With no built-ins, packages keep the card
+ * grid.
  */
 
 type OnboardingStep = 1 | 2 | 3
@@ -67,7 +79,7 @@ type FirstWinSubStep = 1 | 2 | 3
 const onboardingSteps = [
 	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
 	{ number: 2, label: 'See it work', hash: 'first-win' },
-	{ number: 3, label: 'Install a starter package', hash: 'starter-packages' },
+	{ number: 3, label: 'Connect your tools', hash: 'starter-packages' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
 	label: string
@@ -127,6 +139,7 @@ export function OnboardingRoute(handle: Handle) {
 	let hasSavedMemory = false
 	let hasFirstWin = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
+	let builtInProviders: Array<OnboardingBuiltInProvider> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
 	let activeStep: OnboardingStep = 1
@@ -183,6 +196,7 @@ export function OnboardingRoute(handle: Handle) {
 		// reply that arrived outside it never skips the earlier sub-steps.
 		hasFirstWin = hasSentWelcomeEmail && hasFirstHello && hasSavedMemory
 		featuredListings = payload.featuredListings ?? []
+		builtInProviders = payload.builtInProviders ?? []
 		checklist = payload.checklist
 		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
@@ -287,8 +301,12 @@ export function OnboardingRoute(handle: Handle) {
 					const waiting = loggedIn && step.number === waitingStep && !done
 					return (
 						<li key={step.number}>
-							<span
-								mix={css(firstWinStepPillCss)}
+							<button
+								type="button"
+								mix={[
+									css(firstWinStepPillCss),
+									on('click', () => selectFirstWinStep(step.number)),
+								]}
 								data-state={done ? 'done' : waiting ? 'waiting' : undefined}
 								aria-current={step.number === shown ? 'step' : undefined}
 							>
@@ -305,7 +323,7 @@ export function OnboardingRoute(handle: Handle) {
 									)}
 								</span>
 								<span>{step.label}</span>
-							</span>
+							</button>
 						</li>
 					)
 				})}
@@ -328,8 +346,9 @@ export function OnboardingRoute(handle: Handle) {
 			return (
 				<div mix={css(firstWinContentCss)}>
 					<p mix={css(firstWinGuidanceCss)}>
-						Paste this into your connected agent — Kody emails you from your own
-						Kody address within a minute.
+						Paste this into your connected agent. This step completes when Kody
+						records the send — usually within a minute, even if your personal
+						inbox already has the message.
 					</p>
 					<figure mix={css(promptBlockCss)}>
 						<blockquote>{introEmailPrompt}</blockquote>
@@ -346,11 +365,17 @@ export function OnboardingRoute(handle: Handle) {
 			return (
 				<div mix={css(firstWinContentCss)}>
 					<p mix={css(firstWinGuidanceCss)}>
-						Email sent. Open it and reply with your answers — about thirty
-						seconds. This page moves on when your reply lands.
+						Kody recorded the send. Open the welcome email and reply with your
+						answers — about thirty seconds. This page moves on when your reply
+						lands in Kody.
 					</p>
 					<p mix={css(firstWinGuidanceCss)}>
-						<a href="/account/email" mix={css(primaryLinkCss)}>
+						<a
+							href="/account/email"
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(primaryLinkCss)}
+						>
 							Open your Kody inbox
 						</a>{' '}
 						to see the stored copy.
@@ -362,7 +387,7 @@ export function OnboardingRoute(handle: Handle) {
 			<div mix={css(firstWinContentCss)}>
 				<p mix={css(firstWinGuidanceCss)}>
 					Reply received. Paste this so your agent reads it and saves what
-					matters.
+					matters as memories.
 				</p>
 				<figure mix={css(promptBlockCss)}>
 					<blockquote>{introEmailLookupPrompt}</blockquote>
@@ -568,7 +593,12 @@ export function OnboardingRoute(handle: Handle) {
 					<p data-rise style={{ '--rise': '1' }}>
 						Connect any MCP-capable AI agent to your Kody account, then ask it
 						to help you set things up. New here?{' '}
-						<a href="/guides/what-is-kody" mix={css(headerGuideLinkCss)}>
+						<a
+							href="/guides/what-is-kody"
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(headerGuideLinkCss)}
+						>
 							Read what Kody can do
 						</a>{' '}
 						first.
@@ -767,7 +797,7 @@ export function OnboardingRoute(handle: Handle) {
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											Install a starter package
+											Connect your tools
 										</h2>
 									</div>
 									<img
@@ -781,26 +811,127 @@ export function OnboardingRoute(handle: Handle) {
 										mix={css(panelArtCss)}
 									/>
 								</div>
-								<p mix={css(panelLedeCss)}>
-									{featuredListings.length > 0
-										? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
-										: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
-								</p>
-								<ul mix={css(starterGridCss)}>
-									{featuredListings.map((listing) => (
-										<OnboardingStarterCard
-											key={listing.id}
-											listing={listing}
-											loggedIn={loggedIn}
-										/>
-									))}
-									<OnboardingDiyCard setupPrompt={setupPrompt} />
-								</ul>
-								<p mix={css({ margin: '0.2rem 0 0' })}>
-									<a href="/community" mix={css(primaryLinkCss)}>
-										Browse all community packages
-									</a>
-								</p>
+								{builtInProviders.length > 0 ? (
+									<>
+										<p mix={css(panelLedeCss)}>
+											Connect a built-in integration in one click — Kody hosts
+											the provider app, so there is nothing to register.
+										</p>
+										<ul
+											mix={css(starterGridCss)}
+											data-testid="onboarding-built-in-integrations"
+										>
+											{builtInProviders.map((provider) => (
+												<li key={provider.slug} mix={css(providerCardCss)}>
+													<a
+														href={`/connect/oauth?provider=${encodeURIComponent(provider.slug)}`}
+														mix={css(providerCardLinkCss)}
+													>
+														<span mix={css(providerIconWellCss)}>
+															{provider.logoPath ? (
+																<img
+																	src={provider.logoPath}
+																	alt=""
+																	width={30}
+																	height={30}
+																	loading="lazy"
+																	mix={css(providerLogoCss)}
+																/>
+															) : (
+																<ProviderIcon
+																	providerId={provider.slug}
+																	size="30"
+																/>
+															)}
+														</span>
+														<strong mix={css(providerCardNameCss)}>
+															{provider.label}
+														</strong>
+														<span mix={css(providerConnectPillCss)}>
+															Connect
+														</span>
+													</a>
+												</li>
+											))}
+										</ul>
+										<p mix={css(builtInByoCss)}>
+											Want scopes or rate limits Kody's app does not offer?{' '}
+											<a
+												href="/guides/oauth"
+												target="_blank"
+												rel="noreferrer noopener"
+												mix={css(primaryLinkCss)}
+											>
+												Bring your own OAuth app
+											</a>{' '}
+											for more power — the guide explains how connections and
+											helper packages work.
+										</p>
+										<div mix={css(advancedSectionCss)}>
+											<p mix={css(advancedLabelCss)}>
+												Starter packages
+												<span mix={css(advancedBadgeCss)}>Advanced</span>
+											</p>
+											<p mix={css(advancedLedeCss)}>
+												{featuredListings.length > 0
+													? 'Admin-reviewed packages with one-click install. After install, use Copy prompt so your agent can finish any remaining setup.'
+													: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+											</p>
+											<ul mix={css(starterListCss)}>
+												{featuredListings.map((listing) => (
+													<OnboardingStarterCard
+														key={listing.id}
+														listing={listing}
+														loggedIn={loggedIn}
+														variant="row"
+													/>
+												))}
+												<OnboardingDiyCard
+													setupPrompt={setupPrompt}
+													variant="row"
+												/>
+											</ul>
+											<p mix={css({ margin: '0.2rem 0 0' })}>
+												<a
+													href="/community"
+													target="_blank"
+													rel="noreferrer noopener"
+													mix={css(primaryLinkCss)}
+												>
+													Browse all community packages
+												</a>
+											</p>
+										</div>
+									</>
+								) : (
+									<>
+										<p mix={css(panelLedeCss)}>
+											{featuredListings.length > 0
+												? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
+												: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+										</p>
+										<ul mix={css(starterGridCss)}>
+											{featuredListings.map((listing) => (
+												<OnboardingStarterCard
+													key={listing.id}
+													listing={listing}
+													loggedIn={loggedIn}
+												/>
+											))}
+											<OnboardingDiyCard setupPrompt={setupPrompt} />
+										</ul>
+										<p mix={css({ margin: '0.2rem 0 0' })}>
+											<a
+												href="/community"
+												target="_blank"
+												rel="noreferrer noopener"
+												mix={css(primaryLinkCss)}
+											>
+												Browse all community packages
+											</a>
+										</p>
+									</>
+								)}
 								{/* The last step doubles as the "what's left" recap, so the
 								    derived checklist lives here instead of distracting from
 								    the earlier steps. */}
@@ -823,7 +954,7 @@ export function OnboardingRoute(handle: Handle) {
 
 						{/* Outside the wizard panels on purpose: the prototype keeps the
 					    BYOK disclosure visible on every step. */}
-						{renderByokDetails()}
+						{renderByokDetails(builtInProviders.length > 0)}
 
 						{loggedIn ? null : (
 							<p mix={css(authLinksCss)}>
@@ -906,7 +1037,7 @@ function WizardNavigation(
  * prototype's onboarding-specific framing ("Why there's no one-click
  * connect"); the integrations page keeps its own `byok-explainer` copy.
  */
-function renderByokDetails() {
+function renderByokDetails(hasBuiltIns: boolean) {
 	return (
 		<details mix={css(byokDetailsCss)}>
 			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
@@ -924,12 +1055,14 @@ function renderByokDetails() {
 				/>
 				<div>
 					<h2 id="byok-note-title" mix={css(byokTitleCss)}>
-						Why there&apos;s no one-click connect
+						{hasBuiltIns
+							? 'Why bring your own keys?'
+							: "Why there's no one-click connect"}
 					</h2>
 					<p mix={css(byokCopyCss)}>
-						Kody never asks a company for access on your behalf. You create the
-						connection yourself, and your agent walks you through it, so it is
-						completely yours: your app, your scopes, no middleman.
+						{hasBuiltIns
+							? 'Built-in integrations run on an app Kody hosts, for a fast start. For everything else — or for full control — you create the connection yourself, and your agent walks you through it, so it is completely yours: your app, your scopes, no middleman.'
+							: 'Kody never asks a company for access on your behalf. You create the connection yourself, and your agent walks you through it, so it is completely yours: your app, your scopes, no middleman.'}
 					</p>
 					<dl mix={css(byokCompareCss)}>
 						<div>
@@ -1242,13 +1375,24 @@ const firstWinStepPillCss = {
 	border: `1.5px solid ${colors.border}`,
 	borderRadius: '999px',
 	whiteSpace: 'nowrap' as const,
-	'&[data-state="waiting"]': {
-		borderColor: colors.primary,
-		color: colors.text,
+	cursor: 'pointer',
+	transition: 'border-color 120ms ease, color 120ms ease',
+	[hoverMq]: {
+		'&:hover': {
+			borderColor: `oklch(from ${colors.primary} l c h / 0.6)`,
+			color: colors.text,
+		},
 	},
 	'&[data-state="done"]': {
 		borderColor: `oklch(from ${colors.primary} l c h / 0.5)`,
 		color: colors.primaryText,
+	},
+	// The highlight tracks the sub-step being VIEWED (Next/Back can peek
+	// ahead of the signals); the spinner alone marks the one being waited
+	// on. Declared last so viewing a done pill still reads as current.
+	'&[aria-current="step"]': {
+		borderColor: colors.primary,
+		color: colors.text,
 	},
 }
 
@@ -1394,6 +1538,108 @@ function connectStatusContent(input: {
 		/>,
 		<strong key="label">{input.waitingLabel}</strong>,
 	]
+}
+
+/* Built-in integrations lead step 3 as full cards — the path of least
+   resistance reads first, with BYO as the power-user footnote. */
+const providerCardCss = {
+	...starterCardCss,
+}
+
+const providerCardLinkCss = {
+	flex: 1,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	alignItems: 'center',
+	gap: '0.65rem',
+	textDecoration: 'none',
+	color: 'inherit',
+	minWidth: 0,
+}
+
+/* Same rounded well as CommunityListingIcon size="starter". */
+const providerIconWellCss = {
+	display: 'grid',
+	placeItems: 'center',
+	width: '3.2rem',
+	height: '3.2rem',
+	borderRadius: '12px',
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	marginBottom: '0.2rem',
+	transition: `border-color 160ms ${transitions.easeOut}`,
+}
+
+const providerLogoCss = {
+	display: 'block',
+	borderRadius: '4px',
+}
+
+const providerCardNameCss = {
+	color: colors.text,
+	fontWeight: 650,
+	fontSize: '0.98rem',
+}
+
+const providerConnectPillCss = {
+	...getPillButtonCss(),
+	marginTop: 'auto',
+	width: '100%',
+	fontSize: '0.95rem',
+	textAlign: 'center' as const,
+}
+
+const builtInByoCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.9rem',
+}
+
+/* Starter packages demote to a labeled "Advanced" list under the cards. */
+const advancedSectionCss = {
+	display: 'grid',
+	gap: '0.55rem',
+	marginTop: '0.6rem',
+	paddingTop: '1.1rem',
+	borderTop: `1px solid ${colors.border}`,
+}
+
+const advancedLabelCss = {
+	margin: 0,
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.5rem',
+	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
+	letterSpacing: '0.06em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const advancedBadgeCss = {
+	display: 'inline-block',
+	padding: '0.18rem 0.5rem',
+	borderRadius: radius.full,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	font: `700 0.68rem/1 ${typography.fontFamilyBody}`,
+	letterSpacing: '0.06em',
+	color: colors.textMuted,
+}
+
+const advancedLedeCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.92rem',
+	lineHeight: 1.55,
+	maxWidth: '68ch',
+}
+
+const starterListCss = {
+	listStyle: 'none',
+	margin: '0.2rem 0 0',
+	padding: 0,
+	display: 'grid',
+	gap: '0.6rem',
 }
 
 /* Starter packages: compact centered cards; the DIY card breaks the grid

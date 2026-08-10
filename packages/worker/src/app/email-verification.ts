@@ -1,6 +1,6 @@
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 

@@ -37,6 +37,15 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 	createPackageRuntimeInvokeTools: mockFns.createPackageRuntimeInvokeTools,
 }))
 
+vi.mock('#worker/identity/background-mcp-user.ts', () => ({
+	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
+		userId,
+		email: `${userId}@example.com`,
+		username: userId,
+		displayName: userId,
+	}),
+}))
+
 function createRetrieverEntry(input: {
 	packageId: string
 	kodyId: string

@@ -21,6 +21,20 @@ covered in [Package approval](#package-approval).
 execution (for example a refreshed OAuth token). It does not return secret
 values.
 
+## Built-in integrations
+
+Some providers are available as **built-in integrations**: the deployment
+operator has already registered the OAuth app, so you connect with one click at
+**`/connect/oauth?provider=<slug>`** — no provider developer console, client ID,
+or client secret needed. Agents can list the available built-in apps with
+**`integration_platform_app_list`**. Tokens for a built-in connection are stored
+as your own secrets, the same as any other integration.
+
+Built-in or not, a connection authorizes _your_ agent — and any code you run or
+install — to act as you on that provider. Kody does not control or supervise
+what your agent does with the access you grant; scope connections deliberately
+and revoke unused ones. See the [Terms](/terms).
+
 ## Placeholders in `fetch` and capability inputs
 
 Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**

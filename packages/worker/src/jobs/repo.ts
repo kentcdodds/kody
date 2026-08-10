@@ -543,7 +543,6 @@ export async function finalizeClaimedJobRow(input: {
 	db: D1Database
 	userId: string
 	job: JobRecord
-	callerContextJson: string
 	claimToken: string
 	scheduledFor: string
 }): Promise<boolean> {
@@ -551,9 +550,7 @@ export async function finalizeClaimedJobRow(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs SET
-				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
-				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
-				last_run_at = ?, last_run_status = ?,
+				enabled = ?, updated_at = ?, last_run_at = ?, last_run_status = ?,
 				next_run_at = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
 				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
@@ -561,19 +558,7 @@ export async function finalizeClaimedJobRow(input: {
 			WHERE id = ? AND user_id = ? AND claim_token = ?`,
 		)
 		.bind(
-			serialized.name,
-			serialized.source_id,
-			serialized.published_commit,
-			serialized.repo_check_policy_json,
-			serialized.storage_id,
-			serialized.params_json,
-			serialized.schedule_json,
-			serialized.timezone,
 			serialized.enabled,
-			serialized.kill_switch_enabled,
-			serialized.preserved,
-			serialized.expires_at,
-			input.callerContextJson,
 			serialized.updated_at,
 			serialized.last_run_at,
 			serialized.last_run_status,
@@ -613,6 +598,37 @@ export async function retryClaimedJobRow(input: {
 			input.jobId,
 			input.userId,
 			input.claimToken,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+/**
+ * Refresh package-owned execution identity without disturbing an in-flight
+ * scheduler claim or recomputing the next occurrence.
+ */
+export async function refreshPackageJobRowIdentity(input: {
+	db: D1Database
+	userId: string
+	jobId: string
+	sourceId: string
+	publishedCommit: string | null
+	callerContextJson: string
+	updatedAt: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET
+				source_id = ?, published_commit = ?, caller_context_json = ?, updated_at = ?
+			WHERE id = ? AND user_id = ?`,
+		)
+		.bind(
+			input.sourceId,
+			input.publishedCommit,
+			input.callerContextJson,
+			input.updatedAt,
+			input.jobId,
+			input.userId,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0

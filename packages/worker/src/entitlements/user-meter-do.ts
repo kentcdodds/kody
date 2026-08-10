@@ -7,7 +7,7 @@ import {
 	restoreToBookmark,
 } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { type EntitlementResource } from './plans.ts'
+import { type EntitlementResource } from '#universal/plans.ts'
 
 /** Daily rate-style resources stored in the per-user UserMeter (UTC day keys). */
 export const dailyEntitlementResources = [
@@ -15,6 +15,7 @@ export const dailyEntitlementResources = [
 	'email_receives_per_day',
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
+	'job_runs_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 export type DailyEntitlementResource =

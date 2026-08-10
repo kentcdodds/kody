@@ -395,7 +395,6 @@ test('package invocation API validates requests and invokes exports with scoped 
 			tokenId: 'discord-gateway',
 			userId: expectedUserId,
 			email: 'me@example.com',
-			displayName: 'me',
 			packageIds: [],
 			packageKodyIds: ['discord-gateway'],
 			exportNames: ['./dispatch-message-created'],

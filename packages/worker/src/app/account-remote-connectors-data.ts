@@ -1,4 +1,4 @@
-import { type AccountRemoteConnectorsLoaderData } from '#app/loader-data.ts'
+import { type AccountRemoteConnectorsLoaderData } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { listRemoteConnectorSettingsWithSharedSecrets } from '#worker/remote-connector/settings-service.ts'
 import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-connectors.ts'
