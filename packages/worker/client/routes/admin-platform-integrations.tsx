@@ -16,6 +16,7 @@ import {
 	fieldLabelCss,
 	getDangerPillCss,
 	getGhostButtonCss,
+	getLogoWellCss,
 	getPillButtonCss,
 	getSelectCss,
 } from '#universal/styles/style-primitives.ts'
@@ -762,39 +763,64 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 						/>
 					</label>
 					{isEditing && editingApp?.logoPath ? (
-						<label
+						<div
 							mix={css({
-								...fieldCss,
 								display: 'flex',
-								flexDirection: 'row',
 								alignItems: 'center',
-								gap: spacing.sm,
+								gap: spacing.md,
+								flexWrap: 'wrap',
 							})}
 						>
-							<input
-								name="removeLogo"
-								type="checkbox"
-								checked={removeLogoChecked}
-								disabled={actionState !== 'idle'}
-								mix={[
-									css({
-										width: '1.25rem',
-										height: '1.25rem',
-										accentColor: colors.primary,
-									}),
-									on('change', (event) => {
-										const input = event.currentTarget
-										if (!(input instanceof HTMLInputElement)) return
-										removeLogoChecked = input.checked
-										if (removeLogoChecked) {
-											pendingLogoBase64 = undefined
-										}
-										handle.update()
-									}),
-								]}
-							/>
-							<span mix={css(fieldLabelCss)}>Remove logo</span>
-						</label>
+							<span
+								mix={css(getLogoWellCss({ size: '2.5rem', radius: '10px' }))}
+							>
+								<img
+									src={editingApp.logoPath}
+									alt=""
+									width={32}
+									height={32}
+									mix={css({
+										display: 'block',
+										width: '1.75rem',
+										height: '1.75rem',
+										objectFit: 'contain',
+									})}
+								/>
+							</span>
+							<label
+								mix={css({
+									...fieldCss,
+									display: 'flex',
+									flexDirection: 'row',
+									alignItems: 'center',
+									gap: spacing.sm,
+								})}
+							>
+								<input
+									name="removeLogo"
+									type="checkbox"
+									checked={removeLogoChecked}
+									disabled={actionState !== 'idle'}
+									mix={[
+										css({
+											width: '1.25rem',
+											height: '1.25rem',
+											accentColor: colors.primary,
+										}),
+										on('change', (event) => {
+											const input = event.currentTarget
+											if (!(input instanceof HTMLInputElement)) return
+											removeLogoChecked = input.checked
+											if (removeLogoChecked) {
+												pendingLogoBase64 = undefined
+											}
+											handle.update()
+										}),
+									]}
+								/>
+								<span mix={css(fieldLabelCss)}>Remove logo</span>
+							</label>
+						</div>
 					) : null}
 					<label
 						mix={css({

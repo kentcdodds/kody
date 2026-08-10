@@ -50,6 +50,7 @@ import {
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
+	getLogoWellCss,
 	getPillButtonCss,
 	hoverMq,
 	inlineSpinnerCss,
@@ -1557,15 +1558,9 @@ const providerCardLinkCss = {
 	minWidth: 0,
 }
 
-/* Same rounded well as CommunityListingIcon size="starter". */
+/* Same rounded white logo plate as CommunityListingIcon size="starter". */
 const providerIconWellCss = {
-	display: 'grid',
-	placeItems: 'center',
-	width: '3.2rem',
-	height: '3.2rem',
-	borderRadius: '12px',
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
+	...getLogoWellCss({ size: '3.2rem', radius: '12px' }),
 	marginBottom: '0.2rem',
 	transition: `border-color 160ms ${transitions.easeOut}`,
 }

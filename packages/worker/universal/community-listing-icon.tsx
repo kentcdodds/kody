@@ -1,7 +1,7 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
-import { colors } from '#universal/styles/tokens.ts'
+import { getLogoWellCss } from '#universal/styles/style-primitives.ts'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
 
 type CommunityListingIconProps = {
@@ -21,6 +21,8 @@ const iconWellBySize = {
  * `.pkg-icon-lg` grammar). The image is served per pinned commit by the
  * community icon endpoint, which already falls back to a rendered initial
  * when a package publishes no icon — so the well always has a photo to fill.
+ * The well is a fixed white plate so dark or colorful marks stay readable in
+ * both light and dark UI themes.
  */
 export function CommunityListingIcon(
 	handle: Handle<CommunityListingIconProps>,
@@ -31,15 +33,8 @@ export function CommunityListingIcon(
 	return () => (
 		<span
 			mix={css({
-				flex: 'none',
+				...getLogoWellCss(well),
 				display: 'block',
-				width: well.size,
-				height: well.size,
-				borderRadius: well.radius,
-				backgroundColor: isDetail ? colors.surface : colors.background,
-				border: `${well.borderWidth} solid ${colors.border}`,
-				overflow: 'hidden',
-				boxSizing: 'border-box' as const,
 			})}
 			data-testid={`community-listing-icon-${size}`}
 		>

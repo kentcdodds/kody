@@ -978,3 +978,30 @@ export function getAlertCardCss(type: 'error' | 'info' = 'info') {
 		fontSize: typography.fontSize.sm,
 	}
 }
+
+/**
+ * Rounded plate behind uploaded or third-party logos. Always white (and
+ * dark ink for `currentColor` marks) so logos that were authored for a
+ * light field stay legible in dark mode without per-logo theme variants.
+ */
+export function getLogoWellCss(
+	options: {
+		size: string
+		radius: string
+		borderWidth?: string
+	} = { size: '3.2rem', radius: '12px' },
+) {
+	return {
+		display: 'grid',
+		placeItems: 'center',
+		flex: 'none',
+		boxSizing: 'border-box' as const,
+		width: options.size,
+		height: options.size,
+		borderRadius: options.radius,
+		border: `${options.borderWidth ?? '1px'} solid ${colors.border}`,
+		backgroundColor: colors.logoWell,
+		color: colors.logoWellInk,
+		overflow: 'hidden' as const,
+	}
+}

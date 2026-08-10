@@ -19,6 +19,14 @@ export const colors = {
 	onDanger: 'var(--color-on-danger)',
 	error: 'var(--color-danger)',
 	errorHover: 'var(--color-danger-hover)',
+	/**
+	 * Fixed white plate behind uploaded / third-party logos so dark marks
+	 * (GitHub, monochrome SVGs) stay readable in dark mode and colorful
+	 * marks stay consistent across themes. Not a theme variable on purpose.
+	 */
+	logoWell: '#ffffff',
+	/** Ink for `currentColor` marks sitting on {@link colors.logoWell}. */
+	logoWellInk: '#111111',
 } as const
 
 // Typography tokens
