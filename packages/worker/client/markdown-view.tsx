@@ -13,12 +13,14 @@
  *   markup. Unknown languages fall back to escaped plaintext.
  * - No resource-loading elements are emitted (`<img>`, `<iframe>`, media,
  *   etc.), so a README can never make a viewer's browser issue requests —
- *   including to hosted package endpoints (`/@username/packages/*`), which
- *   execute author-controlled code. Images render as plain links instead.
+ *   including to hosted package endpoints (`/@username/packages/*` and the
+ *   per-user subdomain mount `/packages/*`), which execute author-controlled
+ *   code. Images render as plain links instead.
  * - Links must be absolute `http:`/`https:`/`mailto:` URLs. Relative URLs
  *   (which would resolve against this origin) and URLs whose path points at a
- *   user scope (`/@...`) render as plain text. Allowed links open in a new
- *   tab with `rel="noopener noreferrer nofollow ugc"`.
+ *   hosted package surface (`/@...` or `/packages/...`) render as plain text.
+ *   Allowed links open in a new tab with `rel="noopener noreferrer nofollow
+ *   ugc"`.
  *
  * The first-party CSP (`security-headers.ts`) blocks off-site scripts,
  * images, and connections as defense in depth; this module must stay safe
@@ -76,12 +78,17 @@ const defaultRenderOptions: ResolvedRenderOptions = {
 }
 
 /**
- * True when the URL's path could reach a user scope (`/@...`, where hosted
- * package apps live). Deliberately over-matches: repeated leading slashes
- * collapse (the worker routes with `split('/').filter(Boolean)`, so
- * `//@user` still reaches package apps) and percent-encoding is decoded
- * repeatedly (`/%40user`, `/%2540user`) before checking. Undecodable paths
- * are treated as user-scope so ambiguity always fails closed.
+ * True when the URL's path could reach a hosted package surface: a user scope
+ * (`/@...`) on any host, or a package-app mount (`/packages/...`, the path
+ * shape served on per-user package-app subdomains). Deliberately
+ * over-matches: it refuses these path shapes on *every* host because this
+ * module cannot know the deployment's package-app domain (the same trade-off
+ * the `/@` rule already makes for hosts like `medium.com/@author`). Repeated
+ * leading slashes collapse (the worker routes with
+ * `split('/').filter(Boolean)`, so `//@user` still reaches package apps) and
+ * percent-encoding is decoded repeatedly (`/%40user`, `/%2540user`) before
+ * checking. Undecodable paths are treated as user-scope so ambiguity always
+ * fails closed.
  */
 function hasUserScopePath(url: URL): boolean {
 	let pathname = url.pathname
@@ -98,7 +105,12 @@ function hasUserScopePath(url: URL): boolean {
 		if (pass >= 4) return true
 		pathname = decoded
 	}
-	return pathname.replace(/^\/+/, '').startsWith('@')
+	const normalized = pathname.replace(/^\/+/, '')
+	return (
+		normalized.startsWith('@') ||
+		normalized === 'packages' ||
+		normalized.startsWith('packages/')
+	)
 }
 
 /**

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
-import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -352,8 +352,9 @@ async function resolvePublishedHostedAppUrl(input: {
 		email: input.ownerEmail,
 	})
 	if (!username) return null
-	return buildPackageAppUrl({
-		origin: getPackageAppBaseUrl({ env: input.env }) ?? input.baseUrl,
+	return resolveHostedPackageAppUrl({
+		packageAppBaseUrl: getPackageAppBaseUrl({ env: input.env }),
+		appBaseUrl: input.baseUrl,
 		username,
 		kodyId: input.kodyId,
 	})

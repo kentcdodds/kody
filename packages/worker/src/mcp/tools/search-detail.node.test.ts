@@ -278,7 +278,7 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 
 	expect(detail).toMatchObject({
 		type: 'package',
-		hostedUrl: 'https://kodyapps.dev/@kentcdodds/packages/demo',
+		hostedUrl: 'https://kentcdodds.kodyapps.dev/packages/demo',
 		baseUrl: 'https://heykody.dev',
 	})
 })

@@ -1,5 +1,5 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
-import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -20,8 +20,8 @@ import {
 	findPlainRepoPromotionHint,
 } from '#worker/repo/user-repos.ts'
 import {
-	parsePackageAppPath,
 	servePackageAppRequest,
+	type PackageAppPath,
 } from '#worker/package-runtime/package-app-serve.ts'
 import {
 	packageAppFetchCapabilityName,
@@ -396,20 +396,24 @@ export const packageAppFetchCapability = defineDomainCapability(
 				)
 			}
 
+			// The normalized path keeps any query string for the request URL; the
+			// package path's restPath is path-only (matching what URL parsing
+			// produced for browser requests).
 			const restPath = normalizePackageAppFetchPath(args.path)
-			const packageAppOrigin =
-				getPackageAppBaseUrl({ env: ctx.env }) ?? ctx.callerContext.baseUrl
-			const hostedUrl = buildPackageAppUrl({
-				origin: packageAppOrigin,
+			const restPathOnly = restPath.split(/[?#]/, 1)[0] || '/'
+			const packageAppOrigin = getPackageAppBaseUrl({ env: ctx.env })
+			const hostedUrl = resolveHostedPackageAppUrl({
+				packageAppBaseUrl: packageAppOrigin,
+				appBaseUrl: ctx.callerContext.baseUrl,
 				username: owner.ownerScope,
 				kodyId: savedPackage.kodyId,
-				restPath,
+				restPath: restPath === '/' ? null : restPath,
 			})
-			const packagePath = parsePackageAppPath(new URL(hostedUrl).pathname)
-			if (!packagePath) {
-				throw new McpCallerError(
-					'Could not resolve a hosted package app path for this package.',
-				)
+			const packagePath: PackageAppPath = {
+				username: owner.ownerScope,
+				kodyId: savedPackage.kodyId,
+				restPath: restPathOnly,
+				mount: packageAppOrigin ? 'user-subdomain' : 'username-path',
 			}
 
 			const requestHeaders = collectSafeRequestHeaders(args.headers)

@@ -143,16 +143,40 @@ test('the package-app session cookie is not interchangeable with the app session
 	resetAuthSessionSecretForTests()
 	const env = createTestEnv()
 
+	// Secure requests get the `__Host-` prefixed name, which browsers only
+	// accept host-only (`Secure`, no `Domain`, `Path=/`): a sibling package-app
+	// subdomain cannot toss a `Domain`-wide cookie under this name.
 	const setCookie = await createPackageAppSessionCookie({
 		env,
 		session: { stableUserId: ownerStableUserId, username: 'owner' },
 		secure: true,
 	})
-	expect(setCookie).toContain('kody_pkg_session=')
+	expect(setCookie).toContain('__Host-kody_pkg_session=')
 	expect(setCookie).toContain('HttpOnly')
 	expect(setCookie).toContain('SameSite=Lax')
 	expect(setCookie).toContain('Secure')
 	expect(setCookie).toContain('Path=/')
+	expect(setCookie).not.toContain('Domain=')
+
+	// Plain-HTTP local development falls back to an unprefixed name because
+	// browsers refuse `__Host-` cookies on insecure origins.
+	const insecureSetCookie = await createPackageAppSessionCookie({
+		env,
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
+		secure: false,
+	})
+	expect(insecureSetCookie).toContain('kody_pkg_session=')
+	expect(insecureSetCookie).not.toContain('__Host-')
+	await expect(
+		readPackageAppSession({
+			request: new Request('http://owner.packages.localhost/packages/x', {
+				headers: { Cookie: insecureSetCookie.split(';')[0] ?? '' },
+			}),
+			env,
+		}),
+	).resolves.toMatchObject({
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
+	})
 
 	const cookiePair = setCookie.split(';')[0] ?? ''
 	const [, cookieValue] = cookiePair.split('=')
@@ -160,7 +184,7 @@ test('the package-app session cookie is not interchangeable with the app session
 
 	await expect(
 		readPackageAppSession({
-			request: new Request('https://kodyapps.dev/@owner/packages/x', {
+			request: new Request('https://owner.kodyapps.dev/packages/x', {
 				headers: { Cookie: cookiePair },
 			}),
 			env,

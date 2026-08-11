@@ -37,15 +37,6 @@ vi.mock('#worker/app-base-url.ts', () => ({
 }))
 
 vi.mock('#worker/package-runtime/package-app-serve.ts', () => ({
-	parsePackageAppPath: (pathname: string) => {
-		const match = pathname.match(/^\/@([^/]+)\/packages\/([^/]+)(\/.*)?$/)
-		if (!match) return null
-		return {
-			username: decodeURIComponent(match[1] ?? ''),
-			kodyId: decodeURIComponent(match[2] ?? ''),
-			restPath: match[3] || '/',
-		}
-	},
 	servePackageAppRequest: (...args: Array<unknown>) =>
 		mockModule.servePackageAppRequest(...args),
 }))
@@ -152,13 +143,14 @@ test('package_app_fetch dispatches synthetic in-process app requests against hos
 				username: 'kody',
 				kodyId: 'demo-app',
 				restPath: '/api/health',
+				mount: 'user-subdomain',
 			},
 		}),
 	)
 	const request = mockModule.servePackageAppRequest.mock.calls[0]?.[0]?.request
 	expect(request).toBeInstanceOf(Request)
 	expect(request.url).toBe(
-		'https://apps.example.com/@kody/packages/demo-app/api/health',
+		'https://kody.apps.example.com/packages/demo-app/api/health',
 	)
 	expect(request.headers.get('Host')).toBeNull()
 	expect(request.headers.get('CF-Ray')).toBeNull()

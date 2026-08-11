@@ -1,4 +1,4 @@
-import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
@@ -85,8 +85,7 @@ export async function resolveEntityDetail(input: {
 			userId: platformFallback?.ownerUserId ?? input.userId,
 			sourceId: record.sourceId,
 		})
-		const packageAppOrigin =
-			getPackageAppBaseUrl({ env }) ?? input.callerContext.baseUrl
+		const packageAppOrigin = getPackageAppBaseUrl({ env })
 		const ownerUsername = platformFallback?.platformScope ?? input.username
 		return {
 			type: 'package' as const,
@@ -101,8 +100,9 @@ export async function resolveEntityDetail(input: {
 			platformScope: platformFallback?.platformScope ?? null,
 			hostedUrl:
 				record.hasApp && ownerUsername
-					? buildPackageAppUrl({
-							origin: packageAppOrigin,
+					? resolveHostedPackageAppUrl({
+							packageAppBaseUrl: packageAppOrigin,
+							appBaseUrl: input.callerContext.baseUrl,
 							username: ownerUsername,
 							kodyId: record.kodyId,
 						})

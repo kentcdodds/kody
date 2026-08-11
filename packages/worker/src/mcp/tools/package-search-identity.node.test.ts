@@ -116,6 +116,35 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 			query: 'https://kodyapps.dev/@user/packages/daily-notes/report?tab=1',
 		}),
 	).toEqual({ kind: 'not-package-identity' })
+
+	// The canonical hosted URL is the caller's per-user subdomain, where the
+	// username lives in the hostname and the path carries only the mount.
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://user.kodyapps.dev/packages/daily-notes?tab=source#top',
+		}),
+	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://user.kodyapps.dev/packages/daily-notes/report?tab=1',
+		}),
+	).toEqual({ kind: 'not-package-identity' })
+	for (const query of [
+		// Another user's subdomain, even for the same kody id.
+		'https://other.kodyapps.dev/packages/daily-notes',
+		// Nested labels are never a user subdomain.
+		'https://a.user.kodyapps.dev/packages/daily-notes',
+		// Embedded credentials stay refused on the subdomain form too.
+		'https://user:password@user.kodyapps.dev/packages/daily-notes',
+		// Wrong scheme for the configured package-app origin.
+		'http://user.kodyapps.dev/packages/daily-notes',
+	]) {
+		expect(parsePackageSearchIdentity({ ...hosted, query }), query).toEqual({
+			kind: 'invalid-package-identity',
+		})
+	}
 	// The app origin keeps working, and relative URLs still resolve against it.
 	expect(
 		parsePackageSearchIdentity({

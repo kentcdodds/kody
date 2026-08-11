@@ -3,18 +3,19 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { type PackageJobSchedule } from '#worker/package-registry/types.ts'
-import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 
 import { type SearchEntityType } from './search-format-types.ts'
 
 export { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
 
-export function buildPackageHostedUrl(
-	baseUrl: string,
-	username: string,
-	kodyId: string,
-) {
-	return buildPackageAppUrl({ origin: baseUrl, username, kodyId })
+export function buildPackageHostedUrl(input: {
+	packageAppBaseUrl: string | null
+	appBaseUrl: string
+	username: string
+	kodyId: string
+}) {
+	return resolveHostedPackageAppUrl(input)
 }
 
 export function buildEntityRef(id: string, type: SearchEntityType) {
