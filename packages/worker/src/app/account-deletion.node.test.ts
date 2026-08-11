@@ -469,6 +469,41 @@ function createTestDb(
 	return { db, rows }
 }
 
+// Mimics the jobs worker's JobsService against the test db: storage-id
+// listing and purgeUser both operate on the fixture's jobs tables.
+function createJobsBindingStub(
+	db: D1Database,
+	overrides: Record<string, unknown> = {},
+) {
+	async function listStorageIds(table: string, userId: string) {
+		const { results } = await db
+			.prepare(
+				`SELECT storage_id FROM ${table} WHERE user_id = ? AND storage_id IS NOT NULL`,
+			)
+			.bind(userId)
+			.all<{ storage_id: string }>()
+		return (results ?? []).map((row) => row.storage_id)
+	}
+	return {
+		listJobStorageIdsForUser: async (input: { userId: string }) => [
+			...(await listStorageIds('jobs', input.userId)),
+			...(await listStorageIds('archived_job_artifacts', input.userId)),
+		],
+		purgeUser: async (input: { userId: string }) => {
+			await db
+				.prepare(`DELETE FROM archived_job_artifacts WHERE user_id = ?`)
+				.bind(input.userId)
+				.run()
+			await db
+				.prepare(`DELETE FROM jobs WHERE user_id = ?`)
+				.bind(input.userId)
+				.run()
+			return { ok: true as const, userId: input.userId, purged: true }
+		},
+		...overrides,
+	}
+}
+
 function createSuccessfulDeletionEnv(
 	db: D1Database,
 	overrides: Partial<Env> & {
@@ -519,13 +554,7 @@ function createSuccessfulDeletionEnv(
 				purge: async () => ({ ok: true as const }),
 			}),
 		},
-		JOBS: {
-			purgeUser: async (input: { userId: string }) => ({
-				ok: true as const,
-				userId: input.userId,
-				purged: true,
-			}),
-		},
+		JOBS: createJobsBindingStub(db),
 		REPO_SESSION: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeSession: async () => ({ ok: true as const }) }),
@@ -1106,11 +1135,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			}
 		},
 	)
-	const purgeJobManagerMock = vi.fn(async () => ({
-		ok: true as const,
-		userId: userAaa,
-		purged: true,
-	}))
+	const jobsBindingStub = createJobsBindingStub(db)
+	const purgeJobManagerMock = vi.fn((input: { userId: string }) =>
+		jobsBindingStub.purgeUser(input),
+	)
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeMcpClientHubMock = vi.fn(async () => undefined)
@@ -1154,9 +1182,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				purge: purgeMailboxMock,
 			}),
 		},
-		JOBS: {
-			purgeUser: purgeJobManagerMock,
-		},
+		JOBS: createJobsBindingStub(db, {
+			purgeUser: purgeJobManagerMock as unknown,
+		}),
 		REPO_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ purgeSession: purgeRepoSessionMock }),
@@ -1404,8 +1432,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		`package-codemod-revert:${userBbb}:item-other`,
 	)
 
-	// Result accounting captures the per-table counts.
-	expect(result.deletedRowCounts.jobs).toBe(3)
+	// Result accounting captures the per-table counts. Job rows are purged
+	// through the JOBS service (ADR 0016), so they are not counted here.
+	expect(result.deletedRowCounts.jobs).toBeUndefined()
 	expect(result.deletedRowCounts.users).toBe(1)
 	expect(result.deletedRowCounts.package_service_states).toBe(3)
 	expect(result.deletedRowCounts.user_storage_buckets).toBe(2)
@@ -1937,10 +1966,10 @@ test('atomic D1 deletion rolls back every row when one statement fails', async (
 	const { db, rows } = createTestDb(
 		{
 			users: [{ id: 1, email: 'a@example.com' }],
-			jobs: [{ id: 'job-a', user_id: 'user-aaa', storage_id: null }],
+			secret_buckets: [{ id: 'sb-a', user_id: 'user-aaa' }],
 			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
 		},
-		{ failRunContaining: 'delete from jobs where user_id = ?' },
+		{ failRunContaining: 'delete from mcp_memories where user_id = ?' },
 	)
 	await expect(
 		deleteUserAccount({
@@ -1960,9 +1989,7 @@ test('atomic D1 deletion rolls back every row when one statement fails', async (
 			deleting_at: expect.any(String),
 		}),
 	])
-	expect(rows.jobs).toEqual([
-		{ id: 'job-a', user_id: 'user-aaa', storage_id: null },
-	])
+	expect(rows.secret_buckets).toEqual([{ id: 'sb-a', user_id: 'user-aaa' }])
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
 })
 

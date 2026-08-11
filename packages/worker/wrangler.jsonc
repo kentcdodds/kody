@@ -939,6 +939,16 @@
 					"name": "EMAIL",
 				},
 			],
+			// Jobs worker service binding (ADR 0016): local dev/e2e runs both
+			// configs together (`wrangler dev --env test` names the jobs worker
+			// script "kody-jobs-test") so jobs data resolves in-process.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs-test",
+					"entrypoint": "JobsService",
+				},
+			],
 			"queues": {
 				"producers": [
 					{

@@ -50,7 +50,6 @@ import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
-	readEntitlementResourceUsage,
 } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
@@ -694,11 +693,8 @@ export async function syncPackageJobsForPackage(input: {
 					getCurrent: async () =>
 						Math.max(
 							0,
-							(await readEntitlementResourceUsage({
-								db: input.env.APP_DB,
+							(await jobsData(input.env).countJobsForUser({
 								userId: input.userId,
-								resource: 'scheduled_jobs',
-								now: new Date(),
 							})) - jobsToRemove,
 						),
 				})
@@ -899,6 +895,10 @@ export async function createJob(input: {
 				userId: callerContext.user.userId,
 				email: callerContext.user.email,
 				resource: 'scheduled_jobs',
+				getCurrent: () =>
+					jobsData(input.env).countJobsForUser({
+						userId: callerContext.user.userId,
+					}),
 			})
 			const schedule = normalizeJobSchedule(input.body.schedule)
 			const timezone = normalizeJobTimezone(input.body.timezone)

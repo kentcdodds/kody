@@ -15,18 +15,6 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 		{ table: 'feature_flag_exposure_rollups', kind: 'scheduled_policy' },
 		{ table: 'stripe_webhook_events', kind: 'scheduled_policy' },
 		{
-			table: 'archived_job_artifacts',
-			kind: 'alternate_cleanup',
-			reason:
-				'Archived job artifact rows are bounded by retain_until and cleaned by the job artifact cleanup path.',
-		},
-		{
-			table: 'jobs',
-			kind: 'alternate_cleanup',
-			reason:
-				'Ad-hoc jobs are cleaned by the hourly job_retention sweeper using account/platform retention windows; package-owned and preserved jobs are durable until explicit delete, package sync, or account deletion.',
-		},
-		{
 			table: 'system_email_delivery_events',
 			kind: 'alternate_cleanup',
 			reason:

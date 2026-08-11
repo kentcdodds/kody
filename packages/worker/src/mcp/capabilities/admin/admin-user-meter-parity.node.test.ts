@@ -54,7 +54,14 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 		acquiredAt: '2026-08-01T09:00:00.000Z',
 	})
 	const ctx = {
-		env: { APP_DB: db, ...meter.env } as Env,
+		env: {
+			APP_DB: db,
+			// Jobs data lives in the jobs worker (ADR 0016); this test has none.
+			JOBS: {
+				sumJobsStorageBytesForUser: async () => 0,
+			},
+			...meter.env,
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {

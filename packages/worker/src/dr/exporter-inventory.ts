@@ -1,3 +1,4 @@
+import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { buildPackageServiceStorageId } from '#worker/package-runtime/package-service.ts'
 import { listPlatformStorageBuckets } from '#worker/storage-buckets/service.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
@@ -37,40 +38,32 @@ export async function listPlatformOwnerInventory(
  * iterates every user's storage ids so the sealed day can rebuild the whole
  * platform. Do not copy this pattern into user-facing read/write paths.
  */
-export async function listPlatformStorageInventory(
-	db: D1Database,
-): Promise<Array<StorageInventoryEntry>> {
+export async function listPlatformStorageInventory(input: {
+	db: D1Database
+	/** Jobs-data access for job/archived-artifact storage ids (ADR 0016). */
+	jobs: JobsStore
+}): Promise<Array<StorageInventoryEntry>> {
+	const { db, jobs } = input
 	// Platform-wide DR has only a D1Database (no per-user Env / network), so
 	// service buckets come from projected `package_service_states` rather than
 	// package manifests. Ad-hoc / execute buckets come from the authoritative
-	// `user_storage_buckets` registry via `listPlatformStorageBuckets`.
-	const [jobRows, archivedRows, registeredBuckets, serviceRows] =
-		await Promise.all([
-			db
-				.prepare(
-					`SELECT user_id AS userId, storage_id AS storageId
-					FROM jobs WHERE storage_id IS NOT NULL`,
-				)
-				.all<{ userId: string; storageId: string }>(),
-			db
-				.prepare(
-					`SELECT user_id AS userId, storage_id AS storageId
-					FROM archived_job_artifacts WHERE storage_id IS NOT NULL`,
-				)
-				.all<{ userId: string; storageId: string }>(),
-			listPlatformStorageBuckets({ db }),
-			db
-				.prepare(
-					`SELECT DISTINCT user_id AS userId, package_id AS packageId,
+	// `user_storage_buckets` registry via `listPlatformStorageBuckets`. Job
+	// and archived-artifact storage ids come from the jobs worker's database.
+	const [jobStorageOwners, registeredBuckets, serviceRows] = await Promise.all([
+		jobs.listAllJobStorageOwners(),
+		listPlatformStorageBuckets({ db }),
+		db
+			.prepare(
+				`SELECT DISTINCT user_id AS userId, package_id AS packageId,
 						service_name AS serviceName
 					FROM package_service_states`,
-				)
-				.all<{
-					userId: string
-					packageId: string
-					serviceName: string
-				}>(),
-		])
+			)
+			.all<{
+				userId: string
+				packageId: string
+				serviceName: string
+			}>(),
+	])
 
 	const seen = new Set<string>()
 	const inventory: Array<StorageInventoryEntry> = []
@@ -80,8 +73,7 @@ export async function listPlatformStorageInventory(
 		seen.add(identity)
 		inventory.push({ userId, storageId, identity })
 	}
-	for (const row of jobRows.results ?? []) push(row.userId, row.storageId)
-	for (const row of archivedRows.results ?? []) push(row.userId, row.storageId)
+	for (const row of jobStorageOwners) push(row.userId, row.storageId)
 	for (const row of registeredBuckets) push(row.userId, row.storageId)
 	for (const row of serviceRows.results ?? []) {
 		push(

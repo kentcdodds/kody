@@ -3,7 +3,7 @@ import {
 	type JobManagerDebugState,
 	type JobManagerDebugStatus,
 } from '@kody-internal/shared/jobs/manager-debug.ts'
-import { jobsService } from './jobs-data.ts'
+import { jobsData, jobsService } from './jobs-data.ts'
 import {
 	logJobSchedulerError,
 	logJobSchedulerEvent,
@@ -27,6 +27,9 @@ export async function purgeJobManagerForUser(input: {
 }) {
 	const jobs = jobsService(input.env)
 	if (!jobs) {
+		// No jobs worker: still clear the fallback store's rows so account
+		// deletion leaves no job data behind; only the DO purge is skipped.
+		await jobsData(input.env).purgeUserJobsData({ userId: input.userId })
 		return {
 			ok: true as const,
 			userId: input.userId,

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { loadAdminUserMeterParityReport } from '#worker/admin/user-meter-parity.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { dailyEntitlementResources } from '#worker/entitlements/user-meter-do.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -98,6 +99,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 					report: await loadAdminUserMeterParityReport({
 						db: ctx.env.APP_DB,
 						env: ctx.env,
+						jobs: jobsData(ctx.env),
 						stableUserId: args.stable_user_id,
 					}),
 				}),

@@ -1,3 +1,4 @@
+import { createD1JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	backupStagingLegacySchemaVersion,
@@ -1419,17 +1420,19 @@ test('DR inventory includes registry storage and excludes deleting owners', asyn
 	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValueOnce([
 		{ userId: 'user-a', storageId: 'exec:adhoc-only' },
 	])
-	const inventory = await listPlatformStorageInventory(
-		createDb({
-			services: [
-				{
-					userId: 'user-a',
-					packageId: 'pkg-1',
-					serviceName: 'worker',
-				},
-			],
-		}),
-	)
+	const inventoryDb = createDb({
+		services: [
+			{
+				userId: 'user-a',
+				packageId: 'pkg-1',
+				serviceName: 'worker',
+			},
+		],
+	})
+	const inventory = await listPlatformStorageInventory({
+		db: inventoryDb,
+		jobs: createD1JobsStore(inventoryDb),
+	})
 	expect(inventory.map((entry) => entry.storageId).sort()).toEqual([
 		'exec:adhoc-only',
 		'service:pkg-1:worker',

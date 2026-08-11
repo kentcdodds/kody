@@ -30,13 +30,6 @@ test('retention dispositions stay aligned with scheduled policies and documented
 		[...exemptionTables].sort(),
 	)
 	expect(
-		nonScheduled.some(
-			(disposition) =>
-				disposition.table === 'archived_job_artifacts' &&
-				disposition.kind === 'alternate_cleanup',
-		),
-	).toBe(true)
-	expect(
 		nonScheduled
 			.filter((disposition) => disposition.table.startsWith('system_email_'))
 			.map((disposition) => disposition.table)
@@ -60,13 +53,6 @@ test('retention dispositions stay aligned with scheduled policies and documented
 					disposition.kind === 'alternate_cleanup' &&
 					disposition.reason.includes('dedicated'),
 			),
-	).toBe(true)
-	expect(
-		nonScheduled.some(
-			(disposition) =>
-				disposition.table === 'jobs' &&
-				disposition.kind === 'alternate_cleanup',
-		),
 	).toBe(true)
 	expect(
 		nonScheduled.some(

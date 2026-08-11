@@ -1,6 +1,7 @@
 import { cachified } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { loadFleetUsageInsights } from '#worker/admin/fleet-usage-insights.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
@@ -65,10 +66,6 @@ type PlanRow = { plan: string; n: number }
 type AuthDayRow = { day: string; result: string; n: number }
 type AuthCategoryRow = { category: string; n: number }
 type HeatmapRow = { day: string; hour: string; n: number }
-type JobStatsRow = {
-	total: number
-	enabled: number | null
-}
 type ForkActorRow = { actor: string | null; n: number }
 type InsightsUserRow = {
 	stable_user_id: string
@@ -146,9 +143,7 @@ async function queryAdminInsights(
 		insightsUsers,
 	] = await Promise.all([
 		queryTotals(db),
-		db
-			.prepare(`SELECT COUNT(*) AS total, SUM(enabled) AS enabled FROM jobs`)
-			.first<JobStatsRow>(),
+		jobsData(env).getJobInsights(),
 		db
 			.prepare(
 				`SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n
@@ -223,8 +218,8 @@ async function queryAdminInsights(
 	const fleetUsage = await loadFleetUsageInsights({ db, env, now })
 
 	const jobHealth: AdminInsightsJobHealth = {
-		totalJobs: Number(jobStats?.total ?? 0),
-		enabledJobs: Number(jobStats?.enabled ?? 0),
+		totalJobs: jobStats.total,
+		enabledJobs: jobStats.enabled,
 		successRuns: runLogInsights.jobSuccessRuns,
 		errorRuns: runLogInsights.jobErrorRuns,
 	}

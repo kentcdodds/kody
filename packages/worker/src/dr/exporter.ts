@@ -29,6 +29,7 @@ import {
 	type StorageIndexEntry,
 } from '@kody-internal/shared/backup-staging.ts'
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { runLogRpc } from '#worker/run-records/service.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
@@ -1397,7 +1398,10 @@ export async function runDrExportTick(input: {
 			})
 		}
 		if (!timeBudgetExhausted && progress.phase === 'storage') {
-			const inventory = await listPlatformStorageInventory(input.env.APP_DB)
+			const inventory = await listPlatformStorageInventory({
+				db: input.env.APP_DB,
+				jobs: jobsData(input.env),
+			})
 			timeBudgetExhausted = await exportStoragePhase({
 				env: input.env,
 				s3,

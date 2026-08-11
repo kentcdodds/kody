@@ -18,6 +18,12 @@ import {
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
 	applyAllMigrations(db, migrationsDir)
+	// The APP_DB fallback jobs store serves the jobs-worker schema (ADR 0016)
+	// from the same test database handle.
+	applyAllMigrations(
+		db,
+		new URL('../../../jobs-worker/migrations/', import.meta.url),
+	)
 }
 
 function createD1FromSqlite(
@@ -187,7 +193,9 @@ async function createSignedR2Cursor(input: {
 
 test('account export D1 coverage includes every live user-owned schema column', () => {
 	const db = new DatabaseSync(':memory:')
-	applyMigrations(db)
+	// Coverage tracks APP_DB only; jobs tables live in the jobs worker's
+	// database and are exported through the JOBS service (ADR 0016).
+	applyAllMigrations(db, new URL('../../migrations/', import.meta.url))
 	const tables = db
 		.prepare(
 			`SELECT name
@@ -1001,9 +1009,12 @@ test('durable object discovery pages high-cardinality storage ids without nested
 				bind(...params: Array<unknown>) {
 					return {
 						async all<T>() {
-							if (query.includes('SELECT id FROM (')) {
-								const afterId = String(params[3])
-								const limit = Number(params[4])
+							if (query.includes('FROM user_storage_buckets')) {
+								if (!query.includes('storage_id > ?')) {
+									return { results: [] as Array<T> }
+								}
+								const afterId = String(params[1])
+								const limit = Number(params[2])
 								const rows = ids
 									.filter((id) => id > afterId)
 									.slice(0, limit)
@@ -1028,7 +1039,10 @@ test('durable object discovery pages high-cardinality storage ids without nested
 	let startAfter: string | undefined
 	for (;;) {
 		const page = await readAccountExportSection({
-			env: { APP_DB: db } as Env,
+			env: {
+				APP_DB: db,
+				JOBS: { listJobStorageIdsForUser: async () => [] },
+			} as unknown as Env,
 			dbUserId: 1,
 			mcpUserId: 'user-a',
 			section: 'durable_object_summaries',

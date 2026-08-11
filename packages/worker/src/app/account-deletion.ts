@@ -1158,11 +1158,6 @@ export async function deleteUserAccount(input: {
 		return 0
 	})
 
-	result.clearedDurableObjects.jobManagers = await purgeJobManager({
-		env: input.env,
-		userId: input.mcpUserId,
-		warnings,
-	})
 	result.clearedDurableObjects.repoSessions = await purgeRepoSessions({
 		env: input.env,
 		userId: input.mcpUserId,
@@ -1312,6 +1307,19 @@ export async function deleteUserAccount(input: {
 		})
 	}
 
+	if (warnings.length > 0) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	// Jobs data lives in the jobs worker's database (ADR 0016), so it cannot
+	// join the atomic APP_DB deletion below. Purge it fail-closed here, after
+	// every best-effort cleanup succeeded; a failure aborts before the user row
+	// is removed so a retry can purge again (purgeUser is idempotent).
+	result.clearedDurableObjects.jobManagers = await purgeJobManager({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
 	if (warnings.length > 0) {
 		throw new AccountDeletionCleanupError(warnings, result)
 	}
