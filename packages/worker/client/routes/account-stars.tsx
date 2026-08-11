@@ -201,7 +201,7 @@ export function AccountStarsRoute(handle: Handle) {
 										<a
 											href={getCommunityListingHref({
 												listingId: listing.id,
-												ownerUsername: listing.ownerUsername,
+												listingName: listing.name,
 												kodyId: listing.kodyId,
 											})}
 											mix={css(titleLinkCss)}

@@ -60,7 +60,7 @@ export function CommunityListingsContent(
 										<a
 											href={getCommunityListingHref({
 												listingId: listing.id,
-												ownerUsername: listing.ownerUsername,
+												listingName: listing.name,
 												kodyId: listing.kodyId,
 											})}
 											mix={css(listingLinkCss)}
