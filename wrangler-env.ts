@@ -15,6 +15,7 @@ import {
 	getDefaultWranglerConfigPath,
 	resolveWranglerConfigPath,
 } from './tools/wrangler-env-config.ts'
+import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -32,6 +33,7 @@ const hasInspectorPortFlag = args.some(
 )
 
 const commandArgs = [...args]
+let shouldAddRuntimeDevConfig = false
 
 if (
 	!hasConfigFlag &&
@@ -44,7 +46,10 @@ if (
 	// binds the runtime worker (RUNTIME_WORKER service binding plus
 	// cross-script Durable Objects), so `wrangler dev` runs both scripts in
 	// one Miniflare via a secondary --config, which resolves those bindings
-	// locally.
+	// locally. The secondary config is a generated local-dev variant (see
+	// tools/local-runtime-dev-config.ts) because wrangler applies `--var`
+	// only to the primary config, registers workers under `<name>-<env>`,
+	// and treats a secondary `ai` binding as always-remote.
 	const runtimeWorkerConfigPath = 'packages/runtime-worker/wrangler.jsonc'
 	// The test env runs the runtime lane in-process (no RUNTIME_WORKER
 	// binding), and the runtime config defines no test env.
@@ -55,7 +60,7 @@ if (
 			resolveWranglerConfigPath(runtimeWorkerConfigPath, process.cwd()),
 		)
 	) {
-		commandArgs.push('--config', runtimeWorkerConfigPath)
+		shouldAddRuntimeDevConfig = true
 	}
 }
 
@@ -130,6 +135,16 @@ if (isDevCommand && !hasInspectorPortFlag) {
 		}),
 	)
 	commandArgs.push('--inspector-port', resolvedInspectorPort)
+}
+
+if (shouldAddRuntimeDevConfig) {
+	const runtimeDevConfigPath = await writeLocalRuntimeDevConfig({
+		runtimeConfigPath: 'packages/runtime-worker/wrangler.jsonc',
+		envName,
+		mainWorkerDevName: `kody-${envName}`,
+		port: resolvedPort,
+	})
+	commandArgs.push('--config', runtimeDevConfigPath)
 }
 
 const processEnv = {
