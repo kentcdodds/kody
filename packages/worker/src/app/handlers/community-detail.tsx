@@ -3,7 +3,10 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import { resolveCommunityListingRoute } from '#app/community-package-route.ts'
+import {
+	resolveCanonicalListingPath,
+	resolveCommunityListingRoute,
+} from '#app/community-package-route.ts'
 import {
 	getCommunityPackageHref,
 	resolveCommunityPackageUrl,
@@ -90,18 +93,18 @@ export function createCommunityDetailHandler(env: Env) {
 			if (frameResponse) return frameResponse
 
 			const detail = await loadCommunityDetailData(env, request, listingId)
-			const ownerUsername = detail?.listing.ownerUsername
-			if (detail && ownerUsername) {
-				return Response.redirect(
-					new URL(
-						getCommunityPackageHref({
-							username: ownerUsername,
-							kodyId: detail.listing.kodyId,
-						}),
-						url,
-					).toString(),
-					301,
-				)
+			const canonicalPath = detail
+				? await resolveCanonicalListingPath({
+						env,
+						listingId,
+						ownerUsername: detail.listing.ownerUsername,
+						kodyId: detail.listing.kodyId,
+					})
+				: null
+			// A listing whose canonical pair no longer resolves stays served here
+			// rather than redirecting permanently at a dead URL.
+			if (canonicalPath) {
+				return Response.redirect(new URL(canonicalPath, url).toString(), 301)
 			}
 
 			return renderCommunityListingPage({ request, env, listingId })

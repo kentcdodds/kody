@@ -25,6 +25,7 @@ const listedPackage = {
 	tags: ['fathom', 'analytics'],
 	updatedAt: '2026-07-28T00:00:00.000Z',
 	communityListingId: 'listing-1',
+	communityListingKodyId: 'fathom-analytics',
 } satisfies PublicProfilePackageItem
 
 const unpublishedPackage = {
@@ -34,6 +35,7 @@ const unpublishedPackage = {
 	tags: [],
 	updatedAt: '2026-07-01T00:00:00.000Z',
 	communityListingId: null,
+	communityListingKodyId: null,
 } satisfies PublicProfilePackageItem
 
 test('profile packages link listings and expose follow controls next to the username', async () => {
@@ -93,4 +95,29 @@ test('profile packages link listings and expose follow controls next to the user
 
 	expect(ownHtml).toContain('@kody')
 	expect(ownHtml).not.toContain('data-testid="profile-follow"')
+})
+
+test('a package link uses the listing kody id, not the package one it drifted from', async () => {
+	// Editing `kody.id` updates the package immediately; the listing's id only
+	// moves on republish, so until then the page lives at the listing's id.
+	const html = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...listedPackage,
+				kodyId: 'fathom',
+				communityListingKodyId: 'fathom-analytics',
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: false,
+		loggedIn: false,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
+	})
+
+	expect(html).toContain('href="/@kody/fathom-analytics"')
+	expect(html).not.toContain('href="/@kody/fathom"')
 })

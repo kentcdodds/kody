@@ -3,32 +3,48 @@
 -- most one publicly reachable listing, and both halves have to survive a
 -- rename.
 --
--- Deleting a package intentionally leaves its listing behind (the pinned
--- snapshot outlives the source), so an owner could delete a package and
--- publish a new one reusing the same `kody.id`, leaving two active listings
--- competing for one URL. Delist the orphaned side of any such collision -- the
--- listing whose package row is already gone -- so the live package keeps the
--- URL, then let a partial unique index hold the invariant going forward.
--- Delisted rows stay readable by id for admin review; public reads already
--- filter them out.
+-- Two active listings can already compete for one pair. Deleting a package
+-- intentionally leaves its listing behind (the pinned snapshot outlives the
+-- source), so an owner could delete a package and publish a new one reusing the
+-- same `kody.id`; and because a listing's `kody_id` only moves on republish, an
+-- owner could also edit one package's `kody.id` away and publish a second
+-- package under the freed id, leaving two listings with live packages. Every
+-- collision has to be resolved before the index exists, or creating it fails and
+-- takes the deploy with it.
+--
+-- Keep exactly one listing per pair, preferring the strongest claim: a live
+-- package that still uses the id, then any live package, then the most recently
+-- updated listing (id as the final tiebreak so the choice is deterministic).
+-- Delist the rest -- they stay readable by id for admin review, and public reads
+-- already filter them out.
 UPDATE community_listings
 SET
 	status = 'delisted',
 	updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 WHERE status = 'active'
-	AND NOT EXISTS (
-		SELECT 1
-		FROM saved_packages
-		WHERE saved_packages.id = community_listings.package_id
-			AND saved_packages.user_id = community_listings.owner_user_id
-	)
-	AND EXISTS (
-		SELECT 1
-		FROM community_listings AS competing
-		WHERE competing.owner_user_id = community_listings.owner_user_id
-			AND competing.kody_id = community_listings.kody_id
-			AND competing.id <> community_listings.id
-			AND competing.status = 'active'
+	AND id <> (
+		SELECT keep.id
+		FROM community_listings AS keep
+		WHERE keep.owner_user_id = community_listings.owner_user_id
+			AND keep.kody_id = community_listings.kody_id
+			AND keep.status = 'active'
+		ORDER BY
+			EXISTS (
+				SELECT 1
+				FROM saved_packages
+				WHERE saved_packages.id = keep.package_id
+					AND saved_packages.user_id = keep.owner_user_id
+					AND saved_packages.kody_id = keep.kody_id
+			) DESC,
+			EXISTS (
+				SELECT 1
+				FROM saved_packages
+				WHERE saved_packages.id = keep.package_id
+					AND saved_packages.user_id = keep.owner_user_id
+			) DESC,
+			keep.updated_at DESC,
+			keep.id ASC
+		LIMIT 1
 	);
 
 CREATE UNIQUE INDEX idx_community_listings_owner_kody_id_active

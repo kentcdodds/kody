@@ -180,6 +180,7 @@ test('a non-canonically spelled pair redirects to the canonical one', async () =
 		}),
 	).resolves.toEqual({
 		kind: 'redirect',
+		listingId: pkg.listingId,
 		username: pkg.username,
 		kodyId: pkg.kodyId,
 	})
@@ -204,6 +205,7 @@ test('links shared under a retired username follow the rename', async () => {
 		}),
 	).resolves.toEqual({
 		kind: 'redirect',
+		listingId: pkg.listingId,
 		username: renamed,
 		kodyId: pkg.kodyId,
 	})
@@ -238,6 +240,7 @@ test('a second rename keeps the oldest username resolving', async () => {
 			}),
 		).resolves.toEqual({
 			kind: 'redirect',
+			listingId: pkg.listingId,
 			username: latest,
 			kodyId: pkg.kodyId,
 		})
@@ -310,6 +313,7 @@ test('links shared under a retired kody id follow the package', async () => {
 		}),
 	).resolves.toEqual({
 		kind: 'redirect',
+		listingId: pkg.listingId,
 		username: pkg.username,
 		kodyId: 'devin-two',
 	})

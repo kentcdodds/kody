@@ -158,7 +158,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 								? getCommunityListingHref({
 										listingId: pkg.communityListingId,
 										ownerUsername: profile.username,
-										kodyId: pkg.kodyId,
+										kodyId: pkg.communityListingKodyId,
 									})
 								: null
 							return (

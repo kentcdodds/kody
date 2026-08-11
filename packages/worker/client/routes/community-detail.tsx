@@ -118,8 +118,25 @@ const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
  * every listing-scoped API is keyed by it. The server resolves the pair once
  * per page load (route loader or SSR shell); remembering the answer here keeps
  * the action handlers able to read the id synchronously.
+ *
+ * Module scope is shared by every request in a worker isolate (the app shell
+ * imports this module for SSR too), so the cache is bounded: it only ever needs
+ * the page being rendered plus the handful a visitor navigated through, and an
+ * entry evicted early costs a refetch, not correctness.
  */
 const listingIdsByPathname = new Map<string, string>()
+const maxRememberedListingPathnames = 10
+
+function rememberListingId(pathname: string, listingId: string) {
+	// Re-setting moves the entry to the end of the insertion order, so the
+	// oldest key is always the least recently resolved one.
+	listingIdsByPathname.delete(pathname)
+	listingIdsByPathname.set(pathname, listingId)
+	for (const key of listingIdsByPathname.keys()) {
+		if (listingIdsByPathname.size <= maxRememberedListingPathnames) break
+		listingIdsByPathname.delete(key)
+	}
+}
 
 type ListingPageRef = {
 	pathname: string
@@ -210,7 +227,7 @@ export async function communityDetailRouteLoader(
 
 	await framePrefetchPromise
 	const listingId = payload.listing.id
-	listingIdsByPathname.set(ref.pathname, listingId)
+	rememberListingId(ref.pathname, listingId)
 
 	return {
 		communityDetailShell: {
@@ -321,7 +338,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load community package.')
 			}
-			listingIdsByPathname.set(ref.pathname, payload.listing.id)
+			rememberListingId(ref.pathname, payload.listing.id)
 			forkPrompt = payload.forkPrompt
 			loggedIn = payload.loggedIn
 			viewerIsAdmin = payload.viewerIsAdmin
@@ -694,7 +711,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		// The canonical URL carries no listing id, so the server's answer for this
 		// pathname is what makes the page's listing-scoped actions addressable.
 		if (routeData) {
-			listingIdsByPathname.set(pathname, routeData.listingId)
+			rememberListingId(pathname, routeData.listingId)
 		}
 		const ref = getListingPageRef(pathname)
 		const listingId = ref?.listingId ?? null

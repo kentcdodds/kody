@@ -35,6 +35,7 @@ const communityMockModule = vi.hoisted(() => ({
 	getCommunityListingWithAggregates: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
 	resolveCommunityListingRoute: vi.fn(),
+	resolveCanonicalListingPath: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -54,6 +55,8 @@ vi.mock('#worker/community/service.ts', () => ({
 vi.mock('#app/community-package-route.ts', () => ({
 	resolveCommunityListingRoute: (...args: Array<unknown>) =>
 		communityMockModule.resolveCommunityListingRoute(...args),
+	resolveCanonicalListingPath: (...args: Array<unknown>) =>
+		communityMockModule.resolveCanonicalListingPath(...args),
 }))
 
 vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
@@ -835,6 +838,10 @@ test('listing-uuid URL redirects to the canonical package URL', async () => {
 		stable_user_id: 'owner-mcp-id',
 	})
 
+	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(
+		'/@kentcdodds/github-triage',
+	)
+
 	const response = await createCommunityDetailHandler(env).handler({
 		request: new Request('https://example.com/community/listing-detail-1'),
 		url: new URL('https://example.com/community/listing-detail-1'),
@@ -845,6 +852,36 @@ test('listing-uuid URL redirects to the canonical package URL', async () => {
 	expect(response.headers.get('location')).toBe(
 		'https://example.com/@kentcdodds/github-triage',
 	)
+})
+
+test('listing-uuid URL keeps serving the page when no canonical URL resolves', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue({
+		...sampleListing,
+		id: 'listing-detail-1',
+	})
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	// A stale owner scope in the listing name: redirecting would cache a 404.
+	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(null)
+
+	const response = await createCommunityDetailHandler(env).handler({
+		request: new Request('https://example.com/community/listing-detail-1'),
+		url: new URL('https://example.com/community/listing-detail-1'),
+		params: { listingId: 'listing-detail-1' },
+	} as never)
+
+	expect(response.status).toBe(200)
+	const props = readAppRootProps(await readResponseText(response))
+	expect(props.loaderData?.communityDetailShell).toMatchObject({
+		ok: true,
+		listingId: 'listing-detail-1',
+	})
 })
 
 test('renderAppPage renders the redesigned blog post', async () => {

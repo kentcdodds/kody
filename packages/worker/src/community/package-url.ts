@@ -22,8 +22,10 @@ export function getCommunityPackageHref(input: {
 export type CommunityPackageUrlTarget =
 	| { kind: 'listing'; listingId: string; username: string; kodyId: string }
 	// The requested pair is retired (or not canonically spelled); `username` and
-	// `kodyId` are the pair that owns the package now.
-	| { kind: 'redirect'; username: string; kodyId: string }
+	// `kodyId` are the pair that owns the package now, and `listingId` is the
+	// listing that pair resolves to — a caller redirecting *to* the canonical URL
+	// can check it lands on the listing it started from.
+	| { kind: 'redirect'; listingId: string; username: string; kodyId: string }
 
 // A rename chain collapses in one hop because retirement rows point at the
 // package, not at the next name in the chain. Username hops can still stack (a
@@ -68,7 +70,12 @@ export async function resolveCommunityPackageUrl(input: {
 			})
 			if (listing) {
 				return moved
-					? { kind: 'redirect', username: identity.username, kodyId }
+					? {
+							kind: 'redirect',
+							listingId: listing.id,
+							username: identity.username,
+							kodyId,
+						}
 					: {
 							kind: 'listing',
 							listingId: listing.id,
@@ -91,6 +98,7 @@ export async function resolveCommunityPackageUrl(input: {
 			if (!currentListing) return null
 			return {
 				kind: 'redirect',
+				listingId: currentListing.id,
 				username: identity.username,
 				kodyId: currentKodyId,
 			}

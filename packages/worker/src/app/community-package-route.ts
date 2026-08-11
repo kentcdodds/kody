@@ -40,3 +40,25 @@ export async function resolveCommunityListingRoute(input: {
 	}
 	return { kind: 'listing', listingId: target.listingId }
 }
+
+/**
+ * The canonical path for a listing, or null when the owner/`kody.id` pair does
+ * not lead back to it. The owner half comes from the listing's scoped name,
+ * which a failed republish can leave stale, so a caller redirecting permanently
+ * has to know the destination actually resolves — a cached redirect to a 404
+ * would outlive the data fix.
+ */
+export async function resolveCanonicalListingPath(input: {
+	env: Env
+	listingId: string
+	ownerUsername: string
+	kodyId: string
+}): Promise<string | null> {
+	const target = await resolveCommunityPackageUrl({
+		db: input.env.APP_DB,
+		username: input.ownerUsername,
+		kodyId: input.kodyId,
+	})
+	if (target?.listingId !== input.listingId) return null
+	return getCommunityPackageHref(target)
+}
