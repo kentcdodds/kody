@@ -252,11 +252,11 @@ Client routes: `packages/worker/client/routes/community*`
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
   plus the active listing's `kody_id` (JSON companion:
   `/profiles/:username/packages/:kodyId.json`). `username_redirects` and
-  `package_kody_id_redirects` keep links shared before a rename resolving, to a
-  redirect rather than the page
-- `/community/:listingId` — the same page by listing id, which redirects to the
-  canonical URL; metadata, ratings, README, one-click install (requires login;
-  untrusted listings require a confirmed warning), fork prompt, report link
+  `package_kody_id_redirects` map prior owner usernames and package `kody.id`
+  values to a redirect at that URL
+- `/community/:listingId` — the same page by listing id; redirects to the
+  canonical URL. Metadata, ratings, README, one-click install (requires login;
+  untrusted listings require a confirmed warning), fork prompt, and report link
   (report requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
