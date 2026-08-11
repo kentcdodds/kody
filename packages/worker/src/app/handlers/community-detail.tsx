@@ -38,12 +38,22 @@ const reportReasonSchema = z
 
 /**
  * A moved package keeps whatever the link carried: `followError` and friends
- * ride in the query string, and a permanent redirect that drops them is cached.
+ * ride in the query string, and a redirect that drops them gets cached.
+ *
+ * `301` states which URL is canonical, but the destination is not permanent --
+ * a username can be released and reclaimed by someone else -- so it is cached
+ * for an hour rather than forever.
  */
 function redirectToCanonicalPath(input: { path: string; url: URL }) {
 	const destination = new URL(input.path, input.url)
 	destination.search = input.url.search
-	return Response.redirect(destination.toString(), 301)
+	return new Response(null, {
+		status: 301,
+		headers: {
+			location: destination.toString(),
+			'cache-control': 'public, max-age=3600',
+		},
+	})
 }
 
 async function renderCommunityListingPage(input: {

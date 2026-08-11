@@ -12,6 +12,47 @@
 -- collision has to be resolved before the index exists, or creating it fails and
 -- takes the deploy with it.
 --
+-- A losing listing whose package still exists under a different `kody.id` is
+-- exactly what a republish would repair, so repair it here instead of taking its
+-- page away: delisting is the moderator state, and publishing refuses to touch a
+-- delisted listing, which would leave a live package stranded with no way back.
+-- Moving onto an id another active listing holds is skipped (the delist below
+-- then settles it), which also makes the statement safe whichever order SQLite
+-- visits the rows in.
+UPDATE community_listings
+SET
+	kody_id = (
+		SELECT saved_packages.kody_id
+		FROM saved_packages
+		WHERE saved_packages.id = community_listings.package_id
+			AND saved_packages.user_id = community_listings.owner_user_id
+	),
+	updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE status = 'active'
+	AND EXISTS (
+		SELECT 1
+		FROM community_listings AS competitor
+		WHERE competitor.owner_user_id = community_listings.owner_user_id
+			AND competitor.kody_id = community_listings.kody_id
+			AND competitor.status = 'active'
+			AND competitor.id <> community_listings.id
+	)
+	AND EXISTS (
+		SELECT 1
+		FROM saved_packages
+		WHERE saved_packages.id = community_listings.package_id
+			AND saved_packages.user_id = community_listings.owner_user_id
+			AND saved_packages.kody_id <> community_listings.kody_id
+			AND NOT EXISTS (
+				SELECT 1
+				FROM community_listings AS taken
+				WHERE taken.owner_user_id = community_listings.owner_user_id
+					AND taken.kody_id = saved_packages.kody_id
+					AND taken.status = 'active'
+					AND taken.id <> community_listings.id
+			)
+	);
+
 -- Keep exactly one listing per pair, preferring the strongest claim: a live
 -- package that still uses the id, then any live package, then the most recently
 -- updated listing (id as the final tiebreak so the choice is deterministic).

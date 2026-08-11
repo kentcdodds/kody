@@ -70,6 +70,15 @@ function readStatuses(db: DatabaseSync) {
 	)
 }
 
+function readKodyIds(db: DatabaseSync) {
+	return Object.fromEntries(
+		db
+			.prepare(`SELECT id, kody_id FROM community_listings ORDER BY id`)
+			.all()
+			.map((row) => [String(row['id']), String(row['kody_id'])]),
+	)
+}
+
 test('canonical-url collisions are resolved so the unique index can be created', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBeforeFriendlyUrls(db)
@@ -137,10 +146,59 @@ test('canonical-url collisions are resolved so the unique index can be created',
 	expect(readStatuses(db)).toEqual({
 		'listing-orphan': 'delisted',
 		'listing-live': 'active',
-		'listing-drifted': 'delisted',
+		// The drifted listing keeps its page at the id its package actually has:
+		// nothing can relist a delisted listing, so a live package must not lose.
+		'listing-drifted': 'active',
 		'listing-claimed': 'active',
 		'listing-other-owner': 'active',
 		'listing-alone': 'active',
+	})
+	expect(readKodyIds(db)).toMatchObject({
+		'listing-drifted': 'renamed',
+		'listing-claimed': 'contested',
+	})
+})
+
+test('a drifted listing is delisted when its package id is taken too', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBeforeFriendlyUrls(db)
+	// `pkg-drifted` moved to `taken`, which another published package already
+	// holds, so there is no free id to repair the listing onto.
+	insertPackage(db, { id: 'pkg-drifted', userId: 'user-1', kodyId: 'taken' })
+	insertPackage(db, { id: 'pkg-holder', userId: 'user-1', kodyId: 'holder' })
+	insertPackage(db, {
+		id: 'pkg-claimed',
+		userId: 'user-1',
+		kodyId: 'contested',
+	})
+	insertListing(db, {
+		id: 'listing-drifted',
+		ownerUserId: 'user-1',
+		packageId: 'pkg-drifted',
+		kodyId: 'contested',
+		updatedAt: '2026-01-01T00:00:00Z',
+	})
+	insertListing(db, {
+		id: 'listing-claimed',
+		ownerUserId: 'user-1',
+		packageId: 'pkg-claimed',
+		kodyId: 'contested',
+		updatedAt: '2024-01-01T00:00:00Z',
+	})
+	insertListing(db, {
+		id: 'listing-holder',
+		ownerUserId: 'user-1',
+		packageId: 'pkg-holder',
+		kodyId: 'taken',
+		updatedAt: '2024-01-01T00:00:00Z',
+	})
+
+	expect(() => applyFriendlyUrlMigration(db)).not.toThrow()
+
+	expect(readStatuses(db)).toEqual({
+		'listing-drifted': 'delisted',
+		'listing-claimed': 'active',
+		'listing-holder': 'active',
 	})
 })
 
