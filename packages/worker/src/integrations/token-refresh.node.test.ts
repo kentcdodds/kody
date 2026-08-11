@@ -12,6 +12,7 @@ import { upsertPlatformOauthApp } from './platform-apps.ts'
 import { upsertIntegration, upsertPlatformIntegration } from './service.ts'
 import {
 	IntegrationTokenRefreshCallerError,
+	integrationTokenRefreshCallerMarker,
 	refreshIntegrationTokens,
 } from './token-refresh.ts'
 
@@ -151,7 +152,8 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		(error: unknown) =>
 			error instanceof IntegrationTokenRefreshCallerError &&
 			error.message.includes('does not define a refresh token secret name') &&
-			error.message.includes('/connect/oauth?provider=github'),
+			error.message.includes('/connect/oauth?provider=github') &&
+			error.message.includes(integrationTokenRefreshCallerMarker),
 	)
 })
 
@@ -209,7 +211,8 @@ test('provider HTTP 4xx refresh rejection is a caller error with reconnect guida
 					'Token refresh was rejected for integration "google" with HTTP 400',
 				) &&
 				error.message.includes('invalid_grant') &&
-				error.message.includes('/connect/oauth?provider=google'),
+				error.message.includes('/connect/oauth?provider=google') &&
+				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
 	} finally {
 		vi.unstubAllGlobals()
@@ -324,8 +327,13 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 	try {
 		await expect(
 			refreshIntegrationTokens({ env, userId, name: 'google' }),
-		).rejects.toThrow(
-			'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof IntegrationTokenRefreshCallerError &&
+				error.message.includes(
+					'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+				) &&
+				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
 		expect(fetchMock).not.toHaveBeenCalled()
 

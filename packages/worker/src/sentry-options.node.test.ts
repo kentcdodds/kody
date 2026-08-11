@@ -226,14 +226,15 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).not.toBeNull()
 
-	// OAuth token-refresh caller state (KODY-CLOUDFLARE-4J).
+	// OAuth token-refresh caller state (KODY-CLOUDFLARE-4J). The trailing
+	// marker is the stable beforeSend match for every caller-error constructor.
 	expect(
 		filterSentryEvent({
 			exception: {
 				values: [
 					{
 						value:
-							'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google.',
+							'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
 					},
 				],
 			},
@@ -245,14 +246,50 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 				values: [
 					{
 						value:
-							'Integration "linkedin" does not define a refresh token secret name. This connection cannot refresh; reconnect at /connect/oauth?provider=linkedin if the provider issues a refresh token, or stop calling integration_token_refresh for this integration.',
+							'Integration "linkedin" does not define a refresh token secret name. This connection cannot refresh; reconnect at /connect/oauth?provider=linkedin if the provider issues a refresh token, or stop calling integration_token_refresh for this integration. (integration_token_refresh caller state)',
 					},
 				],
 			},
 		}),
 	).toBeNull()
-	// Provider 5xx keeps the "Token refresh failed …" wording and must stay
-	// visible in Sentry.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Integration "missing" was not found. (integration_token_refresh caller state)',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Integration "broken" has an invalid token URL. (integration_token_refresh caller state)',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Integration "broken" uses confidential flow but does not define a client secret secret name. (integration_token_refresh caller state)',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	// Provider 5xx keeps the "Token refresh failed …" wording (no marker) and
+	// must stay visible in Sentry.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -260,6 +297,18 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 					{
 						value:
 							'Token refresh failed for integration "google" with HTTP 503 (server_error).',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	// Unrelated Integration-not-found strings without the marker must stay.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: 'Integration "spotify" was not found.',
 					},
 				],
 			},

@@ -317,9 +317,9 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage:
-				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google.',
+				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
 			cause: new Error(
-				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google.',
+				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
 			),
 		})
 	})
