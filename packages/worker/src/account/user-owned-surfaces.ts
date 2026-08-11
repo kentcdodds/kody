@@ -71,10 +71,11 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 	[
 		{
 			id: 'job_manager',
-			binding: 'JOB_MANAGER',
+			binding: 'JOBS',
 			deletionResultKey: 'jobManagers',
 			export: 'include',
-			notes: 'Job manager state is included in account export.',
+			notes:
+				'Job manager state lives in the jobs worker (ADR 0016) and is reached through the JOBS service binding; it is included in account export.',
 		},
 		{
 			id: 'storage_runner',

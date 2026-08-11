@@ -1,96 +1,48 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { jobManagerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import {
+	type JobManagerDebugState,
+	type JobManagerDebugStatus,
+} from '@kody-internal/shared/jobs/manager-debug.ts'
+import { jobsService } from './jobs-data.ts'
 import {
 	logJobSchedulerError,
 	logJobSchedulerEvent,
 	schedulerErrorFields,
 } from './scheduler-logging.ts'
-import {
-	type JobExecutionResult,
-	type JobRepoCheckPolicy,
-	type JobView,
-} from './types.ts'
+import { type JobRepoCheckPolicy } from './types.ts'
 
-export type JobManagerDebugStatus =
-	| 'missing_binding'
-	| 'idle'
-	| 'armed'
-	| 'out_of_sync'
+export { type JobManagerDebugState, type JobManagerDebugStatus }
 
-export type JobManagerDebugState = {
-	bindingAvailable: boolean
-	status: JobManagerDebugStatus
-	storedUserId: string | null
-	alarmScheduledFor: string | null
-	nextRunnableJobId: string | null
-	nextRunnableRunAt: string | null
-	alarmInSync: boolean | null
-}
-
-type JobManagerRpc = {
-	purgeUser: (payload: { userId: string }) => Promise<{
-		ok: true
-		userId: string
-	}>
-	exportUser: (payload: { userId: string }) => Promise<JobManagerDebugState>
-	syncAlarm: (payload: {
-		userId: string
-		source?: 'alarm' | 'rpc' | 'run_now'
-	}) => Promise<{
-		ok: true
-		userId: string
-		nextRunAt: string | null
-	}>
-	getDebugState: (payload: { userId: string }) => Promise<JobManagerDebugState>
-	runNow: (payload: {
-		userId: string
-		jobId: string
-		callerContext?: McpCallerContext | null
-		repoCheckPolicyOverride?: JobRepoCheckPolicy | null
-	}) => Promise<{
-		job: JobView
-		execution: JobExecutionResult
-		deletedAfterRun: boolean
-	}>
-}
-
-export function jobManagerRpc(env: Env, userId: string): JobManagerRpc | null {
-	const namespace = env.JOB_MANAGER
-	if (!namespace) {
-		return null
-	}
-	return namespace.get(
-		namespace.idFromName(jobManagerDurableObjectName(userId)),
-	) as unknown as JobManagerRpc
-}
-
+/**
+ * JobManager scheduling operations, routed to the jobs worker's
+ * `JobsService` (which owns the JobManager Durable Object namespace since
+ * the ADR 0016 extraction). When the JOBS binding is absent (tests, local
+ * single-worker dev) the operations degrade the same way the old missing
+ * JOB_MANAGER binding did: syncs and purges no-op, debug state reports
+ * `missing_binding`, and run-now fails loudly.
+ */
 export async function purgeJobManagerForUser(input: {
 	env: Env
 	userId: string
 }) {
-	const rpc = jobManagerRpc(input.env, input.userId)
-	if (!rpc) {
+	const jobs = jobsService(input.env)
+	if (!jobs) {
 		return {
 			ok: true as const,
 			userId: input.userId,
 			purged: false,
 		}
 	}
-	await rpc.purgeUser({ userId: input.userId })
-	return {
-		ok: true as const,
-		userId: input.userId,
-		purged: true,
-	}
+	return jobs.purgeUser({ userId: input.userId })
 }
 
 export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
-	const rpc = jobManagerRpc(input.env, input.userId)
-	if (!rpc) {
+	const jobs = jobsService(input.env)
+	if (!jobs) {
 		logJobSchedulerEvent({
 			event: 'sync_alarm_skipped_missing_binding',
 			userId: input.userId,
-			reason: 'missing_job_manager_binding',
+			reason: 'missing_jobs_binding',
 		})
 		return {
 			ok: true as const,
@@ -103,9 +55,8 @@ export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
 		userId: input.userId,
 	})
 	try {
-		const result = await rpc.syncAlarm({
+		const result = await jobs.syncAlarm({
 			userId: input.userId,
-			source: 'rpc',
 		})
 		logJobSchedulerEvent({
 			event: 'sync_alarm_completed',
@@ -127,23 +78,25 @@ export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
 	}
 }
 
+const missingBindingDebugState: JobManagerDebugState = {
+	bindingAvailable: false,
+	status: 'missing_binding',
+	storedUserId: null,
+	alarmScheduledFor: null,
+	nextRunnableJobId: null,
+	nextRunnableRunAt: null,
+	alarmInSync: null,
+}
+
 export async function getJobManagerDebugState(input: {
 	env: Env
 	userId: string
 }) {
-	const rpc = jobManagerRpc(input.env, input.userId)
-	if (!rpc) {
-		return {
-			bindingAvailable: false,
-			status: 'missing_binding' as const,
-			storedUserId: null,
-			alarmScheduledFor: null,
-			nextRunnableJobId: null,
-			nextRunnableRunAt: null,
-			alarmInSync: null,
-		}
+	const jobs = jobsService(input.env)
+	if (!jobs) {
+		return missingBindingDebugState
 	}
-	return rpc.getDebugState({
+	return jobs.getDebugState({
 		userId: input.userId,
 	})
 }
@@ -152,19 +105,11 @@ export async function exportJobManagerForUser(input: {
 	env: Env
 	userId: string
 }) {
-	const rpc = jobManagerRpc(input.env, input.userId)
-	if (!rpc) {
-		return {
-			bindingAvailable: false,
-			status: 'missing_binding' as const,
-			storedUserId: null,
-			alarmScheduledFor: null,
-			nextRunnableJobId: null,
-			nextRunnableRunAt: null,
-			alarmInSync: null,
-		} satisfies JobManagerDebugState
+	const jobs = jobsService(input.env)
+	if (!jobs) {
+		return missingBindingDebugState
 	}
-	return rpc.exportUser({
+	return jobs.exportUser({
 		userId: input.userId,
 	})
 }
@@ -176,11 +121,11 @@ export async function runJobNowViaManager(input: {
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }) {
-	const rpc = jobManagerRpc(input.env, input.userId)
-	if (!rpc) {
-		throw new Error('Missing JOB_MANAGER binding for jobs scheduling.')
+	const jobs = jobsService(input.env)
+	if (!jobs) {
+		throw new Error('Missing JOBS binding for jobs scheduling.')
 	}
-	return rpc.runNow({
+	return jobs.runJobNow({
 		userId: input.userId,
 		jobId: input.jobId,
 		callerContext: input.callerContext ?? null,

@@ -50,7 +50,6 @@
 							"name": "OAUTH_PURGE_COORDINATOR",
 							"class_name": "OAuthPurgeCoordinator"
 						},
-						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
 						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
 						{ "name": "RUN_LOG", "class_name": "RunLog" },
 						{ "name": "USER_METER", "class_name": "UserMeter" },
@@ -83,7 +82,6 @@
 							"name": "OAUTH_PURGE_COORDINATOR",
 							"class_name": "OAuthPurgeCoordinator"
 						},
-						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
 						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
 						{ "name": "RUN_LOG", "class_name": "RunLog" },
 						{ "name": "USER_METER", "class_name": "UserMeter" },
@@ -116,7 +114,6 @@
 							"name": "OAUTH_PURGE_COORDINATOR",
 							"class_name": "OAuthPurgeCoordinator"
 						},
-						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
 						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
 						{ "name": "RUN_LOG", "class_name": "RunLog" },
 						{ "name": "USER_METER", "class_name": "UserMeter" },
@@ -142,6 +139,24 @@
 			"path": "packages/backup-control-plane/wrangler.jsonc",
 			"protected_migrations": [],
 			"protected_binding_sets": []
+		},
+		{
+			"path": "packages/jobs-worker/wrangler.jsonc",
+			"protected_migrations": [],
+			"protected_binding_sets": [
+				{
+					"location": "env.production.durable_objects",
+					"bindings": [{ "name": "JOB_MANAGER", "class_name": "JobManager" }]
+				},
+				{
+					"location": "env.preview.durable_objects",
+					"bindings": [{ "name": "JOB_MANAGER", "class_name": "JobManager" }]
+				},
+				{
+					"location": "env.test.durable_objects",
+					"bindings": [{ "name": "JOB_MANAGER", "class_name": "JobManager" }]
+				}
+			]
 		}
 	]
 }

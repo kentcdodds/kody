@@ -12,8 +12,6 @@ import {
 	artifactsRepoEventsQueueName,
 	handleArtifactsRepoEventsQueue,
 } from '#worker/repo/artifacts-event-queue.ts'
-import { handleScheduledDispatchQueue } from '#worker/scheduled/scheduled-dispatch-queue.ts'
-import { scheduledDispatchQueueName } from '#worker/scheduled/scheduled-dispatch-queue-names.ts'
 import {
 	handleWebhookDispatchQueue,
 	webhookDispatchQueueName,
@@ -41,9 +39,6 @@ export async function handleQueueBatch(
 			return
 		case packageEventsDispatchQueueName:
 			await handlePackageEventsDispatchQueue(batch, env, ctx)
-			return
-		case scheduledDispatchQueueName:
-			await handleScheduledDispatchQueue(batch, env, ctx)
 			return
 		case webhookDispatchQueueName:
 			await handleWebhookDispatchQueue(batch, env)

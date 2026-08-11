@@ -675,7 +675,7 @@ async function purgeJobManager(input: {
 		})
 		if (!result.purged) {
 			input.warnings.push(
-				'JOB_MANAGER binding was unavailable; the user scheduler Durable Object was not purged.',
+				'JOBS service binding was unavailable; the user scheduler Durable Object was not purged.',
 			)
 		}
 		return result.purged ? 1 : 0

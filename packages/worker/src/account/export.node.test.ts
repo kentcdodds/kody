@@ -942,14 +942,11 @@ test('DO export sections expose bounded job manager and owned connector state', 
 	} as unknown as D1Database
 	const env = {
 		APP_DB: db,
-		JOB_MANAGER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				exportUser: async () => ({
-					userId: 'user-aaa',
-					alarm: null,
-					status: 'idle',
-				}),
+		JOBS: {
+			exportUser: async () => ({
+				userId: 'user-aaa',
+				alarm: null,
+				status: 'idle',
 			}),
 		},
 		REMOTE_CONNECTOR_SESSION: {
@@ -1571,11 +1568,8 @@ test('account export includes run_records section with runs, ledger, and dedicat
 				}),
 			}),
 		},
-		JOB_MANAGER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				exportUser: async () => ({ userId: 'user-aaa' }),
-			}),
+		JOBS: {
+			exportUser: async () => ({ userId: 'user-aaa' }),
 		},
 	} as unknown as Env
 

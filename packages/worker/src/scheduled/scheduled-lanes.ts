@@ -1,131 +1,53 @@
 import * as Sentry from '@sentry/cloudflare'
-import {
-	checkUsageEntitlementPressureAndNotify,
-	shouldRunUsageEntitlementAlertCron,
-} from '#app/usage-entitlement-alerts.ts'
-import {
-	checkAuthDenialBurstAndNotify,
-	shouldRunAuthDenialAlertCron,
-} from '#app/auth-denial-alerts.ts'
-import {
-	checkEmailDeliveryBurstAndNotify,
-	shouldRunEmailDeliveryAlertCron,
-} from '#app/email-delivery-alerts.ts'
-import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
+import { checkUsageEntitlementPressureAndNotify } from '#app/usage-entitlement-alerts.ts'
+import { checkAuthDenialBurstAndNotify } from '#app/auth-denial-alerts.ts'
+import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
+import { pruneRetention } from '#app/retention.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
-	isDrExportConfigured,
 	runDrExportTick,
 	runDrExportWatchdogTick,
-	shouldRunDrExportCatchUpCron,
-	shouldRunDrExportCron,
-	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
 import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
-import {
-	runJobScheduleWatchdogTick,
-	shouldRunJobScheduleWatchdogCron,
-} from '#worker/jobs/job-schedule-watchdog.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
+import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
+
+export {
+	isScheduledLaneName,
+	parseScheduledLaneMessage,
+	scheduledLaneNames,
+	type ScheduledLaneMessage,
+	type ScheduledLaneName,
+} from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import {
-	aggregateUsageRollups,
-	shouldRunUsageAggregationCron,
-} from '#worker/usage/aggregate-rollups.ts'
+	isJobsWorkerLocalLane,
+	type ScheduledLaneMessage,
+	type ScheduledLaneName,
+} from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 
-export const scheduledLaneNames = [
-	'reconcile_artifacts_pushes',
-	'repo_session_cleanup',
-	'reconcile_inbound_deliveries',
-	'system_email_retention',
-	'storage_bucket_estimate_backfill',
-	'd1_storage_reconciliation',
-	'oauth_purge_expired',
-	'retention',
-	'job_retention',
-	'usage_aggregation',
-	'auth_denial_alert',
-	'email_delivery_alert',
-	'usage_entitlement_alert',
-	'dr_export',
-	'dr_export_watchdog',
-	'job_schedule_watchdog',
-] as const
-
-export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
-
-export type ScheduledLaneMessage = {
-	lane: ScheduledLaneName
-	scheduledTime: number
-	cron: string
-}
-
-export function isScheduledLaneName(
-	value: unknown,
-): value is ScheduledLaneName {
-	return (
-		typeof value === 'string' &&
-		(scheduledLaneNames as ReadonlyArray<string>).includes(value)
-	)
-}
-
-export function getScheduledLanes(input: {
-	env: Env
-	scheduledAt: Date
-}): Array<ScheduledLaneName> {
-	const lanes: Array<ScheduledLaneName> = [
-		'reconcile_artifacts_pushes',
-		'repo_session_cleanup',
-		'reconcile_inbound_deliveries',
-		'system_email_retention',
-		'storage_bucket_estimate_backfill',
-		'd1_storage_reconciliation',
-		'oauth_purge_expired',
-	]
-	if (shouldRunRetentionCron(input.scheduledAt)) {
-		lanes.push('retention', 'job_retention')
-	}
-	if (shouldRunUsageAggregationCron(input.scheduledAt)) {
-		lanes.push('usage_aggregation')
-	}
-	if (shouldRunAuthDenialAlertCron(input.scheduledAt)) {
-		lanes.push('auth_denial_alert')
-	}
-	if (shouldRunEmailDeliveryAlertCron(input.scheduledAt)) {
-		lanes.push('email_delivery_alert')
-	}
-	if (shouldRunUsageEntitlementAlertCron(input.scheduledAt)) {
-		lanes.push('usage_entitlement_alert')
-	}
-	if (
-		(shouldRunDrExportCron(input.scheduledAt) ||
-			shouldRunDrExportCatchUpCron(input.scheduledAt)) &&
-		isDrExportConfigured(input.env)
-	) {
-		lanes.push('dr_export')
-	}
-	if (
-		shouldRunDrExportWatchdogCron(input.scheduledAt) &&
-		isDrExportConfigured(input.env)
-	) {
-		lanes.push('dr_export_watchdog')
-	}
-	if (shouldRunJobScheduleWatchdogCron(input.scheduledAt)) {
-		lanes.push('job_schedule_watchdog')
-	}
-	return lanes
-}
-
+/**
+ * Execute one platform scheduled lane in the main worker. The cron trigger
+ * and the scheduled dispatch queue live in the jobs worker (ADR 0016), which
+ * forwards every lane it does not own through `JobsHost.runScheduledLane`.
+ * Lanes the jobs worker executes locally (job scheduling watchdog) never
+ * arrive here.
+ */
 export async function runScheduledLane(input: {
 	env: Env
 	lane: ScheduledLaneName
 	scheduledAt: Date
 }): Promise<unknown> {
 	const baseUrl = input.env.APP_BASE_URL ?? 'https://kody.local'
+	if (isJobsWorkerLocalLane(input.lane)) {
+		throw new Error(
+			`Scheduled lane "${input.lane}" is owned by the jobs worker and cannot run in the main worker.`,
+		)
+	}
 	switch (input.lane) {
 		case 'reconcile_artifacts_pushes':
 			return reconcileArtifactsPushes({
@@ -186,15 +108,13 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
+		// DR export lanes are dispatched on cadence by the jobs worker without
+		// access to DR configuration; both ticks exit cheaply with a
+		// `not-configured` result when DR export is disabled.
 		case 'dr_export':
 			return runDrExportTick({ env: input.env, now: input.scheduledAt })
 		case 'dr_export_watchdog':
 			return runDrExportWatchdogTick({
-				env: input.env,
-				now: input.scheduledAt,
-			})
-		case 'job_schedule_watchdog':
-			return runJobScheduleWatchdogTick({
 				env: input.env,
 				now: input.scheduledAt,
 			})

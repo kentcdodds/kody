@@ -159,9 +159,8 @@
 			"enabled": true,
 		},
 	},
-	"triggers": {
-		"crons": ["*/5 * * * *"],
-	},
+	// Cron scheduling moved to the jobs worker (packages/jobs-worker, ADR
+	// 0016); the main worker has no scheduled handler.
 	"env": {
 		"production": {
 			"ratelimits": [
@@ -236,10 +235,6 @@
 						"name": "OAUTH_PURGE_COORDINATOR",
 					},
 					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
-					},
-					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
 					},
@@ -290,6 +285,16 @@
 					"name": "EMAIL",
 				},
 			],
+			// Jobs worker service binding (ADR 0016): account dashboards, MCP
+			// capabilities, and account deletion/export reach jobs data and the
+			// JobManager Durable Object through this coarse-grained contract.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
+				},
+			],
 			"queues": {
 				"producers": [
 					{
@@ -299,10 +304,6 @@
 					{
 						"binding": "COMMUNITY_ACTIVITY_DISPATCH_QUEUE",
 						"queue": "kody-community-activity-dispatch",
-					},
-					{
-						"binding": "SCHEDULED_DISPATCH_QUEUE",
-						"queue": "kody-scheduled-dispatch",
 					},
 					{
 						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
@@ -341,14 +342,6 @@
 						"max_batch_timeout": 5,
 						"max_retries": 3,
 						"dead_letter_queue": "kody-community-activity-dispatch-dlq",
-					},
-					{
-						"queue": "kody-scheduled-dispatch",
-						"max_batch_size": 1,
-						"max_batch_timeout": 0,
-						"max_retries": 3,
-						"max_concurrency": 16,
-						"dead_letter_queue": "kody-scheduled-dispatch-dlq",
 					},
 					{
 						"queue": "kody-package-events-dispatch",
@@ -541,10 +534,6 @@
 						"name": "OAUTH_PURGE_COORDINATOR",
 					},
 					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
-					},
-					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
 					},
@@ -593,6 +582,15 @@
 			"send_email": [
 				{
 					"name": "EMAIL",
+				},
+			],
+			// Rewired per preview by tools/ci/preview-resources.ts to the
+			// per-preview jobs worker name.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
 				},
 			],
 			"queues": {
@@ -715,10 +713,6 @@
 					{
 						"class_name": "OAuthPurgeCoordinator",
 						"name": "OAUTH_PURGE_COORDINATOR",
-					},
-					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
 					},
 					{
 						"class_name": "StorageRunner",

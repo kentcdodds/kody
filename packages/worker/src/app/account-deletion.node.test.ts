@@ -519,9 +519,12 @@ function createSuccessfulDeletionEnv(
 				purge: async () => ({ ok: true as const }),
 			}),
 		},
-		JOB_MANAGER: {
-			idFromName: durableObjectId,
-			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
+		JOBS: {
+			purgeUser: async (input: { userId: string }) => ({
+				ok: true as const,
+				userId: input.userId,
+				purged: true,
+			}),
 		},
 		REPO_SESSION: {
 			idFromName: durableObjectId,
@@ -1103,7 +1106,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			}
 		},
 	)
-	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeJobManagerMock = vi.fn(async () => ({
+		ok: true as const,
+		userId: userAaa,
+		purged: true,
+	}))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeMcpClientHubMock = vi.fn(async () => undefined)
@@ -1147,9 +1154,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				purge: purgeMailboxMock,
 			}),
 		},
-		JOB_MANAGER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ purgeUser: purgeJobManagerMock }),
+		JOBS: {
+			purgeUser: purgeJobManagerMock,
 		},
 		REPO_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,

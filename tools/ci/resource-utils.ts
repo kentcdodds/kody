@@ -1129,6 +1129,7 @@ export async function writeGeneratedWranglerConfig({
 	emailBlobsBucketName,
 	workerVars,
 	queueBindings,
+	serviceBindings,
 	extraMigrations,
 }: {
 	baseConfigPath: string
@@ -1148,6 +1149,10 @@ export async function writeGeneratedWranglerConfig({
 		binding: string
 		queue: string
 		deadLetterQueue: string
+	}>
+	serviceBindings?: Array<{
+		binding: string
+		service: string
 	}>
 	extraMigrations?: Array<WranglerMigration>
 }) {
@@ -1373,6 +1378,30 @@ export async function writeGeneratedWranglerConfig({
 			producer.queue = binding.queue
 			consumer.queue = binding.queue
 			consumer.dead_letter_queue = binding.deadLetterQueue
+		}
+	}
+
+	if (serviceBindings && serviceBindings.length > 0) {
+		const services = (targetEnv as Record<string, unknown>).services
+		if (!Array.isArray(services)) {
+			fail(
+				`wrangler config "${baseConfigPath}" is missing "env.${envName}.services".`,
+			)
+		}
+		for (const override of serviceBindings) {
+			const entry = services.find(
+				(candidate) =>
+					candidate &&
+					typeof candidate === 'object' &&
+					!Array.isArray(candidate) &&
+					(candidate as Record<string, unknown>).binding === override.binding,
+			) as Record<string, unknown> | undefined
+			if (!entry) {
+				fail(
+					`wrangler config "${baseConfigPath}" has no ${envName} service binding for "${override.binding}".`,
+				)
+			}
+			entry.service = override.service
 		}
 	}
 

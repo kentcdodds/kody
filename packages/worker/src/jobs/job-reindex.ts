@@ -11,7 +11,7 @@ import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
-import { listJobRowsPage } from './repo.ts'
+import { jobsData } from './jobs-data.ts'
 import { toJobView } from './schedule.ts'
 
 // Jobs are reindexed in keyset-paged batches so memory stays bounded
@@ -33,7 +33,7 @@ export async function reindexJobVectors(
 	let afterId: string | null = null
 	while (true) {
 		const rows = await runD1WithRetry(() =>
-			listJobRowsPage(env.APP_DB, {
+			jobsData(env).listJobsPage({
 				afterId,
 				limit: reindexPageSize,
 			}),

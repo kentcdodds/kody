@@ -170,9 +170,13 @@ export const EnvSchema = object({
 			context.path,
 		)
 	}),
-	JOB_MANAGER: requiredDurableObjectNamespaceSchema(
-		'Missing JOB_MANAGER binding for jobs scheduling.',
-	),
+	// Jobs worker service binding (ADR 0016). Optional: tests and local
+	// single-worker dev fall back to jobs tables in APP_DB and skip
+	// JobManager alarm scheduling.
+	JOBS: createSchema<unknown, Fetcher | undefined>((value, _context) => {
+		if (value === undefined) return { value: undefined }
+		return { value: value as Fetcher }
+	}),
 	STORAGE_RUNNER: requiredDurableObjectNamespaceSchema(
 		'Missing STORAGE_RUNNER binding for durable execute and job storage.',
 	),

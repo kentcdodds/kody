@@ -1,17 +1,18 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { DurableObject } from 'cloudflare:workers'
-import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
+import { type JobManagerDebugState } from '@kody-internal/shared/jobs/manager-debug.ts'
+import { resolveJobManagerAlarmState } from '@kody-internal/shared/jobs/manager-state.ts'
 import {
 	logJobSchedulerError,
 	logJobSchedulerEvent,
 	schedulerErrorFields,
 	summarizeSchedulerJobOutcomes,
-} from './scheduler-logging.ts'
-import { resolveJobManagerAlarmState } from './manager-state.ts'
-import { type JobRepoCheckPolicy } from './types.ts'
-import { type JobManagerDebugState } from './manager-client.ts'
+} from '@kody-internal/shared/jobs/scheduler-logging.ts'
+import { type JobRepoCheckPolicy } from '@kody-internal/shared/jobs/types.ts'
+import { DurableObject } from 'cloudflare:workers'
+import { type JobsWorkerEnv } from './env.ts'
+import { buildSentryOptions } from './sentry-options.ts'
+import { getNextRunnableJob } from './store.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -23,7 +24,14 @@ const userIdStorageKey = 'user-id'
  */
 const jobBacklogRearmDelayMs = 1_000
 
-export class JobManagerBase extends DurableObject<Env> {
+/**
+ * Per-user job scheduler Durable Object. Moved from the main worker script
+ * (`kody`) via a script-transfer migration (ADR 0016) so each user's existing
+ * storage (stored user id, alarm) carried over. Owns alarm arming against the
+ * jobs D1 database; actual job execution happens in the main worker through
+ * the HOST service binding (`JobsHost`).
+ */
+export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 	async purgeUser(input: { userId: string }) {
 		const userId = input.userId.trim()
 		if (!userId) {
@@ -173,13 +181,7 @@ export class JobManagerBase extends DurableObject<Env> {
 			isRetry: alarmInfo?.isRetry,
 		})
 		try {
-			const result = await runDueJobsForUser({
-				env: this.env,
-				userId,
-				waitUntil: (promise) => {
-					this.ctx.waitUntil(promise)
-				},
-			})
+			const result = await this.env.HOST.runDueJobsForUser({ userId })
 			logJobSchedulerEvent({
 				event: 'run_due_jobs_completed',
 				userId,
@@ -220,18 +222,16 @@ export class JobManagerBase extends DurableObject<Env> {
 		callerContext?: McpCallerContext | null
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	}) {
-		let result: Awaited<ReturnType<typeof runJobNow>> | undefined
+		let result:
+			| Awaited<ReturnType<JobsWorkerEnv['HOST']['runJobNow']>>
+			| undefined
 		let originalError: unknown
 		try {
-			result = await runJobNow({
-				env: this.env,
+			result = await this.env.HOST.runJobNow({
 				userId: input.userId,
 				jobId: input.jobId,
 				callerContext: input.callerContext ?? null,
-				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
-				waitUntil: (promise) => {
-					this.ctx.waitUntil(promise)
-				},
+				repoCheckPolicyOverride: input.repoCheckPolicyOverride ?? null,
 			})
 		} catch (error) {
 			originalError = error
@@ -253,6 +253,6 @@ export class JobManagerBase extends DurableObject<Env> {
 }
 
 export const JobManager = Sentry.instrumentDurableObjectWithSentry(
-	(env: Env) => buildSentryOptions(env),
+	(env: JobsWorkerEnv) => buildSentryOptions(env),
 	JobManagerBase,
 )

@@ -1,15 +1,16 @@
 import * as Sentry from '@sentry/cloudflare'
-import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
-import { runD1WithRetry } from '#worker/d1-retry.ts'
-import { syncJobManagerAlarm } from './manager-client.ts'
-import { computeNextRunAt } from './schedule.ts'
+import { runD1WithRetry } from '@kody-internal/shared/d1-retry.ts'
 import {
 	advanceStuckSkippedJobNextRunAt,
 	listSilentlyOverdueJobRowsPage,
 	listStuckSkippedJobRowsPage,
 	type JobRow,
-} from './repo.ts'
-import { logJobSchedulerEvent } from './scheduler-logging.ts'
+} from '@kody-internal/shared/jobs/repo.ts'
+import { computeNextRunAt } from '@kody-internal/shared/jobs/schedule.ts'
+import { logJobSchedulerEvent } from '@kody-internal/shared/jobs/scheduler-logging.ts'
+import { type JobsWorkerEnv } from './env.ts'
+import { jobManagerStub } from './manager.ts'
+import { getWorkerStateValue, putWorkerStateValue } from './store.ts'
 
 /**
  * Platform cron that detects enabled recurring jobs that should already have
@@ -21,8 +22,6 @@ import { logJobSchedulerEvent } from './scheduler-logging.ts'
 
 /** Due jobs older than this are treated as silently overdue. */
 export const jobScheduleWatchdogGraceMs = 5 * 60 * 1_000
-/** Worker cron fires every 5 minutes; run this lane on :00/:15/:30/:45. */
-export const jobScheduleWatchdogIntervalMinutes = 15
 export const jobScheduleWatchdogPageSize = 100
 /** Cap cross-user page accumulation so a large backlog cannot OOM the cron. */
 export const jobScheduleWatchdogMaxRowsPerTick = 5_000
@@ -30,19 +29,8 @@ export const jobScheduleWatchdogMaxUsersPerTick = 50
 export const jobScheduleWatchdogMaxJobsLogged = 20
 /** Avoid re-paging Sentry on the same sustained overdue set every tick. */
 export const jobScheduleWatchdogAlertCooldownMinutes = 6 * 60
-export const jobScheduleWatchdogAlertKvKey =
+export const jobScheduleWatchdogAlertStateKey =
 	'ops-alert:job-schedule-watchdog:v1'
-
-type JobScheduleWatchdogEnv = {
-	APP_DB: D1Database
-	JOB_MANAGER?: Env['JOB_MANAGER']
-	BUNDLE_ARTIFACTS_KV?: KVNamespace
-	USER_METER?: DurableObjectNamespace
-}
-
-export function shouldRunJobScheduleWatchdogCron(now: Date) {
-	return now.getUTCMinutes() % jobScheduleWatchdogIntervalMinutes === 0
-}
 
 export type JobScheduleWatchdogResult = {
 	overdueJobCount: number
@@ -91,7 +79,7 @@ async function collectPagedJobRows(input: {
 }
 
 async function maybeCaptureWatchdogAlert(input: {
-	env: JobScheduleWatchdogEnv
+	env: JobsWorkerEnv
 	now: Date
 	result: Omit<JobScheduleWatchdogResult, 'alerted'>
 	overdueSample: Array<JobRow>
@@ -104,24 +92,26 @@ async function maybeCaptureWatchdogAlert(input: {
 		return false
 	}
 
+	// Cooldown lives in the jobs D1 (jobs_worker_state), replacing the main
+	// worker's BUNDLE_ARTIFACTS_KV cooldown key from before the extraction.
 	let alerted = true
-	if (input.env.BUNDLE_ARTIFACTS_KV) {
-		const lastSentRaw = await input.env.BUNDLE_ARTIFACTS_KV.get(
-			jobScheduleWatchdogAlertKvKey,
+	const lastSentRaw = await getWorkerStateValue(
+		input.env.JOBS_DB,
+		jobScheduleWatchdogAlertStateKey,
+	)
+	const lastSentMs = lastSentRaw ? Number(lastSentRaw) : NaN
+	if (
+		Number.isFinite(lastSentMs) &&
+		input.now.getTime() - lastSentMs <
+			jobScheduleWatchdogAlertCooldownMinutes * 60_000
+	) {
+		alerted = false
+	} else {
+		await putWorkerStateValue(
+			input.env.JOBS_DB,
+			jobScheduleWatchdogAlertStateKey,
+			String(input.now.getTime()),
 		)
-		const lastSentMs = lastSentRaw ? Number(lastSentRaw) : NaN
-		if (
-			Number.isFinite(lastSentMs) &&
-			input.now.getTime() - lastSentMs <
-				jobScheduleWatchdogAlertCooldownMinutes * 60_000
-		) {
-			alerted = false
-		} else {
-			await input.env.BUNDLE_ARTIFACTS_KV.put(
-				jobScheduleWatchdogAlertKvKey,
-				String(input.now.getTime()),
-			)
-		}
 	}
 
 	const payload = {
@@ -144,7 +134,7 @@ async function maybeCaptureWatchdogAlert(input: {
 }
 
 export async function runJobScheduleWatchdogTick(input: {
-	env: JobScheduleWatchdogEnv
+	env: JobsWorkerEnv
 	now?: Date
 }): Promise<JobScheduleWatchdogResult> {
 	const now = input.now ?? new Date()
@@ -155,7 +145,7 @@ export async function runJobScheduleWatchdogTick(input: {
 
 	const overduePage = await collectPagedJobRows({
 		page: (afterId) =>
-			listSilentlyOverdueJobRowsPage(input.env.APP_DB, {
+			listSilentlyOverdueJobRowsPage(input.env.JOBS_DB, {
 				overdueBeforeIso,
 				nowIso,
 				afterId,
@@ -164,7 +154,7 @@ export async function runJobScheduleWatchdogTick(input: {
 	})
 	const stuckPage = await collectPagedJobRows({
 		page: (afterId) =>
-			listStuckSkippedJobRowsPage(input.env.APP_DB, {
+			listStuckSkippedJobRowsPage(input.env.JOBS_DB, {
 				nowIso,
 				afterId,
 				limit: jobScheduleWatchdogPageSize,
@@ -188,19 +178,17 @@ export async function runJobScheduleWatchdogTick(input: {
 				timezone: row.record.timezone,
 				from: now,
 			})
-			const repaired = await withAccountWriteLease({
-				db: input.env.APP_DB,
-				stableUserId: row.user_id,
-				env: input.env,
-				async write() {
-					return advanceStuckSkippedJobNextRunAt({
-						db: input.env.APP_DB,
-						userId: row.user_id,
-						jobId: row.id,
-						nextRunAt,
-						updatedAt: nowIso,
-					})
-				},
+			// The pre-extraction watchdog wrapped this in the main worker's
+			// account write lease. Account deletion now serializes through
+			// JobsService.purgeUser (which deletes every row for the user), so a
+			// stuck-fence advance racing a purge at worst repairs a row that is
+			// deleted moments later.
+			const repaired = await advanceStuckSkippedJobNextRunAt({
+				db: input.env.JOBS_DB,
+				userId: row.user_id,
+				jobId: row.id,
+				nextRunAt,
+				updatedAt: nowIso,
 			})
 			if (repaired) {
 				repairedStuckJobCount += 1
@@ -232,7 +220,7 @@ export async function runJobScheduleWatchdogTick(input: {
 	let usersFailedSync = 0
 	for (const userId of usersToSync) {
 		try {
-			await syncJobManagerAlarm({ env: input.env as Env, userId })
+			await jobManagerStub(input.env, userId).syncAlarm({ userId })
 			usersSynced += 1
 			logJobSchedulerEvent({
 				event: 'watchdog_sync_alarm',

@@ -16,10 +16,6 @@ function createProductionEnv() {
 					queue: 'kody-community-activity-dispatch',
 				},
 				{
-					binding: 'SCHEDULED_DISPATCH_QUEUE',
-					queue: 'kody-scheduled-dispatch',
-				},
-				{
 					binding: 'PACKAGE_EVENTS_DISPATCH_QUEUE',
 					queue: 'kody-package-events-dispatch',
 				},
@@ -56,14 +52,6 @@ function createProductionEnv() {
 					max_batch_timeout: 5,
 					max_retries: 3,
 					dead_letter_queue: 'kody-community-activity-dispatch-dlq',
-				},
-				{
-					queue: 'kody-scheduled-dispatch',
-					max_batch_size: 1,
-					max_batch_timeout: 0,
-					max_retries: 3,
-					max_concurrency: 16,
-					dead_letter_queue: 'kody-scheduled-dispatch-dlq',
 				},
 				{
 					queue: 'kody-package-events-dispatch',
@@ -111,8 +99,6 @@ test('production queue config requires all consumers and consistent producers', 
 		communityActivityDispatchQueueName: 'kody-community-activity-dispatch',
 		communityActivityDispatchDeadLetterQueueName:
 			'kody-community-activity-dispatch-dlq',
-		scheduledDispatchQueueName: 'kody-scheduled-dispatch',
-		scheduledDispatchDeadLetterQueueName: 'kody-scheduled-dispatch-dlq',
 		packageEventsDispatchQueueName: 'kody-package-events-dispatch',
 		packageEventsDispatchDeadLetterQueueName:
 			'kody-package-events-dispatch-dlq',
@@ -127,7 +113,7 @@ test('production queue config requires all consumers and consistent producers', 
 			productionEnv: missingFeedbackConsumer,
 			configPath: 'wrangler.jsonc',
 		}),
-	).toThrow('exactly 7 production Queue consumers')
+	).toThrow('exactly 6 production Queue consumers')
 
 	const mismatchedProducer = createProductionEnv()
 	mismatchedProducer.queues.producers[0] = {
@@ -157,18 +143,6 @@ test('production queue config requires all consumers and consistent producers', 
 		'must bind "COMMUNITY_ACTIVITY_DISPATCH_QUEUE" to "kody-community-activity-dispatch"',
 	)
 
-	const missingScheduledProducer = createProductionEnv()
-	missingScheduledProducer.queues.producers =
-		missingScheduledProducer.queues.producers.filter(
-			(producer) => producer.binding !== 'SCHEDULED_DISPATCH_QUEUE',
-		)
-	expect(() =>
-		parseProductionQueueResources({
-			productionEnv: missingScheduledProducer,
-			configPath: 'wrangler.jsonc',
-		}),
-	).toThrow('must bind "SCHEDULED_DISPATCH_QUEUE" to "kody-scheduled-dispatch"')
-
 	const missingPackageEventsProducer = createProductionEnv()
 	missingPackageEventsProducer.queues.producers =
 		missingPackageEventsProducer.queues.producers.filter(
@@ -188,20 +162,20 @@ test('production queue config requires all consumers and consistent producers', 
 		{ max_batch_timeout: 1 },
 		{ max_concurrency: 1 },
 	]) {
-		const invalidScheduledConsumer = createProductionEnv()
+		const invalidWebhookConsumer = createProductionEnv()
 		Object.assign(
-			invalidScheduledConsumer.queues.consumers.find(
-				(consumer) => consumer.queue === 'kody-scheduled-dispatch',
+			invalidWebhookConsumer.queues.consumers.find(
+				(consumer) => consumer.queue === 'kody-webhook-dispatch',
 			)!,
 			invalidSettings,
 		)
 		expect(() =>
 			parseProductionQueueResources({
-				productionEnv: invalidScheduledConsumer,
+				productionEnv: invalidWebhookConsumer,
 				configPath: 'wrangler.jsonc',
 			}),
 		).toThrow(
-			'invalid production consumer settings for "kody-scheduled-dispatch"',
+			'invalid production consumer settings for "kody-webhook-dispatch"',
 		)
 	}
 })

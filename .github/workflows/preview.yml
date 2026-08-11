@@ -254,6 +254,44 @@ jobs:
             echo "version_preview_url=$PREVIEW_VERSION_URL" >> "$GITHUB_OUTPUT"
           fi
 
+      # The preview app worker deploys first (its JOBS service binding can
+      # be created before the target script exists); the jobs worker then
+      # deploys with its HOST binding pointing at the freshly deployed app
+      # worker. Preview jobs workers are new scripts, so the generated config
+      # creates the JobManager class fresh instead of running the production
+      # script transfer.
+      - name: 🧱 Ensure preview jobs worker resources (D1)
+        id: jobs_resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name "${APP_WORKER_NAME}-jobs" --host-worker-name "$APP_WORKER_NAME" --out-config packages/jobs-worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      - name: 🗄️ Apply D1 Migrations (preview jobs)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ENV: preview
+          WRANGLER_CONFIG:
+            ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
+        run: |
+          node ./wrangler-env.ts d1 migrations apply JOBS_DB --remote --config "$WRANGLER_CONFIG"
+
+      - name: ☁️ Deploy preview jobs worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ENV: preview
+          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
+        run: |
+          set -euo pipefail
+          node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+
       - name: 🔐 Sync preview app Worker secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

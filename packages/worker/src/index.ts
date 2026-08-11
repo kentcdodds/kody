@@ -3,7 +3,7 @@ import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
 import { RemoteConnectorSession } from './remote-connector/session.ts'
 import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
-import { JobManager } from './jobs/manager-do.ts'
+import { JobsHost } from './jobs/jobs-host.ts'
 import { StorageRunner } from './storage-runner.ts'
 import { RunLog } from './run-records/run-log-do.ts'
 import { UserMeter } from './entitlements/user-meter-do.ts'
@@ -61,7 +61,6 @@ import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
-import { dispatchScheduledLanes } from '#worker/scheduled/scheduled-dispatch-queue.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
 import { handleDrExportRequest } from '#worker/dr/dr-export-maintenance.ts'
 import { handleDoPitrRequest } from '#worker/dr/do-pitr-maintenance.ts'
@@ -80,7 +79,7 @@ export {
 	RemoteConnectorSession,
 	McpClientHub,
 	MCP,
-	JobManager,
+	JobsHost,
 	PackageRealtimeSession,
 	PackageServiceInstance,
 	DynamicCallableWorkflow,
@@ -616,13 +615,6 @@ const workerHandler = {
 	},
 	async queue(batch: MessageBatch<unknown>, env: Env, ctx: ExecutionContext) {
 		await handleQueueBatch(batch, env, ctx)
-	},
-	async scheduled(
-		controller: ScheduledController,
-		env: Env,
-		_ctx: ExecutionContext,
-	) {
-		await dispatchScheduledLanes({ controller, env })
 	},
 } satisfies ExportedHandler<Env>
 

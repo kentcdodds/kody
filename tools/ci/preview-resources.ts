@@ -364,6 +364,12 @@ async function ensurePreviewResources(options: CliOptions) {
 				deadLetterQueue: webhookDispatchDeadLetterQueueName,
 			},
 		],
+		serviceBindings: [
+			{
+				binding: 'JOBS',
+				service: `${options.workerName}-jobs`,
+			},
+		],
 	})
 
 	// Emit GitHub Actions-friendly outputs (stdout only).
@@ -408,6 +414,7 @@ function listMockServerNames() {
 
 function deletePreviewWorkers(workerName: string, dryRun: boolean) {
 	deleteWorkerScript({ name: workerName, dryRun })
+	deleteWorkerScript({ name: `${workerName}-jobs`, dryRun })
 	for (const service of listMockServerNames()) {
 		deleteWorkerScript({
 			name: `${workerName}-mock-${service}`,

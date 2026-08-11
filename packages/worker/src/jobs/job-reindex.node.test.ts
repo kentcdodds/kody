@@ -25,7 +25,7 @@ vi.mock('#worker/vectorize/embedding.ts', () => ({
 		mockModule.isCapabilitySearchOffline(...args),
 }))
 
-vi.mock('./repo.ts', () => ({
+vi.mock('@kody-internal/shared/jobs/repo.ts', () => ({
 	listJobRowsPage: (...args: Array<unknown>) =>
 		mockModule.listJobRowsPage(...args),
 }))
