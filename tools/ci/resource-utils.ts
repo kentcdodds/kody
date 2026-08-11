@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { parse as parsePublicSuffix } from 'tldts'
 import { resolveLocalBinary } from '../node-runtime.ts'
 
 type WranglerEnvName = 'preview' | 'production'
@@ -377,6 +378,237 @@ export async function cloudflareApiRequest<T>(
 		}
 	}
 	throw lastError
+}
+
+type CloudflareRootApiRequestInput = {
+	apiToken: string
+	pathname: string
+	method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+	body?: Record<string, unknown>
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+}
+
+async function cloudflareRootApiRequestOnce<T>(
+	input: CloudflareRootApiRequestInput,
+) {
+	const baseUrl = input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'
+	const url = `${baseUrl.replace(/\/$/, '')}${input.pathname}`
+	const abortController = new AbortController()
+	const timeout = setTimeout(() => abortController.abort(), 30_000)
+	try {
+		const response = await (input.fetcher ?? fetch)(url, {
+			method: input.method ?? 'GET',
+			headers: {
+				Authorization: `Bearer ${input.apiToken}`,
+				Accept: 'application/json',
+				...(input.body ? { 'Content-Type': 'application/json' } : {}),
+			},
+			...(input.body ? { body: JSON.stringify(input.body) } : {}),
+			signal: abortController.signal,
+		})
+		const text = await response.text()
+		const preview = text.trim().slice(0, 200) || '(empty body)'
+		let parsed: unknown
+		try {
+			parsed = JSON.parse(text)
+		} catch {
+			throw new Error(
+				`Malformed Cloudflare response (${response.status}) for ${input.pathname}: ${preview}`,
+			)
+		}
+		if (
+			parsed === null ||
+			typeof parsed !== 'object' ||
+			Array.isArray(parsed)
+		) {
+			throw new Error(
+				`Malformed Cloudflare response (${response.status}) for ${input.pathname}: ${preview}`,
+			)
+		}
+		const payload = parsed as CloudflareApiEnvelope<T>
+		if (
+			!response.ok ||
+			payload.success !== true ||
+			payload.result === undefined
+		) {
+			const error = payload.errors?.[0]
+			throw new Error(
+				`Cloudflare API request failed (${response.status}): ${error?.message ?? error?.code ?? input.pathname}`,
+			)
+		}
+		return payload
+	} finally {
+		clearTimeout(timeout)
+	}
+}
+
+async function cloudflareRootApiRequest<T>(input: CloudflareRootApiRequestInput) {
+	const maxAttempts = input.maxAttempts ?? cloudflareApiRetryMaxAttempts
+	const wait = input.sleep ?? sleep
+	let lastError: unknown
+	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+		try {
+			return await cloudflareRootApiRequestOnce<T>(input)
+		} catch (error) {
+			lastError = error
+			if (!isRetryableCloudflareApiError(error) || attempt === maxAttempts) {
+				throw error
+			}
+			console.error(
+				`Retrying Cloudflare API ${input.method ?? 'GET'} ${input.pathname} (attempt ${attempt + 1}/${maxAttempts})`,
+			)
+			await wait(cloudflareApiRetryBaseDelayMs * 2 ** (attempt - 1))
+		}
+	}
+	throw lastError
+}
+
+type CloudflareZoneSummary = {
+	id: string
+	name: string
+}
+
+type CloudflareDnsRecord = {
+	id: string
+	type: string
+	name: string
+	content: string
+	proxied?: boolean
+}
+
+const packageAppWildcardDnsContent = '100::'
+
+export function readPackageAppZoneName(packageAppHostname: string) {
+	const parsed = parsePublicSuffix(packageAppHostname)
+	return parsed.domain ?? null
+}
+
+export function packageAppWildcardRoutePattern(packageAppHostname: string) {
+	return `*.${packageAppHostname}/*`
+}
+
+export function packageAppWildcardDnsRecordName(packageAppHostname: string) {
+	return `*.${packageAppHostname}`
+}
+
+async function lookupCloudflareZoneId(input: {
+	accountId: string
+	apiToken: string
+	zoneName: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+}) {
+	const payload = await cloudflareRootApiRequest<Array<CloudflareZoneSummary>>({
+		apiToken: input.apiToken,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+		pathname: `/zones?name=${encodeURIComponent(input.zoneName)}&account.id=${encodeURIComponent(input.accountId)}&status=active`,
+	})
+	const zones = payload.result ?? []
+	const zone = zones.find((entry) => entry.name === input.zoneName)
+	return zone?.id ?? null
+}
+
+function isPackageAppWildcardDnsRecord(input: {
+	record: CloudflareDnsRecord
+	wildcardRecordName: string
+}) {
+	return (
+		input.record.type === 'AAAA' &&
+		input.record.name === input.wildcardRecordName &&
+		input.record.content === packageAppWildcardDnsContent &&
+		input.record.proxied === true
+	)
+}
+
+export async function ensurePackageAppWildcardDnsRecord(input: {
+	accountId: string
+	apiToken: string
+	packageAppHostname: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+}) {
+	const zoneName = readPackageAppZoneName(input.packageAppHostname)
+	if (!zoneName) {
+		return fail(
+			`Could not derive a registrable zone name from PACKAGE_APP_BASE_URL host "${input.packageAppHostname}". Use a hostname on a public suffix (for example kodyapps.dev).`,
+		)
+	}
+	const wildcardRecordName = packageAppWildcardDnsRecordName(
+		input.packageAppHostname,
+	)
+	if (input.dryRun) {
+		console.error(
+			`[dry-run] ensure package-app wildcard DNS: ${wildcardRecordName} AAAA ${packageAppWildcardDnsContent} (proxied) in zone ${zoneName}`,
+		)
+		return
+	}
+
+	const zoneId = await lookupCloudflareZoneId({
+		accountId: input.accountId,
+		apiToken: input.apiToken,
+		zoneName,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+	})
+	if (!zoneId) {
+		return fail(
+			`Package-app zone "${zoneName}" was not found in Cloudflare account ${input.accountId}. Create the zone, add a proxied wildcard DNS record (${wildcardRecordName} AAAA ${packageAppWildcardDnsContent}), then re-run deploy. See docs/contributing/setup-manifest.md.`,
+		)
+	}
+
+	const listed = await cloudflareRootApiRequest<Array<CloudflareDnsRecord>>({
+		apiToken: input.apiToken,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(wildcardRecordName)}&type=AAAA`,
+	})
+	const existing = (listed.result ?? []).find((record) =>
+		isPackageAppWildcardDnsRecord({ record, wildcardRecordName }),
+	)
+	if (existing) {
+		console.error(
+			`Package-app wildcard DNS exists: ${existing.name} (${existing.id})`,
+		)
+		return
+	}
+
+	const conflicting = (listed.result ?? []).find(
+		(record) => record.name === wildcardRecordName,
+	)
+	if (conflicting) {
+		return fail(
+			`Package-app wildcard DNS record "${wildcardRecordName}" exists in zone "${zoneName}" but is not a proxied AAAA ${packageAppWildcardDnsContent} record (found ${conflicting.type} ${conflicting.content}, proxied=${String(conflicting.proxied)}). Fix it in the Cloudflare dashboard, then re-run deploy.`,
+		)
+	}
+
+	const created = await cloudflareRootApiRequest<CloudflareDnsRecord>({
+		apiToken: input.apiToken,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records`,
+		method: 'POST',
+		body: {
+			type: 'AAAA',
+			name: wildcardRecordName,
+			content: packageAppWildcardDnsContent,
+			proxied: true,
+			ttl: 1,
+		},
+	})
+	console.error(
+		`Created package-app wildcard DNS: ${created.result?.name} (${created.result?.id})`,
+	)
 }
 
 export async function listCloudflareQueues(input: {
@@ -1022,17 +1254,24 @@ function readLegacyHostsVar(input: {
 }
 
 /**
- * Publish the Worker's Cloudflare custom domains, derived from the environment's
+ * Publish the Worker's Cloudflare routes, derived from the environment's
  * `APP_BASE_URL`, `APP_LEGACY_HOSTS`, and `PACKAGE_APP_BASE_URL`.
  *
- * **`routes` is the complete custom-domain set for the script, not an addition to
- * it.** A deploy that lists only the package-app domain detaches the app origin
- * and deletes its DNS record, which takes production down. So the app origin is
+ * **`routes` is the complete route set for the script, not an addition to it.**
+ * A deploy that lists only the package-app domain detaches the app origin and
+ * deletes its DNS record, which takes production down. So the app origin is
  * always listed alongside the package-app origin, and a package-app origin
  * without an app origin fails the deploy instead of publishing a partial set.
  * For the same reason a domain migration must list the previous app origin in
  * `APP_LEGACY_HOSTS` when `APP_BASE_URL` moves to the new domain — otherwise
  * the first deploy after the flip detaches the old origin and deletes its DNS.
+ *
+ * Per-user hosted package apps use `{username}.<package-app-domain>` subdomains.
+ * Cloudflare **custom domains** cannot be wildcards, so the apex
+ * (`PACKAGE_APP_BASE_URL`) stays a `custom_domain` route for legacy redirects,
+ * while `*.<package-app-host>/*` is published as a **zone route** (`zone_name`
+ * is the registrable domain). Zone routes do not create DNS records — production
+ * CI ensures a proxied wildcard AAAA `100::` record exists separately.
  *
  * The routes are generated instead of committed because Wrangler resolves **local
  * dev** request URLs against the first configured route: a committed
@@ -1084,10 +1323,17 @@ function addPackageAppCustomDomainRoute(input: {
 		)
 	}
 
+	const packageAppZoneName = readPackageAppZoneName(packageAppHostname)
+	if (!packageAppZoneName) {
+		return fail(
+			`wrangler config "${input.baseConfigPath}" has "env.${input.envName}.vars.PACKAGE_APP_BASE_URL" host "${packageAppHostname}" without a registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
+		)
+	}
+
 	const existingRoutes = Array.isArray(input.targetEnv.routes)
 		? (input.targetEnv.routes as Array<unknown>)
 		: []
-	const routedHostnames = new Set(
+	const existingRoutePatterns = new Set(
 		existingRoutes.flatMap((route) => {
 			if (!route || typeof route !== 'object') return []
 			const pattern = (route as Record<string, unknown>).pattern
@@ -1095,12 +1341,20 @@ function addPackageAppCustomDomainRoute(input: {
 		}),
 	)
 
-	input.targetEnv.routes = [
-		...existingRoutes,
+	const wildcardRoutePattern = packageAppWildcardRoutePattern(packageAppHostname)
+	const newRoutes: Array<Record<string, unknown>> = [
 		...[appHostname, ...legacyHostnames, packageAppHostname]
-			.filter((hostname) => !routedHostnames.has(hostname))
+			.filter((hostname) => !existingRoutePatterns.has(hostname))
 			.map((pattern) => ({ pattern, custom_domain: true })),
 	]
+	if (!existingRoutePatterns.has(wildcardRoutePattern)) {
+		newRoutes.push({
+			pattern: wildcardRoutePattern,
+			zone_name: packageAppZoneName,
+		})
+	}
+
+	input.targetEnv.routes = [...existingRoutes, ...newRoutes]
 	// Publishing routes flips `workers_dev` to false, which removed the
 	// `<name>.<subdomain>.workers.dev` trigger the deploy previously kept as a
 	// backup access path (and that MCP clients may be pointed at). Ask for it
@@ -1110,7 +1364,7 @@ function addPackageAppCustomDomainRoute(input: {
 		? `, ${legacyHostnames.join(', ')} (APP_LEGACY_HOSTS)`
 		: ''
 	console.error(
-		`Custom domain routes: ${appHostname} (APP_BASE_URL)${legacyNote}, ${packageAppHostname} (PACKAGE_APP_BASE_URL); workers.dev trigger kept`,
+		`Worker routes: ${appHostname} (APP_BASE_URL)${legacyNote}, ${packageAppHostname} (PACKAGE_APP_BASE_URL custom domain), ${wildcardRoutePattern} (zone ${packageAppZoneName}); workers.dev trigger kept`,
 	)
 }
 

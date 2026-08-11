@@ -3,6 +3,7 @@ import {
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
+	ensurePackageAppWildcardDnsRecord,
 	ensureR2Bucket,
 	fail,
 	isValidBareHostname,
@@ -53,6 +54,7 @@ type ResolvedProductionBindings = {
 	webhookDispatchQueueName: string
 	webhookDispatchDeadLetterQueueName: string
 	committedUserEmailDomain: string | null
+	packageAppHostname: string | null
 }
 
 function parseArgs(argv: Array<string>): {
@@ -458,6 +460,29 @@ async function resolveProductionBindings({
 			? committedUserEmailDomainRaw.trim().toLowerCase().replace(/\.$/, '')
 			: null
 
+	const packageAppBaseUrlRaw =
+		productionVars && typeof productionVars === 'object'
+			? (productionVars as Record<string, unknown>).PACKAGE_APP_BASE_URL
+			: undefined
+	let packageAppHostname: string | null = null
+	if (
+		typeof packageAppBaseUrlRaw === 'string' &&
+		packageAppBaseUrlRaw.trim().length > 0
+	) {
+		try {
+			packageAppHostname = new URL(packageAppBaseUrlRaw.trim()).hostname
+		} catch {
+			fail(
+				`wrangler config "${wranglerConfigPath}" has an invalid "env.production.vars.PACKAGE_APP_BASE_URL": ${packageAppBaseUrlRaw}`,
+			)
+		}
+		if (!packageAppHostname) {
+			fail(
+				`wrangler config "${wranglerConfigPath}" has "env.production.vars.PACKAGE_APP_BASE_URL" without a hostname: ${packageAppBaseUrlRaw}`,
+			)
+		}
+	}
+
 	const resolved: ResolvedProductionBindings = {
 		workerName,
 		d1DatabaseName,
@@ -471,6 +496,7 @@ async function resolveProductionBindings({
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		committedUserEmailDomain,
+		packageAppHostname,
 		...queueResources,
 	}
 
@@ -627,6 +653,15 @@ async function ensureProductionResources(options: CliOptions) {
 			queueId: artifactsRepoEventsQueue.id,
 			dryRun: options.dryRun,
 		})
+
+	if (bindings.packageAppHostname) {
+		await ensurePackageAppWildcardDnsRecord({
+			accountId: accountId ?? 'dry-run-account',
+			apiToken: apiToken ?? 'dry-run-token',
+			packageAppHostname: bindings.packageAppHostname,
+			dryRun: options.dryRun,
+		})
+	}
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
