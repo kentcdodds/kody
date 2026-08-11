@@ -235,7 +235,8 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 	let workerName = baseConfig.name as string
 	if (options.envName === 'preview') {
 		// Per-preview jobs workers are brand new scripts: they cannot run the
-		// production script-transfer migration (from_script "kody"), so the
+		// production script-transfer migration (from_script "kody-production"),
+		// so the
 		// generated preview config creates the class fresh instead.
 		workerName = options.workerName
 		baseConfig.name = workerName

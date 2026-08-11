@@ -5,9 +5,10 @@ Operational runbook for cutting production over to the dedicated jobs worker
 [0016 — Mono-worker extraction](../decisions/0016-mono-worker-extraction.md)).
 It covers two coordinated moves:
 
-1. **Durable Object transfer** — the `JobManager` class moves from the `kody`
-   script to the `kody-jobs` script via a Wrangler `transferred_classes` script
-   migration, keeping every existing per-user DO's storage and alarm.
+1. **Durable Object transfer** — the `JobManager` class moves from the deployed
+   `kody-production` script to the `kody-jobs` script via a Wrangler
+   `transferred_classes` script migration, keeping every existing per-user DO's
+   storage and alarm.
 2. **Bounded D1 data migration** — the `jobs` and `archived_job_artifacts` rows
    move from `APP_DB` (`kody-db`) into the dedicated `kody-jobs` D1 database.
 
@@ -33,21 +34,23 @@ operator (or the coordinating parent session) runs the steps below in order.
 
 - A `transferred_classes` migration lives in the **receiving** worker's config
   (`packages/jobs-worker/wrangler.jsonc`, tag `v1`,
-  `{ from: "JobManager", from_script: "kody", to: "JobManager" }`). It is
-  applied when the receiving worker (`kody-jobs`) is deployed.
-- At the moment the transfer is applied, the source script (`kody`) must still
-  have the `JobManager` class deployed and no in-flight deploy removing it.
-  After the transfer, the namespace belongs to `kody-jobs`; a subsequent deploy
-  of `kody` without the class (and without its DO binding) is valid and must
-  **not** include a `deleted_classes` migration for `JobManager` (that would
-  destroy the transferred data; the deploy-guardrails check enforces an
-  allowlist for any `deleted_classes`).
-- Service bindings are by worker name: `kody` reaches the jobs worker through
-  the `JOBS` binding (`JobsService` entrypoint) and `kody-jobs` calls back into
-  `kody` through the `HOST` binding (`JobsHost` entrypoint). The jobs worker
-  must exist before a `kody` deploy that declares the `JOBS` binding can
-  validate, hence the deploy ordering in `.github/workflows/deploy.yml` (jobs
-  worker deploys first).
+  `{ from: "JobManager", from_script: "kody-production", to: "JobManager" }`).
+  It is applied when the receiving worker (`kody-jobs`) is deployed.
+- At the moment the transfer is applied, the source script (`kody-production`)
+  must still have the `JobManager` class deployed and no in-flight deploy
+  removing it. After the transfer, the namespace belongs to `kody-jobs`; a
+  subsequent deploy of `kody-production` without the class (and without its DO
+  binding) is valid and must **not** include a `deleted_classes` migration for
+  `JobManager` (that would destroy the transferred data; the deploy-guardrails
+  check enforces an allowlist for any `deleted_classes`).
+- Service bindings are by deployed worker name (wrangler appends the
+  environment, so the production main worker script is `kody-production`):
+  `kody-production` reaches the jobs worker through the `JOBS` binding
+  (`JobsService` entrypoint) and `kody-jobs` calls back into `kody-production`
+  through the `HOST` binding (`JobsHost` entrypoint). The jobs worker must exist
+  before a main-worker deploy that declares the `JOBS` binding can validate,
+  hence the deploy ordering in `.github/workflows/deploy.yml` (jobs worker
+  deploys first).
 
 ## Cutover steps (production)
 
@@ -110,7 +113,7 @@ npx wrangler d1 execute kody-jobs --remote \
 
 ### 5. Deploy the jobs worker (applies the DO transfer)
 
-Deploy `kody-jobs` **before** deploying a `kody` build that removes the
+Deploy `kody-jobs` **before** deploying a main-worker build that removes the
 `JobManager` class:
 
 ```sh
@@ -124,11 +127,11 @@ of every existing `JobManager` object and its storage. Healthcheck:
 
 ### 6. Deploy the main worker (flips reads/writes to the jobs worker)
 
-Deploy the `kody` build from this PR. Its config has no `JobManager` class
-export, no jobs cron, and no scheduled-queue consumer; all job reads and writes
-go through the `JOBS` service binding, so this deploy is the read/write flip.
-The regular deploy workflow performs steps 1, 2, 5, and 6 in this order
-automatically.
+Deploy the main-worker (`kody-production`) build from this PR. Its config has no
+`JobManager` class export, no jobs cron, and no scheduled-queue consumer; all
+job reads and writes go through the `JOBS` service binding, so this deploy is
+the read/write flip. The regular deploy workflow performs steps 1, 2, 5, and 6
+in this order automatically.
 
 ### 7. Unpause and verify
 
@@ -150,8 +153,8 @@ Not part of this cutover.
 ## Rollback
 
 - Before step 5: nothing to roll back (resources are additive).
-- After step 5 but before step 6: redeploy the previous `kody` build; the DO
-  namespace already belongs to `kody-jobs`, and the previous build reaches it
+- After step 5 but before step 6: redeploy the previous main-worker build; the
+  DO namespace already belongs to `kody-jobs`, and the previous build reaches it
   only if it still has a `JOB_MANAGER` binding — so prefer rolling forward. A
   reverse `transferred_classes` migration (`from_script: "kody-jobs"`) is the
   escape hatch to hand the namespace back.

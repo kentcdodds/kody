@@ -265,11 +265,15 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_bootstrap_config }}
         run: |
           set -euo pipefail
-          node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+          # Explicit --name: without it wrangler appends the environment to
+          # the script name (…-jobs-preview), which would not match the app
+          # worker's JOBS service binding.
+          node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
       - name: ☁️ Deploy preview app Worker
         id: deploy_preview
@@ -301,11 +305,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
         run: |
           set -euo pipefail
-          node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+          node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
       - name: 🔐 Sync preview app Worker secrets (bulk)
         env:

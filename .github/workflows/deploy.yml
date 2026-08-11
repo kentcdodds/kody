@@ -162,7 +162,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
-          "$WRANGLER_CONFIG" --set-from-env-optional SENTRY_DSN
+          "$WRANGLER_CONFIG" --name kody-jobs --set-from-env-optional SENTRY_DSN
 
       - name: ☁️ Deploy jobs worker
         env:
@@ -179,7 +179,11 @@ jobs:
           for attempt in $(seq 1 "$deploy_attempts"); do
             echo "Jobs worker deploy attempt $attempt/$deploy_attempts"
             set +e
+            # Explicit --name: without it wrangler would append the
+            # environment to the script name (kody-jobs-production), which
+            # would not match the main worker's JOBS service binding.
             node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" \
+              --name kody-jobs \
               --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee jobs-deploy.log
             deploy_status="${PIPESTATUS[0]}"
             set -e

@@ -37,7 +37,9 @@
 			"transferred_classes": [
 				{
 					"from": "JobManager",
-					"from_script": "kody",
+					// The deployed production main worker script is "kody-production"
+					// (wrangler appends the environment name to the top-level name).
+					"from_script": "kody-production",
 					"to": "JobManager",
 				},
 			],
@@ -63,7 +65,7 @@
 			"services": [
 				{
 					"binding": "HOST",
-					"service": "kody",
+					"service": "kody-production",
 					"entrypoint": "JobsHost",
 				},
 			],
@@ -118,7 +120,8 @@
 		},
 		"test": {
 			// Local test workers are fresh scripts: they cannot run the
-			// production script-transfer migration (from_script "kody"), so the
+			// production script-transfer migration (from_script
+			// "kody-production"), so the
 			// class is created fresh here (matching the generated preview
 			// config in tools/ci/jobs-worker-resources.ts).
 			"migrations": [
