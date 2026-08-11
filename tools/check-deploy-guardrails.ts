@@ -18,6 +18,8 @@ export const defaultWorkflowDirectory = path.join('.github', 'workflows')
 type ProtectedMigration = {
 	tag: string
 	new_sqlite_classes: Array<string>
+	/** Migration list location; defaults to the top-level "migrations". */
+	location?: string
 }
 
 type TransferredClass = {
@@ -29,6 +31,8 @@ type TransferredClass = {
 type ProtectedTransferMigration = {
 	tag: string
 	transferred_classes: Array<TransferredClass>
+	/** Migration list location; defaults to the top-level "migrations". */
+	location?: string
 }
 
 type ProtectedBindingSet = {
@@ -214,6 +218,45 @@ function collectDurableObjectBindings(
 	return result
 }
 
+const defaultMigrationLocation = 'migrations'
+
+type MigrationSection = {
+	location: string
+	migrations: Array<WranglerMigration>
+}
+
+/**
+ * Collects every Durable Object migration list in the config: the top-level
+ * `migrations` plus each environment-specific `env.<name>.migrations`
+ * override (wrangler environments may declare their own list, e.g. the
+ * runtime worker's preview `new_sqlite_classes`).
+ */
+function collectMigrationSections(
+	config: WranglerConfig,
+): Array<MigrationSection> {
+	const sections: Array<MigrationSection> = []
+	if (Array.isArray(config.migrations)) {
+		sections.push({
+			location: defaultMigrationLocation,
+			migrations: config.migrations as Array<WranglerMigration>,
+		})
+	}
+	const env = config.env
+	if (env && typeof env === 'object' && !Array.isArray(env)) {
+		for (const [envName, envConfig] of Object.entries(env)) {
+			if (!envConfig || typeof envConfig !== 'object') continue
+			const envMigrations = (envConfig as { migrations?: unknown }).migrations
+			if (Array.isArray(envMigrations)) {
+				sections.push({
+					location: `env.${envName}.migrations`,
+					migrations: envMigrations as Array<WranglerMigration>,
+				})
+			}
+		}
+	}
+	return sections
+}
+
 export function checkDurableObjectConfig(
 	configPath: string,
 	config: WranglerConfig,
@@ -221,44 +264,60 @@ export function checkDurableObjectConfig(
 	allowlist: DurableObjectDeletionAllowlist,
 ): Array<string> {
 	const errors: Array<string> = []
-	const migrations = Array.isArray(config.migrations)
-		? (config.migrations as Array<WranglerMigration>)
-		: []
-	const migrationsByTag = new Map<string, WranglerMigration>()
+	const sections = collectMigrationSections(config)
+	const migrationsByLocationAndTag = new Map<string, WranglerMigration>()
 
-	for (const migration of migrations) {
-		if (typeof migration.tag === 'string') {
-			if (migrationsByTag.has(migration.tag)) {
-				errors.push(
-					`${configPath}: duplicate Durable Object migration tag "${migration.tag}".`,
+	// Duplicate-tag validation is scoped per migration list: an environment
+	// override may legitimately reuse a tag (e.g. "v1") that the top level
+	// also uses.
+	for (const section of sections) {
+		const seenTags = new Set<string>()
+		for (const migration of section.migrations) {
+			if (typeof migration.tag === 'string') {
+				if (seenTags.has(migration.tag)) {
+					errors.push(
+						`${configPath}: duplicate Durable Object migration tag "${migration.tag}" in ${section.location}.`,
+					)
+				}
+				seenTags.add(migration.tag)
+				migrationsByLocationAndTag.set(
+					`${section.location}\u0000${migration.tag}`,
+					migration,
 				)
 			}
-			migrationsByTag.set(migration.tag, migration)
 		}
 	}
 
 	for (const protectedMigration of baseline.protected_migrations) {
-		const current = migrationsByTag.get(protectedMigration.tag)
+		const location = protectedMigration.location ?? defaultMigrationLocation
+		const current = migrationsByLocationAndTag.get(
+			`${location}\u0000${protectedMigration.tag}`,
+		)
 		const currentClasses = sortedStrings(current?.new_sqlite_classes)
 		const expectedClasses = protectedMigration.new_sqlite_classes.toSorted()
 		if (!currentClasses || !sameStrings(currentClasses, expectedClasses)) {
 			errors.push(
-				`${configPath}: protected new_sqlite_classes migration "${protectedMigration.tag}" was removed, renamed, or changed (expected ${expectedClasses.join(', ')}).`,
+				`${configPath}: protected new_sqlite_classes migration "${protectedMigration.tag}" at ${location} was removed, renamed, or changed (expected ${expectedClasses.join(', ')}).`,
 			)
 		}
 	}
-	const protectedMigrationTags = new Set(
-		baseline.protected_migrations.map(({ tag }) => tag),
+	const protectedMigrationKeys = new Set(
+		baseline.protected_migrations.map(
+			({ tag, location }) =>
+				`${location ?? defaultMigrationLocation}\u0000${tag}`,
+		),
 	)
-	for (const migration of migrations) {
-		if (
-			migration.new_sqlite_classes !== undefined &&
-			typeof migration.tag === 'string' &&
-			!protectedMigrationTags.has(migration.tag)
-		) {
-			errors.push(
-				`${configPath}: new_sqlite_classes migration "${migration.tag}" is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
-			)
+	for (const section of sections) {
+		for (const migration of section.migrations) {
+			if (
+				migration.new_sqlite_classes !== undefined &&
+				typeof migration.tag === 'string' &&
+				!protectedMigrationKeys.has(`${section.location}\u0000${migration.tag}`)
+			) {
+				errors.push(
+					`${configPath}: new_sqlite_classes migration "${migration.tag}" at ${section.location} is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
+				)
+			}
 		}
 	}
 
@@ -269,7 +328,10 @@ export function checkDurableObjectConfig(
 	const protectedTransferMigrations =
 		baseline.protected_transfer_migrations ?? []
 	for (const protectedTransfer of protectedTransferMigrations) {
-		const current = migrationsByTag.get(protectedTransfer.tag)
+		const location = protectedTransfer.location ?? defaultMigrationLocation
+		const current = migrationsByLocationAndTag.get(
+			`${location}\u0000${protectedTransfer.tag}`,
+		)
 		const currentTransfers = normalizeTransferredClasses(
 			current?.transferred_classes,
 		)
@@ -281,46 +343,57 @@ export function checkDurableObjectConfig(
 			)
 		) {
 			errors.push(
-				`${configPath}: protected transferred_classes migration "${protectedTransfer.tag}" was removed, renamed, or changed (expected ${protectedTransfer.transferred_classes.map((transfer) => `${transfer.from_script}/${transfer.from} -> ${transfer.to}`).join(', ')}).`,
+				`${configPath}: protected transferred_classes migration "${protectedTransfer.tag}" at ${location} was removed, renamed, or changed (expected ${protectedTransfer.transferred_classes.map((transfer) => `${transfer.from_script}/${transfer.from} -> ${transfer.to}`).join(', ')}).`,
 			)
 		}
 	}
-	const protectedTransferTags = new Set(
-		protectedTransferMigrations.map(({ tag }) => tag),
+	const protectedTransferKeys = new Set(
+		protectedTransferMigrations.map(
+			({ tag, location }) =>
+				`${location ?? defaultMigrationLocation}\u0000${tag}`,
+		),
 	)
-	for (const migration of migrations) {
-		if (
-			migration.transferred_classes !== undefined &&
-			typeof migration.tag === 'string' &&
-			!protectedTransferTags.has(migration.tag)
-		) {
-			errors.push(
-				`${configPath}: transferred_classes migration "${migration.tag}" is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
-			)
+	for (const section of sections) {
+		for (const migration of section.migrations) {
+			if (
+				migration.transferred_classes !== undefined &&
+				typeof migration.tag === 'string' &&
+				!protectedTransferKeys.has(`${section.location}\u0000${migration.tag}`)
+			) {
+				errors.push(
+					`${configPath}: transferred_classes migration "${migration.tag}" at ${section.location} is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
+				)
+			}
 		}
 	}
 
 	const allowedDeletionKeys = new Set(
 		allowlist.deletions.map((deletion) => deletionKey(deletion)),
 	)
-	for (const migration of migrations) {
-		if (migration.deleted_classes === undefined) continue
-		const classes = sortedStrings(migration.deleted_classes)
-		if (typeof migration.tag !== 'string' || !classes || classes.length === 0) {
-			errors.push(
-				`${configPath}: every deleted_classes migration must have a string tag and a non-empty string class list.`,
-			)
-			continue
-		}
-		const candidate = {
-			config: configPath,
-			tag: migration.tag,
-			classes,
-		}
-		if (!allowedDeletionKeys.has(deletionKey(candidate))) {
-			errors.push(
-				`${configPath}: destructive deletion ${migration.tag} [${classes.join(', ')}] is not an exact entry in ${defaultDurableObjectDeletionAllowlistPath}. Durable Object class deletion requires an explicit reviewed allowlist change.`,
-			)
+	for (const section of sections) {
+		for (const migration of section.migrations) {
+			if (migration.deleted_classes === undefined) continue
+			const classes = sortedStrings(migration.deleted_classes)
+			if (
+				typeof migration.tag !== 'string' ||
+				!classes ||
+				classes.length === 0
+			) {
+				errors.push(
+					`${configPath}: every deleted_classes migration must have a string tag and a non-empty string class list.`,
+				)
+				continue
+			}
+			const candidate = {
+				config: configPath,
+				tag: migration.tag,
+				classes,
+			}
+			if (!allowedDeletionKeys.has(deletionKey(candidate))) {
+				errors.push(
+					`${configPath}: destructive deletion ${migration.tag} [${classes.join(', ')}] is not an exact entry in ${defaultDurableObjectDeletionAllowlistPath}. Durable Object class deletion requires an explicit reviewed allowlist change.`,
+				)
+			}
 		}
 	}
 

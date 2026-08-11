@@ -165,7 +165,18 @@
 		},
 		{
 			"path": "packages/runtime-worker/wrangler.jsonc",
-			"protected_migrations": [],
+			"protected_migrations": [
+				{
+					"tag": "v1",
+					"location": "env.preview.migrations",
+					"new_sqlite_classes": [
+						"StorageRunner",
+						"RunLog",
+						"PackageRealtimeSession",
+						"PackageServiceInstance"
+					]
+				}
+			],
 			"protected_transfer_migrations": [
 				{
 					"tag": "v1",

@@ -58,6 +58,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'COMMUNITY_ASSETS',
 				bucket_name: 'kody-pr-7-community-assets',
 			},
+			{
+				binding: 'EMAIL_BLOBS',
+				bucket_name: 'kody-pr-7-email-blobs',
+			},
 		],
 		queues: {
 			producers: [

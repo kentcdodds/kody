@@ -82,7 +82,16 @@ hand.
      itself (preview pairs are created fresh with `new_sqlite_classes`); the
      transfer is exercised for the first time in production, which is why the
      deploy order below matters.
-2. **Merge the PR.** The production deploy workflow then:
+2. **Detach the `kodyapps.dev` custom domain from `kody` (one-time, just before
+   merging).** Cloudflare refuses to assign a custom domain that another Worker
+   still owns, so the first `kody-runtime` deploy fails while `kody` holds
+   `kodyapps.dev`. In the Cloudflare dashboard (Workers & Pages → `kody` →
+   Settings → Domains & Routes) remove the `kodyapps.dev` custom domain, then
+   merge promptly — between the detach and the runtime deploy's domain attach,
+   package-app traffic on `kodyapps.dev` is unserved. This is only needed on the
+   first production deploy; later deploys find the domain already on
+   `kody-runtime`.
+3. **Merge the PR.** The production deploy workflow then:
    1. generates the runtime config from the provisioned main config
       (`tools/ci/runtime-worker-config.ts`);
    2. syncs secrets to both workers;
@@ -92,13 +101,16 @@ hand.
       `kody`. From this moment the still-running old `kody` deployment serves
       runtime traffic against namespaces that have moved; the window until step
       5 completes must be short and is why the two deploys are consecutive steps
-      in one job;
+      in one job. There is deliberately no maintenance-mode traffic gate: the
+      accepted risk (per ADR 0016) is that runtime requests hitting the old
+      `kody` deployment during this seconds-long window error and surface as
+      failed runs/invocations, which is why the deploy runs at a quiet time;
    5. **deploys `kody` second** with the config that binds the four classes
       cross-script (`script_name: "kody-runtime"`) plus the `RUNTIME_WORKER`
       service binding, and stops routing runtime requests in-process;
    6. healthchecks `kody` (`/health`) and `kody-runtime` (`/__runtime/health`),
       then runs the execute smoke check.
-3. **Post-deploy verification.**
+4. **Post-deploy verification.**
    - Load a production package app on `https://kodyapps.dev`.
    - Run a package invocation; confirm the run appears with streaming logs
      (proves RunLog storage transferred, not recreated empty).
@@ -107,7 +119,11 @@ hand.
 
 ## Manual execution (only if the workflow cannot run)
 
-From a checkout of the merged commit, with `CLOUDFLARE_API_TOKEN` set:
+From a checkout of the merged commit, with `CLOUDFLARE_API_TOKEN` set (plus the
+secret values used below — mirror the `🔐 Sync Cloudflare Secrets` steps in
+`.github/workflows/deploy.yml`, which are the source of truth for the exact
+secret lists). The steps mirror the workflow order: generate configs, sync
+secrets to both workers, apply D1 migrations, then deploy runtime → main.
 
 ```sh
 node tools/ci/production-resources.ts ensure --out-config packages/worker/wrangler-production.generated.json
@@ -117,6 +133,24 @@ node tools/ci/runtime-worker-config.ts generate \
   --worker-name kody-runtime \
   --main-worker-name kody \
   --out-config packages/runtime-worker/wrangler-production.generated.json
+
+# Sync secrets to both workers (full secret set to main; runtime-lane
+# allowlist to kody-runtime — see deploy.yml for the current lists):
+node tools/ci/sync-worker-secrets.ts --env production \
+  --config packages/worker/wrangler-production.generated.json \
+  --set-from-env COOKIE_SECRET ... # copy the main-worker flag list from deploy.yml
+node tools/ci/sync-worker-secrets.ts --env production \
+  --config packages/runtime-worker/wrangler-production.generated.json \
+  --set-from-env COOKIE_SECRET \
+  --set-from-env-optional SECRET_STORE_KEY \
+  --set-from-env-optional AI_GATEWAY_ID \
+  --set-from-env-optional SENTRY_DSN \
+  --set-from-env-optional CLOUDFLARE_API_TOKEN
+
+# Apply shared D1 migrations once (both workers bind the same databases):
+node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config packages/worker/wrangler-production.generated.json
+node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config packages/worker/wrangler-production.generated.json
+
 npm run deploy -- --config packages/runtime-worker/wrangler-production.generated.json
 npm run deploy -- --config packages/worker/wrangler-production.generated.json
 ```

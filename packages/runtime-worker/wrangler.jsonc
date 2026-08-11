@@ -190,6 +190,12 @@
 					"binding": "COMMUNITY_ASSETS",
 					"bucket_name": "kody-community-assets",
 				},
+				// Capability execution on the runtime lane reads email
+				// attachments (email-attachment-get) from the shared blob store.
+				{
+					"binding": "EMAIL_BLOBS",
+					"bucket_name": "kody-email-blobs",
+				},
 			],
 			"queues": {
 				"producers": [
@@ -353,6 +359,10 @@
 				{
 					"binding": "COMMUNITY_ASSETS",
 					"bucket_name": "kody-preview-community-assets",
+				},
+				{
+					"binding": "EMAIL_BLOBS",
+					"bucket_name": "kody-preview-email-blobs",
 				},
 			],
 			"queues": {

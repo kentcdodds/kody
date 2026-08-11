@@ -200,7 +200,18 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 			`runtime env.${envName}.vars.PACKAGE_APP_BASE_URL is not a valid URL: ${packageAppBaseUrl}`,
 		)
 	}
-	runtimeEnv.routes = [{ pattern: hostname, custom_domain: true }]
+	const existingRoutes = Array.isArray(runtimeEnv.routes)
+		? runtimeEnv.routes.filter(
+				(route) =>
+					!route ||
+					typeof route !== 'object' ||
+					(route as JsonRecord).pattern !== hostname,
+			)
+		: []
+	runtimeEnv.routes = [
+		...existingRoutes,
+		{ pattern: hostname, custom_domain: true },
+	]
 	// Keep the workers.dev trigger as the deploy healthcheck target and a
 	// backup access path (publishing routes would otherwise disable it).
 	runtimeEnv.workers_dev = true
@@ -335,6 +346,14 @@ export async function generate(options: CliOptions) {
 	})
 	rewriteWorkerNameReferences(runtimeConfig, names)
 	if (Array.isArray(runtimeEnv.workflows)) {
+		// Renaming assumes the single dynamic-callable workflow; a second
+		// entry would silently receive the same name and bind the wrong
+		// workflow, so fail loudly instead.
+		if (runtimeEnv.workflows.length > 1) {
+			fail(
+				`runtime env.${options.envName}.workflows declares ${String(runtimeEnv.workflows.length)} entries; the generator only knows how to name the single dynamic-callable workflow. Extend the naming logic before adding workflows.`,
+			)
+		}
 		for (const entry of runtimeEnv.workflows) {
 			if (entry && typeof entry === 'object') {
 				;(entry as JsonRecord).name =

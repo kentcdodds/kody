@@ -199,6 +199,13 @@ jobs:
           --set-from-env-optional STRIPE_SECRET_KEY --set-from-env-optional
           STRIPE_WEBHOOK_SECRET
 
+      # Runtime-lane secret allowlist (ADR 0016): only the secrets the
+      # package runtime lane actually reads. COOKIE_SECRET/SECRET_STORE_KEY
+      # (app-origin sessions + user secret store), AI_GATEWAY_ID (capability
+      # embeddings), SENTRY_DSN (error reporting), CLOUDFLARE_API_TOKEN
+      # (Cloudflare REST capabilities). Billing (Stripe), waiting-list (Kit),
+      # OAuth client credentials, and maintenance secrets stay main-only so a
+      # runtime-Worker compromise cannot reach them.
       - name: 🔐 Sync Cloudflare Secrets to runtime worker (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -208,29 +215,12 @@ jobs:
           SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.OAUTH_GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.OAUTH_GOOGLE_CLIENT_SECRET }}
-          X_CLIENT_ID: ${{ secrets.OAUTH_X_CLIENT_ID }}
-          X_CLIENT_SECRET: ${{ secrets.OAUTH_X_CLIENT_SECRET }}
-          KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
-          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
-          CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
-          --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
-          GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
-          --set-from-env-optional X_CLIENT_ID --set-from-env-optional
-          X_CLIENT_SECRET --set-from-env-optional KIT_API_KEY
-          --set-from-env-optional STRIPE_SECRET_KEY --set-from-env-optional
-          STRIPE_WEBHOOK_SECRET
+          --set-from-env-optional CLOUDFLARE_API_TOKEN
 
       - name: 🗄️ Apply D1 Migrations
         env:
@@ -254,9 +244,48 @@ jobs:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
         run: |
           set -euo pipefail
-          npm run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
 
-          RUNTIME_URL="$(node -e "const fs = require('node:fs'); const t = fs.readFileSync('deploy-runtime.log','utf8'); const m = t.match(/https:\\/\\/[a-zA-Z0-9._-]+\\.workers\\.dev/g); process.stdout.write(m?.at(-1) ?? '')")"
+          is_retryable_deploy_failure() {
+            node <<'NODE'
+          const fs = require('node:fs')
+          const text = fs.readFileSync('deploy-runtime.log', 'utf8').replace(/\u001b\[[0-9;]*m/g, '')
+          const retryablePatterns = [
+            /workflows\.api\.error\.internal_server/i,
+            /Cloudflare API[\s\S]*\[code:\s*10001\]/i,
+          ]
+          process.exit(retryablePatterns.some((pattern) => pattern.test(text)) ? 0 : 1)
+          NODE
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Runtime deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Runtime deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Runtime deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
+
+          RUNTIME_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-runtime.log kody-runtime)"
           if [ -n "$RUNTIME_URL" ]; then
             echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
           fi
@@ -387,6 +416,11 @@ jobs:
 
           if [ -z "${RUNTIME_URL:-}" ]; then
             echo "Missing runtime worker deploy URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          if [ -z "${EXPECTED_COMMIT_SHA:-}" ]; then
+            echo "Missing expected commit SHA; cannot verify runtime deployment version." >&2
             exit 1
           fi
 

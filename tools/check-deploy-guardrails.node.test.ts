@@ -95,7 +95,7 @@ test('Durable Object guard protects migration tags and bound classes', () => {
 	).toEqual([
 		expect.stringContaining('was removed, renamed, or changed'),
 		expect.stringContaining(
-			'new_sqlite_classes migration "renamed-v1" is not recorded',
+			'new_sqlite_classes migration "renamed-v1" at migrations is not recorded',
 		),
 	])
 
@@ -179,7 +179,7 @@ test('Durable Object guard protects transferred_classes migrations', () => {
 		),
 	).toEqual([
 		expect.stringContaining(
-			'protected transferred_classes migration "v1" was removed, renamed, or changed',
+			'protected transferred_classes migration "v1" at migrations was removed, renamed, or changed',
 		),
 	])
 
@@ -198,9 +198,143 @@ test('Durable Object guard protects transferred_classes migrations', () => {
 		),
 	).toEqual([
 		expect.stringContaining(
-			'transferred_classes migration "v2" is not recorded',
+			'transferred_classes migration "v2" at migrations is not recorded',
 		),
 	])
+})
+
+test('Durable Object guard covers environment-specific migration lists', () => {
+	const allowlist = {
+		version: 1,
+		deletions: [],
+	} satisfies DurableObjectDeletionAllowlist
+	const envBaseline = {
+		path: configPath,
+		protected_migrations: [
+			{
+				tag: 'v1',
+				location: 'env.preview.migrations',
+				new_sqlite_classes: ['RunLog'],
+			},
+		],
+		protected_transfer_migrations: [
+			{
+				tag: 'v1',
+				transferred_classes: [
+					{ from: 'RunLog', from_script: 'kody', to: 'RunLog' },
+				],
+			},
+		],
+		protected_binding_sets: [],
+	} satisfies DurableObjectBaseline['configs'][number]
+
+	// The same tag may exist at the top level and in an env override.
+	const matching = {
+		migrations: [
+			{
+				tag: 'v1',
+				transferred_classes: [
+					{ from: 'RunLog', from_script: 'kody', to: 'RunLog' },
+				],
+			},
+		],
+		env: {
+			preview: {
+				migrations: [{ tag: 'v1', new_sqlite_classes: ['RunLog'] }],
+			},
+		},
+	}
+	expect(
+		checkDurableObjectConfig(configPath, matching, envBaseline, allowlist),
+	).toEqual([])
+
+	const changedEnvMigration = {
+		...matching,
+		env: {
+			preview: {
+				migrations: [{ tag: 'v1', new_sqlite_classes: ['SomethingElse'] }],
+			},
+		},
+	}
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			changedEnvMigration,
+			envBaseline,
+			allowlist,
+		),
+	).toEqual([
+		expect.stringContaining(
+			'protected new_sqlite_classes migration "v1" at env.preview.migrations was removed, renamed, or changed',
+		),
+	])
+
+	const unrecordedEnvMigration = {
+		...matching,
+		env: {
+			preview: {
+				migrations: [
+					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
+					{ tag: 'v2', new_sqlite_classes: ['Unrecorded'] },
+				],
+			},
+		},
+	}
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			unrecordedEnvMigration,
+			envBaseline,
+			allowlist,
+		),
+	).toEqual([
+		expect.stringContaining(
+			'new_sqlite_classes migration "v2" at env.preview.migrations is not recorded',
+		),
+	])
+
+	const duplicateTagInEnv = {
+		...matching,
+		env: {
+			preview: {
+				migrations: [
+					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
+					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
+				],
+			},
+		},
+	}
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			duplicateTagInEnv,
+			envBaseline,
+			allowlist,
+		),
+	).toContainEqual(
+		expect.stringContaining(
+			'duplicate Durable Object migration tag "v1" in env.preview.migrations',
+		),
+	)
+
+	const envDeletion = {
+		...matching,
+		env: {
+			preview: {
+				migrations: [
+					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
+					{ tag: 'v2', deleted_classes: ['RunLog'] },
+				],
+			},
+		},
+	}
+	expect(
+		checkDurableObjectConfig(configPath, envDeletion, envBaseline, allowlist),
+	).toContainEqual(
+		expect.stringContaining(
+			'destructive deletion v2 [RunLog] is not an exact entry',
+		),
+	)
 })
 
 test('workflow guard permits destructive commands only in operator-dispatched jobs', () => {
