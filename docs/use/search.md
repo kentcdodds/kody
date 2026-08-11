@@ -58,9 +58,10 @@ error listing the available domains. The `search` meta capability (usable inside
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user. Kody also recognizes
-current-origin `/account/packages/:packageId` URLs and owner-matching
-`/@username/packages/:kodyId` URLs — including the hosted package-app domain a
-package app actually runs on, so a URL copied from an open app resolves too.
+current-origin `/account/packages/:packageId` URLs, owner-matching
+`/@username/packages/:kodyId` URLs, and per-user package-app subdomain URLs
+(`https://{username}.<package-app host>/packages/:kodyId`) — so a URL copied
+from an open app resolves too.
 Exact package identities never compete with semantic capability results. Hidden
 exact query matches still require `includeHiddenPackages: true`; exact `entity`
 lookup by UUID or `kody.id` ignores the hidden discovery preference.
