@@ -997,6 +997,56 @@ test('ensurePackageAppWildcardDnsRecord fails on a conflicting record of another
 	exit.mockRestore()
 })
 
+test('ensurePackageAppWildcardDnsRecord fails on a conflict even when the required record exists', async () => {
+	consoleError.mockImplementation(() => {})
+	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						id: 'dns-required',
+						type: 'AAAA',
+						name: '*.kodyapps.dev',
+						content: '100::',
+						proxied: true,
+					},
+					{
+						id: 'dns-stray',
+						type: 'A',
+						name: '*.kodyapps.dev',
+						content: '192.0.2.1',
+						proxied: false,
+					},
+				],
+			}),
+		)
+
+	await expect(
+		ensurePackageAppWildcardDnsRecord({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			packageAppHostname: 'kodyapps.dev',
+			dryRun: false,
+			fetcher,
+		}),
+	).rejects.toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('found A 192.0.2.1'),
+	)
+	exit.mockRestore()
+})
+
 test('ensurePackageAppWildcardDnsRecord reuses an existing proxied wildcard record', async () => {
 	consoleError.mockImplementation(() => {})
 	const fetcher = vi

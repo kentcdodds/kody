@@ -448,7 +448,13 @@ async function cloudflareRootApiRequestOnce<T>(
 async function cloudflareRootApiRequest<T>(
 	input: CloudflareRootApiRequestInput,
 ) {
-	const maxAttempts = input.maxAttempts ?? cloudflareApiRetryMaxAttempts
+	// Non-idempotent methods are never retried automatically: a create whose
+	// response was lost may have succeeded, and repeating it fails on the
+	// duplicate instead of converging. Callers are ensure-style, so the next
+	// deploy run reconciles an ambiguous outcome.
+	const method = input.method ?? 'GET'
+	const maxAttempts =
+		method === 'GET' ? (input.maxAttempts ?? cloudflareApiRetryMaxAttempts) : 1
 	const wait = input.sleep ?? sleep
 	let lastError: unknown
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -460,7 +466,7 @@ async function cloudflareRootApiRequest<T>(
 				throw error
 			}
 			console.error(
-				`Retrying Cloudflare API ${input.method ?? 'GET'} ${input.pathname} (attempt ${attempt + 1}/${maxAttempts})`,
+				`Retrying Cloudflare API ${method} ${input.pathname} (attempt ${attempt + 1}/${maxAttempts})`,
 			)
 			await wait(cloudflareApiRetryBaseDelayMs * 2 ** (attempt - 1))
 		}
@@ -577,6 +583,20 @@ export async function ensurePackageAppWildcardDnsRecord(input: {
 		sleep: input.sleep,
 		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(wildcardRecordName)}`,
 	})
+	// Conflicts are checked before accepting the required record: a stray A,
+	// CNAME, or extra AAAA at the wildcard name must fail the deploy even when
+	// the proxied AAAA also exists, otherwise resolution stays ambiguous.
+	const conflicting = (listed.result ?? []).find(
+		(record) =>
+			record.name === wildcardRecordName &&
+			!isPackageAppWildcardDnsRecord({ record, wildcardRecordName }),
+	)
+	if (conflicting) {
+		return fail(
+			`Package-app wildcard DNS record "${wildcardRecordName}" exists in zone "${zoneName}" but is not a proxied AAAA ${packageAppWildcardDnsContent} record (found ${conflicting.type} ${conflicting.content}, proxied=${String(conflicting.proxied)}). Fix it in the Cloudflare dashboard, then re-run deploy.`,
+		)
+	}
+
 	const existing = (listed.result ?? []).find((record) =>
 		isPackageAppWildcardDnsRecord({ record, wildcardRecordName }),
 	)
@@ -585,15 +605,6 @@ export async function ensurePackageAppWildcardDnsRecord(input: {
 			`Package-app wildcard DNS exists: ${existing.name} (${existing.id})`,
 		)
 		return
-	}
-
-	const conflicting = (listed.result ?? []).find(
-		(record) => record.name === wildcardRecordName,
-	)
-	if (conflicting) {
-		return fail(
-			`Package-app wildcard DNS record "${wildcardRecordName}" exists in zone "${zoneName}" but is not a proxied AAAA ${packageAppWildcardDnsContent} record (found ${conflicting.type} ${conflicting.content}, proxied=${String(conflicting.proxied)}). Fix it in the Cloudflare dashboard, then re-run deploy.`,
-		)
 	}
 
 	const created = await cloudflareRootApiRequest<CloudflareDnsRecord>({

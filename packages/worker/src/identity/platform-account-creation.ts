@@ -3,7 +3,7 @@ import { userExistsByUsername } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import {
-	getUsernameFormatValidationError,
+	getDnsSafeUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -54,7 +54,10 @@ export async function createPlatformAccount(input: {
 	}
 
 	const username = normalizeUsername(input.username)
-	const formatError = getUsernameFormatValidationError(username)
+	// Platform accounts are new accounts too: their usernames must be strict
+	// DNS labels so they can own a package-app subdomain (they only bypass the
+	// reserved-list restriction, not the format rules).
+	const formatError = getDnsSafeUsernameValidationError(username)
 	if (formatError) {
 		throw new PlatformAccountCreateError('invalid_username', formatError)
 	}
