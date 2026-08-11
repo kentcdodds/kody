@@ -21,10 +21,6 @@
 					"new_sqlite_classes": ["SchedulerDO"]
 				},
 				{
-					"tag": "v6",
-					"new_sqlite_classes": ["JobManager", "JobRunner"]
-				},
-				{
 					"tag": "v8",
 					"new_sqlite_classes": ["StorageRunner"]
 				},

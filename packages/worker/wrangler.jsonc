@@ -72,10 +72,12 @@
 			"new_sqlite_classes": ["SchedulerDO"],
 			"tag": "v4",
 		},
-		{
-			"new_sqlite_classes": ["JobManager", "JobRunner"],
-			"tag": "v6",
-		},
+		// v6 (JobManager+JobRunner) and v9 (delete JobRunner) are omitted:
+		// JobManager moved to the jobs worker (ADR 0016) and is no longer
+		// exported here, so a fresh script replaying this chain (local dev,
+		// a new deployment) must not create it. The deployed production
+		// script is already past these tags, so wrangler's migration diff
+		// for it is unaffected.
 		{
 			"deleted_classes": ["SchedulerDO"],
 			"tag": "v7",
@@ -83,10 +85,6 @@
 		{
 			"new_sqlite_classes": ["StorageRunner"],
 			"tag": "v8",
-		},
-		{
-			"deleted_classes": ["JobRunner"],
-			"tag": "v9",
 		},
 		{
 			"new_sqlite_classes": ["AgentTurnRunner"],

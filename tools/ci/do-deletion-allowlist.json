@@ -8,11 +8,6 @@
 		},
 		{
 			"config": "packages/worker/wrangler.jsonc",
-			"tag": "v9",
-			"classes": ["JobRunner"]
-		},
-		{
-			"config": "packages/worker/wrangler.jsonc",
 			"tag": "v16",
 			"classes": ["HomeMCP"]
 		},
