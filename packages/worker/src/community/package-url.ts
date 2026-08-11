@@ -187,6 +187,27 @@ export async function retireUsername(input: {
 }
 
 /**
+ * Claim an id for a package: any retirement row pointing away from it was left
+ * by a package that no longer owns the name, and letting it stand would forward
+ * the new package's own URL to an unrelated one.
+ */
+export async function releasePackageKodyIdRedirect(input: {
+	db: D1Database
+	userId: string
+	kodyId: string
+}) {
+	const kodyId = normalizeKodyId(input.kodyId)
+	if (!kodyId) return
+	await input.db
+		.prepare(
+			`DELETE FROM package_kody_id_redirects
+			WHERE user_id = ? AND old_kody_id = ?`,
+		)
+		.bind(input.userId, kodyId)
+		.run()
+}
+
+/**
  * Retire the `kody.id` a package just moved away from, so links shared under
  * the old id follow the package to its new one.
  */

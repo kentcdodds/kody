@@ -4,6 +4,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 import {
 	deletePackageKodyIdRedirects,
+	releasePackageKodyIdRedirect,
 	resolveCommunityPackageUrl,
 	retirePackageKodyId,
 	retireUsername,
@@ -364,6 +365,33 @@ test('deleting a package releases the ids it retired', async () => {
 		.bind(pkg.packageId)
 		.first<{ count: number }>()
 	expect(remaining?.count).toBe(0)
+})
+
+test('claiming a retired id makes the new package authoritative', async () => {
+	const pkg = await createPublishedPackage()
+	// An earlier package of the same owner moved off `devin-old`, then a new
+	// package takes the freed id: the old forwarding row has to go, or the new
+	// package's own URL would send visitors to its predecessor.
+	await retirePackageKodyId({
+		db: env.APP_DB,
+		userId: pkg.userId,
+		packageId: `pkg-other-${uniqueSuffix()}`,
+		oldKodyId: 'devin-old',
+		newKodyId: 'devin-new',
+	})
+	await releasePackageKodyIdRedirect({
+		db: env.APP_DB,
+		userId: pkg.userId,
+		kodyId: 'devin-old',
+	})
+
+	await expect(
+		resolveCommunityPackageUrl({
+			db: env.APP_DB,
+			username: pkg.username,
+			kodyId: 'devin-old',
+		}),
+	).resolves.toBeNull()
 })
 
 test('one owner cannot have two active listings on one kody id', async () => {

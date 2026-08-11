@@ -4,6 +4,7 @@ import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
 import {
 	deletePackageKodyIdRedirects,
+	releasePackageKodyIdRedirect,
 	retirePackageKodyId,
 } from '#worker/community/package-url.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
@@ -314,6 +315,13 @@ export async function refreshSavedPackageProjection(input: {
 					resource: 'saved_packages',
 				})
 				await insertSavedPackage(input.env.APP_DB, row)
+				// A brand new package claims its id outright, so an earlier package's
+				// retirement row must not keep forwarding it elsewhere.
+				await releasePackageKodyIdRedirect({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					kodyId: row.kody_id,
+				})
 			}
 			const refreshedAt = new Date().toISOString()
 			const savedPackage = {
