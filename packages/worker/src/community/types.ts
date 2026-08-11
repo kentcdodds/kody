@@ -125,6 +125,8 @@ export type PublicProfilePackage = {
 	 * the package's. Public links have to use this one to stay resolvable.
 	 */
 	communityListingKodyId: string | null
+	/** published_at of the active community listing, when the package has one. */
+	communityPublishedAt: string | null
 }
 
 export type CommunityStargazer = {

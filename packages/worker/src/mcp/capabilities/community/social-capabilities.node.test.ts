@@ -121,6 +121,7 @@ function makePackage(
 		tags: ['demo'],
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		communityListingId: 'listing-1',
+		communityPublishedAt: '2026-07-01T00:00:00.000Z',
 		...overrides,
 	}
 }

@@ -64,6 +64,7 @@ export type PublicProfilePackageItem = {
 	communityListingId: string | null
 	/** The listing's `kody.id`, which can lag the package's until republish. */
 	communityListingKodyId: string | null
+	communityPublishedAt: string | null
 }
 
 export type CommunityActivityEventType =

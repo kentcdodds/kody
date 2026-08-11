@@ -199,6 +199,13 @@ user/role account metadata, sanitized audit metadata, feedback that a user
 explicitly approved for admin review, operator-owned system email, and the
 documented metadata projection for activity on public community listings.
 
+`admin_system_email_send` is the operator correspondence channel: it sends from
+a reserved system sender (`kody@<apex>` by default) to arbitrary recipients, so
+the platform can answer a feedback report or a system-inbox message. It never
+touches a user mailbox, sender identity, or plan entitlement, and it carries its
+own per-sender daily cap. User mail keeps its own boundary: `email_send` remains
+notify-self and `email_reply` remains reply-only.
+
 Platform feedback list/get is the only admin capability surface that reviews
 user-authored private text, and only after explicit approval. Community activity
 returns public-listing metadata, acting username, timestamps, and rating scores;
@@ -239,6 +246,7 @@ rule.
 - `admin_feature_flag_override`
 - `admin_system_email_list`
 - `admin_system_email_get`
+- `admin_system_email_send`
 - `admin_system_email_sender_rule_list`
 - `admin_system_email_sender_rule_set`
 - `admin_system_email_sender_rule_delete`
