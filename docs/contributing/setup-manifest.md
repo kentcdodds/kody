@@ -108,19 +108,20 @@ This project uses the following resources:
     `https://{username}.kodyapps.dev/packages/{kodyId}/...`; the apex stays
     attached for legacy redirects (`/@user/packages/...` → per-user subdomain,
     `/` → app origin).
-  - **Wildcard DNS (one-time per zone).** Zone routes do not create DNS
-    records. Production CI (`tools/ci/production-resources.ts ensure`) idempotently
-    ensures a proxied wildcard record in the package-app zone:
-    `*.kodyapps.dev` → AAAA `100::` (orange-cloud proxied). The deploy token
-    needs **DNS:Edit** on that zone (in addition to Workers deploy permissions).
-    Forks must create the zone and either run `ensure` or add the record
-    manually before the first per-user-subdomain deploy.
+  - **Wildcard DNS (one-time per zone).** Zone routes do not create DNS records.
+    Production CI (`tools/ci/production-resources.ts ensure`) idempotently
+    ensures a proxied wildcard record in the package-app zone: `*.kodyapps.dev`
+    → AAAA `100::` (orange-cloud proxied). The deploy token needs **DNS:Edit**
+    on that zone (in addition to Workers deploy permissions). Forks must create
+    the zone and either run `ensure` or add the record manually before the first
+    per-user-subdomain deploy.
   - **Wildcard zone route.** `writeGeneratedWranglerConfig`
-    (`tools/ci/resource-utils.ts`) also publishes `{ pattern:
-    "*.kodyapps.dev/*", zone_name: "kodyapps.dev" }` alongside the apex
-    `custom_domain` route. Cloudflare custom domains cannot be wildcards, so
-    per-user hosts use a zone route instead. Cloudflare Universal SSL covers one
-    wildcard label (`*.kodyapps.dev`), which is enough for `{username}.kodyapps.dev`.
+    (`tools/ci/resource-utils.ts`) also publishes
+    `{ pattern: "*.kodyapps.dev/*", zone_name: "kodyapps.dev" }` alongside the
+    apex `custom_domain` route. Cloudflare custom domains cannot be wildcards,
+    so per-user hosts use a zone route instead. Cloudflare Universal SSL covers
+    one wildcard label (`*.kodyapps.dev`), which is enough for
+    `{username}.kodyapps.dev`.
   - The attach happens on deploy, but the routes are **generated, not
     committed**: `writeGeneratedWranglerConfig` derives one `custom_domain`
     route per base-URL var (`APP_BASE_URL`, `APP_LEGACY_HOSTS`, and

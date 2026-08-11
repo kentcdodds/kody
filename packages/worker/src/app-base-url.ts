@@ -1,7 +1,9 @@
 import { getDomain } from 'tldts'
-import { buildPackageAppSubdomainOrigin } from '@kody-internal/shared/public-urls.ts'
+import {
+	buildPackageAppSubdomainOrigin,
+	isDnsSafeUsername,
+} from '@kody-internal/shared/public-urls.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
-import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 
 const DEFAULT_APP_BASE_URL = 'https://heykody.app'
 
@@ -104,7 +106,9 @@ export function parsePackageAppRequestHost(input: {
 	if (!hostname.endsWith(`.${base.hostname}`)) return null
 
 	const label = hostname.slice(0, -(base.hostname.length + 1))
-	if (label.includes('.') || getUsernameFormatValidationError(label)) {
+	// Strict DNS-label check: legacy underscore usernames cannot own a
+	// subdomain, and nested labels never match.
+	if (label.includes('.') || !isDnsSafeUsername(label)) {
 		return { kind: 'unrecognized-subdomain' }
 	}
 	const expectedOrigin = buildPackageAppSubdomainOrigin({

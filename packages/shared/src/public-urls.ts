@@ -38,6 +38,18 @@ export function buildPackageAppUrl(input: {
 export type PackageAppMount = 'user-subdomain' | 'username-path'
 
 /**
+ * Usernames that can own a `{username}.` package-app subdomain: a valid DNS
+ * label (lowercase letters, digits, hyphens; 3–32 chars; alphanumeric edges).
+ * Legacy usernames may still contain underscores; those cannot be a hostname
+ * label, so subdomain URL builders fall back to the path-based mount for them.
+ */
+export const dnsSafeUsernamePattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
+
+export function isDnsSafeUsername(username: string) {
+	return dnsSafeUsernamePattern.test(username.trim())
+}
+
+/**
  * Path for a hosted package app on its per-user package-app subdomain. The
  * username lives in the hostname there, so the path carries only the package
  * mount: `/packages/{kodyId}/{rest}`.
@@ -82,8 +94,9 @@ export function buildPackageAppSubdomainUrl(input: {
 
 /**
  * Canonical browser URL for a hosted package app: the per-user subdomain of
- * the package-app origin when one is configured, or the path-based mount on
- * the app origin when a non-production deployment serves package apps inline.
+ * the package-app origin when one is configured and the username can be a
+ * hostname label, or the path-based mount on the app origin otherwise (inline
+ * non-production serving, and legacy usernames that cannot own a subdomain).
  */
 export function resolveHostedPackageAppUrl(input: {
 	packageAppBaseUrl: string | null
@@ -92,7 +105,7 @@ export function resolveHostedPackageAppUrl(input: {
 	kodyId: string
 	restPath?: string | null
 }) {
-	if (input.packageAppBaseUrl) {
+	if (input.packageAppBaseUrl && isDnsSafeUsername(input.username)) {
 		return buildPackageAppSubdomainUrl({
 			packageAppOrigin: input.packageAppBaseUrl,
 			username: input.username,

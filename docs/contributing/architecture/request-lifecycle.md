@@ -31,10 +31,10 @@ Requests are handled in this order:
    - On the **package-app apex**, no package code runs: `/` redirects to the app
      origin; legacy `/@{username}/packages/*` redirects to the owning user's
      subdomain; everything else is `404`.
-   - On a **per-user package-app subdomain**
-     (`{username}.<package-app host>`), only `/packages/{kodyId}/*` for that
-     hostname's username is served (plus the handoff-token exchange on those same
-     paths). `/` redirects to the app origin; every other path is `404`.
+   - On a **per-user package-app subdomain** (`{username}.<package-app host>`),
+     only `/packages/{kodyId}/*` for that hostname's username is served (plus
+     the handoff-token exchange on those same paths). `/` redirects to the app
+     origin; every other path is `404`.
    - On the **app origin**, `/@{username}/packages/*` never executes package
      code: safe methods redirect to the owner's package-app subdomain with a
      handoff token, other methods get a `307` to that subdomain.

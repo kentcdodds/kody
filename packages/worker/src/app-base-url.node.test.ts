@@ -136,7 +136,10 @@ test('the package-app origin is configurable and never resolves as the app origi
 		getAppBaseUrl({ env, requestUrl: 'https://kodyapps.dev/@me/packages/x' }),
 	).toBe('https://heykody.dev')
 	expect(
-		getAppBaseUrl({ env, requestUrl: 'https://user-me.kodyapps.dev/packages/x' }),
+		getAppBaseUrl({
+			env,
+			requestUrl: 'https://user-me.kodyapps.dev/packages/x',
+		}),
 	).toBe('https://heykody.dev')
 	expect(
 		getAppBaseUrl({ env, requestUrl: 'https://heykody.dev/@me/packages/x' }),

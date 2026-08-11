@@ -120,17 +120,17 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
   `custom_domain` routes for the apex and a wildcard for per-user subdomains so
   Cloudflare provisions DNS and edge certificates (see
   [setup-manifest.md](./setup-manifest.md)). Each owner's apps are addressed at
-  `https://{username}.<apex-host>/packages/{kodyId}/...`; the apex itself
-  serves only redirects (legacy `/@user/packages/...` paths to the owning
-  subdomain, `/` to the app origin). It **must be a separate registrable domain**
-  from `APP_BASE_URL`: that is what makes author-supplied package code
-  cross-site, so the `SameSite=Lax` `kody_session` cookie never reaches it.
-  Production origin validation also requires `APP_BASE_URL` so this relationship
-  can be checked at runtime. Production returns `500` for package-app requests
-  when this value is missing, invalid, equal to `APP_BASE_URL`, or on the same
-  registrable domain; it never falls back to inline serving. Preview, tests, and
-  E2E may leave it unset and keep serving package apps inline on the app origin
-  at `/@{username}/packages/*`.
+  `https://{username}.<apex-host>/packages/{kodyId}/...`; the apex itself serves
+  only redirects (legacy `/@user/packages/...` paths to the owning subdomain,
+  `/` to the app origin). It **must be a separate registrable domain** from
+  `APP_BASE_URL`: that is what makes author-supplied package code cross-site, so
+  the `SameSite=Lax` `kody_session` cookie never reaches it. Production origin
+  validation also requires `APP_BASE_URL` so this relationship can be checked at
+  runtime. Production returns `500` for package-app requests when this value is
+  missing, invalid, equal to `APP_BASE_URL`, or on the same registrable domain;
+  it never falls back to inline serving. Preview, tests, and E2E may leave it
+  unset and keep serving package apps inline on the app origin at
+  `/@{username}/packages/*`.
 
   `npm run dev` runs the **production** Wrangler environment, so the committed
   production value reaches local dev too; `getPackageAppBaseUrl` ignores an

@@ -31,22 +31,23 @@ block `{username}.kodyapps.dev` for affected accounts.
 Serve production hosted package apps on **per-user subdomains** of the
 package-app apex:
 
-- Public URL shape:
-  `https://{username}.kodyapps.dev/packages/{kodyId}/{path}`
+- Public URL shape: `https://{username}.kodyapps.dev/packages/{kodyId}/{path}`
 - The apex (`kodyapps.dev`) serves no package code: `/` redirects to the app
   origin; legacy `/@user/packages/...` paths redirect to the owning subdomain;
   everything else `404`s.
 - The app-origin path `/@{username}/packages/...` remains the authenticated
   entry point and redirects into the handoff on the owner's subdomain.
-- Package-app session cookies on secure requests use the `__Host-kody_pkg_session`
-  name so browsers reject any variant with a `Domain` attribute (cookie-tossing
-  defense before Public Suffix List entry). Insecure local HTTP keeps plain
-  `kody_pkg_session`.
+- Package-app session cookies on secure requests use the
+  `__Host-kody_pkg_session` name so browsers reject any variant with a `Domain`
+  attribute (cookie-tossing defense before Public Suffix List entry). Insecure
+  local HTTP keeps plain `kody_pkg_session`.
 - Serving requires session account username == subdomain label == path owner
   (fixation defense).
-- Usernames are strict DNS labels (lowercase alphanumeric + hyphens; underscores
-  banned). Accounts with legacy underscore usernames must rename before hosted
-  apps work.
+- New and changed usernames are strict DNS labels (lowercase alphanumeric +
+  hyphens; underscores banned). Recognition of stored usernames stays lenient
+  (two-tier validation) so legacy underscore accounts keep display names, public
+  lookup, and inbound email routing; they must rename before hosted apps work
+  (the app origin answers their package-app entry with a `409` rename prompt).
 - `packageContext.appBasePath` on a subdomain is `/packages/{kodyId}` (no
   `/@{username}` prefix); inline non-production serving keeps the path-based
   mount. Well-behaved packages that use `hostedUrl` / `appBasePath` stay
@@ -69,5 +70,5 @@ package-app apex:
   hosting works.
 - `parsePackageSearchIdentity`, status probes, and author docs must recognize
   both subdomain URLs and legacy path shapes during transition.
-- Revisit per-package subdomains only if same-owner isolation becomes a
-  reported abuse vector or a product requirement.
+- Revisit per-package subdomains only if same-owner isolation becomes a reported
+  abuse vector or a product requirement.

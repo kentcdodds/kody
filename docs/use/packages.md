@@ -369,11 +369,11 @@ When `package.json#kody.app` is present, the package is hosted under the package
 app route.
 
 Production-hosted package apps run on per-user subdomains of Kody's separate
-`kodyapps.dev` domain (`https://{username}.kodyapps.dev/packages/<kody-id>/...`),
-not on the signed-in app origin. Opening an app from Kody performs a short-lived
-session handoff to that subdomain. Package author JavaScript cannot use the
-first-party `kody_session` cookie or call authenticated Kody pages as the
-signed-in user.
+`kodyapps.dev` domain
+(`https://{username}.kodyapps.dev/packages/<kody-id>/...`), not on the signed-in
+app origin. Opening an app from Kody performs a short-lived session handoff to
+that subdomain. Package author JavaScript cannot use the first-party
+`kody_session` cookie or call authenticated Kody pages as the signed-in user.
 
 Package app URLs follow the mount contract: on a subdomain the public path is
 `/packages/<kody-id>/<path>` (the username lives in the hostname). Kody strips
@@ -381,9 +381,10 @@ that mount before forwarding, so root-relative links such as `/audio/123` escape
 the app. Build in-app links, redirects, shared links, email links, and OAuth
 callbacks against `packageContext.hostedUrl` and `packageContext.appBasePath`
 (derived from the serving username and `kody.id` — `/packages/<kody-id>` on a
-subdomain, `/@username/packages/<kody-id>` when served inline in non-production).
-See [Package app routing](../guides/package-authoring.md#package-app-routing)
-for the authoring example. Other saved-package runtime surfaces may omit these
+subdomain, `/@username/packages/<kody-id>` when served inline in
+non-production). See
+[Package app routing](../guides/package-authoring.md#package-app-routing) for
+the authoring example. Other saved-package runtime surfaces may omit these
 app-specific fields.
 
 Use the package app model when the package needs:

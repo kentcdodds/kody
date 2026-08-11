@@ -61,10 +61,10 @@ identity when it resolves for the signed-in user. Kody also recognizes
 current-origin `/account/packages/:packageId` URLs, owner-matching
 `/@username/packages/:kodyId` URLs, and per-user package-app subdomain URLs
 (`https://{username}.<package-app host>/packages/:kodyId`) — so a URL copied
-from an open app resolves too.
-Exact package identities never compete with semantic capability results. Hidden
-exact query matches still require `includeHiddenPackages: true`; exact `entity`
-lookup by UUID or `kody.id` ignores the hidden discovery preference.
+from an open app resolves too. Exact package identities never compete with
+semantic capability results. Hidden exact query matches still require
+`includeHiddenPackages: true`; exact `entity` lookup by UUID or `kody.id`
+ignores the hidden discovery preference.
 
 When a tool call also includes **`memoryContext`**, Kody may include relevant
 long-term memory metadata in structured content, but broad query markdown stays

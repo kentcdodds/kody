@@ -445,7 +445,9 @@ async function cloudflareRootApiRequestOnce<T>(
 	}
 }
 
-async function cloudflareRootApiRequest<T>(input: CloudflareRootApiRequestInput) {
+async function cloudflareRootApiRequest<T>(
+	input: CloudflareRootApiRequestInput,
+) {
 	const maxAttempts = input.maxAttempts ?? cloudflareApiRetryMaxAttempts
 	const wait = input.sleep ?? sleep
 	let lastError: unknown
@@ -1341,12 +1343,15 @@ function addPackageAppCustomDomainRoute(input: {
 		}),
 	)
 
-	const wildcardRoutePattern = packageAppWildcardRoutePattern(packageAppHostname)
+	const wildcardRoutePattern =
+		packageAppWildcardRoutePattern(packageAppHostname)
 	const newRoutes: Array<Record<string, unknown>> = [
-		...[appHostname, ...legacyHostnames, packageAppHostname]
-			.filter((hostname) => !existingRoutePatterns.has(hostname))
-			.map((pattern) => ({ pattern, custom_domain: true })),
+		appHostname,
+		...legacyHostnames,
+		packageAppHostname,
 	]
+		.filter((hostname) => !existingRoutePatterns.has(hostname))
+		.map((pattern) => ({ pattern, custom_domain: true }))
 	if (!existingRoutePatterns.has(wildcardRoutePattern)) {
 		newRoutes.push({
 			pattern: wildcardRoutePattern,

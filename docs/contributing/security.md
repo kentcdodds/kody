@@ -50,8 +50,8 @@ package-app surfaces:
    links), and links are restricted to absolute `http:`/`https:`/`mailto:` URLs
    with `/@...` user-scope paths and `/packages/...` package-app mount paths
    refused on any host so a README can never point viewers at hosted package
-   endpoints. Never render third-party markdown via an HTML
-   string, `innerHTML`, or a markdown-to-HTML renderer.
+   endpoints. Never render third-party markdown via an HTML string, `innerHTML`,
+   or a markdown-to-HTML renderer.
 9. **Package code never receives first-party credentials, and never executes on
    the app origin in production.** Every request handed to package code goes
    through `createPackageCodeRequest`
@@ -135,10 +135,9 @@ covered too.
 
 **2. A separate registrable domain (production).** `PACKAGE_APP_BASE_URL`
 (production Worker var, `https://kodyapps.dev` — the apex; the deploy attaches
-that host to the Worker as a Cloudflare custom domain plus a wildcard zone
-route for per-user subdomains — see
-[`setup-manifest.md`](./setup-manifest.md)) makes package
-apps cross-site from the app origin, so the `SameSite=Lax`, `HttpOnly`
+that host to the Worker as a Cloudflare custom domain plus a wildcard zone route
+for per-user subdomains — see [`setup-manifest.md`](./setup-manifest.md)) makes
+package apps cross-site from the app origin, so the `SameSite=Lax`, `HttpOnly`
 `kody_session` cookie never attaches to them and cross-origin `fetch` from
 package pages has no CORS grant (`withCors` only reflects same-origin, plus
 `/mcp`). It must stay a **separate registrable domain**: a subdomain of the app
@@ -152,11 +151,17 @@ from `{username}.<package-app host>` (`buildPackageAppSubdomainOrigin` in
 `packages/shared/src/public-urls.ts`), so browser state (cookies, storage,
 `document` access) never crosses accounts. The username label in the hostname
 must be a valid single DNS label: lowercase letters, digits, and hyphens only,
-3–32 characters, alphanumeric edges (`packages/worker/src/identity/username.ts`).
-Underscores are not allowed; accounts whose usernames still contain underscores
-must rename before hosted apps work on a subdomain. Wildcard DNS still routes
-invalid or nested labels to the Worker, so hostnames that are not exactly one
-valid username label fail closed with `404`.
+3–32 characters, alphanumeric edges (`dnsSafeUsernamePattern` in
+`packages/shared/src/public-urls.ts`). Underscores are not allowed for new or
+changed usernames; accounts whose usernames still contain legacy underscores
+must rename before hosted apps work on a subdomain — the app-origin entry
+answers them with a `409` rename prompt instead of redirecting to a hostname
+nothing can serve, and hosted-URL emission falls back to the path-based shape
+for them. Recognition of _stored_ usernames elsewhere
+(`getUsernameFormatValidationError`) deliberately stays lenient so legacy
+accounts keep display names, public lookup, and inbound email routing. Wildcard
+DNS still routes invalid or nested labels to the Worker, so hostnames that are
+not exactly one valid username label fail closed with `404`.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
@@ -168,11 +173,12 @@ in the Worker `fetch` handler:
 - **Package-app apex** (`kodyapps.dev`): serves no package code. `/` redirects
   to the app origin. Legacy path-based URLs (`/@{username}/packages/*`) redirect
   (`302`/`307`) to the owning user's subdomain. Everything else — including
-  `/account/*`, `/login`, `/mcp`, and the `/@{username}/api/package-invocations/*`,
-  `/connectors/*`, `/webhooks/*` machine APIs — is `404`. Those APIs stay on the
-  app origin on purpose: they are authenticated by their own bearer tokens or
-  URL secrets, they are never called by package browser code, and hosting them
-  on the package-app domain would only widen its surface.
+  `/account/*`, `/login`, `/mcp`, and the
+  `/@{username}/api/package-invocations/*`, `/connectors/*`, `/webhooks/*`
+  machine APIs — is `404`. Those APIs stay on the app origin on purpose: they
+  are authenticated by their own bearer tokens or URL secrets, they are never
+  called by package browser code, and hosting them on the package-app domain
+  would only widen its surface.
 - **Per-user package-app subdomain** (`{username}.kodyapps.dev`): serves only
   `/packages/{kodyId}/*` for that hostname's username label. `/` redirects to
   the app origin; every other path is `404`.
@@ -187,8 +193,9 @@ insecure origins. The `__Host-` prefix requires `Secure`, `Path=/`, and no
 cross-subdomain cookie tossing even before the package-app domain is on the
 Public Suffix List. Serving additionally requires the resolved session account's
 username, the subdomain label, and the path's owner username to all match
-(`servePackageAppRequest` in `packages/worker/src/package-runtime/package-app-serve.ts`),
-so a handoff minted for one account cannot authorize another user's subdomain.
+(`servePackageAppRequest` in
+`packages/worker/src/package-runtime/package-app-serve.ts`), so a handoff minted
+for one account cannot authorize another user's subdomain.
 
 - **No redirect cycle:** the app origin only ever redirects _to_ a package-app
   subdomain, the apex only redirects to a subdomain or the app origin, and a
@@ -227,11 +234,11 @@ cannot link into either origin's package surface.
 
 **Out of scope (deliberate).** User-to-user isolation is complete: each owner's
 apps run on a distinct origin. Two packages owned by the **same** user still
-share that user's subdomain origin, so one of that owner's package apps can reach
-another's `__Host-kody_pkg_session`-authorized endpoints from the browser. That
-is a smaller blast radius than first-party access (all of it stays inside one
-owner's own data, since serving is `userId`-scoped and the session is bound to
-one account), but it is not zero.
+share that user's subdomain origin, so one of that owner's package apps can
+reach another's `__Host-kody_pkg_session`-authorized endpoints from the browser.
+That is a smaller blast radius than first-party access (all of it stays inside
+one owner's own data, since serving is `userId`-scoped and the session is bound
+to one account), but it is not zero.
 
 **Operational follow-up (not code).** Submit `kodyapps.dev` to the
 [Public Suffix List](https://publicsuffix.org/submit/) for defense-in-depth

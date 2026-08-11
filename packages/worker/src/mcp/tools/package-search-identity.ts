@@ -1,4 +1,7 @@
-import { buildPackageAppSubdomainOrigin } from '@kody-internal/shared/public-urls.ts'
+import {
+	buildPackageAppSubdomainOrigin,
+	isDnsSafeUsername,
+} from '@kody-internal/shared/public-urls.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { type SearchMatch } from '#mcp/tools/search-format.ts'
 import {
@@ -97,7 +100,7 @@ function parsePackageUrl(input: {
 			const kodyId = safelyDecodePathSegment(parts[1] ?? '')
 			if (
 				label.includes('.') ||
-				getUsernameFormatValidationError(label) ||
+				!isDnsSafeUsername(label) ||
 				url.origin !==
 					buildPackageAppSubdomainOrigin({
 						packageAppOrigin,

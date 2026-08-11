@@ -212,15 +212,13 @@ test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths',
 			'https://mallory.kodyapps.dev/packages/tracker/app',
 		),
 	).toBe(null)
-	expect(getSafeMarkdownLinkHref('https://other.example/packages/x')).toBe(
+	expect(getSafeMarkdownLinkHref('https://other.example/packages/x')).toBe(null)
+	expect(getSafeMarkdownLinkHref('https://other.example//packages/x')).toBe(
 		null,
 	)
-	expect(
-		getSafeMarkdownLinkHref('https://other.example//packages/x'),
-	).toBe(null)
-	expect(
-		getSafeMarkdownLinkHref('https://other.example/%70ackages/x'),
-	).toBe(null)
+	expect(getSafeMarkdownLinkHref('https://other.example/%70ackages/x')).toBe(
+		null,
+	)
 	// Paths that merely contain (not start with) a `packages` segment stay
 	// allowed — only the mount shape is refused.
 	expect(

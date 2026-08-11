@@ -381,13 +381,13 @@ the app origin mints `<base64url payload>.<HMAC-SHA256>`:
   the binding is missing; signature, expiry, and the path binding always fail
   closed.
 
-It travels in the `__kody_handoff` query parameter of a cross-origin redirect
-to the owner's package-app subdomain, which is why it is deliberately this weak.
-A token in a URL is exposed to browser history, referrers, and anything that
-logs URLs; the subdomain redirects straight to the same URL without it, which
-reduces that exposure but cannot eliminate it. The 60-second expiry and the
-single-use burn are what bound the damage when a token does leak. A request that
-still carries the parameter is rewritten without it before package code sees it.
+It travels in the `__kody_handoff` query parameter of a cross-origin redirect to
+the owner's package-app subdomain, which is why it is deliberately this weak. A
+token in a URL is exposed to browser history, referrers, and anything that logs
+URLs; the subdomain redirects straight to the same URL without it, which reduces
+that exposure but cannot eliminate it. The 60-second expiry and the single-use
+burn are what bound the damage when a token does leak. A request that still
+carries the parameter is rewritten without it before package code sees it.
 
 **Package-app session cookie**
 (`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token on
