@@ -120,13 +120,13 @@ export function createLazyRoute<TModule>(
 			const { render } = handle.props
 			const module = area.getCached()
 			if (module) {
-				spinDelay.setLoading(false)
+				queueMicrotask(() => spinDelay.setLoading(false))
 				return render(module)
 			}
 
 			if (!loadStarted) {
 				loadStarted = true
-				spinDelay.setLoading(true)
+				queueMicrotask(() => spinDelay.setLoading(true))
 				handle.queueTask(async (signal) => {
 					try {
 						await area.load()
