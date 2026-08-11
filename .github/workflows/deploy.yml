@@ -109,7 +109,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to production
-    timeout-minutes: 8
+    timeout-minutes: 12
     needs: sha-guard
     if: needs.sha-guard.outputs.should_deploy == 'true'
     environment:
@@ -254,7 +254,7 @@ jobs:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
         run: |
           set -euo pipefail
-          npm run deploy -- --config "$WRANGLER_CONFIG" --outdir .wrangler/sentry-bundle-runtime --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+          npm run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
 
           RUNTIME_URL="$(node -e "const fs = require('node:fs'); const t = fs.readFileSync('deploy-runtime.log','utf8'); const m = t.match(/https:\\/\\/[a-zA-Z0-9._-]+\\.workers\\.dev/g); process.stdout.write(m?.at(-1) ?? '')")"
           if [ -n "$RUNTIME_URL" ]; then

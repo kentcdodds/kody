@@ -52,7 +52,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🔎 Deploy Preview Resources
-    timeout-minutes: 4
+    timeout-minutes: 8
     environment:
       name:
         preview-${{ github.event.pull_request.number || inputs.pr_number ||
@@ -279,7 +279,7 @@ jobs:
           set -euo pipefail
           echo "worker_name=$RUNTIME_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          npm run deploy -- --name "$RUNTIME_WORKER_NAME" --config "$WRANGLER_CONFIG" --outdir .wrangler/sentry-bundle-runtime --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+          npm run deploy -- --name "$RUNTIME_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
 
           RUNTIME_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-runtime.log "$RUNTIME_WORKER_NAME")"
           if [ -n "$RUNTIME_URL" ]; then

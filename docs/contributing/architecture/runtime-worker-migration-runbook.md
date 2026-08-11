@@ -56,6 +56,16 @@ Cloudflare requirements for a `transferred_classes` migration:
 - Existing DO ids, storage, and alarms move with the class. In-flight requests
   against the old namespace during the switch can error; run at a quiet time.
 
+## Workflow cutover caveat
+
+`DynamicCallableWorkflow` moves to `kody-runtime` as a **new** Cloudflare
+Workflow (`kody-runtime-dynamic-callable-workflows`) — Workflows cannot be
+transferred between scripts. Any workflow instances still running on the old
+`kody`-owned workflow at cutover are orphaned once the main worker stops
+exporting a workflow binding for them; deploy at a quiet time and treat
+in-flight dynamic callable runs at the cutover moment as lost (they surface as
+failed runs).
+
 ## Coordinated production deploy order
 
 The merged main-branch deploy workflow (`.github/workflows/deploy.yml`) encodes
@@ -107,7 +117,7 @@ node tools/ci/runtime-worker-config.ts generate \
   --worker-name kody-runtime \
   --main-worker-name kody \
   --out-config packages/runtime-worker/wrangler-production.generated.json
-npm run deploy -- --config packages/runtime-worker/wrangler-production.generated.json --outdir .wrangler/sentry-bundle-runtime
+npm run deploy -- --config packages/runtime-worker/wrangler-production.generated.json
 npm run deploy -- --config packages/worker/wrangler-production.generated.json
 ```
 
