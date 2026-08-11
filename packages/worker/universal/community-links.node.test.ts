@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 
-test('the canonical href comes from the owner, however the caller holds it', () => {
+test('community listing hrefs prefer the canonical pair and fall back to the id URL', () => {
 	expect(
 		getCommunityListingHref({
 			listingId: 'listing-1',
@@ -17,9 +17,7 @@ test('the canonical href comes from the owner, however the caller holds it', () 
 			kodyId: 'devin',
 		}),
 	).toBe('/@kentcdodds/devin')
-})
 
-test('a listing without a resolvable owner or kody id keeps its working id link', () => {
 	// Names are validated as scoped, so these are the defensive paths -- and a
 	// dead `/@unknown/...` link would be worse than the id URL it replaced.
 	expect(

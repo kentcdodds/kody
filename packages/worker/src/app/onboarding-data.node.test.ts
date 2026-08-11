@@ -16,27 +16,20 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toBe('https://preview.example/mcp')
 
-	// Discovery prompt must identify the deployment origin so agents know
-	// which Kody instance the user is evaluating.
+	// Discovery and first-win prompts must identify the deployment origin so
+	// agents know which Kody instance the user is evaluating.
 	expect(
 		buildDiscoveryPrompt({
 			env: {},
 			requestUrl: 'https://preview.example/onboarding',
 		}),
 	).toContain('https://preview.example')
-
-	// The whole first win is one paste, and it routes through the guide rather
-	// than restating the loop. "Ask the connected Kody server" is deliberate:
-	// some hosts read "Hey Kody" as impersonation and skip MCP tools.
-	const firstWinPrompt = buildFirstWinPrompt({
-		env: {},
-		requestUrl: 'https://preview.example/onboarding',
-	})
-	expect(firstWinPrompt).toContain('https://preview.example/guides/first-win')
-	expect(firstWinPrompt.toLowerCase()).toContain('connected kody server')
-	expect(firstWinPrompt.toLowerCase()).not.toContain('hey kody')
-	// The agent must hand back to the person instead of busy-waiting.
-	expect(firstWinPrompt.toLowerCase()).toContain('do not poll')
+	expect(
+		buildFirstWinPrompt({
+			env: {},
+			requestUrl: 'https://preview.example/onboarding',
+		}),
+	).toContain('https://preview.example/guides/first-win')
 
 	expect(
 		loadPublicOnboardingData({

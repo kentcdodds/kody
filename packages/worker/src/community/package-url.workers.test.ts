@@ -102,7 +102,7 @@ async function createPublishedPackage(kodyId = 'devin') {
 	return { ...user, packageId, listingId, kodyId }
 }
 
-test('canonical pair resolves to its listing', async () => {
+test('canonical pairs resolve, miss, delist, and case-correct to the listing', async () => {
 	const pkg = await createPublishedPackage()
 
 	await expect(
@@ -117,10 +117,6 @@ test('canonical pair resolves to its listing', async () => {
 		username: pkg.username,
 		kodyId: pkg.kodyId,
 	})
-})
-
-test('unknown owner, unknown id, and malformed id resolve to nothing', async () => {
-	const pkg = await createPublishedPackage()
 
 	await expect(
 		resolveCommunityPackageUrl({
@@ -143,35 +139,6 @@ test('unknown owner, unknown id, and malformed id resolve to nothing', async () 
 			kodyId: 'Not A Kody Id',
 		}),
 	).resolves.toBeNull()
-})
-
-test('a delisted listing is not reachable by its pair', async () => {
-	const suffix = uniqueSuffix()
-	const user = await insertUser(`owner${suffix}`)
-	await insertPackage({
-		id: `pkg-${suffix}`,
-		userId: user.userId,
-		kodyId: 'devin',
-	})
-	await insertListing({
-		id: `listing-${suffix}`,
-		ownerUserId: user.userId,
-		packageId: `pkg-${suffix}`,
-		kodyId: 'devin',
-		status: 'delisted',
-	})
-
-	await expect(
-		resolveCommunityPackageUrl({
-			db: env.APP_DB,
-			username: user.username,
-			kodyId: 'devin',
-		}),
-	).resolves.toBeNull()
-})
-
-test('a non-canonically spelled pair redirects to the canonical one', async () => {
-	const pkg = await createPublishedPackage()
 
 	await expect(
 		resolveCommunityPackageUrl({
@@ -185,34 +152,31 @@ test('a non-canonically spelled pair redirects to the canonical one', async () =
 		username: pkg.username,
 		kodyId: pkg.kodyId,
 	})
-})
 
-test('links shared under a retired username follow the rename', async () => {
-	const pkg = await createPublishedPackage()
-	const renamed = `renamed${uniqueSuffix()}`
-	await renameUser({ userId: pkg.userId, username: renamed })
-	await retireUsername({
-		db: env.APP_DB,
-		oldUsername: pkg.username,
-		newUsername: renamed,
-		userId: pkg.userId,
+	const suffix = uniqueSuffix()
+	const delistedOwner = await insertUser(`owner${suffix}`)
+	await insertPackage({
+		id: `pkg-${suffix}`,
+		userId: delistedOwner.userId,
+		kodyId: 'devin',
 	})
-
+	await insertListing({
+		id: `listing-${suffix}`,
+		ownerUserId: delistedOwner.userId,
+		packageId: `pkg-${suffix}`,
+		kodyId: 'devin',
+		status: 'delisted',
+	})
 	await expect(
 		resolveCommunityPackageUrl({
 			db: env.APP_DB,
-			username: pkg.username,
-			kodyId: pkg.kodyId,
+			username: delistedOwner.username,
+			kodyId: 'devin',
 		}),
-	).resolves.toEqual({
-		kind: 'redirect',
-		listingId: pkg.listingId,
-		username: renamed,
-		kodyId: pkg.kodyId,
-	})
+	).resolves.toBeNull()
 })
 
-test('a second rename keeps the oldest username resolving', async () => {
+test('retired usernames redirect through rename chains until a reclaim wins', async () => {
 	const pkg = await createPublishedPackage()
 	const middle = `middle${uniqueSuffix()}`
 	const latest = `latest${uniqueSuffix()}`
@@ -246,18 +210,6 @@ test('a second rename keeps the oldest username resolving', async () => {
 			kodyId: pkg.kodyId,
 		})
 	}
-})
-
-test('reclaiming a released username wins over its retirement row', async () => {
-	const pkg = await createPublishedPackage()
-	const renamed = `renamed${uniqueSuffix()}`
-	await renameUser({ userId: pkg.userId, username: renamed })
-	await retireUsername({
-		db: env.APP_DB,
-		oldUsername: pkg.username,
-		newUsername: renamed,
-		userId: pkg.userId,
-	})
 
 	// Someone else takes the released username and publishes under it.
 	const suffix = uniqueSuffix()
@@ -288,7 +240,7 @@ test('reclaiming a released username wins over its retirement row', async () => 
 	})
 })
 
-test('links shared under a retired kody id follow the package', async () => {
+test('retired kody ids follow the package, die when unpublished, and clear on claim or delete', async () => {
 	const pkg = await createPublishedPackage()
 	await runSql(
 		`UPDATE saved_packages SET kody_id = 'devin-two' WHERE id = ?`,
@@ -318,78 +270,69 @@ test('links shared under a retired kody id follow the package', async () => {
 		username: pkg.username,
 		kodyId: 'devin-two',
 	})
-})
 
-test('a retired kody id whose package is no longer published is a dead end', async () => {
-	const pkg = await createPublishedPackage()
+	const deadEnd = await createPublishedPackage('dead-end')
 	await runSql(
-		`UPDATE saved_packages SET kody_id = 'devin-two' WHERE id = ?`,
-		pkg.packageId,
+		`UPDATE saved_packages SET kody_id = 'dead-end-two' WHERE id = ?`,
+		deadEnd.packageId,
 	)
-	await runSql(`DELETE FROM community_listings WHERE id = ?`, pkg.listingId)
+	await runSql(`DELETE FROM community_listings WHERE id = ?`, deadEnd.listingId)
 	await retirePackageKodyId({
 		db: env.APP_DB,
-		userId: pkg.userId,
-		packageId: pkg.packageId,
-		oldKodyId: pkg.kodyId,
-		newKodyId: 'devin-two',
+		userId: deadEnd.userId,
+		packageId: deadEnd.packageId,
+		oldKodyId: deadEnd.kodyId,
+		newKodyId: 'dead-end-two',
 	})
-
 	await expect(
 		resolveCommunityPackageUrl({
 			db: env.APP_DB,
-			username: pkg.username,
-			kodyId: pkg.kodyId,
+			username: deadEnd.username,
+			kodyId: deadEnd.kodyId,
 		}),
 	).resolves.toBeNull()
-})
 
-test('deleting a package releases the ids it retired', async () => {
-	const pkg = await createPublishedPackage()
+	const released = await createPublishedPackage('release-me')
 	await retirePackageKodyId({
 		db: env.APP_DB,
-		userId: pkg.userId,
-		packageId: pkg.packageId,
-		oldKodyId: 'devin-old',
-		newKodyId: pkg.kodyId,
+		userId: released.userId,
+		packageId: released.packageId,
+		oldKodyId: 'release-old',
+		newKodyId: released.kodyId,
 	})
 	await deletePackageKodyIdRedirects({
 		db: env.APP_DB,
-		userId: pkg.userId,
-		packageId: pkg.packageId,
+		userId: released.userId,
+		packageId: released.packageId,
 	})
-
 	const remaining = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count FROM package_kody_id_redirects WHERE package_id = ?`,
 	)
-		.bind(pkg.packageId)
+		.bind(released.packageId)
 		.first<{ count: number }>()
 	expect(remaining?.count).toBe(0)
-})
 
-test('claiming a retired id makes the new package authoritative', async () => {
-	const pkg = await createPublishedPackage()
-	// An earlier package of the same owner moved off `devin-old`, then a new
+	const claim = await createPublishedPackage('claim-me')
+	// An earlier package of the same owner moved off `claim-old`, then a new
 	// package takes the freed id: the old forwarding row has to go, or the new
 	// package's own URL would send visitors to its predecessor.
 	await retirePackageKodyId({
 		db: env.APP_DB,
-		userId: pkg.userId,
+		userId: claim.userId,
 		packageId: `pkg-other-${uniqueSuffix()}`,
-		oldKodyId: 'devin-old',
-		newKodyId: 'devin-new',
+		oldKodyId: 'claim-old',
+		newKodyId: 'claim-new',
 	})
 	await releasePackageKodyIdRedirect({
 		db: env.APP_DB,
-		userId: pkg.userId,
-		kodyId: 'devin-old',
+		userId: claim.userId,
+		kodyId: 'claim-old',
 	})
-
 	await expect(
 		resolveCommunityPackageUrl({
 			db: env.APP_DB,
-			username: pkg.username,
-			kodyId: 'devin-old',
+			username: claim.username,
+			kodyId: 'claim-old',
 		}),
 	).resolves.toBeNull()
 })

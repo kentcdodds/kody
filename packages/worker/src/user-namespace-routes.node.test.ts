@@ -6,7 +6,7 @@ import {
 	isNamespacedPackageInvocationEndpointPath,
 } from './user-namespace-routes.ts'
 
-test('machine namespaces claim their own paths only', () => {
+test('machine namespaces claim only their multi-segment paths', () => {
 	expect(isNamespacedAppEndpointPath('/@kody/packages/devin')).toBe(true)
 	expect(isNamespacedAppEndpointPath('/@kody/packages/devin/index.html')).toBe(
 		true,
@@ -23,9 +23,7 @@ test('machine namespaces claim their own paths only', () => {
 
 	expect(isNamespacedAppEndpointPath('/community/listing-1')).toBe(false)
 	expect(isNamespacedPackageInvocationEndpointPath('/@kody/api')).toBe(false)
-})
 
-test('the canonical package URL is never mistaken for a machine namespace', () => {
 	// Including the ids that spell a namespace segment: the two-segment form is
 	// the public page, not a truncated machine path.
 	for (const pathname of [

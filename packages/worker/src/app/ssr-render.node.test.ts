@@ -824,7 +824,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	})
 })
 
-test('listing-uuid URL redirects to the canonical package URL', async () => {
+test('listing-uuid URLs redirect to the canonical pair when possible and keep serving otherwise', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv(createUserTestDb([]))
@@ -844,7 +844,7 @@ test('listing-uuid URL redirects to the canonical package URL', async () => {
 
 	// The follow control redirects back with `followError`, so the query has to
 	// survive the hop or the message vanishes.
-	const response = await createCommunityDetailHandler(env).handler({
+	const redirect = await createCommunityDetailHandler(env).handler({
 		request: new Request(
 			'https://example.com/community/listing-detail-1?followError=nope',
 		),
@@ -854,38 +854,23 @@ test('listing-uuid URL redirects to the canonical package URL', async () => {
 		params: { listingId: 'listing-detail-1' },
 	} as never)
 
-	expect(response.status).toBe(301)
-	expect(response.headers.get('location')).toBe(
+	expect(redirect.status).toBe(301)
+	expect(redirect.headers.get('location')).toBe(
 		'https://example.com/@kentcdodds/github-triage?followError=nope',
 	)
 	// The same URL serves frame HTML, which must not get this redirect back.
-	expect(response.headers.get('vary')).toBe('x-remix-target')
-})
+	expect(redirect.headers.get('vary')).toBe('x-remix-target')
 
-test('listing-uuid URL keeps serving the page when no canonical URL resolves', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue({
-		...sampleListing,
-		id: 'listing-detail-1',
-	})
-	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: 'public',
-		stable_user_id: 'owner-mcp-id',
-	})
 	// A stale owner scope in the listing name: redirecting would cache a 404.
 	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(null)
-
-	const response = await createCommunityDetailHandler(env).handler({
+	const fallback = await createCommunityDetailHandler(env).handler({
 		request: new Request('https://example.com/community/listing-detail-1'),
 		url: new URL('https://example.com/community/listing-detail-1'),
 		params: { listingId: 'listing-detail-1' },
 	} as never)
 
-	expect(response.status).toBe(200)
-	const props = readAppRootProps(await readResponseText(response))
+	expect(fallback.status).toBe(200)
+	const props = readAppRootProps(await readResponseText(fallback))
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,
 		listingId: 'listing-detail-1',

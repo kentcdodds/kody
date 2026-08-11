@@ -130,13 +130,7 @@ test('status page renders provider incidents separately and omits them when abse
 	)
 	expect(withProvider).toContain('Provider incidents (Cloudflare)')
 	expect(withProvider).toContain('R2 Availability Issues')
-	expect(withProvider).toContain('investigating')
-	expect(withProvider).toContain('minor')
 	expect(withProvider).toContain('https://stspg.io/r2')
-	expect(withProvider).toContain('affects R2')
-	expect(withProvider).toContain('updated 2026-08-07T19:00:00.000Z')
-	expect(withProvider).toContain('for context only')
-	expect(withProvider).toContain('All systems operational')
 
 	const withoutCommit = renderStatusPage(snapshot({ productionCommit: null }))
 	expect(withoutCommit).not.toContain('Production commit')

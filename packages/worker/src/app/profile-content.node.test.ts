@@ -40,7 +40,7 @@ const unpublishedPackage = {
 	communityPublishedAt: null,
 } satisfies PublicProfilePackageItem
 
-test('profile packages link listings and expose follow controls next to the username', async () => {
+test('profile packages link listings, prefer listing kody ids, and separate published dates from local edits', async () => {
 	const guestHtml = await renderProfileContentHtml({
 		profile,
 		packages: [listedPackage, unpublishedPackage],
@@ -61,6 +61,35 @@ test('profile packages link listings and expose follow controls next to the user
 	expect(guestHtml).not.toContain('href="/@kody/notes"')
 	expect(guestHtml).toContain('data-testid="profile-follow"')
 	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
+
+	// Listed packages report the listing's published date, not the owner's
+	// unpublished local edit, which is what made the activity feed look stale.
+	expect(guestHtml).toContain('Published July 28, 2026')
+	expect(guestHtml).not.toContain('August 7, 2026')
+	expect(guestHtml).toContain('Edited July 1, 2026')
+	expect(guestHtml).toContain('data-testid="profile-activity-hint"')
+
+	// Editing `kody.id` updates the package immediately; the listing's id only
+	// moves on republish, so until then the page lives at the listing's id.
+	const driftedHtml = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...listedPackage,
+				kodyId: 'fathom',
+				communityListingKodyId: 'fathom-analytics',
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: false,
+		loggedIn: false,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
+	})
+	expect(driftedHtml).toContain('href="/@kody/fathom-analytics"')
+	expect(driftedHtml).not.toContain('href="/@kody/fathom"')
 
 	const followingHtml = await renderProfileContentHtml({
 		profile,
@@ -85,7 +114,7 @@ test('profile packages link listings and expose follow controls next to the user
 
 	const ownHtml = await renderProfileContentHtml({
 		profile,
-		packages: [],
+		packages: [listedPackage],
 		activity: [],
 		query: null,
 		isSelf: true,
@@ -97,65 +126,6 @@ test('profile packages link listings and expose follow controls next to the user
 
 	expect(ownHtml).toContain('@kody')
 	expect(ownHtml).not.toContain('data-testid="profile-follow"')
-})
-
-test('a package link uses the listing kody id, not the package one it drifted from', async () => {
-	// Editing `kody.id` updates the package immediately; the listing's id only
-	// moves on republish, so until then the page lives at the listing's id.
-	const html = await renderProfileContentHtml({
-		profile,
-		packages: [
-			{
-				...listedPackage,
-				kodyId: 'fathom',
-				communityListingKodyId: 'fathom-analytics',
-			},
-		],
-		activity: [],
-		query: null,
-		isSelf: false,
-		loggedIn: false,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
-	})
-
-	expect(html).toContain('href="/@kody/fathom-analytics"')
-	expect(html).not.toContain('href="/@kody/fathom"')
-})
-
-test('package cards separate the published date from local edits', async () => {
-	const guestHtml = await renderProfileContentHtml({
-		profile,
-		packages: [listedPackage, unpublishedPackage],
-		activity: [],
-		query: null,
-		isSelf: false,
-		loggedIn: false,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
-	})
-
-	// Listed packages report the listing's published date, not the owner's
-	// unpublished local edit, which is what made the activity feed look stale.
-	expect(guestHtml).toContain('Published July 28, 2026')
-	expect(guestHtml).not.toContain('August 7, 2026')
-	expect(guestHtml).toContain('Edited July 1, 2026')
-	expect(guestHtml).toContain('data-testid="profile-activity-hint"')
-
-	const ownHtml = await renderProfileContentHtml({
-		profile,
-		packages: [listedPackage],
-		activity: [],
-		query: null,
-		isSelf: true,
-		loggedIn: true,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
-	})
-
 	// Owners also see that the listing is behind their local edits.
 	expect(ownHtml).toContain('edited August 7, 2026, not republished')
 })

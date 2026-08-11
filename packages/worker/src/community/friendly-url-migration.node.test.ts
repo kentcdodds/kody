@@ -79,7 +79,7 @@ function readKodyIds(db: DatabaseSync) {
 	)
 }
 
-test('canonical-url collisions are resolved so the unique index can be created', () => {
+test('friendly-url migration resolves collisions, repairs drift, and leaves uncontested orphans alone', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBeforeFriendlyUrls(db)
 
@@ -157,35 +157,41 @@ test('canonical-url collisions are resolved so the unique index can be created',
 		'listing-drifted': 'renamed',
 		'listing-claimed': 'contested',
 	})
-})
 
-test('a drifted listing is delisted when its package id is taken too', () => {
-	const db = new DatabaseSync(':memory:')
-	applyMigrationsBeforeFriendlyUrls(db)
+	const blocked = new DatabaseSync(':memory:')
+	applyMigrationsBeforeFriendlyUrls(blocked)
 	// `pkg-drifted` moved to `taken`, which another published package already
 	// holds, so there is no free id to repair the listing onto.
-	insertPackage(db, { id: 'pkg-drifted', userId: 'user-1', kodyId: 'taken' })
-	insertPackage(db, { id: 'pkg-holder', userId: 'user-1', kodyId: 'holder' })
-	insertPackage(db, {
+	insertPackage(blocked, {
+		id: 'pkg-drifted',
+		userId: 'user-1',
+		kodyId: 'taken',
+	})
+	insertPackage(blocked, {
+		id: 'pkg-holder',
+		userId: 'user-1',
+		kodyId: 'holder',
+	})
+	insertPackage(blocked, {
 		id: 'pkg-claimed',
 		userId: 'user-1',
 		kodyId: 'contested',
 	})
-	insertListing(db, {
+	insertListing(blocked, {
 		id: 'listing-drifted',
 		ownerUserId: 'user-1',
 		packageId: 'pkg-drifted',
 		kodyId: 'contested',
 		updatedAt: '2026-01-01T00:00:00Z',
 	})
-	insertListing(db, {
+	insertListing(blocked, {
 		id: 'listing-claimed',
 		ownerUserId: 'user-1',
 		packageId: 'pkg-claimed',
 		kodyId: 'contested',
 		updatedAt: '2024-01-01T00:00:00Z',
 	})
-	insertListing(db, {
+	insertListing(blocked, {
 		id: 'listing-holder',
 		ownerUserId: 'user-1',
 		packageId: 'pkg-holder',
@@ -193,27 +199,22 @@ test('a drifted listing is delisted when its package id is taken too', () => {
 		updatedAt: '2024-01-01T00:00:00Z',
 	})
 
-	expect(() => applyFriendlyUrlMigration(db)).not.toThrow()
-
-	expect(readStatuses(db)).toEqual({
+	expect(() => applyFriendlyUrlMigration(blocked)).not.toThrow()
+	expect(readStatuses(blocked)).toEqual({
 		'listing-drifted': 'delisted',
 		'listing-claimed': 'active',
 		'listing-holder': 'active',
 	})
-})
 
-test('a listing whose package is gone keeps the URL when nothing competes for it', () => {
-	const db = new DatabaseSync(':memory:')
-	applyMigrationsBeforeFriendlyUrls(db)
-	insertListing(db, {
+	const orphanAlone = new DatabaseSync(':memory:')
+	applyMigrationsBeforeFriendlyUrls(orphanAlone)
+	insertListing(orphanAlone, {
 		id: 'listing-orphan',
 		ownerUserId: 'user-1',
 		packageId: 'pkg-gone',
 		kodyId: 'snapshot',
 		updatedAt: '2026-01-01T00:00:00Z',
 	})
-
-	applyFriendlyUrlMigration(db)
-
-	expect(readStatuses(db)).toEqual({ 'listing-orphan': 'active' })
+	applyFriendlyUrlMigration(orphanAlone)
+	expect(readStatuses(orphanAlone)).toEqual({ 'listing-orphan': 'active' })
 })

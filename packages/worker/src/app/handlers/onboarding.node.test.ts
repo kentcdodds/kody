@@ -54,10 +54,12 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		new RequestContext(new Request('https://example.com/onboarding.json')),
 	)
 	expect(anonymousApiResponse.status).toBe(200)
-	await expect(anonymousApiResponse.json()).resolves.toEqual({
+	// Payload shape belongs to onboarding-data; the handler just serves it.
+	await expect(anonymousApiResponse.json()).resolves.toMatchObject({
 		ok: true,
 		loggedIn: false,
 		mcpServerUrl: 'https://example.com/mcp',
+		needsOnboarding: true,
 		setupPrompt: buildOnboardingSetupPrompt(),
 		discoveryPrompt: buildDiscoveryPrompt({
 			env,
@@ -67,14 +69,6 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			env,
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
-		hasSentWelcomeEmail: false,
-		welcomeEmail: null,
-		hasMcpClient: false,
-		emailVerified: false,
-		needsOnboarding: true,
-		featuredListings: [],
-		builtInProviders: [],
-		checklist: null,
 	})
 })
 

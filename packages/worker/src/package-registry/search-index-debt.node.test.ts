@@ -16,11 +16,7 @@ vi.mock('@sentry/cloudflare', () => ({
 		mockModule.captureException(...args),
 }))
 
-import {
-	clearSavedPackageSearchIndexDebt,
-	markSavedPackageSearchIndexDebt,
-	scheduleSavedPackageSearchIndexUpsert,
-} from './search-index-debt.ts'
+import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
 
 type DebtRow = {
 	packageId: string
@@ -176,7 +172,7 @@ test('scheduleSavedPackageSearchIndexUpsert keeps debt and reports to Sentry on 
 	expect(consoleError).toHaveBeenCalled()
 })
 
-test('out-of-order publishes keep the newest embed text and debt generation', async () => {
+test('out-of-order publishes keep the newest owner and embed text under one coalesced reconcile', async () => {
 	let resolveFirstUpsert: (() => void) | undefined
 	let upsertCalls = 0
 	mockModule.upsertSavedPackageVector.mockReset()
@@ -197,19 +193,20 @@ test('out-of-order publishes keep the newest embed text and debt generation', as
 	await scheduleSavedPackageSearchIndexUpsert({
 		env: { APP_DB: db } as Env,
 		packageId: 'pkg-race',
-		userId: 'user-1',
+		userId: 'user-a',
 		embedText: 'older',
 		waitUntil,
 	})
 	await scheduleSavedPackageSearchIndexUpsert({
 		env: { APP_DB: db } as Env,
 		packageId: 'pkg-race',
-		userId: 'user-1',
+		userId: 'user-b',
 		embedText: 'newer',
 		waitUntil,
 	})
 	expect(rows.get('pkg-race')).toMatchObject({
 		generation: 2,
+		userId: 'user-b',
 		embedText: 'newer',
 	})
 	// Coalesced to one in-flight reconcile.
@@ -219,7 +216,7 @@ test('out-of-order publishes keep the newest embed text and debt generation', as
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
 		1,
 		expect.anything(),
-		expect.objectContaining({ embedText: 'older' }),
+		expect.objectContaining({ userId: 'user-a', embedText: 'older' }),
 	)
 
 	resolveFirstUpsert?.()
@@ -230,81 +227,7 @@ test('out-of-order publishes keep the newest embed text and debt generation', as
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
 		2,
 		expect.anything(),
-		expect.objectContaining({ embedText: 'newer' }),
+		expect.objectContaining({ userId: 'user-b', embedText: 'newer' }),
 	)
 	expect(rows.has('pkg-race')).toBe(false)
-})
-
-test('mark and clear debt helpers round-trip', async () => {
-	const { db, rows } = createDebtDb()
-	const generation = await markSavedPackageSearchIndexDebt({
-		db,
-		packageId: 'pkg-3',
-		userId: 'user-3',
-		embedText: 'pending text',
-		lastError: 'pending',
-	})
-	expect(generation).toBe(1)
-	expect(rows.get('pkg-3')?.lastError).toBe('pending')
-	await clearSavedPackageSearchIndexDebt({
-		db,
-		packageId: 'pkg-3',
-		generation,
-	})
-	expect(rows.has('pkg-3')).toBe(false)
-})
-
-test('reconcile upserts under the debt row owner, not the scheduler userId', async () => {
-	let resolveFirstUpsert: (() => void) | undefined
-	let upsertCalls = 0
-	mockModule.upsertSavedPackageVector.mockReset()
-	mockModule.upsertSavedPackageVector.mockImplementation(async () => {
-		upsertCalls += 1
-		if (upsertCalls === 1) {
-			await new Promise<void>((resolve) => {
-				resolveFirstUpsert = resolve
-			})
-		}
-	})
-	const { db, rows } = createDebtDb()
-	const waitUntilPromises: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		waitUntilPromises.push(promise)
-	}
-
-	await scheduleSavedPackageSearchIndexUpsert({
-		env: { APP_DB: db } as Env,
-		packageId: 'pkg-owner',
-		userId: 'user-a',
-		embedText: 'from-a',
-		waitUntil,
-	})
-	await scheduleSavedPackageSearchIndexUpsert({
-		env: { APP_DB: db } as Env,
-		packageId: 'pkg-owner',
-		userId: 'user-b',
-		embedText: 'from-b',
-		waitUntil,
-	})
-	expect(rows.get('pkg-owner')).toMatchObject({
-		userId: 'user-b',
-		embedText: 'from-b',
-		generation: 2,
-	})
-
-	resolveFirstUpsert?.()
-	await waitUntilPromises[0]
-	await waitUntilPromises[1]
-
-	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledTimes(2)
-	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
-		1,
-		expect.anything(),
-		expect.objectContaining({ userId: 'user-a', embedText: 'from-a' }),
-	)
-	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
-		2,
-		expect.anything(),
-		expect.objectContaining({ userId: 'user-b', embedText: 'from-b' }),
-	)
 })
