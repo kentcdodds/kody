@@ -42,8 +42,13 @@ independently:
 2. **Jobs worker** (`packages/jobs-worker/`): `JobManager`, scheduled lanes, and
    job retention. It owns a **dedicated D1 database** (`kody-jobs`) holding
    `jobs` and `archived_job_artifacts`, migrated from `APP_DB` by a bounded
-   manual copy (export → import → flip reads → later drop). Background write
-   churn leaves `APP_DB` entirely.
+   manual copy. The cutover must be lossless: quiesce the scheduled lanes and
+   job mutation paths (brief write pause), export, import, verify row counts and
+   representative records (including archived artifacts) against the source,
+   then switch reads and writes together in one deploy — never a read/write
+   split across databases. `APP_DB` keeps the old tables untouched as the
+   rollback path until verification passes; only a later migration drops them.
+   Background write churn then leaves `APP_DB` entirely.
 
 Everything else — Remix app, MCP, OAuth, account surfaces, email, connectors —
 stays in the main worker for now; they share auth/session/D1 state too tightly
@@ -57,10 +62,23 @@ per-row RPC. Table ownership is documented: post-split, `jobs` and
 another worker's tables is a review smell. `UserMeter` stays in main and is
 reachable from the extracted workers as a DO binding.
 
+The split moves code between trust-equivalent hosts; it does not change any
+isolation guarantee. Every moved surface keeps its existing authenticated user
+context and owner-scoped queries (jobs, artifacts, run logs, and storage stay
+keyed by user/package-derived identities, and moved DO classes keep their names
+and id-derivation so instances resolve to the same objects). Migration
+verification includes confirming records stay associated with the same user.
+Resources staying in main (packages, secrets, values, memories, connectors,
+inboxes) are untouched.
+
 Deploys are fully independent per worker (nx-affected-narrowed CI, per-worker
-SHA guards and healthchecks), following the status-worker pattern. DO class
-moves between scripts use Wrangler script migrations executed in a documented
-runbook order, verified on preview deploys before production.
+SHA guards and healthchecks), following the status-worker pattern, with the
+standard service-binding ordering rule: deploy the callee (with
+backward-compatible changes) before the caller that depends on it. DO class
+moves between scripts use Wrangler's cross-script transfer mechanism executed in
+a documented runbook order — the receiving worker declares the incoming
+transfer, and the source worker's deploy commits the handoff — verified on
+preview deploys before production.
 
 ## Consequences
 
