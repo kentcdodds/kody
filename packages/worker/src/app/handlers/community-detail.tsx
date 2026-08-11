@@ -36,6 +36,16 @@ const reportReasonSchema = z
 	.min(1, 'Report reason is required.')
 	.max(2000, 'Report reason must be at most 2000 characters.')
 
+/**
+ * A moved package keeps whatever the link carried: `followError` and friends
+ * ride in the query string, and a permanent redirect that drops them is cached.
+ */
+function redirectToCanonicalPath(input: { path: string; url: URL }) {
+	const destination = new URL(input.path, input.url)
+	destination.search = input.url.search
+	return Response.redirect(destination.toString(), 301)
+}
+
 async function renderCommunityListingPage(input: {
 	request: Request
 	env: Env
@@ -104,7 +114,7 @@ export function createCommunityDetailHandler(env: Env) {
 			// A listing whose canonical pair no longer resolves stays served here
 			// rather than redirecting permanently at a dead URL.
 			if (canonicalPath) {
-				return Response.redirect(new URL(canonicalPath, url).toString(), 301)
+				return redirectToCanonicalPath({ path: canonicalPath, url })
 			}
 
 			return renderCommunityListingPage({ request, env, listingId })
@@ -122,7 +132,7 @@ export function createCommunityPackageHandler(env: Env) {
 
 			const target = await resolveCommunityListingRoute({ env, url })
 			if (target?.kind === 'redirect') {
-				return Response.redirect(new URL(target.to, url).toString(), 301)
+				return redirectToCanonicalPath({ path: target.to, url })
 			}
 
 			return renderCommunityListingPage({

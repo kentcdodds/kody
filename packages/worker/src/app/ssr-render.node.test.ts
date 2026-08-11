@@ -842,15 +842,21 @@ test('listing-uuid URL redirects to the canonical package URL', async () => {
 		'/@kentcdodds/github-triage',
 	)
 
+	// The follow control redirects back with `followError`, so the query has to
+	// survive the hop or the message vanishes.
 	const response = await createCommunityDetailHandler(env).handler({
-		request: new Request('https://example.com/community/listing-detail-1'),
-		url: new URL('https://example.com/community/listing-detail-1'),
+		request: new Request(
+			'https://example.com/community/listing-detail-1?followError=nope',
+		),
+		url: new URL(
+			'https://example.com/community/listing-detail-1?followError=nope',
+		),
 		params: { listingId: 'listing-detail-1' },
 	} as never)
 
 	expect(response.status).toBe(301)
 	expect(response.headers.get('location')).toBe(
-		'https://example.com/@kentcdodds/github-triage',
+		'https://example.com/@kentcdodds/github-triage?followError=nope',
 	)
 })
 
