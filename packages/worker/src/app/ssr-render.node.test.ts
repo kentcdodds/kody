@@ -858,6 +858,8 @@ test('listing-uuid URL redirects to the canonical package URL', async () => {
 	expect(response.headers.get('location')).toBe(
 		'https://example.com/@kentcdodds/github-triage?followError=nope',
 	)
+	// The same URL serves frame HTML, which must not get this redirect back.
+	expect(response.headers.get('vary')).toBe('x-remix-target')
 })
 
 test('listing-uuid URL keeps serving the page when no canonical URL resolves', async () => {

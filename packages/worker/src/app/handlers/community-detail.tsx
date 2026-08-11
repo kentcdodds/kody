@@ -11,6 +11,7 @@ import {
 	getCommunityPackageHref,
 	resolveCommunityPackageUrl,
 } from '#worker/community/package-url.ts'
+import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -42,7 +43,8 @@ const reportReasonSchema = z
  *
  * `301` states which URL is canonical, but the destination is not permanent --
  * a username can be released and reclaimed by someone else -- so it is cached
- * for an hour rather than forever.
+ * for an hour rather than forever, and only for requests shaped like this one:
+ * the same URL serves frame HTML when the target header is present.
  */
 function redirectToCanonicalPath(input: { path: string; url: URL }) {
 	const destination = new URL(input.path, input.url)
@@ -52,6 +54,7 @@ function redirectToCanonicalPath(input: { path: string; url: URL }) {
 		headers: {
 			location: destination.toString(),
 			'cache-control': 'public, max-age=3600',
+			vary: REMIX_FRAME_TARGET_HEADER,
 		},
 	})
 }
