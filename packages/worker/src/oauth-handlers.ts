@@ -84,7 +84,7 @@ function renderSpaShell(
 }
 
 const dummyPasswordHash =
-	'pbkdf2_sha256$600000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
+	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
 const oauthClientResetVerificationCookieName = 'kody_oauth_client_reset'
 const oauthClientResetVerificationMaxAgeSeconds = 60 * 5
 const oauthClientResetVerificationCookiePath = '/oauth'

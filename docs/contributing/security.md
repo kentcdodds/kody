@@ -408,13 +408,16 @@ change to these decisions here so future agents do not relitigate them.
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.
-- **PBKDF2-SHA256 (600k iterations)** is used for password hashing rather than a
-  memory-hard KDF. Acceptable here: it meets OWASP's PBKDF2-SHA256 guidance, and
-  Workers' WebCrypto has no argon2/scrypt. Verification accepts any iteration
-  count up to a hard ceiling well above the generation setting, and
-  lower-iteration hashes are transparently re-hashed after a successful login
+- **PBKDF2-SHA256 (100k iterations)** is used for password hashing rather than a
+  memory-hard KDF. Workers' WebCrypto has no argon2/scrypt, and Cloudflare's
+  production runtime rejects PBKDF2 above 100,000 iterations (deriveBits throws
+  `NotSupportedError`; local workerd does not enforce the cap), so 100k is the
+  strongest setting the platform allows — below OWASP's 600k PBKDF2-SHA256
+  guidance. Iteration counts above the runtime cap are rejected during
+  verification (they could never derive in production), and lower-iteration
+  hashes are transparently re-hashed after a successful login
   (`packages/worker/src/password-upgrade.ts`), so the setting can be raised
-  again later without a migration.
+  without a migration if the platform cap ever lifts.
 - **No CSRF tokens.** State-changing requests are protected by `SameSite=Lax`
   cookies plus JSON `Content-Type` on mutating endpoints. This is a deliberate
   decision, restated as invariant 10 above: it holds only while both halves

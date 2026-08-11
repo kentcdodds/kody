@@ -3,13 +3,16 @@ import { toHex } from './hex.ts'
 const passwordHashPrefix = 'pbkdf2_sha256'
 const passwordSaltBytes = 16
 const passwordHashBytes = 32
-// Iterations used when creating new hashes. Older (lower-iteration) hashes
-// still verify and are transparently upgraded on successful login.
-const passwordHashIterations = 600_000
-// Hard ceiling on iterations accepted during verification, kept well above
-// the generation setting so hashes written by newer deploys keep verifying
-// after a rollback while absurd values stay rejected as a DoS guard.
-const maxAcceptedPasswordHashIterations = 10_000_000
+// Iterations used when creating new hashes. Cloudflare's production Workers
+// runtime rejects PBKDF2 above 100,000 iterations (crypto.subtle.deriveBits
+// throws NotSupportedError; local workerd does not enforce the cap), so this
+// is the maximum strength available on Workers. Older (lower-iteration)
+// hashes still verify and are transparently upgraded on successful login.
+const passwordHashIterations = 100_000
+// Ceiling on iterations accepted during verification. Anything above the
+// Workers runtime cap can never derive successfully in production, so such
+// hashes are rejected up front instead of throwing inside deriveBits.
+const maxAcceptedPasswordHashIterations = 100_000
 
 function fromHex(value: string): Uint8Array<ArrayBuffer> | null {
 	const normalized = value.trim().toLowerCase()

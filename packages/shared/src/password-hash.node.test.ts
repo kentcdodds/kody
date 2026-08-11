@@ -34,7 +34,7 @@ async function createLegacyHash(password: string, iterations: number) {
 
 test('legacy lower-iteration hashes still verify and are flagged for upgrade', async () => {
 	const password = 'kodylovesyou'
-	const legacyHash = await createLegacyHash(password, 100_000)
+	const legacyHash = await createLegacyHash(password, 50_000)
 
 	await expect(verifyPassword(password, legacyHash)).resolves.toBe(true)
 	expect(passwordHashNeedsUpgrade(legacyHash)).toBe(true)
@@ -43,13 +43,16 @@ test('legacy lower-iteration hashes still verify and are flagged for upgrade', a
 	expect(passwordHashNeedsUpgrade(currentHash)).toBe(false)
 })
 
-test('hashes above the generation setting verify but absurd iteration counts are rejected', async () => {
+test('iteration counts above the Workers runtime cap are rejected without deriving', async () => {
+	// Cloudflare's production runtime throws NotSupportedError for PBKDF2
+	// above 100,000 iterations, so such hashes can never verify and must be
+	// rejected cleanly instead of erroring inside deriveBits.
 	const password = 'kodylovesyou'
-	const futureHash = await createLegacyHash(password, 700_000)
-	await expect(verifyPassword(password, futureHash)).resolves.toBe(true)
-	expect(passwordHashNeedsUpgrade(futureHash)).toBe(false)
+	const overCapHash = await createLegacyHash(password, 100_001)
+	await expect(verifyPassword(password, overCapHash)).resolves.toBe(false)
+	expect(passwordHashNeedsUpgrade(overCapHash)).toBe(false)
 
-	const [prefix, , saltHex, hashHex] = futureHash.split('$')
+	const [prefix, , saltHex, hashHex] = overCapHash.split('$')
 	const absurdHash = `${prefix}$20000000$${saltHex}$${hashHex}`
 	await expect(verifyPassword(password, absurdHash)).resolves.toBe(false)
 })
@@ -63,7 +66,7 @@ test('verifyPassword accepts valid hashes and rejects tampered metadata', async 
 	const [prefix, iterations, saltHex, hashHex] = hash.split('$')
 	const tamperedHashes = [
 		`${prefix}$${iterations}abc$${saltHex}$${hashHex}`,
-		`${prefix}$100001$${saltHex}$${hashHex}`,
+		`${prefix}$99999$${saltHex}$${hashHex}`,
 		`${prefix}$${iterations}$${saltHex}xyz$${hashHex}`,
 	]
 
