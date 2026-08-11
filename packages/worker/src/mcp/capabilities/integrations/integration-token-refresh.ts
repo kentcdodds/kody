@@ -1,9 +1,13 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { refreshIntegrationTokens } from '#worker/integrations/token-refresh.ts'
+import {
+	IntegrationTokenRefreshCallerError,
+	refreshIntegrationTokens,
+} from '#worker/integrations/token-refresh.ts'
 
 const inputSchema = z.object({
 	name: z
@@ -43,16 +47,25 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const result = await refreshIntegrationTokens({
-				env: ctx.env,
-				userId: user.userId,
-				userEmail: user.email,
-				name: args.name,
-			})
-			return {
-				ok: true as const,
-				refreshedAt: result.refreshedAt,
-				refreshTokenRotated: result.refreshTokenRotated,
+			try {
+				const result = await refreshIntegrationTokens({
+					env: ctx.env,
+					userId: user.userId,
+					userEmail: user.email,
+					name: args.name,
+				})
+				return {
+					ok: true as const,
+					refreshedAt: result.refreshedAt,
+					refreshTokenRotated: result.refreshTokenRotated,
+				}
+			} catch (error) {
+				// Missing refresh token, revoked grant (HTTP 4xx), host-approval
+				// gaps — caller-clearable reconnect state, not platform defects.
+				if (error instanceof IntegrationTokenRefreshCallerError) {
+					throw new McpCallerError(error.message, { cause: error })
+				}
+				throw error
 			}
 		},
 	},

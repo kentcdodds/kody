@@ -14,6 +14,7 @@ import {
 	isPrivateVisibilityChangeConfirmationMessage,
 } from '#worker/repo/source-safety-policy.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
+import { isIntegrationTokenRefreshCallerMessage } from '#worker/integrations/token-refresh.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
@@ -172,6 +173,18 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error &&
 				(isDestructiveOverwriteConfirmationMessage(entry.message) ||
 					isPrivateVisibilityChangeConfirmationMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// OAuth token refresh preconditions and provider 4xx rejections
+	// (revoked/expired grant, connection without a refresh token). Agents
+	// reconnect at /connect/oauth; keep volume on mcp-event lines.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				isIntegrationTokenRefreshCallerMessage(entry.message),
 		)
 	) {
 		return true

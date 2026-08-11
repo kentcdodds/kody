@@ -226,6 +226,46 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).not.toBeNull()
 
+	// OAuth token-refresh caller state (KODY-CLOUDFLARE-4J).
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Integration "linkedin" does not define a refresh token secret name. This connection cannot refresh; reconnect at /connect/oauth?provider=linkedin if the provider issues a refresh token, or stop calling integration_token_refresh for this integration.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	// Provider 5xx keeps the "Token refresh failed …" wording and must stay
+	// visible in Sentry.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Token refresh failed for integration "google" with HTTP 503 (server_error).',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
 	const platformBuildFailure = {
 		exception: {
 			values: [
