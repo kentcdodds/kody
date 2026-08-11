@@ -2,6 +2,7 @@ import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
 	decryptPlatformOauthClientSecret,
 	encryptPlatformOauthClientSecret,
+	platformOauthAppContext,
 } from '#mcp/secrets/crypto.ts'
 import {
 	canonicalIntegrationName,
@@ -213,6 +214,7 @@ export async function upsertPlatformOauthApp(input: {
 				: await encryptPlatformOauthClientSecret(
 						input.env,
 						input.app.clientSecret.trim(),
+						platformOauthAppContext(slug),
 					)
 	const enabled =
 		input.app.enabled === undefined
@@ -342,6 +344,7 @@ export async function upsertPlatformOauthApp(input: {
  */
 export async function renamePlatformOauthApp(input: {
 	db: D1Database
+	env: Pick<Env, 'SECRET_STORE_KEY'>
 	slug: string
 	newSlug: string
 }): Promise<PlatformOauthApp> {
@@ -377,6 +380,20 @@ export async function renamePlatformOauthApp(input: {
 			`Platform OAuth app "${newSlug}" already exists.`,
 		)
 	}
+	// The ciphertext is AAD-bound to the app slug, so a carried secret must be
+	// re-encrypted under the new slug's context.
+	const secretRow = await getPlatformOauthAppRowBySlug({ db: input.db, slug })
+	const reboundSecret = secretRow?.client_secret_encrypted
+		? await encryptPlatformOauthClientSecret(
+				input.env,
+				await decryptPlatformOauthClientSecret(
+					input.env,
+					secretRow.client_secret_encrypted,
+					platformOauthAppContext(slug),
+				),
+				platformOauthAppContext(newSlug),
+			)
+		: null
 	await input.db.batch([
 		input.db
 			.prepare(
@@ -390,14 +407,14 @@ export async function renamePlatformOauthApp(input: {
 				)
 				SELECT
 					?, provider, label, description, client_id,
-					client_secret_encrypted, token_url, authorize_url, api_base_url,
+					?, token_url, authorize_url, api_base_url,
 					flow, use_pkce, token_exchange_style, scope_separator,
 					extra_authorize_params_json, allowed_scopes_json,
 					default_scopes_json, required_hosts_json, enabled, logo_key,
 					logo_content_type, created_at, ?
 				FROM platform_oauth_apps WHERE slug = ?`,
 			)
-			.bind(newSlug, new Date().toISOString(), slug),
+			.bind(newSlug, reboundSecret, new Date().toISOString(), slug),
 		input.db
 			.prepare(
 				`UPDATE user_integrations SET platform_app_slug = ?
@@ -474,6 +491,7 @@ export async function getPlatformOauthAppClientSecret(input: {
 	return decryptPlatformOauthClientSecret(
 		input.env,
 		row.client_secret_encrypted,
+		platformOauthAppContext(slug),
 	)
 }
 

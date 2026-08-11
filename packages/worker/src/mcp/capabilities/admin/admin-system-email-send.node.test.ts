@@ -58,15 +58,36 @@ function createAdminCtx() {
 	}
 }
 
-test('admin_system_email_send is admin-gated and audits the redacted send', async () => {
+test('admin_system_email_send is admin-gated, validates input, and audits a redacted send', async () => {
 	expect(adminSystemEmailSendCapability.requiredRole).toBe('admin')
 	expect(adminSystemEmailSendCapability.readOnly).toBe(false)
+	const ctx = createAdminCtx()
+	mockModule.sendSystemEmail.mockClear()
+
+	await expect(
+		adminSystemEmailSendCapability.handler(
+			{ to: 'reporter@example.com', subject: 'No body' },
+			ctx,
+		),
+	).rejects.toThrow(/text/iu)
+
+	await expect(
+		adminSystemEmailSendCapability.handler(
+			{
+				to: Array.from({ length: 6 }, (_, index) => `r${index}@example.com`),
+				subject: 'Too many',
+				text: 'Body',
+			},
+			ctx,
+		),
+	).rejects.toThrow()
+	expect(mockModule.sendSystemEmail).not.toHaveBeenCalled()
+
 	mockModule.sendSystemEmail.mockResolvedValue({
 		from: 'support@heykody.dev',
 		to: ['reporter@example.com'],
 		providerMessageId: 'provider-1',
 	})
-	const ctx = createAdminCtx()
 
 	const result = await adminSystemEmailSendCapability.handler(
 		{
@@ -101,28 +122,4 @@ test('admin_system_email_send is admin-gated and audits the redacted send', asyn
 	expect(auditCall?.reason).toContain('from=support@heykody.dev')
 	// Recipients are redacted in audit rows, never stored in the clear.
 	expect(auditCall?.reason).not.toContain('reporter@example.com')
-})
-
-test('admin_system_email_send requires a body and bounds recipients', async () => {
-	const ctx = createAdminCtx()
-	mockModule.sendSystemEmail.mockClear()
-
-	await expect(
-		adminSystemEmailSendCapability.handler(
-			{ to: 'reporter@example.com', subject: 'No body' },
-			ctx,
-		),
-	).rejects.toThrow(/text/iu)
-
-	await expect(
-		adminSystemEmailSendCapability.handler(
-			{
-				to: Array.from({ length: 6 }, (_, index) => `r${index}@example.com`),
-				subject: 'Too many',
-				text: 'Body',
-			},
-			ctx,
-		),
-	).rejects.toThrow()
-	expect(mockModule.sendSystemEmail).not.toHaveBeenCalled()
 })

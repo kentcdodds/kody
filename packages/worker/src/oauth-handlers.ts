@@ -18,6 +18,7 @@ import { type OAuthAuthorizeLoaderData } from '#universal/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { createDb, usersTable } from './db.ts'
+import { upgradePasswordHashIfNeeded } from './password-upgrade.ts'
 import { wantsJson } from './utils.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -851,6 +852,16 @@ export async function handleAuthorizeRequest(
 				reason: 'invalid_credentials',
 			})
 			return respondAuthorizeError(request, 'Invalid email or password.')
+		}
+		try {
+			await upgradePasswordHashIfNeeded(
+				db,
+				userRecord.id,
+				password,
+				userRecord.password_hash,
+			)
+		} catch {
+			// A failed hash upgrade must never block an otherwise valid login.
 		}
 		const username = getValidOAuthUsername(userRecord.username)
 		if (!username) {

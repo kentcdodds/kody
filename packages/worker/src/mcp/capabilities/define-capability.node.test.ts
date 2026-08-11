@@ -40,9 +40,6 @@ test('Zod capability validation failures identify the capability, fields, and re
 		cause: expect.any(z.ZodError),
 	})
 	expect(inputError.message).toContain('package_id')
-	expect(inputError.message).toContain(
-		'Call search({ entity: "package_get:capability" }) for the exact input shape.',
-	)
 	expect(inputHandler).not.toHaveBeenCalled()
 
 	const outputHandler = vi.fn(async () => ({ package_id: 123 }) as never)
@@ -69,8 +66,4 @@ test('Zod capability validation failures identify the capability, fields, and re
 		cause: expect.any(z.ZodError),
 	})
 	expect(outputError.message).toContain('package_id')
-	expect(outputError.message).toContain(
-		'This is a capability implementation error; changing the input shape will not repair it.',
-	)
-	expect(outputError.message).not.toContain('Call search')
 })

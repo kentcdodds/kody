@@ -319,6 +319,7 @@ test('renamePlatformOauthApp carries the secret and moves connections atomically
 
 	const renamed = await renamePlatformOauthApp({
 		db,
+		env,
 		slug: 'github',
 		newSlug: 'github-platform',
 	})
@@ -361,11 +362,12 @@ test('renamePlatformOauthApp carries the secret and moves connections atomically
 
 	// Guards: missing source, same slug, and collisions all reject.
 	await expect(
-		renamePlatformOauthApp({ db, slug: 'missing', newSlug: 'other' }),
+		renamePlatformOauthApp({ db, env, slug: 'missing', newSlug: 'other' }),
 	).rejects.toThrow('was not found')
 	await expect(
 		renamePlatformOauthApp({
 			db,
+			env,
 			slug: 'github-platform',
 			newSlug: 'github-platform',
 		}),
@@ -378,6 +380,7 @@ test('renamePlatformOauthApp carries the secret and moves connections atomically
 	await expect(
 		renamePlatformOauthApp({
 			db,
+			env,
 			slug: 'github-platform',
 			newSlug: 'occupied',
 		}),

@@ -131,6 +131,7 @@ async function handleSaveAction(input: {
 		if (renameTo) {
 			const renamed = await renamePlatformOauthApp({
 				db: input.env.APP_DB,
+				env: input.env,
 				slug,
 				newSlug: renameTo,
 			})
@@ -182,6 +183,7 @@ async function handleSaveAction(input: {
 		if (renamedSlug) {
 			await renamePlatformOauthApp({
 				db: input.env.APP_DB,
+				env: input.env,
 				slug: renamedSlug,
 				newSlug: slug,
 			}).catch(() => {})

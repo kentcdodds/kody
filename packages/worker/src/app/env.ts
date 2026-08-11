@@ -22,6 +22,12 @@ export function getEnv(env: Env): Env {
 }
 
 function validateEnv(env: Env) {
+	if (env.SENTRY_ENVIRONMENT === 'production' && !env.AUTH_RATE_LIMITER) {
+		throw new Error(
+			'Missing AUTH_RATE_LIMITER binding: production auth rate limiting must use the Cloudflare rate-limit binding, not the D1 fallback. Check the ratelimits block in packages/worker/wrangler.jsonc.',
+		)
+	}
+
 	const result = parseSafe(EnvSchema, env)
 
 	if (!result.success) {

@@ -62,6 +62,13 @@ package-app surfaces:
    package-app origin, and do not reintroduce cookie forwarding "just for
    convenience". See
    [Hosted package app origin isolation](#hosted-package-app-origin-isolation).
+10. **CSRF protection is `SameSite=Lax` + JSON content types, not tokens.**
+    Every mutating first-party endpoint must keep requiring a JSON
+    `Content-Type` (which cross-site form posts cannot send) and the
+    `kody_session` cookie must stay `SameSite=Lax`. Do not add a mutating
+    endpoint that accepts `application/x-www-form-urlencoded` or
+    `multipart/form-data` from the browser, and do not relax the cookie to
+    `SameSite=None`, without adding CSRF tokens at the same time.
 
 ## First-party HTTP security headers
 
@@ -188,10 +195,14 @@ session is bound to one account), but it is not zero.
 ## Auth rate limiting
 
 Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
-(`auth:ip:<ip>`) backed by a D1 atomic limiter
-(`packages/worker/src/app/rate-limit.ts`, default 10 requests per 60-second
-window). The shared bucket means brute-force attempts cannot fan out across
-parallel paths. Covered paths (`rateLimitedAuthPaths` in
+(`auth:ip:<ip>`, `packages/worker/src/app/rate-limit.ts`, default 10 requests
+per 60-second window). Deployed environments use the Cloudflare rate-limit
+binding (`AUTH_RATE_LIMITER` in `packages/worker/wrangler.jsonc`); local dev,
+tests, and self-hosted configs fall back to a D1 atomic limiter. Production
+fails closed: env validation (`packages/worker/src/app/env.ts`) rejects a
+production runtime without the binding, so the D1 fallback can never silently
+become the production limiter. The shared bucket means brute-force attempts
+cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 `packages/worker/src/index.ts`):
 
 - `POST /auth` (password login/signup)
@@ -298,7 +309,18 @@ guarded by a bearer secret comparison.
 ## Secrets and user code execution (in-scope model)
 
 - Saved secrets are encrypted at rest with AES-GCM under `SECRET_STORE_KEY` and
-  scoped by `userId` (`packages/worker/src/mcp/secrets/`).
+  scoped by `userId` (`packages/worker/src/mcp/secrets/`). Ciphertexts are
+  versioned (`v2.<iv>.<ct>`) and bound via AES-GCM additional authenticated data
+  to their purpose and owning identity (`user:<userId>` for user secrets,
+  `app:<slug>` for platform OAuth client secrets), so a ciphertext copied into
+  another user's row fails to decrypt. Legacy unversioned ciphertexts still
+  decrypt and upgrade to `v2` whenever the value is re-encrypted on write. Only
+  `v2` provides owner binding: a legacy ciphertext carries no AAD, so until it
+  is rewritten it would still decrypt if copied into another row (metadata-only
+  writes preserve the legacy ciphertext). Row swaps already require write access
+  to the database, so this is defense-in-depth, not a standing hole; the
+  compatibility branch is deliberately upgrade-on-write (never rewrite-on-read)
+  and gets removed once no legacy ciphertexts remain.
 - `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
   blob in the DR backup bucket (solo operator; see
   [Disaster recovery](./disaster-recovery.md) and
@@ -387,8 +409,17 @@ change to these decisions here so future agents do not relitigate them.
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.
 - **PBKDF2-SHA256 (100k iterations)** is used for password hashing rather than a
-  memory-hard KDF. Acceptable here; changing it requires a rehash-on-login
-  migration.
+  memory-hard KDF. Workers' WebCrypto has no argon2/scrypt, and Cloudflare's
+  production runtime rejects PBKDF2 above 100,000 iterations (deriveBits throws
+  `NotSupportedError`; local workerd does not enforce the cap), so 100k is the
+  strongest setting the platform allows — below OWASP's 600k PBKDF2-SHA256
+  guidance. Iteration counts above the runtime cap are rejected during
+  verification (they could never derive in production), and lower-iteration
+  hashes are transparently re-hashed after a successful login
+  (`packages/worker/src/password-upgrade.ts`), so the setting can be raised
+  without a migration if the platform cap ever lifts.
 - **No CSRF tokens.** State-changing requests are protected by `SameSite=Lax`
-  cookies plus JSON `Content-Type` on mutating endpoints. Revisit if any
-  mutating endpoint starts accepting cross-site form posts or `SameSite=None`.
+  cookies plus JSON `Content-Type` on mutating endpoints. This is a deliberate
+  decision, restated as invariant 10 above: it holds only while both halves
+  hold, so revisit if any mutating endpoint starts accepting cross-site form
+  posts or `SameSite=None`.

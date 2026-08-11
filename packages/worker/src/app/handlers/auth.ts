@@ -28,6 +28,7 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { upgradePasswordHashIfNeeded } from '#worker/password-upgrade.ts'
 import {
 	parseStoredPlanName,
 	resolvePlanWrite,
@@ -500,6 +501,17 @@ export function createAuthHandler(env: Env) {
 					{ error: 'Invalid email or password.' },
 					{ status: 401 },
 				)
+			}
+
+			try {
+				await upgradePasswordHashIfNeeded(
+					db,
+					userRecord.id,
+					normalizedPassword,
+					userRecord.password_hash,
+				)
+			} catch {
+				// A failed hash upgrade must never block an otherwise valid login.
 			}
 
 			// Two-factor accounts get a short-lived pending cookie instead of a

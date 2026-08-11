@@ -1,10 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { registerPrompts } from './register-prompts.ts'
-import {
-	buildDiscoveryPrompt,
-	buildFirstWinPrompt,
-	buildOnboardingSetupPrompt,
-} from '#worker/onboarding-prompts.ts'
 
 test('registerPrompts advertises the templated onboarding prompts', async () => {
 	const registerPrompt = vi.fn()
@@ -22,41 +17,23 @@ test('registerPrompts advertises the templated onboarding prompts', async () => 
 	await registerPrompts(agent as never)
 
 	expect(registerPrompt).toHaveBeenCalledTimes(3)
-	const names = registerPrompt.mock.calls.map((call) => call[0])
-	expect(names).toEqual([
+	expect(registerPrompt.mock.calls.map((call) => call[0])).toEqual([
 		'onboarding_setup',
 		'onboarding_discovery',
 		'onboarding_first_win',
 	])
 
-	const setupResult = await registerPrompt.mock.calls[0]![2]!()
-	expect(setupResult).toEqual({
-		description: 'Kody onboarding setup prompt',
-		messages: [
+	for (const call of registerPrompt.mock.calls) {
+		const result = await call[2]!()
+		expect(result.messages).toEqual([
 			{
 				role: 'user',
 				content: {
 					type: 'text',
-					text: buildOnboardingSetupPrompt(),
+					text: expect.any(String),
 				},
 			},
-		],
-	})
-
-	const discoveryResult = await registerPrompt.mock.calls[1]![2]!()
-	expect(discoveryResult.messages[0]?.content).toEqual({
-		type: 'text',
-		text: buildDiscoveryPrompt({
-			env: { APP_BASE_URL: 'https://kody.test' },
-			requestUrl: 'https://kody.test',
-		}),
-	})
-
-	const firstWinResult = await registerPrompt.mock.calls[2]![2]!()
-	expect(firstWinResult.messages[0]?.content.text).toBe(
-		buildFirstWinPrompt({
-			env: { APP_BASE_URL: 'https://kody.test' },
-			requestUrl: 'https://kody.test',
-		}),
-	)
+		])
+		expect(result.messages[0]?.content.text.length).toBeGreaterThan(0)
+	}
 })

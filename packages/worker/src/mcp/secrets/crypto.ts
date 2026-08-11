@@ -5,10 +5,24 @@ import {
 
 const ivBytes = 12
 
+/**
+ * Ciphertext format version. `v2` payloads (`v2.<iv>.<ciphertext>`) bind the
+ * AES-GCM ciphertext to an additional-authenticated-data (AAD) string built
+ * from the purpose plus an identity context (e.g. the owning user), so a
+ * ciphertext copied into another row fails to decrypt. Legacy two-part
+ * payloads (`<iv>.<ciphertext>`, no AAD) keep decrypting for compatibility;
+ * they upgrade to v2 whenever the value is re-encrypted on write.
+ */
+const ciphertextVersion = 'v2'
+
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
 const derivedEncryptionKeyCache = new Map<string, Promise<CryptoKey>>()
+
+function buildAad(purpose: string, context: string) {
+	return textEncoder.encode(`kody.${ciphertextVersion}|${purpose}|${context}`)
+}
 
 function deriveEncryptionKey(secret: string, purpose: string) {
 	const cacheKey = `${purpose}:${secret}`
@@ -31,43 +45,92 @@ function deriveEncryptionKey(secret: string, purpose: string) {
 	return derivationPromise
 }
 
-export async function encryptStringWithPurpose(
-	env: Pick<Env, 'COOKIE_SECRET'>,
+async function encryptWithKey(
+	keySecret: string,
 	purpose: string,
+	context: string,
 	value: string,
 ) {
-	const key = await deriveEncryptionKey(env.COOKIE_SECRET, purpose)
+	const key = await deriveEncryptionKey(keySecret, purpose)
 	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
 	const ciphertext = await crypto.subtle.encrypt(
 		{
 			name: 'AES-GCM',
 			iv,
+			additionalData: buildAad(purpose, context),
 		},
 		key,
 		textEncoder.encode(value),
 	)
-	return `${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(ciphertext))}`
+	return `${ciphertextVersion}.${bytesToBase64Url(iv)}.${bytesToBase64Url(
+		new Uint8Array(ciphertext),
+	)}`
+}
+
+async function decryptWithKey(
+	keySecret: string,
+	purpose: string,
+	context: string,
+	payload: string,
+) {
+	const parts = payload.split('.')
+	const key = await deriveEncryptionKey(keySecret, purpose)
+	if (parts.length === 3) {
+		const [version, ivPart, ciphertextPart] = parts
+		if (version !== ciphertextVersion || !ivPart || !ciphertextPart) {
+			throw new Error('Invalid encrypted secret payload.')
+		}
+		const plaintext = await crypto.subtle.decrypt(
+			{
+				name: 'AES-GCM',
+				iv: base64UrlToBytes(ivPart),
+				additionalData: buildAad(purpose, context),
+			},
+			key,
+			base64UrlToBytes(ciphertextPart),
+		)
+		return textDecoder.decode(plaintext)
+	}
+	if (parts.length === 2) {
+		// Legacy payload written before AAD binding existed.
+		const [ivPart, ciphertextPart] = parts
+		if (!ivPart || !ciphertextPart) {
+			throw new Error('Invalid encrypted secret payload.')
+		}
+		const plaintext = await crypto.subtle.decrypt(
+			{
+				name: 'AES-GCM',
+				iv: base64UrlToBytes(ivPart),
+			},
+			key,
+			base64UrlToBytes(ciphertextPart),
+		)
+		return textDecoder.decode(plaintext)
+	}
+	throw new Error('Invalid encrypted secret payload.')
+}
+
+/**
+ * General-purpose string encryption under COOKIE_SECRET. `context` defaults to
+ * empty for identity-free payloads; pass an owning identity whenever the
+ * ciphertext lives in a row that could be swapped between owners.
+ */
+export async function encryptStringWithPurpose(
+	env: Pick<Env, 'COOKIE_SECRET'>,
+	purpose: string,
+	value: string,
+	context = '',
+) {
+	return encryptWithKey(env.COOKIE_SECRET, purpose, context, value)
 }
 
 export async function decryptStringWithPurpose(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	purpose: string,
 	payload: string,
+	context = '',
 ) {
-	const [ivPart, ciphertextPart] = payload.split('.')
-	if (!ivPart || !ciphertextPart) {
-		throw new Error('Invalid encrypted secret payload.')
-	}
-	const key = await deriveEncryptionKey(env.COOKIE_SECRET, purpose)
-	const plaintext = await crypto.subtle.decrypt(
-		{
-			name: 'AES-GCM',
-			iv: base64UrlToBytes(ivPart),
-		},
-		key,
-		base64UrlToBytes(ciphertextPart),
-	)
-	return textDecoder.decode(plaintext)
+	return decryptWithKey(env.COOKIE_SECRET, purpose, context, payload)
 }
 
 const secretStorePurpose = 'mcp-secret-store'
@@ -81,42 +144,41 @@ const secretStorePurpose = 'mcp-secret-store'
  */
 const platformOauthClientSecretPurpose = 'platform-oauth-client-secret'
 
+/** AAD context for a user-owned secret ciphertext. */
+export function userSecretContext(userId: string) {
+	return `user:${userId}`
+}
+
+/** AAD context for a platform OAuth app client secret ciphertext. */
+export function platformOauthAppContext(slug: string) {
+	return `app:${slug}`
+}
+
 export async function encryptPlatformOauthClientSecret(
 	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	value: string,
+	context: string,
 ) {
-	const key = await deriveEncryptionKey(
+	return encryptWithKey(
 		env.SECRET_STORE_KEY,
 		platformOauthClientSecretPurpose,
+		context,
+		value,
 	)
-	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
-	const ciphertext = await crypto.subtle.encrypt(
-		{ name: 'AES-GCM', iv },
-		key,
-		textEncoder.encode(value),
-	)
-	return `${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(ciphertext))}`
 }
 
 export async function decryptPlatformOauthClientSecret(
 	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	payload: string,
+	context: string,
 ) {
-	const [ivPart, ciphertextPart] = payload.split('.')
-	if (!ivPart || !ciphertextPart) {
-		throw new Error('Invalid encrypted platform client secret payload.')
-	}
 	try {
-		const key = await deriveEncryptionKey(
+		return await decryptWithKey(
 			env.SECRET_STORE_KEY,
 			platformOauthClientSecretPurpose,
+			context,
+			payload,
 		)
-		const plaintext = await crypto.subtle.decrypt(
-			{ name: 'AES-GCM', iv: base64UrlToBytes(ivPart) },
-			key,
-			base64UrlToBytes(ciphertextPart),
-		)
-		return textDecoder.decode(plaintext)
 	} catch {
 		throw new Error('Unable to decrypt platform client secret.')
 	}
@@ -125,41 +187,28 @@ export async function decryptPlatformOauthClientSecret(
 export async function encryptSecretValue(
 	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	value: string,
+	context: string,
 ) {
-	const key = await deriveEncryptionKey(
+	return encryptWithKey(
 		env.SECRET_STORE_KEY,
 		secretStorePurpose,
+		context,
+		value,
 	)
-	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
-	const ciphertext = await crypto.subtle.encrypt(
-		{ name: 'AES-GCM', iv },
-		key,
-		textEncoder.encode(value),
-	)
-	return `${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(ciphertext))}`
 }
 
 export async function decryptSecretValue(
 	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	payload: string,
+	context: string,
 ) {
-	const [ivPart, ciphertextPart] = payload.split('.')
-	if (!ivPart || !ciphertextPart) {
-		throw new Error('Invalid encrypted secret payload.')
-	}
 	try {
-		const iv = base64UrlToBytes(ivPart)
-		const ciphertextBytes = base64UrlToBytes(ciphertextPart)
-		const key = await deriveEncryptionKey(
+		return await decryptWithKey(
 			env.SECRET_STORE_KEY,
 			secretStorePurpose,
+			context,
+			payload,
 		)
-		const plaintext = await crypto.subtle.decrypt(
-			{ name: 'AES-GCM', iv },
-			key,
-			ciphertextBytes,
-		)
-		return textDecoder.decode(plaintext)
 	} catch {
 		throw new Error('Unable to decrypt secret value.')
 	}

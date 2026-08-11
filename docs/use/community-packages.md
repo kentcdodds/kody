@@ -78,15 +78,14 @@ delete can remove the delisted row.
 ## Browsing listings
 
 Anyone can browse `/community` and open a package at `/@username/kody-id` — for
-example `/@kentcdodds/devin`. Older `/community/:listingId` links still work and
-redirect to that address, and so do links shared before the owner changed their
-username or the package changed its `kody.id`. Detail pages show metadata,
-aggregate ratings, **star count** (stargazers — distinct from 1–5 ratings), fork
-count, the README (not the full source tree), and a dynamically generated Open
-Graph image (1200×630). When the owner keeps a
-[public profile](./community-profiles.md), the listing links to `/@username` and
-shows a follow control next to the username. Private owners still show as
-`@username` with a lock that explains the profile is private.
+example `/@kentcdodds/devin`. `/community/:listingId` redirects to that
+canonical URL; username and `kody.id` redirect tables resolve renamed owners and
+package ids the same way. Detail pages show metadata, aggregate ratings, **star
+count** (stargazers — distinct from 1–5 ratings), fork count, the README (not
+the full source tree), and a dynamically generated Open Graph image (1200×630).
+When the owner keeps a [public profile](./community-profiles.md), the listing
+links to `/@username` and shows a follow control next to the username. Private
+owners show as `@username` with a lock that explains the profile is private.
 
 Each detail page includes a **copyable prompt** you can hand to your agent to
 start a fork. You can also ask your agent to use `community_search` or

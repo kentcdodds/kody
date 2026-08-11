@@ -599,13 +599,18 @@ package summary. Ranked **search** excludes hidden packages unless the caller
 passes **`includeHiddenPackages: true`**. Known-id **`entity`** lookups still
 resolve hidden packages.
 
-Those two package capabilities also return community-fork provenance:
-**`source_listing_id`** is the listing the package was forked from,
-**`listing_current`** reports whether that ID is still an active listing, and
-**`listing_kody_id`** is the source listing's recorded `kody.id`. All three are
-`null` for self-authored packages. If a source is unpublished, `listing_current`
-becomes `false`; republishing the same source package moves prior forks to the
-new listing ID.
+## Community fork provenance
+
+**`package_list`** and **`package_get`** also return community-fork provenance
+on each package summary:
+
+- **`source_listing_id`** — listing the package was forked from
+- **`listing_current`** — whether that listing id is an active listing
+- **`listing_kody_id`** — the source listing's recorded `kody.id`
+
+All three are `null` for self-authored packages. When the source listing is
+unpublished, `listing_current` is `false`. Republishing the same source package
+moves prior forks to the new listing id.
 
 ## Author a saved package via direct git push
 

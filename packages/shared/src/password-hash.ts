@@ -3,8 +3,16 @@ import { toHex } from './hex.ts'
 const passwordHashPrefix = 'pbkdf2_sha256'
 const passwordSaltBytes = 16
 const passwordHashBytes = 32
-const maxPasswordHashIterations = 100_000
-const passwordHashIterations = maxPasswordHashIterations
+// Iterations used when creating new hashes. Cloudflare's production Workers
+// runtime rejects PBKDF2 above 100,000 iterations (crypto.subtle.deriveBits
+// throws NotSupportedError; local workerd does not enforce the cap), so this
+// is the maximum strength available on Workers. Older (lower-iteration)
+// hashes still verify and are transparently upgraded on successful login.
+const passwordHashIterations = 100_000
+// Ceiling on iterations accepted during verification. Anything above the
+// Workers runtime cap can never derive successfully in production, so such
+// hashes are rejected up front instead of throwing inside deriveBits.
+const maxAcceptedPasswordHashIterations = 100_000
 
 function fromHex(value: string): Uint8Array<ArrayBuffer> | null {
 	const normalized = value.trim().toLowerCase()
@@ -92,6 +100,16 @@ export async function createPasswordHash(password: string) {
 	)}`
 }
 
+export function passwordHashNeedsUpgrade(storedHash: string): boolean {
+	const normalizedHash = storedHash.trim()
+	if (!normalizedHash.startsWith(`${passwordHashPrefix}$`)) return false
+	const iterationsRaw = normalizedHash.split('$')[1]
+	if (!iterationsRaw || !/^\d+$/.test(iterationsRaw)) return false
+	const iterations = Number(iterationsRaw)
+	if (!Number.isSafeInteger(iterations) || iterations < 1) return false
+	return iterations < passwordHashIterations
+}
+
 export async function verifyPassword(
 	password: string,
 	storedHash: string,
@@ -113,7 +131,7 @@ export async function verifyPassword(
 		if (!Number.isSafeInteger(iterations) || iterations < 1 || !salt || !hash) {
 			return false
 		}
-		if (iterations > maxPasswordHashIterations) {
+		if (iterations > maxAcceptedPasswordHashIterations) {
 			return false
 		}
 		const derived = await derivePasswordKey(
