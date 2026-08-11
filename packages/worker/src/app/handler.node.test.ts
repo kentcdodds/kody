@@ -40,6 +40,17 @@ test('getEnv memoizes the parsed env per env object identity', () => {
 	expect(getEnv(createEnv())).not.toBe(getEnv(env))
 })
 
+test('production env requires the AUTH_RATE_LIMITER binding', () => {
+	expect(() => getEnv(createEnv({ SENTRY_ENVIRONMENT: 'production' }))).toThrow(
+		'AUTH_RATE_LIMITER',
+	)
+	expect(() =>
+		getEnv(
+			createEnv({ SENTRY_ENVIRONMENT: 'production', AUTH_RATE_LIMITER: {} }),
+		),
+	).not.toThrow()
+})
+
 test('handleRequest serves multiple requests from the same env object', async () => {
 	const env = createEnv()
 	const first = await handleRequest(

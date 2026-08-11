@@ -195,10 +195,14 @@ session is bound to one account), but it is not zero.
 ## Auth rate limiting
 
 Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
-(`auth:ip:<ip>`) backed by a D1 atomic limiter
-(`packages/worker/src/app/rate-limit.ts`, default 10 requests per 60-second
-window). The shared bucket means brute-force attempts cannot fan out across
-parallel paths. Covered paths (`rateLimitedAuthPaths` in
+(`auth:ip:<ip>`, `packages/worker/src/app/rate-limit.ts`, default 10 requests
+per 60-second window). Deployed environments use the Cloudflare rate-limit
+binding (`AUTH_RATE_LIMITER` in `packages/worker/wrangler.jsonc`); local dev,
+tests, and self-hosted configs fall back to a D1 atomic limiter. Production
+fails closed: env validation (`packages/worker/src/app/env.ts`) rejects a
+production runtime without the binding, so the D1 fallback can never silently
+become the production limiter. The shared bucket means brute-force attempts
+cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 `packages/worker/src/index.ts`):
 
 - `POST /auth` (password login/signup)
