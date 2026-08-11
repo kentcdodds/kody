@@ -8,7 +8,7 @@ import { createMatcher } from 'remix/route-pattern/match'
 const profileMatcher = createMatcher(routes.profile.pattern)
 
 registerFrame(PROFILE_TARGET, {
-	route: routes.profile,
+	routes: [routes.profile],
 	render: async ({ request, env, url }) => {
 		const username = profileMatcher.match(url)?.params.username
 		if (!username) {

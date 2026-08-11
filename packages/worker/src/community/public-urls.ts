@@ -1,4 +1,5 @@
 import { parseUserAvatarCacheKey } from '#worker/community/avatar.ts'
+import { parseListingOwnerUsername } from '#universal/community-links.ts'
 
 export function buildUserAvatarUrl(input: {
 	username: string
@@ -10,9 +11,6 @@ export function buildUserAvatarUrl(input: {
 	return `/profiles/${input.username}/avatar/${cacheKey}`
 }
 
-const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
-
 export function getOwnerUsernameFromListingName(name: string) {
-	const match = scopedPackageNamePattern.exec(name.trim())
-	return match?.[1] ?? 'unknown'
+	return parseListingOwnerUsername(name) ?? 'unknown'
 }

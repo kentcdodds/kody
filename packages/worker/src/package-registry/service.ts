@@ -2,6 +2,10 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
+import {
+	deletePackageKodyIdRedirects,
+	retirePackageKodyId,
+} from '#worker/community/package-url.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
 import {
@@ -290,6 +294,17 @@ export async function refreshSavedPackageProjection(input: {
 					sourceId: row.source_id,
 					hasApp: row.has_app === 1,
 					isPrivate: row.is_private === 1,
+				})
+				// `kody.id` is the second half of the package's canonical URL, so
+				// editing it in the manifest moves that URL. Retire the old id here
+				// rather than in the community layer: the id belongs to the package
+				// whether or not it is published.
+				await retirePackageKodyId({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					packageId: input.packageId,
+					oldKodyId: existing.kodyId,
+					newKodyId: row.kody_id,
 				})
 			} else {
 				await assertWithinEntitlement({
@@ -595,6 +610,14 @@ export async function deleteSavedPackageProjection(input: {
 				)
 			})
 			await deleteSavedPackage(input.env.APP_DB, {
+				userId: input.userId,
+				packageId: input.packageId,
+			})
+			// Retired `kody.id`s only mean something while the package they point
+			// at exists; leaving them behind would hand a later package another
+			// package's redirect history.
+			await deletePackageKodyIdRedirects({
+				db: input.env.APP_DB,
 				userId: input.userId,
 				packageId: input.packageId,
 			})

@@ -5,7 +5,7 @@ import { registerFrame } from '#app/frame-registry.ts'
 import { routes } from '#universal/routes.ts'
 
 registerFrame(COMMUNITY_LISTINGS_TARGET, {
-	route: routes.community,
+	routes: [routes.community],
 	render: async ({ request, env }) => {
 		const data = await loadCommunityIndexData(env, request)
 		return renderCommunityListingsContentHtml({

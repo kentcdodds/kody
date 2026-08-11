@@ -423,6 +423,32 @@ export async function getCommunityListingByOwnerAndPackage(
 	return row ? mapCommunityListingRow(row) : null
 }
 
+/**
+ * Lookup behind the canonical `/@owner/kody-id` URL. Only active listings are
+ * addressable that way: a delisted listing releases the pair (and the partial
+ * unique index that guards it), so a republish can take the URL over.
+ */
+export async function getCommunityListingByOwnerAndKodyId(
+	db: D1Database,
+	input: {
+		ownerUserId: string
+		kodyId: string
+	},
+): Promise<CommunityListingRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${communityListingSelectColumns}
+			FROM community_listings
+			${communityListingSourceJoin}
+			WHERE community_listings.owner_user_id = ?
+				AND community_listings.kody_id = ?
+				AND community_listings.status = 'active'`,
+		)
+		.bind(input.ownerUserId, input.kodyId)
+		.first<Record<string, unknown>>()
+	return row ? mapCommunityListingRow(row) : null
+}
+
 export async function listCommunityListings(
 	db: D1Database,
 	input: {

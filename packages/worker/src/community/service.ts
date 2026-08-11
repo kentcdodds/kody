@@ -30,6 +30,7 @@ import {
 	getCommunityForkByForkedPackageId,
 	getCommunityForkByListingAndUser,
 	getCommunityListingById,
+	getCommunityListingByOwnerAndKodyId,
 	getCommunityListingByOwnerAndPackage,
 	listCommunityForksByListingAndUser,
 	markCommunityForkAdopted,
@@ -346,6 +347,47 @@ export async function attachListingAggregatesBatch(
 	})
 }
 
+/**
+ * `(owner, kody.id)` is the canonical package URL, and a partial unique index
+ * keeps at most one active listing per pair. The pair can still be contested:
+ * deleting a package leaves its listing behind (the pinned snapshot outlives
+ * the source), so a later package can be published under a reused `kody.id`.
+ * The package that still exists takes the URL, and the stranded listing is
+ * delisted -- the same rule migration 0009 applied to historical collisions.
+ */
+async function releaseContestedCommunityPackageUrl(input: {
+	env: Env
+	ownerUserId: string
+	packageId: string
+	kodyId: string
+}) {
+	const competing = await getCommunityListingByOwnerAndKodyId(
+		input.env.APP_DB,
+		{ ownerUserId: input.ownerUserId, kodyId: input.kodyId },
+	)
+	if (!competing || competing.packageId === input.packageId) return
+
+	const competingPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: competing.packageId,
+	})
+	if (competingPackage) {
+		// `saved_packages` is unique on `(user_id, kody_id)`, so two live packages
+		// cannot claim one id. A live competitor means that listing's `kody_id`
+		// has drifted from its package, and re-publishing it is the fix.
+		throw new CommunityActionError(
+			`Community URL "${input.kodyId}" is already used by package "${competingPackage.name}". Re-publish that package to move it to its current id.`,
+		)
+	}
+
+	await updateCommunityListing(input.env.APP_DB, {
+		listingId: competing.id,
+		ownerUserId: input.ownerUserId,
+		status: 'delisted',
+	})
+	invalidateCommunityPublicCache()
+}
+
 export async function publishCommunityListing(input: {
 	env: Env
 	baseUrl: string
@@ -420,6 +462,13 @@ export async function publishCommunityListing(input: {
 			`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
 		)
 	}
+
+	await releaseContestedCommunityPackageUrl({
+		env: input.env,
+		ownerUserId: input.userId,
+		packageId: input.packageId,
+		kodyId: savedPackage.kodyId,
+	})
 
 	const now = new Date().toISOString()
 	const listingId = existingListing?.id ?? crypto.randomUUID()

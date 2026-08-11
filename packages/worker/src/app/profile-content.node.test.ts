@@ -49,13 +49,12 @@ test('profile packages link listings and expose follow controls next to the user
 		followError: null,
 	})
 
-	expect(guestHtml).toContain('href="/community/listing-1"')
-	expect(guestHtml.match(/fathom-analytics/g)).toHaveLength(1)
-	expect(guestHtml).toContain('href="/community/listing-1#fork-title"')
+	expect(guestHtml).toContain('href="/@kody/fathom-analytics"')
+	expect(guestHtml).toContain('href="/@kody/fathom-analytics#fork-title"')
 	// Listed packages get one fork control; unpublished packages do not.
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
-	expect(guestHtml).not.toContain('href="/community/notes')
+	expect(guestHtml).not.toContain('href="/@kody/notes"')
 	expect(guestHtml).toContain('data-testid="profile-follow"')
 	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
 

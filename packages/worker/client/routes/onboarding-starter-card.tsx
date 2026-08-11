@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import { routes } from '#universal/routes.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
@@ -146,7 +147,11 @@ export function OnboardingStarterCard(
 	return () => {
 		const { listing } = handle.props
 		const isRow = handle.props.variant === 'row'
-		const detailHref = routes.communityDetail.href({ listingId: listing.id })
+		const detailHref = getCommunityListingHref({
+			listingId: listing.id,
+			listingName: listing.name,
+			kodyId: listing.kodyId,
+		})
 		const existingInstall = listing.viewerInstall ?? null
 		const readyPrompt = agentPrompt ?? existingInstall?.agentPrompt ?? null
 		const readyStatus =

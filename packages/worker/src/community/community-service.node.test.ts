@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(),
 	getCommunityBan: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
+	getCommunityListingByOwnerAndKodyId: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	listCommunityListingCandidates: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
@@ -97,6 +98,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.getCommunityBan(...args),
 		getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
 			mockModule.getCommunityListingByOwnerAndPackage(...args),
+		getCommunityListingByOwnerAndKodyId: (...args: Array<unknown>) =>
+			mockModule.getCommunityListingByOwnerAndKodyId(...args),
 		getCommunityListingById: (...args: Array<unknown>) =>
 			mockModule.getCommunityListingById(...args),
 		listCommunityListingCandidates: (...args: Array<unknown>) =>

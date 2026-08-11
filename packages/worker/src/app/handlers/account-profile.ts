@@ -14,6 +14,7 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
+import { retireUsername } from '#worker/community/package-url.ts'
 import { updateCommunityProfile } from '#worker/community/social-service.ts'
 import {
 	republishCommunityListingsAfterUsernameChange,
@@ -209,6 +210,27 @@ export function createAccountProfileApiHandler(env: Env) {
 								packageIds: communityPackageIds,
 							})
 						: { republishedPackageIds: [], warnings: [] }
+
+				// Every canonical package URL for this user just moved, so retire the
+				// old username to keep links shared before the rename resolving. The
+				// rename itself has already succeeded here: a failure costs
+				// redirects, not the account change.
+				try {
+					await retireUsername({
+						db: env.APP_DB,
+						oldUsername: previousUsername,
+						newUsername: username,
+						userId: packageUserId,
+					})
+				} catch (error) {
+					console.error(
+						JSON.stringify({
+							message: 'username retirement write failed',
+							userId: packageUserId,
+							error: getErrorMessage(error),
+						}),
+					)
+				}
 
 				void logAuditEvent({
 					category: 'account',

@@ -35,6 +35,10 @@
 		{
 			"filename": "0008-refresh-google-platform-hosts.sql",
 			"sha256": "0fcb55e9e026bd33be47aceb728e31fbb79cb5b3a9a7c9f007a5209a48f0ac12"
+		},
+		{
+			"filename": "0009-community-listing-friendly-urls.sql",
+			"sha256": "30bf208bdeb34ce207ab7b3b053e0de08e9a1c0186c82afbddced2005214abba"
 		}
 	]
 }

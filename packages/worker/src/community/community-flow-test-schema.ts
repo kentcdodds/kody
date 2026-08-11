@@ -96,6 +96,24 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_community_listings_owner_package
 			ON community_listings(owner_user_id, package_id)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_community_listings_owner_kody_id_active
+			ON community_listings(owner_user_id, kody_id) WHERE status = 'active'`,
+		`CREATE TABLE IF NOT EXISTS username_redirects (
+			old_username TEXT PRIMARY KEY NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_username_redirects_user_id
+			ON username_redirects(user_id)`,
+		`CREATE TABLE IF NOT EXISTS package_kody_id_redirects (
+			user_id TEXT NOT NULL,
+			old_kody_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, old_kody_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_package_kody_id_redirects_package_id
+			ON package_kody_id_redirects(package_id)`,
 		`CREATE TABLE IF NOT EXISTS community_forks (
 			id TEXT PRIMARY KEY NOT NULL,
 			listing_id TEXT NOT NULL,

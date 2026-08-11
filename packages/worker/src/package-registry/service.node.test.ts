@@ -1165,6 +1165,10 @@ function createEntitlementsDatabase(input: {
 								}
 								return { meta: { changes: before - storageBuckets.length } }
 							}
+							// Deleting a package releases the `kody.id`s it retired.
+							if (query.includes('DELETE FROM package_kody_id_redirects')) {
+								return { meta: { changes: 0 } }
+							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
 						async first<T>() {

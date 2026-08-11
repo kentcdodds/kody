@@ -1,6 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { ensureCommunityFlowSchema } from '#worker/community/community-flow-test-schema.ts'
 
 function createRequest(
 	path: string,
@@ -54,15 +55,23 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 				message: { jsonrpc: '2.0', method: 'ping', id: 1 },
 			}),
 		}),
-		createRequest('/@connector-user/connectors'),
 	]
 	for (const request of unauthorizedConnectorRequests) {
 		const response = await workerFetch(request)
 		expect(response.status).toBe(404)
-		if (request.url.endsWith('/connectors')) {
-			await expect(response.text()).resolves.toBe('Not Found')
-		}
 	}
+
+	// Two segments is the public package URL `/@owner/kody-id`, even when the id
+	// spells a machine namespace: it reaches the app and 404s as a page rather
+	// than being swallowed by the connector namespace.
+	await ensureCommunityFlowSchema(env.APP_DB)
+	const namespaceLookalikeResponse = await workerFetch(
+		createRequest('/@connector-user/connectors'),
+	)
+	expect(namespaceLookalikeResponse.status).toBe(404)
+	await expect(namespaceLookalikeResponse.text()).resolves.toContain(
+		'Community package not found',
+	)
 
 	const websocketRequest = createRequest('/@connector-user/connectors/home', {
 		headers: { Upgrade: 'websocket' },

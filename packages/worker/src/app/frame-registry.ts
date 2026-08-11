@@ -16,7 +16,13 @@ type AppRoute = (typeof routes)[keyof typeof routes]
 
 export type RegisteredFrame = {
 	name: string
-	route: AppRoute
+	/**
+	 * Every route the frame may be requested for. More than one is legitimate
+	 * when a single page is addressable by several URL shapes (the canonical
+	 * `/@owner/kody-id` package URL and the listing-uuid URL it replaced), and
+	 * the frame renders the same content for each.
+	 */
+	routes: ReadonlyArray<AppRoute>
 	render: FrameRenderer
 }
 
@@ -32,17 +38,18 @@ function getMatcherForRoute(route: AppRoute) {
 	return matcher
 }
 
-export function pathnameMatchesFrameRoute(route: AppRoute, pathname: string) {
-	return (
-		getMatcherForRoute(route).match(new URL(pathname, 'https://kody.local')) !==
-		null
-	)
+export function pathnameMatchesFrameRoute(
+	routes: ReadonlyArray<AppRoute>,
+	pathname: string,
+) {
+	const url = new URL(pathname, 'https://kody.local')
+	return routes.some((route) => getMatcherForRoute(route).match(url) !== null)
 }
 
 export function registerFrame(
 	name: string,
 	config: {
-		route: AppRoute
+		routes: ReadonlyArray<AppRoute>
 		render: FrameRenderer
 	},
 ): RegisteredFrame {
@@ -52,7 +59,7 @@ export function registerFrame(
 
 	const frame = {
 		name,
-		route: config.route,
+		routes: config.routes,
 		render: config.render,
 	} satisfies RegisteredFrame
 
@@ -82,7 +89,7 @@ export async function handleFrameRequest(
 	if (!target) return null
 
 	const frame = getRegisteredFrame(target)
-	if (!frame || !pathnameMatchesFrameRoute(frame.route, pathname)) return null
+	if (!frame || !pathnameMatchesFrameRoute(frame.routes, pathname)) return null
 
 	const html = await frame.render({
 		request,
@@ -111,7 +118,7 @@ export async function resolveRegisteredFrameHtml(input: {
 	}
 
 	const frameUrl = new URL(src, currentFrameSrc ?? pageUrl)
-	if (!pathnameMatchesFrameRoute(frame.route, frameUrl.pathname)) {
+	if (!pathnameMatchesFrameRoute(frame.routes, frameUrl.pathname)) {
 		throw new Error(
 			`Frame target ${target} is not registered for ${frameUrl.pathname}`,
 		)
