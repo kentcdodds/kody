@@ -15,6 +15,8 @@ import {
 	filterSentryEvent,
 	isCloudflareOpaqueInternalErrorMessage,
 	isDurableObjectIsolateResourceLimitResetMessage,
+	isMcpAgentSessionDestroyedAbortMessage,
+	mcpAgentSessionDestroyedAbortMessage,
 } from './sentry-options.ts'
 
 test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
@@ -144,6 +146,39 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(wrappedOpaqueInternal)).toBe(wrappedOpaqueInternal)
+
+	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —
+	// KODY-CLOUDFLARE-4K. Wrapped "stream was destroyed" forms stay visible.
+	expect(
+		isMcpAgentSessionDestroyedAbortMessage(mcpAgentSessionDestroyedAbortMessage),
+	).toBe(true)
+	expect(isMcpAgentSessionDestroyedAbortMessage('Error: destroyed')).toBe(true)
+	expect(isMcpAgentSessionDestroyedAbortMessage('destroyed.')).toBe(true)
+	expect(
+		isMcpAgentSessionDestroyedAbortMessage(
+			'Cannot call write after a stream was destroyed',
+		),
+	).toBe(false)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: mcpAgentSessionDestroyedAbortMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: { values: [{ value: 'Error: destroyed' }] },
+		}),
+	).toBeNull()
+	const wrappedDestroyed = {
+		exception: {
+			values: [
+				{ value: 'Cannot call write after a stream was destroyed' },
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedDestroyed)).toBe(wrappedDestroyed)
 
 	const bareObjectReset = {
 		exception: {
