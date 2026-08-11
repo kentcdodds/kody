@@ -477,6 +477,93 @@
 			},
 		},
 		"preview": {
+			// Fresh preview scripts replay the whole migration chain, so it must
+			// not create JobManager/JobRunner: the class is not exported here
+			// anymore (it lives in the jobs worker, ADR 0016). Same chain as the
+			// top level minus the v6/v9 JobManager+JobRunner pair.
+			"migrations": [
+				{
+					"new_sqlite_classes": ["MCP"],
+					"tag": "v1",
+				},
+				{
+					"new_sqlite_classes": ["ChatAgent"],
+					"tag": "v2",
+				},
+				{
+					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"],
+					"tag": "v3",
+				},
+				{
+					"new_sqlite_classes": ["SchedulerDO"],
+					"tag": "v4",
+				},
+				{
+					"deleted_classes": ["SchedulerDO"],
+					"tag": "v7",
+				},
+				{
+					"new_sqlite_classes": ["StorageRunner"],
+					"tag": "v8",
+				},
+				{
+					"new_sqlite_classes": ["AgentTurnRunner"],
+					"tag": "v10",
+				},
+				{
+					"new_sqlite_classes": ["RepoSession"],
+					"tag": "v11",
+				},
+				{
+					"new_sqlite_classes": ["PackageRealtimeSession"],
+					"tag": "v13",
+				},
+				{
+					"new_sqlite_classes": ["PackageServiceInstance"],
+					"tag": "v14",
+				},
+				{
+					"renamed_classes": [
+						{
+							"from": "HomeConnectorSession",
+							"to": "RemoteConnectorSession",
+						},
+					],
+					"tag": "v15",
+				},
+				{
+					"deleted_classes": ["HomeMCP"],
+					"tag": "v16",
+				},
+				{
+					"deleted_classes": ["ChatAgent", "AgentTurnRunner"],
+					"tag": "v17",
+				},
+				{
+					"new_sqlite_classes": ["McpClientHub"],
+					"tag": "v18",
+				},
+				{
+					"new_sqlite_classes": ["OAuthPurgeCoordinator"],
+					"tag": "v19",
+				},
+				{
+					"new_sqlite_classes": ["RunLog"],
+					"tag": "v20",
+				},
+				{
+					"new_sqlite_classes": ["UserMeter"],
+					"tag": "v21",
+				},
+				{
+					"new_sqlite_classes": ["Mailbox"],
+					"tag": "v22",
+				},
+				{
+					"new_sqlite_classes": ["StripePlanRefresh"],
+					"tag": "v23",
+				},
+			],
 			"ratelimits": [
 				{
 					"name": "AUTH_RATE_LIMITER",
@@ -668,6 +755,93 @@
 			},
 		},
 		"test": {
+			// Local test workers replay the whole migration chain, so it must
+			// not create JobManager/JobRunner: the class is not exported here
+			// anymore (it lives in the jobs worker, ADR 0016). Same chain as the
+			// top level minus the v6/v9 JobManager+JobRunner pair.
+			"migrations": [
+				{
+					"new_sqlite_classes": ["MCP"],
+					"tag": "v1",
+				},
+				{
+					"new_sqlite_classes": ["ChatAgent"],
+					"tag": "v2",
+				},
+				{
+					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"],
+					"tag": "v3",
+				},
+				{
+					"new_sqlite_classes": ["SchedulerDO"],
+					"tag": "v4",
+				},
+				{
+					"deleted_classes": ["SchedulerDO"],
+					"tag": "v7",
+				},
+				{
+					"new_sqlite_classes": ["StorageRunner"],
+					"tag": "v8",
+				},
+				{
+					"new_sqlite_classes": ["AgentTurnRunner"],
+					"tag": "v10",
+				},
+				{
+					"new_sqlite_classes": ["RepoSession"],
+					"tag": "v11",
+				},
+				{
+					"new_sqlite_classes": ["PackageRealtimeSession"],
+					"tag": "v13",
+				},
+				{
+					"new_sqlite_classes": ["PackageServiceInstance"],
+					"tag": "v14",
+				},
+				{
+					"renamed_classes": [
+						{
+							"from": "HomeConnectorSession",
+							"to": "RemoteConnectorSession",
+						},
+					],
+					"tag": "v15",
+				},
+				{
+					"deleted_classes": ["HomeMCP"],
+					"tag": "v16",
+				},
+				{
+					"deleted_classes": ["ChatAgent", "AgentTurnRunner"],
+					"tag": "v17",
+				},
+				{
+					"new_sqlite_classes": ["McpClientHub"],
+					"tag": "v18",
+				},
+				{
+					"new_sqlite_classes": ["OAuthPurgeCoordinator"],
+					"tag": "v19",
+				},
+				{
+					"new_sqlite_classes": ["RunLog"],
+					"tag": "v20",
+				},
+				{
+					"new_sqlite_classes": ["UserMeter"],
+					"tag": "v21",
+				},
+				{
+					"new_sqlite_classes": ["Mailbox"],
+					"tag": "v22",
+				},
+				{
+					"new_sqlite_classes": ["StripePlanRefresh"],
+					"tag": "v23",
+				},
+			],
 			"worker_loaders": [
 				{
 					"binding": "LOADER",

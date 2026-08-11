@@ -117,6 +117,16 @@
 			},
 		},
 		"test": {
+			// Local test workers are fresh scripts: they cannot run the
+			// production script-transfer migration (from_script "kody"), so the
+			// class is created fresh here (matching the generated preview
+			// config in tools/ci/jobs-worker-resources.ts).
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["JobManager"],
+				},
+			],
 			"durable_objects": {
 				"bindings": [
 					{
@@ -134,8 +144,9 @@
 			],
 			"services": [
 				{
+					// `wrangler dev --env test` names the main worker `kody-test`.
 					"binding": "HOST",
-					"service": "kody",
+					"service": "kody-test",
 					"entrypoint": "JobsHost",
 				},
 			],

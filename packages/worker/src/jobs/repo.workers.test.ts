@@ -12,7 +12,7 @@ import {
 	refreshPackageJobRowIdentity,
 	retryClaimedJobRow,
 	updateJobRow,
-} from './repo.ts'
+} from '@kody-internal/shared/jobs/repo.ts'
 
 async function ensureJobsSchema() {
 	await env.APP_DB.prepare(
