@@ -51,8 +51,16 @@
 							"class_name": "OAuthPurgeCoordinator"
 						},
 						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
-						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
-						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{
+							"name": "STORAGE_RUNNER",
+							"class_name": "StorageRunner",
+							"script_name": "kody-runtime"
+						},
+						{
+							"name": "RUN_LOG",
+							"class_name": "RunLog",
+							"script_name": "kody-runtime"
+						},
 						{ "name": "USER_METER", "class_name": "UserMeter" },
 						{ "name": "MAILBOX", "class_name": "Mailbox" },
 						{
@@ -62,11 +70,13 @@
 						{ "name": "REPO_SESSION", "class_name": "RepoSession" },
 						{
 							"name": "PACKAGE_REALTIME_SESSION",
-							"class_name": "PackageRealtimeSession"
+							"class_name": "PackageRealtimeSession",
+							"script_name": "kody-runtime"
 						},
 						{
 							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance"
+							"class_name": "PackageServiceInstance",
+							"script_name": "kody-runtime"
 						}
 					]
 				},
@@ -84,8 +94,16 @@
 							"class_name": "OAuthPurgeCoordinator"
 						},
 						{ "name": "JOB_MANAGER", "class_name": "JobManager" },
-						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
-						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{
+							"name": "STORAGE_RUNNER",
+							"class_name": "StorageRunner",
+							"script_name": "kody-runtime"
+						},
+						{
+							"name": "RUN_LOG",
+							"class_name": "RunLog",
+							"script_name": "kody-runtime"
+						},
 						{ "name": "USER_METER", "class_name": "UserMeter" },
 						{ "name": "MAILBOX", "class_name": "Mailbox" },
 						{
@@ -95,11 +113,13 @@
 						{ "name": "REPO_SESSION", "class_name": "RepoSession" },
 						{
 							"name": "PACKAGE_REALTIME_SESSION",
-							"class_name": "PackageRealtimeSession"
+							"class_name": "PackageRealtimeSession",
+							"script_name": "kody-runtime"
 						},
 						{
 							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance"
+							"class_name": "PackageServiceInstance",
+							"script_name": "kody-runtime"
 						}
 					]
 				},
@@ -142,6 +162,135 @@
 			"path": "packages/backup-control-plane/wrangler.jsonc",
 			"protected_migrations": [],
 			"protected_binding_sets": []
+		},
+		{
+			"path": "packages/runtime-worker/wrangler.jsonc",
+			"protected_migrations": [],
+			"protected_transfer_migrations": [
+				{
+					"tag": "v1",
+					"transferred_classes": [
+						{
+							"from": "StorageRunner",
+							"from_script": "kody",
+							"to": "StorageRunner"
+						},
+						{ "from": "RunLog", "from_script": "kody", "to": "RunLog" },
+						{
+							"from": "PackageRealtimeSession",
+							"from_script": "kody",
+							"to": "PackageRealtimeSession"
+						},
+						{
+							"from": "PackageServiceInstance",
+							"from_script": "kody",
+							"to": "PackageServiceInstance"
+						}
+					]
+				}
+			],
+			"protected_binding_sets": [
+				{
+					"location": "env.production.durable_objects",
+					"bindings": [
+						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
+						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession"
+						},
+						{
+							"name": "PACKAGE_SERVICE_INSTANCE",
+							"class_name": "PackageServiceInstance"
+						},
+						{
+							"name": "USER_METER",
+							"class_name": "UserMeter",
+							"script_name": "kody"
+						},
+						{
+							"name": "MCP_OBJECT",
+							"class_name": "MCP",
+							"script_name": "kody"
+						},
+						{
+							"name": "REMOTE_CONNECTOR_SESSION",
+							"class_name": "RemoteConnectorSession",
+							"script_name": "kody"
+						},
+						{
+							"name": "MCP_CLIENT_HUB",
+							"class_name": "McpClientHub",
+							"script_name": "kody"
+						},
+						{
+							"name": "JOB_MANAGER",
+							"class_name": "JobManager",
+							"script_name": "kody"
+						},
+						{
+							"name": "MAILBOX",
+							"class_name": "Mailbox",
+							"script_name": "kody"
+						},
+						{
+							"name": "REPO_SESSION",
+							"class_name": "RepoSession",
+							"script_name": "kody"
+						}
+					]
+				},
+				{
+					"location": "env.preview.durable_objects",
+					"bindings": [
+						{ "name": "STORAGE_RUNNER", "class_name": "StorageRunner" },
+						{ "name": "RUN_LOG", "class_name": "RunLog" },
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession"
+						},
+						{
+							"name": "PACKAGE_SERVICE_INSTANCE",
+							"class_name": "PackageServiceInstance"
+						},
+						{
+							"name": "USER_METER",
+							"class_name": "UserMeter",
+							"script_name": "kody"
+						},
+						{
+							"name": "MCP_OBJECT",
+							"class_name": "MCP",
+							"script_name": "kody"
+						},
+						{
+							"name": "REMOTE_CONNECTOR_SESSION",
+							"class_name": "RemoteConnectorSession",
+							"script_name": "kody"
+						},
+						{
+							"name": "MCP_CLIENT_HUB",
+							"class_name": "McpClientHub",
+							"script_name": "kody"
+						},
+						{
+							"name": "JOB_MANAGER",
+							"class_name": "JobManager",
+							"script_name": "kody"
+						},
+						{
+							"name": "MAILBOX",
+							"class_name": "Mailbox",
+							"script_name": "kody"
+						},
+						{
+							"name": "REPO_SESSION",
+							"class_name": "RepoSession",
+							"script_name": "kody"
+						}
+					]
+				}
+			]
 		}
 	]
 }

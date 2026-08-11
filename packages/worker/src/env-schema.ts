@@ -45,6 +45,16 @@ const optionalAiSchema = createSchema<unknown, Ai | undefined>(
 	},
 )
 
+// Service binding to the package runtime Worker (`kody-runtime`). Present in
+// production/preview and multi-worker local dev; absent in tests and
+// single-worker dev, where the main Worker serves the runtime lane itself.
+const optionalFetcherSchema = createSchema<unknown, Fetcher | undefined>(
+	(value, _context) => {
+		if (value === undefined) return { value: undefined }
+		return { value: value as Fetcher }
+	},
+)
+
 const optionalNonEmptyStringSchema = createSchema<unknown, string | undefined>(
 	(value, context) => {
 		if (value === undefined) return { value: undefined }
@@ -185,6 +195,7 @@ export const EnvSchema = object({
 	MCP_CLIENT_HUB: requiredDurableObjectNamespaceSchema(
 		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
 	),
+	RUNTIME_WORKER: optionalFetcherSchema,
 	APP_BASE_URL: optionalUrlStringSchema,
 	// Comma-separated legacy app hostnames (for example `heykody.dev`) the
 	// Worker keeps serving alongside the canonical `APP_BASE_URL` host during

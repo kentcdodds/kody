@@ -69,6 +69,7 @@ import { handleMailboxImportRequest } from '#worker/dr/mailbox-import-maintenanc
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
+import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
 
 export {
 	RepoSession,
@@ -538,6 +539,15 @@ function createOAuthProviderExceptionResponse(
 const workerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
+
+		// Package runtime lane extraction (ADR 0016): when the runtime Worker
+		// service binding is configured, runtime-owned requests (package-app
+		// origin, inline package apps, package invocation API) are forwarded
+		// wholesale to the `kody-runtime` Worker. Without the binding (tests,
+		// single-worker local dev) the in-process handlers below keep serving.
+		if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
+			return env.RUNTIME_WORKER.fetch(request)
+		}
 
 		// Host isolation for hosted package apps runs before every other route:
 		// nothing first-party may be reachable on the package-app origin, and the

@@ -42,6 +42,10 @@ to become.
 - [Run records](./run-records.md): per-user execution history and logs across
   every runtime surface (`RunLog` Durable Object, `runs` MCP domain,
   `/account/activity`).
+- [Runtime worker migration runbook](./runtime-worker-migration-runbook.md): the
+  coordinated deploy order and Durable Object script migration for extracting
+  the package runtime lane into the `kody-runtime` Worker
+  ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
   invariants for the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`). It is not a living feature changelog

@@ -136,6 +136,73 @@ test('Durable Object guard protects migration tags and bound classes', () => {
 	).toEqual([expect.stringContaining('binding identities')])
 })
 
+test('Durable Object guard protects transferred_classes migrations', () => {
+	const allowlist = {
+		version: 1,
+		deletions: [],
+	} satisfies DurableObjectDeletionAllowlist
+	const transfer = {
+		from: 'RunLog',
+		from_script: 'kody',
+		to: 'RunLog',
+	}
+	const transferBaseline = {
+		path: configPath,
+		protected_migrations: [],
+		protected_transfer_migrations: [
+			{ tag: 'v1', transferred_classes: [transfer] },
+		],
+		protected_binding_sets: [],
+	} satisfies DurableObjectBaseline['configs'][number]
+
+	const matching = {
+		migrations: [{ tag: 'v1', transferred_classes: [transfer] }],
+	}
+	expect(
+		checkDurableObjectConfig(configPath, matching, transferBaseline, allowlist),
+	).toEqual([])
+
+	const retargeted = {
+		migrations: [
+			{
+				tag: 'v1',
+				transferred_classes: [{ ...transfer, from_script: 'other-worker' }],
+			},
+		],
+	}
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			retargeted,
+			transferBaseline,
+			allowlist,
+		),
+	).toEqual([
+		expect.stringContaining(
+			'protected transferred_classes migration "v1" was removed, renamed, or changed',
+		),
+	])
+
+	const unrecorded = {
+		migrations: [
+			{ tag: 'v1', transferred_classes: [transfer] },
+			{ tag: 'v2', transferred_classes: [transfer] },
+		],
+	}
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			unrecorded,
+			transferBaseline,
+			allowlist,
+		),
+	).toEqual([
+		expect.stringContaining(
+			'transferred_classes migration "v2" is not recorded',
+		),
+	])
+})
+
 test('workflow guard permits destructive commands only in operator-dispatched jobs', () => {
 	const automaticWorkflow = `on:
   push:

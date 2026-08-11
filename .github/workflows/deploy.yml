@@ -153,10 +153,57 @@ jobs:
           set -euo pipefail
           node tools/ci/production-resources.ts ensure --out-config packages/worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
+      # Package runtime worker (ADR 0016). Shares the main worker's data
+      # plane, so it derives resource ids from the generated main config and
+      # patches the main config's cross-script references in place.
+      - name: 🧩 Generate runtime worker config
+        id: runtime_config
+        run: |
+          set -euo pipefail
+          node tools/ci/runtime-worker-config.ts generate \
+            --env production \
+            --main-config packages/worker/wrangler-production.generated.json \
+            --worker-name kody-runtime \
+            --main-worker-name kody \
+            --out-config packages/runtime-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+          SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
+          AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.OAUTH_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.OAUTH_GOOGLE_CLIENT_SECRET }}
+          X_CLIENT_ID: ${{ secrets.OAUTH_X_CLIENT_ID }}
+          X_CLIENT_SECRET: ${{ secrets.OAUTH_X_CLIENT_SECRET }}
+          KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        run: >
+          node tools/ci/sync-worker-secrets.ts --env production --config
+          "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
+          --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
+          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
+          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
+          CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
+          --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
+          GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
+          --set-from-env-optional X_CLIENT_ID --set-from-env-optional
+          X_CLIENT_SECRET --set-from-env-optional KIT_API_KEY
+          --set-from-env-optional STRIPE_SECRET_KEY --set-from-env-optional
+          STRIPE_WEBHOOK_SECRET
+
+      - name: 🔐 Sync Cloudflare Secrets to runtime worker (bulk)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_CONFIG:
+            ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
           SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
@@ -192,6 +239,27 @@ jobs:
         run: |
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
           node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
+
+      # Deploys before the main worker: the main worker's cross-script
+      # Durable Object / service bindings require the kody-runtime script to
+      # exist. On the first production deploy this also runs the
+      # transferred_classes migration; see
+      # docs/contributing/architecture/runtime-worker-migration-runbook.md.
+      - name: ☁️ Deploy runtime worker to Cloudflare Workers
+        id: deploy_runtime
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
+        run: |
+          set -euo pipefail
+          npm run deploy -- --config "$WRANGLER_CONFIG" --outdir .wrangler/sentry-bundle-runtime --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+
+          RUNTIME_URL="$(node -e "const fs = require('node:fs'); const t = fs.readFileSync('deploy-runtime.log','utf8'); const m = t.match(/https:\\/\\/[a-zA-Z0-9._-]+\\.workers\\.dev/g); process.stdout.write(m?.at(-1) ?? '')")"
+          if [ -n "$RUNTIME_URL" ]; then
+            echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: ☁️ Deploy to Cloudflare Workers
         id: deploy
@@ -306,6 +374,43 @@ jobs:
           if [ -f health.json ]; then
             echo "Last response body:" >&2
             cat health.json >&2
+          fi
+          exit 1
+
+      - name: 🩺 Healthcheck runtime worker (production)
+        shell: bash
+        env:
+          RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RUNTIME_URL:-}" ]; then
+            echo "Missing runtime worker deploy URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          HEALTHCHECK_URL="${RUNTIME_URL%/}/__runtime/health"
+          echo "Healthcheck URL: $HEALTHCHECK_URL"
+
+          attempts=20
+          delay_seconds=3
+
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > runtime-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('runtime-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.status !== 'ok') { console.error('runtime-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commitSha !== expected) { console.error('runtime-healthcheck-unexpected-commit-sha', { expected, actual: json?.commitSha }); process.exit(1); } console.log('runtime-healthcheck-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "Runtime worker healthcheck failed after ${attempts} attempts: $HEALTHCHECK_URL" >&2
+          if [ -f runtime-health.json ]; then
+            echo "Last response body:" >&2
+            cat runtime-health.json >&2
           fi
           exit 1
 

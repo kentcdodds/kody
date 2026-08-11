@@ -20,6 +20,17 @@ type ProtectedMigration = {
 	new_sqlite_classes: Array<string>
 }
 
+type TransferredClass = {
+	from: string
+	from_script: string
+	to: string
+}
+
+type ProtectedTransferMigration = {
+	tag: string
+	transferred_classes: Array<TransferredClass>
+}
+
 type ProtectedBindingSet = {
 	location: string
 	bindings: Array<DurableObjectBinding>
@@ -28,6 +39,7 @@ type ProtectedBindingSet = {
 type DurableObjectBaselineConfig = {
 	path: string
 	protected_migrations: Array<ProtectedMigration>
+	protected_transfer_migrations?: Array<ProtectedTransferMigration>
 	protected_binding_sets: Array<ProtectedBindingSet>
 }
 
@@ -50,6 +62,7 @@ export type DurableObjectDeletionAllowlist = {
 type WranglerMigration = {
 	tag?: unknown
 	new_sqlite_classes?: unknown
+	transferred_classes?: unknown
 	deleted_classes?: unknown
 }
 
@@ -91,6 +104,40 @@ function sameStrings(
 		left.length === right.length &&
 		left.every((entry, index) => entry === right[index])
 	)
+}
+
+function normalizeTransferredClasses(
+	value: unknown,
+): Array<TransferredClass> | null {
+	if (!Array.isArray(value)) return null
+	const transfers: Array<TransferredClass> = []
+	for (const entry of value) {
+		if (!entry || typeof entry !== 'object') return null
+		const candidate = entry as Record<string, unknown>
+		if (
+			typeof candidate.from !== 'string' ||
+			typeof candidate.from_script !== 'string' ||
+			typeof candidate.to !== 'string'
+		) {
+			return null
+		}
+		transfers.push({
+			from: candidate.from,
+			from_script: candidate.from_script,
+			to: candidate.to,
+		})
+	}
+	return transfers
+}
+
+function transferKey(transfer: TransferredClass): string {
+	return JSON.stringify([transfer.from, transfer.from_script, transfer.to])
+}
+
+function sortedTransferKeys(
+	transfers: ReadonlyArray<TransferredClass>,
+): Array<string> {
+	return transfers.map((transfer) => transferKey(transfer)).sort()
 }
 
 function deletionKey(deletion: AllowedDeletion): string {
@@ -211,6 +258,44 @@ export function checkDurableObjectConfig(
 		) {
 			errors.push(
 				`${configPath}: new_sqlite_classes migration "${migration.tag}" is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
+			)
+		}
+	}
+
+	// Transfer migrations move Durable Object storage between scripts;
+	// changing or removing one after it ships would orphan or duplicate
+	// storage, so every transferred_classes migration must exactly match a
+	// reviewed baseline entry.
+	const protectedTransferMigrations =
+		baseline.protected_transfer_migrations ?? []
+	for (const protectedTransfer of protectedTransferMigrations) {
+		const current = migrationsByTag.get(protectedTransfer.tag)
+		const currentTransfers = normalizeTransferredClasses(
+			current?.transferred_classes,
+		)
+		if (
+			!currentTransfers ||
+			!sameStrings(
+				sortedTransferKeys(currentTransfers),
+				sortedTransferKeys(protectedTransfer.transferred_classes),
+			)
+		) {
+			errors.push(
+				`${configPath}: protected transferred_classes migration "${protectedTransfer.tag}" was removed, renamed, or changed (expected ${protectedTransfer.transferred_classes.map((transfer) => `${transfer.from_script}/${transfer.from} -> ${transfer.to}`).join(', ')}).`,
+			)
+		}
+	}
+	const protectedTransferTags = new Set(
+		protectedTransferMigrations.map(({ tag }) => tag),
+	)
+	for (const migration of migrations) {
+		if (
+			migration.transferred_classes !== undefined &&
+			typeof migration.tag === 'string' &&
+			!protectedTransferTags.has(migration.tag)
+		) {
+			errors.push(
+				`${configPath}: transferred_classes migration "${migration.tag}" is not recorded in ${defaultDurableObjectBaselinePath}. Update the reviewed baseline so this migration remains protected after it lands.`,
 			)
 		}
 	}

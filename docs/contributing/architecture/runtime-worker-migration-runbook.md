@@ -1,0 +1,125 @@
+# Runtime worker migration runbook
+
+How to move the package runtime lane from the main `kody` Worker into the
+`kody-runtime` Worker (`packages/runtime-worker/`) in production, per
+[ADR 0016](../decisions/0016-mono-worker-extraction.md). The genuinely risky
+step is the one-time Durable Object **script migration**: the storage of
+`StorageRunner`, `RunLog`, `PackageRealtimeSession`, and
+`PackageServiceInstance` moves from the `kody` script to the `kody-runtime`
+script via a Wrangler `transferred_classes` migration.
+
+> **Warning:** the implementation session that authored this document must NOT
+> execute these production steps. The runbook is executed by an operator (the
+> parent session) after preview verification and PR merge.
+
+## Ownership after the split
+
+| Concern                                                                       | Owner                                                                       |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Package-app origin (`PACKAGE_APP_BASE_URL`, `kodyapps.dev`) custom domain     | `kody-runtime`                                                              |
+| Inline package-app serving (`/apps/...` on the app origin)                    | `kody-runtime` (forwarded by main via the `RUNTIME_WORKER` service binding) |
+| Package invocation API                                                        | `kody-runtime` (forwarded by main)                                          |
+| `DynamicCallableWorkflow` (Cloudflare Workflow)                               | `kody-runtime` (main binds it cross-script)                                 |
+| `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `PackageServiceInstance` | `kody-runtime` (main binds them cross-script)                               |
+| `UserMeter` and every other Durable Object, app, MCP, OAuth, email, jobs      | `kody` (runtime binds what it needs cross-script)                           |
+| `APP_DB` / `AUDIT_DB` / KV / R2 / queues / Vectorize / AI                     | Shared resources; each worker binds directly (no RPC proxying)              |
+
+## Migration configuration
+
+Committed in `packages/runtime-worker/wrangler.jsonc` (production applies it on
+the first `kody-runtime` deploy; the exact transfer set is protected by
+`tools/ci/durable-object-baseline.json`):
+
+```jsonc
+"migrations": [
+	{
+		"tag": "v1",
+		"transferred_classes": [
+			{ "from": "StorageRunner", "from_script": "kody", "to": "StorageRunner" },
+			{ "from": "RunLog", "from_script": "kody", "to": "RunLog" },
+			{ "from": "PackageRealtimeSession", "from_script": "kody", "to": "PackageRealtimeSession" },
+			{ "from": "PackageServiceInstance", "from_script": "kody", "to": "PackageServiceInstance" }
+		]
+	}
+]
+```
+
+Cloudflare requirements for a `transferred_classes` migration:
+
+- The source script (`kody`) must still exist and must still contain the
+  migration history that created the classes; the transfer removes them from the
+  source script's Durable Object namespace registry.
+- The destination script must export classes under the `to` names.
+- The source script must stop exporting/serving the classes in the **same
+  coordinated deploy window** — after the transfer, DO requests routed through
+  the old script's namespaces fail.
+- Existing DO ids, storage, and alarms move with the class. In-flight requests
+  against the old namespace during the switch can error; run at a quiet time.
+
+## Coordinated production deploy order
+
+The merged main-branch deploy workflow (`.github/workflows/deploy.yml`) encodes
+this order; the operator's job is to merge and watch, not to run wrangler by
+hand.
+
+1. **Preview verification (before merging).** The PR's preview deploy creates a
+   fresh worker pair (`kody-pr-<n>` and `kody-pr-<n>-runtime`). Verify:
+   - both healthchecks passed in the preview workflow (`/health` on main,
+     `/__runtime/health` on runtime);
+   - a package app loads on the preview origin (`/apps/<user>/<package>`);
+   - a package invocation runs end to end (create a run, watch its RunLog stream
+     complete). Preview cannot rehearse the `transferred_classes` migration
+     itself (preview pairs are created fresh with `new_sqlite_classes`); the
+     transfer is exercised for the first time in production, which is why the
+     deploy order below matters.
+2. **Merge the PR.** The production deploy workflow then:
+   1. generates the runtime config from the provisioned main config
+      (`tools/ci/runtime-worker-config.ts`);
+   2. syncs secrets to both workers;
+   3. applies D1 migrations (shared databases, applied once);
+   4. **deploys `kody-runtime` first** — this applies the `v1`
+      `transferred_classes` migration, moving the four classes' storage out of
+      `kody`. From this moment the still-running old `kody` deployment serves
+      runtime traffic against namespaces that have moved; the window until step
+      5 completes must be short and is why the two deploys are consecutive steps
+      in one job;
+   5. **deploys `kody` second** with the config that binds the four classes
+      cross-script (`script_name: "kody-runtime"`) plus the `RUNTIME_WORKER`
+      service binding, and stops routing runtime requests in-process;
+   6. healthchecks `kody` (`/health`) and `kody-runtime` (`/__runtime/health`),
+      then runs the execute smoke check.
+3. **Post-deploy verification.**
+   - Load a production package app on `https://kodyapps.dev`.
+   - Run a package invocation; confirm the run appears with streaming logs
+     (proves RunLog storage transferred, not recreated empty).
+   - Open an existing pre-migration run's logs (proves old DO storage moved).
+   - Check Sentry for both workers.
+
+## Manual execution (only if the workflow cannot run)
+
+From a checkout of the merged commit, with `CLOUDFLARE_API_TOKEN` set:
+
+```sh
+node tools/ci/production-resources.ts ensure --out-config packages/worker/wrangler-production.generated.json
+node tools/ci/runtime-worker-config.ts generate \
+  --env production \
+  --main-config packages/worker/wrangler-production.generated.json \
+  --worker-name kody-runtime \
+  --main-worker-name kody \
+  --out-config packages/runtime-worker/wrangler-production.generated.json
+npm run deploy -- --config packages/runtime-worker/wrangler-production.generated.json --outdir .wrangler/sentry-bundle-runtime
+npm run deploy -- --config packages/worker/wrangler-production.generated.json
+```
+
+## Rollback
+
+- **Runtime deploy failed before the migration applied:** nothing moved; the old
+  `kody` deployment still owns the classes. Fix and retry.
+- **After the transfer applied:** roll _forward_ on the runtime worker (redeploy
+  a fixed `kody-runtime`). Do not attempt to transfer the classes back to `kody`
+  under incident pressure — a reverse `transferred_classes` migration is
+  possible but is a second risky migration; it needs its own reviewed config
+  change (the deploy guardrails intentionally refuse unreviewed migration
+  edits).
+- The main worker can always be rolled back independently as long as its config
+  keeps the cross-script bindings.

@@ -1,0 +1,395 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// Package runtime Worker (ADR 0016): the untrusted-code execution lane
+	// extracted from the main `kody` Worker. Owns the package-app origin
+	// (PACKAGE_APP_BASE_URL), inline package-app serving, the package
+	// invocation API, dynamic callable workflows, and the runtime Durable
+	// Objects (StorageRunner, RunLog, PackageRealtimeSession,
+	// PackageServiceInstance). The entry module lives in
+	// packages/worker/src/runtime-worker.ts so the shared source tree,
+	// `#worker`/`#app` import maps, and the pre-bundled `src/generated/`
+	// modules resolve identically to the main Worker.
+	"name": "kody-runtime",
+	"compatibility_date": "2026-04-16",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// Same rationale as the main worker: package runtime lanes fan out into
+	// many D1 + Durable Object subrequests per invocation.
+	"limits": {
+		"subrequests": 100000,
+	},
+	"main": "../worker/src/runtime-worker.ts",
+	"minify": true,
+	"upload_source_maps": true,
+	// Mirrors packages/worker/wrangler.jsonc: the module-graph builders
+	// dynamically import the pre-bundled worker-bundler modules from
+	// `packages/worker/src/generated/` (base_dir defaults to the entry
+	// module's directory, which is packages/worker/src).
+	"find_additional_modules": true,
+	"rules": [
+		{
+			"type": "Text",
+			"globs": ["./**/*.md", "../**/*.md"],
+			"fallthrough": true,
+		},
+		{
+			"type": "ESModule",
+			"globs": ["generated/*.mjs", "./generated/*.mjs"],
+			"fallthrough": true,
+		},
+		{
+			"type": "CompiledWasm",
+			"globs": ["generated/*.wasm"],
+			"fallthrough": true,
+		},
+	],
+	// Production Durable Object storage moves with the classes from the main
+	// `kody` script via a transfer migration; this applies on the first
+	// production deploy of this Worker. See
+	// docs/contributing/architecture/runtime-worker-migration-runbook.md for
+	// the coordinated deploy order. The preview environment overrides this
+	// with `new_sqlite_classes` because preview worker pairs are created
+	// fresh per PR with no storage to preserve.
+	"migrations": [
+		{
+			"tag": "v1",
+			"transferred_classes": [
+				{
+					"from": "StorageRunner",
+					"from_script": "kody",
+					"to": "StorageRunner",
+				},
+				{
+					"from": "RunLog",
+					"from_script": "kody",
+					"to": "RunLog",
+				},
+				{
+					"from": "PackageRealtimeSession",
+					"from_script": "kody",
+					"to": "PackageRealtimeSession",
+				},
+				{
+					"from": "PackageServiceInstance",
+					"from_script": "kody",
+					"to": "PackageServiceInstance",
+				},
+			],
+		},
+	],
+	"observability": {
+		"enabled": true,
+		"traces": {
+			"enabled": true,
+		},
+	},
+	"env": {
+		"production": {
+			"observability": {
+				"enabled": true,
+				"traces": {
+					"enabled": true,
+					"destinations": ["sentry-otlp-traces"],
+				},
+			},
+			"worker_loaders": [
+				{
+					"binding": "LOADER",
+				},
+				{
+					"binding": "APP_LOADER",
+				},
+			],
+			"workflows": [
+				{
+					"binding": "DYNAMIC_CALLABLE_WORKFLOWS",
+					"name": "kody-runtime-dynamic-callable-workflows",
+					"class_name": "DynamicCallableWorkflow",
+				},
+			],
+			"durable_objects": {
+				"bindings": [
+					// Runtime-owned classes, local to this script.
+					{
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
+					},
+					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
+					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
+					},
+					{
+						"class_name": "PackageServiceInstance",
+						"name": "PACKAGE_SERVICE_INSTANCE",
+					},
+					// Main-worker classes reached cross-script. UserMeter stays
+					// in the main Worker per ADR 0016; the rest back capability
+					// execution paths reachable from package code.
+					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "MCP",
+						"name": "MCP_OBJECT",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "RemoteConnectorSession",
+						"name": "REMOTE_CONNECTOR_SESSION",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "McpClientHub",
+						"name": "MCP_CLIENT_HUB",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "JobManager",
+						"name": "JOB_MANAGER",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
+						"script_name": "kody",
+					},
+				],
+			},
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody",
+					"migrations_dir": "./../worker/migrations",
+				},
+				{
+					"binding": "AUDIT_DB",
+					"database_name": "kody-audit",
+					"migrations_dir": "./../worker/audit-migrations",
+				},
+			],
+			"kv_namespaces": [
+				{
+					"binding": "OAUTH_KV",
+				},
+				{
+					"binding": "BUNDLE_ARTIFACTS_KV",
+				},
+			],
+			"r2_buckets": [
+				{
+					"binding": "COMMUNITY_ASSETS",
+					"bucket_name": "kody-community-assets",
+				},
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "PLATFORM_FEEDBACK_DISPATCH_QUEUE",
+						"queue": "kody-platform-feedback-dispatch",
+					},
+					{
+						"binding": "COMMUNITY_ACTIVITY_DISPATCH_QUEUE",
+						"queue": "kody-community-activity-dispatch",
+					},
+					{
+						"binding": "SCHEDULED_DISPATCH_QUEUE",
+						"queue": "kody-scheduled-dispatch",
+					},
+					{
+						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
+						"queue": "kody-package-events-dispatch",
+					},
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-webhook-dispatch",
+					},
+				],
+			},
+			"vectorize": [
+				{
+					"binding": "CAPABILITY_VECTOR_INDEX",
+					"index_name": "kody-capabilities-prod",
+				},
+			],
+			"analytics_engine_datasets": [
+				{
+					"binding": "USAGE_EVENTS",
+					"dataset": "kody_usage_events",
+				},
+				{
+					"binding": "FLAG_EXPOSURES",
+					"dataset": "kody_flag_exposures",
+				},
+				{
+					"binding": "MCP_PROTOCOL_EVENTS",
+					"dataset": "kody_mcp_protocol_events",
+				},
+			],
+			"ai": {
+				"binding": "AI",
+			},
+			"vars": {
+				"SENTRY_ENVIRONMENT": "production",
+				"SENTRY_TRACES_SAMPLE_RATE": 0,
+				"ARTIFACTS_NAMESPACE": "production",
+				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
+			},
+		},
+		"preview": {
+			// Preview worker pairs are created fresh per PR: the runtime-owned
+			// classes are new namespaces here, not a transfer.
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": [
+						"StorageRunner",
+						"RunLog",
+						"PackageRealtimeSession",
+						"PackageServiceInstance",
+					],
+				},
+			],
+			"worker_loaders": [
+				{
+					"binding": "LOADER",
+				},
+				{
+					"binding": "APP_LOADER",
+				},
+			],
+			"workflows": [
+				{
+					"binding": "DYNAMIC_CALLABLE_WORKFLOWS",
+					"name": "kody-runtime-preview-dynamic-callable-workflows",
+					"class_name": "DynamicCallableWorkflow",
+				},
+			],
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
+					},
+					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
+					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
+					},
+					{
+						"class_name": "PackageServiceInstance",
+						"name": "PACKAGE_SERVICE_INSTANCE",
+					},
+					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "MCP",
+						"name": "MCP_OBJECT",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "RemoteConnectorSession",
+						"name": "REMOTE_CONNECTOR_SESSION",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "McpClientHub",
+						"name": "MCP_CLIENT_HUB",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "JobManager",
+						"name": "JOB_MANAGER",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
+						"script_name": "kody",
+					},
+					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
+						"script_name": "kody",
+					},
+				],
+			},
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody-preview",
+					"migrations_dir": "./../worker/migrations",
+				},
+				{
+					"binding": "AUDIT_DB",
+					"database_name": "kody-preview-audit",
+					"migrations_dir": "./../worker/audit-migrations",
+				},
+			],
+			"kv_namespaces": [
+				{
+					"binding": "OAUTH_KV",
+				},
+				{
+					"binding": "BUNDLE_ARTIFACTS_KV",
+				},
+			],
+			"r2_buckets": [
+				{
+					"binding": "COMMUNITY_ASSETS",
+					"bucket_name": "kody-preview-community-assets",
+				},
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "WEBHOOK_DISPATCH_QUEUE",
+						"queue": "kody-preview-webhook-dispatch",
+					},
+				],
+			},
+			"vectorize": [
+				{
+					"binding": "CAPABILITY_VECTOR_INDEX",
+					"index_name": "kody-capabilities-preview",
+				},
+			],
+			"analytics_engine_datasets": [
+				{
+					"binding": "USAGE_EVENTS",
+					"dataset": "kody_usage_events_preview",
+				},
+				{
+					"binding": "FLAG_EXPOSURES",
+					"dataset": "kody_flag_exposures_preview",
+				},
+				{
+					"binding": "MCP_PROTOCOL_EVENTS",
+					"dataset": "kody_mcp_protocol_events_preview",
+				},
+			],
+			"ai": {
+				"binding": "AI",
+			},
+			"vars": {
+				"SENTRY_ENVIRONMENT": "preview",
+				"ARTIFACTS_NAMESPACE": "preview",
+			},
+		},
+	},
+}
