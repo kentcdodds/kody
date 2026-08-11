@@ -307,7 +307,21 @@ jobs:
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+          # Preview scripts deployed before a Durable Object class moved to
+          # another worker still carry live DO namespaces for that class, and
+          # the API rejects a new version that no longer exports it
+          # ("does not export class ... [code: 10064]"). Preview scripts are
+          # disposable (data lives in per-preview D1/KV/R2, not the script),
+          # so delete the stale script and deploy fresh.
+          if ! npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee bootstrap-deploy.log; then
+            if grep -q "does not export class" bootstrap-deploy.log; then
+              echo "Stale preview script $APP_WORKER_NAME has Durable Objects for a class this version no longer exports; deleting it and deploying fresh."
+              npx wrangler delete "$APP_WORKER_NAME" --force
+              npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+            else
+              exit 1
+            fi
+          fi
 
       - name: ☁️ Deploy preview runtime Worker
         id: deploy_runtime
