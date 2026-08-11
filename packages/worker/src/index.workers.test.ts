@@ -5,6 +5,7 @@ import {
 	env,
 	runInDurableObject,
 } from 'cloudflare:test'
+import type * as SystemEmail from '#worker/email/system-email.ts'
 import {
 	oauthPurgeContinuationStorageKey,
 	type OAuthPurgeCoordinator,
@@ -63,7 +64,8 @@ vi.mock('./repo/repo-session-cleanup.ts', () => ({
 	cleanupRepoSessionBranches: mocks.cleanupRepoSessionBranches,
 }))
 
-vi.mock('#worker/email/system-email.ts', () => ({
+vi.mock('#worker/email/system-email.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof SystemEmail>()),
 	pruneSystemEmailRetention: mocks.pruneSystemEmailRetention,
 }))
 

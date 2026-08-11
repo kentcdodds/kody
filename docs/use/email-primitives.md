@@ -121,8 +121,12 @@ Inbound storage is quota-gated per user:
   authentication headers separately.
 - Outbound sending requires a verified account email, sends only from the
   platform-assigned address, and `email_send` only delivers to the signed-in
-  user's own account email. `email_reply` is the only way to address external
-  recipients, and only recipients taken from stored inbound mail.
+  user's own account email. `email_reply` is the only way for a user account to
+  address external recipients, and only recipients taken from stored inbound
+  mail. Admins have a separate operator channel (`admin_system_email_send`) that
+  speaks for the platform rather than for any user account: it sends from a
+  reserved system sender, uses no user mailbox or plan entitlement, is
+  audit-logged, and is capped per sender per UTC day.
 - Outbound sends consume a per-day entitlement. The `max` plan allows 10,000
   send attempts per UTC day.
 - A successful send request has `processing_status: "sent"`. Cloudflare delivery
@@ -138,7 +142,8 @@ Inbound storage is quota-gated per user:
 - System inbox mail is not gated by a user plan or account-verification state.
   It has fixed platform caps and retention: messages are pruned after 90 days
   and the stored system inbox is capped so arbitrary sender traffic cannot grow
-  without bound.
+  without bound. Operator sends from a system address are capped separately from
+  receives, so a runaway sender can never block inbound system mail.
 - Stored inbound mail is the source of truth. If a user wants email automation,
   they can publish a package that subscribes to the stored inbound email topics
   `email.message.received` or `email.message.quarantined` using normal package

@@ -33,6 +33,8 @@ export type SystemEmailLocal = (typeof systemEmailLocals)[number]
 export const systemEmailLimits = {
 	maxMessageBytes: maxRawMimeBytes,
 	maxReceivesPerDay: 1000,
+	/** Per-sender ceiling on operator sends (see `sendSystemEmail`). */
+	maxSendsPerDay: 200,
 	maxStoredMessages: 5000,
 	retentionDays: 90,
 	pruneBatchSize: 500,
@@ -200,6 +202,71 @@ export async function refundSystemEmailDailyReceive(input: {
 				AND day = ?`,
 		)
 		.bind(now.toISOString(), input.localPart, systemEmailDayKey(now))
+		.run()
+}
+
+/**
+ * Counter key for operator sends. Sends share the daily-counter table with
+ * receives but use a prefixed key so the two quotas stay independent (a busy
+ * inbox can never block operator correspondence, and vice versa).
+ */
+function systemEmailSendCounterKey(localPart: SystemEmailLocal) {
+	return `send:${localPart}`
+}
+
+export async function consumeSystemEmailDailySend(input: {
+	db: D1Database
+	localPart: SystemEmailLocal
+	now?: Date
+	limit?: number
+}) {
+	const now = input.now ?? new Date()
+	const limit = input.limit ?? systemEmailLimits.maxSendsPerDay
+	const row = await input.db
+		.prepare(
+			`INSERT INTO system_email_daily_counters (
+				local_part, day, count, updated_at
+			) VALUES (?, ?, 1, ?)
+			ON CONFLICT(local_part, day) DO UPDATE SET
+				count = count + 1,
+				updated_at = excluded.updated_at
+			WHERE count < ?
+			RETURNING count`,
+		)
+		.bind(
+			systemEmailSendCounterKey(input.localPart),
+			systemEmailDayKey(now),
+			now.toISOString(),
+			limit,
+		)
+		.first<{ count: number }>()
+	return row ? Number(row.count) : null
+}
+
+/**
+ * Atomically refund one consumed operator send (floors at zero) so a failed
+ * provider call does not permanently spend the day's budget. Pass the same
+ * `now` (day key) as the matching consume call.
+ */
+export async function refundSystemEmailDailySend(input: {
+	db: D1Database
+	localPart: SystemEmailLocal
+	now?: Date
+}): Promise<void> {
+	const now = input.now ?? new Date()
+	await input.db
+		.prepare(
+			`UPDATE system_email_daily_counters
+			SET count = MAX(0, count - 1),
+				updated_at = ?
+			WHERE local_part = ?
+				AND day = ?`,
+		)
+		.bind(
+			now.toISOString(),
+			systemEmailSendCounterKey(input.localPart),
+			systemEmailDayKey(now),
+		)
 		.run()
 }
 
