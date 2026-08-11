@@ -930,6 +930,13 @@ test('ensurePackageAppWildcardDnsRecord creates a proxied wildcard AAAA record',
 		'https://api.cloudflare.com/client/v4/zones?name=kodyapps.dev&account.id=account-1&status=active',
 		expect.objectContaining({ method: 'GET' }),
 	)
+	// The list query is name-only on purpose: a type filter would hide
+	// conflicting A/CNAME records at the wildcard name.
+	expect(fetcher).toHaveBeenNthCalledWith(
+		2,
+		`https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records?name=${encodeURIComponent('*.kodyapps.dev')}`,
+		expect.objectContaining({ method: 'GET' }),
+	)
 	expect(fetcher).toHaveBeenNthCalledWith(
 		3,
 		'https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records',
@@ -944,6 +951,50 @@ test('ensurePackageAppWildcardDnsRecord creates a proxied wildcard AAAA record',
 			}),
 		}),
 	)
+})
+
+test('ensurePackageAppWildcardDnsRecord fails on a conflicting record of another type', async () => {
+	consoleError.mockImplementation(() => {})
+	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						id: 'dns-conflicting',
+						type: 'CNAME',
+						name: '*.kodyapps.dev',
+						content: 'somewhere-else.example',
+						proxied: false,
+					},
+				],
+			}),
+		)
+
+	await expect(
+		ensurePackageAppWildcardDnsRecord({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			packageAppHostname: 'kodyapps.dev',
+			dryRun: false,
+			fetcher,
+		}),
+	).rejects.toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('found CNAME somewhere-else.example'),
+	)
+	expect(fetcher).toHaveBeenCalledTimes(2)
+	exit.mockRestore()
 })
 
 test('ensurePackageAppWildcardDnsRecord reuses an existing proxied wildcard record', async () => {

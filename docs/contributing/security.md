@@ -197,12 +197,24 @@ username, the subdomain label, and the path's owner username to all match
 `packages/worker/src/package-runtime/package-app-serve.ts`), so a handoff minted
 for one account cannot authorize another user's subdomain.
 
+Sibling subdomains also stay **same-site** with each other until the domain is
+on the Public Suffix List, so a `SameSite=Lax` cookie still attaches to their
+cross-origin requests. In a browser holding sessions for two accounts (a shared
+machine), one user's package code could otherwise send a credentialed mutating
+request to the other user's app — CORS blocks the response, not the side effect.
+Mutating requests on a subdomain therefore require any `Origin` header to match
+the subdomain itself; requests without one (non-browser clients, synthetic
+dispatch) authenticate through their own paths. Same-site credentialed GETs
+remain possible until the PSL entry lands; package apps must not mutate on GET,
+which HTTP already demands.
+
 - **No redirect cycle:** the app origin only ever redirects _to_ a package-app
   subdomain, the apex only redirects to a subdomain or the app origin, and a
-  subdomain only ever redirects within itself (to drop a consumed token from the
-  URL). A package-app request with no usable session terminates in a `403` that
-  links back to the app origin, so a browser that refuses the cookie fails
-  visibly instead of ping-ponging between hosts.
+  subdomain only redirects within itself to drop a consumed token from the URL
+  (plus its bare `/`, which goes home to the app origin — a terminal hop, not
+  part of the handoff). A package-app request with no usable session terminates
+  in a `403` that links back to the app origin, so a browser that refuses the
+  cookie fails visibly instead of ping-ponging between hosts.
 
 Production fails closed with `500` before executing package code when
 `PACKAGE_APP_BASE_URL` is missing, invalid, equal to `APP_BASE_URL`, or on the

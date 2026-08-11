@@ -334,6 +334,31 @@ async function handleUserSubdomainRequest(input: {
 		return createUnmatchedPackageAppPathResponse()
 	}
 
+	// Sibling package-app subdomains are same-site, so until the package-app
+	// domain is on the Public Suffix List a `SameSite=Lax` session cookie still
+	// attaches to their cross-origin requests. A browser that holds sessions
+	// for two accounts (shared machine, multiple sign-ins) could therefore let
+	// one user's package code send a credentialed mutating request to another
+	// user's app — CORS blocks the response, not the side effect. Mutating
+	// browser requests must originate from this subdomain itself; requests
+	// without an `Origin` header (non-browser clients, synthetic dispatch)
+	// authenticate through their own paths and are unaffected.
+	if (request.method !== 'GET' && request.method !== 'HEAD') {
+		const originHeader = request.headers.get('Origin')
+		if (originHeader !== null && originHeader !== url.origin) {
+			return new Response(
+				'Cross-origin mutating requests to a package-app subdomain are not allowed.',
+				{
+					status: 403,
+					headers: {
+						'Cache-Control': 'no-store',
+						'Content-Type': 'text/plain; charset=utf-8',
+					},
+				},
+			)
+		}
+	}
+
 	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)
 	if (handoffToken) {
 		const claims = await consumePackageAppHandoffToken({

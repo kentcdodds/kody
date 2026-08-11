@@ -230,6 +230,33 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		buildPackageAppNotFoundMessage(),
 	)
 
+	// 7b. Sibling subdomains are same-site, so a Lax cookie would attach to
+	// their cross-origin requests. A mutating request whose Origin is not this
+	// subdomain is rejected before any package code runs, even with a valid
+	// session; a same-origin mutation passes through to serving.
+	const crossOriginPost = await workerFetch(cleanLocation, {
+		method: 'POST',
+		headers: {
+			Cookie: packageSessionCookie,
+			Origin: 'https://other-user.packages.isolated.test',
+		},
+	})
+	expect(crossOriginPost.status).toBe(403)
+	await expect(crossOriginPost.text()).resolves.toContain(
+		'Cross-origin mutating requests',
+	)
+	const sameOriginPost = await workerFetch(cleanLocation, {
+		method: 'POST',
+		headers: {
+			Cookie: packageSessionCookie,
+			Origin: ownerPackageAppOrigin,
+		},
+	})
+	expect(sameOriginPost.status).toBe(404)
+	await expect(sameOriginPost.text()).resolves.toBe(
+		buildPackageAppNotFoundMessage(),
+	)
+
 	// 8. Nothing first-party is reachable on the package-app domain — neither on
 	// the bare origin nor on a user subdomain.
 	for (const origin of [packageAppOrigin, ownerPackageAppOrigin]) {

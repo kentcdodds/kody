@@ -404,6 +404,10 @@ the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
   substitution
 - the `__Host-` prefix on secure requests forbids a `Domain` attribute, so
   sibling subdomains cannot plant a shadow cookie under this name
+- sibling subdomains are still same-site (until the Public Suffix List entry),
+  so mutating requests additionally require any `Origin` header to match the
+  subdomain itself — see the same-site paragraph in
+  [security.md](../security.md#hosted-package-app-origin-isolation)
 
 It authorizes hosted package-app serving for one account on that account's
 subdomain and nothing else: the app origin has no code path that reads it, and

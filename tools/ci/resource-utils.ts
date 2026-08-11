@@ -567,12 +567,15 @@ export async function ensurePackageAppWildcardDnsRecord(input: {
 		)
 	}
 
+	// List every record type at the wildcard name: filtering to AAAA would hide
+	// a conflicting A or CNAME record and turn the actionable conflict error
+	// below into an opaque create failure.
 	const listed = await cloudflareRootApiRequest<Array<CloudflareDnsRecord>>({
 		apiToken: input.apiToken,
 		apiBaseUrl: input.apiBaseUrl,
 		fetcher: input.fetcher,
 		sleep: input.sleep,
-		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(wildcardRecordName)}&type=AAAA`,
+		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(wildcardRecordName)}`,
 	})
 	const existing = (listed.result ?? []).find((record) =>
 		isPackageAppWildcardDnsRecord({ record, wildcardRecordName }),

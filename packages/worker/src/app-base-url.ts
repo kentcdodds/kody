@@ -97,13 +97,21 @@ export function parsePackageAppRequestHost(input: {
 	if (!packageAppOrigin) return null
 
 	const base = new URL(packageAppOrigin)
-	const hostname = input.url.hostname.toLowerCase()
+	const rawHostname = input.url.hostname.toLowerCase()
+	// `URL.hostname` preserves a trailing DNS dot, and `kodyapps.dev.` is the
+	// same host as `kodyapps.dev` to resolvers. Letting the dotted form fall
+	// through would route it as first-party traffic, so it fails closed as an
+	// unrecognized package-app host instead.
+	const hadTrailingDot = rawHostname.endsWith('.')
+	const hostname = rawHostname.replace(/\.+$/, '')
 	if (hostname === base.hostname) {
+		if (hadTrailingDot) return { kind: 'unrecognized-subdomain' }
 		// Same hostname on a different scheme/port is another local service, not
 		// the package-app origin (matches the previous exact-origin behavior).
 		return input.url.origin === base.origin ? { kind: 'apex' } : null
 	}
 	if (!hostname.endsWith(`.${base.hostname}`)) return null
+	if (hadTrailingDot) return { kind: 'unrecognized-subdomain' }
 
 	const label = hostname.slice(0, -(base.hostname.length + 1))
 	// Strict DNS-label check: legacy underscore usernames cannot own a

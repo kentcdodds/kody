@@ -165,6 +165,10 @@ test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects e
 		'https://bad_label.kodyapps.dev/',
 		// Wrong scheme for the configured origin.
 		'http://kentcdodds.kodyapps.dev/',
+		// Trailing DNS dots resolve to the same host but survive in
+		// URL.hostname; letting them fall through would route them first-party.
+		'https://kodyapps.dev./',
+		'https://kentcdodds.kodyapps.dev./',
 	]) {
 		expect(parse(url), url).toEqual({ kind: 'unrecognized-subdomain' })
 	}

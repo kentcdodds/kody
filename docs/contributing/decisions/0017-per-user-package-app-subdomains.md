@@ -43,6 +43,10 @@ package-app apex:
   local HTTP keeps plain `kody_pkg_session`.
 - Serving requires session account username == subdomain label == path owner
   (fixation defense).
+- Mutating requests on a subdomain require any `Origin` header to match the
+  subdomain itself: sibling subdomains stay same-site until the PSL entry, so a
+  `SameSite=Lax` cookie would otherwise attach to a cross-subdomain mutation
+  from a browser holding sessions for two accounts.
 - New and changed usernames are strict DNS labels (lowercase alphanumeric +
   hyphens; underscores banned). Recognition of stored usernames stays lenient
   (two-tier validation) so legacy underscore accounts keep display names, public
