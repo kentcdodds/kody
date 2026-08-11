@@ -39,6 +39,10 @@
 		{
 			"filename": "0009-community-listing-friendly-urls.sql",
 			"sha256": "d73dcc93d60eb4100f1e788cdcfd62f3e034904f73e8d4e100ff59d8ea48a181"
+		},
+		{
+			"filename": "0010-drop-jobs-tables.sql",
+			"sha256": "11215c35ea70784dd4d85c627eb5990b5a51941d3b51929c390e8c3bf36c0481"
 		}
 	]
 }

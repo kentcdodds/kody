@@ -306,9 +306,25 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				'MCP server capability "supermemory:listMemories" failed: ProtocolError: Structured content does not match the tool\'s output schema',
 			),
 		})
+
+		// OAuth token refresh caller state (KODY-CLOUDFLARE-4J): revoked grant
+		// or connection without a refresh token. Plain Error message match.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'integration_token_refresh',
+			domain: 'integrations',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
+			cause: new Error(
+				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
+			),
+		})
 	})
 
-	expect(payloads).toHaveLength(17)
+	expect(payloads).toHaveLength(18)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

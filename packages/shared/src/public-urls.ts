@@ -2,16 +2,19 @@ export function buildUsernamePathPrefix(username: string) {
 	return `/@${encodeURIComponent(username.trim())}`
 }
 
+function buildRestPathSuffix(restPath: string | null | undefined) {
+	const trimmed = restPath?.trim()
+	return trimmed ? `/${trimmed.replace(/^\/+/, '')}` : ''
+}
+
 export function buildPackageAppPath(input: {
 	username: string
 	kodyId: string
 	restPath?: string | null
 }) {
-	const restPath = input.restPath?.trim()
-	const suffix = restPath ? `/${restPath.replace(/^\/+/, '')}` : ''
 	return `${buildUsernamePathPrefix(input.username)}/packages/${encodeURIComponent(
 		input.kodyId.trim(),
-	)}${suffix}`
+	)}${buildRestPathSuffix(input.restPath)}`
 }
 
 export function buildPackageAppUrl(input: {
@@ -21,6 +24,101 @@ export function buildPackageAppUrl(input: {
 	restPath?: string | null
 }) {
 	return `${input.origin.trim().replace(/\/+$/, '')}${buildPackageAppPath(input)}`
+}
+
+/**
+ * How a package-app URL addresses its package:
+ *
+ * - `user-subdomain`: `https://{username}.<package-app host>/packages/{kodyId}`
+ *   — the production shape, where the username lives in the hostname.
+ * - `username-path`: `/@{username}/packages/{kodyId}` — the app-origin entry
+ *   point (which redirects into the handoff) and the non-production inline
+ *   serving shape.
+ */
+export type PackageAppMount = 'user-subdomain' | 'username-path'
+
+/**
+ * Usernames that can own a `{username}.` package-app subdomain: a valid DNS
+ * label (lowercase letters, digits, hyphens; 3–32 chars; alphanumeric edges).
+ * Legacy usernames may still contain underscores; those cannot be a hostname
+ * label, so subdomain URL builders fall back to the path-based mount for them.
+ */
+export const dnsSafeUsernamePattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
+
+export function isDnsSafeUsername(username: string) {
+	return dnsSafeUsernamePattern.test(username.trim())
+}
+
+/**
+ * Path for a hosted package app on its per-user package-app subdomain. The
+ * username lives in the hostname there, so the path carries only the package
+ * mount: `/packages/{kodyId}/{rest}`.
+ */
+export function buildPackageAppSubdomainPath(input: {
+	kodyId: string
+	restPath?: string | null
+}) {
+	return `/packages/${encodeURIComponent(input.kodyId.trim())}${buildRestPathSuffix(
+		input.restPath,
+	)}`
+}
+
+/**
+ * Origin of one user's package-app subdomain: `{username}.` prefixed onto the
+ * configured package-app origin's hostname, preserving scheme and port.
+ *
+ * The username must already satisfy the username format rules (lowercase DNS
+ * label); this function does not re-validate it.
+ */
+export function buildPackageAppSubdomainOrigin(input: {
+	packageAppOrigin: string
+	username: string
+}) {
+	const username = input.username.trim().toLowerCase()
+	if (!username) {
+		throw new Error('Username is required to build a package-app subdomain.')
+	}
+	const url = new URL(input.packageAppOrigin)
+	url.hostname = `${username}.${url.hostname}`
+	return url.origin
+}
+
+export function buildPackageAppSubdomainUrl(input: {
+	packageAppOrigin: string
+	username: string
+	kodyId: string
+	restPath?: string | null
+}) {
+	return `${buildPackageAppSubdomainOrigin(input)}${buildPackageAppSubdomainPath(input)}`
+}
+
+/**
+ * Canonical browser URL for a hosted package app: the per-user subdomain of
+ * the package-app origin when one is configured and the username can be a
+ * hostname label, or the path-based mount on the app origin otherwise (inline
+ * non-production serving, and legacy usernames that cannot own a subdomain).
+ */
+export function resolveHostedPackageAppUrl(input: {
+	packageAppBaseUrl: string | null
+	appBaseUrl: string
+	username: string
+	kodyId: string
+	restPath?: string | null
+}) {
+	if (input.packageAppBaseUrl && isDnsSafeUsername(input.username)) {
+		return buildPackageAppSubdomainUrl({
+			packageAppOrigin: input.packageAppBaseUrl,
+			username: input.username,
+			kodyId: input.kodyId,
+			restPath: input.restPath,
+		})
+	}
+	return buildPackageAppUrl({
+		origin: input.appBaseUrl,
+		username: input.username,
+		kodyId: input.kodyId,
+		restPath: input.restPath,
+	})
 }
 
 export const packageInvocationRootExportRouteSegment = '__root__'

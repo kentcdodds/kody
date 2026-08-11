@@ -201,4 +201,27 @@ test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths',
 	expect(getSafeMarkdownLinkHref('https://example.com/a%20b')).toBe(
 		'https://example.com/a%20b',
 	)
+	// The per-user package-app subdomain mounts apps at `/packages/...`, so
+	// that path shape is refused on every host too (this module cannot know
+	// the deployment's package-app domain; same trade-off as the `/@` rule).
+	expect(
+		getSafeMarkdownLinkHref('https://mallory.kodyapps.dev/packages/tracker'),
+	).toBe(null)
+	expect(
+		getSafeMarkdownLinkHref(
+			'https://mallory.kodyapps.dev/packages/tracker/app',
+		),
+	).toBe(null)
+	expect(getSafeMarkdownLinkHref('https://other.example/packages/x')).toBe(null)
+	expect(getSafeMarkdownLinkHref('https://other.example//packages/x')).toBe(
+		null,
+	)
+	expect(getSafeMarkdownLinkHref('https://other.example/%70ackages/x')).toBe(
+		null,
+	)
+	// Paths that merely contain (not start with) a `packages` segment stay
+	// allowed — only the mount shape is refused.
+	expect(
+		getSafeMarkdownLinkHref('https://github.com/orgs/example/packages'),
+	).toBe('https://github.com/orgs/example/packages')
 })

@@ -15,6 +15,7 @@ import {
 	readAccountR2ExportPage,
 } from '#worker/account/r2-export.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { listPackageServices } from '#worker/package-registry/manifest.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -556,18 +557,59 @@ async function listUserStorageIds(
 	})
 }
 
-/** D1 entity/registry storage ids used by discovery paging (no manifests). */
-const exportStorageIdBaseSql = `SELECT id FROM (
-	SELECT storage_id AS id FROM jobs
-		WHERE user_id = ? AND storage_id IS NOT NULL
-	UNION SELECT storage_id FROM archived_job_artifacts
-		WHERE user_id = ? AND storage_id IS NOT NULL
-	UNION SELECT storage_id FROM user_storage_buckets
-		WHERE user_id = ? AND kind <> 'repo_session'
-)`
+/**
+ * Entity/registry storage ids used by discovery paging (no manifests):
+ * APP_DB registry buckets plus job/archived-artifact ids from the jobs
+ * worker (ADR 0016). Job counts are entitlement-bounded, so job ids are
+ * merged in memory around bounded keyset SQL pages over the registry
+ * buckets.
+ */
+const exportBucketStorageIdSql = `SELECT storage_id AS id FROM user_storage_buckets
+	WHERE user_id = ? AND kind <> 'repo_session'`
 
-function exportStorageIdBaseParams(userId: string) {
-	return [userId, userId, userId] as const
+async function listExportJobStorageIds(
+	env: Env,
+	userId: string,
+): Promise<Array<string>> {
+	const ids = await jobsData(env).listJobStorageIdsForUser({ userId })
+	return [...ids].sort()
+}
+
+async function listExportBaseStorageIds(
+	env: Env,
+	userId: string,
+): Promise<Array<string>> {
+	const [bucketRows, jobStorageIds] = await Promise.all([
+		env.APP_DB.prepare(exportBucketStorageIdSql)
+			.bind(userId)
+			.all<{ id: string }>(),
+		listExportJobStorageIds(env, userId),
+	])
+	const ids = new Set<string>(jobStorageIds)
+	for (const row of bucketRows.results ?? []) ids.add(row.id)
+	return [...ids].sort()
+}
+
+async function listExportBaseStorageIdPage(
+	env: Env,
+	userId: string,
+	afterId: string,
+	pageSize: number,
+): Promise<{ ids: Array<string>; truncated: boolean }> {
+	const [bucketRows, jobStorageIds] = await Promise.all([
+		env.APP_DB.prepare(
+			`${exportBucketStorageIdSql} AND storage_id > ? ORDER BY storage_id LIMIT ?`,
+		)
+			.bind(userId, afterId, pageSize + 1)
+			.all<{ id: string }>(),
+		listExportJobStorageIds(env, userId),
+	])
+	const merged = new Set<string>(
+		(bucketRows.results ?? []).map((row) => row.id),
+	)
+	for (const id of jobStorageIds) if (id > afterId) merged.add(id)
+	const sorted = [...merged].sort()
+	return { ids: sorted.slice(0, pageSize), truncated: sorted.length > pageSize }
 }
 
 function tryDecodeURIComponent(value: string) {
@@ -592,10 +634,8 @@ function parseServiceStorageId(storageId: string) {
 }
 
 async function listExportD1DiscoverableStorageIds(env: Env, userId: string) {
-	const [baseRows, serviceRows] = await Promise.all([
-		env.APP_DB.prepare(exportStorageIdBaseSql)
-			.bind(...exportStorageIdBaseParams(userId))
-			.all<{ id: string }>(),
+	const [baseIds, serviceRows] = await Promise.all([
+		listExportBaseStorageIds(env, userId),
 		env.APP_DB.prepare(
 			`SELECT package_id, service_name AS name
 			FROM package_service_states
@@ -604,7 +644,7 @@ async function listExportD1DiscoverableStorageIds(env: Env, userId: string) {
 			.bind(userId)
 			.all<{ package_id: string; name: string }>(),
 	])
-	const ids = new Set((baseRows.results ?? []).map((row) => row.id))
+	const ids = new Set(baseIds)
 	for (const row of serviceRows.results ?? []) {
 		ids.add(buildPackageServiceStorageId(row.package_id, row.name))
 	}
@@ -616,12 +656,14 @@ async function isExportDiscoverableStorageId(
 	userId: string,
 	storageId: string,
 ) {
-	const inBase = await env.APP_DB.prepare(
-		`SELECT 1 AS owned FROM (${exportStorageIdBaseSql}) WHERE id = ?`,
+	const jobStorageIds = await listExportJobStorageIds(env, userId)
+	if (jobStorageIds.includes(storageId)) return true
+	const bucketRow = await env.APP_DB.prepare(
+		`SELECT 1 AS owned FROM (${exportBucketStorageIdSql}) WHERE id = ?`,
 	)
-		.bind(...exportStorageIdBaseParams(userId), storageId)
+		.bind(userId, storageId)
 		.first<{ owned: number }>()
-	if (inBase?.owned === 1) return true
+	if (bucketRow?.owned === 1) return true
 	const parsed = parseServiceStorageId(storageId)
 	if (parsed) {
 		const row = await env.APP_DB.prepare(
@@ -1184,6 +1226,70 @@ async function countOAuthGrants(input: {
 	}
 }
 
+// Job and archived-artifact rows live in the jobs worker's database
+// (ADR 0016); they are exported through the JOBS service contract but keep
+// their `d1.<table>` section names for export-shape continuity.
+const jobsWorkerExportTables = ['archived_job_artifacts', 'jobs'] as const
+
+async function listJobsWorkerTableRows(
+	env: Env,
+	userId: string,
+	table: (typeof jobsWorkerExportTables)[number],
+): Promise<Array<Record<string, unknown>>> {
+	if (table === 'jobs') {
+		const rows = await jobsData(env).listJobsForUser({ userId })
+		return sortRowsByDedupeKey(
+			rows.map((row) => {
+				const {
+					record,
+					callerContext,
+					callerContextJson,
+					schedulerWakeAt,
+					...columns
+				} = row
+				void record
+				void callerContext
+				void callerContextJson
+				void schedulerWakeAt
+				return { ...columns }
+			}),
+		)
+	}
+	const artifacts = await jobsData(env).listArchivedJobArtifactsForUser({
+		userId,
+	})
+	return sortRowsByDedupeKey(artifacts.map((artifact) => ({ ...artifact })))
+}
+
+async function collectJobsWorkerTables(input: {
+	env: AccountExportEnv
+	mcpUserId: string
+	warnings: Array<string>
+}): Promise<Array<[string, AccountExportD1Table]>> {
+	const tables: Array<[string, AccountExportD1Table]> = []
+	for (const table of jobsWorkerExportTables) {
+		const section: AccountExportD1Table = {
+			table,
+			rows: [],
+			redactedColumns: [],
+			warnings: [],
+		}
+		try {
+			section.rows = await listJobsWorkerTableRows(
+				input.env,
+				input.mcpUserId,
+				table,
+			)
+		} catch (error) {
+			const warning = `Jobs export failed for ${table}: ${getErrorMessage(error)}`
+			section.warnings.push(warning)
+			input.warnings.push(warning)
+		}
+		tables.push([table, section])
+	}
+	return tables
+}
+
 async function collectD1Tables(input: {
 	env: AccountExportEnv
 	dbUserId: number
@@ -1207,6 +1313,7 @@ async function collectD1Tables(input: {
 			}),
 		])
 	}
+	tables.push(...(await collectJobsWorkerTables(input)))
 	return Object.fromEntries(
 		tables.sort(([left], [right]) => left.localeCompare(right)),
 	)
@@ -1253,6 +1360,20 @@ async function collectD1TableCounts(input: {
 			sections.push([`d1.${table}`, { count: 0, warnings: [warning] }])
 		}
 	}
+	for (const table of jobsWorkerExportTables) {
+		try {
+			const rows = await listJobsWorkerTableRows(
+				input.env,
+				input.mcpUserId,
+				table,
+			)
+			sections.push([`d1.${table}`, { count: rows.length, warnings: [] }])
+		} catch (error) {
+			const warning = `Jobs export failed for ${table}: ${getErrorMessage(error)}`
+			input.warnings.push(warning)
+			sections.push([`d1.${table}`, { count: 0, warnings: [warning] }])
+		}
+	}
 	return Object.fromEntries(
 		sections.sort(([left], [right]) => left.localeCompare(right)),
 	)
@@ -1273,12 +1394,44 @@ async function readD1TableSectionPage(input: {
 	startAfter: string | undefined
 	warnings: Array<string>
 }) {
+	const pageSize = normalizePageSize(input.pageSize)
+	if (
+		jobsWorkerExportTables.includes(
+			input.table as (typeof jobsWorkerExportTables)[number],
+		)
+	) {
+		try {
+			const rows = await listJobsWorkerTableRows(
+				input.env,
+				input.mcpUserId,
+				input.table as (typeof jobsWorkerExportTables)[number],
+			)
+			const afterIndex = parseRowidCursor(input.startAfter)
+			const items = rows.slice(afterIndex, afterIndex + pageSize)
+			const truncated = afterIndex + pageSize < rows.length
+			return {
+				items,
+				truncated,
+				nextStartAfter: truncated ? String(afterIndex + pageSize) : null,
+				pageSize,
+			}
+		} catch (error) {
+			input.warnings.push(
+				`Jobs export failed for ${input.table}: ${getErrorMessage(error)}`,
+			)
+			return {
+				items: [] as Array<Record<string, unknown>>,
+				truncated: false,
+				nextStartAfter: null,
+				pageSize,
+			}
+		}
+	}
 	const conditions = buildD1TableConditions({
 		mcpUserId: input.mcpUserId,
 		dbUserId: input.dbUserId,
 	}).get(input.table)
 	if (!conditions) return null
-	const pageSize = normalizePageSize(input.pageSize)
 	try {
 		const page = await selectD1TablePage({
 			env: input.env,
@@ -2284,30 +2437,22 @@ export async function readAccountExportSection(input: {
 			const stage = String(cursor['stage'] ?? 'base')
 			if (stage === 'base') {
 				const afterId = String(cursor['afterId'] ?? '')
-				const rows = await input.env.APP_DB.prepare(
-					`${exportStorageIdBaseSql} WHERE id > ? ORDER BY id LIMIT ?`,
+				const { ids: selected, truncated } = await listExportBaseStorageIdPage(
+					input.env,
+					input.mcpUserId,
+					afterId,
+					pageSize,
 				)
-					.bind(
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						afterId,
-						pageSize + 1,
-					)
-					.all<{ id: string }>()
-				const pageRows = rows.results ?? []
-				const truncated = pageRows.length > pageSize
-				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
 				return {
 					section: input.section,
-					items: selected.map((row) => ({
+					items: selected.map((id) => ({
 						kind: input.kind,
-						storageId: row.id,
+						storageId: id,
 					})),
 					truncated: true,
 					nextStartAfter: JSON.stringify(
 						truncated
-							? { stage: 'base', afterId: selected.at(-1)!.id }
+							? { stage: 'base', afterId: selected.at(-1)! }
 							: { stage: 'service', packageId: '', name: '' },
 					),
 					pageSize,
@@ -2342,16 +2487,20 @@ export async function readAccountExportSection(input: {
 				const alreadyInBase = new Set<string>()
 				if (candidateIds.length > 0) {
 					const placeholders = candidateIds.map(() => '?').join(', ')
-					const existing = await input.env.APP_DB.prepare(
-						`SELECT id FROM (${exportStorageIdBaseSql}) WHERE id IN (${placeholders})`,
-					)
-						.bind(
-							...exportStorageIdBaseParams(input.mcpUserId),
-							...candidateIds,
+					const [bucketMatches, jobStorageIds] = await Promise.all([
+						input.env.APP_DB.prepare(
+							`SELECT id FROM (${exportBucketStorageIdSql}) WHERE id IN (${placeholders})`,
 						)
-						.all<{ id: string }>()
-					for (const row of existing.results ?? []) {
+							.bind(input.mcpUserId, ...candidateIds)
+							.all<{ id: string }>(),
+						listExportJobStorageIds(input.env, input.mcpUserId),
+					])
+					for (const row of bucketMatches.results ?? []) {
 						alreadyInBase.add(row.id)
+					}
+					const jobIdSet = new Set(jobStorageIds)
+					for (const storageId of candidateIds) {
+						if (jobIdSet.has(storageId)) alreadyInBase.add(storageId)
 					}
 				}
 				for (const storageId of candidateIds) {

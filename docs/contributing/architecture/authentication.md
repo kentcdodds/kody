@@ -357,8 +357,10 @@ Hosted package apps run on their own registrable domain in production
 (`PACKAGE_APP_BASE_URL`) so author-supplied code is cross-site from the app
 origin — see
 [Hosted package app origin isolation](../security.md#hosted-package-app-origin-isolation)
-for why. That means `kody_session` never reaches them, so the package-app origin
-needs its own, deliberately smaller credential.
+for why. Production serves each owner's apps on a per-user subdomain of that
+domain (`https://{username}.kodyapps.dev/packages/{kodyId}/...`); the apex only
+redirects. That means `kody_session` never reaches them, so the package-app
+subdomain needs its own, deliberately smaller credential.
 
 **Handoff token** (`packages/worker/src/app/package-app-handoff.ts`). When a
 signed-in owner requests `/@{username}/packages/{kodyId}/...` on the app origin,
@@ -368,7 +370,7 @@ the app origin mints `<base64url payload>.<HMAC-SHA256>`:
   (`kody-package-app-handoff:v2`), so it is not interchangeable with any other
   signed value
 - payload binds `{ stableUserId, username, kodyId, exp, jti }`; the package-app
-  origin rejects a token whose `username`/`kodyId` do not match the requested
+  subdomain rejects a token whose `username`/`kodyId` do not match the requested
   path
 - 60 second lifetime
 - single use: `jti` is burned in `BUNDLE_ARTIFACTS_KV` for 60 seconds on first
@@ -379,17 +381,18 @@ the app origin mints `<base64url payload>.<HMAC-SHA256>`:
   the binding is missing; signature, expiry, and the path binding always fail
   closed.
 
-It travels in the `__kody_handoff` query parameter of a cross-origin redirect,
-which is why it is deliberately this weak. A token in a URL is exposed to
-browser history, referrers, and anything that logs URLs; the package-app origin
-redirects straight to the same URL without it, which reduces that exposure but
-cannot eliminate it. The 60-second expiry and the single-use burn are what bound
-the damage when a token does leak. A request that still carries the parameter is
-rewritten without it before package code sees it.
+It travels in the `__kody_handoff` query parameter of a cross-origin redirect to
+the owner's package-app subdomain, which is why it is deliberately this weak. A
+token in a URL is exposed to browser history, referrers, and anything that logs
+URLs; the subdomain redirects straight to the same URL without it, which reduces
+that exposure but cannot eliminate it. The 60-second expiry and the single-use
+burn are what bound the damage when a token does leak. A request that still
+carries the parameter is rewritten without it before package code sees it.
 
 **Package-app session cookie**
-(`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token
-sets `kody_pkg_session` on the package-app origin:
+(`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token on
+the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
+`kody_pkg_session` on insecure local HTTP only):
 
 - `httpOnly: true`, `sameSite: 'Lax'`, `path: '/'`, `secure` per request
 - 12 hour max age
@@ -399,17 +402,25 @@ sets `kody_pkg_session` on the package-app origin:
 - payload is `{ v, stableUserId, pkgUsername, issuedAt }` — a shape the app
   session schema rejects, so the two cannot be confused even by name
   substitution
+- the `__Host-` prefix on secure requests forbids a `Domain` attribute, so
+  sibling subdomains cannot plant a shadow cookie under this name
+- sibling subdomains are still same-site (until the Public Suffix List entry),
+  so mutating requests additionally require any `Origin` header to match the
+  subdomain itself — see the same-site paragraph in
+  [security.md](../security.md#hosted-package-app-origin-isolation)
 
-It authorizes hosted package-app serving for one account and nothing else: the
-app origin has no code path that reads it, and the package-app origin has no
-first-party routes. Every request re-resolves the account from D1
-(`resolvePackageAppOwnerByStableUserId`) and fails closed for unknown, deleting,
-or suspended accounts, and for sessions issued at or before
-`users.password_changed_at` — the same rules browser sessions follow. Confirmed
-local, preview, and test runtimes with `PACKAGE_APP_BASE_URL` unset never mint
-either credential; they serve package apps inline behind `kody_session`.
-Production requires a separate registrable package-app origin and returns `500`
-instead of falling back inline when that configuration is missing or unsafe.
+It authorizes hosted package-app serving for one account on that account's
+subdomain and nothing else: the app origin has no code path that reads it, and
+the package-app domain has no first-party routes. Every request re-resolves the
+account from D1 (`resolvePackageAppOwnerByStableUserId`) and fails closed for
+unknown, deleting, or suspended accounts, for sessions issued at or before
+`users.password_changed_at` — the same rules browser sessions follow — and when
+the session account's username does not match the subdomain label and requested
+package path. Confirmed local, preview, and test runtimes with
+`PACKAGE_APP_BASE_URL` unset never mint either credential; they serve package
+apps inline behind `kody_session`. Production requires a separate registrable
+package-app origin and returns `500` instead of falling back inline when that
+configuration is missing or unsafe.
 
 ## Account secret reveal
 

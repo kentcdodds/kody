@@ -10,7 +10,11 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
 import { upsertIntegration, upsertPlatformIntegration } from './service.ts'
-import { refreshIntegrationTokens } from './token-refresh.ts'
+import {
+	IntegrationTokenRefreshCallerError,
+	integrationTokenRefreshCallerMarker,
+	refreshIntegrationTokens,
+} from './token-refresh.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -144,7 +148,129 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 			userId: 'user-no-refresh',
 			name: 'github',
 		}),
-	).rejects.toThrow('does not define a refresh token secret name')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof IntegrationTokenRefreshCallerError &&
+			error.message.includes('does not define a refresh token secret name') &&
+			error.message.includes('/connect/oauth?provider=github') &&
+			error.message.includes(integrationTokenRefreshCallerMarker),
+	)
+})
+
+test('provider HTTP 4xx refresh rejection is a caller error with reconnect guidance', async () => {
+	const { env } = createHarness()
+	const userId = 'user-google-invalid-grant'
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'google',
+			clientId: 'platform-google-client-id',
+			clientSecret: 'platform-google-client-secret-value',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'confidential',
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'google',
+		scopes: [],
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+	})
+	await seedUserTokens(env, userId, 'google')
+
+	const fetchMock = vi.fn(
+		async () =>
+			new Response(
+				JSON.stringify({
+					error: 'invalid_grant',
+					error_description: 'Token has been expired or revoked.',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await expect(
+			refreshIntegrationTokens({
+				env,
+				userId,
+				name: 'google',
+			}),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof IntegrationTokenRefreshCallerError &&
+				error.message.includes(
+					'Token refresh was rejected for integration "google" with HTTP 400',
+				) &&
+				error.message.includes('invalid_grant') &&
+				error.message.includes('/connect/oauth?provider=google') &&
+				error.message.includes(integrationTokenRefreshCallerMarker),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('provider HTTP 5xx refresh failure stays a plain Error for Sentry visibility', async () => {
+	const { env } = createHarness()
+	const userId = 'user-google-provider-outage'
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'google',
+			clientId: 'platform-google-client-id',
+			clientSecret: 'platform-google-client-secret-value',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'confidential',
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'google',
+		scopes: [],
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+	})
+	await seedUserTokens(env, userId, 'google')
+
+	const fetchMock = vi.fn(
+		async () =>
+			new Response(JSON.stringify({ error: 'server_error' }), {
+				status: 503,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await expect(
+			refreshIntegrationTokens({
+				env,
+				userId,
+				name: 'google',
+			}),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error &&
+				!(error instanceof IntegrationTokenRefreshCallerError) &&
+				error.message.includes(
+					'Token refresh failed for integration "google" with HTTP 503',
+				),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
 
 async function approveSecretHosts(
@@ -201,8 +327,13 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 	try {
 		await expect(
 			refreshIntegrationTokens({ env, userId, name: 'google' }),
-		).rejects.toThrow(
-			'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof IntegrationTokenRefreshCallerError &&
+				error.message.includes(
+					'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+				) &&
+				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
 		expect(fetchMock).not.toHaveBeenCalled()
 

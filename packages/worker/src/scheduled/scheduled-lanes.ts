@@ -12,6 +12,7 @@ import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-del
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
 import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
@@ -80,6 +81,7 @@ export async function runScheduledLane(input: {
 			return reconcileD1StorageBytes({
 				db: input.env.APP_DB,
 				env: input.env,
+				jobs: jobsData(input.env),
 				now: input.scheduledAt,
 			})
 		case 'oauth_purge_expired': {

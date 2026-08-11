@@ -24,7 +24,7 @@ export async function getAvailableUsernameFromBase(
 	// Provider handles may contain characters the username format rejects;
 	// map them the same way usernameFromEmail maps email local parts.
 	const normalizedBase = normalizeUsername(base)
-		.replace(/[^a-z0-9_-]+/g, '-')
+		.replace(/[^a-z0-9-]+/g, '-')
 		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
 		.slice(0, 32)
 		.replace(/[^a-z0-9]+$/g, '')
@@ -37,7 +37,7 @@ export async function getAvailableUsernameFromBase(
 	}
 
 	const prefix =
-		(normalizedBase || 'user').slice(0, 27).replace(/[-_]+$/g, '') || 'user'
+		(normalizedBase || 'user').slice(0, 27).replace(/-+$/g, '') || 'user'
 	for (let suffix = 2; suffix <= 100; suffix += 1) {
 		const candidate = `${prefix}-${suffix}`
 		if (

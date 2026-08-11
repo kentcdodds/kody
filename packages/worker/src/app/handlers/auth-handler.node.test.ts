@@ -502,7 +502,7 @@ test('auth handler login and signup workflow', async () => {
 	expect(invalidUsernameResponse.status).toBe(400)
 	expect(await invalidUsernameResponse.json()).toEqual({
 		error:
-			'Username must be 3 to 32 characters, use only letters, numbers, hyphens, or underscores, and start and end with a letter or number.',
+			'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.',
 	})
 
 	// Reserved usernames double as reserved email local parts

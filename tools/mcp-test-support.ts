@@ -639,13 +639,51 @@ async function applyMigrations(persistDir: string) {
 	const getStdout = captureOutput(proc.stdout)
 	const getStderr = captureOutput(proc.stderr)
 	const exitCode = await proc.exited
-	if (exitCode === 0) return
+	if (exitCode !== 0) {
+		throw new Error(
+			[
+				`Failed to apply local D1 migrations (exit ${String(exitCode)}).`,
+				getStdout(),
+				getStderr(),
+			]
+				.filter(Boolean)
+				.join('\n\n'),
+		)
+	}
+
+	// The jobs worker (ADR 0016) runs alongside the main worker in local dev
+	// and owns its own D1 database, so its migrations apply too.
+	const jobsProc = spawnProcess({
+		cmd: [
+			nodeBin,
+			'--env-file=packages/worker/.env',
+			'./wrangler-env.ts',
+			'd1',
+			'migrations',
+			'apply',
+			'JOBS_DB',
+			'--local',
+			'--config',
+			'packages/jobs-worker/wrangler.jsonc',
+			'--persist-to',
+			persistDir,
+		],
+		cwd: projectRoot,
+		env: {
+			...process.env,
+			CLOUDFLARE_ENV: 'test',
+		},
+	})
+	const getJobsStdout = captureOutput(jobsProc.stdout)
+	const getJobsStderr = captureOutput(jobsProc.stderr)
+	const jobsExitCode = await jobsProc.exited
+	if (jobsExitCode === 0) return
 
 	throw new Error(
 		[
-			`Failed to apply local D1 migrations (exit ${String(exitCode)}).`,
-			getStdout(),
-			getStderr(),
+			`Failed to apply local jobs D1 migrations (exit ${String(jobsExitCode)}).`,
+			getJobsStdout(),
+			getJobsStderr(),
 		]
 			.filter(Boolean)
 			.join('\n\n'),

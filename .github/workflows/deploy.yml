@@ -160,9 +160,16 @@ jobs:
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-        run: >
-          node tools/ci/sync-worker-secrets.ts --env production --config
-          "$WRANGLER_CONFIG" --name kody-jobs --set-from-env-optional SENTRY_DSN
+        run: |
+          set -euo pipefail
+          # The jobs worker only has optional secrets; sync-worker-secrets
+          # fails on an empty set, so skip when SENTRY_DSN is not configured.
+          if [ -z "${SENTRY_DSN:-}" ]; then
+            echo "SENTRY_DSN is not configured; skipping jobs worker secret sync."
+            exit 0
+          fi
+          node tools/ci/sync-worker-secrets.ts --env production --config \
+            "$WRANGLER_CONFIG" --name kody-jobs --set-from-env-optional SENTRY_DSN
 
       - name: ☁️ Deploy jobs worker
         env:

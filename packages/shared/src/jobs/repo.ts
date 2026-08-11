@@ -720,3 +720,91 @@ export async function listJobRetentionCandidateRows(
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
+
+export async function countJobRowsForUser(
+	db: D1Database,
+	userId: string,
+): Promise<number> {
+	const row = await db
+		.prepare(`SELECT COUNT(*) AS count FROM jobs WHERE user_id = ?`)
+		.bind(userId)
+		.first<{ count: number }>()
+	return Number(row?.count ?? 0)
+}
+
+/**
+ * Physical text-byte estimate of a user's job rows, mirroring the main
+ * worker's `calculateUserD1StorageBytes` per-table formula so jobs data keeps
+ * counting toward the D1 storage quota now that it lives in the jobs
+ * database.
+ */
+export async function sumJobRowsStorageBytesForUser(
+	db: D1Database,
+	userId: string,
+): Promise<number> {
+	const columns = [
+		'name',
+		'params_json',
+		'schedule_json',
+		'timezone',
+		'caller_context_json',
+		'last_run_status',
+		'source_id',
+		'published_commit',
+		'storage_id',
+	]
+	const expression = columns
+		.map((column) => `length(CAST(COALESCE(${column}, '') AS BLOB))`)
+		.join(' + ')
+	const row = await db
+		.prepare(
+			`SELECT COALESCE(SUM(${expression}), 0) AS count
+			FROM jobs
+			WHERE user_id = ?`,
+		)
+		.bind(userId)
+		.first<{ count: number }>()
+	return Number(row?.count ?? 0)
+}
+
+export async function listJobStorageIdRowsForUser(
+	db: D1Database,
+	userId: string,
+): Promise<Array<string>> {
+	const { results } = await db
+		.prepare(
+			`SELECT storage_id AS storageId FROM jobs
+			WHERE user_id = ? AND storage_id IS NOT NULL`,
+		)
+		.bind(userId)
+		.all<{ storageId: string }>()
+	return (results ?? []).map((row) => row.storageId)
+}
+
+/**
+ * Platform-wide (userId, storageId) pairs for every job row with storage.
+ * Operator-level DR inventory only — not for user-facing paths.
+ */
+export async function listAllJobStorageOwnerRows(
+	db: D1Database,
+): Promise<Array<{ userId: string; storageId: string }>> {
+	const { results } = await db
+		.prepare(
+			`SELECT user_id AS userId, storage_id AS storageId
+			FROM jobs WHERE storage_id IS NOT NULL`,
+		)
+		.all<{ userId: string; storageId: string }>()
+	return results ?? []
+}
+
+export async function getJobRowInsights(
+	db: D1Database,
+): Promise<{ total: number; enabled: number }> {
+	const row = await db
+		.prepare(`SELECT COUNT(*) AS total, SUM(enabled) AS enabled FROM jobs`)
+		.first<{ total: number; enabled: number | null }>()
+	return {
+		total: Number(row?.total ?? 0),
+		enabled: Number(row?.enabled ?? 0),
+	}
+}

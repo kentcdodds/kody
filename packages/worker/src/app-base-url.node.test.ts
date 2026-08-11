@@ -5,6 +5,7 @@ import {
 	getPackageAppBaseUrl,
 	getPackageAppOriginConfigurationError,
 	joinAppUrl,
+	parsePackageAppRequestHost,
 } from './app-base-url.ts'
 
 test('getAppBaseUrl prefers the request origin when present', () => {
@@ -129,13 +130,65 @@ test('the package-app origin is configurable and never resolves as the app origi
 		PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
 	}
 	// Package runtime callbacks and first-party links resolved while serving a
-	// package app must point at the app origin, never at the package-app host.
+	// package app must point at the app origin, never at the package-app host —
+	// neither the bare origin nor a per-user subdomain.
 	expect(
 		getAppBaseUrl({ env, requestUrl: 'https://kodyapps.dev/@me/packages/x' }),
 	).toBe('https://heykody.dev')
 	expect(
+		getAppBaseUrl({
+			env,
+			requestUrl: 'https://user-me.kodyapps.dev/packages/x',
+		}),
+	).toBe('https://heykody.dev')
+	expect(
 		getAppBaseUrl({ env, requestUrl: 'https://heykody.dev/@me/packages/x' }),
 	).toBe('https://heykody.dev')
+})
+
+test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects everything else', () => {
+	const env = { PACKAGE_APP_BASE_URL: 'https://kodyapps.dev' }
+	const parse = (url: string) =>
+		parsePackageAppRequestHost({ env, url: new URL(url) })
+
+	expect(parse('https://kodyapps.dev/anything')).toEqual({ kind: 'apex' })
+	expect(parse('https://kentcdodds.kodyapps.dev/packages/demo')).toEqual({
+		kind: 'user-subdomain',
+		username: 'kentcdodds',
+	})
+	// Hostnames the wildcard route still delivers, but that no user can own.
+	for (const url of [
+		// Nested labels.
+		'https://a.b.kodyapps.dev/',
+		// Not a valid username label (too short / invalid characters).
+		'https://xy.kodyapps.dev/',
+		'https://bad_label.kodyapps.dev/',
+		// Wrong scheme for the configured origin.
+		'http://kentcdodds.kodyapps.dev/',
+		// Trailing DNS dots resolve to the same host but survive in
+		// URL.hostname; letting them fall through would route them first-party.
+		'https://kodyapps.dev./',
+		'https://kentcdodds.kodyapps.dev./',
+	]) {
+		expect(parse(url), url).toEqual({ kind: 'unrecognized-subdomain' })
+	}
+	// Not the package-app domain at all.
+	for (const url of [
+		'https://heykody.dev/',
+		'https://evil-kodyapps.dev/',
+		'https://kodyapps.dev.attacker.example/',
+		// Same hostname on another scheme/port is another local service.
+		'http://kodyapps.dev/',
+	]) {
+		expect(parse(url), url).toBeNull()
+	}
+	// No configured package-app origin: nothing classifies.
+	expect(
+		parsePackageAppRequestHost({
+			env: {},
+			url: new URL('https://kentcdodds.kodyapps.dev/'),
+		}),
+	).toBeNull()
 })
 
 test('production package-app origin configuration requires a separate registrable domain', () => {

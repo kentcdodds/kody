@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { listPackageServices } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
@@ -160,35 +161,20 @@ export async function listAccountUserStorageIds(input: {
 	warnings?: Array<string>
 	packageServices?: ReadonlyArray<AccountUserPackageService>
 }): Promise<Array<string>> {
-	const [
-		jobRows,
-		archivedRows,
-		bucketIds,
-		packageServices,
-		runRecordStorageIds,
-	] = await Promise.all([
-		input.env.APP_DB.prepare(
-			`SELECT storage_id FROM jobs WHERE user_id = ? AND storage_id IS NOT NULL`,
-		)
-			.bind(input.userId)
-			.all<{ storage_id: string }>(),
-		input.env.APP_DB.prepare(
-			`SELECT storage_id FROM archived_job_artifacts WHERE user_id = ? AND storage_id IS NOT NULL`,
-		)
-			.bind(input.userId)
-			.all<{ storage_id: string }>(),
-		listUserStorageBucketIds({
-			env: input.env,
-			userId: input.userId,
-		}),
-		input.packageServices
-			? Promise.resolve([...input.packageServices])
-			: listAccountUserPackageServices(input),
-		listRunRecordStorageIds({ env: input.env, userId: input.userId }),
-	])
+	const [jobStorageIds, bucketIds, packageServices, runRecordStorageIds] =
+		await Promise.all([
+			jobsData(input.env).listJobStorageIdsForUser({ userId: input.userId }),
+			listUserStorageBucketIds({
+				env: input.env,
+				userId: input.userId,
+			}),
+			input.packageServices
+				? Promise.resolve([...input.packageServices])
+				: listAccountUserPackageServices(input),
+			listRunRecordStorageIds({ env: input.env, userId: input.userId }),
+		])
 	return uniqueStrings([
-		...(jobRows.results ?? []).map((row) => row.storage_id),
-		...(archivedRows.results ?? []).map((row) => row.storage_id),
+		...jobStorageIds,
 		...bucketIds,
 		...packageServices.map((service) =>
 			buildPackageServiceStorageId(service.packageId, service.serviceName),

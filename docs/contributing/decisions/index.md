@@ -36,3 +36,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0014 — Platform scopes resolve live in package imports](./0014-platform-live-packages.md)
 - [0015 — Wait on Skills over MCP (SEP-2640); serve skill content via packages](./0015-skills-over-mcp-wait.md)
 - [0016 — Extract the package runtime and jobs lanes into separate workers](./0016-mono-worker-extraction.md)
+- [0017 — Per-user subdomains for hosted package apps](./0017-per-user-package-app-subdomains.md)

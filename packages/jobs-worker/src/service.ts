@@ -153,6 +153,40 @@ export class JobsService
 		await jobsStore(this.env).deleteArchivedJobArtifact(input)
 	}
 
+	async countJobsForUser(input: { userId: string }): Promise<number> {
+		return jobsStore(this.env).countJobsForUser(input)
+	}
+
+	async sumJobsStorageBytesForUser(input: { userId: string }): Promise<number> {
+		return jobsStore(this.env).sumJobsStorageBytesForUser(input)
+	}
+
+	async listJobStorageIdsForUser(input: {
+		userId: string
+	}): Promise<Array<string>> {
+		return jobsStore(this.env).listJobStorageIdsForUser(input)
+	}
+
+	async listArchivedJobArtifactsForUser(input: {
+		userId: string
+	}): Promise<Array<ArchivedJobArtifactRecord>> {
+		return jobsStore(this.env).listArchivedJobArtifactsForUser(input)
+	}
+
+	async listAllJobStorageOwners(): Promise<
+		Array<{ userId: string; storageId: string }>
+	> {
+		return jobsStore(this.env).listAllJobStorageOwners()
+	}
+
+	async getJobInsights(): Promise<{ total: number; enabled: number }> {
+		return jobsStore(this.env).getJobInsights()
+	}
+
+	async purgeUserJobsData(input: { userId: string }): Promise<void> {
+		await jobsStore(this.env).purgeUserJobsData(input)
+	}
+
 	async syncAlarm(input: {
 		userId: string
 	}): Promise<{ ok: true; userId: string; nextRunAt: string | null }> {
@@ -183,14 +217,7 @@ export class JobsService
 		if (!userId) {
 			throw new Error('Jobs purge requires a non-empty userId.')
 		}
-		await this.env.JOBS_DB.prepare(
-			`DELETE FROM archived_job_artifacts WHERE user_id = ?`,
-		)
-			.bind(userId)
-			.run()
-		await this.env.JOBS_DB.prepare(`DELETE FROM jobs WHERE user_id = ?`)
-			.bind(userId)
-			.run()
+		await jobsStore(this.env).purgeUserJobsData({ userId })
 		await jobManagerStub(this.env, userId).purgeUser({ userId })
 		return { ok: true as const, userId, purged: true }
 	}

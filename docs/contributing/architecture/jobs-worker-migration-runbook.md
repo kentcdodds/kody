@@ -145,10 +145,13 @@ in this order automatically.
 
 ### 8. Later: drop the old tables from `APP_DB`
 
-After a soak period (suggested: one week) with no fallback reads, land a
-separate `packages/worker/migrations/` migration dropping `jobs` and
-`archived_job_artifacts` from `APP_DB`, following the migration-ledger process.
-Not part of this cutover.
+The soak period was accelerated pre-launch: after every main-worker surface that
+still read the old `APP_DB` copies (entitlement counts and storage bytes, DR
+exporter inventory, admin insights, account export / user-inventory storage ids,
+account data targets) was ported to the JOBS service contract, migration
+`packages/worker/migrations/0010-drop-jobs-tables.sql` drops `jobs` and
+`archived_job_artifacts` from `APP_DB` (applied by the regular deploy pipeline's
+D1 migration step).
 
 ## Rollback
 

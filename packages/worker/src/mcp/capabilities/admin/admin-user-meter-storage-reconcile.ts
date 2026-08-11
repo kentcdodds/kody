@@ -3,6 +3,7 @@ import {
 	d1StorageReconciliationBatchSize,
 	reconcileD1StorageBytes,
 } from '#worker/entitlements/d1-storage-reconciliation.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -66,6 +67,7 @@ export const adminUserMeterStorageReconcileCapability = defineDomainCapability(
 					const result = await reconcileD1StorageBytes({
 						db: ctx.env.APP_DB,
 						env: ctx.env,
+						jobs: jobsData(ctx.env),
 						batchSize,
 						now,
 					})

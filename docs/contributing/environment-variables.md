@@ -114,11 +114,17 @@ Wrangler `var` (public and non-secret; required in production, optional in
 confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
 `packages/worker/src/app/package-app-origin.ts`):
 
-- `PACKAGE_APP_BASE_URL` — the origin that hosted package apps are served from.
-  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
-  and the deploy derives a Workers `custom_domain` route from it so Cloudflare
-  provisions DNS and the edge certificate (see
-  [setup-manifest.md](./setup-manifest.md)). It **must be a separate registrable
+- `PACKAGE_APP_BASE_URL` — the **apex** origin of the package-app domain that
+  hosted package apps are served from. Production sets `https://kodyapps.dev` in
+  `packages/worker/wrangler.jsonc`, and the deploy derives a Workers
+  `custom_domain` route for the apex (which provisions its DNS and certificate)
+  plus a wildcard **zone route** (`*.<apex-host>/*`) for per-user subdomains —
+  Cloudflare custom domains cannot be wildcards, and zone routes do not create
+  DNS records, so production CI ensures the proxied wildcard DNS record
+  separately (see [setup-manifest.md](./setup-manifest.md)). Each owner's apps
+  are addressed at `https://{username}.<apex-host>/packages/{kodyId}/...`; the
+  apex itself serves only redirects (legacy `/@user/packages/...` paths to the
+  owning subdomain, `/` to the app origin). It **must be a separate registrable
   domain** from `APP_BASE_URL`: that is what makes author-supplied package code
   cross-site, so the `SameSite=Lax` `kody_session` cookie never reaches it.
   Production origin validation also requires `APP_BASE_URL` so this relationship

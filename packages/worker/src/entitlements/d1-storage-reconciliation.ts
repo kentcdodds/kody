@@ -1,3 +1,4 @@
+import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { type UserMeterEnv } from './user-meter-client.ts'
 import {
 	advanceD1StorageReconciliationCursor,
@@ -30,6 +31,8 @@ export async function reconcileD1StorageBytes(input: {
 	batchSize?: number
 	/** Required because UserMeter is the storage-usage authority. */
 	env: UserMeterEnv
+	/** Jobs-worker byte contribution (see calculateUserD1StorageBytes). */
+	jobs?: JobsStore
 }): Promise<{
 	scanned: number
 	updated: number
@@ -49,6 +52,7 @@ export async function reconcileD1StorageBytes(input: {
 			const result = await reconcileUserD1StorageBytes({
 				db: input.db,
 				env: input.env,
+				jobs: input.jobs,
 				userId: row.userId,
 				now,
 			})

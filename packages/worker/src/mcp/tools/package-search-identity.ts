@@ -1,3 +1,7 @@
+import {
+	buildPackageAppSubdomainOrigin,
+	isDnsSafeUsername,
+} from '@kody-internal/shared/public-urls.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { type SearchMatch } from '#mcp/tools/search-format.ts'
 import {
@@ -66,7 +70,7 @@ function parsePackageUrl(input: {
 			? { kind: 'invalid-package-identity' }
 			: { kind: 'not-package-identity' }
 	}
-	// Hosted package apps are served from their own origin in production, so the
+	// Hosted package apps are served from their own domain in production, so the
 	// URL a user copies out of the address bar is on that host, not the app host.
 	// Both are this deployment's own origins; anything else is another site's URL
 	// and must not resolve to one of this user's packages.
@@ -80,6 +84,39 @@ function parsePackageUrl(input: {
 	}
 
 	const parts = url.pathname.split('/').filter(Boolean)
+
+	// Per-user subdomain form: `https://{username}.<package-app host>/packages/{kodyId}`.
+	if (packageAppOrigin) {
+		const packageAppBase = new URL(packageAppOrigin)
+		const hostname = url.hostname.toLowerCase()
+		if (
+			hostname !== packageAppBase.hostname &&
+			hostname.endsWith(`.${packageAppBase.hostname}`)
+		) {
+			const isSubdomainPackagePath =
+				parts.length === 2 && parts[0] === 'packages'
+			if (!isSubdomainPackagePath) return { kind: 'not-package-identity' }
+			const label = hostname.slice(0, -(packageAppBase.hostname.length + 1))
+			const kodyId = safelyDecodePathSegment(parts[1] ?? '')
+			if (
+				label.includes('.') ||
+				!isDnsSafeUsername(label) ||
+				url.origin !==
+					buildPackageAppSubdomainOrigin({
+						packageAppOrigin,
+						username: label,
+					}) ||
+				url.username.length > 0 ||
+				url.password.length > 0 ||
+				!kodyId ||
+				!kodyPackageIdPattern.test(kodyId) ||
+				label !== input.username
+			) {
+				return { kind: 'invalid-package-identity' }
+			}
+			return { kind: 'kody-id', value: kodyId, authoritative: true }
+		}
+	}
 	const isAccountPackagePath =
 		parts.length === 3 && parts[0] === 'account' && parts[1] === 'packages'
 	const isHostedPackagePath =

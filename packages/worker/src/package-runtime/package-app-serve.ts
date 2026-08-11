@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
+import { type PackageAppMount } from '@kody-internal/shared/public-urls.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
@@ -29,7 +30,16 @@ export type PackageAppServeOwner = {
 	displayName: string
 }
 
-export function parsePackageAppPath(pathname: string) {
+export { type PackageAppMount }
+
+export type PackageAppPath = {
+	username: string
+	kodyId: string
+	restPath: string
+	mount: PackageAppMount
+}
+
+export function parsePackageAppPath(pathname: string): PackageAppPath | null {
 	const parts = pathname.split('/').filter(Boolean)
 	const rawUsername = parts[0]?.startsWith('@') ? parts[0].slice(1) : ''
 	if (!rawUsername || parts[1] !== 'packages') return null
@@ -48,14 +58,40 @@ export function parsePackageAppPath(pathname: string) {
 		username,
 		kodyId,
 		restPath: parts.length > 3 ? `/${parts.slice(3).join('/')}` : '/',
+		mount: 'username-path',
+	}
+}
+
+/**
+ * Parse the path shape served on a per-user package-app subdomain, where the
+ * username comes from the hostname and the path is `/packages/{kodyId}/{rest}`.
+ * The caller must already have validated the subdomain's username label.
+ */
+export function parsePackageAppSubdomainPath(input: {
+	pathname: string
+	username: string
+}): PackageAppPath | null {
+	const parts = input.pathname.split('/').filter(Boolean)
+	if (parts[0] !== 'packages') return null
+	const rawKodyId = parts[1]?.trim()
+	if (!rawKodyId) return null
+	let kodyId: string
+	try {
+		kodyId = decodeURIComponent(rawKodyId)
+	} catch {
+		return null
+	}
+	return {
+		username: input.username,
+		kodyId,
+		restPath: parts.length > 2 ? `/${parts.slice(2).join('/')}` : '/',
+		mount: 'user-subdomain',
 	}
 }
 
 export function isPackageAppRequestPath(pathname: string) {
 	return parsePackageAppPath(pathname) !== null
 }
-
-export type PackageAppPath = NonNullable<ReturnType<typeof parsePackageAppPath>>
 
 // Credentials that must never reach author-supplied package code. `Cookie`
 // carries the owner's `kody_session`, `Authorization` carries MCP bearer tokens,
@@ -418,6 +454,7 @@ export async function servePackageAppRequest(input: {
 				callerContext,
 				servingUsername: packagePath.username,
 				hostedOrigin: requestUrl.origin,
+				mount: packagePath.mount,
 			},
 		})
 		entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)

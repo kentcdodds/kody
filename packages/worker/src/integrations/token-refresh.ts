@@ -13,6 +13,56 @@ export type IntegrationTokenRefreshResult = {
 }
 
 /**
+ * Caller-clearable token-refresh failures: missing refresh token on the
+ * connection, revoked/expired provider grant (HTTP 4xx), host-approval gaps,
+ * and similar reconnectable state. MCP capabilities re-wrap this as
+ * `McpCallerError` so agents get a clear next step and Sentry stays quiet.
+ */
+export class IntegrationTokenRefreshCallerError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options)
+		this.name = 'IntegrationTokenRefreshCallerError'
+	}
+}
+
+/**
+ * Trailing marker on every `IntegrationTokenRefreshCallerError` message. MCP
+ * observability and Sentry `beforeSend` match this so reconnectable OAuth
+ * state stays on structured `mcp-event` logs and out of Sentry — without
+ * over-matching unrelated "Integration …" strings elsewhere.
+ */
+export const integrationTokenRefreshCallerMarker =
+	'(integration_token_refresh caller state)'
+
+export function isIntegrationTokenRefreshCallerMessage(message: string) {
+	return message.includes(integrationTokenRefreshCallerMarker)
+}
+
+function callerRefreshError(message: string, options?: ErrorOptions) {
+	return new IntegrationTokenRefreshCallerError(
+		`${message} ${integrationTokenRefreshCallerMarker}`,
+		options,
+	)
+}
+
+function connectOauthPath(integrationName: string) {
+	return `/connect/oauth?provider=${encodeURIComponent(integrationName)}`
+}
+
+function formatProviderTokenError(payload: Record<string, unknown> | null) {
+	if (!payload) return null
+	const error =
+		typeof payload.error === 'string' ? payload.error.trim().slice(0, 80) : ''
+	const description =
+		typeof payload.error_description === 'string'
+			? payload.error_description.trim().slice(0, 200)
+			: ''
+	if (!error && !description) return null
+	if (error && description) return `${error}: ${description}`
+	return error || description
+}
+
+/**
  * Host-side OAuth token refresh. Runs entirely in the Worker: the refresh
  * token and client secret are materialized here (never in the sandbox), the
  * provider response is parsed here, and only fresh token *values* are written
@@ -34,25 +84,26 @@ export async function refreshIntegrationTokens(input: {
 		name: input.name,
 	})
 	if (!joined) {
-		throw new Error(`Integration "${input.name}" was not found.`)
+		throw callerRefreshError(`Integration "${input.name}" was not found.`)
 	}
 	const { app, connection } = joined
+	const reconnectPath = connectOauthPath(connection.name)
 	const clientId = app.clientId.trim()
 	if (!clientId) {
-		throw new Error(
-			`Integration "${connection.name}" does not define a client id.`,
+		throw callerRefreshError(
+			`Integration "${connection.name}" does not define a client id. Reconnect at ${reconnectPath}.`,
 		)
 	}
 	const refreshTokenSecretName = connection.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
-		throw new Error(
-			`Integration "${connection.name}" does not define a refresh token secret name.`,
+		throw callerRefreshError(
+			`Integration "${connection.name}" does not define a refresh token secret name. This connection cannot refresh; reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integration_token_refresh for this integration.`,
 		)
 	}
 	const accessTokenSecretName = connection.accessTokenSecretName.trim()
 	if (!accessTokenSecretName) {
-		throw new Error(
-			`Integration "${connection.name}" does not define an access token secret name.`,
+		throw callerRefreshError(
+			`Integration "${connection.name}" does not define an access token secret name. Reconnect at ${reconnectPath}.`,
 		)
 	}
 
@@ -64,7 +115,7 @@ export async function refreshIntegrationTokens(input: {
 	// rows, so no user-secret allowlist applies.
 	const tokenHost = safeParseHost(app.tokenUrl)
 	if (!tokenHost) {
-		throw new Error(
+		throw callerRefreshError(
 			`Integration "${connection.name}" has an invalid token URL.`,
 		)
 	}
@@ -74,7 +125,7 @@ export async function refreshIntegrationTokens(input: {
 	) => {
 		if (joined.lane !== 'user') return
 		if (allowedHosts.includes(tokenHost)) return
-		throw new Error(
+		throw callerRefreshError(
 			`Secret "${secretName}" is not approved for host "${tokenHost}". Approve the host on /account/secrets before refreshing this integration.`,
 		)
 	}
@@ -87,8 +138,8 @@ export async function refreshIntegrationTokens(input: {
 		storageContext,
 	})
 	if (!refreshTokenSecret.found || !refreshTokenSecret.value) {
-		throw new Error(
-			`Refresh token secret "${refreshTokenSecretName}" was not found.`,
+		throw callerRefreshError(
+			`Refresh token secret "${refreshTokenSecretName}" was not found. Reconnect at ${reconnectPath}.`,
 		)
 	}
 	assertUserSecretAllowedForTokenHost(
@@ -111,7 +162,7 @@ export async function refreshIntegrationTokens(input: {
 				const clientSecretSecretName =
 					joined.app.clientSecretSecretName?.trim() ?? ''
 				if (!clientSecretSecretName) {
-					throw new Error(
+					throw callerRefreshError(
 						`Integration "${connection.name}" uses confidential flow but does not define a client secret secret name.`,
 					)
 				}
@@ -139,7 +190,7 @@ export async function refreshIntegrationTokens(input: {
 			}
 		}
 		if (!clientSecret) {
-			throw new Error(
+			throw callerRefreshError(
 				`Client secret for integration "${connection.name}" was not found.`,
 			)
 		}
@@ -174,13 +225,23 @@ export async function refreshIntegrationTokens(input: {
 		unknown
 	> | null
 	if (!response.ok) {
+		const providerDetail = formatProviderTokenError(payload)
+		const detailSuffix = providerDetail ? ` (${providerDetail})` : ''
+		// Provider 4xx is almost always revoked/expired grant or bad client
+		// state the user (or operator) clears by reconnecting — not a platform
+		// defect worth a Sentry issue. 5xx stays a plain Error for visibility.
+		if (response.status >= 400 && response.status < 500) {
+			throw callerRefreshError(
+				`Token refresh was rejected for integration "${connection.name}" with HTTP ${response.status}${detailSuffix}. Reconnect at ${reconnectPath}.`,
+			)
+		}
 		throw new Error(
-			`Token refresh failed for integration "${connection.name}" with HTTP ${response.status}.`,
+			`Token refresh failed for integration "${connection.name}" with HTTP ${response.status}${detailSuffix}.`,
 		)
 	}
 	if (!payload || typeof payload.access_token !== 'string') {
-		throw new Error(
-			`Token refresh for integration "${connection.name}" did not return an access_token.`,
+		throw callerRefreshError(
+			`Token refresh for integration "${connection.name}" did not return an access_token. Reconnect at ${reconnectPath}.`,
 		)
 	}
 

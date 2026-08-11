@@ -423,7 +423,6 @@ export const packageSearchEntityPlugin = {
 		)
 	},
 	formatSlimMatch({ match, baseUrl, packageAppBaseUrl, username }) {
-		const hostedAppOrigin = packageAppBaseUrl ?? baseUrl
 		const rootImportUsage = buildPackageRootImportUsage(match.name)
 		const actionMatches = (match.actionMatches ?? []).map((actionMatch) => {
 			const importSpecifier = buildPackageImportSpecifier(
@@ -481,7 +480,12 @@ export const packageSearchEntityPlugin = {
 			hostedUrl: (() => {
 				const hostedUsername = match.platformScope ?? username
 				return match.hasApp && hostedUsername
-					? buildPackageHostedUrl(hostedAppOrigin, hostedUsername, match.kodyId)
+					? buildPackageHostedUrl({
+							packageAppBaseUrl: packageAppBaseUrl ?? null,
+							appBaseUrl: baseUrl,
+							username: hostedUsername,
+							kodyId: match.kodyId,
+						})
 					: null
 			})(),
 			readmeSnippet: match.readmeSnippet

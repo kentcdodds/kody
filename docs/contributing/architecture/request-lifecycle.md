@@ -28,12 +28,16 @@ Requests are handled in this order:
 
 0. Package-app host isolation (before everything else — see
    [Hosted package app origin isolation](../security.md#hosted-package-app-origin-isolation)):
-   - On the **package-app origin**, only `/@{username}/packages/*` is served
-     (plus the handoff-token exchange on those same paths). `/` redirects to the
-     app origin; every other path is `404`.
+   - On the **package-app apex**, no package code runs: `/` redirects to the app
+     origin; legacy `/@{username}/packages/*` redirects to the owning user's
+     subdomain; everything else is `404`.
+   - On a **per-user package-app subdomain** (`{username}.<package-app host>`),
+     only `/packages/{kodyId}/*` for that hostname's username is served (plus
+     the handoff-token exchange on those same paths). `/` redirects to the app
+     origin; every other path is `404`.
    - On the **app origin**, `/@{username}/packages/*` never executes package
-     code: safe methods redirect to the package-app origin with a handoff token,
-     other methods get a `307` to the same path there.
+     code: safe methods redirect to the owner's package-app subdomain with a
+     handoff token, other methods get a `307` to that subdomain.
    - Production package-app requests fail with `500` when `PACKAGE_APP_BASE_URL`
      is missing or is not on a separate registrable domain from `APP_BASE_URL`;
      package code never executes inline.

@@ -68,7 +68,9 @@ import {
 } from '#worker/run-records/types.ts'
 import {
 	buildPackageAppPath,
-	buildPackageAppUrl,
+	buildPackageAppSubdomainPath,
+	resolveHostedPackageAppUrl,
+	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import {
@@ -1498,23 +1500,39 @@ function buildPackageAppPublicContext(input: {
 	runtime: {
 		servingUsername?: string
 		hostedOrigin?: string
+		mount?: PackageAppMount
 	}
 }) {
 	const username =
 		input.runtime.servingUsername ??
 		getUsernameFromPackageName(input.savedPackage.name)
-	const origin =
-		input.runtime.hostedOrigin ??
-		getPackageAppBaseUrl({ env: input.env }) ??
-		input.baseUrl
-	const publicUrlInput = {
-		origin,
-		username,
-		kodyId: input.savedPackage.kodyId,
+	const { kodyId } = input.savedPackage
+	if (input.runtime.hostedOrigin) {
+		// Request-scoped: the mount the request actually arrived on. On a
+		// per-user subdomain the username lives in the hostname, so the app is
+		// mounted at `/packages/{kodyId}`; inline serving keeps the
+		// `/@{username}` path prefix.
+		const appBasePath =
+			input.runtime.mount === 'user-subdomain'
+				? buildPackageAppSubdomainPath({ kodyId })
+				: buildPackageAppPath({ username, kodyId })
+		return {
+			appBasePath,
+			hostedUrl: `${input.runtime.hostedOrigin.replace(/\/+$/, '')}${appBasePath}`,
+		}
 	}
+	// Background/synthetic callers get the canonical hosted URL: the per-user
+	// subdomain when a package-app origin is configured, the inline path-based
+	// mount otherwise.
+	const hostedUrl = resolveHostedPackageAppUrl({
+		packageAppBaseUrl: getPackageAppBaseUrl({ env: input.env }),
+		appBaseUrl: input.baseUrl,
+		username,
+		kodyId,
+	})
 	return {
-		appBasePath: buildPackageAppPath(publicUrlInput),
-		hostedUrl: buildPackageAppUrl(publicUrlInput),
+		appBasePath: new URL(hostedUrl).pathname,
+		hostedUrl,
 	}
 }
 
@@ -1698,6 +1716,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		callerContext: ReturnType<typeof createMcpCallerContext>
 		servingUsername?: string
 		hostedOrigin?: string
+		mount?: PackageAppMount
 	}
 }): Promise<PackageAppWorkerOptions> {
 	const publicContext = buildPackageAppPublicContext(input)
@@ -1809,6 +1828,7 @@ export async function buildPackageAppWorker(input: {
 		callerContext: ReturnType<typeof createMcpCallerContext>
 		servingUsername?: string
 		hostedOrigin?: string
+		mount?: PackageAppMount
 	}
 }) {
 	const publicContext = buildPackageAppPublicContext(input)

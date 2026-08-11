@@ -100,3 +100,45 @@ export async function deleteArchivedJobArtifact(db: D1Database, id: string) {
 		.bind(id)
 		.run()
 }
+
+export async function listArchivedJobArtifactsForUser(
+	db: D1Database,
+	userId: string,
+): Promise<Array<ArchivedJobArtifactRecord>> {
+	const { results } = await db
+		.prepare(
+			`SELECT id, job_id, user_id, source_id, published_commit, storage_id, retain_until, created_at, updated_at
+			FROM archived_job_artifacts
+			WHERE user_id = ?
+			ORDER BY id ASC`,
+		)
+		.bind(userId)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map((row) => ({
+		id: String(row['id']),
+		jobId: String(row['job_id']),
+		userId: String(row['user_id']),
+		sourceId: String(row['source_id']),
+		publishedCommit: String(row['published_commit']),
+		storageId: String(row['storage_id']),
+		retainUntil: String(row['retain_until']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}))
+}
+
+/**
+ * Platform-wide (userId, storageId) pairs for every archived artifact.
+ * Operator-level DR inventory only — not for user-facing paths.
+ */
+export async function listAllArchivedJobArtifactStorageOwnerRows(
+	db: D1Database,
+): Promise<Array<{ userId: string; storageId: string }>> {
+	const { results } = await db
+		.prepare(
+			`SELECT user_id AS userId, storage_id AS storageId
+			FROM archived_job_artifacts WHERE storage_id IS NOT NULL`,
+		)
+		.all<{ userId: string; storageId: string }>()
+	return results ?? []
+}

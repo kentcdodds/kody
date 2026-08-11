@@ -1,5 +1,9 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { parseJsonc } from './resource-utils.ts'
+import {
+	packageAppWildcardRoutePattern,
+	parseJsonc,
+	readPackageAppZoneName,
+} from './resource-utils.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
 
 /**
@@ -183,9 +187,11 @@ function copyResourceIdentifiers(input: {
 }
 
 /**
- * Attach the package-app origin as this Worker's custom domain. The main
- * Worker's generated config no longer lists the package-app host (see
- * tools/ci/resource-utils.ts), so the runtime Worker owns it.
+ * Attach the package-app origin as this Worker's custom domain, plus the
+ * per-user subdomain wildcard zone route (decision 0017; Cloudflare custom
+ * domains cannot be wildcards). The main Worker's generated config no longer
+ * lists the package-app host (see tools/ci/resource-utils.ts), so the
+ * runtime Worker owns both routes.
  */
 function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	const vars =
@@ -204,17 +210,26 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 			`runtime env.${envName}.vars.PACKAGE_APP_BASE_URL is not a valid URL: ${packageAppBaseUrl}`,
 		)
 	}
+	const zoneName = readPackageAppZoneName(hostname)
+	if (!zoneName) {
+		fail(
+			`runtime env.${envName}.vars.PACKAGE_APP_BASE_URL host "${hostname}" has no registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
+		)
+	}
+	const wildcardPattern = packageAppWildcardRoutePattern(hostname)
 	const existingRoutes = Array.isArray(runtimeEnv.routes)
 		? runtimeEnv.routes.filter(
 				(route) =>
 					!route ||
 					typeof route !== 'object' ||
-					(route as JsonRecord).pattern !== hostname,
+					((route as JsonRecord).pattern !== hostname &&
+						(route as JsonRecord).pattern !== wildcardPattern),
 			)
 		: []
 	runtimeEnv.routes = [
 		...existingRoutes,
 		{ pattern: hostname, custom_domain: true },
+		{ pattern: wildcardPattern, zone_name: zoneName },
 	]
 	// Keep the workers.dev trigger as the deploy healthcheck target and a
 	// backup access path (publishing routes would otherwise disable it).

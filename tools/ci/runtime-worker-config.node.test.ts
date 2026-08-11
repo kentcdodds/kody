@@ -256,6 +256,7 @@ test('generate publishes the package-app custom domain for production', async ()
 
 		expect(runtimeConfig.env?.production?.routes).toEqual([
 			{ pattern: 'kodyapps.dev', custom_domain: true },
+			{ pattern: '*.kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 		])
 		expect(runtimeConfig.env?.production?.workers_dev).toBe(true)
 		// The storage transfer migration survives generation untouched.

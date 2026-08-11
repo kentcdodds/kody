@@ -12,6 +12,7 @@ import {
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
+	ensurePackageAppWildcardDnsRecord,
 	isR2BucketAlreadyExistsOutput,
 	isRetryableCloudflareApiError,
 	isWranglerNotFoundOutput,
@@ -80,7 +81,11 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 						migrations_dir: string
 					}>
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
-					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					routes?: Array<{
+						pattern: string
+						custom_domain?: boolean
+						zone_name?: string
+					}>
 					workers_dev?: boolean
 					vars?: Record<string, unknown>
 				}
@@ -132,6 +137,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		const packageAppBaseUrl =
 			productionConfig.env?.production?.vars?.PACKAGE_APP_BASE_URL
 		expect(typeof packageAppBaseUrl).toBe('string')
+		const packageAppHostname = new URL(String(packageAppBaseUrl)).hostname
 		expect(productionConfig.env?.production?.routes).toEqual([
 			{ pattern: 'heykody.dev', custom_domain: true },
 		])
@@ -180,7 +186,11 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 							dead_letter_queue: string
 						}>
 					}
-					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					routes?: Array<{
+						pattern: string
+						custom_domain?: boolean
+						zone_name?: string
+					}>
 				}
 			}
 		}>(await readFile(previewOutPath, 'utf8'))
@@ -294,7 +304,11 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 		const config = parseJsonc<{
 			env?: {
 				production?: {
-					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					routes?: Array<{
+						pattern: string
+						custom_domain?: boolean
+						zone_name?: string
+					}>
 					vars?: Record<string, unknown>
 				}
 			}
@@ -853,6 +867,201 @@ test('ensureArtifactsAccountEventSubscription creates account-level lifecycle su
 			}),
 		}),
 	)
+})
+
+test('ensurePackageAppWildcardDnsRecord creates a proxied wildcard AAAA record', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: {
+					id: 'dns-wildcard',
+					type: 'AAAA',
+					name: '*.kodyapps.dev',
+					content: '100::',
+					proxied: true,
+				},
+			}),
+		)
+
+	await ensurePackageAppWildcardDnsRecord({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		packageAppHostname: 'kodyapps.dev',
+		dryRun: false,
+		fetcher,
+	})
+
+	expect(fetcher).toHaveBeenNthCalledWith(
+		1,
+		'https://api.cloudflare.com/client/v4/zones?name=kodyapps.dev&account.id=account-1&status=active',
+		expect.objectContaining({ method: 'GET' }),
+	)
+	// The list query is name-only on purpose: a type filter would hide
+	// conflicting A/CNAME records at the wildcard name.
+	expect(fetcher).toHaveBeenNthCalledWith(
+		2,
+		`https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records?name=${encodeURIComponent('*.kodyapps.dev')}`,
+		expect.objectContaining({ method: 'GET' }),
+	)
+	expect(fetcher).toHaveBeenNthCalledWith(
+		3,
+		'https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records',
+		expect.objectContaining({
+			method: 'POST',
+			body: JSON.stringify({
+				type: 'AAAA',
+				name: '*.kodyapps.dev',
+				content: '100::',
+				proxied: true,
+				ttl: 1,
+			}),
+		}),
+	)
+})
+
+test('ensurePackageAppWildcardDnsRecord fails on a conflicting record of another type', async () => {
+	consoleError.mockImplementation(() => {})
+	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						id: 'dns-conflicting',
+						type: 'CNAME',
+						name: '*.kodyapps.dev',
+						content: 'somewhere-else.example',
+						proxied: false,
+					},
+				],
+			}),
+		)
+
+	await expect(
+		ensurePackageAppWildcardDnsRecord({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			packageAppHostname: 'kodyapps.dev',
+			dryRun: false,
+			fetcher,
+		}),
+	).rejects.toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('found CNAME somewhere-else.example'),
+	)
+	expect(fetcher).toHaveBeenCalledTimes(2)
+	exit.mockRestore()
+})
+
+test('ensurePackageAppWildcardDnsRecord fails on a conflict even when the required record exists', async () => {
+	consoleError.mockImplementation(() => {})
+	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						id: 'dns-required',
+						type: 'AAAA',
+						name: '*.kodyapps.dev',
+						content: '100::',
+						proxied: true,
+					},
+					{
+						id: 'dns-stray',
+						type: 'A',
+						name: '*.kodyapps.dev',
+						content: '192.0.2.1',
+						proxied: false,
+					},
+				],
+			}),
+		)
+
+	await expect(
+		ensurePackageAppWildcardDnsRecord({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			packageAppHostname: 'kodyapps.dev',
+			dryRun: false,
+			fetcher,
+		}),
+	).rejects.toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('found A 192.0.2.1'),
+	)
+	exit.mockRestore()
+})
+
+test('ensurePackageAppWildcardDnsRecord reuses an existing proxied wildcard record', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [
+					{
+						id: 'dns-existing',
+						type: 'AAAA',
+						name: '*.kodyapps.dev',
+						content: '100::',
+						proxied: true,
+					},
+				],
+			}),
+		)
+
+	await ensurePackageAppWildcardDnsRecord({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		packageAppHostname: 'kodyapps.dev',
+		dryRun: false,
+		fetcher,
+	})
+
+	expect(fetcher).toHaveBeenCalledTimes(2)
 })
 
 test('writeGeneratedWranglerConfig rejects invalid environment asset config', async () => {

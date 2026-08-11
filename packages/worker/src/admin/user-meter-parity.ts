@@ -8,6 +8,7 @@ import {
 	type DailyEntitlementResource,
 } from '#worker/entitlements/user-meter-do.ts'
 import { calculateUserD1StorageBytes } from '#worker/entitlements/service.ts'
+import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 type DailyResourceRead = {
@@ -95,6 +96,7 @@ async function readDailyMeterCounts(input: {
 async function readStorageParity(input: {
 	db: D1Database
 	env: UserMeterEnv
+	jobs?: JobsStore
 	stableUserId: string
 }): Promise<StorageParity> {
 	// Physical recompute from D1 payload tables — the same source the
@@ -104,6 +106,7 @@ async function readStorageParity(input: {
 		0,
 		await calculateUserD1StorageBytes({
 			db: input.db,
+			jobs: input.jobs,
 			userId: input.stableUserId,
 		}),
 	)
@@ -158,6 +161,8 @@ async function readDeletionParity(input: {
 export async function loadAdminUserMeterParityReport(input: {
 	db: D1Database
 	env: UserMeterEnv
+	/** Jobs-worker byte contribution (see calculateUserD1StorageBytes). */
+	jobs?: JobsStore
 	stableUserId: string
 	now?: Date
 }): Promise<AdminUserMeterParityReport | null> {
@@ -179,6 +184,7 @@ export async function loadAdminUserMeterParityReport(input: {
 		readStorageParity({
 			db: input.db,
 			env: input.env,
+			jobs: input.jobs,
 			stableUserId,
 		}),
 		readDeletionParity({

@@ -3,6 +3,7 @@ import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
+import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import { isRemoteConnectorUnavailableMessage } from './remote-connector/status.ts'
 import { isUserCodeError } from './user-code-error.ts'
 
@@ -164,6 +165,27 @@ export function isRemoteConnectorUnavailableSentryEvent(event: ErrorEvent) {
 
 export function filterRemoteConnectorUnavailableSentryEvent(event: ErrorEvent) {
 	if (!isRemoteConnectorUnavailableSentryEvent(event)) return event
+	return null
+}
+
+/**
+ * OAuth token-refresh caller state (no refresh token on the connection,
+ * provider HTTP 4xx / invalid_grant, missing secrets). MCP observability
+ * already skips them via `isCallerFailure`; this `beforeSend` gate is the
+ * backstop for any other capture path that still forwards the plain Error.
+ */
+export function isIntegrationTokenRefreshCallerSentryEvent(event: ErrorEvent) {
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isIntegrationTokenRefreshCallerMessage(message),
+	)
+}
+
+export function filterIntegrationTokenRefreshCallerSentryEvent(
+	event: ErrorEvent,
+) {
+	if (!isIntegrationTokenRefreshCallerSentryEvent(event)) return event
 	return null
 }
 
@@ -375,6 +397,8 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
 	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
 	if (filterRemoteConnectorUnavailableSentryEvent(event) === null) return null
+	if (filterIntegrationTokenRefreshCallerSentryEvent(event) === null)
+		return null
 	if (filterDurableObjectIsolateResetSentryEvent(event) === null) return null
 	if (filterCloudflareOpaqueInternalErrorSentryEvent(event) === null)
 		return null
@@ -418,7 +442,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// paths; see filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent. Offline remote-connector
 		// guidance messages are dropped the same way — see
-		// filterRemoteConnectorUnavailableSentryEvent. Bare Cloudflare Durable
+		// filterRemoteConnectorUnavailableSentryEvent. OAuth token-refresh
+		// caller state (missing refresh token, provider 4xx / invalid_grant)
+		// is dropped the same way — see
+		// filterIntegrationTokenRefreshCallerSentryEvent. Bare Cloudflare Durable
 		// Object platform reset strings (memory/CPU limits, deploy-time code
 		// updates, blockConcurrencyWhile timeouts, DO storage operation
 		// timeouts, and DO storage object-reset with a support reference) are

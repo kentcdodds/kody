@@ -7,6 +7,7 @@ import {
 	createPackageCodeRequest,
 	isPackageAppRequestPath,
 	parsePackageAppPath,
+	parsePackageAppSubdomainPath,
 	servePackageAppRequest,
 	type PackageAppPath,
 } from '#worker/package-runtime/package-app-serve.ts'
@@ -15,6 +16,7 @@ export {
 	createPackageCodeRequest,
 	isPackageAppRequestPath,
 	parsePackageAppPath,
+	parsePackageAppSubdomainPath,
 	servePackageAppRequest,
 	type PackageAppPath,
 }

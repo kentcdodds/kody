@@ -67,10 +67,13 @@ success means for the user, not duplicate every implementation detail.
 
 ## Package app routing
 
-Hosted package apps are mounted at `/@username/packages/<kody-id>/<path>`. The
-app receives only `/<path>` in its fetch request. Root-relative links such as
-`/audio/123` therefore escape the mount and are not routed back to the package
-app.
+Production-hosted package apps live at
+`https://{username}.kodyapps.dev/packages/<kody-id>/<path>` (the username is in
+the hostname; the path mount is `/packages/<kody-id>`). Confirmed non-production
+runtimes may serve inline on the app origin at
+`/@username/packages/<kody-id>/<path>` instead. The app receives only `/<path>`
+in its fetch request in both cases. Root-relative links such as `/audio/123`
+therefore escape the mount and are not routed back to the package app.
 
 Import `packageContext` from `kody:runtime` and build every in-app link,
 redirect, share/email URL, and OAuth callback against its public base:
@@ -89,7 +92,9 @@ const audioUrl = new URL(
 ```
 
 - `packageContext.hostedUrl` is the full public URL of the app mount.
-- `packageContext.appBasePath` is the origin-relative mount path.
+- `packageContext.appBasePath` is the origin-relative mount path
+  (`/packages/<kody-id>` on a subdomain, `/@username/packages/<kody-id>` when
+  inline).
 
 Kody derives both fields from the package's current serving username and
 `kody.id`, including after a rename or fork. Do not hard-code either path

@@ -2,6 +2,8 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parseStoredPlanName,
@@ -22,7 +24,7 @@ import {
 
 /** Env surface for authoritative entitlement usage readers. */
 export type EntitlementUsageEnv = UserMeterEnv &
-	Pick<Env, 'RUN_LOG' | 'MAILBOX'>
+	Pick<Env, 'RUN_LOG' | 'MAILBOX' | 'JOBS'>
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
@@ -383,9 +385,18 @@ async function sumStorageBytes(
 export async function calculateUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
+	/**
+	 * Jobs-data access for the jobs-worker database (ADR 0016). Job rows no
+	 * longer live in APP_DB; when provided, their byte estimate is included
+	 * in the total so jobs keep counting toward the D1 storage quota.
+	 */
+	jobs?: JobsStore
 }) {
 	const { db, userId } = input
 	const sums = await Promise.all([
+		input.jobs
+			? input.jobs.sumJobsStorageBytesForUser({ userId })
+			: Promise.resolve(0),
 		sumStorageBytes(
 			db,
 			`SELECT COALESCE(SUM(
@@ -443,25 +454,6 @@ export async function calculateUserD1StorageBytes(input: {
 				])}
 			), 0) AS count
 			FROM saved_packages
-			WHERE user_id = ?`,
-			[userId],
-		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
-				${textBytesExpression([
-					'name',
-					'params_json',
-					'schedule_json',
-					'timezone',
-					'caller_context_json',
-					'last_run_status',
-					'source_id',
-					'published_commit',
-					'storage_id',
-				])}
-			), 0) AS count
-			FROM jobs
 			WHERE user_id = ?`,
 			[userId],
 		),
@@ -565,6 +557,8 @@ export async function reconcileUserD1StorageBytes(input: {
 	now?: Date
 	/** Required because UserMeter is the storage-usage authority. */
 	env: UserMeterEnv
+	/** Jobs-worker byte contribution (see calculateUserD1StorageBytes). */
+	jobs?: JobsStore
 }): Promise<{ bytes: number; updated: boolean; deferred: boolean }> {
 	const nowIso = (input.now ?? new Date()).toISOString()
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
@@ -730,6 +724,10 @@ export async function readEntitlementResourceUsage(input: {
 				[userId],
 			)
 		case 'scheduled_jobs':
+			// Job rows live in the jobs-worker database (ADR 0016). Production
+			// callers must go through readCurrentEntitlementResourceUsage or pass
+			// getCurrent with a jobsData count; this direct query only works
+			// against test/local fallback databases that still have the table.
 			return await countRows(
 				db,
 				`SELECT COUNT(*) AS count FROM jobs WHERE user_id = ?`,
@@ -894,6 +892,14 @@ export async function readCurrentEntitlementResourceUsage(input: {
 		return await countInternalUserEmailMessages({
 			env: input.env,
 			ownerId: input.userId,
+		})
+	}
+	if (input.resource === 'scheduled_jobs') {
+		return await jobsData({
+			JOBS: input.env.JOBS,
+			APP_DB: input.db,
+		}).countJobsForUser({
+			userId: input.userId,
 		})
 	}
 	return await readEntitlementResourceUsage({

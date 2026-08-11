@@ -103,25 +103,43 @@ This project uses the following resources:
 - Second registrable domain for hosted package apps
   - Production: `kodyapps.dev` (zone in the same Cloudflare account, on
     Cloudflare nameservers), attached to the production Worker as a Workers
-    **custom domain**, which provisions the DNS record and edge certificate.
+    **custom domain**, which provisions the apex DNS record and edge
+    certificate. Per-user package apps are served from
+    `https://{username}.kodyapps.dev/packages/{kodyId}/...`; the apex stays
+    attached for legacy redirects (`/@user/packages/...` → per-user subdomain,
+    `/` → app origin).
+  - **Wildcard DNS (one-time per zone).** Zone routes do not create DNS records.
+    Production CI (`tools/ci/production-resources.ts ensure`) idempotently
+    ensures a proxied wildcard record in the package-app zone: `*.kodyapps.dev`
+    → AAAA `100::` (orange-cloud proxied). The deploy token needs **DNS:Edit**
+    on that zone (in addition to Workers deploy permissions). Forks must create
+    the zone and either run `ensure` or add the record manually before the first
+    per-user-subdomain deploy.
+  - **Wildcard zone route.** `writeGeneratedWranglerConfig`
+    (`tools/ci/resource-utils.ts`) also publishes
+    `{ pattern: "*.kodyapps.dev/*", zone_name: "kodyapps.dev" }` alongside the
+    apex `custom_domain` route. Cloudflare custom domains cannot be wildcards,
+    so per-user hosts use a zone route instead. Cloudflare Universal SSL covers
+    one wildcard label (`*.kodyapps.dev`), which is enough for
+    `{username}.kodyapps.dev`.
   - The attach happens on deploy, but the routes are **generated, not
-    committed**: `writeGeneratedWranglerConfig` (`tools/ci/resource-utils.ts`)
-    derives one `custom_domain` route per base-URL var (`APP_BASE_URL`,
-    `APP_LEGACY_HOSTS`, and `PACKAGE_APP_BASE_URL`) while writing
+    committed**: `writeGeneratedWranglerConfig` derives one `custom_domain`
+    route per base-URL var (`APP_BASE_URL`, `APP_LEGACY_HOSTS`, and
+    `PACKAGE_APP_BASE_URL`) plus the wildcard zone route while writing
     `packages/worker/wrangler-production.generated.json`. Those vars are the
     single source of truth for both the hosts the Worker routes on and the
     domains the deploy attaches, so the two cannot drift.
-  - **`routes` replaces the Worker's whole custom-domain set — it does not add
-    to it.** Omitting a previously attached custom domain detaches that origin
-    and deletes its DNS record. The generator therefore always lists the app
-    origin alongside the package-app origin, and fails the deploy when
-    `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than publishing
-    a partial set. Any domain attached out-of-band must be added here before the
-    next deploy, or that deploy will remove it. During a domain migration the
-    previous app host must therefore be listed in the `APP_LEGACY_HOSTS`
-    repository variable (comma-separated bare hostnames, e.g. `heykody.dev`)
-    before `APP_BASE_URL` flips to the new domain, so the old origin stays
-    attached and dual-served.
+  - **`routes` replaces the Worker's whole route set — it does not add to it.**
+    Omitting a previously attached custom domain detaches that origin and
+    deletes its DNS record. The generator therefore always lists the app origin
+    alongside the package-app apex and wildcard zone route, and fails the deploy
+    when `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than
+    publishing a partial set. Any domain attached out-of-band must be added here
+    before the next deploy, or that deploy will remove it. During a domain
+    migration the previous app host must therefore be listed in the
+    `APP_LEGACY_HOSTS` repository variable (comma-separated bare hostnames, e.g.
+    `heykody.dev`) before `APP_BASE_URL` flips to the new domain, so the old
+    origin stays attached and dual-served.
   - Publishing routes also flips `workers_dev` to `false`, which silently drops
     the `<name>.<subdomain>.workers.dev` trigger (Cloudflare then answers that
     hostname with error 1042). The generator sets `workers_dev: true` alongside
@@ -309,9 +327,11 @@ automatically:
 - `PACKAGE_APP_BASE_URL` (Wrangler `var`; required in production and optional
   for confirmed local/preview/test runtimes; origin for hosted package apps.
   Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
-  and the deploy attaches that host as a Workers custom domain from the
-  generated config (see the Cloudflare resources list above). Must be a
-  **separate registrable domain** from `APP_BASE_URL` — see
+  and the deploy attaches that apex as a Workers custom domain plus a wildcard
+  zone route (`*.kodyapps.dev/*`) from the generated config (see the Cloudflare
+  resources list above). Per-user apps use `{username}.kodyapps.dev` subdomains;
+  production CI ensures the proxied wildcard DNS record. Must be a **separate
+  registrable domain** from `APP_BASE_URL` — see
   [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
   Local dev ignores any value it cannot serve itself, and preview/test leave it
   unset, so those keep serving package apps inline on the app origin. Point it

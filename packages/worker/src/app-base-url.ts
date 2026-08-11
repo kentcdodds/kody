@@ -1,4 +1,8 @@
 import { getDomain } from 'tldts'
+import {
+	buildPackageAppSubdomainOrigin,
+	isDnsSafeUsername,
+} from '@kody-internal/shared/public-urls.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 
 const DEFAULT_APP_BASE_URL = 'https://heykody.app'
@@ -67,6 +71,64 @@ function getRegistrableDomain(url: URL) {
 	return getDomain(url.hostname) ?? url.hostname.toLowerCase()
 }
 
+export type PackageAppRequestHost =
+	/** The bare package-app origin: serves only redirects, never package code. */
+	| { kind: 'apex' }
+	/** One user's package-app subdomain: `{username}.<package-app host>`. */
+	| { kind: 'user-subdomain'; username: string }
+	/**
+	 * A hostname under the package-app domain that is not a valid single
+	 * username label (nested labels, invalid characters, wrong scheme/port).
+	 * Wildcard DNS still routes it here, so it must fail closed.
+	 */
+	| { kind: 'unrecognized-subdomain' }
+
+/**
+ * Classify a request URL against the configured package-app origin.
+ *
+ * Returns `null` when no package-app origin resolves or when the URL is not
+ * on the package-app domain at all (ordinary first-party traffic).
+ */
+export function parsePackageAppRequestHost(input: {
+	env: PackageAppBaseUrlEnv
+	url: URL
+}): PackageAppRequestHost | null {
+	const packageAppOrigin = getPackageAppBaseUrl({ env: input.env })
+	if (!packageAppOrigin) return null
+
+	const base = new URL(packageAppOrigin)
+	const rawHostname = input.url.hostname.toLowerCase()
+	// `URL.hostname` preserves a trailing DNS dot, and `kodyapps.dev.` is the
+	// same host as `kodyapps.dev` to resolvers. Letting the dotted form fall
+	// through would route it as first-party traffic, so it fails closed as an
+	// unrecognized package-app host instead.
+	const hadTrailingDot = rawHostname.endsWith('.')
+	const hostname = rawHostname.replace(/\.+$/, '')
+	if (hostname === base.hostname) {
+		if (hadTrailingDot) return { kind: 'unrecognized-subdomain' }
+		// Same hostname on a different scheme/port is another local service, not
+		// the package-app origin (matches the previous exact-origin behavior).
+		return input.url.origin === base.origin ? { kind: 'apex' } : null
+	}
+	if (!hostname.endsWith(`.${base.hostname}`)) return null
+	if (hadTrailingDot) return { kind: 'unrecognized-subdomain' }
+
+	const label = hostname.slice(0, -(base.hostname.length + 1))
+	// Strict DNS-label check: legacy underscore usernames cannot own a
+	// subdomain, and nested labels never match.
+	if (label.includes('.') || !isDnsSafeUsername(label)) {
+		return { kind: 'unrecognized-subdomain' }
+	}
+	const expectedOrigin = buildPackageAppSubdomainOrigin({
+		packageAppOrigin,
+		username: label,
+	})
+	if (input.url.origin !== expectedOrigin) {
+		return { kind: 'unrecognized-subdomain' }
+	}
+	return { kind: 'user-subdomain', username: label }
+}
+
 /**
  * Return a clear production configuration failure instead of allowing package
  * apps to fall back to the first-party origin.
@@ -112,9 +174,10 @@ export function getPackageAppOriginConfigurationError(
  * Fall back to `APP_BASE_URL`, then the production default, for background work
  * (workflows, email, etc.) that has no inbound request.
  *
- * Requests that arrived on the package-app origin are treated as having no
- * usable request origin: that host only serves author-supplied package apps, so
- * first-party links and package runtime callbacks must point at the app origin.
+ * Requests that arrived on the package-app domain (the bare origin or any
+ * per-user subdomain) are treated as having no usable request origin: those
+ * hosts only serve author-supplied package apps, so first-party links and
+ * package runtime callbacks must point at the app origin.
  */
 export function getAppBaseUrl(input: {
 	env: AppBaseUrlEnv
@@ -122,9 +185,9 @@ export function getAppBaseUrl(input: {
 }) {
 	if (input.requestUrl != null && input.requestUrl !== '') {
 		try {
-			const requestOrigin = new URL(input.requestUrl).origin
-			if (requestOrigin !== getPackageAppBaseUrl({ env: input.env })) {
-				return requestOrigin
+			const requestUrl = new URL(input.requestUrl)
+			if (!parsePackageAppRequestHost({ env: input.env, url: requestUrl })) {
+				return requestUrl.origin
 			}
 		} catch {
 			// Fall through to configured / default origin.

@@ -280,7 +280,7 @@ test('account profile API updates username for the signed-in user', async () => 
 				packageId: 'pkg-1',
 				kodyId: 'demo',
 				previousName: '@current-user/demo',
-				nextName: '@next_user/demo',
+				nextName: '@next-user/demo',
 				publishedCommit: 'abc',
 				changedPaths: ['package.json'],
 				shouldRepublishCommunityListing: true,
@@ -302,7 +302,7 @@ test('account profile API updates username for the signed-in user', async () => 
 				rememberMe: false,
 			},
 			method: 'POST',
-			body: { username: 'Next_User' },
+			body: { username: 'Next-User' },
 		}),
 	)
 
@@ -310,20 +310,20 @@ test('account profile API updates username for the signed-in user', async () => 
 	expect(await response.json()).toMatchObject({
 		ok: true,
 		email: 'current-user@example.com',
-		username: 'next_user',
-		displayName: 'next_user',
+		username: 'next-user',
+		displayName: 'next-user',
 		bio: null,
 		profileVisibility: 'public',
 		packagesUpdated: 1,
 		communityListingsRepublished: 1,
-		packageUpdateMessage: 'Updated 1 package to the new @next_user scope.',
+		packageUpdateMessage: 'Updated 1 package to the new @next-user scope.',
 	})
-	expect(testDb.users.get(1)?.username).toBe('next_user')
+	expect(testDb.users.get(1)?.username).toBe('next-user')
 	expect(mockModule.updateCommunityProfile).not.toHaveBeenCalled()
 	expect(mocks.updatePackagesForUsernameChange).toHaveBeenCalledWith(
 		expect.objectContaining({
 			previousUsername: 'current-user',
-			nextUsername: 'next_user',
+			nextUsername: 'next-user',
 		}),
 	)
 	expect(
@@ -395,7 +395,7 @@ test('account profile API rejects username changes when package updates fail', a
 				rememberMe: false,
 			},
 			method: 'POST',
-			body: { username: 'next_user' },
+			body: { username: 'next-user' },
 		}),
 	)
 
