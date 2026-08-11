@@ -3,8 +3,13 @@ import { toHex } from './hex.ts'
 const passwordHashPrefix = 'pbkdf2_sha256'
 const passwordSaltBytes = 16
 const passwordHashBytes = 32
-const maxPasswordHashIterations = 100_000
-const passwordHashIterations = maxPasswordHashIterations
+// Iterations used when creating new hashes. Older (lower-iteration) hashes
+// still verify and are transparently upgraded on successful login.
+const passwordHashIterations = 600_000
+// Hard ceiling on iterations accepted during verification, kept well above
+// the generation setting so hashes written by newer deploys keep verifying
+// after a rollback while absurd values stay rejected as a DoS guard.
+const maxAcceptedPasswordHashIterations = 10_000_000
 
 function fromHex(value: string): Uint8Array<ArrayBuffer> | null {
 	const normalized = value.trim().toLowerCase()
@@ -92,6 +97,16 @@ export async function createPasswordHash(password: string) {
 	)}`
 }
 
+export function passwordHashNeedsUpgrade(storedHash: string): boolean {
+	const normalizedHash = storedHash.trim()
+	if (!normalizedHash.startsWith(`${passwordHashPrefix}$`)) return false
+	const iterationsRaw = normalizedHash.split('$')[1]
+	if (!iterationsRaw || !/^\d+$/.test(iterationsRaw)) return false
+	const iterations = Number(iterationsRaw)
+	if (!Number.isSafeInteger(iterations) || iterations < 1) return false
+	return iterations < passwordHashIterations
+}
+
 export async function verifyPassword(
 	password: string,
 	storedHash: string,
@@ -113,7 +128,7 @@ export async function verifyPassword(
 		if (!Number.isSafeInteger(iterations) || iterations < 1 || !salt || !hash) {
 			return false
 		}
-		if (iterations > maxPasswordHashIterations) {
+		if (iterations > maxAcceptedPasswordHashIterations) {
 			return false
 		}
 		const derived = await derivePasswordKey(

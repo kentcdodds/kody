@@ -3,7 +3,11 @@ import {
 	normalizeRemoteConnectorInstanceId,
 	type RemoteConnectorRef,
 } from '@kody-internal/shared/remote-connectors.ts'
-import { decryptSecretValue, encryptSecretValue } from '#mcp/secrets/crypto.ts'
+import {
+	decryptSecretValue,
+	encryptSecretValue,
+	userSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import {
 	deleteRemoteConnectorSettingRow,
 	getRemoteConnectorSettingRowById,
@@ -68,7 +72,11 @@ export async function listRemoteConnectorSettingsWithSharedSecrets(input: {
 		rows.map(async (row) => ({
 			...toMetadata(row),
 			sharedSecret: row.encrypted_shared_secret
-				? await decryptSecretValue(input.env, row.encrypted_shared_secret)
+				? await decryptSecretValue(
+						input.env,
+						row.encrypted_shared_secret,
+						userSecretContext(input.userId),
+					)
 				: '',
 		})),
 	)
@@ -123,7 +131,11 @@ export async function saveRemoteConnectorSetting(
 
 	const sharedSecret = input.sharedSecret?.trim() ?? ''
 	const encryptedSharedSecret = sharedSecret
-		? await encryptSecretValue(input.env, sharedSecret)
+		? await encryptSecretValue(
+				input.env,
+				sharedSecret,
+				userSecretContext(input.userId),
+			)
 		: (existing?.encrypted_shared_secret ?? null)
 	if (!encryptedSharedSecret) {
 		throw new Error('Connector shared secret is required.')
@@ -187,7 +199,11 @@ export async function listRemoteConnectorSharedSecretsForRef(input: {
 	for (const row of rows) {
 		if (!row.encrypted_shared_secret) continue
 		secrets.push(
-			await decryptSecretValue(input.env, row.encrypted_shared_secret),
+			await decryptSecretValue(
+				input.env,
+				row.encrypted_shared_secret,
+				userSecretContext(input.userId),
+			),
 		)
 	}
 	return secrets

@@ -62,6 +62,13 @@ package-app surfaces:
    package-app origin, and do not reintroduce cookie forwarding "just for
    convenience". See
    [Hosted package app origin isolation](#hosted-package-app-origin-isolation).
+10. **CSRF protection is `SameSite=Lax` + JSON content types, not tokens.**
+    Every mutating first-party endpoint must keep requiring a JSON
+    `Content-Type` (which cross-site form posts cannot send) and the
+    `kody_session` cookie must stay `SameSite=Lax`. Do not add a mutating
+    endpoint that accepts `application/x-www-form-urlencoded` or
+    `multipart/form-data` from the browser, and do not relax the cookie to
+    `SameSite=None`, without adding CSRF tokens at the same time.
 
 ## First-party HTTP security headers
 
@@ -298,7 +305,12 @@ guarded by a bearer secret comparison.
 ## Secrets and user code execution (in-scope model)
 
 - Saved secrets are encrypted at rest with AES-GCM under `SECRET_STORE_KEY` and
-  scoped by `userId` (`packages/worker/src/mcp/secrets/`).
+  scoped by `userId` (`packages/worker/src/mcp/secrets/`). Ciphertexts are
+  versioned (`v2.<iv>.<ct>`) and bound via AES-GCM additional authenticated data
+  to their purpose and owning identity (`user:<userId>` for user secrets,
+  `app:<slug>` for platform OAuth client secrets), so a ciphertext copied into
+  another user's row fails to decrypt. Legacy unversioned ciphertexts still
+  decrypt and upgrade to `v2` whenever the value is re-encrypted on write.
 - `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
   blob in the DR backup bucket (solo operator; see
   [Disaster recovery](./disaster-recovery.md) and
@@ -386,9 +398,15 @@ change to these decisions here so future agents do not relitigate them.
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.
-- **PBKDF2-SHA256 (100k iterations)** is used for password hashing rather than a
-  memory-hard KDF. Acceptable here; changing it requires a rehash-on-login
-  migration.
+- **PBKDF2-SHA256 (600k iterations)** is used for password hashing rather than a
+  memory-hard KDF. Acceptable here: it meets OWASP's PBKDF2-SHA256 guidance, and
+  Workers' WebCrypto has no argon2/scrypt. Verification accepts any iteration
+  count up to a hard ceiling well above the generation setting, and
+  lower-iteration hashes are transparently re-hashed after a successful login
+  (`packages/worker/src/password-upgrade.ts`), so the setting can be raised
+  again later without a migration.
 - **No CSRF tokens.** State-changing requests are protected by `SameSite=Lax`
-  cookies plus JSON `Content-Type` on mutating endpoints. Revisit if any
-  mutating endpoint starts accepting cross-site form posts or `SameSite=None`.
+  cookies plus JSON `Content-Type` on mutating endpoints. This is a deliberate
+  decision, restated as invariant 10 above: it holds only while both halves
+  hold, so revisit if any mutating endpoint starts accepting cross-site form
+  posts or `SameSite=None`.

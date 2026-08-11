@@ -2,6 +2,7 @@ import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
 	decryptPlatformOauthClientSecret,
 	encryptPlatformOauthClientSecret,
+	platformOauthAppContext,
 } from '#mcp/secrets/crypto.ts'
 import {
 	canonicalIntegrationName,
@@ -213,6 +214,7 @@ export async function upsertPlatformOauthApp(input: {
 				: await encryptPlatformOauthClientSecret(
 						input.env,
 						input.app.clientSecret.trim(),
+						platformOauthAppContext(slug),
 					)
 	const enabled =
 		input.app.enabled === undefined
@@ -474,6 +476,7 @@ export async function getPlatformOauthAppClientSecret(input: {
 	return decryptPlatformOauthClientSecret(
 		input.env,
 		row.client_secret_encrypted,
+		platformOauthAppContext(slug),
 	)
 }
 

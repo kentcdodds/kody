@@ -15,7 +15,11 @@ import {
 	parseAllowedHosts,
 	stringifyAllowedHosts,
 } from './allowed-hosts.ts'
-import { decryptSecretValue, encryptSecretValue } from './crypto.ts'
+import {
+	decryptSecretValue,
+	encryptSecretValue,
+	userSecretContext,
+} from './crypto.ts'
 import { assertSecretNameAllowed, isReservedSecretName } from './name-guards.ts'
 import {
 	getSecretBindingKey,
@@ -127,7 +131,11 @@ export async function saveSecret(
 			resource: 'secrets',
 		})
 	}
-	const encryptedValue = await encryptSecretValue(input.env, value)
+	const encryptedValue = await encryptSecretValue(
+		input.env,
+		value,
+		userSecretContext(input.userId),
+	)
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
 		env: input.env,
@@ -354,7 +362,11 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		})
 		if (!existingEntry) throw new Error('User secret not found.')
 		const description = secret.description?.trim() ?? existingEntry.description
-		const encryptedValue = await encryptSecretValue(input.env, value)
+		const encryptedValue = await encryptSecretValue(
+			input.env,
+			value,
+			userSecretContext(input.userId),
+		)
 		requestedStorageBytes += estimateEntitlementStorageEntryByteDelta({
 			next: {
 				key: name,
@@ -476,7 +488,11 @@ async function saveSecretsAtomically(input: {
 		if (existingEntry == null) {
 			newSecretCount += 1
 		}
-		const encryptedValue = await encryptSecretValue(input.env, value)
+		const encryptedValue = await encryptSecretValue(
+			input.env,
+			value,
+			userSecretContext(input.userId),
+		)
 		requestedStorageBytes += estimateEntitlementStorageEntryByteDelta({
 			next: {
 				key: name,
@@ -619,6 +635,7 @@ export async function resolveSecret(
 			const decrypted = await decryptSecretValue(
 				input.env,
 				entry.encrypted_value,
+				userSecretContext(input.userId),
 			)
 			return {
 				found: true as const,
@@ -710,7 +727,11 @@ export async function updateSecret(
 			name,
 			description: nextDescription,
 			encrypted_value: hasValueUpdate
-				? await encryptSecretValue(input.env, nextValue!)
+				? await encryptSecretValue(
+						input.env,
+						nextValue!,
+						userSecretContext(input.userId),
+					)
 				: existingEntry.encrypted_value,
 			allowed_hosts: existingEntry.allowed_hosts,
 			allowed_capabilities: existingEntry.allowed_capabilities,
