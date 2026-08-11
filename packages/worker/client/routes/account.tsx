@@ -735,8 +735,8 @@ export function AccountRoute(handle: Handle) {
 										data-field-ring
 										required
 										autoComplete="username"
-										pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,30}[A-Za-z0-9]"
-										title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
+										pattern="[A-Za-z0-9][A-Za-z0-9-]{1,30}[A-Za-z0-9]"
+										title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
 										value={draftUsername}
 										mix={[
 											css(accountInputCss),

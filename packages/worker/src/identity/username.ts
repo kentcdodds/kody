@@ -1,9 +1,10 @@
 import { getReservedUsernameError } from '#worker/identity/reserved-usernames.ts'
 
 export const usernameRequirements =
-	'Username must be 3 to 32 characters, use only letters, numbers, hyphens, or underscores, and start and end with a letter or number.'
+	'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.'
 
-const usernamePattern = /^[a-z0-9](?:[a-z0-9_-]{1,30}[a-z0-9])$/
+/** Valid DNS label for `{username}.` on the package-app domain: lowercase, 3–32 chars, alphanumeric edges, hyphens only. */
+const usernamePattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
 
 export function normalizeUsername(value: unknown) {
 	return typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -27,7 +28,7 @@ export function usernameFromEmail(email: string) {
 	const localPart = email.split('@')[0] ?? 'user'
 	const normalized = localPart
 		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/g, '-')
+		.replace(/[^a-z0-9-]+/g, '-')
 		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
 	const truncated = normalized
 		.slice(0, 32)
