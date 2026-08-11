@@ -130,6 +130,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 						if (renameTo) {
 							const renamed = await renamePlatformOauthApp({
 								db: ctx.env.APP_DB,
+								env: ctx.env,
 								slug: args.slug,
 								newSlug: renameTo,
 							})
@@ -182,6 +183,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 						if (renamedSlug) {
 							await renamePlatformOauthApp({
 								db: ctx.env.APP_DB,
+								env: ctx.env,
 								slug: renamedSlug,
 								newSlug: args.slug,
 							}).catch(() => {})
