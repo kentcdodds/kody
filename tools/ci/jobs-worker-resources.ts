@@ -272,6 +272,32 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 		`${JSON.stringify(baseConfig, null, '\t')}\n`,
 	)
 
+	if (options.envName === 'preview') {
+		// Service bindings cannot reference scripts that do not exist yet, and
+		// per-preview app/jobs workers reference each other. The bootstrap
+		// config omits the HOST binding so the jobs worker can deploy before
+		// the app worker; the full config is deployed again afterwards.
+		const bootstrapConfig = JSON.parse(JSON.stringify(baseConfig)) as Record<
+			string,
+			unknown
+		>
+		const bootstrapEnvs = bootstrapConfig.env as Record<string, unknown>
+		const bootstrapEnv = bootstrapEnvs[options.envName] as Record<
+			string,
+			unknown
+		>
+		delete bootstrapEnv.services
+		const bootstrapConfigPath = options.outConfigPath.replace(
+			/\.json$/,
+			'-bootstrap.json',
+		)
+		writeFileSync(
+			bootstrapConfigPath,
+			`${JSON.stringify(bootstrapConfig, null, '\t')}\n`,
+		)
+		console.log(`jobs_wrangler_bootstrap_config=${bootstrapConfigPath}`)
+	}
+
 	// Emit GitHub Actions-friendly outputs (stdout only).
 	console.log(`jobs_wrangler_config=${options.outConfigPath}`)
 	console.log(`jobs_worker_name=${workerName}`)
