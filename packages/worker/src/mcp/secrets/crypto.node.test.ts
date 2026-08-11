@@ -1,9 +1,12 @@
 import { expect, test, vi } from 'vitest'
 import {
+	decryptPlatformOauthClientSecret,
 	decryptSecretValue,
 	decryptStringWithPurpose,
 	encryptSecretValue,
+	encryptPlatformOauthClientSecret,
 	encryptStringWithPurpose,
+	platformOauthAppContext,
 	userSecretContext,
 } from './crypto.ts'
 
@@ -69,6 +72,29 @@ test('v2 ciphertexts are bound to their identity context', async () => {
 			userSecretContext('user-a'),
 		),
 	).rejects.toThrow('Unable to decrypt secret value.')
+})
+
+test('platform OAuth client secrets are bound to their app slug', async () => {
+	const env = { SECRET_STORE_KEY: primaryKey }
+	const encrypted = await encryptPlatformOauthClientSecret(
+		env,
+		'client-secret-value',
+		platformOauthAppContext('one'),
+	)
+	expect(
+		await decryptPlatformOauthClientSecret(
+			env,
+			encrypted,
+			platformOauthAppContext('one'),
+		),
+	).toBe('client-secret-value')
+	await expect(
+		decryptPlatformOauthClientSecret(
+			env,
+			encrypted,
+			platformOauthAppContext('two'),
+		),
+	).rejects.toThrow('Unable to decrypt platform client secret.')
 })
 
 test('legacy two-part ciphertexts still decrypt regardless of context', async () => {

@@ -382,12 +382,7 @@ export async function renamePlatformOauthApp(input: {
 	}
 	// The ciphertext is AAD-bound to the app slug, so a carried secret must be
 	// re-encrypted under the new slug's context.
-	const secretRow = await input.db
-		.prepare(
-			`SELECT client_secret_encrypted FROM platform_oauth_apps WHERE slug = ?`,
-		)
-		.bind(slug)
-		.first<{ client_secret_encrypted: string | null }>()
+	const secretRow = await getPlatformOauthAppRowBySlug({ db: input.db, slug })
 	const reboundSecret = secretRow?.client_secret_encrypted
 		? await encryptPlatformOauthClientSecret(
 				input.env,

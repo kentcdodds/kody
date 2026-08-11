@@ -60,12 +60,18 @@ ORDER BY requests DESC
 
 Retire the legacy lane when **both** hold for the window:
 
-1. legacy-lane requests are **< 1% of total `/mcp` requests**, and
-2. **no single `client_name` accounts for more than 100 legacy requests** (a
-   named client above that is a real installation that would break, not noise;
-   unnamed/blank clients count as noise).
+1. legacy-lane requests are **< 1% of total instrumented `/mcp` requests** (the
+   metric records authenticated, verified, non-suspended requests — the only
+   population that can contain a working legacy client, so it is the right
+   denominator), and
+2. **no single `client_name` bucket accounts for more than 100 legacy requests**
+   — including the blank/unnamed bucket, since header-only legacy clients report
+   no name; a bucket above that is a real installation that would break, not
+   noise.
 
-When both hold, remove the `McpAgent` lane, the `mcp_agent_sessions` registry,
-the `MCP_OBJECT` Durable Object, and the session purge path in one change. If a
+When both hold, remove the `McpAgent` lane, the `mcp_agent_sessions` registry
+(including a D1 migration dropping the `mcp_agent_sessions` table — deleting the
+Durable Object class removes its object storage but not the D1 rows), the
+`MCP_OBJECT` Durable Object, and the session purge path in one change. If a
 later reading fails the criterion again before the removal ships, reset the
 clock — the window must be the 30 days immediately preceding the removal PR.

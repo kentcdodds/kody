@@ -110,6 +110,11 @@ async function decryptWithKey(
 	throw new Error('Invalid encrypted secret payload.')
 }
 
+/**
+ * General-purpose string encryption under COOKIE_SECRET. `context` defaults to
+ * empty for identity-free payloads; pass an owning identity whenever the
+ * ciphertext lives in a row that could be swapped between owners.
+ */
 export async function encryptStringWithPurpose(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	purpose: string,
