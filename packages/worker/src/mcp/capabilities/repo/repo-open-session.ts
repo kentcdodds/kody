@@ -4,17 +4,50 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { getActiveRepoSessionByConversation } from '#worker/repo/repo-sessions.ts'
 import {
 	buildPublishedCommitHeadMismatchCallerMessage,
 	isPublishedCommitHeadMismatchMessage,
 } from '#worker/repo/source-safety-policy.ts'
-import {
-	repoOpenSessionOutputSchema,
-	repoOpenSessionInputSchema,
-} from './repo-shared.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { isCloudflareOpaqueInternalErrorMessage } from '#worker/sentry-options.ts'
 import { resolveRepoSourceReference } from './repo-resolve-target.ts'
+import {
+	repoOpenSessionInputSchema,
+	repoOpenSessionOutputSchema,
+} from './repo-shared.ts'
+
+const openSessionTransientRetryDelaysMs = [100, 500] as const
+
+function createRepoSessionId() {
+	return (
+		crypto.randomUUID?.() ??
+		`repo-session-${Date.now().toString(36)}-${Math.random()
+			.toString(36)
+			.slice(2, 10)}`
+	)
+}
+
+function delay(ms: number) {
+	return new Promise<void>((resolve) => {
+		setTimeout(resolve, ms)
+	})
+}
+
+function mapOpenSessionError(error: unknown): never {
+	const message = getErrorMessage(error)
+	// Unpublished git-lane pushes leave HEAD ahead of published_commit
+	// until package_publish_external_push (or reconcile) lands. Keep the
+	// safety gate, but classify it as a caller precondition so Sentry
+	// does not open platform-bug issues for expected workflow state.
+	if (isPublishedCommitHeadMismatchMessage(message)) {
+		throw new McpCallerError(
+			buildPublishedCommitHeadMismatchCallerMessage(message),
+			{ cause: error },
+		)
+	}
+	throw error
+}
 
 export const repoOpenSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -66,11 +99,6 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					resolved_target: requested.resolvedTarget,
 				}
 			}
-			const sessionId =
-				crypto.randomUUID?.() ??
-				`repo-session-${Date.now().toString(36)}-${Math.random()
-					.toString(36)
-					.slice(2, 10)}`
 
 			await assertWithinEntitlement({
 				db: ctx.env.APP_DB,
@@ -79,30 +107,47 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				resource: 'repo_sessions',
 			})
 
+			// Opaque Cloudflare platform internals (KODY-CLOUDFLARE-4H) are brief
+			// infrastructure blips with no app signature. Each attempt uses a
+			// fresh session id / DO so a partial prior attempt cannot poison the
+			// retry; abandoned branches are swept by repo-session cleanup.
 			let session
-			try {
-				session = await repoSessionRpc(ctx.env, sessionId).openSession({
-					sessionId,
-					sourceId: requested.source.id,
-					userId: user.userId,
-					baseUrl: ctx.callerContext.baseUrl,
-					conversationId: args.conversation_id ?? null,
-					sourceRoot: args.source_root ?? requested.source.source_root,
-					defaultBranch: args.default_branch ?? null,
-				})
-			} catch (error) {
-				const message = getErrorMessage(error)
-				// Unpublished git-lane pushes leave HEAD ahead of published_commit
-				// until package_publish_external_push (or reconcile) lands. Keep the
-				// safety gate, but classify it as a caller precondition so Sentry
-				// does not open platform-bug issues for expected workflow state.
-				if (isPublishedCommitHeadMismatchMessage(message)) {
-					throw new McpCallerError(
-						buildPublishedCommitHeadMismatchCallerMessage(message),
-						{ cause: error },
+			let attempt = 0
+			for (;;) {
+				const sessionId = createRepoSessionId()
+				try {
+					session = await repoSessionRpc(ctx.env, sessionId).openSession({
+						sessionId,
+						sourceId: requested.source.id,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						conversationId: args.conversation_id ?? null,
+						sourceRoot: args.source_root ?? requested.source.source_root,
+						defaultBranch: args.default_branch ?? null,
+					})
+					break
+				} catch (error) {
+					const message = getErrorMessage(error)
+					const retryDelayMs = openSessionTransientRetryDelaysMs[attempt]
+					if (
+						retryDelayMs === undefined ||
+						!isCloudflareOpaqueInternalErrorMessage(message)
+					) {
+						mapOpenSessionError(error)
+					}
+					console.warn(
+						JSON.stringify({
+							message:
+								'repo_open_session transient Cloudflare opaque internal error',
+							sourceId: requested.source.id,
+							attempt: attempt + 1,
+							nextDelayMs: retryDelayMs,
+							errorMessage: message,
+						}),
 					)
+					await delay(retryDelayMs)
+					attempt += 1
 				}
-				throw error
 			}
 			return {
 				...session,

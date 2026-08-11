@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import { EntitlementLimitError } from './entitlements/errors.ts'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
+	cloudflareArtifactsOpaqueInternalErrorMessage,
+	cloudflareOpaqueInternalErrorMessage,
 	durableObjectBlockConcurrencyWhileTimeoutResetMessage,
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectIsolateCpuResetMessage,
@@ -11,6 +13,7 @@ import {
 	executorSandboxTimeoutMessageExplanation,
 	executorSandboxTimeoutMessagePrefix,
 	filterSentryEvent,
+	isCloudflareOpaqueInternalErrorMessage,
 	isDurableObjectIsolateResourceLimitResetMessage,
 } from './sentry-options.ts'
 
@@ -103,6 +106,44 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		exception: { values: [{ value: 'internal error' }] },
 	}
 	expect(filterSentryEvent(bareInternalError)).toBe(bareInternalError)
+
+	// Exact opaque Cloudflare / Artifacts internal-error sentences are platform
+	// blips (KODY-CLOUDFLARE-4H). Bare `internal error` above stays visible;
+	// wrapped recovery text must also stay visible.
+	expect(
+		isCloudflareOpaqueInternalErrorMessage(
+			cloudflareOpaqueInternalErrorMessage,
+		),
+	).toBe(true)
+	expect(
+		isCloudflareOpaqueInternalErrorMessage(
+			cloudflareArtifactsOpaqueInternalErrorMessage.replace(/\.$/, ''),
+		),
+	).toBe(true)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: cloudflareOpaqueInternalErrorMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: `Error: ${cloudflareOpaqueInternalErrorMessage}` }],
+			},
+		}),
+	).toBeNull()
+	const wrappedOpaqueInternal = {
+		exception: {
+			values: [
+				{
+					value: `repo_open_session could not recover: ${cloudflareOpaqueInternalErrorMessage}`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedOpaqueInternal)).toBe(wrappedOpaqueInternal)
 
 	const bareObjectReset = {
 		exception: {
