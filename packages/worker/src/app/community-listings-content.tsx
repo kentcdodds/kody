@@ -6,7 +6,7 @@ import { type PublicCommunityListing } from '#app/community-public.ts'
 import { formatCommunityAdaptationEffort } from '#universal/community-display.ts'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
-import { routes } from '#universal/routes.ts'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import {
 	getSurfaceCardCss,
@@ -58,8 +58,10 @@ export function CommunityListingsContent(
 								<div mix={css(listingTitleBlockCss)}>
 									<h2 mix={css(listingNameCss)}>
 										<a
-											href={routes.communityDetail.href({
+											href={getCommunityListingHref({
 												listingId: listing.id,
+												listingName: listing.name,
+												kodyId: listing.kodyId,
 											})}
 											mix={css(listingLinkCss)}
 										>

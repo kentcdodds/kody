@@ -30,6 +30,7 @@ import {
 	getCommunityForkByForkedPackageId,
 	getCommunityForkByListingAndUser,
 	getCommunityListingById,
+	getCommunityListingByOwnerAndKodyId,
 	getCommunityListingByOwnerAndPackage,
 	listCommunityForksByListingAndUser,
 	markCommunityForkAdopted,
@@ -346,6 +347,74 @@ export async function attachListingAggregatesBatch(
 	})
 }
 
+/**
+ * `(owner, kody.id)` is the canonical package URL, and a partial unique index
+ * keeps at most one active listing per pair. The pair can still be contested:
+ * deleting a package leaves its listing behind (the pinned snapshot outlives
+ * the source), so a later package can be published under a reused `kody.id`.
+ * The package that still exists takes the URL, and the stranded listing is
+ * delisted -- the same rule migration 0009 applied to historical collisions.
+ */
+async function releaseContestedCommunityPackageUrl(input: {
+	env: Env
+	ownerUserId: string
+	packageId: string
+	kodyId: string
+}): Promise<string | null> {
+	const competing = await getCommunityListingByOwnerAndKodyId(
+		input.env.APP_DB,
+		{ ownerUserId: input.ownerUserId, kodyId: input.kodyId },
+	)
+	if (!competing || competing.packageId === input.packageId) return null
+
+	const competingPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.ownerUserId,
+		packageId: competing.packageId,
+	})
+	if (competingPackage) {
+		// `saved_packages` is unique on `(user_id, kody_id)`, so two live packages
+		// cannot claim one id. A live competitor means that listing's `kody_id`
+		// has drifted from its package, and re-publishing it is the fix.
+		throw new CommunityActionError(
+			`Community URL "${input.kodyId}" is already used by package "${competingPackage.name}". Re-publish that package to move it to its current id.`,
+		)
+	}
+
+	await updateCommunityListing(input.env.APP_DB, {
+		listingId: competing.id,
+		ownerUserId: input.ownerUserId,
+		status: 'delisted',
+	})
+	invalidateCommunityPublicCache()
+	return competing.id
+}
+
+/**
+ * Give a released listing its page back when the publish that displaced it
+ * fails. Nothing else can: publishing refuses to touch a delisted listing, and
+ * the released one is stranded precisely because its package is gone.
+ */
+async function restoreReleasedCommunityPackageUrl(input: {
+	env: Env
+	ownerUserId: string
+	listingId: string | null
+}) {
+	if (!input.listingId) return
+	try {
+		await updateCommunityListing(input.env.APP_DB, {
+			listingId: input.listingId,
+			ownerUserId: input.ownerUserId,
+			status: 'active',
+		})
+		invalidateCommunityPublicCache()
+	} catch (restoreError) {
+		console.error(
+			'Failed to restore released community listing after publish failure:',
+			restoreError,
+		)
+	}
+}
+
 export async function publishCommunityListing(input: {
 	env: Env
 	baseUrl: string
@@ -421,6 +490,13 @@ export async function publishCommunityListing(input: {
 		)
 	}
 
+	const releasedListingId = await releaseContestedCommunityPackageUrl({
+		env: input.env,
+		ownerUserId: input.userId,
+		packageId: input.packageId,
+		kodyId: savedPackage.kodyId,
+	})
+
 	const now = new Date().toISOString()
 	const listingId = existingListing?.id ?? crypto.randomUUID()
 	const tagsJson = JSON.stringify(savedPackage.tags)
@@ -442,88 +518,99 @@ export async function publishCommunityListing(input: {
 		createdAt: now,
 	}
 
-	if (existingListing) {
-		const updated = await updateCommunityListing(input.env.APP_DB, {
-			listingId,
-			ownerUserId: input.userId,
-			sourceId: savedPackage.sourceId,
-			kodyId: savedPackage.kodyId,
-			name: savedPackage.name,
-			description,
-			tagsJson,
-			searchText: savedPackage.searchText,
-			readmeContent: readme.content,
-			license,
-			pinnedCommit: publishedCommit,
-			publishedAt: now,
-			requireStatus: 'active',
-		})
-		if (!updated) {
-			throw new CommunityActionError(
-				`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
-			)
-		}
-	} else {
-		await insertCommunityListing(input.env.APP_DB, {
-			id: listingId,
-			owner_user_id: input.userId,
-			package_id: input.packageId,
-			source_id: savedPackage.sourceId,
-			kody_id: savedPackage.kodyId,
-			name: savedPackage.name,
-			description,
-			tags_json: tagsJson,
-			search_text: savedPackage.searchText,
-			readme_content: readme.content,
-			license,
-			pinned_commit: publishedCommit,
-			status: 'active',
-			published_at: now,
-		})
-	}
-
-	// Unpublish intentionally deletes the listing row while preserving fork
-	// provenance. The surviving row does not retain owner/package ids, so the
-	// narrowest historical lineage key available is an orphaned listing id plus
-	// the exact scoped package name and kody.id captured at fork time.
-	await repointOrphanedCommunityForksToListing(input.env.APP_DB, {
-		listingId,
-		listingName: savedPackage.name,
-		listingKodyId: savedPackage.kodyId,
-	})
-
+	// A released listing is delisted before this one exists, so every failure
+	// from here on has to hand its page back.
 	try {
-		await writeCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, snapshot)
-	} catch (snapshotError) {
-		try {
-			if (existingListing) {
-				await updateCommunityListing(input.env.APP_DB, {
-					listingId,
-					ownerUserId: input.userId,
-					sourceId: existingListing.sourceId,
-					kodyId: existingListing.kodyId,
-					name: existingListing.name,
-					description: existingListing.description,
-					tagsJson: JSON.stringify(existingListing.tags),
-					searchText: existingListing.searchText,
-					readmeContent: existingListing.readmeContent,
-					license: existingListing.license,
-					pinnedCommit: existingListing.pinnedCommit,
-					publishedAt: existingListing.publishedAt,
-				})
-			} else {
-				await deleteCommunityListing(input.env.APP_DB, {
-					listingId,
-					ownerUserId: input.userId,
-				})
+		if (existingListing) {
+			const updated = await updateCommunityListing(input.env.APP_DB, {
+				listingId,
+				ownerUserId: input.userId,
+				sourceId: savedPackage.sourceId,
+				kodyId: savedPackage.kodyId,
+				name: savedPackage.name,
+				description,
+				tagsJson,
+				searchText: savedPackage.searchText,
+				readmeContent: readme.content,
+				license,
+				pinnedCommit: publishedCommit,
+				publishedAt: now,
+				requireStatus: 'active',
+			})
+			if (!updated) {
+				throw new CommunityActionError(
+					`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
+				)
 			}
-		} catch (revertError) {
-			console.error(
-				'Failed to revert community listing after snapshot failure:',
-				revertError,
-			)
+		} else {
+			await insertCommunityListing(input.env.APP_DB, {
+				id: listingId,
+				owner_user_id: input.userId,
+				package_id: input.packageId,
+				source_id: savedPackage.sourceId,
+				kody_id: savedPackage.kodyId,
+				name: savedPackage.name,
+				description,
+				tags_json: tagsJson,
+				search_text: savedPackage.searchText,
+				readme_content: readme.content,
+				license,
+				pinned_commit: publishedCommit,
+				status: 'active',
+				published_at: now,
+			})
 		}
-		throw snapshotError
+
+		// Unpublish intentionally deletes the listing row while preserving fork
+		// provenance. The surviving row does not retain owner/package ids, so the
+		// narrowest historical lineage key available is an orphaned listing id plus
+		// the exact scoped package name and kody.id captured at fork time.
+		await repointOrphanedCommunityForksToListing(input.env.APP_DB, {
+			listingId,
+			listingName: savedPackage.name,
+			listingKodyId: savedPackage.kodyId,
+		})
+
+		try {
+			await writeCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, snapshot)
+		} catch (snapshotError) {
+			try {
+				if (existingListing) {
+					await updateCommunityListing(input.env.APP_DB, {
+						listingId,
+						ownerUserId: input.userId,
+						sourceId: existingListing.sourceId,
+						kodyId: existingListing.kodyId,
+						name: existingListing.name,
+						description: existingListing.description,
+						tagsJson: JSON.stringify(existingListing.tags),
+						searchText: existingListing.searchText,
+						readmeContent: existingListing.readmeContent,
+						license: existingListing.license,
+						pinnedCommit: existingListing.pinnedCommit,
+						publishedAt: existingListing.publishedAt,
+					})
+				} else {
+					await deleteCommunityListing(input.env.APP_DB, {
+						listingId,
+						ownerUserId: input.userId,
+					})
+				}
+			} catch (revertError) {
+				console.error(
+					'Failed to revert community listing after snapshot failure:',
+					revertError,
+				)
+			}
+			throw snapshotError
+		}
+	} catch (publishError) {
+		await restoreReleasedCommunityPackageUrl({
+			env: input.env,
+			ownerUserId: input.userId,
+			listingId: releasedListingId,
+		})
+		throw publishError
 	}
 	if (existingListing) {
 		// Drop all cached icon revisions (including a reused commit id) so the

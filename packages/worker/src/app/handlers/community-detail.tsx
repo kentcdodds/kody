@@ -3,6 +3,15 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
+import {
+	resolveCanonicalListingPath,
+	resolveCommunityListingRoute,
+} from '#app/community-package-route.ts'
+import {
+	getCommunityPackageHref,
+	resolveCommunityPackageUrl,
+} from '#worker/community/package-url.ts'
+import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -28,52 +37,124 @@ const reportReasonSchema = z
 	.min(1, 'Report reason is required.')
 	.max(2000, 'Report reason must be at most 2000 characters.')
 
+/**
+ * A moved package keeps whatever the link carried: `followError` and friends
+ * ride in the query string, and a redirect that drops them gets cached.
+ *
+ * `301` states which URL is canonical, but the destination is not permanent --
+ * a username can be released and reclaimed by someone else -- so it is cached
+ * for an hour rather than forever, and only for requests shaped like this one:
+ * the same URL serves frame HTML when the target header is present.
+ */
+function redirectToCanonicalPath(input: { path: string; url: URL }) {
+	const destination = new URL(input.path, input.url)
+	destination.search = input.url.search
+	return new Response(null, {
+		status: 301,
+		headers: {
+			location: destination.toString(),
+			'cache-control': 'public, max-age=3600',
+			vary: REMIX_FRAME_TARGET_HEADER,
+		},
+	})
+}
+
+async function renderCommunityListingPage(input: {
+	request: Request
+	env: Env
+	listingId: string | null
+}) {
+	const detail = input.listingId
+		? await loadCommunityDetailData(input.env, input.request, input.listingId)
+		: null
+	if (!input.listingId || !detail) {
+		return renderAppPage({
+			request: input.request,
+			env: input.env,
+			title: 'Community package not found',
+			notFound: true,
+			status: 404,
+		})
+	}
+
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		loaderData: {
+			communityDetailShell: {
+				ok: true,
+				listingId: input.listingId,
+				name: detail.listing.name,
+				description: detail.listing.description,
+				forkPrompt: detail.forkPrompt,
+				loggedIn: detail.loggedIn,
+				viewerIsAdmin: detail.viewerIsAdmin,
+				trusted: detail.listing.trusted,
+				featured: detail.listing.featured,
+				readmeContent: detail.listing.readmeContent,
+				starCount: detail.listing.starCount,
+				starredByViewer: detail.starredByViewer,
+				viewerInstall: detail.viewerInstall,
+			},
+		},
+	})
+}
+
+/**
+ * The listing-uuid URL predates the canonical `/@owner/kody-id` one and stays
+ * addressable for every link already shared. Documents move to the canonical
+ * URL; the JSON companion and the frame do not, so the client keeps working
+ * for a visitor who is already on this path.
+ */
 export function createCommunityDetailHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, params }) {
 			const listingId = params.listingId
-			const frameResponse = await handleFrameRequest(
-				request,
-				env,
-				new URL(request.url).pathname,
-			)
+			const url = new URL(request.url)
+			const frameResponse = await handleFrameRequest(request, env, url.pathname)
 			if (frameResponse) return frameResponse
 
 			const detail = await loadCommunityDetailData(env, request, listingId)
-			if (!detail) {
-				return renderAppPage({
-					request,
-					env,
-					title: 'Community package not found',
-					notFound: true,
-					status: 404,
-				})
+			const canonicalPath = detail
+				? await resolveCanonicalListingPath({
+						env,
+						listingId,
+						ownerUsername: detail.listing.ownerUsername,
+						kodyId: detail.listing.kodyId,
+					})
+				: null
+			// A listing whose canonical pair no longer resolves stays served here
+			// rather than redirecting permanently at a dead URL.
+			if (canonicalPath) {
+				return redirectToCanonicalPath({ path: canonicalPath, url })
 			}
 
-			return renderAppPage({
-				request,
-				env,
-				loaderData: {
-					communityDetailShell: {
-						ok: true,
-						listingId,
-						name: detail.listing.name,
-						description: detail.listing.description,
-						forkPrompt: detail.forkPrompt,
-						loggedIn: detail.loggedIn,
-						viewerIsAdmin: detail.viewerIsAdmin,
-						trusted: detail.listing.trusted,
-						featured: detail.listing.featured,
-						readmeContent: detail.listing.readmeContent,
-						starCount: detail.listing.starCount,
-						starredByViewer: detail.starredByViewer,
-						viewerInstall: detail.viewerInstall,
-					},
-				},
-			})
+			return renderCommunityListingPage({ request, env, listingId })
 		},
 	} satisfies Action<typeof routes.communityDetail>
+}
+
+export function createCommunityPackageHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const url = new URL(request.url)
+			const frameResponse = await handleFrameRequest(request, env, url.pathname)
+			if (frameResponse) return frameResponse
+
+			const target = await resolveCommunityListingRoute({ env, url })
+			if (target?.kind === 'redirect') {
+				return redirectToCanonicalPath({ path: target.to, url })
+			}
+
+			return renderCommunityListingPage({
+				request,
+				env,
+				listingId: target?.listingId ?? null,
+			})
+		},
+	} satisfies Action<typeof routes.communityPackage>
 }
 
 export function createCommunityDetailApiHandler(env: Env) {
@@ -93,6 +174,46 @@ export function createCommunityDetailApiHandler(env: Env) {
 			return jsonResponse(request, detail)
 		},
 	} satisfies Action<typeof routes.communityDetailApi>
+}
+
+export function createCommunityPackageApiHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const target = await resolveCommunityPackageUrl({
+				db: env.APP_DB,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			// A stale pair reports where the package lives now instead of its data:
+			// the client turns that into a document navigation so the visitor's URL
+			// is corrected rather than kept on a name that no longer exists.
+			if (target?.kind === 'redirect') {
+				return jsonResponse(
+					request,
+					{
+						ok: false,
+						error: 'Community package moved.',
+						redirectTo: getCommunityPackageHref(target),
+					},
+					404,
+				)
+			}
+
+			const detail = target
+				? await loadCommunityDetailData(env, request, target.listingId)
+				: null
+			if (!detail) {
+				return jsonResponse(
+					request,
+					{ ok: false, error: 'Community listing not found.' },
+					404,
+				)
+			}
+
+			return jsonResponse(request, detail)
+		},
+	} satisfies Action<typeof routes.communityPackageApi>
 }
 
 /**

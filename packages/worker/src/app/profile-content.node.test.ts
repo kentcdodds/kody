@@ -25,6 +25,7 @@ const listedPackage = {
 	tags: ['fathom', 'analytics'],
 	updatedAt: '2026-08-07T00:00:00.000Z',
 	communityListingId: 'listing-1',
+	communityListingKodyId: 'fathom-analytics',
 	communityPublishedAt: '2026-07-28T00:00:00.000Z',
 } satisfies PublicProfilePackageItem
 
@@ -35,6 +36,7 @@ const unpublishedPackage = {
 	tags: [],
 	updatedAt: '2026-07-01T00:00:00.000Z',
 	communityListingId: null,
+	communityListingKodyId: null,
 	communityPublishedAt: null,
 } satisfies PublicProfilePackageItem
 
@@ -51,13 +53,12 @@ test('profile packages link listings and expose follow controls next to the user
 		followError: null,
 	})
 
-	expect(guestHtml).toContain('href="/community/listing-1"')
-	expect(guestHtml.match(/fathom-analytics/g)).toHaveLength(1)
-	expect(guestHtml).toContain('href="/community/listing-1#fork-title"')
+	expect(guestHtml).toContain('href="/@kody/fathom-analytics"')
+	expect(guestHtml).toContain('href="/@kody/fathom-analytics#fork-title"')
 	// Listed packages get one fork control; unpublished packages do not.
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
-	expect(guestHtml).not.toContain('href="/community/notes')
+	expect(guestHtml).not.toContain('href="/@kody/notes"')
 	expect(guestHtml).toContain('data-testid="profile-follow"')
 	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
 
@@ -96,6 +97,31 @@ test('profile packages link listings and expose follow controls next to the user
 
 	expect(ownHtml).toContain('@kody')
 	expect(ownHtml).not.toContain('data-testid="profile-follow"')
+})
+
+test('a package link uses the listing kody id, not the package one it drifted from', async () => {
+	// Editing `kody.id` updates the package immediately; the listing's id only
+	// moves on republish, so until then the page lives at the listing's id.
+	const html = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...listedPackage,
+				kodyId: 'fathom',
+				communityListingKodyId: 'fathom-analytics',
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: false,
+		loggedIn: false,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
+	})
+
+	expect(html).toContain('href="/@kody/fathom-analytics"')
+	expect(html).not.toContain('href="/@kody/fathom"')
 })
 
 test('package cards separate the published date from local edits', async () => {

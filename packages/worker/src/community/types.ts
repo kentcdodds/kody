@@ -120,6 +120,11 @@ export type PublicProfilePackage = {
 	tags: Array<string>
 	updatedAt: string
 	communityListingId: string | null
+	/**
+	 * The listing's own `kody_id`, which only moves on republish and so can lag
+	 * the package's. Public links have to use this one to stay resolvable.
+	 */
+	communityListingKodyId: string | null
 	/** published_at of the active community listing, when the package has one. */
 	communityPublishedAt: string | null
 }

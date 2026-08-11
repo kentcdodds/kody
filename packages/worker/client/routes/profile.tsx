@@ -1,4 +1,5 @@
 import { Frame, type Handle, css } from 'remix/ui'
+import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { PROFILE_TARGET } from '#universal/profile-frame-constants.ts'
 import {
@@ -29,9 +30,14 @@ import {
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
 
+const profileMatcher = createMatcher(routes.profile.pattern)
+
 function getUsernameFromPathname(pathname: string) {
-	if (!pathname.startsWith('/@')) return null
-	const username = decodeURIComponent(pathname.slice(2).replace(/\/$/, ''))
+	// Matched against the route rather than parsed off the `/@` prefix: the
+	// `/@owner/…` namespace also holds the canonical package URL, and reading
+	// `kentcdodds/devin` as a username would render a profile page for it.
+	const username = profileMatcher.match(new URL(pathname, 'http://localhost'))
+		?.params.username
 	return username || null
 }
 

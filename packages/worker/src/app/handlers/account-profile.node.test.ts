@@ -153,6 +153,10 @@ function createProfileTestDb(initialUsers: Array<TestUser>) {
 				},
 			}
 		},
+		// A username change also retires the old username (batched write).
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			return Promise.all(statements.map((statement) => statement.run()))
+		},
 		async exec() {
 			return
 		},

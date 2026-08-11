@@ -1,5 +1,6 @@
 import { type Handle, css, on } from 'remix/ui'
 import { communityActivityVerb } from '#universal/community-activity-display.ts'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import {
 	type CommunityActivityEventType,
@@ -294,7 +295,11 @@ function renderEvent(event: PublicCommunityActivityItem) {
 			data-published={published ? 'true' : undefined}
 		>
 			<a
-				href={routes.communityDetail.href({ listingId: event.listingId })}
+				href={getCommunityListingHref({
+					listingId: event.listingId,
+					listingName: event.listingName,
+					kodyId: event.listingKodyId,
+				})}
 				mix={css(eventLinkCss)}
 			>
 				<span data-timeline-glyph mix={css(glyphCss)}>

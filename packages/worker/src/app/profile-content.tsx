@@ -13,7 +13,7 @@ import {
 	type PublicCommunityProfile,
 	type PublicProfilePackageItem,
 } from '#universal/community-public-types.ts'
-import { routes } from '#universal/routes.ts'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
 import {
@@ -174,8 +174,10 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					<ul mix={css(packageListCss)}>
 						{packages.map((pkg) => {
 							const listingHref = pkg.communityListingId
-								? routes.communityDetail.href({
+								? getCommunityListingHref({
 										listingId: pkg.communityListingId,
+										ownerUsername: profile.username,
+										kodyId: pkg.communityListingKodyId,
 									})
 								: null
 							return (
@@ -254,8 +256,10 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 									<span>
 										{communityActivityVerb(item.type)}{' '}
 										<a
-											href={routes.communityDetail.href({
+											href={getCommunityListingHref({
 												listingId: item.listingId,
+												listingName: item.listingName,
+												kodyId: item.listingKodyId,
 											})}
 											mix={css(mutedLinkCss)}
 										>

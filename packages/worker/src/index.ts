@@ -70,6 +70,10 @@ import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
+import {
+	isNamespacedAppEndpointPath,
+	isNamespacedPackageInvocationEndpointPath,
+} from '#worker/user-namespace-routes.ts'
 
 export {
 	RepoSession,
@@ -128,25 +132,6 @@ const protectedPublicJsonFormPaths = new Set([
 	'/verify/2fa.json',
 	'/webauthn/authentication',
 ])
-
-function isNamespacedPackageInvocationEndpointPath(pathname: string) {
-	const parts = pathname.split('/').filter(Boolean)
-	return (
-		parts[0]?.startsWith('@') === true &&
-		parts[1] === 'api' &&
-		parts[2] === 'package-invocations'
-	)
-}
-
-function isNamespacedAppEndpointPath(pathname: string) {
-	const parts = pathname.split('/').filter(Boolean)
-	return (
-		parts[0]?.startsWith('@') === true &&
-		(parts[1] === 'packages' ||
-			parts[1] === 'connectors' ||
-			parts[1] === 'webhooks')
-	)
-}
 
 async function handleUserScopedConnectorRequest(request: Request, env: Env) {
 	const url = new URL(request.url)

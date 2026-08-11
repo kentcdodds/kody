@@ -2,7 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from './event-mixin.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
 import { getSlugFromPathname } from './routes/blog-post.tsx'
-import { getListingIdFromPathname } from './routes/community-detail.tsx'
+import { isCommunityListingPathname } from './routes/community-detail.tsx'
 import {
 	listenToRouterMutations,
 	listenToRouterNavigation,
@@ -159,7 +159,7 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/community' ||
 			currentPathname === '/timeline' ||
 			currentPathname === '/onboarding' ||
-			getListingIdFromPathname(currentPathname) !== null ||
+			isCommunityListingPathname(currentPathname) ||
 			getSlugFromPathname(currentPathname) !== null
 		// The redesigned auth screens (login/signup) are a standalone
 		// two-panel canvas with their own brand link, theme toggle, and "back"

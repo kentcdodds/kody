@@ -140,6 +140,15 @@ export const routes = route({
 	communityStarApiPost: post('/community/:listingId/star.json'),
 	communityStargazersApi: '/community/:listingId/stargazers.json',
 	profile: '/@:username',
+	// Canonical public URL for a published package, keyed by its owner and
+	// `kody.id` (`/@kentcdodds/devin`) rather than the listing uuid. Kept a leaf
+	// route: the `/@:username/…` namespaces handled before this router
+	// (`packages`, `connectors`, `webhooks`, `api`) all match on the second
+	// segment, so any deeper package route would sit at their depth.
+	communityPackage: '/@:username/:kodyId',
+	// JSON companion lives under `/profiles/…` with the other username-keyed
+	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
+	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	profileApi: '/profiles/:username.json',
 	profileAvatar: '/profiles/:username/avatar/:cacheKey',
 	profileOgImage: '/profiles/:username/og.png',

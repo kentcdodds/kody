@@ -1,4 +1,5 @@
 import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
+import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import {
@@ -8,7 +9,10 @@ import {
 import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { type RouteLoaderResult } from '#client/route-loader.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -39,7 +43,10 @@ import {
 	type PublicCommunityStargazer,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
-import { type CommunityStargazersLoaderData } from '#universal/loader-data.ts'
+import {
+	type AppLoaderData,
+	type CommunityStargazersLoaderData,
+} from '#universal/loader-data.ts'
 import { formatCommunityPublishedDate } from '#universal/community-display.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 
@@ -62,6 +69,12 @@ type CommunityDetailApiPayload = {
 	forkPrompt: string
 	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
+}
+
+type CommunityPackageMovedPayload = {
+	ok: false
+	// The canonical pair the requested one was renamed to.
+	redirectTo?: string
 }
 
 type CommunityInstallApiPayload = {
@@ -98,20 +111,81 @@ export function getListingIdFromPathname(pathname: string) {
 	return listingId || null
 }
 
+const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
+
+/**
+ * The canonical package URL (`/@owner/kody-id`) carries no listing id, and
+ * every listing-scoped API is keyed by it. The server resolves the pair once
+ * per page load (route loader or SSR shell); remembering the answer here keeps
+ * the action handlers able to read the id synchronously.
+ *
+ * Module scope is shared by every request in a worker isolate (the app shell
+ * imports this module for SSR too), so the cache is bounded: it only ever needs
+ * the page being rendered plus the handful a visitor navigated through, and an
+ * entry evicted early costs a refetch, not correctness.
+ */
+const listingIdsByPathname = new Map<string, string>()
+const maxRememberedListingPathnames = 10
+
+function rememberListingId(pathname: string, listingId: string) {
+	// Re-setting moves the entry to the end of the insertion order, so the
+	// oldest key is always the least recently resolved one.
+	listingIdsByPathname.delete(pathname)
+	listingIdsByPathname.set(pathname, listingId)
+	for (const key of listingIdsByPathname.keys()) {
+		if (listingIdsByPathname.size <= maxRememberedListingPathnames) break
+		listingIdsByPathname.delete(key)
+	}
+}
+
+type ListingPageRef = {
+	pathname: string
+	detailApiHref: string
+	listingId: string | null
+}
+
+function getListingPageRef(pathname: string): ListingPageRef | null {
+	const listingId = getListingIdFromPathname(pathname)
+	if (listingId) {
+		return {
+			pathname,
+			detailApiHref: routes.communityDetailApi.href({ listingId }),
+			listingId,
+		}
+	}
+
+	const params = communityPackageMatcher.match(
+		new URL(pathname, 'http://localhost'),
+	)?.params
+	if (!params) return null
+	return {
+		pathname,
+		detailApiHref: routes.communityPackageApi.href({
+			username: params.username,
+			kodyId: params.kodyId,
+		}),
+		listingId: listingIdsByPathname.get(pathname) ?? null,
+	}
+}
+
+/**
+ * True for both public spellings of a listing page: the canonical
+ * `/@owner/kody-id` and the listing-uuid URL that redirects to it.
+ */
+export function isCommunityListingPathname(pathname: string) {
+	return getListingPageRef(pathname) !== null
+}
+
 function getCurrentListingId(handle: Handle) {
-	return getListingIdFromPathname(readRouterPathname(handle))
+	return getListingPageRef(readRouterPathname(handle))?.listingId ?? null
 }
 
 function buildCommunityDetailFrameSrc(href: string) {
 	const url = new URL(href, 'http://localhost')
-	const listingId = getListingIdFromPathname(url.pathname)
-	if (!listingId) return url.pathname
+	if (!getListingPageRef(url.pathname)) return url.pathname
 	const followError = url.searchParams.get('followError')
-	if (!followError) return routes.communityDetail.href({ listingId })
-	const frameUrl = new URL(
-		routes.communityDetail.href({ listingId }),
-		'http://localhost',
-	)
+	if (!followError) return url.pathname
+	const frameUrl = new URL(url.pathname, 'http://localhost')
 	frameUrl.searchParams.set('followError', followError)
 	return `${frameUrl.pathname}${frameUrl.search}`
 }
@@ -120,13 +194,13 @@ export async function communityDetailRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const listingId = getListingIdFromPathname(url.pathname)
-	if (!listingId) {
+	const ref = getListingPageRef(url.pathname)
+	if (!ref) {
 		throw new Error('Community listing not found.')
 	}
 
 	const frameSrc = buildCommunityDetailFrameSrc(`${url.pathname}${url.search}`)
-	const shellPromise = fetch(routes.communityDetailApi.href({ listingId }), {
+	const shellPromise = fetch(ref.detailApiHref, {
 		headers: { Accept: 'application/json' },
 		signal,
 	})
@@ -137,15 +211,23 @@ export async function communityDetailRouteLoader(
 	)
 
 	const response = await shellPromise
+	const payload = await readJson<
+		CommunityDetailApiPayload | CommunityPackageMovedPayload
+	>(response)
 	if (response.status === 404) {
+		const movedTo = payload && !payload.ok ? payload.redirectTo : null
+		// A renamed package is a real destination, not a dead link: leave the SPA
+		// so the visitor lands on (and can copy) the canonical URL.
+		if (movedTo) return routeLoaderRedirect(movedTo)
 		throw new Error('Community listing not found.')
 	}
-	const payload = await readJson<CommunityDetailApiPayload>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load community package.')
 	}
 
 	await framePrefetchPromise
+	const listingId = payload.listing.id
+	rememberListingId(ref.pathname, listingId)
 
 	return {
 		communityDetailShell: {
@@ -190,8 +272,11 @@ export function CommunityDetailRoute(handle: Handle) {
 	let reportReason = ''
 	let reportState: 'idle' | 'submitting' | 'success' | 'error' = 'idle'
 	let reportMessage: string | null = null
-	let shellLoadedForListingId: string | null = null
-	let shellRequestedForListingId: string | null = null
+	// Keyed by pathname, not listing id: the canonical URL's listing id is only
+	// known after the shell resolves, and the page's identity is its URL either
+	// way.
+	let shellLoadedForPathname: string | null = null
+	let shellRequestedForPathname: string | null = null
 	let starCount = 0
 	let starredByViewer = false
 	let starState: 'idle' | 'submitting' | 'error' = 'idle'
@@ -219,35 +304,41 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 
 	async function loadDetailShell() {
-		const listingId = getCurrentListingId(handle)
-		if (!listingId) return
+		const ref = getListingPageRef(readRouterPathname(handle))
+		if (!ref) return
 
 		const requestId = ++shellLoadRequestId
-		// Same-listing revalidations keep showing the current shell while the
-		// fetch is in flight; only brand-new listings show the loading state.
-		if (shellLoadedForListingId !== listingId) {
+		// Same-page revalidations keep showing the current shell while the fetch
+		// is in flight; only brand-new listings show the loading state.
+		if (shellLoadedForPathname !== ref.pathname) {
 			shellStatus = 'loading'
 			handle.update()
 		}
 
 		try {
-			const response = await fetch(
-				routes.communityDetailApi.href({ listingId }),
-				{
-					headers: { Accept: 'application/json' },
-				},
-			)
+			const response = await fetch(ref.detailApiHref, {
+				headers: { Accept: 'application/json' },
+			})
 			if (requestId !== shellLoadRequestId) return
+			const payload = await readJson<
+				CommunityDetailApiPayload | CommunityPackageMovedPayload
+			>(response)
 			if (response.status === 404) {
-				shellLoadedForListingId = listingId
+				const movedTo = payload && !payload.ok ? payload.redirectTo : null
+				// A renamed package is a real destination, not a dead link.
+				if (movedTo) {
+					window.location.assign(movedTo)
+					return
+				}
+				shellLoadedForPathname = ref.pathname
 				shellStatus = 'error'
 				handle.update()
 				return
 			}
-			const payload = await readJson<CommunityDetailApiPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load community package.')
 			}
+			rememberListingId(ref.pathname, payload.listing.id)
 			forkPrompt = payload.forkPrompt
 			loggedIn = payload.loggedIn
 			viewerIsAdmin = payload.viewerIsAdmin
@@ -268,15 +359,15 @@ export function CommunityDetailRoute(handle: Handle) {
 			starMessage = null
 			reportState = 'idle'
 			reportMessage = null
-			shellLoadedForListingId = listingId
+			shellLoadedForPathname = ref.pathname
 			shellStatus = 'ready'
 			handle.update()
-			void loadStargazers(listingId)
+			void loadStargazers(payload.listing.id)
 		} catch {
 			if (requestId !== shellLoadRequestId) return
 			// Mark the listing as attempted so renders do not requeue the load
 			// in a loop; the user can recover via navigation or reload.
-			shellLoadedForListingId = listingId
+			shellLoadedForPathname = ref.pathname
 			shellStatus = 'error'
 			handle.update()
 		}
@@ -556,8 +647,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 
 	listenToRouterNavigation(handle, () => {
-		const listingId = getCurrentListingId(handle)
-		if (!listingId) return
+		if (!getListingPageRef(readRouterPathname(handle))) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
 		if (!frame) return
@@ -569,14 +659,12 @@ export function CommunityDetailRoute(handle: Handle) {
 		void frame.reload()
 	})
 
-	function applyRouteShellData(href: string, listingId: string | null) {
-		if (!listingId) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'communityDetailShell',
-			href,
-		)
-		if (!routeData || routeData.listingId !== listingId) {
+	function applyRouteShellData(
+		routeData: AppLoaderData['communityDetailShell'],
+		pathname: string,
+		listingId: string | null,
+	) {
+		if (!routeData || !listingId || routeData.listingId !== listingId) {
 			return false
 		}
 		forkPrompt = routeData.forkPrompt
@@ -599,7 +687,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		starMessage = null
 		reportState = 'idle'
 		reportMessage = null
-		shellLoadedForListingId = listingId
+		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
 		if (stargazersLoadedForListingId !== listingId) {
 			// This runs during render, and `loadStargazers` calls
@@ -613,10 +701,22 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 
 	return () => {
-		const listingId = getCurrentListingId(handle)
 		const currentHref = readCurrentRouterHref(handle)
+		const pathname = readRouterPathname(handle)
+		const routeData = tryConsumeRouteLoaderData(
+			handle,
+			'communityDetailShell',
+			currentHref,
+		)
+		// The canonical URL carries no listing id, so the server's answer for this
+		// pathname is what makes the page's listing-scoped actions addressable.
+		if (routeData) {
+			rememberListingId(pathname, routeData.listingId)
+		}
+		const ref = getListingPageRef(pathname)
+		const listingId = ref?.listingId ?? null
 
-		if (!listingId) {
+		if (!ref) {
 			return (
 				<article mix={css(detailArticleCss)}>
 					<a href={routes.community.href()} mix={css(backLinkCss)}>
@@ -630,15 +730,15 @@ export function CommunityDetailRoute(handle: Handle) {
 			)
 		}
 
-		const appliedShellData = applyRouteShellData(currentHref, listingId)
+		const appliedShellData = applyRouteShellData(routeData, pathname, listingId)
 		// A same-path refresh whose loader failed leaves no preload and the
 		// listing id unchanged; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedShellData
 		if (
 			(needsStaleRefresh ||
-				(shellLoadedForListingId !== listingId &&
-					shellRequestedForListingId !== listingId)) &&
+				(shellLoadedForPathname !== pathname &&
+					shellRequestedForPathname !== pathname)) &&
 			typeof document !== 'undefined'
 		) {
 			// Show the loading state immediately so the previous listing's
@@ -647,19 +747,19 @@ export function CommunityDetailRoute(handle: Handle) {
 			// stale refreshes keep the current shell visible instead. Tracking
 			// the requested listing separately keeps re-renders from enqueueing
 			// duplicate fetches while one is already in flight.
-			if (shellLoadedForListingId !== listingId) {
+			if (shellLoadedForPathname !== pathname) {
 				shellStatus = 'loading'
 			}
-			shellRequestedForListingId = listingId
+			shellRequestedForPathname = pathname
 			handle.queueTask(loadDetailShell)
 		}
 
 		const frameSrc = buildCommunityDetailFrameSrc(currentHref)
 
 		// Never show another listing's shell data: even if an in-flight fetch
-		// for the previous listing resolves late, mismatched ids render the
+		// for the previous listing resolves late, mismatched pages render the
 		// loading state until the current listing's shell arrives.
-		const shellMatchesListing = shellLoadedForListingId === listingId
+		const shellMatchesListing = shellLoadedForPathname === pathname
 		const showShellReady = shellStatus === 'ready' && shellMatchesListing
 		const showShellError = shellStatus === 'error' && shellMatchesListing
 		const shellStatusMessage = showShellError

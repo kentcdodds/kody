@@ -8,8 +8,8 @@ A successful one-click install creates and publishes a fork you own. Open it,
 change it, schedule it, or publish your own version back to the community.
 
 Community listings are **public**: `/community` (searchable index) and
-`/community/:listingId` (detail) work without a Kody account. Forking, rating,
-and reporting require a signed-in MCP user.
+`/@username/kody-id` (detail) work without a Kody account. Forking, rating, and
+reporting require a signed-in MCP user.
 
 Community discovery uses the MCP **`community`** domain. Community listings do
 **not** appear in the general MCP **`search`** tool, so agents never pull
@@ -77,10 +77,13 @@ delete can remove the delisted row.
 
 ## Browsing listings
 
-Anyone can browse `/community` and open `/community/:listingId`. Detail pages
-show metadata, aggregate ratings, **star count** (stargazers — distinct from 1–5
-ratings), fork count, the README (not the full source tree), and a dynamically
-generated Open Graph image (1200×630). When the owner keeps a
+Anyone can browse `/community` and open a package at `/@username/kody-id` — for
+example `/@kentcdodds/devin`. Older `/community/:listingId` links still work and
+redirect to that address, and so do links shared before the owner changed their
+username or the package changed its `kody.id`. Detail pages show metadata,
+aggregate ratings, **star count** (stargazers — distinct from 1–5 ratings), fork
+count, the README (not the full source tree), and a dynamically generated Open
+Graph image (1200×630). When the owner keeps a
 [public profile](./community-profiles.md), the listing links to `/@username` and
 shows a follow control next to the username. Private owners still show as
 `@username` with a lock that explains the profile is private.

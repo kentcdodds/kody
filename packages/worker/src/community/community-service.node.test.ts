@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(),
 	getCommunityBan: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
+	getCommunityListingByOwnerAndKodyId: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	listCommunityListingCandidates: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
@@ -97,6 +98,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.getCommunityBan(...args),
 		getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
 			mockModule.getCommunityListingByOwnerAndPackage(...args),
+		getCommunityListingByOwnerAndKodyId: (...args: Array<unknown>) =>
+			mockModule.getCommunityListingByOwnerAndKodyId(...args),
 		getCommunityListingById: (...args: Array<unknown>) =>
 			mockModule.getCommunityListingById(...args),
 		listCommunityListingCandidates: (...args: Array<unknown>) =>
@@ -395,6 +398,46 @@ test('publishCommunityListing rolls back D1 when KV snapshot write fails', async
 			publishedAt: existingListing.publishedAt,
 		}),
 	)
+})
+
+test('a failed publish gives the listing it displaced its page back', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { packageId: string }) =>
+			input.packageId === 'package-1' ? validSavedPackage() : null,
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	// A stranded listing (its package is gone) holds the pair being published.
+	mockModule.getCommunityListingByOwnerAndKodyId.mockResolvedValue(
+		sampleListing({ id: 'listing-stranded', packageId: 'package-gone' }),
+	)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	mockModule.insertCommunityListing.mockRejectedValue(new Error('d1 down'))
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('d1 down')
+
+	// Delisted to free the pair, then relisted -- nothing else can relist it.
+	expect(
+		mockModule.updateCommunityListing.mock.calls.map((call) => call[1]),
+	).toEqual([
+		expect.objectContaining({
+			listingId: 'listing-stranded',
+			status: 'delisted',
+		}),
+		expect.objectContaining({
+			listingId: 'listing-stranded',
+			status: 'active',
+		}),
+	])
 })
 
 test('unpublishCommunityListing refuses delisted listings without deleting anything', async () => {

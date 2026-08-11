@@ -17,6 +17,7 @@ import {
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -198,8 +199,10 @@ export function AccountStarsRoute(handle: Handle) {
 								<div mix={css(rowCss)}>
 									<div>
 										<a
-											href={routes.communityDetail.href({
+											href={getCommunityListingHref({
 												listingId: listing.id,
+												listingName: listing.name,
+												kodyId: listing.kodyId,
 											})}
 											mix={css(titleLinkCss)}
 										>

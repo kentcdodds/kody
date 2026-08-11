@@ -11,7 +11,10 @@ import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
-import { createCommunityDetailHandler } from '#app/handlers/community-detail.tsx'
+import {
+	createCommunityDetailHandler,
+	createCommunityPackageHandler,
+} from '#app/handlers/community-detail.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
@@ -31,6 +34,8 @@ const communityMockModule = vi.hoisted(() => ({
 	searchCommunityListings: vi.fn(),
 	getCommunityListingWithAggregates: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
+	resolveCommunityListingRoute: vi.fn(),
+	resolveCanonicalListingPath: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -42,6 +47,16 @@ vi.mock('#worker/community/service.ts', () => ({
 		communityMockModule.getCommunityListingWithAggregates(...args),
 	reportCommunityListing: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
+}))
+
+// Owner/kody-id resolution is covered against the real schema in
+// `community/package-url` tests; here it only has to hand the handler a
+// listing id so the page itself can be rendered.
+vi.mock('#app/community-package-route.ts', () => ({
+	resolveCommunityListingRoute: (...args: Array<unknown>) =>
+		communityMockModule.resolveCommunityListingRoute(...args),
+	resolveCanonicalListingPath: (...args: Array<unknown>) =>
+		communityMockModule.resolveCanonicalListingPath(...args),
 }))
 
 vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
@@ -759,7 +774,7 @@ test('renderAppPage renders the redesigned blog index', async () => {
 	}
 })
 
-test('community detail SSR renders the redesigned article', async () => {
+test('canonical package URL SSR renders the redesigned article', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv(createUserTestDb([]))
@@ -781,10 +796,15 @@ test('community detail SSR renders the redesigned article', async () => {
 		stable_user_id: 'owner-mcp-id',
 	})
 
-	const response = await createCommunityDetailHandler(env).handler({
-		request: new Request('https://example.com/community/listing-detail-1'),
-		url: new URL('https://example.com/community/listing-detail-1'),
-		params: { listingId: 'listing-detail-1' },
+	communityMockModule.resolveCommunityListingRoute.mockResolvedValue({
+		kind: 'listing',
+		listingId: 'listing-detail-1',
+	})
+
+	const response = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@kentcdodds/github-triage'),
+		url: new URL('https://example.com/@kentcdodds/github-triage'),
+		params: { username: 'kentcdodds', kodyId: 'github-triage' },
 	} as never)
 
 	expect(response.status).toBe(200)
@@ -801,6 +821,74 @@ test('community detail SSR renders the redesigned article', async () => {
 		listingId: 'listing-detail-1',
 		name: '@kentcdodds/github-triage',
 		trusted: true,
+	})
+})
+
+test('listing-uuid URL redirects to the canonical package URL', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue({
+		...sampleListing,
+		id: 'listing-detail-1',
+	})
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+
+	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(
+		'/@kentcdodds/github-triage',
+	)
+
+	// The follow control redirects back with `followError`, so the query has to
+	// survive the hop or the message vanishes.
+	const response = await createCommunityDetailHandler(env).handler({
+		request: new Request(
+			'https://example.com/community/listing-detail-1?followError=nope',
+		),
+		url: new URL(
+			'https://example.com/community/listing-detail-1?followError=nope',
+		),
+		params: { listingId: 'listing-detail-1' },
+	} as never)
+
+	expect(response.status).toBe(301)
+	expect(response.headers.get('location')).toBe(
+		'https://example.com/@kentcdodds/github-triage?followError=nope',
+	)
+	// The same URL serves frame HTML, which must not get this redirect back.
+	expect(response.headers.get('vary')).toBe('x-remix-target')
+})
+
+test('listing-uuid URL keeps serving the page when no canonical URL resolves', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue({
+		...sampleListing,
+		id: 'listing-detail-1',
+	})
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	// A stale owner scope in the listing name: redirecting would cache a 404.
+	communityMockModule.resolveCanonicalListingPath.mockResolvedValue(null)
+
+	const response = await createCommunityDetailHandler(env).handler({
+		request: new Request('https://example.com/community/listing-detail-1'),
+		url: new URL('https://example.com/community/listing-detail-1'),
+		params: { listingId: 'listing-detail-1' },
+	} as never)
+
+	expect(response.status).toBe(200)
+	const props = readAppRootProps(await readResponseText(response))
+	expect(props.loaderData?.communityDetailShell).toMatchObject({
+		ok: true,
+		listingId: 'listing-detail-1',
 	})
 })
 

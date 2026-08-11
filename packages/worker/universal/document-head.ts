@@ -83,6 +83,30 @@ function titleOnly(title: string): DocumentHeadDescriptor {
 	return { title }
 }
 
+/**
+ * Shared by the canonical `/@owner/kody-id` URL and the listing-uuid URL that
+ * redirects to it, so a listing describes itself identically either way.
+ */
+function communityListingHead({
+	loaderData,
+	pathname,
+}: DocumentHeadContext): DocumentHeadDescriptor {
+	const shell = loaderData?.communityDetailShell
+	if (!shell?.ok) {
+		return titleOnly('Community packages')
+	}
+	const title = `${shell.name} — Kody community package`
+	return {
+		title,
+		canonicalPath: pathname,
+		og: {
+			title,
+			description: truncateText(shell.description, 200),
+			imagePath: `/community/${shell.listingId}/og.png`,
+		},
+	}
+}
+
 function publicPageHead(
 	pageId: PublicOgPageId,
 	title: string,
@@ -216,22 +240,8 @@ const routeDocumentHeads = {
 		'community',
 		'Community packages',
 	),
-	[routePattern(routes.communityDetail)]: ({ loaderData, pathname }) => {
-		const shell = loaderData?.communityDetailShell
-		if (!shell?.ok) {
-			return titleOnly('Community packages')
-		}
-		const title = `${shell.name} — Kody community package`
-		return {
-			title,
-			canonicalPath: pathname,
-			og: {
-				title,
-				description: truncateText(shell.description, 200),
-				imagePath: `/community/${shell.listingId}/og.png`,
-			},
-		}
-	},
+	[routePattern(routes.communityDetail)]: communityListingHead,
+	[routePattern(routes.communityPackage)]: communityListingHead,
 	[routePattern(routes.profile)]: ({ loaderData, params, pathname }) => {
 		const shell = loaderData?.profileShell
 		if (shell && !shell.ok) {

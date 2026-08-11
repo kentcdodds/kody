@@ -694,31 +694,40 @@ export async function listPublicProfilePackages(
 		tags: parseTagsJson(row['tags_json']),
 		updatedAt: String(row['updated_at']),
 		communityListingId: null as string | null,
+		communityListingKodyId: null as string | null,
 		communityPublishedAt: null as string | null,
 	}))
 
 	if (packages.length === 0) return packages
 
 	const packageIds = packages.map((pkg) => pkg.packageId)
+	// The listing's own `kody_id` travels with its id: it only moves on republish,
+	// so it is the id the public URL actually resolves under.
 	const listingByPackageId = new Map<
 		string,
-		{ id: string; publishedAt: string }
+		{ id: string; kodyId: string | null; publishedAt: string }
 	>()
 	for (const idChunk of chunkArray(packageIds, maxSqlBindingsPerChunk)) {
 		const placeholders = idChunk.map(() => '?').join(', ')
 		const listingRows = await db
 			.prepare(
-				`SELECT id, package_id, published_at
+				`SELECT id, package_id, kody_id, published_at
 				FROM community_listings
 				WHERE owner_user_id = ?
 					AND status = 'active'
 					AND package_id IN (${placeholders})`,
 			)
 			.bind(input.ownerStableUserId, ...idChunk)
-			.all<{ id: string; package_id: string; published_at: string }>()
+			.all<{
+				id: string
+				package_id: string
+				kody_id: string | null
+				published_at: string
+			}>()
 		for (const listingRow of listingRows.results ?? []) {
 			listingByPackageId.set(listingRow.package_id, {
 				id: listingRow.id,
+				kodyId: listingRow.kody_id,
 				publishedAt: String(listingRow.published_at),
 			})
 		}
@@ -729,6 +738,7 @@ export async function listPublicProfilePackages(
 		return {
 			...pkg,
 			communityListingId: listing?.id ?? null,
+			communityListingKodyId: listing?.kodyId ?? null,
 			communityPublishedAt: listing?.publishedAt ?? null,
 		}
 	})
