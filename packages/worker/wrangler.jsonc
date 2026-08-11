@@ -159,9 +159,8 @@
 			"enabled": true,
 		},
 	},
-	"triggers": {
-		"crons": ["*/5 * * * *"],
-	},
+	// Cron scheduling moved to the jobs worker (packages/jobs-worker, ADR
+	// 0016); the main worker has no scheduled handler.
 	"env": {
 		"production": {
 			"ratelimits": [
@@ -248,10 +247,6 @@
 						"class_name": "OAuthPurgeCoordinator",
 						"name": "OAUTH_PURGE_COORDINATOR",
 					},
-					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
-					},
 					// Runtime-owned Durable Objects live in the kody-runtime script
 					// (ADR 0016); storage transferred there via that script's
 					// `transferred_classes` migration.
@@ -310,6 +305,16 @@
 					"name": "EMAIL",
 				},
 			],
+			// Jobs worker service binding (ADR 0016): account dashboards, MCP
+			// capabilities, and account deletion/export reach jobs data and the
+			// JobManager Durable Object through this coarse-grained contract.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
+				},
+			],
 			"queues": {
 				"producers": [
 					{
@@ -319,10 +324,6 @@
 					{
 						"binding": "COMMUNITY_ACTIVITY_DISPATCH_QUEUE",
 						"queue": "kody-community-activity-dispatch",
-					},
-					{
-						"binding": "SCHEDULED_DISPATCH_QUEUE",
-						"queue": "kody-scheduled-dispatch",
 					},
 					{
 						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
@@ -361,14 +362,6 @@
 						"max_batch_timeout": 5,
 						"max_retries": 3,
 						"dead_letter_queue": "kody-community-activity-dispatch-dlq",
-					},
-					{
-						"queue": "kody-scheduled-dispatch",
-						"max_batch_size": 1,
-						"max_batch_timeout": 0,
-						"max_retries": 3,
-						"max_concurrency": 16,
-						"dead_letter_queue": "kody-scheduled-dispatch-dlq",
 					},
 					{
 						"queue": "kody-package-events-dispatch",
@@ -504,6 +497,93 @@
 			},
 		},
 		"preview": {
+			// Fresh preview scripts replay the whole migration chain, so it must
+			// not create JobManager/JobRunner: the class is not exported here
+			// anymore (it lives in the jobs worker, ADR 0016). Same chain as the
+			// top level minus the v6/v9 JobManager+JobRunner pair.
+			"migrations": [
+				{
+					"new_sqlite_classes": ["MCP"],
+					"tag": "v1",
+				},
+				{
+					"new_sqlite_classes": ["ChatAgent"],
+					"tag": "v2",
+				},
+				{
+					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"],
+					"tag": "v3",
+				},
+				{
+					"new_sqlite_classes": ["SchedulerDO"],
+					"tag": "v4",
+				},
+				{
+					"deleted_classes": ["SchedulerDO"],
+					"tag": "v7",
+				},
+				{
+					"new_sqlite_classes": ["StorageRunner"],
+					"tag": "v8",
+				},
+				{
+					"new_sqlite_classes": ["AgentTurnRunner"],
+					"tag": "v10",
+				},
+				{
+					"new_sqlite_classes": ["RepoSession"],
+					"tag": "v11",
+				},
+				{
+					"new_sqlite_classes": ["PackageRealtimeSession"],
+					"tag": "v13",
+				},
+				{
+					"new_sqlite_classes": ["PackageServiceInstance"],
+					"tag": "v14",
+				},
+				{
+					"renamed_classes": [
+						{
+							"from": "HomeConnectorSession",
+							"to": "RemoteConnectorSession",
+						},
+					],
+					"tag": "v15",
+				},
+				{
+					"deleted_classes": ["HomeMCP"],
+					"tag": "v16",
+				},
+				{
+					"deleted_classes": ["ChatAgent", "AgentTurnRunner"],
+					"tag": "v17",
+				},
+				{
+					"new_sqlite_classes": ["McpClientHub"],
+					"tag": "v18",
+				},
+				{
+					"new_sqlite_classes": ["OAuthPurgeCoordinator"],
+					"tag": "v19",
+				},
+				{
+					"new_sqlite_classes": ["RunLog"],
+					"tag": "v20",
+				},
+				{
+					"new_sqlite_classes": ["UserMeter"],
+					"tag": "v21",
+				},
+				{
+					"new_sqlite_classes": ["Mailbox"],
+					"tag": "v22",
+				},
+				{
+					"new_sqlite_classes": ["StripePlanRefresh"],
+					"tag": "v23",
+				},
+			],
 			"ratelimits": [
 				{
 					"name": "AUTH_RATE_LIMITER",
@@ -571,10 +651,6 @@
 						"name": "OAUTH_PURGE_COORDINATOR",
 					},
 					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
-					},
-					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
 						"script_name": "kody-runtime",
@@ -627,6 +703,15 @@
 			"send_email": [
 				{
 					"name": "EMAIL",
+				},
+			],
+			// Rewired per preview by tools/ci/preview-resources.ts to the
+			// per-preview jobs worker name.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
 				},
 			],
 			"queues": {
@@ -704,6 +789,93 @@
 			},
 		},
 		"test": {
+			// Local test workers replay the whole migration chain, so it must
+			// not create JobManager/JobRunner: the class is not exported here
+			// anymore (it lives in the jobs worker, ADR 0016). Same chain as the
+			// top level minus the v6/v9 JobManager+JobRunner pair.
+			"migrations": [
+				{
+					"new_sqlite_classes": ["MCP"],
+					"tag": "v1",
+				},
+				{
+					"new_sqlite_classes": ["ChatAgent"],
+					"tag": "v2",
+				},
+				{
+					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"],
+					"tag": "v3",
+				},
+				{
+					"new_sqlite_classes": ["SchedulerDO"],
+					"tag": "v4",
+				},
+				{
+					"deleted_classes": ["SchedulerDO"],
+					"tag": "v7",
+				},
+				{
+					"new_sqlite_classes": ["StorageRunner"],
+					"tag": "v8",
+				},
+				{
+					"new_sqlite_classes": ["AgentTurnRunner"],
+					"tag": "v10",
+				},
+				{
+					"new_sqlite_classes": ["RepoSession"],
+					"tag": "v11",
+				},
+				{
+					"new_sqlite_classes": ["PackageRealtimeSession"],
+					"tag": "v13",
+				},
+				{
+					"new_sqlite_classes": ["PackageServiceInstance"],
+					"tag": "v14",
+				},
+				{
+					"renamed_classes": [
+						{
+							"from": "HomeConnectorSession",
+							"to": "RemoteConnectorSession",
+						},
+					],
+					"tag": "v15",
+				},
+				{
+					"deleted_classes": ["HomeMCP"],
+					"tag": "v16",
+				},
+				{
+					"deleted_classes": ["ChatAgent", "AgentTurnRunner"],
+					"tag": "v17",
+				},
+				{
+					"new_sqlite_classes": ["McpClientHub"],
+					"tag": "v18",
+				},
+				{
+					"new_sqlite_classes": ["OAuthPurgeCoordinator"],
+					"tag": "v19",
+				},
+				{
+					"new_sqlite_classes": ["RunLog"],
+					"tag": "v20",
+				},
+				{
+					"new_sqlite_classes": ["UserMeter"],
+					"tag": "v21",
+				},
+				{
+					"new_sqlite_classes": ["Mailbox"],
+					"tag": "v22",
+				},
+				{
+					"new_sqlite_classes": ["StripePlanRefresh"],
+					"tag": "v23",
+				},
+			],
 			"worker_loaders": [
 				{
 					"binding": "LOADER",
@@ -749,10 +921,6 @@
 					{
 						"class_name": "OAuthPurgeCoordinator",
 						"name": "OAUTH_PURGE_COORDINATOR",
-					},
-					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
 					},
 					{
 						"class_name": "StorageRunner",

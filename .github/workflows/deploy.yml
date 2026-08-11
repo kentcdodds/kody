@@ -106,11 +106,141 @@ jobs:
             echo "Status worker deploy: skipped (no relevant path changes)."
           fi
 
+  # The jobs worker deploys before the main worker on every production
+  # deploy: its JobManager script-transfer migration must run while the main
+  # worker still owns the class, and the main worker's JOBS service binding
+  # requires the jobs worker script to exist. See
+  # docs/contributing/architecture/jobs-worker-migration-runbook.md.
+  deploy-jobs-worker:
+    runs-on: ubuntu-latest
+    name: ⏰ Deploy jobs worker
+    timeout-minutes: 8
+    needs: sha-guard
+    if: needs.sha-guard.outputs.should_deploy == 'true'
+    environment:
+      name: production
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
+          fetch-depth: 0
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: 🧱 Ensure jobs worker resources (D1 + Queues)
+        id: jobs_resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          node tools/ci/jobs-worker-resources.ts ensure --env production --out-config packages/jobs-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      - name: 🗄️ Apply D1 Migrations (jobs)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_CONFIG:
+            ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
+        run: |
+          node ./wrangler-env.ts d1 migrations apply JOBS_DB --remote --config "$WRANGLER_CONFIG"
+
+      - name: 🔐 Sync jobs worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_CONFIG:
+            ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: >
+          node tools/ci/sync-worker-secrets.ts --env production --config
+          "$WRANGLER_CONFIG" --name kody-jobs --set-from-env-optional SENTRY_DSN
+
+      - name: ☁️ Deploy jobs worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
+        run: |
+          set -euo pipefail
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Jobs worker deploy attempt $attempt/$deploy_attempts"
+            set +e
+            # Explicit --name: without it wrangler would append the
+            # environment to the script name (kody-jobs-production), which
+            # would not match the main worker's JOBS service binding.
+            node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" \
+              --name kody-jobs \
+              --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee jobs-deploy.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Jobs worker deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+            echo "Retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
+
+      - name: 🩺 Healthcheck (jobs worker)
+        shell: bash
+        env:
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          JOBS_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync("jobs-deploy.log", "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const matches = text.match(/https:\/\/[a-zA-Z0-9._-]+\.workers\.dev/g); process.stdout.write(matches?.at(-1) ?? "")')"
+          if [ -z "$JOBS_URL" ]; then
+            echo "No workers.dev URL in jobs worker deploy output; skipping healthcheck."
+            exit 0
+          fi
+
+          HEALTHCHECK_URL="${JOBS_URL%/}/health"
+          echo "Healthcheck URL: $HEALTHCHECK_URL"
+
+          attempts=20
+          delay_seconds=3
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > jobs-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('jobs-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true) { console.error('jobs-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commit !== expected) { console.error('jobs-healthcheck-unexpected-commit', { expected, actual: json?.commit }); process.exit(1); } console.log('jobs-healthcheck-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "Jobs worker healthcheck failed after ${attempts} attempts." >&2
+          if [ -f jobs-health.json ]; then
+            echo "Last response body:" >&2
+            cat jobs-health.json >&2
+          fi
+          exit 1
+
   deploy:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to production
     timeout-minutes: 12
-    needs: sha-guard
+    needs:
+      - sha-guard
+      - deploy-jobs-worker
     if: needs.sha-guard.outputs.should_deploy == 'true'
     environment:
       name: production
@@ -164,7 +294,7 @@ jobs:
             --env production \
             --main-config packages/worker/wrangler-production.generated.json \
             --worker-name kody-runtime \
-            --main-worker-name kody \
+            --main-worker-name kody-production \
             --out-config packages/runtime-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🔐 Sync Cloudflare Secrets (bulk)
@@ -216,8 +346,8 @@ jobs:
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: >
-          node tools/ci/sync-worker-secrets.ts --env production --config
-          "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
+          node tools/ci/sync-worker-secrets.ts --env production --name
+          kody-runtime --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
           --set-from-env-optional CLOUDFLARE_API_TOKEN
@@ -262,7 +392,10 @@ jobs:
           for attempt in $(seq 1 "$deploy_attempts"); do
             echo "Runtime deploy attempt $attempt/$deploy_attempts"
             set +e
-            npm run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
+            # Explicit --name: without it wrangler appends the environment to
+            # the script name (kody-runtime-production), which would not match
+            # the main worker's cross-script bindings.
+            npm run deploy -- --name kody-runtime --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-runtime.log
             deploy_status="${PIPESTATUS[0]}"
             set -e
 

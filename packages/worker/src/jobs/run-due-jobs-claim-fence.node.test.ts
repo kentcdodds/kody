@@ -21,8 +21,9 @@ vi.mock('#worker/account/deletion-state.ts', () => ({
 		withAccountWriteLease(...(args as [never])),
 }))
 
-vi.mock('./repo.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('./repo.ts')>()
+vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('@kody-internal/shared/jobs/repo.ts')>()
 	return {
 		...actual,
 		disableExpiredJobRowsForUser: (...args: Array<unknown>) =>
@@ -70,7 +71,7 @@ vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('./archived-artifacts-repo.ts', () => ({
+vi.mock('@kody-internal/shared/jobs/archived-artifacts-repo.ts', () => ({
 	listArchivedJobArtifactsDueBefore: (...args: Array<unknown>) =>
 		listArchivedJobArtifactsDueBefore(...(args as [never])),
 	deleteArchivedJobArtifact: vi.fn(),

@@ -18,11 +18,6 @@ import {
 	artifactsRepoEventsQueueName,
 } from '../../packages/worker/src/repo/artifacts-event-queue-names.ts'
 import {
-	scheduledDispatchDeadLetterQueueName,
-	scheduledDispatchQueueBinding,
-	scheduledDispatchQueueName,
-} from '../../packages/worker/src/scheduled/scheduled-dispatch-queue-names.ts'
-import {
 	webhookDispatchDeadLetterQueueName,
 	webhookDispatchQueueBinding,
 	webhookDispatchQueueName,
@@ -33,7 +28,7 @@ const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
 const expectedMaxBatchSize = 10
 const expectedMaxBatchTimeout = 5
 const expectedMaxRetries = 3
-const expectedConsumerCount = 7
+const expectedConsumerCount = 6
 
 function readQueueConsumer(input: {
 	consumers: Array<unknown>
@@ -139,15 +134,6 @@ export function parseProductionQueueResources(input: {
 		deadLetterQueueName: communityActivityDispatchDeadLetterQueueName,
 		configPath: input.configPath,
 	})
-	const scheduledDispatch = readQueueConsumer({
-		consumers,
-		queueName: scheduledDispatchQueueName,
-		deadLetterQueueName: scheduledDispatchDeadLetterQueueName,
-		configPath: input.configPath,
-		maxBatchSize: 1,
-		maxBatchTimeout: 0,
-		maxConcurrency: 16,
-	})
 	const packageEventsDispatch = readQueueConsumer({
 		consumers,
 		queueName: packageEventsDispatchQueueName,
@@ -184,12 +170,6 @@ export function parseProductionQueueResources(input: {
 	})
 	readQueueProducer({
 		producers,
-		binding: scheduledDispatchQueueBinding,
-		queueName: scheduledDispatchQueueName,
-		configPath: input.configPath,
-	})
-	readQueueProducer({
-		producers,
 		binding: packageEventsDispatchQueueBinding,
 		queueName: packageEventsDispatchQueueName,
 		configPath: input.configPath,
@@ -211,8 +191,6 @@ export function parseProductionQueueResources(input: {
 		communityActivityDispatchQueueName: communityActivityDispatch.queue,
 		communityActivityDispatchDeadLetterQueueName:
 			communityActivityDispatch.deadLetterQueue,
-		scheduledDispatchQueueName: scheduledDispatch.queue,
-		scheduledDispatchDeadLetterQueueName: scheduledDispatch.deadLetterQueue,
 		packageEventsDispatchQueueName: packageEventsDispatch.queue,
 		packageEventsDispatchDeadLetterQueueName:
 			packageEventsDispatch.deadLetterQueue,

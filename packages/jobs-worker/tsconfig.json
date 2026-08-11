@@ -1,0 +1,20 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "Preserve",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"types": ["@cloudflare/workers-types", "node"],
+		"paths": {
+			"#worker/*": ["../worker/src/*"]
+		},
+		"skipLibCheck": true
+	},
+	"include": ["src/**/*.ts", "../shared/src/**/*.ts"],
+	// Shared tests are typechecked through the main worker project (they lean
+	// on its vitest setup); this project only needs the shared sources.
+	"exclude": ["../shared/src/**/*.test.ts"]
+}

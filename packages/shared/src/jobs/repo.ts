@@ -1,5 +1,5 @@
-import { parseJsonWithFallback } from '@kody-internal/shared/json-parsing.ts'
-import { createJobStorageId } from '#worker/storage-runner.ts'
+import { parseJsonWithFallback } from '../json-parsing.ts'
+import { createJobStorageId } from './storage-id.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
 type JobRowRecord = {

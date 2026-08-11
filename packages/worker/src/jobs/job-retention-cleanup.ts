@@ -5,10 +5,8 @@ import {
 	type JobRetentionPreferences,
 	validateJobRetentionDaysInput,
 } from './job-retention.ts'
-import {
-	listJobRetentionCandidateRows,
-	maxJobRetentionCandidatesPerRun,
-} from './repo.ts'
+import { maxJobRetentionCandidatesPerRun } from '@kody-internal/shared/jobs/repo.ts'
+import { jobsData } from './jobs-data.ts'
 import { deleteJob } from './service.ts'
 import {
 	logJobSchedulerError,
@@ -186,7 +184,7 @@ export async function pruneJobRetention(input: {
 			timeBudgetExhausted = true
 			break
 		}
-		const candidates = await listJobRetentionCandidateRows(input.env.APP_DB, {
+		const candidates = await jobsData(input.env).listJobRetentionCandidates({
 			afterId,
 			limit: batchSize,
 		})

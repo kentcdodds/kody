@@ -1,7 +1,7 @@
 import {
 	type JobManagerDebugState,
 	type JobManagerDebugStatus,
-} from './manager-client.ts'
+} from './manager-debug.ts'
 
 export function resolveJobManagerAlarmState(input: {
 	alarmTimestamp: number | null

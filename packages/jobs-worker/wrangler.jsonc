@@ -1,0 +1,161 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// Jobs worker (ADR 0016): owns the JobManager Durable Object, the
+	// scheduled/cron dispatch lane, the scheduled dispatch queue, and the
+	// dedicated jobs D1 database (`jobs` + `archived_job_artifacts`). Job
+	// execution and the platform scheduled lanes stay in the main worker and
+	// are reached through the HOST service binding (`JobsHost` entrypoint);
+	// the main worker reaches this worker through its JOBS service binding
+	// (`JobsService` entrypoint).
+	"name": "kody-jobs",
+	"main": "./src/index.ts",
+	"compatibility_date": "2026-04-16",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"minify": true,
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"traces": {
+			"enabled": true,
+		},
+	},
+	// The cron trigger moved here from the main worker; the cadence is
+	// unchanged (every 5 minutes, see shared/src/jobs/scheduled-lanes.ts).
+	"triggers": {
+		"crons": ["*/5 * * * *"],
+	},
+	// JobManager moves from the main worker script (`kody`) with a
+	// script-transfer migration so every user's existing Durable Object
+	// storage (alarm state, stored user id) moves with the class. The
+	// coordinated deploy order is documented in
+	// docs/contributing/architecture/jobs-worker-migration-runbook.md and MUST
+	// be followed: this worker deploys first (running the transfer), then the
+	// main worker deploys without the JobManager class/binding.
+	"migrations": [
+		{
+			"tag": "v1",
+			"transferred_classes": [
+				{
+					"from": "JobManager",
+					// The deployed production main worker script is "kody-production"
+					// (wrangler appends the environment name to the top-level name).
+					"from_script": "kody-production",
+					"to": "JobManager",
+				},
+			],
+		},
+	],
+	"env": {
+		"production": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "JobManager",
+						"name": "JOB_MANAGER",
+					},
+				],
+			},
+			"d1_databases": [
+				{
+					"binding": "JOBS_DB",
+					"database_name": "kody-jobs",
+					"migrations_dir": "./migrations",
+				},
+			],
+			"services": [
+				{
+					"binding": "HOST",
+					"service": "kody-production",
+					"entrypoint": "JobsHost",
+				},
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "SCHEDULED_DISPATCH_QUEUE",
+						"queue": "kody-scheduled-dispatch",
+					},
+				],
+				"consumers": [
+					{
+						"queue": "kody-scheduled-dispatch",
+						"max_batch_size": 1,
+						"max_batch_timeout": 0,
+						"max_retries": 3,
+						"max_concurrency": 16,
+						"dead_letter_queue": "kody-scheduled-dispatch-dlq",
+					},
+				],
+			},
+			"vars": {
+				"SENTRY_ENVIRONMENT": "production",
+			},
+		},
+		"preview": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "JobManager",
+						"name": "JOB_MANAGER",
+					},
+				],
+			},
+			"d1_databases": [
+				{
+					"binding": "JOBS_DB",
+					"database_name": "kody-preview-jobs",
+					"migrations_dir": "./migrations",
+				},
+			],
+			"services": [
+				{
+					"binding": "HOST",
+					"service": "kody",
+					"entrypoint": "JobsHost",
+				},
+			],
+			"vars": {
+				"SENTRY_ENVIRONMENT": "preview",
+			},
+		},
+		"test": {
+			// Local test workers are fresh scripts: they cannot run the
+			// production script-transfer migration (from_script
+			// "kody-production"), so the
+			// class is created fresh here (matching the generated preview
+			// config in tools/ci/jobs-worker-resources.ts).
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": ["JobManager"],
+				},
+			],
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "JobManager",
+						"name": "JOB_MANAGER",
+					},
+				],
+			},
+			"d1_databases": [
+				{
+					"binding": "JOBS_DB",
+					"database_name": "kody-preview-jobs",
+					"migrations_dir": "./migrations",
+				},
+			],
+			"services": [
+				{
+					// `wrangler dev --env test` names the main worker `kody-test`.
+					"binding": "HOST",
+					"service": "kody-test",
+					"entrypoint": "JobsHost",
+				},
+			],
+			"vars": {
+				"SENTRY_ENVIRONMENT": "test",
+			},
+		},
+	},
+}

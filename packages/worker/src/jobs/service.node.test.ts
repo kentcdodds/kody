@@ -26,7 +26,10 @@ import {
 	syncPackageJobsForPackage,
 	updateJob,
 } from './service.ts'
-import { listJobRowsByUserId, refreshPackageJobRowIdentity } from './repo.ts'
+import {
+	listJobRowsByUserId,
+	refreshPackageJobRowIdentity,
+} from '@kody-internal/shared/jobs/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	type JobCreateInput,
@@ -2099,7 +2102,7 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 		},
 	})
 	const jobRow = await (
-		await import('./repo.ts')
+		await import('@kody-internal/shared/jobs/repo.ts')
 	).getJobRowById(env.APP_DB, callerContext.user.userId, created.id)
 	if (!jobRow) {
 		throw new Error('Expected created job row.')
@@ -2109,7 +2112,7 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	jobRow.record.nextRunAt = '2026-04-20T10:00:00.000Z'
 	jobRow.record.updatedAt = '2026-04-20T10:05:00.000Z'
 	await (
-		await import('./repo.ts')
+		await import('@kody-internal/shared/jobs/repo.ts')
 	).updateJobRow({
 		db: env.APP_DB,
 		userId: callerContext.user.userId,
@@ -2586,7 +2589,7 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 			.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 			.mockReturnValue(sessionClient as never)
 		const row = await (
-			await import('./repo.ts')
+			await import('@kody-internal/shared/jobs/repo.ts')
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
@@ -2782,7 +2785,7 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 			.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 			.mockReturnValue(sessionClient as never)
 		const row = await (
-			await import('./repo.ts')
+			await import('@kody-internal/shared/jobs/repo.ts')
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
@@ -2981,7 +2984,7 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 			.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 			.mockReturnValue(sessionClient as never)
 		const row = await (
-			await import('./repo.ts')
+			await import('@kody-internal/shared/jobs/repo.ts')
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
@@ -4416,7 +4419,7 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 		expect(result.deletedAfterRun).toBe(false)
 		expect(deleteByIds).not.toHaveBeenCalled()
 		const row = await (
-			await import('./repo.ts')
+			await import('@kody-internal/shared/jobs/repo.ts')
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		expect(row?.record).toEqual(
 			expect.objectContaining({
@@ -4610,7 +4613,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 			logs: ['repo-backed kody executed'],
 		})
 		const row = await (
-			await import('./repo.ts')
+			await import('@kody-internal/shared/jobs/repo.ts')
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		expect(row?.record.repoCheckPolicy).toBeUndefined()
 		expect(executeSpy).toHaveBeenCalledTimes(1)
@@ -4778,7 +4781,7 @@ test('executeJobOnce records job_run usage for success and failure without chang
 		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 		.mockReturnValue(sessionClient as never)
 	const row = await (
-		await import('./repo.ts')
+		await import('@kody-internal/shared/jobs/repo.ts')
 	).getJobRowById(db, callerContext.user.userId, jobView.id)
 	if (!row) {
 		throw new Error('Expected created job row.')

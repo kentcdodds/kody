@@ -28,7 +28,10 @@ script via a Wrangler `transferred_classes` migration.
 
 Committed in `packages/runtime-worker/wrangler.jsonc` (production applies it on
 the first `kody-runtime` deploy; the exact transfer set is protected by
-`tools/ci/durable-object-baseline.json`):
+`tools/ci/durable-object-baseline.json`). The committed `from_script: "kody"` is
+rewritten by `tools/ci/runtime-worker-config.ts` to the actual deployed main
+script name (`kody-production` — wrangler appends the environment to the
+top-level name) at deploy time:
 
 ```jsonc
 "migrations": [
@@ -46,9 +49,9 @@ the first `kody-runtime` deploy; the exact transfer set is protected by
 
 Cloudflare requirements for a `transferred_classes` migration:
 
-- The source script (`kody`) must still exist and must still contain the
-  migration history that created the classes; the transfer removes them from the
-  source script's Durable Object namespace registry.
+- The source script (`kody-production`) must still exist and must still contain
+  the migration history that created the classes; the transfer removes them from
+  the source script's Durable Object namespace registry.
 - The destination script must export classes under the `to` names.
 - The source script must stop exporting/serving the classes in the **same
   coordinated deploy window** — after the transfer, DO requests routed through

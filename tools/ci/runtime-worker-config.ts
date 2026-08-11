@@ -115,6 +115,10 @@ function copyResourceIdentifiers(input: {
 			key: 'binding',
 			fields: ['dataset'],
 		},
+		// Service bindings (the JOBS binding to the jobs worker): the main
+		// generated config carries the resolved per-environment worker name
+		// (`kody-jobs` in production, `<worker>-jobs` in preview).
+		{ section: 'services', key: 'binding', fields: ['service'] },
 	]
 	for (const { section, key, fields } of copies) {
 		const runtimeEntries = runtimeEnv[section]

@@ -7,7 +7,7 @@ import {
 	getJobManagerDebugState,
 	type JobManagerDebugState,
 } from './manager-client.ts'
-import { getJobRowById, listJobRowsByUserId } from './repo.ts'
+import { jobsData } from './jobs-data.ts'
 import { toJobView } from './schedule.ts'
 import { type JobSourceInspection, type JobView } from './types.ts'
 
@@ -19,7 +19,9 @@ import { type JobSourceInspection, type JobView } from './types.ts'
  * first cold-isolate capability dispatch.
  */
 export async function listJobs(input: { env: Env; userId: string }) {
-	const rows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
+	const rows = await jobsData(input.env).listJobsForUser({
+		userId: input.userId,
+	})
 	return hydrateJobViewsFromRunLog({
 		env: input.env,
 		userId: input.userId,
@@ -32,7 +34,10 @@ export async function getJob(input: {
 	userId: string
 	jobId: string
 }) {
-	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
+	const row = await jobsData(input.env).getJobById({
+		userId: input.userId,
+		jobId: input.jobId,
+	})
 	if (!row) {
 		// Caller-supplied job id that does not resolve for this user — keep it
 		// off Sentry via McpCallerError (agent typos / stale ids are routine).

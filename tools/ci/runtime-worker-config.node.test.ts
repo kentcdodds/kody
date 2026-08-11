@@ -26,7 +26,10 @@ function buildMainGeneratedConfig(envName: string) {
 				},
 			],
 		},
-		services: [{ binding: 'RUNTIME_WORKER', service: 'kody-runtime' }],
+		services: [
+			{ binding: 'RUNTIME_WORKER', service: 'kody-runtime' },
+			{ binding: 'JOBS', service: 'kody-pr-7-jobs', entrypoint: 'JobsService' },
+		],
 		workflows: [
 			{
 				binding: 'DYNAMIC_CALLABLE_WORKFLOWS',
@@ -203,7 +206,9 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 				}
 			}
 		}>(await readFile(bootstrapPath, 'utf8'))
-		expect(bootstrap.env?.preview?.services).toEqual([])
+		expect(bootstrap.env?.preview?.services).toEqual([
+			{ binding: 'JOBS', service: 'kody-pr-7-jobs', entrypoint: 'JobsService' },
+		])
 		const bootstrapStorageRunner =
 			bootstrap.env?.preview?.durable_objects?.bindings?.find(
 				(binding) => binding.name === 'STORAGE_RUNNER',

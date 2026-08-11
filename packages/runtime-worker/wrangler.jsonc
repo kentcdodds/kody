@@ -149,11 +149,6 @@
 						"script_name": "kody",
 					},
 					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
-						"script_name": "kody",
-					},
-					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
 						"script_name": "kody",
@@ -165,6 +160,15 @@
 					},
 				],
 			},
+			// Jobs worker service binding (ADR 0016): package save/delete paths
+			// sync the JobManager alarm through this coarse-grained contract.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
+				},
+			],
 			"d1_databases": [
 				{
 					"binding": "APP_DB",
@@ -319,11 +323,6 @@
 						"script_name": "kody",
 					},
 					{
-						"class_name": "JobManager",
-						"name": "JOB_MANAGER",
-						"script_name": "kody",
-					},
-					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
 						"script_name": "kody",
@@ -335,6 +334,16 @@
 					},
 				],
 			},
+			// Jobs worker service binding (ADR 0016): the preview config
+			// generator rewrites the service to the per-preview jobs worker
+			// name, same as the main worker's JOBS binding.
+			"services": [
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
+				},
+			],
 			"d1_databases": [
 				{
 					"binding": "APP_DB",

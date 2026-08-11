@@ -272,6 +272,100 @@ export function filterDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
 	return null
 }
 
+/**
+ * Bare Cloudflare platform "internal error" with no support reference and no
+ * app context. Observed on `repo_open_session` when Durable Object / Artifacts
+ * infrastructure fails opaquely (KODY-CLOUDFLARE-4H). Distinct from D1/DO
+ * storage resets that carry `reference = <id>`, and from bare `internal error`
+ * which stays Sentry-visible because it is too short to attribute safely.
+ *
+ * Also matches Artifacts `INTERNAL_ERROR` (10400) wording from the public docs.
+ * Require the exact sentence (optional trailing period / `Error:` prefix) so
+ * wrapped recovery messages stay visible.
+ */
+export const cloudflareOpaqueInternalErrorMessage =
+	'An internal error occurred.'
+
+export const cloudflareArtifactsOpaqueInternalErrorMessage =
+	'An unexpected internal error occurred.'
+
+function normalizeCloudflareOpaqueInternalErrorMessage(message: string) {
+	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
+	return withoutErrorPrefix.endsWith('.')
+		? withoutErrorPrefix
+		: `${withoutErrorPrefix}.`
+}
+
+export function isCloudflareOpaqueInternalErrorMessage(message: string) {
+	const normalized = normalizeCloudflareOpaqueInternalErrorMessage(message)
+	return (
+		normalized === cloudflareOpaqueInternalErrorMessage ||
+		normalized === cloudflareArtifactsOpaqueInternalErrorMessage
+	)
+}
+
+export function isCloudflareOpaqueInternalErrorSentryEvent(event: ErrorEvent) {
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	return (
+		messages.length > 0 &&
+		messages.every((message) => isCloudflareOpaqueInternalErrorMessage(message))
+	)
+}
+
+export function filterCloudflareOpaqueInternalErrorSentryEvent(
+	event: ErrorEvent,
+) {
+	if (!isCloudflareOpaqueInternalErrorSentryEvent(event)) return event
+	return null
+}
+
+/**
+ * Bare Durable Object abort reason from Cloudflare Agents MCP session
+ * teardown (`ctx.abort("destroyed")` inside `Agent.destroy()` /
+ * `_cf_scheduleDestroy`). Observed on `/mcp` when a Streamable-HTTP client
+ * DELETEs its session (or a concurrent request races the abort) —
+ * KODY-CLOUDFLARE-4K. Same class as other DO platform-reset strings: not an
+ * application defect. Match only the exact abort token (optional `Error:`
+ * prefix / trailing period) so wrapped forms such as "stream was destroyed"
+ * or "Cannot call write after a stream was destroyed" stay Sentry-visible.
+ */
+export const mcpAgentSessionDestroyedAbortMessage = 'destroyed'
+
+function normalizeMcpAgentSessionDestroyedAbortMessage(message: string) {
+	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
+	return withoutErrorPrefix.endsWith('.')
+		? withoutErrorPrefix.slice(0, -1)
+		: withoutErrorPrefix
+}
+
+export function isMcpAgentSessionDestroyedAbortMessage(message: string) {
+	return (
+		normalizeMcpAgentSessionDestroyedAbortMessage(message) ===
+		mcpAgentSessionDestroyedAbortMessage
+	)
+}
+
+export function isMcpAgentSessionDestroyedAbortSentryEvent(event: ErrorEvent) {
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	return (
+		messages.length > 0 &&
+		messages.every((message) => isMcpAgentSessionDestroyedAbortMessage(message))
+	)
+}
+
+export function filterMcpAgentSessionDestroyedAbortSentryEvent(
+	event: ErrorEvent,
+) {
+	if (!isMcpAgentSessionDestroyedAbortSentryEvent(event)) return event
+	return null
+}
+
 export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// Marker first: primary mechanism for user-authored failures.
 	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
@@ -282,6 +376,10 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
 	if (filterRemoteConnectorUnavailableSentryEvent(event) === null) return null
 	if (filterDurableObjectIsolateResetSentryEvent(event) === null) return null
+	if (filterCloudflareOpaqueInternalErrorSentryEvent(event) === null)
+		return null
+	if (filterMcpAgentSessionDestroyedAbortSentryEvent(event) === null)
+		return null
 	return event
 }
 
@@ -325,6 +423,12 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// updates, blockConcurrencyWhile timeouts, DO storage operation
 		// timeouts, and DO storage object-reset with a support reference) are
 		// dropped the same way — see filterDurableObjectIsolateResetSentryEvent.
+		// Exact opaque Cloudflare "An internal error occurred." (and Artifacts
+		// INTERNAL_ERROR wording) with no support reference are dropped the
+		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
+		// Bare Durable Object abort token `destroyed` from Agents MCP session
+		// teardown (`ctx.abort("destroyed")`) is dropped the same way — see
+		// filterMcpAgentSessionDestroyedAbortSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }

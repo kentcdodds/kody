@@ -1,10 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import * as Sentry from '@sentry/cloudflare'
-import {
-	createExecutionContext,
-	env,
-	runInDurableObject,
-} from 'cloudflare:test'
+import { env, runInDurableObject } from 'cloudflare:test'
 import type * as SystemEmail from '#worker/email/system-email.ts'
 import {
 	oauthPurgeContinuationStorageKey,
@@ -19,31 +15,11 @@ const mocks = vi.hoisted(() => ({
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
 	pruneJobRetention: vi.fn(async () => ({})),
-	shouldRunRetentionCron: vi.fn(() => false),
 	checkAuthDenialBurstAndNotify: vi.fn(async () => ({
 		status: 'below_threshold',
 		count: 0,
 	})),
-	shouldRunAuthDenialAlertCron: vi.fn(() => false),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
-	shouldRunUsageAggregationCron: vi.fn(() => false),
-	runDrExportTick: vi.fn(async () => ({ skipped: true })),
-	runDrExportWatchdogTick: vi.fn(async () => ({ skipped: true })),
-	shouldRunDrExportCron: vi.fn(() => false),
-	shouldRunDrExportCatchUpCron: vi.fn(() => false),
-	shouldRunDrExportWatchdogCron: vi.fn(() => false),
-	isDrExportConfigured: vi.fn(() => false),
-	runJobScheduleWatchdogTick: vi.fn(async () => ({
-		overdueJobCount: 0,
-		stuckSkippedJobCount: 0,
-		repairedStuckJobCount: 0,
-		usersSynced: 0,
-		usersFailedSync: 0,
-		usersSkippedCap: 0,
-		scanTruncated: false,
-		alerted: false,
-	})),
-	shouldRunJobScheduleWatchdogCron: vi.fn(() => false),
 	backfillStorageBucketEstimates: vi.fn(async () => ({
 		scanned: 0,
 		updated: 0,
@@ -75,7 +51,6 @@ vi.mock('#worker/email/reconcile-inbound-deliveries.ts', () => ({
 
 vi.mock('#app/retention.ts', () => ({
 	pruneRetention: mocks.pruneRetention,
-	shouldRunRetentionCron: mocks.shouldRunRetentionCron,
 }))
 
 vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
@@ -84,21 +59,10 @@ vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
 
 vi.mock('#app/auth-denial-alerts.ts', () => ({
 	checkAuthDenialBurstAndNotify: mocks.checkAuthDenialBurstAndNotify,
-	shouldRunAuthDenialAlertCron: mocks.shouldRunAuthDenialAlertCron,
 }))
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 	aggregateUsageRollups: mocks.aggregateUsageRollups,
-	shouldRunUsageAggregationCron: mocks.shouldRunUsageAggregationCron,
-}))
-
-vi.mock('#worker/dr/exporter.ts', () => ({
-	runDrExportTick: mocks.runDrExportTick,
-	runDrExportWatchdogTick: mocks.runDrExportWatchdogTick,
-	shouldRunDrExportCron: mocks.shouldRunDrExportCron,
-	shouldRunDrExportCatchUpCron: mocks.shouldRunDrExportCatchUpCron,
-	shouldRunDrExportWatchdogCron: mocks.shouldRunDrExportWatchdogCron,
-	isDrExportConfigured: mocks.isDrExportConfigured,
 }))
 
 vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
@@ -110,19 +74,17 @@ vi.mock('#worker/entitlements/d1-storage-reconciliation.ts', () => ({
 	reconcileD1StorageBytes: mocks.reconcileD1StorageBytes,
 }))
 
-vi.mock('#worker/jobs/job-schedule-watchdog.ts', () => ({
-	runJobScheduleWatchdogTick: mocks.runJobScheduleWatchdogTick,
-	shouldRunJobScheduleWatchdogCron: mocks.shouldRunJobScheduleWatchdogCron,
-}))
+const { runScheduledLane, runScheduledLaneWithFailureIsolation } =
+	await import('./scheduled/scheduled-lanes.ts')
 
-const worker = (await import('./index.ts')).default
+const cron = '*/5 * * * *'
 
-function createController(scheduledTime: number) {
+function createMessage(lane: string, scheduledTime: number) {
 	return {
+		lane,
 		scheduledTime,
-		cron: '*/5 * * * *',
-		noRetry() {},
-	} satisfies ScheduledController
+		cron,
+	} as Parameters<typeof runScheduledLaneWithFailureIsolation>[0]['message']
 }
 
 function getOAuthPurgeCoordinator() {
@@ -131,42 +93,46 @@ function getOAuthPurgeCoordinator() {
 	)
 }
 
-test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retention', async () => {
-	mocks.shouldRunUsageAggregationCron.mockReturnValueOnce(true)
-	mocks.shouldRunAuthDenialAlertCron.mockReturnValueOnce(true)
-	mocks.shouldRunJobScheduleWatchdogCron.mockReturnValueOnce(true)
+test('platform lanes execute with their expected inputs', async () => {
 	const scheduledTime = Date.parse('2026-07-05T10:05:30.000Z')
-
-	await worker.scheduled?.(
-		createController(scheduledTime),
-		env,
-		createExecutionContext(),
-	)
+	const scheduledAt = new Date(scheduledTime)
+	for (const lane of [
+		'reconcile_artifacts_pushes',
+		'repo_session_cleanup',
+		'reconcile_inbound_deliveries',
+		'system_email_retention',
+		'storage_bucket_estimate_backfill',
+		'd1_storage_reconciliation',
+		'retention',
+		'job_retention',
+		'usage_aggregation',
+		'auth_denial_alert',
+	] as const) {
+		await runScheduledLane({ env, lane, scheduledAt })
+	}
 
 	expect(mocks.reconcileArtifactsPushes).toHaveBeenCalledWith(
-		expect.objectContaining({ now: new Date(scheduledTime) }),
+		expect.objectContaining({ now: scheduledAt }),
 	)
 	expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalledTimes(1)
 	expect(mocks.sweepStaleInboundDeliveries).toHaveBeenCalledWith(
-		expect.objectContaining({
-			now: new Date(scheduledTime),
-		}),
+		expect.objectContaining({ now: scheduledAt }),
 	)
 	expect(mocks.pruneSystemEmailRetention).toHaveBeenCalledWith(
 		expect.objectContaining({ blobs: env.EMAIL_BLOBS }),
 	)
-	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(
-		env,
-		new Date(scheduledTime),
-	)
+	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(env, scheduledAt)
 	expect(mocks.checkAuthDenialBurstAndNotify).toHaveBeenCalledWith(
-		expect.objectContaining({ now: new Date(scheduledTime) }),
-	)
-	expect(mocks.runJobScheduleWatchdogTick).toHaveBeenCalledWith(
-		expect.objectContaining({ now: new Date(scheduledTime) }),
+		expect.objectContaining({ now: scheduledAt }),
 	)
 	expect(mocks.backfillStorageBucketEstimates).toHaveBeenCalledWith(
-		expect.objectContaining({ now: new Date(scheduledTime) }),
+		expect.objectContaining({ now: scheduledAt }),
+	)
+	expect(mocks.pruneRetention).toHaveBeenCalledWith(
+		expect.objectContaining({ now: scheduledAt }),
+	)
+	expect(mocks.pruneJobRetention).toHaveBeenCalledWith(
+		expect.objectContaining({ now: scheduledAt }),
 	)
 	expect(mocks.reconcileD1StorageBytes).toHaveBeenCalledTimes(1)
 	const reconciliationInput = mocks.reconcileD1StorageBytes.mock.calls[0]?.[0]
@@ -174,8 +140,17 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	expect(reconciliationInput?.env).toEqual(
 		expect.objectContaining({ APP_DB: env.APP_DB }),
 	)
-	expect(reconciliationInput?.now).toEqual(new Date(scheduledTime))
-	expect(mocks.pruneRetention).not.toHaveBeenCalled()
+	expect(reconciliationInput?.now).toEqual(scheduledAt)
+})
+
+test('jobs-worker-owned lanes are rejected in the main worker', async () => {
+	await expect(
+		runScheduledLane({
+			env,
+			lane: 'job_schedule_watchdog',
+			scheduledAt: new Date(),
+		}),
+	).rejects.toThrow(/owned by the jobs worker/)
 })
 
 test('scheduled OAuth purge advances and revokes every grant token before the grant', async () => {
@@ -226,42 +201,29 @@ test('scheduled OAuth purge advances and revokes every grant token before the gr
 		),
 	)
 
-	await worker.scheduled?.(
-		createController(scheduledTime),
-		env,
-		createExecutionContext(),
-	)
+	const runPurgeTick = (tickTime: number) =>
+		runScheduledLane({
+			env,
+			lane: 'oauth_purge_expired',
+			scheduledAt: new Date(tickTime),
+		})
+
+	await runPurgeTick(scheduledTime)
 	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
 	expect(await env.OAUTH_KV.get(orphanTokenKeys[0] ?? '')).not.toBeNull()
 
-	await worker.scheduled?.(
-		createController(scheduledTime + 5 * 60_000),
-		env,
-		createExecutionContext(),
-	)
+	await runPurgeTick(scheduledTime + 5 * 60_000)
 	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
 
-	await worker.scheduled?.(
-		createController(scheduledTime + 10 * 60_000),
-		env,
-		createExecutionContext(),
-	)
+	await runPurgeTick(scheduledTime + 10 * 60_000)
 	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
 	expect(await env.OAUTH_KV.get(orphanTokenKeys[0] ?? '')).toBeNull()
 	expect(await env.OAUTH_KV.get(orphanTokenKeys.at(-1) ?? '')).not.toBeNull()
 
-	await worker.scheduled?.(
-		createController(scheduledTime + 15 * 60_000),
-		env,
-		createExecutionContext(),
-	)
+	await runPurgeTick(scheduledTime + 15 * 60_000)
 	expect(await env.OAUTH_KV.get(orphanGrantKey)).not.toBeNull()
 
-	await worker.scheduled?.(
-		createController(scheduledTime + 20 * 60_000),
-		env,
-		createExecutionContext(),
-	)
+	await runPurgeTick(scheduledTime + 20 * 60_000)
 	expect(await env.OAUTH_KV.get(orphanGrantKey)).toBeNull()
 	await expect(
 		Promise.all(orphanTokenKeys.map((key) => env.OAUTH_KV.get(key))),
@@ -357,7 +319,7 @@ test('OAuth purge coordinator serializes overlapping invocations', async () => {
 	)
 })
 
-test('scheduled isolates a failing lane: logs it and keeps siblings and the invocation alive', async () => {
+test('a failing lane reports to Sentry and resolves as failed', async () => {
 	const consoleErrorSpy = vi
 		.spyOn(console, 'error')
 		.mockImplementation(() => {})
@@ -372,15 +334,12 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 
 	try {
 		await expect(
-			worker.scheduled?.(
-				createController(scheduledTime),
+			runScheduledLaneWithFailureIsolation({
 				env,
-				createExecutionContext(),
-			),
-		).resolves.toBeUndefined()
+				message: createMessage('reconcile_artifacts_pushes', scheduledTime),
+			}),
+		).resolves.toBe('failed')
 
-		expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalled()
-		expect(mocks.pruneSystemEmailRetention).toHaveBeenCalled()
 		expect(consoleErrorSpy).toHaveBeenCalledWith(
 			'scheduled_lane_failed lane=reconcile_artifacts_pushes',
 			expect.objectContaining({ message: 'reconcile exploded' }),
@@ -408,7 +367,7 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 			expect.objectContaining({
 				lane: 'reconcile_artifacts_pushes',
 				scheduledTime: new Date(scheduledTime).toISOString(),
-				cron: '*/5 * * * *',
+				cron,
 			}),
 		)
 	} finally {
@@ -418,7 +377,7 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 	}
 })
 
-test('scheduled logs D1 lock contention as a warning without reporting to Sentry', async () => {
+test('D1 lock contention resolves as retryable without reporting to Sentry', async () => {
 	const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const captureException = vi
 		.spyOn(Sentry, 'captureException')
@@ -429,11 +388,12 @@ test('scheduled logs D1 lock contention as a warning without reporting to Sentry
 	const scheduledTime = Date.parse('2026-07-05T10:20:00.000Z')
 
 	try {
-		await worker.scheduled?.(
-			createController(scheduledTime),
-			env,
-			createExecutionContext(),
-		)
+		await expect(
+			runScheduledLaneWithFailureIsolation({
+				env,
+				message: createMessage('reconcile_artifacts_pushes', scheduledTime),
+			}),
+		).resolves.toBe('d1_lock_contention')
 
 		expect(consoleWarnSpy).toHaveBeenCalledWith(
 			'scheduled_lane_d1_lock_contention lane=reconcile_artifacts_pushes',
@@ -442,7 +402,6 @@ test('scheduled logs D1 lock contention as a warning without reporting to Sentry
 			}),
 		)
 		expect(captureException).not.toHaveBeenCalled()
-		expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalled()
 	} finally {
 		consoleWarnSpy.mockRestore()
 		captureException.mockRestore()

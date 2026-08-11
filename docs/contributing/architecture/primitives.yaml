@@ -77,6 +77,20 @@ primitives:
       - docs/contributing/setup-manifest.md
       - docs/contributing/decisions/0004-status-page-separate-worker.md
 
+  - id: jobs-worker
+    group: surfaces
+    name: Jobs worker
+    summary:
+      Independently deployed jobs worker owning the JobManager Durable Object,
+      the cron/scheduled dispatch lane and queue, and the dedicated kody-jobs D1
+      database (jobs + archived_job_artifacts), calling back into the main
+      worker for job execution.
+    code:
+      - packages/jobs-worker/
+    docs:
+      - docs/contributing/decisions/0016-mono-worker-extraction.md
+      - docs/contributing/architecture/jobs-worker-migration-runbook.md
+
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler

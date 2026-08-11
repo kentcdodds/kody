@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import { EntitlementLimitError } from './entitlements/errors.ts'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
+	cloudflareArtifactsOpaqueInternalErrorMessage,
+	cloudflareOpaqueInternalErrorMessage,
 	durableObjectBlockConcurrencyWhileTimeoutResetMessage,
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectIsolateCpuResetMessage,
@@ -11,7 +13,10 @@ import {
 	executorSandboxTimeoutMessageExplanation,
 	executorSandboxTimeoutMessagePrefix,
 	filterSentryEvent,
+	isCloudflareOpaqueInternalErrorMessage,
 	isDurableObjectIsolateResourceLimitResetMessage,
+	isMcpAgentSessionDestroyedAbortMessage,
+	mcpAgentSessionDestroyedAbortMessage,
 } from './sentry-options.ts'
 
 test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
@@ -103,6 +108,77 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		exception: { values: [{ value: 'internal error' }] },
 	}
 	expect(filterSentryEvent(bareInternalError)).toBe(bareInternalError)
+
+	// Exact opaque Cloudflare / Artifacts internal-error sentences are platform
+	// blips (KODY-CLOUDFLARE-4H). Bare `internal error` above stays visible;
+	// wrapped recovery text must also stay visible.
+	expect(
+		isCloudflareOpaqueInternalErrorMessage(
+			cloudflareOpaqueInternalErrorMessage,
+		),
+	).toBe(true)
+	expect(
+		isCloudflareOpaqueInternalErrorMessage(
+			cloudflareArtifactsOpaqueInternalErrorMessage.replace(/\.$/, ''),
+		),
+	).toBe(true)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: cloudflareOpaqueInternalErrorMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: `Error: ${cloudflareOpaqueInternalErrorMessage}` }],
+			},
+		}),
+	).toBeNull()
+	const wrappedOpaqueInternal = {
+		exception: {
+			values: [
+				{
+					value: `repo_open_session could not recover: ${cloudflareOpaqueInternalErrorMessage}`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedOpaqueInternal)).toBe(wrappedOpaqueInternal)
+
+	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —
+	// KODY-CLOUDFLARE-4K. Wrapped "stream was destroyed" forms stay visible.
+	expect(
+		isMcpAgentSessionDestroyedAbortMessage(
+			mcpAgentSessionDestroyedAbortMessage,
+		),
+	).toBe(true)
+	expect(isMcpAgentSessionDestroyedAbortMessage('Error: destroyed')).toBe(true)
+	expect(isMcpAgentSessionDestroyedAbortMessage('destroyed.')).toBe(true)
+	expect(
+		isMcpAgentSessionDestroyedAbortMessage(
+			'Cannot call write after a stream was destroyed',
+		),
+	).toBe(false)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: mcpAgentSessionDestroyedAbortMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: { values: [{ value: 'Error: destroyed' }] },
+		}),
+	).toBeNull()
+	const wrappedDestroyed = {
+		exception: {
+			values: [{ value: 'Cannot call write after a stream was destroyed' }],
+		},
+	}
+	expect(filterSentryEvent(wrappedDestroyed)).toBe(wrappedDestroyed)
 
 	const bareObjectReset = {
 		exception: {

@@ -21,8 +21,11 @@ type RetentionPolicyExemption = {
 
 type IdValue = string | number
 
-export const retentionCronGateMinutes = 5
-export const retentionCronIntervalMinutes = 60
+export {
+	retentionCronGateMinutes,
+	retentionCronIntervalMinutes,
+	shouldRunRetentionCron,
+} from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 export const retentionDefaultBatchSize = 250
 export const retentionDeleteIdsMaxParameters = 100
 export const publishedBundleArtifactRetentionBatchSize = 100
@@ -136,13 +139,6 @@ export type RetentionPruneResult = {
 	stripeWebhookEvents: number
 	batchesPerTable: Record<string, number>
 	timeBudgetExhausted: boolean
-}
-
-export function shouldRunRetentionCron(now: Date) {
-	return (
-		now.getUTCMinutes() < retentionCronGateMinutes &&
-		now.getUTCMinutes() % retentionCronIntervalMinutes === 0
-	)
 }
 
 export function getRetentionPolicyCoverage() {

@@ -33,6 +33,7 @@ import {
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { createD1JobsStore } from '@kody-internal/shared/jobs/store.ts'
 
 /**
  * User-scoped RunLog namespace stub (idFromName(userId) → per-user RPC), enough
@@ -1028,7 +1029,6 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	})
 	const kv = createJobMutationKv()
 	const repoSessionAccesses: Array<string> = []
-	const jobManagerNames: Array<string> = []
 	const jobManagerSyncPayloads: Array<{ userId: string; source?: string }> = []
 	const env = createRunKodyRegistryTestEnv({
 		APP_DB: db,
@@ -1046,26 +1046,19 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 				throw new Error('metadata-only job updates must not open repo sessions')
 			},
 		},
-		JOB_MANAGER: {
-			idFromName(name: string) {
-				jobManagerNames.push(name)
-				if (name !== callerContext.user.userId) {
+		JOBS: {
+			...createD1JobsStore(db),
+			async syncAlarm(input: { userId: string }) {
+				if (input.userId !== callerContext.user.userId) {
 					throw new Error(
-						`Expected JOB_MANAGER to be scoped to ${callerContext.user.userId}`,
+						`Expected JOBS.syncAlarm to be scoped to ${callerContext.user.userId}`,
 					)
 				}
-				return name as unknown as DurableObjectId
-			},
-			get() {
+				jobManagerSyncPayloads.push(input)
 				return {
-					async syncAlarm(input: { userId: string }) {
-						jobManagerSyncPayloads.push(input)
-						return {
-							ok: true as const,
-							userId: input.userId,
-							nextRunAt: null,
-						}
-					},
+					ok: true as const,
+					userId: input.userId,
+					nextRunAt: null,
 				}
 			},
 		},
@@ -1108,7 +1101,6 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 			},
 		})
 		expect(repoSessionAccesses).toEqual([])
-		expect(jobManagerNames).toEqual([callerContext.user.userId])
 		expect(jobManagerSyncPayloads).toMatchObject([
 			{ userId: callerContext.user.userId },
 		])
@@ -1126,10 +1118,6 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 			deleted: true,
 		})
 		expect(repoSessionAccesses).toEqual([])
-		expect(jobManagerNames).toEqual([
-			callerContext.user.userId,
-			callerContext.user.userId,
-		])
 		expect(jobManagerSyncPayloads).toMatchObject([
 			{ userId: callerContext.user.userId },
 			{ userId: callerContext.user.userId },

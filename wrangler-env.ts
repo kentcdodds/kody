@@ -13,6 +13,7 @@ import { resolveLocalBinary } from './tools/node-runtime.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import {
 	getDefaultWranglerConfigPath,
+	jobsWorkerWranglerConfigPath,
 	resolveWranglerConfigPath,
 } from './tools/wrangler-env-config.ts'
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
@@ -42,6 +43,17 @@ if (
 	)
 ) {
 	commandArgs.push('--config', defaultWranglerConfigPath)
+	// Multi-worker local dev (ADR 0016): the main worker's JOBS service
+	// binding targets the jobs worker, so `wrangler dev` runs both configs
+	// together and resolves the service bindings in-process.
+	if (
+		isDevCommand &&
+		existsSync(
+			resolveWranglerConfigPath(jobsWorkerWranglerConfigPath, process.cwd()),
+		)
+	) {
+		commandArgs.push('--config', jobsWorkerWranglerConfigPath)
+	}
 	// Multi-worker local dev (ADR 0016): the main worker's production env
 	// binds the runtime worker (RUNTIME_WORKER service binding plus
 	// cross-script Durable Objects), so `wrangler dev` runs both scripts in

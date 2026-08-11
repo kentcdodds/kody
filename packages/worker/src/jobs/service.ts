@@ -16,20 +16,8 @@ import { type RunRecordHandle } from '#worker/run-records/types.ts'
 import { hydrateJobViewFromRunLog } from './job-run-observability-hydrate.ts'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import { syncJobManagerAlarm } from './manager-client.ts'
-import {
-	deleteJobRow,
-	claimJobRow,
-	disableExpiredJobRowsForUser,
-	finalizeClaimedJobRow,
-	getJobRowById,
-	listDueJobRows,
-	listJobRowsByUserId,
-	getNextRunnableJobRow,
-	insertJobRow,
-	refreshPackageJobRowIdentity,
-	retryClaimedJobRow,
-	updateJobRow,
-} from './repo.ts'
+import { type JobRow } from '@kody-internal/shared/jobs/repo.ts'
+import { jobsData } from './jobs-data.ts'
 import {
 	buildScheduledJobIdempotencyKey,
 	computeJobRetryAt,
@@ -97,10 +85,6 @@ import {
 	inspectJobsForUser,
 	listJobs,
 } from './inspect.ts'
-import {
-	deleteArchivedJobArtifact,
-	listArchivedJobArtifactsDueBefore,
-} from './archived-artifacts-repo.ts'
 import {
 	deletePublishedSourceSnapshot,
 	type PublishedBundleArtifact,
@@ -511,10 +495,9 @@ async function executePublishedJobArtifact(input: {
 }
 
 async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
-	const due = await listArchivedJobArtifactsDueBefore(
-		input.env.APP_DB,
-		(input.now ?? new Date()).toISOString(),
-	)
+	const due = await jobsData(input.env).listArchivedJobArtifactsDueBefore({
+		retainUntil: (input.now ?? new Date()).toISOString(),
+	})
 	for (const artifact of due) {
 		try {
 			const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
@@ -564,7 +547,7 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 				userId: artifact.userId,
 				storageId: artifact.storageId,
 			}).clearStorage()
-			await deleteArchivedJobArtifact(input.env.APP_DB, artifact.id)
+			await jobsData(input.env).deleteArchivedJobArtifact({ id: artifact.id })
 			logJobSchedulerEvent({
 				event: 'job_artifact_cleanup_completed',
 				userId: artifact.userId,
@@ -685,10 +668,9 @@ export async function syncPackageJobsForPackage(input: {
 			const callerContextJson = serializeCallerContext(callerContext)
 			const publishedCommit = source?.published_commit ?? null
 			const desiredJobs = input.manifest.kody.jobs ?? {}
-			const existingRows = await listJobRowsByUserId(
-				input.env.APP_DB,
-				input.userId,
-			)
+			const existingRows = await jobsData(input.env).listJobsForUser({
+				userId: input.userId,
+			})
 			const packageRows = existingRows.filter(
 				(row) => row.source_id === input.sourceId,
 			)
@@ -736,8 +718,9 @@ export async function syncPackageJobsForPackage(input: {
 						existing.record.timezone === timezone &&
 						existing.record.enabled === enabled
 					if (schedulerStateMatches) {
-						const refreshed = await refreshPackageJobRowIdentity({
-							db: input.env.APP_DB,
+						const refreshed = await jobsData(
+							input.env,
+						).refreshPackageJobIdentity({
 							userId: input.userId,
 							jobId: existing.record.id,
 							sourceId: input.sourceId,
@@ -766,8 +749,7 @@ export async function syncPackageJobsForPackage(input: {
 							timezone,
 						}),
 					}
-					await updateJobRow({
-						db: input.env.APP_DB,
+					await jobsData(input.env).updateJob({
 						userId: input.userId,
 						job: updated,
 						callerContextJson,
@@ -802,8 +784,7 @@ export async function syncPackageJobsForPackage(input: {
 					successCount: 0,
 					errorCount: 0,
 				}
-				await insertJobRow({
-					db: input.env.APP_DB,
+				await jobsData(input.env).insertJob({
 					userId: input.userId,
 					job: created,
 					callerContextJson,
@@ -813,7 +794,10 @@ export async function syncPackageJobsForPackage(input: {
 
 			for (const row of packageRows) {
 				if (desiredNames.has(row.name)) continue
-				await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+				await jobsData(input.env).deleteJob({
+					userId: input.userId,
+					jobId: row.id,
+				})
 				await deleteJobVector(input.env, row.id)
 				schedulerStateChanged = true
 			}
@@ -832,13 +816,15 @@ export async function deletePackageJobsForSourceId(input: {
 		stableUserId: input.userId,
 		env: input.env,
 		async write() {
-			const existingRows = await listJobRowsByUserId(
-				input.env.APP_DB,
-				input.userId,
-			)
+			const existingRows = await jobsData(input.env).listJobsForUser({
+				userId: input.userId,
+			})
 			for (const row of existingRows) {
 				if (row.source_id !== input.sourceId) continue
-				await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+				await jobsData(input.env).deleteJob({
+					userId: input.userId,
+					jobId: row.id,
+				})
 				await deleteJobVector(input.env, row.id)
 			}
 		},
@@ -973,8 +959,7 @@ export async function createJob(input: {
 				job.publishedCommit = syncedPublishedCommit
 			}
 			const callerContextJson = serializeCallerContext(callerContext)
-			await insertJobRow({
-				db: input.env.APP_DB,
+			await jobsData(input.env).insertJob({
 				userId: callerContext.user.userId,
 				job,
 				callerContextJson,
@@ -1009,11 +994,10 @@ export async function updateJob(input: {
 		stableUserId: callerContext.user.userId,
 		env: input.env,
 		async write() {
-			const existingRow = await getJobRowById(
-				input.env.APP_DB,
-				callerContext.user.userId,
-				input.body.id,
-			)
+			const existingRow = await jobsData(input.env).getJobById({
+				userId: callerContext.user.userId,
+				jobId: input.body.id,
+			})
 			if (!existingRow) {
 				throw new McpCallerError(`Job "${input.body.id}" was not found.`)
 			}
@@ -1098,8 +1082,7 @@ export async function updateJob(input: {
 				}
 			}
 			const nextCallerContextJson = serializeCallerContext(callerContext)
-			const didUpdate = await updateJobRow({
-				db: input.env.APP_DB,
+			const didUpdate = await jobsData(input.env).updateJob({
 				userId: callerContext.user.userId,
 				job: updated,
 				callerContextJson: nextCallerContextJson,
@@ -1136,11 +1119,10 @@ export async function deleteJob(input: {
 		stableUserId: input.userId,
 		env: input.env,
 		async write() {
-			const row = await getJobRowById(
-				input.env.APP_DB,
-				input.userId,
-				input.jobId,
-			)
+			const row = await jobsData(input.env).getJobById({
+				userId: input.userId,
+				jobId: input.jobId,
+			})
 			if (!row) {
 				throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 			}
@@ -1151,7 +1133,10 @@ export async function deleteJob(input: {
 				sourceId: row.record.sourceId,
 			})
 			const storageId = row.record.storageId
-			await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+			await jobsData(input.env).deleteJob({
+				userId: input.userId,
+				jobId: input.jobId,
+			})
 			await deleteJobVector(input.env, input.jobId)
 			let storageCleared = false
 			try {
@@ -1413,11 +1398,10 @@ export async function runJobNow(input: {
 		stableUserId: input.userId,
 		env: input.env,
 		async write() {
-			const row = await getJobRowById(
-				input.env.APP_DB,
-				input.userId,
-				input.jobId,
-			)
+			const row = await jobsData(input.env).getJobById({
+				userId: input.userId,
+				jobId: input.jobId,
+			})
 			if (!row) {
 				throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 			}
@@ -1452,8 +1436,7 @@ export async function runJobNow(input: {
 			// Successful once jobs are retained for account/platform cleanup
 			// rather than deleted immediately.
 			const deletedAfterRun = false
-			await updateJobRow({
-				db: input.env.APP_DB,
+			await jobsData(input.env).updateJob({
 				userId: input.userId,
 				job: updated,
 				callerContextJson: activeCallerContext
@@ -1515,7 +1498,7 @@ async function resolveScheduledJobRunAttribution(input: {
 
 async function executeClaimedScheduledJob(input: {
 	env: Env
-	row: NonNullable<Awaited<ReturnType<typeof claimJobRow>>>
+	row: JobRow
 	scheduledFor: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
@@ -1606,16 +1589,14 @@ export async function runDueJobsForUser(input: {
 		async write() {
 			const now = input.now ?? new Date()
 			const nowIso = now.toISOString()
-			await disableExpiredJobRowsForUser({
-				db: input.env.APP_DB,
+			await jobsData(input.env).disableExpiredJobsForUser({
 				userId: input.userId,
 				nowIso,
 			})
-			const dueRows = await listDueJobRows(
-				input.env.APP_DB,
-				input.userId,
+			const dueRows = await jobsData(input.env).listDueJobs({
+				userId: input.userId,
 				nowIso,
-			)
+			})
 			if (dueRows.length === 0) {
 				logJobSchedulerEvent({
 					event: 'run_due_jobs_empty',
@@ -1637,11 +1618,10 @@ export async function runDueJobsForUser(input: {
 			for (const dueRow of dueRows) {
 				const claimToken = crypto.randomUUID()
 				const claimNow = input.now ?? new Date()
-				const row = await claimJobRow({
-					db: input.env.APP_DB,
+				const row = await jobsData(input.env).claimJob({
 					userId: input.userId,
 					jobId: dueRow.id,
-					now: claimNow,
+					nowMs: claimNow.valueOf(),
 					claimToken,
 				})
 				if (!row?.claimed_scheduled_for) {
@@ -1668,8 +1648,7 @@ export async function runDueJobsForUser(input: {
 							`Scheduled job "${row.id}" produced no final job state.`,
 						)
 					}
-					const finalized = await finalizeClaimedJobRow({
-						db: input.env.APP_DB,
+					const finalized = await jobsData(input.env).finalizeClaimedJob({
 						userId: input.userId,
 						job: updated,
 						claimToken,
@@ -1699,8 +1678,7 @@ export async function runDueJobsForUser(input: {
 						now: input.now ?? new Date(),
 						retryCount: row.retry_count,
 					})
-					const retried = await retryClaimedJobRow({
-						db: input.env.APP_DB,
+					const retried = await jobsData(input.env).retryClaimedJob({
 						userId: input.userId,
 						jobId: row.id,
 						claimToken,
@@ -1748,16 +1726,14 @@ export async function getNextRunnableJob(input: {
 }) {
 	const now = input.now ?? new Date()
 	const nowIso = now.toISOString()
-	await disableExpiredJobRowsForUser({
-		db: input.env.APP_DB,
+	await jobsData(input.env).disableExpiredJobsForUser({
 		userId: input.userId,
 		nowIso,
 	})
-	const row = await getNextRunnableJobRow(
-		input.env.APP_DB,
-		input.userId,
+	const row = await jobsData(input.env).getNextRunnableJob({
+		userId: input.userId,
 		nowIso,
-	)
+	})
 	return row
 		? {
 				...row.record,

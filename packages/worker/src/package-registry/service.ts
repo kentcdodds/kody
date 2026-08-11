@@ -26,7 +26,7 @@ import {
 } from './types.ts'
 import { deleteSavedPackageVector } from './vectorize.ts'
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
-import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
@@ -551,10 +551,10 @@ export async function deleteSavedPackageProjection(input: {
 						}),
 					)
 				})
-				const existingRows = await listJobRowsByUserId(
-					input.env.APP_DB,
-					input.userId,
-				)
+				const jobs = jobsData(input.env)
+				const existingRows = await jobs.listJobsForUser({
+					userId: input.userId,
+				})
 				const packageRows = existingRows.filter(
 					(row) => row.source_id === savedPackage.sourceId,
 				)
@@ -562,7 +562,7 @@ export async function deleteSavedPackageProjection(input: {
 					if (row.storage_id) {
 						packageOwnedStorageIds.add(row.storage_id)
 					}
-					await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+					await jobs.deleteJob({ userId: input.userId, jobId: row.id })
 				}
 				packageJobsRemoved = packageRows.length > 0
 			}

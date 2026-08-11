@@ -145,10 +145,12 @@ vi.mock('./search-index-debt.ts', () => ({
 		mockModule.scheduleSavedPackageSearchIndexUpsert(...args),
 }))
 
-vi.mock('#worker/jobs/repo.ts', () => ({
-	deleteJobRow: (...args: Array<unknown>) => mockModule.deleteJobRow(...args),
-	listJobRowsByUserId: (...args: Array<unknown>) =>
-		mockModule.listJobRowsByUserId(...args),
+vi.mock('#worker/jobs/jobs-data.ts', () => ({
+	jobsData: () => ({
+		deleteJob: (...args: Array<unknown>) => mockModule.deleteJobRow(...args),
+		listJobsForUser: (...args: Array<unknown>) =>
+			mockModule.listJobRowsByUserId(...args),
+	}),
 }))
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({
@@ -644,11 +646,10 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		serviceName: 'realtime-supervisor',
 	})
 	expect(mockModule.deleteJobRow).toHaveBeenCalledTimes(1)
-	expect(mockModule.deleteJobRow).toHaveBeenCalledWith(
-		env.APP_DB,
-		'user-1',
-		'job-1',
-	)
+	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({
+		userId: 'user-1',
+		jobId: 'job-1',
+	})
 	expect(mockModule.deleteAllPackageScopedSecrets).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',

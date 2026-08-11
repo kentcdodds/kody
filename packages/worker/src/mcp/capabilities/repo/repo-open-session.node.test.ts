@@ -5,6 +5,8 @@ import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { buildSourceRecoveryProblemMessage } from '#worker/repo/source-safety-policy.ts'
+import { cloudflareOpaqueInternalErrorMessage } from '#worker/sentry-options.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -438,4 +440,115 @@ test('repo_open_session allows below-max usage and denies at the max plan ceilin
 		current: maxLimit,
 	})
 	expect(deniedRpc.openSession).not.toHaveBeenCalled()
+})
+
+test('repo_open_session retries opaque Cloudflare internal errors with a fresh session id', async () => {
+	consoleWarn.mockImplementation(() => {})
+	resetMocks()
+	const email = 'opaque-internal@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'pro', stable_user_id: userId }],
+			repoSessionCount: 0,
+		}),
+	} as Env
+	const ctx = {
+		env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId,
+				email,
+				displayName: 'Opaque Internal User',
+			},
+		}),
+	}
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(
+		createSavedPackageRow(userId),
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		createPackageSourceRow(userId),
+	)
+	const openRpc = createRepoRpc()
+	openRpc.openSession
+		.mockRejectedValueOnce(new Error(cloudflareOpaqueInternalErrorMessage))
+		.mockResolvedValueOnce(createOpenSessionResult())
+	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+
+	const opened = await repoOpenSessionCapability.handler(
+		{
+			target: { kind: 'package', kody_id: 'triage-github-pr' },
+		},
+		ctx,
+	)
+
+	expect(opened.id).toBe('session-new')
+	expect(openRpc.openSession).toHaveBeenCalledTimes(2)
+	const firstSessionId = openRpc.openSession.mock.calls[0]?.[0]?.sessionId
+	const secondSessionId = openRpc.openSession.mock.calls[1]?.[0]?.sessionId
+	expect(typeof firstSessionId).toBe('string')
+	expect(typeof secondSessionId).toBe('string')
+	expect(firstSessionId).not.toBe(secondSessionId)
+	expect(mockModule.repoSessionRpc).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining(
+			'repo_open_session transient Cloudflare opaque internal error',
+		),
+	)
+})
+
+test('repo_open_session rethrows after opaque Cloudflare internal error retries are exhausted', async () => {
+	consoleWarn.mockImplementation(() => {})
+	resetMocks()
+	const email = 'opaque-exhausted@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'pro', stable_user_id: userId }],
+			repoSessionCount: 0,
+		}),
+	} as Env
+	const ctx = {
+		env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId,
+				email,
+				displayName: 'Opaque Exhausted User',
+			},
+		}),
+	}
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(
+		createSavedPackageRow(userId),
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		createPackageSourceRow(userId),
+	)
+	const openRpc = createRepoRpc()
+	openRpc.openSession.mockRejectedValue(
+		new Error(cloudflareOpaqueInternalErrorMessage),
+	)
+	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+
+	const error = await repoOpenSessionCapability
+		.handler(
+			{
+				target: { kind: 'package', kody_id: 'triage-github-pr' },
+			},
+			ctx,
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+
+	expect(error).toMatchObject({
+		message: cloudflareOpaqueInternalErrorMessage,
+	})
+	// Initial attempt + two delayed retries.
+	expect(openRpc.openSession).toHaveBeenCalledTimes(3)
 })
