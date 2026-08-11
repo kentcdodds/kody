@@ -62,6 +62,7 @@ export type PublicProfilePackageItem = {
 	tags: Array<string>
 	updatedAt: string
 	communityListingId: string | null
+	communityPublishedAt: string | null
 }
 
 export type CommunityActivityEventType =

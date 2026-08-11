@@ -27,8 +27,18 @@ export const communityProfilePackageSchema = z.object({
 	kody_id: z.string(),
 	description: z.string(),
 	tags: z.array(z.string()),
-	updated_at: z.string(),
+	updated_at: z
+		.string()
+		.describe(
+			'Last time the owner edited the saved package. Independent of what is published to the community.',
+		),
 	community_listing_id: z.string().nullable(),
+	community_published_at: z
+		.string()
+		.nullable()
+		.describe(
+			'Last time the package was published to its community listing, or null when it has no active listing.',
+		),
 })
 
 export const communityProfileGetOutputSchema = z.object({
@@ -72,6 +82,7 @@ export function toCommunityProfilePackageOutput(
 		tags: Array<string>
 		updated_at: string
 		community_listing_id: string | null
+		community_published_at: string | null
 	} = {
 		name: pkg.name,
 		kody_id: pkg.kodyId,
@@ -79,6 +90,7 @@ export function toCommunityProfilePackageOutput(
 		tags: pkg.tags,
 		updated_at: pkg.updatedAt,
 		community_listing_id: pkg.communityListingId,
+		community_published_at: pkg.communityPublishedAt,
 	}
 	if (options.includePackageId) {
 		output.package_id = pkg.packageId

@@ -120,6 +120,8 @@ export type PublicProfilePackage = {
 	tags: Array<string>
 	updatedAt: string
 	communityListingId: string | null
+	/** published_at of the active community listing, when the package has one. */
+	communityPublishedAt: string | null
 }
 
 export type CommunityStargazer = {

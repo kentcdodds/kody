@@ -68,6 +68,25 @@ function renderForkIcon() {
 	)
 }
 
+/**
+ * Package cards carry two unrelated timestamps: the community listing's
+ * published_at and the owner's local saved-package edit time. Only the
+ * published date lines up with the activity feed, so unpublished edits are
+ * labelled as edits and shown to the owner alone as a republish reminder.
+ */
+function renderProfilePackageDates(
+	pkg: PublicProfilePackageItem,
+	options: { isSelf: boolean },
+) {
+	if (!pkg.communityPublishedAt) {
+		return `Edited ${formatCommunityPublishedDate(pkg.updatedAt)}`
+	}
+	const published = `Published ${formatCommunityPublishedDate(pkg.communityPublishedAt)}`
+	const hasUnpublishedEdits = pkg.updatedAt > pkg.communityPublishedAt
+	if (!options.isSelf || !hasUnpublishedEdits) return published
+	return `${published} · edited ${formatCommunityPublishedDate(pkg.updatedAt)}, not republished`
+}
+
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
 	const {
 		profile,
@@ -202,7 +221,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 										</ul>
 									) : null}
 									<p mix={css(mutedCss)}>
-										Updated {formatCommunityPublishedDate(pkg.updatedAt)}
+										{renderProfilePackageDates(pkg, { isSelf })}
 									</p>
 								</li>
 							)
@@ -213,6 +232,10 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 
 			<section mix={css(sectionCss)} data-testid="profile-activity">
 				<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
+				<p mix={css(mutedCss)} data-testid="profile-activity-hint">
+					Community publishes, forks, and stars. Editing a package without
+					republishing it does not appear here.
+				</p>
 				{activity.length === 0 ? (
 					<p mix={css(descriptionCss)}>No public activity yet.</p>
 				) : (

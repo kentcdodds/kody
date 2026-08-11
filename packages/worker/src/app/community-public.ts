@@ -66,6 +66,7 @@ export function toPublicProfilePackageItem(
 		tags: pkg.tags,
 		updatedAt: pkg.updatedAt,
 		communityListingId: pkg.communityListingId,
+		communityPublishedAt: pkg.communityPublishedAt,
 	}
 }
 
