@@ -18,7 +18,6 @@ import {
 } from './repo-sessions.ts'
 import {
 	type ArtifactBootstrapAccess,
-	type ArtifactRepoInfo,
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactSourceHead,
@@ -1272,8 +1271,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Source "${source.id}" already has a published commit. Use repo sessions for later edits.`,
 			)
 		}
-		let sourceInfo: ArtifactRepoInfo | null = null
-		const sourceAccess = await pushServerTiming(
+		const remoteSetup = await pushServerTiming(
 			serverTiming,
 			'bootstrap-artifact-remote',
 			async () => {
@@ -1281,14 +1279,15 @@ class RepoSessionBase extends DurableObject<Env> {
 					return {
 						remote: input.bootstrapAccess.remote,
 						token: input.bootstrapAccess.token,
+						sourceInfo: null,
 					}
 				}
 				const sourceRepo = await resolveArtifactSourceRepo(
 					this.env,
 					source.repo_id,
 				)
-				sourceInfo = await sourceRepo.info()
-				return await ensureArtifactRepoRemote({
+				const sourceInfo = await sourceRepo.info()
+				const access = await ensureArtifactRepoRemote({
 					repo: sourceRepo,
 					scope: 'write',
 					pendingReconcile: buildPendingExternalReconcile(
@@ -1296,11 +1295,16 @@ class RepoSessionBase extends DurableObject<Env> {
 						source,
 					),
 				})
+				return {
+					remote: access.remote,
+					token: access.token,
+					sourceInfo,
+				}
 			},
 		)
 		const targetBranch =
 			input.bootstrapAccess?.defaultBranch ??
-			sourceInfo?.defaultBranch ??
+			remoteSetup.sourceInfo?.defaultBranch ??
 			defaultSessionBranch
 		await pushServerTiming(serverTiming, 'bootstrap-git-init', async () => {
 			await this.resetWorkspace()
@@ -1314,8 +1318,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			await this.ensureRemote({
 				name: 'source',
 				url: buildAuthenticatedArtifactsRemote({
-					remote: sourceAccess.remote,
-					token: sourceAccess.token,
+					remote: remoteSetup.remote,
+					token: remoteSetup.token,
 				}),
 			})
 		})
@@ -1348,15 +1352,15 @@ class RepoSessionBase extends DurableObject<Env> {
 				dir: repoSessionWorkspacePrefix,
 				remote: 'source',
 				ref: targetBranch,
-				...buildArtifactsGitAuth({ token: sourceAccess.token }),
+				...buildArtifactsGitAuth({ token: remoteSetup.token }),
 			}),
 		)
 		await pushServerTiming(serverTiming, 'bootstrap-git-note', () =>
 			this.attachSourcePublishGitNote({
 				source,
 				commitOid: publishedCommit,
-				remote: sourceAccess.remote,
-				token: sourceAccess.token,
+				remote: remoteSetup.remote,
+				token: remoteSetup.token,
 				remoteName: 'source',
 				publishedBy: 'source_bootstrap',
 				sessionId: input.sessionId,
