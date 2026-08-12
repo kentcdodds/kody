@@ -1082,9 +1082,7 @@ async function runChunkedBundleValidation(input: {
 		start < input.entryPoints.length;
 		start += isolatedBundleChunkSize
 	) {
-		chunks.push(
-			input.entryPoints.slice(start, start + isolatedBundleChunkSize),
-		)
+		chunks.push(input.entryPoints.slice(start, start + isolatedBundleChunkSize))
 	}
 	// Each chunk runs in its own throwaway isolate, so fan-out is safe and
 	// cuts wall time for multi-export packages (community install / publish).
