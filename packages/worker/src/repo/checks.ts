@@ -44,6 +44,7 @@ import {
 } from './repo-kody-execution.ts'
 import {
 	createIsolatedCheckPhaseRunner,
+	isolatedBundleChunkConcurrency,
 	isolatedBundleChunkSize,
 	type IsolatedCheckPhaseRunner,
 } from './isolated-check-phases.ts'
@@ -1069,6 +1070,34 @@ export async function runPackageTypecheckLanguageService(input: {
 	}
 }
 
+async function mapPool<T, R>(
+	items: ReadonlyArray<T>,
+	concurrency: number,
+	mapper: (item: T) => Promise<R>,
+): Promise<Array<R>> {
+	if (items.length === 0) return []
+	const limit = Math.max(1, Math.min(concurrency, items.length))
+	const results: Array<R> = []
+	let nextIndex = 0
+	let firstError: unknown
+	async function worker() {
+		while (nextIndex < items.length) {
+			const index = nextIndex
+			nextIndex += 1
+			const item = items[index]
+			if (item === undefined) return
+			try {
+				results[index] = await mapper(item)
+			} catch (error) {
+				firstError ??= error
+			}
+		}
+	}
+	await Promise.all(Array.from({ length: limit }, () => worker()))
+	if (firstError !== undefined) throw firstError
+	return results
+}
+
 async function runChunkedBundleValidation(input: {
 	runner: IsolatedCheckPhaseRunner
 	stagingKey: string
@@ -1084,10 +1113,13 @@ async function runChunkedBundleValidation(input: {
 	) {
 		chunks.push(input.entryPoints.slice(start, start + isolatedBundleChunkSize))
 	}
-	// Each chunk runs in its own throwaway isolate, so fan-out is safe and
-	// cuts wall time for multi-export packages (community install / publish).
-	const outcomes = await Promise.all(
-		chunks.map((bundleTargets) =>
+	// Each chunk runs in its own throwaway isolate. Cap how many of those
+	// isolates one check request starts together so a many-export package
+	// cannot stampede Durable Object capacity.
+	const outcomes = await mapPool(
+		chunks,
+		isolatedBundleChunkConcurrency,
+		(bundleTargets) =>
 			input.runner.run({
 				phase: 'bundle-chunk',
 				stagingKey: input.stagingKey,
@@ -1095,7 +1127,6 @@ async function runChunkedBundleValidation(input: {
 				userId: input.userId,
 				bundleTargets,
 			}),
-		),
 	)
 	const failures = outcomes
 		.filter((outcome) => !outcome.ok)
@@ -1408,10 +1439,20 @@ export async function runRepoChecks(input: {
 		// first so its disposable heap never sits on top of resident
 		// esbuild-wasm memory.
 		if (isolatedRunner && stagingKey) {
-			;[typecheckResult, bundleCheckResult] = await Promise.all([
-				runTypecheckPhase(),
-				runBundlePhase(),
+			const typecheckPromise = runTypecheckPhase()
+			const bundlePromise = runBundlePhase()
+			const [typecheckSettled, bundleSettled] = await Promise.allSettled([
+				typecheckPromise,
+				bundlePromise,
 			])
+			if (typecheckSettled.status === 'rejected') {
+				throw typecheckSettled.reason
+			}
+			if (bundleSettled.status === 'rejected') {
+				throw bundleSettled.reason
+			}
+			typecheckResult = typecheckSettled.value
+			bundleCheckResult = bundleSettled.value
 		} else {
 			typecheckResult = await runTypecheckPhase()
 			bundleCheckResult = await runBundlePhase()

@@ -35,6 +35,12 @@ const stagingTtlSeconds = 15 * 60
  * fan-out modest for typical packages.
  */
 export const isolatedBundleChunkSize = 4
+/**
+ * Max throwaway isolates running bundle chunks at once. Chunk size bounds
+ * work *inside* one isolate; this bounds how many of those isolates a single
+ * check request may start together.
+ */
+export const isolatedBundleChunkConcurrency = 2
 
 export type IsolatedCheckPhaseRequest =
 	| {

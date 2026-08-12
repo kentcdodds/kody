@@ -33,7 +33,10 @@ import {
 	repoChecksSourceMaxTotalBytes,
 	runRepoChecks,
 } from './checks.ts'
-import { isolatedBundleChunkSize } from './isolated-check-phases.ts'
+import {
+	isolatedBundleChunkConcurrency,
+	isolatedBundleChunkSize,
+} from './isolated-check-phases.ts'
 import { maxRepoSourceFileBytes } from './large-file-policy.ts'
 
 type MockSnapshot = {
@@ -1635,10 +1638,22 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 	const gate = new Promise<void>((resolve) => {
 		resolveGate = resolve
 	})
+	let bundleChunksInFlight = 0
+	let maxBundleChunksInFlight = 0
 	const stub = {
 		runIsolatedCheckPhase: vi.fn(async (request: Record<string, unknown>) => {
 			phaseRequests.push(request)
+			if (request.phase === 'bundle-chunk') {
+				bundleChunksInFlight += 1
+				maxBundleChunksInFlight = Math.max(
+					maxBundleChunksInFlight,
+					bundleChunksInFlight,
+				)
+			}
 			await gate
+			if (request.phase === 'bundle-chunk') {
+				bundleChunksInFlight -= 1
+			}
 			return request.phase === 'typecheck'
 				? { ok: true, message: 'No semantic diagnostics (isolated).' }
 				: { ok: true, message: 'chunk ok' }
@@ -1673,8 +1688,9 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 		userId: 'user-123',
 	})
 
-	// Wait until typecheck and every bundle chunk have started while the
+	// Wait until typecheck and the first bundle chunks have started while the
 	// gate is still closed — proves isolated phases fan out, not sequence.
+	// Remaining chunks stay queued until a slot frees (concurrency cap).
 	let stableCallCount = 0
 	let stableTicks = 0
 	for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -1699,9 +1715,21 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 	).toBe(true)
 	const startedPhaseCount = stub.runIsolatedCheckPhase.mock.calls.length
 	expect(startedPhaseCount).toBeGreaterThan(1)
+	expect(startedPhaseCount).toBeLessThanOrEqual(
+		1 + isolatedBundleChunkConcurrency,
+	)
+	expect(maxBundleChunksInFlight).toBeGreaterThanOrEqual(1)
+	expect(maxBundleChunksInFlight).toBeLessThanOrEqual(
+		isolatedBundleChunkConcurrency,
+	)
 	resolveGate?.()
 	const result = await resultPromise
-	expect(stub.runIsolatedCheckPhase.mock.calls.length).toBe(startedPhaseCount)
+	expect(stub.runIsolatedCheckPhase.mock.calls.length).toBeGreaterThan(
+		startedPhaseCount,
+	)
+	expect(maxBundleChunksInFlight).toBeLessThanOrEqual(
+		isolatedBundleChunkConcurrency,
+	)
 
 	expect(result.ok).toBe(true)
 	// The staged snapshot is written once with a TTL and cleaned up after.

@@ -476,3 +476,31 @@ test('loadPackageSourceFromFiles parses the caller file set without reading KV',
 	expect(loaded.manifest.kody.id).toBe('example-package')
 	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
 })
+
+test('loadPackageSourceFromFiles rejects a source owned by another user', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		...createPackageSourceRow({
+			id: 'source-from-files',
+			publishedCommit: 'commit-fork-1',
+		}),
+		user_id: 'user-2',
+	})
+	await expect(
+		loadPackageSourceFromFiles({
+			env: { APP_DB: {} } as Env,
+			userId: 'user-1',
+			sourceId: 'source-from-files',
+			files: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/example-package',
+					exports: { '.': './index.js' },
+					kody: {
+						id: 'example-package',
+						description: 'Example package',
+					},
+				}),
+			},
+		}),
+	).rejects.toThrow('was not found')
+})
