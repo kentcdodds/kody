@@ -152,16 +152,12 @@ from `{username}.<package-app host>` (`buildPackageAppSubdomainOrigin` in
 `document` access) never crosses accounts. The username label in the hostname
 must be a valid single DNS label: lowercase letters, digits, and hyphens only,
 3–32 characters, alphanumeric edges (`dnsSafeUsernamePattern` in
-`packages/shared/src/public-urls.ts`). Underscores are not allowed for new or
-changed usernames; accounts whose usernames still contain legacy underscores
-must rename before hosted apps work on a subdomain — the app-origin entry
-answers them with a `409` rename prompt instead of redirecting to a hostname
-nothing can serve, and hosted-URL emission falls back to the path-based shape
-for them. Recognition of _stored_ usernames elsewhere
-(`getUsernameFormatValidationError`) deliberately stays lenient so legacy
-accounts keep display names, public lookup, and inbound email routing. Wildcard
-DNS still routes invalid or nested labels to the Worker, so hostnames that are
-not exactly one valid username label fail closed with `404`.
+`packages/shared/src/public-urls.ts`). Every username satisfies this shape —
+underscores are rejected everywhere, and the pre-existing underscore accounts
+were migrated by hand on 2026-08-12 (decision 0017), so there is no lenient
+legacy tier. Wildcard DNS still routes invalid or nested labels to the Worker,
+so hostnames that are not exactly one valid username label fail closed with
+`404`.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:

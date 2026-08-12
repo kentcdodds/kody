@@ -329,57 +329,6 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	).toBe('/login')
 })
 
-test('legacy underscore usernames get a rename prompt instead of a broken subdomain redirect', async () => {
-	configureOrigins({
-		packageAppBaseUrl: packageAppOrigin,
-		runtime: 'production',
-	})
-	// Ensures schema and the session secret are in place.
-	await seedOwnerSessionCookie()
-	const legacyEmail = 'legacy-owner@example.com'
-	const legacyUsername = 'legacy_owner'
-	await seedAccount({
-		db: env.APP_DB,
-		email: legacyEmail,
-		username: legacyUsername,
-	})
-	const legacySetCookie = await createAuthCookie(
-		{
-			stableUserId: await createStableUserIdFromEmail(legacyEmail),
-			email: legacyEmail,
-			rememberMe: false,
-		},
-		true,
-	)
-	const legacyCookie = legacySetCookie.split(';')[0] ?? ''
-
-	// The app-origin entry terminates with the fix instead of redirecting to a
-	// hostname the wildcard certificate and routing cannot serve.
-	const entryResponse = await workerFetch(
-		`${appOrigin}/@${legacyUsername}/packages/demo`,
-		{ headers: { Cookie: legacyCookie } },
-	)
-	expect(entryResponse.status).toBe(409)
-	expect(entryResponse.headers.get('Location')).toBeNull()
-	await expect(entryResponse.text()).resolves.toContain('Rename the username')
-
-	// Legacy apex URLs for such accounts terminate the same way.
-	const apexResponse = await workerFetch(
-		`${packageAppOrigin}/@${legacyUsername}/packages/demo`,
-	)
-	expect(apexResponse.status).toBe(409)
-
-	// And an underscore hostname is never a valid user subdomain.
-	const subdomainResponse = await workerFetch(
-		`https://${legacyUsername}.packages.isolated.test/packages/demo`,
-		{ headers: { Cookie: legacyCookie } },
-	)
-	expect(subdomainResponse.status).toBe(404)
-	await expect(subdomainResponse.text()).resolves.toBe(
-		buildUnmatchedPackageAppOriginPathMessage(),
-	)
-})
-
 test('package apps stay inline on the app origin when no package-app origin is configured', async () => {
 	configureOrigins({ packageAppBaseUrl: undefined, runtime: 'preview' })
 	const sessionCookie = await seedOwnerSessionCookie()

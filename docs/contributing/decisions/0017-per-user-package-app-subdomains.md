@@ -47,11 +47,12 @@ package-app apex:
   subdomain itself: sibling subdomains stay same-site until the PSL entry, so a
   `SameSite=Lax` cookie would otherwise attach to a cross-subdomain mutation
   from a browser holding sessions for two accounts.
-- New and changed usernames are strict DNS labels (lowercase alphanumeric +
-  hyphens; underscores banned). Recognition of stored usernames stays lenient
-  (two-tier validation) so legacy underscore accounts keep display names, public
-  lookup, and inbound email routing; they must rename before hosted apps work
-  (the app origin answers their package-app entry with a `409` rename prompt).
+- Usernames are strict DNS labels everywhere (lowercase alphanumeric + hyphens;
+  underscores banned). A two-tier lenient-recognition scheme shipped briefly to
+  protect legacy underscore accounts, but production had exactly one such
+  account; it was renamed by hand (`users.username`, `email_inbox_addresses`,
+  `saved_packages.name`) on 2026-08-12 and the lenient tier was removed the same
+  day — no legacy affordances remain.
 - `packageContext.appBasePath` on a subdomain is `/packages/{kodyId}` (no
   `/@{username}` prefix); inline non-production serving keeps the path-based
   mount. Well-behaved packages that use `hostedUrl` / `appBasePath` stay

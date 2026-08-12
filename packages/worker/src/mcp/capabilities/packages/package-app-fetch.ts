@@ -1,8 +1,5 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
-import {
-	isDnsSafeUsername,
-	resolveHostedPackageAppUrl,
-} from '@kody-internal/shared/public-urls.ts'
+import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -412,16 +409,11 @@ export const packageAppFetchCapability = defineDomainCapability(
 				kodyId: savedPackage.kodyId,
 				restPath: restPath === '/' ? null : restPath,
 			})
-			// Mount matches how resolveHostedPackageAppUrl addressed the app:
-			// legacy usernames that cannot own a subdomain keep the path mount.
 			const packagePath: PackageAppPath = {
 				username: owner.ownerScope,
 				kodyId: savedPackage.kodyId,
 				restPath: restPathOnly,
-				mount:
-					packageAppOrigin && isDnsSafeUsername(owner.ownerScope)
-						? 'user-subdomain'
-						: 'username-path',
+				mount: packageAppOrigin ? 'user-subdomain' : 'username-path',
 			}
 
 			const requestHeaders = collectSafeRequestHeaders(args.headers)

@@ -3,7 +3,6 @@ import { createHtmlResponse } from 'remix/response/html'
 import {
 	buildPackageAppPath,
 	buildPackageAppSubdomainUrl,
-	isDnsSafeUsername,
 } from '@kody-internal/shared/public-urls.ts'
 import {
 	getAppBaseUrl,
@@ -107,25 +106,6 @@ function createUnmatchedPackageAppPathResponse() {
 			'Content-Type': 'text/plain; charset=utf-8',
 		},
 	})
-}
-
-/**
- * Terminal response for a legacy username that cannot own a subdomain
- * (underscores are not valid in hostnames). Redirecting would send the
- * browser to a hostname the wildcard certificate and routing cannot serve, so
- * fail here with the fix instead.
- */
-function createSubdomainIneligibleUsernameResponse() {
-	return new Response(
-		'Hosted package apps run on a per-user subdomain, and this username contains characters that are not allowed in domain names (such as underscores). Rename the username under Account settings, then reopen the app.',
-		{
-			status: 409,
-			headers: {
-				'Cache-Control': 'no-store',
-				'Content-Type': 'text/plain; charset=utf-8',
-			},
-		},
-	)
 }
 
 /**
@@ -245,9 +225,6 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	packageAppOrigin: string
 }) {
 	const { request, env, url, packagePath, packageAppOrigin } = input
-	if (!isDnsSafeUsername(packagePath.username)) {
-		return createSubdomainIneligibleUsernameResponse()
-	}
 	const target = buildSubdomainTarget({ packageAppOrigin, packagePath, url })
 
 	// A non-safe method reaching the app origin is not part of the normal flow
@@ -293,9 +270,6 @@ function handleApexRequest(input: {
 }) {
 	const { request, env, url, packagePath, packageAppOrigin } = input
 	if (packagePath) {
-		if (!isDnsSafeUsername(packagePath.username)) {
-			return createSubdomainIneligibleUsernameResponse()
-		}
 		const target = buildSubdomainTarget({ packageAppOrigin, packagePath, url })
 		return redirectResponse({
 			location: target.toString(),
