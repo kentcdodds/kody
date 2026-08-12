@@ -49,9 +49,9 @@ package to be searchable before invoking.
 Search for the package by the kody id from the prompt (for example
 `local-conditions`, `hn-pulse`, or `personal-capture`).
 
-If it is missing, tell them install may still be finishing (~tens of seconds) and
-ask them to say when the page shows installed. Try the search **once** more after
-they confirm. Do not poll.
+If it is missing, tell them install may still be finishing (~tens of seconds)
+and ask them to say when the page shows installed. Try the search **once** more
+after they confirm. Do not poll.
 
 ## Step 2 — Invoke their copy
 
@@ -69,9 +69,9 @@ Show a short summary of the result.
 
 ## Step 3 — Name the ownership lesson
 
-In one short message, explain that the package lives in **their** account:
-they can edit it, hang triggers on it, or fork something else. This is the
-permanence lesson for onboarding — not a practice run.
+In one short message, explain that the package lives in **their** account: they
+can edit it, hang triggers on it, or fork something else. This is the permanence
+lesson for onboarding — not a practice run.
 
 ## Step 4 — Offer triggers (optional)
 
@@ -83,7 +83,8 @@ and more).
 ## Troubleshooting
 
 - **Package not found** — install still in flight, or they are on a different
-  account than the browser session. Wait for their "finished" message; one retry.
+  account than the browser session. Wait for their "finished" message; one
+  retry.
 - **`packageStorage` / platform invoke errors** — they invoked the platform
   `@kody/*` copy instead of their fork. Search again and invoke by kody id from
   their account.

@@ -112,6 +112,7 @@ export function OnboardingExampleCard(
 			handle.update()
 		} catch (error) {
 			phase = 'error'
+			statusMessage = null
 			errorMessage =
 				error instanceof Error
 					? error.message
@@ -153,12 +154,14 @@ export function OnboardingExampleCard(
 			kodyId: listing.kodyId,
 		})
 		const readyStatus =
-			statusMessage ??
-			(existingInstall
-				? existingInstall.status === 'installed'
-					? `Installed as ${existingInstall.targetName}.`
-					: `Forked as ${existingInstall.targetName}; needs adaptation before it can run.`
-				: null)
+			phase === 'error'
+				? null
+				: (statusMessage ??
+					(existingInstall
+						? existingInstall.status === 'installed'
+							? `Installed as ${existingInstall.targetName}.`
+							: `Forked as ${existingInstall.targetName}; needs adaptation before it can run.`
+						: null))
 
 		return (
 			<li

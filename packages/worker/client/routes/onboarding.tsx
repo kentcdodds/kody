@@ -168,7 +168,6 @@ export function OnboardingRoute(handle: Handle) {
 
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
-		const wasQuickExample = hasQuickExample
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
@@ -191,12 +190,9 @@ export function OnboardingRoute(handle: Handle) {
 			activeStep = 2
 			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
-		} else if (!wasQuickExample && hasQuickExample) {
-			panelAnimationArmed = true
-			activeStep = 3
-			updateStepHash(3)
-			scrollToNav('onboarding-steps-nav')
 		}
+		// Stay on Step 2 when a quick example finishes so the expanded
+		// copy-prompt climax is not unmounted mid-paste. Wizard nav advances.
 	}
 
 	/**
