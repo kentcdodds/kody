@@ -15,6 +15,8 @@ import {
  *
  * - phases never stack their peak memory on top of the session isolate or
  *   each other (esbuild-wasm memory in particular never shrinks once grown),
+ * - callers may overlap typecheck with bundle chunks (and overlap chunks with
+ *   each other) without stacking DO heap — `runRepoChecks` does this,
  * - a package too large for even a single phase surfaces as a failed check
  *   with an actionable message instead of an opaque isolate reset, and
  * - the throwaway instances never touch their own Durable Object storage, so

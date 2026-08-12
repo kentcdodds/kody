@@ -1076,25 +1076,32 @@ async function runChunkedBundleValidation(input: {
 	userId: string
 	entryPoints: Array<PackageBundleTarget>
 }) {
-	const failures: Array<string> = []
+	const chunks: Array<Array<PackageBundleTarget>> = []
 	for (
 		let start = 0;
 		start < input.entryPoints.length;
 		start += isolatedBundleChunkSize
 	) {
-		const chunk = input.entryPoints.slice(
-			start,
-			start + isolatedBundleChunkSize,
+		chunks.push(
+			input.entryPoints.slice(start, start + isolatedBundleChunkSize),
 		)
-		const outcome = await input.runner.run({
-			phase: 'bundle-chunk',
-			stagingKey: input.stagingKey,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			bundleTargets: chunk,
-		})
-		if (!outcome.ok) failures.push(outcome.message)
 	}
+	// Each chunk runs in its own throwaway isolate, so fan-out is safe and
+	// cuts wall time for multi-export packages (community install / publish).
+	const outcomes = await Promise.all(
+		chunks.map((bundleTargets) =>
+			input.runner.run({
+				phase: 'bundle-chunk',
+				stagingKey: input.stagingKey,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				bundleTargets,
+			}),
+		),
+	)
+	const failures = outcomes
+		.filter((outcome) => !outcome.ok)
+		.map((outcome) => outcome.message)
 	return {
 		ok: failures.length === 0,
 		message:
@@ -1313,7 +1320,7 @@ export async function runRepoChecks(input: {
 	let typecheckResult: RepoCheckResult
 	let bundleCheckResult: { ok: boolean; message: string }
 	try {
-		typecheckResult = await (async (): Promise<RepoCheckResult> => {
+		const runTypecheckPhase = async (): Promise<RepoCheckResult> => {
 			if (missingCallableTypecheckTargets.length > 0) {
 				return {
 					kind: 'typecheck',
@@ -1357,38 +1364,60 @@ export async function runRepoChecks(input: {
 							targets: callableTypecheckTargets,
 						})
 			return { kind: 'typecheck', ...outcome }
-		})()
+		}
 
-		bundleCheckResult =
-			missingBundleTargets.length > 0
-				? {
-						ok: false,
-						message: formatBundleCheckMessage({
-							missingEntryPoints: missingBundleTargets,
-							targetCount: bundleTargets.length,
-						}),
-					}
-				: bundleContext
-					? isolatedRunner && stagingKey
-						? await runChunkedBundleValidation({
-								runner: isolatedRunner,
-								stagingKey,
-								baseUrl: bundleContext.baseUrl,
-								userId: bundleContext.userId,
-								entryPoints: bundleTargets,
-							})
-						: await validatePackageBundles({
-								...bundleContext,
-								sourceFiles,
-								entryPoints: bundleTargets,
-							})
-					: {
-							ok: true,
-							message: formatBundleCheckMessage({
-								missingEntryPoints: missingBundleTargets,
-								targetCount: bundleTargets.length,
-							}),
-						}
+		const runBundlePhase = async (): Promise<{
+			ok: boolean
+			message: string
+		}> => {
+			if (missingBundleTargets.length > 0) {
+				return {
+					ok: false,
+					message: formatBundleCheckMessage({
+						missingEntryPoints: missingBundleTargets,
+						targetCount: bundleTargets.length,
+					}),
+				}
+			}
+			if (!bundleContext) {
+				return {
+					ok: true,
+					message: formatBundleCheckMessage({
+						missingEntryPoints: missingBundleTargets,
+						targetCount: bundleTargets.length,
+					}),
+				}
+			}
+			if (isolatedRunner && stagingKey) {
+				return await runChunkedBundleValidation({
+					runner: isolatedRunner,
+					stagingKey,
+					baseUrl: bundleContext.baseUrl,
+					userId: bundleContext.userId,
+					entryPoints: bundleTargets,
+				})
+			}
+			return await validatePackageBundles({
+				...bundleContext,
+				sourceFiles,
+				entryPoints: bundleTargets,
+			})
+		}
+
+		// Isolated phases use separate throwaway isolates, so overlapping them
+		// (and overlapping bundle chunks) does not stack DO heap the way the
+		// inline fallback would. Keep the inline path sequential: typecheck
+		// first so its disposable heap never sits on top of resident
+		// esbuild-wasm memory.
+		if (isolatedRunner && stagingKey) {
+			;[typecheckResult, bundleCheckResult] = await Promise.all([
+				runTypecheckPhase(),
+				runBundlePhase(),
+			])
+		} else {
+			typecheckResult = await runTypecheckPhase()
+			bundleCheckResult = await runBundlePhase()
+		}
 	} finally {
 		if (isolatedRunner && stagingKey) {
 			await isolatedRunner.discard(stagingKey)

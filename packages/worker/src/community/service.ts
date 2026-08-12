@@ -990,20 +990,20 @@ export async function forkCommunityListing(input: {
 	 */
 	actor?: CommunityForkActor | null
 }): Promise<ForkCommunityListingResult> {
-	await assertNotCommunityBanned(input.env.APP_DB, input.userId)
-
-	const listing = await getCommunityListingById(input.env.APP_DB, {
-		listingId: input.listingId,
-		includeDelisted: false,
-	})
+	// Ban check, listing row, and pinned KV snapshot are independent reads —
+	// overlapping them shaves fork preflight latency before the Artifacts
+	// bootstrap (the dominant cost) begins.
+	const [, listing, snapshot] = await Promise.all([
+		assertNotCommunityBanned(input.env.APP_DB, input.userId),
+		getCommunityListingById(input.env.APP_DB, {
+			listingId: input.listingId,
+			includeDelisted: false,
+		}),
+		readCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId),
+	])
 	if (!listing) {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
-
-	const snapshot = await readCommunitySnapshot(
-		input.env.BUNDLE_ARTIFACTS_KV,
-		input.listingId,
-	)
 	if (!snapshot) {
 		throw new Error(
 			`Community listing snapshot for "${input.listingId}" was not found.`,
@@ -1029,27 +1029,28 @@ export async function forkCommunityListing(input: {
 		expectedPackageScope: input.expectedPackageScope,
 		targetKodyId,
 	})
-	const existingByKody = await getSavedPackageByKodyId(input.env.APP_DB, {
-		userId: input.userId,
-		kodyId: targetKodyId,
-	})
-	const existingByName = await getSavedPackageByName(input.env.APP_DB, {
-		userId: input.userId,
-		name: rewrittenManifest.targetName,
-	})
+	const [existingByKody, existingByName, existingForks, platformUsernames] =
+		await Promise.all([
+			getSavedPackageByKodyId(input.env.APP_DB, {
+				userId: input.userId,
+				kodyId: targetKodyId,
+			}),
+			getSavedPackageByName(input.env.APP_DB, {
+				userId: input.userId,
+				name: rewrittenManifest.targetName,
+			}),
+			listCommunityForksByListingAndUser(input.env.APP_DB, {
+				listingId: input.listingId,
+				userId: input.userId,
+			}),
+			listPlatformAccountUsernames(input.env.APP_DB),
+		])
 	if (existingByKody || existingByName) {
 		throw new CommunityActionError(
 			`You already have a saved package with kody id "${targetKodyId}". Pass a different kody_id to fork this listing.`,
 		)
 	}
 
-	const existingForks = await listCommunityForksByListingAndUser(
-		input.env.APP_DB,
-		{
-			listingId: input.listingId,
-			userId: input.userId,
-		},
-	)
 	const collidingFork = existingForks.find(
 		(fork) => fork.targetKodyId === targetKodyId,
 	)
@@ -1072,7 +1073,7 @@ export async function forkCommunityListing(input: {
 		expectedPackageScope: input.expectedPackageScope,
 		// Platform scopes (e.g. @kody) resolve live for every caller; forks
 		// keep those references instead of rewriting them.
-		allowedForeignScopes: await listPlatformAccountUsernames(input.env.APP_DB),
+		allowedForeignScopes: platformUsernames,
 	})
 
 	const packageId = crypto.randomUUID()

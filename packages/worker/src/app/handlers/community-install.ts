@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { type Action } from 'remix/router'
+import { waitUntil } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -82,6 +83,10 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					// decision was made against so a concurrent republish cannot
 					// activate content the user never saw.
 					expectedPinnedCommit: listing.pinnedCommit,
+					// Projection already supports deferred search-index upsert and
+					// retriever-cache refresh; without waitUntil those await on the
+					// install response and stretch one-click / onboarding latency.
+					waitUntil,
 				})
 				if (result.status === 'adaptation_required') {
 					return jsonResponse({

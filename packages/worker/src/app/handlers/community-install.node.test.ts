@@ -7,7 +7,16 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingById: vi.fn(),
 	installCommunityListing: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
+	waitUntil: vi.fn(),
 }))
+
+vi.mock('cloudflare:workers', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	return {
+		...actual,
+		waitUntil: (...args: Array<unknown>) => mockModule.waitUntil(...args),
+	}
+})
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
@@ -120,6 +129,9 @@ test('community install POST enforces gates and maps install outcomes', async ()
 			// The acknowledgement is bound to the commit the listing pinned
 			// when the handler checked trust.
 			expectedPinnedCommit: 'commit-1',
+			// cloudflare:workers waitUntil — defers search-index / retriever
+			// projection work off the install response critical path.
+			waitUntil: expect.any(Function),
 		}),
 	)
 
