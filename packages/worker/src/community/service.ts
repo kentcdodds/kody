@@ -86,6 +86,7 @@ import {
 	type CommunityRatingRecord,
 	type CommunityReportRecord,
 	type CommunityReportResolutionAction,
+	type CrossScopeReference,
 	type ForkCommunityListingResult,
 } from './types.ts'
 
@@ -969,7 +970,7 @@ export async function getCommunityActivityForAdmin(input: {
 	return activity
 }
 
-export async function forkCommunityListing(input: {
+export type PrepareCommunityForkInput = {
 	env: Env
 	baseUrl: string
 	userId: string
@@ -989,7 +990,47 @@ export async function forkCommunityListing(input: {
 	 * can separate what a user chose from what their agent did on its own.
 	 */
 	actor?: CommunityForkActor | null
-}): Promise<ForkCommunityListingResult> {
+}
+
+export type PreparedCommunityFork = {
+	env: Env
+	baseUrl: string
+	userId: string
+	listingId: string
+	listingName: string
+	listingKodyId: string
+	originCommit: string
+	actor: CommunityForkActor | null
+	packageId: string
+	targetKodyId: string
+	targetName: string
+	files: Record<string, string>
+	crossScopeReferences: Array<CrossScopeReference>
+}
+
+function logCommunityPhaseTiming(input: {
+	phase: string
+	durationMs: number
+	listingId?: string
+	packageId?: string
+	filesCount?: number
+}) {
+	console.info(
+		JSON.stringify({
+			message: 'community-phase-timing',
+			...input,
+		}),
+	)
+}
+
+/**
+ * Rewrite the listing snapshot and run collision checks without touching
+ * Artifacts. One-click install overlaps the subsequent git bootstrap with
+ * publish checks against these in-memory files.
+ */
+export async function prepareCommunityFork(
+	input: PrepareCommunityForkInput,
+): Promise<PreparedCommunityFork> {
 	// Ban check, listing row, and pinned KV snapshot are independent reads —
 	// overlapping them shaves fork preflight latency before the Artifacts
 	// bootstrap (the dominant cost) begins.
@@ -1076,66 +1117,105 @@ export async function forkCommunityListing(input: {
 		allowedForeignScopes: platformUsernames,
 	})
 
-	const packageId = crypto.randomUUID()
-	const ensuredSource = await ensureEntitySource({
-		db: input.env.APP_DB,
+	return {
 		env: input.env,
+		baseUrl: input.baseUrl,
 		userId: input.userId,
+		listingId: input.listingId,
+		listingName: listing.name,
+		listingKodyId: listing.kodyId,
+		originCommit: listing.pinnedCommit,
+		actor: input.actor ?? null,
+		packageId: crypto.randomUUID(),
+		targetKodyId,
+		targetName: rewrittenManifest.targetName,
+		files: rewrittenFiles,
+		crossScopeReferences,
+	}
+}
+
+/**
+ * Create the Artifacts repo, sync the rewritten snapshot, and insert the
+ * inert `community_forks` row. Callers that already hold a prepared fork
+ * (one-click install) can overlap this with `runRepoChecks`.
+ */
+export async function persistPreparedCommunityFork(
+	prepared: PreparedCommunityFork,
+): Promise<ForkCommunityListingResult> {
+	const persistStartedAt = Date.now()
+	const ensuredSource = await ensureEntitySource({
+		db: prepared.env.APP_DB,
+		env: prepared.env,
+		userId: prepared.userId,
 		entityKind: 'package',
-		entityId: packageId,
+		entityId: prepared.packageId,
 		requirePersistence: true,
 	})
 	try {
 		await syncArtifactSourceSnapshot({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
+			env: prepared.env,
+			baseUrl: prepared.baseUrl,
+			userId: prepared.userId,
 			sourceId: ensuredSource.id,
-			files: rewrittenFiles,
+			files: prepared.files,
 			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 		})
 
 		const forkId = crypto.randomUUID()
-		await insertCommunityFork(input.env.APP_DB, {
+		await insertCommunityFork(prepared.env.APP_DB, {
 			id: forkId,
-			listing_id: input.listingId,
-			forker_user_id: input.userId,
-			origin_commit: listing.pinnedCommit,
-			forked_package_id: packageId,
+			listing_id: prepared.listingId,
+			forker_user_id: prepared.userId,
+			origin_commit: prepared.originCommit,
+			forked_package_id: prepared.packageId,
 			forked_source_id: ensuredSource.id,
-			target_kody_id: targetKodyId,
-			listing_name: listing.name,
-			listing_kody_id: listing.kodyId,
-			actor: input.actor ?? null,
+			target_kody_id: prepared.targetKodyId,
+			listing_name: prepared.listingName,
+			listing_kody_id: prepared.listingKodyId,
+			actor: prepared.actor,
 		})
 		await enqueueRecordedCommunityActivity({
-			env: input.env,
+			env: prepared.env,
 			kind: 'fork',
 			activityId: forkId,
 		})
 
 		invalidateCommunityPublicCache()
+		logCommunityPhaseTiming({
+			phase: 'fork-persist',
+			durationMs: Date.now() - persistStartedAt,
+			listingId: prepared.listingId,
+			packageId: prepared.packageId,
+			filesCount: Object.keys(prepared.files).length,
+		})
 
 		return {
 			forkId,
-			packageId,
+			packageId: prepared.packageId,
 			sourceId: ensuredSource.id,
-			targetKodyId,
-			targetName: rewrittenManifest.targetName,
-			originCommit: listing.pinnedCommit,
-			crossScopeReferences,
-			filesCount: Object.keys(rewrittenFiles).length,
-			files: rewrittenFiles,
+			targetKodyId: prepared.targetKodyId,
+			targetName: prepared.targetName,
+			originCommit: prepared.originCommit,
+			crossScopeReferences: prepared.crossScopeReferences,
+			filesCount: Object.keys(prepared.files).length,
+			files: prepared.files,
 		}
 	} catch (error) {
 		await cleanupFailedCommunityFork({
-			env: input.env,
-			userId: input.userId,
+			env: prepared.env,
+			userId: prepared.userId,
 			sourceId: ensuredSource.id,
-			packageId,
+			packageId: prepared.packageId,
 		})
 		throw error
 	}
+}
+
+export async function forkCommunityListing(
+	input: PrepareCommunityForkInput,
+): Promise<ForkCommunityListingResult> {
+	const prepared = await prepareCommunityFork(input)
+	return await persistPreparedCommunityFork(prepared)
 }
 
 export type AdoptCommunityForkResult = {

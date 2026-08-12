@@ -1,14 +1,17 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	forkCommunityListing: vi.fn(),
+	prepareCommunityFork: vi.fn(),
+	persistPreparedCommunityFork: vi.fn(),
 	runRepoChecks: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
 }))
 
 vi.mock('./service.ts', () => ({
-	forkCommunityListing: (...args: Array<unknown>) =>
-		mockModule.forkCommunityListing(...args),
+	prepareCommunityFork: (...args: Array<unknown>) =>
+		mockModule.prepareCommunityFork(...args),
+	persistPreparedCommunityFork: (...args: Array<unknown>) =>
+		mockModule.persistPreparedCommunityFork(...args),
 }))
 
 vi.mock('#worker/repo/checks.ts', () => ({
@@ -24,6 +27,27 @@ import { installCommunityListing } from './install.ts'
 
 const env = { APP_DB: {} as D1Database } as Env
 
+function preparedFork() {
+	return {
+		env,
+		baseUrl: 'https://kody.test',
+		userId: 'user-b',
+		listingId: 'listing-1',
+		listingName: '@owner/demo',
+		listingKodyId: 'demo',
+		originCommit: 'commit-1',
+		actor: 'human' as const,
+		packageId: 'package-1',
+		targetKodyId: 'demo',
+		targetName: '@userb/demo',
+		files: {
+			'package.json': '{"name":"@userb/demo"}',
+			'src/index.ts': 'export default async function main() {}',
+		},
+		crossScopeReferences: [],
+	}
+}
+
 function forkResult() {
 	return {
 		forkId: 'fork-1',
@@ -34,10 +58,7 @@ function forkResult() {
 		originCommit: 'commit-1',
 		crossScopeReferences: [],
 		filesCount: 2,
-		files: {
-			'package.json': '{"name":"@userb/demo"}',
-			'src/index.ts': 'export default async function main() {}',
-		},
+		files: preparedFork().files,
 	}
 }
 
@@ -54,7 +75,9 @@ function installInput() {
 }
 
 test('install publishes clean forks, keeps failed checks inert, and propagates errors', async () => {
-	mockModule.forkCommunityListing.mockResolvedValue(forkResult())
+	const prepared = preparedFork()
+	mockModule.prepareCommunityFork.mockResolvedValue(prepared)
+	mockModule.persistPreparedCommunityFork.mockResolvedValue(forkResult())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
 		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
@@ -73,7 +96,7 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	})
 	// The user's trust/acknowledgement decision is pinned to the commit they
 	// saw, so a concurrent republish cannot swap in unreviewed content.
-	expect(mockModule.forkCommunityListing).toHaveBeenCalledWith(
+	expect(mockModule.prepareCommunityFork).toHaveBeenCalledWith(
 		expect.objectContaining({ expectedPinnedCommit: 'commit-1' }),
 	)
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
@@ -106,11 +129,13 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 		userEmail: 'userb@example.com',
 		packageId: 'package-1',
 		sourceId: 'source-1',
+		sourceFiles: prepared.files,
 		waitUntil: undefined,
 	})
 
 	const waitUntil = vi.fn()
-	mockModule.forkCommunityListing.mockResolvedValue(forkResult())
+	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	mockModule.persistPreparedCommunityFork.mockResolvedValue(forkResult())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
 		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
@@ -118,10 +143,14 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	mockModule.refreshSavedPackageProjection.mockClear()
 	await installCommunityListing({ ...installInput(), waitUntil })
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
-		expect.objectContaining({ waitUntil }),
+		expect.objectContaining({ waitUntil, sourceFiles: prepared.files }),
 	)
 
-	mockModule.forkCommunityListing.mockResolvedValue({
+	mockModule.prepareCommunityFork.mockResolvedValue({
+		...preparedFork(),
+		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
+	})
+	mockModule.persistPreparedCommunityFork.mockResolvedValue({
 		...forkResult(),
 		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
 	})
@@ -150,14 +179,15 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	})
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
 
-	mockModule.forkCommunityListing.mockRejectedValueOnce(
+	mockModule.prepareCommunityFork.mockRejectedValueOnce(
 		new Error('banned from community participation'),
 	)
 	await expect(installCommunityListing(installInput())).rejects.toThrow(
 		'banned from community participation',
 	)
 
-	mockModule.forkCommunityListing.mockResolvedValue(forkResult())
+	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	mockModule.persistPreparedCommunityFork.mockResolvedValue(forkResult())
 	mockModule.runRepoChecks.mockResolvedValue({ ok: true, results: [] })
 	mockModule.refreshSavedPackageProjection.mockRejectedValue(
 		new Error('saved_packages entitlement exceeded'),
@@ -165,4 +195,38 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	await expect(installCommunityListing(installInput())).rejects.toThrow(
 		'saved_packages entitlement exceeded',
 	)
+})
+
+test('install overlaps Artifacts persist with publish checks', async () => {
+	let resolvePersist: (() => void) | undefined
+	const persistGate = new Promise<void>((resolve) => {
+		resolvePersist = resolve
+	})
+	let resolveChecks: (() => void) | undefined
+	const checksGate = new Promise<void>((resolve) => {
+		resolveChecks = resolve
+	})
+	const started: Array<string> = []
+	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	mockModule.persistPreparedCommunityFork.mockImplementation(async () => {
+		started.push('persist')
+		await persistGate
+		return forkResult()
+	})
+	mockModule.runRepoChecks.mockImplementation(async () => {
+		started.push('checks')
+		await checksGate
+		return { ok: true, results: [] }
+	})
+	mockModule.refreshSavedPackageProjection.mockResolvedValue(undefined)
+
+	const installPromise = installCommunityListing(installInput())
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (started.includes('persist') && started.includes('checks')) break
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+	expect(started).toEqual(expect.arrayContaining(['persist', 'checks']))
+	resolvePersist?.()
+	resolveChecks?.()
+	await expect(installPromise).resolves.toMatchObject({ status: 'installed' })
 })

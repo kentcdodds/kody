@@ -150,6 +150,30 @@ async function loadPackageSourceUncached(input: {
 	})
 }
 
+export async function loadPackageSourceFromFiles(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	files: Record<string, string>
+}): Promise<LoadedPackageSource> {
+	const source = await loadPackageSourceRowForUser({
+		env: input.env,
+		userId: input.userId,
+		sourceId: input.sourceId,
+	})
+	return finalizeLoadedSource({
+		source,
+		manifest: parsePackageManifest({
+			source,
+			content: getManifestContent({
+				source,
+				files: input.files,
+			}),
+		}),
+		files: input.files,
+	})
+}
+
 export async function loadPackageSourceBySourceId(input: {
 	env: Env
 	baseUrl: string

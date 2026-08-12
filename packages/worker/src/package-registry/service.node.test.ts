@@ -42,6 +42,7 @@ const mockModule = vi.hoisted(() => ({
 	listJobRowsByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
+	loadPackageSourceFromFiles: vi.fn(),
 	packageServiceRpc: vi.fn(),
 	syncJobManagerAlarm: vi.fn(),
 	syncPackageJobsForPackage: vi.fn(),
@@ -131,6 +132,8 @@ vi.mock('./source.ts', () => ({
 		mockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mockModule.loadPackageSourceBySourceId(...args),
+	loadPackageSourceFromFiles: (...args: Array<unknown>) =>
+		mockModule.loadPackageSourceFromFiles(...args),
 }))
 
 vi.mock('./vectorize.ts', () => ({
@@ -252,6 +255,7 @@ function setupDefaultMocks() {
 	mockModule.clearStorage.mockReset()
 	mockModule.clearStorage.mockResolvedValue({ ok: true as const })
 	mockModule.listJobRowsByUserId.mockResolvedValue([])
+	mockModule.loadPackageSourceFromFiles.mockReset()
 }
 
 test('refreshSavedPackageProjection defers search-index upsert and retriever cache via waitUntil', async () => {
@@ -307,6 +311,60 @@ test('refreshSavedPackageProjection defers search-index upsert and retriever cac
 	expect(waitUntilPromises.length).toBeGreaterThanOrEqual(1)
 	await Promise.all(waitUntilPromises)
 	expect(mockModule.refreshPackageRetrieverManifestCache).toHaveBeenCalled()
+})
+
+test('refreshSavedPackageProjection uses caller-supplied source files instead of reloading KV', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	const sourceFiles = {
+		'package.json': '{"name":"@kentcdodds/shade-automation"}',
+		'src/index.ts': 'export default async function main() {}',
+	}
+	mockModule.loadPackageSourceFromFiles.mockResolvedValue({
+		manifest: {
+			name: '@kentcdodds/shade-automation',
+			kody: {
+				id: 'shade-automation',
+				description: 'Shade automation package',
+				tags: ['home'],
+			},
+		},
+		files: sourceFiles,
+		source: { id: 'source-1' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Old description',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+
+	await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+		sourceFiles,
+	})
+
+	expect(mockModule.loadPackageSourceFromFiles).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		sourceId: 'source-1',
+		files: sourceFiles,
+	})
+	expect(mockModule.loadPackageSourceBySourceId).not.toHaveBeenCalled()
+	expect(mockModule.buildPublishedPackageArtifacts).toHaveBeenCalled()
 })
 
 test('refreshSavedPackageProjection syncs the job manager only when package jobs change', async () => {

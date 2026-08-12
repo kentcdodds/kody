@@ -317,6 +317,34 @@ export async function persistPublishedPackageArtifactTarget(
 	})
 }
 
+/**
+ * Cap concurrent esbuild-wasm rebuilds so a many-export package cannot stack
+ * isolate heap the way fully sequential rebuilds used to stretch wall time.
+ * Two at a time cuts typical 4-target publishes roughly in half without
+ * reopening the session-DO memory failure in kentcdodds/kody#987.
+ */
+const publishedPackageArtifactRebuildConcurrency = 2
+
+async function mapWithConcurrency<T>(
+	items: ReadonlyArray<T>,
+	concurrency: number,
+	mapper: (item: T) => Promise<void>,
+) {
+	if (items.length === 0) return
+	const limit = Math.max(1, Math.min(concurrency, items.length))
+	let nextIndex = 0
+	async function worker() {
+		while (nextIndex < items.length) {
+			const index = nextIndex
+			nextIndex += 1
+			const item = items[index]
+			if (item === undefined) return
+			await mapper(item)
+		}
+	}
+	await Promise.all(Array.from({ length: limit }, () => worker()))
+}
+
 export async function rebuildPublishedPackageArtifacts(
 	input: {
 		env: Env
@@ -326,18 +354,22 @@ export async function rebuildPublishedPackageArtifacts(
 		manifest: AuthoredPackageJson
 	} & PublishedPackageArtifactBuilders,
 ) {
-	for (const target of collectPublishedPackageArtifactTargets(input.manifest)) {
-		await persistPublishedPackageArtifactTarget({
-			env: input.env,
-			userId: input.userId,
-			source: input.source,
-			savedPackage: input.savedPackage,
-			target,
-			buildAppBundle: input.buildAppBundle,
-			buildModuleBundle: input.buildModuleBundle,
-			buildImportableModuleBundle: input.buildImportableModuleBundle,
-		})
-	}
+	await mapWithConcurrency(
+		collectPublishedPackageArtifactTargets(input.manifest),
+		publishedPackageArtifactRebuildConcurrency,
+		async (target) => {
+			await persistPublishedPackageArtifactTarget({
+				env: input.env,
+				userId: input.userId,
+				source: input.source,
+				savedPackage: input.savedPackage,
+				target,
+				buildAppBundle: input.buildAppBundle,
+				buildModuleBundle: input.buildModuleBundle,
+				buildImportableModuleBundle: input.buildImportableModuleBundle,
+			})
+		},
+	)
 }
 
 export async function deletePublishedArtifactsForSource(input: {

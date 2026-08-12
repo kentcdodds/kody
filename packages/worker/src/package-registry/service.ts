@@ -18,6 +18,7 @@ import {
 import {
 	loadPackageManifestBySourceId,
 	loadPackageSourceBySourceId,
+	loadPackageSourceFromFiles,
 } from './source.ts'
 import {
 	type AuthoredPackageJson,
@@ -220,6 +221,11 @@ export async function refreshSavedPackageProjection(input: {
 	packageId: string
 	sourceId: string
 	rebuildArtifacts?: boolean
+	/**
+	 * When the caller already holds the published file set (one-click install
+	 * just forked these into the source), skip the KV/Artifacts reload.
+	 */
+	sourceFiles?: Record<string, string>
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	return await withAccountWriteLease({
@@ -228,19 +234,26 @@ export async function refreshSavedPackageProjection(input: {
 		env: input.env,
 		async write() {
 			const shouldRebuildArtifacts = input.rebuildArtifacts ?? true
-			const loaded = shouldRebuildArtifacts
-				? await loadPackageSourceBySourceId({
+			const loaded = input.sourceFiles
+				? await loadPackageSourceFromFiles({
 						env: input.env,
-						baseUrl: input.baseUrl,
 						userId: input.userId,
 						sourceId: input.sourceId,
+						files: input.sourceFiles,
 					})
-				: await loadPackageManifestBySourceId({
-						env: input.env,
-						baseUrl: input.baseUrl,
-						userId: input.userId,
-						sourceId: input.sourceId,
-					})
+				: shouldRebuildArtifacts
+					? await loadPackageSourceBySourceId({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							userId: input.userId,
+							sourceId: input.sourceId,
+						})
+					: await loadPackageManifestBySourceId({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							userId: input.userId,
+							sourceId: input.sourceId,
+						})
 			const row = toSavedPackageInsertRow({
 				packageId: input.packageId,
 				userId: input.userId,
@@ -341,10 +354,10 @@ export async function refreshSavedPackageProjection(input: {
 				createdAt: existing?.createdAt ?? refreshedAt,
 				updatedAt: refreshedAt,
 			} satisfies SavedPackageRecord
-			const loadedFiles: Record<string, string> | null =
-				shouldRebuildArtifacts && 'files' in loaded
-					? (loaded.files as Record<string, string>)
-					: null
+			const loadedFiles: Record<string, string> | null = shouldRebuildArtifacts
+				? (input.sourceFiles ??
+					('files' in loaded ? (loaded.files as Record<string, string>) : null))
+				: null
 			if (loadedFiles) {
 				// Artifacts stay on the hot path: invoke needs them immediately
 				// and there is no safe cold-build substitute for a fresh publish.

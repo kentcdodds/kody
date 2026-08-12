@@ -619,3 +619,106 @@ test('rebuildPublishedPackageArtifacts uses builder dependency metadata instead 
 		),
 	).toEqual(['[]', '[]'])
 })
+
+test('rebuildPublishedPackageArtifacts overlaps a bounded number of target builds', async () => {
+	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.insertPublishedBundleArtifactRow.mockReset()
+	mockModule.writePublishedBundleArtifact.mockReset()
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	mockModule.writePublishedBundleArtifact.mockResolvedValue('kv:key')
+	mockModule.insertPublishedBundleArtifactRow.mockResolvedValue(undefined)
+
+	let resolveGate: (() => void) | undefined
+	const gate = new Promise<void>((resolve) => {
+		resolveGate = resolve
+	})
+	let inFlight = 0
+	let maxInFlight = 0
+	const track = async (entryPoint: string, prefix: string) => {
+		inFlight += 1
+		maxInFlight = Math.max(maxInFlight, inFlight)
+		await gate
+		inFlight -= 1
+		return {
+			mainModule: `dist/${prefix}${entryPoint.replaceAll('/', '_')}.js`,
+			modules: {
+				[`dist/${prefix}${entryPoint.replaceAll('/', '_')}.js`]:
+					'export default async function run() { return "ok" }',
+			},
+			dependencies: [],
+		}
+	}
+	const buildAppBundle = vi.fn()
+	const buildModuleBundle = vi.fn(
+		async ({ entryPoint }: { entryPoint: string }) => track(entryPoint, ''),
+	)
+	const buildImportableModuleBundle = vi.fn(
+		async ({ entryPoint }: { entryPoint: string }) =>
+			track(entryPoint, 'importable_'),
+	)
+
+	const rebuildPromise = rebuildPublishedPackageArtifacts({
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: {
+				get: async () => null,
+				put: async () => undefined,
+				delete: async () => undefined,
+			},
+		} as unknown as Env,
+		userId: 'user-1',
+		source: {
+			id: 'source-1',
+			user_id: 'user-1',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-1',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-30T00:00:00.000Z',
+			updated_at: '2026-04-30T00:00:00.000Z',
+		},
+		savedPackage: {
+			id: 'pkg-1',
+			userId: 'user-1',
+			name: '@kentcdodds/multi-export',
+			kodyId: 'multi-export',
+			description: 'Multi-export package',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-1',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-04-30T00:00:00.000Z',
+			updatedAt: '2026-04-30T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kentcdodds/multi-export',
+			exports: {
+				'.': './src/index.ts',
+				'./hello': './src/hello.ts',
+			},
+			kody: {
+				id: 'multi-export',
+				description: 'Multi-export package',
+			},
+		},
+		buildAppBundle,
+		buildModuleBundle,
+		buildImportableModuleBundle,
+	})
+
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (maxInFlight >= 2) break
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+	expect(maxInFlight).toBeGreaterThanOrEqual(2)
+	expect(maxInFlight).toBeLessThanOrEqual(2)
+	resolveGate?.()
+	await rebuildPromise
+	expect(buildModuleBundle).toHaveBeenCalledTimes(2)
+	expect(buildImportableModuleBundle).toHaveBeenCalledTimes(2)
+})

@@ -22,8 +22,11 @@ vi.mock('#worker/repo/published-source.ts', () => ({
 		mockModule.loadPublishedEntityManifest(...args),
 }))
 
-const { loadPackageSourceBySourceId, loadPackageManifestBySourceId } =
-	await import('./source.ts')
+const {
+	loadPackageSourceBySourceId,
+	loadPackageManifestBySourceId,
+	loadPackageSourceFromFiles,
+} = await import('./source.ts')
 
 function createPackageSourceRow(input: {
 	id: string
@@ -439,4 +442,37 @@ test('loadPackageManifestBySourceId retries transient D1 export errors on the so
 
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
 	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
+})
+
+test('loadPackageSourceFromFiles parses the caller file set without reading KV', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.loadPublishedEntitySource.mockReset()
+	mockModule.getEntitySourceById.mockResolvedValue(
+		createPackageSourceRow({
+			id: 'source-from-files',
+			publishedCommit: 'commit-fork-1',
+		}),
+	)
+	const files = {
+		'package.json': JSON.stringify({
+			name: '@kentcdodds/example-package',
+			exports: { '.': './index.js' },
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		}),
+		'index.js': 'export default async function main() { return "ok" }\n',
+	}
+
+	const loaded = await loadPackageSourceFromFiles({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		sourceId: 'source-from-files',
+		files,
+	})
+
+	expect(loaded.files).toEqual(files)
+	expect(loaded.manifest.kody.id).toBe('example-package')
+	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
 })
