@@ -143,6 +143,12 @@ class McpClientHubBase extends DurableObject<Env> {
 		name: string
 		url: string
 		callbackUrl: string
+		/**
+		 * Optional static request headers (for example Authorization: Bearer …).
+		 * Persisted in the Agents SDK `server_options` blob alongside the server
+		 * row; never returned in snapshots.
+		 */
+		headers?: Record<string, string>
 	}): Promise<McpServerConnectResult> {
 		await this.ensureRestored()
 		const existing = this.manager.mcpConnections[input.serverId]
@@ -164,7 +170,11 @@ class McpClientHubBase extends DurableObject<Env> {
 			url: input.url,
 			name: input.name,
 			callbackUrl: input.callbackUrl,
-			transport: { type: 'auto', authProvider },
+			transport: {
+				type: 'auto',
+				authProvider,
+				...(input.headers ? { headers: input.headers } : {}),
+			},
 		})
 		const result = await this.manager.connectToServer(input.serverId)
 		if (result.state === 'connected') {

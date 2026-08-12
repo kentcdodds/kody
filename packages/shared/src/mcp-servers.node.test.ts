@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	isValidMcpServerName,
+	mcpServerAuthorizationHeaders,
+	mcpServerBearerTokenMaxLength,
+	normalizeMcpServerBearerToken,
 	normalizeMcpServerName,
 	validateMcpServerUrl,
 } from './mcp-servers.ts'
@@ -27,4 +30,30 @@ test('MCP server URLs require https except for loopback hosts', () => {
 	expect(validateMcpServerUrl('').ok).toBe(false)
 	expect(validateMcpServerUrl('not a url').ok).toBe(false)
 	expect(validateMcpServerUrl('http://example.com/mcp').ok).toBe(false)
+})
+
+test('MCP server bearer tokens normalize to Authorization header values', () => {
+	expect(normalizeMcpServerBearerToken(undefined)).toEqual({ ok: true })
+	expect(normalizeMcpServerBearerToken('')).toEqual({ ok: true })
+	expect(normalizeMcpServerBearerToken('   ')).toEqual({ ok: true })
+	expect(normalizeMcpServerBearerToken('secret-token')).toEqual({
+		ok: true,
+		authorization: 'Bearer secret-token',
+	})
+	expect(normalizeMcpServerBearerToken('Bearer already')).toEqual({
+		ok: true,
+		authorization: 'Bearer already',
+	})
+	expect(normalizeMcpServerBearerToken('token abc.def')).toEqual({
+		ok: true,
+		authorization: 'token abc.def',
+	})
+	expect(
+		normalizeMcpServerBearerToken('x'.repeat(mcpServerBearerTokenMaxLength + 1))
+			.ok,
+	).toBe(false)
+	expect(mcpServerAuthorizationHeaders(undefined)).toBeUndefined()
+	expect(mcpServerAuthorizationHeaders('Bearer secret')).toEqual({
+		Authorization: 'Bearer secret',
+	})
 })

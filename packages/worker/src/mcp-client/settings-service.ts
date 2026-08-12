@@ -1,6 +1,8 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	isValidMcpServerName,
+	mcpServerAuthorizationHeaders,
+	normalizeMcpServerBearerToken,
 	normalizeMcpServerName,
 	validateMcpServerUrl,
 	type McpServerRef,
@@ -145,6 +147,12 @@ export async function addMcpServer(input: {
 	name: string
 	url: string
 	baseUrl: string
+	/**
+	 * Optional static credential for servers that authenticate with a bearer
+	 * token (or other Authorization scheme) instead of OAuth. Never stored in
+	 * D1 — only forwarded into the hub DO's Agents SDK server options.
+	 */
+	bearerToken?: string | null
 }): Promise<{
 	setting: McpServerSettingMetadata
 	connection: McpServerConnectResult
@@ -154,6 +162,11 @@ export async function addMcpServer(input: {
 	if (!urlValidation.ok || !urlValidation.url) {
 		throw new Error(urlValidation.error ?? 'Server URL is invalid.')
 	}
+	const tokenValidation = normalizeMcpServerBearerToken(input.bearerToken)
+	if (!tokenValidation.ok) {
+		throw new Error(tokenValidation.error ?? 'Bearer token is invalid.')
+	}
+	const headers = mcpServerAuthorizationHeaders(tokenValidation.authorization)
 	const existing = await getMcpServerSettingRowByName({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -185,6 +198,7 @@ export async function addMcpServer(input: {
 			name,
 			url: urlValidation.url,
 			callbackUrl: buildMcpServerOAuthCallbackUrl(input.baseUrl),
+			...(headers ? { headers } : {}),
 		})
 	} catch (error) {
 		const message = getErrorMessage(error)

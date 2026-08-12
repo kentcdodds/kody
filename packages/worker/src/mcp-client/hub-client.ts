@@ -26,6 +26,7 @@ export type McpClientHubClient = {
 		name: string
 		url: string
 		callbackUrl: string
+		headers?: Record<string, string>
 	}): Promise<McpServerConnectResult>
 	reconnectServer(input: { serverId: string }): Promise<McpServerConnectResult>
 	refreshServer(input: { serverId: string }): Promise<McpServerConnectResult>

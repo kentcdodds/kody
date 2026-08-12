@@ -28,13 +28,17 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
 - **Settings service** (`packages/worker/src/mcp-client/settings-service.ts`) —
   validates names (`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`) and URLs (https
   required; plain http allowed only for loopback hosts), and keeps D1 and the
-  hub DO in sync.
+  hub DO in sync. Optional `bearerToken` values are normalized into an
+  `Authorization` header and stored only in the hub DO's Agents SDK
+  `server_options` (never in D1 or list/detail API responses).
 
 ## OAuth flow
 
 1. `addServer` registers the server with a callback URL of
    `<canonical-app-origin>/account/mcp-servers/oauth/callback` (from
-   `APP_BASE_URL`, not the request host) and starts connecting.
+   `APP_BASE_URL`, not the request host) and starts connecting. Optional static
+   Authorization headers from `bearerToken` are registered on the transport at
+   the same time.
 2. If the server requires OAuth, the SDK performs dynamic client registration
    and the connection parks in state `authenticating` with an `authUrl`.
 3. The user opens `authUrl` in the browser (surfaced in the account UI and by
@@ -87,11 +91,13 @@ canonical app origin and the callback path above. See
 
 ## Management surfaces
 
-- **UI**: `/account/mcp-servers` (add, authorize, reconnect, refresh tools,
-  enable/disable, remove; shows live state and discovered tools).
+- **UI**: `/account/mcp-servers` (add with optional bearer token, authorize,
+  reconnect, refresh tools, enable/disable, remove; shows live state and
+  discovered tools).
 - **Capabilities**: the `mcp_servers` domain (`mcp_server_add`,
   `mcp_server_list`, `mcp_server_reconnect`, `mcp_server_refresh`,
-  `mcp_server_remove`, `mcp_server_set_enabled`).
+  `mcp_server_remove`, `mcp_server_set_enabled`). `mcp_server_add` accepts
+  optional `bearerToken`.
 
 ## Isolation and lifecycle
 

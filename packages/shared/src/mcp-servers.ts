@@ -5,6 +5,11 @@ export type McpServerRef = {
 
 export const mcpServerNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
 
+/** Upper bound for static Authorization header values stored for MCP clients. */
+export const mcpServerBearerTokenMaxLength = 8_192
+
+const authorizationSchemePattern = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\s+\S/
+
 export function normalizeMcpServerName(name: string): string {
 	return name.trim().toLowerCase()
 }
@@ -47,4 +52,49 @@ export function validateMcpServerUrl(url: string): {
 		error:
 			'Server URL must use https (plain http is only allowed for localhost).',
 	}
+}
+
+/**
+ * Normalize an optional static MCP Authorization credential.
+ *
+ * Empty input means no header. Values that already look like an HTTP auth
+ * scheme (`Bearer …`, `token …`, etc.) are kept as-is; bare tokens become
+ * `Bearer <token>`. The result is suitable for an `Authorization` request
+ * header on every MCP client request.
+ */
+export function normalizeMcpServerBearerToken(
+	token: string | null | undefined,
+): {
+	ok: boolean
+	authorization?: string
+	error?: string
+} {
+	if (token == null) {
+		return { ok: true }
+	}
+	const trimmed = token.trim()
+	if (!trimmed) {
+		return { ok: true }
+	}
+	if (trimmed.length > mcpServerBearerTokenMaxLength) {
+		return {
+			ok: false,
+			error: `Bearer token must be at most ${mcpServerBearerTokenMaxLength} characters.`,
+		}
+	}
+	const authorization = authorizationSchemePattern.test(trimmed)
+		? trimmed
+		: `Bearer ${trimmed}`
+	return { ok: true, authorization }
+}
+
+/**
+ * Build the durable transport headers map for a normalized Authorization
+ * value, or `undefined` when no static auth header should be sent.
+ */
+export function mcpServerAuthorizationHeaders(
+	authorization: string | undefined,
+): Record<string, string> | undefined {
+	if (!authorization) return undefined
+	return { Authorization: authorization }
 }

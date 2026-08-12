@@ -4,7 +4,10 @@ import { type Action } from 'remix/router'
 import { loadAccountMcpServersData } from '#app/account-mcp-servers-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
-import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
+import {
+	readNonEmptyTrimmedString,
+	readTrimmedStringOrEmpty,
+} from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
@@ -200,6 +203,7 @@ async function handleAddAction(input: {
 		name: readTrimmedStringOrEmpty(input.body, 'name'),
 		url: readTrimmedStringOrEmpty(input.body, 'url'),
 		baseUrl: oauth.clientOrigin,
+		bearerToken: readNonEmptyTrimmedString(input.body, 'bearerToken'),
 	})
 	const payload = await loadAccountMcpServersData({
 		env: input.env,

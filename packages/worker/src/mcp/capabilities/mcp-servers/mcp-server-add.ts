@@ -27,7 +27,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 	{
 		name: 'mcp_server_add',
 		description:
-			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin and oauthCallbackUrl.',
+			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin and oauthCallbackUrl.',
 		keywords: [
 			'mcp',
 			'server',
@@ -35,6 +35,9 @@ export const mcpServerAddCapability = defineDomainCapability(
 			'connect',
 			'client',
 			'oauth',
+			'bearer',
+			'token',
+			'authorization',
 			'remote',
 			'tools',
 			'integration',
@@ -55,9 +58,19 @@ export const mcpServerAddCapability = defineDomainCapability(
 				.describe(
 					'The remote MCP server endpoint URL. Must be https (http is only allowed for localhost during development).',
 				),
+			bearerToken: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Optional static credential for Authorization. Bare tokens are sent as Bearer <token>; values that already include an auth scheme (Bearer, token, etc.) are sent as-is. Stored only in the per-user MCP client hub, never returned later.',
+				),
 		}),
 		outputSchema,
-		async handler(args: { name: string; url: string }, ctx: CapabilityContext) {
+		async handler(
+			args: { name: string; url: string; bearerToken?: string },
+			ctx: CapabilityContext,
+		) {
 			const user = requireMcpUser(ctx.callerContext)
 			const oauth = resolveMcpServerOAuthClientUrls({
 				env: ctx.env,
@@ -69,6 +82,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 				name: args.name,
 				url: args.url,
 				baseUrl: oauth.clientOrigin,
+				bearerToken: args.bearerToken,
 			})
 			const error = connection.error
 				? enrichMcpOAuthProviderError(connection.error, oauth)

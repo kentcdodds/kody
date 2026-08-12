@@ -36,6 +36,7 @@ vi.mock('./hub-client.ts', () => ({
 }))
 
 const {
+	addMcpServer,
 	clearEnabledMcpServerRefsCacheForTests,
 	enabledMcpServerRefsCacheTtlMs,
 	listEnabledMcpServerRefsCached,
@@ -122,4 +123,51 @@ test('resolveMcpServerOAuthClientUrls prefers APP_BASE_URL over the request host
 		clientOrigin: 'https://preview.example',
 		callbackUrl: 'https://preview.example/account/mcp-servers/oauth/callback',
 	})
+})
+
+test('addMcpServer forwards bearer tokens as Authorization headers to the hub', async () => {
+	clearEnabledMcpServerRefsCacheForTests()
+	mockModule.getMcpServerSettingRowByName.mockResolvedValue(null)
+	mockModule.insertMcpServerSettingRow.mockResolvedValue(undefined)
+	mockModule.hubClient.addServer.mockResolvedValue({
+		serverId: 'ignored',
+		state: 'ready',
+		authUrl: null,
+		error: null,
+		toolCount: 1,
+	})
+
+	const env = { APP_DB: {} } as Env
+	const result = await addMcpServer({
+		env,
+		userId: 'user-1',
+		name: 'linear',
+		url: 'https://mcp.example.com/mcp',
+		baseUrl: 'https://heykody.app',
+		bearerToken: 'secret-token',
+	})
+
+	expect(result.setting.name).toBe('linear')
+	expect(mockModule.hubClient.addServer).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'linear',
+			url: 'https://mcp.example.com/mcp',
+			callbackUrl: 'https://heykody.app/account/mcp-servers/oauth/callback',
+			headers: { Authorization: 'Bearer secret-token' },
+		}),
+	)
+	expect(mockModule.insertMcpServerSettingRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			row: expect.objectContaining({
+				name: 'linear',
+				url: 'https://mcp.example.com/mcp',
+				user_id: 'user-1',
+			}),
+		}),
+	)
+	// D1 metadata must not carry the credential.
+	const insertedRow = mockModule.insertMcpServerSettingRow.mock.calls[0]?.[0]
+		?.row as Record<string, unknown>
+	expect(insertedRow).not.toHaveProperty('bearerToken')
+	expect(JSON.stringify(insertedRow)).not.toContain('secret-token')
 })

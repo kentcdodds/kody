@@ -191,6 +191,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let oauthCallbackUrl = ''
 	let addName = ''
 	let addUrl = ''
+	let addBearerToken = ''
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	const loadLatch = createRouteLoadLatch()
@@ -326,6 +327,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 		const formData = new FormData(form)
 		addName = String(formData.get('name') ?? '').trim()
 		addUrl = String(formData.get('url') ?? '').trim()
+		addBearerToken = String(formData.get('bearerToken') ?? '')
 		if (!addName) {
 			setMessage('Server name is required.', 'error')
 			handle.update()
@@ -336,11 +338,18 @@ export function AccountMcpServersRoute(handle: Handle) {
 			handle.update()
 			return
 		}
+		const bearerToken = addBearerToken.trim()
 		await postAction({
-			body: { action: 'add', name: addName, url: addUrl },
+			body: {
+				action: 'add',
+				name: addName,
+				url: addUrl,
+				...(bearerToken ? { bearerToken } : {}),
+			},
 			successMessage: (payload) => {
 				addName = ''
 				addUrl = ''
+				addBearerToken = ''
 				const added = payload.selectedServerId
 					? payload.servers.find(
 							(server) => server.id === payload.selectedServerId,
@@ -412,7 +421,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="MCP servers"
-					description="Connect remote MCP servers so their tools are available to Kody as kody.mcp capabilities. Servers that require OAuth prompt for authorization after they are added."
+					description="Connect remote MCP servers so their tools are available to Kody as kody.mcp capabilities. Use a bearer token for static Authorization, or complete OAuth when the server requires it."
 					currentHref={currentHref}
 					actions={
 						<button
@@ -569,7 +578,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 										<p mix={css(descriptionCss)}>
 											Provide a short name and the server URL. Remote servers
 											must use https; Kody connects as an MCP client and
-											discovers the server&apos;s tools.
+											discovers the server&apos;s tools. For servers that use a
+											static bearer token instead of OAuth, paste it below.
 										</p>
 									</div>
 
@@ -583,6 +593,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 											placeholder="linear"
 											disabled={isMutating}
 											required
+											autocomplete="off"
 											mix={[
 												on('input', (event) => {
 													addName = event.currentTarget.value
@@ -607,6 +618,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 											placeholder="https://mcp.example.com/mcp"
 											disabled={isMutating}
 											required
+											autocomplete="off"
 											mix={[
 												on('input', (event) => {
 													addUrl = event.currentTarget.value
@@ -615,6 +627,38 @@ export function AccountMcpServersRoute(handle: Handle) {
 												css(accountInputCss),
 											]}
 										/>
+									</label>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>
+											Bearer token{' '}
+											<span mix={css({ color: colors.textMuted })}>
+												(optional)
+											</span>
+										</span>
+										<input
+											data-field-ring
+											name="bearerToken"
+											type="password"
+											value={addBearerToken}
+											placeholder="Paste token or Authorization value"
+											disabled={isMutating}
+											autocomplete="off"
+											mix={[
+												on('input', (event) => {
+													addBearerToken = event.currentTarget.value
+													handle.update()
+												}),
+												css(accountInputCss),
+											]}
+										/>
+										<span mix={css(descriptionCss)}>
+											Sent as Authorization: Bearer &lt;token&gt; on every
+											request. If you already include a scheme (Bearer, token,
+											etc.), it is used as-is. Leave blank for OAuth or
+											unauthenticated servers. The token is stored only in your
+											private MCP client hub and is never shown again.
+										</span>
 									</label>
 
 									<div>

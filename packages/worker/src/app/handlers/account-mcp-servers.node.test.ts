@@ -198,6 +198,7 @@ test('MCP servers API add action uses the canonical OAuth callback origin', asyn
 				action: 'add',
 				name: 'notion',
 				url: 'https://mcp.notion.example/mcp',
+				bearerToken: 'secret-token',
 			}),
 		}),
 		params: {},
@@ -210,6 +211,7 @@ test('MCP servers API add action uses the canonical OAuth callback origin', asyn
 			name: 'notion',
 			url: 'https://mcp.notion.example/mcp',
 			baseUrl: 'https://example.com',
+			bearerToken: 'secret-token',
 		}),
 	)
 	const payload = (await addResponse.json()) as {
