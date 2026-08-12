@@ -303,6 +303,11 @@ export type ForkCommunityListingResult = {
 	 * the snapshot; capability results must never expose them directly.
 	 */
 	files: Record<string, string>
+	/**
+	 * Request-scoped phase timings for this fork. Same shape as execute
+	 * `serverTiming`. Returned on the response only — not stored.
+	 */
+	serverTiming?: Array<{ name: string; durationMs: number }>
 }
 
 export type CommunityReportResolutionAction = 'dismiss' | 'delist' | 'delete'

@@ -154,6 +154,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		})
 
 	try {
+		const serverTiming: Array<{ name: string; durationMs: number }> = []
 		const source = await ensureEntitySource({
 			db,
 			env: {
@@ -166,6 +167,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 			entityKind: 'job',
 			entityId: 'job-1',
 			sourceRoot: '/',
+			serverTiming,
 		})
 
 		expect(fetchMock).toHaveBeenCalledTimes(3)
@@ -176,6 +178,11 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 			token: 'art_v1_create?expires=1760000000',
 			expiresAt: '2025-10-09T08:53:20.000Z',
 		})
+		expect(serverTiming.map((entry) => entry.name)).toEqual([
+			'artifacts-repo-ready',
+			'entity-source-insert',
+			'artifacts-push-subscription',
+		])
 	} finally {
 		fetchMock.mockRestore()
 	}

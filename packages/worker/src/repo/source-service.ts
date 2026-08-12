@@ -11,6 +11,10 @@ import {
 	updateEntitySource,
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 
 export type EnsuredEntitySource = EntitySourceRow & {
 	bootstrapAccess?: ArtifactBootstrapAccess | null
@@ -66,6 +70,8 @@ export async function ensureEntitySource(input: {
 	manifestPath?: string
 	sourceRoot?: string
 	requirePersistence?: boolean
+	/** Request-scoped phase timings; omitted when the caller does not collect. */
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<EnsuredEntitySource> {
 	const hasDbPrepare = hasAppDbBinding(input.db)
 	const hasArtifactsAccessResult = hasArtifactsAccess(input.env)
@@ -96,7 +102,11 @@ export async function ensureEntitySource(input: {
 		entityId: input.entityId,
 	})
 	if (existing) {
-		const repoReady = await ensureArtifactRepoReady(input.env, existing.repo_id)
+		const repoReady = await pushServerTiming(
+			input.serverTiming,
+			'artifacts-repo-ready',
+			() => ensureArtifactRepoReady(input.env, existing.repo_id),
+		)
 		const source = repoReady.recreated
 			? {
 					...existing,
@@ -113,12 +123,17 @@ export async function ensureEntitySource(input: {
 				indexedCommit: null,
 			})
 		}
-		await ensureArtifactsRepoPushSubscription({
-			env: input.env,
-			userId: existing.user_id,
-			sourceId: existing.id,
-			repoName: existing.repo_id,
-		})
+		await pushServerTiming(
+			input.serverTiming,
+			'artifacts-push-subscription',
+			() =>
+				ensureArtifactsRepoPushSubscription({
+					env: input.env,
+					userId: existing.user_id,
+					sourceId: existing.id,
+					repoName: existing.repo_id,
+				}),
+		)
 		return source
 	}
 	const row = buildEntitySourceRow({
@@ -130,14 +145,25 @@ export async function ensureEntitySource(input: {
 		manifestPath: input.manifestPath,
 		sourceRoot: input.sourceRoot,
 	})
-	const repoReady = await ensureArtifactRepoReady(input.env, row.repo_id)
-	await insertEntitySource(input.db, row)
-	await ensureArtifactsRepoPushSubscription({
-		env: input.env,
-		userId: row.user_id,
-		sourceId: row.id,
-		repoName: row.repo_id,
-	})
+	const repoReady = await pushServerTiming(
+		input.serverTiming,
+		'artifacts-repo-ready',
+		() => ensureArtifactRepoReady(input.env, row.repo_id),
+	)
+	await pushServerTiming(input.serverTiming, 'entity-source-insert', () =>
+		insertEntitySource(input.db, row),
+	)
+	await pushServerTiming(
+		input.serverTiming,
+		'artifacts-push-subscription',
+		() =>
+			ensureArtifactsRepoPushSubscription({
+				env: input.env,
+				userId: row.user_id,
+				sourceId: row.id,
+				repoName: row.repo_id,
+			}),
+	)
 	return {
 		...row,
 		bootstrapAccess: repoReady.recreated ? repoReady.bootstrapAccess : null,

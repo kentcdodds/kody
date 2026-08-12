@@ -292,6 +292,25 @@ test('community package flow works end-to-end through capability handlers', asyn
 		forkerCtx,
 	)
 	expect(forkResult.target_name).toBe(`@userb/${kodyId}`)
+	expect(forkResult.serverTiming).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				name: 'prepare',
+				durationMs: expect.any(Number),
+			}),
+			expect.objectContaining({
+				name: 'artifacts-repo-ready',
+				durationMs: expect.any(Number),
+			}),
+			expect.objectContaining({
+				name: 'fork-row',
+				durationMs: expect.any(Number),
+			}),
+		]),
+	)
+	for (const entry of forkResult.serverTiming ?? []) {
+		expect(entry.durationMs).toBeGreaterThanOrEqual(0)
+	}
 	expect(forkResult.cross_scope_references).toEqual(
 		expect.arrayContaining([
 			{ file: 'src/index.ts', specifier: 'kody:@usera/' },

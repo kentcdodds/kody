@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 export const entityKindValues = ['job', 'package', 'repo'] as const
 export type EntityKind = (typeof entityKindValues)[number]
@@ -353,6 +354,7 @@ export type RepoSourceBootstrapResult = {
 	sessionId: string
 	publishedCommit: string
 	message: string
+	serverTiming?: Array<ServerTimingEntry>
 }
 
 export type RepoSessionRebaseResult = {

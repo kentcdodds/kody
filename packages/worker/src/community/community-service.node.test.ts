@@ -956,6 +956,10 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 
 	expect(result.targetKodyId).toBe('my-discord-gateway')
 	expect(result.targetName).toBe('@jane/my-discord-gateway')
+	expect(result.serverTiming?.map((entry) => entry.name)).toEqual([
+		'prepare',
+		'fork-row',
+	])
 	expect(result.crossScopeReferences).toEqual([
 		{ file: 'package.json', specifier: '@owner/shared-utils' },
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
@@ -964,9 +968,14 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		expect.objectContaining({
 			userId: 'user-2',
 			entityKind: 'package',
+			serverTiming: expect.any(Array),
 		}),
 	)
-	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			serverTiming: expect.any(Array),
+		}),
+	)
 	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({

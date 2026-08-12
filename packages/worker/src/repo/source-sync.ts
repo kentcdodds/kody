@@ -17,6 +17,10 @@ import {
 	writePublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type EntitySourceRow } from './types.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 
 type SyncArtifactSourceInput = {
 	env: Env
@@ -35,6 +39,8 @@ type SyncArtifactSourceInput = {
 	expectedPackageScope?: string
 	/** Optional git commit message used when publishing an existing source. */
 	commitMessage?: string
+	/** Request-scoped phase timings; omitted when the caller does not collect. */
+	serverTiming?: Array<ServerTimingEntry>
 }
 
 function validateEntitySourceManifest(input: {
@@ -132,73 +138,91 @@ export async function syncArtifactSourceSnapshot(
 				input.bootstrapAccess?.remote &&
 				isLoopbackArtifactsRemote(input.bootstrapAccess.remote)
 			) {
-				// The local-dev mock lane skips the RepoSession applyEdits gate, so
-				// enforce the per-file limit here for dev/prod parity.
-				const oversizedFile = findOversizedRepoSourceFile(
-					Object.entries(input.files),
-				)
-				if (oversizedFile) {
-					throw new Error(buildRepoLargeFileMessage(oversizedFile))
-				}
-				const snapshot = await writeMockArtifactSnapshot({
-					env: input.env,
-					repoId: source.repo_id,
-					files: input.files,
-				})
-				// Plain repos have no manifest requirement (live-at-HEAD).
-				if (source.entity_kind !== 'repo') {
-					const manifestContent = input.files[source.manifest_path]
-					if (typeof manifestContent !== 'string') {
-						throw new Error(
-							`Manifest "${source.manifest_path}" was not found in the repo source.`,
+				return await pushServerTiming(
+					input.serverTiming,
+					'mock-artifact-snapshot',
+					async () => {
+						// The local-dev mock lane skips the RepoSession applyEdits gate, so
+						// enforce the per-file limit here for dev/prod parity.
+						const oversizedFile = findOversizedRepoSourceFile(
+							Object.entries(input.files),
 						)
-					}
-					validateEntitySourceManifest({
-						entityKind: source.entity_kind,
-						content: manifestContent,
-						manifestPath: source.manifest_path,
-					})
-				}
-				await writePublishedSourceSnapshot({
-					env: input.env,
-					source: {
-						...source,
-						published_commit: snapshot.published_commit,
+						if (oversizedFile) {
+							throw new Error(buildRepoLargeFileMessage(oversizedFile))
+						}
+						const snapshot = await writeMockArtifactSnapshot({
+							env: input.env,
+							repoId: source.repo_id,
+							files: input.files,
+						})
+						// Plain repos have no manifest requirement (live-at-HEAD).
+						if (source.entity_kind !== 'repo') {
+							const manifestContent = input.files[source.manifest_path]
+							if (typeof manifestContent !== 'string') {
+								throw new Error(
+									`Manifest "${source.manifest_path}" was not found in the repo source.`,
+								)
+							}
+							validateEntitySourceManifest({
+								entityKind: source.entity_kind,
+								content: manifestContent,
+								manifestPath: source.manifest_path,
+							})
+						}
+						await writePublishedSourceSnapshot({
+							env: input.env,
+							source: {
+								...source,
+								published_commit: snapshot.published_commit,
+							},
+							files: input.files,
+						})
+						try {
+							await updateEntitySource(input.env.APP_DB, {
+								id: source.id,
+								userId: source.user_id,
+								publishedCommit: snapshot.published_commit,
+								manifestPath: source.manifest_path,
+								sourceRoot: source.source_root,
+							})
+						} catch (error) {
+							await input.env.BUNDLE_ARTIFACTS_KV.delete(
+								buildPublishedSourceSnapshotKvKey({
+									sourceId: source.id,
+									publishedCommit: snapshot.published_commit,
+								}),
+							)
+							throw error
+						}
+						return snapshot.published_commit
 					},
-					files: input.files,
-				})
-				try {
-					await updateEntitySource(input.env.APP_DB, {
-						id: source.id,
-						userId: source.user_id,
-						publishedCommit: snapshot.published_commit,
-						manifestPath: source.manifest_path,
-						sourceRoot: source.source_root,
-					})
-				} catch (error) {
-					await input.env.BUNDLE_ARTIFACTS_KV.delete(
-						buildPublishedSourceSnapshotKvKey({
-							sourceId: source.id,
-							publishedCommit: snapshot.published_commit,
-						}),
-					)
-					throw error
-				}
-				return snapshot.published_commit
+				)
 			}
-			const bootstrapResult = await session.bootstrapSource({
-				sessionId,
-				sourceId: source.id,
-				userId: input.userId,
-				edits,
-				bootstrapAccess: input.bootstrapAccess ?? null,
-			})
-			await writePublishedSnapshotWithRevert({
-				env: input.env,
-				source,
-				files: input.files,
-				publishedCommit: bootstrapResult.publishedCommit,
-			})
+			const bootstrapResult = await pushServerTiming(
+				input.serverTiming,
+				'bootstrap-source',
+				async () => {
+					const result = await session.bootstrapSource({
+						sessionId,
+						sourceId: source.id,
+						userId: input.userId,
+						edits,
+						bootstrapAccess: input.bootstrapAccess ?? null,
+					})
+					if (input.serverTiming && result.serverTiming) {
+						input.serverTiming.push(...result.serverTiming)
+					}
+					return result
+				},
+			)
+			await pushServerTiming(input.serverTiming, 'published-snapshot', () =>
+				writePublishedSnapshotWithRevert({
+					env: input.env,
+					source,
+					files: input.files,
+					publishedCommit: bootstrapResult.publishedCommit,
+				}),
+			)
 			return bootstrapResult.publishedCommit
 		}
 		await session.openSession({
@@ -247,10 +271,10 @@ export async function syncArtifactSourceSnapshot(
 		// persistence and rollback.
 		return publishResult.publishedCommit
 	} finally {
-		await session
-			.discardSession({ sessionId, userId: input.userId })
-			.catch(() => {
+		await pushServerTiming(input.serverTiming, 'discard-session', () =>
+			session.discardSession({ sessionId, userId: input.userId }).catch(() => {
 				// Best effort only; publish/apply failures should preserve the root cause.
-			})
+			}),
+		)
 	}
 }

@@ -183,6 +183,14 @@ id to the forker's scope, scans cross-scope references, calls
 `ensureEntitySource` + `syncArtifactSourceSnapshot`, and records
 `community_forks` — **without** inserting `saved_packages`.
 
+`community_fork` returns request-scoped `serverTiming` entries
+(`{ name, durationMs }`), the same shape as `execute`. They are not written to
+D1 or Analytics Engine. Nested `bootstrap-*` phases come from the RepoSession
+Durable Object; `bootstrap-source` is the RPC wall clock, including isolate
+startup. Subtract the nested bootstrap phases from `bootstrap-source` to
+estimate cold start. `Date.now()` in Workers only advances across I/O, so
+CPU-only steps may report `0`.
+
 `rateCommunityListing` requires a prior fork row for the rater and rejects
 ratings from the listing owner. `reportCommunityListing` stores denormalized
 listing metadata for the admin queue.

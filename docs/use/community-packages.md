@@ -106,6 +106,12 @@ user scopes:
 - static `kody:@originuser/...` imports
 - `package.json#kody.dependencies` entries pointing at other users' scopes
 
+The capability also returns optional **`serverTiming`** entries
+(`{ name, durationMs }`), the same shape as execute. They are request-scoped
+diagnostics, not stored metrics. `bootstrap-source` is the git bootstrap RPC
+(including Durable Object startup); nested `bootstrap-*` phases are the work
+inside that isolate.
+
 Your agent should:
 
 1. Confirm **your** intent (which may differ from the original author's).

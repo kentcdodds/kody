@@ -17,6 +17,10 @@ import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-clean
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
@@ -1141,8 +1145,10 @@ export async function prepareCommunityFork(
  */
 export async function persistPreparedCommunityFork(
 	prepared: PreparedCommunityFork,
+	options?: { serverTiming?: Array<ServerTimingEntry> },
 ): Promise<ForkCommunityListingResult> {
 	const persistStartedAt = Date.now()
+	const serverTiming = options?.serverTiming ?? []
 	const ensuredSource = await ensureEntitySource({
 		db: prepared.env.APP_DB,
 		env: prepared.env,
@@ -1150,6 +1156,7 @@ export async function persistPreparedCommunityFork(
 		entityKind: 'package',
 		entityId: prepared.packageId,
 		requirePersistence: true,
+		serverTiming,
 	})
 	try {
 		await syncArtifactSourceSnapshot({
@@ -1159,25 +1166,28 @@ export async function persistPreparedCommunityFork(
 			sourceId: ensuredSource.id,
 			files: prepared.files,
 			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+			serverTiming,
 		})
 
 		const forkId = crypto.randomUUID()
-		await insertCommunityFork(prepared.env.APP_DB, {
-			id: forkId,
-			listing_id: prepared.listingId,
-			forker_user_id: prepared.userId,
-			origin_commit: prepared.originCommit,
-			forked_package_id: prepared.packageId,
-			forked_source_id: ensuredSource.id,
-			target_kody_id: prepared.targetKodyId,
-			listing_name: prepared.listingName,
-			listing_kody_id: prepared.listingKodyId,
-			actor: prepared.actor,
-		})
-		await enqueueRecordedCommunityActivity({
-			env: prepared.env,
-			kind: 'fork',
-			activityId: forkId,
+		await pushServerTiming(serverTiming, 'fork-row', async () => {
+			await insertCommunityFork(prepared.env.APP_DB, {
+				id: forkId,
+				listing_id: prepared.listingId,
+				forker_user_id: prepared.userId,
+				origin_commit: prepared.originCommit,
+				forked_package_id: prepared.packageId,
+				forked_source_id: ensuredSource.id,
+				target_kody_id: prepared.targetKodyId,
+				listing_name: prepared.listingName,
+				listing_kody_id: prepared.listingKodyId,
+				actor: prepared.actor,
+			})
+			await enqueueRecordedCommunityActivity({
+				env: prepared.env,
+				kind: 'fork',
+				activityId: forkId,
+			})
 		})
 
 		invalidateCommunityPublicCache()
@@ -1199,6 +1209,7 @@ export async function persistPreparedCommunityFork(
 			crossScopeReferences: prepared.crossScopeReferences,
 			filesCount: Object.keys(prepared.files).length,
 			files: prepared.files,
+			...(serverTiming.length > 0 ? { serverTiming } : {}),
 		}
 	} catch (error) {
 		await cleanupFailedCommunityFork({
@@ -1214,8 +1225,11 @@ export async function persistPreparedCommunityFork(
 export async function forkCommunityListing(
 	input: PrepareCommunityForkInput,
 ): Promise<ForkCommunityListingResult> {
-	const prepared = await prepareCommunityFork(input)
-	return await persistPreparedCommunityFork(prepared)
+	const serverTiming: Array<ServerTimingEntry> = []
+	const prepared = await pushServerTiming(serverTiming, 'prepare', () =>
+		prepareCommunityFork(input),
+	)
+	return await persistPreparedCommunityFork(prepared, { serverTiming })
 }
 
 export type AdoptCommunityForkResult = {

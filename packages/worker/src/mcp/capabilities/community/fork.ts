@@ -42,6 +42,17 @@ export const communityForkCapability = defineDomainCapability(
 			cross_scope_references: z.array(crossScopeReferenceSchema),
 			next_steps: z.string(),
 			content_warning: z.string(),
+			serverTiming: z
+				.array(
+					z.object({
+						name: z.string(),
+						durationMs: z.number().nonnegative(),
+					}),
+				)
+				.optional()
+				.describe(
+					'Request-scoped phase timings. Same shape as execute serverTiming. Not stored. bootstrap-source includes Durable Object startup; subtract nested bootstrap-* phases to estimate cold start.',
+				),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -81,6 +92,9 @@ export const communityForkCapability = defineDomainCapability(
 				cross_scope_references: result.crossScopeReferences,
 				next_steps: communityForkNextSteps,
 				content_warning: communityContentWarning,
+				...(result.serverTiming && result.serverTiming.length > 0
+					? { serverTiming: result.serverTiming }
+					: {}),
 			}
 		},
 	},
