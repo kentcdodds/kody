@@ -442,14 +442,15 @@ function createPackageAppTestSource() {
 	}
 }
 
-function createPackageAppTestManifest() {
+function createPackageAppTestManifest(entry = 'app.js') {
 	return {
 		name: '@kody/example',
+		exports: { '.': `./${entry}` },
 		kody: {
 			id: 'example',
 			description: 'Example package',
 			app: {
-				entry: 'app.js',
+				entry,
 			},
 		},
 	}
@@ -872,6 +873,12 @@ test('buildPackageAppWorker persists rebuilt app artifacts with artifactName nul
 		'bundle-artifact:v1:source-1:commit-1:app:_:app.js',
 	)
 
+	const freshSource = {
+		...createPackageAppTestSource(),
+		published_commit: 'commit-2',
+	}
+	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(freshSource)
+
 	await buildPackageAppWorker({
 		env,
 		baseUrl: 'https://example.com',
@@ -903,17 +910,88 @@ test('buildPackageAppWorker persists rebuilt app artifacts with artifactName nul
 		} as never,
 	})
 
-	expect(packageAppRuntimeMock.getEntitySourceById).not.toHaveBeenCalled()
+	expect(packageAppRuntimeMock.getEntitySourceById).toHaveBeenCalledTimes(1)
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 	expect(
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
-			source,
+			source: freshSource,
 			kind: 'app',
 			artifactName: null,
 			entryPoint: 'app.js',
+		}),
+	)
+})
+
+test('an app artifact rebuild resolves its entry point from the fresh source, not the cached manifest', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env } = createPackageAppTestEnv()
+	const cachedSource = createPackageAppTestSource()
+	const freshSource = {
+		...createPackageAppTestSource(),
+		published_commit: 'commit-2',
+	}
+	const staleManifest = createPackageAppTestManifest('stale.js')
+	const freshManifest = createPackageAppTestManifest('fresh.js')
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		null,
+	)
+	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
+		mainModule: 'dist/app.js',
+		modules: {
+			'dist/app.js':
+				'export default { fetch() { return new Response("fresh") } }',
+		},
+		dependencies: [],
+		dynamicDependencies: [],
+	})
+	packageAppRuntimeMock.persistPublishedBundleArtifact.mockResolvedValue(
+		'bundle-artifact:v1:source-1:commit-2:app:_:fresh.js',
+	)
+	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(freshSource)
+
+	await buildPackageAppWorker({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		savedPackage: {
+			id: 'package-rebuild-entry',
+			kodyId: 'example-rebuild',
+			name: '@kody/example-rebuild',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		},
+		source: cachedSource,
+		manifest: staleManifest,
+		loadSourceFiles: async () => ({
+			'package.json': JSON.stringify(freshManifest),
+			'fresh.js':
+				'export default { async fetch() { return new Response("v2") } }',
+		}),
+		runtime: {
+			callerContext: {
+				user: {
+					userId: 'user-1',
+					email: 'rebuild@example.com',
+					displayName: 'Rebuild User',
+				},
+			},
+		} as never,
+	})
+
+	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'fresh.js' }),
+	)
+	expect(
+		packageAppRuntimeMock.persistPublishedBundleArtifact,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source: freshSource,
+			entryPoint: 'fresh.js',
 		}),
 	)
 })
@@ -934,8 +1012,8 @@ test('buildPackageAppWorker rejects persisting artifacts for a source owned by a
 		dependencies: [],
 		dynamicDependencies: [],
 	})
-	// The pre-resolved source belongs to user-1, so the fast path must be
-	// skipped and the DB lookup (which finds nothing for this user) must fail.
+	// Rebuild always loads the current source row. The lookup finds nothing
+	// for this user, so persist must not run.
 	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(null)
 
 	await expect(
