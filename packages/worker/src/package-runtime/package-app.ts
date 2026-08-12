@@ -613,11 +613,27 @@ function isSyntheticPackageAppRequest(request) {
 }
 
 async function startRuntimeRun(runtimeBridge, input) {
-	return await runtimeBridge.packageRuntimeRunStart(input);
+	try {
+		return await runtimeBridge.packageRuntimeRunStart(input);
+	} catch (error) {
+		console.warn('package-app-run-record-start-failed', error);
+		return null;
+	}
 }
 
 function finishRuntimeRun(runtimeBridge, executionCtx, input) {
-	executionCtx.waitUntil(runtimeBridge.packageRuntimeRunFinish(input));
+	// Begin is a WorkerEntrypoint RPC even though beginRunRecord itself is
+	// synchronous. Await it only inside waitUntil, chained before finish, so
+	// the HTTP/realtime response is not blocked on minting the handle.
+	executionCtx.waitUntil(
+		(async () => {
+			const run = await input.run;
+			await runtimeBridge.packageRuntimeRunFinish({
+				...input,
+				run,
+			});
+		})(),
+	);
 }
 
 function resolveRealtimeHandler(userModule, facetName) {
@@ -654,7 +670,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 	async fetch(request) {
 		const runtimeBridge = this.env.${packageAppRuntimeBindingName};
 		const requestUrl = new URL(request.url);
-		const runtimeRun = await startRuntimeRun(runtimeBridge, {
+		const runtimeRun = startRuntimeRun(runtimeBridge, {
 			surface: 'app_fetch',
 			name: requestUrl.pathname,
 			metadata: {
@@ -709,7 +725,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 
 	async handleRealtimeEvent(payload) {
 		const runtimeBridge = this.env.${packageAppRuntimeBindingName};
-		const runtimeRun = await startRuntimeRun(runtimeBridge, {
+		const runtimeRun = startRuntimeRun(runtimeBridge, {
 			surface: 'app_realtime',
 			name: buildFacetName(payload?.facet),
 			sessionId: payload?.sessionId,

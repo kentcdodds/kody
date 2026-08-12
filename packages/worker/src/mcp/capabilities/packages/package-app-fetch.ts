@@ -11,6 +11,7 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -258,15 +259,22 @@ async function resolveOwnedSavedPackage(input: {
 	packageId?: string
 	kodyId?: string
 }) {
-	if (input.packageId !== undefined) {
-		return await getSavedPackageById(input.db, {
-			userId: input.userId,
-			packageId: input.packageId,
-		})
-	}
-	return await getSavedPackageByKodyId(input.db, {
+	const packageIdOrKodyId = input.packageId ?? input.kodyId ?? ''
+	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
-		kodyId: input.kodyId ?? '',
+		packageIdOrKodyId,
+		load: async () => {
+			if (input.packageId !== undefined) {
+				return await getSavedPackageById(input.db, {
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+			}
+			return await getSavedPackageByKodyId(input.db, {
+				userId: input.userId,
+				kodyId: input.kodyId ?? '',
+			})
+		},
 	})
 }
 
@@ -366,6 +374,11 @@ export const packageAppFetchCapability = defineDomainCapability(
 			}
 			assertRequestBodyWithinLimit(args.body)
 
+			// Validate the path before any D1 lookup so traversal and encoding
+			// errors fail closed without warming the saved-package cache.
+			const restPath = normalizePackageAppFetchPath(args.path)
+			const restPathOnly = restPath.split(/[?#]/, 1)[0] || '/'
+
 			const owner = await resolvePackageOwnerContext(
 				ctx.env,
 				user,
@@ -396,11 +409,6 @@ export const packageAppFetchCapability = defineDomainCapability(
 				)
 			}
 
-			// The normalized path keeps any query string for the request URL; the
-			// package path's restPath is path-only (matching what URL parsing
-			// produced for browser requests).
-			const restPath = normalizePackageAppFetchPath(args.path)
-			const restPathOnly = restPath.split(/[?#]/, 1)[0] || '/'
 			const packageAppOrigin = getPackageAppBaseUrl({ env: ctx.env })
 			const hostedUrl = resolveHostedPackageAppUrl({
 				packageAppBaseUrl: packageAppOrigin,

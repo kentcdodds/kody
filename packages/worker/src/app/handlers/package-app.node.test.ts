@@ -25,7 +25,7 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	redirectToLogin: vi.fn(() => new Response(null, { status: 302 })),
 	getAppBaseUrl: vi.fn(() => 'https://example.com'),
-	getSavedPackageByKodyId: vi.fn(async () => ({
+	resolveSavedPackage: vi.fn(async () => ({
 		id: 'package-1',
 		userId: 'user-1',
 		name: '@kody/example',
@@ -43,7 +43,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(async () => {
 		throw new Error('bundle failed')
 	}),
-	loadPackageManifestBySourceId: vi.fn(async () => {
+	loadInvokeManifestBySourceId: vi.fn(async () => {
 		throw new Error('manifest load failed')
 	}),
 	createPackageAppCallerContext: vi.fn(),
@@ -77,16 +77,16 @@ vi.mock('#worker/app-base-url.ts', () => ({
 	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
 }))
 
-vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
-}))
-
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mockModule.loadPackageSourceBySourceId(...args),
-	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
-		mockModule.loadPackageManifestBySourceId(...args),
+}))
+
+vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
+	resolveSavedPackage: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackage(...args),
+	loadInvokeManifestBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadInvokeManifestBySourceId(...args),
 }))
 
 vi.mock('#worker/package-runtime/package-app.ts', () => ({
@@ -199,7 +199,7 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 	resetMocks()
 	consoleError.mockImplementation(() => {})
 
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+	mockModule.loadInvokeManifestBySourceId.mockResolvedValueOnce({
 		source: {
 			published_commit: 'commit-1',
 			manifest_path: 'package.json',
@@ -273,7 +273,7 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 test('handlePackageAppRequest forwards package code a request stripped of owner credentials', async () => {
 	resetMocks()
 
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+	mockModule.loadInvokeManifestBySourceId.mockResolvedValueOnce({
 		source: {
 			published_commit: 'commit-1',
 			manifest_path: 'package.json',
@@ -336,5 +336,5 @@ test('handlePackageAppRequest returns not found when the URL username does not m
 	)
 
 	expect(response.status).toBe(404)
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(mockModule.resolveSavedPackage).not.toHaveBeenCalled()
 })

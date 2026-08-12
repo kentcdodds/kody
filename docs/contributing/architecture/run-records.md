@@ -117,7 +117,11 @@ Rules:
   fire-and-forgets `startRun` (optionally via `waitUntil`). It returns a handle
   that already carries a minted run id, `startedAt`, persistence mode, and the
   full context — or `null` when there is no user / no `RUN_LOG` binding /
-  missing context.
+  missing context. Callers that reach begin through a WorkerEntrypoint RPC
+  (package-app isolates: `packageRuntimeRunStart`) must not await that RPC on
+  the HTTP/realtime response path — kick it off, run user code, and `waitUntil`
+  begin-then-finish. A dropped `running` insert is still harmless because finish
+  upserts the terminal row.
 - **`finishRunRecord` awaits the complete-row upsert in one RPC** (`finishRun`),
   then replaces logs and enforces retention. A supplied `waitUntil` applies only
   to post-terminal observers such as `run.error.recorded`, never to the terminal

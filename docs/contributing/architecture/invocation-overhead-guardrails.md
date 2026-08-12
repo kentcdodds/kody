@@ -28,14 +28,20 @@ call, not about what user code does inside the call.
   [Run records](./run-records.md)), so the durability cost is **one awaited DO
   call for claim + run-record begin and one for terminal response + run-record
   finish** — no D1 round trips at all.
+- **Package-app HTTP** (`servePackageAppRequest` / `app_fetch`) is the same
+  class of hot path as keyless invoke: a hello-world `fetch` that returns `ok`
+  should not pay tens of milliseconds of platform overhead on a warm isolate.
+  The serve path shares the invoke freshness/commit caches, and must not await
+  the run-record begin RPC before user `fetch`. Finish already upserts a
+  complete row, so a dropped `running` insert is harmless.
 
 ## Per-isolate caches and their staleness bounds
 
 The keyless `packages.invoke` contract check (saved-package row, entity-source
-row, manifest, bundle artifact) and per-run registry assembly are cached per
-isolate so a warm invoke of an already-warm package+commit performs **zero D1/KV
-loads** before dispatch. The caches come in two tiers with different correctness
-arguments (see
+row, manifest, bundle artifact) and package-app HTTP serve (saved-package row,
+entity-source row, manifest) are cached per isolate so a warm call of an
+already-warm package+commit performs **zero D1/KV loads** before dispatch. The
+caches come in two tiers with different correctness arguments (see
 `packages/worker/src/package-invocations/invoke-contract-cache.ts`):
 
 - **Freshness tier** — saved-package row and entity-source row (the row that
@@ -56,9 +62,10 @@ arguments (see
 Rules for touching these paths: publish and rebuild flows must keep using the
 uncached row/manifest loaders (`loadPackageManifestBySourceId`,
 `loadPackageSourceBySourceId`) so a rebuild can never run against a stale
-`published_commit`; every cache key must start with the owning `userId` (per
-user isolation is inviolable); and new caches on invocation paths need an
-explicit staleness bound documented here.
+`published_commit`; package-app HTTP serve must keep using the cached invoke
+loaders (`resolveSavedPackage`, `loadInvokeManifestBySourceId`); every cache key
+must start with the owning `userId` (per user isolation is inviolable); and new
+caches on invocation paths need an explicit staleness bound documented here.
 
 ## Watch the percentiles
 

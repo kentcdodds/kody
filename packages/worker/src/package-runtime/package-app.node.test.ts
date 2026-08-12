@@ -89,6 +89,120 @@ async function collectQueryParamNamesForTest(url: URL) {
 	)(url) as Array<string>
 }
 
+async function extractGeneratedRuntimeRunHelpers() {
+	const sourceText = await readFile(
+		new URL('./package-app.ts', import.meta.url),
+		'utf8',
+	)
+	const start = sourceText.indexOf(
+		'async function startRuntimeRun(runtimeBridge, input) {',
+	)
+	const end = sourceText.indexOf('\nfunction resolveRealtimeHandler', start)
+	if (start < 0 || end < 0) {
+		throw new Error('runtime run helpers were not found.')
+	}
+	return sourceText
+		.slice(start, end)
+		.replaceAll('\\\\', '\\')
+		.replaceAll('\\`', '`')
+		.replaceAll('\\${', '${')
+}
+
+async function createRuntimeRunHelpersForTest() {
+	return new Function(
+		`${await extractGeneratedRuntimeRunHelpers()}; return { startRuntimeRun, finishRuntimeRun };`,
+	)() as {
+		startRuntimeRun: (
+			runtimeBridge: {
+				packageRuntimeRunStart: (input: unknown) => Promise<unknown>
+			},
+			input: unknown,
+		) => Promise<unknown>
+		finishRuntimeRun: (
+			runtimeBridge: {
+				packageRuntimeRunFinish: (input: unknown) => Promise<unknown>
+			},
+			executionCtx: { waitUntil: (promise: Promise<unknown>) => void },
+			input: Record<string, unknown>,
+		) => void
+	}
+}
+
+test('package app fetch does not await run-record begin before user code', async () => {
+	const sourceText = await readFile(
+		new URL('./package-app.ts', import.meta.url),
+		'utf8',
+	)
+	const fetchStart = sourceText.indexOf('async fetch(request) {')
+	const realtimeStart = sourceText.indexOf(
+		'async handleRealtimeEvent(payload) {',
+	)
+	const classEnd = sourceText.indexOf('\n}\n`.trim()', realtimeStart)
+	if (fetchStart < 0 || realtimeStart < 0 || classEnd < 0) {
+		throw new Error('package app worker fetch source was not found.')
+	}
+	const fetchSource = sourceText.slice(fetchStart, realtimeStart)
+	const realtimeSource = sourceText.slice(realtimeStart, classEnd)
+	expect(fetchSource).toContain('const runtimeRun = startRuntimeRun(')
+	expect(fetchSource).not.toContain('await startRuntimeRun(')
+	expect(realtimeSource).toContain('const runtimeRun = startRuntimeRun(')
+	expect(realtimeSource).not.toContain('await startRuntimeRun(')
+})
+
+test('package app run-record finish waits for begin inside waitUntil, not on the response path', async () => {
+	const { startRuntimeRun, finishRuntimeRun } =
+		await createRuntimeRunHelpersForTest()
+	let resolveStart: ((value: { id: string }) => void) | undefined
+	const startGate = new Promise<{ id: string }>((resolve) => {
+		resolveStart = resolve
+	})
+	const startCalls: Array<unknown> = []
+	const finishCalls: Array<unknown> = []
+	const waitUntilTasks: Array<Promise<unknown>> = []
+	const runtimeBridge = {
+		packageRuntimeRunStart: async (input: unknown) => {
+			startCalls.push(input)
+			return await startGate
+		},
+		packageRuntimeRunFinish: async (input: unknown) => {
+			finishCalls.push(input)
+			return { ok: true }
+		},
+	}
+
+	const runtimeRun = startRuntimeRun(runtimeBridge, {
+		surface: 'app_fetch',
+		name: '/',
+	})
+	finishRuntimeRun(
+		runtimeBridge,
+		{
+			waitUntil: (promise) => {
+				waitUntilTasks.push(promise)
+			},
+		},
+		{
+			run: runtimeRun,
+			status: 'success',
+			metadata: { httpStatus: 200 },
+		},
+	)
+
+	expect(startCalls).toEqual([{ surface: 'app_fetch', name: '/' }])
+	expect(finishCalls).toEqual([])
+	expect(waitUntilTasks).toHaveLength(1)
+
+	resolveStart?.({ id: 'run-1' })
+	await Promise.all(waitUntilTasks)
+	expect(finishCalls).toEqual([
+		{
+			run: { id: 'run-1' },
+			status: 'success',
+			metadata: { httpStatus: 200 },
+		},
+	])
+})
+
 test('package app kody proxy supports remote namespace calls', async () => {
 	const calls: Array<{ name: string; args: unknown }> = []
 	const kody = await createKodyProxyForTest({

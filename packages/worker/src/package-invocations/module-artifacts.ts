@@ -63,7 +63,8 @@ export async function resolveSavedPackage(input: {
  * contract cache, and the manifest itself from the commit-keyed manifest
  * cache. Warm calls perform zero D1/KV loads. Publish and rebuild flows must
  * keep using `loadPackageManifestBySourceId`, which always reads the row
- * fresh.
+ * fresh. Package-app HTTP serve is an invocation hot path and uses this
+ * loader; do not switch it back to the uncached source-row read.
  */
 export async function loadInvokeManifestBySourceId(input: {
 	env: Env

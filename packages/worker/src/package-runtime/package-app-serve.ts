@@ -4,11 +4,11 @@ import { createHtmlResponse } from 'remix/response/html'
 import { type PackageAppMount } from '@kody-internal/shared/public-urls.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
-	loadPackageManifestBySourceId,
-	loadPackageSourceBySourceId,
-} from '#worker/package-registry/source.ts'
+	loadInvokeManifestBySourceId,
+	resolveSavedPackage,
+} from '#worker/package-invocations/module-artifacts.ts'
+import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	buildPackageAppWorker,
 	createPackageAppCallerContext,
@@ -364,9 +364,12 @@ export async function servePackageAppRequest(input: {
 	if (owner.username !== packagePath.username) {
 		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
 	}
-	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+	// Same freshness-tier cache as keyless `packages.invoke`: warm serve must
+	// not pay a D1 round trip for the saved-package or entity-source row.
+	const savedPackage = await resolveSavedPackage({
+		db: env.APP_DB,
 		userId: owner.userId,
-		kodyId,
+		packageIdOrKodyId: kodyId,
 	})
 	if (!savedPackage || !savedPackage.hasApp) {
 		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
@@ -409,9 +412,8 @@ export async function servePackageAppRequest(input: {
 	let entrypoint: { fetch(request: Request): Promise<Response> }
 	try {
 		const [packageManifest, callerContext] = await Promise.all([
-			loadPackageManifestBySourceId({
+			loadInvokeManifestBySourceId({
 				env,
-				baseUrl,
 				userId: owner.userId,
 				sourceId: savedPackage.sourceId,
 			}),

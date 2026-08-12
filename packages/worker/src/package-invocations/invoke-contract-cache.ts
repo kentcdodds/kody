@@ -4,9 +4,9 @@ import { type PublishedBundleArtifact } from '#worker/package-runtime/published-
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
 /**
- * Per-isolate caches for the `packages.invoke` contract check, so a warm
- * keyless invoke of an already-warm package+commit performs zero D1/KV loads
- * before dispatch (see
+ * Per-isolate caches for invocation hot paths (`packages.invoke` contract
+ * check and package-app HTTP serve), so a warm call of an already-warm
+ * package+commit performs zero D1/KV loads before dispatch (see
  * docs/contributing/architecture/invocation-overhead-guardrails.md).
  *
  * Two tiers with different lifetimes:
