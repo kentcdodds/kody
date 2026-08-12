@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	packageAppApexRoutePattern,
 	packageAppWildcardRoutePattern,
 	parseJsonc,
 	readPackageAppZoneName,
@@ -187,11 +188,18 @@ function copyResourceIdentifiers(input: {
 }
 
 /**
- * Attach the package-app origin as this Worker's custom domain, plus the
- * per-user subdomain wildcard zone route (decision 0017; Cloudflare custom
- * domains cannot be wildcards). The main Worker's generated config no longer
- * lists the package-app host (see tools/ci/resource-utils.ts), so the
- * runtime Worker owns both routes.
+ * Attach the package-app apex and the per-user subdomain wildcard as **zone
+ * routes** on this Worker (decision 0017). The main Worker's generated config
+ * no longer lists the package-app host (see tools/ci/resource-utils.ts), so
+ * the runtime Worker owns both routes.
+ *
+ * Neither may be a Cloudflare custom domain. Wildcards cannot be custom
+ * domains at all, and a custom domain must not coexist with published zone
+ * routes in the same zone: replacing that zone's route table during deploy
+ * detaches the custom domain and deletes its DNS record (this took
+ * `kodyapps.dev` down on 2026-08-11). Both hostnames are instead served by
+ * proxied placeholder DNS records that production CI ensures separately
+ * (zone routes do not create DNS records).
  */
 function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	const vars =
@@ -216,6 +224,7 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 			`runtime env.${envName}.vars.PACKAGE_APP_BASE_URL host "${hostname}" has no registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
 		)
 	}
+	const apexPattern = packageAppApexRoutePattern(hostname)
 	const wildcardPattern = packageAppWildcardRoutePattern(hostname)
 	const existingRoutes = Array.isArray(runtimeEnv.routes)
 		? runtimeEnv.routes.filter(
@@ -223,12 +232,13 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 					!route ||
 					typeof route !== 'object' ||
 					((route as JsonRecord).pattern !== hostname &&
+						(route as JsonRecord).pattern !== apexPattern &&
 						(route as JsonRecord).pattern !== wildcardPattern),
 			)
 		: []
 	runtimeEnv.routes = [
 		...existingRoutes,
-		{ pattern: hostname, custom_domain: true },
+		{ pattern: apexPattern, zone_name: zoneName },
 		{ pattern: wildcardPattern, zone_name: zoneName },
 	]
 	// Keep the workers.dev trigger as the deploy healthcheck target and a

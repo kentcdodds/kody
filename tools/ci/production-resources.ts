@@ -3,7 +3,7 @@ import {
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
-	ensurePackageAppWildcardDnsRecord,
+	ensurePackageAppDnsRecords,
 	ensureR2Bucket,
 	fail,
 	isValidBareHostname,
@@ -643,7 +643,7 @@ async function ensureProductionResources(options: CliOptions) {
 		})
 
 	if (bindings.packageAppHostname) {
-		await ensurePackageAppWildcardDnsRecord({
+		await ensurePackageAppDnsRecords({
 			accountId: accountId ?? 'dry-run-account',
 			apiToken: apiToken ?? 'dry-run-token',
 			packageAppHostname: bindings.packageAppHostname,

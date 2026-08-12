@@ -494,12 +494,31 @@ export function readPackageAppZoneName(packageAppHostname: string) {
 	return parsed.domain ?? null
 }
 
+export function packageAppApexRoutePattern(packageAppHostname: string) {
+	return `${packageAppHostname}/*`
+}
+
 export function packageAppWildcardRoutePattern(packageAppHostname: string) {
 	return `*.${packageAppHostname}/*`
 }
 
 export function packageAppWildcardDnsRecordName(packageAppHostname: string) {
 	return `*.${packageAppHostname}`
+}
+
+/**
+ * DNS record names the package-app zone needs: the apex and the per-user
+ * wildcard. Both are served by zone routes, which do not create DNS records,
+ * so both need a proxied placeholder record. Neither may be a Workers custom
+ * domain: a custom domain in a zone whose route table the deploy also
+ * publishes gets detached (and its DNS record deleted) when the routes are
+ * replaced — this took the package-app apex down on 2026-08-11.
+ */
+export function packageAppDnsRecordNames(packageAppHostname: string) {
+	return [
+		packageAppHostname,
+		packageAppWildcardDnsRecordName(packageAppHostname),
+	]
 }
 
 async function lookupCloudflareZoneId(input: {
@@ -522,19 +541,24 @@ async function lookupCloudflareZoneId(input: {
 	return zone?.id ?? null
 }
 
-function isPackageAppWildcardDnsRecord(input: {
+function isRequiredPackageAppDnsRecord(input: {
 	record: CloudflareDnsRecord
-	wildcardRecordName: string
+	recordName: string
 }) {
 	return (
 		input.record.type === 'AAAA' &&
-		input.record.name === input.wildcardRecordName &&
+		input.record.name === input.recordName &&
 		input.record.content === packageAppWildcardDnsContent &&
 		input.record.proxied === true
 	)
 }
 
-export async function ensurePackageAppWildcardDnsRecord(input: {
+/**
+ * Idempotently ensure the proxied placeholder AAAA records the package-app
+ * zone routes need: one at the apex and one at the per-user wildcard (see
+ * `packageAppDnsRecordNames` for why neither may be a custom domain).
+ */
+export async function ensurePackageAppDnsRecords(input: {
 	accountId: string
 	apiToken: string
 	packageAppHostname: string
@@ -549,13 +573,13 @@ export async function ensurePackageAppWildcardDnsRecord(input: {
 			`Could not derive a registrable zone name from PACKAGE_APP_BASE_URL host "${input.packageAppHostname}". Use a hostname on a public suffix (for example kodyapps.dev).`,
 		)
 	}
-	const wildcardRecordName = packageAppWildcardDnsRecordName(
-		input.packageAppHostname,
-	)
+	const recordNames = packageAppDnsRecordNames(input.packageAppHostname)
 	if (input.dryRun) {
-		console.error(
-			`[dry-run] ensure package-app wildcard DNS: ${wildcardRecordName} AAAA ${packageAppWildcardDnsContent} (proxied) in zone ${zoneName}`,
-		)
+		for (const recordName of recordNames) {
+			console.error(
+				`[dry-run] ensure package-app DNS: ${recordName} AAAA ${packageAppWildcardDnsContent} (proxied) in zone ${zoneName}`,
+			)
+		}
 		return
 	}
 
@@ -569,62 +593,62 @@ export async function ensurePackageAppWildcardDnsRecord(input: {
 	})
 	if (!zoneId) {
 		return fail(
-			`Package-app zone "${zoneName}" was not found in Cloudflare account ${input.accountId}. Create the zone, add a proxied wildcard DNS record (${wildcardRecordName} AAAA ${packageAppWildcardDnsContent}), then re-run deploy. See docs/contributing/setup-manifest.md.`,
+			`Package-app zone "${zoneName}" was not found in Cloudflare account ${input.accountId}. Create the zone, add proxied DNS records (${recordNames.join(' and ')} AAAA ${packageAppWildcardDnsContent}), then re-run deploy. See docs/contributing/setup-manifest.md.`,
 		)
 	}
 
-	// List every record type at the wildcard name: filtering to AAAA would hide
-	// a conflicting A or CNAME record and turn the actionable conflict error
-	// below into an opaque create failure.
-	const listed = await cloudflareRootApiRequest<Array<CloudflareDnsRecord>>({
-		apiToken: input.apiToken,
-		apiBaseUrl: input.apiBaseUrl,
-		fetcher: input.fetcher,
-		sleep: input.sleep,
-		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(wildcardRecordName)}`,
-	})
-	// Conflicts are checked before accepting the required record: a stray A,
-	// CNAME, or extra AAAA at the wildcard name must fail the deploy even when
-	// the proxied AAAA also exists, otherwise resolution stays ambiguous.
-	const conflicting = (listed.result ?? []).find(
-		(record) =>
-			record.name === wildcardRecordName &&
-			!isPackageAppWildcardDnsRecord({ record, wildcardRecordName }),
-	)
-	if (conflicting) {
-		return fail(
-			`Package-app wildcard DNS record "${wildcardRecordName}" exists in zone "${zoneName}" but is not a proxied AAAA ${packageAppWildcardDnsContent} record (found ${conflicting.type} ${conflicting.content}, proxied=${String(conflicting.proxied)}). Fix it in the Cloudflare dashboard, then re-run deploy.`,
+	for (const recordName of recordNames) {
+		// List every record type at the name: filtering to AAAA would hide a
+		// conflicting A or CNAME record and turn the actionable conflict error
+		// below into an opaque create failure.
+		const listed = await cloudflareRootApiRequest<Array<CloudflareDnsRecord>>({
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(recordName)}`,
+		})
+		// Conflicts are checked before accepting the required record: a stray A,
+		// CNAME, or extra AAAA at the name must fail the deploy even when the
+		// proxied AAAA also exists, otherwise resolution stays ambiguous.
+		const conflicting = (listed.result ?? []).find(
+			(record) =>
+				record.name === recordName &&
+				!isRequiredPackageAppDnsRecord({ record, recordName }),
 		)
-	}
+		if (conflicting) {
+			return fail(
+				`Package-app DNS record "${recordName}" exists in zone "${zoneName}" but is not a proxied AAAA ${packageAppWildcardDnsContent} record (found ${conflicting.type} ${conflicting.content}, proxied=${String(conflicting.proxied)}). Fix it in the Cloudflare dashboard, then re-run deploy.`,
+			)
+		}
 
-	const existing = (listed.result ?? []).find((record) =>
-		isPackageAppWildcardDnsRecord({ record, wildcardRecordName }),
-	)
-	if (existing) {
+		const existing = (listed.result ?? []).find((record) =>
+			isRequiredPackageAppDnsRecord({ record, recordName }),
+		)
+		if (existing) {
+			console.error(`Package-app DNS exists: ${existing.name} (${existing.id})`)
+			continue
+		}
+
+		const created = await cloudflareRootApiRequest<CloudflareDnsRecord>({
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records`,
+			method: 'POST',
+			body: {
+				type: 'AAAA',
+				name: recordName,
+				content: packageAppWildcardDnsContent,
+				proxied: true,
+				ttl: 1,
+			},
+		})
 		console.error(
-			`Package-app wildcard DNS exists: ${existing.name} (${existing.id})`,
+			`Created package-app DNS: ${created.result?.name} (${created.result?.id})`,
 		)
-		return
 	}
-
-	const created = await cloudflareRootApiRequest<CloudflareDnsRecord>({
-		apiToken: input.apiToken,
-		apiBaseUrl: input.apiBaseUrl,
-		fetcher: input.fetcher,
-		sleep: input.sleep,
-		pathname: `/zones/${encodeURIComponent(zoneId)}/dns_records`,
-		method: 'POST',
-		body: {
-			type: 'AAAA',
-			name: wildcardRecordName,
-			content: packageAppWildcardDnsContent,
-			proxied: true,
-			ttl: 1,
-		},
-	})
-	console.error(
-		`Created package-app wildcard DNS: ${created.result?.name} (${created.result?.id})`,
-	)
 }
 
 export async function listCloudflareQueues(input: {
@@ -1283,11 +1307,13 @@ function readLegacyHostsVar(input: {
  * the first deploy after the flip detaches the old origin and deletes its DNS.
  *
  * Per-user hosted package apps use `{username}.<package-app-domain>` subdomains.
- * Cloudflare **custom domains** cannot be wildcards, so the apex
- * (`PACKAGE_APP_BASE_URL`) stays a `custom_domain` route for legacy redirects,
- * while `*.<package-app-host>/*` is published as a **zone route** (`zone_name`
- * is the registrable domain). Zone routes do not create DNS records — production
- * CI ensures a proxied wildcard AAAA `100::` record exists separately.
+ * Both the apex (`PACKAGE_APP_BASE_URL`, serving legacy redirects) and
+ * `*.<package-app-host>/*` are published as **zone routes** (`zone_name` is the
+ * registrable domain) on the runtime Worker — never as custom domains: a custom
+ * domain in a zone whose route table the deploy also publishes gets detached
+ * (deleting its DNS record) when the routes are replaced, which took the
+ * package-app apex down on 2026-08-11. Zone routes do not create DNS records —
+ * production CI ensures proxied AAAA `100::` records for both names separately.
  *
  * The routes are generated instead of committed because Wrangler resolves **local
  * dev** request URLs against the first configured route: a committed

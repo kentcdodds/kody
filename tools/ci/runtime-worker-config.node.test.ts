@@ -246,7 +246,11 @@ test('generate publishes the package-app custom domain for production', async ()
 		const runtimeConfig = parseJsonc<{
 			env?: {
 				production?: {
-					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					routes?: Array<{
+						pattern: string
+						custom_domain?: boolean
+						zone_name?: string
+					}>
 					workers_dev?: boolean
 					migrations?: unknown
 				}
@@ -254,8 +258,11 @@ test('generate publishes the package-app custom domain for production', async ()
 			migrations?: Array<{ tag?: string; transferred_classes?: unknown }>
 		}>(await readFile(outConfigPath, 'utf8'))
 
+		// Both package-app routes are zone routes, never custom domains: a
+		// custom domain in a zone whose route table the deploy also publishes
+		// gets detached (deleting its DNS record) when the routes are replaced.
 		expect(runtimeConfig.env?.production?.routes).toEqual([
-			{ pattern: 'kodyapps.dev', custom_domain: true },
+			{ pattern: 'kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 			{ pattern: '*.kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 		])
 		expect(runtimeConfig.env?.production?.workers_dev).toBe(true)
