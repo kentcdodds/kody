@@ -35,7 +35,7 @@ export function selectOnboardingExampleListings(
 ): Array<OnboardingFeaturedListing> {
 	const examples = featuredListings.filter(isOnboardingExampleListing)
 	const knownIds = onboardingExampleListingIds as ReadonlyArray<string>
-	return examples.toSorted((left, right) => {
+	return [...examples].sort((left, right) => {
 		const leftIndex = knownIds.indexOf(left.id)
 		const rightIndex = knownIds.indexOf(right.id)
 		const leftRank = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex
