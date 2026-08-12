@@ -1148,7 +1148,7 @@ export async function persistPreparedCommunityFork(
 	options?: { serverTiming?: Array<ServerTimingEntry> },
 ): Promise<ForkCommunityListingResult> {
 	const persistStartedAt = Date.now()
-	const serverTiming = options?.serverTiming ?? []
+	const serverTiming = options?.serverTiming
 	const ensuredSource = await ensureEntitySource({
 		db: prepared.env.APP_DB,
 		env: prepared.env,
@@ -1209,7 +1209,7 @@ export async function persistPreparedCommunityFork(
 			crossScopeReferences: prepared.crossScopeReferences,
 			filesCount: Object.keys(prepared.files).length,
 			files: prepared.files,
-			...(serverTiming.length > 0 ? { serverTiming } : {}),
+			...(serverTiming && serverTiming.length > 0 ? { serverTiming } : {}),
 		}
 	} catch (error) {
 		await cleanupFailedCommunityFork({
