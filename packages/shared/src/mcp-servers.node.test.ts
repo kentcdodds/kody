@@ -49,6 +49,17 @@ test('MCP server bearer tokens normalize to Authorization header values', () => 
 		authorization: 'token abc.def',
 	})
 	expect(
+		normalizeMcpServerBearerToken('Authorization: Bearer pasted-header'),
+	).toEqual({
+		ok: true,
+		authorization: 'Bearer pasted-header',
+	})
+	expect(normalizeMcpServerBearerToken('authorization:token xyz')).toEqual({
+		ok: true,
+		authorization: 'token xyz',
+	})
+	expect(normalizeMcpServerBearerToken('Authorization:').ok).toBe(false)
+	expect(
 		normalizeMcpServerBearerToken('x'.repeat(mcpServerBearerTokenMaxLength + 1))
 			.ok,
 	).toBe(false)

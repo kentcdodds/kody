@@ -641,7 +641,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 											name="bearerToken"
 											type="password"
 											value={addBearerToken}
-											placeholder="Paste token or Authorization value"
+											placeholder="Paste token (or Bearer …)"
 											disabled={isMutating}
 											autocomplete="off"
 											mix={[
@@ -654,10 +654,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 										/>
 										<span mix={css(descriptionCss)}>
 											Sent as Authorization: Bearer &lt;token&gt; on every
-											request. If you already include a scheme (Bearer, token,
-											etc.), it is used as-is. Leave blank for OAuth or
-											unauthenticated servers. The token is stored only in your
-											private MCP client hub and is never shown again.
+											request. You can paste a bare token, a scheme-prefixed
+											value (Bearer, token, etc.), or a full Authorization
+											header line. Leave blank for OAuth or unauthenticated
+											servers. The token is stored only in your private MCP
+											client hub and is never shown again.
 										</span>
 									</label>
 

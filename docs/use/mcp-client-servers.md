@@ -14,9 +14,9 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 2. If the server authenticates with a static bearer token (or other
    Authorization scheme), paste it in the optional Bearer token field — or pass
    `bearerToken` to `mcp_server_add`. Bare tokens are sent as
-   `Authorization: Bearer <token>`; values that already include a scheme are
-   sent as-is. The credential is stored only in your private MCP client hub and
-   is never returned later.
+   `Authorization: Bearer <token>`; scheme-prefixed values and full
+   `Authorization: …` header pastes are normalized. The credential is stored
+   only in your private MCP client hub and is never returned later.
 3. If the server needs OAuth, Kody returns an authorization link. Open it, sign
    in at the provider, and approve access.
 4. Confirm with `mcp_server_list` (or refresh the account page). Connected tools

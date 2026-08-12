@@ -57,10 +57,13 @@ export function validateMcpServerUrl(url: string): {
 /**
  * Normalize an optional static MCP Authorization credential.
  *
- * Empty input means no header. Values that already look like an HTTP auth
- * scheme (`Bearer …`, `token …`, etc.) are kept as-is; bare tokens become
- * `Bearer <token>`. The result is suitable for an `Authorization` request
- * header on every MCP client request.
+ * Empty input means no header. Accepts:
+ * - bare tokens → `Bearer <token>`
+ * - scheme-prefixed values (`Bearer …`, `token …`) kept as-is
+ * - full header pastes (`Authorization: Bearer …`) with the header name stripped
+ *
+ * The result is suitable for an `Authorization` request header on every MCP
+ * client request.
  */
 export function normalizeMcpServerBearerToken(
 	token: string | null | undefined,
@@ -72,9 +75,19 @@ export function normalizeMcpServerBearerToken(
 	if (token == null) {
 		return { ok: true }
 	}
-	const trimmed = token.trim()
+	let trimmed = token.trim()
 	if (!trimmed) {
 		return { ok: true }
+	}
+	const authorizationHeaderPrefix = /^authorization\s*:\s*/i
+	if (authorizationHeaderPrefix.test(trimmed)) {
+		trimmed = trimmed.replace(authorizationHeaderPrefix, '').trim()
+	}
+	if (!trimmed) {
+		return {
+			ok: false,
+			error: 'Bearer token is required when Authorization is provided.',
+		}
 	}
 	if (trimmed.length > mcpServerBearerTokenMaxLength) {
 		return {
