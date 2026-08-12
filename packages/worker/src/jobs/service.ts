@@ -627,18 +627,12 @@ async function createPackageJobCallerContext(input: {
 	userId: string
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
-	const [user, remoteConnectors] = await Promise.all([
-		resolveBackgroundMcpUser(input.db, input.userId),
-		listAttachedRemoteConnectorRefs({
-			env: input.env,
-			userId: input.userId,
-		}),
-	])
+	const user = await resolveBackgroundMcpUser(input.db, input.userId)
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user,
-		remoteConnectors,
+		remoteConnectors: [],
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
