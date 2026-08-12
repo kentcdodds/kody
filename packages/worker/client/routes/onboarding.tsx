@@ -161,9 +161,9 @@ export function OnboardingRoute(handle: Handle) {
 		if (isOnboardingChecklistItemDone(payload.checklist, 'install-starter')) {
 			return true
 		}
-		return selectOnboardingExampleListings(
-			payload.featuredListings ?? [],
-		).some((listing) => listing.viewerInstall != null)
+		return selectOnboardingExampleListings(payload.featuredListings ?? []).some(
+			(listing) => listing.viewerInstall != null,
+		)
 	}
 
 	function applyPayload(payload: OnboardingPayload) {
@@ -452,9 +452,9 @@ export function OnboardingRoute(handle: Handle) {
 						Get started with <em>Kody</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }}>
-						Give your agent a personal software factory: connect any
-						MCP-capable host, fork a ready-made package, then wire real
-						services when you are ready. New here?{' '}
+						Give your agent a personal software factory: connect any MCP-capable
+						host, fork a ready-made package, then wire real services when you
+						are ready. New here?{' '}
 						<a
 							href="/guides/what-is-kody"
 							target="_blank"
@@ -756,10 +756,7 @@ export function OnboardingRoute(handle: Handle) {
 											</a>{' '}
 											for more power — the guide explains how connections and
 											helper packages work. Or open{' '}
-											<a
-												href="#byok"
-												mix={css(primaryLinkCss)}
-											>
+											<a href="#byok" mix={css(primaryLinkCss)}>
 												Bring your own API keys
 											</a>{' '}
 											below.

@@ -11,7 +11,9 @@ export const onboardingExampleListingIds = [
 	'bd541b8f-6c77-4a8d-9151-6e3b36afa069', // @kody/personal-capture
 ] as const
 
-const onboardingExampleListingIdSet = new Set<string>(onboardingExampleListingIds)
+const onboardingExampleListingIdSet = new Set<string>(
+	onboardingExampleListingIds,
+)
 
 export function isOnboardingExampleListing(listing: {
 	id: string
@@ -46,7 +48,9 @@ export function selectOnboardingExampleListings(
 export function selectOnboardingServiceStarterListings(
 	featuredListings: Array<OnboardingFeaturedListing>,
 ): Array<OnboardingFeaturedListing> {
-	return featuredListings.filter((listing) => !isOnboardingExampleListing(listing))
+	return featuredListings.filter(
+		(listing) => !isOnboardingExampleListing(listing),
+	)
 }
 
 function exampleInvokeHint(kodyId: string): string {

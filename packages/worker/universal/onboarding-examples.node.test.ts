@@ -43,9 +43,9 @@ test('selects zero-auth examples in the known production order', () => {
 		},
 	]
 
-	expect(selectOnboardingExampleListings(featured).map((row) => row.kodyId)).toEqual(
-		['local-conditions', 'hn-pulse', 'personal-capture'],
-	)
+	expect(
+		selectOnboardingExampleListings(featured).map((row) => row.kodyId),
+	).toEqual(['local-conditions', 'hn-pulse', 'personal-capture'])
 	expect(
 		selectOnboardingServiceStarterListings(featured).map((row) => row.kodyId),
 	).toEqual(['github-helper'])
