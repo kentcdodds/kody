@@ -69,6 +69,10 @@ const identityMockModule = vi.hoisted(() => ({
 	})),
 }))
 
+const remoteConnectorMockModule = vi.hoisted(() => ({
+	listAttachedRemoteConnectorRefs: vi.fn(async () => []),
+}))
+
 vi.mock('#worker/repo/source-service.ts', () => ({
 	ensureEntitySource: (...args: Array<unknown>) =>
 		repoMockModule.ensureEntitySource(...args),
@@ -111,6 +115,15 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 			...(args as [D1Database, string]),
 		),
 }))
+
+vi.mock('#worker/remote-connector/settings-service.ts', async (importOriginal) => {
+	const actual = (await importOriginal()) as Record<string, unknown>
+	return {
+		...actual,
+		listAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
+			remoteConnectorMockModule.listAttachedRemoteConnectorRefs(...args),
+	}
+})
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
@@ -193,6 +206,8 @@ afterEach(() => {
 			displayName: userId,
 		}),
 	)
+	remoteConnectorMockModule.listAttachedRemoteConnectorRefs.mockReset()
+	remoteConnectorMockModule.listAttachedRemoteConnectorRefs.mockResolvedValue([])
 })
 
 function mockRepoPersistence() {
@@ -2623,6 +2638,127 @@ test('executeJobOnce binds writable storage and overrides persisted interactive 
 			expect.any(Object),
 		)
 		repoSessionRpcSpy.mockRestore()
+	} finally {
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce loads attached remote connectors for background execution', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const db = createDatabase()
+	const env = createJobServiceTestEnv({
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		LOADER: {} as WorkerLoader,
+		REPO_SESSION: {} as DurableObjectNamespace,
+		STORAGE_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					getValue: async () => ({ key: 'count', value: 2 }),
+					setValue: async () => ({ ok: true, key: 'count' }),
+					deleteValue: async () => ({ ok: true, key: 'count', deleted: true }),
+					clearStorage: async () => ({ ok: true }),
+					listValues: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					exportStorage: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					sqlQuery: async () => ({
+						columns: ['value'],
+						rows: [{ value: 2 }],
+						rowCount: 1,
+						rowsRead: 1,
+						rowsWritten: 0,
+					}),
+				}
+			},
+		},
+	})
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Remote connector bridge',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Remote connector bridge',
+				description: 'Runs once at 2026-04-17T15:00:00.000Z',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true })',
+		},
+	})
+
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-kody-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true },
+			logs: [],
+		})
+	const remoteConnectorSpy =
+		remoteConnectorMockModule.listAttachedRemoteConnectorRefs.mockResolvedValueOnce(
+			[{ instanceId: 'home' }],
+		)
+
+	try {
+		const row = await (
+			await import('@kody-internal/shared/jobs/repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
+		if (!row) {
+			throw new Error('Expected created job row.')
+		}
+		await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext: row.callerContext,
+		})
+
+		expect(remoteConnectorSpy).toHaveBeenCalledWith({
+			env,
+			userId: callerContext.user.userId,
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+		expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
+			remoteConnectors: [{ instanceId: 'home' }],
+		})
 	} finally {
 		executeSpy.mockRestore()
 	}

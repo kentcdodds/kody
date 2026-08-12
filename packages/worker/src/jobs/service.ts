@@ -45,6 +45,7 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
+import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
@@ -620,15 +621,24 @@ async function cleanupAdHocJobSource(input: {
 }
 
 async function createPackageJobCallerContext(input: {
+	env: Env
 	db: D1Database
 	baseUrl: string
 	userId: string
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
+	const [user, remoteConnectors] = await Promise.all([
+		resolveBackgroundMcpUser(input.db, input.userId),
+		listAttachedRemoteConnectorRefs({
+			env: input.env,
+			userId: input.userId,
+		}),
+	])
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
-		user: await resolveBackgroundMcpUser(input.db, input.userId),
+		user,
+		remoteConnectors,
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
@@ -637,6 +647,33 @@ async function createPackageJobCallerContext(input: {
 		},
 		repoContext: null,
 	}) as PersistedJobCallerContext
+}
+
+async function resolveJobRuntimeCallerContext(input: {
+	env: Env
+	job: JobRecord
+	callerContext: PersistedJobCallerContext
+	backgroundUser: NonNullable<PersistedJobCallerContext['user']>
+}): Promise<PersistedJobCallerContext> {
+	const remoteConnectors = await listAttachedRemoteConnectorRefs({
+		env: input.env,
+		userId: input.callerContext.user.userId,
+	}).catch((error: unknown) => {
+		throw markPreExecutionTransientError(error)
+	})
+	return {
+		...input.callerContext,
+		executionOrigin: 'background',
+		user: input.backgroundUser,
+		remoteConnectors,
+		storageContext: {
+			sessionId: input.callerContext.storageContext?.sessionId ?? null,
+			appId: input.callerContext.storageContext?.appId ?? null,
+			packageId: input.callerContext.storageContext?.packageId ?? null,
+			storageId: input.job.storageId,
+		},
+		repoContext: input.callerContext.repoContext ?? null,
+	}
 }
 
 export async function syncPackageJobsForPackage(input: {
@@ -654,6 +691,7 @@ export async function syncPackageJobsForPackage(input: {
 		async write() {
 			const [callerContext, source] = await Promise.all([
 				createPackageJobCallerContext({
+					env: input.env,
 					db: input.env.APP_DB,
 					baseUrl: input.baseUrl,
 					userId: input.userId,
@@ -1223,18 +1261,12 @@ export async function executeJobOnce(input: {
 					).catch((error: unknown) => {
 						throw markPreExecutionTransientError(error)
 					})
-					const runtimeCallerContext: PersistedJobCallerContext = {
-						...input.callerContext,
-						executionOrigin: 'background',
-						user: backgroundUser,
-						storageContext: {
-							sessionId: input.callerContext.storageContext?.sessionId ?? null,
-							appId: input.callerContext.storageContext?.appId ?? null,
-							packageId: input.callerContext.storageContext?.packageId ?? null,
-							storageId: input.job.storageId,
-						},
-						repoContext: input.callerContext.repoContext ?? null,
-					}
+					const runtimeCallerContext = await resolveJobRuntimeCallerContext({
+						env: input.env,
+						job: input.job,
+						callerContext: input.callerContext,
+						backgroundUser,
+					})
 					// Daily job-run quota before sandbox work so over-limit
 					// ticks cost nothing. Failed attempts still count.
 					await consumeDailyEntitlement({
