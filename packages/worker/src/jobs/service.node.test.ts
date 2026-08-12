@@ -116,14 +116,17 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 		),
 }))
 
-vi.mock('#worker/remote-connector/settings-service.ts', async (importOriginal) => {
-	const actual = (await importOriginal()) as Record<string, unknown>
-	return {
-		...actual,
-		listAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
-			remoteConnectorMockModule.listAttachedRemoteConnectorRefs(...args),
-	}
-})
+vi.mock(
+	'#worker/remote-connector/settings-service.ts',
+	async (importOriginal) => {
+		const actual = (await importOriginal()) as Record<string, unknown>
+		return {
+			...actual,
+			listAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
+				remoteConnectorMockModule.listAttachedRemoteConnectorRefs(...args),
+		}
+	},
+)
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
@@ -207,7 +210,9 @@ afterEach(() => {
 		}),
 	)
 	remoteConnectorMockModule.listAttachedRemoteConnectorRefs.mockReset()
-	remoteConnectorMockModule.listAttachedRemoteConnectorRefs.mockResolvedValue([])
+	remoteConnectorMockModule.listAttachedRemoteConnectorRefs.mockResolvedValue(
+		[],
+	)
 })
 
 function mockRepoPersistence() {
