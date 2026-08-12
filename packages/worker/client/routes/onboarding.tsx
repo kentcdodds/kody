@@ -31,7 +31,6 @@ import {
 import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
 import {
 	OnboardingChecklistCard,
-	isOnboardingChecklistItemDone,
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
@@ -156,11 +155,10 @@ export function OnboardingRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 
 	function readHasQuickExample(
-		payload: Pick<OnboardingPayload, 'checklist' | 'featuredListings'>,
+		payload: Pick<OnboardingPayload, 'featuredListings'>,
 	) {
-		if (isOnboardingChecklistItemDone(payload.checklist, 'install-starter')) {
-			return true
-		}
+		// Step 2 is specifically a zero-auth example install — not "any saved
+		// package" (the shared install-starter checklist signal).
 		return selectOnboardingExampleListings(payload.featuredListings ?? []).some(
 			(listing) => listing.viewerInstall != null,
 		)
