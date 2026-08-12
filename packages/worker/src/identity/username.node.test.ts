@@ -7,7 +7,7 @@ import {
 	usernameRequirements,
 } from './username.ts'
 
-test('usernames must be DNS labels (no underscores)', () => {
+test('usernames are DNS labels: reject underscores, map email locals, fall back display names', () => {
 	expect(getUsernameFormatValidationError('some_user')).toBe(
 		usernameRequirements,
 	)
@@ -17,11 +17,8 @@ test('usernames must be DNS labels (no underscores)', () => {
 	)
 	expect(getUsernameFormatValidationError('some-user')).toBeNull()
 	expect(getUsernameValidationError('some-user')).toBeNull()
+	expect(usernameFromEmail('some_user@example.com')).toBe('some-user')
 	expect(
 		resolveDisplayName({ email: 'user@example.com', username: 'some_user' }),
 	).toBe('user')
-})
-
-test('usernameFromEmail maps underscores in the email local part to hyphens', () => {
-	expect(usernameFromEmail('some_user@example.com')).toBe('some-user')
 })

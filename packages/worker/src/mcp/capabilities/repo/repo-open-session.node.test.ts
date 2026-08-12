@@ -442,7 +442,7 @@ test('repo_open_session allows below-max usage and denies at the max plan ceilin
 	expect(deniedRpc.openSession).not.toHaveBeenCalled()
 })
 
-test('repo_open_session retries opaque Cloudflare internal errors with a fresh session id', async () => {
+test('repo_open_session retries opaque Cloudflare internal errors then rethrows when exhausted', async () => {
 	consoleWarn.mockImplementation(() => {})
 	resetMocks()
 	const email = 'opaque-internal@example.com'
@@ -497,49 +497,50 @@ test('repo_open_session retries opaque Cloudflare internal errors with a fresh s
 			'repo_open_session transient Cloudflare opaque internal error',
 		),
 	)
-})
 
-test('repo_open_session rethrows after opaque Cloudflare internal error retries are exhausted', async () => {
-	consoleWarn.mockImplementation(() => {})
+	// Exhaustion path needs a fresh always-rejecting mock so the success spy
+	// above does not leak into call-count assertions.
 	resetMocks()
-	const email = 'opaque-exhausted@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
+	const exhaustedEmail = 'opaque-exhausted@example.com'
+	const exhaustedUserId = await createStableUserIdFromEmail(exhaustedEmail)
+	const exhaustedEnv = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'pro', stable_user_id: userId }],
+			users: [
+				{ email: exhaustedEmail, plan: 'pro', stable_user_id: exhaustedUserId },
+			],
 			repoSessionCount: 0,
 		}),
 	} as Env
-	const ctx = {
-		env,
+	const exhaustedCtx = {
+		env: exhaustedEnv,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId,
-				email,
+				userId: exhaustedUserId,
+				email: exhaustedEmail,
 				displayName: 'Opaque Exhausted User',
 			},
 		}),
 	}
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(
-		createSavedPackageRow(userId),
+		createSavedPackageRow(exhaustedUserId),
 	)
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
-		createPackageSourceRow(userId),
+		createPackageSourceRow(exhaustedUserId),
 	)
-	const openRpc = createRepoRpc()
-	openRpc.openSession.mockRejectedValue(
+	const exhaustedRpc = createRepoRpc()
+	exhaustedRpc.openSession.mockRejectedValue(
 		new Error(cloudflareOpaqueInternalErrorMessage),
 	)
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+	mockModule.repoSessionRpc.mockReturnValue(exhaustedRpc)
 
 	const error = await repoOpenSessionCapability
 		.handler(
 			{
 				target: { kind: 'package', kody_id: 'triage-github-pr' },
 			},
-			ctx,
+			exhaustedCtx,
 		)
 		.then(
 			() => null,
@@ -550,5 +551,5 @@ test('repo_open_session rethrows after opaque Cloudflare internal error retries 
 		message: cloudflareOpaqueInternalErrorMessage,
 	})
 	// Initial attempt + two delayed retries.
-	expect(openRpc.openSession).toHaveBeenCalledTimes(3)
+	expect(exhaustedRpc.openSession).toHaveBeenCalledTimes(3)
 })

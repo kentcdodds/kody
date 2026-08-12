@@ -32,7 +32,7 @@ async function createLegacyHash(password: string, iterations: number) {
 	return `${prefix}$${iterations}$${saltHex}$${derivedHex}`
 }
 
-test('legacy lower-iteration hashes still verify and are flagged for upgrade', async () => {
+test('password hash verify upgrades legacy, rejects over-cap and tampered metadata', async () => {
 	const password = 'kodylovesyou'
 	const legacyHash = await createLegacyHash(password, 50_000)
 
@@ -41,36 +41,24 @@ test('legacy lower-iteration hashes still verify and are flagged for upgrade', a
 
 	const currentHash = await createPasswordHash(password)
 	expect(passwordHashNeedsUpgrade(currentHash)).toBe(false)
-})
+	await expect(verifyPassword(password, currentHash)).resolves.toBe(true)
 
-test('iteration counts above the Workers runtime cap are rejected without deriving', async () => {
 	// Cloudflare's production runtime throws NotSupportedError for PBKDF2
 	// above 100,000 iterations, so such hashes can never verify and must be
 	// rejected cleanly instead of erroring inside deriveBits.
-	const password = 'kodylovesyou'
 	const overCapHash = await createLegacyHash(password, 100_001)
 	await expect(verifyPassword(password, overCapHash)).resolves.toBe(false)
 	expect(passwordHashNeedsUpgrade(overCapHash)).toBe(false)
 
-	const [prefix, , saltHex, hashHex] = overCapHash.split('$')
+	const [prefix, iterations, saltHex, hashHex] = currentHash.split('$')
 	const absurdHash = `${prefix}$20000000$${saltHex}$${hashHex}`
 	await expect(verifyPassword(password, absurdHash)).resolves.toBe(false)
-})
 
-test('verifyPassword accepts valid hashes and rejects tampered metadata', async () => {
-	const password = 'kodylovesyou'
-	const hash = await createPasswordHash(password)
-
-	await expect(verifyPassword(password, hash)).resolves.toBe(true)
-
-	const [prefix, iterations, saltHex, hashHex] = hash.split('$')
-	const tamperedHashes = [
+	for (const tamperedHash of [
 		`${prefix}$${iterations}abc$${saltHex}$${hashHex}`,
 		`${prefix}$99999$${saltHex}$${hashHex}`,
 		`${prefix}$${iterations}$${saltHex}xyz$${hashHex}`,
-	]
-
-	for (const tamperedHash of tamperedHashes) {
+	]) {
 		await expect(verifyPassword(password, tamperedHash)).resolves.toBe(false)
 	}
 })

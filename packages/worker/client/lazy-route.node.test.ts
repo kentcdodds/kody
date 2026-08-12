@@ -59,39 +59,7 @@ test('every non-eager route pattern resolves to a registered lazy area', () => {
 	}
 })
 
-test('a cold lazy route does not trigger handle.update during render', async () => {
-	const previousWindow = globalThis.window
-	globalThis.window = {} as Window & typeof globalThis
-
-	try {
-		const loadModule = vi.fn<() => Promise<{ value: JSX.Element }>>(
-			() => new Promise(() => {}),
-		)
-		const area = createLazyRouteArea(loadModule)
-		let updateCalledDuringRender = false
-		const update = vi.fn(() => {
-			updateCalledDuringRender = true
-		})
-		const LazyRoute = createLazyRoute(area)
-		const render = LazyRoute({
-			props: {
-				render: (module) => module.value,
-			},
-			queueTask() {},
-			update,
-		} as never)
-
-		render()
-		expect(updateCalledDuringRender).toBe(false)
-
-		await Promise.resolve()
-		expect(update).toHaveBeenCalled()
-	} finally {
-		globalThis.window = previousWindow
-	}
-})
-
-test('a cold lazy route renders a fallback and retries once before full navigation recovery', async () => {
+test('a cold lazy route defers handle.update, renders a fallback, and retries once before navigation recovery', async () => {
 	vi.useFakeTimers()
 	const previousWindow = globalThis.window
 	const assign = vi.fn()
@@ -105,6 +73,28 @@ test('a cold lazy route renders a fallback and retries once before full navigati
 	} as unknown as Window & typeof globalThis
 
 	try {
+		const pendingLoad = vi.fn<() => Promise<{ value: JSX.Element }>>(
+			() => new Promise(() => {}),
+		)
+		const pendingArea = createLazyRouteArea(pendingLoad)
+		let updateCalledDuringRender = false
+		const pendingUpdate = vi.fn(() => {
+			updateCalledDuringRender = true
+		})
+		const PendingLazyRoute = createLazyRoute(pendingArea)
+		const pendingRender = PendingLazyRoute({
+			props: {
+				render: (module) => module.value,
+			},
+			queueTask() {},
+			update: pendingUpdate,
+		} as never)
+
+		pendingRender()
+		expect(updateCalledDuringRender).toBe(false)
+		await Promise.resolve()
+		expect(pendingUpdate).toHaveBeenCalled()
+
 		const loadModule = vi.fn<() => Promise<{ value: JSX.Element }>>()
 		loadModule.mockRejectedValue(new Error('chunk unavailable'))
 		const area = createLazyRouteArea(loadModule)

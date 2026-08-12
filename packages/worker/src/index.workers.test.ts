@@ -93,7 +93,7 @@ function getOAuthPurgeCoordinator() {
 	)
 }
 
-test('platform lanes execute with their expected inputs', async () => {
+test('platform lanes execute with their expected inputs and jobs-owned lanes are rejected', async () => {
 	const scheduledTime = Date.parse('2026-07-05T10:05:30.000Z')
 	const scheduledAt = new Date(scheduledTime)
 	for (const lane of [
@@ -141,9 +141,7 @@ test('platform lanes execute with their expected inputs', async () => {
 		expect.objectContaining({ APP_DB: env.APP_DB }),
 	)
 	expect(reconciliationInput?.now).toEqual(scheduledAt)
-})
 
-test('jobs-worker-owned lanes are rejected in the main worker', async () => {
 	await expect(
 		runScheduledLane({
 			env,
@@ -319,10 +317,11 @@ test('OAuth purge coordinator serializes overlapping invocations', async () => {
 	)
 })
 
-test('a failing lane reports to Sentry and resolves as failed', async () => {
+test('lane failure isolation reports ordinary errors to Sentry and treats D1 lock contention as retryable', async () => {
 	const consoleErrorSpy = vi
 		.spyOn(console, 'error')
 		.mockImplementation(() => {})
+	const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const withScope = vi.spyOn(Sentry, 'withScope')
 	const captureException = vi
 		.spyOn(Sentry, 'captureException')
@@ -330,13 +329,13 @@ test('a failing lane reports to Sentry and resolves as failed', async () => {
 	mocks.reconcileArtifactsPushes.mockRejectedValueOnce(
 		new Error('reconcile exploded'),
 	)
-	const scheduledTime = Date.parse('2026-07-05T10:10:00.000Z')
+	const failedTime = Date.parse('2026-07-05T10:10:00.000Z')
 
 	try {
 		await expect(
 			runScheduledLaneWithFailureIsolation({
 				env,
-				message: createMessage('reconcile_artifacts_pushes', scheduledTime),
+				message: createMessage('reconcile_artifacts_pushes', failedTime),
 			}),
 		).resolves.toBe('failed')
 
@@ -366,32 +365,20 @@ test('a failing lane reports to Sentry and resolves as failed', async () => {
 			'scheduled',
 			expect.objectContaining({
 				lane: 'reconcile_artifacts_pushes',
-				scheduledTime: new Date(scheduledTime).toISOString(),
+				scheduledTime: new Date(failedTime).toISOString(),
 				cron,
 			}),
 		)
-	} finally {
-		consoleErrorSpy.mockRestore()
-		withScope.mockRestore()
-		captureException.mockRestore()
-	}
-})
 
-test('D1 lock contention resolves as retryable without reporting to Sentry', async () => {
-	const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const captureException = vi
-		.spyOn(Sentry, 'captureException')
-		.mockImplementation(() => '')
-	mocks.reconcileArtifactsPushes.mockRejectedValueOnce(
-		new Error('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
-	)
-	const scheduledTime = Date.parse('2026-07-05T10:20:00.000Z')
-
-	try {
+		captureException.mockClear()
+		mocks.reconcileArtifactsPushes.mockRejectedValueOnce(
+			new Error('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
+		)
+		const lockTime = Date.parse('2026-07-05T10:20:00.000Z')
 		await expect(
 			runScheduledLaneWithFailureIsolation({
 				env,
-				message: createMessage('reconcile_artifacts_pushes', scheduledTime),
+				message: createMessage('reconcile_artifacts_pushes', lockTime),
 			}),
 		).resolves.toBe('d1_lock_contention')
 
@@ -403,7 +390,9 @@ test('D1 lock contention resolves as retryable without reporting to Sentry', asy
 		)
 		expect(captureException).not.toHaveBeenCalled()
 	} finally {
+		consoleErrorSpy.mockRestore()
 		consoleWarnSpy.mockRestore()
+		withScope.mockRestore()
 		captureException.mockRestore()
 	}
 })

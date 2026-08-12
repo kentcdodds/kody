@@ -34,13 +34,10 @@ test('account secrets api ignores legacy remote connector env secrets', async ()
 	})
 })
 
-test('getEnv memoizes the parsed env per env object identity', () => {
+test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER in production', () => {
 	const env = createEnv()
 	expect(getEnv(env)).toBe(getEnv(env))
 	expect(getEnv(createEnv())).not.toBe(getEnv(env))
-})
-
-test('production env requires the AUTH_RATE_LIMITER binding', () => {
 	expect(() => getEnv(createEnv({ SENTRY_ENVIRONMENT: 'production' }))).toThrow(
 		'AUTH_RATE_LIMITER',
 	)

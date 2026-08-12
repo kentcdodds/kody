@@ -307,8 +307,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			),
 		})
 
-		// OAuth token refresh caller state (KODY-CLOUDFLARE-4J): revoked grant
-		// or connection without a refresh token. Plain Error message match.
+		// OAuth token refresh caller state (KODY-CLOUDFLARE-4J): marker match.
 		logMcpEvent({
 			...callerFailureBase,
 			capabilityName: 'integration_token_refresh',
@@ -317,9 +316,9 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage:
-				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
+				'Token refresh was rejected. (integration_token_refresh caller state)',
 			cause: new Error(
-				'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google. (integration_token_refresh caller state)',
+				'Token refresh was rejected. (integration_token_refresh caller state)',
 			),
 		})
 	})

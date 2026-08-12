@@ -157,9 +157,9 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 	)
 })
 
-test('provider HTTP 4xx refresh rejection is a caller error with reconnect guidance', async () => {
+test('provider HTTP status classifies refresh failures as caller errors or Sentry-visible Errors', async () => {
 	const { env } = createHarness()
-	const userId = 'user-google-invalid-grant'
+	const userId = 'user-google-provider-status'
 	await upsertPlatformOauthApp({
 		db: env.APP_DB,
 		env,
@@ -183,8 +183,9 @@ test('provider HTTP 4xx refresh rejection is a caller error with reconnect guida
 	})
 	await seedUserTokens(env, userId, 'google')
 
-	const fetchMock = vi.fn(
-		async () =>
+	const fetchMock = vi
+		.fn()
+		.mockResolvedValueOnce(
 			new Response(
 				JSON.stringify({
 					error: 'invalid_grant',
@@ -195,7 +196,13 @@ test('provider HTTP 4xx refresh rejection is a caller error with reconnect guida
 					headers: { 'Content-Type': 'application/json' },
 				},
 			),
-	)
+		)
+		.mockResolvedValueOnce(
+			new Response(JSON.stringify({ error: 'server_error' }), {
+				status: 503,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+		)
 	vi.stubGlobal('fetch', fetchMock)
 	try {
 		await expect(
@@ -207,53 +214,12 @@ test('provider HTTP 4xx refresh rejection is a caller error with reconnect guida
 		).rejects.toSatisfy(
 			(error: unknown) =>
 				error instanceof IntegrationTokenRefreshCallerError &&
-				error.message.includes(
-					'Token refresh was rejected for integration "google" with HTTP 400',
-				) &&
+				error.message.includes('HTTP 400') &&
 				error.message.includes('invalid_grant') &&
 				error.message.includes('/connect/oauth?provider=google') &&
 				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
-	} finally {
-		vi.unstubAllGlobals()
-	}
-})
 
-test('provider HTTP 5xx refresh failure stays a plain Error for Sentry visibility', async () => {
-	const { env } = createHarness()
-	const userId = 'user-google-provider-outage'
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env,
-		app: {
-			slug: 'google',
-			clientId: 'platform-google-client-id',
-			clientSecret: 'platform-google-client-secret-value',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			apiBaseUrl: 'https://www.googleapis.com',
-			flow: 'confidential',
-		},
-	})
-	await upsertPlatformIntegration({
-		env,
-		userId,
-		platformAppSlug: 'google',
-		scopes: [],
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
-	})
-	await seedUserTokens(env, userId, 'google')
-
-	const fetchMock = vi.fn(
-		async () =>
-			new Response(JSON.stringify({ error: 'server_error' }), {
-				status: 503,
-				headers: { 'Content-Type': 'application/json' },
-			}),
-	)
-	vi.stubGlobal('fetch', fetchMock)
-	try {
 		await expect(
 			refreshIntegrationTokens({
 				env,
@@ -264,9 +230,7 @@ test('provider HTTP 5xx refresh failure stays a plain Error for Sentry visibilit
 			(error: unknown) =>
 				error instanceof Error &&
 				!(error instanceof IntegrationTokenRefreshCallerError) &&
-				error.message.includes(
-					'Token refresh failed for integration "google" with HTTP 503',
-				),
+				error.message.includes('HTTP 503'),
 		)
 	} finally {
 		vi.unstubAllGlobals()

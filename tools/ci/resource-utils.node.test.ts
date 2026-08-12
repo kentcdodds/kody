@@ -869,9 +869,9 @@ test('ensureArtifactsAccountEventSubscription creates account-level lifecycle su
 	)
 })
 
-test('ensurePackageAppDnsRecords creates proxied apex and wildcard AAAA records', async () => {
+test('ensurePackageAppDnsRecords creates proxied apex/wildcard records and reuses them', async () => {
 	consoleError.mockImplementation(() => {})
-	const fetcher = vi
+	const createFetcher = vi
 		.fn<typeof fetch>()
 		.mockResolvedValueOnce(
 			Response.json({
@@ -911,22 +911,22 @@ test('ensurePackageAppDnsRecords creates proxied apex and wildcard AAAA records'
 		apiToken: 'token-1',
 		packageAppHostname: 'kodyapps.dev',
 		dryRun: false,
-		fetcher,
+		fetcher: createFetcher,
 	})
 
-	expect(fetcher).toHaveBeenNthCalledWith(
+	expect(createFetcher).toHaveBeenNthCalledWith(
 		1,
 		'https://api.cloudflare.com/client/v4/zones?name=kodyapps.dev&account.id=account-1&status=active',
 		expect.objectContaining({ method: 'GET' }),
 	)
 	// The list queries are name-only on purpose: a type filter would hide
 	// conflicting A/CNAME records at the same name.
-	expect(fetcher).toHaveBeenNthCalledWith(
+	expect(createFetcher).toHaveBeenNthCalledWith(
 		2,
 		'https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records?name=kodyapps.dev',
 		expect.objectContaining({ method: 'GET' }),
 	)
-	expect(fetcher).toHaveBeenNthCalledWith(
+	expect(createFetcher).toHaveBeenNthCalledWith(
 		3,
 		'https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records',
 		expect.objectContaining({
@@ -940,12 +940,12 @@ test('ensurePackageAppDnsRecords creates proxied apex and wildcard AAAA records'
 			}),
 		}),
 	)
-	expect(fetcher).toHaveBeenNthCalledWith(
+	expect(createFetcher).toHaveBeenNthCalledWith(
 		4,
 		`https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records?name=${encodeURIComponent('*.kodyapps.dev')}`,
 		expect.objectContaining({ method: 'GET' }),
 	)
-	expect(fetcher).toHaveBeenNthCalledWith(
+	expect(createFetcher).toHaveBeenNthCalledWith(
 		5,
 		'https://api.cloudflare.com/client/v4/zones/zone-kodyapps/dns_records',
 		expect.objectContaining({
@@ -959,105 +959,8 @@ test('ensurePackageAppDnsRecords creates proxied apex and wildcard AAAA records'
 			}),
 		}),
 	)
-})
 
-test('ensurePackageAppDnsRecords fails on a conflicting record of another type', async () => {
-	consoleError.mockImplementation(() => {})
-	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
-		throw new Error('process.exit called')
-	}) as never)
-	const fetcher = vi
-		.fn<typeof fetch>()
-		.mockResolvedValueOnce(
-			Response.json({
-				success: true,
-				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
-			}),
-		)
-		.mockResolvedValueOnce(
-			Response.json({
-				success: true,
-				result: [
-					{
-						id: 'dns-conflicting',
-						type: 'CNAME',
-						name: 'kodyapps.dev',
-						content: 'somewhere-else.example',
-						proxied: false,
-					},
-				],
-			}),
-		)
-
-	await expect(
-		ensurePackageAppDnsRecords({
-			accountId: 'account-1',
-			apiToken: 'token-1',
-			packageAppHostname: 'kodyapps.dev',
-			dryRun: false,
-			fetcher,
-		}),
-	).rejects.toThrow('process.exit called')
-	expect(consoleError).toHaveBeenCalledWith(
-		expect.stringContaining('found CNAME somewhere-else.example'),
-	)
-	expect(fetcher).toHaveBeenCalledTimes(2)
-	exit.mockRestore()
-})
-
-test('ensurePackageAppDnsRecords fails on a conflict even when the required record exists', async () => {
-	consoleError.mockImplementation(() => {})
-	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
-		throw new Error('process.exit called')
-	}) as never)
-	const fetcher = vi
-		.fn<typeof fetch>()
-		.mockResolvedValueOnce(
-			Response.json({
-				success: true,
-				result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
-			}),
-		)
-		.mockResolvedValueOnce(
-			Response.json({
-				success: true,
-				result: [
-					{
-						id: 'dns-required',
-						type: 'AAAA',
-						name: 'kodyapps.dev',
-						content: '100::',
-						proxied: true,
-					},
-					{
-						id: 'dns-stray',
-						type: 'A',
-						name: 'kodyapps.dev',
-						content: '192.0.2.1',
-						proxied: false,
-					},
-				],
-			}),
-		)
-
-	await expect(
-		ensurePackageAppDnsRecords({
-			accountId: 'account-1',
-			apiToken: 'token-1',
-			packageAppHostname: 'kodyapps.dev',
-			dryRun: false,
-			fetcher,
-		}),
-	).rejects.toThrow('process.exit called')
-	expect(consoleError).toHaveBeenCalledWith(
-		expect.stringContaining('found A 192.0.2.1'),
-	)
-	exit.mockRestore()
-})
-
-test('ensurePackageAppDnsRecords reuses existing proxied apex and wildcard records', async () => {
-	consoleError.mockImplementation(() => {})
-	const fetcher = vi
+	const reuseFetcher = vi
 		.fn<typeof fetch>()
 		.mockResolvedValueOnce(
 			Response.json({
@@ -1099,10 +1002,101 @@ test('ensurePackageAppDnsRecords reuses existing proxied apex and wildcard recor
 		apiToken: 'token-1',
 		packageAppHostname: 'kodyapps.dev',
 		dryRun: false,
-		fetcher,
+		fetcher: reuseFetcher,
 	})
 
-	expect(fetcher).toHaveBeenCalledTimes(3)
+	expect(reuseFetcher).toHaveBeenCalledTimes(3)
+})
+
+test('ensurePackageAppDnsRecords fails closed on conflicting DNS records', async () => {
+	consoleError.mockImplementation(() => {})
+	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+
+	try {
+		const wrongTypeFetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(
+				Response.json({
+					success: true,
+					result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					success: true,
+					result: [
+						{
+							id: 'dns-conflicting',
+							type: 'CNAME',
+							name: 'kodyapps.dev',
+							content: 'somewhere-else.example',
+							proxied: false,
+						},
+					],
+				}),
+			)
+
+		await expect(
+			ensurePackageAppDnsRecords({
+				accountId: 'account-1',
+				apiToken: 'token-1',
+				packageAppHostname: 'kodyapps.dev',
+				dryRun: false,
+				fetcher: wrongTypeFetcher,
+			}),
+		).rejects.toThrow('process.exit called')
+		expect(consoleError).toHaveBeenCalledWith(
+			expect.stringContaining('found CNAME somewhere-else.example'),
+		)
+		expect(wrongTypeFetcher).toHaveBeenCalledTimes(2)
+
+		const strayRecordFetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(
+				Response.json({
+					success: true,
+					result: [{ id: 'zone-kodyapps', name: 'kodyapps.dev' }],
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					success: true,
+					result: [
+						{
+							id: 'dns-required',
+							type: 'AAAA',
+							name: 'kodyapps.dev',
+							content: '100::',
+							proxied: true,
+						},
+						{
+							id: 'dns-stray',
+							type: 'A',
+							name: 'kodyapps.dev',
+							content: '192.0.2.1',
+							proxied: false,
+						},
+					],
+				}),
+			)
+
+		await expect(
+			ensurePackageAppDnsRecords({
+				accountId: 'account-1',
+				apiToken: 'token-1',
+				packageAppHostname: 'kodyapps.dev',
+				dryRun: false,
+				fetcher: strayRecordFetcher,
+			}),
+		).rejects.toThrow('process.exit called')
+		expect(consoleError).toHaveBeenCalledWith(
+			expect.stringContaining('found A 192.0.2.1'),
+		)
+	} finally {
+		exit.mockRestore()
+	}
 })
 
 test('writeGeneratedWranglerConfig rejects invalid environment asset config', async () => {
